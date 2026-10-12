@@ -734,6 +734,21 @@ async function importExternalFolder({
       logger.info(`Queued ${queued} of ${importedPhotoIds.length} imported external photo(s) for face scanning (event ${eventId})`);
     }
 
+    // Scene tagging (issue 1733): the same late read and the same whereNull.
+    try {
+      const freshEvent = await db('events').where('id', eventId).first();
+      if (importedPhotoIds.length && await require('./tagSettings').isEnabledForEvent(freshEvent)) {
+        for (let i = 0; i < importedPhotoIds.length; i += 500) {
+          await db('photos')
+            .whereIn('id', importedPhotoIds.slice(i, i + 500))
+            .whereNull('tag_status')
+            .update({ tag_status: 'pending' });
+        }
+      }
+    } catch (err) {
+      logger.warn(`Could not queue imported photos for tagging (event ${eventId}): ${err.message}`);
+    }
+
     const result = {
       imported, skipped, deferred, excluded, thumbnailsGenerated, thumbnailsFailed,
       truncated: walkBudget.truncated, capReached,

@@ -927,6 +927,8 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       // nonfatal, so an event can still be carrying it here.
       await trx('photo_faces').where('event_id', req.params.id).del();
       await trx('event_people').where('event_id', req.params.id).del();
+      // Scene tags (issue 1733) stay with an archived gallery's photo rows.
+      await trx('photo_tags').where('event_id', req.params.id).del();
       if (hasMergeDismissals) {
         await trx('event_people_merge_dismissals').where('event_id', req.params.id).del();
       }

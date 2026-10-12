@@ -18,5 +18,6 @@ require('./archiveBulk')(router);
 require('./logo')(router);
 require('./qr')(router);
 require('./faces')(router);
+require('./tags')(router);
 
 module.exports = router;

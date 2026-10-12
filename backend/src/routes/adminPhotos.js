@@ -806,6 +806,8 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     } catch (err) {
       logger.warn(`deletePhoto: face purge failed for photo ${photoId}`, { error: err.message });
     }
+    // Scene tags (issue 1733): the same inert cascade on SQLite.
+    await db('photo_tags').where({ photo_id: photoId }).del();
 
     // An external photo's file stays on the NAS; make sure the folder watcher
     // (issue 1187) does not re-import it on its next pass.
@@ -1070,6 +1072,10 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
       } catch (err) {
         logger.warn(`bulk delete: face purge failed for photo ${photo.id}`, { error: err.message });
       }
+    }
+    // Scene tags (issue 1733), from the validated rows for the same reason.
+    if (photos.length) {
+      await db('photo_tags').whereIn('photo_id', photos.map((photo) => photo.id)).del();
     }
 
     // Delete from database

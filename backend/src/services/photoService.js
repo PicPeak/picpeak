@@ -129,6 +129,8 @@ const deletePhoto = async (photoId, options = {}) => {
       } catch (err) {
         logger.warn(`deletePhoto: face purge failed for photo ${photoId}`, { error: err.message });
       }
+      // Scene tags (issue 1733): the same inert cascade on SQLite.
+      await db('photo_tags').where({ photo_id: photoId }).del();
 
       // Delete from database
       await db('photos').where('id', photoId).delete();

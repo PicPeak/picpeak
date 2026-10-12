@@ -106,6 +106,29 @@ async function detectFaces(buffer, filename = 'photo.jpg') {
 }
 
 /**
+ * Scene tags for an image (issue 1733). `buffer` is the thumbnail's bytes.
+ * Returns the sidecar's `{ model_version, tags: [{ tag, score }] }`. Same
+ * error taxonomy as detectFaces; a sidecar image built without the tagging
+ * model answers 503, so those photos stay queued.
+ */
+async function tagImage(buffer, filename = 'photo.jpg') {
+  const form = new FormData();
+  form.append('image', new Blob([buffer]), filename);
+
+  try {
+    const response = await axios.post(`${getSidecarUrl()}/tags`, form, {
+      headers: authHeaders(),
+      timeout: REQUEST_TIMEOUT_MS,
+      maxBodyLength: 64 * 1024 * 1024,
+      maxContentLength: 1024 * 1024,
+    });
+    return response.data;
+  } catch (err) {
+    throw classify(err);
+  }
+}
+
+/**
  * Sidecar identity + liveness, for the admin connection test.
  * Returns { ok: true, info } or { ok: false, reason, error } — never throws,
  * because the caller is a UI button and a stack trace helps nobody there.
@@ -154,6 +177,7 @@ async function checkHealth() {
 
 module.exports = {
   detectFaces,
+  tagImage,
   checkHealth,
   SidecarUnavailableError,
   SidecarRejectedError,

@@ -339,6 +339,27 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     personIdsByPhoto = new Map();
   }
 
+  // Scene tags (issue 1733). Sent only while the feature flag and the
+  // gallery's own switch are both on; otherwise the payload carries no tag
+  // key at all. Not for the slideshow, which has no filter UI.
+  let tagsEnabled = false;
+  let tagKeysByPhoto = new Map();
+  let tagCounts = [];
+  try {
+    if (accessLevel !== 'slideshow' && await require('./tagSettings').isEnabledForEvent(event)) {
+      tagsEnabled = true;
+      if (!hiddenForGuest) {
+        const tagQueries = require('./tagQueries');
+        tagKeysByPhoto = await tagQueries.getTagKeysByPhoto(event.id);
+        tagCounts = await tagQueries.getEventTagCounts(event.id, accessLevel);
+      }
+    }
+  } catch (err) {
+    // A tagging failure must never take down the gallery payload.
+    logger.warn(`gallery: tag lookup failed for event ${event.id}`, { error: err.message });
+    tagsEnabled = false;
+  }
+
   // Get actual categories used by photos in this event
   // This includes both global categories and event-specific ones. Only
   // photos this viewer may see count, as for the folders below: a category
@@ -584,6 +605,8 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // to keep the strip to themselves — the frontend renders no face UI
       // at all in that case.
       people_enabled: peopleEnabled,
+      // Scene tags (issue 1733): the filter chips hang off this flag.
+      tags_enabled: tagsEnabled,
       ...protectionSettings
     },
     // Reveal mode (#838): the guest UI switches to the upload-only view
@@ -591,6 +614,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     hidden_until_reveal: hiddenForGuest,
     reveal_at: hiddenForGuest ? (event.reveal_at || null) : undefined,
     categories: categories,
+    // Tags in use among the photos this viewer may see, with counts
+    // (issue 1733). Absent unless tagging is on for the gallery.
+    ...(tagsEnabled ? { tags: tagCounts } : {}),
     photos: photos.map(photo => {
       // Every protection level takes the JWT route. Under enhanced/maximum
       // this used to emit `/api/secure-images/.../{{token}}` and rely on the
@@ -743,6 +769,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // face filtering client-side and instant, like the category and
         // liked/rated filters.
         person_ids: personIdsByPhoto.get(photo.id) || [],
+        // Scene tags of this photo (issue 1733), best first. The key is left
+        // out while tagging is off for the gallery.
+        ...(tagsEnabled ? { tag_keys: tagKeysByPhoto.get(Number(photo.id)) || [] } : {}),
         // Photo credit (#1561), only when the viewer may see names — the key is
         // left out otherwise rather than sent as null. `uploaded_by_guest`
         // lets the "By" filter tell a nameless guest upload from the

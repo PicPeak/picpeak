@@ -798,6 +798,16 @@
         "PATCH /:id/slideshow"
       ]
     },
+    "adminEvents/tags.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Excluded: automatic scene tagging is not reported as a capability. No flag value, per-gallery switch, queue progress, tag keys, scores or counts.",
+      "route_signatures": [
+        "GET /:id/tags",
+        "PATCH /:id/tags",
+        "POST /:id/tags/rescan"
+      ]
+    },
     "adminEventTypes.js": {
       "decision": "partial",
       "signals": [
@@ -1906,6 +1916,10 @@
         "analytics_dashboard"
       ],
       "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "autoTagging": {
+      "signals": [],
+      "reason": "Excluded: automatic scene tagging is not reported as its own capability; no flag value, tag keys, scores or counts."
     },
     "bills": {
       "signals": [

@@ -357,6 +357,18 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         });
       }
 
+      // Scene tagging (issue 1733), for the same reason and guarded the same
+      // way: the feature flag and the gallery's own switch.
+      try {
+        if (!isVideo && await require('./tagSettings').isEnabledForEvent(event)) {
+          await db('photos').where({ id: photoId }).update({ tag_status: 'pending' });
+        }
+      } catch (err) {
+        logger.warn(`processUploadedPhotos: tag enqueue failed for photo ${photoId}`, {
+          error: err.message,
+        });
+      }
+
       uploadedPhotos.push({
         id: photoId,
         filename: newFilename,
@@ -743,6 +755,15 @@ async function processPhoto(photoId) {
   } catch (err) {
     // Never let the face feature block a photo from completing.
     logger.warn(`processPhoto: face enqueue check failed for ${photoId}`, { error: err.message });
+  }
+
+  // Scene tagging (issue 1733): same UPDATE, same two switches.
+  try {
+    if (!isVideo && await require('./tagSettings').isEnabledForEvent(event)) {
+      updateData.tag_status = 'pending';
+    }
+  } catch (err) {
+    logger.warn(`processPhoto: tag enqueue check failed for ${photoId}`, { error: err.message });
   }
 
   // Browser-playable copy (issue 1430, item 8): same UPDATE for the same

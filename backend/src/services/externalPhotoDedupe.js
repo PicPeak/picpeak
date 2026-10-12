@@ -56,6 +56,8 @@ const chunked = (arr) => {
 const LOG_TABLES = [
   ['image_access_logs', 'photo_id'],
   ['transfer_downloads', 'photo_id'],
+  // Scene tags (issue 1733): the survivor was tagged from the same picture.
+  ['photo_tags', 'photo_id'],
 ];
 
 /**

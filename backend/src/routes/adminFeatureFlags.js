@@ -110,6 +110,12 @@ const KNOWN_FLAGS = [
   // the first of two deliberate actions — detection still has to be enabled
   // per event. Strictly opt-in.
   'faces',
+  // Automatic scene tags (migration 297, issue 1733). Runs in the same
+  // optional picpeak-ml sidecar as `faces`, but is its own switch: a scene
+  // tag is not biometric data, so the face consent does not gate it. While
+  // off, the tag queue idles and no tag_status is ever written. Tagging
+  // still has to be enabled per gallery. Strictly opt-in.
+  'autoTagging',
   // Newsletter campaigns (migration 199, #1264). Child of `clients` — mass
   // marketing mail to customer accounts, with per-customer opt-out and an
   // unsubscribe link on every send. Strictly opt-in: an install that never
@@ -152,6 +158,7 @@ const DEFAULT_FLAGS = {
   workflows: false,
   // #1074 — off by default is the whole "zero behaviour change" guarantee.
   faces: false,
+  autoTagging: false,
   newsletters: false,
   documents: false,
 };
@@ -180,6 +187,8 @@ function applyDependencyRules(flags) {
   // depth, not the enforcement itself.
   const { isSingleContainerImage } = require('../services/faceSettings');
   if (isSingleContainerImage()) out.faces = false;
+  // Same sidecar, same reason (tagSettings.isFeatureEnabled refuses too).
+  if (isSingleContainerImage()) out.autoTagging = false;
   // Sub-features can't outlive their parents.
   if (out.quotes === false) out.bills = false;
   if (out.calendar === false) out.calendarBooking = false;

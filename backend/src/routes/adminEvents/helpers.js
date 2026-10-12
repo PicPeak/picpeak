@@ -180,6 +180,8 @@ async function deleteEventCascade(eventId, adminContext) {
     // photos, so the guarantee holds on both engines.
     await trx('photo_faces').where('event_id', eventId).del();
     await trx('event_people').where('event_id', eventId).del();
+    // Scene tags (issue 1733): the same inert-cascade reason.
+    await trx('photo_tags').where('event_id', eventId).del();
     // Separations carry a COPY of each side's centroid since #1132, so this
     // table holds biometric data too — and it deliberately has no event FK, so
     // nothing else would ever reach it. hasTable rather than a catch: a failed

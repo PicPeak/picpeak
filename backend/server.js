@@ -1533,6 +1533,10 @@ async function startServerInternal() {
     // lazy means they don't pay for a module graph they never use.
     require('./src/services/faceQueue').start();
 
+    // Scene tagging (issue 1733). Same shape: idle until the `autoTagging`
+    // feature flag is on, and it never contacts the sidecar before that.
+    require('./src/services/tagQueue').start();
+
     // Browser-playable video copies (issue 1430). Same shape as the face
     // queue: starts idle and re-reads the general_video_web_rendition
     // setting every tick, so nothing runs until an admin switches it on.
