@@ -821,6 +821,20 @@
     "language": "Jezik"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} datoteka je že v tej galeriji",
+      "title_two": "{{count}} datoteki sta že v tej galeriji",
+      "title_few": "{{count}} datoteke so že v tej galeriji",
+      "title_other": "{{count}} datotek je že v tej galeriji",
+      "toast_one": "{{count}} datoteka je že v tej galeriji in je bila preskočena — podrobnosti so v vrstici za nalaganje na vrhu.",
+      "toast_two": "{{count}} datoteki sta že v tej galeriji in sta bili preskočeni — podrobnosti so v vrstici za nalaganje na vrhu.",
+      "toast_few": "{{count}} datoteke so že v tej galeriji in so bile preskočene — podrobnosti so v vrstici za nalaganje na vrhu.",
+      "toast_other": "{{count}} datotek je že v tej galeriji in je bilo preskočenih — podrobnosti so v vrstici za nalaganje na vrhu.",
+      "badge": "Dvojnik",
+      "sameAs": "enaka vsebina kot {{name}}",
+      "uploadAnyway": "Vseeno naloži",
+      "uploadAllAnyway": "Vseeno naloži vse"
+    },
     "photoCategory": "Kategorija fotografije",
     "noCategory": "Brez kategorije",
     "eventSpecific": "(specifično za dogodek)",

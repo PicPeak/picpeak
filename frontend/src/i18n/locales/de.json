@@ -846,6 +846,16 @@
     "moreActions": "Weitere Aktionen"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} Datei ist bereits in dieser Galerie",
+      "title_other": "{{count}} Dateien sind bereits in dieser Galerie",
+      "toast_one": "{{count}} Datei ist bereits in dieser Galerie und wurde übersprungen – Details in der Upload-Leiste oben.",
+      "toast_other": "{{count}} Dateien sind bereits in dieser Galerie und wurden übersprungen – Details in der Upload-Leiste oben.",
+      "badge": "Duplikat",
+      "sameAs": "gleicher Inhalt wie {{name}}",
+      "uploadAnyway": "Trotzdem hochladen",
+      "uploadAllAnyway": "Alle trotzdem hochladen"
+    },
     "capacity": {
       "decoded": "Dieses Bild überschreitet die Bildverarbeitungsgrenzen des Servers.",
       "imagePixels": "Dieses Bild ist größer als die {{max}} Megapixel, die dieser Server verarbeitet.",

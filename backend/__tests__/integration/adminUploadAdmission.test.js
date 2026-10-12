@@ -185,7 +185,8 @@ test('authenticated uploads are neither charged to nor refused by the public all
   process.env.PUBLIC_UPLOAD_LIMITS_JSON = JSON.stringify({ gallery: { bytes: 2 * 1024 * 1024, files: 2, pendingFiles: 1, requests: 1 } });
   process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';
   quota._legacyCache.clear();
-  for (let n = 0; n < 3; n++) expect((await attach(upload(), image(1024 * 1024), `admin-${n}.jpg`)).status).toBe(202);
+  // The same bytes three times: stored as three photos only with the duplicate override.
+  for (let n = 0; n < 3; n++) expect((await attach(upload().field('allow_duplicates', 'true'), image(1024 * 1024), `admin-${n}.jpg`)).status).toBe(202);
   expect(await db('photos').where({ processing_status: 'pending' })).toHaveLength(3);
   const held = await quota.begin({ eventId, mode: 'admin', maxFiles: 1, declaredBytes: 1024 });
   const guest = await quota.begin({ eventId, maxFiles: 1, declaredBytes: 1024 });
@@ -613,7 +614,8 @@ test('private admission and promotion cannot disagree about exponential event id
 });
 
 test('the existing 500-file default still accepts a real bounded batch of small images', async () => {
-  let req = upload();
+  // 500 copies of one image: the duplicate override keeps them 500 photos.
+  let req = upload().field('allow_duplicates', 'true');
   for (let n = 0; n < 500; n++) req = attach(req, jpeg, `small-${n}.jpg`);
   const res = await req;
   expect(res.status).toBe(202); expect(res.body.count).toBe(500);

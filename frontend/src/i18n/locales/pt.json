@@ -148,6 +148,16 @@
     "language": "Idioma"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} arquivo já está nesta galeria",
+      "title_other": "{{count}} arquivos já estão nesta galeria",
+      "toast_one": "{{count}} arquivo já está nesta galeria e foi ignorado — detalhes na barra de envio no topo.",
+      "toast_other": "{{count}} arquivos já estão nesta galeria e foram ignorados — detalhes na barra de envio no topo.",
+      "badge": "Duplicado",
+      "sameAs": "mesmo conteúdo de {{name}}",
+      "uploadAnyway": "Enviar mesmo assim",
+      "uploadAllAnyway": "Enviar todos mesmo assim"
+    },
     "photoCategory": "Categoria da Foto",
     "noCategory": "Sem categoria",
     "eventSpecific": "(Específico do evento)",

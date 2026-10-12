@@ -124,6 +124,16 @@
     "poweredBy": "Desarrollado por"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} archivo ya está en esta galería",
+      "title_other": "{{count}} archivos ya están en esta galería",
+      "toast_one": "{{count}} archivo ya está en esta galería y se omitió: detalles en la barra de subida de arriba.",
+      "toast_other": "{{count}} archivos ya están en esta galería y se omitieron: detalles en la barra de subida de arriba.",
+      "badge": "Duplicado",
+      "sameAs": "mismo contenido que {{name}}",
+      "uploadAnyway": "Subir de todos modos",
+      "uploadAllAnyway": "Subir todos de todos modos"
+    },
     "photoCategory": "Categoría de foto",
     "noCategory": "Sin categoría",
     "eventSpecific": "(Específico del evento)",

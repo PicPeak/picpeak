@@ -69,9 +69,12 @@ describe('admin upload per-file video size limit (general_max_video_size_mb)', (
     uploadSettings.clearMaxVideoSizeCache();
   };
 
+  // The tests send the same bytes into one gallery again and again; without
+  // the override every upload after the first is a duplicate (issue 1733).
   const postUpload = (bytes, filename, contentType) => request(app)
     .post(`/api/admin/photos/${eventId}/upload`)
     .set('Authorization', `Bearer ${adminToken}`)
+    .field('allow_duplicates', 'true')
     .attach('photos', contentType.startsWith('video/') ? admissionVideo(bytes) : Buffer.alloc(bytes, 0x41), { filename, contentType });
 
   const postVideo = (bytes) => postUpload(bytes, 'clip.mp4', 'video/mp4');

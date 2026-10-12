@@ -129,6 +129,16 @@
     "poweredBy": "Mogelijk gemaakt door"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} bestand staat al in deze galerij",
+      "title_other": "{{count}} bestanden staan al in deze galerij",
+      "toast_one": "{{count}} bestand staat al in deze galerij en is overgeslagen — details in de uploadbalk bovenaan.",
+      "toast_other": "{{count}} bestanden staan al in deze galerij en zijn overgeslagen — details in de uploadbalk bovenaan.",
+      "badge": "Duplicaat",
+      "sameAs": "zelfde inhoud als {{name}}",
+      "uploadAnyway": "Toch uploaden",
+      "uploadAllAnyway": "Alles toch uploaden"
+    },
     "photoCategory": "Fotocategorie",
     "noCategory": "Geen categorie",
     "eventSpecific": "(Evenement-specifiek)",

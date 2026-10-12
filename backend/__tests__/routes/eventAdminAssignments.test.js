@@ -77,7 +77,9 @@ describe('gallery team members and upload review (issue 743)', () => {
     return rows[0]?.id ?? rows[0];
   }
 
+  // Everyone uploads the same image, so the duplicate override is on (issue 1733).
   const upload = (who, eventId) => as(request(app).post(`/api/admin/photos/${eventId}/upload`), who)
+    .field('allow_duplicates', 'true')
     .attach('photos', jpeg, { filename: `${who}.jpg`, contentType: 'image/jpeg' });
 
   beforeAll(async () => {

@@ -12,6 +12,7 @@ const { insertPhotoWithinCap, photoCapOf } = require('./photoCap');
 const { resolveCredit, creditOpenForExif, settleGuestCredit } = require('./photoCredit');
 const imageAdmission = require('./imageWorkAdmission');
 const { isResourceError, describe: describeImageError } = require('./imageResourcePolicy');
+const { sha256File } = require('./photoDuplicates');
 const mediaAttempts = require('./mediaAttemptService');
 const { refusal: mediaRefusal, isInterruption } = require('./mediaProcessPolicy');
 
@@ -219,6 +220,9 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       // Credit (#1561), read from the temp file before it is moved.
       const credit = await resolveCredit({ uploadedBy, localPath: tempPath, isVideo });
+      // Content hash (issue 1733, C2), likewise before the move; the chunked
+      // route has already computed it for its duplicate check.
+      const contentSha256 = file.contentSha256 || await sha256File(tempPath);
 
       // Now upload the original through the storage backend and remove the
       // local temp copy.
@@ -263,6 +267,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         thumbnail_path: relativeThumbPath,
         type: photoType,
         size_bytes: actualSize,
+        content_sha256: contentSha256,
         uploaded_by: uploadedBy,
         source_origin: 'managed',
         media_type: mediaType,
@@ -492,6 +497,11 @@ async function queueFilesForProcessing(files, options = {}) {
       // or queue insertion, with a message naming the limit.
       if (!isVideo) await imageAdmission.inspect(tempPath, newFilename, uploadReservation?.signal, preparedImages);
 
+      // Stored, never checked here (issue 1733, C2): this path serves guest
+      // uploads, and a "duplicate" answer would tell a guest what the gallery
+      // already holds.
+      const contentSha256 = await sha256File(tempPath);
+
       if (uploadReservation) {
         uploadCharge = await require('./publicUploadQuota').prepareObject(uploadReservation, finalKey, tempStats.size);
       }
@@ -520,6 +530,7 @@ async function queueFilesForProcessing(files, options = {}) {
         category_id: categoryId,
         folder_id: folderId,
         size_bytes: tempStats.size,
+        content_sha256: contentSha256,
         captured_at: null,
         media_type: isVideo ? 'video' : 'image',
         mime_type: file.mimetype,

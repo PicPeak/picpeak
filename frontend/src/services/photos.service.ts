@@ -359,11 +359,13 @@ class PhotosService {
     eventId: number,
     uploadId: string,
     categoryId?: number | null,
-    folder: FolderPlacement = {}
+    folder: FolderPlacement = {},
+    allowDuplicates = false
   ): Promise<{ success: boolean; uploaded: number; photos: AdminPhoto[] }> {
     const response = await api.post(
       `/admin/photos/${eventId}/chunked-upload/${uploadId}/complete`,
-      uploadPlacementBody({ ...folder, categoryId }),
+      // allow_duplicates is "upload anyway" (issue 1733, C2); sent only when set.
+      { ...uploadPlacementBody({ ...folder, categoryId }), ...(allowDuplicates ? { allow_duplicates: true } : {}) },
       // Merge + ffmpeg thumbnail can take a while on large videos.
       { timeout: 0 }
     );
@@ -379,7 +381,8 @@ class PhotosService {
     file: File,
     categoryId?: number | null,
     onProgress?: (progress: number) => void,
-    folder: FolderPlacement = {}
+    folder: FolderPlacement = {},
+    allowDuplicates = false
   ): Promise<AdminPhoto[]> {
     // Initialize upload
     const { uploadId, expectedChunks } = await this.initChunkedUpload(
@@ -404,7 +407,7 @@ class PhotosService {
       }
 
       // Complete upload
-      const result = await this.completeChunkedUpload(eventId, uploadId, categoryId, folder);
+      const result = await this.completeChunkedUpload(eventId, uploadId, categoryId, folder, allowDuplicates);
       return result.photos;
     } catch (error) {
       // Abort on error

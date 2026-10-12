@@ -846,6 +846,16 @@
     "moreActions": "More actions"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} file is already in this gallery",
+      "title_other": "{{count}} files are already in this gallery",
+      "toast_one": "{{count}} file is already in this gallery and was skipped — details in the upload bar at the top.",
+      "toast_other": "{{count}} files are already in this gallery and were skipped — details in the upload bar at the top.",
+      "badge": "Duplicate",
+      "sameAs": "same content as {{name}}",
+      "uploadAnyway": "Upload anyway",
+      "uploadAllAnyway": "Upload all anyway"
+    },
     "capacity": {
       "decoded": "This image exceeds the server's image-processing limits.",
       "imagePixels": "This image is larger than the {{max}} megapixels this server processes.",
