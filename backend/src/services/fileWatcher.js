@@ -12,9 +12,12 @@ const logger = require('../utils/logger');
 const { isVideoMimeType } = require('./videoProcessor');
 const mime = require('mime-types');
 const downloadZipService = require('./downloadZipService');
+const photoTrash = require('./photoTrashService');
 
 const { getStoragePath } = require('../config/storage');
 const WATCH_PATH = () => path.join(getStoragePath(), 'events/active');
+/** The storage key of a file under the watched folder. */
+const storageKeyOf = (relativePath) => path.posix.join('events/active', relativePath.split(path.sep).join('/'));
 
 // Bound concurrent watcher work. chokidar fires 'add' once per file — with no
 // ignoreInitial option the boot scan fires it for EVERY existing file, and a
@@ -146,6 +149,14 @@ async function processNewPhoto(filePath) {
   // Find the event
   const event = await db('events').where({ slug: eventSlug, is_active: formatBoolean(true) }).first();
   if (!event) return;
+
+  // A photo coming back from the trash (issue 1733): the restore moves the
+  // file in first and inserts its row, under its own id, right after. It is
+  // not a new photo.
+  if (await photoTrash.claimsIncomingFile(storageKeyOf(relativePath))) {
+    logger.debug(`Skipping a file a trash restore is putting back: ${relativePath}`);
+    return;
+  }
   
   // Get file stats
   const stats = await fs.stat(filePath);
@@ -250,6 +261,15 @@ async function removePhoto(filePath) {
   // Look up event before deleting to invalidate zip cache
   const photo = await db('photos').where({ path: relativePath }).first();
 
+  // The app moved this file to the trash itself (issue 1733). The row and its
+  // children are the trashing transaction's to snapshot and delete, and the
+  // delete route fires photo.deleted; doing either here would lose the
+  // children and announce the deletion twice.
+  if (photo && await photoTrash.ownsOutgoingFile(photo.id, storageKeyOf(relativePath))) {
+    logger.debug(`Ignoring the removal of a file moved to the trash: ${relativePath}`);
+    return;
+  }
+
   // Remove from database
   await db('photos').where({ path: relativePath }).delete();
 
@@ -270,4 +290,8 @@ async function removePhoto(filePath) {
   logger.info(`Removed photo: ${relativePath}`);
 }
 
-module.exports = { stopFileWatcher, startFileWatcher, findExistingPhoto };
+module.exports = {
+  stopFileWatcher, startFileWatcher, findExistingPhoto,
+  // exported for tests
+  processNewPhoto, removePhoto,
+};

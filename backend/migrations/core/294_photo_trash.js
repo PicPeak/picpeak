@@ -23,6 +23,11 @@
  */
 
 exports.up = async function up(knex) {
+  // Set on a photo that came back from the trash: its processing run only
+  // makes the derived files again and does not announce an upload.
+  if (!(await knex.schema.hasColumn('photos', 'restored_from_trash_at'))) {
+    await knex.schema.alterTable('photos', (t) => t.string('restored_from_trash_at', 32).nullable());
+  }
   if (await knex.schema.hasTable('photo_trash')) return;
   await knex.schema.createTable('photo_trash', (t) => {
     t.increments('id').primary();
@@ -51,4 +56,7 @@ exports.up = async function up(knex) {
 exports.down = async function down(knex) {
   // The files under trash/ stay; without the rows nothing can restore them.
   await knex.schema.dropTableIfExists('photo_trash');
+  if (await knex.schema.hasColumn('photos', 'restored_from_trash_at')) {
+    await knex.schema.alterTable('photos', (t) => t.dropColumn('restored_from_trash_at'));
+  }
 };

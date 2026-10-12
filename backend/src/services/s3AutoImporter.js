@@ -90,6 +90,9 @@ async function processEvent(event, storage) {
         ? entry.key.slice(eventsActivePrefix.length)
         : entry.key;
       if (existingPaths.has(relativePath)) continue;
+      // A trash restore (issue 1733) is putting this object back and inserts
+      // its row itself.
+      if (await require('./photoTrashService').claimsIncomingFile(entry.key)) continue;
 
       // Skip generated artifacts (thumbnails get their own keys; we don't
       // want to re-register them as photos).

@@ -8,8 +8,14 @@
  *  - restore gives back the same id, the row, the child rows worth keeping
  *    and the file, and queues processing; faces and download grants are not
  *    kept
- *  - a photo that cannot be restored (id taken, cap reached, file missing)
- *    stays in the trash, file included
+ *  - a photo whose id is in use again comes back under a new id, children
+ *    with it; one that cannot be restored (cap reached, file missing) stays
+ *    in the trash, file included
+ *  - the folder watcher neither deletes the row of a file on its way to the
+ *    trash nor imports a file a restore is putting back, whichever comes first
+ *  - a restore announces nothing: no photo.uploaded, and a photo held for
+ *    review comes back held
+ *  - forgetting a guest reaches what the trash holds of them
  *  - trashed photos do not count toward the photo cap
  *  - the trash routes are scoped to the gallery like delete is
  *  - retention 0 deletes at once, as before the trash
@@ -233,16 +239,85 @@ describe('photo trash (issue 1733)', () => {
       await db('photo_feedback').insert({ photo_id: photo.id, event_id: event.id, feedback_type: 'like', guest_identifier: 'ben-ident', guest_id: guestId });
       expect((await del(event, photo)).status).toBe(200);
 
-      // The guest asked to be forgotten and the category was deleted.
+      // The guest row and the category were deleted meanwhile.
       await db('gallery_guests').where({ id: guestId }).del();
       await db('photo_categories').where({ id: categoryId }).del();
 
       const row = await trashRowOf(photo.id);
       expect((await restore(event, [row.id])).status).toBe(200);
       expect(await db('photos').where({ id: photo.id }).first()).toMatchObject({
-        category_id: null, uploader_guest_id: null, credit_name: null, credit_source: null, like_count: 0,
+        category_id: null, uploader_guest_id: null, credit_name: null, credit_source: null, like_count: 1,
       });
-      expect(await count('photo_feedback', { photo_id: photo.id })).toBe(0);
+      // The like still counts; it no longer names anyone.
+      expect(await db('photo_feedback').where({ photo_id: photo.id }).first()).toMatchObject({ feedback_type: 'like', guest_id: null });
+    });
+
+    it('forgets a guest inside the trash too, not only in the gallery', async () => {
+      const event = await mkEvent();
+      const guestId = firstId(await db('gallery_guests').insert({
+        event_id: event.id, name: 'Cara', email: 'cara@example.com', identifier: 'cara-ident', created_at: now(),
+      }).returning('id'));
+      const photo = await mkPhoto(event, { uploader_guest_id: guestId, credit_name: 'Cara', credit_source: 'guest', uploaded_by: 'guest' });
+      await db('photo_feedback').insert([
+        { photo_id: photo.id, event_id: event.id, feedback_type: 'comment', comment_text: 'Mine', guest_identifier: 'cara-ident', guest_id: guestId, guest_name: 'Cara', guest_email: 'cara@example.com' },
+        { photo_id: photo.id, event_id: event.id, feedback_type: 'like', guest_identifier: 'someone-else', guest_name: 'Dan' },
+      ]);
+      expect((await del(event, photo)).status).toBe(200);
+      expect((await trashRowOf(photo.id)).children).toContain('cara@example.com');
+
+      // What both erasure routes call (admin removes the guest, or "forget me").
+      await require('../../src/services/feedbackService').anonymizeGuestFeedback(guestId);
+
+      const row = await trashRowOf(photo.id);
+      expect(row.children).not.toContain('cara@example.com');
+      expect(row.children).not.toContain('"Cara"');
+      expect(row.photo_row).not.toContain('"Cara"');
+      expect(JSON.parse(row.children).feedback.map((f) => [f.feedback_type, f.guest_id, f.guest_name])).toEqual(
+        expect.arrayContaining([['comment', null, null], ['like', null, 'Dan']])
+      );
+
+      expect((await restore(event, [row.id])).status).toBe(200);
+      expect(await db('photos').where({ id: photo.id }).first()).toMatchObject({ uploader_guest_id: null, credit_name: null, credit_source: null });
+      expect(await count('photo_feedback', { photo_id: photo.id })).toBe(2);
+    });
+
+    it('brings a photo held for review back held, and announces nothing', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event, { moderation_status: 'pending', visibility: 'hidden', uploaded_by_admin_id: id.other });
+      expect((await del(event, photo)).status).toBe(200);
+      webhookFire.mockClear();
+
+      const row = await trashRowOf(photo.id);
+      expect((await restore(event, [row.id])).status).toBe(200);
+      const after = await db('photos').where({ id: photo.id }).first();
+      expect(after).toMatchObject({ moderation_status: 'pending', visibility: 'hidden', uploaded_by_admin_id: id.other });
+      expect(after.restored_from_trash_at).toEqual(expect.any(String));
+      expect(webhookFire).not.toHaveBeenCalled();
+    });
+
+    it('does not fire photo.uploaded when the restored photo is processed again', async () => {
+      const sharp = require('sharp');
+      const jpeg = await sharp({ create: { width: 40, height: 30, channels: 3, background: { r: 200, g: 80, b: 20 } } }).jpeg().toBuffer();
+      const { processPhoto } = require('../../src/services/photoProcessor');
+      const event = await mkEvent();
+      const restored = await mkPhoto(event);
+      const fresh = await mkPhoto(event, { processing_status: 'pending', thumbnail_path: null });
+      await storage.put(restored.key, jpeg);
+      await storage.put(fresh.key, jpeg);
+
+      expect((await del(event, restored)).status).toBe(200);
+      expect((await restore(event, [(await trashRowOf(restored.id)).id])).status).toBe(200);
+      webhookFire.mockClear();
+
+      await processPhoto(restored.id);
+      const row = await db('photos').where({ id: restored.id }).first();
+      expect(row.processing_status).toBe('complete');
+      expect(await storage.exists(row.thumbnail_path)).toBe(true);
+      expect(webhookFire).not.toHaveBeenCalledWith('photo.uploaded', expect.anything());
+
+      // The control: an upload's first processing run does announce it.
+      await processPhoto(fresh.id);
+      expect(webhookFire).toHaveBeenCalledWith('photo.uploaded', expect.objectContaining({ photo: expect.objectContaining({ id: fresh.id }) }));
     });
 
     it('follows a gallery that was renamed while the photo was in the trash', async () => {
@@ -260,22 +335,37 @@ describe('photo trash (issue 1733)', () => {
   });
 
   describe('a restore that cannot happen leaves the photo in the trash', () => {
-    it('fails loudly when the photo id is in use again', async () => {
+    it('restores under a new id, children with it, when the old id is in use again', async () => {
       const event = await mkEvent();
       const photo = await mkPhoto(event);
+      await db('photo_feedback').insert({ photo_id: photo.id, event_id: event.id, feedback_type: 'like', guest_identifier: 'x' });
+      await db('photo_admin_marks').insert({ photo_id: photo.id, event_id: event.id, admin_id: id.owner, rating: 5 });
+      await db('events').where({ id: event.id }).update({ hero_photo_id: photo.id });
       expect((await del(event, photo)).status).toBe(200);
       const row = await trashRowOf(photo.id);
-      // What a restored database backup can lead to: the id handed out again.
+      // What a restored database backup leads to: the id handed out again.
       await db('photos').insert({
         id: photo.id, event_id: event.id, filename: 'other.jpg', path: `${event.slug}/other.jpg`, type: 'individual', uploaded_at: now(),
       });
 
       const res = await restore(event, [row.id]);
-      expect(res.status).toBe(409);
-      expect(res.body.failed).toEqual([expect.objectContaining({ id: row.id, code: 'PHOTO_ID_TAKEN' })]);
-      expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed' });
-      expect(await storage.exists(row.trash_key)).toBe(true);
+      expect(res.status).toBe(200);
+      expect(res.body.restored).toBe(1);
+      const newId = res.body.photo_ids[0];
+      expect(newId).not.toBe(photo.id);
+      expect(res.body.reassigned).toEqual([{ previous_photo_id: photo.id, photo_id: newId }]);
+
+      // The photo that holds the old id is untouched, and owns none of the children.
       expect((await db('photos').where({ id: photo.id }).first()).filename).toBe('other.jpg');
+      expect(await count('photo_feedback', { photo_id: photo.id })).toBe(0);
+      expect(await count('photo_admin_marks', { photo_id: photo.id })).toBe(0);
+
+      expect(await db('photos').where({ id: newId }).first()).toMatchObject({ filename: photo.filename, path: `${event.slug}/${photo.filename}` });
+      expect(await count('photo_feedback', { photo_id: newId })).toBe(1);
+      expect(await db('photo_admin_marks').where({ photo_id: newId }).first()).toMatchObject({ rating: 5 });
+      expect((await db('events').where({ id: event.id }).first()).hero_photo_id).toBe(newId);
+      expect(await storage.exists(photo.key)).toBe(true);
+      expect(await db('photo_trash').where({ id: row.id }).first()).toBeUndefined();
     });
 
     it('does not count trash toward the photo cap, and respects the cap on restore', async () => {
@@ -394,6 +484,89 @@ describe('photo trash (issue 1733)', () => {
       expect((await del(event, photo)).body.retention_days).toBe(7);
       const row = await trashRowOf(photo.id);
       expect(Date.parse(row.purge_after) - Date.parse(row.deleted_at)).toBe(7 * 86400000);
+    });
+  });
+
+  describe('the folder watcher', () => {
+    let watcher;
+    const abs = (key) => path.join(process.env.STORAGE_PATH, key);
+    /** Runs `during` right after the next storage move, before the caller's transaction. */
+    const afterNextMove = (during) => {
+      const rename = storage.rename.bind(storage);
+      const spy = jest.spyOn(storage, 'rename').mockImplementation(async (...args) => {
+        spy.mockRestore();
+        await rename(...args);
+        await during();
+      });
+    };
+
+    beforeAll(() => { watcher = require('../../src/services/fileWatcher'); });
+
+    it('leaves the row and children alone when it sees the file leave BEFORE the transaction', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      await db('photo_feedback').insert({ photo_id: photo.id, event_id: event.id, feedback_type: 'like', guest_identifier: 'x' });
+      let rowSeenByWatcher;
+      afterNextMove(async () => {
+        await watcher.removePhoto(abs(photo.key));
+        rowSeenByWatcher = await db('photos').where({ id: photo.id }).first();
+      });
+
+      expect((await del(event, photo)).body).toMatchObject({ trashed: 1 });
+      // The watcher ran in the gap and deleted nothing.
+      expect(rowSeenByWatcher).toBeDefined();
+      // Exactly one photo.deleted: the route's, without the watcher's `source`.
+      const deleted = webhookFire.mock.calls.filter(([type]) => type === 'photo.deleted');
+      expect(deleted).toEqual([['photo.deleted', expect.objectContaining({ photo: { id: photo.id, filename: photo.filename } })]]);
+      // The transaction still found the children to snapshot.
+      expect(JSON.parse((await trashRowOf(photo.id)).children).feedback).toHaveLength(1);
+      expect(await count('photo_feedback', { photo_id: photo.id })).toBe(0);
+    });
+
+    it('does nothing when it sees the file leave AFTER the transaction', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      expect((await del(event, photo)).status).toBe(200);
+      webhookFire.mockClear();
+
+      await watcher.removePhoto(abs(photo.key));
+      expect(webhookFire).not.toHaveBeenCalled();
+      expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed' });
+    });
+
+    it('still removes the row of a file somebody deleted from the folder', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      await storage.delete(photo.key);
+      await watcher.removePhoto(abs(photo.key));
+      expect(await db('photos').where({ id: photo.id }).first()).toBeUndefined();
+      expect(webhookFire).toHaveBeenCalledWith('photo.deleted', expect.objectContaining({
+        photo: expect.objectContaining({ id: photo.id, source: 'auto-import' }),
+      }));
+    });
+
+    it('does not import a file a restore is putting back as a new photo', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      expect((await del(event, photo)).status).toBe(200);
+      const row = await trashRowOf(photo.id);
+      webhookFire.mockClear();
+
+      let rowsSeenByWatcher;
+      afterNextMove(async () => {
+        // The file is back under events/active and no photo row names it yet.
+        await watcher.processNewPhoto(abs(photo.key));
+        rowsSeenByWatcher = await count('photos', { event_id: event.id });
+      });
+      expect((await restore(event, [row.id])).status).toBe(200);
+
+      expect(rowsSeenByWatcher).toBe(0);
+      expect((await db('photos').where({ event_id: event.id })).map((p) => p.id)).toEqual([photo.id]);
+      expect(webhookFire).not.toHaveBeenCalled();
+
+      // After the restore the watcher finds the row and has nothing to add.
+      await watcher.processNewPhoto(abs(photo.key));
+      expect(await count('photos', { event_id: event.id })).toBe(1);
     });
   });
 
@@ -623,6 +796,26 @@ describe('photo trash (issue 1733)', () => {
       } finally {
         backend.adapter.copy = copy;
       }
+      expect(await db('photos').where({ id: photo.id }).first()).toBeDefined();
+      expect(objects.has(photo.key)).toBe(true);
+      expect(await trashRowOf(photo.id)).toBeUndefined();
+    });
+
+    it('refuses an object S3 cannot copy in one request, and deletes nothing', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      const send = backend.adapter.s3Client.send;
+      backend.adapter.s3Client.send = async (command) => ({ ...(await send(command)), ContentLength: 6 * 1024 ** 3 });
+      calls.length = 0;
+      let res;
+      try {
+        res = await del(event, photo);
+      } finally {
+        backend.adapter.s3Client.send = send;
+      }
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('TRASH_TOO_LARGE');
+      expect(calls).toEqual([]);
       expect(await db('photos').where({ id: photo.id }).first()).toBeDefined();
       expect(objects.has(photo.key)).toBe(true);
       expect(await trashRowOf(photo.id)).toBeUndefined();

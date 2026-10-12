@@ -108,6 +108,8 @@ export interface PhotoTrash {
 export interface TrashRestoreResult {
   restored: number;
   photo_ids: number[];
+  /** Photos whose old id was in use again; they came back under a new one. */
+  reassigned?: Array<{ previous_photo_id: number; photo_id: number }>;
   failed: Array<{ id: number; filename: string; code: string; error: string }>;
 }
 

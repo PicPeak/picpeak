@@ -85,6 +85,7 @@ export interface DashboardStats {
     uploads: number;
     businessDocs: number;
     downloadCache: number;
+    trash: number;
     externalMedia: number;
     temp: number;
     other: number;

@@ -63,6 +63,7 @@ describe('localStorageUsage (#1164)', () => {
     await write(path.join('previews', 'a.jpg'), 300);
     await write(path.join('heroes', 'a.jpg'), 200);
     await write(path.join('watermarks', 'a.jpg'), 700);
+    await write(path.join('trash', '7', 'uuid', 'deleted.jpg'), 900);
     await write(path.join('uploads', 'logo.png'), 50);
 
     const { breakdown } = await measureLocalStorageUsage();
@@ -74,6 +75,7 @@ describe('localStorageUsage (#1164)', () => {
       previews: 300,
       heroes: 200,
       watermarks: 700,
+      trash: 900,
       uploads: 50,
     });
   });

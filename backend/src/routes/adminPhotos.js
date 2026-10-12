@@ -1345,10 +1345,14 @@ router.post('/:eventId/photos/trash/restore', adminAuth, requirePermission('phot
     const { event, rows } = found;
 
     const restored = [];
+    // Photos whose old id was in use again and that came back under a new one.
+    const reassigned = [];
     const failed = [];
     for (const row of rows) {
       try {
-        restored.push(await photoTrash.restorePhoto(event, row));
+        const photoId = await photoTrash.restorePhoto(event, row);
+        restored.push(photoId);
+        if (photoId !== row.photo_id) reassigned.push({ previous_photo_id: row.photo_id, photo_id: photoId });
       } catch (error) {
         if (error.statusCode !== 409) logger.error(`Could not restore trash row ${row.id}`, { error: error.message });
         failed.push({
@@ -1363,10 +1367,10 @@ router.post('/:eventId/photos/trash/restore', adminAuth, requirePermission('phot
     if (restored.length > 0) {
       downloadZipService.invalidate(event.id);
       await logActivity('photos_restored',
-        { count: restored.length, photoIds: restored, eventName: event.event_name },
+        { count: restored.length, photoIds: restored, reassigned, eventName: event.event_name },
         event.id, trashActor(req));
     }
-    res.status(restored.length > 0 ? 200 : 409).json({ restored: restored.length, photo_ids: restored, failed });
+    res.status(restored.length > 0 ? 200 : 409).json({ restored: restored.length, photo_ids: restored, reassigned, failed });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to restore photos');
   }

@@ -94,6 +94,8 @@ function categorize(relPath) {
   case 'uploads': return 'uploads';
   case 'temp': return 'temp';
   case 'business-docs': return 'businessDocs';
+  // Originals of deleted photos, until their trash retention ends (issue 1733).
+  case 'trash': return 'trash';
   case 'events':
     return segments[1] === 'archived' ? 'archives' : 'originals';
   default:
@@ -111,6 +113,7 @@ const EMPTY_BREAKDOWN = () => ({
   uploads: 0,
   businessDocs: 0,
   downloadCache: 0,
+  trash: 0,
   temp: 0,
   other: 0,
 });
