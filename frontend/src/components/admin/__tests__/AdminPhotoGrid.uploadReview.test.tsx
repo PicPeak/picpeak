@@ -92,9 +92,11 @@ describe('AdminPhotoGrid upload review', () => {
 
   it('labels whose upload is under review: a team member or a guest (issue 1733)', () => {
     renderGrid(false);
-    expect(screen.getByTestId('admin-photo-review-source-1')).toHaveTextContent('Team · anna');
-    expect(screen.getByTestId('admin-photo-review-source-4')).toHaveTextContent('Guest · Ben');
-    expect(screen.getByTestId('admin-photo-review-source-5')).toHaveTextContent(/Guest$/);
+    expect(screen.getByTestId('admin-photo-review-source-1')).toHaveTextContent('Team');
+    expect(screen.getByTestId('admin-photo-review-badge-1')).toHaveTextContent('Team· anna');
+    expect(screen.getByTestId('admin-photo-review-source-4')).toHaveTextContent('Guest');
+    expect(screen.getByTestId('admin-photo-review-badge-4')).toHaveTextContent('Guest· Ben');
+    expect(screen.getByTestId('admin-photo-review-badge-5')).toHaveTextContent(/Guest$/);
   });
 
   it('offers Approve / Reject to the owner only, and approves just the photos under review', async () => {

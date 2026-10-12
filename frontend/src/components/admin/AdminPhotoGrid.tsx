@@ -420,11 +420,9 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       >
         <ClipboardCheck className="w-3 h-3 shrink-0" />
         <span className="shrink-0">{pending ? t('photos.review.pendingBadge', 'Pending review') : t('photos.review.rejectedBadge', 'Rejected')}</span>
-        {source && (
-          <span className="min-w-0 truncate font-normal opacity-90" data-testid={`admin-photo-review-source-${photo.id}`}>
-            · {source}{uploader ? ` · ${uploader}` : ''}
-          </span>
-        )}
+        {/* The source always shows; on a narrow tile only the name gives way. */}
+        {source && <span className="shrink-0 font-normal opacity-90" data-testid={`admin-photo-review-source-${photo.id}`}>· {source}</span>}
+        {source && uploader && <span className="min-w-0 truncate font-normal opacity-90">· {uploader}</span>}
       </span>
     );
   };
