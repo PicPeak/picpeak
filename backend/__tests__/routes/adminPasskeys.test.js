@@ -372,6 +372,24 @@ describe('list, rename, delete', () => {
   });
 });
 
+describe('password change', () => {
+  // Only a reset by somebody else removes passkeys (adminPasswordReset.js);
+  // an admin changing their own password is signed in and keeps them.
+  it('keeps the passkeys when an admin changes their own password', async () => {
+    const admin = await seedAdmin();
+    const passkey = await addPasskey(admin, 'cred-own-change');
+
+    const res = await asAdmin(request(adminApp).post('/api/admin/auth/change-password'), admin)
+      .send({ currentPassword: PASSWORD, newPassword: 'Brand-New-Passphrase-2026!' });
+    expect(res.status).toBe(200);
+
+    const row = await db('admin_users').where({ id: admin.id }).first();
+    await expect(bcrypt.compare(PASSWORD, row.password_hash)).resolves.toBe(false);
+    const rows = await db('admin_webauthn_credentials').where({ admin_user_id: admin.id });
+    expect(rows.map((r) => r.id)).toEqual([passkey.id]);
+  });
+});
+
 describe('passwordless login', () => {
   it('options name no account and do not change with what the caller sends', async () => {
     const a = await loginOptions();

@@ -186,6 +186,14 @@ async function countForAdmin(adminId, conn = db) {
   return Number(row?.count) || 0;
 }
 
+// Every passkey of one account, e.g. when somebody else resets its password:
+// a passkey signs in without the password, so one that survived would defeat
+// the reset. Returns how many were removed.
+async function deleteAllForAdmin(adminId, conn = db) {
+  if (!(await conn.schema.hasTable(TABLE))) return 0;
+  return conn(TABLE).where('admin_user_id', adminId).del();
+}
+
 async function anyRegistered() {
   return Boolean(await db(TABLE).select('id').first());
 }
@@ -376,6 +384,7 @@ module.exports = {
   getRelyingParty,
   listForAdmin,
   countForAdmin,
+  deleteAllForAdmin,
   anyRegistered,
   publicView,
   cleanName,

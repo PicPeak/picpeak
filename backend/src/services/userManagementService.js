@@ -686,7 +686,8 @@ async function resetAdminPassword(id, resetById) {
 
   // Recovery invalidates every existing API credential permanently, even
   // after the owner completes the required interactive password change.
-  await require('./adminPasswordReset').setAdminPasswordForReset(id, passwordHash);
+  // The account's passkeys are removed in the same transaction.
+  const passkeysRemoved = await require('./adminPasswordReset').setAdminPasswordForReset(id, passwordHash);
 
   // Queue password reset email
   await queueEmail(null, user.email, 'admin_password_reset', {
@@ -695,12 +696,12 @@ async function resetAdminPassword(id, resetById) {
   });
 
   await logActivity('admin_password_reset',
-    { userId: id, username: user.username },
+    { userId: id, username: user.username, passkeysRemoved },
     null,
     { type: 'admin', id: resetById, name: 'system' }
   );
 
-  logger.info('Admin password reset', { userId: id, resetById });
+  logger.info('Admin password reset', { userId: id, resetById, passkeysRemoved });
 
   return { email: user.email, passwordSent: true };
 }
