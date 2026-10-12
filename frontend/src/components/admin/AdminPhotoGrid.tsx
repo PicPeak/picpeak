@@ -403,7 +403,13 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       : (pending
         ? 'bg-warning-soft text-warning-text'
         : 'bg-danger-soft text-danger-text');
-    const uploader = photo.uploaded_by_admin?.username;
+    // Whose upload it is: a guest's (issue 1733), named when the gallery
+    // asks guests for a name, or a team member's.
+    const fromGuest = photo.uploaded_by === 'guest';
+    const uploader = fromGuest ? photo.credit_name : photo.uploaded_by_admin?.username;
+    const source = fromGuest
+      ? t('photos.review.sourceGuest', 'Guest')
+      : (uploader ? t('photos.review.sourceTeam', 'Team') : null);
     return (
       <span
         className={`inline-flex max-w-full items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${colors}`}
@@ -414,7 +420,11 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       >
         <ClipboardCheck className="w-3 h-3 shrink-0" />
         <span className="shrink-0">{pending ? t('photos.review.pendingBadge', 'Pending review') : t('photos.review.rejectedBadge', 'Rejected')}</span>
-        {uploader && <span className="min-w-0 truncate font-normal opacity-90">· {uploader}</span>}
+        {source && (
+          <span className="min-w-0 truncate font-normal opacity-90" data-testid={`admin-photo-review-source-${photo.id}`}>
+            · {source}{uploader ? ` · ${uploader}` : ''}
+          </span>
+        )}
       </span>
     );
   };

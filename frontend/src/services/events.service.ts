@@ -109,6 +109,8 @@ interface UpdateEventData {
   // untouched, send [] to clear.
   assigned_admin_ids?: number[];
   review_contributor_uploads?: boolean;
+  // Hold guest uploads until they are approved (issue 1733).
+  moderate_guest_uploads?: boolean;
 }
 
 /** Two-stage delivery state of one gallery (issue 1562). */

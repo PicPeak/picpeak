@@ -127,6 +127,8 @@ export interface Event {
   can_link_crm?: boolean;
   can_review_uploads?: boolean;
   review_contributor_uploads?: boolean | number;
+  // Guest uploads wait for approval the same way (issue 1733).
+  moderate_guest_uploads?: boolean | number;
   // Live Slideshow / "Diashow" (migration 138). Token-only fullscreen kiosk
   // link minted on demand; null token = disabled. Settings drive the running
   // projector and can be changed live.

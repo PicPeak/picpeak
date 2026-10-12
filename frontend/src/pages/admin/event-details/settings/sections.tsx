@@ -338,6 +338,24 @@ export const GuestsSection: React.FC<FieldsProps & {
           <p className="text-xs text-muted mt-1">{t('events.uploadCategoryHelp')}</p>
         </div>
       )}
+      {/* Approval of guest uploads (issue 1733) — only meaningful with them on */}
+      {f.allow_user_uploads && (
+        <div className="ml-6">
+          <label className="flex items-center">
+            <input
+              type="checkbox"
+              checked={f.moderate_guest_uploads}
+              onChange={(e) => set({ moderate_guest_uploads: e.target.checked })}
+              className={checkboxClass}
+              data-testid="event-moderate-guest-uploads"
+            />
+            <span className="ml-2 text-sm text-body">{t('events.moderateGuestUploads', 'Approve guest uploads before they are published')}</span>
+          </label>
+          <p className="text-xs text-muted mt-1 ml-6">
+            {t('events.moderateGuestUploadsHelp', 'Guest uploads stay hidden from guests and clients until you or a reviewer approve them on the Photos tab. Rejected uploads stay hidden. Uploads that are waiting count towards the photo limit.')}
+          </p>
+        </div>
+      )}
       {/* Reveal mode (#838) — only meaningful with guest uploads */}
       {f.allow_user_uploads && (
         <div className="ml-6">

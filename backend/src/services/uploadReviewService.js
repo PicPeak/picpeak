@@ -10,9 +10,13 @@
  *
  * A role holding photos.review (a project lead) reviews too, on every gallery
  * it reaches, and its own uploads are not held.
+ *
+ * Guest uploads (issue 1733): with `events.moderate_guest_uploads` on, every
+ * upload through the gallery's own upload route is held the same way and
+ * leaves review through the same route. The bell hears of the ones waiting.
  */
 
-const { db } = require('../database/db');
+const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { ownsEvent } = require('../middleware/ownership');
 const { roleHasPermission } = require('../middleware/permissions');
@@ -21,6 +25,7 @@ const { accountCreditFields } = require('./photoCredit');
 
 const MODERATION_STATUSES = ['pending', 'rejected'];
 const MAX_MODERATION_IDS = 500;
+const GUEST_UPLOADS_PENDING_TYPE = 'guest_uploads_pending_review';
 
 /**
  * Whether `admin` approves and rejects uploads on `event`, which it is known
@@ -48,6 +53,53 @@ async function adminUploadColumns(admin, event) {
     ...(await accountCreditFields(admin.id)),
     ...(await holdsForReview(admin, event) ? { visibility: 'hidden', moderation_status: 'pending' } : {}),
   };
+}
+
+/** Whether an upload through the gallery's upload route waits for review. */
+function holdsGuestUploads(event) {
+  return parseBooleanInput(event?.moderate_guest_uploads, false);
+}
+
+/**
+ * Tell the bell that `count` guest uploads wait for review. The gallery sends
+ * one file per request, so an unread entry for the event grows instead of a
+ * new one being written per photo; it comes back for an admin who had cleared
+ * it, as the API download summary does (apiDownloadNotifications). The update
+ * is a compare-and-set on the stored metadata, so parallel uploads do not lose
+ * each other's count. Best effort: the upload never fails on it.
+ */
+async function notifyGuestUploadsPending(event, count) {
+  try {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const open = await db('activity_logs')
+        .where({ activity_type: GUEST_UPLOADS_PENDING_TYPE, event_id: event.id })
+        .whereNull('read_at')
+        .orderBy('id', 'desc')
+        .first('id', db.raw('CAST(metadata AS TEXT) AS metadata_text'));
+      if (!open) {
+        // eslint-disable-next-line no-await-in-loop
+        await logActivity(GUEST_UPLOADS_PENDING_TYPE, { count, eventName: event.event_name }, event.id, { type: 'guest' });
+        return;
+      }
+      let metadata = {};
+      try { metadata = JSON.parse(open.metadata_text) || {}; } catch { /* written by logActivity, so JSON */ }
+      // eslint-disable-next-line no-await-in-loop
+      const updated = await db.transaction(async (trx) => {
+        const n = await trx('activity_logs')
+          .where({ id: open.id })
+          .whereNull('read_at')
+          .whereRaw('CAST(metadata AS TEXT) = ?', [open.metadata_text])
+          .update({ metadata: JSON.stringify({ ...metadata, count: (Number(metadata.count) || 0) + count }) });
+        if (n) await trx('notification_dismissals').where({ activity_log_id: open.id }).del();
+        return n;
+      });
+      if (updated) return;
+    }
+    logger.warn('upload review: guest upload notification lost an increment under contention', { eventId: event.id });
+  } catch (e) {
+    logger.warn(`upload review: guest upload notification failed for event ${event.id}`, { error: e.message });
+  }
 }
 
 /**
@@ -123,6 +175,8 @@ async function moderationCounts(eventId) {
 module.exports = {
   MODERATION_STATUSES,
   MAX_MODERATION_IDS,
+  holdsGuestUploads,
+  notifyGuestUploadsPending,
   mayReviewUploads,
   holdsForReview,
   adminUploadColumns,

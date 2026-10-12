@@ -420,6 +420,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
  *   - credit            credit columns resolved by the caller (#1561); for a
  *                       guest upload that is the guest's name, and the
  *                       worker then never reads EXIF for the row
+ *   - heldForReview     store the rows hidden and pending review (a guest
+ *                       upload to a moderated gallery, issue 1733)
  *
  * Returns: { uploadId, photos: [{id, filename, size, category_id}], errors: [{filename, error}] }
  */
@@ -428,7 +430,7 @@ async function queueFilesForProcessing(files, options = {}) {
   const { countEventPhotos, insertPhotoWithinCap, photoCapError } = require('./photoCap');
   const {
     eventId, photoType = 'individual', categoryId = null, folderId = null, uploadId: providedUploadId, photoCap = null,
-    uploadedBy = 'admin', credit = {}, uploadReservation = null,
+    uploadedBy = 'admin', credit = {}, uploadReservation = null, heldForReview = false,
   } = options;
   const uploadId = providedUploadId || crypto.randomBytes(16).toString('hex');
 
@@ -529,6 +531,8 @@ async function queueFilesForProcessing(files, options = {}) {
         // guest upload used to be recorded as the photographer's (#1561).
         uploaded_by: uploadedBy,
         ...credit,
+        // Stored like a team upload under review (uploadReviewService).
+        ...(heldForReview ? { visibility: 'hidden', moderation_status: 'pending' } : {}),
       };
       const writePhoto = async conn => {
         const inserted = await insertPhotoWithinCap(photoRow, photoCap, conn);

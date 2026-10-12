@@ -973,6 +973,7 @@ module.exports = (router) => {
         created_by: req.admin.id,
         allow_user_uploads: source.allow_user_uploads,
         upload_category_id: source.upload_category_id,
+        moderate_guest_uploads: formatBoolean(parseBooleanInput(source.moderate_guest_uploads, false)),
         // Uploader names are part of the gallery's configuration (#1561).
         guest_name_mode: source.guest_name_mode || 'off',
         show_credits_to_guests: formatBoolean(parseBooleanInput(source.show_credits_to_guests, false)),
@@ -1138,6 +1139,8 @@ module.exports = (router) => {
     body('welcome_message').optional({ nullable: true, checkFalsy: true }).trim(),
     body('color_theme').optional({ nullable: true }),
     body('allow_user_uploads').optional().isBoolean(),
+    // Hold guest uploads until they are approved (issue 1733).
+    body('moderate_guest_uploads').optional().isBoolean(),
     // Uploader names (#1561).
     body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
     body('show_credits_to_guests').optional().isBoolean(),
@@ -1875,6 +1878,12 @@ module.exports = (router) => {
 
       if (Object.prototype.hasOwnProperty.call(updates, 'custom_theme_enabled')) {
         updates.custom_theme_enabled = formatBoolean(parseBooleanInput(updates.custom_theme_enabled, false));
+      }
+
+      // Guest uploads with approval (issue 1733). Switching it off leaves the
+      // photos already waiting where they are: they still need a decision.
+      if (Object.prototype.hasOwnProperty.call(updates, 'moderate_guest_uploads')) {
+        updates.moderate_guest_uploads = formatBoolean(parseBooleanInput(updates.moderate_guest_uploads, false));
       }
 
       // Written through formatBoolean like the other event flags (#1561).

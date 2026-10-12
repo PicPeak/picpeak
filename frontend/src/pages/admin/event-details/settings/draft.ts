@@ -64,6 +64,8 @@ export interface EventFields extends EditFormState {
   assigned_admins: AssignedAdmin[];
   /** Hold the team members' uploads until the owner approves them. */
   review_contributor_uploads: boolean;
+  /** Hold guest uploads until the owner or a reviewer approves them. */
+  moderate_guest_uploads: boolean;
 }
 
 export const INHERIT = '__inherit__';
@@ -196,6 +198,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     delivery_badge_label: event.delivery_badge_label || '',
     assigned_admins: event.assigned_admins || [],
     review_contributor_uploads: truthy(event.review_contributor_uploads),
+    moderate_guest_uploads: truthy(event.moderate_guest_uploads),
   };
 }
 
@@ -240,6 +243,7 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   use_canvas_rendering: 'downloads',
   allow_user_uploads: 'guests',
   upload_category_id: 'guests',
+  moderate_guest_uploads: 'guests',
   guest_name_mode: 'guests',
   show_credits_to_guests: 'guests',
   reveal_mode: 'guests',
@@ -376,6 +380,7 @@ function requestFields(f: EventFields): Record<string, unknown> {
     require_password: f.require_password,
     allow_user_uploads: f.allow_user_uploads,
     upload_category_id: f.upload_category_id,
+    moderate_guest_uploads: f.moderate_guest_uploads,
     guest_name_mode: f.guest_name_mode,
     show_credits_to_guests: f.show_credits_to_guests,
     reveal_mode: reveal,
