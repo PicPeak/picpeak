@@ -41,7 +41,6 @@
     { "key": "sunset", "prompt": "a photo of a sunset" },
     { "key": "night", "prompt": "a photo taken at night" },
     { "key": "vehicle", "prompt": "a photo of a car" },
-    { "key": "children", "prompt": "a photo of children" },
     { "key": "pets", "prompt": "a photo of a dog or a cat" },
     { "key": "black_and_white", "prompt": "a black and white photo" }
   ]
