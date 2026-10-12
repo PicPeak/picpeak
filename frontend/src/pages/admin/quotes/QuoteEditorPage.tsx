@@ -20,6 +20,7 @@ import { Button, Card, Loading, Input, LocalizedDateInput, TimeField } from '../
 import { DocumentHeader } from '../../../components/admin/DocumentHeader';
 import { useConfirm } from '../../../components/common/ConfirmDialog';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
+import { useLeaveGuard } from '../../../contexts/UnsavedChangesContext';
 import {
   quotesService,
   type QuoteCreatePayload,
@@ -864,6 +865,7 @@ QuoteForm.displayName = 'QuoteForm';
 export const QuoteEditorPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { unguarded } = useLeaveGuard();
   const formRef = useRef<QuoteFormHandle>(null);
   const [state, setState] = useState<QuoteFormState>({ dirty: true, busy: false, valid: true, canRecalculate: false });
   // Created: the form no longer counts as unsaved, so opening the new page
@@ -890,7 +892,7 @@ export const QuoteEditorPage: React.FC = () => {
             <Button variant="outline" onClick={() => formRef.current?.previewUnsaved()} disabled={state.busy} leftIcon={<Eye className="w-4 h-4" />}>
               {t('quotes.preview', 'Preview PDF')}
             </Button>
-            <Button variant="ghost" onClick={() => navigate('/admin/clients/quotes')} disabled={state.busy}>
+            <Button variant="ghost" onClick={() => unguarded(() => navigate('/admin/clients/quotes'))} disabled={state.busy}>
               {t('common.cancel', 'Cancel')}
             </Button>
           </>

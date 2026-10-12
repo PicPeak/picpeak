@@ -20,6 +20,7 @@ import { toast } from 'react-toastify';
 import { Button, Card, Input, Loading, LocalizedDateInput, TimeField } from '../../../components/common';
 import { DocumentHeader } from '../../../components/admin/DocumentHeader';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
+import { useLeaveGuard } from '../../../contexts/UnsavedChangesContext';
 import {
   contractsService,
   type ContractBlockSection,
@@ -1027,6 +1028,7 @@ ContractForm.displayName = 'ContractForm';
 export const ContractEditorPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { unguarded } = useLeaveGuard();
   const formRef = useRef<ContractFormHandle>(null);
   const [state, setState] = useState<ContractFormState>({ dirty: true, busy: false, valid: false });
   const [createdId, setCreatedId] = useState<number | null>(null);
@@ -1039,7 +1041,7 @@ export const ContractEditorPage: React.FC = () => {
       <DocumentHeader
         title={t('contracts.editor.titleNew', 'New contract')}
         actions={(
-          <Button variant="ghost" onClick={() => navigate('/admin/clients/contracts')} disabled={state.busy}>
+          <Button variant="ghost" onClick={() => unguarded(() => navigate('/admin/clients/contracts'))} disabled={state.busy}>
             {t('common.cancel', 'Cancel')}
           </Button>
         )}

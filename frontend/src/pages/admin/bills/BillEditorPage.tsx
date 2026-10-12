@@ -16,6 +16,7 @@ import { Eye } from 'lucide-react';
 import { Button, Card, Loading, Input, LocalizedDateInput, TimeField } from '../../../components/common';
 import { DocumentHeader } from '../../../components/admin/DocumentHeader';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
+import { useLeaveGuard } from '../../../contexts/UnsavedChangesContext';
 import { billsService, type InvoiceCreatePayload, type InvoiceQrFormat } from '../../../services/bills.service';
 import { quotesService } from '../../../services/quotes.service';
 import { contractsService } from '../../../services/contracts.service';
@@ -834,6 +835,7 @@ BillForm.displayName = 'BillForm';
 export const BillEditorPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { unguarded } = useLeaveGuard();
   const formRef = useRef<BillFormHandle>(null);
   const [state, setState] = useState<BillFormState>({ dirty: true, busy: false, valid: true, spawnCount: 0 });
   const [createdId, setCreatedId] = useState<number | null>(null);
@@ -855,7 +857,7 @@ export const BillEditorPage: React.FC = () => {
             <Button variant="outline" onClick={() => formRef.current?.previewUnsaved()} disabled={state.busy} leftIcon={<Eye className="w-4 h-4" />}>
               {t('common.preview', 'Preview')}
             </Button>
-            <Button variant="ghost" onClick={() => navigate('/admin/clients/bills')} disabled={state.busy}>
+            <Button variant="ghost" onClick={() => unguarded(() => navigate('/admin/clients/bills'))} disabled={state.busy}>
               {t('common.cancel', 'Cancel')}
             </Button>
           </>
