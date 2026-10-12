@@ -12,6 +12,7 @@ const resources = [
   ['./fileWatcher', 'stopFileWatcher', 'startFileWatcher'], ['./externalMediaWatcher', 'stopExternalMediaWatcher', 'startExternalMediaWatcher'],
   ['./expirationChecker', 'stopExpirationChecker', 'startExpirationChecker'], ['./transferCleanupService', 'stopTransferCleanup', 'startTransferCleanup'],
   ['./customerDocumentRetentionService', 'stopCustomerDocumentRetention', 'startCustomerDocumentRetention'],
+  ['./photoTrashService', 'stopPhotoTrashPurge', 'startPhotoTrashPurge'],
   ['./customerDocumentRescanService', 'stopCustomerDocumentRescan', 'startCustomerDocumentRescan'],
   ['./customerDocumentRequestReminderService', 'stopDocumentRequestReminders', 'startDocumentRequestReminders'],
   ['./contract/expiry', 'stopContractSigningSweep', 'startContractSigningSweep'], ['./contract/signingSignals', 'stopSigningSignals', 'startSigningSignals'],

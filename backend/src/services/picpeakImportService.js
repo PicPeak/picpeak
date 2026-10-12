@@ -59,7 +59,7 @@ function archiveLimitError(message, statusCode) {
 // the import copies files/ into STORAGE_PATH as-is, and some of that tree is
 // served publicly (fonts/, uploads/logos, uploads/favicons).
 const IMPORT_FILE_ROOTS = ['business-docs', 'uploads', 'transfers', 'events/active', 'events/archived',
-  'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];
+  'thumbnails', 'previews', 'heroes', 'videos', 'watermarks', 'trash'];
 // The storage subtrees (inside the roots above) that the app serves as
 // static web content, without authentication:
 //   uploads/logos     backend/server.js `app.use('/uploads/logos', secureStatic(...))`

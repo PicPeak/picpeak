@@ -1835,6 +1835,18 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       settings.general_max_video_size_mb = normalizedValue;
     }
 
+    // Photo trash retention in days (issue 1733); 0 deletes photos at once.
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_photo_trash_retention_days')) {
+      const { MAX_RETENTION_DAYS } = require('../services/photoTrashService');
+      const days = Number(settings.general_photo_trash_retention_days);
+      if (!Number.isInteger(days) || days < 0 || days > MAX_RETENTION_DAYS) {
+        return res.status(400).json({
+          error: `general_photo_trash_retention_days must be an integer between 0 and ${MAX_RETENTION_DAYS}`
+        });
+      }
+      settings.general_photo_trash_retention_days = days;
+    }
+
     // Browser-playable video copies (issue 1430, item 8): a plain boolean.
     if (Object.prototype.hasOwnProperty.call(settings, 'general_video_web_rendition')) {
       const raw = settings.general_video_web_rendition;

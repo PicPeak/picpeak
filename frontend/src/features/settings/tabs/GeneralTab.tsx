@@ -266,6 +266,31 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 {t('settings.general.maxUploadBatchSizeHelp')}
               </p>
             </div>
+            <div>
+              <label htmlFor="general-photo-trash-retention" className="block text-sm font-medium text-body mb-1">
+                {t('settings.general.photoTrashRetention')}
+              </label>
+              <Input
+                id="general-photo-trash-retention"
+                type="number"
+                value={generalSettings.photo_trash_retention_days}
+                onChange={(e) => {
+                  // 0 is a real choice here (delete at once), so no `|| default`.
+                  const parsed = parseInt(e.target.value, 10);
+                  setGeneralSettings(prev => ({
+                    ...prev,
+                    photo_trash_retention_days: Number.isFinite(parsed)
+                      ? Math.min(365, Math.max(0, parsed))
+                      : prev.photo_trash_retention_days
+                  }));
+                }}
+                min="0"
+                max="365"
+              />
+              <p className="text-xs text-muted mt-1">
+                {t('settings.general.photoTrashRetentionHelp')}
+              </p>
+            </div>
           </div>
 
           <div>

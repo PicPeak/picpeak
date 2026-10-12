@@ -21,6 +21,7 @@ import { FolderPickerModal } from './folders/FolderPickerModal';
 import { invalidateFolderViews } from './folders/folderQueries';
 import type { GalleryFolder } from '../../services/folders.service';
 import { folderPathLabel } from '../../utils/folderTree';
+import { deleteManyConfirm, deleteOneConfirm, deletedMessage } from './photoDeleteCopy';
 
 interface CategoryOption {
   id: number;
@@ -46,6 +47,8 @@ interface AdminPhotoGridProps {
   onSortChange?: (sort: PhotoSortKey, order: 'asc' | 'desc') => void;
   /** The gallery's owner may approve or reject team members' uploads (issue 743). */
   canModerate?: boolean;
+  /** Days a deleted photo stays in the trash (issue 1733); 0 or unknown: deleting is final. */
+  trashRetentionDays?: number;
 }
 
 // The moderation route takes this many photo ids per request (issue 743).
@@ -62,7 +65,8 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   sortBy,
   sortOrder,
   onSortChange,
-  canModerate = false
+  canModerate = false,
+  trashRetentionDays
 }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
@@ -234,7 +238,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     e.stopPropagation();
     
     if (!(await confirm({
-      message: t('admin.photos.deleteOneConfirm', 'Delete "{{name}}"? The photo is removed from the gallery for good. This cannot be undone.', { name: photo.filename }),
+      message: deleteOneConfirm(t, photo.filename, trashRetentionDays),
       variant: 'danger',
       confirmLabel: t('admin.photos.deleteOneAction', 'Delete photo'),
     }))) {
@@ -243,8 +247,8 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
 
     setDeletingPhotos(prev => new Set(prev).add(photo.id));
     try {
-      await photosService.deletePhoto(eventId, photo.id);
-      toast.success('Photo deleted successfully');
+      const result = await photosService.deletePhoto(eventId, photo.id);
+      toast.success(deletedMessage(t, 1, result));
       onPhotosDeleted();
     } catch {
       toast.error('Failed to delete photo');
@@ -261,7 +265,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
 
     const count = selectedPhotos.size;
     if (!(await confirm({
-      message: t('admin.photos.deleteManyConfirm', 'Delete {{count}} photos? They are removed from the gallery. This cannot be undone.', { count }),
+      message: deleteManyConfirm(t, count, trashRetentionDays),
       variant: 'danger',
       confirmLabel: t('admin.photos.deleteManyAction', 'Delete {{count}} photos', { count }),
     }))) {
@@ -273,8 +277,11 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     setDeletingPhotos(new Set(selectedIds));
     
     try {
-      await photosService.deletePhotos(eventId, selectedIds);
-      toast.success(`${count} photo${count > 1 ? 's' : ''} deleted successfully`);
+      const result = await photosService.deletePhotos(eventId, selectedIds);
+      const failed = result?.failed?.length ?? 0;
+      if (failed < count) toast.success(deletedMessage(t, count - failed, result));
+      // Still in the gallery: the refreshed grid shows which.
+      if (failed > 0) toast.error(t('admin.photos.trash.deleteFailed', { count: failed }));
       setSelectedPhotos(new Set());
       setAnchor(null);
       setIsSelectionMode(false);

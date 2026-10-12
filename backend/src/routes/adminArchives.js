@@ -913,6 +913,12 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
     const hasMergeDismissals = await db.schema.hasTable('event_people_merge_dismissals');
     const hasDownloadGrants = await db.schema.hasTable('event_download_grants');
     const hasAdminAssignments = await db.schema.hasTable('event_admin_assignments');
+    // The gallery's trash (issue 1733) is deleted with it: rows in the
+    // transaction, files after the commit.
+    const hasPhotoTrash = await db.schema.hasTable('photo_trash');
+    const trashKeys = hasPhotoTrash
+      ? await require('../services/photoTrashService').eventTrashKeys(req.params.id)
+      : [];
     await db.transaction(async (trx) => {
       // Event row first (issue 1560): the download-limit grants lock the
       // event row and then grant/photo rows, so taking them here in the
@@ -937,10 +943,16 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
         await trx('event_admin_assignments').where('event_id', req.params.id).del();
       }
       await trx('feedback_rate_limits').where('event_id', req.params.id).del();
+      if (hasPhotoTrash) await trx('photo_trash').where('event_id', req.params.id).del();
       await trx('photos').where('event_id', req.params.id).del();
       await deleteWithAccountingHistory(trx, 'events', { id: req.params.id },
         { actor: req.admin.id, source: 'archive.delete' });
     });
+    for (const key of trashKeys) {
+      await getStorage().delete(key).catch((error) => {
+        logger.warn('Failed to delete a trashed photo of a deleted archive', { key, error: error.message });
+      });
+    }
 
     // Log activity
     await db('activity_logs').insert({

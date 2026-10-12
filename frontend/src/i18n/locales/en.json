@@ -2392,7 +2392,9 @@
       "adminLanguageHelp": "Applies to the admin area, for you on this device only. It takes effect immediately — no need to save.",
       "customerLanguage": "Gallery & guest language",
       "accountCreditName": "Photo credit",
-      "accountCreditNameHelp": "Credited on photos you upload when the file has no photographer name in its metadata. Leave empty for no credit."
+      "accountCreditNameHelp": "Credited on photos you upload when the file has no photographer name in its metadata. Leave empty for no credit.",
+      "photoTrashRetention": "Trash retention (days)",
+      "photoTrashRetentionHelp": "Photos deleted from a gallery stay in its trash this long and can be restored. 0 deletes photos at once. Photos in the trash still use storage."
     },
     "publicSite": {
       "badge": "Public Landing",
@@ -4466,7 +4468,11 @@
       "photosReviewRejected_one": "{{count}} team upload rejected in {{eventName}}",
       "photosReviewRejected_other": "{{count}} team uploads rejected in {{eventName}}",
       "photoDecision": "Photo approved or rejected in {{eventName}}",
-      "guestFeedbackDecision": "Guest approved or rejected a photo in {{eventName}}"
+      "guestFeedbackDecision": "Guest approved or rejected a photo in {{eventName}}",
+      "photosRestored_one": "{{count}} photo restored from the trash of \"{{eventName}}\"",
+      "photosRestored_other": "{{count}} photos restored from the trash of \"{{eventName}}\"",
+      "photosTrashPurged_one": "{{count}} photo deleted permanently from the trash of \"{{eventName}}\"",
+      "photosTrashPurged_other": "{{count}} photos deleted permanently from the trash of \"{{eventName}}\""
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
@@ -4560,7 +4566,50 @@
       "deleteManyConfirm_one": "Delete {{count}} photo? It is removed from the gallery. This cannot be undone.",
       "deleteManyConfirm_other": "Delete {{count}} photos? They are removed from the gallery. This cannot be undone.",
       "deleteManyAction_one": "Delete {{count}} photo",
-      "deleteManyAction_other": "Delete {{count}} photos"
+      "deleteManyAction_other": "Delete {{count}} photos",
+      "trash": {
+        "title": "Trash",
+        "intro_one": "Deleted photos can be restored for {{count}} day. After that they are deleted for good.",
+        "intro_other": "Deleted photos can be restored for {{count}} days. After that they are deleted for good.",
+        "introOff": "Photos are now deleted at once. The ones listed here stay until their time is up.",
+        "empty": "The trash is empty",
+        "emptyHelp": "Photos deleted from this gallery are kept here before they are deleted for good.",
+        "loadFailed": "The trash could not be loaded",
+        "columnFile": "File",
+        "columnDeleted": "Deleted",
+        "columnDeletedBy": "Deleted by",
+        "columnRemaining": "Time left",
+        "columnSize": "Size",
+        "unknownUser": "Unknown",
+        "daysLeft_one": "{{count}} day left",
+        "daysLeft_other": "{{count}} days left",
+        "lastDay": "Less than a day left",
+        "restore": "Restore",
+        "restoreSelected": "Restore ({{count}})",
+        "purgeAction": "Delete permanently",
+        "purgeSelected": "Delete permanently ({{count}})",
+        "purgeOneLabel": "Delete \"{{name}}\" permanently",
+        "purgeConfirm_one": "Delete {{count}} photo permanently? This cannot be undone.",
+        "purgeConfirm_other": "Delete {{count}} photos permanently? This cannot be undone.",
+        "restored_one": "{{count}} photo restored. Its thumbnail is being created again.",
+        "restored_other": "{{count}} photos restored. Their thumbnails are being created again.",
+        "restoreFailed_one": "{{count}} photo could not be restored.",
+        "restoreFailed_other": "{{count}} photos could not be restored.",
+        "purged_one": "{{count}} photo deleted permanently",
+        "purged_other": "{{count}} photos deleted permanently",
+        "purgeFailed": "The photos could not be deleted permanently",
+        "forDays_one": "for {{count}} day",
+        "forDays_other": "for {{count}} days",
+        "confirmOne": "Delete \"{{name}}\"? The photo moves to the trash and can be restored {{forDays}}.",
+        "confirmMany_one": "Delete {{count}} photo? It moves to the trash and can be restored {{forDays}}.",
+        "confirmMany_other": "Delete {{count}} photos? They move to the trash and can be restored {{forDays}}.",
+        "moved_one": "{{count}} photo moved to the trash",
+        "moved_other": "{{count}} photos moved to the trash",
+        "deleted_one": "{{count}} photo deleted",
+        "deleted_other": "{{count}} photos deleted",
+        "deleteFailed_one": "{{count}} photo could not be deleted and is still in the gallery",
+        "deleteFailed_other": "{{count}} photos could not be deleted and are still in the gallery"
+      }
     },
     "events": {
       "tabs": {
@@ -4866,7 +4915,9 @@
       "photos_review_approved_one": "{{count}} team upload approved in {{eventName}}",
       "photos_review_approved_other": "{{count}} team uploads approved in {{eventName}}",
       "photos_review_rejected_one": "{{count}} team upload rejected in {{eventName}}",
-      "photos_review_rejected_other": "{{count}} team uploads rejected in {{eventName}}"
+      "photos_review_rejected_other": "{{count}} team uploads rejected in {{eventName}}",
+      "photos_restored": "{{count}} photos restored from the trash of {{eventName}}",
+      "photos_trash_purged": "{{count}} photos deleted permanently from the trash of {{eventName}}"
     },
     "people": {
       "title": "People in this gallery",

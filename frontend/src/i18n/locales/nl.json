@@ -967,7 +967,9 @@
       "adminLanguageHelp": "Geldt voor het beheergedeelte, alleen voor jou op dit apparaat. Werkt direct — opslaan is niet nodig.",
       "customerLanguage": "Taal voor galerie en gasten",
       "accountCreditName": "Fotocredit",
-      "accountCreditNameHelp": "Wordt vermeld bij foto's die je uploadt als het bestand geen fotografennaam in de metadata heeft. Laat leeg voor geen credit."
+      "accountCreditNameHelp": "Wordt vermeld bij foto's die je uploadt als het bestand geen fotografennaam in de metadata heeft. Laat leeg voor geen credit.",
+      "photoTrashRetention": "Bewaartermijn prullenbak (dagen)",
+      "photoTrashRetentionHelp": "Zo lang blijven uit een galerij verwijderde foto's in de prullenbak van die galerij en kunnen ze worden hersteld. Met 0 worden foto's direct verwijderd. Foto's in de prullenbak nemen nog steeds opslagruimte in."
     },
     "publicSite": {
       "badge": "Openbare landingspagina",
@@ -1927,7 +1929,11 @@
       "photosReviewRejected_one": "{{count}} teamupload afgewezen in {{eventName}}",
       "photosReviewRejected_other": "{{count}} teamuploads afgewezen in {{eventName}}",
       "photoDecision": "Foto goedgekeurd of afgewezen in {{eventName}}",
-      "guestFeedbackDecision": "Gast heeft een foto goedgekeurd of afgewezen in {{eventName}}"
+      "guestFeedbackDecision": "Gast heeft een foto goedgekeurd of afgewezen in {{eventName}}",
+      "photosRestored_one": "{{count}} foto hersteld uit de prullenbak van \"{{eventName}}\"",
+      "photosRestored_other": "{{count}} foto's hersteld uit de prullenbak van \"{{eventName}}\"",
+      "photosTrashPurged_one": "{{count}} foto definitief verwijderd uit de prullenbak van \"{{eventName}}\"",
+      "photosTrashPurged_other": "{{count}} foto's definitief verwijderd uit de prullenbak van \"{{eventName}}\""
     },
     "notificationToasts": {
       "markedAllRead": "Alle meldingen als gelezen gemarkeerd",
@@ -1991,7 +1997,50 @@
         "filterNone": "Geen naam"
       },
       "approvedBy": "Goedgekeurd: {{value}}",
-      "rejectedBy": "Afgewezen: {{value}}"
+      "rejectedBy": "Afgewezen: {{value}}",
+      "trash": {
+        "title": "Prullenbak",
+        "intro_one": "Verwijderde foto's kunnen {{count}} dag lang worden hersteld. Daarna worden ze definitief verwijderd.",
+        "intro_other": "Verwijderde foto's kunnen {{count}} dagen lang worden hersteld. Daarna worden ze definitief verwijderd.",
+        "introOff": "Foto's worden nu direct verwijderd. De foto's in deze lijst blijven tot hun termijn afloopt.",
+        "empty": "De prullenbak is leeg",
+        "emptyHelp": "Foto's die uit deze galerij zijn verwijderd, blijven hier voordat ze definitief worden verwijderd.",
+        "loadFailed": "De prullenbak kon niet worden geladen",
+        "columnFile": "Bestand",
+        "columnDeleted": "Verwijderd",
+        "columnDeletedBy": "Verwijderd door",
+        "columnRemaining": "Resterende tijd",
+        "columnSize": "Grootte",
+        "unknownUser": "Onbekend",
+        "daysLeft_one": "nog {{count}} dag",
+        "daysLeft_other": "nog {{count}} dagen",
+        "lastDay": "minder dan een dag",
+        "restore": "Herstellen",
+        "restoreSelected": "Herstellen ({{count}})",
+        "purgeAction": "Definitief verwijderen",
+        "purgeSelected": "Definitief verwijderen ({{count}})",
+        "purgeOneLabel": "\"{{name}}\" definitief verwijderen",
+        "purgeConfirm_one": "{{count}} foto definitief verwijderen? Dit kan niet ongedaan worden gemaakt.",
+        "purgeConfirm_other": "{{count}} foto's definitief verwijderen? Dit kan niet ongedaan worden gemaakt.",
+        "restored_one": "{{count}} foto hersteld. De miniatuur wordt opnieuw gemaakt.",
+        "restored_other": "{{count}} foto's hersteld. De miniaturen worden opnieuw gemaakt.",
+        "restoreFailed_one": "{{count}} foto kon niet worden hersteld.",
+        "restoreFailed_other": "{{count}} foto's konden niet worden hersteld.",
+        "purged_one": "{{count}} foto definitief verwijderd",
+        "purged_other": "{{count}} foto's definitief verwijderd",
+        "purgeFailed": "De foto's konden niet definitief worden verwijderd",
+        "forDays_one": "{{count}} dag lang",
+        "forDays_other": "{{count}} dagen lang",
+        "confirmOne": "\"{{name}}\" verwijderen? De foto gaat naar de prullenbak en kan {{forDays}} worden hersteld.",
+        "confirmMany_one": "{{count}} foto verwijderen? Die gaat naar de prullenbak en kan {{forDays}} worden hersteld.",
+        "confirmMany_other": "{{count}} foto's verwijderen? Ze gaan naar de prullenbak en kunnen {{forDays}} worden hersteld.",
+        "moved_one": "{{count}} foto naar de prullenbak verplaatst",
+        "moved_other": "{{count}} foto's naar de prullenbak verplaatst",
+        "deleted_one": "{{count}} foto verwijderd",
+        "deleted_other": "{{count}} foto's verwijderd",
+        "deleteFailed_one": "{{count}} foto kon niet worden verwijderd en staat nog in de galerij",
+        "deleteFailed_other": "{{count}} foto's konden niet worden verwijderd en staan nog in de galerij"
+      }
     },
     "events": {
       "tabs": {
@@ -2196,7 +2245,9 @@
       "photos_review_approved_one": "{{count}} teamupload goedgekeurd in {{eventName}}",
       "photos_review_approved_other": "{{count}} teamuploads goedgekeurd in {{eventName}}",
       "photos_review_rejected_one": "{{count}} teamupload afgewezen in {{eventName}}",
-      "photos_review_rejected_other": "{{count}} teamuploads afgewezen in {{eventName}}"
+      "photos_review_rejected_other": "{{count}} teamuploads afgewezen in {{eventName}}",
+      "photos_restored": "{{count}} foto's hersteld uit de prullenbak van {{eventName}}",
+      "photos_trash_purged": "{{count}} foto's definitief verwijderd uit de prullenbak van {{eventName}}"
     },
     "catalogedMedia": "{{size}} gecatalogiseerd",
     "storageUnavailable": "niet beschikbaar",

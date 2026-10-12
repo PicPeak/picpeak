@@ -67,7 +67,7 @@ const EXCLUDED_TABLES = new Set([
 const DOC_DIRS = ['business-docs', 'uploads', 'transfers'];
 // Original gallery photos — only when includePhotos is true (large; otherwise
 // the admin re-uploads originals per gallery and previews are re-rendered).
-const PHOTO_DIRS = ['events/active', 'events/archived', 'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];
+const PHOTO_DIRS = ['events/active', 'events/archived', 'thumbnails', 'previews', 'heroes', 'videos', 'watermarks', 'trash'];
 
 const isPostgres = () => knexConfig.client === 'pg';
 

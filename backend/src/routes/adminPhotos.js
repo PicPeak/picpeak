@@ -41,6 +41,7 @@ const { findReplacementCandidate, replacePhoto } = require('../services/photoRep
 const { requireEventOwnership, canAccessEvent } = require('../middleware/ownership');
 const { mayReviewUploads, adminUploadColumns, moderatePhotos, moderationCounts, MODERATION_STATUSES, MAX_MODERATION_IDS } = require('../services/uploadReviewService');
 const { getStorage } = require('../services/storage');
+const photoTrash = require('../services/photoTrashService');
 const { errorResponse } = require('../utils/routeHelpers');
 const { withPublicUpload } = require('../middleware/publicUploadStream');
 const { createUploadFileGuard } = require('../utils/uploadAdmissionType');
@@ -756,6 +757,38 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     const { resolvePhotoStorageKey } = require('../services/photoResolver');
     const event = await db('events').where({ id: eventId }).first();
 
+    // The trash (issue 1733): the photo leaves the gallery but stays
+    // restorable for the retention. Zero days, or an original that is already
+    // missing, deletes outright below as before. A photo that cannot be
+    // trashed is not deleted: the error leaves it in the gallery.
+    const retentionDays = await photoTrash.getRetentionDays();
+    if (retentionDays > 0) {
+      let trashed;
+      try {
+        trashed = await photoTrash.trashPhoto(event, photo, req.admin, retentionDays);
+      } catch (error) {
+        if (error.statusCode === 409) return res.status(409).json({ error: error.message, code: error.code });
+        throw error;
+      }
+      if (trashed) {
+        await logActivity('photo_deleted',
+          { filename: photo.filename, eventName: event.event_name, trashed: true },
+          eventId,
+          { type: 'admin', id: req.admin.id, name: req.admin.username }
+        );
+        // photo.deleted fires here, not on the purge: this is when the photo
+        // left the gallery.
+        try {
+          await require('../services/webhookService').fire('photo.deleted', {
+            event: { id: parseInt(eventId, 10), slug: event?.slug, event_name: event?.event_name },
+            photo: { id: parseInt(photoId, 10), filename: photo.filename },
+          });
+        } catch (e) { /* non-fatal */ }
+        downloadZipService.invalidate(parseInt(eventId));
+        return res.json({ message: 'Photo moved to trash', trashed: 1, deleted: 0, retention_days: retentionDays });
+      }
+    }
+
     try {
       const originalKey = resolvePhotoStorageKey(event, photo);
       if (originalKey) await storage.delete(originalKey);
@@ -829,7 +862,7 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     } catch (e) { /* non-fatal */ }
 
     downloadZipService.invalidate(parseInt(eventId));
-    res.json({ message: 'Photo deleted successfully' });
+    res.json({ message: 'Photo deleted successfully', trashed: 0, deleted: 1 });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to delete photo');
   }
@@ -1012,7 +1045,7 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
     }
     
     // Get all photos to delete
-    const photos = await db('photos')
+    let photos = await db('photos')
       .whereIn('id', photoIds)
       .where('event_id', eventId);
     
@@ -1024,6 +1057,30 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
     const storage = getStorage();
     const event = await db('events').where({ id: eventId }).first();
     const { resolvePhotoStorageKey } = require('../services/photoResolver');
+
+    // The trash (issue 1733), as in the single delete: with a retention the
+    // photos move there, and only the ones whose original is already missing
+    // are left in `photos` for the outright delete below. One that cannot be
+    // trashed stays in the gallery and is reported back.
+    const retentionDays = await photoTrash.getRetentionDays();
+    const trashedPhotos = [];
+    const failedIds = [];
+    if (retentionDays > 0) {
+      const outright = [];
+      for (const photo of photos) {
+        try {
+          if (await photoTrash.trashPhoto(event, photo, req.admin, retentionDays)) trashedPhotos.push(photo);
+          else outright.push(photo);
+        } catch (error) {
+          logger.error(`bulk delete: could not move photo ${photo.id} to the trash`, { error: error.message });
+          failedIds.push(photo.id);
+        }
+      }
+      if (failedIds.length === photos.length) {
+        return res.status(500).json({ error: 'Failed to delete photos', failed: failedIds });
+      }
+      photos = outright;
+    }
 
     for (const photo of photos) {
       try {
@@ -1076,14 +1133,16 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
     // Same as the single delete: keep the watcher from bringing these back.
     await require('../services/externalImportService').recordExclusions(Number(eventId), photos);
     await db('photos')
-      .whereIn('id', photoIds)
+      .whereIn('id', photos.map((photo) => photo.id))
       .where('event_id', eventId)
       .delete();
 
-    // Webhook (#327): one photo.deleted per row in the bulk batch.
+    // Webhook (#327): one photo.deleted per row in the bulk batch, trashed
+    // or deleted outright.
+    const gone = [...trashedPhotos, ...photos];
     try {
       const webhookService = require('../services/webhookService');
-      for (const photo of photos) {
+      for (const photo of gone) {
         await webhookService.fire('photo.deleted', {
           event: { id: parseInt(eventId, 10), slug: event?.slug, event_name: event?.event_name },
           photo: { id: photo.id, filename: photo.filename },
@@ -1093,13 +1152,19 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
 
     // Log activity
     await logActivity('photos_bulk_deleted',
-      { count: photos.length, eventName: event.event_name },
+      { count: gone.length, eventName: event.event_name, trashed: trashedPhotos.length },
       eventId,
       { type: 'admin', id: req.admin.id, name: req.admin.username }
     );
     
     downloadZipService.invalidate(parseInt(eventId));
-    res.json({ message: `${photos.length} photos deleted successfully` });
+    res.json({
+      message: `${gone.length} photos deleted successfully`,
+      trashed: trashedPhotos.length,
+      deleted: photos.length,
+      failed: failedIds,
+      retention_days: retentionDays,
+    });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to delete photos');
   }
@@ -1230,6 +1295,106 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
     res.json({ message: `${photoIds.length} photos updated successfully`, skipped_under_review: skippedUnderReview });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to update photos');
+  }
+});
+
+// The gallery's trash (issue 1733): photos an admin deleted, restorable until
+// their retention runs out. Same permission and gallery scope as deleting.
+const MAX_TRASH_IDS = 500;
+const trashActor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
+
+router.get('/:eventId/photos/trash', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+  try {
+    res.json({
+      items: await photoTrash.listTrash(req.params.eventId),
+      retention_days: await photoTrash.getRetentionDays(),
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to list the trash');
+  }
+});
+
+/** The trash rows a restore or purge request names, scoped to the gallery in the URL. */
+async function trashRowsFor(req, res) {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => Number.isInteger(id) && id > 0)) {
+    res.status(400).json({ error: 'Invalid trash IDs' });
+    return null;
+  }
+  if (ids.length > MAX_TRASH_IDS) {
+    res.status(400).json({ error: `At most ${MAX_TRASH_IDS} photos per request` });
+    return null;
+  }
+  const event = await db('events').where({ id: req.params.eventId }).first();
+  if (!event) {
+    res.status(404).json({ error: 'Event not found' });
+    return null;
+  }
+  const rows = await db('photo_trash').whereIn('id', ids).where({ event_id: event.id, state: 'trashed' });
+  if (rows.length === 0) {
+    res.status(404).json({ error: 'No photos found in the trash' });
+    return null;
+  }
+  return { event, rows };
+}
+
+router.post('/:eventId/photos/trash/restore', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+  try {
+    const found = await trashRowsFor(req, res);
+    if (!found) return;
+    const { event, rows } = found;
+
+    const restored = [];
+    const failed = [];
+    for (const row of rows) {
+      try {
+        restored.push(await photoTrash.restorePhoto(event, row));
+      } catch (error) {
+        if (error.statusCode !== 409) logger.error(`Could not restore trash row ${row.id}`, { error: error.message });
+        failed.push({
+          id: row.id,
+          filename: row.filename,
+          code: error.code || 'RESTORE_FAILED',
+          error: error.statusCode === 409 ? error.message : 'The photo could not be restored',
+        });
+      }
+    }
+
+    if (restored.length > 0) {
+      downloadZipService.invalidate(event.id);
+      await logActivity('photos_restored',
+        { count: restored.length, photoIds: restored, eventName: event.event_name },
+        event.id, trashActor(req));
+    }
+    res.status(restored.length > 0 ? 200 : 409).json({ restored: restored.length, photo_ids: restored, failed });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to restore photos');
+  }
+});
+
+router.post('/:eventId/photos/trash/purge', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+  try {
+    const found = await trashRowsFor(req, res);
+    if (!found) return;
+    const { event, rows } = found;
+
+    let purged = 0;
+    const failed = [];
+    for (const row of rows) {
+      try {
+        if (await photoTrash.purgeTrashRow(row)) purged += 1;
+      } catch (error) {
+        logger.error(`Could not purge trash row ${row.id}`, { error: error.message });
+        failed.push(row.id);
+      }
+    }
+
+    if (purged > 0) {
+      await logActivity('photos_trash_purged', { count: purged, eventName: event.event_name }, event.id, trashActor(req));
+    }
+    res.status(purged > 0 || failed.length === 0 ? 200 : 500).json({ purged, failed });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to delete photos from the trash');
   }
 });
 

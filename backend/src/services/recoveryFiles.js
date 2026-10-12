@@ -17,7 +17,7 @@ const logger = require('../utils/logger');
 const MANAGED_ROOTS = [
   'events/active', 'events/archived', 'thumbnails', 'previews', 'heroes',
   'videos', 'watermarks', 'uploads/transfers', 'transfers',
-  'business-docs/customer-documents',
+  'business-docs/customer-documents', 'trash',
 ];
 const DEFAULT_MAX_BYTES = 5000 * 1024 * 1024;
 // The list of required keys lives beside the database dump it belongs to; the

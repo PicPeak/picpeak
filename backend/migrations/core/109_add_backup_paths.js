@@ -123,6 +123,15 @@ const DEFAULT_PATHS = [
     display_order: 100,
     description: 'Managed watermarked gallery renditions',
   },
+  {
+    // The photo trash (issue 1733): the database dump carries the trash
+    // rows, so the originals they point at belong in the same backup.
+    path: 'trash',
+    include_in_default: true,
+    feature_flag: null,
+    display_order: 110,
+    description: 'Originals of deleted photos, until their trash retention ends',
+  },
 ];
 
 exports.up = async function(knex) {

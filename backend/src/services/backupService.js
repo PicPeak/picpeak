@@ -602,6 +602,7 @@ const LEGACY_BACKUP_PATHS = [
   { path: 'videos',           feature_flag: null },
   { path: 'transfers',        feature_flag: null },
   { path: 'watermarks',       feature_flag: null },
+  { path: 'trash',            feature_flag: null },
 ];
 
 // "What to Backup" opt-OUT toggles written by BackupConfiguration.tsx.
@@ -612,6 +613,8 @@ const LEGACY_BACKUP_PATHS = [
 const OPT_OUT_FLAGS = {
   'events/active': 'backup_include_photos',
   'thumbnails': 'backup_include_thumbnails',
+  // Trashed originals are photos: left out with them.
+  'trash': 'backup_include_photos',
 };
 
 // The UI "Archives" checkbox writes backup_include_archives (plural) while

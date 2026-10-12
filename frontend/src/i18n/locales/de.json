@@ -2985,7 +2985,9 @@
       "adminLanguageHelp": "Gilt für den Admin-Bereich, nur für Sie auf diesem Gerät. Die Änderung wirkt sofort — Speichern ist nicht nötig.",
       "customerLanguage": "Sprache für Galerie & Gäste",
       "accountCreditName": "Fotografen-Credit",
-      "accountCreditNameHelp": "Wird bei Ihren Uploads als Fotograf angegeben, wenn die Datei keinen Fotografennamen in den Metadaten enthält. Leer lassen für keinen Credit."
+      "accountCreditNameHelp": "Wird bei Ihren Uploads als Fotograf angegeben, wenn die Datei keinen Fotografennamen in den Metadaten enthält. Leer lassen für keinen Credit.",
+      "photoTrashRetention": "Aufbewahrung im Papierkorb (Tage)",
+      "photoTrashRetentionHelp": "So lange bleiben aus einer Galerie gelöschte Fotos in deren Papierkorb und lassen sich wiederherstellen. 0 löscht Fotos sofort. Fotos im Papierkorb belegen weiterhin Speicherplatz."
     },
     "publicSite": {
       "badge": "Öffentliche Landingpage",
@@ -4988,7 +4990,11 @@
       "photosReviewRejected_one": "{{count}} Team-Upload in {{eventName}} abgelehnt",
       "photosReviewRejected_other": "{{count}} Team-Uploads in {{eventName}} abgelehnt",
       "photoDecision": "Foto freigegeben oder abgelehnt in {{eventName}}",
-      "guestFeedbackDecision": "Gast hat ein Foto freigegeben oder abgelehnt in {{eventName}}"
+      "guestFeedbackDecision": "Gast hat ein Foto freigegeben oder abgelehnt in {{eventName}}",
+      "photosRestored_one": "{{count}} Foto aus dem Papierkorb von \"{{eventName}}\" wiederhergestellt",
+      "photosRestored_other": "{{count}} Fotos aus dem Papierkorb von \"{{eventName}}\" wiederhergestellt",
+      "photosTrashPurged_one": "{{count}} Foto endgültig aus dem Papierkorb von \"{{eventName}}\" gelöscht",
+      "photosTrashPurged_other": "{{count}} Fotos endgültig aus dem Papierkorb von \"{{eventName}}\" gelöscht"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -5080,7 +5086,50 @@
       "deleteManyConfirm_one": "{{count}} Foto löschen? Es wird aus der Galerie entfernt. Das kann nicht rückgängig gemacht werden.",
       "deleteManyConfirm_other": "{{count}} Fotos löschen? Sie werden aus der Galerie entfernt. Das kann nicht rückgängig gemacht werden.",
       "deleteManyAction_one": "{{count}} Foto löschen",
-      "deleteManyAction_other": "{{count}} Fotos löschen"
+      "deleteManyAction_other": "{{count}} Fotos löschen",
+      "trash": {
+        "title": "Papierkorb",
+        "intro_one": "Gelöschte Fotos lassen sich {{count}} Tag lang wiederherstellen. Danach werden sie endgültig gelöscht.",
+        "intro_other": "Gelöschte Fotos lassen sich {{count}} Tage lang wiederherstellen. Danach werden sie endgültig gelöscht.",
+        "introOff": "Fotos werden jetzt sofort gelöscht. Die hier aufgeführten bleiben, bis ihre Frist abläuft.",
+        "empty": "Der Papierkorb ist leer",
+        "emptyHelp": "Aus dieser Galerie gelöschte Fotos bleiben hier, bevor sie endgültig gelöscht werden.",
+        "loadFailed": "Der Papierkorb konnte nicht geladen werden",
+        "columnFile": "Datei",
+        "columnDeleted": "Gelöscht",
+        "columnDeletedBy": "Gelöscht von",
+        "columnRemaining": "Verbleibend",
+        "columnSize": "Größe",
+        "unknownUser": "Unbekannt",
+        "daysLeft_one": "noch {{count}} Tag",
+        "daysLeft_other": "noch {{count}} Tage",
+        "lastDay": "weniger als ein Tag",
+        "restore": "Wiederherstellen",
+        "restoreSelected": "Wiederherstellen ({{count}})",
+        "purgeAction": "Endgültig löschen",
+        "purgeSelected": "Endgültig löschen ({{count}})",
+        "purgeOneLabel": "„{{name}}“ endgültig löschen",
+        "purgeConfirm_one": "{{count}} Foto endgültig löschen? Das kann nicht rückgängig gemacht werden.",
+        "purgeConfirm_other": "{{count}} Fotos endgültig löschen? Das kann nicht rückgängig gemacht werden.",
+        "restored_one": "{{count}} Foto wiederhergestellt. Das Vorschaubild wird neu erstellt.",
+        "restored_other": "{{count}} Fotos wiederhergestellt. Die Vorschaubilder werden neu erstellt.",
+        "restoreFailed_one": "{{count}} Foto konnte nicht wiederhergestellt werden.",
+        "restoreFailed_other": "{{count}} Fotos konnten nicht wiederhergestellt werden.",
+        "purged_one": "{{count}} Foto endgültig gelöscht",
+        "purged_other": "{{count}} Fotos endgültig gelöscht",
+        "purgeFailed": "Die Fotos konnten nicht endgültig gelöscht werden",
+        "forDays_one": "{{count}} Tag lang",
+        "forDays_other": "{{count}} Tage lang",
+        "confirmOne": "„{{name}}“ löschen? Das Foto kommt in den Papierkorb und lässt sich {{forDays}} wiederherstellen.",
+        "confirmMany_one": "{{count}} Foto löschen? Es kommt in den Papierkorb und lässt sich {{forDays}} wiederherstellen.",
+        "confirmMany_other": "{{count}} Fotos löschen? Sie kommen in den Papierkorb und lassen sich {{forDays}} wiederherstellen.",
+        "moved_one": "{{count}} Foto in den Papierkorb verschoben",
+        "moved_other": "{{count}} Fotos in den Papierkorb verschoben",
+        "deleted_one": "{{count}} Foto gelöscht",
+        "deleted_other": "{{count}} Fotos gelöscht",
+        "deleteFailed_one": "{{count}} Foto konnte nicht gelöscht werden und ist noch in der Galerie",
+        "deleteFailed_other": "{{count}} Fotos konnten nicht gelöscht werden und sind noch in der Galerie"
+      }
     },
     "events": {
       "tabs": {
@@ -5386,7 +5435,9 @@
       "photos_review_approved_one": "{{count}} Team-Upload in {{eventName}} freigegeben",
       "photos_review_approved_other": "{{count}} Team-Uploads in {{eventName}} freigegeben",
       "photos_review_rejected_one": "{{count}} Team-Upload in {{eventName}} abgelehnt",
-      "photos_review_rejected_other": "{{count}} Team-Uploads in {{eventName}} abgelehnt"
+      "photos_review_rejected_other": "{{count}} Team-Uploads in {{eventName}} abgelehnt",
+      "photos_restored": "{{count}} Fotos aus dem Papierkorb von {{eventName}} wiederhergestellt",
+      "photos_trash_purged": "{{count}} Fotos endgültig aus dem Papierkorb von {{eventName}} gelöscht"
     },
     "people": {
       "title": "Personen in dieser Galerie",
