@@ -4,7 +4,7 @@
  * The mail links to the gallery with `?download_job=<token>`, never to the
  * archive, so opening it goes through the normal gallery access first: the
  * password prompt and the expired page render in place and leave the query
- * string alone. Once the gallery itself is on screen it takes the token and
+ * string alone. Once the gallery itself is on screen it reads the token and
  * offers that job.
  *
  * The token is not a credential. The server checks gallery access and the
@@ -19,16 +19,17 @@ export function readDownloadJobParam(search: string = typeof window === 'undefin
 }
 
 /**
- * Read the token and drop it from the address bar, so a reload or a shared
- * link does not reopen the dialog. History state is kept: the router and the
- * lightbox store their own fields there.
+ * Drop the token from the address bar once its dialog is closed, so a reload
+ * or a copied link does not reopen it. Not done while reading: the gallery
+ * view can mount more than once on the way in (and twice under StrictMode),
+ * and a read that consumed the token left the second mount with nothing.
+ * History state is kept: the router and the lightbox store their own fields
+ * there.
  */
-export function takeDownloadJobParam(): string | null {
-  if (typeof window === 'undefined') return null;
+export function clearDownloadJobParam(): void {
+  if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
-  if (!url.searchParams.has(DOWNLOAD_JOB_QUERY_PARAM)) return null;
-  const token = readDownloadJobParam(url.search);
+  if (!url.searchParams.has(DOWNLOAD_JOB_QUERY_PARAM)) return;
   url.searchParams.delete(DOWNLOAD_JOB_QUERY_PARAM);
   window.history.replaceState(window.history.state, '', url.toString());
-  return token;
 }

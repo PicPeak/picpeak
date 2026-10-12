@@ -31,7 +31,7 @@ vi.mock('../DownloadQuotaNotice', () => ({ DownloadQuotaNotice: () => null }));
 
 import { galleryService } from '../../../services/gallery.service';
 import { DownloadResolutionModal } from '../DownloadResolutionModal';
-import { readDownloadJobParam, takeDownloadJobParam } from '../downloadJobLink';
+import { clearDownloadJobParam, readDownloadJobParam } from '../downloadJobLink';
 
 const TOKEN = 'a'.repeat(64);
 const choices = [{ id: '1500x1000', label: 'Medium', width: 1500, height: 1000 }];
@@ -97,11 +97,17 @@ describe('download job link', () => {
     expect(readDownloadJobParam('?photo=3')).toBeNull();
   });
 
-  it('takes the token out of the address bar and keeps the rest', () => {
+  it('reading leaves the address bar alone, so a second mount still finds the token', () => {
     window.history.replaceState({ kept: true }, '', `/gallery/party?folder=a&download_job=${TOKEN}`);
-    expect(takeDownloadJobParam()).toBe(TOKEN);
+    expect(readDownloadJobParam()).toBe(TOKEN);
+    expect(readDownloadJobParam()).toBe(TOKEN);
+  });
+
+  it('closing drops the token from the address bar and keeps the rest', () => {
+    window.history.replaceState({ kept: true }, '', `/gallery/party?folder=a&download_job=${TOKEN}`);
+    clearDownloadJobParam();
     expect(window.location.search).toBe('?folder=a');
     expect(window.history.state).toEqual({ kept: true });
-    expect(takeDownloadJobParam()).toBeNull();
+    expect(readDownloadJobParam()).toBeNull();
   });
 });
