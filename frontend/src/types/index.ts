@@ -491,6 +491,8 @@ export interface LoginResponse {
 export interface MfaChallengeResponse {
   mfaRequired: true;
   mfaToken: string;
+  // The account has a passkey that can stand in for the code (issue 1733).
+  passkeyAvailable?: boolean;
 }
 
 export type AdminLoginResponse = LoginResponse | MfaChallengeResponse;

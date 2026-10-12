@@ -1602,6 +1602,49 @@
       "placeholder": "Pesquisar nas definições…",
       "label": "Pesquisar nas definições",
       "noResults": "Nenhuma definição corresponde a “{{query}}”."
+    },
+    "passkeys": {
+      "title": "Chaves de acesso",
+      "description": "Entre com sua impressão digital, seu rosto, o PIN do dispositivo ou uma chave de segurança em vez da senha. Uma chave de acesso também substitui o código do aplicativo autenticador.",
+      "domainNote": "As chaves de acesso estão vinculadas a {{domain}}. Se este site mudar de endereço, elas deixam de funcionar e você volta a entrar com sua senha.",
+      "empty": "Nenhuma chave de acesso ainda.",
+      "add": "Adicionar uma chave de acesso",
+      "nameLabel": "Nome",
+      "namePlaceholder": "ex.: MacBook, YubiKey",
+      "nameRequired": "Dê um nome à chave de acesso.",
+      "passwordLabel": "Senha atual",
+      "passwordHelp": "Confirma que é você quem está adicionando uma nova forma de entrar.",
+      "passwordRequired": "Digite sua senha atual.",
+      "continue": "Continuar",
+      "added": "Chave de acesso adicionada.",
+      "addedOn": "Adicionada em {{date}}",
+      "lastUsed": "Último uso em {{date}}",
+      "neverUsed": "Nunca usada",
+      "rename": "Renomear",
+      "remove": "Remover",
+      "removeHelp": "Remover \"{{name}}\"? Você não poderá mais entrar com ela.",
+      "removeConfirm": "Remover chave de acesso",
+      "removed": "Chave de acesso removida.",
+      "loadFailed": "Não foi possível carregar as chaves de acesso.",
+      "errors": {
+        "cancelled": "O pedido da chave de acesso foi cancelado ou expirou. Tente novamente.",
+        "exists": "Esta chave de acesso já está registrada.",
+        "unsupported": "Este navegador ou dispositivo não pode criar uma chave de acesso.",
+        "security": "O navegador se recusou a criar uma chave de acesso para este endereço.",
+        "limit": "Você atingiu o número máximo de chaves de acesso. Remova uma para adicionar outra.",
+        "expired": "O pedido expirou. Tente novamente.",
+        "wrongPassword": "A senha atual está incorreta.",
+        "failed": "Algo deu errado. Tente novamente."
+      },
+      "unavailable": {
+        "not_configured": "As chaves de acesso precisam de um endereço público para este site. Defina primeiro a URL do site abaixo.",
+        "ip_address": "As chaves de acesso precisam de um nome de domínio. Este site está configurado com um endereço IP, então elas não podem ser usadas.",
+        "insecure_origin": "As chaves de acesso precisam de HTTPS. Este site está configurado sem ele, então elas não podem ser usadas.",
+        "origin_mismatch": "As chaves de acesso só funcionam em {{origin}}. Abra a administração nesse endereço para adicionar ou usar uma.",
+        "sso_only": "A entrada com senha está desativada em favor do login único, então as chaves de acesso também estão.",
+        "sso_account": "Sua conta entra pelo login único e por isso não pode usar chaves de acesso.",
+        "unsupported": "Este navegador não oferece suporte a chaves de acesso."
+      }
     }
   },
   "analytics": {
@@ -3258,7 +3301,14 @@
     "invalidCredentials": "E-mail ou senha inválidos",
     "generalError": "Ocorreu um erro. Tente novamente.",
     "needHelp": "Precisa de ajuda? Contate",
-    "devModeHint": "Modo Desenvolvimento: E-mail: admin@exemplo.com, Senha: admin123"
+    "devModeHint": "Modo Desenvolvimento: E-mail: admin@exemplo.com, Senha: admin123",
+    "passkey": {
+      "signIn": "Entrar com uma chave de acesso",
+      "useInstead": "Usar uma chave de acesso",
+      "cancelled": "O pedido da chave de acesso foi cancelado ou expirou. Tente novamente.",
+      "unsupported": "Este navegador ou dispositivo não pode usar uma chave de acesso aqui.",
+      "failed": "Falha ao entrar com a chave de acesso. Tente novamente ou entre com sua senha."
+    }
   },
   "slideshow": {
     "adminTitle": "Apresentação de slides ao vivo",

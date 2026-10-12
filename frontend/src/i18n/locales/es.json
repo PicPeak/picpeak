@@ -1367,6 +1367,49 @@
     "features": {
       "configure": "Configurar",
       "sidebarInSettings": "Sin entrada en la barra lateral — está en los ajustes"
+    },
+    "passkeys": {
+      "title": "Llaves de acceso",
+      "description": "Inicia sesión con tu huella, tu rostro, el PIN del dispositivo o una llave de seguridad en lugar de la contraseña. Una llave de acceso también sustituye al código de la aplicación de autenticación.",
+      "domainNote": "Las llaves de acceso están vinculadas a {{domain}}. Si este sitio cambia de dirección dejarán de funcionar y volverás a iniciar sesión con tu contraseña.",
+      "empty": "Aún no hay llaves de acceso.",
+      "add": "Añadir una llave de acceso",
+      "nameLabel": "Nombre",
+      "namePlaceholder": "p. ej. MacBook, YubiKey",
+      "nameRequired": "Ponle un nombre a la llave de acceso.",
+      "passwordLabel": "Contraseña actual",
+      "passwordHelp": "Confirma que eres tú quien añade una nueva forma de iniciar sesión.",
+      "passwordRequired": "Introduce tu contraseña actual.",
+      "continue": "Continuar",
+      "added": "Llave de acceso añadida.",
+      "addedOn": "Añadida el {{date}}",
+      "lastUsed": "Último uso el {{date}}",
+      "neverUsed": "Nunca usada",
+      "rename": "Cambiar nombre",
+      "remove": "Quitar",
+      "removeHelp": "¿Quitar «{{name}}»? Ya no podrás iniciar sesión con ella.",
+      "removeConfirm": "Quitar llave de acceso",
+      "removed": "Llave de acceso quitada.",
+      "loadFailed": "No se pudieron cargar las llaves de acceso.",
+      "errors": {
+        "cancelled": "La solicitud de la llave de acceso se canceló o caducó. Inténtalo de nuevo.",
+        "exists": "Esta llave de acceso ya está registrada.",
+        "unsupported": "Este navegador o dispositivo no puede crear una llave de acceso.",
+        "security": "El navegador se negó a crear una llave de acceso para esta dirección.",
+        "limit": "Has alcanzado el número máximo de llaves de acceso. Quita una para añadir otra.",
+        "expired": "La solicitud ha caducado. Inténtalo de nuevo.",
+        "wrongPassword": "La contraseña actual no es correcta.",
+        "failed": "Algo salió mal. Inténtalo de nuevo."
+      },
+      "unavailable": {
+        "not_configured": "Las llaves de acceso necesitan una dirección pública para este sitio. Configura primero la URL del sitio más abajo.",
+        "ip_address": "Las llaves de acceso necesitan un nombre de dominio. Este sitio está configurado con una dirección IP, así que no se pueden usar.",
+        "insecure_origin": "Las llaves de acceso necesitan HTTPS. Este sitio está configurado sin él, así que no se pueden usar.",
+        "origin_mismatch": "Las llaves de acceso solo funcionan en {{origin}}. Abre la administración allí para añadir o usar una.",
+        "sso_only": "El inicio de sesión con contraseña está desactivado en favor del inicio de sesión único, así que las llaves de acceso también lo están.",
+        "sso_account": "Tu cuenta inicia sesión mediante el inicio de sesión único, así que no puede usar llaves de acceso.",
+        "unsupported": "Este navegador no admite llaves de acceso."
+      }
     }
   },
   "analytics": {
@@ -2896,7 +2939,14 @@
     "invalidCredentials": "Correo o contraseña inválidos",
     "generalError": "Ocurrió un error. Por favor, inténtalo de nuevo.",
     "needHelp": "¿Necesitas ayuda? Contacta",
-    "devModeHint": "Modo desarrollo: usa admin@example.com, contraseña: admin123"
+    "devModeHint": "Modo desarrollo: usa admin@example.com, contraseña: admin123",
+    "passkey": {
+      "signIn": "Iniciar sesión con una llave de acceso",
+      "useInstead": "Usar una llave de acceso en su lugar",
+      "cancelled": "La solicitud de la llave de acceso se canceló o caducó. Inténtalo de nuevo.",
+      "unsupported": "Este navegador o dispositivo no puede usar una llave de acceso aquí.",
+      "failed": "No se pudo iniciar sesión con la llave de acceso. Inténtalo de nuevo o usa tu contraseña."
+    }
   },
   "clientAccess": {
     "title": "Acceso cliente",

@@ -2954,6 +2954,49 @@
       "regenerateFailed": "Obnovitvenih kod ni bilo mogoče ustvariti znova. Preverite kodo in poskusite znova.",
       "recoveryCodesRemaining_one": "Preostala obnovitvena koda: {{count}}."
     },
+    "passkeys": {
+      "title": "Ključi za dostop",
+      "description": "Prijavite se s prstnim odtisom, obrazom, kodo PIN naprave ali varnostnim ključem namesto z geslom. Ključ za dostop nadomesti tudi kodo iz aplikacije za preverjanje pristnosti.",
+      "domainNote": "Ključi za dostop so vezani na {{domain}}. Če se spletno mesto preseli na drug naslov, prenehajo delovati in se znova prijavite z geslom.",
+      "empty": "Ni še nobenega ključa za dostop.",
+      "add": "Dodaj ključ za dostop",
+      "nameLabel": "Ime",
+      "namePlaceholder": "npr. MacBook, YubiKey",
+      "nameRequired": "Poimenujte ključ za dostop.",
+      "passwordLabel": "Trenutno geslo",
+      "passwordHelp": "Potrdi, da nov način prijave dodajate vi.",
+      "passwordRequired": "Vnesite trenutno geslo.",
+      "continue": "Nadaljuj",
+      "added": "Ključ za dostop je dodan.",
+      "addedOn": "Dodan {{date}}",
+      "lastUsed": "Nazadnje uporabljen {{date}}",
+      "neverUsed": "Še ni bil uporabljen",
+      "rename": "Preimenuj",
+      "remove": "Odstrani",
+      "removeHelp": "Odstranim »{{name}}«? Z njim se ne boste mogli več prijaviti.",
+      "removeConfirm": "Odstrani ključ za dostop",
+      "removed": "Ključ za dostop je odstranjen.",
+      "loadFailed": "Ključev za dostop ni bilo mogoče naložiti.",
+      "errors": {
+        "cancelled": "Zahteva za ključ za dostop je bila preklicana ali je potekla. Poskusite znova.",
+        "exists": "Ta ključ za dostop je že registriran.",
+        "unsupported": "Ta brskalnik ali naprava ne more ustvariti ključa za dostop.",
+        "security": "Brskalnik je zavrnil ustvarjanje ključa za dostop za ta naslov.",
+        "limit": "Dosegli ste največje število ključev za dostop. Odstranite enega, da dodate novega.",
+        "expired": "Zahteva je potekla. Poskusite znova.",
+        "wrongPassword": "Trenutno geslo ni pravilno.",
+        "failed": "Nekaj je šlo narobe. Poskusite znova."
+      },
+      "unavailable": {
+        "not_configured": "Ključi za dostop potrebujejo javni naslov tega spletnega mesta. Najprej spodaj nastavite URL strani.",
+        "ip_address": "Ključi za dostop potrebujejo ime domene. To spletno mesto je nastavljeno z naslovom IP, zato jih ni mogoče uporabiti.",
+        "insecure_origin": "Ključi za dostop potrebujejo HTTPS. To spletno mesto je nastavljeno brez njega, zato jih ni mogoče uporabiti.",
+        "origin_mismatch": "Ključi za dostop delujejo samo na {{origin}}. Tam odprite upravljanje, da ga dodate ali uporabite.",
+        "sso_only": "Prijava z geslom je izklopljena v korist enotne prijave, zato so izklopljeni tudi ključi za dostop.",
+        "sso_account": "Vaš račun se prijavlja z enotno prijavo, zato ne more uporabljati ključev za dostop.",
+        "unsupported": "Ta brskalnik ne podpira ključev za dostop."
+      }
+    },
     "sso": {
       "title": "Enotna prijava (OIDC)",
       "intro": "Omogočite skrbnikom prijavo prek ponudnika identitete (Keycloak, Authentik, Pocket ID ali katerikoli z OIDC združljiv IdP). Lokalna prijava z e-pošto in geslom ostane na voljo kot rezervna možnost.",
@@ -5662,6 +5705,13 @@
       "sessionExpired": "Seja preverjanja je potekla. Znova se prijavite.",
       "locked": "Račun je zaradi preveč poskusov začasno zaklenjen. Poskusite znova pozneje.",
       "lockedRetry": "Račun je začasno zaklenjen. Poskusite znova čez {{seconds}} sekund."
+    },
+    "passkey": {
+      "signIn": "Prijava s ključem za dostop",
+      "useInstead": "Namesto tega uporabi ključ za dostop",
+      "cancelled": "Zahteva za ključ za dostop je bila preklicana ali je potekla. Poskusite znova.",
+      "unsupported": "Ta brskalnik ali naprava tukaj ne more uporabiti ključa za dostop.",
+      "failed": "Prijava s ključem za dostop ni uspela. Poskusite znova ali se prijavite z geslom."
     },
     "ssoDivider": "ali",
     "ssoSignIn": "Prijava s SSO",

@@ -3239,6 +3239,49 @@
       "regenerateFailed": "Could not regenerate recovery codes. Check the code and try again.",
       "recoveryCodesRemaining_one": "{{count}} recovery code remaining."
     },
+    "passkeys": {
+      "title": "Passkeys",
+      "description": "Sign in with your fingerprint, face, device PIN or a security key instead of your password. A passkey also replaces the authenticator code.",
+      "domainNote": "Passkeys are tied to {{domain}}. If this site moves to another address they stop working, and you sign in with your password again.",
+      "empty": "No passkeys yet.",
+      "add": "Add a passkey",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. MacBook, YubiKey",
+      "nameRequired": "Give the passkey a name.",
+      "passwordLabel": "Current password",
+      "passwordHelp": "Confirms that it is you adding a new way to sign in.",
+      "passwordRequired": "Enter your current password.",
+      "continue": "Continue",
+      "added": "Passkey added.",
+      "addedOn": "Added {{date}}",
+      "lastUsed": "Last used {{date}}",
+      "neverUsed": "Never used",
+      "rename": "Rename",
+      "remove": "Remove",
+      "removeHelp": "Remove \"{{name}}\"? You will no longer be able to sign in with it.",
+      "removeConfirm": "Remove passkey",
+      "removed": "Passkey removed.",
+      "loadFailed": "Passkeys could not be loaded.",
+      "errors": {
+        "cancelled": "The passkey prompt was cancelled or timed out. Try again.",
+        "exists": "This passkey is already registered.",
+        "unsupported": "This browser or device cannot create a passkey.",
+        "security": "The browser refused to create a passkey for this address.",
+        "limit": "You have reached the maximum number of passkeys. Remove one to add another.",
+        "expired": "The request expired. Try again.",
+        "wrongPassword": "The current password is incorrect.",
+        "failed": "Something went wrong. Try again."
+      },
+      "unavailable": {
+        "not_configured": "Passkeys need a public address for this site. Set the site URL below first.",
+        "ip_address": "Passkeys need a domain name. This site is set up with an IP address, so they cannot be used.",
+        "insecure_origin": "Passkeys need HTTPS. This site is set up without it, so they cannot be used.",
+        "origin_mismatch": "Passkeys only work on {{origin}}. Open the admin there to add or use one.",
+        "sso_only": "Password sign-in is switched off in favour of single sign-on, so passkeys are switched off too.",
+        "sso_account": "Your account signs in through single sign-on, so it cannot use passkeys.",
+        "unsupported": "This browser does not support passkeys."
+      }
+    },
     "sso": {
       "title": "Single Sign-On (OIDC)",
       "intro": "Let admins sign in through your identity provider (Keycloak, Authentik, Pocket ID, or any OIDC-compliant IdP). Local email/password login stays available as a fallback.",
@@ -6451,6 +6494,13 @@
       "sessionExpired": "Your verification session expired. Please sign in again.",
       "locked": "Account temporarily locked due to too many attempts. Try again later.",
       "lockedRetry": "Account temporarily locked. Try again in {{seconds}} seconds."
+    },
+    "passkey": {
+      "signIn": "Sign in with a passkey",
+      "useInstead": "Use a passkey instead",
+      "cancelled": "The passkey prompt was cancelled or timed out. Try again.",
+      "unsupported": "This browser or device cannot use a passkey here.",
+      "failed": "Passkey sign-in failed. Try again or sign in with your password."
     },
     "ssoDivider": "or",
     "ssoSignIn": "Sign in with SSO",

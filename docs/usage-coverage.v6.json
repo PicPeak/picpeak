@@ -274,7 +274,12 @@
         "POST /mfa/setup",
         "POST /mfa/enable",
         "POST /mfa/disable",
-        "POST /mfa/recovery-codes"
+        "POST /mfa/recovery-codes",
+        "GET /passkeys",
+        "POST /passkeys/register/options",
+        "POST /passkeys/register/verify",
+        "PATCH /passkeys/:id",
+        "POST /passkeys/:id/delete"
       ]
     },
     "adminBackup.js": {
@@ -1492,6 +1497,8 @@
       "route_signatures": [
         "POST /admin/login",
         "POST /admin/login/mfa",
+        "POST /admin/passkey/options",
+        "POST /admin/passkey/verify",
         "POST /logout",
         "POST /gallery/verify",
         "POST /gallery/:slug/client-login",

@@ -48,6 +48,10 @@ const CREDENTIAL_ENDPOINTS = [
   // Admin password, and the second factor that completes the same login.
   { method: 'POST', path: /^\/api\/auth\/admin\/login\/?$/i },
   { method: 'POST', path: /^\/api\/auth\/admin\/login\/mfa\/?$/i },
+  // Passkey login (issue 1733): the same login by another credential, as the
+  // primary step or in place of the TOTP code.
+  { method: 'POST', path: /^\/api\/auth\/admin\/passkey\/options\/?$/i },
+  { method: 'POST', path: /^\/api\/auth\/admin\/passkey\/verify\/?$/i },
   // Gallery password, client PIN, share-link token.
   { method: 'POST', path: /^\/api\/auth\/gallery\/verify\/?$/i },
   { method: 'POST', path: /^\/api\/auth\/gallery\/share-login\/?$/i },
@@ -72,6 +76,9 @@ const CREDENTIAL_ENDPOINTS = [
   // moment. Without this entry nothing bounded the guessing.
   { method: 'POST', path: /^\/api\/admin\/auth\/mfa\/disable\/?$/i },
   { method: 'POST', path: /^\/api\/admin\/auth\/mfa\/recovery-codes\/?$/i },
+  // Adding and removing a passkey verify the current password the same way.
+  { method: 'POST', path: /^\/api\/admin\/auth\/passkeys\/register\/options\/?$/i },
+  { method: 'POST', path: /^\/api\/admin\/auth\/passkeys\/[^/]+\/delete\/?$/i },
 ];
 
 /**

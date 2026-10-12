@@ -78,6 +78,9 @@ async function maintenanceMiddleware(req, res, next) {
     // MFA-enrolled admin gets a 503 on the verify step and cannot sign in
     // at all while maintenance mode is on.
     '/api/auth/admin/login/mfa',
+    // Passkey login is a third way through the same door (issue 1733).
+    '/api/auth/admin/passkey/options',
+    '/api/auth/admin/passkey/verify',
     // SSO variants of the admin login (#798) — same reasoning: an SSO-only
     // (JIT-provisioned) admin has no password, so blocking these would make
     // maintenance mode admin-proof for them.

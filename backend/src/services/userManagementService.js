@@ -635,6 +635,10 @@ async function deleteAdminUser(id, deletedById) {
   // on assigned_by and on the photos they uploaded.
   await db.transaction(async (trx) => {
     await trx('notification_dismissals').where('admin_id', id).del();
+    // Their passkeys (migration 295), for the same reason.
+    if (await trx.schema.hasTable('admin_webauthn_credentials')) {
+      await trx('admin_webauthn_credentials').where('admin_user_id', id).del();
+    }
     if (await trx.schema.hasTable('event_admin_assignments')) {
       await trx('event_admin_assignments').where('admin_user_id', id).del();
       await trx('event_admin_assignments').where('assigned_by', id).update({ assigned_by: null });

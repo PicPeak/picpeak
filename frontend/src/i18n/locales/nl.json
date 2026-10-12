@@ -1474,6 +1474,49 @@
       "placeholder": "Instellingen zoeken…",
       "label": "Instellingen zoeken",
       "noResults": "Geen instelling komt overeen met “{{query}}”."
+    },
+    "passkeys": {
+      "title": "Passkeys",
+      "description": "Log in met je vingerafdruk, gezicht, apparaatpincode of een beveiligingssleutel in plaats van je wachtwoord. Een passkey vervangt ook de code van de authenticator-app.",
+      "domainNote": "Passkeys zijn gekoppeld aan {{domain}}. Als deze site naar een ander adres verhuist, werken ze niet meer en log je weer in met je wachtwoord.",
+      "empty": "Nog geen passkeys.",
+      "add": "Passkey toevoegen",
+      "nameLabel": "Naam",
+      "namePlaceholder": "bijv. MacBook, YubiKey",
+      "nameRequired": "Geef de passkey een naam.",
+      "passwordLabel": "Huidig wachtwoord",
+      "passwordHelp": "Bevestigt dat jij het bent die een nieuwe manier van inloggen toevoegt.",
+      "passwordRequired": "Voer je huidige wachtwoord in.",
+      "continue": "Doorgaan",
+      "added": "Passkey toegevoegd.",
+      "addedOn": "Toegevoegd op {{date}}",
+      "lastUsed": "Laatst gebruikt op {{date}}",
+      "neverUsed": "Nooit gebruikt",
+      "rename": "Naam wijzigen",
+      "remove": "Verwijderen",
+      "removeHelp": "\"{{name}}\" verwijderen? Je kunt er daarna niet meer mee inloggen.",
+      "removeConfirm": "Passkey verwijderen",
+      "removed": "Passkey verwijderd.",
+      "loadFailed": "Passkeys konden niet worden geladen.",
+      "errors": {
+        "cancelled": "Het passkey-verzoek is geannuleerd of verlopen. Probeer het opnieuw.",
+        "exists": "Deze passkey is al geregistreerd.",
+        "unsupported": "Deze browser of dit apparaat kan geen passkey aanmaken.",
+        "security": "De browser weigerde een passkey voor dit adres aan te maken.",
+        "limit": "Je hebt het maximale aantal passkeys bereikt. Verwijder er een om een nieuwe toe te voegen.",
+        "expired": "Het verzoek is verlopen. Probeer het opnieuw.",
+        "wrongPassword": "Het huidige wachtwoord is onjuist.",
+        "failed": "Er is iets misgegaan. Probeer het opnieuw."
+      },
+      "unavailable": {
+        "not_configured": "Passkeys hebben een openbaar adres voor deze site nodig. Stel eerst hieronder de site-URL in.",
+        "ip_address": "Passkeys hebben een domeinnaam nodig. Deze site is ingesteld met een IP-adres, dus ze kunnen niet worden gebruikt.",
+        "insecure_origin": "Passkeys hebben HTTPS nodig. Deze site is zonder HTTPS ingesteld, dus ze kunnen niet worden gebruikt.",
+        "origin_mismatch": "Passkeys werken alleen op {{origin}}. Open het beheer daar om er een toe te voegen of te gebruiken.",
+        "sso_only": "Inloggen met wachtwoord is uitgeschakeld ten gunste van single sign-on, dus passkeys ook.",
+        "sso_account": "Je account logt in via single sign-on en kan daarom geen passkeys gebruiken.",
+        "unsupported": "Deze browser ondersteunt geen passkeys."
+      }
     }
   },
   "analytics": {
@@ -3108,7 +3151,14 @@
     "invalidCredentials": "Ongeldige e-mail of wachtwoord",
     "generalError": "Er is een fout opgetreden. Probeer het opnieuw.",
     "needHelp": "Hulp nodig? Neem contact op met",
-    "devModeHint": "Ontwikkelmodus: Gebruik e-mail: admin@example.com, wachtwoord: admin123"
+    "devModeHint": "Ontwikkelmodus: Gebruik e-mail: admin@example.com, wachtwoord: admin123",
+    "passkey": {
+      "signIn": "Inloggen met een passkey",
+      "useInstead": "In plaats daarvan een passkey gebruiken",
+      "cancelled": "Het passkey-verzoek is geannuleerd of verlopen. Probeer het opnieuw.",
+      "unsupported": "Deze browser of dit apparaat kan hier geen passkey gebruiken.",
+      "failed": "Inloggen met passkey is mislukt. Probeer het opnieuw of log in met je wachtwoord."
+    }
   },
   "clientAccess": {
     "title": "Klanttoegang",

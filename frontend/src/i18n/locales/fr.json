@@ -1517,6 +1517,49 @@
       "placeholder": "Rechercher dans les paramètres…",
       "label": "Rechercher dans les paramètres",
       "noResults": "Aucun paramètre ne correspond à « {{query}} »."
+    },
+    "passkeys": {
+      "title": "Clés d'accès",
+      "description": "Connectez-vous avec votre empreinte, votre visage, le code de l'appareil ou une clé de sécurité au lieu du mot de passe. Une clé d'accès remplace aussi le code de l'application d'authentification.",
+      "domainNote": "Les clés d'accès sont liées à {{domain}}. Si ce site change d'adresse, elles cessent de fonctionner et vous vous reconnectez avec votre mot de passe.",
+      "empty": "Aucune clé d'accès pour l'instant.",
+      "add": "Ajouter une clé d'accès",
+      "nameLabel": "Nom",
+      "namePlaceholder": "p. ex. MacBook, YubiKey",
+      "nameRequired": "Donnez un nom à la clé d'accès.",
+      "passwordLabel": "Mot de passe actuel",
+      "passwordHelp": "Confirme que c'est bien vous qui ajoutez un nouveau moyen de connexion.",
+      "passwordRequired": "Saisissez votre mot de passe actuel.",
+      "continue": "Continuer",
+      "added": "Clé d'accès ajoutée.",
+      "addedOn": "Ajoutée le {{date}}",
+      "lastUsed": "Dernière utilisation le {{date}}",
+      "neverUsed": "Jamais utilisée",
+      "rename": "Renommer",
+      "remove": "Retirer",
+      "removeHelp": "Retirer « {{name}} » ? Vous ne pourrez plus vous connecter avec.",
+      "removeConfirm": "Retirer la clé d'accès",
+      "removed": "Clé d'accès retirée.",
+      "loadFailed": "Impossible de charger les clés d'accès.",
+      "errors": {
+        "cancelled": "La demande de clé d'accès a été annulée ou a expiré. Réessayez.",
+        "exists": "Cette clé d'accès est déjà enregistrée.",
+        "unsupported": "Ce navigateur ou cet appareil ne peut pas créer de clé d'accès.",
+        "security": "Le navigateur a refusé de créer une clé d'accès pour cette adresse.",
+        "limit": "Vous avez atteint le nombre maximal de clés d'accès. Retirez-en une pour en ajouter une autre.",
+        "expired": "La demande a expiré. Réessayez.",
+        "wrongPassword": "Le mot de passe actuel est incorrect.",
+        "failed": "Une erreur s'est produite. Réessayez."
+      },
+      "unavailable": {
+        "not_configured": "Les clés d'accès ont besoin d'une adresse publique pour ce site. Définissez d'abord l'URL du site ci-dessous.",
+        "ip_address": "Les clés d'accès ont besoin d'un nom de domaine. Ce site est configuré avec une adresse IP, elles ne peuvent donc pas être utilisées.",
+        "insecure_origin": "Les clés d'accès ont besoin de HTTPS. Ce site est configuré sans, elles ne peuvent donc pas être utilisées.",
+        "origin_mismatch": "Les clés d'accès ne fonctionnent que sur {{origin}}. Ouvrez l'administration à cette adresse pour en ajouter ou en utiliser une.",
+        "sso_only": "La connexion par mot de passe est désactivée au profit de l'authentification unique, les clés d'accès le sont donc aussi.",
+        "sso_account": "Votre compte se connecte par authentification unique et ne peut donc pas utiliser de clés d'accès.",
+        "unsupported": "Ce navigateur ne prend pas en charge les clés d'accès."
+      }
     }
   },
   "analytics": {
@@ -3139,7 +3182,14 @@
     "invalidCredentials": "E-mail ou mot de passe invalide",
     "generalError": "Une erreur est survenue. Veuillez réessayer.",
     "needHelp": "Besoin d'aide ? Contactez",
-    "devModeHint": "Mode développement : Utilisez l'e-mail : admin@example.com, mot de passe : admin123"
+    "devModeHint": "Mode développement : Utilisez l'e-mail : admin@example.com, mot de passe : admin123",
+    "passkey": {
+      "signIn": "Se connecter avec une clé d'accès",
+      "useInstead": "Utiliser plutôt une clé d'accès",
+      "cancelled": "La demande de clé d'accès a été annulée ou a expiré. Réessayez.",
+      "unsupported": "Ce navigateur ou cet appareil ne peut pas utiliser de clé d'accès ici.",
+      "failed": "La connexion par clé d'accès a échoué. Réessayez ou connectez-vous avec votre mot de passe."
+    }
   },
   "clientAccess": {
     "title": "Accès client",

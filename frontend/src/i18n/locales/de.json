@@ -3832,6 +3832,49 @@
       "regenerateFailed": "Wiederherstellungscodes konnten nicht neu erzeugt werden. Prüfen Sie den Code und versuchen Sie es erneut.",
       "recoveryCodesRemaining_one": "Noch {{count}} Wiederherstellungscode übrig."
     },
+    "passkeys": {
+      "title": "Passkeys",
+      "description": "Melde dich mit Fingerabdruck, Gesichtserkennung, Geräte-PIN oder einem Sicherheitsschlüssel statt mit dem Passwort an. Ein Passkey ersetzt auch den Code der Authenticator-App.",
+      "domainNote": "Passkeys sind an {{domain}} gebunden. Zieht diese Website auf eine andere Adresse um, funktionieren sie nicht mehr und du meldest dich wieder mit dem Passwort an.",
+      "empty": "Noch keine Passkeys.",
+      "add": "Passkey hinzufügen",
+      "nameLabel": "Name",
+      "namePlaceholder": "z. B. MacBook, YubiKey",
+      "nameRequired": "Gib dem Passkey einen Namen.",
+      "passwordLabel": "Aktuelles Passwort",
+      "passwordHelp": "Bestätigt, dass du es bist, der eine neue Anmeldemöglichkeit hinzufügt.",
+      "passwordRequired": "Gib dein aktuelles Passwort ein.",
+      "continue": "Weiter",
+      "added": "Passkey hinzugefügt.",
+      "addedOn": "Hinzugefügt am {{date}}",
+      "lastUsed": "Zuletzt verwendet am {{date}}",
+      "neverUsed": "Noch nie verwendet",
+      "rename": "Umbenennen",
+      "remove": "Entfernen",
+      "removeHelp": "„{{name}}“ entfernen? Du kannst dich danach nicht mehr damit anmelden.",
+      "removeConfirm": "Passkey entfernen",
+      "removed": "Passkey entfernt.",
+      "loadFailed": "Passkeys konnten nicht geladen werden.",
+      "errors": {
+        "cancelled": "Die Passkey-Abfrage wurde abgebrochen oder ist abgelaufen. Bitte erneut versuchen.",
+        "exists": "Dieser Passkey ist bereits registriert.",
+        "unsupported": "Dieser Browser oder dieses Gerät kann keinen Passkey erstellen.",
+        "security": "Der Browser hat das Erstellen eines Passkeys für diese Adresse abgelehnt.",
+        "limit": "Die maximale Anzahl an Passkeys ist erreicht. Entferne einen, um einen neuen hinzuzufügen.",
+        "expired": "Die Anfrage ist abgelaufen. Bitte erneut versuchen.",
+        "wrongPassword": "Das aktuelle Passwort ist falsch.",
+        "failed": "Etwas ist schiefgelaufen. Bitte erneut versuchen."
+      },
+      "unavailable": {
+        "not_configured": "Passkeys brauchen eine öffentliche Adresse für diese Website. Lege zuerst unten die Website-URL fest.",
+        "ip_address": "Passkeys brauchen einen Domainnamen. Diese Website ist mit einer IP-Adresse eingerichtet, daher sind sie nicht verfügbar.",
+        "insecure_origin": "Passkeys brauchen HTTPS. Diese Website ist ohne HTTPS eingerichtet, daher sind sie nicht verfügbar.",
+        "origin_mismatch": "Passkeys funktionieren nur unter {{origin}}. Öffne die Verwaltung dort, um einen hinzuzufügen oder zu verwenden.",
+        "sso_only": "Die Anmeldung mit Passwort ist zugunsten von Single Sign-on abgeschaltet, Passkeys damit ebenfalls.",
+        "sso_account": "Dein Konto meldet sich über Single Sign-on an und kann daher keine Passkeys verwenden.",
+        "unsupported": "Dieser Browser unterstützt keine Passkeys."
+      }
+    },
     "sso": {
       "title": "Single Sign-On (OIDC)",
       "intro": "Admins melden sich über Ihren Identity Provider an (Keycloak, Authentik, Pocket ID oder jeder OIDC-konforme IdP). Die lokale Anmeldung mit E-Mail/Passwort bleibt als Fallback verfügbar.",
@@ -6538,6 +6581,13 @@
       "sessionExpired": "Ihre Bestätigungssitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
       "locked": "Konto wegen zu vieler Versuche vorübergehend gesperrt. Versuchen Sie es später erneut.",
       "lockedRetry": "Konto vorübergehend gesperrt. Versuchen Sie es in {{seconds}} Sekunden erneut."
+    },
+    "passkey": {
+      "signIn": "Mit Passkey anmelden",
+      "useInstead": "Stattdessen Passkey verwenden",
+      "cancelled": "Die Passkey-Abfrage wurde abgebrochen oder ist abgelaufen. Bitte erneut versuchen.",
+      "unsupported": "Dieser Browser oder dieses Gerät kann hier keinen Passkey verwenden.",
+      "failed": "Anmeldung mit Passkey fehlgeschlagen. Erneut versuchen oder mit Passwort anmelden."
     },
     "ssoDivider": "oder",
     "ssoSignIn": "Mit SSO anmelden",
