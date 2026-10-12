@@ -134,6 +134,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     canDraw: photos[currentIndex]?.media_type !== 'video',
     panelOpen: showFeedback,
     onStart: () => resetZoom(),
+    // On a phone the panel covers the photo: step aside to show the drawing.
+    onShow: () => { if (isSmallScreen) setShowFeedback(false); },
   });
   const annotating = annotation.drawing;
   const annotationRef = useRef(annotation);
@@ -989,6 +991,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
          disappear under the camera/dynamic-island. */}
       <button
         onClick={onClose}
+        // Not while drawing (issue 1733): it sits on the photo's corner, where
+        // a stroke would close the lightbox. Cancel is the way out then.
+        hidden={annotating}
         className="absolute p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-30"
         aria-label="Close"
         style={{
@@ -1423,7 +1428,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
               // Stop above the opaque toolbar so it never masks the
               // photo (#888).
-              bottom: `${toolbarHeight}px`,
+              // The drawing toolbar (issue 1733) can be taller.
+              bottom: `${Math.max(toolbarHeight, annotation.toolbarHeight)}px`,
               // Tell the browser we handle horizontal gestures ourselves so
               // it doesn't fight us with edge-swipe back navigation, native
               // pinch-zoom, etc. Videos keep default touch behaviour.

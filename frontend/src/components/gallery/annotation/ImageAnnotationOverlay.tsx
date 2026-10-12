@@ -145,7 +145,9 @@ export const ImageAnnotationOverlay: React.FC<ImageAnnotationOverlayProps> = ({
   };
 
   return (
-    <div ref={anchorRef} className="absolute inset-0 pointer-events-none">
+    // z-10: the lightbox image carries a transform, which makes it a stacking
+    // context that would otherwise paint over the drawing.
+    <div ref={anchorRef} className="absolute inset-0 z-10 pointer-events-none">
       {box && (
         <AnnotationSvg
           annotation={annotation}

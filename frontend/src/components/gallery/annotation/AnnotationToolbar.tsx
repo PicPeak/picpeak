@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, MoveUpRight, Pencil, Trash2, Undo2, X } from 'lucide-react';
 import { ANNOTATION_MAX_STROKES, ANNOTATION_PALETTE } from '../../../utils/photoAnnotation';
@@ -21,8 +21,25 @@ export const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({ annotation
   const { t } = useTranslation();
   const empty = annotation.strokes.length === 0;
 
+  // Report the height so the photo area can end above the toolbar: on a
+  // phone it wraps to more rows than the toolbar it covers.
+  const ref = useRef<HTMLDivElement>(null);
+  const { setToolbarHeight } = annotation;
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setToolbarHeight(el.offsetHeight);
+    const observer = new ResizeObserver(() => setToolbarHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      setToolbarHeight(0);
+    };
+  }, [setToolbarHeight]);
+
   return (
     <div
+      ref={ref}
       role="toolbar"
       aria-label={t('feedback.annotation.toolbar', 'Drawing tools')}
       className="absolute bottom-0 left-0 bg-black px-3 pt-3 sm:px-4 z-30 flex items-center justify-center gap-x-3 gap-y-2 flex-wrap"

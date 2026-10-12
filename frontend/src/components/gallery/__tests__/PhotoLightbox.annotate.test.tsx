@@ -123,12 +123,15 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     expect(screen.getByText('100%')).toBeTruthy();
     expect(screen.getByLabelText('Previous photo').hidden).toBe(true);
     expect(screen.getByLabelText('Next photo').hidden).toBe(true);
+    // The close button sits on the photo's corner: out of the way too.
+    expect(screen.getByLabelText('Close').hidden).toBe(true);
 
     key('Escape');
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryByRole('toolbar', { name: 'Drawing tools' })).toBeNull();
 
     // Every gesture is back.
+    expect(screen.getByLabelText('Close').hidden).toBe(false);
     expect(screen.getByLabelText('Previous photo').hidden).toBe(false);
     key('+');
     expect(screen.getByText('150%')).toBeTruthy();
