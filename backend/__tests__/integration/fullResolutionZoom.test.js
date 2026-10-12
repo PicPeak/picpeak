@@ -298,9 +298,17 @@ describe('Full-resolution zoom (issue 1733)', () => {
     ['protection level enhanced', { protection_level: 'enhanced' }],
     ['protection level maximum', { protection_level: 'maximum' }],
     ['canvas rendering', { use_canvas_rendering: 1 }],
-    ['the right-click block', { disable_right_click: 1 }],
   ])('refuses a gallery with %s: 403', async (_name, fields) => {
     const { event, photoId, token } = await makeEvent(fields);
+    expect(await advertised(event, token)).toBeNull();
+    await refused(await zoom(event, photoId, token));
+  });
+
+  it('allows a gallery with the right-click block, which a level above standard still refuses', async () => {
+    const { event, photoId, token } = await makeEvent({ disable_right_click: 1 });
+    expect(await advertised(event, token)).toEqual(expect.stringContaining('zoom=1'));
+    expect((await zoom(event, photoId, token)).status).toBe(200);
+    await db('events').where({ id: event.id }).update({ protection_level: 'enhanced' });
     expect(await advertised(event, token)).toBeNull();
     await refused(await zoom(event, photoId, token));
   });

@@ -208,6 +208,26 @@ describe('PhotoLightbox with a full resolution', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the right-click block on the zoomed original', async () => {
+    const { image, surface, overlay } = setup([zoomable(1), zoomable(2), zoomable(3)], { disableRightClick: true });
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    await finishDecode();
+    // The original takes no pointer events, so a right-click lands on the
+    // preview below it; the lightbox blocks the menu for the whole document.
+    expect(overlay()!.className).toContain('pointer-events-none');
+    for (const target of [overlay()!, image(), surface]) {
+      expect(fireEvent.contextMenu(target)).toBe(false);
+    }
+  });
+
+  it('leaves the context menu alone without the right-click block', async () => {
+    const { image, overlay } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    await finishDecode();
+    expect(overlay()).not.toBeNull();
+    expect(fireEvent.contextMenu(image())).toBe(true);
+  });
+
   it('toggles between fit and 100 % at the cursor on double-click', () => {
     const { image, surface, readout } = setup([zoomable(1), zoomable(2), zoomable(3)]);
     // jsdom's rect is all zeros, so the container centre is the origin.
