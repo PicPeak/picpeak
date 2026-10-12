@@ -4919,6 +4919,7 @@
     "ratingsCount_one": "{{count}} Bewertungen",
     "ratingsCount_other": "{{count}} Bewertungen",
     "likeError": "Like konnte nicht aktualisiert werden",
+    "likeRateLimited": "Zu viele Anfragen. Bitte warten Sie ein paar Minuten und versuchen Sie es dann erneut.",
     "unlike": "Nicht mehr mögen",
     "like": "Gefällt mir",
     "favoriteError": "Favorit konnte nicht aktualisiert werden",
