@@ -361,6 +361,9 @@ describe('adaptive streaming routes (issue 1733)', () => {
 
       await hls.deleteLadder(await db('photos').where({ id: a }).first());
       expect(await keysUnder(`hls/${a}`)).toEqual([]);
+      // No empty directory tree stays behind on local disk either.
+      expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'hls', String(a)))).toBe(false);
+      expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'hls', String(b), ATTEMPT, '480p'))).toBe(true);
       expect(await keysUnder(`hls/${b}`)).toHaveLength(4);
       expect(await keysUnder(`hls/${a}0000`)).toHaveLength(1);
       await storage.delete(`hls/${a}0000/${ATTEMPT}/master.m3u8`);
@@ -372,6 +375,7 @@ describe('adaptive streaming routes (issue 1733)', () => {
       await hls.deleteLadder({ id }, { keep: `hls/${id}/${ATTEMPT}` });
       expect(await keysUnder(`hls/${id}`)).toEqual((await keysUnder(`hls/${id}/${ATTEMPT}`)));
       expect(await keysUnder(`hls/${id}`)).toHaveLength(4);
+      expect(fs.readdirSync(path.join(process.env.STORAGE_PATH, 'hls', String(id)))).toEqual([ATTEMPT]);
     });
 
     test('deleting the gallery deletes the ladders of its videos', async () => {

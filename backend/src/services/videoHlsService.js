@@ -259,6 +259,18 @@ async function removeUnder(prefix, keep = null) {
     while (cursor < keys.length) await storage.delete(keys[cursor++]).catch(() => {});
   };
   await Promise.all(Array.from({ length: Math.min(8, keys.length) }, worker));
+  // On local disk the keys were files in directories of their own; what is
+  // empty now goes too, or every deleted video leaves a small tree behind.
+  if (storage.kind() === 'local') await pruneEmptyDirs(storage.resolveLocalPath(prefix));
+}
+
+/** rmdir, bottom-up, every directory under `dir` (and `dir`) that holds nothing. */
+async function pruneEmptyDirs(dir) {
+  const entries = await fsp.readdir(dir, { withFileTypes: true }).catch(() => null);
+  if (!entries) return;
+  for (const entry of entries) if (entry.isDirectory()) await pruneEmptyDirs(path.join(dir, entry.name));
+  // Fails, and is meant to, on a directory that still has something in it.
+  await fsp.rmdir(dir).catch(() => {});
 }
 
 /**
