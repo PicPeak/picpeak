@@ -90,6 +90,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     allow_color_labels: allowColorLabelsInput,
     allow_decisions: allowDecisionsInput,
     keybind_mode: keybindModeInput,
+    // "Finish selection" (issue 1733): off unless the form switches it on.
+    allow_selection_submit = false,
     require_name_email = false,
     moderate_comments = true,
     show_feedback_to_guests = true,
@@ -548,6 +550,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
         allow_reactions: formatBoolean(feedbackDefaults.allow_reactions),
         allow_color_labels: formatBoolean(feedbackDefaults.allow_color_labels),
         allow_decisions: formatBoolean(feedbackDefaults.allow_decisions),
+        allow_selection_submit: formatBoolean(allow_selection_submit),
         keybind_mode: feedbackDefaults.keybind_mode,
         require_name_email: formatBoolean(require_name_email),
         moderate_comments: formatBoolean(moderate_comments),

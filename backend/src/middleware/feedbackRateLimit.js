@@ -31,7 +31,10 @@ const DEFAULT_RATE_LIMITS = {
   color_label: { max: 2000, window: 3600 },
   // Approve / reject (issue 744) is the same one-click-per-photo proofing
   // pass as colour labels, so it gets the same budget.
-  decision: { max: 2000, window: 3600 }
+  decision: { max: 2000, window: 3600 },
+  // Finish selection / approve edited photos (issue 1733, A1): one deliberate
+  // click per kind, repeated only after an admin reopened it.
+  selection_submit: { max: 20, window: 3600 }
 };
 
 /**

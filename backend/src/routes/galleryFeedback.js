@@ -1,4 +1,5 @@
 const express = require('express');
+const { body } = require('express-validator');
 const router = express.Router();
 const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
 const { guestBlockedByReveal, blockHiddenGallery } = require('../utils/revealMode');
@@ -6,6 +7,7 @@ const { feedbackRateLimit, generateGuestIdentifier } = require('../middleware/fe
 const { resolveGuest, scopeGuestToFeedback } = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
 const feedbackModeration = require('../services/feedbackModeration');
+const selectionSubmissions = require('../services/selectionSubmissions');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { isPhotoHiddenFromViewer, applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
@@ -379,6 +381,20 @@ router.post('/:slug/photos/:photoId/feedback',
         });
       }
 
+      // Handed in (issue 1733, A1): the picks, or the approve / reject, are
+      // frozen until an admin reopens the submission. 409 with a code the UI
+      // explains; nothing was written.
+      if (result && result.locked) {
+        return res.status(409).json({
+          error: result.kind === 'approval'
+            ? 'The edited photos are approved; the decisions are locked'
+            : 'The selection is finished; the picks are locked',
+          code: result.kind === 'approval' ? 'APPROVAL_LOCKED' : 'SELECTION_LOCKED',
+          kind: result.kind,
+          submitted_at: result.submitted_at,
+        });
+      }
+
       // Per-guest cap reached (#655). Surface as a structured 403 so the
       // frontend can show an explicit popup with the actual cap value and
       // remaining-slots count, rather than a generic toast. Code is the
@@ -556,6 +572,102 @@ router.get('/:slug/my-feedback',
     } catch (error) {
       logger.error('Error getting user feedback:', error);
       res.status(500).json({ error: 'Failed to get your feedback' });
+    }
+  }
+);
+
+// The viewer of a selection route, by the rule that finds their feedback: the
+// registered guest, else the anonymous browser identity.
+async function selectionViewer(req) {
+  return { guestId: req.guest?.id ?? null, guestIdentifier: await generateGuestIdentifier(req) };
+}
+
+// Finish selection / approve edited photos (issue 1733, A1): the viewer's own
+// state per kind, with the cap and how much of it is used.
+router.get('/:slug/selection',
+  verifyGalleryAccess,
+  resolveGuest,
+  scopeGuestToFeedback,
+  async (req, res) => {
+    try {
+      // Reveal mode (#838): a hidden gallery has nothing to select yet; the
+      // same all-off shape rather than a 403, as /my-feedback does.
+      const settings = guestBlockedByReveal(req)
+        ? { feedback_enabled: false }
+        : await feedbackService.getEventFeedbackSettings(req.event.id);
+      res.json(await selectionSubmissions.getState(req.event.id, settings, await selectionViewer(req)));
+    } catch (error) {
+      logger.error('Error getting selection state:', error);
+      res.status(500).json({ error: 'Failed to get the selection' });
+    }
+  }
+);
+
+// Hand the selection in, or approve the edited photos. Locks that guest's
+// picks (or decisions) until an admin reopens it.
+router.post('/:slug/selection/submit',
+  verifyGalleryAccess,
+  denySlideshowToken,
+  blockHiddenGallery,
+  resolveGuest,
+  scopeGuestToFeedback,
+  body('kind').isIn(selectionSubmissions.KINDS),
+  body('note').optional({ nullable: true }).isString().trim()
+    .isLength({ max: selectionSubmissions.NOTE_MAX_LENGTH }),
+  checkValidation,
+  feedbackRateLimit('selection_submit'),
+  async (req, res) => {
+    try {
+      const event = req.event;
+      const settings = await feedbackService.getEventFeedbackSettings(event.id);
+      if (!settings.feedback_enabled) {
+        return res.status(403).json({ error: 'Feedback is not enabled for this event' });
+      }
+      // As for feedback: guest identity mode takes a verified guest only.
+      if (settings.identity_mode === 'guest' && (!req.guest || req.guest.eventId !== event.id)) {
+        return res.status(401).json({ error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' });
+      }
+
+      const { kind } = req.body;
+      const note = req.body.note || null;
+      // The note is read by the photographer only, like a decision's reason:
+      // a `block` word is refused, nothing is held for review.
+      if (note && (await feedbackModeration.moderateText(note)).blocked) {
+        return res.status(400).json({
+          error: 'Your comment contains words that are not allowed here.',
+          code: 'COMMENT_BLOCKED'
+        });
+      }
+
+      const viewer = await selectionViewer(req);
+      const guestName = req.guest?.name ?? await selectionSubmissions.feedbackName(event.id, viewer);
+      const result = await selectionSubmissions.submit(event.id, settings, viewer, { kind, note, guestName });
+
+      if (result.disabled) {
+        return res.status(403).json({ error: `${kind} cannot be submitted in this gallery`, code: 'SUBMISSION_DISABLED' });
+      }
+      if (result.empty) {
+        return res.status(400).json({ error: 'Nothing is selected yet', code: 'NOTHING_SELECTED' });
+      }
+      if (result.already) {
+        return res.status(409).json({ error: 'Already submitted', code: 'ALREADY_SUBMITTED', submission: result.already });
+      }
+
+      try {
+        await selectionSubmissions.notifySubmitted(event, result.submission, {
+          guestName,
+          guestIdentifier: viewer.guestIdentifier,
+          rejected: result.rejected,
+        });
+      } catch (notifyError) {
+        // Stored already; the guest's submission stands without the notice.
+        logger.error('Selection submission notification failed:', notifyError);
+      }
+
+      res.status(201).json({ success: true, submission: result.submission });
+    } catch (error) {
+      logger.error('Error submitting selection:', error);
+      res.status(500).json({ error: 'Failed to submit' });
     }
   }
 );

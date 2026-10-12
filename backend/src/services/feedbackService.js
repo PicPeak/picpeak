@@ -6,6 +6,7 @@ const { isValidColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants
 const { isValidDecision } = require('../constants/photoDecisions');
 const { resolveEventFeedbackDefaults, DEFAULT_KEYBIND_MODE, KEYBIND_MODES } = require('./feedbackDefaults');
 const { applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
+const selectionSubmissions = require('./selectionSubmissions');
 
 // The camera-original name, for the feedback exports (#1224). Both exports
 // used to carry only `photos.filename` — the sanitized stored name
@@ -47,6 +48,7 @@ const FEEDBACK_SETTINGS_COLUMNS = [
   'allow_reactions',
   'allow_color_labels',
   'allow_decisions',
+  'allow_selection_submit',
   'keybind_mode',
   'require_name_email',
   'moderate_comments',
@@ -484,6 +486,19 @@ class FeedbackService {
       // in the gallery would see it as their own.
       if (guestIdentifier === SHARED_COLOR_LABEL_IDENTITY) {
         throw new Error('Reserved guest identifier');
+      }
+
+      // Handed in (issue 1733, A1): once a guest finished their selection,
+      // their likes and favourites are frozen, adds and removals alike, until
+      // an admin reopens it; an approval freezes their approve / reject the
+      // same way. Checked here rather than in the route so no caller can
+      // write around it.
+      const lock = await selectionSubmissions.lockFor(eventId, feedback_type, {
+        guestId: guest_id,
+        guestIdentifier,
+      });
+      if (lock) {
+        return { locked: true, kind: lock.kind, submitted_at: lock.submitted_at };
       }
 
       // Rating 0 clears the guest's rating (#884). Only the explicit zero
@@ -1468,6 +1483,7 @@ class FeedbackService {
       for (const pid of photoIds) {
         await this.updatePhotoFeedbackStats(pid);
       }
+      await selectionSubmissions.anonymizeGuest(guestId);
 
       return { anonymized: affected.length, photos: photoIds.length };
     } catch (error) {
@@ -1538,6 +1554,8 @@ class FeedbackService {
         for (const photoId of photoIds) {
           await this.updatePhotoFeedbackStats(photoId, trx);
         }
+        // A finished selection or approval moves with the guest's picks.
+        await selectionSubmissions.mergeGuests(trx, survivor, sources);
         return { merged, photos: photoIds.length };
       };
       return await (executor ? merge(executor) : db.transaction(merge));

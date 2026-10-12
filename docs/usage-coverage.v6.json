@@ -915,6 +915,8 @@
         "GET /events/:eventId/feedback-settings",
         "PUT /events/:eventId/feedback-settings",
         "GET /events/:eventId/feedback",
+        "GET /events/:eventId/selection-submissions",
+        "POST /events/:eventId/selection-submissions/:submissionId/reopen",
         "PUT /feedback/:feedbackId/:action",
         "DELETE /feedback/:feedbackId",
         "GET /events/:eventId/feedback-analytics",
@@ -1567,7 +1569,9 @@
         "GET /:slug/photos/:photoId/feedback",
         "POST /:slug/photos/:photoId/feedback",
         "GET /:slug/feedback-summary",
-        "GET /:slug/my-feedback"
+        "GET /:slug/my-feedback",
+        "GET /:slug/selection",
+        "POST /:slug/selection/submit"
       ]
     },
     "galleryGuests.js": {

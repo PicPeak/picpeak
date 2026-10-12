@@ -1,0 +1,315 @@
+/**
+ * Finish selection / approve edited photos (issue 1733, A1; migration 291).
+ *
+ * A guest hands over their picks (`selection`) or signs off the edited photos
+ * (`approval`). Each is per guest: a registered guest by guest_id, anyone else
+ * by the anonymous browser identity, the same rule that finds the viewer's
+ * rows in photo_feedback. While a submission is active the feedback it covers
+ * is frozen for that guest (LOCKED_TYPES); everything else stays writable.
+ * An admin reopens it, which keeps the row as history and lifts the lock.
+ *
+ * Does not require feedbackService: that module calls into this one from its
+ * write path, so the caller passes the event's feedback settings in.
+ */
+
+const { db, logActivity } = require('../database/db');
+const logger = require('../utils/logger');
+const { isUniqueViolation } = require('../utils/dbErrors');
+const { toUtcIso } = require('../utils/queueTimestamps');
+
+const KINDS = ['selection', 'approval'];
+const NOTE_MAX_LENGTH = 1000;
+
+/** The feedback types a submission of each kind freezes. */
+const LOCKED_TYPES = {
+  selection: ['like', 'favorite'],
+  approval: ['decision'],
+};
+
+function kindLocking(feedbackType) {
+  return KINDS.find((kind) => LOCKED_TYPES[kind].includes(feedbackType)) || null;
+}
+
+/** Narrow a query to one viewer, as photo_feedback reads do. */
+function scopeToViewer(query, { guestId, guestIdentifier }) {
+  return guestId
+    ? query.where('guest_id', guestId)
+    : query.where('guest_identifier', guestIdentifier);
+}
+
+function present(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    kind: row.kind,
+    submitted_at: toUtcIso(row.submitted_at),
+    item_count: Number(row.item_count) || 0,
+    note: row.note || null,
+  };
+}
+
+async function activeSubmission(eventId, viewer, kind, executor = db) {
+  return scopeToViewer(
+    executor('selection_submissions').where({ event_id: eventId, kind }).whereNull('reopened_at'),
+    viewer,
+  ).first();
+}
+
+/**
+ * The active submission that freezes this feedback type for this viewer, or
+ * null. Called from feedbackService.submitFeedback before any write.
+ */
+async function lockFor(eventId, feedbackType, viewer) {
+  const kind = kindLocking(feedbackType);
+  if (!kind) return null;
+  return present(await activeSubmission(eventId, viewer, kind));
+}
+
+/**
+ * What counts as a pick in this gallery, and the cap on it. A capped type is
+ * the selection (favourites first when both are capped); with no cap every
+ * photo the guest liked or favourited is one pick.
+ */
+function selectionPicks(settings) {
+  const favorites = Boolean(settings.allow_favorites);
+  const likes = Boolean(settings.allow_likes);
+  const favoriteCap = Number(settings.max_favorites_per_guest) || 0;
+  const likeCap = Number(settings.max_likes_per_guest) || 0;
+  if (favorites && favoriteCap > 0) return { types: ['favorite'], cap: favoriteCap };
+  if (likes && likeCap > 0) return { types: ['like'], cap: likeCap };
+  return { types: [favorites && 'favorite', likes && 'like'].filter(Boolean), cap: null };
+}
+
+async function countPicks(eventId, viewer, types) {
+  if (types.length === 0) return 0;
+  const row = await scopeToViewer(
+    db('photo_feedback')
+      // Hidden rows are absent everywhere else, the cap included (#1150).
+      .where({ event_id: eventId, is_hidden: false })
+      .whereIn('feedback_type', types),
+    viewer,
+  ).countDistinct('photo_id as count').first();
+  return Number(row?.count) || 0;
+}
+
+async function countDecisions(eventId, viewer) {
+  const rows = await scopeToViewer(
+    db('photo_feedback').where({ event_id: eventId, feedback_type: 'decision', is_hidden: false }),
+    viewer,
+  ).groupBy('decision').select('decision').count('id as count');
+  const counts = { approved: 0, rejected: 0 };
+  for (const row of rows) {
+    if (row.decision in counts) counts[row.decision] = Number(row.count) || 0;
+  }
+  return counts;
+}
+
+/** The viewer's own state per kind, for GET /:slug/selection. */
+async function getState(eventId, settings, viewer) {
+  const enabled = Boolean(settings.feedback_enabled);
+  const picks = selectionPicks(settings);
+  const selectionOn = enabled && picks.types.length > 0;
+  const canSubmitSelection = selectionOn && Boolean(settings.allow_selection_submit);
+  const canSubmitApproval = enabled && Boolean(settings.allow_decisions);
+  // The counter shows where it means something: a cap to count against, or a
+  // selection to hand in.
+  const counter = selectionOn && (picks.cap !== null || canSubmitSelection);
+
+  const [used, decisions, selection, approval] = await Promise.all([
+    counter ? countPicks(eventId, viewer, picks.types) : 0,
+    canSubmitApproval ? countDecisions(eventId, viewer) : { approved: 0, rejected: 0 },
+    canSubmitSelection ? activeSubmission(eventId, viewer, 'selection') : null,
+    canSubmitApproval ? activeSubmission(eventId, viewer, 'approval') : null,
+  ]);
+
+  return {
+    selection: {
+      counter,
+      can_submit: canSubmitSelection,
+      pick_types: picks.types,
+      cap: picks.cap,
+      used,
+      submission: present(selection),
+    },
+    approval: {
+      can_submit: canSubmitApproval,
+      approved: decisions.approved,
+      rejected: decisions.rejected,
+      submission: present(approval),
+    },
+  };
+}
+
+/**
+ * Record a submission. Returns one of
+ *   { disabled: true }            this gallery does not take that kind
+ *   { empty: true }               a selection with nothing picked
+ *   { already: submission }       this guest already has an active one
+ *   { submission, rejected }      written; `rejected` only for an approval
+ */
+async function submit(eventId, settings, viewer, { kind, note, guestName }) {
+  const state = await getState(eventId, settings, viewer);
+  if (!state[kind].can_submit) return { disabled: true };
+  if (state[kind].submission) return { already: state[kind].submission };
+
+  const itemCount = kind === 'selection' ? state.selection.used : state.approval.approved;
+  if (kind === 'selection' && itemCount === 0) return { empty: true };
+
+  try {
+    const inserted = await db('selection_submissions').insert({
+      event_id: eventId,
+      guest_id: viewer.guestId || null,
+      guest_identifier: viewer.guestIdentifier,
+      guest_name: guestName || null,
+      kind,
+      item_count: itemCount,
+      note: note || null,
+      submitted_at: new Date().toISOString(),
+    }).returning('id');
+    const id = inserted[0]?.id ?? inserted[0];
+    const row = await db('selection_submissions').where({ id }).first();
+    return {
+      submission: present(row),
+      ...(kind === 'approval' ? { rejected: state.approval.rejected } : {}),
+    };
+  } catch (error) {
+    // Two taps at once: the partial unique index lets one through.
+    if (!isUniqueViolation(error)) throw error;
+    return { already: present(await activeSubmission(eventId, viewer, kind)) };
+  }
+}
+
+/** Every submission of a gallery, newest first, for the admin. */
+async function listForEvent(eventId) {
+  const rows = await db('selection_submissions')
+    .leftJoin('gallery_guests', 'selection_submissions.guest_id', 'gallery_guests.id')
+    .where('selection_submissions.event_id', eventId)
+    .select('selection_submissions.*', 'gallery_guests.name as registered_name')
+    .orderBy('selection_submissions.id', 'desc');
+  return rows.map((row) => ({
+    ...present(row),
+    guest_id: row.guest_id ?? null,
+    // The registered name follows a rename or a merge; the stored one is what
+    // an anonymous guest typed with their feedback.
+    guest_name: row.registered_name || row.guest_name || null,
+    reopened_at: toUtcIso(row.reopened_at),
+  }));
+}
+
+/** Reopen an active submission of this gallery. Returns the row, or null. */
+async function reopen(eventId, submissionId, adminId) {
+  const updated = await db('selection_submissions')
+    .where({ id: submissionId, event_id: eventId })
+    .whereNull('reopened_at')
+    .update({ reopened_at: new Date().toISOString(), reopened_by: adminId ?? null });
+  if (!updated) return null;
+  return db('selection_submissions').where({ id: submissionId }).first();
+}
+
+/**
+ * A guest merge carries the submissions along (feedbackService
+ * .mergeGuestFeedback). One active submission per kind survives, the latest:
+ * the merged guest is one person, and one person hands a selection in once.
+ */
+async function mergeGuests(trx, survivor, sourceGuestIds) {
+  const scope = () => trx('selection_submissions')
+    .where({ event_id: survivor.event_id })
+    .whereIn('guest_id', [survivor.id, ...sourceGuestIds]);
+  const active = await scope().whereNull('reopened_at').orderBy('id', 'desc').select('id', 'kind');
+  const kept = new Set();
+  const superseded = [];
+  for (const row of active) {
+    if (kept.has(row.kind)) superseded.push(row.id);
+    else kept.add(row.kind);
+  }
+  // Before the identifier is rewritten: two active rows of one kind under one
+  // identifier is exactly what the unique index refuses.
+  if (superseded.length > 0) {
+    await trx('selection_submissions').whereIn('id', superseded).delete();
+  }
+  await scope().update({ guest_id: survivor.id, guest_identifier: survivor.identifier });
+}
+
+/** "Forget me" and guest deletion: the submission stays, the person goes. */
+async function anonymizeGuest(guestId) {
+  await db('selection_submissions').where({ guest_id: guestId })
+    .update({ guest_id: null, guest_name: null });
+}
+
+/**
+ * The name to show the photographer for an anonymous viewer: the one they
+ * last typed with their feedback, if any. Registered guests carry their own.
+ */
+async function feedbackName(eventId, viewer) {
+  const row = await scopeToViewer(
+    db('photo_feedback').where({ event_id: eventId }).whereNotNull('guest_name'),
+    viewer,
+  ).orderBy('id', 'desc').first('guest_name');
+  return row?.guest_name || null;
+}
+
+/**
+ * Tell the photographer: the admin bell, the `selection.submitted` webhook
+ * and a mail to the gallery's admin address. Never throws: the submission is
+ * already stored, and a notification that failed must not undo that for the
+ * guest.
+ */
+async function notifySubmitted(event, submission, { guestName, guestIdentifier, rejected }) {
+  const isApproval = submission.kind === 'approval';
+  await logActivity(isApproval ? 'approval_submitted' : 'selection_submitted', {
+    kind: submission.kind,
+    guestName: guestName || 'Anonymous',
+    count: submission.item_count,
+    eventName: event.event_name,
+  }, event.id, { type: 'guest', id: String(guestIdentifier).substring(0, 16), name: guestName || 'Anonymous' });
+
+  // Lazily, as the other routes do: neither module is needed to check a lock.
+  const webhookService = require('./webhookService');
+  await webhookService.fire('selection.submitted', {
+    event: webhookService.buildEventSubject(event),
+    submission: {
+      id: submission.id,
+      kind: submission.kind,
+      guest_name: guestName || null,
+      count: submission.item_count,
+      ...(isApproval ? { rejected_count: rejected || 0 } : {}),
+      note: submission.note,
+      submitted_at: submission.submitted_at,
+    },
+  });
+
+  try {
+    const { queueEmail } = require('./emailProcessor');
+    const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
+    const base = await getAbsoluteFrontendUrl(null, { override: process.env.ADMIN_URL });
+    // queueEmail writes scheduled_at as NULL: the mail goes out on the next
+    // queue pass, and no recipient means nothing is queued.
+    await queueEmail(event.id, event.admin_email, 'selection_submitted', {
+      event_name: event.event_name,
+      guest_name: guestName || '',
+      item_count: String(submission.item_count),
+      rejected_count: isApproval && rejected ? String(rejected) : '',
+      note: submission.note || '',
+      is_selection: isApproval ? '' : 'yes',
+      is_approval: isApproval ? 'yes' : '',
+      admin_link: `${base}/admin/events/${event.id}?tab=guests`,
+    });
+  } catch (error) {
+    logger.warn('selection submission mail not queued', { eventId: event.id, error: error.message });
+  }
+}
+
+module.exports = {
+  feedbackName,
+  notifySubmitted,
+  KINDS,
+  NOTE_MAX_LENGTH,
+  LOCKED_TYPES,
+  lockFor,
+  getState,
+  submit,
+  listForEvent,
+  reopen,
+  mergeGuests,
+  anonymizeGuest,
+};

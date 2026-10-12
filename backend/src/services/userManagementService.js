@@ -639,6 +639,10 @@ async function deleteAdminUser(id, deletedById) {
       await trx('event_admin_assignments').where('admin_user_id', id).del();
       await trx('event_admin_assignments').where('assigned_by', id).update({ assigned_by: null });
     }
+    // The submissions this admin reopened (migration 291): SET NULL.
+    if (await trx.schema.hasTable('selection_submissions')) {
+      await trx('selection_submissions').where('reopened_by', id).update({ reopened_by: null });
+    }
     if (await trx.schema.hasColumn('photos', 'uploaded_by_admin_id')) {
       await trx('photos').where('uploaded_by_admin_id', id).update({ uploaded_by_admin_id: null });
     }
