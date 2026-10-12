@@ -145,6 +145,7 @@
     "uploadMedia": "Foto's & video's uploaden",
     "maxFilesReached": "Maximaal {{limit}} bestanden toegestaan",
     "someFilesSkipped": "Er kunnen nog maar {{allowed}} bestanden worden toegevoegd (limiet {{limit}})",
+    "filesOverLimit": "{{allowed}} van {{found}} bestanden toegevoegd. Eén upload bevat maximaal {{limit}} bestanden; upload de rest apart.",
     "tooManyFiles": "Maximaal {{limit}} bestanden kunnen tegelijk worden geupload",
     "limitInfo": "{{selected}} van {{limit}} bestanden geselecteerd ({{remaining}} resterend)",
     "limitReached": "Uploadlimiet bereikt ({{limit}} bestanden per batch)",

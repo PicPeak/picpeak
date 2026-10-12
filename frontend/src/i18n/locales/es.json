@@ -154,6 +154,7 @@
     "importFromSelectedFolder": "Importar desde la carpeta seleccionada",
     "maxFilesReached": "Máximo {{limit}} archivos permitidos",
     "someFilesSkipped": "Solo se pueden agregar {{allowed}} archivos más (límite {{limit}})",
+    "filesOverLimit": "Se añadieron {{allowed}} de {{found}} archivos. Una subida admite como máximo {{limit}} archivos; sube el resto por separado.",
     "tooManyFiles": "Máximo {{limit}} archivos pueden subirse a la vez",
     "limitInfo": "{{selected}} de {{limit}} archivos seleccionados ({{remaining}} restantes)",
     "limitReached": "Límite de subida alcanzado ({{limit}} archivos por lote)",

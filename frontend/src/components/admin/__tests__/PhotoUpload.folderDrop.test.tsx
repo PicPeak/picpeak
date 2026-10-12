@@ -23,7 +23,9 @@ vi.mock('react-i18next', async () => {
     ...actual,
     useTranslation: () => ({
       t: (key: string, opts?: any) =>
-        (opts && typeof opts.allowed === 'number' ? `${key}:${opts.allowed}:${opts.limit}` : key),
+        (opts && typeof opts.allowed === 'number'
+          ? `${key}:${opts.allowed}:${'found' in opts ? `${opts.found}:` : ''}${opts.limit}`
+          : key),
     }),
   };
 });
@@ -156,7 +158,7 @@ describe('PhotoUpload folder drop', () => {
       items: [{ kind: 'file', webkitGetAsEntry: () => dirEntry('shoot', children) }],
     });
 
-    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.someFilesSkipped:3:3'));
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.filesOverLimit:3:5:3'));
     expect(screen.getByText('3.jpg')).toBeInTheDocument();
     expect(screen.queryByText('4.jpg')).not.toBeInTheDocument();
   });
@@ -173,7 +175,7 @@ describe('PhotoUpload folder drop', () => {
     drop(['a1.jpg', 'a2.jpg']);
     drop(['b1.jpg', 'b2.jpg']);
 
-    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.someFilesSkipped:1:3'));
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.filesOverLimit:1:2:3'));
     await waitFor(() => expect(screen.getByText('b1.jpg')).toBeInTheDocument());
     expect(screen.getByText('a1.jpg')).toBeInTheDocument();
     expect(screen.getByText('a2.jpg')).toBeInTheDocument();
@@ -377,9 +379,21 @@ describe('PhotoUpload folder drop', () => {
       ],
     });
 
-    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.someFilesSkipped:3:3'));
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.filesOverLimit:3:5:3'));
     expect(screen.getByText('3.jpg')).toBeInTheDocument();
     expect(screen.queryByText('4.jpg')).not.toBeInTheDocument();
+  });
+
+  it('names the found count as a lower bound when the walk stopped at its ceiling', async () => {
+    // 2500 files: the walk reads 2001 (one above the largest possible cap)
+    // and leaves the rest, so "2001+" rather than a number that looks exact.
+    const children = Array.from({ length: 2500 }, (_, i) => fileEntry(`${i}.jpg`));
+    await dropOnZone({
+      files: [],
+      items: [{ kind: 'file', webkitGetAsEntry: () => dirEntry('archive', children) }],
+    });
+
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.filesOverLimit:3:2001+:3'));
   });
 
   it('keeps every JPEG up to the cap when sidecars sit between them', async () => {

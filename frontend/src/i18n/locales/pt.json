@@ -180,6 +180,7 @@
     "uploadMedia": "Enviar Fotos e Vídeos",
     "maxFilesReached": "Máximo de {{limit}} arquivos permitido",
     "someFilesSkipped": "Apenas {{allowed}} arquivos adicionais podem ser adicionados (limite {{limit}})",
+    "filesOverLimit": "{{allowed}} de {{found}} arquivos adicionados. Um envio aceita no máximo {{limit}} arquivos; envie o restante separadamente.",
     "tooManyFiles": "O limite máximo é de {{limit}} arquivos por vez",
     "limitInfo": "{{selected}} de {{limit}} arquivos selecionados ({{remaining}} restantes)",
     "limitReached": "Limite de envio atingido ({{limit}} arquivos por lote)",

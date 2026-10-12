@@ -861,6 +861,7 @@
     "uploadMedia": "Naloži fotografije in videe",
     "maxFilesReached": "Dovoljenih je največ {{limit}} datotek",
     "someFilesSkipped": "Dodati je mogoče samo še {{allowed}} datotek (omejitev {{limit}})",
+    "filesOverLimit": "Dodanih {{allowed}} od {{found}} datotek. En prenos sprejme največ {{limit}} datotek; preostale naložite posebej.",
     "tooManyFiles": "Naenkrat je mogoče naložiti največ {{limit}} datotek",
     "limitInfo": "Izbranih {{selected}} od {{limit}} datotek (preostane {{remaining}})",
     "limitReached": "Dosežena omejitev nalaganja ({{limit}} datotek na paket)",

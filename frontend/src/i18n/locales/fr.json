@@ -150,6 +150,7 @@
     "uploadMedia": "Téléverser des photos & vidéos",
     "maxFilesReached": "Maximum {{limit}} fichiers autorisés",
     "someFilesSkipped": "Seulement {{allowed}} fichiers supplémentaires peuvent être ajoutés (limite {{limit}})",
+    "filesOverLimit": "{{allowed}} fichiers sur {{found}} ajoutés. Un envoi accepte au maximum {{limit}} fichiers ; envoyez le reste séparément.",
     "tooManyFiles": "Maximum {{limit}} fichiers peuvent être téléversés en une seule fois",
     "limitInfo": "{{selected}} sur {{limit}} fichiers sélectionnés ({{remaining}} restants)",
     "limitReached": "Limite de téléversement atteinte ({{limit}} fichiers par lot)",
