@@ -5,7 +5,7 @@ import { KEEP_BAND_VIEWPORTS } from './lazyBands';
 
 /**
  * Row windowing for the layouts that position every tile from a precomputed
- * box (Justified, Masonry rows) — issue 1733, step 2.
+ * box (Masonry rows) — issue 1733, step 2.
  *
  * Only the rows near the viewport are in the DOM. The grid container keeps
  * the layout's full height and the tiles stay absolutely positioned at their
@@ -88,8 +88,6 @@ interface ScrollAnchor {
 export interface WindowedItems {
   /** The items to render, in layout order. */
   visible: JustifiedLayoutItem[];
-  /** Keep a photo's row, and the rows next to it, mounted while its tile has focus. */
-  pin: (photoId: number | null) => void;
 }
 
 /**
@@ -118,7 +116,6 @@ export function useWindowedItems(
   }, [items, enabled]);
 
   const [range, setRange] = useState<RowRange>({ start: 0, end: 0 });
-  const [pinned, setPinned] = useState<number | null>(null);
   const modelRef = useRef(model);
   const anchorRef = useRef<ScrollAnchor | null>(null);
   const widthRef = useRef(width);
@@ -213,26 +210,13 @@ export function useWindowedItems(
   }, [enabled, measure, markAnchor]);
 
   const visible = useMemo(() => {
-    const { items, rows, rowOf } = model;
+    const { items, rows } = model;
     if (!enabled) return items;
     // The range may predate this layout for one unpainted render.
     const end = Math.min(range.end, rows.length);
     const start = Math.min(range.start, end);
-    const take = (from: number, to: number) => (from < to ? items.slice(rows[from].from, rows[to - 1].to) : []);
-    const pinnedRow = pinned === null ? undefined : rowOf.get(pinned);
-    if (pinnedRow === undefined) return take(start, end);
-    // The focused row and its two neighbours, so Tab and Shift+Tab land on
-    // the next photo (and scroll to it) wherever the window has gone since.
-    const keepStart = Math.max(0, pinnedRow - 1);
-    const keepEnd = Math.min(rows.length, pinnedRow + 2);
-    if (start === end || (keepStart <= end && keepEnd >= start)) {
-      return start === end ? take(keepStart, keepEnd) : take(Math.min(start, keepStart), Math.max(end, keepEnd));
-    }
-    // Document order stays photo order.
-    return keepEnd < start
-      ? [...take(keepStart, keepEnd), ...take(start, end)]
-      : [...take(start, end), ...take(keepStart, keepEnd)];
-  }, [enabled, model, range, pinned]);
+    return start < end ? items.slice(rows[start].from, rows[end - 1].to) : [];
+  }, [enabled, model, range]);
 
-  return { visible, pin: setPinned };
+  return { visible };
 }

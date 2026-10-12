@@ -1,5 +1,5 @@
 /**
- * Row windowing for Justified and Masonry rows (issue 1733, step 2).
+ * Row windowing for Masonry rows (issue 1733, step 2).
  *
  * jsdom has no layout, so the grid's position is stood up through
  * getBoundingClientRect on the `.photo-grid` container and the scroll
@@ -7,9 +7,8 @@
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, act, fireEvent } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 
-import { JustifiedGalleryLayout } from '../JustifiedGalleryLayout';
 import { MasonryGalleryLayout } from '../MasonryGalleryLayout';
 import { buildRows, visibleRowRange, WINDOW_MIN_PHOTOS, type RowBox } from '../rowWindow';
 import { calculateJustifiedLayout, createJustifiedPhotos } from '../../../../utils/justifiedLayoutCalculator';
@@ -28,8 +27,9 @@ vi.mock('../../PhotoCard', () => ({
 }));
 vi.mock('../../../common', () => ({ AuthenticatedImage: () => null }));
 vi.mock('../../../gallery/FeedbackIdentityModal', () => ({ FeedbackIdentityModal: () => null }));
+const themeMode = vi.hoisted(() => ({ current: 'rows' }));
 vi.mock('../../../../contexts/ThemeContext', () => ({
-  useTheme: () => ({ theme: { gallerySettings: { masonryMode: 'rows' } } }),
+  useTheme: () => ({ theme: { gallerySettings: { masonryMode: themeMode.current } } }),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../../hooks/useLocalizedDate', () => ({ useLocalizedDate: () => ({ format: () => '' }) }));
@@ -68,6 +68,7 @@ function scrollGridTo(top: number) {
 
 beforeEach(() => {
   mounts.length = 0;
+  themeMode.current = 'rows';
   gridTop = 0;
   gridWidth = 1200;
   resizeCallbacks = [];
@@ -142,7 +143,6 @@ describe('visibleRowRange', () => {
 });
 
 describe.each([
-  ['Justified', JustifiedGalleryLayout],
   ['Masonry rows', MasonryGalleryLayout],
 ])('%s windowing', (_name, Layout) => {
   it('mounts every tile of a small gallery', () => {
@@ -246,28 +246,28 @@ describe.each([
 
 });
 
-// Justified tiles are focusable themselves. Masonry rows tiles are not: focus
-// sits on a button inside, which PhotoCard already drops with the image.
-describe('Justified windowing and keyboard focus', () => {
-  it('keeps the focused tile mounted when its row scrolls out of the window', () => {
-    render(<JustifiedGalleryLayout {...layoutProps(makePhotos(2000))} />);
-    const first = tiles()[0];
-    fireEvent.focus(first);
-    scrollGridTo(-40000);
-    // Its row stays, first in document order, ahead of the windowed rows.
-    expect(tileIds()[0]).toBe(1);
-    expect(tileIds()[tileIds().length - 1]).toBeGreaterThan(100);
-    expect(tileIds()).toEqual([...tileIds()].sort((a, b) => a - b));
+// The picker's "Google Photos" option stores masonryMode 'justified'. It is
+// the rows mode under another name, not a fall-through to columns.
+describe('Masonry with the stored justified mode', () => {
+  const boxes = () => tiles().map((tile) => `${tile.style.left}/${tile.style.top}/${tile.style.width}/${tile.style.height}`);
 
-    // The next row is kept too, so Tab has somewhere to go.
-    const beyondFirstRow = tiles().find((tile) => parseFloat(tile.style.top) > 0)!;
-    expect(Number(beyondFirstRow.dataset.photo)).toBeLessThan(20);
+  it('renders the same justified rows as rows mode', () => {
+    const photos = makePhotos(12);
+    const rows = render(<MasonryGalleryLayout {...layoutProps(photos)} />);
+    const expected = boxes();
+    expect(expected).toHaveLength(12);
+    expect(new Set(tiles().map((tile) => tile.style.top)).size).toBeGreaterThan(1);
+    rows.unmount();
 
-    // Focus on its way to the next tile must not let go of the rows first.
-    fireEvent.blur(tiles()[0], { relatedTarget: tiles()[1] });
-    expect(tileIds()[0]).toBe(1);
+    themeMode.current = 'justified';
+    render(<MasonryGalleryLayout {...layoutProps(photos)} />);
+    expect(boxes()).toEqual(expected);
+  });
 
-    fireEvent.blur(screen.getAllByTestId('tile')[0]);
-    expect(tileIds()[0]).toBeGreaterThan(100);
+  it('is windowed like rows mode in a large gallery', () => {
+    themeMode.current = 'justified';
+    render(<MasonryGalleryLayout {...layoutProps(makePhotos(2000))} />);
+    expect(tiles().length).toBeGreaterThan(0);
+    expect(tiles().length).toBeLessThan(150);
   });
 });

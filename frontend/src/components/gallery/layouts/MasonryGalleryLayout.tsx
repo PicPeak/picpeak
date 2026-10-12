@@ -213,7 +213,9 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   }, [photos]);
   const gallerySettings = theme.gallerySettings || {};
   const gutter = gallerySettings.masonryGutter || 16;
-  const mode = gallerySettings.masonryMode || 'columns';
+  // 'justified' is the picker's "Google Photos" option: the same justified rows.
+  const storedMode = gallerySettings.masonryMode || 'columns';
+  const mode = storedMode === 'justified' ? 'rows' : storedMode;
   const targetRowHeight = gallerySettings.masonryRowHeight || 250;
   const lastRowBehavior = gallerySettings.masonryLastRowBehavior || 'left';
   const scale = gallerySettings.thumbnailScale || 'md';
