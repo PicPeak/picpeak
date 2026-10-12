@@ -933,6 +933,18 @@
       "reviewUploadsHelp": "Retient les envois des membres de l'équipe dont le rôle n'a pas l'autorisation « Review Team Uploads » : ils restent masqués pour les invités et les clients jusqu'à ce que vous ou un réviseur les approuviez dans l'onglet Photos. Les rôles Admin, Editor et Solo Photographer ont cette autorisation par défaut, leurs envois ne sont donc jamais retenus.",
       "reviewUploadsHelpMember": "Vos envois dans cette galerie restent masqués pour les invités et les clients jusqu'à ce que le propriétaire ou un réviseur les approuve.",
       "reviewUploadsHelpReviewer": "Les envois des membres de l'équipe sans l'autorisation « Review Team Uploads » attendent une approbation dans l'onglet Photos. Les vôtres sont publiés immédiatement."
+    },
+    "nextSteps": {
+      "title": "Avant de partager",
+      "progress": "{{done}} sur {{total}} terminées",
+      "done": "Terminé",
+      "todo": "À faire",
+      "photos": "Ajouter des photos",
+      "photosLink": "Ouvrir Photos",
+      "customer": "Ajouter un e-mail ou un compte client",
+      "customerLink": "Ouvrir les paramètres",
+      "publish": "Publier la galerie",
+      "publishLink": "Publier"
     }
   },
   "settings": {

@@ -2334,7 +2334,19 @@
     "noEventsYet": "No galleries yet",
     "noEventsYetHint": "Create a gallery to share photos with a client.",
     "downloadLimitResetAction": "Reset downloads",
-    "notFoundHint": "It may have been deleted, or the link is wrong."
+    "notFoundHint": "It may have been deleted, or the link is wrong.",
+    "nextSteps": {
+      "title": "Before you share",
+      "progress": "{{done}} of {{total}} done",
+      "done": "Done",
+      "todo": "To do",
+      "photos": "Add photos",
+      "photosLink": "Open Photos",
+      "customer": "Add a customer email or account",
+      "customerLink": "Open Settings",
+      "publish": "Publish the gallery",
+      "publishLink": "Publish"
+    }
   },
   "settings": {
     "title": "System Settings",

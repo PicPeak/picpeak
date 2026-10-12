@@ -921,6 +921,18 @@
       "reviewUploadsHelp": "Houdt uploads tegen van teamleden wier rol de machtiging „Review Team Uploads” niet heeft: ze blijven verborgen voor gasten en klanten totdat u of een beoordelaar ze goedkeurt op het tabblad Foto's. De rollen Admin, Editor en Solo Photographer hebben die machtiging standaard, dus hun uploads worden nooit tegengehouden.",
       "reviewUploadsHelpMember": "Uw uploads naar deze galerij blijven verborgen voor gasten en klanten totdat de eigenaar of een beoordelaar ze goedkeurt.",
       "reviewUploadsHelpReviewer": "Uploads van teamleden zonder de machtiging „Review Team Uploads” wachten op goedkeuring op het tabblad Foto's. Die van u worden direct gepubliceerd."
+    },
+    "nextSteps": {
+      "title": "Voordat je deelt",
+      "progress": "{{done}} van {{total}} klaar",
+      "done": "Klaar",
+      "todo": "Te doen",
+      "photos": "Foto's toevoegen",
+      "photosLink": "Foto's openen",
+      "customer": "E-mailadres of account van de klant toevoegen",
+      "customerLink": "Instellingen openen",
+      "publish": "Galerij publiceren",
+      "publishLink": "Publiceren"
     }
   },
   "settings": {

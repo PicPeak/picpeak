@@ -2070,6 +2070,18 @@
       "reviewUploadsHelp": "Zadrži nalaganja članov ekipe, katerih vloga nima dovoljenja »Review Team Uploads«: ostanejo skrita gostom in strankam, dokler jih vi ali pregledovalec ne odobrite na zavihku Fotografije. Vloge Admin, Editor in Solo Photographer imajo to dovoljenje privzeto, zato njihova nalaganja nikoli niso zadržana.",
       "reviewUploadsHelpMember": "Vaša nalaganja v to galerijo ostanejo skrita gostom in strankam, dokler jih lastnik ali pregledovalec ne odobri.",
       "reviewUploadsHelpReviewer": "Nalaganja članov ekipe brez dovoljenja »Review Team Uploads« čakajo na odobritev na zavihku Fotografije. Vaša so objavljena takoj."
+    },
+    "nextSteps": {
+      "title": "Pred deljenjem",
+      "progress": "Opravljeno: {{done}} od {{total}}",
+      "done": "Opravljeno",
+      "todo": "Odprto",
+      "photos": "Dodajte fotografije",
+      "photosLink": "Odpri Fotografije",
+      "customer": "Dodajte e-pošto ali račun stranke",
+      "customerLink": "Odpri nastavitve",
+      "publish": "Objavite galerijo",
+      "publishLink": "Objavi"
     }
   },
   "settings": {

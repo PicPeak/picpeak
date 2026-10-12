@@ -2927,7 +2927,19 @@
     "noEventsYet": "Noch keine Galerien",
     "noEventsYetHint": "Erstellen Sie eine Galerie, um Fotos mit einem Kunden zu teilen.",
     "downloadLimitResetAction": "Downloads zurücksetzen",
-    "notFoundHint": "Sie wurde vielleicht gelöscht, oder der Link ist falsch."
+    "notFoundHint": "Sie wurde vielleicht gelöscht, oder der Link ist falsch.",
+    "nextSteps": {
+      "title": "Vor dem Teilen",
+      "progress": "{{done}} von {{total}} erledigt",
+      "done": "Erledigt",
+      "todo": "Offen",
+      "photos": "Fotos hinzufügen",
+      "photosLink": "Fotos öffnen",
+      "customer": "Kunden-E-Mail oder Kundenkonto hinzufügen",
+      "customerLink": "Einstellungen öffnen",
+      "publish": "Galerie veröffentlichen",
+      "publishLink": "Veröffentlichen"
+    }
   },
   "settings": {
     "title": "Systemeinstellungen",

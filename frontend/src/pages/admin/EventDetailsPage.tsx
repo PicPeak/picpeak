@@ -412,6 +412,7 @@ export const EventDetailsPage: React.FC = () => {
               onExtendExpiration={(days) => extendMutation.mutate(days)}
               isExtending={extendMutation.isPending}
               onRevealNow={() => revealMutation.mutate()}
+              onPublish={() => setShowPublishDialog(true)}
             />
           )}
 
