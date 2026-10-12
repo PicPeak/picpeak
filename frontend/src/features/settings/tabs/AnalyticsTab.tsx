@@ -33,6 +33,13 @@ const ProxiedNotice: React.FC = () => {
               'PicPeak forwards sanitized page views and gallery events without loading third-party code. The collector receives visitor IP and user agent, but no query strings, page titles, referrers, tokens or account identifiers. Production collectors must use HTTPS.',
             )}
           </p>
+          {/* Easy to mistake for broken analytics after an upgrade (issue 1910). */}
+          <p className="mt-2">
+            {t(
+              'settings.analytics.privacySignalsText',
+              'Visitors whose browser sends Do Not Track or Global Privacy Control (Brave does by default) are not counted: no event leaves their browser.',
+            )}
+          </p>
         </div>
       </div>
     </div>

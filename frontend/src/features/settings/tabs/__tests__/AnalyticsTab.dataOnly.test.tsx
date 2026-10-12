@@ -29,6 +29,8 @@ it.each(['umami', 'rybbit'] as const)('offers data-only %s collection and HTTPS 
   show(provider);
   expect(screen.getByText('Data-only analytics forwarding')).toBeInTheDocument();
   expect(screen.getByText(/Production collectors must use HTTPS/)).toBeInTheDocument();
+  // Issue 1910: say that opted-out browsers are not counted.
+  expect(screen.getByText(/Do Not Track or Global Privacy Control/)).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'custom' })).toBeNull();
 });
 it('says next to the share URL that embedding also needs the dashboard origin in frame-src', () => {
