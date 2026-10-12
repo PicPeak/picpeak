@@ -3345,6 +3345,17 @@
       "noneToRead": "No photos left to read",
       "button": "Read Credits from EXIF"
     },
+    "placeholderBackfill": {
+      "title": "Tile Placeholders",
+      "description": "Compute the blurred placeholder a gallery tile shows while its thumbnail loads, for photos added before placeholders existed. Only the stored thumbnails are read, never the originals. New uploads get theirs automatically.",
+      "total": "Photos with a Thumbnail",
+      "withPlaceholder": "With a Placeholder",
+      "withoutPlaceholder": "Without a Placeholder",
+      "result": "Last run: {{success}} computed, {{failed}} thumbnails unreadable",
+      "running": "Computing placeholders...",
+      "noneToFill": "All photos already have a placeholder",
+      "button": "Compute Placeholders"
+    },
     "saveBar": {
       "unsaved": "You have unsaved changes",
       "leaveTitle": "Discard unsaved changes?",

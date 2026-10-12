@@ -3,6 +3,7 @@ import { Download, Maximize2, Check, MessageSquare, Heart } from 'lucide-react';
 import { useInView } from 'react-intersection-observer';
 import { AuthenticatedImage } from '../common';
 import { thumbnailUrlForTile } from './imageTiers';
+import { TileImage } from './TileImage';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { feedbackService } from '../../services/feedback.service';
 import { ColorLabelBadge } from './ColorLabelBadge';
@@ -475,7 +476,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     >
       {inView && tile ? (
         <>
-          <AuthenticatedImage {...imageProps} src={tileSrc} />
+          {/* Inside the mounted branch on purpose: the blurred placeholder
+              (issue 1733) is decoded only for tiles that are mounted, and
+              goes with them when the release band lets a tile go. */}
+          <TileImage {...imageProps} src={tileSrc} thumbHash={photo.thumb_hash} />
 
           {/* The guest's own colour label (#1044) — visible without hovering
               or opening anything, which is the point: the client watches

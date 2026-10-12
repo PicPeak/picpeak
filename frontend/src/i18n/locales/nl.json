@@ -1466,6 +1466,17 @@
       "noneToRead": "Geen foto’s meer te lezen",
       "button": "Makers uit EXIF lezen"
     },
+    "placeholderBackfill": {
+      "title": "Tegelplaatshouders",
+      "description": "Berekent de vervaagde plaatshouder die een galerijtegel toont terwijl de miniatuur laadt, voor foto’s die zijn toegevoegd voordat er plaatshouders bestonden. Alleen de opgeslagen miniaturen worden gelezen, nooit de originelen. Nieuwe uploads krijgen er automatisch een.",
+      "total": "Foto’s met miniatuur",
+      "withPlaceholder": "Met plaatshouder",
+      "withoutPlaceholder": "Zonder plaatshouder",
+      "result": "Laatste run: {{success}} berekend, {{failed}} miniaturen onleesbaar",
+      "running": "Plaatshouders worden berekend...",
+      "noneToFill": "Alle foto’s hebben al een plaatshouder",
+      "button": "Plaatshouders berekenen"
+    },
     "health": {
       "title": "Gezondheid",
       "description": "Achtergrondfouten die aandacht nodig hebben — vastgelopen e-mails, mislukte controles en opruiming."

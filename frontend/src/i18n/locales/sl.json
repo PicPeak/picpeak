@@ -3059,6 +3059,17 @@
       "noneToRead": "Ni več fotografij za branje",
       "button": "Preberi avtorje iz EXIF"
     },
+    "placeholderBackfill": {
+      "title": "Nadomestne slike ploščic",
+      "description": "Izračuna zamegljeno nadomestno sliko, ki jo ploščica galerije prikaže med nalaganjem sličice, za fotografije, dodane preden so nadomestne slike obstajale. Berejo se samo shranjene sličice, nikoli izvirniki. Nova nalaganja jo dobijo samodejno.",
+      "total": "Fotografije s sličico",
+      "withPlaceholder": "Z nadomestno sliko",
+      "withoutPlaceholder": "Brez nadomestne slike",
+      "result": "Zadnji zagon: izračunano {{success}}, neberljivih sličic {{failed}}",
+      "running": "Računanje nadomestnih slik...",
+      "noneToFill": "Vse fotografije že imajo nadomestno sliko",
+      "button": "Izračunaj nadomestne slike"
+    },
     "health": {
       "title": "Stanje",
       "description": "Napake v ozadju, ki potrebujejo pozornost — obtičala e-pošta, neuspele preverbe in čiščenje."

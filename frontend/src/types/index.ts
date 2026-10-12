@@ -210,6 +210,10 @@ export interface Photo {
   source_filename?: string | null;
   url: string;
   thumbnail_url?: string;
+  // Blurred tile placeholder (issue 1733): a base64 ThumbHash of the
+  // thumbnail, painted behind the tile while it loads. Null for photos
+  // processed before the column existed and not backfilled.
+  thumb_hash?: string | null;
   hero_url?: string; // Hero-optimized image URL (1920x1080) for full-width hero sections
   // Lightbox preview URL (#492). Set only when the admin has flipped
   // lightbox_preview_enabled in Settings → Thumbnails. Aspect-preserved

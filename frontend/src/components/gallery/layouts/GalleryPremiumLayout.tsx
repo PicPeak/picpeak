@@ -20,8 +20,9 @@ import { useInView } from 'react-intersection-observer';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
-import { AuthenticatedImage, PoweredBy } from '../../common';
+import { PoweredBy } from '../../common';
 import { thumbnailUrlForTile } from '../imageTiers';
+import { TileImage } from '../TileImage';
 import { feedbackService } from '../../../services/feedback.service';
 import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
@@ -113,7 +114,11 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
       onClick={onClick}
       data-testid={`photo-card-${photo.id}`}
     >
-      <AuthenticatedImage
+      <TileImage
+        // Blurred placeholder (issue 1733). Every card mounts its image at
+        // page load here, so the hash is only handed over (and decoded) once
+        // the card is in view.
+        thumbHash={inView ? photo.thumb_hash : null}
         src={tieredSrc}
         alt={photo.filename}
         // No inline height: the card now has a definite one, so the

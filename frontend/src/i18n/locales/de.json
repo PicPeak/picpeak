@@ -3938,6 +3938,17 @@
       "noneToRead": "Keine Fotos mehr zu lesen",
       "button": "Urheber aus EXIF lesen"
     },
+    "placeholderBackfill": {
+      "title": "Kachel-Platzhalter",
+      "description": "Berechnet den unscharfen Platzhalter, den eine Galerie-Kachel zeigt, während ihr Miniaturbild lädt, für Fotos, die hinzugefügt wurden, bevor es Platzhalter gab. Gelesen werden nur die gespeicherten Miniaturbilder, nie die Originale. Neue Uploads erhalten ihren Platzhalter automatisch.",
+      "total": "Fotos mit Miniaturbild",
+      "withPlaceholder": "Mit Platzhalter",
+      "withoutPlaceholder": "Ohne Platzhalter",
+      "result": "Letzter Lauf: {{success}} berechnet, {{failed}} Miniaturbilder nicht lesbar",
+      "running": "Platzhalter werden berechnet...",
+      "noneToFill": "Alle Fotos haben bereits einen Platzhalter",
+      "button": "Platzhalter berechnen"
+    },
     "saveBar": {
       "unsaved": "Du hast ungespeicherte Änderungen",
       "leaveTitle": "Ungespeicherte Änderungen verwerfen?",

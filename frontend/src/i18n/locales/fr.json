@@ -1509,6 +1509,17 @@
       "noneToRead": "Plus aucune photo à lire",
       "button": "Lire les crédits EXIF"
     },
+    "placeholderBackfill": {
+      "title": "Aperçus flous des miniatures",
+      "description": "Calcule l’aperçu flou qu’une photo de la galerie affiche pendant le chargement de sa miniature, pour les photos ajoutées avant l’existence de ces aperçus. Seules les miniatures enregistrées sont lues, jamais les originaux. Les nouveaux envois reçoivent le leur automatiquement.",
+      "total": "Photos avec miniature",
+      "withPlaceholder": "Avec aperçu flou",
+      "withoutPlaceholder": "Sans aperçu flou",
+      "result": "Dernière exécution : {{success}} calculés, {{failed}} miniatures illisibles",
+      "running": "Calcul des aperçus...",
+      "noneToFill": "Toutes les photos ont déjà un aperçu flou",
+      "button": "Calculer les aperçus flous"
+    },
     "health": {
       "title": "Santé",
       "description": "Échecs en arrière-plan nécessitant une intervention — e-mails bloqués, vérifications échouées et nettoyage."

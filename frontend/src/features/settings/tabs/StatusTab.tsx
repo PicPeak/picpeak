@@ -10,6 +10,7 @@ import {
   CalendarClock,
   UserRound,
   RotateCw,
+  Sparkles,
   AlertTriangle,
 } from 'lucide-react';
 import { Button, Card, Notice } from '../../../components/common';
@@ -190,6 +191,27 @@ export const StatusTab: React.FC<StatusTabProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photo-credit-status'] });
+    },
+  });
+
+  // Blurred tile placeholders (issue 1733). Same shape as the credit backfill.
+  const { data: placeholderStatus } = useQuery({
+    queryKey: ['photo-placeholder-status'],
+    queryFn: async () => {
+      const res = await api.get('/admin/photos/repair-thumb-hashes/status');
+      return res.data;
+    },
+    enabled: isActive && canManageSystem,
+    refetchInterval: 10000,
+  });
+
+  const placeholderMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/admin/photos/repair-thumb-hashes');
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['photo-placeholder-status'] });
     },
   });
 
@@ -843,6 +865,69 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                 : Number(creditStatus.undecided) === 0
                   ? t('settings.creditBackfill.noneToRead')
                   : t('settings.creditBackfill.button')}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Tile placeholders (issue 1733) */}
+      {placeholderStatus && canManageSystem && (
+        <Card padding="md">
+          <h2 className="text-lg font-semibold text-heading mb-4 flex items-center gap-2">
+            <Sparkles className="w-5 h-5" />
+            {t('settings.placeholderBackfill.title')}
+          </h2>
+
+          <p className="text-sm text-soft mb-4">
+            {t('settings.placeholderBackfill.description')}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="bg-subtle rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-heading">{placeholderStatus.total}</p>
+              <p className="text-xs text-soft">{t('settings.placeholderBackfill.total')}</p>
+            </div>
+            <div className="bg-subtle rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-success-text">{placeholderStatus.withPlaceholder}</p>
+              <p className="text-xs text-soft">{t('settings.placeholderBackfill.withPlaceholder')}</p>
+            </div>
+            <div className="bg-subtle rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-heading">{placeholderStatus.withoutPlaceholder}</p>
+              <p className="text-xs text-soft">{t('settings.placeholderBackfill.withoutPlaceholder')}</p>
+            </div>
+          </div>
+
+          {placeholderStatus.lastResult && (
+            <p className="text-sm text-soft mb-4">
+              {t('settings.placeholderBackfill.result', {
+                success: placeholderStatus.lastResult.success,
+                failed: placeholderStatus.lastResult.failed,
+              })}
+              {Number(placeholderStatus.lastResult.skipped) > 0 && (
+                <span className="block text-warning-text mt-1">
+                  {t('settings.captureDates.skipped', {
+                    count: placeholderStatus.lastResult.skipped,
+                    defaultValue: '{{count}} photo(s) were changed by something else while the run was reading them and were not updated.',
+                  })}
+                </span>
+              )}
+            </p>
+          )}
+
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => placeholderMutation.mutate()}
+              isLoading={placeholderMutation.isPending || placeholderStatus.isRunning}
+              disabled={Number(placeholderStatus.withoutPlaceholder) === 0 || placeholderStatus.isRunning}
+              leftIcon={<Sparkles className="w-4 h-4" />}
+            >
+              {placeholderStatus.isRunning
+                ? t('settings.placeholderBackfill.running')
+                : Number(placeholderStatus.withoutPlaceholder) === 0
+                  ? t('settings.placeholderBackfill.noneToFill')
+                  : t('settings.placeholderBackfill.button')}
             </Button>
           </div>
         </Card>

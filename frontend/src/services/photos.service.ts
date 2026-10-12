@@ -9,6 +9,8 @@ export interface AdminPhoto {
   path: string;
   url: string;
   thumbnail_url: string | null;
+  // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
+  thumb_hash?: string | null;
   type: string;
   category_id: number | string | null;
   category_name: string | null;

@@ -1,11 +1,11 @@
 import React, { useRef, useState } from 'react';
 import { motion, useInView } from 'framer-motion';
 import { Heart, Check } from 'lucide-react';
-import { AuthenticatedImage } from '../../../common';
 import { ColorLabelBadge } from '../../ColorLabelBadge';
 import { FirstLookBadge } from '../../GalleryTileBadges';
 import type { Photo } from '../../../../types';
 import { lightboxImageUrl } from '../../imageTiers';
+import { TileImage } from '../../TileImage';
 
 interface StoryPhotoCardProps {
   photo: Photo;
@@ -108,7 +108,12 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
         {!isNearViewport ? (
           <div className="w-full h-full bg-elevated" aria-hidden="true" />
         ) : (
-        <AuthenticatedImage
+        <TileImage
+          // Blurred placeholder (issue 1733) until the preview is in. Not for
+          // a letterboxed card: the placeholder covers the box and the photo
+          // would not. Fades with the image's own 0.7s entrance.
+          thumbHash={fit === 'cover' ? photo.thumb_hash : null}
+          placeholderFadeClassName="duration-700"
           // A card tile, and it used to render the full ORIGINAL at
           // object-cover — the one place where the reporter's "hundreds of
           // megabytes for a gallery" was literally true (#1166).

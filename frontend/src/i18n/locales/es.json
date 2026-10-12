@@ -1352,6 +1352,17 @@
       "noneToRead": "No quedan fotos por leer",
       "button": "Leer autores del EXIF"
     },
+    "placeholderBackfill": {
+      "title": "Marcadores de las miniaturas",
+      "description": "Calcula el marcador difuminado que muestra una foto de la galería mientras se carga su miniatura, para las fotos añadidas antes de que existieran los marcadores. Solo se leen las miniaturas guardadas, nunca los originales. Las nuevas subidas lo reciben automáticamente.",
+      "total": "Fotos con miniatura",
+      "withPlaceholder": "Con marcador",
+      "withoutPlaceholder": "Sin marcador",
+      "result": "Última ejecución: {{success}} calculados, {{failed}} miniaturas ilegibles",
+      "running": "Calculando marcadores...",
+      "noneToFill": "Todas las fotos ya tienen marcador",
+      "button": "Calcular marcadores"
+    },
     "groups": {
       "people": "Personas y acceso"
     },
