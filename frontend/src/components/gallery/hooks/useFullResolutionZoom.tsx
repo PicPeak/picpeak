@@ -68,6 +68,7 @@ interface Options {
   /** False where the slide is not a plain image: a video, or the canvas rendering mode. */
   enabled: boolean;
   zoom: number;
+  dragOffset: Point;
   setZoom: (zoom: number) => void;
   setDragOffset: (offset: Point) => void;
   /** The element the lightbox measures the cursor against; its centre is the image's. */
@@ -77,7 +78,7 @@ interface Options {
 interface LoadedOriginal extends Size { photoId: number; src: string }
 
 export function useFullResolutionZoom({
-  photo, slug, enabled, zoom, setZoom, setDragOffset, containerRef,
+  photo, slug, enabled, zoom, dragOffset, setZoom, setDragOffset, containerRef,
 }: Options) {
   const photoId = photo?.id;
   const stated = photo?.width && photo?.height ? { width: photo.width, height: photo.height } : null;
@@ -90,6 +91,9 @@ export function useFullResolutionZoom({
   const [failedId, setFailedId] = useState<number | null>(null);
   const [fit, setFit] = useState<Size | null>(null);
   const slideRef = useRef<HTMLDivElement | null>(null);
+  // For handlers the lightbox registers once (wheel) or that fire between
+  // renders, and for the load that ends after the render that started it.
+  const live = useRef({ zoom, dragOffset, actualZoom: null as number | null, maxZoom: BASE_MAX_ZOOM });
 
   // State of another photo is never shown: the reset below lands one render
   // after the navigation.
@@ -171,7 +175,16 @@ export function useFullResolutionZoom({
         setLoaded({ photoId, src: objectUrl, width: image.naturalWidth, height: image.naturalHeight });
       } catch {
         // Refused, aborted, or not decodable: the preview stays, silently.
-        if (!cancelled) setFailedId(photoId);
+        if (cancelled) return;
+        setFailedId(photoId);
+        // The ceiling falls back to the old one with it. A zoom already past
+        // that comes back at once, about the point at the centre of the view.
+        const { zoom: current, dragOffset: offset } = live.current;
+        if (current > BASE_MAX_ZOOM) {
+          const ratio = BASE_MAX_ZOOM / current;
+          setZoom(BASE_MAX_ZOOM);
+          setDragOffset({ x: offset.x * ratio, y: offset.y * ratio });
+        }
       } finally {
         if (objectUrl && !handedOver) URL.revokeObjectURL(objectUrl);
       }
@@ -181,7 +194,7 @@ export function useFullResolutionZoom({
       cancelled = true;
       controller.abort();
     };
-  }, [url, requested, photoId, slug]);
+  }, [url, requested, photoId, slug, setZoom, setDragOffset]);
 
   const failed = failedId !== null && failedId === photoId;
   // What was decoded wins over what the list stated.
@@ -190,10 +203,9 @@ export function useFullResolutionZoom({
     ? actualPixelsZoom(natural, fit, typeof window === 'undefined' ? 1 : window.devicePixelRatio)
     : null;
   const maxZoom = maxZoomFor(actualZoom);
+  live.current = { zoom, dragOffset, actualZoom, maxZoom };
 
   // For handlers the lightbox registers once (wheel) or that fire between renders.
-  const live = useRef({ zoom, actualZoom, maxZoom });
-  live.current = { zoom, actualZoom, maxZoom };
 
   const fitToScreen = useCallback(() => {
     setZoom(1);

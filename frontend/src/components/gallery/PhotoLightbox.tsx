@@ -218,6 +218,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     slug,
     enabled: currentPhoto?.media_type !== 'video' && !(useCanvasRendering || protectionLevel === 'maximum'),
     zoom,
+    dragOffset,
     setZoom,
     setDragOffset,
     containerRef: trackContainerRef,

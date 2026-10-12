@@ -294,15 +294,142 @@ describe('Full-resolution zoom (issue 1733)', () => {
     await refused(await zoom(raw.event, raw.photoId, raw.token));
   });
 
-  it('refuses an expired gallery and a token of another gallery', async () => {
-    const { event, photoId, token } = await makeEvent();
-    const other = await makeEvent();
-    expect((await zoom(event, photoId, other.token)).status).not.toBe(200);
-    expect((await zoom(other.event, photoId, other.token)).status).toBe(404);
+  it.each([
+    ['protection level enhanced', { protection_level: 'enhanced' }],
+    ['protection level maximum', { protection_level: 'maximum' }],
+    ['canvas rendering', { use_canvas_rendering: 1 }],
+    ['the right-click block', { disable_right_click: 1 }],
+  ])('refuses a gallery with %s: 403', async (_name, fields) => {
+    const { event, photoId, token } = await makeEvent(fields);
+    expect(await advertised(event, token)).toBeNull();
+    await refused(await zoom(event, photoId, token));
+  });
 
+  it('allows the protection settings every gallery ships with', async () => {
+    const { event, photoId, token } = await makeEvent({
+      protection_level: 'standard', enable_devtools_protection: 1,
+    });
+    expect(await advertised(event, token)).toEqual(expect.stringContaining('zoom=1'));
+    expect((await zoom(event, photoId, token)).status).toBe(200);
+    await db('events').where({ id: event.id }).update({ protection_level: 'basic' });
+    expect((await zoom(event, photoId, token)).status).toBe(200);
+  });
+
+  it('answers 404 for an expired, archived, inactive or draft gallery', async () => {
+    for (const fields of [
+      { expires_at: new Date(Date.now() - 3600 * 1000).toISOString() },
+      { is_archived: 1 },
+      { is_active: 0 },
+      { is_draft: 1 },
+    ]) {
+      const { event, photoId, token } = await makeEvent();
+      await db('events').where({ id: event.id }).update(fields);
+      const res = await zoom(event, photoId, token);
+      expect(res.status).toBe(404);
+    }
+  });
+
+  it('answers 403 for a token of another gallery and 404 for another gallery\'s photo', async () => {
+    const { event, photoId } = await makeEvent();
+    const other = await makeEvent();
+    expect((await zoom(event, photoId, other.token)).status).toBe(403);
+    expect((await zoom(other.event, photoId, other.token)).status).toBe(404);
+  });
+
+  it('answers 401 without a token on a password-protected gallery', async () => {
+    const { event, photoId } = await makeEvent();
+    const res = await request(app).get(`/api/gallery/${event.slug}/photo/${photoId}?zoom=1`);
+    expect(res.status).toBe(401);
+  });
+
+  it('answers 403 GALLERY_HIDDEN to a guest while the gallery waits for its reveal', async () => {
+    const { event, photoId, token } = await makeEvent({ reveal_mode: 1 });
+    const res = await request(app).get(`/api/gallery/${event.slug}/photo/${photoId}?zoom=1`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('GALLERY_HIDDEN');
+  });
+
+  it('answers 403 MUST_CHANGE_PASSWORD to an admin preview that owes a password change', async () => {
+    const { event, photoId } = await makeEvent();
+    const preview = () => request(app)
+      .get(`/api/gallery/${event.slug}/photo/${photoId}?zoom=1&admin_preview=1`)
+      .set('Cookie', [`admin_token=${adminToken}`]);
+    expect((await preview()).status).toBe(200);
+    await db('admin_users').where({ username: 'zoom-admin' }).update({ must_change_password: 1 });
+    try {
+      const res = await preview();
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('MUST_CHANGE_PASSWORD');
+    } finally {
+      await db('admin_users').where({ username: 'zoom-admin' }).update({ must_change_password: 0 });
+    }
+  });
+
+  it('answers 401 to a session opened before the gallery password changed', async () => {
+    const { event, photoId, token } = await makeEvent();
+    expect((await zoom(event, photoId, token)).status).toBe(200);
     await db('events').where({ id: event.id })
-      .update({ expires_at: new Date(Date.now() - 3600 * 1000).toISOString() });
-    expect((await zoom(event, photoId, token)).status).not.toBe(200);
+      .update({ gallery_password_changed_at: new Date(Date.now() + 60 * 1000).toISOString() });
+    expect((await zoom(event, photoId, token)).status).toBe(401);
+  });
+
+  it('answers 503 in maintenance mode', async () => {
+    await db('app_settings').where({ setting_key: 'general_maintenance_mode' }).del();
+    await db('app_settings').insert({
+      setting_key: 'general_maintenance_mode', setting_value: 'true', setting_type: 'general',
+      updated_at: new Date().toISOString(),
+    });
+    // The gate as server.js mounts it, ahead of the gallery routes. Its
+    // one-minute cache is cold: nothing else in this suite goes through it.
+    const gated = express();
+    gated.use(cookieParser());
+    gated.use(require('../../src/middleware/maintenance').maintenanceMiddleware);
+    gated.use('/api/gallery', require('../../src/routes/gallery'));
+    const { event, photoId, token } = await makeEvent();
+    try {
+      const res = await request(gated).get(`/api/gallery/${event.slug}/photo/${photoId}?zoom=1`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(503);
+    } finally {
+      await db('app_settings').where({ setting_key: 'general_maintenance_mode' }).del();
+    }
+  });
+
+  // Two-stage delivery (issue 1562) has no withheld photo row: what is not
+  // delivered yet is not in the gallery at all, and a first-look photo is a
+  // delivered one. Pinned so a later per-photo stage has to revisit this.
+  it('serves a first-look photo of a partly delivered gallery like any delivered photo', async () => {
+    const { event, photoId, token } = await makeEvent(
+      { delivery_status: 'partial', delivery_expected_count: 40 }, { first_look: 1 });
+    expect((await zoom(event, photoId, token)).status).toBe(200);
+  });
+
+  it('carries the cache headers of the original route and revalidates by ETag only once allowed', async () => {
+    const { event, photoId, token } = await makeEvent();
+    const plain = await request(app).get(`/api/gallery/${event.slug}/photo/${photoId}`)
+      .set('Authorization', `Bearer ${token}`);
+    const res = await zoom(event, photoId, token);
+    expect(res.headers['cache-control']).toBe('private, max-age=1800');
+    expect(res.headers['cache-control']).toBe(plain.headers['cache-control']);
+    expect(res.headers.etag).toBe(plain.headers.etag);
+
+    const revalidated = await zoom(event, photoId, token).set('If-None-Match', res.headers.etag);
+    expect(revalidated.status).toBe(304);
+
+    // A validator the browser still holds must not outlive the permission.
+    await db('events').where({ id: event.id }).update({ allow_downloads: 0 });
+    const afterwards = await zoom(event, photoId, token).set('If-None-Match', res.headers.etag);
+    expect(afterwards.status).toBe(403);
+  });
+
+  // Like the original route: a managed photo is streamed whole, a Range
+  // header on an image is not honoured (only videos are served in ranges).
+  it('ignores Range on an image, as the original route does', async () => {
+    const { event, photoId, token } = await makeEvent();
+    const res = await zoom(event, photoId, token).set('Range', 'bytes=0-9');
+    expect(res.status).toBe(200);
+    expect(res.body.equals(jpeg)).toBe(true);
   });
 
   it('leaves the route without zoom=1 as it was', async () => {

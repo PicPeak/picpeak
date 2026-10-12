@@ -69,13 +69,24 @@ const FULL_RESOLUTION_REFUSED = { error: 'Full resolution is not available for t
  * watermark on downloads or on the display routes, with downloads held to a
  * reduced resolution, or while a download limit is configured (zooming must
  * neither draw on the quota nor go around it; an admin preview gets no
- * exemption here). Shared by the photo list, which only advertises the
+ * exemption here).
+ *
+ * Nor where the gallery is set to keep the file out of the viewer's hands on
+ * the page itself: protection level enhanced or maximum (print-screen and
+ * DevTools detection, canvas rendering), canvas rendering on its own, or the
+ * right-click block. Those are the protection inputs that ship off, so each
+ * is a decision someone made; `enable_devtools_protection` ships on for
+ * every gallery and says nothing. Enforced here because the client only
+ * hides the feature. Shared by the photo list, which only advertises the
  * feature, and by the photo route, which is what enforces it.
  */
 async function galleryFullResolutionDenial(event, accessLevel) {
   if (accessLevel === 'slideshow') return FULL_RESOLUTION_REFUSED;
   if (!parseBooleanInput(event.allow_downloads, true)) return FULL_RESOLUTION_REFUSED;
   if (await currentDownloadLimit(event)) return FULL_RESOLUTION_REFUSED;
+  if (['enhanced', 'maximum'].includes(event.protection_level)
+      || parseBooleanInput(event.use_canvas_rendering, false)
+      || parseBooleanInput(event.disable_right_click, false)) return FULL_RESOLUTION_REFUSED;
   // Unreadable settings refuse: the answer has to be "no watermark", not "unknown".
   const watermark = await watermarkService.getWatermarkSettings();
   if (!watermark || watermark.enabled || parseBooleanInput(event.watermark_downloads, false)) {

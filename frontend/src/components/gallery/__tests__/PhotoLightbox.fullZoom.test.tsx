@@ -276,6 +276,21 @@ describe('PhotoLightbox with a full resolution', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('comes back to the old 3x ceiling at once when a load fails past it', async () => {
+    let refuse: (r: unknown) => void = () => {};
+    fetchMock.mockReturnValue(new Promise((resolve) => { refuse = resolve; }));
+    const { image, surface, readout } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.doubleClick(surface, { clientX: 20, clientY: -10 });
+    expect(image().style.transform).toBe('scale(10) translate(-18px, 9px)');
+    await settle();
+    await act(async () => { refuse({ ok: false, status: 403, blob: async () => new Blob() }); });
+    await settle();
+    // offset (-180, 90) scaled by 3/10, then divided by the zoom of 3.
+    expect(image().style.transform).toBe('scale(3) translate(-18px, 9px)');
+    expect(readout()).toBe('300%');
+    expect(screen.getByLabelText('Zoom in')).toBeDisabled();
+  });
+
   it('falls back silently when the original does not decode', async () => {
     const { overlay, hint } = setup([zoomable(1), zoomable(2), zoomable(3)]);
     fireEvent.click(screen.getByLabelText('Zoom in'));
