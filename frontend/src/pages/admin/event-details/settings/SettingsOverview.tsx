@@ -9,7 +9,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle, Bell, ChevronRight, Download, FolderOpen, FolderTree, Lock, MonitorPlay,
-  Palette, ScanFace, SlidersHorizontal, Users, type LucideIcon,
+  Palette, ScanFace, SlidersHorizontal, Tags, Users, type LucideIcon,
 } from 'lucide-react';
 import type { Event } from '../../../../types';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
@@ -27,6 +27,7 @@ export const SECTION_ICON: Record<SettingsSectionKey, LucideIcon> = {
   delivery: FolderTree,
   reminder: Bell,
   faces: ScanFace,
+  tags: Tags,
   danger: AlertTriangle,
 };
 
@@ -35,7 +36,7 @@ export const SECTION_GROUPS: Array<{ key: string; label: string; sections: Setti
   { key: 'basics', label: 'Basics', sections: ['general', 'appearance'] },
   { key: 'access', label: 'Access & downloads', sections: ['access', 'downloads'] },
   { key: 'guests', label: 'Guests', sections: ['guests', 'slideshow'] },
-  { key: 'photos', label: 'Photos & automation', sections: ['source', 'delivery', 'reminder', 'faces'] },
+  { key: 'photos', label: 'Photos & automation', sections: ['source', 'delivery', 'reminder', 'faces', 'tags'] },
 ];
 
 type Tone = 'plain' | 'strong' | 'ok' | 'off';
@@ -155,6 +156,7 @@ export function useSectionSummaries(
       isDefault: reminderInherits,
     },
     faces: { parts: [{ text: s('faces', 'Find and group the people in the photos') }] },
+    tags: { parts: [{ text: s('tags', 'Tag photos by scene so guests can filter') }] },
     danger: { parts: [{ text: s('danger', 'Archive or delete this gallery') }] },
   };
 }

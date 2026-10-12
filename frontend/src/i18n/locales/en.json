@@ -1575,6 +1575,55 @@
     "preview": {
       "title": "Theme preview",
       "description": "This is how your galleries will look with the current theme settings."
+    },
+    "tags": {
+      "filterLabel": "Tags",
+      "matchAny": "Showing photos with any of the selected tags.",
+      "names": {
+        "ceremony": "Ceremony",
+        "couple": "Couple",
+        "portrait": "Portrait",
+        "group_photo": "Group photo",
+        "kiss": "Kiss",
+        "hug": "Hug",
+        "laughter": "Laughter",
+        "dancing": "Dancing",
+        "party": "Party",
+        "speech": "Speech",
+        "toast": "Toast",
+        "music": "Music",
+        "stage": "Stage",
+        "audience": "Audience",
+        "presentation": "Presentation",
+        "awards": "Awards",
+        "sports": "Sports",
+        "getting_ready": "Getting ready",
+        "dress": "Dress",
+        "rings": "Rings",
+        "bouquet": "Bouquet",
+        "flowers": "Flowers",
+        "cake": "Cake",
+        "food": "Food",
+        "drinks": "Drinks",
+        "table_setting": "Table setting",
+        "decoration": "Decoration",
+        "lights": "Candles & lights",
+        "gifts": "Gifts",
+        "confetti": "Confetti",
+        "fireworks": "Fireworks",
+        "details": "Details",
+        "venue": "Venue",
+        "indoor": "Indoors",
+        "outdoor": "Outdoors",
+        "landscape": "Landscape",
+        "beach": "Beach",
+        "sunset": "Sunset",
+        "night": "Night",
+        "vehicle": "Car",
+        "children": "Children",
+        "pets": "Pets",
+        "black_and_white": "Black & white"
+      }
     }
   },
   "categories": {
@@ -2160,7 +2209,8 @@
         "reminder": "The reminder email to the customer before the event.",
         "slideshow": "A fullscreen link for projectors at live events.",
         "source": "Where the photos of this gallery come from.",
-        "delivery": "Nested folders from uploads, and delivering a first look before the full gallery."
+        "delivery": "Nested folders from uploads, and delivering a first look before the full gallery.",
+        "tags": "Tag photos by scene so guests can filter the gallery."
       },
       "access": "Access",
       "appearance": "Appearance",
@@ -2241,11 +2291,13 @@
         "firstLook": "first look, more to come",
         "teamMembers_one": "{{count}} team member",
         "teamMembers_other": "{{count}} team members",
-        "teamReview": "team uploads reviewed"
+        "teamReview": "team uploads reviewed",
+        "tags": "Tag photos by scene so guests can filter"
       },
       "undoSection": "Undo changes in this section",
       "delivery": "Folders & delivery",
-      "passwordOwnerOnly": "Only the gallery owner can change the password or turn it off."
+      "passwordOwnerOnly": "Only the gallery owner can change the password or turn it off.",
+      "tags": "Tags"
     },
     "folders": {
       "sectionTitle": "Folders",
@@ -3108,6 +3160,11 @@
         "beta": "In development: ready for real work, but details may still change.",
         "experimental": "May break or be removed. Not for a production studio.",
         "roadmap": "Not built yet."
+      },
+      "autoTagging": {
+        "title": "Automatic tags",
+        "description": "Tag photos by scene (ceremony, cake, dancing, outdoors…) so guests can filter a gallery. Runs on your own server in the same optional ML container as face detection, with a tagging model added. Tags describe scenes, not people. Stays off until you also enable it per gallery.",
+        "lockedSingleContainer": "Not available on the all-in-one image. Tagging needs the separate ML container."
       }
     },
     "customerSurface": {
@@ -4964,7 +5021,19 @@
     "expandSidebar": "Expand sidebar",
     "collapseSidebar": "Collapse sidebar",
     "backToMenu": "Back to menu",
-    "viewOnGithub": "View PicPeak on GitHub"
+    "viewOnGithub": "View PicPeak on GitHub",
+    "tags": {
+      "title": "Automatic tags",
+      "subtitle": "Tag photos by what they show, so guests can filter the gallery by scene.",
+      "enable": "Tag the photos of this gallery automatically",
+      "enableHint": "Photos are tagged in the background from a fixed list of scenes such as ceremony, cake or dancing. Tags describe the scene, never who is in it. Guests can filter by the tags that occur.",
+      "tagging": "Tagging… {{tagged}} of {{total}} photos",
+      "status": "{{tagged}} / {{total}} photos tagged",
+      "failed": "failed: {{count}}",
+      "queued": "Queued for tagging: {{count}}",
+      "rescan": "Re-run tagging",
+      "waitingHint": "Photos stay queued until the ML container with the tagging model is reachable."
+    }
   },
   "acceptInvitation": {
     "title": "Accept Invitation",

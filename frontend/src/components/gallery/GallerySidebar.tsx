@@ -8,6 +8,7 @@ import { GalleryFilter, type FilterType, type FeedbackFilterType } from './Galle
 import { ColorLabelFilterChips } from './ColorLabelFilterChips';
 import { MinRatingFilterChips } from './MinRatingFilterChips';
 import { CreditFilterChips } from './CreditFilterChips';
+import { TagFilterChips, type TagChip } from './TagFilterChips';
 import type { ColorLabel } from '../../services/feedback.service';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import type { QuotaPhoto } from '../../utils/downloadLimit';
@@ -86,6 +87,10 @@ interface GallerySidebarProps {
   creditPhotos?: Photo[];
   selectedCreditKey?: string | null;
   onCreditChange?: (key: string | null) => void;
+  // Scene-tag filter (issue 1733). Empty while the gallery has no tags.
+  tagChips?: TagChip[];
+  selectedTagKeys?: string[];
+  onTagToggle?: (key: string) => void;
   // Copyable filename list (issue 1733, A3d). `copyFilenamesCount` is how many
   // photos the dialog would list — the selection, or the viewer's favourites
   // when nothing is selected; the control is hidden at zero.
@@ -150,6 +155,9 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   creditPhotos,
   selectedCreditKey = null,
   onCreditChange,
+  tagChips = [],
+  selectedTagKeys = [],
+  onTagToggle,
   onCopyFilenames,
   copyFilenamesCount = 0,
   folderTree,
@@ -403,6 +411,18 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                 onCreditChange(key);
                 if (isMobile) onClose();
               }}
+            />
+          )}
+
+          {/* Tags section (issue 1733). Stays open on a phone: the filter is
+              multi-select, so one tap is rarely the whole choice. */}
+          {onTagToggle && (
+            <TagFilterChips
+              variant="list"
+              className="gallery-sidebar-section p-4 border-b border-border-token"
+              tags={tagChips}
+              selectedKeys={selectedTagKeys}
+              onToggle={onTagToggle}
             />
           )}
 

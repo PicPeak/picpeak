@@ -458,6 +458,55 @@
       "withDate": "Les images restantes sont encore en cours de retouche ; la galerie complète sera disponible au plus tard le {{date}}.",
       "noDetails": "Les images restantes sont encore en cours de retouche.",
       "progressLabel": "Photos livrées jusqu'à présent"
+    },
+    "tags": {
+      "filterLabel": "Tags",
+      "matchAny": "Affiche les photos portant au moins un des tags sélectionnés.",
+      "names": {
+        "ceremony": "Cérémonie",
+        "couple": "Couple",
+        "portrait": "Portrait",
+        "group_photo": "Photo de groupe",
+        "kiss": "Baiser",
+        "hug": "Câlin",
+        "laughter": "Rires",
+        "dancing": "Danse",
+        "party": "Fête",
+        "speech": "Discours",
+        "toast": "Toast",
+        "music": "Musique",
+        "stage": "Scène",
+        "audience": "Public",
+        "presentation": "Présentation",
+        "awards": "Récompenses",
+        "sports": "Sport",
+        "getting_ready": "Préparatifs",
+        "dress": "Robe",
+        "rings": "Alliances",
+        "bouquet": "Bouquet",
+        "flowers": "Fleurs",
+        "cake": "Gâteau",
+        "food": "Repas",
+        "drinks": "Boissons",
+        "table_setting": "Table dressée",
+        "decoration": "Décoration",
+        "lights": "Bougies et lumières",
+        "gifts": "Cadeaux",
+        "confetti": "Confettis",
+        "fireworks": "Feu d'artifice",
+        "details": "Détails",
+        "venue": "Lieu",
+        "indoor": "Intérieur",
+        "outdoor": "Extérieur",
+        "landscape": "Paysage",
+        "beach": "Plage",
+        "sunset": "Coucher de soleil",
+        "night": "Nuit",
+        "vehicle": "Voiture",
+        "children": "Enfants",
+        "pets": "Animaux",
+        "black_and_white": "Noir et blanc"
+      }
     }
   },
   "categories": {
@@ -848,7 +897,8 @@
     "settingsTab": {
       "delivery": "Dossiers et livraison",
       "about": {
-        "delivery": "Dossiers imbriqués issus des envois, et une première sélection avant la galerie complète."
+        "delivery": "Dossiers imbriqués issus des envois, et une première sélection avant la galerie complète.",
+        "tags": "Taguer les photos par scène pour que les invités puissent filtrer la galerie."
       },
       "summary": {
         "folderStructureOn": "Arborescence activée",
@@ -857,9 +907,11 @@
         "firstLook": "première sélection, la suite après",
         "teamMembers_one": "{{count}} membre de l'équipe",
         "teamMembers_other": "{{count}} membres de l'équipe",
-        "teamReview": "envois de l'équipe vérifiés"
+        "teamReview": "envois de l'équipe vérifiés",
+        "tags": "Taguer les photos par scène pour que les invités filtrent"
       },
-      "passwordOwnerOnly": "Seul le propriétaire de la galerie peut modifier le mot de passe ou le désactiver."
+      "passwordOwnerOnly": "Seul le propriétaire de la galerie peut modifier le mot de passe ou le désactiver.",
+      "tags": "Tags"
     },
     "folders": {
       "sectionTitle": "Dossiers",
@@ -1466,7 +1518,12 @@
         "description": "Interrupteur principal pour la section Clients de la barre latérale. Désactivé masque la section et toutes les sous-fonctionnalités ci-dessous, quel que soit leur état individuel — réactivez pour restaurer selon ce que vous avez défini en dernier."
       },
       "configure": "Configurer",
-      "sidebarInSettings": "Pas d'entrée dans la barre latérale — se trouve dans les paramètres"
+      "sidebarInSettings": "Pas d'entrée dans la barre latérale — se trouve dans les paramètres",
+      "autoTagging": {
+        "title": "Tags automatiques",
+        "description": "Taguer les photos par scène (cérémonie, gâteau, danse, extérieur…) pour que les invités puissent filtrer une galerie. Fonctionne sur votre propre serveur, dans le même conteneur ML facultatif que la détection des visages, avec un modèle de tagage en plus. Les tags décrivent des scènes, pas des personnes. Reste désactivé tant que vous ne l'activez pas aussi pour chaque galerie.",
+        "lockedSingleContainer": "Indisponible sur l'image tout-en-un. Le tagage nécessite le conteneur ML séparé."
+      }
     },
     "customerSurface": {
       "brandingTitle": "En-tête du tableau de bord client",
@@ -2243,7 +2300,19 @@
     },
     "catalogedMedia": "{{size}} catalogués",
     "storageUnavailable": "indisponible",
-    "catalogedMediaOnly": "catalogué — les objets sont dans S3"
+    "catalogedMediaOnly": "catalogué — les objets sont dans S3",
+    "tags": {
+      "title": "Tags automatiques",
+      "subtitle": "Taguer les photos selon ce qu'elles montrent, pour que les invités puissent filtrer la galerie par scène.",
+      "enable": "Taguer automatiquement les photos de cette galerie",
+      "enableHint": "Les photos sont taguées en arrière-plan à partir d'une liste fixe de scènes, comme cérémonie, gâteau ou danse. Les tags décrivent la scène, jamais les personnes présentes. Les invités peuvent filtrer selon les tags présents.",
+      "tagging": "Tagage en cours… {{tagged}} sur {{total}} photos",
+      "status": "{{tagged}} / {{total}} photos taguées",
+      "failed": "en échec : {{count}}",
+      "queued": "En file d'attente pour le tagage : {{count}}",
+      "rescan": "Relancer le tagage",
+      "waitingHint": "Les photos restent en file d'attente jusqu'à ce que le conteneur ML avec le modèle de tagage soit joignable."
+    }
   },
   "acceptInvitation": {
     "title": "Accepter l'invitation",

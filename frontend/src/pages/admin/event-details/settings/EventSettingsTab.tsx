@@ -20,6 +20,7 @@ import type { Event } from '../../../../types';
 import { Button } from '../../../../components/common';
 import { SettingsSaveBar } from '../../../../components/admin/SettingsSaveBar';
 import { FaceRecognitionCard } from '../../../../components/admin/FaceRecognitionCard';
+import { AutoTaggingCard } from '../../../../components/admin/AutoTaggingCard';
 import { useConfirm } from '../../../../components/common/ConfirmDialog';
 import { useFillViewport } from '../../../../components/admin/fillViewport';
 import { useFeatureFlags } from '../../../../contexts/FeatureFlagsContext';
@@ -101,6 +102,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
     { key: 'reminder', label: t('eventReminderOverride.title', 'Pre-event reminder'), show: !!flags.reminderEmails },
     { key: 'slideshow', label: t('slideshow.adminTitle', 'Live Slideshow'), show: !!flags.slideshow },
     { key: 'faces', label: t('events.settingsTab.faces', 'Faces'), show: !!flags.faces },
+    { key: 'tags', label: t('events.settingsTab.tags', 'Tags'), show: !!flags.autoTagging },
     { key: 'danger', label: t('events.settingsTab.danger', 'Danger zone'), show: !archived && (canArchive || canDelete) },
   ];
   const visible = sections.filter((s) => s.show);
@@ -180,6 +182,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
     delivery: t('events.settingsTab.about.delivery', 'Nested folders from uploads, and delivering a first look before the full gallery.'),
     reminder: t('events.settingsTab.about.reminder', 'The reminder email to the customer before the event.'),
     faces: t('events.settingsTab.about.faces', 'Find and group the people in the photos.'),
+    tags: t('events.settingsTab.about.tags', 'Tag photos by scene so guests can filter the gallery.'),
     danger: t('events.settingsTab.about.danger', 'Archive or delete this gallery.'),
   };
 
@@ -238,6 +241,10 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
         // Face recognition is a set of jobs (detect, rescan, recluster,
         // delete) rather than settings, so it acts immediately.
         return <FaceRecognitionCard eventId={event.id} isArchived={archived} bare />;
+      case 'tags':
+        // Like faces: a switch and a job, so it acts immediately. Unlike
+        // faces it stays inside the read-only fieldset for a viewer.
+        return <AutoTaggingCard eventId={event.id} isArchived={archived} bare />;
       case 'danger':
         return (
           <SectionCard>

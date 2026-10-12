@@ -565,6 +565,55 @@
       "withDate": "As imagens restantes ainda estão em edição — a galeria completa estará disponível o mais tardar em {{date}}.",
       "noDetails": "As imagens restantes ainda estão em edição.",
       "progressLabel": "Fotos entregues até agora"
+    },
+    "tags": {
+      "filterLabel": "Tags",
+      "matchAny": "Mostrando fotos com qualquer uma das tags selecionadas.",
+      "names": {
+        "ceremony": "Cerimônia",
+        "couple": "Casal",
+        "portrait": "Retrato",
+        "group_photo": "Foto de grupo",
+        "kiss": "Beijo",
+        "hug": "Abraço",
+        "laughter": "Risos",
+        "dancing": "Dança",
+        "party": "Festa",
+        "speech": "Discurso",
+        "toast": "Brinde",
+        "music": "Música",
+        "stage": "Palco",
+        "audience": "Plateia",
+        "presentation": "Apresentação",
+        "awards": "Prêmios",
+        "sports": "Esportes",
+        "getting_ready": "Preparativos",
+        "dress": "Vestido",
+        "rings": "Alianças",
+        "bouquet": "Buquê",
+        "flowers": "Flores",
+        "cake": "Bolo",
+        "food": "Comida",
+        "drinks": "Bebidas",
+        "table_setting": "Mesa posta",
+        "decoration": "Decoração",
+        "lights": "Velas e luzes",
+        "gifts": "Presentes",
+        "confetti": "Confete",
+        "fireworks": "Fogos de artifício",
+        "details": "Detalhes",
+        "venue": "Local",
+        "indoor": "Ambiente interno",
+        "outdoor": "Ao ar livre",
+        "landscape": "Paisagem",
+        "beach": "Praia",
+        "sunset": "Pôr do sol",
+        "night": "Noite",
+        "vehicle": "Carro",
+        "children": "Crianças",
+        "pets": "Animais de estimação",
+        "black_and_white": "Preto e branco"
+      }
     }
   },
   "categories": {
@@ -963,7 +1012,8 @@
     "settingsTab": {
       "delivery": "Pastas e entrega",
       "about": {
-        "delivery": "Pastas aninhadas a partir dos envios e uma primeira seleção antes da galeria completa."
+        "delivery": "Pastas aninhadas a partir dos envios e uma primeira seleção antes da galeria completa.",
+        "tags": "Marque as fotos por cena para que os convidados possam filtrar a galeria."
       },
       "summary": {
         "folderStructureOn": "Estrutura de pastas ativada",
@@ -972,9 +1022,11 @@
         "firstLook": "primeira seleção, mais depois",
         "teamMembers_one": "{{count}} membro da equipe",
         "teamMembers_other": "{{count}} membros da equipe",
-        "teamReview": "envios da equipe revisados"
+        "teamReview": "envios da equipe revisados",
+        "tags": "Marcar as fotos por cena para que os convidados filtrem"
       },
-      "passwordOwnerOnly": "Apenas o proprietário da galeria pode alterar a senha ou desativá-la."
+      "passwordOwnerOnly": "Apenas o proprietário da galeria pode alterar a senha ou desativá-la.",
+      "tags": "Tags"
     },
     "folders": {
       "sectionTitle": "Pastas",
@@ -1571,7 +1623,12 @@
         "description": "Chave principal da seção Clientes na barra lateral. Desligado oculta a seção e todas as sub-funcionalidades independentemente dos seus controles individuais — reativar restaura o estado anterior."
       },
       "configure": "Configurar",
-      "sidebarInSettings": "Sem item na barra lateral — fica nas definições"
+      "sidebarInSettings": "Sem item na barra lateral — fica nas definições",
+      "autoTagging": {
+        "title": "Tags automáticas",
+        "description": "Marque as fotos por cena (cerimônia, bolo, dança, ao ar livre…) para que os convidados possam filtrar uma galeria. Roda no seu próprio servidor, no mesmo contêiner de ML opcional da detecção de rostos, com um modelo de marcação adicional. As tags descrevem cenas, não pessoas. Permanece desativado até você ativá-lo também em cada galeria.",
+        "lockedSingleContainer": "Indisponível na imagem tudo-em-um. A marcação precisa do contêiner de ML separado."
+      }
     },
     "customerSurface": {
       "brandingTitle": "Cabeçalho do painel do cliente",
@@ -2336,7 +2393,19 @@
     },
     "catalogedMedia": "{{size}} catalogados",
     "storageUnavailable": "indisponível",
-    "catalogedMediaOnly": "catalogado — os objetos estão no S3"
+    "catalogedMediaOnly": "catalogado — os objetos estão no S3",
+    "tags": {
+      "title": "Tags automáticas",
+      "subtitle": "Marque as fotos pelo que elas mostram, para que os convidados possam filtrar a galeria por cena.",
+      "enable": "Marcar automaticamente as fotos desta galeria",
+      "enableHint": "As fotos são marcadas em segundo plano a partir de uma lista fixa de cenas, como cerimônia, bolo ou dança. As tags descrevem a cena, nunca quem aparece nela. Os convidados podem filtrar pelas tags existentes.",
+      "tagging": "Marcando… {{tagged}} de {{total}} fotos",
+      "status": "{{tagged}} / {{total}} fotos marcadas",
+      "failed": "com falha: {{count}}",
+      "queued": "Na fila para marcação: {{count}}",
+      "rescan": "Executar a marcação novamente",
+      "waitingHint": "As fotos permanecem na fila até que o contêiner de ML com o modelo de marcação esteja acessível."
+    }
   },
   "acceptInvitation": {
     "title": "Aceitar Convite",

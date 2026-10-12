@@ -2168,6 +2168,55 @@
     "preview": {
       "title": "Theme-Vorschau",
       "description": "So sehen Ihre Galerien mit den aktuellen Theme-Einstellungen aus."
+    },
+    "tags": {
+      "filterLabel": "Tags",
+      "matchAny": "Zeigt Fotos mit mindestens einem der gewählten Tags.",
+      "names": {
+        "ceremony": "Zeremonie",
+        "couple": "Paar",
+        "portrait": "Porträt",
+        "group_photo": "Gruppenfoto",
+        "kiss": "Kuss",
+        "hug": "Umarmung",
+        "laughter": "Lachen",
+        "dancing": "Tanzen",
+        "party": "Party",
+        "speech": "Rede",
+        "toast": "Anstoßen",
+        "music": "Musik",
+        "stage": "Bühne",
+        "audience": "Publikum",
+        "presentation": "Präsentation",
+        "awards": "Auszeichnungen",
+        "sports": "Sport",
+        "getting_ready": "Vorbereitungen",
+        "dress": "Kleid",
+        "rings": "Ringe",
+        "bouquet": "Brautstrauß",
+        "flowers": "Blumen",
+        "cake": "Torte",
+        "food": "Essen",
+        "drinks": "Getränke",
+        "table_setting": "Tischdekoration",
+        "decoration": "Dekoration",
+        "lights": "Kerzen & Lichter",
+        "gifts": "Geschenke",
+        "confetti": "Konfetti",
+        "fireworks": "Feuerwerk",
+        "details": "Details",
+        "venue": "Location",
+        "indoor": "Drinnen",
+        "outdoor": "Draußen",
+        "landscape": "Landschaft",
+        "beach": "Strand",
+        "sunset": "Sonnenuntergang",
+        "night": "Nacht",
+        "vehicle": "Auto",
+        "children": "Kinder",
+        "pets": "Haustiere",
+        "black_and_white": "Schwarz-Weiß"
+      }
     }
   },
   "categories": {
@@ -2753,7 +2802,8 @@
         "reminder": "Die Erinnerungs-E-Mail an den Kunden vor dem Event.",
         "slideshow": "Ein Vollbild-Link für Beamer bei Live-Events.",
         "source": "Woher die Fotos dieser Galerie kommen.",
-        "delivery": "Verschachtelte Ordner aus Uploads und eine erste Auswahl vor der vollständigen Galerie."
+        "delivery": "Verschachtelte Ordner aus Uploads und eine erste Auswahl vor der vollständigen Galerie.",
+        "tags": "Fotos nach Szenen taggen, damit Gäste die Galerie filtern können."
       },
       "access": "Zugang",
       "appearance": "Erscheinungsbild",
@@ -2834,11 +2884,13 @@
         "firstLook": "erste Auswahl, mehr folgt",
         "teamMembers_one": "{{count}} Teammitglied",
         "teamMembers_other": "{{count}} Teammitglieder",
-        "teamReview": "Team-Uploads werden geprüft"
+        "teamReview": "Team-Uploads werden geprüft",
+        "tags": "Fotos nach Szenen taggen, damit Gäste filtern können"
       },
       "undoSection": "Diesen Bereich zurücksetzen",
       "delivery": "Ordner & Auslieferung",
-      "passwordOwnerOnly": "Nur der Besitzer der Galerie kann das Passwort ändern oder ausschalten."
+      "passwordOwnerOnly": "Nur der Besitzer der Galerie kann das Passwort ändern oder ausschalten.",
+      "tags": "Tags"
     },
     "folders": {
       "sectionTitle": "Ordner",
@@ -3701,6 +3753,11 @@
         "beta": "In Entwicklung: für echte Arbeit nutzbar, Details können sich noch ändern.",
         "experimental": "Kann ausfallen oder wieder entfernt werden. Nicht für den produktiven Studiobetrieb.",
         "roadmap": "Noch nicht gebaut."
+      },
+      "autoTagging": {
+        "title": "Automatische Tags",
+        "description": "Fotos nach Szenen taggen (Zeremonie, Torte, Tanzen, draußen …), damit Gäste eine Galerie filtern können. Läuft auf Ihrem eigenen Server im selben optionalen ML-Container wie die Gesichtserkennung, ergänzt um ein Tagging-Modell. Tags beschreiben Szenen, keine Personen. Bleibt aus, bis Sie es zusätzlich pro Galerie aktivieren.",
+        "lockedSingleContainer": "Im All-in-One-Image nicht verfügbar. Das Tagging benötigt den separaten ML-Container."
       }
     },
     "customerSurface": {
@@ -5484,7 +5541,19 @@
     "expandSidebar": "Seitenleiste ausklappen",
     "collapseSidebar": "Seitenleiste einklappen",
     "backToMenu": "Zurück zum Menü",
-    "viewOnGithub": "PicPeak auf GitHub ansehen"
+    "viewOnGithub": "PicPeak auf GitHub ansehen",
+    "tags": {
+      "title": "Automatische Tags",
+      "subtitle": "Fotos nach ihrem Motiv taggen, damit Gäste die Galerie nach Szenen filtern können.",
+      "enable": "Fotos dieser Galerie automatisch taggen",
+      "enableHint": "Die Fotos werden im Hintergrund mit Tags aus einer festen Liste von Szenen versehen, etwa Zeremonie, Torte oder Tanzen. Tags beschreiben die Szene, nie die abgebildeten Personen. Gäste können nach den vorkommenden Tags filtern.",
+      "tagging": "Tagging läuft … {{tagged}} von {{total}} Fotos",
+      "status": "{{tagged}} / {{total}} Fotos getaggt",
+      "failed": "fehlgeschlagen: {{count}}",
+      "queued": "Zum Taggen eingereiht: {{count}}",
+      "rescan": "Tagging erneut ausführen",
+      "waitingHint": "Die Fotos bleiben eingereiht, bis der ML-Container mit dem Tagging-Modell erreichbar ist."
+    }
   },
   "acceptInvitation": {
     "title": "Einladung annehmen",

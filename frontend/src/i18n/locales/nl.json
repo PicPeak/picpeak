@@ -449,6 +449,55 @@
       "withDate": "De overige foto's worden nog bewerkt — de volledige galerie volgt uiterlijk op {{date}}.",
       "noDetails": "De overige foto's worden nog bewerkt.",
       "progressLabel": "Tot nu toe geleverde foto's"
+    },
+    "tags": {
+      "filterLabel": "Tags",
+      "matchAny": "Toont foto's met minstens één van de gekozen tags.",
+      "names": {
+        "ceremony": "Ceremonie",
+        "couple": "Koppel",
+        "portrait": "Portret",
+        "group_photo": "Groepsfoto",
+        "kiss": "Kus",
+        "hug": "Knuffel",
+        "laughter": "Lachen",
+        "dancing": "Dansen",
+        "party": "Feest",
+        "speech": "Toespraak",
+        "toast": "Toost",
+        "music": "Muziek",
+        "stage": "Podium",
+        "audience": "Publiek",
+        "presentation": "Presentatie",
+        "awards": "Prijzen",
+        "sports": "Sport",
+        "getting_ready": "Voorbereidingen",
+        "dress": "Jurk",
+        "rings": "Ringen",
+        "bouquet": "Boeket",
+        "flowers": "Bloemen",
+        "cake": "Taart",
+        "food": "Eten",
+        "drinks": "Drankjes",
+        "table_setting": "Gedekte tafel",
+        "decoration": "Decoratie",
+        "lights": "Kaarsen en lichtjes",
+        "gifts": "Cadeaus",
+        "confetti": "Confetti",
+        "fireworks": "Vuurwerk",
+        "details": "Details",
+        "venue": "Locatie",
+        "indoor": "Binnen",
+        "outdoor": "Buiten",
+        "landscape": "Landschap",
+        "beach": "Strand",
+        "sunset": "Zonsondergang",
+        "night": "Nacht",
+        "vehicle": "Auto",
+        "children": "Kinderen",
+        "pets": "Huisdieren",
+        "black_and_white": "Zwart-wit"
+      }
     }
   },
   "categories": {
@@ -837,7 +886,8 @@
     "settingsTab": {
       "delivery": "Mappen en levering",
       "about": {
-        "delivery": "Geneste mappen uit uploads en een eerste selectie vóór de volledige galerie."
+        "delivery": "Geneste mappen uit uploads en een eerste selectie vóór de volledige galerie.",
+        "tags": "Tag foto's op scène zodat gasten de galerij kunnen filteren."
       },
       "summary": {
         "folderStructureOn": "Mapstructuur aan",
@@ -846,9 +896,11 @@
         "firstLook": "eerste selectie, meer volgt",
         "teamMembers_one": "{{count}} teamlid",
         "teamMembers_other": "{{count}} teamleden",
-        "teamReview": "teamuploads worden gecontroleerd"
+        "teamReview": "teamuploads worden gecontroleerd",
+        "tags": "Foto's op scène taggen zodat gasten kunnen filteren"
       },
-      "passwordOwnerOnly": "Alleen de eigenaar van de galerij kan het wachtwoord wijzigen of uitschakelen."
+      "passwordOwnerOnly": "Alleen de eigenaar van de galerij kan het wachtwoord wijzigen of uitschakelen.",
+      "tags": "Tags"
     },
     "folders": {
       "sectionTitle": "Mappen",
@@ -1443,7 +1495,12 @@
         "description": "Hoofdschakelaar voor het Klanten-onderdeel in de zijbalk. Uitgeschakeld verbergt het onderdeel en alle subfuncties ongeacht hun individuele schakelaars — opnieuw inschakelen herstelt de vorige status."
       },
       "configure": "Configureren",
-      "sidebarInSettings": "Geen item in de zijbalk — staat in Instellingen"
+      "sidebarInSettings": "Geen item in de zijbalk — staat in Instellingen",
+      "autoTagging": {
+        "title": "Automatische tags",
+        "description": "Tag foto's op scène (ceremonie, taart, dansen, buiten…) zodat gasten een galerij kunnen filteren. Draait op je eigen server in dezelfde optionele ML-container als de gezichtsdetectie, aangevuld met een tagmodel. Tags beschrijven scènes, geen personen. Blijft uit tot je het ook per galerij inschakelt.",
+        "lockedSingleContainer": "Niet beschikbaar in de alles-in-één-image. Taggen heeft de aparte ML-container nodig."
+      }
     },
     "customerSurface": {
       "brandingTitle": "Kopregel klantdashboard",
@@ -2200,7 +2257,19 @@
     },
     "catalogedMedia": "{{size}} gecatalogiseerd",
     "storageUnavailable": "niet beschikbaar",
-    "catalogedMediaOnly": "gecatalogiseerd — objecten staan in S3"
+    "catalogedMediaOnly": "gecatalogiseerd — objecten staan in S3",
+    "tags": {
+      "title": "Automatische tags",
+      "subtitle": "Tag foto's op wat erop te zien is, zodat gasten de galerij op scène kunnen filteren.",
+      "enable": "De foto's van deze galerij automatisch taggen",
+      "enableHint": "Foto's worden op de achtergrond getagd uit een vaste lijst met scènes, zoals ceremonie, taart of dansen. Tags beschrijven de scène, nooit wie erop staat. Gasten kunnen filteren op de tags die voorkomen.",
+      "tagging": "Bezig met taggen… {{tagged}} van {{total}} foto's",
+      "status": "{{tagged}} / {{total}} foto's getagd",
+      "failed": "mislukt: {{count}}",
+      "queued": "In de wachtrij voor taggen: {{count}}",
+      "rescan": "Taggen opnieuw uitvoeren",
+      "waitingHint": "Foto's blijven in de wachtrij tot de ML-container met het tagmodel bereikbaar is."
+    }
   },
   "acceptInvitation": {
     "title": "Uitnodiging accepteren",

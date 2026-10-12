@@ -25,6 +25,7 @@ import {
   Send,
   Workflow,
   Megaphone,
+  Tags,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -198,6 +199,23 @@ export const FeaturesTab: React.FC = () => {
                 'settings.features.faces.lockedSingleContainer',
                 'Not available on the all-in-one image. Face detection needs a separate ML container and competes with image processing for the same CPU and memory, which would slow the whole install down.',
               )
+              : undefined}
+          />
+
+          {/* Automatic scene tags (issue 1733). Same optional sidecar as
+              faces, its own switch; each gallery still has to opt in. */}
+          <FeatureCard
+            icon={Tags}
+            title={t('settings.features.autoTagging.title')}
+            description={t('settings.features.autoTagging.description')}
+            feature="autoTagging"
+            sidebarHidden
+            sidebarHiddenLabel={sidebarHiddenLabel}
+            enabled={staged.autoTagging && !isSingleContainer}
+            onToggle={(next) => setFlag('autoTagging', next)}
+            disabled={isSingleContainer}
+            lockedReason={isSingleContainer
+              ? t('settings.features.autoTagging.lockedSingleContainer')
               : undefined}
           />
         </Section>

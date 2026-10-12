@@ -33,6 +33,7 @@ export type SettingsSectionKey =
   | 'reminder'
   | 'slideshow'
   | 'faces'
+  | 'tags'
   | 'danger';
 
 export interface EventFields extends EditFormState {

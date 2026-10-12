@@ -430,6 +430,55 @@
       "withDate": "Las imágenes restantes aún se están editando: la galería completa estará disponible a más tardar el {{date}}.",
       "noDetails": "Las imágenes restantes aún se están editando.",
       "progressLabel": "Fotos entregadas hasta ahora"
+    },
+    "tags": {
+      "filterLabel": "Etiquetas",
+      "matchAny": "Se muestran las fotos con cualquiera de las etiquetas seleccionadas.",
+      "names": {
+        "ceremony": "Ceremonia",
+        "couple": "Pareja",
+        "portrait": "Retrato",
+        "group_photo": "Foto de grupo",
+        "kiss": "Beso",
+        "hug": "Abrazo",
+        "laughter": "Risas",
+        "dancing": "Baile",
+        "party": "Fiesta",
+        "speech": "Discurso",
+        "toast": "Brindis",
+        "music": "Música",
+        "stage": "Escenario",
+        "audience": "Público",
+        "presentation": "Presentación",
+        "awards": "Premios",
+        "sports": "Deporte",
+        "getting_ready": "Preparativos",
+        "dress": "Vestido",
+        "rings": "Anillos",
+        "bouquet": "Ramo",
+        "flowers": "Flores",
+        "cake": "Tarta",
+        "food": "Comida",
+        "drinks": "Bebidas",
+        "table_setting": "Mesa decorada",
+        "decoration": "Decoración",
+        "lights": "Velas y luces",
+        "gifts": "Regalos",
+        "confetti": "Confeti",
+        "fireworks": "Fuegos artificiales",
+        "details": "Detalles",
+        "venue": "Lugar",
+        "indoor": "Interior",
+        "outdoor": "Exterior",
+        "landscape": "Paisaje",
+        "beach": "Playa",
+        "sunset": "Atardecer",
+        "night": "Noche",
+        "vehicle": "Coche",
+        "children": "Niños",
+        "pets": "Mascotas",
+        "black_and_white": "Blanco y negro"
+      }
     }
   },
   "categories": {
@@ -856,7 +905,8 @@
     "settingsTab": {
       "delivery": "Carpetas y entrega",
       "about": {
-        "delivery": "Carpetas anidadas de las subidas y una primera selección antes de la galería completa."
+        "delivery": "Carpetas anidadas de las subidas y una primera selección antes de la galería completa.",
+        "tags": "Etiqueta las fotos por escena para que los invitados puedan filtrar la galería."
       },
       "summary": {
         "folderStructureOn": "Estructura de carpetas activada",
@@ -865,9 +915,11 @@
         "firstLook": "primera selección, más después",
         "teamMembers_one": "{{count}} miembro del equipo",
         "teamMembers_other": "{{count}} miembros del equipo",
-        "teamReview": "subidas del equipo revisadas"
+        "teamReview": "subidas del equipo revisadas",
+        "tags": "Etiquetar las fotos por escena para que los invitados filtren"
       },
-      "passwordOwnerOnly": "Solo el propietario de la galería puede cambiar la contraseña o desactivarla."
+      "passwordOwnerOnly": "Solo el propietario de la galería puede cambiar la contraseña o desactivarla.",
+      "tags": "Etiquetas"
     },
     "folders": {
       "sectionTitle": "Carpetas",
@@ -1366,7 +1418,12 @@
     },
     "features": {
       "configure": "Configurar",
-      "sidebarInSettings": "Sin entrada en la barra lateral — está en los ajustes"
+      "sidebarInSettings": "Sin entrada en la barra lateral — está en los ajustes",
+      "autoTagging": {
+        "title": "Etiquetas automáticas",
+        "description": "Etiqueta las fotos por escena (ceremonia, tarta, baile, exterior…) para que los invitados puedan filtrar una galería. Se ejecuta en tu propio servidor, en el mismo contenedor de ML opcional que la detección de rostros, con un modelo de etiquetado añadido. Las etiquetas describen escenas, no personas. Permanece desactivado hasta que lo actives también en cada galería.",
+        "lockedSingleContainer": "No disponible en la imagen todo en uno. El etiquetado necesita el contenedor de ML independiente."
+      }
     }
   },
   "analytics": {
@@ -1952,7 +2009,19 @@
     },
     "catalogedMedia": "{{size}} catalogados",
     "storageUnavailable": "no disponible",
-    "catalogedMediaOnly": "catalogado — los objetos están en S3"
+    "catalogedMediaOnly": "catalogado — los objetos están en S3",
+    "tags": {
+      "title": "Etiquetas automáticas",
+      "subtitle": "Etiqueta las fotos según lo que muestran para que los invitados puedan filtrar la galería por escena.",
+      "enable": "Etiquetar automáticamente las fotos de esta galería",
+      "enableHint": "Las fotos se etiquetan en segundo plano a partir de una lista fija de escenas, como ceremonia, tarta o baile. Las etiquetas describen la escena, nunca quién aparece. Los invitados pueden filtrar por las etiquetas presentes.",
+      "tagging": "Etiquetando… {{tagged}} de {{total}} fotos",
+      "status": "{{tagged}} / {{total}} fotos etiquetadas",
+      "failed": "con error: {{count}}",
+      "queued": "En cola para etiquetar: {{count}}",
+      "rescan": "Volver a etiquetar",
+      "waitingHint": "Las fotos permanecen en cola hasta que el contenedor de ML con el modelo de etiquetado esté disponible."
+    }
   },
   "permissions": {
     "insufficient": "No tienes permiso para realizar esta acción",

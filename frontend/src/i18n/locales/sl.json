@@ -1436,6 +1436,55 @@
       "withDate": "Preostale slike se še urejajo — celotna galerija bo na voljo najpozneje {{date}}.",
       "noDetails": "Preostale slike se še urejajo.",
       "progressLabel": "Do zdaj dostavljene fotografije"
+    },
+    "tags": {
+      "filterLabel": "Oznake",
+      "matchAny": "Prikazane so fotografije s katero koli izbrano oznako.",
+      "names": {
+        "ceremony": "Obred",
+        "couple": "Par",
+        "portrait": "Portret",
+        "group_photo": "Skupinska fotografija",
+        "kiss": "Poljub",
+        "hug": "Objem",
+        "laughter": "Smeh",
+        "dancing": "Ples",
+        "party": "Zabava",
+        "speech": "Govor",
+        "toast": "Zdravica",
+        "music": "Glasba",
+        "stage": "Oder",
+        "audience": "Občinstvo",
+        "presentation": "Predstavitev",
+        "awards": "Nagrade",
+        "sports": "Šport",
+        "getting_ready": "Priprave",
+        "dress": "Obleka",
+        "rings": "Prstani",
+        "bouquet": "Šopek",
+        "flowers": "Cvetje",
+        "cake": "Torta",
+        "food": "Hrana",
+        "drinks": "Pijača",
+        "table_setting": "Pogrinjek",
+        "decoration": "Dekoracija",
+        "lights": "Sveče in lučke",
+        "gifts": "Darila",
+        "confetti": "Konfeti",
+        "fireworks": "Ognjemet",
+        "details": "Podrobnosti",
+        "venue": "Prizorišče",
+        "indoor": "V zaprtem prostoru",
+        "outdoor": "Na prostem",
+        "landscape": "Pokrajina",
+        "beach": "Plaža",
+        "sunset": "Sončni zahod",
+        "night": "Noč",
+        "vehicle": "Avto",
+        "children": "Otroci",
+        "pets": "Hišni ljubljenčki",
+        "black_and_white": "Črno-belo"
+      }
     }
   },
   "categories": {
@@ -1964,7 +2013,8 @@
     "settingsTab": {
       "delivery": "Mape in dostava",
       "about": {
-        "delivery": "Gnezdene mape iz nalaganj in prvi izbor pred celotno galerijo."
+        "delivery": "Gnezdene mape iz nalaganj in prvi izbor pred celotno galerijo.",
+        "tags": "Označite fotografije po prizorih, da lahko gostje filtrirajo galerijo."
       },
       "summary": {
         "folderStructureOn": "Struktura map vklopljena",
@@ -1975,9 +2025,11 @@
         "teamMembers_two": "{{count}} člana ekipe",
         "teamMembers_few": "{{count}} člani ekipe",
         "teamMembers_other": "{{count}} članov ekipe",
-        "teamReview": "nalaganja ekipe se pregledujejo"
+        "teamReview": "nalaganja ekipe se pregledujejo",
+        "tags": "Oznake po prizorih, da lahko gostje filtrirajo"
       },
-      "passwordOwnerOnly": "Samo lastnik galerije lahko spremeni geslo ali ga izklopi."
+      "passwordOwnerOnly": "Samo lastnik galerije lahko spremeni geslo ali ga izklopi.",
+      "tags": "Oznake"
     },
     "folders": {
       "sectionTitle": "Mape",
@@ -2823,7 +2875,12 @@
         "description": "Delite dokumente s stranko v njenem portalu in od nje prejemajte dokumente. Datoteke, ki jih naložijo stranke, ostanejo nedostopne, dokler jih v zapisu stranke ne označite kot varne. Privzeto je dovoljen PDF; dodatne vrste datotek ter omejitve velikosti in prostora nastavite pod Nastavitve → CRM."
       },
       "configure": "Nastavi",
-      "sidebarInSettings": "Ni vnosa v stranski vrstici — najdete ga v nastavitvah"
+      "sidebarInSettings": "Ni vnosa v stranski vrstici — najdete ga v nastavitvah",
+      "autoTagging": {
+        "title": "Samodejne oznake",
+        "description": "Označite fotografije po prizorih (obred, torta, ples, na prostem …), da lahko gostje filtrirajo galerijo. Deluje na vašem strežniku v istem neobveznem vsebniku ML kot zaznavanje obrazov, z dodanim modelom za označevanje. Oznake opisujejo prizore, ne oseb. Ostane izklopljeno, dokler ga ne vklopite še za posamezno galerijo.",
+        "lockedSingleContainer": "Ni na voljo v sliki »vse v enem«. Označevanje potrebuje ločen vsebnik ML."
+      }
     },
     "customerSurface": {
       "brandingTitle": "Glava nadzorne plošče stranke",
@@ -4274,7 +4331,19 @@
     "viewReleaseNotes": "Ogled opomb ob izdaji na GitHubu",
     "expandSidebar": "Razširi stransko vrstico",
     "collapseSidebar": "Strni stransko vrstico",
-    "viewOnGithub": "Odpri PicPeak na GitHubu"
+    "viewOnGithub": "Odpri PicPeak na GitHubu",
+    "tags": {
+      "title": "Samodejne oznake",
+      "subtitle": "Označite fotografije glede na to, kaj prikazujejo, da lahko gostje galerijo filtrirajo po prizorih.",
+      "enable": "Samodejno označi fotografije te galerije",
+      "enableHint": "Fotografije se v ozadju označijo z oznakami s stalnega seznama prizorov, kot so obred, torta ali ples. Oznake opisujejo prizor, nikoli oseb na njem. Gostje lahko filtrirajo po oznakah, ki se pojavijo.",
+      "tagging": "Označevanje … {{tagged}} od {{total}} fotografij",
+      "status": "Označenih fotografij: {{tagged}} / {{total}}",
+      "failed": "neuspešno: {{count}}",
+      "queued": "V čakalni vrsti za označevanje: {{count}}",
+      "rescan": "Ponovno zaženi označevanje",
+      "waitingHint": "Fotografije ostanejo v čakalni vrsti, dokler vsebnik ML z modelom za označevanje ni dosegljiv."
+    }
   },
   "acceptInvitation": {
     "title": "Sprejmi povabilo",

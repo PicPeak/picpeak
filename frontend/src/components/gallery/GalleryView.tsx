@@ -57,6 +57,7 @@ import { GallerySidebar } from './GallerySidebar';
 import { PhotoFilterBar } from './PhotoFilterBar';
 import { UserPhotoUpload } from './UserPhotoUpload';
 import { CreditFilterChips } from './CreditFilterChips';
+import { TagFilterChips, tagChipsFor } from './TagFilterChips';
 import { creditGroups, uploaderRequiresEmail } from '../../utils/photoCredits';
 import { hasVideoItems } from '../../utils/mediaCounts';
 import { isFilenameListFavourite, photosForFilenameList } from '../../utils/photoFilename';
@@ -194,6 +195,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const [peopleMatchAny, setPeopleMatchAny] = useState(false);
   // "By" filter (#1561): who took or uploaded the photo. null = everyone.
   const [selectedCreditKey, setSelectedCreditKey] = useState<string | null>(null);
+  // Scene-tag filter (issue 1733). Multi-select; several tags are OR-combined.
+  const [selectedTagKeys, setSelectedTagKeys] = useState<string[]>([]);
   const [showPeopleSheet, setShowPeopleSheet] = useState(false);
   // Dismissal is per gallery: a guest who hides the bar in one gallery has
   // said nothing about the next one.
@@ -386,6 +389,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // From the /photos payload, not the prop: the prop's event shape comes
   // from /info, which does not carry this flag.
   const peopleEnabled = data?.event?.people_enabled === true;
+  // Automatic scene tags (issue 1733), from the same payload.
+  const tagsEnabled = data?.event?.tags_enabled === true;
   const { data: peopleData } = useQuery({
     queryKey: ['gallery-people', slug],
     queryFn: () => galleryService.getPeople(slug),
@@ -751,6 +756,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // Same for a credit name (#1561): the chips hide a name with no photos
     // in the new scope, and with it the only way to clear the filter.
     setSelectedCreditKey(null);
+    setSelectedTagKeys([]);
   }, [setSelectedPhotos]);
 
   const openFolderBySlug = useCallback((key: string | null) => {
@@ -811,8 +817,19 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // it. The master switch counts too — turning feedback off keeps
     // allow_ratings as it was, and the chips hide with feedbackEnabled.
     minRating: feedbackSettings?.feedback_enabled && feedbackSettings?.allow_ratings ? minRating : null,
+    // Only while tagging is on for the gallery: the chips hide with it.
+    selectedTagKeys: tagsEnabled ? selectedTagKeys : undefined,
   });
   const creditsVisible = data?.event?.credits_visible === true;
+
+  // Tag chips (issue 1733): the gallery's tags, counted over the scope.
+  const tagChips = useMemo(
+    () => (tagsEnabled ? tagChipsFor(data?.tags, scopedPhotos, selectedTagKeys) : []),
+    [tagsEnabled, data?.tags, scopedPhotos, selectedTagKeys],
+  );
+  const toggleTag = useCallback((key: string) => {
+    setSelectedTagKeys(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
+  }, []);
 
   // Resolve a `?photo=` against the photos this viewer has loaded (issue
   // 1733) — never by fetching the id. A photo in another folder switches the
@@ -846,6 +863,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       setSelectedPersonIds([]);
       setPeopleMatchAny(false);
       setSelectedCreditKey(null);
+      setSelectedTagKeys([]);
     }
     setLinkedPhotoId(resolved.photo.id);
   }, [pendingPhotoLink, data?.photos, data?.categories, hiddenUntilReveal, viewAll, openFolderId, filteredPhotos, setSelectedPhotos]);
@@ -1686,6 +1704,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           creditPhotos={creditsVisible ? scopedPhotos : undefined}
           selectedCreditKey={selectedCreditKey}
           onCreditChange={setSelectedCreditKey}
+          tagChips={tagChips}
+          selectedTagKeys={selectedTagKeys}
+          onTagToggle={toggleTag}
           onCopyFilenames={() => setShowCopyFilenames(true)}
           copyFilenamesCount={copyFilenames.photos.length}
           folderTree={hasFolders ? {
@@ -1866,6 +1887,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               onChange={setSelectedCreditKey}
             />
           )}
+          <TagFilterChips
+            className="mt-3"
+            tags={tagChips}
+            selectedKeys={selectedTagKeys}
+            onToggle={toggleTag}
+          />
         </div>
       ) : null}
 

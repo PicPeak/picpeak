@@ -86,6 +86,10 @@ export type FeatureKey =
   // on is only the first of two deliberate actions, since detection is still
   // enabled per event.
   | 'faces'
+  // Automatic scene tags (migration 297, issue 1733). Runs in the same
+  // optional picpeak-ml sidecar as `faces` but is its own switch: scene tags
+  // are not biometric data. Tagging is still enabled per gallery.
+  | 'autoTagging'
   // Newsletter campaigns (migration 199, #1264). Child of `clients` —
   // mass marketing mail to customer accounts, with per-customer opt-out
   // and an unsubscribe link on every send. Strictly opt-in.
