@@ -1048,6 +1048,11 @@
       "reviewUploadsHelp": "Retém os envios dos membros da equipe cuja função não tem a permissão “Review Team Uploads”: eles ficam ocultos para convidados e clientes até que você ou um revisor os aprove na aba Fotos. As funções Admin, Editor e Solo Photographer têm essa permissão por padrão, então os envios delas nunca ficam retidos.",
       "reviewUploadsHelpMember": "Seus envios para esta galeria ficam ocultos para convidados e clientes até que o proprietário ou um revisor os aprove.",
       "reviewUploadsHelpReviewer": "Os envios de membros da equipe sem a permissão “Review Team Uploads” aguardam aprovação na aba Fotos. Os seus são publicados imediatamente."
+    },
+    "expiryPresets": {
+      "label": "Seleção rápida de expiração",
+      "days": "{{days}} dias",
+      "fromToday": "A partir de hoje:"
     }
   },
   "settings": {

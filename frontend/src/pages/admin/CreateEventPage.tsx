@@ -18,6 +18,7 @@ import { addDays } from 'date-fns';
 import { toast } from 'react-toastify';
 
 import { Button, Input, Card, Notice, PasswordGenerator, LocalizedDateInput, TimeField } from '../../components/common';
+import { ExpiryPresets, EXPIRY_PRESET_DAYS } from '../../components/admin/ExpiryPresets';
 import { ThemeCustomizerEnhanced, GalleryPreview, WelcomeMessageEditor, FeedbackSettings } from '../../components/admin';
 import { CustomerAccountPicker } from '../../components/admin/CustomerAccountPicker';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
@@ -1184,6 +1185,16 @@ export const CreateEventPage: React.FC = () => {
                     />
                   </div>
                   <span className="text-sm text-soft">{t('events.daysAfterEvent')}</span>
+                </div>
+                <div className="mt-2">
+                  <ExpiryPresets
+                    selected={EXPIRY_PRESET_DAYS.find((days) => days === Number(formData.expires_in_days)) ?? null}
+                    onSelect={(days) => {
+                      if (days === 'never') return;
+                      setFormData(prev => ({ ...prev, expires_in_days: days }));
+                      setErrors(prev => ({ ...prev, expires_in_days: undefined }));
+                    }}
+                  />
                 </div>
                 {formData.event_date && (
                   <p className="mt-2 text-sm text-muted">

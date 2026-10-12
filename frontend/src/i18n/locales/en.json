@@ -2334,7 +2334,12 @@
     "noEventsYet": "No galleries yet",
     "noEventsYetHint": "Create a gallery to share photos with a client.",
     "downloadLimitResetAction": "Reset downloads",
-    "notFoundHint": "It may have been deleted, or the link is wrong."
+    "notFoundHint": "It may have been deleted, or the link is wrong.",
+    "expiryPresets": {
+      "label": "Expiry quick picks",
+      "days": "{{days}} days",
+      "fromToday": "From today:"
+    }
   },
   "settings": {
     "title": "System Settings",

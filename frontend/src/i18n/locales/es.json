@@ -940,7 +940,13 @@
       "reviewUploadsHelp": "Retiene las subidas de los miembros del equipo cuyo rol no tiene el permiso «Review Team Uploads»: permanecen ocultas para invitados y clientes hasta que usted o un revisor las aprueben en la pestaña Fotos. Los roles Admin, Editor y Solo Photographer tienen ese permiso por defecto, así que sus subidas nunca se retienen.",
       "reviewUploadsHelpMember": "Sus subidas a esta galería permanecen ocultas para invitados y clientes hasta que el propietario o un revisor las apruebe.",
       "reviewUploadsHelpReviewer": "Las subidas de los miembros del equipo sin el permiso «Review Team Uploads» esperan aprobación en la pestaña Fotos. Las suyas se publican de inmediato."
-    }
+    },
+    "expiryPresets": {
+      "label": "Selección rápida de caducidad",
+      "days": "{{days}} días",
+      "fromToday": "Desde hoy:"
+    },
+    "neverExpires": "Nunca"
   },
   "settings": {
     "title": "Ajustes del sistema",

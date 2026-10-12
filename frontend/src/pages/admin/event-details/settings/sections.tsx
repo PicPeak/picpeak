@@ -4,6 +4,7 @@
  * the controls here never check permissions themselves.
  */
 import React, { useState } from 'react';
+import { addDays } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Lock, RefreshCw } from 'lucide-react';
 import type { Event } from '../../../../types';
@@ -11,6 +12,7 @@ import { Button, Input, LocalizedDateInput, PasswordGenerator, Notice } from '..
 import { FeedbackSettings } from '../../../../components/admin';
 import { CustomerAccountPicker } from '../../../../components/admin/CustomerAccountPicker';
 import { TeamMemberPicker } from '../../../../components/admin/TeamMemberPicker';
+import { ExpiryPresets, EXPIRY_PRESET_DAYS } from '../../../../components/admin/ExpiryPresets';
 import { UploaderNameSettings } from '../../../../components/admin/UploaderNameSettings';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
 import { usePermission } from '../../../../hooks/usePermission';
@@ -214,15 +216,28 @@ export const AccessSection: React.FC<FieldsProps & { ownsEvent?: boolean }> = ({
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
   const [showPassword, setShowPassword] = useState(false);
+  // A quick pick counts from today; an empty date is stored as "never
+  // expires" (the update route keeps NULL, whatever the create default is).
+  const presetDate = (days: number) => format(addDays(new Date(), days), 'yyyy-MM-dd');
   return (
     <SectionCard>
-      <div className="md:w-64">
-        <label className={labelClass}>{t('events.expirationDate')}</label>
-        <LocalizedDateInput
-          value={f.expires_at}
-          onChange={(iso) => set({ expires_at: iso })}
-          min={format(new Date(), 'yyyy-MM-dd')}
-        />
+      <div>
+        <div className="md:w-64">
+          <label className={labelClass}>{t('events.expirationDate')}</label>
+          <LocalizedDateInput
+            value={f.expires_at}
+            onChange={(iso) => set({ expires_at: iso })}
+            min={format(new Date(), 'yyyy-MM-dd')}
+          />
+        </div>
+        <div className="mt-2">
+          <ExpiryPresets
+            lead={t('events.expiryPresets.fromToday', 'From today:')}
+            allowNever
+            selected={f.expires_at ? (EXPIRY_PRESET_DAYS.find((days) => presetDate(days) === f.expires_at) ?? null) : 'never'}
+            onSelect={(preset) => set({ expires_at: preset === 'never' ? '' : presetDate(preset) })}
+          />
+        </div>
       </div>
       <div>
         <label className="flex items-start gap-2">

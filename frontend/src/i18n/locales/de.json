@@ -2927,7 +2927,12 @@
     "noEventsYet": "Noch keine Galerien",
     "noEventsYetHint": "Erstellen Sie eine Galerie, um Fotos mit einem Kunden zu teilen.",
     "downloadLimitResetAction": "Downloads zurücksetzen",
-    "notFoundHint": "Sie wurde vielleicht gelöscht, oder der Link ist falsch."
+    "notFoundHint": "Sie wurde vielleicht gelöscht, oder der Link ist falsch.",
+    "expiryPresets": {
+      "label": "Schnellauswahl für den Ablauf",
+      "days": "{{days}} Tage",
+      "fromToday": "Ab heute:"
+    }
   },
   "settings": {
     "title": "Systemeinstellungen",
