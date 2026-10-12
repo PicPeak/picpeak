@@ -1,10 +1,12 @@
 /**
  * Per-photo scene tagging (issue 1733).
  *
- * Runs on the stored THUMBNAIL. The model looks at a 224px image, so a
- * thumbnail loses nothing, every processed photo already has one in managed
- * storage (external photos included), and no preview tier has to be
- * generated for a backfill.
+ * Runs on the stored THUMBNAIL. The model looks at a 224px image, every
+ * processed photo already has a thumbnail in managed storage (external
+ * photos included), and no preview tier has to be generated for a backfill.
+ *
+ * What that costs: with the default thumbnail settings (300x300, fit
+ * "cover") the model sees the centre square of the frame, not all of it.
  */
 
 const { db } = require('../database/db');

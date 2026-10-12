@@ -129,12 +129,25 @@ class TestVocabulary:
         # different legal category and does not go in this list.
         banned = re.compile(
             r"\b(man|men|woman|women|male|female|boy|girl|bride|groom|old|elderly|young|"
-            r"baby|teen\w*|race|ethnic\w*|skin|religio\w*|church|mosque|synagogue|temple|"
+            r"child\w*|kids?|baby|teen\w*|race|ethnic\w*|skin|religio\w*|church|mosque|synagogue|temple|"
             r"disab\w*|wheelchair|pregnan\w*|sick|ill)\b"
         )
         for t in self.tags:
             assert not banned.search(t["prompt"].lower()), t["key"]
             assert not banned.search(t["key"].replace("_", " ")), t["key"]
+
+    def test_committed_text_embeddings_belong_to_this_vocabulary(self):
+        # Changing a key or a prompt without re-running tools/export_tagger.py
+        # would ship a sidecar that refuses to tag. Fail here instead.
+        with np.load(config.TAG_EMBEDDINGS_PATH, allow_pickle=False) as data:
+            meta = json.loads(str(data["meta"]))
+            keys = [str(k) for k in data["keys"]]
+            embeddings = data["embeddings"]
+        assert keys == [t["key"] for t in self.tags]
+        assert meta["vocabulary_sha256"] == tagging.vocabulary_fingerprint(self.tags)
+        assert embeddings.shape[0] == len(self.tags)
+        assert np.allclose(np.linalg.norm(embeddings, axis=1), 1.0, atol=1e-4)
+        assert re.fullmatch(r"[0-9a-f]{64}", meta["encoder_sha256"])
 
     def test_fingerprint_follows_prompts_but_not_thresholds(self):
         base = tagging.vocabulary_fingerprint(self.tags)
@@ -193,6 +206,54 @@ class TestPreprocess:
     def test_undecodable_bytes_raise_value_error(self):
         with pytest.raises(ValueError):
             tagging.preprocess(b"not an image", 32, self.mean, self.std)
+
+
+class TestResizeBicubic:
+    """The resize has to be Pillow's antialiased bicubic, not merely a resize.
+
+    The expected values were produced with Pillow 12.3 (`Image.resize(...,
+    Image.BICUBIC)`), which is what SigLIP's own image processor calls.
+    Pillow is not a dependency of this service, hence the pinned numbers.
+    """
+
+    @staticmethod
+    def _pattern() -> np.ndarray:
+        src = (np.arange(12)[:, None] * 37 + np.arange(10)[None, :] * 53) % 256
+        return np.stack([src, 255 - src, src * 3 % 256], axis=-1).astype(np.uint8)
+
+    def test_shrinking_matches_pillow(self):
+        out = tagging.resize_bicubic(self._pattern(), 4).astype(int)
+        red = [[92, 156, 107, 145], [167, 110, 151, 95], [87, 158, 108, 148], [138, 109, 141, 110]]
+        blue = [[104, 141, 127, 134], [148, 121, 127, 123], [108, 133, 128, 109], [137, 122, 107, 138]]
+        assert np.abs(out[..., 0] - np.array(red)).max() <= 1
+        assert np.abs(out[..., 2] - np.array(blue)).max() <= 1
+
+    def test_enlarging_matches_pillow(self):
+        out = tagging.resize_bicubic(self._pattern()[:3, :3], 5).astype(int)
+        red = [
+            [0, 13, 50, 87, 107], [10, 27, 64, 101, 121], [33, 53, 90, 127, 147],
+            [59, 79, 116, 153, 173], [73, 93, 130, 167, 187],
+        ]
+        assert np.abs(out[..., 0] - np.array(red)).max() <= 1
+
+    def test_shrinking_averages_instead_of_sampling(self):
+        # A one-pixel checkerboard has no detail left at a quarter of its
+        # size. A filter without antialiasing picks single pixels and returns
+        # black-and-white noise; this one returns mid grey.
+        board = ((np.indices((64, 64)).sum(axis=0) % 2) * 255).astype(np.uint8)
+        out = tagging.resize_bicubic(np.repeat(board[..., None], 3, axis=2), 16)
+        assert out.min() >= 120 and out.max() <= 135
+
+    def test_a_large_frame_is_brought_down_before_the_exact_filter(self, monkeypatch):
+        seen = []
+        original = tagging.resize_bicubic
+        monkeypatch.setattr(
+            tagging, "resize_bicubic", lambda rgb, size: seen.append(rgb.shape) or original(rgb, size)
+        )
+        mean = std = np.array([0.5, 0.5, 0.5], dtype=np.float32)
+        batch = tagging.preprocess(_png(width=3000, height=1000), 32, mean, std)
+        assert batch.shape == (1, 3, 32, 32)
+        assert seen == [(43, 128, 3)]
 
 
 class FakeSession:

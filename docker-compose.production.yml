@@ -249,7 +249,7 @@ services:
       - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
       - FACE_ORT_THREADS=${FACE_ORT_THREADS:-1}
       # Scene tagging (issue 1733); only read once /tags is used.
-      - TAG_SCORE_THRESHOLD=${TAG_SCORE_THRESHOLD:-0.15}
+      - TAG_SCORE_THRESHOLD=${TAG_SCORE_THRESHOLD:-0.01}
       - TAG_TOP_K=${TAG_TOP_K:-5}
       - TZ=${TZ:-UTC}
     # No volumes and no published ports: stateless, and reachable only from

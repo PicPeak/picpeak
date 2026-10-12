@@ -1,18 +1,19 @@
 # Build-time only: tools/export_tagger.py (issue 1733). Never installed in
 # the sidecar image.
 #
-# Lower bounds, not pins: this script has not been run yet (see its
-# docstring). Whoever runs it first should replace these with the exact
-# versions that produced the published artifact, as requirements-convert.txt
-# does for the FaceNet conversion.
-torch>=2.2
-# SigLIP landed in transformers 4.37.
-transformers>=4.37
+# Pinned to the versions that produced the committed
+# app/tag_text_embeddings.npz and the encoder checksum in LICENSES.md
+# (Python 3.11, macOS arm64). A different torch or onnxscript may export a
+# graph with different bytes; see the script's note on reproducibility.
+torch==2.14.1
+transformers==5.19.0
+# torch.onnx.export(dynamo=True) needs it.
+onnxscript==0.7.2
+onnx==1.23.2
+onnxruntime==1.31.0
 # SigLIP's tokenizer.
-sentencepiece
-protobuf
-onnx
-onnxruntime
-numpy
+sentencepiece==0.2.2
+protobuf==7.36.2
+numpy==2.4.6
 # The script imports app/tagging.py for the vocabulary fingerprint.
-opencv-python-headless
+opencv-python-headless==5.0.0.93

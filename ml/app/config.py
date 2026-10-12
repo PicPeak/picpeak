@@ -93,6 +93,13 @@ TAG_EMBEDDINGS_PATH = os.environ.get(
 
 # A tag is reported when its score reaches the threshold (the vocabulary may
 # override it per tag), and at most TAG_TOP_K tags are reported per image.
-# Both defaults are GUESSES until they are evaluated on real galleries.
-TAG_SCORE_THRESHOLD = float(os.environ.get("TAG_SCORE_THRESHOLD", "0.15"))
+#
+# The scores are SigLIP's pairwise sigmoid and are SMALL: a generic scene
+# prompt ("a photo taken outdoors") that clearly applies scores around 0.01
+# to 0.1, one that does not scores below 0.001. On ten real sample photos,
+# sent as the backend sends them, 0.01 produced five tags, all correct;
+# 0.005 produced ten, two of them wrong (see ml/README.md). Ten
+# landscape-like samples say little about event photography, so both values
+# are provisional.
+TAG_SCORE_THRESHOLD = float(os.environ.get("TAG_SCORE_THRESHOLD", "0.01"))
 TAG_TOP_K = int(os.environ.get("TAG_TOP_K", "5"))

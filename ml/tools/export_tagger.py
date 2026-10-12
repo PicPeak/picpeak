@@ -18,15 +18,18 @@ Both come out of ONE run on purpose. The text embeddings only mean anything
 against the encoder they were produced with, so the .npz records the
 encoder's SHA-256 and the sidecar refuses a pair that does not match. For the
 same reason, RE-RUN THIS WHENEVER A KEY OR A PROMPT in tag_vocabulary.json
-changes: the .npz also records a fingerprint of the vocabulary. With an
-unchanged --revision the encoder is the same model, but ONNX export is not
-guaranteed byte-reproducible, so check the printed SHA-256 against the
-published one and re-publish the encoder if it differs.
+changes: the .npz also records a fingerprint of the vocabulary.
 
-NOT VERIFIED: this script was written without access to the model and has
-not been run. Treat its first run as part of the review: the parity check
-below must pass, and the tags have to be looked at on real photos before the
-thresholds in app/config.py mean anything.
+Reproducibility, as measured: two runs on one machine with the versions in
+requirements-export-tagger.txt and the revision recorded in LICENSES.md gave
+byte-identical files both times. That is an observation about those versions
+on that machine (macOS arm64), not a guarantee: after any re-run, compare the
+printed encoder SHA-256 with the one in LICENSES.md. If it differs, the
+committed .npz no longer matches the published encoder, and one of the two
+has to be replaced.
+
+The script checks the exported graph against the PyTorch model on random
+input before it writes the embeddings (observed worst difference 8.6e-06).
 
 Usage
 -----
@@ -39,7 +42,8 @@ Usage
         --out-dir .
 
 `--revision` has no default. Pin the exact commit you reviewed the licence
-of, and record it in LICENSES.md together with the printed checksums.
+of, and record it in LICENSES.md together with the printed checksums. The
+revision the committed embeddings were made from is recorded there.
 """
 
 import argparse
@@ -103,8 +107,10 @@ def main() -> int:
         str(encoder_path),
         input_names=["pixel_values"],
         output_names=["image_embeds"],
-        opset_version=17,
-        dynamic_axes=None,
+        opset_version=18,
+        # One self-contained file: the image build pins a single checksum.
+        dynamo=True,
+        external_data=False,
     )
 
     # A converted graph that is subtly wrong still returns plausible floats.

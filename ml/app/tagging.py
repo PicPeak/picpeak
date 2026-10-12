@@ -76,22 +76,71 @@ def select_tags(
     return picked
 
 
+def _bicubic_axis_weights(in_size: int, out_size: int) -> np.ndarray:
+    """Row-stochastic (out_size, in_size) matrix for one resize axis.
+
+    Pillow's antialiased bicubic (Keys kernel, a = -0.5): when shrinking, the
+    kernel's support is stretched by the scale factor, so every source pixel
+    contributes. cv2.INTER_CUBIC always samples a fixed 4x4 neighbourhood and
+    aliases instead.
+    """
+    scale = in_size / out_size
+    filterscale = max(scale, 1.0)
+    support = 2.0 * filterscale
+    weights = np.zeros((out_size, in_size), dtype=np.float64)
+    for out in range(out_size):
+        center = (out + 0.5) * scale
+        lo = max(int(center - support + 0.5), 0)
+        hi = min(int(center + support + 0.5), in_size)
+        x = np.abs((np.arange(lo, hi) - center + 0.5) / filterscale)
+        w = np.where(
+            x < 1.0,
+            (1.5 * x - 2.5) * x * x + 1.0,
+            np.where(x < 2.0, ((-0.5 * x + 2.5) * x - 4.0) * x + 2.0, 0.0),
+        )
+        weights[out, lo:hi] = w / w.sum()
+    return weights
+
+
+def resize_bicubic(rgb: np.ndarray, size: int) -> np.ndarray:
+    """Squash an HxWx3 uint8 image to size x size like `PIL.Image.resize`.
+
+    Horizontal pass, then vertical, each rounded back to 8 bits as Pillow
+    does. tests/test_tagging.py and the evaluation in the README hold this
+    to within one grey level of Pillow.
+    """
+    h, w = rgb.shape[:2]
+    # Two matrix products rather than a per-pixel loop: (h, c, w) @ (w, size),
+    # then (size, h) @ (h, size * c).
+    out = rgb.astype(np.float64).transpose(0, 2, 1) @ _bicubic_axis_weights(w, size).T
+    out = np.clip(np.rint(out), 0, 255).transpose(0, 2, 1).reshape(h, size * 3)
+    out = _bicubic_axis_weights(h, size) @ out
+    return np.clip(np.rint(out), 0, 255).astype(np.uint8).reshape(size, size, 3)
+
+
 def preprocess(image_bytes: bytes, size: int, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
     """Decode and shape one image as the encoder's NCHW float input.
 
-    The whole frame is squashed to `size` x `size` without cropping, which is
-    how SigLIP's own processor does it. Area interpolation when shrinking
-    stands in for the antialiased bicubic of the reference pipeline.
+    The whole frame is squashed to `size` x `size` without cropping, with an
+    antialiased bicubic filter: what SigLIP's own image processor does. The
+    filter matters. The scores of generic scene tags are small, and a cheaper
+    area resize moved some of them by an order of magnitude on real photos.
     """
     buf = np.frombuffer(image_bytes, dtype=np.uint8)
     img = cv2.imdecode(buf, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError("Image could not be decoded")
+    # The backend sends thumbnails. Anything much larger is brought down
+    # first, so the exact filter below never works on a multi-megapixel frame.
     h, w = img.shape[:2]
-    interpolation = cv2.INTER_AREA if max(h, w) > size else cv2.INTER_CUBIC
-    img = cv2.resize(img, (size, size), interpolation=interpolation)
-    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    rgb = (rgb - mean) / std
+    limit = size * 4
+    if max(h, w) > limit:
+        shrink = limit / max(h, w)
+        img = cv2.resize(
+            img, (max(1, round(w * shrink)), max(1, round(h * shrink))), interpolation=cv2.INTER_AREA
+        )
+    rgb = resize_bicubic(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), size)
+    rgb = (rgb.astype(np.float32) / 255.0 - mean) / std
     return rgb.transpose(2, 0, 1)[None, ...].astype(np.float32)
 
 

@@ -107,13 +107,13 @@ conversion is the parity check's job, not the hash's.
 ## Scene tagging
 
 `POST /tags` scores one image against a fixed vocabulary of event-photography
-scenes ([`app/tag_vocabulary.json`](app/tag_vocabulary.json), 43 tags such as
+scenes ([`app/tag_vocabulary.json`](app/tag_vocabulary.json), 42 tags such as
 `ceremony`, `cake`, `dancing`, `outdoor`) and returns the ones that pass their
 threshold, best first, at most `TAG_TOP_K`:
 
 ```jsonc
-{ "model_version": "siglip-base-patch16-224@<rev>+vocab<hash>",
-  "tags": [ { "tag": "cake", "score": 0.83 }, { "tag": "food", "score": 0.31 } ] }
+{ "model_version": "siglip-base-patch16-224@7fd15f0689c7+vocab2c80423a",
+  "tags": [ { "tag": "black_and_white", "score": 0.15 }, { "tag": "sunset", "score": 0.024 } ] }
 ```
 
 Scores are independent per tag (sigmoid, the SigLIP formulation), so an image
@@ -121,41 +121,94 @@ can carry several tags or none. The vocabulary describes scenes and objects
 only: nothing about who a person is.
 
 **The default image does not contain the tagging model**, and `/tags` answers
-`503` until it does. Nothing has been published for it yet; see
-[LICENSES.md](LICENSES.md). To build an image with tagging:
+`503` until it does: the 373 MB image encoder is not published anywhere yet.
+See [LICENSES.md](LICENSES.md) for the model, the pinned revision and the
+checksums. To produce the encoder:
 
 ```bash
 cd ml
-python3 -m venv .venv && . .venv/bin/activate
+python3.11 -m venv .venv && . .venv/bin/activate
 pip install -r tools/requirements-export-tagger.txt
 python tools/export_tagger.py --model google/siglip-base-patch16-224 \
-  --revision <commit of the model repository> --out-dir .
+  --revision 7fd15f0689c79d79e38b1c2e2e2370a7bf2761ed --out-dir /tmp/tagger
+sha256sum /tmp/tagger/tag_image_encoder.onnx   # must equal the one in LICENSES.md
 ```
 
-That writes `tag_image_encoder.onnx` (publish it; pass its URL and SHA-256 as
-`TAG_ENCODER_ONNX_URL` / `TAG_ENCODER_ONNX_SHA256`, as build args or as
-repository variables for CI) and `tag_text_embeddings.npz` (commit it to
-`ml/app/`). The two belong together: the sidecar refuses to tag when the
-embeddings were made for a different encoder file or a different vocabulary,
-so re-run the script after changing a key or a prompt.
+Publish `tag_image_encoder.onnx` and pass its URL and SHA-256 as
+`TAG_ENCODER_ONNX_URL` / `TAG_ENCODER_ONNX_SHA256` (build args, or repository
+variables for CI). The script also writes `tag_text_embeddings.npz`; the copy
+in `app/` was made by exactly this run. The two belong together: the sidecar
+refuses to tag when the embeddings were made for a different encoder file or
+a different vocabulary, so after changing a key or a prompt, re-run the
+script and commit the new `.npz`.
+
+To run it without an image, point the sidecar at a directory holding the
+encoder (`TAG_MODEL_DIR`, default `FACE_MODEL_DIR`).
 
 The model is loaded on the first `/tags` request, not at startup. The backend
 only calls `/tags` once the `autoTagging` feature flag and a gallery's own
 switch are both on, so an install that leaves tagging off never loads it.
 
-Expected cost, **estimated from the model's size and not measured**: the
-ViT-B/16 image tower is about 93M parameters, so roughly 370 MB on disk and
-400-600 MB of additional resident memory once loaded, and in the order of
-0.2-0.5 s per image on one CPU thread. The backend sends the stored
-thumbnail, not the original.
+### Measured
+
+One machine (Apple Silicon laptop, one ONNX Runtime thread), so read these
+as an order of magnitude; a small VPS core is several times slower.
+
+| | |
+|---|---|
+| Resident memory, face models loaded and used, before any `/tags` call | 322 MB |
+| Same process after the first `/tags` call | 691 MB (about +370 MB), 714 MB after 50 more |
+| A process that is never asked for tags (flag on, no gallery switched on, 12 s) | no `/tags` request, model not loaded, 358 MB |
+| First `/tags` call, including the model load | 0.5 s |
+| Later `/tags` calls, over HTTP | 0.085 s median (0.074 to 0.099) |
+| ONNX encoder against the PyTorch model, same input | scores equal to 5 decimals |
+
+### Thresholds, and what they are based on
 
 | Variable | Default | |
 |---|---|---|
-| `TAG_SCORE_THRESHOLD` | `0.15` | a tag is reported at or above this score; a vocabulary entry may set its own `threshold` |
+| `TAG_SCORE_THRESHOLD` | `0.01` | a tag is reported at or above this score; a vocabulary entry may set its own `threshold` |
 | `TAG_TOP_K` | `5` | most tags reported per image |
 
-Both defaults are placeholders until they have been evaluated on real
-galleries.
+The scores are small by nature. SigLIP's sigmoid answers "is this exact
+caption the pair of this image", and a generic caption rarely is: a clearly
+applicable scene tag scores 0.01 to 0.1, an inapplicable one below 0.001.
+
+The ten sample photos in `test-images/`, tagged through the real path
+(thumbnail from the backend, this sidecar), every score of 0.001 or more:
+
+| Photo | Scores | At 0.01 |
+|---|---|---|
+| black-and-white field, low sun | black_and_white 0.150, sunset 0.024, landscape 0.007, outdoor 0.003 | black_and_white, sunset: both right |
+| park benches in autumn | outdoor 0.006, landscape 0.002 | none (outdoor would be right) |
+| cactus in a pot, close-up | details 0.002 | none (details would be right) |
+| feet of passengers in a tram | audience 0.001 | none (audience is wrong) |
+| conifers above a bay | landscape 0.097, outdoor 0.035, beach 0.002 | landscape, outdoor: both right |
+| backlit cactus | landscape 0.008, sunset 0.002, outdoor 0.001 | none (landscape would be wrong) |
+| forest in fog | landscape 0.008, outdoor 0.002 | none (both would be right) |
+| suspension bridge in fog | landscape 0.002 | none |
+| small island in a calm sea | landscape 0.028, beach 0.008, outdoor 0.003 | landscape: right (beach would be wrong) |
+| laptop on a table | nothing | none |
+
+At 0.01 that is five tags, all correct, and seven photos without a tag. At
+0.005 it is ten tags, two of them wrong; at 0.002, eighteen with three wrong
+and two debatable. 0.01 was chosen because a wrong chip in a guest's filter
+is worse than a missing one. Top-k never came into play (at most two tags
+passed), so 5 is untested as a limit.
+
+**These thresholds are provisional.** Ten landscape-like photos without a
+single person, cake or dance floor say almost nothing about event
+photography, where most of the vocabulary lives. Before relying on the
+feature, tag a few real galleries and look at the result; per-tag
+`threshold` values in the vocabulary are the tool for tags that turn out
+too eager or too shy.
+
+Preprocessing is the reference one: the frame is squashed to 224x224 with an
+antialiased bicubic filter, implemented in `app/tagging.py` and held to
+within one grey level of Pillow by the tests. That is not a detail. A plain
+area resize, the first implementation, moved scores at this scale by an
+order of magnitude (conifers above a bay: landscape 0.002 with area, 0.048
+with bicubic, on the same thumbnail).
 
 ## Not available on the all-in-one image
 
