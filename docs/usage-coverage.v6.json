@@ -1566,6 +1566,7 @@
         "GET /:slug/feedback-settings",
         "GET /:slug/photos/:photoId/feedback",
         "POST /:slug/photos/:photoId/feedback",
+        "POST /:slug/feedback/bulk",
         "GET /:slug/feedback-summary",
         "GET /:slug/my-feedback"
       ]
