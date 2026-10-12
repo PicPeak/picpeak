@@ -6140,7 +6140,9 @@
       "timeWindow": "Time Window (minutes)",
       "maxRequests": "Max Requests",
       "decisions": "Approve / reject per photo",
-      "decisionsDesc": "Guests approve or reject each photo, optionally saying why. You filter and export by their decision"
+      "decisionsDesc": "Guests approve or reject each photo, optionally saying why. You filter and export by their decision",
+      "annotations": "Drawing on photos",
+      "annotationsDesc": "Guests can draw on a photo and attach the drawing to their comment. Needs comments"
     },
     "moderated": "Feedback moderated",
     "deleted": "Feedback deleted",
@@ -6261,7 +6263,25 @@
     "youRejected": "You rejected this photo",
     "deleteAction": "Delete feedback",
     "panelTitle": "Photo feedback",
-    "closePanel": "Close feedback"
+    "closePanel": "Close feedback",
+    "annotation": {
+      "draw": "Draw on photo",
+      "edit": "Edit drawing",
+      "remove": "Remove drawing",
+      "attached": "Drawing attached",
+      "inProgress": "Finish the drawing on the photo, then send your comment.",
+      "show": "Show drawing",
+      "hide": "Hide drawing",
+      "toolbar": "Drawing tools",
+      "toolFree": "Freehand",
+      "toolArrow": "Arrow",
+      "color": "Colour {{number}}",
+      "undo": "Undo",
+      "clear": "Clear",
+      "done": "Done",
+      "limitReached": "A drawing can have up to {{max}} strokes.",
+      "overlayLabel": "Drawing on the photo"
+    }
   },
   "filter": {
     "feedbackFilters": "Feedback Filters",

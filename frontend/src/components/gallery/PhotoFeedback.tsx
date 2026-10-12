@@ -192,6 +192,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
             isEnabled={true}
             requireNameEmail={settings.require_name_email || false}
             showToGuests={settings.show_feedback_to_guests || false}
+            allowAnnotations={!!settings.allow_annotations}
             onCommentAdded={() => {
               if (onFeedbackUpdate) onFeedbackUpdate();
             }}

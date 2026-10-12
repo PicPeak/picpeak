@@ -1,0 +1,117 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ANNOTATION_MAX_STROKES,
+  type AnnotationStroke,
+  type AnnotationTool,
+  type PhotoAnnotation,
+} from '../../../utils/photoAnnotation';
+import type { CommentAnnotationContextValue } from './CommentAnnotationContext';
+
+interface Options {
+  photoId: number | undefined;
+  /** A still picture is on screen (not a video). */
+  canDraw: boolean;
+  /** The feedback panel, which holds the comment form, is open. */
+  panelOpen: boolean;
+  /** Called when drawing starts: the lightbox resets the image to fit. */
+  onStart: () => void;
+}
+
+/**
+ * Annotate mode for the lightbox (issue 1733): the strokes being drawn, the
+ * finished drawing waiting on the comment form, and the stored drawing a
+ * guest picked from the comment list. Kept out of PhotoLightbox so that file
+ * only has the integration points.
+ */
+export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart }: Options) {
+  const [drawing, setDrawing] = useState(false);
+  const [strokes, setStrokes] = useState<AnnotationStroke[]>([]);
+  const [draft, setDraft] = useState<PhotoAnnotation | null>(null);
+  const [shown, setShown] = useState<{ commentId: number; annotation: PhotoAnnotation } | null>(null);
+  const [tool, setTool] = useState<AnnotationTool>('free');
+  const [color, setColor] = useState(0);
+
+  // A drawing belongs to one photo: another photo drops all of it.
+  useEffect(() => {
+    setDrawing(false);
+    setStrokes([]);
+    setDraft(null);
+    setShown(null);
+  }, [photoId, canDraw]);
+
+  // The comment form lives in the feedback panel, so a draft goes with it
+  // when the panel closes. A stored drawing picked from the list stays: on a
+  // phone the panel covers the photo and has to be closed to look at it.
+  useEffect(() => {
+    if (panelOpen) return;
+    setDrawing(false);
+    setStrokes([]);
+    setDraft(null);
+  }, [panelOpen]);
+
+  const startDrawing = useCallback(() => {
+    if (!canDraw) return;
+    setShown(null);
+    setStrokes(draft?.strokes ?? []);
+    setDrawing(true);
+    onStart();
+  }, [canDraw, draft, onStart]);
+
+  /** Leave the mode, keeping whatever was attached before it was entered. */
+  const cancel = useCallback(() => setDrawing(false), []);
+
+  const done = () => {
+    setDraft(strokes.length > 0 ? { v: 1, strokes } : null);
+    setDrawing(false);
+  };
+
+  const discard = useCallback(() => {
+    setDrawing(false);
+    setStrokes([]);
+    setDraft(null);
+  }, []);
+
+  const toggleShown = useCallback((commentId: number, annotation: PhotoAnnotation) => {
+    setShown((prev) => (prev?.commentId === commentId ? null : { commentId, annotation }));
+  }, []);
+
+  const atLimit = strokes.length >= ANNOTATION_MAX_STROKES;
+  const addStroke = (stroke: AnnotationStroke) => {
+    setStrokes((prev) => (prev.length >= ANNOTATION_MAX_STROKES ? prev : [...prev, stroke]));
+  };
+
+  const context = useMemo<CommentAnnotationContextValue>(() => ({
+    canDraw,
+    drawing,
+    draft,
+    startDrawing,
+    discard,
+    shownCommentId: shown?.commentId ?? null,
+    toggleShown,
+  }), [canDraw, drawing, draft, startDrawing, discard, shown, toggleShown]);
+
+  // What lies on the photo: the strokes in progress, else the drawing picked
+  // from the comment list, else the one waiting on the comment form.
+  const visible: PhotoAnnotation | null = drawing
+    ? (strokes.length > 0 ? { v: 1, strokes } : null)
+    : shown?.annotation ?? draft;
+
+  return {
+    drawing,
+    cancel,
+    done,
+    strokes,
+    atLimit,
+    addStroke,
+    undo: () => setStrokes((prev) => prev.slice(0, -1)),
+    clear: () => setStrokes([]),
+    tool,
+    setTool,
+    color,
+    setColor,
+    visible,
+    context,
+  };
+}
+
+export type LightboxAnnotation = ReturnType<typeof useLightboxAnnotation>;

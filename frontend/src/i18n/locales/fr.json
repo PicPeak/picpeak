@@ -2981,7 +2981,9 @@
       "keybindLightroom": "Valeurs par défaut de Lightroom",
       "keybindLightroomDesc": "1-5 attribuent les étoiles, 6-9 les couleurs rouge / jaune / vert / bleu",
       "decisions": "Approuver / refuser chaque photo",
-      "decisionsDesc": "Les invités approuvent ou refusent chaque photo, en indiquant éventuellement pourquoi. Vous filtrez et exportez selon leur décision"
+      "decisionsDesc": "Les invités approuvent ou refusent chaque photo, en indiquant éventuellement pourquoi. Vous filtrez et exportez selon leur décision",
+      "annotations": "Dessin sur les photos",
+      "annotationsDesc": "Les invités peuvent dessiner sur une photo et joindre le dessin à leur commentaire. Nécessite les commentaires"
     },
     "settingsUpdated": "Paramètres de commentaires mis à jour",
     "settingsUpdateError": "Échec de la mise à jour des paramètres",
@@ -3090,7 +3092,25 @@
     "decisionError": "Impossible d'enregistrer votre décision",
     "decisionType": "votre décision",
     "youApproved": "Vous avez approuvé cette photo",
-    "youRejected": "Vous avez refusé cette photo"
+    "youRejected": "Vous avez refusé cette photo",
+    "annotation": {
+      "draw": "Dessiner sur la photo",
+      "edit": "Modifier le dessin",
+      "remove": "Retirer le dessin",
+      "attached": "Dessin joint",
+      "inProgress": "Terminez le dessin sur la photo, puis envoyez votre commentaire.",
+      "show": "Afficher le dessin",
+      "hide": "Masquer le dessin",
+      "toolbar": "Outils de dessin",
+      "toolFree": "Main levée",
+      "toolArrow": "Flèche",
+      "color": "Couleur {{number}}",
+      "undo": "Annuler le dernier trait",
+      "clear": "Tout effacer",
+      "done": "Terminé",
+      "limitReached": "Un dessin peut contenir au maximum {{max}} traits.",
+      "overlayLabel": "Dessin sur la photo"
+    }
   },
   "filter": {
     "feedbackFilters": "Filtres de commentaires",

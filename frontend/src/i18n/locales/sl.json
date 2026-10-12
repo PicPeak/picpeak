@@ -5352,7 +5352,9 @@
       "timeWindow": "Časovno okno (minute)",
       "maxRequests": "Največ zahtev",
       "decisions": "Odobri / zavrni posamezno fotografijo",
-      "decisionsDesc": "Gostje vsako fotografijo odobrijo ali zavrnejo, po želji z razlogom. Po njihovi odločitvi lahko filtrirate in izvažate"
+      "decisionsDesc": "Gostje vsako fotografijo odobrijo ali zavrnejo, po želji z razlogom. Po njihovi odločitvi lahko filtrirate in izvažate",
+      "annotations": "Risanje na fotografije",
+      "annotationsDesc": "Gostje lahko rišejo na fotografijo in risbo priložijo komentarju. Potrebni so komentarji"
     },
     "settingsUpdated": "Nastavitve povratnih informacij posodobljene",
     "settingsUpdateError": "Nastavitev ni bilo mogoče posodobiti",
@@ -5472,7 +5474,25 @@
     "decisionError": "Odločitve ni bilo mogoče shraniti",
     "decisionType": "vašo odločitev",
     "youApproved": "To fotografijo ste odobrili",
-    "youRejected": "To fotografijo ste zavrnili"
+    "youRejected": "To fotografijo ste zavrnili",
+    "annotation": {
+      "draw": "Riši na fotografijo",
+      "edit": "Uredi risbo",
+      "remove": "Odstrani risbo",
+      "attached": "Risba priložena",
+      "inProgress": "Dokončajte risbo na fotografiji in nato pošljite komentar.",
+      "show": "Pokaži risbo",
+      "hide": "Skrij risbo",
+      "toolbar": "Orodja za risanje",
+      "toolFree": "Prostoročno",
+      "toolArrow": "Puščica",
+      "color": "Barva {{number}}",
+      "undo": "Razveljavi",
+      "clear": "Počisti vse",
+      "done": "Končano",
+      "limitReached": "Risba ima lahko največ {{max}} potez.",
+      "overlayLabel": "Risba na fotografiji"
+    }
   },
   "filter": {
     "feedbackFilters": "Filtri povratnih informacij",

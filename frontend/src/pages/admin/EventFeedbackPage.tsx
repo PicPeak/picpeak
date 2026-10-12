@@ -21,6 +21,7 @@ import { format, parseISO } from 'date-fns';
 
 import { Button, Card, EmptyState, Loading, Tabs, useConfirm } from '../../components/common';
 import { AdminAuthenticatedImage } from '../../components/admin/AdminAuthenticatedImage';
+import { AnnotatedPhotoPreview } from '../../components/admin/AnnotatedPhotoPreview';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
 import { feedbackService } from '../../services/feedback.service';
@@ -293,6 +294,16 @@ export const EventFeedbackPanel: React.FC<{ eventId: string }> = ({ eventId }) =
                           )}
                           {item.comment_text && (
                             <p className="text-sm text-body">{item.comment_text}</p>
+                          )}
+                          {/* The guest's drawing on the photo (issue 1733). */}
+                          {id && item.feedback_type === 'comment' && (
+                            <AnnotatedPhotoPreview
+                              eventId={id}
+                              photoId={item.photo_id}
+                              annotation={item.annotation}
+                              alt={item.filename || 'Photo'}
+                              className="mt-2"
+                            />
                           )}
                           <p className="text-xs text-muted mt-1">
                             {(() => {

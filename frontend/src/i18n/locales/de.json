@@ -6085,7 +6085,9 @@
       "timeWindow": "Zeitfenster (Minuten)",
       "maxRequests": "Maximale Anfragen",
       "decisions": "Freigabe / Ablehnung pro Foto",
-      "decisionsDesc": "Gäste geben jedes Foto frei oder lehnen es ab, auf Wunsch mit Begründung. Du filterst und exportierst nach ihrer Entscheidung"
+      "decisionsDesc": "Gäste geben jedes Foto frei oder lehnen es ab, auf Wunsch mit Begründung. Du filterst und exportierst nach ihrer Entscheidung",
+      "annotations": "Zeichnen auf Fotos",
+      "annotationsDesc": "Gäste können auf ein Foto zeichnen und die Zeichnung an ihren Kommentar anhängen. Benötigt Kommentare"
     },
     "moderated": "Feedback moderiert",
     "deleted": "Feedback gelöscht",
@@ -6206,7 +6208,25 @@
     "youRejected": "Du hast dieses Foto abgelehnt",
     "deleteAction": "Feedback löschen",
     "panelTitle": "Feedback zum Foto",
-    "closePanel": "Feedback schließen"
+    "closePanel": "Feedback schließen",
+    "annotation": {
+      "draw": "Auf Foto zeichnen",
+      "edit": "Zeichnung bearbeiten",
+      "remove": "Zeichnung entfernen",
+      "attached": "Zeichnung angehängt",
+      "inProgress": "Schließe die Zeichnung auf dem Foto ab und sende dann deinen Kommentar.",
+      "show": "Zeichnung anzeigen",
+      "hide": "Zeichnung ausblenden",
+      "toolbar": "Zeichenwerkzeuge",
+      "toolFree": "Freihand",
+      "toolArrow": "Pfeil",
+      "color": "Farbe {{number}}",
+      "undo": "Rückgängig",
+      "clear": "Alles löschen",
+      "done": "Fertig",
+      "limitReached": "Eine Zeichnung kann höchstens {{max}} Striche enthalten.",
+      "overlayLabel": "Zeichnung auf dem Foto"
+    }
   },
   "filter": {
     "feedbackFilters": "Feedback-Filter",

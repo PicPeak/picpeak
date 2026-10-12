@@ -2811,7 +2811,9 @@
       "keybindLightroom": "Valores por defecto de Lightroom",
       "keybindLightroomDesc": "1-5 asignan estrellas, 6-9 asignan rojo / amarillo / verde / azul",
       "decisions": "Aprobar / rechazar cada foto",
-      "decisionsDesc": "Los invitados aprueban o rechazan cada foto, opcionalmente indicando el motivo. Puedes filtrar y exportar según su decisión"
+      "decisionsDesc": "Los invitados aprueban o rechazan cada foto, opcionalmente indicando el motivo. Puedes filtrar y exportar según su decisión",
+      "annotations": "Dibujar en las fotos",
+      "annotationsDesc": "Los invitados pueden dibujar en una foto y adjuntar el dibujo a su comentario. Requiere comentarios"
     },
     "colorLabels": {
       "red": "Rojo",
@@ -2847,7 +2849,25 @@
     "decisionError": "No se pudo guardar tu decisión",
     "decisionType": "tu decisión",
     "youApproved": "Has aprobado esta foto",
-    "youRejected": "Has rechazado esta foto"
+    "youRejected": "Has rechazado esta foto",
+    "annotation": {
+      "draw": "Dibujar en la foto",
+      "edit": "Editar dibujo",
+      "remove": "Quitar dibujo",
+      "attached": "Dibujo adjunto",
+      "inProgress": "Termina el dibujo en la foto y después envía tu comentario.",
+      "show": "Mostrar dibujo",
+      "hide": "Ocultar dibujo",
+      "toolbar": "Herramientas de dibujo",
+      "toolFree": "Mano alzada",
+      "toolArrow": "Flecha",
+      "color": "Color {{number}}",
+      "undo": "Deshacer",
+      "clear": "Borrar todo",
+      "done": "Listo",
+      "limitReached": "Un dibujo puede tener como máximo {{max}} trazos.",
+      "overlayLabel": "Dibujo sobre la foto"
+    }
   },
   "filter": {
     "feedbackFilters": "Filtros de feedback",

@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import type { PhotoAnnotation } from '../utils/photoAnnotation';
 
 export type IdentityMode = 'simple' | 'guest' | 'shared';
 
@@ -73,6 +74,8 @@ export interface FeedbackSettings {
   allow_color_labels: boolean;
   /** Approve / reject per photo (issue 744). Off unless switched on. */
   allow_decisions?: boolean;
+  /** Drawing on a photo with a comment (issue 1733). Off unless switched on. */
+  allow_annotations?: boolean;
   /** Which lightbox shortcut scheme this gallery uses (#1044). */
   keybind_mode?: KeybindMode;
   require_name_email: boolean;
@@ -100,6 +103,11 @@ export interface PhotoFeedback {
   color_label?: ColorLabel | null;
   /** On decision rows (issue 744); the reason is in comment_text. */
   decision?: PhotoDecision | null;
+  /**
+   * The drawing on a comment (issue 1733). Typed unknown on purpose: it is
+   * only ever drawn after parseAnnotation (utils/photoAnnotation.ts).
+   */
+  annotation?: unknown;
   guest_name?: string;
   guest_email?: string;
   is_approved: boolean;
@@ -289,6 +297,8 @@ class FeedbackService {
     reaction?: string;
     color_label?: ColorLabel;
     decision?: PhotoDecision;
+    /** Only with feedback_type 'comment' (issue 1733). */
+    annotation?: PhotoAnnotation;
     guest_name?: string;
     guest_email?: string;
   }) {

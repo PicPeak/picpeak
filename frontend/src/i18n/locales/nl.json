@@ -2938,7 +2938,9 @@
       "keybindLightroom": "Lightroom-standaard",
       "keybindLightroomDesc": "1-5 geven sterren, 6-9 geven rood / geel / groen / blauw",
       "decisions": "Goedkeuren / afwijzen per foto",
-      "decisionsDesc": "Gasten keuren elke foto goed of wijzen hem af, eventueel met een reden. Jij filtert en exporteert op hun beslissing"
+      "decisionsDesc": "Gasten keuren elke foto goed of wijzen hem af, eventueel met een reden. Jij filtert en exporteert op hun beslissing",
+      "annotations": "Tekenen op foto's",
+      "annotationsDesc": "Gasten kunnen op een foto tekenen en de tekening aan hun opmerking toevoegen. Vereist opmerkingen"
     },
     "settingsUpdated": "Feedbackinstellingen bijgewerkt",
     "settingsUpdateError": "Bijwerken instellingen mislukt",
@@ -3047,7 +3049,25 @@
     "decisionError": "Je beslissing kon niet worden opgeslagen",
     "decisionType": "je beslissing",
     "youApproved": "Je hebt deze foto goedgekeurd",
-    "youRejected": "Je hebt deze foto afgewezen"
+    "youRejected": "Je hebt deze foto afgewezen",
+    "annotation": {
+      "draw": "Op foto tekenen",
+      "edit": "Tekening bewerken",
+      "remove": "Tekening verwijderen",
+      "attached": "Tekening toegevoegd",
+      "inProgress": "Maak de tekening op de foto af en verstuur daarna je opmerking.",
+      "show": "Tekening tonen",
+      "hide": "Tekening verbergen",
+      "toolbar": "Tekengereedschap",
+      "toolFree": "Vrije hand",
+      "toolArrow": "Pijl",
+      "color": "Kleur {{number}}",
+      "undo": "Ongedaan maken",
+      "clear": "Alles wissen",
+      "done": "Klaar",
+      "limitReached": "Een tekening kan maximaal {{max}} lijnen bevatten.",
+      "overlayLabel": "Tekening op de foto"
+    }
   },
   "filter": {
     "feedbackFilters": "Feedbackfilters",
