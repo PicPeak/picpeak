@@ -186,6 +186,7 @@ export const CreateEventPage: React.FC = () => {
       allow_reactions: true,
       allow_color_labels: false,
       allow_decisions: false,
+      allow_selection_submit: false,
       keybind_mode: 'colors',
       require_name_email: false,
       moderate_comments: true,
