@@ -13,6 +13,7 @@ import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import type { QuotaPhoto } from '../../utils/downloadLimit';
 import { selectLabel } from '../../utils/mediaCounts';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
+import { BulkRating } from './BulkRating';
 import { GallerySidebarFolderTree, type SidebarFolderTreeProps } from './GallerySidebarFolderTree';
 import { lockBodyScroll } from '../../utils/scrollLock';
 
@@ -78,6 +79,8 @@ interface GallerySidebarProps {
   minRating?: number | null;
   onMinRatingChange?: (minRating: number | null) => void;
   minRatingCounts?: Partial<Record<number, number>>;
+  // "Rate selected" (issue 1733): set when ratings are on for the gallery.
+  bulkRating?: { slug: string; photoIds: number[]; requireNameEmail?: boolean };
   mediaFilter?: 'all' | 'photo' | 'video';
   onMediaFilterChange?: (filter: 'all' | 'photo' | 'video') => void;
   showMediaFilter?: boolean;
@@ -144,6 +147,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   minRating = null,
   onMinRatingChange,
   minRatingCounts = {},
+  bulkRating,
   mediaFilter = 'all',
   onMediaFilterChange,
   showMediaFilter = false,
@@ -330,6 +334,10 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                 )}
                 {isSelectionMode && selectedCount > 0 && selectedPhotosForQuota && (
                   <DownloadQuotaNotice photos={selectedPhotosForQuota} />
+                )}
+                {/* Rate the selection (issue 1733) */}
+                {isSelectionMode && bulkRating && bulkRating.photoIds.length > 0 && (
+                  <BulkRating {...bulkRating} />
                 )}
               </div>
             </div>

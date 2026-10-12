@@ -1683,6 +1683,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           minRating={minRating}
           onMinRatingChange={setMinRating}
           minRatingCounts={minRatingCounts}
+          bulkRating={feedbackEnabled && feedbackSettings?.allow_ratings ? {
+            slug,
+            photoIds: Array.from(selectedPhotos),
+            requireNameEmail: !!feedbackSettings?.require_name_email,
+          } : undefined}
           creditPhotos={creditsVisible ? scopedPhotos : undefined}
           selectedCreditKey={selectedCreditKey}
           onCreditChange={setSelectedCreditKey}

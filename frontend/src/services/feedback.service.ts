@@ -150,6 +150,22 @@ export interface FeedbackResponse {
   };
 }
 
+/** Most photos one bulk rating request may name. Mirrors the backend cap. */
+export const BULK_RATING_MAX_PHOTOS = 200;
+
+export interface BulkRatingResponse {
+  success: boolean;
+  rating: number;
+  results: Array<{
+    photo_id: number;
+    success: boolean;
+    error?: string;
+    /** Only when the gallery shows feedback to guests. */
+    average_rating?: number;
+    total_ratings?: number;
+  }>;
+}
+
 export interface FeedbackAnalytics {
   summary: {
     total_feedback: number;
@@ -293,6 +309,19 @@ class FeedbackService {
     guest_email?: string;
   }) {
     const response = await api.post(`/gallery/${slug}/photos/${photoId}/feedback`, feedback);
+    return response.data;
+  }
+
+  /**
+   * One rating for several photos (issue 1733); 0 clears. The server takes at
+   * most BULK_RATING_MAX_PHOTOS ids per request and rates all of them or,
+   * when the rating budget does not cover them, none (429).
+   */
+  async submitBulkRating(slug: string, photoIds: number[], rating: number, identity?: {
+    guest_name?: string;
+    guest_email?: string;
+  }): Promise<BulkRatingResponse> {
+    const response = await api.post(`/gallery/${slug}/feedback/bulk`, { photo_ids: photoIds, rating, ...identity });
     return response.data;
   }
 

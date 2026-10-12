@@ -1,0 +1,214 @@
+/**
+ * "Rate selected" (issue 1733): one star press rates the selection through the
+ * bulk route and writes the result into the cached gallery-photos lists in
+ * place, without refetching the gallery.
+ */
+import React from 'react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { toast } from 'react-toastify';
+
+import { BulkRating } from '../BulkRating';
+import { GallerySidebar } from '../GallerySidebar';
+import { feedbackService } from '../../../services/feedback.service';
+import type { GalleryData, Photo } from '../../../types';
+
+vi.mock('../../../contexts/GuestIdentityContext', () => ({
+  useGuestIdentityOptional: () => null,
+}));
+
+vi.mock('../../../services/feedback.service', () => ({
+  BULK_RATING_MAX_PHOTOS: 200,
+  feedbackService: { submitBulkRating: vi.fn() },
+}));
+
+vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
+vi.mock('react-i18next', async () => {
+  const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
+  return {
+    ...actual,
+    useTranslation: () => ({
+      t: (key: string, fallback?: unknown, opts?: Record<string, unknown>) => {
+        const vars = (typeof fallback === 'object' && fallback ? fallback : opts) as Record<string, unknown> | undefined;
+        const text = typeof fallback === 'string' ? fallback : key;
+        return text.replace(/\{\{(\w+)\}\}/g, (_m, k) => String(vars?.[k] ?? ''));
+      },
+      i18n: { language: 'en' },
+    }),
+  };
+});
+
+const SLUG = 'x';
+const LIST_KEY = ['gallery-photos', SLUG, 'all', undefined];
+const submit = vi.mocked(feedbackService.submitBulkRating);
+
+function makePhoto(id: number, patch: Partial<Photo> = {}): Photo {
+  return {
+    id,
+    filename: `IMG_${id}.jpg`,
+    url: `/api/gallery/x/photo/${id}`,
+    thumbnail_url: `/api/gallery/x/thumbnail/${id}`,
+    type: 'individual',
+    size: 1,
+    uploaded_at: '2026-01-01T00:00:00Z',
+    my_rating: null,
+    average_rating: 0,
+    total_ratings: 0,
+    ...patch,
+  } as Photo;
+}
+
+let queryClient: QueryClient;
+const listFetch = vi.fn();
+
+function seedCache(photos: Photo[]) {
+  queryClient.setQueryData(LIST_KEY, { event: { id: 1 }, photos } as unknown as GalleryData);
+}
+const cached = () => queryClient.getQueryData<GalleryData>(LIST_KEY)!.photos;
+const ok = (ids: number[], rating: number, extra: object = {}) => ({
+  success: true, rating, results: ids.map((id) => ({ photo_id: id, success: true, ...extra })),
+});
+
+function renderControl(photoIds: number[], props: Partial<React.ComponentProps<typeof BulkRating>> = {}) {
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <BulkRating slug={SLUG} photoIds={photoIds} {...props} />
+    </QueryClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, queryFn: listFetch, staleTime: Infinity } } });
+});
+
+describe('BulkRating', () => {
+  it('rates the selection in one request and patches only those rows', async () => {
+    seedCache([makePhoto(1), makePhoto(2, { my_rating: 2 }), makePhoto(3, { my_rating: 1, average_rating: 1, total_ratings: 1 })]);
+    submit.mockResolvedValue(ok([1, 2], 4, { average_rating: 4, total_ratings: 1 }));
+    renderControl([1, 2]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+
+    await waitFor(() => expect(cached()[0].my_rating).toBe(4));
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledWith(SLUG, [1, 2], 4, { guest_name: undefined, guest_email: undefined });
+    expect(cached().map((p) => [p.my_rating, p.average_rating, p.total_ratings])).toEqual([
+      [4, 4, 1], [4, 4, 1], [1, 1, 1],
+    ]);
+    expect(listFetch).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps the list aggregates when the gallery does not share them', async () => {
+    seedCache([makePhoto(1, { average_rating: 3, total_ratings: 2 })]);
+    submit.mockResolvedValue(ok([1], 5));
+    renderControl([1]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 5 stars' }));
+
+    await waitFor(() => expect(cached()[0].my_rating).toBe(5));
+    expect(cached()[0]).toMatchObject({ average_rating: 3, total_ratings: 2 });
+  });
+
+  it('clears the rating of the selection', async () => {
+    seedCache([makePhoto(1, { my_rating: 3 })]);
+    submit.mockResolvedValue({ success: true, rating: 0, results: [{ photo_id: 1, success: true }] });
+    renderControl([1]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove rating' }));
+
+    await waitFor(() => expect(cached()[0].my_rating).toBeNull());
+    expect(submit).toHaveBeenCalledWith(SLUG, [1], 0, expect.anything());
+  });
+
+  it('says so when the rating limit is reached and leaves the rows alone', async () => {
+    seedCache([makePhoto(1), makePhoto(2)]);
+    submit.mockRejectedValue({ response: { status: 429 } });
+    renderControl([1, 2]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 3 stars' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Rating limit reached. Try again later.'));
+    expect(cached().map((p) => p.my_rating)).toEqual([null, null]);
+  });
+
+  it('leaves a photo the server refused unrated and reports the shortfall', async () => {
+    seedCache([makePhoto(1), makePhoto(2)]);
+    submit.mockResolvedValue({
+      success: true, rating: 4,
+      results: [{ photo_id: 1, success: true }, { photo_id: 2, success: false, error: 'Photo not found' }],
+    });
+    renderControl([1, 2]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('1 of 2 photos were rated'));
+    expect(cached().map((p) => p.my_rating)).toEqual([4, null]);
+  });
+
+  it('sends a selection above the server cap in several requests', async () => {
+    const ids = Array.from({ length: 450 }, (_, i) => i + 1);
+    seedCache(ids.map((id) => makePhoto(id)));
+    submit.mockImplementation(async (_slug, chunk, rating) => ok(chunk, rating));
+    renderControl(ids);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 2 stars' }));
+
+    await waitFor(() => expect(cached()[449].my_rating).toBe(2));
+    expect(submit.mock.calls.map((call) => call[1].length)).toEqual([200, 200, 50]);
+  });
+
+  it('asks for name and email first when the gallery requires them', async () => {
+    seedCache([makePhoto(1)]);
+    submit.mockResolvedValue(ok([1], 4));
+    renderControl([1], { requireNameEmail: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    expect(submit).not.toHaveBeenCalled();
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+  });
+});
+
+describe('GallerySidebar', () => {
+  const sidebar = (extra: Partial<React.ComponentProps<typeof GallerySidebar>>) => render(
+    <QueryClientProvider client={queryClient}>
+      <GallerySidebar
+        isOpen
+        onClose={() => {}}
+        categories={[]}
+        selectedCategoryId={null}
+        onCategoryChange={() => {}}
+        searchTerm=""
+        onSearchChange={() => {}}
+        sortBy="date"
+        onSortChange={() => {}}
+        isSelectionMode
+        onToggleSelectionMode={() => {}}
+        selectedCount={2}
+        onDownloadAll={() => {}}
+        onDownloadSelected={() => {}}
+        isDownloading={false}
+        allowDownloads
+        totalPhotos={3}
+        isMobile={false}
+        {...extra}
+      />
+    </QueryClientProvider>,
+  );
+
+  it('offers "Rate selected" next to the selection actions when ratings are on', () => {
+    sidebar({ bulkRating: { slug: SLUG, photoIds: [1, 2] } });
+    expect(screen.getByRole('group', { name: 'Rate selected' })).toBeTruthy();
+  });
+
+  it('does not offer it with ratings off or nothing selected', () => {
+    const { unmount } = sidebar({});
+    expect(screen.queryByRole('group', { name: 'Rate selected' })).toBeNull();
+    unmount();
+    sidebar({ bulkRating: { slug: SLUG, photoIds: [] }, selectedCount: 0 });
+    expect(screen.queryByRole('group', { name: 'Rate selected' })).toBeNull();
+  });
+});

@@ -15,6 +15,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
+import { BulkRating } from './BulkRating';
 import type { LightboxPhotoChangeHandler } from './photoLink';
 
 // Import all layouts
@@ -579,6 +580,14 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
                   </Button>
                 )}
                 {copyFilenamesButton}
+                {/* Rate the selection (issue 1733) */}
+                {feedbackEnabled && feedbackOptions?.allowRatings && selectedPhotos.size > 0 && (
+                  <BulkRating
+                    slug={slug}
+                    photoIds={Array.from(selectedPhotos)}
+                    requireNameEmail={feedbackOptions.requireNameEmail}
+                  />
+                )}
               </div>
               {allowDownloads && selectedPhotos.size > 0 && (
                 <DownloadQuotaNotice photos={selectedPhotoList} className="text-xs sm:text-sm" />
