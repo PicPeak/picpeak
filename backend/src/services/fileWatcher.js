@@ -152,10 +152,11 @@ async function processNewPhoto(filePath) {
   
   // Generate thumbnail or placeholder
   let thumbnailPath = null;
+  const thumbMeta = {};
   if (isVideo) {
     thumbnailPath = await generateVideoPlaceholder(filename);
   } else {
-    thumbnailPath = await generateThumbnail(filePath);
+    thumbnailPath = await generateThumbnail(filePath, { meta: thumbMeta });
   }
   
   // Calculate relative thumbnail path
@@ -218,6 +219,7 @@ async function processNewPhoto(filePath) {
       source_filename: path.basename(filePath),
       path: relativePath,
       thumbnail_path: relativeThumbPath,
+      thumb_hash: thumbMeta.thumbHash || null,
       type: isVideo ? 'video' : photoType,
       size_bytes: stats.size,
       mime_type: mimeType,

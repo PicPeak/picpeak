@@ -156,6 +156,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       // Generate thumbnail and extract metadata FROM the temp file (still on
       // local disk) before uploading the original.
       let thumbnailPath;
+      // Receives the tile placeholder hash of the thumbnail (issue 1733).
+      const thumbMeta = {};
       let videoMetadata = null;
       let imageMetadata = null;
       // A video that completes with the placeholder tile records why, so the
@@ -179,6 +181,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
           const result = await processUploadedVideo(tempPath, videoThumbnailKey);
           videoMetadata = result.metadata;
           thumbnailPath = result.thumbnailKey;
+          thumbMeta.thumbHash = result.thumbHash;
           if (result.placeholder) processingError = posterFrameError(result.thumbnailError);
         } catch (videoErr) {
           logger.warn(`Video processing failed for ${file.originalname}, using placeholder thumbnail:`, videoErr.message);
@@ -199,7 +202,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         // the RAW-derived thumbnail's global key can't collide across galleries.
         const proc = await withProcessableImage(tempPath, newFilename);
         try {
-          thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
+          thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename, meta: thumbMeta });
           try {
             const sharp = require('./isolatedSharp');
             const metadata = await sharp(proc.path).metadata();
@@ -261,6 +264,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         original_filename: file.originalname,
         path: relativePath,
         thumbnail_path: relativeThumbPath,
+        thumb_hash: thumbMeta.thumbHash || null,
         type: photoType,
         size_bytes: actualSize,
         uploaded_by: uploadedBy,
@@ -681,7 +685,10 @@ async function processPhoto(photoId) {
         const placeholderKey = await generateVideoPlaceholder(thumbnailBasename);
         if (placeholderKey) videoResult = { ...(videoResult || {}), thumbnailKey: placeholderKey };
       }
-      if (videoResult?.thumbnailKey) updateData.thumbnail_path = videoResult.thumbnailKey;
+      if (videoResult?.thumbnailKey) {
+        updateData.thumbnail_path = videoResult.thumbnailKey;
+        updateData.thumb_hash = videoResult.thumbHash || null;
+      }
       if (videoResult?.metadata) {
         const m = videoResult.metadata;
         if (m.duration != null) updateData.duration = m.duration;
@@ -699,8 +706,12 @@ async function processPhoto(photoId) {
       const proc = await withProcessableImage(localPath, photo.filename);
       try {
         try {
-          const thumbnailPath = await generateThumbnail(proc.path, { outputBasename: mediaAttempts.outputName(proc.outputBasename || photo.filename) });
-          if (thumbnailPath) updateData.thumbnail_path = thumbnailPath;
+          const meta = {};
+          const thumbnailPath = await generateThumbnail(proc.path, { outputBasename: mediaAttempts.outputName(proc.outputBasename || photo.filename), meta });
+          if (thumbnailPath) {
+            updateData.thumbnail_path = thumbnailPath;
+            updateData.thumb_hash = meta.thumbHash || null;
+          }
         } catch (e) {
           if (isResourceError(e)) throw e;
           logger.warn(`processPhoto: thumbnail generation failed for ${photoId}`, { error: e.message });

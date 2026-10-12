@@ -613,8 +613,9 @@ async function handleV1PhotoUpload(req, res) {
     const credit = await require('../../services/photoCredit').resolveCredit({ localPath: tempPath });
 
     let thumbRel = null;
+    const thumbMeta = {};
     try {
-      thumbRel = await generateThumbnail(tempPath);
+      thumbRel = await generateThumbnail(tempPath, { meta: thumbMeta });
     } catch (err) {
       if (require('../../services/imageResourcePolicy').isResourceError(err)) throw err;
       logger.warn('v1 thumbnail generation failed', { err: err.message });
@@ -642,6 +643,7 @@ async function handleV1PhotoUpload(req, res) {
       source_filename: req.file.originalname,
       path: relPath,
       thumbnail_path: thumbRel,
+      thumb_hash: thumbMeta.thumbHash || null,
       type: photoType,
       category_id: folderId ? null : categoryId,
       folder_id: folderId,

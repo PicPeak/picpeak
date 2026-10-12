@@ -174,6 +174,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     let width = null;
     let height = null;
     let thumbnailPath = null;
+    const thumbMeta = {};
     // Detect/name by the unique stored filename (newFilename), not the
     // client-supplied original, so RAW derivative keys can't collide.
     const proc = await withProcessableImage(newFileTempPath, newFilename);
@@ -187,7 +188,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         // Non-image or corrupt
       }
       try {
-        thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
+        thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename, meta: thumbMeta });
       } catch (error) {
         if (isResourceError(error)) throw error;
         logger.warn('Failed to generate thumbnail for replaced photo', { photoId: existingPhoto.id });
@@ -252,6 +253,8 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         : { source_filename: existingPhoto.original_filename || originalFilename }),
       path: relativePath,
       thumbnail_path: thumbnailPath,
+      // The old hash describes the replaced image; none beats a wrong one.
+      thumb_hash: thumbMeta.thumbHash || null,
       size_bytes: stats.size,
       width,
       height,

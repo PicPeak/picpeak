@@ -1680,6 +1680,8 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         web_error: photo.web_error || null,
         width: photo.width || null,
         height: photo.height || null,
+        // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
+        thumb_hash: photo.thumb_hash || null,
         duration: photo.duration || null,
         size: photo.size_bytes,
         uploaded_at: photo.uploaded_at,

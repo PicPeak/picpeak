@@ -1059,7 +1059,9 @@
         "POST /repair-orientation",
         "GET /repair-orientation/status",
         "POST /repair-credits",
-        "GET /repair-credits/status"
+        "GET /repair-credits/status",
+        "POST /repair-thumb-hashes",
+        "GET /repair-thumb-hashes/status"
       ]
     },
     "adminPhotoExport.js": {

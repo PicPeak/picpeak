@@ -630,9 +630,10 @@ async function importExternalFolder({
         if (photoId != null && !isVideo) {
           try {
             const outputBasename = `ext${photoId}_${path.basename(f.rel)}`;
-            const thumbnailPath = await generateThumbnail(f.full, { outputBasename });
+            const meta = {};
+            const thumbnailPath = await generateThumbnail(f.full, { outputBasename, meta });
             if (thumbnailPath) {
-              await db('photos').where({ id: photoId }).update({ thumbnail_path: thumbnailPath });
+              await db('photos').where({ id: photoId }).update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null });
               thumbnailsGenerated++;
             } else {
               thumbnailsFailed++;
@@ -660,6 +661,7 @@ async function importExternalFolder({
             const m = result.metadata || {};
             await db('photos').where({ id: photoId }).update({
               thumbnail_path: result.thumbnailKey,
+              thumb_hash: result.thumbHash || null,
               // Browser-playable copy (issue 1430, item 8). The copy is
               // written to the managed backend; the NAS file is never
               // touched.

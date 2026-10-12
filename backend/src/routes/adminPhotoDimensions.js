@@ -20,7 +20,7 @@ const maintenanceJobs = require('../services/maintenanceJobState');
 // Two separate rows, for the same reason the two objects were separate: the
 // jobs walk the same photos but read different things out of them, and one
 // running must not block or report for the other.
-const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFILL, JOB_CREDIT_BACKFILL } = maintenanceJobs;
+const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFILL, JOB_CREDIT_BACKFILL, JOB_THUMB_HASH_BACKFILL } = maintenanceJobs;
 
 const { HEARTBEAT_INTERVAL_MS } = maintenanceJobs;
 
@@ -1072,6 +1072,154 @@ router.get('/repair-credits/status', adminAuth, requirePermission('system.manage
   } catch (error) {
     logger.error('Error fetching credit backfill status:', error);
     res.status(500).json({ error: 'Failed to fetch credit backfill status' });
+  }
+});
+
+/**
+ * Backfill tile placeholders (issue 1733, B1).
+ *
+ * New thumbnails get their ThumbHash when they are generated
+ * (services/thumbHash.js). A library that predates the column has none, and
+ * its tiles simply keep the plain loading state until this has run. Opt-in
+ * and an endpoint rather than a migration, like the backfills above: it reads
+ * through the storage backend, which may be unreachable at upgrade time.
+ *
+ * It reads THUMBNAILS, never originals: a few kilobytes per photo, on S3 and
+ * for external libraries alike (their thumbnails are managed objects too).
+ *
+ * Resumable by construction. A candidate is a row with a thumbnail and no
+ * hash, so a run that was interrupted leaves the rest as candidates and the
+ * next run picks up there. Rows are fetched in id order, a batch at a time,
+ * so memory stays flat however large the library is, and a thumbnail that
+ * cannot be read is passed over for this run instead of being retried in a
+ * loop.
+ */
+const THUMB_HASH_BATCH = 200;
+
+function thumbHashCandidates() {
+  return db('photos')
+    .join('events', 'photos.event_id', 'events.id')
+    .whereNotNull('photos.thumbnail_path')
+    // An archived event's renditions are gone with the archive.
+    .where(function () {
+      this.where('events.is_archived', false).orWhereNull('events.is_archived');
+    });
+}
+
+router.post('/repair-thumb-hashes', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    const token = await maintenanceJobs.claim(JOB_THUMB_HASH_BACKFILL);
+    if (!token) {
+      return res.status(409).json({ error: 'Placeholder backfill is already running' });
+    }
+    const lease = startLeaseKeeper(JOB_THUMB_HASH_BACKFILL, token);
+
+    let count;
+    try {
+      const pending = await thumbHashCandidates().whereNull('photos.thumb_hash').count('photos.id as count').first();
+      count = Number(pending.count);
+    } catch (err) {
+      lease.stop();
+      await maintenanceJobs.release(JOB_THUMB_HASH_BACKFILL, token);
+      throw err;
+    }
+
+    if (count === 0) {
+      lease.stop();
+      await maintenanceJobs.release(JOB_THUMB_HASH_BACKFILL, token);
+      return res.json({ message: 'No photos need a placeholder', count: 0 });
+    }
+
+    res.json({ message: `Started computing placeholders for ${count} photos`, count });
+
+    applicationWork.defer('photo rendition repair', async () => {
+      const { withLocalCopy } = require('../services/imageProcessor');
+      const { computeThumbHash } = require('../services/thumbHash');
+      let successCount = 0;
+      let errorCount = 0;
+      let skippedCount = 0;
+      let lostClaim = false;
+      let lastId = 0;
+
+      try {
+        for (;;) {
+          const batch = await thumbHashCandidates()
+            .whereNull('photos.thumb_hash')
+            .where('photos.id', '>', lastId)
+            .orderBy('photos.id')
+            .limit(THUMB_HASH_BATCH)
+            .select('photos.id', 'photos.thumbnail_path');
+          if (batch.length === 0) break;
+
+          for (const photo of batch) {
+            if (lease.lost()) { lostClaim = true; break; }
+            lastId = photo.id;
+
+            try {
+              const hash = await withLocalCopy(photo.thumbnail_path, (localPath) => computeThumbHash(localPath));
+              if (!hash) {
+                errorCount++;
+                continue;
+              }
+              // Fenced on the thumbnail that was read: a replacement or a
+              // regeneration mid-run writes its own hash with its own key.
+              const updated = await db('photos')
+                .where({ id: photo.id, thumbnail_path: photo.thumbnail_path })
+                .whereNull('thumb_hash')
+                .update({ thumb_hash: hash });
+              if (updated) successCount++; else skippedCount++;
+            } catch (error) {
+              logger.warn(`Placeholder backfill: thumbnail of photo ${photo.id} could not be read: ${error.message}`);
+              errorCount++;
+            }
+          }
+          if (lostClaim) break;
+        }
+
+        if (lostClaim) {
+          logger.warn(`Placeholder backfill stopped: claim taken over after ${successCount} updated, ${errorCount} errors`);
+          return;
+        }
+        await maintenanceJobs.release(JOB_THUMB_HASH_BACKFILL, token, { success: successCount, failed: errorCount, skipped: skippedCount });
+        logger.info(
+          `Placeholder backfill complete: ${successCount} updated, ${errorCount} unreadable, `
+          + `${skippedCount} skipped (changed mid-run)`
+        );
+      } catch (err) {
+        logger.error('Placeholder backfill aborted:', err);
+        await maintenanceJobs
+          .release(JOB_THUMB_HASH_BACKFILL, token, { success: successCount, failed: errorCount, skipped: skippedCount, error: err.message })
+          .catch(() => {});
+      } finally {
+        lease.stop();
+      }
+    });
+  } catch (error) {
+    logger.error('Error starting placeholder backfill:', error);
+    res.status(500).json({ error: 'Failed to start placeholder backfill' });
+  }
+});
+
+// system.manage for the same reason as the capture-date status above.
+router.get('/repair-thumb-hashes/status', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    const counts = await thumbHashCandidates()
+      .count('photos.id as total')
+      .count({ hashed: db.raw('CASE WHEN photos.thumb_hash IS NOT NULL THEN 1 END') })
+      .first();
+    const total = Number(counts.total);
+    const withPlaceholder = Number(counts.hashed);
+    const state = await maintenanceJobs.read(JOB_THUMB_HASH_BACKFILL);
+    res.json({
+      total,
+      withPlaceholder,
+      withoutPlaceholder: total - withPlaceholder,
+      isRunning: state.isRunning,
+      lastResult: state.lastResult
+    });
+  } catch (error) {
+    logger.error('Error fetching placeholder backfill status:', error);
+    res.status(500).json({ error: 'Failed to fetch placeholder backfill status' });
   }
 });
 
