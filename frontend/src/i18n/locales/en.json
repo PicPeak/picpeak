@@ -1550,6 +1550,11 @@
       "uploadedBy": "Uploaded by {{name}}",
       "photoBy": "Photo by {{name}}"
     },
+    "filmStrip": {
+      "label": "Photos",
+      "photo": "Photo {{position}} of {{total}}",
+      "photoNamed": "Photo {{position}} of {{total}}: {{name}}"
+    },
     "firstLook": "First look",
     "viewAllPhotos": "All photos",
     "viewSwitch": "Show photos by",

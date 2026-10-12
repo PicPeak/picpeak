@@ -428,6 +428,11 @@
       "uploadedBy": "Geüpload door {{name}}",
       "photoBy": "Foto door {{name}}"
     },
+    "filmStrip": {
+      "label": "Foto's",
+      "photo": "Foto {{position}} van {{total}}",
+      "photoNamed": "Foto {{position}} van {{total}}: {{name}}"
+    },
     "firstLook": "Eerste selectie",
     "viewAllPhotos": "Alle foto's",
     "viewSwitch": "Foto's tonen per",

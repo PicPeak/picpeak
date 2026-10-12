@@ -458,6 +458,11 @@
       "uploadedBy": "Загрузил(а): {{name}}",
       "photoBy": "Фото: {{name}}"
     },
+    "filmStrip": {
+      "label": "Фотографии",
+      "photo": "Фото {{position}} из {{total}}",
+      "photoNamed": "Фото {{position}} из {{total}}: {{name}}"
+    },
     "firstLook": "Первая подборка",
     "viewAllPhotos": "Все фото",
     "viewSwitch": "Показывать фото",

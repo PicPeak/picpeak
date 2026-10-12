@@ -21,6 +21,8 @@ import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableMessage } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 import { lockBodyScroll } from '../../utils/scrollLock';
+import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
+import { useLightboxScrub } from './hooks/useLightboxScrub';
 
 interface PhotoLightboxProps {
   photos: Photo[];
@@ -180,11 +182,23 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // neighbours would inflate, and a neighbour promoted by a swipe is
   // never re-fetched (#505).
   const currentPhotoId = photos[currentIndex]?.id;
+  // Hold-to-scrub (issue 1733): while an arrow key repeats, the photos passed
+  // over are neither counted nor mirrored to the URL; the one landed on is,
+  // once, when the key is let go.
+  const scrub = useLightboxScrub(
+    (direction) => (direction === 1 ? goToNext() : goToPrevious()),
+    currentPhotoId,
+  );
+  const { scrubbing } = scrub;
+  // A scrub that ends on the photo it started from is not a second view.
+  const lastTrackedPhotoIdRef = useRef<number | undefined>(undefined);
   useEffect(() => {
+    if (scrubbing || currentPhotoId === lastTrackedPhotoIdRef.current) return;
+    lastTrackedPhotoIdRef.current = currentPhotoId;
     if (currentPhotoId !== undefined) {
       galleryService.trackPhotoView(slug, currentPhotoId);
     }
-  }, [slug, currentPhotoId]);
+  }, [slug, currentPhotoId, scrubbing]);
 
   // Mirror the visible photo to the URL (issue 1733). Through a ref so an
   // inline callback from the host does not re-fire this — and rewrite the
@@ -192,10 +206,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const onCurrentPhotoChangeRef = useRef(onCurrentPhotoChange);
   onCurrentPhotoChangeRef.current = onCurrentPhotoChange;
   useEffect(() => {
-    if (currentPhotoId !== undefined) {
+    if (!scrubbing && currentPhotoId !== undefined) {
       onCurrentPhotoChangeRef.current?.(currentPhotoId);
     }
-  }, [currentPhotoId]);
+  }, [currentPhotoId, scrubbing]);
 
 
   // Save-aware download. On mobile (where Web Share + files is supported)
@@ -297,6 +311,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   });
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // A held arrow key: the scrub steps at its own rate.
+      if (scrub.handleKeyDown(e)) return;
       switch (e.key) {
         case 'Escape':
           onClose();
@@ -404,7 +420,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     let mounted = true;
     (async () => {
       try {
-        if (!feedbackSettings?.feedback_enabled || !currentPhoto) return;
+        // Not for the photos a scrub passes over, only the one it lands on.
+        if (scrubbing || !feedbackSettings?.feedback_enabled || !currentPhoto) return;
         const data = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
         if (!mounted) return;
         setMyLiked(!!data.my_feedback.liked);
@@ -421,7 +438,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       }
     })();
     return () => { mounted = false; };
-  }, [slug, currentPhoto?.id, currentPhoto?.my_rating, feedbackSettings?.feedback_enabled]);
+  }, [slug, currentPhoto?.id, currentPhoto?.my_rating, feedbackSettings?.feedback_enabled, scrubbing]);
 
   // Said out loud, as the grid's like button does (PhotoLikes): a 429 was
   // only logged, so to the guest the heart did nothing (issue 1891).
@@ -619,6 +636,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
   const goToNext = () => {
     setCurrentIndex((prev) => (prev < photos.length - 1 ? prev + 1 : 0));
+    resetZoom();
+  };
+
+  const goToIndex = (index: number) => {
+    setCurrentIndex(index);
     resetZoom();
   };
 
@@ -1005,6 +1027,13 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))'
         }}
       >
+        <LightboxFilmStrip
+          photos={photos}
+          currentIndex={currentIndex}
+          onSelect={goToIndex}
+          slug={slug}
+          showFilenames={showOriginalFilename}
+        />
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2 flex-wrap">
           <div className="text-white min-w-0">
             <p className="text-sm opacity-75">
@@ -1342,6 +1371,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 draggable={false}
                 isGallery={true}
                 slug={slug}
+                // Stable callback: the scrub's stand-in leaves once this is in.
+                onLoad={scrub.handlePreviewLoaded}
                 useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
                 onProtectionViolation={(violationType) => {
                   console.warn(`Protection violation in lightbox for photo ${photo.id}: ${violationType}`);
@@ -1383,7 +1414,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               touchAction: isVideoCurrent ? 'auto' : 'none',
             }}
           >
-            {isVideoCurrent && videoLocked ? (
+            {/* Hold-to-scrub stand-in (issue 1733): the thumbnail, in place of
+                the slides while a key is held — so no preview is requested for
+                a photo passed over — and underneath the landed slide until its
+                preview has loaded. */}
+            {(scrubbing || (scrub.standIn && !isVideoCurrent)) && (
+              <LightboxScrubStandIn photo={currentPhoto} slug={slug} />
+            )}
+            {scrubbing ? null : isVideoCurrent && videoLocked ? (
               <div className="w-full h-full flex items-center justify-center p-6">
                 {/* Theme-token panel, like the feedback panel: the lightbox
                     ground is black, so a black panel would leave bare text. */}

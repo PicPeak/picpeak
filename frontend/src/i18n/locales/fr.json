@@ -435,6 +435,11 @@
       "uploadedBy": "Envoyée par {{name}}",
       "photoBy": "Photo de {{name}}"
     },
+    "filmStrip": {
+      "label": "Photos",
+      "photo": "Photo {{position}} sur {{total}}",
+      "photoNamed": "Photo {{position}} sur {{total}} : {{name}}"
+    },
     "firstLook": "Première sélection",
     "viewAllPhotos": "Toutes les photos",
     "viewSwitch": "Afficher les photos par",

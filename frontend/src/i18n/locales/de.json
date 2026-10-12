@@ -2143,6 +2143,11 @@
       "uploadedBy": "Hochgeladen von {{name}}",
       "photoBy": "Foto von {{name}}"
     },
+    "filmStrip": {
+      "label": "Fotos",
+      "photo": "Foto {{position}} von {{total}}",
+      "photoNamed": "Foto {{position}} von {{total}}: {{name}}"
+    },
     "firstLook": "Erste Auswahl",
     "viewAllPhotos": "Alle Fotos",
     "viewSwitch": "Fotos anzeigen nach",

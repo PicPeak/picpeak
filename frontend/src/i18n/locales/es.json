@@ -406,6 +406,11 @@
       "uploadedBy": "Subida por {{name}}",
       "photoBy": "Foto de {{name}}"
     },
+    "filmStrip": {
+      "label": "Fotos",
+      "photo": "Foto {{position}} de {{total}}",
+      "photoNamed": "Foto {{position}} de {{total}}: {{name}}"
+    },
     "footer": {
       "forgetMeConfirmUploads": "Tu nombre se eliminará de las fotos que subiste a esta galería."
     },
