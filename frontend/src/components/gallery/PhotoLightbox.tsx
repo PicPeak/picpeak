@@ -21,6 +21,7 @@ import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableMessage } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 import { lockBodyScroll } from '../../utils/scrollLock';
+import { exifLine } from '../../utils/photoExif';
 
 interface PhotoLightboxProps {
   photos: Photo[];
@@ -212,6 +213,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const currentPhoto = photos[currentIndex] ?? photos[photos.length - 1];
 
   const { t } = useTranslation();
+
+  const exifText = exifLine(currentPhoto?.exif);
 
   // People detected in the open photo (#1074). Resolved against the list the
   // server returned rather than the raw ids, so a person the photographer
@@ -1038,6 +1041,18 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 {currentPhoto.uploaded_by_guest
                   ? t('gallery.credits.uploadedBy', { name: currentPhoto.credit_name })
                   : t('gallery.credits.photoBy', { name: currentPhoto.credit_name })}
+              </p>
+            )}
+
+            {/* Camera details (issue 1733, D1). In the payload only when the
+                gallery shows them; the row is left out when nothing is known. */}
+            {exifText && (
+              <p
+                className="text-xs opacity-60 truncate max-w-[14rem] sm:max-w-md mt-0.5"
+                title={exifText}
+                data-testid="lightbox-exif"
+              >
+                {exifText}
               </p>
             )}
 

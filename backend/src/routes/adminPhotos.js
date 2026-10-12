@@ -32,6 +32,7 @@ const {
 const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
+const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
@@ -1710,6 +1711,8 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         credit_name: photo.credit_name || null,
         credit_source: photo.credit_source || null,
         uploaded_by: photo.uploaded_by === 'guest' ? 'guest' : 'admin',
+        // Camera details (issue 1733, D1); null when none were read.
+        exif: parseStoredExif(photo.exif_json),
         // Review of team members' uploads (issue 743): null, 'pending' or
         // 'rejected', and the admin account that ran the upload.
         moderation_status: photo.moderation_status || null,

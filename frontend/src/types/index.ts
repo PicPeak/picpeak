@@ -48,6 +48,8 @@ export interface Event {
   // see the names. SQLite hands the flag back as 0/1.
   guest_name_mode?: GuestNameMode;
   show_credits_to_guests?: boolean | number;
+  // Camera details in the guest lightbox (issue 1733, D1).
+  show_exif_to_guests?: boolean | number;
   // Reveal mode (#838)
   reveal_mode?: boolean;
   reveal_at?: string | null;
@@ -198,6 +200,20 @@ export interface GalleryPeopleResponse {
   };
 }
 
+/** Camera details read from EXIF (issue 1733, D1). Every field is optional. */
+export interface PhotoExif {
+  make?: string;
+  model?: string;
+  lens?: string;
+  /** Millimetres. */
+  focal_length?: number;
+  /** The f-number. */
+  aperture?: number;
+  /** Seconds. */
+  exposure_time?: number;
+  iso?: number;
+}
+
 export interface Photo {
   id: number;
   filename: string;
@@ -255,6 +271,9 @@ export interface Photo {
   // guest upload apart from the photographer's own photos.
   credit_name?: string | null;
   uploaded_by_guest?: boolean;
+  // Camera details (issue 1733, D1). The key is present only when the
+  // gallery shows them to guests; null when the photo carries none.
+  exif?: PhotoExif | null;
   size: number;
   uploaded_at: string;
   captured_at?: string; // EXIF capture date (if available)

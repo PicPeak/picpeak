@@ -485,6 +485,8 @@
   "events": {
     "revealMode": "Mode révélation (masquer la galerie jusqu'à la révélation)",
     "revealModeHelp": "Les invités peuvent téléverser mais ne voient aucune photo tant que vous ne révélez pas la galerie — manuellement ou à l'heure programmée. Le diaporama et l'accès client continuent de fonctionner.",
+    "showExifToGuests": "Afficher les données de prise de vue aux invités",
+    "showExifToGuestsHelp": "L'appareil, l'objectif, la focale, l'ouverture, la vitesse d'obturation et la sensibilité ISO apparaissent sous la photo en plein écran. La position et les numéros de série ne sont jamais enregistrés ni affichés.",
     "revealAt": "Révélation programmée (optionnel)",
     "revealAtHelp": "Laissez vide pour révéler manuellement avec le bouton « Révéler maintenant ».",
     "revealModeStatus": "Mode révélation",
@@ -1489,7 +1491,8 @@
       "noneToFill": "Toutes les photos ont déjà une date de prise de vue",
       "resultSuccess": "Dernier passage : {{success}} mises à jour, {{noExif}} sans date trouvée, {{failed}} inaccessibles",
       "skipped": "{{count}} photo(s) ont été modifiées par autre chose pendant le passage et n'ont donc pas été mises à jour.",
-      "description": "Complète la « date de prise de vue » depuis les EXIF pour les photos importées avant sa lecture. Les imports externes n'en enregistraient aucune, si bien que ces galeries se trient par ordre d'import plutôt que par date de prise de vue."
+      "description": "Complète la « date de prise de vue » depuis les EXIF pour les photos importées avant sa lecture. Les imports externes n'en enregistraient aucune, si bien que ces galeries se trient par ordre d'import plutôt que par date de prise de vue.",
+      "pendingDetails": "Photos en attente de ce traitement : {{photos}}. Il lit aussi les données de prise de vue (appareil, objectif, exposition) des photos qui n'en ont pas encore."
     },
     "orientationBackfill": {
       "title": "Orientation des photos",
@@ -2034,7 +2037,8 @@
         "filterNone": "Aucun nom"
       },
       "approvedBy": "Approuvée : {{value}}",
-      "rejectedBy": "Refusée : {{value}}"
+      "rejectedBy": "Refusée : {{value}}",
+      "cameraDetails": "Données de prise de vue"
     },
     "events": {
       "tabs": {

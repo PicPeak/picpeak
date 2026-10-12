@@ -20,6 +20,7 @@ const watermarkGeneratorService = require('./watermarkGeneratorService');
 const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey } = require('./photoResolver');
 const { resolveCredit } = require('./photoCredit');
+const { exifColumn } = require('./photoExif');
 const logger = require('../utils/logger');
 const uploadQuota = require('./publicUploadQuota');
 
@@ -163,6 +164,8 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     // EXIF replaces it. Guest and manual credits are decisions about the
     // photo and stay.
     const isVideoReplacement = !!mimeType?.startsWith('video/');
+    // Read while the temp file is still here, like the date above.
+    const exif = isVideoReplacement ? {} : await exifColumn(newFileTempPath);
     const autoCredit = existingPhoto.uploaded_by !== 'guest'
       && (!existingPhoto.credit_source || existingPhoto.credit_source === 'exif')
       ? await resolveCredit({ localPath: newFileTempPath, isVideo: isVideoReplacement })
@@ -256,6 +259,10 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       width,
       height,
       captured_at: capturedAt,
+      // Camera details describe the file (issue 1733, D1): the new file's,
+      // or none. NULL leaves an unreadable one to the backfill.
+      exif_json: null,
+      ...exif,
       mime_type: mimeType,
       media_type: mimeType?.startsWith('video/') ? 'video' : 'image',
       // A replaced video is queued for a new copy while the setting is on;

@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import type { PhotoExif } from '../types';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
 import { uploadMultipartBudget } from '../utils/uploadMultipartBudget';
 
@@ -51,6 +52,8 @@ export interface AdminPhoto {
   credit_name?: string | null;
   credit_source?: 'guest' | 'exif' | 'manual' | 'account' | null;
   uploaded_by?: 'admin' | 'guest';
+  // Camera details (issue 1733, D1); null when the photo carries none.
+  exif?: PhotoExif | null;
   // Folders (issue 1786): the folder the photo lives in (null = gallery
   // root), and the open folder request it waits on, if any.
   folder_id?: number | null;

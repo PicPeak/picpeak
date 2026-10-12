@@ -462,6 +462,8 @@
   "events": {
     "revealMode": "Modo revelación (ocultar la galería hasta revelarla)",
     "revealModeHelp": "Los invitados pueden subir fotos pero no verlas hasta que reveles la galería — manualmente o a la hora programada. La presentación y el acceso de clientes siguen funcionando.",
+    "showExifToGuests": "Mostrar los datos de cámara a los invitados",
+    "showExifToGuestsHelp": "La cámara, el objetivo, la distancia focal, la apertura, la velocidad de obturación y el ISO aparecen bajo la foto en la vista a pantalla completa. La ubicación y los números de serie nunca se guardan ni se muestran.",
     "revealAt": "Revelación programada (opcional)",
     "revealAtHelp": "Déjalo vacío para revelar manualmente con el botón \"Revelar ahora\".",
     "revealModeStatus": "Modo revelación",
@@ -1367,6 +1369,9 @@
     "features": {
       "configure": "Configurar",
       "sidebarInSettings": "Sin entrada en la barra lateral — está en los ajustes"
+    },
+    "captureDates": {
+      "pendingDetails": "Fotos pendientes de esta ejecución: {{photos}}. También lee los datos de cámara (cámara, objetivo, exposición) de las fotos que aún no los tienen registrados."
     }
   },
   "analytics": {
@@ -1940,7 +1945,8 @@
       "noPosterFrame": "Sin fotograma de portada",
       "noPosterFrameRetry": "Volver a tomar el fotograma de portada",
       "approvedBy": "Aprobada: {{value}}",
-      "rejectedBy": "Rechazada: {{value}}"
+      "rejectedBy": "Rechazada: {{value}}",
+      "cameraDetails": "Datos de cámara"
     },
     "guests": {
       "columns": {

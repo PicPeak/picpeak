@@ -2214,6 +2214,8 @@
   "events": {
     "revealMode": "Reveal-Modus (Galerie bis zur Freigabe verbergen)",
     "revealModeHelp": "Gäste können hochladen, sehen aber keine Fotos, bis Sie die Galerie freigeben — manuell oder zum geplanten Zeitpunkt. Diashow und Kundenzugang funktionieren weiter.",
+    "showExifToGuests": "Kameradaten den Gästen anzeigen",
+    "showExifToGuestsHelp": "Kamera, Objektiv, Brennweite, Blende, Belichtungszeit und ISO erscheinen in der Vollbildansicht unter dem Foto. Standort und Seriennummern werden nie gespeichert oder angezeigt.",
     "revealAt": "Geplante Freigabe (optional)",
     "revealAtHelp": "Leer lassen, um manuell mit „Jetzt freigeben\" freizugeben.",
     "revealModeStatus": "Reveal-Modus",
@@ -3914,7 +3916,8 @@
       "skipped": "{{count}} Foto(s) wurden während des Laufs anderweitig geändert und daher nicht aktualisiert.",
       "description": "Trägt „Aufnahmedatum\" aus den EXIF-Daten nach, für Fotos die vor dieser Auswertung importiert wurden. Externe Importe haben nie eines gespeichert, dadurch sortieren diese Galerien nach Importreihenfolge statt nach Aufnahmezeit.",
       "skipped_one": "{{count}} Foto wurde während des Laufs anderweitig geändert und daher nicht aktualisiert.",
-      "skipped_other": "{{count}} Fotos wurden während des Laufs anderweitig geändert und daher nicht aktualisiert."
+      "skipped_other": "{{count}} Fotos wurden während des Laufs anderweitig geändert und daher nicht aktualisiert.",
+      "pendingDetails": "Fotos, die auf diesen Lauf warten: {{photos}}. Er liest auch die Kameradaten (Kamera, Objektiv, Belichtung) für Fotos, bei denen noch keine erfasst sind."
     },
     "orientationBackfill": {
       "title": "Fotoausrichtung",
@@ -5080,7 +5083,8 @@
       "deleteManyConfirm_one": "{{count}} Foto löschen? Es wird aus der Galerie entfernt. Das kann nicht rückgängig gemacht werden.",
       "deleteManyConfirm_other": "{{count}} Fotos löschen? Sie werden aus der Galerie entfernt. Das kann nicht rückgängig gemacht werden.",
       "deleteManyAction_one": "{{count}} Foto löschen",
-      "deleteManyAction_other": "{{count}} Fotos löschen"
+      "deleteManyAction_other": "{{count}} Fotos löschen",
+      "cameraDetails": "Kameradaten"
     },
     "events": {
       "tabs": {

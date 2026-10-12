@@ -37,6 +37,7 @@ import { toast } from 'react-toastify';
 
 import './GalleryPremiumLayout.css';
 import { lightboxImageUrl } from '../imageTiers';
+import { exifLine } from '../../../utils/photoExif';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
 
 const isVideoPhoto = (photo: Photo) => photo.media_type === 'video' || photo.type === 'video';
@@ -414,11 +415,16 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         : undefined,
       // Photo credit (#1561), same wording as PhotoLightbox. Only present
       // when the gallery shows names to this viewer.
-      description: photo.credit_name
-        ? (photo.uploaded_by_guest
-          ? t('gallery.credits.uploadedBy', { name: photo.credit_name })
-          : t('gallery.credits.photoBy', { name: photo.credit_name }))
-        : undefined,
+      // Camera details (issue 1733, D1) on a second line; the caption
+      // plugin breaks a string at "\n".
+      description: [
+        photo.credit_name
+          ? (photo.uploaded_by_guest
+            ? t('gallery.credits.uploadedBy', { name: photo.credit_name })
+            : t('gallery.credits.photoBy', { name: photo.credit_name }))
+          : null,
+        exifLine(photo.exif),
+      ].filter(Boolean).join('\n') || undefined,
     }));
   }, [filteredPhotos, allowDownloads, showOriginalFilename, imageDimensions, t]);
   const showCaptions = showOriginalFilename || slides.some((slide) => !!slide.description);

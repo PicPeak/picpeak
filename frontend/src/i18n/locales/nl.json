@@ -476,6 +476,8 @@
   "events": {
     "revealMode": "Onthullingsmodus (galerij verbergen tot de onthulling)",
     "revealModeHelp": "Gasten kunnen uploaden maar zien geen foto's totdat je de galerij onthult — handmatig of op het geplande tijdstip. Diavoorstelling en klanttoegang blijven werken.",
+    "showExifToGuests": "Cameragegevens aan gasten tonen",
+    "showExifToGuestsHelp": "Camera, objectief, brandpuntsafstand, diafragma, sluitertijd en ISO verschijnen onder de foto in de volledige weergave. Locatie en serienummers worden nooit opgeslagen of getoond.",
     "revealAt": "Geplande onthulling (optioneel)",
     "revealAtHelp": "Laat leeg om handmatig te onthullen met de knop \"Nu onthullen\".",
     "revealModeStatus": "Onthullingsmodus",
@@ -1474,6 +1476,9 @@
       "placeholder": "Instellingen zoeken…",
       "label": "Instellingen zoeken",
       "noResults": "Geen instelling komt overeen met “{{query}}”."
+    },
+    "captureDates": {
+      "pendingDetails": "Foto's die op deze run wachten: {{photos}}. De run leest ook de cameragegevens (camera, objectief, belichting) van foto's waarvoor nog niets is vastgelegd."
     }
   },
   "analytics": {
@@ -1991,7 +1996,8 @@
         "filterNone": "Geen naam"
       },
       "approvedBy": "Goedgekeurd: {{value}}",
-      "rejectedBy": "Afgewezen: {{value}}"
+      "rejectedBy": "Afgewezen: {{value}}",
+      "cameraDetails": "Cameragegevens"
     },
     "events": {
       "tabs": {

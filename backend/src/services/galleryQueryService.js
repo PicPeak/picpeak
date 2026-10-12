@@ -1,6 +1,7 @@
 const { toIso } = require('../utils/dateNormalize');
 const { toDateOnly } = require('../utils/dateOnly');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
+const { parseStoredExif } = require('./photoExif');
 const { publicThemeFields } = require('./galleryTheme');
 const { db } = require('../database/db');
 const { parseBooleanInput } = require('../utils/parsers');
@@ -506,6 +507,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   const creditsVisible = accessLevel !== 'slideshow'
     && (isClient || parseBooleanInput(event.show_credits_to_guests, false));
 
+  // Camera details in the lightbox (issue 1733, D1): the per-event switch
+  // decides, for every viewer of the guest gallery.
+  const showExif = parseBooleanInput(event.show_exif_to_guests, false);
+
   const theme = await publicThemeFields(event);
   return {
     pagination: { page, limit: limit || total, total, has_more: !!limit && page * limit < total },
@@ -701,6 +706,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         height: photo.height || null,
         // EXIF capture date
         captured_at: toIso(photo.captured_at) || null,
+        // Camera details (issue 1733, D1), only when the gallery shows them
+        // to guests — the key is left out otherwise.
+        ...(showExif ? { exif: parseStoredExif(photo.exif_json) } : {}),
         // Media type
         media_type: photo.media_type || null,
         mime_type: photo.mime_type || null,

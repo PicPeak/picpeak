@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { generateThumbnail, generateVideoPlaceholder, extractCaptureDate, withLocalCopy, withProcessableImage } = require('./imageProcessor');
+const { exifColumn } = require('./photoExif');
 const { generatePhotoFilename } = require('../utils/filenameSanitizer');
 const { processUploadedVideo, extractVideoMetadata, isVideoMimeType, posterFrameError } = require('./videoProcessor');
 const { getStorage } = require('./storage');
@@ -638,6 +639,11 @@ async function processPhoto(photoId) {
       } catch (e) {
         logger.warn(`processPhoto: EXIF extraction failed for ${photoId}`, { error: e.message });
       }
+    }
+
+    // Camera details (issue 1733, D1), from the same original.
+    if (!photo.exif_json && !isVideo) {
+      Object.assign(updateData, await exifColumn(localPath));
     }
 
     if (isVideo) {

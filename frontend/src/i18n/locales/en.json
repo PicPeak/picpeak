@@ -1621,6 +1621,8 @@
   "events": {
     "revealMode": "Reveal mode (hide gallery until reveal)",
     "revealModeHelp": "Guests can upload but see no photos until you reveal the gallery — manually or at the scheduled time. Slideshow and client access keep working.",
+    "showExifToGuests": "Show camera details to guests",
+    "showExifToGuestsHelp": "Camera, lens, focal length, aperture, shutter speed and ISO appear below the photo in the full-screen view. Location and serial numbers are never stored or shown.",
     "revealAt": "Scheduled reveal (optional)",
     "revealAtHelp": "Leave empty to reveal manually with the \"Reveal now\" button.",
     "revealModeStatus": "Reveal mode",
@@ -3321,7 +3323,8 @@
       "skipped": "{{count}} photo(s) were changed by something else while the run was reading them and were not updated.",
       "description": "Backfill \"Date Taken\" from EXIF for photos imported before capture dates were read. External/reference imports never recorded one, so their galleries sort by import order instead of when the photos were taken.",
       "skipped_one": "{{count}} photo(s) were changed by something else while the run was reading them and were not updated.",
-      "skipped_other": "{{count}} photo(s) were changed by something else while the run was reading them and were not updated."
+      "skipped_other": "{{count}} photo(s) were changed by something else while the run was reading them and were not updated.",
+      "pendingDetails": "Photos waiting for this run: {{photos}}. It also reads the camera details (camera, lens, exposure) of photos that have none on record."
     },
     "orientationBackfill": {
       "title": "Photo Orientation",
@@ -4560,7 +4563,8 @@
       "deleteManyConfirm_one": "Delete {{count}} photo? It is removed from the gallery. This cannot be undone.",
       "deleteManyConfirm_other": "Delete {{count}} photos? They are removed from the gallery. This cannot be undone.",
       "deleteManyAction_one": "Delete {{count}} photo",
-      "deleteManyAction_other": "Delete {{count}} photos"
+      "deleteManyAction_other": "Delete {{count}} photos",
+      "cameraDetails": "Camera details"
     },
     "events": {
       "tabs": {

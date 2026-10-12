@@ -125,7 +125,8 @@ describe('capture date backfill (#1172)', () => {
 
   it('reports nothing to do once every photo has a date', async () => {
     const { photoId } = await seed({ relpath: 'b.jpg', exifIso: '2026-06-02T09:00:00Z' });
-    await db('photos').where({ id: photoId }).update({ captured_at: new Date().toISOString() });
+    // And its camera details read: the job fills those too (issue 1733, D1).
+    await db('photos').where({ id: photoId }).update({ captured_at: new Date().toISOString(), exif_json: '{}' });
 
     const res = await request(app).post('/api/admin/photos/repair-capture-dates');
 

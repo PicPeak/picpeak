@@ -378,6 +378,19 @@ export const GuestsSection: React.FC<FieldsProps & {
         showToGuests={f.show_credits_to_guests}
         onShowToGuestsChange={(show_credits_to_guests) => set({ show_credits_to_guests })}
       />
+      {/* Camera details in the guest lightbox (issue 1733, D1). */}
+      <div>
+        <label className="flex items-center">
+          <input
+            type="checkbox"
+            checked={f.show_exif_to_guests}
+            onChange={(e) => set({ show_exif_to_guests: e.target.checked })}
+            className={checkboxClass}
+          />
+          <span className="ml-2 text-sm text-body">{t('events.showExifToGuests')}</span>
+        </label>
+        <p className="text-xs text-muted mt-1 ml-6">{t('events.showExifToGuestsHelp')}</p>
+      </div>
       {feedback && (
         <div className="pt-4 border-t border-line">
           <h4 className="text-sm font-semibold text-heading mb-3">{t('feedback.settings.title', 'Guest Feedback Settings')}</h4>

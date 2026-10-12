@@ -1482,6 +1482,8 @@
   "events": {
     "revealMode": "Način razkritja (skrij galerijo do razkritja)",
     "revealModeHelp": "Gostje lahko nalagajo fotografije, vendar jih ne vidijo, dokler galerije ne razkrijete — ročno ali ob načrtovanem času. Diaprojekcija in dostop za stranke delujeta naprej.",
+    "showExifToGuests": "Pokaži podatke o fotoaparatu gostom",
+    "showExifToGuestsHelp": "Fotoaparat, objektiv, goriščna razdalja, zaslonka, čas osvetlitve in ISO so prikazani pod fotografijo v celozaslonskem pogledu. Lokacija in serijske številke se nikoli ne shranijo in ne prikažejo.",
     "revealAt": "Načrtovano razkritje (neobvezno)",
     "revealAtHelp": "Pustite prazno za ročno razkritje z gumbom »Razkrij zdaj«.",
     "revealModeStatus": "Način razkritja",
@@ -3035,7 +3037,8 @@
       "skipped": "{{count}} fotografij je bilo med zagonom spremenjenih drugje in zato niso bile posodobljene.",
       "description": "Dopolni »datum zajema« iz EXIF za fotografije, uvožene pred njegovim branjem. Zunanji uvozi ga niso zabeležili, zato se te galerije razvrščajo po vrstnem redu uvoza namesto po času zajema.",
       "skipped_one": "{{count}} fotografij je bilo med zagonom spremenjenih drugje in zato niso bile posodobljene.",
-      "skipped_other": "{{count}} fotografij je bilo med zagonom spremenjenih drugje in zato niso bile posodobljene."
+      "skipped_other": "{{count}} fotografij je bilo med zagonom spremenjenih drugje in zato niso bile posodobljene.",
+      "pendingDetails": "Fotografije, ki čakajo na ta zagon: {{photos}}. Prebere tudi podatke o fotoaparatu (fotoaparat, objektiv, osvetlitev) za fotografije, ki jih še nimajo."
     },
     "orientationBackfill": {
       "title": "Usmerjenost fotografij",
@@ -3876,7 +3879,8 @@
         "filterNone": "Brez imena"
       },
       "approvedBy": "Odobreno: {{value}}",
-      "rejectedBy": "Zavrnjeno: {{value}}"
+      "rejectedBy": "Zavrnjeno: {{value}}",
+      "cameraDetails": "Podatki o fotoaparatu"
     },
     "events": {
       "tabs": {
