@@ -285,7 +285,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
 
   // Rows mode mounts only the rows near the viewport in a large gallery
   // (issue 1733); the other modes never have items here.
-  const { visible: visibleRowItems, pin: pinRowPhoto } = useWindowedItems(
+  const { visible: visibleRowItems } = useWindowedItems(
     containerRef,
     rowsLayout.items,
     containerWidth,
@@ -403,10 +403,6 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           return (
             <PhotoCard
               key={photo.id}
-              containerProps={{
-                onFocus: () => pinRowPhoto(photo.id),
-                onBlur: () => pinRowPhoto(null),
-              }}
               firstLookClassName={firstLookAboveChips(photo.type === 'collage' ? 1 : 0)}
               photo={photo}
               isSelected={selectedPhotos.has(photo.id)}

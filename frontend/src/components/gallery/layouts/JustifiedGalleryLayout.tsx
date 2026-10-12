@@ -131,7 +131,11 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
         tabIndex: 0,
         'aria-label': `View photo ${photo.filename}`,
         onFocus: () => onFocusChange?.(true),
-        onBlur: () => onFocusChange?.(false),
+        // Focus moving to another tile is that tile's to report. Letting go
+        // here first would unmount the very row focus is on its way to.
+        onBlur: (e) => {
+          if (!e.currentTarget.parentElement?.contains(e.relatedTarget)) onFocusChange?.(false);
+        },
         onKeyDown: (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();

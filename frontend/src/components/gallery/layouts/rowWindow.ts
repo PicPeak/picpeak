@@ -81,14 +81,14 @@ export function visibleRowRange(
 
 interface ScrollAnchor {
   photoId: number;
-  /** The anchor row's top relative to the top of the viewport. */
-  offset: number;
+  /** How far down the anchor's row the top of the viewport is, 0 to 1. */
+  ratio: number;
 }
 
 export interface WindowedItems {
   /** The items to render, in layout order. */
   visible: JustifiedLayoutItem[];
-  /** Keep a photo's row mounted while focus is inside its tile. */
+  /** Keep a photo's row, and the rows next to it, mounted while its tile has focus. */
   pin: (photoId: number | null) => void;
 }
 
@@ -96,9 +96,11 @@ export interface WindowedItems {
  * Which of `items` to render. With `enabled` false it is all of them.
  *
  * `width` is the container width the items were laid out for: when it
- * changes, the page is scrolled so the row that was at the top of the
- * viewport is there again, instead of whatever now sits at the old pixel
- * offset.
+ * changes, the page is scrolled so a photo from the row that crossed the top
+ * of the viewport crosses it again, at the same fraction of its row, instead
+ * of whatever now sits at the old pixel offset. A plain scroll adjustment by
+ * the browser cannot do this: the rows are re-packed, so the photo moves by
+ * a different amount than its neighbours.
  */
 export function useWindowedItems(
   containerRef: RefObject<HTMLElement | null>,
@@ -131,11 +133,31 @@ export function useWindowedItems(
     const viewport = window.innerHeight;
     const next = visibleRowRange(rows, viewTop, viewTop + viewport, viewport * WINDOW_OVERSCAN_VIEWPORTS);
     setRange((prev) => (prev.start === next.start && prev.end === next.end ? prev : next));
+  }, [containerRef]);
 
+  // Remember what is at the top of the viewport. Taken when the viewer
+  // scrolls or the list changes, not on a resize: by then the toolbar above
+  // may already have re-wrapped and pushed the grid a few pixels, and going
+  // there and back would not return to the same place.
+  const markAnchor = useCallback(() => {
+    const container = containerRef.current;
+    const { rows } = modelRef.current;
+    if (!container || rows.length === 0) return;
+    const viewTop = -container.getBoundingClientRect().top;
     const top = firstRow(rows, (row) => row.bottom > viewTop);
-    anchorRef.current = viewTop > 0 && top < rows.length
-      ? { photoId: modelRef.current.items[rows[top].from].photoId, offset: rows[top].top - viewTop }
-      : null;
+    if (viewTop <= 0 || top >= rows.length) {
+      anchorRef.current = null;
+      return;
+    }
+    // Hold on to the same photo while its row is still the one at the top:
+    // another width puts it in a row that starts with a different photo, and
+    // switching to that one would drift a row per resize, never to return.
+    const { items, rowOf } = modelRef.current;
+    const previous = anchorRef.current;
+    anchorRef.current = {
+      photoId: previous && rowOf.get(previous.photoId) === top ? previous.photoId : items[rows[top].from].photoId,
+      ratio: Math.max(0, (viewTop - rows[top].top) / (rows[top].bottom - rows[top].top)),
+    };
   }, [containerRef]);
 
   // A new layout (sort, filter, more photos, another width) invalidates the
@@ -144,41 +166,51 @@ export function useWindowedItems(
     modelRef.current = model;
     const container = containerRef.current;
     const anchor = anchorRef.current;
-    if (container && anchor && widthRef.current > 0 && widthRef.current !== width) {
-      const row = model.rowOf.get(anchor.photoId);
-      if (row !== undefined) {
+    if (widthRef.current === width) {
+      markAnchor();
+    } else if (container && anchor && widthRef.current > 0) {
+      const index = model.rowOf.get(anchor.photoId);
+      if (index !== undefined) {
+        const row = model.rows[index];
         const viewTop = -container.getBoundingClientRect().top;
-        const delta = model.rows[row].top - anchor.offset - viewTop;
+        const delta = row.top + anchor.ratio * (row.bottom - row.top) - viewTop;
         if (Math.abs(delta) >= 1) window.scrollBy(0, delta);
       }
     }
     widthRef.current = width;
     measure();
-  }, [model, width, measure, containerRef]);
+  }, [model, width, measure, markAnchor, containerRef]);
 
   useEffect(() => {
     if (!enabled) return;
     let frame = 0;
+    let scrolled = false;
     const schedule = () => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
         measure();
+        if (scrolled) markAnchor();
+        scrolled = false;
       });
     };
-    window.addEventListener('scroll', schedule, { passive: true });
+    const onScroll = () => {
+      scrolled = true;
+      schedule();
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', schedule);
     // Content above the grid can grow without a scroll event (no scroll
     // anchoring in Safari); the document's height changes when it does.
     const observer = new ResizeObserver(schedule);
     observer.observe(document.body);
     return () => {
-      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', schedule);
       observer.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [enabled, measure]);
+  }, [enabled, measure, markAnchor]);
 
   const visible = useMemo(() => {
     const { items, rows, rowOf } = model;
@@ -186,12 +218,20 @@ export function useWindowedItems(
     // The range may predate this layout for one unpainted render.
     const end = Math.min(range.end, rows.length);
     const start = Math.min(range.start, end);
-    const slice = start < end ? items.slice(rows[start].from, rows[end - 1].to) : [];
+    const take = (from: number, to: number) => (from < to ? items.slice(rows[from].from, rows[to - 1].to) : []);
     const pinnedRow = pinned === null ? undefined : rowOf.get(pinned);
-    if (pinnedRow === undefined || (pinnedRow >= start && pinnedRow < end)) return slice;
-    const kept = items.slice(rows[pinnedRow].from, rows[pinnedRow].to);
-    // Document order stays photo order, so Tab moves on from the kept row.
-    return pinnedRow < start ? [...kept, ...slice] : [...slice, ...kept];
+    if (pinnedRow === undefined) return take(start, end);
+    // The focused row and its two neighbours, so Tab and Shift+Tab land on
+    // the next photo (and scroll to it) wherever the window has gone since.
+    const keepStart = Math.max(0, pinnedRow - 1);
+    const keepEnd = Math.min(rows.length, pinnedRow + 2);
+    if (start === end || (keepStart <= end && keepEnd >= start)) {
+      return start === end ? take(keepStart, keepEnd) : take(Math.min(start, keepStart), Math.max(end, keepEnd));
+    }
+    // Document order stays photo order.
+    return keepEnd < start
+      ? [...take(keepStart, keepEnd), ...take(start, end)]
+      : [...take(start, end), ...take(keepStart, keepEnd)];
   }, [enabled, model, range, pinned]);
 
   return { visible, pin: setPinned };

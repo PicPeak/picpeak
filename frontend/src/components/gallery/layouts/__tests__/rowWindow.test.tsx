@@ -213,26 +213,44 @@ describe.each([
   it('keeps the viewer on the same photo when the container width changes', () => {
     render(<Layout {...layoutProps(makePhotos(2000))} />);
     scrollGridTo(-40000);
-    // The first row that reaches into the viewport, and where it sits.
-    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) + parseFloat(tile.style.height) > 40000)!;
+    const resizeTo = (width: number) => {
+      gridWidth = width;
+      act(() => {
+        resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(width));
+      });
+    };
+    // How far down a tile the top of the viewport is, as a fraction of it.
+    const ratioOf = (tile: HTMLElement) =>
+      (-gridTop - parseFloat(tile.style.top)) / parseFloat(tile.style.height);
+    const find = (id: number) => tiles().find((tile) => Number(tile.dataset.photo) === id)!;
+
+    // Put the top of the viewport 40% down a row; its first photo is the anchor.
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
     const anchorId = Number(anchorTile.dataset.photo);
-    const offset = parseFloat(anchorTile.style.top) - 40000;
+    const start = parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4;
+    scrollGridTo(-start);
+    const ratio = ratioOf(find(anchorId));
+    expect(ratio).toBeCloseTo(0.4, 5);
 
-    gridWidth = 600;
-    act(() => {
-      resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
-    });
-
-    // Narrower rows: the photo is far further down now.
-    // and the page was scrolled so it sits where it sat in the viewport.
-    const newTop = tileTop(anchorId);
-    expect(newTop).toBeGreaterThan(60000);
+    // Narrower rows: the photo is far further down, and the page follows it.
+    resizeTo(600);
+    expect(tileTop(anchorId)).toBeGreaterThan(60000);
     expect(window.scrollBy).toHaveBeenCalledTimes(1);
-    expect(newTop + gridTop).toBeCloseTo(offset, 3);
+    expect(ratioOf(find(anchorId))).toBeCloseTo(ratio, 5);
+
+    // And back: the same pixel as before, not a row or two off.
+    resizeTo(1200);
+    expect(gridTop).toBeCloseTo(-start, 3);
+    expect(ratioOf(find(anchorId))).toBeCloseTo(ratio, 5);
   });
 
+});
+
+// Justified tiles are focusable themselves. Masonry rows tiles are not: focus
+// sits on a button inside, which PhotoCard already drops with the image.
+describe('Justified windowing and keyboard focus', () => {
   it('keeps the focused tile mounted when its row scrolls out of the window', () => {
-    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    render(<JustifiedGalleryLayout {...layoutProps(makePhotos(2000))} />);
     const first = tiles()[0];
     fireEvent.focus(first);
     scrollGridTo(-40000);
@@ -240,6 +258,14 @@ describe.each([
     expect(tileIds()[0]).toBe(1);
     expect(tileIds()[tileIds().length - 1]).toBeGreaterThan(100);
     expect(tileIds()).toEqual([...tileIds()].sort((a, b) => a - b));
+
+    // The next row is kept too, so Tab has somewhere to go.
+    const beyondFirstRow = tiles().find((tile) => parseFloat(tile.style.top) > 0)!;
+    expect(Number(beyondFirstRow.dataset.photo)).toBeLessThan(20);
+
+    // Focus on its way to the next tile must not let go of the rows first.
+    fireEvent.blur(tiles()[0], { relatedTarget: tiles()[1] });
+    expect(tileIds()[0]).toBe(1);
 
     fireEvent.blur(screen.getAllByTestId('tile')[0]);
     expect(tileIds()[0]).toBeGreaterThan(100);
