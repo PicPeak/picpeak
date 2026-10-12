@@ -483,6 +483,29 @@
       "withDate": "Остальные снимки ещё обрабатываются — полная галерея появится не позднее {{date}}.",
       "noDetails": "Остальные снимки ещё обрабатываются.",
       "progressLabel": "Уже переданные фото"
+    },
+    "selection": {
+      "counterCapped": "Выбрано: {{used}} из {{cap}}",
+      "counter": "Выбрано: {{used}}",
+      "finish": "Завершить выбор",
+      "finishTitle": "Завершить выбор?",
+      "finishCount": "Выбранные фото: {{count}}",
+      "finishBody": "Ваш выбор будет отправлен фотографу. После этого изменить его нельзя; фотограф может снова открыть его для вас.",
+      "finishSuccess": "Ваш выбор отправлен фотографу",
+      "finishedOn": "Выбор завершён {{date}}. Ваш выбор заблокирован.",
+      "approve": "Одобрить обработанные фото",
+      "approveTitle": "Одобрить обработанные фото?",
+      "approveBody": "Вы подтверждаете, что обработанные фото вас устраивают и фотограф может продолжать. После этого изменить одобрения и отклонения нельзя; фотограф может снова открыть их для вас.",
+      "approveRejected": "Фото, всё ещё отмеченные как отклонённые: {{count}}",
+      "approveConfirm": "Одобрить",
+      "approveSuccess": "Ваше одобрение отправлено фотографу",
+      "approvedOn": "Обработанные фото одобрены {{date}}",
+      "noteLabel": "Примечание для фотографа (необязательно)",
+      "noteBlocked": "Ваше примечание содержит слова, которые здесь не разрешены.",
+      "nothingSelected": "Сначала выберите хотя бы одно фото",
+      "submitError": "Не удалось отправить. Попробуйте ещё раз.",
+      "lockedSelection": "Ваш выбор завершён, изменить его больше нельзя. Попросите фотографа снова открыть его.",
+      "lockedApproval": "Вы одобрили обработанные фото, поэтому изменить одобрения и отклонения больше нельзя. Попросите фотографа снова открыть их."
     }
   },
   "categories": {
@@ -1997,7 +2020,10 @@
       "photosReviewRejected_many": "{{count}} загрузок команды отклонено в {{eventName}}",
       "photosReviewRejected_other": "{{count}} загрузок команды отклонено в {{eventName}}",
       "photoDecision": "Фото одобрено или отклонено в {{eventName}}",
-      "guestFeedbackDecision": "Гость одобрил или отклонил фото в {{eventName}}"
+      "guestFeedbackDecision": "Гость одобрил или отклонил фото в {{eventName}}",
+      "selectionSubmitted": "{{guestName}} завершил(а) выбор в {{eventName}} (фото: {{count}})",
+      "approvalSubmitted": "{{guestName}} одобрил(а) обработанные фото в {{eventName}}",
+      "selectionReopened": "Отправка гостя {{guestName}} снова открыта в {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "Все уведомления отмечены как прочитанные",
@@ -2280,7 +2306,10 @@
       "photos_review_rejected_one": "{{count}} загрузка команды отклонена в {{eventName}}",
       "photos_review_rejected_few": "{{count}} загрузки команды отклонены в {{eventName}}",
       "photos_review_rejected_many": "{{count}} загрузок команды отклонено в {{eventName}}",
-      "photos_review_rejected_other": "{{count}} загрузок команды отклонено в {{eventName}}"
+      "photos_review_rejected_other": "{{count}} загрузок команды отклонено в {{eventName}}",
+      "selection_submitted": "{{guestName}} завершил(а) выбор в {{eventName}} (фото: {{count}})",
+      "approval_submitted": "{{guestName}} одобрил(а) обработанные фото в {{eventName}}",
+      "selection_reopened": "Отправка гостя {{guestName}} снова открыта в {{eventName}}"
     },
     "catalogedMedia": "{{size}} в каталоге",
     "storageUnavailable": "недоступно",
@@ -3022,7 +3051,9 @@
       "keybindLightroom": "Как в Lightroom",
       "keybindLightroomDesc": "1–5 ставят звёзды, 6–9 — красный / жёлтый / зелёный / синий",
       "decisions": "Одобрение / отклонение каждого фото",
-      "decisionsDesc": "Гости одобряют или отклоняют каждое фото и при желании указывают причину. Вы фильтруете и экспортируете по их решению"
+      "decisionsDesc": "Гости одобряют или отклоняют каждое фото и при желании указывают причину. Вы фильтруете и экспортируете по их решению",
+      "selectionSubmit": "Завершение выбора",
+      "selectionSubmitDesc": "Гости отправляют свои лайки или избранное, когда закончат. После этого их выбор заблокирован, пока вы не откроете его снова, а вы получаете уведомление"
     },
     "settingsUpdated": "Настройки отзывов обновлены",
     "settingsUpdateError": "Не удалось обновить настройки",
@@ -3141,7 +3172,20 @@
     "decisionError": "Не удалось сохранить решение",
     "decisionType": "ваше решение",
     "youApproved": "Вы одобрили это фото",
-    "youRejected": "Вы отклонили это фото"
+    "youRejected": "Вы отклонили это фото",
+    "submissions": {
+      "title": "Завершённые выборы и одобрения",
+      "selection": "Выбор",
+      "approval": "Одобрение обработанных фото",
+      "photoCount": "Фото: {{count}}",
+      "submittedOn": "Отправлено {{date}}",
+      "reopenedOn": "Снова открыто {{date}}",
+      "note": "Примечание: {{note}}",
+      "reopen": "Открыть снова",
+      "reopenConfirm": "Открыть эту отправку снова? Гость сможет изменить выбор и должен будет отправить его заново.",
+      "reopened": "Отправка снова открыта",
+      "reopenError": "Не удалось снова открыть отправку"
+    }
   },
   "filter": {
     "feedbackFilters": "Фильтры отзывов",

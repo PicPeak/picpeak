@@ -1575,6 +1575,29 @@
     "preview": {
       "title": "Theme preview",
       "description": "This is how your galleries will look with the current theme settings."
+    },
+    "selection": {
+      "counterCapped": "{{used}} of {{cap}} selected",
+      "counter": "{{used}} selected",
+      "finish": "Finish selection",
+      "finishTitle": "Finish your selection?",
+      "finishCount": "Selected photos: {{count}}",
+      "finishBody": "Your selection goes to the photographer. After that you can no longer change it; the photographer can reopen it for you.",
+      "finishSuccess": "Your selection was sent to the photographer",
+      "finishedOn": "Selection finished on {{date}}. Your picks are locked.",
+      "approve": "Approve edited photos",
+      "approveTitle": "Approve the edited photos?",
+      "approveBody": "You confirm that the edited photos are fine as they are and the photographer can go ahead. After that you can no longer change your approvals and rejections; the photographer can reopen them for you.",
+      "approveRejected": "Photos still marked as rejected: {{count}}",
+      "approveConfirm": "Approve",
+      "approveSuccess": "Your approval was sent to the photographer",
+      "approvedOn": "Edited photos approved on {{date}}",
+      "noteLabel": "Note for the photographer (optional)",
+      "noteBlocked": "Your note contains words that are not allowed here.",
+      "nothingSelected": "Select at least one photo first",
+      "submitError": "Could not send it. Please try again.",
+      "lockedSelection": "Your selection is finished and can no longer be changed. Ask the photographer to reopen it.",
+      "lockedApproval": "You approved the edited photos, so your approvals and rejections can no longer be changed. Ask the photographer to reopen them."
     }
   },
   "categories": {
@@ -4466,7 +4489,10 @@
       "photosReviewRejected_one": "{{count}} team upload rejected in {{eventName}}",
       "photosReviewRejected_other": "{{count}} team uploads rejected in {{eventName}}",
       "photoDecision": "Photo approved or rejected in {{eventName}}",
-      "guestFeedbackDecision": "Guest approved or rejected a photo in {{eventName}}"
+      "guestFeedbackDecision": "Guest approved or rejected a photo in {{eventName}}",
+      "selectionSubmitted": "{{guestName}} finished their selection in {{eventName}} (photos: {{count}})",
+      "approvalSubmitted": "{{guestName}} approved the edited photos in {{eventName}}",
+      "selectionReopened": "Submission by {{guestName}} reopened in {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
@@ -4866,7 +4892,10 @@
       "photos_review_approved_one": "{{count}} team upload approved in {{eventName}}",
       "photos_review_approved_other": "{{count}} team uploads approved in {{eventName}}",
       "photos_review_rejected_one": "{{count}} team upload rejected in {{eventName}}",
-      "photos_review_rejected_other": "{{count}} team uploads rejected in {{eventName}}"
+      "photos_review_rejected_other": "{{count}} team uploads rejected in {{eventName}}",
+      "selection_submitted": "{{guestName}} finished their selection in {{eventName}} (photos: {{count}})",
+      "approval_submitted": "{{guestName}} approved the edited photos in {{eventName}}",
+      "selection_reopened": "Submission by {{guestName}} reopened in {{eventName}}"
     },
     "people": {
       "title": "People in this gallery",
@@ -6140,7 +6169,9 @@
       "timeWindow": "Time Window (minutes)",
       "maxRequests": "Max Requests",
       "decisions": "Approve / reject per photo",
-      "decisionsDesc": "Guests approve or reject each photo, optionally saying why. You filter and export by their decision"
+      "decisionsDesc": "Guests approve or reject each photo, optionally saying why. You filter and export by their decision",
+      "selectionSubmit": "Finish selection",
+      "selectionSubmitDesc": "Guests hand in their likes or favorites when they are done. Their picks are then locked until you reopen them, and you are notified"
     },
     "moderated": "Feedback moderated",
     "deleted": "Feedback deleted",
@@ -6261,7 +6292,20 @@
     "youRejected": "You rejected this photo",
     "deleteAction": "Delete feedback",
     "panelTitle": "Photo feedback",
-    "closePanel": "Close feedback"
+    "closePanel": "Close feedback",
+    "submissions": {
+      "title": "Finished selections and approvals",
+      "selection": "Selection",
+      "approval": "Approval of the edited photos",
+      "photoCount": "Photos: {{count}}",
+      "submittedOn": "Submitted {{date}}",
+      "reopenedOn": "Reopened {{date}}",
+      "note": "Note: {{note}}",
+      "reopen": "Reopen",
+      "reopenConfirm": "Reopen this submission? The guest can change their picks again and has to submit them anew.",
+      "reopened": "Submission reopened",
+      "reopenError": "Failed to reopen the submission"
+    }
   },
   "filter": {
     "feedbackFilters": "Feedback Filters",

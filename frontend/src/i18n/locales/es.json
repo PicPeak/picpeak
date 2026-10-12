@@ -430,6 +430,29 @@
       "withDate": "Las imágenes restantes aún se están editando: la galería completa estará disponible a más tardar el {{date}}.",
       "noDetails": "Las imágenes restantes aún se están editando.",
       "progressLabel": "Fotos entregadas hasta ahora"
+    },
+    "selection": {
+      "counterCapped": "{{used}} de {{cap}} seleccionadas",
+      "counter": "{{used}} seleccionadas",
+      "finish": "Finalizar selección",
+      "finishTitle": "¿Finalizar tu selección?",
+      "finishCount": "Fotos seleccionadas: {{count}}",
+      "finishBody": "Tu selección se envía al fotógrafo. Después ya no podrás cambiarla; el fotógrafo puede volver a abrirla por ti.",
+      "finishSuccess": "Tu selección se ha enviado al fotógrafo",
+      "finishedOn": "Selección finalizada el {{date}}. Tu selección está bloqueada.",
+      "approve": "Aprobar fotos editadas",
+      "approveTitle": "¿Aprobar las fotos editadas?",
+      "approveBody": "Confirmas que las fotos editadas están bien tal como están y que el fotógrafo puede continuar. Después ya no podrás cambiar tus aprobaciones y rechazos; el fotógrafo puede volver a abrirlos por ti.",
+      "approveRejected": "Fotos aún marcadas como rechazadas: {{count}}",
+      "approveConfirm": "Aprobar",
+      "approveSuccess": "Tu aprobación se ha enviado al fotógrafo",
+      "approvedOn": "Fotos editadas aprobadas el {{date}}",
+      "noteLabel": "Nota para el fotógrafo (opcional)",
+      "noteBlocked": "Tu nota contiene palabras que no están permitidas aquí.",
+      "nothingSelected": "Selecciona primero al menos una foto",
+      "submitError": "No se pudo enviar. Inténtalo de nuevo.",
+      "lockedSelection": "Tu selección está finalizada y ya no se puede cambiar. Pide al fotógrafo que la vuelva a abrir.",
+      "lockedApproval": "Has aprobado las fotos editadas, así que tus aprobaciones y rechazos ya no se pueden cambiar. Pide al fotógrafo que los vuelva a abrir."
     }
   },
   "categories": {
@@ -1760,7 +1783,10 @@
       "photosReviewRejected_one": "{{count}} subida del equipo rechazada en {{eventName}}",
       "photosReviewRejected_other": "{{count}} subidas del equipo rechazadas en {{eventName}}",
       "photoDecision": "Foto aprobada o rechazada en {{eventName}}",
-      "guestFeedbackDecision": "Un invitado aprobó o rechazó una foto en {{eventName}}"
+      "guestFeedbackDecision": "Un invitado aprobó o rechazó una foto en {{eventName}}",
+      "selectionSubmitted": "{{guestName}} finalizó su selección en {{eventName}} (fotos: {{count}})",
+      "approvalSubmitted": "{{guestName}} aprobó las fotos editadas en {{eventName}}",
+      "selectionReopened": "Envío de {{guestName}} reabierto en {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "Todas las notificaciones marcadas como leídas",
@@ -1874,7 +1900,10 @@
       "photos_review_approved_one": "{{count}} subida del equipo aprobada en {{eventName}}",
       "photos_review_approved_other": "{{count}} subidas del equipo aprobadas en {{eventName}}",
       "photos_review_rejected_one": "{{count}} subida del equipo rechazada en {{eventName}}",
-      "photos_review_rejected_other": "{{count}} subidas del equipo rechazadas en {{eventName}}"
+      "photos_review_rejected_other": "{{count}} subidas del equipo rechazadas en {{eventName}}",
+      "selection_submitted": "{{guestName}} finalizó su selección en {{eventName}} (fotos: {{count}})",
+      "approval_submitted": "{{guestName}} aprobó las fotos editadas en {{eventName}}",
+      "selection_reopened": "Envío de {{guestName}} reabierto en {{eventName}}"
     },
     "userManagement": "Gestión de usuarios",
     "inviteUser": "Invitar usuario",
@@ -2811,7 +2840,9 @@
       "keybindLightroom": "Valores por defecto de Lightroom",
       "keybindLightroomDesc": "1-5 asignan estrellas, 6-9 asignan rojo / amarillo / verde / azul",
       "decisions": "Aprobar / rechazar cada foto",
-      "decisionsDesc": "Los invitados aprueban o rechazan cada foto, opcionalmente indicando el motivo. Puedes filtrar y exportar según su decisión"
+      "decisionsDesc": "Los invitados aprueban o rechazan cada foto, opcionalmente indicando el motivo. Puedes filtrar y exportar según su decisión",
+      "selectionSubmit": "Finalizar selección",
+      "selectionSubmitDesc": "Los invitados entregan sus me gusta o favoritos cuando terminan. Su selección queda bloqueada hasta que la reabras, y recibes un aviso"
     },
     "colorLabels": {
       "red": "Rojo",
@@ -2847,7 +2878,20 @@
     "decisionError": "No se pudo guardar tu decisión",
     "decisionType": "tu decisión",
     "youApproved": "Has aprobado esta foto",
-    "youRejected": "Has rechazado esta foto"
+    "youRejected": "Has rechazado esta foto",
+    "submissions": {
+      "title": "Selecciones y aprobaciones finalizadas",
+      "selection": "Selección",
+      "approval": "Aprobación de las fotos editadas",
+      "photoCount": "Fotos: {{count}}",
+      "submittedOn": "Enviada el {{date}}",
+      "reopenedOn": "Reabierta el {{date}}",
+      "note": "Nota: {{note}}",
+      "reopen": "Reabrir",
+      "reopenConfirm": "¿Reabrir este envío? El invitado podrá cambiar de nuevo su selección y tendrá que enviarla otra vez.",
+      "reopened": "Envío reabierto",
+      "reopenError": "No se pudo reabrir el envío"
+    }
   },
   "filter": {
     "feedbackFilters": "Filtros de feedback",

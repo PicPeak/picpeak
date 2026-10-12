@@ -449,6 +449,29 @@
       "withDate": "De overige foto's worden nog bewerkt — de volledige galerie volgt uiterlijk op {{date}}.",
       "noDetails": "De overige foto's worden nog bewerkt.",
       "progressLabel": "Tot nu toe geleverde foto's"
+    },
+    "selection": {
+      "counterCapped": "{{used}} van {{cap}} geselecteerd",
+      "counter": "{{used}} geselecteerd",
+      "finish": "Selectie afronden",
+      "finishTitle": "Je selectie afronden?",
+      "finishCount": "Geselecteerde foto’s: {{count}}",
+      "finishBody": "Je selectie gaat naar de fotograaf. Daarna kun je haar niet meer wijzigen; de fotograaf kan haar voor je heropenen.",
+      "finishSuccess": "Je selectie is naar de fotograaf gestuurd",
+      "finishedOn": "Selectie afgerond op {{date}}. Je selectie is vergrendeld.",
+      "approve": "Bewerkte foto’s goedkeuren",
+      "approveTitle": "De bewerkte foto’s goedkeuren?",
+      "approveBody": "Je bevestigt dat de bewerkte foto’s zo goed zijn en dat de fotograaf verder kan. Daarna kun je je goedkeuringen en afwijzingen niet meer wijzigen; de fotograaf kan ze voor je heropenen.",
+      "approveRejected": "Foto’s die nog als afgewezen zijn gemarkeerd: {{count}}",
+      "approveConfirm": "Goedkeuren",
+      "approveSuccess": "Je goedkeuring is naar de fotograaf gestuurd",
+      "approvedOn": "Bewerkte foto’s goedgekeurd op {{date}}",
+      "noteLabel": "Opmerking voor de fotograaf (optioneel)",
+      "noteBlocked": "Je opmerking bevat woorden die hier niet zijn toegestaan.",
+      "nothingSelected": "Selecteer eerst minstens één foto",
+      "submitError": "Verzenden is mislukt. Probeer het opnieuw.",
+      "lockedSelection": "Je selectie is afgerond en kan niet meer worden gewijzigd. Vraag de fotograaf om haar te heropenen.",
+      "lockedApproval": "Je hebt de bewerkte foto’s goedgekeurd, dus je goedkeuringen en afwijzingen kunnen niet meer worden gewijzigd. Vraag de fotograaf om ze te heropenen."
     }
   },
   "categories": {
@@ -1927,7 +1950,10 @@
       "photosReviewRejected_one": "{{count}} teamupload afgewezen in {{eventName}}",
       "photosReviewRejected_other": "{{count}} teamuploads afgewezen in {{eventName}}",
       "photoDecision": "Foto goedgekeurd of afgewezen in {{eventName}}",
-      "guestFeedbackDecision": "Gast heeft een foto goedgekeurd of afgewezen in {{eventName}}"
+      "guestFeedbackDecision": "Gast heeft een foto goedgekeurd of afgewezen in {{eventName}}",
+      "selectionSubmitted": "{{guestName}} heeft de selectie in {{eventName}} afgerond (foto’s: {{count}})",
+      "approvalSubmitted": "{{guestName}} heeft de bewerkte foto’s in {{eventName}} goedgekeurd",
+      "selectionReopened": "Inzending van {{guestName}} heropend in {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "Alle meldingen als gelezen gemarkeerd",
@@ -2196,7 +2222,10 @@
       "photos_review_approved_one": "{{count}} teamupload goedgekeurd in {{eventName}}",
       "photos_review_approved_other": "{{count}} teamuploads goedgekeurd in {{eventName}}",
       "photos_review_rejected_one": "{{count}} teamupload afgewezen in {{eventName}}",
-      "photos_review_rejected_other": "{{count}} teamuploads afgewezen in {{eventName}}"
+      "photos_review_rejected_other": "{{count}} teamuploads afgewezen in {{eventName}}",
+      "selection_submitted": "{{guestName}} heeft de selectie in {{eventName}} afgerond (foto’s: {{count}})",
+      "approval_submitted": "{{guestName}} heeft de bewerkte foto’s in {{eventName}} goedgekeurd",
+      "selection_reopened": "Inzending van {{guestName}} heropend in {{eventName}}"
     },
     "catalogedMedia": "{{size}} gecatalogiseerd",
     "storageUnavailable": "niet beschikbaar",
@@ -2938,7 +2967,9 @@
       "keybindLightroom": "Lightroom-standaard",
       "keybindLightroomDesc": "1-5 geven sterren, 6-9 geven rood / geel / groen / blauw",
       "decisions": "Goedkeuren / afwijzen per foto",
-      "decisionsDesc": "Gasten keuren elke foto goed of wijzen hem af, eventueel met een reden. Jij filtert en exporteert op hun beslissing"
+      "decisionsDesc": "Gasten keuren elke foto goed of wijzen hem af, eventueel met een reden. Jij filtert en exporteert op hun beslissing",
+      "selectionSubmit": "Selectie afronden",
+      "selectionSubmitDesc": "Gasten leveren hun likes of favorieten in wanneer ze klaar zijn. Hun selectie is dan vergrendeld tot je haar heropent, en je krijgt een melding"
     },
     "settingsUpdated": "Feedbackinstellingen bijgewerkt",
     "settingsUpdateError": "Bijwerken instellingen mislukt",
@@ -3047,7 +3078,20 @@
     "decisionError": "Je beslissing kon niet worden opgeslagen",
     "decisionType": "je beslissing",
     "youApproved": "Je hebt deze foto goedgekeurd",
-    "youRejected": "Je hebt deze foto afgewezen"
+    "youRejected": "Je hebt deze foto afgewezen",
+    "submissions": {
+      "title": "Afgeronde selecties en goedkeuringen",
+      "selection": "Selectie",
+      "approval": "Goedkeuring van de bewerkte foto’s",
+      "photoCount": "Foto’s: {{count}}",
+      "submittedOn": "Ingediend op {{date}}",
+      "reopenedOn": "Heropend op {{date}}",
+      "note": "Opmerking: {{note}}",
+      "reopen": "Heropenen",
+      "reopenConfirm": "Deze inzending heropenen? De gast kan de selectie weer wijzigen en moet haar opnieuw indienen.",
+      "reopened": "Inzending heropend",
+      "reopenError": "Inzending kon niet worden heropend"
+    }
   },
   "filter": {
     "feedbackFilters": "Feedbackfilters",

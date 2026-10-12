@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import { explainFeedbackLock } from '../utils/feedbackLock';
 
 export type IdentityMode = 'simple' | 'guest' | 'shared';
 
@@ -73,6 +74,8 @@ export interface FeedbackSettings {
   allow_color_labels: boolean;
   /** Approve / reject per photo (issue 744). Off unless switched on. */
   allow_decisions?: boolean;
+  /** "Finish selection" for guests (issue 1733). Off unless switched on. */
+  allow_selection_submit?: boolean;
   /** Which lightbox shortcut scheme this gallery uses (#1044). */
   keybind_mode?: KeybindMode;
   require_name_email: boolean;
@@ -148,6 +151,44 @@ export interface FeedbackResponse {
     per_page: number;
     total: number;
   };
+}
+
+/** What a guest hands in (issue 1733): their picks, or the edited photos. */
+export type SubmissionKind = 'selection' | 'approval';
+
+export interface SelectionSubmission {
+  id: number;
+  kind: SubmissionKind;
+  submitted_at: string;
+  item_count: number;
+  note: string | null;
+}
+
+/** The viewer's own state per kind, from GET /gallery/:slug/selection. */
+export interface SelectionState {
+  selection: {
+    /** Show "x of y selected": a cap is set, or the selection can be handed in. */
+    counter: boolean;
+    can_submit: boolean;
+    /** The feedback types that count as a pick in this gallery. */
+    pick_types: Array<'like' | 'favorite'>;
+    cap: number | null;
+    used: number;
+    submission: SelectionSubmission | null;
+  };
+  approval: {
+    can_submit: boolean;
+    approved: number;
+    rejected: number;
+    submission: SelectionSubmission | null;
+  };
+}
+
+/** A submission as the admin sees it. */
+export interface AdminSelectionSubmission extends SelectionSubmission {
+  guest_id: number | null;
+  guest_name: string | null;
+  reopened_at: string | null;
 }
 
 export interface FeedbackAnalytics {
@@ -245,6 +286,16 @@ class FeedbackService {
     return response.data;
   }
 
+  async getSelectionSubmissions(eventId: string): Promise<AdminSelectionSubmission[]> {
+    const response = await api.get(`/admin/feedback/events/${eventId}/selection-submissions`);
+    return response.data.submissions;
+  }
+
+  async reopenSelectionSubmission(eventId: string, submissionId: number) {
+    const response = await api.post(`/admin/feedback/events/${eventId}/selection-submissions/${submissionId}/reopen`);
+    return response.data;
+  }
+
   async getPendingModeration() {
     const response = await api.get('/admin/feedback/feedback/pending-moderation');
     return response.data;
@@ -292,8 +343,25 @@ class FeedbackService {
     guest_name?: string;
     guest_email?: string;
   }) {
-    const response = await api.post(`/gallery/${slug}/photos/${photoId}/feedback`, feedback);
+    try {
+      const response = await api.post(`/gallery/${slug}/photos/${photoId}/feedback`, feedback);
+      return response.data;
+    } catch (error) {
+      // A finished selection locks the picks (issue 1733). Said here, once,
+      // because most tiles swallow a failed like without a word.
+      explainFeedbackLock(error);
+      throw error;
+    }
+  }
+
+  async getSelectionState(slug: string): Promise<SelectionState> {
+    const response = await api.get(`/gallery/${slug}/selection`);
     return response.data;
+  }
+
+  async submitSelection(slug: string, kind: SubmissionKind, note?: string): Promise<SelectionSubmission> {
+    const response = await api.post(`/gallery/${slug}/selection/submit`, { kind, note: note || undefined });
+    return response.data.submission;
   }
 
   async getGalleryFeedbackSummary(slug: string) {

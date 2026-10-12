@@ -2168,6 +2168,29 @@
     "preview": {
       "title": "Theme-Vorschau",
       "description": "So sehen Ihre Galerien mit den aktuellen Theme-Einstellungen aus."
+    },
+    "selection": {
+      "counterCapped": "{{used}} von {{cap}} ausgewählt",
+      "counter": "{{used}} ausgewählt",
+      "finish": "Auswahl abschließen",
+      "finishTitle": "Auswahl abschließen?",
+      "finishCount": "Ausgewählte Fotos: {{count}}",
+      "finishBody": "Ihre Auswahl geht an den Fotografen. Danach können Sie sie nicht mehr ändern; der Fotograf kann sie für Sie wieder öffnen.",
+      "finishSuccess": "Ihre Auswahl wurde an den Fotografen gesendet",
+      "finishedOn": "Auswahl abgeschlossen am {{date}}. Ihre Auswahl ist gesperrt.",
+      "approve": "Bearbeitete Fotos freigeben",
+      "approveTitle": "Bearbeitete Fotos freigeben?",
+      "approveBody": "Sie bestätigen, dass die bearbeiteten Fotos so in Ordnung sind und der Fotograf weitermachen kann. Danach können Sie Ihre Freigaben und Ablehnungen nicht mehr ändern; der Fotograf kann sie für Sie wieder öffnen.",
+      "approveRejected": "Noch als abgelehnt markierte Fotos: {{count}}",
+      "approveConfirm": "Freigeben",
+      "approveSuccess": "Ihre Freigabe wurde an den Fotografen gesendet",
+      "approvedOn": "Bearbeitete Fotos freigegeben am {{date}}",
+      "noteLabel": "Anmerkung für den Fotografen (optional)",
+      "noteBlocked": "Ihre Anmerkung enthält Wörter, die hier nicht erlaubt sind.",
+      "nothingSelected": "Wählen Sie zuerst mindestens ein Foto aus",
+      "submitError": "Senden fehlgeschlagen. Bitte versuchen Sie es erneut.",
+      "lockedSelection": "Ihre Auswahl ist abgeschlossen und kann nicht mehr geändert werden. Bitten Sie den Fotografen, sie wieder zu öffnen.",
+      "lockedApproval": "Sie haben die bearbeiteten Fotos freigegeben, Ihre Freigaben und Ablehnungen können nicht mehr geändert werden. Bitten Sie den Fotografen, sie wieder zu öffnen."
     }
   },
   "categories": {
@@ -4988,7 +5011,10 @@
       "photosReviewRejected_one": "{{count}} Team-Upload in {{eventName}} abgelehnt",
       "photosReviewRejected_other": "{{count}} Team-Uploads in {{eventName}} abgelehnt",
       "photoDecision": "Foto freigegeben oder abgelehnt in {{eventName}}",
-      "guestFeedbackDecision": "Gast hat ein Foto freigegeben oder abgelehnt in {{eventName}}"
+      "guestFeedbackDecision": "Gast hat ein Foto freigegeben oder abgelehnt in {{eventName}}",
+      "selectionSubmitted": "{{guestName}} hat die Auswahl in {{eventName}} abgeschlossen (Fotos: {{count}})",
+      "approvalSubmitted": "{{guestName}} hat die bearbeiteten Fotos in {{eventName}} freigegeben",
+      "selectionReopened": "Einreichung von {{guestName}} in {{eventName}} wieder geöffnet"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -5386,7 +5412,10 @@
       "photos_review_approved_one": "{{count}} Team-Upload in {{eventName}} freigegeben",
       "photos_review_approved_other": "{{count}} Team-Uploads in {{eventName}} freigegeben",
       "photos_review_rejected_one": "{{count}} Team-Upload in {{eventName}} abgelehnt",
-      "photos_review_rejected_other": "{{count}} Team-Uploads in {{eventName}} abgelehnt"
+      "photos_review_rejected_other": "{{count}} Team-Uploads in {{eventName}} abgelehnt",
+      "selection_submitted": "{{guestName}} hat die Auswahl in {{eventName}} abgeschlossen (Fotos: {{count}})",
+      "approval_submitted": "{{guestName}} hat die bearbeiteten Fotos in {{eventName}} freigegeben",
+      "selection_reopened": "Einreichung von {{guestName}} in {{eventName}} wieder geöffnet"
     },
     "people": {
       "title": "Personen in dieser Galerie",
@@ -6085,7 +6114,9 @@
       "timeWindow": "Zeitfenster (Minuten)",
       "maxRequests": "Maximale Anfragen",
       "decisions": "Freigabe / Ablehnung pro Foto",
-      "decisionsDesc": "Gäste geben jedes Foto frei oder lehnen es ab, auf Wunsch mit Begründung. Du filterst und exportierst nach ihrer Entscheidung"
+      "decisionsDesc": "Gäste geben jedes Foto frei oder lehnen es ab, auf Wunsch mit Begründung. Du filterst und exportierst nach ihrer Entscheidung",
+      "selectionSubmit": "Auswahl abschließen",
+      "selectionSubmitDesc": "Gäste reichen ihre Likes oder Favoriten ein, wenn sie fertig sind. Ihre Auswahl ist dann gesperrt, bis du sie wieder öffnest, und du wirst benachrichtigt"
     },
     "moderated": "Feedback moderiert",
     "deleted": "Feedback gelöscht",
@@ -6206,7 +6237,20 @@
     "youRejected": "Du hast dieses Foto abgelehnt",
     "deleteAction": "Feedback löschen",
     "panelTitle": "Feedback zum Foto",
-    "closePanel": "Feedback schließen"
+    "closePanel": "Feedback schließen",
+    "submissions": {
+      "title": "Abgeschlossene Auswahlen und Freigaben",
+      "selection": "Auswahl",
+      "approval": "Freigabe der bearbeiteten Fotos",
+      "photoCount": "Fotos: {{count}}",
+      "submittedOn": "Eingereicht am {{date}}",
+      "reopenedOn": "Wieder geöffnet am {{date}}",
+      "note": "Anmerkung: {{note}}",
+      "reopen": "Wieder öffnen",
+      "reopenConfirm": "Diese Einreichung wieder öffnen? Der Gast kann seine Auswahl wieder ändern und muss sie erneut einreichen.",
+      "reopened": "Einreichung wieder geöffnet",
+      "reopenError": "Einreichung konnte nicht wieder geöffnet werden"
+    }
   },
   "filter": {
     "feedbackFilters": "Feedback-Filter",

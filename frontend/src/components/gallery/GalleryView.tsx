@@ -65,6 +65,7 @@ import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { PeopleStrip } from './PeopleStrip';
 import { PeopleSheet } from './PeopleSheet';
 import { GuestIdentityProvider } from '../../contexts/GuestIdentityContext';
+import { SelectionSubmitBar, selectionStateKey } from './SelectionSubmitBar';
 import { DownloadQuotaProvider, buildDownloadQuotaValue } from '../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, quotaFromEvent, showDownloadLimitReached, type QuotaPhoto } from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
@@ -514,15 +515,40 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // — gating on activeFilters would leave "Liked (0)" stale until the user
   // clicks the chip, which is the same UX cliff bug 1 was reporting.
   const isGuestIdentityMode = feedbackSettings?.identity_mode === 'guest';
+
+  // Finish selection / approve edited photos (issue 1733, A1): the viewer's
+  // own state. Its "x of y selected" counter is fed from /my-feedback below,
+  // in every identity mode, so it follows each like without a request of its
+  // own; galleries without a counter keep /my-feedback to guest mode.
+  const { data: selectionState } = useQuery({
+    queryKey: selectionStateKey(slug),
+    queryFn: () => feedbackService.getSelectionState(slug),
+    enabled: !!slug && !!feedbackSettings?.feedback_enabled,
+    staleTime: 30 * 1000,
+  });
+  const selectionCounterOn = !!selectionState?.selection.counter;
+
   const { data: myFeedbackRows } = useQuery<Array<{
     photo_id: number;
     feedback_type: 'like' | 'favorite' | 'rating' | 'comment';
   }>>({
     queryKey: ['my-feedback', slug],
     queryFn: () => feedbackService.getMyFeedback(slug),
-    enabled: isGuestIdentityMode && !!slug,
+    enabled: (isGuestIdentityMode || selectionCounterOn) && !!slug,
     staleTime: 30 * 1000,
   });
+
+  // One pick per photo, whichever of the gallery's pick types marks it.
+  const selectionUsed = useMemo(() => {
+    if (!selectionState) return 0;
+    if (!myFeedbackRows) return selectionState.selection.used;
+    const pickTypes: string[] = selectionState.selection.pick_types;
+    return new Set(
+      myFeedbackRows.filter((row) => pickTypes.includes(row.feedback_type)).map((row) => row.photo_id),
+    ).size;
+  }, [selectionState, myFeedbackRows]);
+  const selectionBarShown = !!selectionState
+    && (selectionState.selection.counter || selectionState.approval.can_submit);
 
   const myFeedbackPhotoIds = useMemo(() => {
     const sets = {
@@ -1444,7 +1470,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
             reads as chrome against the full-bleed grid below it. */}
-        {(hasFolderNav || (copyFilenames.photos.length > 0 && theme.galleryLayout !== 'gallery-story')) && (
+        {(hasFolderNav || selectionBarShown || (copyFilenames.photos.length > 0 && theme.galleryLayout !== 'gallery-story')) && (
           // Story's `.story-nav` is fixed across this same band at z-index 50.
           // Raising the strip above it is necessary for the chips to be
           // clickable at all, but the strip is mostly empty space — so the
@@ -1500,6 +1526,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenames.photos.length})
               </Button>
             )}
+            {/* Counter and hand-over (issue 1733, A1): the same band, for the
+                reason given above. */}
+            <SelectionSubmitBar
+              slug={slug}
+              state={selectionState}
+              used={selectionUsed}
+              className="pointer-events-auto"
+            />
           </div>
         )}
         <PhotoGridWithLayouts
@@ -1781,6 +1815,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {showUrgentWarning && event.expires_at && (
           <ExpirationBanner daysRemaining={daysUntilExpiration} expiresAt={event.expires_at} />
         )}
+
+        {/* "x of y selected", Finish selection, Approve edited photos
+            (issue 1733, A1). */}
+        <SelectionSubmitBar slug={slug} state={selectionState} used={selectionUsed} className="mt-4" />
 
         {/* Client Access Banner (#172) */}
         {isClient && (

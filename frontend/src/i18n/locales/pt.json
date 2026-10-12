@@ -565,6 +565,29 @@
       "withDate": "As imagens restantes ainda estão em edição — a galeria completa estará disponível o mais tardar em {{date}}.",
       "noDetails": "As imagens restantes ainda estão em edição.",
       "progressLabel": "Fotos entregues até agora"
+    },
+    "selection": {
+      "counterCapped": "{{used}} de {{cap}} selecionadas",
+      "counter": "{{used}} selecionadas",
+      "finish": "Concluir seleção",
+      "finishTitle": "Concluir sua seleção?",
+      "finishCount": "Fotos selecionadas: {{count}}",
+      "finishBody": "Sua seleção é enviada ao fotógrafo. Depois disso você não poderá mais alterá-la; o fotógrafo pode reabri-la para você.",
+      "finishSuccess": "Sua seleção foi enviada ao fotógrafo",
+      "finishedOn": "Seleção concluída em {{date}}. Sua seleção está bloqueada.",
+      "approve": "Aprovar fotos editadas",
+      "approveTitle": "Aprovar as fotos editadas?",
+      "approveBody": "Você confirma que as fotos editadas estão boas como estão e que o fotógrafo pode prosseguir. Depois disso você não poderá mais alterar suas aprovações e rejeições; o fotógrafo pode reabri-las para você.",
+      "approveRejected": "Fotos ainda marcadas como rejeitadas: {{count}}",
+      "approveConfirm": "Aprovar",
+      "approveSuccess": "Sua aprovação foi enviada ao fotógrafo",
+      "approvedOn": "Fotos editadas aprovadas em {{date}}",
+      "noteLabel": "Observação para o fotógrafo (opcional)",
+      "noteBlocked": "Sua observação contém palavras que não são permitidas aqui.",
+      "nothingSelected": "Selecione pelo menos uma foto primeiro",
+      "submitError": "Não foi possível enviar. Tente novamente.",
+      "lockedSelection": "Sua seleção está concluída e não pode mais ser alterada. Peça ao fotógrafo para reabri-la.",
+      "lockedApproval": "Você aprovou as fotos editadas, então suas aprovações e rejeições não podem mais ser alteradas. Peça ao fotógrafo para reabri-las."
     }
   },
   "categories": {
@@ -2058,7 +2081,10 @@
       "photosReviewRejected_one": "{{count}} envio da equipe rejeitado em {{eventName}}",
       "photosReviewRejected_other": "{{count}} envios da equipe rejeitados em {{eventName}}",
       "photoDecision": "Foto aprovada ou rejeitada em {{eventName}}",
-      "guestFeedbackDecision": "Um convidado aprovou ou rejeitou uma foto em {{eventName}}"
+      "guestFeedbackDecision": "Um convidado aprovou ou rejeitou uma foto em {{eventName}}",
+      "selectionSubmitted": "{{guestName}} concluiu a seleção em {{eventName}} (fotos: {{count}})",
+      "approvalSubmitted": "{{guestName}} aprovou as fotos editadas em {{eventName}}",
+      "selectionReopened": "Envio de {{guestName}} reaberto em {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "Todas as notificações marcadas como lidas",
@@ -2332,7 +2358,10 @@
       "photos_review_approved_one": "{{count}} envio da equipe aprovado em {{eventName}}",
       "photos_review_approved_other": "{{count}} envios da equipe aprovados em {{eventName}}",
       "photos_review_rejected_one": "{{count}} envio da equipe rejeitado em {{eventName}}",
-      "photos_review_rejected_other": "{{count}} envios da equipe rejeitados em {{eventName}}"
+      "photos_review_rejected_other": "{{count}} envios da equipe rejeitados em {{eventName}}",
+      "selection_submitted": "{{guestName}} concluiu a seleção em {{eventName}} (fotos: {{count}})",
+      "approval_submitted": "{{guestName}} aprovou as fotos editadas em {{eventName}}",
+      "selection_reopened": "Envio de {{guestName}} reaberto em {{eventName}}"
     },
     "catalogedMedia": "{{size}} catalogados",
     "storageUnavailable": "indisponível",
@@ -3084,7 +3113,9 @@
       "timeWindow": "Janela de tempo (minutos)",
       "maxRequests": "Máximo de solicitações",
       "decisions": "Aprovar / rejeitar cada foto",
-      "decisionsDesc": "Os convidados aprovam ou rejeitam cada foto, opcionalmente com um motivo. Pode filtrar e exportar pela decisão deles"
+      "decisionsDesc": "Os convidados aprovam ou rejeitam cada foto, opcionalmente com um motivo. Pode filtrar e exportar pela decisão deles",
+      "selectionSubmit": "Concluir seleção",
+      "selectionSubmitDesc": "Os convidados entregam suas curtidas ou favoritos quando terminam. A seleção fica bloqueada até você reabri-la, e você é avisado"
     },
     "settingsUpdated": "Configurações de feedback atualizadas",
     "settingsUpdateError": "Falha ao atualizar as configurações",
@@ -3209,7 +3240,20 @@
     "decisionError": "Não foi possível guardar a sua decisão",
     "decisionType": "a sua decisão",
     "youApproved": "Aprovou esta foto",
-    "youRejected": "Rejeitou esta foto"
+    "youRejected": "Rejeitou esta foto",
+    "submissions": {
+      "title": "Seleções e aprovações concluídas",
+      "selection": "Seleção",
+      "approval": "Aprovação das fotos editadas",
+      "photoCount": "Fotos: {{count}}",
+      "submittedOn": "Enviada em {{date}}",
+      "reopenedOn": "Reaberta em {{date}}",
+      "note": "Observação: {{note}}",
+      "reopen": "Reabrir",
+      "reopenConfirm": "Reabrir este envio? O convidado poderá alterar a seleção novamente e terá de enviá-la de novo.",
+      "reopened": "Envio reaberto",
+      "reopenError": "Não foi possível reabrir o envio"
+    }
   },
   "filter": {
     "feedbackFilters": "Filtros de Feedback",

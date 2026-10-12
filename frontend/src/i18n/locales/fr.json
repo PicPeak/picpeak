@@ -458,6 +458,29 @@
       "withDate": "Les images restantes sont encore en cours de retouche ; la galerie complète sera disponible au plus tard le {{date}}.",
       "noDetails": "Les images restantes sont encore en cours de retouche.",
       "progressLabel": "Photos livrées jusqu'à présent"
+    },
+    "selection": {
+      "counterCapped": "{{used}} sur {{cap}} sélectionnées",
+      "counter": "{{used}} sélectionnées",
+      "finish": "Terminer la sélection",
+      "finishTitle": "Terminer votre sélection ?",
+      "finishCount": "Photos sélectionnées : {{count}}",
+      "finishBody": "Votre sélection est envoyée au photographe. Vous ne pourrez ensuite plus la modifier ; le photographe peut la rouvrir pour vous.",
+      "finishSuccess": "Votre sélection a été envoyée au photographe",
+      "finishedOn": "Sélection terminée le {{date}}. Votre sélection est verrouillée.",
+      "approve": "Approuver les photos retouchées",
+      "approveTitle": "Approuver les photos retouchées ?",
+      "approveBody": "Vous confirmez que les photos retouchées conviennent telles quelles et que le photographe peut poursuivre. Vous ne pourrez ensuite plus modifier vos approbations et refus ; le photographe peut les rouvrir pour vous.",
+      "approveRejected": "Photos encore marquées comme refusées : {{count}}",
+      "approveConfirm": "Approuver",
+      "approveSuccess": "Votre approbation a été envoyée au photographe",
+      "approvedOn": "Photos retouchées approuvées le {{date}}",
+      "noteLabel": "Note pour le photographe (facultatif)",
+      "noteBlocked": "Votre note contient des mots qui ne sont pas autorisés ici.",
+      "nothingSelected": "Sélectionnez d’abord au moins une photo",
+      "submitError": "Envoi impossible. Veuillez réessayer.",
+      "lockedSelection": "Votre sélection est terminée et ne peut plus être modifiée. Demandez au photographe de la rouvrir.",
+      "lockedApproval": "Vous avez approuvé les photos retouchées : vos approbations et refus ne peuvent plus être modifiés. Demandez au photographe de les rouvrir."
     }
   },
   "categories": {
@@ -1970,7 +1993,10 @@
       "photosReviewRejected_one": "{{count}} envoi de l'équipe refusé dans {{eventName}}",
       "photosReviewRejected_other": "{{count}} envois de l'équipe refusés dans {{eventName}}",
       "photoDecision": "Photo approuvée ou refusée dans {{eventName}}",
-      "guestFeedbackDecision": "Un invité a approuvé ou refusé une photo dans {{eventName}}"
+      "guestFeedbackDecision": "Un invité a approuvé ou refusé une photo dans {{eventName}}",
+      "selectionSubmitted": "{{guestName}} a terminé sa sélection dans {{eventName}} (photos : {{count}})",
+      "approvalSubmitted": "{{guestName}} a approuvé les photos retouchées dans {{eventName}}",
+      "selectionReopened": "Envoi de {{guestName}} rouvert dans {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "Toutes les notifications marquées comme lues",
@@ -2239,7 +2265,10 @@
       "photos_review_approved_one": "{{count}} envoi de l'équipe approuvé dans {{eventName}}",
       "photos_review_approved_other": "{{count}} envois de l'équipe approuvés dans {{eventName}}",
       "photos_review_rejected_one": "{{count}} envoi de l'équipe refusé dans {{eventName}}",
-      "photos_review_rejected_other": "{{count}} envois de l'équipe refusés dans {{eventName}}"
+      "photos_review_rejected_other": "{{count}} envois de l'équipe refusés dans {{eventName}}",
+      "selection_submitted": "{{guestName}} a terminé sa sélection dans {{eventName}} (photos : {{count}})",
+      "approval_submitted": "{{guestName}} a approuvé les photos retouchées dans {{eventName}}",
+      "selection_reopened": "Envoi de {{guestName}} rouvert dans {{eventName}}"
     },
     "catalogedMedia": "{{size}} catalogués",
     "storageUnavailable": "indisponible",
@@ -2981,7 +3010,9 @@
       "keybindLightroom": "Valeurs par défaut de Lightroom",
       "keybindLightroomDesc": "1-5 attribuent les étoiles, 6-9 les couleurs rouge / jaune / vert / bleu",
       "decisions": "Approuver / refuser chaque photo",
-      "decisionsDesc": "Les invités approuvent ou refusent chaque photo, en indiquant éventuellement pourquoi. Vous filtrez et exportez selon leur décision"
+      "decisionsDesc": "Les invités approuvent ou refusent chaque photo, en indiquant éventuellement pourquoi. Vous filtrez et exportez selon leur décision",
+      "selectionSubmit": "Terminer la sélection",
+      "selectionSubmitDesc": "Les invités remettent leurs « j’aime » ou favoris lorsqu’ils ont terminé. Leur sélection est alors verrouillée jusqu’à ce que vous la rouvriez, et vous êtes averti"
     },
     "settingsUpdated": "Paramètres de commentaires mis à jour",
     "settingsUpdateError": "Échec de la mise à jour des paramètres",
@@ -3090,7 +3121,20 @@
     "decisionError": "Impossible d'enregistrer votre décision",
     "decisionType": "votre décision",
     "youApproved": "Vous avez approuvé cette photo",
-    "youRejected": "Vous avez refusé cette photo"
+    "youRejected": "Vous avez refusé cette photo",
+    "submissions": {
+      "title": "Sélections et approbations terminées",
+      "selection": "Sélection",
+      "approval": "Approbation des photos retouchées",
+      "photoCount": "Photos : {{count}}",
+      "submittedOn": "Envoyée le {{date}}",
+      "reopenedOn": "Rouverte le {{date}}",
+      "note": "Note : {{note}}",
+      "reopen": "Rouvrir",
+      "reopenConfirm": "Rouvrir cet envoi ? L’invité pourra de nouveau modifier sa sélection et devra l’envoyer à nouveau.",
+      "reopened": "Envoi rouvert",
+      "reopenError": "Impossible de rouvrir l’envoi"
+    }
   },
   "filter": {
     "feedbackFilters": "Filtres de commentaires",

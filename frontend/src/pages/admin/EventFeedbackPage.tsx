@@ -21,6 +21,7 @@ import { format, parseISO } from 'date-fns';
 
 import { Button, Card, EmptyState, Loading, Tabs, useConfirm } from '../../components/common';
 import { AdminAuthenticatedImage } from '../../components/admin/AdminAuthenticatedImage';
+import { SelectionSubmissionsCard } from '../../components/admin/SelectionSubmissionsCard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
 import { feedbackService } from '../../services/feedback.service';
@@ -178,6 +179,9 @@ export const EventFeedbackPanel: React.FC<{ eventId: string }> = ({ eventId }) =
           </Button>
         </div>
       </div>
+
+      {/* Finished selections and approvals, per guest (issue 1733). */}
+      <SelectionSubmissionsCard eventId={id} className="mb-6" />
 
       {/* Tabs */}
       <Tabs

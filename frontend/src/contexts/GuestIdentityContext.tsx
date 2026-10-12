@@ -158,6 +158,8 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     previousIdentityId.current = currentId;
 
     queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+    // A finished selection is per guest too (issue 1733).
+    queryClient.invalidateQueries({ queryKey: ['gallery-selection', slug] });
     queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
     // Every mounted photo, regardless of id.
     queryClient.invalidateQueries({ queryKey: ['photo-feedback', slug] });
