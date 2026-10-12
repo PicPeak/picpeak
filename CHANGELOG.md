@@ -5,6 +5,16 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.134.5](https://github.com/PicPeak/picpeak/compare/v3.134.4...v3.134.5) (2026-10-12)
+
+
+### Bug Fixes
+
+* **analytics:** say in the settings that opted-out browsers are not counted (stable) ([#1920](https://github.com/PicPeak/picpeak/issues/1920)) ([ebfd353](https://github.com/PicPeak/picpeak/commit/ebfd35344a935425086cf5a21cc845be710cb044))
+* **gallery:** give a verified viewer a request budget of their own, and say when a like is refused (stable) ([#1926](https://github.com/PicPeak/picpeak/issues/1926)) ([d558307](https://github.com/PicPeak/picpeak/commit/d558307bd971808c3ac20ed36552bf6f01a1d265))
+* **gallery:** refresh only the liked photo instead of refetching the whole gallery (stable) ([#1918](https://github.com/PicPeak/picpeak/issues/1918)) ([c0f8d87](https://github.com/PicPeak/picpeak/commit/c0f8d873ebc1910a3f21be0bc249767a046e6688))
+* **seo:** app pages answer noindex so only the landing page can be indexed (stable) ([#1923](https://github.com/PicPeak/picpeak/issues/1923)) ([6749a10](https://github.com/PicPeak/picpeak/commit/6749a10de8409a84d90e54593b4799614819c663))
+
 ## [3.134.4](https://github.com/PicPeak/picpeak/compare/v3.134.3...v3.134.4) (2026-10-11)
 
 
