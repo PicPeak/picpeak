@@ -2077,6 +2077,7 @@
     "downloadPartsIntro": "Dieser Download besteht aus {{total}} Teilen. Sie benötigen alle Teile, um jedes Foto zu erhalten.",
     "downloadPartLabel": "Teil {{part}} von {{total}}",
     "downloadPartAction": "Teil {{part}} herunterladen",
+    "downloadPartStarted": "Download gestartet",
     "downloadPrepFailed": "Vorbereitung fehlgeschlagen",
     "downloadPrepTimeout": "Das dauert länger als erwartet. Bitte erneut versuchen.",
     "people": {

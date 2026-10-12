@@ -461,7 +461,8 @@
     },
     "downloadPartsIntro": "Ce téléchargement comporte {{total}} parties. Il vous les faut toutes pour obtenir toutes les photos.",
     "downloadPartLabel": "Partie {{part}} sur {{total}}",
-    "downloadPartAction": "Télécharger la partie {{part}}"
+    "downloadPartAction": "Télécharger la partie {{part}}",
+    "downloadPartStarted": "Téléchargement lancé"
   },
   "categories": {
     "title": "Catégories de photos",

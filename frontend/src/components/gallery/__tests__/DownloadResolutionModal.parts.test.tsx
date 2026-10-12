@@ -68,6 +68,10 @@ describe('DownloadResolutionModal, split downloads (issue 1733)', () => {
       .toHaveBeenCalledWith('g', 'tok', 'g-original-part-2-of-3.zip', 2));
     // The other parts are still to be fetched: the dialog stays.
     expect(onClose).not.toHaveBeenCalled();
+    // The part just fetched is marked, the others are not.
+    const after = screen.getAllByRole('listitem');
+    expect(after[1]).toHaveTextContent('Download started');
+    expect(after[0]).not.toHaveTextContent('Download started');
     expect(screen.getByRole('button', { name: 'Download part 3' })).toBeInTheDocument();
   });
 

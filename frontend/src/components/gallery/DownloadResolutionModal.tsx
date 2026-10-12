@@ -65,11 +65,18 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
   const [photoCount, setPhotoCount] = useState(0);
   // A download too large for one archive arrives as several (issue 1733).
   const [parts, setParts] = useState<DownloadJobPart[]>([]);
+  // The parts already handed to the browser, so the guest can tell which are left.
+  const [startedParts, setStartedParts] = useState<number[]>([]);
   const tokenRef = useRef<string | null>(null);
   // Guards the polling loop against running on after unmount / close.
   const activeRef = useRef(true);
 
-  useEffect(() => () => { activeRef.current = false; }, []);
+  // Set on mount as well: StrictMode runs the cleanup once in development,
+  // and the ref would stay false, so the poll below never asked.
+  useEffect(() => {
+    activeRef.current = true;
+    return () => { activeRef.current = false; };
+  }, []);
 
   const baseName = `${slug}-${selected === 'original' ? 'original' : selected}`;
   const filename = `${baseName}.zip`;
@@ -161,6 +168,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
     if (part) {
       // The dialog stays open: the other parts are still to be fetched.
       galleryService.downloadJobFile(slug, token, `${baseName}-part-${part}-of-${parts.length}.zip`, part);
+      setStartedParts((started) => (started.includes(part) ? started : [...started, part]));
       return;
     }
     galleryService.downloadJobFile(slug, token, filename);
@@ -276,7 +284,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
                     total: parts.length,
                   })}
                 </p>
-                <ul className="space-y-2 text-left max-h-64 overflow-y-auto">
+                <ul className="space-y-2 text-left max-h-[50vh] overflow-y-auto">
                   {parts.map((item) => (
                     <li
                       key={item.part}
@@ -289,10 +297,13 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
                             total: parts.length,
                           })}
                         </span>
-                        <span className="block text-xs text-muted-theme">{formatFileSize(item.size_bytes)}</span>
+                        <span className="block text-xs text-muted-theme">
+                          {formatFileSize(item.size_bytes)}
+                          {startedParts.includes(item.part) && ` · ${t('gallery.downloadPartStarted', 'Download started')}`}
+                        </span>
                       </span>
                       <Button
-                        variant="primary"
+                        variant={startedParts.includes(item.part) ? 'outline' : 'primary'}
                         size="sm"
                         onClick={() => download(item.part)}
                         leftIcon={<Download className="w-4 h-4" />}

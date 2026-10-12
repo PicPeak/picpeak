@@ -486,7 +486,8 @@
     },
     "downloadPartsIntro": "Эта загрузка состоит из нескольких частей: {{total}}. Чтобы получить все фотографии, нужны все части.",
     "downloadPartLabel": "Часть {{part}} из {{total}}",
-    "downloadPartAction": "Скачать часть {{part}}"
+    "downloadPartAction": "Скачать часть {{part}}",
+    "downloadPartStarted": "Загрузка начата"
   },
   "categories": {
     "title": "Категории фото",

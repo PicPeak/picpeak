@@ -452,7 +452,8 @@
     },
     "downloadPartsIntro": "Deze download bestaat uit {{total}} delen. U hebt ze allemaal nodig om alle foto's te krijgen.",
     "downloadPartLabel": "Deel {{part}} van {{total}}",
-    "downloadPartAction": "Deel {{part}} downloaden"
+    "downloadPartAction": "Deel {{part}} downloaden",
+    "downloadPartStarted": "Download gestart"
   },
   "categories": {
     "title": "Fotocategorieen",

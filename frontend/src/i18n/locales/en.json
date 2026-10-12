@@ -1484,6 +1484,7 @@
     "downloadPartsIntro": "This download comes in {{total}} parts. You need all of them to get every photo.",
     "downloadPartLabel": "Part {{part}} of {{total}}",
     "downloadPartAction": "Download part {{part}}",
+    "downloadPartStarted": "Download started",
     "downloadPrepFailed": "Preparation failed",
     "downloadPrepTimeout": "This is taking longer than expected. Please try again.",
     "people": {
