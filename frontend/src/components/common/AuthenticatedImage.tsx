@@ -134,7 +134,23 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // and leave the tile blank after the limit had actually lifted.
   const retryAfterRef = useRef(0);
   const lastSrcRef = useRef<string | undefined>(undefined);
-  const retryRef = useRef<HTMLDivElement | null>(null);
+  const retryRef = useRef<HTMLElement | null>(null);
+  // The fallback shown in place of a `src` that failed for a reason a retry
+  // can cure (issue 1936). The lightbox passes the thumbnail as fallback, so
+  // a preview answered 503 while storage was briefly unreachable used to
+  // stay a thumbnail for good. The stand-in stays on screen while `src` is
+  // asked again; `standInUrlRef` keeps its blob alive across those runs,
+  // which the per-run cleanup below would otherwise revoke.
+  const [standIn, setStandIn] = useState(false);
+  const standInUrlRef = useRef<string | null>(null);
+  // Both fetches rejected (not a decode failure of a 200), with a fallback.
+  const fetchFailedRef = useRef(false);
+  const imageKeyRef = useRef<string | undefined>(undefined);
+  const dropStandIn = useCallback(() => {
+    if (standInUrlRef.current) URL.revokeObjectURL(standInUrlRef.current);
+    standInUrlRef.current = null;
+  }, []);
+  useEffect(() => dropStandIn, [dropStandIn]);
   // Read at enqueue time, never a dependency of the fetch effect (#1734).
   // The lightbox keeps a slide's element across navigation and only flips
   // this prop when the slide moves between neighbour and current; as a
@@ -179,6 +195,17 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       lastSrcRef.current = src;
       attemptsRef.current = 0;
     }
+    // A retry of the same image that has a fallback on screen keeps showing
+    // it; anything else starts from the loading placeholder.
+    const imageKey = `${src ?? ''}\n${fallbackSrc ?? ''}\n${slug ?? ''}`;
+    const sameImage = imageKeyRef.current === imageKey;
+    imageKeyRef.current = imageKey;
+    if (!sameImage) {
+      dropStandIn();
+      setStandIn(false);
+      fetchFailedRef.current = false;
+    }
+    const quietRetry = sameImage && Boolean(fallbackSrc) && (standInUrlRef.current !== null || fetchFailedRef.current);
 
     // Determine which token to use based on context
     if (!src) {
@@ -188,10 +215,12 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       return;
     }
 
-    setIsLoading(true);
-    setError(false);
-    setCanvasFailed(false);
-    setCanvasReady(false);
+    if (!quietRetry) {
+      setIsLoading(true);
+      setError(false);
+      setCanvasFailed(false);
+      setCanvasReady(false);
+    }
 
     const resolveSlug = (candidateSrc?: string): string | null => {
       if (slug) {
@@ -274,6 +303,13 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         if (!aborted) {
           setImageSrc(primaryUrl);
           setError(false);
+          fetchFailedRef.current = false;
+          if (standInUrlRef.current) {
+            dropStandIn();
+            setStandIn(false);
+            setCanvasFailed(false);
+            setCanvasReady(false);
+          }
         }
       } catch (err) {
         // Torn down mid-flight (#1287): the abort is expected, not a failure.
@@ -288,10 +324,17 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         }
         retryAfterRef.current = err instanceof HttpError ? err.retryAfterMs : 0;
         setIsLoading(false);
+        // The stand-in from an earlier attempt is still on screen: keep it.
+        if (standInUrlRef.current) return;
         if (fallbackSrc && fallbackSrc !== src) {
           try {
             const fallbackUrl = await fetchWithAuth(fallbackSrc);
             if (!aborted) {
+              // Out of this run's list: it has to outlive the run's cleanup
+              // for as long as it stands in (dropStandIn revokes it).
+              objectUrls.splice(objectUrls.indexOf(fallbackUrl), 1);
+              standInUrlRef.current = fallbackUrl;
+              setStandIn(true);
               setImageSrc(fallbackUrl);
               setError(false);
             }
@@ -299,6 +342,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
           } catch (fallbackError) {
             // Swallow and mark error below
           }
+          if (!aborted) fetchFailedRef.current = true;
         }
         if (!aborted) {
           setError(true);
@@ -321,7 +365,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       controller.abort();
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [src, fallbackSrc, slug, retryNonce]);
+  }, [src, fallbackSrc, slug, retryNonce, dropStandIn]);
 
   // Retry a failed fetch once the tile is back on screen (#1287).
   //
@@ -340,10 +384,16 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // visible — a tile that failed while backgrounded retries when the user
   // comes back, not while they are still away. Without IntersectionObserver
   // the placeholder counts as visible.
-  const retryable = error && !fallbackSrc && attemptsRef.current < MAX_RETRIES;
+  // With a fallback the retry is for `src` behind it: while the fallback
+  // stands in, or when both fetches were rejected. A fallback shown because
+  // a 200 would not decode is final, as before.
+  const retryable = (standIn || (error && (!fallbackSrc || fetchFailedRef.current)))
+    && attemptsRef.current < MAX_RETRIES;
   useEffect(() => {
     if (!retryable) return;
-    const el = retryRef.current;
+    // A stand-in drawn to a canvas has no retryRef: the canvas ref has to
+    // stay the one stable callback, or every render would release its pixels.
+    const el = retryRef.current ?? canvasRef.current;
     if (!el) return;
 
     let cancelled = false;
@@ -453,7 +503,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   }
 
   if (error && fallbackSrc) {
-    return <img src={fallbackSrc} alt={alt} {...props} />;
+    return <img ref={(el) => { retryRef.current = el; }} src={fallbackSrc} alt={alt} {...props} />;
   }
 
   if (error) {
@@ -461,7 +511,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     // observes. Returning null here (as this used to) left nothing to watch
     // and nothing for the user to see either.
     return (
-      <div ref={retryRef} className={props.className} style={{ backgroundColor: '#f3f4f6', ...props.style }} />
+      <div ref={(el) => { retryRef.current = el; }} className={props.className} style={{ backgroundColor: '#f3f4f6', ...props.style }} />
     );
   }
 
@@ -504,6 +554,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // Without this the tile silently shows nothing and the fallback never runs.
   return (
     <img
+      ref={(el) => { if (standIn) retryRef.current = el; }}
       src={imageSrc}
       alt={alt}
       onLoad={(event) => onLoad?.({
