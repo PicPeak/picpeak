@@ -1,6 +1,7 @@
 import { useGalleryFiltering, resolveMediaType } from './hooks/useGalleryFiltering';
 import { useGalleryUpload } from './hooks/useGalleryUpload';
 import { useGallerySelection } from './hooks/useGallerySelection';
+import { useFeedbackChange } from './hooks/useFeedbackChange';
 import { UploadProcessingNotice } from './UploadProcessingNotice';
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
@@ -204,6 +205,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Fetch photos WITHOUT filter (always get all photos, filter on frontend)
   // This ensures counts are always calculated from the full dataset
   const { data, isLoading, error, refetch } = useGalleryPhotos(slug, 'all', guestId);
+  const handleFeedbackChange = useFeedbackChange(slug, refetch, { patchRows: !isClient });
   const { isSelectionMode, setIsSelectionMode, selectedPhotos, setSelectedPhotos } = useGallerySelection(data?.photos);
   
   // Set protection level when data is available
@@ -1181,13 +1183,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           people={peopleEnabled ? people : undefined}
           onSelectPerson={togglePerson}
           categoryId={selectedCategoryId}
-          onFeedbackChange={() => {
-            refetch();
-            // Guest-mode Rated/Liked filter membership + chip counts come
-            // from my-feedback, not the photo rows (#538) — refresh it too
-            // so e.g. a cleared rating (#884) leaves the Rated filter.
-            queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
-          }}
+          onFeedbackChange={handleFeedbackChange}
           heroPhotoOverride={staticHeroPhoto}
           feedbackEnabled={feedbackEnabled}
           feedbackOptions={{
@@ -1590,13 +1586,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             people={peopleEnabled ? people : undefined}
             onSelectPerson={togglePerson} 
             categoryId={selectedCategoryId}
-            onFeedbackChange={() => {
-              refetch();
-              // Guest-mode Rated/Liked filter membership + chip counts come
-              // from my-feedback, not the photo rows (#538) — refresh it too
-              // so e.g. a cleared rating (#884) leaves the Rated filter.
-              queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
-            }}
+            onFeedbackChange={handleFeedbackChange}
             heroPhotoOverride={staticHeroPhoto}
             feedbackEnabled={feedbackEnabled}
             feedbackOptions={{

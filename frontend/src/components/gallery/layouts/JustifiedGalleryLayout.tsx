@@ -51,7 +51,7 @@ interface JustifiedPhotoProps {
   savedIdentity?: { name: string; email: string } | null;
   onRequireIdentity?: (action: 'like', photoId: number) => void;
   onQuickComment?: () => void;
-  onFeedbackChange?: () => void;
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
   liked?: boolean;
   onLikeSuccess?: () => void;
 }

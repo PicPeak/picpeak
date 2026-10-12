@@ -16,6 +16,8 @@ interface PhotoLikesProps {
   isEnabled: boolean;
   requireNameEmail?: boolean;
   onLikeChange?: (liked: boolean) => void;
+  /** The server accepted the toggle. */
+  onSaved?: (photoId: string) => void;
 }
 
 export const PhotoLikes: React.FC<PhotoLikesProps> = ({
@@ -25,7 +27,8 @@ export const PhotoLikes: React.FC<PhotoLikesProps> = ({
   likeCount,
   isEnabled,
   requireNameEmail = false,
-  onLikeChange
+  onLikeChange,
+  onSaved
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -37,8 +40,11 @@ export const PhotoLikes: React.FC<PhotoLikesProps> = ({
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
 
   const submitLikeMutation = useMutation({
-    mutationFn: (data: { guest_name?: string; guest_email?: string } = {}) => 
-      feedbackService.submitFeedback(gallerySlug, photoId, {
+    // The photo travels with the call. The function and the callbacks below
+    // are the latest render's, which in the lightbox can already show another
+    // photo: a toggle paused offline would otherwise be sent for that one.
+    mutationFn: (data: { photoId: string; guest_name?: string; guest_email?: string }) =>
+      feedbackService.submitFeedback(gallerySlug, data.photoId, {
         feedback_type: 'like',
         guest_name: data.guest_name || undefined,
         guest_email: data.guest_email || undefined
@@ -51,9 +57,12 @@ export const PhotoLikes: React.FC<PhotoLikesProps> = ({
         onLikeChange(!isLiked);
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
-      queryClient.invalidateQueries({ queryKey: ['gallery-photos'] });
+    onSuccess: (_data, variables) => {
+      const savedPhotoId = variables.photoId;
+      queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, savedPhotoId] });
+      // The parent refreshes this photo's row; without one, the whole list.
+      if (onSaved) onSaved(savedPhotoId);
+      else queryClient.invalidateQueries({ queryKey: ['gallery-photos', gallerySlug] });
     },
     onError: (error: any) => {
       // Revert optimistic update
@@ -86,7 +95,7 @@ export const PhotoLikes: React.FC<PhotoLikesProps> = ({
         // User cancelled the prompt — silently abort.
         return;
       }
-      submitLikeMutation.mutate({});
+      submitLikeMutation.mutate({ photoId });
       return;
     }
 
@@ -97,14 +106,14 @@ export const PhotoLikes: React.FC<PhotoLikesProps> = ({
       const identityPayload = savedIdentity
         ? { guest_name: savedIdentity.name, guest_email: savedIdentity.email }
         : {};
-      submitLikeMutation.mutate(identityPayload);
+      submitLikeMutation.mutate({ ...identityPayload, photoId });
     }
   };
 
   const handleIdentitySubmit = (name: string, email: string) => {
     setSavedIdentity({ name, email });
     setShowIdentityModal(false);
-    submitLikeMutation.mutate({ guest_name: name, guest_email: email });
+    submitLikeMutation.mutate({ photoId, guest_name: name, guest_email: email });
   };
 
   if (!isEnabled) return null;

@@ -29,7 +29,7 @@ interface GridPhotoProps {
   savedIdentity?: { name: string; email: string } | null;
   onRequireIdentity?: (action: 'like', photoId: number) => void;
   onQuickComment?: () => void;
-  onFeedbackChange?: () => void;
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
   // Immediate UI like state and callback
   liked?: boolean;
   onLikeSuccess?: () => void;

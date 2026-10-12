@@ -161,7 +161,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       await feedbackService.submitFeedback(slug, String(photoId), {
         feedback_type: 'like',
       });
-      onFeedbackChange?.();
+      onFeedbackChange?.(photoId);
     } catch (err) {
       console.warn('Like submit failed', err);
     }
