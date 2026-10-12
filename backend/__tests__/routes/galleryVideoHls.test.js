@@ -388,10 +388,22 @@ describe('adaptive streaming routes (issue 1733)', () => {
       expect(await keysUnder(`hls/${survivor}`)).toHaveLength(4);
     });
 
+    test('removing a duplicate row removes its ladder and keeps the survivor\'s', async () => {
+      const survivor = await insertVideo('twin.mp4');
+      const duplicate = await insertVideo('twin-again.mp4');
+      const never = await insertVideo('twin-plain.mp4', { ladder: false });
+      const { deleteDuplicatePhotos } = require('../../src/services/externalPhotoDedupe');
+      expect(await deleteDuplicatePhotos(db, new Map([[duplicate, survivor], [never, survivor]]))).toBe(2);
+      expect(await db('photos').whereIn('id', [duplicate, never])).toEqual([]);
+      expect(await keysUnder(`hls/${duplicate}`)).toEqual([]);
+      expect(await keysUnder(`hls/${survivor}`)).toHaveLength(4);
+      expect((await get(`${survivor}/master.m3u8`)).status).toBe(200);
+    });
+
     test('every path that removes a video or its file names the ladder', () => {
       const read = file => fs.readFileSync(path.join(__dirname, '../../src', file), 'utf8');
       expect(read('routes/adminPhotos.js').match(/videoHlsService'\)\.deleteLadder\(photo\)/g)).toHaveLength(2);
-      for (const file of ['routes/adminEvents/helpers.js', 'services/archiveService.js', 'services/photoReplacementService.js', 'services/fileWatcher.js']) {
+      for (const file of ['routes/adminEvents/helpers.js', 'services/archiveService.js', 'services/photoReplacementService.js', 'services/fileWatcher.js', 'services/externalPhotoDedupe.js']) {
         expect(read(file)).toMatch(/deleteLadder\(/);
       }
     });

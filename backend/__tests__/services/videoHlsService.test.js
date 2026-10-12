@@ -133,6 +133,45 @@ describe('buildMasterPlaylist', () => {
   });
 });
 
+describe('readInitSegment and the master playlist built from it', () => {
+  // ftyp names 'avc1' as a brand; the sample entry after stsd is the one that counts.
+  const init = ({ profile = 0x64, flags = 0x00, level = 0x1f, width = 1280, height = 720, audio = true } = {}) => {
+    const entry = Buffer.alloc(8 + 78);
+    entry.write('avc1', 4, 'latin1');
+    entry.writeUInt16BE(width, 8 + 24);
+    entry.writeUInt16BE(height, 8 + 26);
+    return Buffer.concat([
+      Buffer.from('\0\0\0\x18ftypiso5\0\0\0\0iso5avc1', 'latin1'), Buffer.from('\0\0\0\0stsd\0\0\0\0\0\0\0\x01', 'latin1'),
+      entry, Buffer.from('\0\0\0\x10avcC', 'latin1'), Buffer.from([1, profile, flags, level, 0xff]),
+      audio ? Buffer.from('\0\0\0\x10mp4a', 'latin1') : Buffer.alloc(0),
+    ]);
+  };
+
+  it('reads the codec string and the coded size', () => {
+    expect(hls.readInitSegment(init())).toEqual({ codecs: 'avc1.64001f,mp4a.40.2', width: 1280, height: 720 });
+    expect(hls.readInitSegment(init({ profile: 0x4d, flags: 0x40, level: 0x28, width: 1080, height: 1920, audio: false })))
+      .toEqual({ codecs: 'avc1.4d4028', width: 1080, height: 1920 });
+  });
+
+  it('has nothing to say about a file that is not H.264 in MP4', () => {
+    expect(hls.readInitSegment(Buffer.from('not an init segment'))).toBeNull();
+    expect(hls.readInitSegment(Buffer.from('\0\0\0\x18ftypiso5\0\0\0\0iso5avc1', 'latin1'))).toBeNull();
+    expect(hls.readInitSegment(Buffer.alloc(0))).toBeNull();
+  });
+
+  it('puts CODECS and the real RESOLUTION on every rung it was read for', () => {
+    const rungs = hls.selectLadder({ width: 1280, height: 720, bitrate: 20000000 });
+    const inits = { '480p': { codecs: 'avc1.64001e,mp4a.40.2', width: 854, height: 480 }, '720p': { codecs: 'avc1.64001f,mp4a.40.2', width: 1280, height: 720 } };
+    expect(hls.buildMasterPlaylist(rungs, { averages: { '480p': 900000, '720p': 2100000 }, inits })).toBe([
+      '#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-INDEPENDENT-SEGMENTS',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1460800,AVERAGE-BANDWIDTH=900000,RESOLUTION=854x480,CODECS="avc1.64001e,mp4a.40.2"', '480p/index.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=3220800,AVERAGE-BANDWIDTH=2100000,RESOLUTION=1280x720,CODECS="avc1.64001f,mp4a.40.2"', '720p/index.m3u8', '',
+    ].join('\n'));
+    // The quoted attribute passes the route's rewrite untouched.
+    expect(hls.rewritePlaylist(hls.buildMasterPlaylist(rungs, { inits }), 'master', 'v=a')).toContain('CODECS="avc1.64001f,mp4a.40.2"\n720p/index.m3u8?v=a');
+  });
+});
+
 describe('rewritePlaylist', () => {
   const media = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-TARGETDURATION:6', '#EXT-X-MAP:URI="init.mp4"',
     '#EXTINF:6.000000,', 'seg_00000.m4s', '#EXTINF:1.000000,', 'seg_00001.m4s', '#EXT-X-ENDLIST', ''].join('\n');

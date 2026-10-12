@@ -27,6 +27,7 @@ const {
   drawsOnQuota, clientOnlyError, refuseDownload, downloadLimitError, settleWhenDone, responseDelivered,
 } = require('../../services/downloadQuota');
 const videoHls = require('../../services/videoHlsService');
+const { refundRateLimit } = require('../../services/rateLimitService');
 
 /**
  * Download limit (issue 1560): a video without a web copy has no preview
@@ -522,6 +523,7 @@ router.get('/:slug/hls/:photoId/master.m3u8', ...hlsAccess, async (req, res) => 
       return res.status(404).json({ error: 'No stream for this video' });
     }
     if (!(await admitStream(req, res, photo, { playback: true }))) return;
+    refundRateLimit(req);
     await sendPlaylist(req, res, key, 'master');
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to serve video stream');
@@ -539,6 +541,9 @@ router.get('/:slug/hls/:photoId/:rung/:file', ...hlsAccess, async (req, res) => 
     const stat = key ? await getStorage().stat(key) : null;
     if (!stat) return res.status(404).json({ error: 'No stream for this video' });
     if (!(await admitStream(req, res, photo, { playback: false }))) return;
+    // Authorised, and one of many requests of a single playback: it does
+    // not count against the address's API budget (rateLimitService).
+    refundRateLimit(req);
     if (req.params.file === 'index.m3u8') return await sendPlaylist(req, res, key, 'media');
     res.writeHead(200, {
       'Content-Length': stat.size,

@@ -168,14 +168,46 @@ function transcodeOptions(rungs, outDir, { toneMap = false, threads = 1 } = {}) 
   return args;
 }
 
-/** The master playlist; `averages` maps a rung name to its measured bits per second. */
-function buildMasterPlaylist(rungs, { audio = true, averages = {} } = {}) {
+/**
+ * What a rung's init segment says it holds: the RFC 6381 codec string and
+ * the coded picture size, read from the avc1 sample entry and its avcC box.
+ * A player picks and switches rungs by these, so they come from the file
+ * ffmpeg wrote and not from what it was asked for. Null for anything that is
+ * not the H.264 (and AAC) this service encodes.
+ */
+function readInitSegment(buffer) {
+  // From the sample description on: 'avc1' is also a brand name in ftyp.
+  const description = buffer.indexOf('stsd', 0, 'latin1');
+  const entry = description < 0 ? -1 : buffer.indexOf('avc1', description, 'latin1');
+  const config = entry < 0 ? -1 : buffer.indexOf('avcC', entry, 'latin1');
+  if (entry < 0 || config < 0 || config + 8 > buffer.length || entry + 32 > buffer.length) return null;
+  const hex = value => value.toString(16).padStart(2, '0');
+  // avcC: version, profile, constraint flags, level.
+  const video = `avc1.${hex(buffer[config + 5])}${hex(buffer[config + 6])}${hex(buffer[config + 7])}`;
+  // Sample entry: 6 reserved, 2 data reference, 16 predefined, then width, height.
+  const width = buffer.readUInt16BE(entry + 28);
+  const height = buffer.readUInt16BE(entry + 30);
+  if (!width || !height) return null;
+  // The encoder is ffmpeg's AAC at its default profile: AAC-LC.
+  const audio = buffer.indexOf('mp4a', 0, 'latin1') >= 0 ? ',mp4a.40.2' : '';
+  return { codecs: `${video}${audio}`, width, height };
+}
+
+/**
+ * The master playlist. `averages` maps a rung name to its measured bits per
+ * second, `inits` to what readInitSegment found: with it the entry carries
+ * CODECS and the real RESOLUTION, without it the size the rung was asked for.
+ */
+function buildMasterPlaylist(rungs, { audio = true, averages = {}, inits = {} } = {}) {
   const lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-INDEPENDENT-SEGMENTS'];
   for (const rung of rungs) {
     const peak = Math.round((rung.bitrate + (audio ? AUDIO_BITRATE : 0)) * 1.1);
     const average = Math.min(peak, Math.ceil(averages[rung.name] || 0));
-    lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${peak}${average ? `,AVERAGE-BANDWIDTH=${average}` : ''},RESOLUTION=${rung.width}x${rung.outputHeight}`,
-      `${rung.name}/index.m3u8`);
+    const init = inits[rung.name];
+    lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${peak}${average ? `,AVERAGE-BANDWIDTH=${average}` : ''}`
+      + `,RESOLUTION=${init ? `${init.width}x${init.height}` : `${rung.width}x${rung.outputHeight}`}`
+      + `${init ? `,CODECS="${init.codecs}"` : ''}`,
+    `${rung.name}/index.m3u8`);
   }
   return `${lines.join('\n')}\n`;
 }
@@ -343,6 +375,7 @@ async function renderLadder(photoId) {
 
       const files = [];
       const averages = {};
+      const inits = {};
       let total = 0;
       for (const rung of rungs) {
         let bytes = 0;
@@ -353,12 +386,13 @@ async function renderLadder(photoId) {
           files.push({ key: `${prefix}/${rung.name}/${name}`, local });
         }
         averages[rung.name] = (bytes * 8) / probed.duration;
+        inits[rung.name] = readInitSegment(await fsp.readFile(path.join(tmpDir, rung.name, 'init.mp4')));
         total += bytes;
       }
       const { outputBytes } = mediaPolicy();
       if (outputBytes && total > outputBytes) throw refusal(`Video ladder is larger than ${outputBytes / 1048576} MiB (MEDIA_MAX_VIDEO_OUTPUT_MIB)`);
       const master = path.join(tmpDir, 'master.m3u8');
-      await fsp.writeFile(master, buildMasterPlaylist(rungs, { audio: probed.audio, averages }));
+      await fsp.writeFile(master, buildMasterPlaylist(rungs, { audio: probed.audio, averages, inits }));
       // The master goes last: a ladder is only ever read through it.
       files.push({ key: `${prefix}/master.m3u8`, local: master });
 
@@ -404,6 +438,7 @@ module.exports = {
   queuePending,
   selectLadder,
   transcodeOptions,
+  readInitSegment,
   buildMasterPlaylist,
   rewritePlaylist,
   ladderKey,

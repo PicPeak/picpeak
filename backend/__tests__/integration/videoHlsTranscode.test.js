@@ -98,7 +98,11 @@ const SLUG = 'hls-transcode';
     expect(master.status).toBe(200);
     const lines = master.body.toString().split('\n');
     expect(lines.filter(line => line && !line.startsWith('#'))).toEqual(['480p/index.m3u8?v=abc', '720p/index.m3u8?v=abc']);
-    expect(lines.filter(line => line.startsWith('#EXT-X-STREAM-INF')).map(line => /RESOLUTION=(\d+x\d+)/.exec(line)[1])).toEqual(['854x480', '1280x720']);
+    const variants = lines.filter(line => line.startsWith('#EXT-X-STREAM-INF'));
+    expect(variants.map(line => /RESOLUTION=(\d+x\d+)/.exec(line)[1])).toEqual(['854x480', '1280x720']);
+    for (const line of variants) {
+      expect(line).toMatch(/^#EXT-X-STREAM-INF:BANDWIDTH=\d+,AVERAGE-BANDWIDTH=\d+,RESOLUTION=\d+x\d+,CODECS="avc1\.64[0-9a-f]{4},mp4a\.40\.2"$/);
+    }
 
     const media = await get(`${photoId}/720p/index.m3u8?v=abc`);
     expect(media.status).toBe(200);

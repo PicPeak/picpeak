@@ -291,8 +291,14 @@ async function createRateLimiter(store = new MemoryStore()) {
     },
     // A bucket of its own, or the viewer budget would be spent by the
     // anonymous requests of everyone else behind the same address.
-    keyGenerator: async (req) => (usesGalleryViewerBudget(req, await getRateLimitSettings())
-      ? `gallery-viewer:${rateLimitKey(req)}` : rateLimitKey(req)),
+    keyGenerator: async (req) => {
+      const key = usesGalleryViewerBudget(req, await getRateLimitSettings())
+        ? `gallery-viewer:${rateLimitKey(req)}` : rateLimitKey(req);
+      // Only a counted request gets here, and this is what it was counted
+      // under: refundRateLimit gives exactly that back.
+      req.rateLimitRefund = () => store.decrement(key);
+      return key;
+    },
     skip: async (req) => {
       const currentConfig = await getRateLimitSettings();
       return await shouldSkipRateLimit(req, currentConfig);
@@ -426,6 +432,23 @@ async function initializeRateLimiters() {
   return current;
 }
 
+/**
+ * Give a counted request its slot back. For a route whose one user action is
+ * many requests and that has just authorised this one itself: a segment of
+ * an adaptive video stream (issue 1733) is fetched every six seconds, by
+ * viewers of a public gallery too, who carry no token the limiter could have
+ * skipped on. The limiter still counts first, so a request the route refuses
+ * (wrong gallery, hidden photo, bad name) is never refunded, and an address
+ * already over its budget is stopped before it gets here. Once per request;
+ * a no-op for a request the limiter skipped or never saw.
+ */
+function refundRateLimit(req) {
+  const refund = req.rateLimitRefund;
+  if (!refund) return;
+  req.rateLimitRefund = null;
+  Promise.resolve().then(refund).catch((error) => logger.warn('Rate limit refund failed', { error: error.message }));
+}
+
 const getGeneralLimiter = () => current.general;
 const getAuthLimiter = () => current.auth;
 
@@ -442,5 +465,6 @@ module.exports = {
   isOwnGalleryImageRequest,
   isOwnGalleryViewerRequest,
   GALLERY_VIEWER_BUDGET_FACTOR,
-  shouldSkipRateLimit
+  shouldSkipRateLimit,
+  refundRateLimit
 };
