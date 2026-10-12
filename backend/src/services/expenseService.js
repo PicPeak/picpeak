@@ -26,6 +26,7 @@ const { auditedInsert, auditedUpdate, auditedDelete } = require('./accountingHis
 // Tri-state proof-attach resolver — single source of truth lives with the
 // send-time attachment logic (no require cycle: rebillProofs never imports us).
 const { resolveDefaultAttach } = require('./invoice/rebillProofs');
+const { ownedBy, assertEventLinkable } = require('./expenseAccess');
 
 /**
  * Actor for logActivity. `adminId` is legitimately absent on automated paths —
@@ -38,6 +39,10 @@ const adminActor = (adminId) => (adminId ? { type: 'admin', id: adminId } : null
 
 // Actor for the accounting change history: the admin, or null (system).
 const historyActor = (adminId) => adminId || null;
+
+// An incoming invoice nobody recorded (mailbox intake) belongs to whoever
+// triages it (expenseAccess).
+const claimUnowned = (row, adminId) => (row.created_by_admin_id == null && adminId ? { created_by_admin_id: adminId } : {});
 
 const DISPOSITIONS = ['rebill', 'durchlaufend', 'eigener_aufwand', 'duplikat', 'abgelehnt'];
 const TAX_TREATMENTS = ['domestic', 'reverse_charge_service', 'foreign_vat_non_reclaimable', 'import_goods'];
@@ -282,7 +287,8 @@ const INBOUND_CUSTOMER_SELECT = [
 ];
 function inboundWithCustomer() {
   return db('inbound_documents')
-    .leftJoin('customer_accounts as c', 'inbound_documents.customer_account_id', 'c.id');
+    .leftJoin('customer_accounts as c', 'inbound_documents.customer_account_id', 'c.id')
+    .modify(ownedBy('inbound_documents'));
 }
 
 async function getInbound(id) {
@@ -487,9 +493,10 @@ async function categorizeInbound(id, payload, adminId) {
 
   let billedInvoiceId = null;
   await db.transaction(async (trx) => {
-    const row = await trx('inbound_documents').where({ id }).first();
+    const row = await trx('inbound_documents').where({ id }).modify(ownedBy('inbound_documents')).first();
     if (!row) throw new AppError('Incoming invoice not found', 404, 'INBOUND_NOT_FOUND');
     const doc = transformInbound(row);
+    if (BOOKING_DISPOSITIONS.includes(disposition)) await assertEventLinkable(payload.eventId, trx);
 
     // A doc attached to a customer will become a client invoice line, which
     // needs an amount. Require one NOW (0 is fine — a legitimately zero-value
@@ -527,6 +534,7 @@ async function categorizeInbound(id, payload, adminId) {
       billed_invoice_line_item_id: null,
       status: DISPOSITION_DOC_STATUS[disposition] || 'categorized',
       updated_at: new Date(),
+      ...claimUnowned(row, adminId),
     };
     if (disposition === 'duplikat' && payload.duplicateOfId) patch.duplicate_of_id = payload.duplicateOfId;
     await auditedUpdate(trx, 'inbound_documents', { id }, patch, {
@@ -558,9 +566,10 @@ async function categorizeInbound(id, payload, adminId) {
 async function rebillInbound(id, payload, adminId, trx0) {
   if (!payload.customerAccountId) throw new AppError('customerAccountId is required to re-bill', 400, 'CUSTOMER_REQUIRED');
   const run = async (trx) => {
-    const row = await trx('inbound_documents').where({ id }).first();
+    const row = await trx('inbound_documents').where({ id }).modify(ownedBy('inbound_documents')).first();
     if (!row) throw new AppError('Incoming invoice not found', 404, 'INBOUND_NOT_FOUND');
     const doc = transformInbound(row);
+    await assertEventLinkable(payload.eventId, trx);
     // A client invoice line needs an amount (0 allowed, null not) — fail here
     // rather than deep inside buildInboundLineItem.
     if (doc.totalAmountMinor == null && doc.netAmountMinor == null) {
@@ -580,6 +589,7 @@ async function rebillInbound(id, payload, adminId, trx0) {
       markup_percent: markup.type === 'percent' ? markup.percent : null,
       markup_flat_minor: markup.type === 'flat' ? markup.flatMinor : null,
       updated_at: new Date(),
+      ...claimUnowned(row, adminId),
     }, { actor: historyActor(adminId), source: 'inbound.rebill' });
     return billInboundNow(trx, id, payload.customerAccountId, payload.eventId || doc.eventId || null, 'rebill', markup, adminId);
   };
@@ -599,6 +609,7 @@ async function rebillInbound(id, payload, adminId, trx0) {
 async function listPendingRebillSummary() {
   const rows = await db('inbound_documents as d')
     .join('customer_accounts as c', 'd.customer_account_id', 'c.id')
+    .modify(ownedBy('d'))
     .whereNotNull('d.customer_account_id')
     .whereNull('d.billed_invoice_id')
     .whereIn('d.disposition', CUSTOMER_DISPOSITIONS)
@@ -648,6 +659,7 @@ async function listPendingRebillSummary() {
 // invoice; #866). Shared by the re-bills-only path and the combined orchestrator.
 async function buildPendingRebillLineItems(trx, customer) {
   const docs = await trx('inbound_documents')
+    .modify(ownedBy('inbound_documents'))
     .where({ customer_account_id: customer.id })
     .whereNull('billed_invoice_id')
     .whereIn('disposition', CUSTOMER_DISPOSITIONS)
@@ -741,6 +753,7 @@ async function listCustomerRebills(customerId) {
   const rows = await db('inbound_documents as d')
     .leftJoin('invoices as inv', 'd.billed_invoice_id', 'inv.id')
     .leftJoin('events as e', 'd.event_id', 'e.id')
+    .modify(ownedBy('d'))
     .where('d.customer_account_id', customerId)
     .whereIn('d.disposition', CUSTOMER_DISPOSITIONS)
     .where('d.status', 'categorized')
@@ -905,7 +918,7 @@ function buildExpenseInsert(payload, adminId, opts = {}) {
 }
 
 async function getExpense(id) {
-  const row = await db('expenses').where({ id }).first();
+  const row = await db('expenses').where({ id }).modify(ownedBy('expenses')).first();
   if (!row) throw new AppError('Expense not found', 404, 'EXPENSE_NOT_FOUND');
   return transformExpense(row);
 }
@@ -915,6 +928,7 @@ async function createExpense(payload, adminId, { receiptPath } = {}) {
   if (settings.requireProof && !receiptPath) {
     throw new AppError('A proof file is required for expenses', 400, 'PROOF_REQUIRED');
   }
+  await assertEventLinkable(payload.eventId, db);
   const row = buildExpenseInsert(payload, adminId, {
     receiptPath,
     kmRateMinor: settings.kmRateMinor,
@@ -930,7 +944,7 @@ async function createExpense(payload, adminId, { receiptPath } = {}) {
 
 async function listExpenses({ kind, eventId, categoryId, page, pageSize } = {}) {
   const { p, ps } = clampPage(page, pageSize);
-  const base = db('expenses').where({ inbound_document_id: null }); // internal only
+  const base = db('expenses').where({ inbound_document_id: null }).modify(ownedBy('expenses')); // internal only
   if (kind) base.where({ kind });
   if (categoryId) base.where({ category_id: categoryId });
   if (eventId === 'company') base.whereNull('event_id');
@@ -956,6 +970,7 @@ async function updateExpense(id, payload, adminId, { receiptPath } = {}) {
     if (payload[camel] !== undefined) patch[snake] = payload[camel] === '' ? null : payload[camel];
   }
   if (receiptPath) patch.receipt_path = receiptPath;
+  if (patch.event_id != null && Number(patch.event_id) !== Number(existing.eventId)) await assertEventLinkable(patch.event_id, db);
   await auditedUpdate(db, 'expenses', { id }, patch, {
     actor: historyActor(adminId), source: 'expense.update',
   });
@@ -967,9 +982,10 @@ async function updateExpense(id, payload, adminId, { receiptPath } = {}) {
  *  invoiced (locks editing) + links the invoice. base = chf amount + markup. */
 async function rebillExpense(id, payload, adminId, trx0) {
   const run = async (trx) => {
-    const row = await trx('expenses').where({ id }).first();
+    const row = await trx('expenses').where({ id }).modify(ownedBy('expenses')).first();
     if (!row) throw new AppError('Expense not found', 404, 'EXPENSE_NOT_FOUND');
     const exp = transformExpense(row);
+    await assertEventLinkable(payload.eventId, trx);
     if (exp.invoiced) throw new AppError('Expense already invoiced', 409, 'ALREADY_INVOICED');
     if (!payload.customerAccountId) throw new AppError('customerAccountId is required', 400, 'CUSTOMER_REQUIRED');
     const base = exp.chfAmountMinor;
