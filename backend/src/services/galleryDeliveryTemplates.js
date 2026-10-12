@@ -16,6 +16,8 @@
  * Plain HTML so wrapEmailHtml's palette styles it.
  */
 
+const { upgradeUneditedTemplates } = require('./emailTemplateUpgrade');
+
 const TEMPLATES = {
   gallery_completed: {
     variables: ['host_name', 'customer_name', 'event_name', 'event_date', 'gallery_link', 'photo_count', 'expiry_date'],
@@ -25,8 +27,8 @@ const TEMPLATES = {
 <p>Dear {{host_name}},</p>
 <p>All photos of "{{event_name}}" are now in your gallery: {{photo_count}} photos, including the first look you already received.</p>
 <p><a href="{{gallery_link}}">Open your gallery</a></p>
-<p>The gallery is available until {{expiry_date}}.</p>`,
-      body_text: 'Your complete gallery is ready\n\nDear {{host_name}},\n\nAll photos of "{{event_name}}" are now in your gallery: {{photo_count}} photos, including the first look you already received.\n\nOpen your gallery: {{gallery_link}}\n\nThe gallery is available until {{expiry_date}}.',
+{{#if expiry_date}}<p>The gallery is available until {{expiry_date}}.</p>{{/if}}`,
+      body_text: 'Your complete gallery is ready\n\nDear {{host_name}},\n\nAll photos of "{{event_name}}" are now in your gallery: {{photo_count}} photos, including the first look you already received.\n\nOpen your gallery: {{gallery_link}}{{#if expiry_date}}\n\nThe gallery is available until {{expiry_date}}.{{/if}}',
     },
     de: {
       subject: 'Ihre vollständige Galerie ist da: {{event_name}}',
@@ -34,8 +36,8 @@ const TEMPLATES = {
 <p>Guten Tag {{host_name}},</p>
 <p>Alle Fotos von „{{event_name}}“ sind jetzt in Ihrer Galerie: {{photo_count}} Fotos, inklusive der ersten Auswahl, die Sie bereits erhalten haben.</p>
 <p><a href="{{gallery_link}}">Galerie öffnen</a></p>
-<p>Die Galerie ist bis zum {{expiry_date}} verfügbar.</p>`,
-      body_text: 'Ihre vollständige Galerie ist da\n\nGuten Tag {{host_name}},\n\nAlle Fotos von „{{event_name}}“ sind jetzt in Ihrer Galerie: {{photo_count}} Fotos, inklusive der ersten Auswahl, die Sie bereits erhalten haben.\n\nGalerie öffnen: {{gallery_link}}\n\nDie Galerie ist bis zum {{expiry_date}} verfügbar.',
+{{#if expiry_date}}<p>Die Galerie ist bis zum {{expiry_date}} verfügbar.</p>{{/if}}`,
+      body_text: 'Ihre vollständige Galerie ist da\n\nGuten Tag {{host_name}},\n\nAlle Fotos von „{{event_name}}“ sind jetzt in Ihrer Galerie: {{photo_count}} Fotos, inklusive der ersten Auswahl, die Sie bereits erhalten haben.\n\nGalerie öffnen: {{gallery_link}}{{#if expiry_date}}\n\nDie Galerie ist bis zum {{expiry_date}} verfügbar.{{/if}}',
     },
   },
   delivery_due_reminder: {
@@ -57,6 +59,33 @@ const TEMPLATES = {
 <p>Sobald die Galerie vollständig ist, markieren Sie sie als fertig, damit der Kunde Bescheid bekommt.</p>
 <p><a href="{{admin_link}}">Event öffnen</a></p>`,
       body_text: 'Die vollständige Galerie für „{{event_name}}“ wurde bis {{due_date}} zugesagt.\n\nBisher sind {{delivered_count}} von ca. {{expected_count}} Fotos in der Galerie.\n\nSobald die Galerie vollständig ist, markieren Sie sie als fertig, damit der Kunde Bescheid bekommt.\n\n{{admin_link}}',
+    },
+  },
+};
+
+// Defaults whose text changed. A stored template still identical to its
+// previous default is brought up to date; one an admin has edited is left as
+// it is. gallery_completed printed the expiry line unconditionally, so a
+// gallery without an expiry date read "available until null".
+const PREVIOUS_DEFAULTS = {
+  gallery_completed: {
+    en: {
+      subject: 'Your complete gallery is ready: {{event_name}}',
+      body_html: `<h2>Your complete gallery is ready</h2>
+<p>Dear {{host_name}},</p>
+<p>All photos of "{{event_name}}" are now in your gallery: {{photo_count}} photos, including the first look you already received.</p>
+<p><a href="{{gallery_link}}">Open your gallery</a></p>
+<p>The gallery is available until {{expiry_date}}.</p>`,
+      body_text: 'Your complete gallery is ready\n\nDear {{host_name}},\n\nAll photos of "{{event_name}}" are now in your gallery: {{photo_count}} photos, including the first look you already received.\n\nOpen your gallery: {{gallery_link}}\n\nThe gallery is available until {{expiry_date}}.',
+    },
+    de: {
+      subject: 'Ihre vollständige Galerie ist da: {{event_name}}',
+      body_html: `<h2>Ihre vollständige Galerie ist da</h2>
+<p>Guten Tag {{host_name}},</p>
+<p>Alle Fotos von „{{event_name}}“ sind jetzt in Ihrer Galerie: {{photo_count}} Fotos, inklusive der ersten Auswahl, die Sie bereits erhalten haben.</p>
+<p><a href="{{gallery_link}}">Galerie öffnen</a></p>
+<p>Die Galerie ist bis zum {{expiry_date}} verfügbar.</p>`,
+      body_text: 'Ihre vollständige Galerie ist da\n\nGuten Tag {{host_name}},\n\nAlle Fotos von „{{event_name}}“ sind jetzt in Ihrer Galerie: {{photo_count}} Fotos, inklusive der ersten Auswahl, die Sie bereits erhalten haben.\n\nGalerie öffnen: {{gallery_link}}\n\nDie Galerie ist bis zum {{expiry_date}} verfügbar.',
     },
   },
 };
@@ -112,8 +141,16 @@ async function ensureGalleryDeliveryTemplatesSeeded(db, logger) {
       return touched;
     }
   }
+  try {
+    await upgradeUneditedTemplates(db, {
+      templates: TEMPLATES, previousDefaults: PREVIOUS_DEFAULTS, cols, hasTranslationsTable: hasTranslations, logger,
+    });
+  } catch (err) {
+    if (logger) logger.error('Failed to update unedited gallery delivery templates', { message: err.message });
+    return touched;
+  }
   _seeded = true;
   return touched;
 }
 
-module.exports = { GALLERY_DELIVERY_TEMPLATES: TEMPLATES, ensureGalleryDeliveryTemplatesSeeded };
+module.exports = { GALLERY_DELIVERY_TEMPLATES: TEMPLATES, PREVIOUS_DEFAULTS, ensureGalleryDeliveryTemplatesSeeded };

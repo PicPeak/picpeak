@@ -1065,7 +1065,10 @@
       "requestMessage": "What do you need from them? (optional)",
       "requestMessagePlaceholder": "Shown to the client on the upload page",
       "uploadWindowDays": "Accept uploads for (days)",
-      "requestRecipientsHint": "Separate multiple addresses with commas. Each one gets the upload link."
+      "requestRecipientsHint": "Separate multiple addresses with commas. Each one gets the upload link.",
+      "maxFilesPerUpload": "Max files per upload",
+      "maxFilesDefault": "Default ({{count}})",
+      "maxFilesInvalid": "A whole number from 1 to {{max}}"
     },
     "picker": {
       "title": "Select images from other events",
@@ -1114,7 +1117,8 @@
       "anyType": "Any file type is accepted.",
       "acceptedTypes": "Accepted: {{types}}",
       "someFailed": "These files could not be stored. Please try them again: {{names}}",
-      "removeFile": "Remove {{name}}"
+      "removeFile": "Remove {{name}}",
+      "pacing": "The server asked for a short pause. Continuing in {{seconds}} seconds…"
     },
     "newSend": "Send files",
     "newRequest": "Request files",
@@ -1154,7 +1158,12 @@
     "someDropped": "{{count}} attached file(s) were not kept — a file request only collects files: {{names}}",
     "deleteRequestAction": "Delete request",
     "deleteAction": "Delete transfer",
-    "loadFailed": "Could not load the transfers"
+    "loadFailed": "Could not load the transfers",
+    "uploadLimit": "Files per upload",
+    "uploadLimitOwn": "The client can select up to {{count}} files at once. This request has its own limit.",
+    "uploadLimitDefault": "The client can select up to {{count}} files at once (the default from Settings).",
+    "uploadLimitSaved": "Upload limit saved",
+    "uploadLimitUseDefault": "Use the default"
   },
   "workflows": {
     "title": "Workflows",
@@ -2714,7 +2723,7 @@
       "title": "SEO & Robots",
       "indexingTitle": "Search Engine Indexing",
       "allowIndexing": "Allow search engine indexing",
-      "allowIndexingHelp": "When disabled, all crawlers are blocked via robots.txt. Recommended off for private photo platforms.",
+      "allowIndexingHelp": "When disabled, no page can appear in search results. When enabled, only the public landing page can. Galleries, share links and sign-in pages are never indexed.",
       "sitemapUrl": "Sitemap URL",
       "sitemapUrlHelp": "Optional. Added to robots.txt if provided.",
       "aiBlockingTitle": "AI & Bot Blocking",
@@ -2755,8 +2764,6 @@
       "customDisabledHelp": "Your legacy custom snippet is disabled and is not sent to visitors. Choose Umami, Rybbit or None, then save to clear the old snippet.",
       "proxiedNoticeText": "PicPeak forwards sanitized page views and gallery events without loading third-party code. The collector receives visitor IP and user agent, but no query strings, page titles, referrers, tokens or account identifiers. Production collectors must use HTTPS.",
       "privacySignalsText": "Visitors whose browser sends Global Privacy Control (Brave and Firefox can) are never counted: no event leaves their browser. Do Not Track is treated the same way unless you switch that off above.",
-      "honorDoNotTrack": "Honour Do Not Track",
-      "honorDoNotTrackHelp": "On by default: a visitor whose browser sends Do Not Track is not counted. Switch it off to count them, for example for invite-only galleries; you are then responsible for the legal basis. Global Privacy Control is always honoured.",
       "customOnlyCspWarningText": "PicPeak ships with a strict CSP (`script-src 'self'; connect-src 'self'`). Unlike the Umami and Rybbit options above, a pasted snippet is not proxied — add your tracker's domain to BOTH `script-src` (to load the script) and `connect-src` (for the events it sends) in your reverse-proxy or nginx CSP config, otherwise the browser silently blocks it.",
       "rybbitUrl": "Rybbit URL",
       "rybbitUrlHelp": "Your Rybbit instance URL — `https://app.rybbit.io` for the SaaS, or `https://rybbit.yourdomain.com` for self-hosted.",
@@ -2789,7 +2796,9 @@
       "privacy": "Privacy",
       "privacyText": "IP addresses are hashed for privacy. No personal data is stored. Analytics data is retained for 90 days.",
       "umamiApiKey": "API key",
-      "umamiApiKeyHelp": "Optional. Required only for the device-breakdown chart on the Analytics dashboard. Generate in Umami → Settings → Profile → API Keys. Stored masked as •••••••• once saved — leave the masked value to keep the existing key."
+      "umamiApiKeyHelp": "Optional. Required only for the device-breakdown chart on the Analytics dashboard. Generate in Umami → Settings → Profile → API Keys. Stored masked as •••••••• once saved — leave the masked value to keep the existing key.",
+      "honorDoNotTrack": "Honour Do Not Track",
+      "honorDoNotTrackHelp": "On by default: a visitor whose browser sends Do Not Track is not counted. Switch it off to count them, for example for invite-only galleries; you are then responsible for the legal basis. Global Privacy Control is always honoured."
     },
     "groups": {
       "general": "General",
@@ -3605,7 +3614,9 @@
       "extensions": "Extensions",
       "maxSize": "Maximum file size (MB)",
       "maxSizeHint": "Applies per file, not per upload.",
-      "readOnly": "Only admins who can edit settings can change what clients may send."
+      "readOnly": "Only admins who can edit settings can change what clients may send.",
+      "maxFiles": "Maximum files per upload",
+      "maxFilesHint": "How many files a client can select in one go, 1 to {{max}}. A client can upload again afterwards; a single file request can have its own value."
     }
   },
   "analytics": {
@@ -6185,6 +6196,7 @@
     "ratingsCount_one": "{{count}} ratings",
     "ratingsCount_other": "{{count}} ratings",
     "likeError": "Failed to update like",
+    "likeRateLimited": "Too many requests. Wait a few minutes, then try again.",
     "unlike": "Unlike",
     "like": "Like",
     "favoriteError": "Failed to update favorite",

@@ -697,6 +697,7 @@ router.get('/transfers',
         accept_all: policy.acceptAll,
         allowed_types: policy.allowedTypes,
         max_size_mb: policy.maxSizeMb,
+        max_files: policy.maxFiles,
       });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to load transfer settings');
@@ -709,7 +710,7 @@ router.put('/transfers',
   requireFlag('transfers'),
   async (req, res) => {
     try {
-      const { normalizeAllowedTypes } = require('../services/transferUploadPolicy');
+      const { normalizeAllowedTypes, normalizeMaxFiles, MAX_FILES_CEILING } = require('../services/transferUploadPolicy');
       const has = (k) => Object.prototype.hasOwnProperty.call(req.body, k);
 
       // Validate EVERY field before writing any of them. Interleaving the two
@@ -745,6 +746,19 @@ router.put('/transfers',
           return res.status(400).json({ error: 'Maximum file size must be between 1 and 100000 MB', code: 'BAD_SIZE' });
         }
         writes.push(['transfer_max_upload_size_mb', JSON.stringify(mb), 'number']);
+      }
+
+      // The default number of files per upload round (issue 1914); a file
+      // request can carry its own value.
+      if (has('max_files')) {
+        const files = normalizeMaxFiles(req.body.max_files);
+        if (!files) {
+          return res.status(400).json({
+            error: `Maximum files per upload must be a whole number between 1 and ${MAX_FILES_CEILING}`,
+            code: 'BAD_FILE_COUNT',
+          });
+        }
+        writes.push(['transfer_upload_max_files', JSON.stringify(files), 'number']);
       }
 
       const updated = [];

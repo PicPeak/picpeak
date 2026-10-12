@@ -72,14 +72,17 @@ export const SEOTab: React.FC<SEOTabProps> = ({
 
     lines.push('# Protected paths');
     lines.push('User-agent: *');
-    lines.push('Disallow: /admin');
     lines.push('Disallow: /api');
     lines.push('');
 
     if (!seoSettings.allow_indexing) {
-      lines.push('# Indexing disabled');
+      lines.push('# Indexing disabled. Pages stay crawlable on purpose: each answers');
+      lines.push('# "X-Robots-Tag: noindex", which only takes effect if a crawler may fetch it.');
       lines.push('User-agent: *');
-      lines.push('Disallow: /');
+      lines.push('Disallow: /photos');
+      lines.push('Disallow: /thumbnails');
+      lines.push('Disallow: /uploads');
+      lines.push('Disallow: /og');
       lines.push('');
     }
 
@@ -138,7 +141,7 @@ export const SEOTab: React.FC<SEOTabProps> = ({
             />
             <div>
               <span className="text-sm font-medium text-body">{t('settings.seo.allowIndexing', 'Allow search engine indexing')}</span>
-              <p className="text-sm text-muted mt-0.5">{t('settings.seo.allowIndexingHelp', 'When disabled, all crawlers are blocked via robots.txt. Recommended off for private photo platforms.')}</p>
+              <p className="text-sm text-muted mt-0.5">{t('settings.seo.allowIndexingHelp', 'When disabled, no page can appear in search results. When enabled, only the public landing page can. Galleries, share links and sign-in pages are never indexed.')}</p>
             </div>
           </label>
 

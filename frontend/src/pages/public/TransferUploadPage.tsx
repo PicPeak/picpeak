@@ -25,7 +25,7 @@ import { Button, Loading } from '../../components/common';
 import { transfersService } from '../../services/transfers.service';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
-import { batchFilesForUpload } from '../../utils/uploadBatches';
+import { batchFilesForUpload, pacedRetryDelay, MAX_PACED_RETRIES } from '../../utils/uploadBatches';
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '0 B';
@@ -140,6 +140,22 @@ export const TransferUploadPage: React.FC = () => {
     });
   };
 
+  // A large selection is many requests, and the upload route allows a fixed
+  // number per minute. Its refusal says how long to wait; waiting that out
+  // and sending the same request again beats failing a valid upload halfway.
+  const sendPaced = async <T,>(send: () => Promise<T>): Promise<T> => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await send();
+      } catch (err) {
+        const wait = attempt < MAX_PACED_RETRIES ? pacedRetryDelay(err) : null;
+        if (wait === null) throw err;
+        toast.info(t('transfers.upload.pacing', 'The server asked for a short pause. Continuing in {{seconds}} seconds…', { seconds: wait }));
+        await new Promise((resolve) => setTimeout(resolve, wait * 1000));
+      }
+    }
+  };
+
   const handleUpload = async () => {
     if (!files.length) return;
     setUploading(true);
@@ -157,9 +173,9 @@ export const TransferUploadPage: React.FC = () => {
       for (const [index, batch] of batches.entries()) {
         const batchBytes = batch.reduce((sum, f) => sum + f.size, 0);
         try {
-          const result = await transfersService.upload(token as string, batch, (pct) => {
+          const result = await sendPaced(() => transfersService.upload(token as string, batch, (pct) => {
             setProgress(Math.round(((sentBytes + (batchBytes * pct) / 100) / totalBytes) * 100));
-          });
+          }));
           rejected.push(...(result.rejected_files || []));
           failed.push(...(result.failed_files || []));
           sentBytes += batchBytes;

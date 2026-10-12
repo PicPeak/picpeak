@@ -126,6 +126,11 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // parent that never refetches.
   const [awaitingRefresh, setAwaitingRefresh] = useState(false);
   const awaitingRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Deliberately without the photo id, here and in runLikeBatch: this layout
+  // asks for the whole list after a like. The favourites set and the wait
+  // below assume one consistent payload; refreshing a single row instead
+  // (issue 1891, as the other layouts do) made them act on a half-updated
+  // list and undo saved likes.
   const handleLightboxFeedbackChange = useCallback(() => {
     if (onFeedbackChange) {
       setAwaitingRefresh(true);

@@ -3,6 +3,7 @@ const { db } = require('../database/db');
 const { archiveEvent } = require('./archiveService');
 const { queueEmail, getSupportEmail } = require('./emailProcessor');
 const { buildShareLinkVariants } = require('./shareLinkService');
+const { galleryLinkFor } = require('./galleryNotificationService');
 const logger = require('../utils/logger');
 const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
 
@@ -130,7 +131,7 @@ async function queueExpirationWarning(event) {
     event_date: event.event_date,
     days_remaining: daysRemaining.toString(),
     expiry_date: event.expires_at,
-    gallery_link: shareUrl,
+    gallery_link: await galleryLinkFor(event, recipientEmail, shareUrl),
     gallery_password: '{{password_security_message}}'
   // Relationship mail — hold to business hours (no-op unless configured).
   }, { respectBusinessHours: true });

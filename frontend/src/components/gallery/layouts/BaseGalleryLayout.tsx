@@ -23,8 +23,10 @@ export interface BaseGalleryLayoutProps {
   onPhotoClick: (index: number) => void;
   // Optional: open the lightbox with feedback panel visible
   onOpenPhotoWithFeedback?: (index: number) => void;
-  // Notify parent that feedback (like/favorite/rating/comment) changed
-  onFeedbackChange?: () => void;
+  // Notify parent that feedback (like/favorite/rating/comment) changed. A
+  // like or favourite toggle passes its photo id, so only that row is
+  // refreshed instead of the whole list (issue 1891).
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
   onDownload: (photo: Photo, e: React.MouseEvent) => void;
   selectedPhotos?: Set<number>;
   isSelectionMode?: boolean;

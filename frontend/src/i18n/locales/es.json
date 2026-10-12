@@ -1291,7 +1291,7 @@
       "title": "SEO y robots",
       "indexingTitle": "Indexación en motores de búsqueda",
       "allowIndexing": "Permitir indexación en motores de búsqueda",
-      "allowIndexingHelp": "Cuando está deshabilitado, todos los rastreadores se bloquean a través de robots.txt. Se recomienda deshabilitado para plataformas privadas de fotos.",
+      "allowIndexingHelp": "Cuando está deshabilitado, ninguna página puede aparecer en los resultados de búsqueda. Cuando está habilitado, solo la página de inicio pública. Las galerías, los enlaces compartidos y las páginas de inicio de sesión nunca se indexan.",
       "sitemapUrl": "URL del mapa del sitio",
       "sitemapUrlHelp": "Opcional. Se añade a robots.txt si se proporciona.",
       "aiBlockingTitle": "Bloqueo de IA y bots",

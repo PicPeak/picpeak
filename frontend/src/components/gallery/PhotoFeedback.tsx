@@ -13,7 +13,8 @@ interface PhotoFeedbackProps {
   gallerySlug: string;
   className?: string;
   showComments?: boolean;
-  onFeedbackUpdate?: () => void;
+  // A like or favourite toggle passes the photo id once the server accepted it.
+  onFeedbackUpdate?: (toggledPhotoId?: number) => void;
 }
 
 export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
@@ -71,13 +72,21 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   const handleLikeChange = (liked: boolean) => {
     setIsLiked(liked);
     setLikeCount(prev => liked ? prev + 1 : Math.max(0, prev - 1));
-    if (onFeedbackUpdate) onFeedbackUpdate();
   };
 
   const handleFavoriteChange = (favorited: boolean) => {
     setIsFavorited(favorited);
     setFavoriteCount(prev => favorited ? prev + 1 : Math.max(0, prev - 1));
-    if (onFeedbackUpdate) onFeedbackUpdate();
+  };
+
+  // The gallery list is told once the server has the toggle, not from the
+  // optimistic update above: it refreshes that one row from the server.
+  // The id comes from the toggle itself: by the time it is saved the panel
+  // may already show the next photo.
+  // Only handed down when a parent refreshes the row: without one the
+  // buttons fall back to invalidating the list themselves.
+  const handleToggleSaved = (savedPhotoId: string) => {
+    if (onFeedbackUpdate) onFeedbackUpdate(Number(savedPhotoId));
   };
 
   // Optimistic reaction switch: decrement the old emoji, increment the new.
@@ -141,6 +150,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
               isEnabled={true}
               requireNameEmail={settings.require_name_email || false}
               onLikeChange={handleLikeChange}
+              onSaved={onFeedbackUpdate ? handleToggleSaved : undefined}
             />
           )}
 
@@ -153,6 +163,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
               isEnabled={true}
               requireNameEmail={settings.require_name_email || false}
               onFavoriteChange={handleFavoriteChange}
+              onSaved={onFeedbackUpdate ? handleToggleSaved : undefined}
             />
           )}
         </div>

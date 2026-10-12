@@ -68,6 +68,10 @@ export interface Transfer {
   delivery_method: 'link' | 'email';
   upload_token: string | null;
   upload_expires_at: string | null;
+  /** Requests only — this request's own files-per-upload limit, null when it follows the default. */
+  max_files_per_upload?: number | null;
+  /** Requests only, detail view — the limit in force, own or default. */
+  effective_max_files_per_upload?: number | null;
   created_at: string;
   updated_at: string;
   status: 'active' | 'expired' | 'deleted';
@@ -101,6 +105,8 @@ export interface CreateTransferInput {
   recipientEmails?: string[];
   /** Sends only — the operator's own files to include as deliverables. */
   files?: File[];
+  /** Requests only — own files-per-upload limit; leave out to use the default. */
+  maxFilesPerUpload?: number | null;
 }
 
 /**
@@ -125,6 +131,8 @@ export interface UpdateTransferInput {
   expiresInDays?: number;
   expiresAt?: string;
   isActive?: boolean;
+  /** Requests only — null hands the limit back to the global default. */
+  maxFilesPerUpload?: number | null;
 }
 
 // --- Public shapes ---
@@ -192,6 +200,11 @@ export const transfersService = {
     const res = await api.get('/admin/transfers', { params: search ? { q: search } : {} });
     return res.data.transfers;
   },
+  /** The global files-per-upload default and the largest value a request may carry. */
+  async uploadDefaults(): Promise<{ max_files_per_upload: number; max_files_ceiling: number }> {
+    const res = await api.get('/admin/transfers/upload-defaults');
+    return { max_files_per_upload: res.data.max_files_per_upload, max_files_ceiling: res.data.max_files_ceiling };
+  },
   async get(id: number): Promise<Transfer> {
     const res = await api.get(`/admin/transfers/${id}`);
     return res.data.transfer;
@@ -204,6 +217,7 @@ export const transfersService = {
     if (input.expiresInDays != null) form.append('expiresInDays', String(input.expiresInDays));
     if (input.maxDownloads != null) form.append('maxDownloads', String(input.maxDownloads));
     if (input.graceDays != null) form.append('graceDays', String(input.graceDays));
+    if (input.maxFilesPerUpload != null) form.append('maxFilesPerUpload', String(input.maxFilesPerUpload));
     form.append('kind', input.kind || 'send');
     form.append('photoIds', JSON.stringify(input.photoIds || []));
     form.append('deliveryMethod', input.deliveryMethod || 'link');
@@ -267,6 +281,10 @@ export const transfersService = {
   /** Absolute API URL for the admin ZIP download (cookie auth → usable as href). */
   adminDownloadUrl(id: number): string {
     return `${getApiBaseUrl()}/admin/transfers/${id}/download`;
+  },
+  /** Everything a client sent through a file request, as one ZIP. */
+  adminUploadsDownloadUrl(id: number): string {
+    return `${getApiBaseUrl()}/admin/transfers/${id}/uploads/download`;
   },
   adminUploadDownloadUrl(id: number, uploadId: number): string {
     return `${getApiBaseUrl()}/admin/transfers/${id}/uploads/${uploadId}/download`;

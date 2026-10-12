@@ -20,6 +20,7 @@ const { clampIntOrUndefined } = require('../utils/numericHelpers');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const {
   notifyGalleryRecipients, resolveGalleryRecipients, reachableAccountsByIds, hasPasswordGeneratedColumn,
+  galleryLinkFor,
 } = require('./galleryNotificationService');
 const { resolveEventFeedbackDefaults, applyFeedbackDefaults } = require('./feedbackDefaults');
 const { getStoragePath, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults,
@@ -656,6 +657,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     try {
       const announced = {
         id: eventId,
+        slug,
         customer_email: customerEmail,
         host_email: customerEmail,
         welcome_message,
@@ -685,7 +687,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
         await queueWhatsapp(eventId, customerPhone, 'gallery_created', {
           customer_name: customerName || '',
           event_name,
-          gallery_link: shareUrl,
+          // A CRM customer gets their portal link here too (galleryLinkFor).
+          gallery_link: await galleryLinkFor({ id: eventId, slug }, customerEmail, shareUrl),
           gallery_password: requirePassword ? password : '',
           expiry_date: expires_at ? expires_at.toISOString() : null,
           language: null, // resolved by processor via general_default_language

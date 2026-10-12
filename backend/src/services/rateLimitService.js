@@ -174,8 +174,11 @@ const GALLERY_IMAGE_RE = /^\/api\/gallery\/([^/]+)\/(thumbnail|preview|hero|phot
 function isOwnGalleryImageRequest(req) {
   if (req.method && req.method !== 'GET') return false;
   const match = (req.path || '').match(GALLERY_IMAGE_RE);
-  if (!match) return false;
-  const slug = match[1];
+  return Boolean(match) && hasOwnGalleryToken(req, match[1]);
+}
+
+/** A gallery token that verifies and names `slug`. */
+function hasOwnGalleryToken(req, slug) {
   try {
     const token = getGalleryTokenFromRequest(req, slug);
     if (!token) return false;
@@ -185,6 +188,47 @@ function isOwnGalleryImageRequest(req) {
   } catch (error) {
     return false;
   }
+}
+
+// What a viewer's browser asks for while they look through a gallery and pick
+// photos: the photo list, per-photo feedback (reads and writes), their own
+// picks, the gallery's info, and the view beacon the lightbox posts for every
+// slide. Downloads, uploads and the password check are not in the list and
+// stay on the ordinary budget.
+const GALLERY_VIEWER_RE = /^\/api\/gallery\/([^/]+)\/(?:(?:photos|my-feedback|feedback-summary|feedback-settings|info|stats|people)(?:\/|$)|photo\/[^/]+\/view\/?$)/i;
+const GALLERY_VIEWER_BUDGET_FACTOR = 10;
+
+/**
+ * A verified gallery viewer working in that gallery (issue 1891).
+ *
+ * The lightbox reads one photo's feedback per slide and a like is a write
+ * plus a read, so one guest choosing from a 1,500-photo gallery spends the
+ * default 300 requests per 15 minutes on their own. After that every request
+ * answers 429 until the window ends, the next like and the next sign-in
+ * included, and the guest sees a heart that does nothing.
+ *
+ * Unlike the image routes these include writes, so they are not exempt: they
+ * count against a budget of their own, GALLERY_VIEWER_BUDGET_FACTOR times
+ * rate_limit_max_requests, in a bucket of their own (the limiter's keyGenerator). The
+ * per-action limits in feedbackRateLimit.js stay the real guard on writes.
+ * Same token and slug rule as isOwnGalleryImageRequest. Memoized: the limiter
+ * asks twice per request.
+ */
+function isOwnGalleryViewerRequest(req) {
+  if (req.ownGalleryViewerRequest === undefined) {
+    const match = (req.path || '').match(GALLERY_VIEWER_RE);
+    req.ownGalleryViewerRequest = Boolean(match) && hasOwnGalleryToken(req, match[1]);
+  }
+  return req.ownGalleryViewerRequest;
+}
+
+/**
+ * Whether this request counts against the viewer budget. Rides on the same
+ * switch as the image exemption: with skip_authenticated off, a guest's
+ * requests are ordinary requests again.
+ */
+function usesGalleryViewerBudget(req, config) {
+  return Boolean(config.skipAuthenticated) && isOwnGalleryViewerRequest(req);
 }
 
 /**
@@ -238,9 +282,15 @@ async function createRateLimiter(store = new MemoryStore()) {
       
       // Different limits for auth endpoints
       const isAuthEndpoint = req.path.match(/\/(auth|login|gallery\/[^/]+\/verify)$/);
-      return isAuthEndpoint ? currentConfig.authMaxRequests : currentConfig.maxRequests;
+      if (isAuthEndpoint) return currentConfig.authMaxRequests;
+      return usesGalleryViewerBudget(req, currentConfig)
+        ? currentConfig.maxRequests * GALLERY_VIEWER_BUDGET_FACTOR
+        : currentConfig.maxRequests;
     },
-    keyGenerator: rateLimitKey,
+    // A bucket of its own, or the viewer budget would be spent by the
+    // anonymous requests of everyone else behind the same address.
+    keyGenerator: async (req) => (usesGalleryViewerBudget(req, await getRateLimitSettings())
+      ? `gallery-viewer:${rateLimitKey(req)}` : rateLimitKey(req)),
     skip: async (req) => {
       const currentConfig = await getRateLimitSettings();
       return await shouldSkipRateLimit(req, currentConfig);
@@ -388,5 +438,7 @@ module.exports = {
   createAuthRateLimiter,
   isAuthenticated,
   isOwnGalleryImageRequest,
+  isOwnGalleryViewerRequest,
+  GALLERY_VIEWER_BUDGET_FACTOR,
   shouldSkipRateLimit
 };

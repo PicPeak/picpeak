@@ -8,6 +8,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const logger = require('../utils/logger');
 const { buildShareLinkVariants } = require('./shareLinkService');
+const { galleryLinkFor } = require('./galleryNotificationService');
 const { queueEmail } = require('./emailProcessor');
 const { getStorage } = require('./storage');
 
@@ -396,7 +397,7 @@ class EventRenameService {
     await queueEmail(eventId, recipientEmail, 'gallery_link_updated', {
       customer_name: recipientName,
       event_name: event.event_name,
-      new_gallery_link: newShareLink,
+      new_gallery_link: await galleryLinkFor(event, recipientEmail, newShareLink),
       event_date: event.event_date
     });
   }

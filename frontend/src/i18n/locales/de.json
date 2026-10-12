@@ -1065,7 +1065,10 @@
       "requestMessage": "Was benötigen Sie von ihnen? (optional)",
       "requestMessagePlaceholder": "Wird dem Kunden auf der Upload-Seite angezeigt",
       "uploadWindowDays": "Uploads annehmen für (Tage)",
-      "requestRecipientsHint": "Mehrere Adressen mit Komma trennen. Jede erhält den Upload-Link."
+      "requestRecipientsHint": "Mehrere Adressen mit Komma trennen. Jede erhält den Upload-Link.",
+      "maxFilesPerUpload": "Max. Dateien pro Upload",
+      "maxFilesDefault": "Standard ({{count}})",
+      "maxFilesInvalid": "Eine ganze Zahl von 1 bis {{max}}"
     },
     "picker": {
       "title": "Bilder aus anderen Events auswählen",
@@ -1114,7 +1117,8 @@
       "anyType": "Jeder Dateityp wird akzeptiert.",
       "acceptedTypes": "Akzeptiert: {{types}}",
       "someFailed": "Diese Dateien konnten nicht gespeichert werden. Bitte erneut versuchen: {{names}}",
-      "removeFile": "{{name}} entfernen"
+      "removeFile": "{{name}} entfernen",
+      "pacing": "Der Server bittet um eine kurze Pause. Weiter in {{seconds}} Sekunden …"
     },
     "newSend": "Dateien senden",
     "newRequest": "Dateien anfordern",
@@ -1154,7 +1158,12 @@
     "someDropped": "{{count}} angehängte Datei(en) wurden nicht übernommen – eine Dateianfrage sammelt nur Dateien: {{names}}",
     "deleteRequestAction": "Anfrage löschen",
     "deleteAction": "Transfer löschen",
-    "loadFailed": "Die Transfers konnten nicht geladen werden"
+    "loadFailed": "Die Transfers konnten nicht geladen werden",
+    "uploadLimit": "Dateien pro Upload",
+    "uploadLimitOwn": "Der Kunde kann bis zu {{count}} Dateien auf einmal auswählen. Diese Anfrage hat ein eigenes Limit.",
+    "uploadLimitDefault": "Der Kunde kann bis zu {{count}} Dateien auf einmal auswählen (Standard aus den Einstellungen).",
+    "uploadLimitSaved": "Upload-Limit gespeichert",
+    "uploadLimitUseDefault": "Standard verwenden"
   },
   "workflows": {
     "title": "Workflows",
@@ -3169,7 +3178,7 @@
       "title": "SEO & Robots",
       "indexingTitle": "Suchmaschinen-Indexierung",
       "allowIndexing": "Suchmaschinen-Indexierung erlauben",
-      "allowIndexingHelp": "Wenn deaktiviert, werden alle Crawler über robots.txt blockiert. Für private Foto-Plattformen empfohlen auszuschalten.",
+      "allowIndexingHelp": "Wenn deaktiviert, kann keine Seite in Suchergebnissen erscheinen. Wenn aktiviert, nur die öffentliche Startseite. Galerien, Freigabe-Links und Anmeldeseiten werden nie indexiert.",
       "sitemapUrl": "Sitemap-URL",
       "sitemapUrlHelp": "Optional. Wird zur robots.txt hinzugefügt, falls angegeben.",
       "aiBlockingTitle": "KI- & Bot-Blockierung",
@@ -3348,8 +3357,6 @@
       "customDisabledHelp": "Ihr bisheriges eigenes Snippet ist deaktiviert und wird nicht an Besucher gesendet. Wählen Sie Umami, Rybbit oder Keinen und speichern Sie, um das alte Snippet zu löschen.",
       "proxiedNoticeText": "PicPeak leitet bereinigte Seitenaufrufe und Galerie-Ereignisse weiter, ohne Drittanbieter-Code zu laden. Der Anbieter erhält Besucher-IP und User-Agent, aber keine URL-Parameter, Seitentitel, Referrer, Tokens oder Konto-Kennungen. In Produktion muss der Anbieter HTTPS verwenden.",
       "privacySignalsText": "Besucher, deren Browser Global Privacy Control sendet (Brave und Firefox können das), werden nie gezählt: Es verlässt kein Ereignis ihren Browser. Do Not Track wird genauso behandelt, solange Sie das oben nicht abschalten.",
-      "honorDoNotTrack": "Do Not Track beachten",
-      "honorDoNotTrackHelp": "Standardmäßig an: Besucher, deren Browser Do Not Track sendet, werden nicht gezählt. Schalten Sie es aus, um sie zu zählen, zum Beispiel bei Galerien nur für geladene Gäste; für die Rechtsgrundlage sind dann Sie verantwortlich. Global Privacy Control wird immer beachtet.",
       "customOnlyCspWarningText": "PicPeak liefert eine strikte CSP aus (`script-src 'self'; connect-src 'self'`). Anders als bei den Optionen Umami und Rybbit oben wird ein eingefügtes Snippet nicht über PicPeak geleitet — tragen Sie die Domain Ihres Trackers sowohl in `script-src` (zum Laden des Skripts) als auch in `connect-src` (für die gesendeten Ereignisse) Ihrer Reverse-Proxy- oder nginx-CSP-Konfiguration ein, sonst blockiert der Browser sie stillschweigend.",
       "rybbitUrl": "Rybbit-URL",
       "rybbitUrlHelp": "URL Ihrer Rybbit-Instanz — `https://app.rybbit.io` für SaaS oder `https://rybbit.ihre-domain.de` für selbst gehostet.",
@@ -3382,7 +3389,9 @@
       "privacy": "Datenschutz",
       "privacyText": "IP-Adressen werden aus Datenschutzgründen gehasht. Es werden keine persönlichen Daten gespeichert. Analysedaten werden 90 Tage aufbewahrt.",
       "umamiApiKey": "API-Schlüssel",
-      "umamiApiKeyHelp": "Optional. Nur für das Geräte-Diagramm im Analyse-Dashboard erforderlich. Erstellen in Umami → Settings → Profile → API Keys. Nach dem Speichern maskiert als •••••••• hinterlegt — den maskierten Wert stehen lassen, um den bestehenden Schlüssel zu behalten."
+      "umamiApiKeyHelp": "Optional. Nur für das Geräte-Diagramm im Analyse-Dashboard erforderlich. Erstellen in Umami → Settings → Profile → API Keys. Nach dem Speichern maskiert als •••••••• hinterlegt — den maskierten Wert stehen lassen, um den bestehenden Schlüssel zu behalten.",
+      "honorDoNotTrack": "Do Not Track beachten",
+      "honorDoNotTrackHelp": "Standardmäßig an: Besucher, deren Browser Do Not Track sendet, werden nicht gezählt. Schalten Sie es aus, um sie zu zählen, zum Beispiel bei Galerien nur für geladene Gäste; für die Rechtsgrundlage sind dann Sie verantwortlich. Global Privacy Control wird immer beachtet."
     },
     "groups": {
       "general": "Allgemein",
@@ -4163,7 +4172,9 @@
       "extensions": "Endungen",
       "maxSize": "Maximale Dateigröße (MB)",
       "maxSizeHint": "Gilt pro Datei, nicht pro Upload.",
-      "readOnly": "Nur Admins mit Bearbeitungsrechten für Einstellungen können ändern, was Kunden senden dürfen."
+      "readOnly": "Nur Admins mit Bearbeitungsrechten für Einstellungen können ändern, was Kunden senden dürfen.",
+      "maxFiles": "Maximale Dateien pro Upload",
+      "maxFilesHint": "Wie viele Dateien ein Kunde auf einmal auswählen kann, 1 bis {{max}}. Danach kann er erneut hochladen; eine einzelne Dateianfrage kann einen eigenen Wert haben."
     }
   },
   "branding": {
@@ -6130,6 +6141,7 @@
     "ratingsCount_one": "{{count}} Bewertungen",
     "ratingsCount_other": "{{count}} Bewertungen",
     "likeError": "Like konnte nicht aktualisiert werden",
+    "likeRateLimited": "Zu viele Anfragen. Bitte warten Sie ein paar Minuten und versuchen Sie es dann erneut.",
     "unlike": "Nicht mehr mögen",
     "like": "Gefällt mir",
     "favoriteError": "Favorit konnte nicht aktualisiert werden",

@@ -19,7 +19,7 @@ import type { TFunction } from 'i18next';
 import { toast } from 'react-toastify';
 import {
   Plus, Send, Link2, Download, Trash2, Upload, X, Copy, Image as ImageIcon,
-  Clock, Ban, RefreshCw, Mail, Paperclip, FileText, Inbox, KeyRound, ShieldAlert,
+  Clock, Ban, RefreshCw, Mail, Paperclip, FileText, Files, Inbox, KeyRound, ShieldAlert,
 } from 'lucide-react';
 
 import { Badge, Button, Input, Card, EmptyState, ErrorState, Loading, Modal, Tabs, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, useConfirm } from '../../../components/common';
@@ -29,6 +29,7 @@ import { AdminAuthenticatedImage } from '../../../components/admin/AdminAuthenti
 import { TransferPhotoPicker, type PickedPhoto } from '../../../components/admin/TransferPhotoPicker';
 import { useMutationWithToast } from '../../../hooks/useMutationWithToast';
 import { usePermission } from '../../../hooks/usePermission';
+import { parseWholeNumber } from '../../../utils/wholeNumber';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import {
   transfersService,
@@ -36,6 +37,9 @@ import {
   type TransferKind,
   type TransferWriteResult,
 } from '../../../services/transfers.service';
+
+// Mirrors MAX_FILES_CEILING in backend/src/services/transferUploadPolicy.js.
+const MAX_FILES_CEILING = 1000;
 
 function formatBytes(bytes: number | null | undefined): string {
   if (!bytes) return '0 B';
@@ -286,6 +290,13 @@ const CreateTransferModal: React.FC<{
   const [message, setMessage] = useState('');
   const [expiresInDays, setExpiresInDays] = useState('14');
   const [maxDownloads, setMaxDownloads] = useState('');
+  // Empty = follow the global default (issue 1914).
+  const [maxFilesPerUpload, setMaxFilesPerUpload] = useState('');
+  const { data: uploadDefaults } = useQuery({
+    queryKey: ['admin-transfer-upload-defaults'],
+    queryFn: () => transfersService.uploadDefaults(),
+    enabled: isRequest,
+  });
   const [picked, setPicked] = useState<PickedPhoto[]>([]);
   const [showPicker, setShowPicker] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -307,6 +318,7 @@ const CreateTransferModal: React.FC<{
       message: message.trim() || null,
       expiresInDays: parseInt(expiresInDays, 10) || 14,
       maxDownloads: !isRequest && maxDownloads ? parseInt(maxDownloads, 10) : null,
+      maxFilesPerUpload: isRequest ? ownLimit : null,
       photoIds: isRequest ? [] : picked.map((p) => p.id),
       files: isRequest ? [] : files,
       deliveryMethod,
@@ -344,8 +356,13 @@ const CreateTransferModal: React.FC<{
 
   // A send needs something to send. A request needs somewhere to send the ask,
   // unless the operator is going to hand the link over themselves.
+  // Empty follows the default; anything else has to be the whole number on
+  // screen, in range, or the request would get a limit nobody typed.
+  const ownLimit = parseWholeNumber(maxFilesPerUpload);
+  const ownLimitInvalid = isRequest && maxFilesPerUpload.trim() !== ''
+    && (ownLimit === null || ownLimit < 1 || ownLimit > (uploadDefaults?.max_files_ceiling ?? MAX_FILES_CEILING));
   const canSubmit = isRequest
-    ? !(deliveryMethod === 'email' && parsedEmails.length === 0)
+    ? !ownLimitInvalid && !(deliveryMethod === 'email' && parsedEmails.length === 0)
     : (picked.length > 0 || files.length > 0) && !(deliveryMethod === 'email' && parsedEmails.length === 0);
 
   return (
@@ -408,7 +425,7 @@ const CreateTransferModal: React.FC<{
           </div>
 
           {/* A request has one deadline and no download cap. */}
-          <div className={isRequest ? '' : 'grid grid-cols-2 gap-4'}>
+          <div className="grid grid-cols-2 gap-4">
             <Input
               type="number"
               min={1}
@@ -426,6 +443,22 @@ const CreateTransferModal: React.FC<{
                 value={maxDownloads}
                 onChange={(e) => setMaxDownloads(e.target.value)}
                 placeholder="0"
+              />
+            )}
+            {isRequest && (
+              <Input
+                type="number"
+                min={1}
+                max={uploadDefaults?.max_files_ceiling}
+                label={t('transfers.field.maxFilesPerUpload', 'Max files per upload')}
+                value={maxFilesPerUpload}
+                onChange={(e) => setMaxFilesPerUpload(e.target.value)}
+                placeholder={uploadDefaults
+                  ? t('transfers.field.maxFilesDefault', 'Default ({{count}})', { count: uploadDefaults.max_files_per_upload })
+                  : ''}
+                error={ownLimitInvalid
+                  ? t('transfers.field.maxFilesInvalid', 'A whole number from 1 to {{max}}', { max: uploadDefaults?.max_files_ceiling ?? MAX_FILES_CEILING })
+                  : undefined}
               />
             )}
           </div>
@@ -580,6 +613,63 @@ interface DetailProps {
   /** events.view — gates the detail query itself. */
   canView: boolean;
 }
+
+/**
+ * A file request's files-per-upload limit: the number in force, whether it is
+ * this request's own or the global default, and the two ways to change it.
+ */
+const UploadLimitEditor: React.FC<{ transfer: Transfer; canEdit: boolean; onSaved: () => void }> = ({ transfer, canEdit, onSaved }) => {
+  const { t } = useTranslation();
+  const own = transfer.max_files_per_upload ?? null;
+  const [value, setValue] = useState(own ? String(own) : '');
+  const parsed = parseWholeNumber(value);
+  const usable = parsed !== null && parsed >= 1 && parsed <= MAX_FILES_CEILING;
+  const saveMutation = useMutationWithToast({
+    mutationFn: (limit: number | null) => transfersService.update(transfer.id, { maxFilesPerUpload: limit }),
+    successMessage: t('transfers.uploadLimitSaved', 'Upload limit saved'),
+    onSuccess: (saved) => { setValue(saved.max_files_per_upload ? String(saved.max_files_per_upload) : ''); onSaved(); },
+  });
+
+  return (
+    <div className="rounded-lg border border-line p-4">
+      <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold text-body">
+        <Files className="h-4 w-4" /> {t('transfers.uploadLimit', 'Files per upload')}
+      </h3>
+      <p className="text-sm text-muted">
+        {own
+          ? t('transfers.uploadLimitOwn', 'The client can select up to {{count}} files at once. This request has its own limit.', { count: transfer.effective_max_files_per_upload ?? own })
+          : t('transfers.uploadLimitDefault', 'The client can select up to {{count}} files at once (the default from Settings).', { count: transfer.effective_max_files_per_upload ?? 0 })}
+      </p>
+      {canEdit && (
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="w-40">
+            <Input
+              type="number"
+              min={1}
+              label={t('transfers.field.maxFilesPerUpload', 'Max files per upload')}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+            />
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!usable || parsed === own}
+            isLoading={saveMutation.isPending}
+            onClick={() => saveMutation.mutate(parsed)}
+          >
+            {t('common.save', 'Save')}
+          </Button>
+          {own && (
+            <Button size="sm" variant="outline" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate(null)}>
+              {t('transfers.uploadLimitUseDefault', 'Use the default')}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCopy, confirm, canEdit, canView }) => {
   const { t } = useTranslation();
@@ -861,11 +951,24 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
                   )}
                 </div>
 
+                {/* How many files one upload round may carry (issue 1914). */}
+                <UploadLimitEditor transfer={transfer} canEdit={canEdit} onSaved={() => refetch()} />
+
                 {/* What the client sent. */}
                 <div className="rounded-lg border border-line p-4">
-                  <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-body">
-                    <Inbox className="h-4 w-4" /> {t('transfers.filesReceived', 'Files received')} · {transfer.upload_count}
-                  </h3>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-body">
+                      <Inbox className="h-4 w-4" /> {t('transfers.filesReceived', 'Files received')} · {transfer.upload_count}
+                    </h3>
+                    {/* The ZIP route is photos.download, like the outgoing bundle. */}
+                    {canDownload && transfer.uploads && transfer.uploads.length > 0 && (
+                      <a href={transfersService.adminUploadsDownloadUrl(transferId)}>
+                        <Button size="sm" variant="outline" leftIcon={<Download className="h-4 w-4" />}>
+                          {t('transfers.downloadAll', 'Download all')}
+                        </Button>
+                      </a>
+                    )}
+                  </div>
                   {transfer.uploads && transfer.uploads.length > 0 ? (
                     <>
                       <ul className="divide-y divide-line-faint">

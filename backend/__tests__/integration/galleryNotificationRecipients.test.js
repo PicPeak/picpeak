@@ -40,6 +40,12 @@ jest.mock('../../src/services/emailProcessor', () => {
       : actual.queueEmail(eventId, to, ...rest)),
   };
 });
+// WhatsApp messages queued, as [eventId, phone, type, data].
+const mockWhatsapp = [];
+jest.mock('../../src/services/whatsappProcessor', () => ({
+  getWhatsAppConfig: async () => ({ enabled: true }),
+  queueWhatsapp: async (...args) => { mockWhatsapp.push(args); return true; },
+}));
 jest.mock('../../src/middleware/permissions', () => ({
   requirePermission: () => (_req, _res, next) => next(),
   userHasAnyPermission: async (_id, perms) => {
@@ -194,15 +200,24 @@ describe('publish and send later reach every recipient', () => {
     expect(row.password_hash).toBe('original-hash');
   });
 
-  it('…but by the gallery email when it carries a welcome message the portal email would drop', async () => {
+  it('…but by the gallery email when it carries a welcome message or client access — linked to her portal', async () => {
     const id = await seedEvent({ slug: 'same-person-welcome', customerEmail: 'anna@recipients.test', welcome: 'Willkommen!' });
     await assign(id,
       await seedAccount('anna@recipients.test', 'Anna Muster'),
       await seedAccount('ben@recipients.test', 'Ben Beispiel'));
+    const client = await seedEvent({ slug: 'same-person-client', customerEmail: 'anna@recipients.test' });
+    await db('events').where({ id: client }).update({ client_access_enabled: 1 });
+    await assign(client, await db('customer_accounts').where({ email: 'anna@recipients.test' }).first().then((r) => r.id));
 
-    const res = await request(app).post(`/admin/events/${id}/send-gallery-email`).send({ password: 'Sunrise-Lake-42' });
-    expect(res.status).toBe(200);
-    expect(await recipientsOf('gallery_created')).toEqual(['anna@recipients.test']);
+    for (const eventId of [id, client]) {
+      const res = await request(app).post(`/admin/events/${eventId}/send-gallery-email`).send({ password: 'Sunrise-Lake-42' });
+      expect(res.status).toBe(200);
+    }
+    const rows = await queued('gallery_created');
+    expect(rows.map((r) => r.recipient_email)).toEqual(['anna@recipients.test', 'anna@recipients.test']);
+    const links = rows.map((r) => (typeof r.email_data === 'string' ? JSON.parse(r.email_data) : r.email_data).gallery_link).sort();
+    expect(links[0]).toMatch(/\/customer\/events\/same-person-client$/);
+    expect(links[1]).toMatch(/\/customer\/events\/same-person-welcome$/);
     expect(await recipientsOf('customer_gallery_assigned')).toEqual(['ben@recipients.test']);
   });
 
@@ -540,7 +555,7 @@ describe('"your complete gallery is ready" reaches the same people (issue 1562)'
     expect(byTo['client@recipients.test'].__language).toBeUndefined();
   });
 
-  it('falls back to the share-link mail when the folded-in account could not be queued', async () => {
+  it('falls back to the inline mail, still with the portal link, when the folded-in account could not be queued', async () => {
     const id = await partial('complete-fallback', { customerEmail: 'anna@recipients.test' });
     await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
     mockRefuseQueueFor = 'anna@recipients.test';
@@ -558,7 +573,8 @@ describe('"your complete gallery is ready" reaches the same people (issue 1562)'
     expect(res.body.recipients).toMatchObject({ email: 'Anna@Recipients.test', account_count: 0 });
     const rows = await queued('gallery_completed');
     expect(rows.map((r) => r.recipient_email)).toEqual(['Anna@Recipients.test']);
-    expect(dataOf(rows[0]).gallery_link).toContain('complete-fallback-2-token');
+    // Still her portal: a CRM customer never gets the direct gallery link.
+    expect(dataOf(rows[0]).gallery_link).toMatch(/\/customer\/events\/complete-fallback-2$/);
   });
 
   it('does not mail the accounts of an expired or archived gallery, only the customer email', async () => {
@@ -611,5 +627,85 @@ describe('"your complete gallery is ready" reaches the same people (issue 1562)'
     await assign(draft, await seedAccount('ben@recipients.test', 'Ben Beispiel'));
     await complete(draft);
     expect(await recipientsOf('gallery_completed')).toEqual(['client@recipients.test']);
+  });
+});
+
+describe('a CRM customer never gets the direct gallery link', () => {
+  const dataOf = (row) => (typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data);
+  const linkOf = async (type) => dataOf((await queued(type))[0]);
+
+  it('the gallery email links to the portal when the admin may not mail accounts', async () => {
+    mockCanAssignCustomers = false;
+    const id = await seedEvent({ slug: 'crm-no-perm', customerEmail: 'anna@recipients.test' });
+    await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
+
+    expect((await request(app).post(`/admin/events/${id}/send-gallery-email`).send({ password: 'Sunrise-Lake-42' })).status).toBe(200);
+    expect(await recipientsOf('gallery_created')).toEqual(['anna@recipients.test']);
+    expect((await linkOf('gallery_created')).gallery_link).toMatch(/\/customer\/events\/crm-no-perm$/);
+  });
+
+  it('the password-reset mail links to the portal', async () => {
+    const id = await seedEvent({ slug: 'crm-reset', customerEmail: 'anna@recipients.test' });
+    await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
+
+    const res = await request(app).post(`/admin/events/${id}/reset-password`).send({ sendEmail: true });
+    expect(res.body.emailSent).toBe(true);
+    expect((await linkOf('gallery_created')).gallery_link).toMatch(/\/customer\/events\/crm-reset$/);
+  });
+
+  it('the expiry warning links to the portal', async () => {
+    const id = await seedEvent({ slug: 'crm-expiring', customerEmail: 'anna@recipients.test' });
+    await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
+
+    await require('../../src/services/expirationChecker').queueExpirationWarning(await db('events').where({ id }).first());
+    expect((await linkOf('expiration_warning')).gallery_link).toMatch(/\/customer\/events\/crm-expiring$/);
+  });
+
+  it('the renamed-gallery mail links to the portal', async () => {
+    const id = await seedEvent({ slug: 'crm-renamed', customerEmail: 'anna@recipients.test' });
+    await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
+
+    await require('../../src/services/eventRenameService').sendRenamedEventEmail(id, 'https://x.test/gallery/crm-renamed/t');
+    expect((await linkOf('gallery_link_updated')).new_gallery_link).toMatch(/\/customer\/events\/crm-renamed$/);
+  });
+
+  it('a passive CRM customer (no portal login) gets the gallery email with the share link and password', async () => {
+    const id = await seedEvent({ slug: 'crm-passive-send', customerEmail: 'ben@recipients.test' });
+    await assign(id, await seedAccount('ben@recipients.test', 'Ben Beispiel', { passive: true }));
+
+    expect((await request(app).post(`/admin/events/${id}/send-gallery-email`).send({ password: 'Sunrise-Lake-42' })).status).toBe(200);
+    expect(await queued('customer_gallery_assigned')).toHaveLength(0);
+    const data = await linkOf('gallery_created');
+    expect(data.gallery_link).toContain('crm-passive-send-token');
+    expect(data.gallery_password).toBe('Sunrise-Lake-42');
+  });
+
+  it('the WhatsApp message on publish links to the portal', async () => {
+    mockWhatsapp.length = 0;
+    const id = await seedEvent({ slug: 'crm-whatsapp', customerEmail: 'anna@recipients.test', isDraft: true });
+    await db('events').where({ id }).update({ customer_phone: '+41790000000' });
+    await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
+
+    expect((await request(app).post(`/admin/events/${id}/publish`).send({ password: 'Sunrise-Lake-42' })).status).toBe(200);
+    expect(mockWhatsapp).toHaveLength(1);
+    expect(mockWhatsapp[0][3].gallery_link).toMatch(/\/customer\/events\/crm-whatsapp$/);
+  });
+
+  it('keeps the share link for anyone else — another address, a passive account, the portal off', async () => {
+    const other = await seedEvent({ slug: 'crm-other', customerEmail: 'client@recipients.test' });
+    await assign(other, await seedAccount('anna@recipients.test', 'Anna Muster'));
+    const passive = await seedEvent({ slug: 'crm-passive', customerEmail: 'ben@recipients.test' });
+    await assign(passive, await seedAccount('ben@recipients.test', 'Ben Beispiel', { passive: true }));
+    const checker = require('../../src/services/expirationChecker');
+    await checker.queueExpirationWarning(await db('events').where({ id: other }).first());
+    await checker.queueExpirationWarning(await db('events').where({ id: passive }).first());
+    await setPortal(false);
+    const off = await seedEvent({ slug: 'crm-portal-off', customerEmail: 'anna@recipients.test' });
+    await assign(off, await db('customer_accounts').where({ email: 'anna@recipients.test' }).first().then((r) => r.id));
+    await checker.queueExpirationWarning(await db('events').where({ id: off }).first());
+
+    const links = (await queued('expiration_warning')).map((r) => dataOf(r).gallery_link);
+    expect(links).toHaveLength(3);
+    for (const link of links) expect(link).not.toContain('/customer/events/');
   });
 });

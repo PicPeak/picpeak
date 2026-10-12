@@ -67,7 +67,7 @@ export interface PhotoCardProps {
   feedbackOptions?: PhotoCardFeedbackOptions;
   slug?: string;
   onQuickComment?: () => void;
-  onFeedbackChange?: () => void;
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
   liked?: boolean;
   onLikeSuccess?: () => void;
   /** 'self': card owns the identity modal; 'parent': delegate via onRequireIdentity. */
@@ -354,7 +354,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       } catch (err) {
         console.warn('Like submit failed, keeping optimistic UI', err);
       }
-      if (onFeedbackChange) onFeedbackChange();
+      if (onFeedbackChange) onFeedbackChange(photo.id);
       hideOverlay();
       return;
     }
@@ -384,7 +384,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       // Keep optimistic state; a refresh will reconcile
       console.warn('Like submit failed, keeping optimistic UI', err);
     }
-    if (onFeedbackChange) onFeedbackChange();
+    if (onFeedbackChange) onFeedbackChange(photo.id);
     hideOverlay();
   };
 

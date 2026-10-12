@@ -16,6 +16,8 @@ interface PhotoFavoritesProps {
   isEnabled: boolean;
   requireNameEmail?: boolean;
   onFavoriteChange?: (favorited: boolean) => void;
+  /** The server accepted the toggle. */
+  onSaved?: (photoId: string) => void;
 }
 
 export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
@@ -25,7 +27,8 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
   favoriteCount,
   isEnabled,
   requireNameEmail = false,
-  onFavoriteChange
+  onFavoriteChange,
+  onSaved
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -37,8 +40,11 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
 
   const submitFavoriteMutation = useMutation({
-    mutationFn: (data: { guest_name?: string; guest_email?: string } = {}) => 
-      feedbackService.submitFeedback(gallerySlug, photoId, {
+    // The photo travels with the call. The function and the callbacks below
+    // are the latest render's, which in the lightbox can already show another
+    // photo: a toggle paused offline would otherwise be sent for that one.
+    mutationFn: (data: { photoId: string; guest_name?: string; guest_email?: string }) =>
+      feedbackService.submitFeedback(gallerySlug, data.photoId, {
         feedback_type: 'favorite',
         guest_name: data.guest_name || undefined,
         guest_email: data.guest_email || undefined
@@ -51,14 +57,15 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
         onFavoriteChange(!isFavorited);
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
-      queryClient.invalidateQueries({ queryKey: ['gallery-photos'] });
-      // The parent refetch fired optimistically in onMutate, before the
-      // server applied the change. In guest identity mode the Favorited
-      // filter and the filename list read the guest's own rows from
-      // my-feedback, so refresh it now that the toggle is accepted (as
-      // PhotoRating does).
+    onSuccess: (_data, variables) => {
+      const savedPhotoId = variables.photoId;
+      queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, savedPhotoId] });
+      // The parent refreshes this photo's row; without one, the whole list.
+      if (onSaved) onSaved(savedPhotoId);
+      else queryClient.invalidateQueries({ queryKey: ['gallery-photos', gallerySlug] });
+      // In guest identity mode the Favorited filter and the filename list
+      // read the guest's own rows from my-feedback, so refresh it now that
+      // the toggle is accepted (as PhotoRating does).
       queryClient.invalidateQueries({ queryKey: ['my-feedback', gallerySlug] });
     },
     onError: (error: any) => {
@@ -89,7 +96,7 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       } catch {
         return;
       }
-      submitFavoriteMutation.mutate({});
+      submitFavoriteMutation.mutate({ photoId });
       return;
     }
 
@@ -99,14 +106,14 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       const identityPayload = savedIdentity
         ? { guest_name: savedIdentity.name, guest_email: savedIdentity.email }
         : {};
-      submitFavoriteMutation.mutate(identityPayload);
+      submitFavoriteMutation.mutate({ ...identityPayload, photoId });
     }
   };
 
   const handleIdentitySubmit = (name: string, email: string) => {
     setSavedIdentity({ name, email });
     setShowIdentityModal(false);
-    submitFavoriteMutation.mutate({ guest_name: name, guest_email: email });
+    submitFavoriteMutation.mutate({ photoId, guest_name: name, guest_email: email });
   };
 
   if (!isEnabled) return null;

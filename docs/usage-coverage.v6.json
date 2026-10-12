@@ -1356,6 +1356,7 @@
       "route_signatures": [
         "GET /",
         "POST /",
+        "GET /upload-defaults",
         "GET /:id",
         "PATCH /:id",
         "DELETE /:id",
@@ -1368,6 +1369,7 @@
         "DELETE /:id/upload-code",
         "POST /:id/resend",
         "GET /:id/download",
+        "GET /:id/uploads/download",
         "GET /:id/uploads/:uploadId/download"
       ]
     },

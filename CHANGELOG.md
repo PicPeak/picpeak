@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.168.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.168.2-beta.0...v3.168.3-beta.0) (2026-10-11)
+
+
+### Bug Fixes
+
+* **delivery:** CRM customers get their portal link, never the direct gallery link ([#1916](https://github.com/PicPeak/picpeak/issues/1916)) ([4fbff3c](https://github.com/PicPeak/picpeak/commit/4fbff3c460086e6cbc292bbb3305e0bc66e98b61))
+
 ## [3.168.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.168.1-beta.0...v3.168.2-beta.0) (2026-10-11)
 
 

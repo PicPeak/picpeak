@@ -38,6 +38,7 @@ const { credentialChangeColumns, sameAsStored } = require('../../utils/galleryCr
 const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const {
   resolveGalleryRecipients, galleryCreatedEmailData, notifyGalleryRecipients, describeRecipients, recipientSummary,
+  galleryLinkFor,
   passwordKnownColumns,
 } = require('../../services/galleryNotificationService');
 const downloadZipService = require('../../services/downloadZipService');
@@ -807,7 +808,10 @@ module.exports = (router) => {
             await queueWhatsapp(parseInt(id, 10), event.customer_phone, 'gallery_created', {
               customer_name: event.customer_name || event.host_name || '',
               event_name: event.event_name,
-              gallery_link: shareUrlForWa || `${await getFrontendBaseUrl()}/gallery/${event.slug}`,
+              // The phone belongs to the gallery's customer: a CRM customer
+              // gets their portal link here too (galleryLinkFor).
+              gallery_link: await galleryLinkFor(event, event.customer_email || event.host_email,
+                shareUrlForWa || `${await getFrontendBaseUrl()}/gallery/${event.slug}`),
               // Plaintext only when the admin re-typed at publish; otherwise
               // omit so the buildComponents() helper renders an empty {{4}}
               // line instead of leaking the "(set at creation)" sentinel.

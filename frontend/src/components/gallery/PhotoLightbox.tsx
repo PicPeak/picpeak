@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'react-toastify';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock } from 'lucide-react';
 import type { Photo, GalleryPerson } from '../../types';
@@ -32,7 +33,7 @@ interface PhotoLightboxProps {
   useEnhancedProtection?: boolean;
   useCanvasRendering?: boolean;
   initialShowFeedback?: boolean;
-  onFeedbackChange?: () => void;
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
   disableRightClick?: boolean;
   enableDevtoolsProtection?: boolean;
   // When true, surface each photo's original camera filename in the
@@ -422,6 +423,15 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     return () => { mounted = false; };
   }, [slug, currentPhoto?.id, currentPhoto?.my_rating, feedbackSettings?.feedback_enabled]);
 
+  // Said out loud, as the grid's like button does (PhotoLikes): a 429 was
+  // only logged, so to the guest the heart did nothing (issue 1891).
+  const showLikeError = (err: unknown) => {
+    const rateLimited = (err as { response?: { status?: number } })?.response?.status === 429;
+    toast.error(rateLimited
+      ? t('feedback.likeRateLimited', 'Too many requests. Wait a few minutes, then try again.')
+      : t('feedback.likeError', 'Failed to update like'));
+  };
+
   const submitLike = async () => {
     // Guest identity mode: ensure we have a per-person guest token. The
     // server reads name/email from the token — body values are ignored.
@@ -441,12 +451,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           setLikeCount(c => Math.max(0, c + (next ? 1 : -1)));
           return next;
         });
-        if (onFeedbackChange) onFeedbackChange();
+        if (onFeedbackChange) onFeedbackChange(currentPhoto.id);
       } catch (err) {
         // Per-guest cap reached (#655) surfaces the shared modal.
         if (handleLimitError(err)) return;
-        // eslint-disable-next-line no-console
-        console.warn('Like submit failed', err);
+        showLikeError(err);
       }
       return;
     }
@@ -473,11 +482,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       // filter chips) in sync — the guest-mode path above already does
       // this; without it, likes made in the lightbox don't appear in
       // the Likes filter until a full page reload.
-      if (onFeedbackChange) onFeedbackChange();
+      if (onFeedbackChange) onFeedbackChange(currentPhoto.id);
     } catch (err) {
       if (handleLimitError(err)) return;
-      // eslint-disable-next-line no-console
-      console.warn('Like submit failed', err);
+      showLikeError(err);
     }
   };
 
@@ -1442,9 +1450,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               gallerySlug={slug}
               showComments={true}
               className="space-y-4"
-              onFeedbackUpdate={() => {
-                if (onFeedbackChange) onFeedbackChange();
-              }}
+              // Only when someone above refreshes the row; otherwise the
+              // panel's buttons invalidate the list themselves.
+              onFeedbackUpdate={onFeedbackChange ? (toggledPhotoId) => onFeedbackChange(toggledPhotoId) : undefined}
             />
           </div>
         </div>
@@ -1467,7 +1475,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               setMyLiked(true);
             } catch (err) {
               // Per-guest cap reached (#655) on the post-identity-modal submit.
-              if (!handleLimitError(err)) throw err;
+              // Anything else is said out loud too: rethrown from here it was
+              // a rejection nobody handled, so the heart again did nothing.
+              if (!handleLimitError(err)) showLikeError(err);
             }
           } else if (pendingAction?.type === 'rating' && typeof pendingAction.rating === 'number') {
             // Explicit number check above: a pending rating of 0 (= clear
@@ -1502,7 +1512,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           }
           // Sync gallery photo list (feedback filter chips) — parity with
           // the direct submit paths.
-          if (onFeedbackChange) onFeedbackChange();
+          if (onFeedbackChange) onFeedbackChange(pendingAction?.type === 'like' ? currentPhoto.id : undefined);
           setPendingAction(null);
         }}
         feedbackType={

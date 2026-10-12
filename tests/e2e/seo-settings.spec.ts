@@ -129,8 +129,27 @@ test.describe('robots.txt Endpoint', () => {
 
     const body = await response.text();
     expect(body).toContain('User-agent');
-    expect(body).toContain('Disallow: /admin');
+    // The pages are not disallowed: they carry X-Robots-Tag: noindex, which
+    // a crawler only sees if it may fetch them.
+    expect(body).not.toContain('Disallow: /admin');
     expect(body).toContain('Disallow: /api');
+  });
+
+  // Blocked by robots.txt, a crawler never saw a noindex and kept the bare
+  // URL in its results; every app page now says it in a header.
+  test('app pages refuse indexing in a header @smoke', async ({ request }) => {
+    for (const path of ['/admin/login', '/customer/login', '/gallery/no-such-gallery']) {
+      const response = await request.get(path);
+      expect(response.status()).toBe(200);
+      expect(response.headers()['x-robots-tag']).toBe('noindex');
+    }
+  });
+
+  // A crawler that indexes can be served the share preview instead of the
+  // app shell (Applebot is one); that page has to refuse indexing too.
+  test('the share preview served to crawlers refuses indexing @smoke', async ({ request }) => {
+    const response = await request.get('/gallery/no-such-gallery', { headers: { 'user-agent': 'Applebot/0.1' } });
+    expect(response.headers()['x-robots-tag']).toContain('noindex');
   });
 
   test('robots.txt blocks AI crawlers by default', async ({ request }) => {

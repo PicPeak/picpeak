@@ -18,6 +18,7 @@ const { getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const { parseBooleanInput } = require('../../utils/parsers');
 const {
   resolveGalleryRecipients, notifyGalleryRecipients, describeRecipients, recipientSummary, passwordKnownColumns,
+  galleryLinkFor,
 } = require('../../services/galleryNotificationService');
 
 module.exports = (router) => {
@@ -107,7 +108,7 @@ module.exports = (router) => {
             host_name: recipientName,
             event_name: event.event_name,
             event_date: event.event_date,  // Pass raw date - will be formatted by email processor
-            gallery_link: shareUrl,
+            gallery_link: await galleryLinkFor(event, recipientEmail, shareUrl),
             gallery_password: newPassword,
             expiry_date: event.expires_at  // Pass raw date - will be formatted by email processor
           }) === true;
