@@ -10,6 +10,7 @@
  *   POST .../download-jobs   → { token, status: 'pending' }
  *   GET  .../download-jobs/:token        → poll { status, progress }
  *   GET  .../download-jobs/:token/file   → the finished zip
+ *   GET  .../download-jobs/:token/parts/:n/file → one part of a split job
  *
  * State lives in the `download_jobs` table rather than in memory: an in-memory
  * map loses every "ready" job on restart and is simply wrong the moment the
@@ -51,6 +52,38 @@ const MAX_QUEUED_BUILDS = 8;
 // A build heartbeats while it works. A row whose heartbeat is older than this
 // has no live worker (crashed or restarted) and may be failed by recovery.
 const LEASE_TIMEOUT_MS = 5 * 60 * 1000;
+// Split archives (issue 1733). A job that would write more than this into one
+// zip is written as several, built one after the other by the same build, so
+// it holds one build slot and one temp file of at most a part at a time.
+// Nothing breaks without it (the archiver writes ZIP64); the parts are for the
+// person downloading: smaller files, and a failed transfer costs one part.
+const PART_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+// A second bound for the case the byte count cannot be trusted (below).
+const PART_MAX_FILES = 10000;
+// A stored file whose row carries no size is counted as this much.
+const UNKNOWN_SIZE_ESTIMATE = 25 * 1024 * 1024;
+
+/**
+ * Does a file of `size` bytes open a new part? A part is never left empty, so
+ * a single file larger than the limit gets a part of its own. Sizes are what
+ * is actually written: the rendered buffer for a resized or watermarked
+ * photo, the stored size for one that ships unchanged.
+ */
+function startsNewPart(part, size, limits) {
+  if (part.files === 0) return false;
+  return part.files >= limits.maxFiles || part.bytes + size > limits.maxBytes;
+}
+
+/** The parts of a split job, in order; empty for a job that is one archive. */
+function partsOf(job) {
+  if (!job || !job.parts) return [];
+  try {
+    const parts = JSON.parse(job.parts);
+    return Array.isArray(parts) ? parts : [];
+  } catch (_) {
+    return [];
+  }
+}
 
 /**
  * Collapse an access level to the visibility scope that decides WHICH photos a
@@ -71,6 +104,7 @@ class DownloadJobService {
     // Slots claimed between the admission check and the liveBuilds entry.
     // Without it, concurrent requests all pass the check before any registers.
     this.reserved = 0;
+    this.partLimits = { maxBytes: PART_MAX_BYTES, maxFiles: PART_MAX_FILES };
   }
 
   cacheDir(slug) {
@@ -79,6 +113,10 @@ class DownloadJobService {
 
   jobKey(slug, token) {
     return path.posix.join(this.cacheDir(slug), `job-${token}.zip`);
+  }
+
+  partKey(slug, token, part) {
+    return path.posix.join(this.cacheDir(slug), `job-${token}-part${part}.zip`);
   }
 
   /**
@@ -277,14 +315,20 @@ class DownloadJobService {
     this.running += 1;
 
     let tmpDir;
+    // Archives already in storage. One entry for an ordinary job; several
+    // when the content outgrew a part (issue 1733).
+    const uploaded = [];
+    const storage = getStorage();
     try {
       await db('download_jobs').where({ id }).update({ status: 'building', heartbeat_at: new Date().toISOString() });
 
       // Same query that produced the dedup identity, so the archive can never
       // contain photos the requester wasn't entitled to at creation time.
+      // The id breaks ties, so the same job always splits the same way.
       const photos = await this.photoQuery(event.id, photoIds, accessLevel, await blockedFoldersOf(event.id))
         .select('photos.*')
-        .orderBy('photos.uploaded_at', 'desc');
+        .orderBy('photos.uploaded_at', 'desc')
+        .orderBy('photos.id', 'desc');
 
       if (photos.length === 0) {
         await this._fail(id, 'No photos available for this selection');
@@ -292,79 +336,112 @@ class DownloadJobService {
       }
 
       const box = parseResolution(resolution);
-      const storage = getStorage();
       const useOriginal = await getUseOriginalFilenames();
+      // Named across the whole job, so two parts never hold the same name
+      // and all of them can be unpacked into one folder.
       const entryNames = getZipEntryNames(photos, useOriginal);
+      const { token } = await db('download_jobs').where({ id }).first();
 
       tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-dljob-'));
-      const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.zip`);
 
       let appended = 0;
-      const appendedIds = [];
-      await new Promise((resolve, reject) => {
-        const output = fs.createWriteStream(tmpPath);
-        // level 0 — photos are already compressed, so deflate only burns CPU.
-        const archive = archiver('zip', { zlib: { level: 0 } });
-        // Bound and reclaim the storage reads (#1399 follow-up). The per-photo
-        // catch below deliberately skips a bad source, but it never destroyed
-        // the stream it had already opened, so every skipped photo leaked a
-        // socket for the life of the process.
-        // A queued read that dies would otherwise stall the archive and hold
-        // its slot for the life of the build, so it fails the job instead.
-        const guard = createArchiveStreamGuard({
-          onFatalError: (err) => { guard.destroyAll(); archive.abort(); reject(err); },
-        });
-        output.on('close', resolve);
-        archive.on('error', (err) => { guard.destroyAll(); reject(err); });
-        archive.pipe(output);
+      // Index of the next photo to place, and a photo already rendered that
+      // did not fit the part being closed.
+      let next = 0;
+      let carried = null;
+      while (next < photos.length) {
+        const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.zip`);
+        const partIds = [];
+        let partBytes = 0;
+        await new Promise((resolve, reject) => {
+          const output = fs.createWriteStream(tmpPath);
+          // level 0 — photos are already compressed, so deflate only burns CPU.
+          const archive = archiver('zip', { zlib: { level: 0 } });
+          // Bound and reclaim the storage reads (#1399 follow-up). The per-photo
+          // catch below deliberately skips a bad source, but it never destroyed
+          // the stream it had already opened, so every skipped photo leaked a
+          // socket for the life of the process.
+          // A queued read that dies would otherwise stall the archive and hold
+          // its slot for the life of the build, so it fails the job instead.
+          const guard = createArchiveStreamGuard({
+            onFatalError: (err) => { guard.destroyAll(); archive.abort(); reject(err); },
+          });
+          output.on('close', resolve);
+          archive.on('error', (err) => { guard.destroyAll(); reject(err); });
+          archive.pipe(output);
 
-        (async () => {
-          for (let i = 0; i < photos.length; i += 1) {
-            const photo = photos[i];
-            const name = entryNames[i] || `photo-${photo.id}.jpg`;
-            try {
-              const rendered = await renderPhotoForDownload(event, photo, box, watermarkSettings);
-              if (rendered) {
-                archive.append(rendered, { name });
-              } else {
-                const key = resolvePhotoStorageKey(event, photo);
-                if (key) {
-                  if (!await guard.acquire()) break;
-                  archive.append(guard.track(await storage.get(key)), { name });
-                } else {
-                  archive.file(resolvePhotoFilePath(event, photo), { name });
+          (async () => {
+            for (; next < photos.length; next += 1) {
+              const photo = photos[next];
+              const name = entryNames[next] || `photo-${photo.id}.jpg`;
+              try {
+                const rendered = carried
+                  ? carried.rendered
+                  : await renderPhotoForDownload(event, photo, box, watermarkSettings);
+                carried = null;
+                const size = rendered ? rendered.length : (Number(photo.size_bytes) || UNKNOWN_SIZE_ESTIMATE);
+                if (startsNewPart({ files: partIds.length, bytes: partBytes }, size, this.partLimits)) {
+                  carried = { rendered };
+                  break;
                 }
+                if (rendered) {
+                  archive.append(rendered, { name });
+                } else {
+                  const key = resolvePhotoStorageKey(event, photo);
+                  if (key) {
+                    if (!await guard.acquire()) break;
+                    archive.append(guard.track(await storage.get(key)), { name });
+                  } else {
+                    archive.file(resolvePhotoFilePath(event, photo), { name });
+                  }
+                }
+                appended += 1;
+                partIds.push(photo.id);
+                partBytes += size;
+                // Progress is coarse (photo count, not bytes) but it is what the
+                // modal needs to show movement on a long build.
+                if (appended % 10 === 0 || appended === photos.length) {
+                  // Doubles as the lease heartbeat — see LEASE_TIMEOUT_MS.
+                  await db('download_jobs').where({ id })
+                    .update({ photo_count: appended, heartbeat_at: new Date().toISOString() });
+                }
+              } catch (err) {
+                logger.warn('Skipping photo in download job', { jobId: id, photoId: photo.id, error: err.message });
               }
-              appended += 1;
-              appendedIds.push(photo.id);
-              // Progress is coarse (photo count, not bytes) but it is what the
-              // modal needs to show movement on a long build.
-              if (appended % 10 === 0 || appended === photos.length) {
-                // Doubles as the lease heartbeat — see LEASE_TIMEOUT_MS.
-                await db('download_jobs').where({ id })
-                  .update({ photo_count: appended, heartbeat_at: new Date().toISOString() });
-              }
-            } catch (err) {
-              logger.warn('Skipping photo in download job', { jobId: id, photoId: photo.id, error: err.message });
             }
-          }
-          archive.finalize();
-        })().catch((err) => { guard.destroyAll(); reject(err); });
-      });
+            archive.finalize();
+          })().catch((err) => { guard.destroyAll(); reject(err); });
+        });
 
-      if (appended === 0) {
+        // Only the tail can come out empty: every photo left was skipped.
+        if (partIds.length === 0) break;
+
+        const stat = await fsp.stat(tmpPath);
+        // An ordinary job keeps its one key. Whether this is one is known
+        // only when its first archive closes with nothing left to place.
+        const key = uploaded.length === 0 && next >= photos.length
+          ? this.jobKey(event.slug, token)
+          : this.partKey(event.slug, token, uploaded.length + 1);
+        await storage.putFromFile(key, tmpPath);
+        uploaded.push({ zip_path: key, size_bytes: stat.size, photo_ids: partIds });
+        // The next part reuses the space: at most one part sits in the temp dir.
+        await fsp.rm(tmpPath, { force: true });
+        await db('download_jobs').where({ id }).update({ heartbeat_at: new Date().toISOString() });
+      }
+
+      if (uploaded.length === 0) {
         await this._fail(id, 'No photos could be packaged');
         return;
       }
 
-      const stat = await fsp.stat(tmpPath);
-      const key = this.jobKey(event.slug, (await db('download_jobs').where({ id }).first()).token);
-      await storage.putFromFile(key, tmpPath);
-
+      const split = uploaded.length > 1;
+      const totalBytes = uploaded.reduce((sum, part) => sum + part.size_bytes, 0);
       await db('download_jobs').where({ id }).update({
         status: 'ready',
-        zip_path: key,
-        size_bytes: stat.size,
+        // A split job has no single archive; its parts carry the keys.
+        zip_path: split ? null : uploaded[0].zip_path,
+        parts: split ? JSON.stringify(uploaded) : null,
+        size_bytes: totalBytes,
         photo_count: appended,
         // Only what actually landed in the zip: a missing/corrupt source is
         // skipped, and counting it as downloaded would inflate that photo's
@@ -372,13 +449,17 @@ class DownloadJobService {
         // photo_ids, which is the requested set the dedup fingerprint was
         // computed from — overwriting it would make every job with a skipped
         // photo fail the delivery fingerprint check.
-        delivered_photo_ids: JSON.stringify(appendedIds),
+        delivered_photo_ids: JSON.stringify(uploaded.flatMap((part) => part.photo_ids)),
         completed_at: new Date().toISOString(),
       });
-      logger.info('Download job ready', { jobId: id, photos: appended, bytes: stat.size });
+      logger.info('Download job ready', { jobId: id, photos: appended, bytes: totalBytes, parts: uploaded.length });
     } catch (err) {
       logger.error('Download job error', { jobId: id, error: err.message });
       await this._fail(id, err.message).catch(() => {});
+      // A failed row records no archive, so the sweep would never find these.
+      for (const part of uploaded) {
+        await storage.delete(part.zip_path).catch(() => {});
+      }
     } finally {
       this.running -= 1;
       if (tmpDir) await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
@@ -421,8 +502,9 @@ class DownloadJobService {
 
     const storage = getStorage();
     for (const job of expired) {
-      if (job.zip_path) {
-        await storage.delete(job.zip_path).catch((e) =>
+      const keys = [job.zip_path, ...partsOf(job).map((part) => part.zip_path)].filter(Boolean);
+      for (const key of keys) {
+        await storage.delete(key).catch((e) =>
           logger.warn('Failed deleting download job artifact', { jobId: job.id, error: e.message }));
       }
     }
@@ -434,3 +516,5 @@ class DownloadJobService {
 
 module.exports = new DownloadJobService();
 module.exports.JOB_TTL_MS = JOB_TTL_MS;
+module.exports.partsOf = partsOf;
+module.exports.startsNewPart = startsNewPart;

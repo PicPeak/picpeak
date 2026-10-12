@@ -40,6 +40,14 @@ const mockEvent = {
 // ON DELETE CASCADE, so they must be read before the transaction.
 const mockDownloadJobs = [
   { zip_path: 'events/active/other-demo-2026-01-01/.download-cache/job-abc123.zip' },
+  // A job split into parts (issue 1733) has no archive of its own.
+  {
+    zip_path: null,
+    parts: JSON.stringify([
+      { zip_path: 'events/active/other-demo-2026-01-01/.download-cache/job-def456-part1.zip' },
+      { zip_path: 'events/active/other-demo-2026-01-01/.download-cache/job-def456-part2.zip' },
+    ]),
+  },
 ];
 const mockPhotos = [
   {
@@ -204,6 +212,8 @@ describe('deleteEventCascade — storage cleanup', () => {
     expect(deleted).toEqual(expect.arrayContaining([
       'events/active/other-demo-2026-01-01/.download-cache/all.zip',
       'events/active/other-demo-2026-01-01/.download-cache/job-abc123.zip',
+      'events/active/other-demo-2026-01-01/.download-cache/job-def456-part1.zip',
+      'events/active/other-demo-2026-01-01/.download-cache/job-def456-part2.zip',
     ]));
   });
 

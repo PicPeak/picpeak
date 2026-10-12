@@ -1149,6 +1149,20 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
 // polls. Same access rules as the download routes above.
 // ──────────────────────────────────────────────────────────────────────────
 
+// The parts of a finished split job as the client sees them (issue 1733):
+// number, size and photo count, never the storage key. Absent for a job that
+// is one archive, which is every job below the part size.
+function jobPartList(job) {
+  if (job.status !== 'ready') return undefined;
+  const parts = downloadJobService.partsOf(job);
+  if (parts.length < 2) return undefined;
+  return parts.map((part, index) => ({
+    part: index + 1,
+    size_bytes: Number(part.size_bytes) || 0,
+    photo_count: Array.isArray(part.photo_ids) ? part.photo_ids.length : 0,
+  }));
+}
+
 // Kick off (or join) a build. Returns the polling token.
 router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
@@ -1212,6 +1226,7 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
       token: job.token,
       status: job.status,
       resolution: job.resolution,
+      parts: jobPartList(job),
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to start download preparation');
@@ -1245,6 +1260,7 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
       resolution: job.resolution,
       photo_count: job.photo_count || 0,
       size_bytes: job.size_bytes || null,
+      parts: jobPartList(job),
       error: job.status === 'failed' ? (job.error || 'Preparation failed') : undefined,
       download_limit_reached: limitReached,
     });
@@ -1253,8 +1269,16 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
   }
 });
 
-// Deliver the finished archive.
-router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
+// Deliver the finished archive, or one part of a split one (issue 1733). A
+// part is addressed by the job token and its number, so every check below
+// runs against the whole job for each part: the parts of a job were built in
+// one run from one photo set, and they go stale together.
+router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery,
+  (req, res) => serveJobArchive(req, res, null));
+router.get('/:slug/download-jobs/:token/parts/:part/file', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery,
+  (req, res) => serveJobArchive(req, res, req.params.part));
+
+async function serveJobArchive(req, res, partParam) {
   try {
     // Downloads can be switched off after a job was created — every other
     // download route re-checks this per request, so this one must too.
@@ -1274,7 +1298,15 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     // Download limit (issue 1560): a limited gallery's archives hold
     // originals, which a share-link guest may not take.
     if (await isPreviewOnly(req)) return res.status(403).json(clientOnlyError());
-    if (job.status !== 'ready' || !job.zip_path) {
+    const parts = downloadJobService.partsOf(job);
+    // A split job has no single archive, and an ordinary one has no parts.
+    const partNumber = partParam === null ? null : Number(partParam);
+    const part = partNumber === null ? null : parts[partNumber - 1];
+    if (job.status === 'ready' && (partNumber === null ? parts.length > 0 : !part)) {
+      return res.status(404).json({ error: 'Download job not found' });
+    }
+    const zipPath = part ? part.zip_path : job.zip_path;
+    if (job.status !== 'ready' || !zipPath) {
       return res.status(409).json({ error: 'Download is not ready yet', status: job.status });
     }
     if (new Date(job.expires_at).getTime() <= Date.now()) {
@@ -1291,16 +1323,18 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     }
 
     const storage = getStorage();
-    const stat = await storage.stat(job.zip_path);
+    const stat = await storage.stat(zipPath);
     if (!stat) {
       return res.status(410).json({ error: 'This download is no longer available' });
     }
 
     // The DELIVERED set, not the requested one: a photo whose source was
     // missing at build time isn't in the zip and must not be counted.
+    // A part hands over, counts and is charged for its own photos only, so
+    // the parts of a job together cost what the one archive would.
     let deliveredIds = [];
     try {
-      deliveredIds = JSON.parse(job.delivered_photo_ids || job.photo_ids || '[]');
+      deliveredIds = part ? part.photo_ids : JSON.parse(job.delivered_photo_ids || job.photo_ids || '[]');
     } catch (_) { /* malformed row — skip counting rather than fail */ }
 
     // Download limit (issue 1560). A limited gallery must know what it is
@@ -1332,6 +1366,9 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
       if (ids.length > 0) {
         db('photos').whereIn('id', ids).increment('download_count', 1).catch(statsWriteFailed('photo download count'));
       }
+      // One download, one log line and one notification: the first part
+      // stands for the set.
+      if (partNumber > 1) return;
       db('access_logs').insert({
         event_id: req.event.id,
         ip_address: req.ip,
@@ -1344,15 +1381,16 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     });
 
     const suffix = job.resolution === 'original' ? 'original' : job.resolution;
+    const partSuffix = part ? `-part-${partNumber}-of-${parts.length}` : '';
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Length', stat.size);
-    res.setHeader('Content-Disposition', `attachment; filename="${req.event.slug}-${suffix}.zip"`);
-    const stream = await storage.get(job.zip_path);
+    res.setHeader('Content-Disposition', `attachment; filename="${req.event.slug}-${suffix}${partSuffix}.zip"`);
+    const stream = await storage.get(zipPath);
     pipeStreamToResponse(stream, res, { context: `download job ${job.id}`, missingStatus: 410 });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to serve prepared download');
   }
-});
+}
 
 // Explicit per-photo view beacon (#895). Counting views on the image-
 // serving routes is wrong in both directions: the lightbox preloads the

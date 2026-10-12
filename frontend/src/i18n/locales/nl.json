@@ -449,7 +449,10 @@
       "withDate": "De overige foto's worden nog bewerkt — de volledige galerie volgt uiterlijk op {{date}}.",
       "noDetails": "De overige foto's worden nog bewerkt.",
       "progressLabel": "Tot nu toe geleverde foto's"
-    }
+    },
+    "downloadPartsIntro": "Deze download bestaat uit {{total}} delen. U hebt ze allemaal nodig om alle foto's te krijgen.",
+    "downloadPartLabel": "Deel {{part}} van {{total}}",
+    "downloadPartAction": "Deel {{part}} downloaden"
   },
   "categories": {
     "title": "Fotocategorieen",

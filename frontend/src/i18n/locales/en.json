@@ -1481,6 +1481,9 @@
     "preparingProgress": "{{count}} photos packaged",
     "downloadReady": "Your download is ready",
     "downloadNow": "Download",
+    "downloadPartsIntro": "This download comes in {{total}} parts. You need all of them to get every photo.",
+    "downloadPartLabel": "Part {{part}} of {{total}}",
+    "downloadPartAction": "Download part {{part}}",
     "downloadPrepFailed": "Preparation failed",
     "downloadPrepTimeout": "This is taking longer than expected. Please try again.",
     "people": {

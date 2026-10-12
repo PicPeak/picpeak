@@ -1736,7 +1736,8 @@
         "POST /:slug/download-selected",
         "POST /:slug/download-jobs",
         "GET /:slug/download-jobs/:token",
-        "GET /:slug/download-jobs/:token/file"
+        "GET /:slug/download-jobs/:token/file",
+        "GET /:slug/download-jobs/:token/parts/:part/file"
       ]
     },
     "gallery/media.js": {

@@ -315,11 +315,19 @@ export interface DownloadResolutionChoice {
   height: number | null;
 }
 
+export interface DownloadJobPart {
+  part: number;
+  size_bytes: number;
+  photo_count: number;
+}
+
 export interface DownloadJobState {
   status: DownloadJobStatus;
   resolution: string;
   photo_count: number;
   size_bytes: number | null;
+  /** A ready job too large for one archive: its parts, all of them needed (issue 1733). */
+  parts?: DownloadJobPart[];
   error?: string;
   /** Set on a ready job the download limit would now refuse (issue 1560). */
   download_limit_reached?: { limit?: number; used?: number; remaining?: number };

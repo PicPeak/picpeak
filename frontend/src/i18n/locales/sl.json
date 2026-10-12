@@ -1342,6 +1342,9 @@
     "preparingProgress": "Zapakiranih fotografij: {{count}}",
     "downloadReady": "Vaš prenos je pripravljen",
     "downloadNow": "Prenesi",
+    "downloadPartsIntro": "Ta prenos je razdeljen na več delov ({{total}}). Za vse fotografije potrebujete vse dele.",
+    "downloadPartLabel": "Del {{part}} od {{total}}",
+    "downloadPartAction": "Prenesi del {{part}}",
     "downloadPrepFailed": "Priprava ni uspela",
     "downloadPrepTimeout": "Traja dlje od pričakovanega. Poskusite znova.",
     "people": {

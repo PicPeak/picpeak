@@ -430,7 +430,10 @@
       "withDate": "Las imágenes restantes aún se están editando: la galería completa estará disponible a más tardar el {{date}}.",
       "noDetails": "Las imágenes restantes aún se están editando.",
       "progressLabel": "Fotos entregadas hasta ahora"
-    }
+    },
+    "downloadPartsIntro": "Esta descarga consta de {{total}} partes. Necesita todas para obtener todas las fotos.",
+    "downloadPartLabel": "Parte {{part}} de {{total}}",
+    "downloadPartAction": "Descargar parte {{part}}"
   },
   "categories": {
     "title": "Categorías de fotos",

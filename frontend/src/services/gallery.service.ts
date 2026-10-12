@@ -2,7 +2,7 @@ import type { AxiosResponse } from 'axios';
 import { api } from '../config/api';
 import type {
   GalleryInfo, GalleryData, GalleryStats, ResolvedGalleryIdentifier,
-  DownloadJobStatus, DownloadJobState, GalleryPeopleResponse,
+  DownloadJobStatus, DownloadJobState, DownloadJobPart, GalleryPeopleResponse,
 } from '../types';
 import { normalizeRequirePassword } from '../utils/accessControl';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
@@ -386,7 +386,7 @@ export const galleryService = {
     slug: string,
     resolution: string,
     photoIds?: number[]
-  ): Promise<{ token: string; status: DownloadJobStatus }> {
+  ): Promise<{ token: string; status: DownloadJobStatus; parts?: DownloadJobPart[] }> {
     const body: Record<string, unknown> = { resolution };
     if (photoIds && photoIds.length) body.photo_ids = photoIds;
     const response = await withDownloadLimit(slug, () => api.post(`/gallery/${slug}/download-jobs`, body));
@@ -400,9 +400,11 @@ export const galleryService = {
 
   // Native browser download so the archive streams with Content-Length
   // (real progress bar, no in-memory blob for a multi-GB gallery).
-  downloadJobFile(slug: string, token: string, filename: string): void {
+  // `part` picks one archive of a job that was split into several.
+  downloadJobFile(slug: string, token: string, filename: string, part?: number): void {
     const link = document.createElement('a');
-    link.href = withAdminPreview(`/api/gallery/${slug}/download-jobs/${token}/file`);
+    const path = part ? `parts/${part}/file` : 'file';
+    link.href = withAdminPreview(`/api/gallery/${slug}/download-jobs/${token}/${path}`);
     link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();

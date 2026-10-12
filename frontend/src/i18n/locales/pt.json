@@ -432,6 +432,9 @@
     "preparingProgress": "{{count}} fotos preparadas",
     "downloadReady": "Seu download está pronto",
     "downloadNow": "Baixar",
+    "downloadPartsIntro": "Este download vem em {{total}} partes. Você precisa de todas para ter todas as fotos.",
+    "downloadPartLabel": "Parte {{part}} de {{total}}",
+    "downloadPartAction": "Baixar parte {{part}}",
     "downloadPrepFailed": "Não foi possível preparar o download",
     "downloadPrepTimeout": "Está demorando mais que o esperado. Tente novamente.",
     "people": {

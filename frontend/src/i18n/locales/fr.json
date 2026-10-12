@@ -458,7 +458,10 @@
       "withDate": "Les images restantes sont encore en cours de retouche ; la galerie complète sera disponible au plus tard le {{date}}.",
       "noDetails": "Les images restantes sont encore en cours de retouche.",
       "progressLabel": "Photos livrées jusqu'à présent"
-    }
+    },
+    "downloadPartsIntro": "Ce téléchargement comporte {{total}} parties. Il vous les faut toutes pour obtenir toutes les photos.",
+    "downloadPartLabel": "Partie {{part}} sur {{total}}",
+    "downloadPartAction": "Télécharger la partie {{part}}"
   },
   "categories": {
     "title": "Catégories de photos",

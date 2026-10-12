@@ -136,11 +136,16 @@ async function deleteEventCascade(eventId, adminContext) {
   if (event.download_zip_path) storageKeys.add(event.download_zip_path);
   try {
     if (await db.schema.hasTable('download_jobs')) {
+      // A job split into parts (issue 1733) keeps its archives in `parts`.
+      const { partsOf } = require('../../services/downloadJobService');
       const jobs = await db('download_jobs')
         .where('event_id', eventId)
-        .whereNotNull('zip_path')
-        .select('zip_path');
-      for (const job of jobs) storageKeys.add(job.zip_path);
+        .select('zip_path', 'parts');
+      for (const job of jobs) {
+        for (const key of [job.zip_path, ...partsOf(job).map((part) => part.zip_path)]) {
+          if (key) storageKeys.add(key);
+        }
+      }
     }
   } catch (jobErr) {
     logger.warn('Could not enumerate download job archives before cascade delete', {

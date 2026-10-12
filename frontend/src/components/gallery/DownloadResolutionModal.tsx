@@ -4,7 +4,8 @@ import { Download, Check, AlertCircle, X, Loader2 } from 'lucide-react';
 
 import { Button } from '../common';
 import { galleryService } from '../../services/gallery.service';
-import type { DownloadResolutionChoice, DownloadJobStatus } from '../../types';
+import type { DownloadResolutionChoice, DownloadJobStatus, DownloadJobPart } from '../../types';
+import { formatFileSize } from '../../utils/fileSize';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import {
   isDownloadLimitError, isGalleryLimited, notifyDownloadQuotaChanged, showDownloadLimitReached,
@@ -62,13 +63,16 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
   const [selected, setSelected] = useState<string>(choices[0]?.id ?? 'original');
   const [error, setError] = useState<string | null>(null);
   const [photoCount, setPhotoCount] = useState(0);
+  // A download too large for one archive arrives as several (issue 1733).
+  const [parts, setParts] = useState<DownloadJobPart[]>([]);
   const tokenRef = useRef<string | null>(null);
   // Guards the polling loop against running on after unmount / close.
   const activeRef = useRef(true);
 
   useEffect(() => () => { activeRef.current = false; }, []);
 
-  const filename = `${slug}-${selected === 'original' ? 'original' : selected}.zip`;
+  const baseName = `${slug}-${selected === 'original' ? 'original' : selected}`;
+  const filename = `${baseName}.zip`;
 
   const poll = useCallback(async (token: string) => {
     for (let i = 0; i < MAX_POLLS; i += 1) {
@@ -79,6 +83,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
         const state = await galleryService.getDownloadJob(slug, token);
         setPhotoCount(state.photo_count || 0);
         if (state.status === 'ready') {
+          setParts(state.parts || []);
           setPhase('ready');
           return;
         }
@@ -120,6 +125,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
       // A job can be deduped onto an already-finished build, in which case
       // there is nothing to wait for.
       if ((job.status as DownloadJobStatus) === 'ready') {
+        setParts(job.parts || []);
         setPhase('ready');
         return;
       }
@@ -132,7 +138,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
     }
   }, [slug, selected, photoIds, poll, t, standardResolution, onClose]);
 
-  const download = useCallback(async () => {
+  const download = useCallback(async (part?: number) => {
     const token = tokenRef.current;
     if (!token) return;
     // Download limit (issue 1560): the file is a browser navigation, which
@@ -152,9 +158,14 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
         // The file route still enforces the limit; let it decide.
       }
     }
+    if (part) {
+      // The dialog stays open: the other parts are still to be fetched.
+      galleryService.downloadJobFile(slug, token, `${baseName}-part-${part}-of-${parts.length}.zip`, part);
+      return;
+    }
     galleryService.downloadJobFile(slug, token, filename);
     onClose();
-  }, [slug, filename, onClose, t]);
+  }, [slug, filename, baseName, parts.length, onClose, t]);
 
   const panelRef = useRef<HTMLDivElement>(null);
   useGalleryDialog({ open: true, onClose, panelRef });
@@ -258,9 +269,46 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
             <p className="text-sm font-medium text-theme mb-4">
               {t('gallery.downloadReady', 'Your download is ready')}
             </p>
-            <Button variant="primary" onClick={download} leftIcon={<Download className="w-4 h-4" />}>
-              {t('gallery.downloadNow', 'Download')}
-            </Button>
+            {parts.length > 1 ? (
+              <>
+                <p className="text-sm text-muted-theme mb-4">
+                  {t('gallery.downloadPartsIntro', 'This download comes in {{total}} parts. You need all of them to get every photo.', {
+                    total: parts.length,
+                  })}
+                </p>
+                <ul className="space-y-2 text-left max-h-64 overflow-y-auto">
+                  {parts.map((item) => (
+                    <li
+                      key={item.part}
+                      className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border border-border-token"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-theme">
+                          {t('gallery.downloadPartLabel', 'Part {{part}} of {{total}}', {
+                            part: item.part,
+                            total: parts.length,
+                          })}
+                        </span>
+                        <span className="block text-xs text-muted-theme">{formatFileSize(item.size_bytes)}</span>
+                      </span>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => download(item.part)}
+                        leftIcon={<Download className="w-4 h-4" />}
+                        aria-label={t('gallery.downloadPartAction', 'Download part {{part}}', { part: item.part })}
+                      >
+                        {t('gallery.downloadNow', 'Download')}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <Button variant="primary" onClick={() => download()} leftIcon={<Download className="w-4 h-4" />}>
+                {t('gallery.downloadNow', 'Download')}
+              </Button>
+            )}
           </div>
         )}
 
