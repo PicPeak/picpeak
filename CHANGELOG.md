@@ -5,6 +5,23 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.169.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.168.3-beta.0...v3.169.0-beta.0) (2026-10-12)
+
+
+### Features
+
+* **analytics:** let the operator decide whether Do Not Track visitors are counted ([#1927](https://github.com/PicPeak/picpeak/issues/1927)) ([355ae7e](https://github.com/PicPeak/picpeak/commit/355ae7ea8c305388938813fe5069bbcb109dd794))
+* **transfers:** configurable files-per-upload limit, global default and per-request override ([#1929](https://github.com/PicPeak/picpeak/issues/1929)) ([e2e1383](https://github.com/PicPeak/picpeak/commit/e2e1383b07fb65308ec39ea8ce6610a1566385d6))
+* **transfers:** download everything a client sent through a file request as one ZIP ([#1928](https://github.com/PicPeak/picpeak/issues/1928)) ([a1d5596](https://github.com/PicPeak/picpeak/commit/a1d55966f3626f4158a443c83678982a89c08750))
+
+
+### Bug Fixes
+
+* **analytics:** say in the settings that opted-out browsers are not counted ([#1919](https://github.com/PicPeak/picpeak/issues/1919)) ([90d5c05](https://github.com/PicPeak/picpeak/commit/90d5c056841e514cb26656dbee1d1360503f9d1e))
+* **gallery:** give a verified viewer a request budget of their own, and say when a like is refused ([#1925](https://github.com/PicPeak/picpeak/issues/1925)) ([d9f49d4](https://github.com/PicPeak/picpeak/commit/d9f49d46e1356428df5d4b90242c970c2fe75892))
+* **gallery:** refresh only the liked photo instead of refetching the whole gallery ([#1917](https://github.com/PicPeak/picpeak/issues/1917)) ([477f1d3](https://github.com/PicPeak/picpeak/commit/477f1d35066f513108b879c9be506e9c7e12bcbe))
+* **seo:** app pages answer noindex so only the landing page can be indexed ([#1922](https://github.com/PicPeak/picpeak/issues/1922)) ([676aa3c](https://github.com/PicPeak/picpeak/commit/676aa3c030ef806f0bc7601f402922dca4e0fc97))
+
 ## [3.168.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.168.2-beta.0...v3.168.3-beta.0) (2026-10-11)
 
 
