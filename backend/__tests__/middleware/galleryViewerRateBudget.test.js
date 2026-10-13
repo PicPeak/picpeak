@@ -71,9 +71,16 @@ describe('a verified viewer working in their gallery', () => {
     expect(await statuses(app, 1, 'get', '/api/public/settings')).toEqual([429]);
   });
 
+  // "Rate selected" is the same guest rating, many photos per request; on the
+  // ordinary budget it answered 429 while single ratings still went through.
+  it('counts a bulk rating against the viewer budget, through the limiter', async () => {
+    const app = await buildApp();
+    expect(await statuses(app, MAX + 2, 'post', '/api/gallery/wedding-2026/feedback/bulk', viewer())).toEqual(Array(MAX + 2).fill(200));
+  });
+
   // photo/<id>/view is the beacon the lightbox posts for every slide: left
   // on the ordinary budget, about 300 slides still locked the guest out.
-  it.each(['photos', 'photos/42/feedback', 'my-feedback', 'feedback-summary', 'feedback-settings', 'info', 'stats', 'people', 'photo/42/view'])(
+  it.each(['photos', 'photos/42/feedback', 'feedback/bulk', 'my-feedback', 'feedback-summary', 'feedback-settings', 'info', 'stats', 'people', 'photo/42/view'])(
     'covers /%s', (rest) => {
       expect(isOwnGalleryViewerRequest({ path: `/api/gallery/wedding-2026/${rest}`, headers: viewer(), cookies: {} })).toBe(true);
     });

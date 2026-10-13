@@ -191,11 +191,11 @@ function hasOwnGalleryToken(req, slug) {
 }
 
 // What a viewer's browser asks for while they look through a gallery and pick
-// photos: the photo list, per-photo feedback (reads and writes), their own
-// picks, the gallery's info, and the view beacon the lightbox posts for every
-// slide. Downloads, uploads and the password check are not in the list and
-// stay on the ordinary budget.
-const GALLERY_VIEWER_RE = /^\/api\/gallery\/([^/]+)\/(?:(?:photos|my-feedback|feedback-summary|feedback-settings|info|stats|people)(?:\/|$)|photo\/[^/]+\/view\/?$)/i;
+// photos: the photo list, per-photo feedback (reads and writes), the bulk
+// rating of a selection, their own picks, the gallery's info, and the view
+// beacon the lightbox posts for every slide. Downloads, uploads and the
+// password check are not in the list and stay on the ordinary budget.
+const GALLERY_VIEWER_RE = /^\/api\/gallery\/([^/]+)\/(?:(?:photos|my-feedback|feedback-summary|feedback-settings|info|stats|people)(?:\/|$)|photo\/[^/]+\/view\/?$|feedback\/bulk\/?$)/i;
 const GALLERY_VIEWER_BUDGET_FACTOR = 10;
 
 /**
