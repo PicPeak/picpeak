@@ -2,15 +2,17 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { AlertTriangle, CheckCircle2, Cog, Upload, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Cog, Copy, Upload, X } from 'lucide-react';
 import { useUploadSession } from '../../contexts/UploadSessionContext';
 
 // Sits under the admin header for the life of an upload session: transfer
 // progress, then processing progress, then the outcome. Failures list every
 // file with its reason and stay until dismissed; a clean finish clears itself.
+// Files the gallery already holds are listed apart from the failures, with
+// "upload anyway" (issue 1733, C2).
 export const UploadProgressBar: React.FC = () => {
   const { t } = useTranslation();
-  const { session, dismiss } = useUploadSession();
+  const { session, dismiss, uploadDuplicates } = useUploadSession();
   const { pathname } = useLocation();
 
   if (!session) return null;
@@ -19,6 +21,8 @@ export const UploadProgressBar: React.FC = () => {
   const onEventPage = pathname === eventPath || pathname.startsWith(`${eventPath}/`);
   const { phase } = session;
   const hasFailures = session.failures.length > 0;
+  const hasDuplicates = session.duplicates.length > 0;
+  const anywayClass = 'text-accent-dark hover:underline whitespace-nowrap disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed';
 
   const processingPct =
     session.processing.total === 0
@@ -40,7 +44,8 @@ export const UploadProgressBar: React.FC = () => {
       <div className="flex items-center gap-3">
         {phase.kind === 'transferring' && <Upload className="w-4 h-4 text-accent-dark flex-shrink-0" />}
         {phase.kind === 'processing' && <Cog className="w-4 h-4 text-warning-text animate-spin flex-shrink-0" />}
-        {phase.kind === 'done' && !hasFailures && <CheckCircle2 className="w-4 h-4 text-success-text flex-shrink-0" />}
+        {phase.kind === 'done' && !hasFailures && !hasDuplicates && <CheckCircle2 className="w-4 h-4 text-success-text flex-shrink-0" />}
+        {phase.kind === 'done' && !hasFailures && hasDuplicates && <Copy className="w-4 h-4 text-muted flex-shrink-0" />}
         {phase.kind === 'done' && hasFailures && <AlertTriangle className="w-4 h-4 text-warning-text flex-shrink-0" />}
 
         <div className="flex-1 min-w-0">
@@ -152,6 +157,49 @@ export const UploadProgressBar: React.FC = () => {
             </li>
           ))}
         </ul>
+      )}
+
+      {/* Duplicates — not stored because the gallery already holds the same
+          bytes. Each can be uploaded anyway once the session is through. */}
+      {hasDuplicates && (
+        <div data-testid="upload-duplicate-report" className="mt-2 ml-7">
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <p className="font-medium text-body">
+              {t('upload.duplicates.title', { count: session.duplicates.length })}
+            </p>
+            {session.duplicates.length > 1 && (
+              <button
+                type="button"
+                onClick={() => uploadDuplicates()}
+                disabled={phase.kind !== 'done'}
+                className={anywayClass}
+              >
+                {t('upload.duplicates.uploadAllAnyway', 'Upload all anyway')}
+              </button>
+            )}
+          </div>
+          <ul className="mt-1.5 max-h-48 overflow-y-auto space-y-1.5">
+            {session.duplicates.map((d, i) => (
+              <li key={`${d.filename}-${i}`} className="flex items-start gap-2 text-xs">
+                <span className="flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded font-medium whitespace-nowrap bg-inset text-body">
+                  {t('upload.duplicates.badge', 'Duplicate')}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium text-body break-all">{d.filename}</span>
+                  <span className="text-muted"> — {t('upload.duplicates.sameAs', 'same content as {{name}}', { name: d.duplicateOf })}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => uploadDuplicates([i])}
+                  disabled={phase.kind !== 'done'}
+                  className={clsx(anywayClass, 'mt-0.5')}
+                >
+                  {t('upload.duplicates.uploadAnyway', 'Upload anyway')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

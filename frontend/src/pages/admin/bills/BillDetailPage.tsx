@@ -22,6 +22,7 @@ import { formatMoney } from '../../../components/admin/LineItemsTable';
 import { formatMoneyMinor } from '../../../utils/money';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { toast } from 'react-toastify';
+import { todayIsoDate } from '../../../utils/localDate';
 
 export const BillDetailPage: React.FC = () => {
   const { t } = useTranslation();
@@ -40,7 +41,7 @@ export const BillDetailPage: React.FC = () => {
   const [payAmount, setPayAmount] = useState(0);
   // Optional payment date — defaults to today, backdate it to when the
   // payment actually arrived. Drives `paid_at` (cash-basis revenue windows).
-  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
+  const [payDate, setPayDate] = useState(todayIsoDate());
   const [payMethod, setPayMethod] = useState('');
   const [payReference, setPayReference] = useState('');
   const [payNotes, setPayNotes] = useState('');
@@ -285,7 +286,7 @@ export const BillDetailPage: React.FC = () => {
       setPayDialogOpen(false);
       setPayAmount(0); setPayMethod(''); setPayReference(''); setPayNotes('');
       setPayWithSkonto(false);
-      setPayDate(new Date().toISOString().slice(0, 10));
+      setPayDate(todayIsoDate());
       qc.invalidateQueries({ queryKey: ['invoice', id] });
       toast.success(t('bills.paymentRecordedToast', 'Payment recorded.'));
     } catch (e: any) {

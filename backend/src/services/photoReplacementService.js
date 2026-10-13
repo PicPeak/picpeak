@@ -20,6 +20,7 @@ const watermarkGeneratorService = require('./watermarkGeneratorService');
 const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey } = require('./photoResolver');
 const { resolveCredit } = require('./photoCredit');
+const { exifColumn } = require('./photoExif');
 const logger = require('../utils/logger');
 const uploadQuota = require('./publicUploadQuota');
 
@@ -158,11 +159,15 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     }
 
     const stats = await fsp.stat(newFileTempPath);
+    // The row now holds other bytes: its content hash follows (issue 1733, C2).
+    const contentSha256 = await require('./photoDuplicates').sha256File(newFileTempPath);
 
     // Credit (#1561): an automatic one describes the file, so the new file's
     // EXIF replaces it. Guest and manual credits are decisions about the
     // photo and stay.
     const isVideoReplacement = !!mimeType?.startsWith('video/');
+    // Read while the temp file is still here, like the date above.
+    const exif = isVideoReplacement ? {} : await exifColumn(newFileTempPath);
     const autoCredit = existingPhoto.uploaded_by !== 'guest'
       && (!existingPhoto.credit_source || existingPhoto.credit_source === 'exif')
       ? await resolveCredit({ localPath: newFileTempPath, isVideo: isVideoReplacement })
@@ -174,6 +179,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     let width = null;
     let height = null;
     let thumbnailPath = null;
+    const thumbMeta = {};
     // Detect/name by the unique stored filename (newFilename), not the
     // client-supplied original, so RAW derivative keys can't collide.
     const proc = await withProcessableImage(newFileTempPath, newFilename);
@@ -187,7 +193,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         // Non-image or corrupt
       }
       try {
-        thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
+        thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename, meta: thumbMeta });
       } catch (error) {
         if (isResourceError(error)) throw error;
         logger.warn('Failed to generate thumbnail for replaced photo', { photoId: existingPhoto.id });
@@ -252,10 +258,17 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         : { source_filename: existingPhoto.original_filename || originalFilename }),
       path: relativePath,
       thumbnail_path: thumbnailPath,
+      // The old hash describes the replaced image; none beats a wrong one.
+      thumb_hash: thumbMeta.thumbHash || null,
       size_bytes: stats.size,
+      content_sha256: contentSha256,
       width,
       height,
       captured_at: capturedAt,
+      // Camera details describe the file (issue 1733, D1): the new file's,
+      // or none. NULL leaves an unreadable one to the backfill.
+      exif_json: null,
+      ...exif,
       mime_type: mimeType,
       media_type: mimeType?.startsWith('video/') ? 'video' : 'image',
       // A replaced video is queued for a new copy while the setting is on;

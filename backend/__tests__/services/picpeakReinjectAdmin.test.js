@@ -9,10 +9,13 @@ const knex = require('knex');
 
 let db;
 let reinjectCurrentAdmin;
+let captureOperatorPasskeys;
+let preserveOperatorPasskeys;
 
 beforeAll(() => {
   jest.doMock('../../knexfile', () => ({ client: 'sqlite3' }), { virtual: false });
-  reinjectCurrentAdmin = require('../../src/services/picpeakImportService').reinjectCurrentAdmin;
+  ({ reinjectCurrentAdmin, captureOperatorPasskeys, preserveOperatorPasskeys } =
+    require('../../src/services/picpeakImportService'));
 });
 
 beforeEach(async () => {
@@ -108,4 +111,114 @@ test('inserts the operator with a non-colliding id when neither key exists in th
   expect(opRow.password_hash).toBe('OP_HASH');
   expect(opRow.id).toBe(10);                          // max(9)+1, no collision
   expect(opRow.created_by).toBeNull();                // self-ref FK nulled so the insert can't dangle
+});
+
+// Passkeys (issue 1733) are the operator's credentials as much as the password
+// and the TOTP secret are: the archive must neither remove them nor attach
+// keys of its own to the operator's account, which would sign in as them.
+describe('operator passkeys', () => {
+  const now = '2026-10-01T00:00:00.000Z';
+  const key = (id, adminId, credentialId, extra = {}) => ({
+    id, admin_user_id: adminId, credential_id: credentialId, public_key: `PUB_${credentialId}`,
+    counter: 0, name: credentialId, created_at: now, ...extra,
+  });
+
+  beforeEach(async () => {
+    await db.schema.createTable('admin_webauthn_credentials', (t) => {
+      t.increments('id');
+      t.integer('admin_user_id').notNullable();
+      t.string('credential_id').notNullable().unique();
+      t.text('public_key').notNullable();
+      t.bigInteger('counter').notNullable().defaultTo(0);
+      t.text('transports');
+      t.string('aaguid');
+      t.string('name').notNullable();
+      t.datetime('created_at').notNullable();
+      t.datetime('last_used_at');
+    });
+  });
+
+  // What the restore does around the wipe: snapshot, replace the rows with
+  // the archive's, re-insert the operator, then restore their passkeys.
+  async function restore({ before, archivedAdmins, archivedKeys }) {
+    await db('admin_users').insert({ ...operator });
+    if (before.length) await db('admin_webauthn_credentials').insert(before);
+    return db.transaction(async (trx) => {
+      const snapshot = await captureOperatorPasskeys(trx, operator.id);
+      await trx('admin_webauthn_credentials').del();
+      await trx('admin_users').del();
+      if (archivedAdmins.length) await trx('admin_users').insert(archivedAdmins);
+      if (archivedKeys.length) await trx('admin_webauthn_credentials').insert(archivedKeys);
+      const operatorId = await reinjectCurrentAdmin(trx, operator);
+      await preserveOperatorPasskeys(trx, operatorId, snapshot);
+      return operatorId;
+    });
+  }
+
+  const keysOf = (adminId) => db('admin_webauthn_credentials').where({ admin_user_id: adminId }).orderBy('id');
+
+  test('replaces archived keys on the matching account with the operator\'s own', async () => {
+    const operatorId = await restore({
+      before: [key(1, operator.id, 'op-key', { counter: 41, transports: '["internal"]', last_used_at: now })],
+      archivedAdmins: [
+        { id: 7, username: 'someoneelse', email: 'OP@example.com', password_hash: 'ATTACKER' },
+        { id: 8, username: 'colleague', email: 'colleague@example.com', password_hash: 'C' },
+      ],
+      archivedKeys: [key(1, 7, 'archived-key'), key(2, 8, 'colleague-key')],
+    });
+
+    expect(operatorId).toBe(7);
+    const own = await keysOf(7);
+    expect(own).toHaveLength(1);
+    expect(own[0]).toMatchObject({
+      credential_id: 'op-key', public_key: 'PUB_op-key', counter: 41,
+      transports: '["internal"]', name: 'op-key', last_used_at: now,
+    });
+    expect(await db('admin_webauthn_credentials').where({ credential_id: 'archived-key' }).first()).toBeUndefined();
+    // Nobody else's keys are touched, and the re-inserted row took a free id.
+    expect((await keysOf(8)).map((row) => row.credential_id)).toEqual(['colleague-key']);
+    expect(own[0].id).toBe(3);
+  });
+
+  test('removes archived keys from the operator\'s account when the operator has none', async () => {
+    await restore({
+      before: [],
+      archivedAdmins: [{ id: 7, username: 'someoneelse', email: 'op@example.com', password_hash: 'ATTACKER' }],
+      archivedKeys: [key(1, 7, 'archived-key')],
+    });
+    expect(await db('admin_webauthn_credentials')).toHaveLength(0);
+  });
+
+  test('the operator\'s key wins over an archived row that claims its credential id for another account', async () => {
+    const operatorId = await restore({
+      before: [key(1, operator.id, 'op-key')],
+      archivedAdmins: [{ id: 8, username: 'colleague', email: 'colleague@example.com', password_hash: 'C' }],
+      archivedKeys: [key(5, 8, 'op-key', { public_key: 'ATTACKER_PUB' })],
+    });
+    const rows = await db('admin_webauthn_credentials');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ admin_user_id: operatorId, credential_id: 'op-key', public_key: 'PUB_op-key' });
+  });
+
+  test('a fresh operator row does not inherit archived keys that point at its new id', async () => {
+    // FK checks are suspended during the load, so an archive can carry keys
+    // for an account id it does not contain: the one the operator will get.
+    const operatorId = await restore({
+      before: [key(1, operator.id, 'op-key')],
+      archivedAdmins: [{ id: 9, username: 'backupadmin', email: 'backup@instance.test', password_hash: 'B' }],
+      archivedKeys: [key(1, 10, 'planted-key')],
+    });
+    expect(operatorId).toBe(10);
+    expect((await keysOf(10)).map((row) => row.credential_id)).toEqual(['op-key']);
+  });
+
+  test('does nothing on a schema without the table', async () => {
+    await db.schema.dropTable('admin_webauthn_credentials');
+    await db('admin_users').insert({ ...operator });
+    await db.transaction(async (trx) => {
+      const snapshot = await captureOperatorPasskeys(trx, operator.id);
+      expect(snapshot).toEqual([]);
+      await expect(preserveOperatorPasskeys(trx, operator.id, snapshot)).resolves.toBeUndefined();
+    });
+  });
 });

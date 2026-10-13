@@ -106,6 +106,7 @@ export function useSectionSummaries(
         f.allow_user_uploads
           ? { text: s('uploadsOn', 'Uploads on'), tone: 'strong' }
           : { text: s('uploadsOff', 'Uploads off'), tone: 'off' },
+        ...(f.allow_user_uploads && f.moderate_guest_uploads ? [{ text: s('uploadsApproved', 'approval required') }] : []),
         ...(draft.feedback
           ? [draft.feedback.feedback_enabled
             ? { text: s('feedbackOn', 'feedback on') }

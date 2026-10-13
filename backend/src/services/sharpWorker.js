@@ -132,7 +132,7 @@ async function run(job) {
     }
   };
   let pipeline = sharp(input, options);
-  const allowed = new Set(['rotate', 'withMetadata', 'keepMetadata', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite']);
+  const allowed = new Set(['rotate', 'withMetadata', 'keepMetadata', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw']);
   for (const [name, encodedArgs] of job.steps) {
     if (!allowed.has(name)) throw refusal('Unsupported image operation');
     const args = decode(encodedArgs);

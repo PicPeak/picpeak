@@ -4,20 +4,23 @@
  * the controls here never check permissions themselves.
  */
 import React, { useState } from 'react';
+import { addDays } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Lock, RefreshCw } from 'lucide-react';
 import type { Event } from '../../../../types';
-import { Button, Input, LocalizedDateInput, PasswordGenerator, Notice } from '../../../../components/common';
+import { Button, Input, LocalizedDateInput, PasswordGenerator, Notice, TimeField } from '../../../../components/common';
 import { FeedbackSettings } from '../../../../components/admin';
 import { CustomerAccountPicker } from '../../../../components/admin/CustomerAccountPicker';
 import { TeamMemberPicker } from '../../../../components/admin/TeamMemberPicker';
+import { ExpiryPresets, EXPIRY_PRESET_DAYS } from '../../../../components/admin/ExpiryPresets';
 import { UploaderNameSettings } from '../../../../components/admin/UploaderNameSettings';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import type { FeedbackSettings as FeedbackSettingsType } from '../../../../services/feedback.service';
 import { ExternalFolderPicker } from '../ExternalFolderPicker';
 import { useExternalImport } from '../useExternalImport';
-import { emailNeedsPassword, type EventFields } from './draft';
+import { emailNeedsPassword, GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, type EventFields } from './draft';
+import { radioGroupKeyDown } from '../../../../utils/ariaKeyboard';
 
 export interface FieldsProps {
   f: EventFields;
@@ -214,15 +217,36 @@ export const AccessSection: React.FC<FieldsProps & { ownsEvent?: boolean }> = ({
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
   const [showPassword, setShowPassword] = useState(false);
+  // A quick pick counts from today; an empty date is stored as "never
+  // expires" (the update route keeps NULL, whatever the create default is).
+  const presetDate = (days: number) => format(addDays(new Date(), days), 'yyyy-MM-dd');
+  // The date field keeps the text being typed and only re-reads `value` when
+  // it changes. A pick equal to the stored date changes nothing, so a
+  // half-typed date would stay: every pick remounts the field instead.
+  const [pickCount, setPickCount] = useState(0);
   return (
     <SectionCard>
-      <div className="md:w-64">
-        <label className={labelClass}>{t('events.expirationDate')}</label>
-        <LocalizedDateInput
-          value={f.expires_at}
-          onChange={(iso) => set({ expires_at: iso })}
-          min={format(new Date(), 'yyyy-MM-dd')}
-        />
+      <div>
+        <div className="md:w-64">
+          <label className={labelClass}>{t('events.expirationDate')}</label>
+          <LocalizedDateInput
+            key={pickCount}
+            value={f.expires_at}
+            onChange={(iso) => set({ expires_at: iso })}
+            min={format(new Date(), 'yyyy-MM-dd')}
+          />
+        </div>
+        <div className="mt-2">
+          <ExpiryPresets
+            lead={t('events.expiryPresets.fromToday', 'From today:')}
+            allowNever
+            selected={f.expires_at ? (EXPIRY_PRESET_DAYS.find((days) => presetDate(days) === f.expires_at) ?? null) : 'never'}
+            onSelect={(preset) => {
+              set({ expires_at: preset === 'never' ? '' : presetDate(preset) });
+              setPickCount((n) => n + 1);
+            }}
+          />
+        </div>
       </div>
       <div>
         <label className="flex items-start gap-2">
@@ -336,6 +360,39 @@ export const GuestsSection: React.FC<FieldsProps & {
             ))}
           </select>
           <p className="text-xs text-muted mt-1">{t('events.uploadCategoryHelp')}</p>
+          <label className={`${labelClass} mt-4`} htmlFor="event-guest-upload-max-edge">
+            {t('events.guestUploadMaxEdge', 'Longest edge of guest photos (px)')}
+          </label>
+          <input
+            id="event-guest-upload-max-edge"
+            type="number"
+            value={f.guest_upload_max_edge}
+            onChange={(e) => set({ guest_upload_max_edge: e.target.value })}
+            min={GUEST_UPLOAD_MIN_EDGE}
+            max={GUEST_UPLOAD_MAX_EDGE}
+            className={inputClass}
+          />
+          <p className="text-xs text-muted mt-1">
+            {t('events.guestUploadMaxEdgeHelp', 'Larger JPEG, PNG and WebP photos are scaled down on the guest\'s device before upload, which saves data and storage. Leave empty to keep originals. Other formats and videos are always sent as they are.')}
+          </p>
+        </div>
+      )}
+      {/* Approval of guest uploads (issue 1733) — only meaningful with them on */}
+      {f.allow_user_uploads && (
+        <div className="ml-6">
+          <label className="flex items-center">
+            <input
+              type="checkbox"
+              checked={f.moderate_guest_uploads}
+              onChange={(e) => set({ moderate_guest_uploads: e.target.checked })}
+              className={checkboxClass}
+              data-testid="event-moderate-guest-uploads"
+            />
+            <span className="ml-2 text-sm text-body">{t('events.moderateGuestUploads', 'Approve guest uploads before they are published')}</span>
+          </label>
+          <p className="text-xs text-muted mt-1 ml-6">
+            {t('events.moderateGuestUploadsHelp', 'Guest uploads stay hidden from guests and clients until you or a reviewer approve them on the Photos tab. Rejected uploads stay hidden. Uploads that are waiting count towards the photo limit.')}
+          </p>
         </div>
       )}
       {/* Reveal mode (#838) — only meaningful with guest uploads */}
@@ -356,12 +413,25 @@ export const GuestsSection: React.FC<FieldsProps & {
           {f.reveal_mode && (
             <div className="mt-2 ml-6">
               <label className={labelClass}>{t('events.revealAt', 'Scheduled reveal (optional)')}</label>
-              <input
-                type="datetime-local"
-                value={f.reveal_at}
-                onChange={(e) => set({ reveal_at: e.target.value })}
-                className="px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent"
-              />
+              {/* Date and time fields instead of a native datetime-local:
+                  those follow the general date and time formats. reveal_at
+                  stays the local "yyyy-MM-ddTHH:mm" string. */}
+              <div className="flex flex-wrap gap-2">
+                <div className="w-44">
+                  <LocalizedDateInput
+                    ariaLabel={t('events.revealAt', 'Scheduled reveal (optional)')}
+                    value={f.reveal_at.slice(0, 10)}
+                    onChange={(date) => set({ reveal_at: date ? `${date}T${f.reveal_at.slice(11, 16) || '00:00'}` : '' })}
+                  />
+                </div>
+                <TimeField
+                  className="w-28"
+                  ariaLabel={t('events.revealAtTime', 'Reveal time')}
+                  value={f.reveal_at.slice(11, 16)}
+                  disabled={!f.reveal_at}
+                  onChange={(time) => f.reveal_at && set({ reveal_at: `${f.reveal_at.slice(0, 10)}T${time}` })}
+                />
+              </div>
               <p className="text-xs text-muted mt-1">
                 {t('events.revealAtHelp', 'Leave empty to reveal manually with the "Reveal now" button.')}
               </p>
@@ -369,6 +439,20 @@ export const GuestsSection: React.FC<FieldsProps & {
           )}
         </div>
       )}
+      {/* Live refresh (issue 1733, C5). Not gated on uploads: the
+          photographer's own uploads during the event count as well. */}
+      <div>
+        <label className="flex items-center">
+          <input
+            type="checkbox"
+            checked={f.live_refresh}
+            onChange={(e) => set({ live_refresh: e.target.checked })}
+            className={checkboxClass}
+          />
+          <span className="ml-2 text-sm text-body">{t('events.liveRefresh')}</span>
+        </label>
+        <p className="text-xs text-muted mt-1 ml-6">{t('events.liveRefreshHelp')}</p>
+      </div>
       {/* Uploader names (#1561). Not gated on uploads: the visibility switch
           also covers credits read from EXIF. */}
       <UploaderNameSettings
@@ -378,6 +462,19 @@ export const GuestsSection: React.FC<FieldsProps & {
         showToGuests={f.show_credits_to_guests}
         onShowToGuestsChange={(show_credits_to_guests) => set({ show_credits_to_guests })}
       />
+      {/* Camera details in the guest lightbox (issue 1733, D1). */}
+      <div>
+        <label className="flex items-center">
+          <input
+            type="checkbox"
+            checked={f.show_exif_to_guests}
+            onChange={(e) => set({ show_exif_to_guests: e.target.checked })}
+            className={checkboxClass}
+          />
+          <span className="ml-2 text-sm text-body">{t('events.showExifToGuests')}</span>
+        </label>
+        <p className="text-xs text-muted mt-1 ml-6">{t('events.showExifToGuestsHelp')}</p>
+      </div>
       {feedback && (
         <div className="pt-4 border-t border-line">
           <h4 className="text-sm font-semibold text-heading mb-3">{t('feedback.settings.title', 'Guest Feedback Settings')}</h4>
@@ -444,11 +541,12 @@ export const SourceSection: React.FC<FieldsProps & { event: Event; canEdit?: boo
     <SectionCard
       description={t('events.sourceModeHelp', 'Use managed mode for direct uploads or point to a mounted /external-media folder when using local storage.')}
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3" role="radiogroup" aria-label={t('events.sourceMode', 'Source Mode')}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3" role="radiogroup" aria-label={t('events.sourceMode', 'Source Mode')} onKeyDown={radioGroupKeyDown}>
         <button
           type="button"
           role="radio"
           aria-checked={f.source_mode === 'managed'}
+          tabIndex={f.source_mode === 'managed' ? 0 : -1}
           className={option(f.source_mode === 'managed')}
           onClick={() => set({ source_mode: 'managed', external_path: '' })}
         >
@@ -459,6 +557,7 @@ export const SourceSection: React.FC<FieldsProps & { event: Event; canEdit?: boo
           type="button"
           role="radio"
           aria-checked={f.source_mode === 'reference'}
+          tabIndex={f.source_mode === 'reference' ? 0 : -1}
           className={option(f.source_mode === 'reference')}
           onClick={() => set({ source_mode: 'reference', external_path: f.external_path || event.external_path || '' })}
         >

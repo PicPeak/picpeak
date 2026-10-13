@@ -193,12 +193,17 @@ function hasOwnGalleryToken(req, slug) {
 }
 
 // What a viewer's browser asks for while they look through a gallery and pick
-// photos: the photo list, per-photo feedback (reads and writes), their own
-// picks, the gallery's info, and the view beacon the lightbox posts for every
-// slide. Downloads, uploads and the password check are not in the list and
-// stay on the ordinary budget.
-const GALLERY_VIEWER_RE = /^\/api\/gallery\/([^/]+)\/(?:(?:photos|my-feedback|feedback-summary|feedback-settings|info|stats|people)(?:\/|$)|photo\/[^/]+\/view\/?$)/i;
+// photos: the photo list, per-photo feedback (reads and writes), the bulk
+// rating of a selection, their own picks, the gallery's info, and the view
+// beacon the lightbox posts for every slide. Downloads, uploads and the
+// password check are not in the list and stay on the ordinary budget.
+const GALLERY_VIEWER_RE = /^\/api\/gallery\/([^/]+)\/(?:(?:photos|my-feedback|feedback-summary|feedback-settings|info|stats|people)(?:\/|$)|photo\/[^/]+\/view\/?$|feedback\/bulk\/?$)/i;
 const GALLERY_VIEWER_BUDGET_FACTOR = 10;
+// The live-refresh poll (issue 1733, C5) counts in a bucket of its own, the
+// same size: every open tab behind one address polls every 20 seconds, and in
+// the viewer bucket a full venue on one WiFi address spent the budget that
+// likes and reloads need. Here an exhausted budget only slows the polling.
+const GALLERY_POLL_RE = /^\/api\/gallery\/[^/]+\/photos\/state\/?$/i;
 
 /**
  * A verified gallery viewer working in that gallery (issue 1891).
@@ -293,7 +298,7 @@ async function createRateLimiter(store = new MemoryStore()) {
     // anonymous requests of everyone else behind the same address.
     keyGenerator: async (req) => {
       const key = usesGalleryViewerBudget(req, await getRateLimitSettings())
-        ? `gallery-viewer:${rateLimitKey(req)}` : rateLimitKey(req);
+        ? `${GALLERY_POLL_RE.test(req.path || '') ? 'gallery-poll' : 'gallery-viewer'}:${rateLimitKey(req)}` : rateLimitKey(req);
       // Only a counted request gets here, and this is what it was counted
       // under: refundRateLimit gives exactly that back.
       req.rateLimitRefund = () => store.decrement(key);

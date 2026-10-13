@@ -799,7 +799,7 @@ router.get('/downloads', adminAuth, requirePermission('settings.view'), async (r
 router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
     const {
-      invalidateDownloadGlobals, getDownloadGlobals, ORIGINAL,
+      invalidateDownloadGlobals, getDownloadGlobals, ORIGINAL, JOB_RETENTION_HOURS, parseJobRetentionHours,
     } = require('../utils/downloadResolutions');
     const has = (k) => Object.prototype.hasOwnProperty.call(req.body, k);
     const updates = [];
@@ -855,6 +855,17 @@ router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (r
     }
     if (has('download_allow_original')) {
       push('download_allow_original', !!req.body.download_allow_original);
+    }
+    // How long a prepared archive is kept (issue 1733). Refused rather than
+    // clamped: a typo must not quietly become a week of archives on disk.
+    if (has('download_job_retention_hours')) {
+      const hours = parseJobRetentionHours(req.body.download_job_retention_hours);
+      if (hours === null) {
+        return res.status(400).json({
+          error: `download_job_retention_hours must be a whole number between ${JOB_RETENTION_HOURS.min} and ${JOB_RETENTION_HOURS.max}`,
+        });
+      }
+      push('download_job_retention_hours', hours);
     }
 
     for (const u of updates) {
