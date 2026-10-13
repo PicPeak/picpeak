@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, ClipboardCheck, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, FolderInput, Cog, AlertTriangle, RefreshCw, LayoutGrid, List, UserRound, X, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
@@ -87,6 +87,17 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingPhotos, setDeletingPhotos] = useState<Set<number>>(new Set());
+  // A deleted photo's id is forgotten once it has left the list: restored
+  // from the trash it comes back under the same id, and must not come back
+  // dimmed and unclickable.
+  useEffect(() => {
+    setDeletingPhotos((prev) => {
+      if (prev.size === 0) return prev;
+      const present = new Set(photos.map((photo) => photo.id));
+      const next = new Set([...prev].filter((id) => present.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [photos]);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isUpdatingCategory, setIsUpdatingCategory] = useState(false);
   // Move to folder (issue 1786)
@@ -281,7 +292,11 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       const failed = result?.failed?.length ?? 0;
       if (failed < count) toast.success(deletedMessage(t, count - failed, result));
       // Still in the gallery: the refreshed grid shows which.
-      if (failed > 0) toast.error(t('admin.photos.trash.deleteFailed', { count: failed }));
+      if (failed > 0) {
+        toast.error(t('admin.photos.trash.deleteFailed', { count: failed }));
+        // They stay in the gallery, and usable.
+        setDeletingPhotos(new Set(selectedIds.filter((id) => !result.failed!.includes(id))));
+      }
       setSelectedPhotos(new Set());
       setAnchor(null);
       setIsSelectionMode(false);

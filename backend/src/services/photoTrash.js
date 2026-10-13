@@ -139,8 +139,13 @@ async function restorePhotos(event, photoIds) {
  * delete did before the trash, and still does with a retention of 0; a
  * purge runs it on a photo it has claimed. Every step tolerates being run
  * twice.
+ *
+ * `strict` (every purge): an original that cannot be deleted stops here and
+ * the row stays, claimed, for the sweep to try again. Deleting the row over a
+ * file that is still there would let the S3 importer or the folder watcher
+ * bring the photo back as a new one.
  */
-async function deletePhotoForGood(event, photo) {
+async function deletePhotoForGood(event, photo, { strict = false } = {}) {
   const storage = getStorage();
   const { resolvePhotoStorageKey } = require('./photoResolver');
   const imageProcessor = require('./imageProcessor');
@@ -150,6 +155,7 @@ async function deletePhotoForGood(event, photo) {
     if (originalKey) await storage.delete(originalKey);
   } catch (error) {
     logger.error('Error deleting photo file:', error);
+    if (strict) throw error;
   }
   // Derived files; thumbnail_path and friends are canonical storage keys.
   for (const key of [photo.thumbnail_path, photo.hero_path, photo.preview_path, photo.web_path]) {
@@ -186,7 +192,7 @@ async function purgePhoto(event, photo, { due = null, now = Date.now() } = {}) {
     .whereNotNull('purge_after');
   if (due) claim = claim.where('purge_after', '<=', due);
   if (await claim.update({ purge_after: null, deleted_at: new Date(now).toISOString() }) !== 1) return false;
-  await deletePhotoForGood(event, photo);
+  await deletePhotoForGood(event, photo, { strict: true });
   return true;
 }
 
@@ -198,7 +204,7 @@ async function purgePhoto(event, photo, { due = null, now = Date.now() } = {}) {
 async function purgeEventTrash(event) {
   const rows = await db('photos').where({ event_id: event.id }).whereNotNull('deleted_at');
   for (const photo of rows) {
-    if (photo.purge_after == null) await deletePhotoForGood(event, photo);
+    if (photo.purge_after == null) await deletePhotoForGood(event, photo, { strict: true });
     else await purgePhoto(event, photo);
   }
   return rows.length;
@@ -252,7 +258,7 @@ async function purgeExpired(now = Date.now()) {
         .where('deleted_at', '<', staleIso)
         .update({ deleted_at: nowIso });
       if (reclaimed !== 1) return false;
-      await deletePhotoForGood(event, photo);
+      await deletePhotoForGood(event, photo, { strict: true });
       return true;
     },
   );

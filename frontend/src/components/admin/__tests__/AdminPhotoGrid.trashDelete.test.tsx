@@ -112,6 +112,25 @@ describe('AdminPhotoGrid delete with the photo trash', () => {
     expect(toastSuccess).toHaveBeenCalledWith('admin.photos.trash.deleted|2');
   });
 
+  it('a photo restored from the trash comes back usable, not dimmed as still being deleted', async () => {
+    deletePhotos.mockResolvedValue({ trashed: 2, deleted: 0, failed: [], retention_days: 30 });
+    const grid = (photos: AdminPhoto[]) => (
+      <QueryClientProvider client={client}>
+        <AdminPhotoGrid photos={photos} eventId={42} onPhotoClick={vi.fn()} onPhotosDeleted={onPhotosDeleted} trashRetentionDays={30} />
+      </QueryClientProvider>
+    );
+    const client = new QueryClient();
+    const { rerender } = render(grid([photo(1), photo(2)]));
+    await deleteBoth();
+    await waitFor(() => expect(onPhotosDeleted).toHaveBeenCalled());
+    expect(screen.getByTestId('admin-photo-tile-1').className).toContain('opacity-50');
+
+    // The refreshed list no longer has them; then photo 1 is restored.
+    rerender(grid([]));
+    rerender(grid([photo(1)]));
+    expect(screen.getByTestId('admin-photo-tile-1').className).not.toContain('opacity-50');
+  });
+
   it('reports a photo the server could not delete', async () => {
     deletePhotos.mockResolvedValue({ trashed: 1, deleted: 0, failed: [2], retention_days: 30 });
     renderGrid(30);

@@ -589,6 +589,50 @@ describe('photo trash (issue 1733)', () => {
       expect(await row(running)).toBeDefined();
     });
 
+    it('an original that cannot be deleted keeps the row for the sweep, instead of orphaning the file', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      await del(event, photo);
+      const realDelete = storage.delete.bind(storage);
+      const failing = jest.spyOn(storage, 'delete').mockImplementation(async (key) => {
+        if (key === photo.key) throw new Error('storage unavailable');
+        return realDelete(key);
+      });
+      let res;
+      try {
+        res = await purge(event, [photo.id]);
+      } finally {
+        failing.mockRestore();
+      }
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ purged: 0, failed: [photo.id] });
+      // Claimed and kept: not restorable, not listed, and not gone either.
+      expect(await row(photo)).toMatchObject({ purge_after: null });
+      expect((await row(photo)).deleted_at).not.toBeNull();
+      expect(await storage.exists(photo.key)).toBe(true);
+
+      await db('photos').where({ id: photo.id }).update({ deleted_at: new Date(Date.now() - 3600000).toISOString() });
+      expect(await photoTrash.purgeExpired()).toBe(1);
+      expect(await row(photo)).toBeUndefined();
+      expect(await filesGone(photo)).toBe(true);
+    });
+
+    it('the folder watcher leaves the row of a purge under way alone', async () => {
+      const event = await mkEvent();
+      const purging = await mkPhoto(event); const trashed = await mkPhoto(event);
+      await del(event, purging); await del(event, trashed);
+      await db('photos').where({ id: purging.id }).update({ purge_after: null });
+      const fileWatcher = require('../../src/services/fileWatcher');
+      const root = require('path').join(process.env.STORAGE_PATH, 'events/active');
+      webhookFire.mockClear();
+      await fileWatcher.removePhoto(require('path').join(root, event.slug, purging.filename));
+      expect(await row(purging)).toBeDefined();
+      // A trashed photo whose file disappears goes as before, without a second webhook.
+      await fileWatcher.removePhoto(require('path').join(root, event.slug, trashed.filename));
+      expect(await row(trashed)).toBeUndefined();
+      expect(webhookFire).not.toHaveBeenCalled();
+    });
+
     it('retention 0 deletes at once', async () => {
       await setRetention(0);
       const event = await mkEvent();
