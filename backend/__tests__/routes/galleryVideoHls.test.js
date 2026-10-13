@@ -322,6 +322,26 @@ describe('adaptive streaming routes (issue 1733)', () => {
       expect(await grants()).toHaveLength(0);
     });
 
+    test('a slot another download only holds opens no segment, and the master playlist takes its own at once', async () => {
+      // A ZIP that is still being built holds its photos' slots and gives
+      // them back when it is abandoned: a stream played on such a hold would
+      // have cost nothing.
+      const { grantDownloads, settleReservation } = require('../../src/services/downloadQuota');
+      const event = await db('events').where({ id: eventId }).first();
+      const zip = await grantDownloads(event, [streamed], { reserve: true });
+      expect(zip.ok).toBe(true);
+      for (const route of [`${streamed}/480p/index.m3u8`, `${streamed}/480p/seg_00000.m4s`]) {
+        expect((await get(route, { headers: asClient })).status).toBe(403);
+      }
+      // Playing it is a grant of its own, there before the first rung is asked for.
+      expect((await get(`${streamed}/master.m3u8`, { headers: asClient })).status).toBe(200);
+      expect((await grants()).map(row => [Number(row.photo_id), Number(row.pending_holders)])).toEqual([[streamed, 0]]);
+      expect((await get(`${streamed}/480p/seg_00000.m4s`, { headers: asClient })).status).toBe(200);
+      // The abandoned ZIP gives nothing back that the playback took.
+      await settleReservation(eventId, zip, []);
+      expect(await grants()).toHaveLength(1);
+    });
+
     test('a guest takes no slot: refused until the client has played the video, served after', async () => {
       expect((await get(`${streamed}/master.m3u8`)).status).toBe(403);
       expect(await grants()).toHaveLength(0);
@@ -448,6 +468,40 @@ describe('adaptive streaming routes (issue 1733)', () => {
       expect(await keysUnder(`hls/${duplicate}`)).toEqual([]);
       expect(await keysUnder(`hls/${survivor}`)).toHaveLength(4);
     }, 120000);
+
+    test('a bulk delete sweeps a ladder published while it was removing the batch\'s files', async () => {
+      // The rows are read first and deleted after every file of the batch
+      // is gone, minutes later for a large one: long enough for the queue to
+      // give a video its first ladder.
+      const { assignAdminRole, mintAdminToken } = require('../integration/helpers/crmDb');
+      const adminId = unwrap(await db('admin_users').insert({
+        username: 'hls-admin', email: 'hls-admin@example.com', password_hash: 'x',
+        must_change_password: false, created_at: new Date().toISOString(),
+      }).returning('id'));
+      await assignAdminRole(db, adminId);
+      const admin = express();
+      admin.use(express.json());
+      admin.use(cookieParser());
+      admin.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
+
+      const id = await insertVideo('late-ladder.mp4', { ladder: false });
+      const original = storage.delete;
+      const remove = jest.spyOn(storage, 'delete').mockImplementation(async function (key) {
+        const result = await original.call(this, key);
+        const row = await db('photos').where({ id }).first('hls_path');
+        if (row && !row.hls_path) await db('photos').where({ id }).update({ hls_status: 'complete', hls_path: await writeLadder(id) });
+        return result;
+      });
+      try {
+        const res = await request(admin).post(`/api/admin/photos/${eventId}/photos/bulk-delete`)
+          .set('Authorization', `Bearer ${mintAdminToken(adminId)}`).send({ photoIds: [id] });
+        expect(res.status).toBe(200);
+      } finally {
+        remove.mockRestore();
+      }
+      expect(await db('photos').where({ id }).first()).toBeUndefined();
+      expect(await keysUnder(`hls/${id}`)).toEqual([]);
+    });
 
     test('the ladder is swept once the row no longer authorises a worker to publish one', () => {
       // A transcode that overlaps the delete publishes against the row. Swept

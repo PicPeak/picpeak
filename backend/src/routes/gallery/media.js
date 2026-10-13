@@ -472,24 +472,40 @@ async function loadStreamedVideo(req, res) {
 
 /**
  * Download limit (issue 1560) for a stream. The ladder stands in for what
- * the photo route would play: free where that is the web copy, one slot
+ * the photo route would play: free where that is the web copy (a key in its
+ * namespace that storage still has, not the row's word for it), one slot
  * where it is the original. Fetching the master playlist is the playback, so
- * that is what takes the slot, once per video (admitVideoStream). Rung
- * playlists and segments never take one; they are answered only for a video
- * that already has its grant, so nobody plays around the master. The web
- * copy counts where the photo route would serve it: a key in its namespace
- * that storage still has, not the row's word for it.
+ * that is what takes the slot, once per video and for the client only, as
+ * admitVideoStream does for the file. Unlike a file the grant is delivered
+ * at once: the playlist is a few hundred bytes, and the rung requests right
+ * behind it are answered on a delivered grant only. A slot that is merely
+ * held (a ZIP still being built) goes back when that download is abandoned,
+ * so it opens nothing here. Rung playlists and segments never take a slot,
+ * so nobody plays around the master.
  */
 async function admitStream(req, res, photo, { playback }) {
   if (req.isAdminPreview || !(await currentDownloadLimit(req.event))) return true;
   if (photo.web_path && photo.web_status === 'complete' && isPresentationRenditionKey(photo.web_path, 'web')
       && await getStorage().stat(photo.web_path).catch(() => null)) return true;
-  if (playback) return admitVideoStream(req, res, photo);
-  // Pending counts: the grant of a master playlist settles as its response
-  // closes, and the player asks for the first rung right behind it.
-  if ((await grantedPhotoIds(req.event.id, [Number(photo.id)])).has(Number(photo.id))) return true;
-  res.status(403).json(clientOnlyError());
-  return false;
+  const photoId = Number(photo.id);
+  if ((await grantedPhotoIds(req.event.id, [photoId], db, { deliveredOnly: true })).has(photoId)) return true;
+  if (!playback || !drawsOnQuota(req)) {
+    res.status(403).json(clientOnlyError());
+    return false;
+  }
+  // A HEAD probe answers without taking any of the quota.
+  if (req.method === 'HEAD') {
+    const check = await checkDownloads(req.event, [photoId]);
+    if (check.ok) return true;
+    res.status(403).json(downloadLimitError(check));
+    return false;
+  }
+  const quota = await grantDownloads(req.event, [photoId]);
+  if (!quota.ok) {
+    refuseDownload(res, quota);
+    return false;
+  }
+  return true;
 }
 
 /**
