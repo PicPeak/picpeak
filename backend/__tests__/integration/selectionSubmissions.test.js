@@ -139,6 +139,27 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
       expect((await state('device-A')).selection).toMatchObject({ cap: null, used: 2, can_submit: true });
     });
 
+    it('leaves a pick on a photo the guest can no longer see out of the count and the hand-over', async () => {
+      await feedback('device-A', photoIds[0], { feedback_type: 'like' });
+      await feedback('device-A', photoIds[1], { feedback_type: 'like' });
+      await setSettings({ allow_decisions: true });
+      await feedback('device-A', photoIds[1], { feedback_type: 'decision', decision: 'rejected' });
+      await db('photos').where({ id: photoIds[1] }).update({ visibility: 'hidden' });
+      try {
+        // What /my-feedback lists, which is what the guest is shown.
+        const mine = await as('device-A', 'get', '/my-feedback');
+        expect(mine.body.map((row) => row.photo_id)).toEqual([photoIds[0]]);
+
+        const { selection, approval } = await state('device-A');
+        expect(selection.used).toBe(1);
+        expect(approval.rejected).toBe(0);
+        const res = await submit('device-A');
+        expect(res.body.submission.item_count).toBe(1);
+      } finally {
+        await db('photos').where({ id: photoIds[1] }).update({ visibility: 'visible' });
+      }
+    });
+
     it('is off without a cap and without the switch', async () => {
       await setSettings({ allow_selection_submit: false });
       expect((await state('device-A')).selection).toMatchObject({ counter: false, can_submit: false });
@@ -188,6 +209,38 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
 
       expect(await rows('like')).toHaveLength(1);
       expect(await rows('favorite')).toHaveLength(1);
+    });
+
+    // A like or an un-like racing the hand-over must land wholly before it
+    // (and be counted) or be refused: the count the photographer is told is
+    // the picks that are there afterwards. Service level, so the two start
+    // in a known order.
+    it.each([
+      ['an added like, started first', 'add', false],
+      ['an added like, started second', 'add', true],
+      ['a removed like, started first', 'remove', false],
+      ['a removed like, started second', 'remove', true],
+    ])('keeps the stored count equal to the picks when it overlaps %s', async (_name, change, submitFirst) => {
+      const selectionSubmissions = require('../../src/services/selectionSubmissions');
+      const viewer = { guestId: null, guestIdentifier: 'race-device' };
+      const like = (photoId) => feedbackService.submitFeedback(
+        photoId, eventId, { feedback_type: 'like', guest_id: null }, viewer.guestIdentifier,
+      );
+      await like(photoIds[0]);
+      await like(photoIds[1]);
+      const settings = await feedbackService.getEventFeedbackSettings(eventId);
+
+      const write = () => like(change === 'add' ? photoIds[2] : photoIds[1]);
+      const handIn = () => selectionSubmissions.submit(eventId, settings, viewer, { kind: 'selection' });
+      const [written, handedIn] = submitFirst
+        ? (await Promise.all([handIn(), write()])).reverse()
+        : await Promise.all([write(), handIn()]);
+
+      const picks = await db('photo_feedback')
+        .where({ event_id: eventId, guest_identifier: viewer.guestIdentifier, feedback_type: 'like' });
+      expect(handedIn.submission.item_count).toBe(picks.length);
+      // Either the write went in first, or it met the lock.
+      expect(picks.length).toBe(written.locked ? 2 : (change === 'add' ? 3 : 1));
     });
 
     it('leaves ratings, colour labels and comments writable', async () => {

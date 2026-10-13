@@ -8,6 +8,10 @@
  * is frozen for that guest (LOCKED_TYPES); everything else stays writable.
  * An admin reopens it, which keeps the row as history and lifts the lock.
  *
+ * The lock only holds if a hand-over and a feedback write of the same guest
+ * never overlap: both run inside withViewerLock, each with its check and its
+ * write in the one transaction.
+ *
  * Does not require feedbackService: that module calls into this one from its
  * write path, so the caller passes the event's feedback settings in.
  */
@@ -16,9 +20,12 @@ const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { toUtcIso } = require('../utils/queueTimestamps');
+const { applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
 
 const KINDS = ['selection', 'approval'];
 const NOTE_MAX_LENGTH = 1000;
+// First key of the PostgreSQL advisory lock; the second is the viewer's hash.
+const VIEWER_LOCK_CLASS = 0x53656c53; // SelS
 
 /** The feedback types a submission of each kind freezes. */
 const LOCKED_TYPES = {
@@ -31,10 +38,33 @@ function kindLocking(feedbackType) {
 }
 
 /** Narrow a query to one viewer, as photo_feedback reads do. */
-function scopeToViewer(query, { guestId, guestIdentifier }) {
+function scopeToViewer(query, { guestId, guestIdentifier }, table = null) {
+  const column = (name) => (table ? `${table}.${name}` : name);
   return guestId
-    ? query.where('guest_id', guestId)
-    : query.where('guest_identifier', guestIdentifier);
+    ? query.where(column('guest_id'), guestId)
+    : query.where(column('guest_identifier'), guestIdentifier);
+}
+
+/**
+ * Run `work(trx)` with this viewer's hand-overs and locked feedback writes
+ * held off until it commits. A like that overlapped a submission otherwise
+ * passed the lock check, then landed after the count was stored.
+ *
+ * PostgreSQL: a transaction-scoped advisory lock on the viewer's identifier,
+ * the key of the unique index, so other guests and other replicas' requests
+ * for other guests never wait on it. SQLite has one connection, and the
+ * transaction holds it: everything in `work` must go through `trx`, and
+ * nothing in it may read through the global pool (hasColumnCached included).
+ */
+async function withViewerLock(eventId, viewer, work) {
+  return db.transaction(async (trx) => {
+    if (trx.client.config.client === 'pg') {
+      await trx.raw('SELECT pg_advisory_xact_lock(?, hashtext(?))', [
+        VIEWER_LOCK_CLASS, `${eventId}:${viewer.guestIdentifier}`,
+      ]);
+    }
+    return work(trx);
+  });
 }
 
 function present(row) {
@@ -59,10 +89,10 @@ async function activeSubmission(eventId, viewer, kind, executor = db) {
  * The active submission that freezes this feedback type for this viewer, or
  * null. Called from feedbackService.submitFeedback before any write.
  */
-async function lockFor(eventId, feedbackType, viewer) {
+async function lockFor(eventId, feedbackType, viewer, executor = db) {
   const kind = kindLocking(feedbackType);
   if (!kind) return null;
-  return present(await activeSubmission(eventId, viewer, kind));
+  return present(await activeSubmission(eventId, viewer, kind, executor));
 }
 
 /**
@@ -80,23 +110,37 @@ function selectionPicks(settings) {
   return { types: [favorites && 'favorite', likes && 'like'].filter(Boolean), cap: null };
 }
 
-async function countPicks(eventId, viewer, types) {
-  if (types.length === 0) return 0;
-  const row = await scopeToViewer(
-    db('photo_feedback')
-      // Hidden rows are absent everywhere else, the cap included (#1150).
-      .where({ event_id: eventId, is_hidden: false })
-      .whereIn('feedback_type', types),
+/**
+ * The viewer's feedback rows on the photos they can still see, as
+ * /my-feedback lists them: a pick on a photo the client has since hidden is
+ * not in the guest's count, so it is not in the one handed in either.
+ */
+function visibleFeedback(eventId, viewer, executor) {
+  return scopeToViewer(
+    applyPhotoVisibilityFilter(
+      executor('photo_feedback')
+        .join('photos', 'photo_feedback.photo_id', 'photos.id')
+        // Hidden rows are absent everywhere else, the cap included (#1150).
+        .where({ 'photo_feedback.event_id': eventId, 'photo_feedback.is_hidden': false }),
+      viewer.accessLevel,
+    ),
     viewer,
-  ).countDistinct('photo_id as count').first();
+    'photo_feedback',
+  );
+}
+
+async function countPicks(eventId, viewer, types, executor = db) {
+  if (types.length === 0) return 0;
+  const row = await visibleFeedback(eventId, viewer, executor)
+    .whereIn('photo_feedback.feedback_type', types)
+    .countDistinct('photo_feedback.photo_id as count').first();
   return Number(row?.count) || 0;
 }
 
-async function countDecisions(eventId, viewer) {
-  const rows = await scopeToViewer(
-    db('photo_feedback').where({ event_id: eventId, feedback_type: 'decision', is_hidden: false }),
-    viewer,
-  ).groupBy('decision').select('decision').count('id as count');
+async function countDecisions(eventId, viewer, executor = db) {
+  const rows = await visibleFeedback(eventId, viewer, executor)
+    .where('photo_feedback.feedback_type', 'decision')
+    .groupBy('photo_feedback.decision').select('photo_feedback.decision').count('photo_feedback.id as count');
   const counts = { approved: 0, rejected: 0 };
   for (const row of rows) {
     if (row.decision in counts) counts[row.decision] = Number(row.count) || 0;
@@ -105,7 +149,7 @@ async function countDecisions(eventId, viewer) {
 }
 
 /** The viewer's own state per kind, for GET /:slug/selection. */
-async function getState(eventId, settings, viewer) {
+async function getState(eventId, settings, viewer, executor = db) {
   const enabled = Boolean(settings.feedback_enabled);
   const picks = selectionPicks(settings);
   const selectionOn = enabled && picks.types.length > 0;
@@ -116,10 +160,10 @@ async function getState(eventId, settings, viewer) {
   const counter = selectionOn && (picks.cap !== null || canSubmitSelection);
 
   const [used, decisions, selection, approval] = await Promise.all([
-    counter ? countPicks(eventId, viewer, picks.types) : 0,
-    canSubmitApproval ? countDecisions(eventId, viewer) : { approved: 0, rejected: 0 },
-    canSubmitSelection ? activeSubmission(eventId, viewer, 'selection') : null,
-    canSubmitApproval ? activeSubmission(eventId, viewer, 'approval') : null,
+    counter ? countPicks(eventId, viewer, picks.types, executor) : 0,
+    canSubmitApproval ? countDecisions(eventId, viewer, executor) : { approved: 0, rejected: 0 },
+    canSubmitSelection ? activeSubmission(eventId, viewer, 'selection', executor) : null,
+    canSubmitApproval ? activeSubmission(eventId, viewer, 'approval', executor) : null,
   ]);
 
   return {
@@ -148,32 +192,37 @@ async function getState(eventId, settings, viewer) {
  *   { submission, rejected }      written; `rejected` only for an approval
  */
 async function submit(eventId, settings, viewer, { kind, note, guestName }) {
-  const state = await getState(eventId, settings, viewer);
-  if (!state[kind].can_submit) return { disabled: true };
-  if (state[kind].submission) return { already: state[kind].submission };
-
-  const itemCount = kind === 'selection' ? state.selection.used : state.approval.approved;
-  if (kind === 'selection' && itemCount === 0) return { empty: true };
-
   try {
-    const inserted = await db('selection_submissions').insert({
-      event_id: eventId,
-      guest_id: viewer.guestId || null,
-      guest_identifier: viewer.guestIdentifier,
-      guest_name: guestName || null,
-      kind,
-      item_count: itemCount,
-      note: note || null,
-      submitted_at: new Date().toISOString(),
-    }).returning('id');
-    const id = inserted[0]?.id ?? inserted[0];
-    const row = await db('selection_submissions').where({ id }).first();
-    return {
-      submission: present(row),
-      ...(kind === 'approval' ? { rejected: state.approval.rejected } : {}),
-    };
+    // Count and insert under the viewer's lock: a like still in flight has
+    // either landed and is counted, or finds the submission and is refused.
+    return await withViewerLock(eventId, viewer, async (trx) => {
+      const state = await getState(eventId, settings, viewer, trx);
+      if (!state[kind].can_submit) return { disabled: true };
+      if (state[kind].submission) return { already: state[kind].submission };
+
+      const itemCount = kind === 'selection' ? state.selection.used : state.approval.approved;
+      if (kind === 'selection' && itemCount === 0) return { empty: true };
+
+      const inserted = await trx('selection_submissions').insert({
+        event_id: eventId,
+        guest_id: viewer.guestId || null,
+        guest_identifier: viewer.guestIdentifier,
+        guest_name: guestName || null,
+        kind,
+        item_count: itemCount,
+        note: note || null,
+        submitted_at: new Date().toISOString(),
+      }).returning('id');
+      const id = inserted[0]?.id ?? inserted[0];
+      const row = await trx('selection_submissions').where({ id }).first();
+      return {
+        submission: present(row),
+        ...(kind === 'approval' ? { rejected: state.approval.rejected } : {}),
+      };
+    });
   } catch (error) {
-    // Two taps at once: the partial unique index lets one through.
+    // The partial unique index is the backstop behind the lock. Caught out
+    // here: the failed insert has aborted the transaction on PostgreSQL.
     if (!isUniqueViolation(error)) throw error;
     return { already: present(await activeSubmission(eventId, viewer, kind)) };
   }
@@ -305,6 +354,8 @@ module.exports = {
   KINDS,
   NOTE_MAX_LENGTH,
   LOCKED_TYPES,
+  kindLocking,
+  withViewerLock,
   lockFor,
   getState,
   submit,

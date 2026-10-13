@@ -233,8 +233,8 @@ class FeedbackService {
    * duplicate-check uses (guest_id when present, fall back to
    * guest_identifier). Used for the per-guest favorite/like caps (#655).
    */
-  async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier) {
-    const query = db('photo_feedback')
+  async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier, executor = db) {
+    const query = executor('photo_feedback')
       // Hidden rows do not count against the guest's cap (#1150). They are
       // absent everywhere else — the heart is empty, the tallies skip them,
       // and submitFeedback now treats one as room for a fresh row. Counting
@@ -440,8 +440,11 @@ class FeedbackService {
   }
 
   async submitFeedback(photoId, eventId, feedbackData, guestIdentifier) {
+    const { feedback_type, guest_id } = feedbackData;
+    const lockable = Boolean(selectionSubmissions.kindLocking(feedback_type));
+    let cap = null;
     try {
-      const { feedback_type, rating, comment_text, reaction, color_label, decision, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
+      const { reaction, color_label, decision, ip_address, user_agent } = feedbackData;
 
       // Validate feedback type
       if (!['rating', 'like', 'comment', 'favorite', 'reaction', 'color_label', 'decision'].includes(feedback_type)) {
@@ -463,13 +466,6 @@ class FeedbackService {
       if (feedback_type === 'decision' && !isValidDecision(decision)) {
         throw new Error('Invalid decision');
       }
-      // The reason on a decision row. `undefined` means the caller did not
-      // send one, which is what lets the same decision again toggle off; an
-      // empty string is an explicit "no reason" and is stored as NULL.
-      const decisionReason = feedback_type === 'decision' && comment_text !== undefined
-        ? (comment_text || null)
-        : undefined;
-
       // The shared tag (#1197) leaves before any of the per-guest machinery
       // below runs: none of it applies to a row that belongs to the photo
       // rather than to a person.
@@ -488,18 +484,57 @@ class FeedbackService {
         throw new Error('Reserved guest identifier');
       }
 
-      // Handed in (issue 1733, A1): once a guest finished their selection,
-      // their likes and favourites are frozen, adds and removals alike, until
-      // an admin reopens it; an approval freezes their approve / reject the
-      // same way. Checked here rather than in the route so no caller can
-      // write around it.
-      const lock = await selectionSubmissions.lockFor(eventId, feedback_type, {
-        guestId: guest_id,
-        guestIdentifier,
-      });
+      // The per-guest cap (#655) is read out here: the write below runs in a
+      // transaction, and inside one a read through the global pool waits for
+      // the one connection SQLite has, which the transaction holds.
+      if (feedback_type === 'favorite' || feedback_type === 'like') {
+        const settings = await this.getEventFeedbackSettings(eventId);
+        cap = feedback_type === 'favorite'
+          ? settings.max_favorites_per_guest
+          : settings.max_likes_per_guest;
+      }
+    } catch (error) {
+      logger.error('Error submitting feedback:', error);
+      throw error;
+    }
+
+    if (!lockable) {
+      return this.writeGuestFeedback(photoId, eventId, feedbackData, guestIdentifier, db);
+    }
+
+    // Handed in (issue 1733, A1): once a guest finished their selection,
+    // their likes and favourites are frozen, adds and removals alike, until
+    // an admin reopens it; an approval freezes their approve / reject the
+    // same way. Checked here rather than in the route so no caller can
+    // write around it, and in one transaction with the write, under the lock
+    // the hand-over takes: a like that overlaps "Finish selection" lands
+    // before the count is taken or is refused, never after it.
+    const viewer = { guestId: guest_id, guestIdentifier };
+    return selectionSubmissions.withViewerLock(eventId, viewer, async (trx) => {
+      const lock = await selectionSubmissions.lockFor(eventId, feedback_type, viewer, trx);
       if (lock) {
         return { locked: true, kind: lock.kind, submitted_at: lock.submitted_at };
       }
+      return this.writeGuestFeedback(photoId, eventId, feedbackData, guestIdentifier, trx, cap);
+    });
+  }
+
+  /**
+   * The per-guest write behind submitFeedback, which has validated the input
+   * and, for a type a submission locks, holds the viewer's lock: `executor`
+   * is then that transaction and every statement here must go through it.
+   * `cap` is the guest's limit for a like or favourite, read by the caller.
+   */
+  async writeGuestFeedback(photoId, eventId, feedbackData, guestIdentifier, executor, cap = null) {
+    try {
+      const { feedback_type, rating, comment_text, reaction, color_label, decision, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
+
+      // The reason on a decision row. `undefined` means the caller did not
+      // send one, which is what lets the same decision again toggle off; an
+      // empty string is an explicit "no reason" and is stored as NULL.
+      const decisionReason = feedback_type === 'decision' && comment_text !== undefined
+        ? (comment_text || null)
+        : undefined;
 
       // Rating 0 clears the guest's rating (#884). Only the explicit zero
       // sentinel (0, or "0" from callers that skip the route validator's
@@ -511,7 +546,7 @@ class FeedbackService {
       // When a per-person guest_id is present, scope the check to that guest
       // so two guests on the same device can independently like a photo.
       if (feedback_type !== 'comment') {
-        const duplicateQuery = db('photo_feedback')
+        const duplicateQuery = executor('photo_feedback')
           .where({
             photo_id: photoId,
             event_id: eventId,
@@ -543,7 +578,7 @@ class FeedbackService {
             // the guest's replacement, and it is the admin's moderation
             // record — clearing a rating must not destroy it, or there is
             // nothing left to review or unhide.
-            const clearScope = db('photo_feedback').where({
+            const clearScope = executor('photo_feedback').where({
               photo_id: photoId,
               event_id: eventId,
               feedback_type: 'rating',
@@ -553,7 +588,7 @@ class FeedbackService {
             else clearScope.where('guest_identifier', guestIdentifier);
             await clearScope.delete();
 
-            await this.updatePhotoFeedbackStats(photoId);
+            await this.updatePhotoFeedbackStats(photoId, executor);
             return { removed: true };
           }
 
@@ -569,7 +604,7 @@ class FeedbackService {
             // (lastMutatedFirst). Visible rows only (#1150): a hidden one is
             // the admin's record.
             const ownRatings = () => {
-              const q = db('photo_feedback').where({
+              const q = executor('photo_feedback').where({
                 photo_id: photoId,
                 event_id: eventId,
                 feedback_type: 'rating',
@@ -588,19 +623,19 @@ class FeedbackService {
 
             if (Number(survivor.rating) !== Number(rating)) {
               // Update existing rating
-              await db('photo_feedback')
+              await executor('photo_feedback')
                 .where('id', survivor.id)
                 .update({
                   rating,
                   updated_at: new Date().toISOString()
                 });
 
-              await this.updatePhotoFeedbackStats(photoId);
+              await this.updatePhotoFeedbackStats(photoId, executor);
               return { id: survivor.id, updated: true };
             }
             // Same value: nothing to write, but a removed duplicate was in
             // the average.
-            if (collapsed) await this.updatePhotoFeedbackStats(photoId);
+            if (collapsed) await this.updatePhotoFeedbackStats(photoId, executor);
             return { id: survivor.id, exists: true };
           }
 
@@ -621,7 +656,7 @@ class FeedbackService {
             // this scope, and a hidden original is the admin's record rather
             // than a racy duplicate of the guest's own.
             const singleValueScope = () => {
-              const q = db('photo_feedback').where({
+              const q = executor('photo_feedback').where({
                 photo_id: photoId,
                 event_id: eventId,
                 feedback_type,
@@ -639,7 +674,7 @@ class FeedbackService {
               && decisionReason !== undefined;
             if (existing[singleValueColumn] === submittedValue && !editsReason) {
               await singleValueScope().delete();
-              await this.updatePhotoFeedbackStats(photoId);
+              await this.updatePhotoFeedbackStats(photoId, executor);
               return { removed: true };
             }
             // Converge to exactly one row: drop any racy duplicates, then
@@ -647,14 +682,14 @@ class FeedbackService {
             // reason sent with it, or none — the old one was about the other
             // verdict.
             await singleValueScope().whereNot('id', existing.id).delete();
-            await db('photo_feedback')
+            await executor('photo_feedback')
               .where('id', existing.id)
               .update({
                 [singleValueColumn]: submittedValue,
                 ...(feedback_type === 'decision' ? { comment_text: decisionReason ?? null } : {}),
                 updated_at: new Date()
               });
-            await this.updatePhotoFeedbackStats(photoId);
+            await this.updatePhotoFeedbackStats(photoId, executor);
             return { id: existing.id, updated: true };
           }
 
@@ -664,7 +699,7 @@ class FeedbackService {
           if (feedback_type === 'like' || feedback_type === 'favorite') {
             // Older guest merges could leave several visible copies. One
             // click must clear the selection, while preserving hidden rows.
-            const selection = db('photo_feedback').where({
+            const selection = executor('photo_feedback').where({
               photo_id: photoId, event_id: eventId, feedback_type,
               is_hidden: formatBoolean(false),
             });
@@ -672,7 +707,7 @@ class FeedbackService {
             else selection.where('guest_identifier', guestIdentifier);
             await selection.delete();
 
-            await this.updatePhotoFeedbackStats(photoId);
+            await this.updatePhotoFeedbackStats(photoId, executor);
             return { removed: true };
           }
 
@@ -690,13 +725,9 @@ class FeedbackService {
       // always allowed. NULL or 0 stored in the column means "unlimited" —
       // the photographer hasn't opted in to a cap for this event.
       if (feedback_type === 'favorite' || feedback_type === 'like') {
-        const settings = await this.getEventFeedbackSettings(eventId);
-        const cap = feedback_type === 'favorite'
-          ? settings.max_favorites_per_guest
-          : settings.max_likes_per_guest;
         if (cap && cap > 0) {
           const currentCount = await this.countGuestFeedback(
-            eventId, feedback_type, guest_id, guestIdentifier,
+            eventId, feedback_type, guest_id, guestIdentifier, executor,
           );
           if (currentCount >= cap) {
             // Don't insert; surface a structured payload so the route layer
@@ -749,7 +780,7 @@ class FeedbackService {
       // can sign in as any more. SQLite serialises the transaction outright.
       let result;
       if (guest_id) {
-        result = await db.transaction(async (trx) => {
+        result = await executor.transaction(async (trx) => {
           const guest = trx('gallery_guests').where({ id: guest_id }).first('is_deleted');
           if (trx.client.config.client === 'pg') guest.forShare();
           if ((await guest)?.is_deleted) return null;
@@ -757,16 +788,16 @@ class FeedbackService {
         });
         if (!result) return { guest_missing: true };
       } else {
-        result = await insertFeedback(db);
+        result = await insertFeedback(executor);
       }
       
       const id = result[0]?.id || result[0];
       
       // Update photo stats
-      await this.updatePhotoFeedbackStats(photoId);
+      await this.updatePhotoFeedbackStats(photoId, executor);
       
       // Log activity
-      await logActivity(`photo_${feedback_type}`, { photo_id: photoId }, eventId);
+      await logActivity(`photo_${feedback_type}`, { photo_id: photoId }, eventId, null, executor.isTransaction ? executor : null);
       
       return { id, created: true };
     } catch (error) {

@@ -577,9 +577,14 @@ router.get('/:slug/my-feedback',
 );
 
 // The viewer of a selection route, by the rule that finds their feedback: the
-// registered guest, else the anonymous browser identity.
+// registered guest, else the anonymous browser identity. The access level
+// keeps a pick on a photo this viewer can no longer see out of the counts.
 async function selectionViewer(req) {
-  return { guestId: req.guest?.id ?? null, guestIdentifier: await generateGuestIdentifier(req) };
+  return {
+    guestId: req.guest?.id ?? null,
+    guestIdentifier: await generateGuestIdentifier(req),
+    accessLevel: req.accessLevel,
+  };
 }
 
 // Finish selection / approve edited photos (issue 1733, A1): the viewer's own
