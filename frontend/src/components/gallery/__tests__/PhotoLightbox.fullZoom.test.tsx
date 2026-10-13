@@ -81,6 +81,8 @@ let fetchMock: ReturnType<typeof vi.fn>;
 let createObjectURL: ReturnType<typeof vi.fn>;
 let revokeObjectURL: ReturnType<typeof vi.fn>;
 let coarse = false;
+// What a `(resolution: …)` media query told its listeners: the window moved to another display.
+let densityListeners: Array<() => void> = [];
 
 beforeEach(() => {
   coarse = false;
@@ -92,7 +94,12 @@ beforeEach(() => {
   Object.defineProperty(HTMLImageElement.prototype, 'naturalHeight', { configurable: true, get: () => 4000 });
   HTMLImageElement.prototype.decode = vi.fn(() => new Promise<void>((resolve, reject) => { decode = { resolve, reject }; }));
   Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
-  vi.stubGlobal('matchMedia', (query: string) => ({ matches: coarse && query.includes('coarse') }));
+  densityListeners = [];
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: coarse && query.includes('coarse'),
+    addEventListener: (_: string, listener: () => void) => { if (query.includes('resolution')) densityListeners.push(listener); },
+    removeEventListener: (_: string, listener: () => void) => { densityListeners = densityListeners.filter((l) => l !== listener); },
+  }));
   fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, blob: async () => new Blob(['original']) });
   vi.stubGlobal('fetch', fetchMock);
   createObjectURL = vi.fn(() => 'blob:original');
@@ -181,6 +188,17 @@ describe('PhotoLightbox with a full resolution', () => {
     const first = setup([zoomable(1), zoomable(2), zoomable(3)]);
     first.pinch(20);
     expect(first.image().style.transform).toContain('scale(5)');
+  });
+
+  it('follows the window to a display with another pixel density', () => {
+    const { image, surface, readout } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.doubleClick(surface, { clientX: 0, clientY: 0 });
+    expect(image().style.transform).toContain('scale(10)');
+
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 });
+    act(() => { densityListeners.forEach((notify) => notify()); });
+    expect(image().style.transform).toContain('scale(5)');
+    expect(readout()).toBe('100%');
   });
 
   it('keeps 3x of fit for a small original', () => {
@@ -416,9 +434,11 @@ describe('PhotoLightbox with a full resolution', () => {
     const { signal } = fetchMock.mock.calls[0][1];
     fireEvent.keyDown(document, { key: 'ArrowRight' });
     expect(signal.aborted).toBe(true);
+    // The decode is still pending: its image and its object URL go now, not when it settles.
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:original');
     await act(async () => { decode.resolve(); });
     expect(overlay()).toBeNull();
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:original');
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1);
   });
 
   it('falls back silently when the server refuses', async () => {

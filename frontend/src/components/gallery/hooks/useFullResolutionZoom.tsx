@@ -71,6 +71,8 @@ const hasCoarsePointer = () => typeof window !== 'undefined'
   && typeof window.matchMedia === 'function'
   && window.matchMedia('(pointer: coarse)').matches;
 
+const currentPixelRatio = () => (typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1);
+
 interface Options {
   /** The photo on screen. */
   photo: Photo | undefined;
@@ -104,6 +106,7 @@ export function useFullResolutionZoom({
   // The object URL whose <img> has loaded in the document, not just decoded off screen.
   const [paintedSrc, setPaintedSrc] = useState<string | null>(null);
   const [fit, setFit] = useState<Size | null>(null);
+  const [pixelRatio, setPixelRatio] = useState(currentPixelRatio);
   const slideRef = useRef<HTMLDivElement | null>(null);
   // Also as state: the carousel can remount the slide under the same photo
   // (its keys change when the gallery goes to or from two photos), and the
@@ -151,6 +154,17 @@ export function useFullResolutionZoom({
     };
   }, [url, photoId, slide, measure]);
 
+  // 100 % is counted in device pixels, and the window can move to a display
+  // with another density without its layout changing at all.
+  useEffect(() => {
+    if (!url || typeof window.matchMedia !== 'function') return;
+    setPixelRatio(currentPixelRatio());
+    const query = window.matchMedia(`(resolution: ${pixelRatio}dppx)`);
+    const update = () => setPixelRatio(currentPixelRatio());
+    query.addEventListener?.('change', update);
+    return () => query.removeEventListener?.('change', update);
+  }, [url, pixelRatio]);
+
   // Navigating away releases the original, and so does a refreshed photo list
   // that withdraws the offer or points it elsewhere. Its object URL goes in
   // the effect after this one.
@@ -177,6 +191,7 @@ export function useFullResolutionZoom({
     const controller = new AbortController();
     let cancelled = false;
     let objectUrl: string | null = null;
+    let decoder: HTMLImageElement | null = null;
     let handedOver = false;
 
     (async () => {
@@ -196,6 +211,7 @@ export function useFullResolutionZoom({
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
         const image = new Image();
+        decoder = image;
         image.src = objectUrl;
         // Decoded before it is shown, so the swap is a repaint and not a
         // blank frame while a 40 MP JPEG decodes.
@@ -211,12 +227,20 @@ export function useFullResolutionZoom({
         setFailedId(photoId);
       } finally {
         if (objectUrl && !handedOver) URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
       }
     })();
 
     return () => {
       cancelled = true;
       controller.abort();
+      // A decode still running is given up now, not when it settles: paging
+      // quickly through large photos would otherwise stack full-size decodes.
+      if (!handedOver) {
+        decoder?.removeAttribute('src');
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+      }
     };
   }, [url, requested, photoId, slug]);
 
@@ -226,7 +250,7 @@ export function useFullResolutionZoom({
   const natural = decoded ?? stated;
   const box = decoded && fit ? overlayBox(decoded, fit) : null;
   const actualZoom = url && !failed && natural && fit
-    ? actualPixelsZoom(natural, box ?? fit, typeof window === 'undefined' ? 1 : window.devicePixelRatio)
+    ? actualPixelsZoom(natural, box ?? fit, pixelRatio)
     : null;
   // While the ceiling is merely unknown (the preview is between two loads and
   // has no box), the zoom holds where it is: no further in, and not forced out.
