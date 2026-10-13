@@ -1496,7 +1496,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="p-4 flex-1 overflow-y-auto">
+          {/* Mid-scrub the panel still belongs to the photo the scrub started
+              from, not the one on screen: nothing in it takes a click until
+              it has caught up. */}
+          <div
+            className="p-4 flex-1 overflow-y-auto"
+            style={scrubbing ? { pointerEvents: 'none' } : undefined}
+            aria-busy={scrubbing || undefined}
+          >
             <PhotoFeedback
               photoId={String(feedbackPhotoIdRef.current ?? currentPhoto.id)}
               gallerySlug={slug}

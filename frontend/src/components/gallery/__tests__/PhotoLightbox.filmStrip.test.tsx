@@ -219,6 +219,9 @@ describe('lightbox hold-to-scrub', () => {
     expect(shown[0].querySelector('[data-src]')).toHaveAttribute('data-src', '/thumb/110');
     expect(Array.from(standIn.querySelectorAll('[data-src]')).map((el) => el.getAttribute('data-src')))
       .toEqual(['/thumb/108', '/thumb/109', '/thumb/110', '/thumb/111', '/thumb/112']);
+    // Only the one on screen is fetched ahead of everything else.
+    expect(Array.from(standIn.querySelectorAll('[data-src]')).map((el) => el.getAttribute('data-priority')))
+      .toEqual(['prefetch', 'prefetch', 'high', 'prefetch', 'prefetch']);
     expect(within(strip()).getByRole('button', { name: 'Photo 110 of 500' })).toHaveAttribute('aria-current', 'true');
 
     fireEvent.keyUp(document, { key: 'ArrowRight' });
@@ -267,9 +270,13 @@ describe('lightbox hold-to-scrub', () => {
     // The panel fetches per photo id: it is not handed the ones passed over.
     expect(counter('109 / 500')).toBeInTheDocument();
     expect(panelPhoto()).toBe('101');
+    // And takes no click meanwhile: it would rate a photo that is not on screen.
+    const panel = screen.getByTestId('feedback-panel').parentElement as HTMLElement;
+    expect(panel.style.pointerEvents).toBe('none');
 
     fireEvent.keyUp(document, { key: 'ArrowRight' });
     expect(panelPhoto()).toBe('109');
+    expect(panel.style.pointerEvents).toBe('');
   });
 
   it('leaves the carousel centred and swipeable when a scrub interrupts a committing swipe', () => {

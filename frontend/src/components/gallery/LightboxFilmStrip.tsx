@@ -172,7 +172,10 @@ export const LightboxScrubStandIn: React.FC<{ photos: Photo[]; currentIndex: num
           style={{ visibility: first + offset === currentIndex ? 'visible' : 'hidden' }}
         >
           <AuthenticatedImage
-            queuePriority="high"
+            // Only the one on screen is top tier; the hidden ones must not
+            // queue ahead of it, or of the landed photo's preview. Read when
+            // the request is queued, so one loaded ahead keeps its tier.
+            queuePriority={first + offset === currentIndex ? 'high' : 'prefetch'}
             src={photo.thumbnail_url}
             alt={photo.filename}
             className="h-full w-full object-contain select-none pointer-events-none"
