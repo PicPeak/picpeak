@@ -54,4 +54,34 @@ async function assertEventLinkable(eventId, conn) {
   }
 }
 
-module.exports = { scopedActor, ownedBy, assertEventLinkable };
+/**
+ * Reads the row of `table` the current admin may reach and, on PostgreSQL,
+ * locks it until the transaction ends. A second admin's concurrent request
+ * then waits here and is answered from the row as the first one left it, so
+ * the check cannot pass on a row that was claimed or moved in between. SQLite
+ * has a single connection: the transaction itself already excludes others.
+ */
+function lockOwned(trx, table, id) {
+  const query = trx(table).where({ id }).modify(ownedBy(table));
+  // Same lock strength as accountingHistory.auditedUpdate, for the same reason.
+  if (trx.client.config.client === 'pg') query.forNoKeyUpdate();
+  return query.first();
+}
+
+/**
+ * Refuses an edit that would put the row out of the admin's own reach. Only
+ * one edit can: taking a row another admin recorded off the gallery that
+ * makes it the caller's (a new gallery was checked by assertEventLinkable).
+ * Without this the change commits and the caller is then answered 404.
+ */
+function assertKeepsAccess(row, nextEventId) {
+  const actor = scopedActor();
+  if (!actor || nextEventId != null) return;
+  if (row.created_by_admin_id == null || Number(row.created_by_admin_id) === Number(actor.id)) return;
+  throw new AppError(
+    'Another admin recorded this; it is yours only through its gallery, so it has to stay booked to one of your galleries.',
+    409, 'ACCESS_THROUGH_EVENT_ONLY',
+  );
+}
+
+module.exports = { scopedActor, ownedBy, assertEventLinkable, lockOwned, assertKeepsAccess };

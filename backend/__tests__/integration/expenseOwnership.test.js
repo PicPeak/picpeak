@@ -109,6 +109,24 @@ describe('internal expenses', () => {
       .field('description', 'super admin books anywhere').field('amountMinor', '1200');
     expect(bySuper.status).toBe(201);
   });
+
+  it('refuses an edit that would take the expense out of the caller\'s reach, and saves none of it', async () => {
+    const res = await api('owner', 'patch', `/${theirsOnMyEvent}`).field('eventId', '').field('description', 'moved to company');
+    expect(res.status).toBe(409);
+    expect(res.body.code || res.body.error?.code).toBe('ACCESS_THROUGH_EVENT_ONLY');
+    const row = await db('expenses').where({ id: theirsOnMyEvent }).first();
+    expect([Number(row.event_id), row.description]).toEqual([Number(ownEvent), 'theirs, booked to my gallery']);
+
+    // Everything that keeps it on the caller's gallery still works, paying included.
+    expect((await api('owner', 'patch', `/${theirsOnMyEvent}`).field('description', 'edited by the gallery owner')).status).toBe(200);
+    expect((await api('owner', 'post', `/${theirsOnMyEvent}/paid`).send({ paid: true })).status).toBe(200);
+    // The recorder and a super admin may move it to the company.
+    expect((await api('other', 'patch', `/${theirsOnMyEvent}`).field('eventId', '')).status).toBe(200);
+    expect((await db('expenses').where({ id: theirsOnMyEvent }).first()).event_id).toBeNull();
+    // Their own record stays theirs without a gallery.
+    const own = await addExpense(ownerId, ownEvent, 'mine, my gallery');
+    expect((await api('owner', 'patch', `/${own}`).field('eventId', '')).status).toBe(200);
+  });
 });
 
 describe('incoming invoices', () => {
@@ -155,6 +173,21 @@ describe('incoming invoices', () => {
     expect(Number((await db('inbound_documents').where({ id: untriaged }).first()).created_by_admin_id)).toBe(Number(ownerId));
     expect((await api('other', 'get', `/inbound/${untriaged}`)).status).toBe(404);
     expect((await api('owner', 'get', `/inbound/${untriaged}`)).status).toBe(200);
+  });
+
+  it('refuses a categorisation that would take the invoice out of the caller\'s reach, so "save and mark paid" never half-completes', async () => {
+    const theirsOnMine = await addInbound(otherId, ownEvent, 'Theirs on my gallery');
+    for (const disposition of ['eigener_aufwand', 'abgelehnt', 'durchlaufend']) {
+      const res = await api('owner', 'post', `/inbound/${theirsOnMine}/categorize`).send({ disposition });
+      expect([disposition, res.status, res.body.code || res.body.error?.code]).toEqual([disposition, 409, 'ACCESS_THROUGH_EVENT_ONLY']);
+    }
+    const untouched = await db('inbound_documents').where({ id: theirsOnMine }).first();
+    expect([untouched.status, untouched.disposition, Number(untouched.event_id)]).toEqual(['unsorted', null, Number(ownEvent)]);
+
+    const kept = await api('owner', 'post', `/inbound/${theirsOnMine}/categorize`).send({ disposition: 'durchlaufend', eventId: ownEvent });
+    expect(kept.status).toBe(200);
+    expect((await api('owner', 'post', `/inbound/${theirsOnMine}/supplier-payment`).send({ paid: true })).status).toBe(200);
+    expect((await api('other', 'post', `/inbound/${theirsOnMine}/categorize`).send({ disposition: 'eigener_aufwand' })).status).toBe(200);
   });
 
   it('keeps the customer panel and the pending pool to the admin\'s own documents', async () => {
