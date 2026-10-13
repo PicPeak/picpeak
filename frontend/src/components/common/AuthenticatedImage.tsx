@@ -366,7 +366,11 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
             }
             return;
           } catch (fallbackError) {
-            // Swallow and mark error below
+            // Swallow and mark error below. The retry asks for both again,
+            // so it waits out the longer of the two cooldowns.
+            if (fallbackError instanceof HttpError) {
+              retryAfterRef.current = Math.max(retryAfterRef.current, fallbackError.retryAfterMs);
+            }
           }
           if (!aborted) fetchFailedRef.current = true;
         }

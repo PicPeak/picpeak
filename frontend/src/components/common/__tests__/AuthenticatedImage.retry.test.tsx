@@ -308,6 +308,23 @@ describe('AuthenticatedImage retry', () => {
       expect(calls(fetchMock, '/thumbnail')).toBe(1);
     });
 
+    it('waits out the cooldown the fallback asked for when both were refused', async () => {
+      const fetchMock = byUrl({
+        preview: [status(503)],
+        thumb: [status(429, { 'Retry-After': '30' }), ok],
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      // The 2 s backoff alone would have asked both again here.
+      await advance(29_999); await flush();
+      expect(calls(fetchMock, '/thumbnail')).toBe(1);
+      await advance(1); await flush();
+      expect(calls(fetchMock, '/thumbnail')).toBe(2);
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
+    });
+
     it('does not arm the next retry while the current one is still in flight', async () => {
       let release: (value: unknown) => void = () => {};
       const pending = () => new Promise((resolve) => { release = resolve; });
