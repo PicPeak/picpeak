@@ -138,9 +138,13 @@ async function lockClaim(trx, row) {
 /**
  * Move a file for the claim `row`. Local storage renames, which is atomic.
  * S3 copies and then deletes: the claim is renewed in between, so a caller
- * that lost it while the copy ran leaves the source alone.
+ * that lost it while the copy ran leaves the source alone. Its copy then
+ * arrived after the sweep had looked. With `dropLateCopy` (a trashing: the
+ * destination is a trash_key only its own row can name) the copy is removed
+ * here once no row names it, which then stays so. A copy at a photo's place
+ * is for the caller to take back under a claim (restorePhoto).
  */
-async function moveClaimed(row, fromKey, toKey) {
+async function moveClaimed(row, fromKey, toKey, { dropLateCopy = false } = {}) {
   const storage = getStorage();
   await holdClaim(row);
   if (storage.kind() !== 's3') {
@@ -148,7 +152,18 @@ async function moveClaimed(row, fromKey, toKey) {
     return;
   }
   await storage.copy(fromKey, toKey);
-  await holdClaim(row);
+  try {
+    await holdClaim(row);
+  } catch (error) {
+    if (dropLateCopy) {
+      try {
+        if (!(await db('photo_trash').where({ trash_key: toKey }).first('id'))) await storage.delete(toKey);
+      } catch (deleteError) {
+        logger.error(`Could not remove the late copy ${toKey}`, { error: deleteError.message });
+      }
+    }
+    throw error;
+  }
   await storage.delete(fromKey);
 }
 
@@ -375,7 +390,7 @@ async function trashPhoto(event, photo, admin, retentionDays) {
   }
 
   try {
-    if (row.trash_key) await moveClaimed(row, row.original_key, row.trash_key);
+    if (row.trash_key) await moveClaimed(row, row.original_key, row.trash_key, { dropLateCopy: true });
     // Before the transaction, like the delete it replaces: the watcher must
     // not re-import the file while the row is in the trash.
     await require('./externalImportService').recordExclusions(Number(event.id), [live]);
@@ -742,6 +757,47 @@ async function settleRestore(row, moved) {
 }
 
 /**
+ * The claim of a restore that failed, to undo it under. Normally the restore
+ * still holds it. When the sweep took the row over (an S3 copy can run past
+ * STALE_MS) it has put the row back to `trashed` without seeing a copy that
+ * had not arrived yet. That copy now lies at the photo's place with no row
+ * and no claim, where the importer would publish it as a new photo: claim
+ * the row again, as a restore that has moved, and settleRestore removes the
+ * copy. Throws when the row is neither: somebody else is at work on it, and
+ * no file is touched.
+ */
+async function retakeRestore(claim, moved) {
+  try {
+    await holdClaim(claim);
+    return;
+  } catch (error) {
+    if (!moved) throw error;
+  }
+  const stamp = nowIso();
+  const retaken = await db('photo_trash').where({ id: claim.id, state: 'trashed' })
+    .update({ state: 'restoring', state_changed_at: stamp, original_key: claim.original_key, restore_move_at: stamp });
+  if (retaken !== 1) throw trashError('TRASH_BUSY', `Trash row ${claim.id} was taken over by another process`);
+  claim.state_changed_at = stamp;
+}
+
+/**
+ * A folder request the photo waited on may have been decided while it was in
+ * the trash; the decision only reached the photos that were in the gallery.
+ * After the commit, like an upload that outlived the decision
+ * (uploadPlacement.afterUploadPlacement): a decision made since sees the row
+ * itself. The restore stands either way.
+ */
+async function settleFolderRequest(event, photoId) {
+  try {
+    const restored = await db('photos').where({ id: photoId }).first('pending_folder_request_id');
+    if (!restored || !restored.pending_folder_request_id) return;
+    await require('./folderRequestService').settleLateArrivals(Number(event.id), restored.pending_folder_request_id);
+  } catch (error) {
+    logger.warn(`Could not settle the folder request of restored photo ${photoId}`, { error: error.message });
+  }
+}
+
+/**
  * Put one trashed photo back, with its child rows, queued for processing so
  * its derived files are made again. Returns the id it now has (the original
  * one unless that is taken, see insertRestored). Throws (statusCode 409, with
@@ -795,11 +851,12 @@ async function restorePhoto(event, row) {
     }
 
     const forEngine = await snapshotCoercion();
-    return await db.transaction((trx) => insertRestored(trx, event, claim, columns, forEngine));
+    const photoId = await db.transaction((trx) => insertRestored(trx, event, claim, columns, forEngine));
+    await settleFolderRequest(event, photoId);
+    return photoId;
   } catch (error) {
     try {
-      // Not this caller's any more (the sweep took it over): no file is touched.
-      await holdClaim(claim);
+      await retakeRestore(claim, moved);
       await settleRestore(claim, moved);
     } catch (undoError) {
       // Left `restoring`; the sweep moves the file back.

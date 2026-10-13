@@ -93,6 +93,10 @@ async function processEvent(event, storage) {
       // A trash restore (issue 1733) is putting this object back and inserts
       // its row itself.
       if (await require('./photoTrashService').claimsIncomingFile(entry.key)) continue;
+      // And one that finished since `existing` was read: its claim is gone,
+      // but the same transaction put the photo row in. In this order, claim
+      // then row, a restore is seen at every point.
+      if (await db('photos').where({ event_id: event.id, path: relativePath }).first('id')) continue;
 
       // Skip generated artifacts (thumbnails get their own keys; we don't
       // want to re-register them as photos).

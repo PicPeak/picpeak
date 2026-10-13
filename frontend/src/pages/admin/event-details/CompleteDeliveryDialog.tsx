@@ -66,11 +66,14 @@ export const CompleteDeliveryDialog: React.FC<CompleteDeliveryDialogProps> = ({ 
         ? t('events.delivery.completedMailed', 'The gallery is complete. The customer has been notified.')
         : t('events.delivery.completed', 'The gallery is complete.'));
       if (removeDuplicates && canDelete && result.duplicate_photo_ids.length > 0) {
+        const notRemoved = () => toast.error(t('events.delivery.duplicatesNotRemoved', 'The gallery is complete, but the first-look duplicates could not be removed. Delete them from the Photos tab.'));
         try {
-          await photosService.deletePhotos(eventId, result.duplicate_photo_ids);
+          // A delete can succeed in part: `failed` lists what is still there.
+          const deleted = await photosService.deletePhotos(eventId, result.duplicate_photo_ids);
           refresh();
+          if ((deleted?.failed?.length ?? 0) > 0) notRemoved();
         } catch {
-          toast.error(t('events.delivery.duplicatesNotRemoved', 'The gallery is complete, but the first-look duplicates could not be removed. Delete them from the Photos tab.'));
+          notRemoved();
         }
       }
       onCompleted();

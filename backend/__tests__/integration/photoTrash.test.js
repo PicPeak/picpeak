@@ -376,6 +376,28 @@ describe('photo trash (issue 1733)', () => {
       expect((await photoTrash.snapshotCoercion())('photos', { uploaded_at: 5 })).toEqual({ uploaded_at: 5 });
     });
 
+    it('applies a folder request that was decided while the photo was in the trash', async () => {
+      const event = await mkEvent();
+      const folderId = firstId(await db('photo_categories').insert({ name: 'Reception', slug: `reception-${seq}`, event_id: event.id }).returning('id'));
+      const mkRequest = async (folderPath) => firstId(await db('folder_requests').insert({
+        event_id: event.id, path: folderPath, status: 'pending',
+      }).returning('id'));
+      const approvedId = await mkRequest('Reception');
+      const rejectedId = await mkRequest('Elsewhere');
+      const approved = await mkPhoto(event, { pending_folder_request_id: approvedId });
+      const rejected = await mkPhoto(event, { pending_folder_request_id: rejectedId });
+      for (const photo of [approved, rejected]) expect((await del(event, photo)).status).toBe(200);
+
+      // The decisions reach the photos in the gallery; these two are not there.
+      await db('folder_requests').where({ id: approvedId }).update({ status: 'approved', approved_folder_id: folderId });
+      await db('folder_requests').where({ id: rejectedId }).update({ status: 'rejected' });
+
+      const rows = await db('photo_trash').where({ event_id: event.id });
+      expect((await restore(event, rows.map((row) => row.id))).body.restored).toBe(2);
+      expect(await db('photos').where({ id: approved.id }).first()).toMatchObject({ folder_id: folderId, pending_folder_request_id: null });
+      expect(await db('photos').where({ id: rejected.id }).first()).toMatchObject({ folder_id: null, pending_folder_request_id: null });
+    });
+
     it('brings a photo held for review back held, and announces nothing', async () => {
       const event = await mkEvent();
       const photo = await mkPhoto(event, { moderation_status: 'pending', visibility: 'hidden', uploaded_by_admin_id: id.other });
@@ -1353,6 +1375,94 @@ describe('photo trash (issue 1733)', () => {
       expect(objects.has(photo.key)).toBe(true);
       expect(await db('photos').where({ id: photo.id }).first()).toBeDefined();
       expect(await trashRowOf(photo.id)).toBeUndefined();
+    });
+
+    it('removes a trash copy that arrives after the sweep gave the trashing up', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      // The copy runs past the stale threshold: the sweep sees no copy and drops the pending row.
+      const copy = backend.adapter.copy;
+      let trashKey;
+      backend.adapter.copy = async (src, dst) => {
+        backend.adapter.copy = copy;
+        trashKey = dst;
+        await db('photo_trash').where({ photo_id: photo.id })
+          .update({ state_changed_at: new Date(Date.now() - 3600000).toISOString() });
+        await photoTrash.purgeExpired();
+        await copy(src, dst);
+      };
+      let res;
+      try {
+        res = await del(event, photo);
+      } finally {
+        backend.adapter.copy = copy;
+      }
+      expect(res.status).toBe(409);
+      expect(objects.has(photo.key)).toBe(true);
+      expect(objects.has(trashKey)).toBe(false);
+      expect(await db('photos').where({ id: photo.id }).first()).toBeDefined();
+      expect(await trashRowOf(photo.id)).toBeUndefined();
+    });
+
+    it('takes back a restore copy that arrives after the sweep returned the photo to the trash', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      expect((await del(event, photo)).body).toMatchObject({ trashed: 1 });
+      const row = await trashRowOf(photo.id);
+
+      const copy = backend.adapter.copy;
+      backend.adapter.copy = async (src, dst) => {
+        backend.adapter.copy = copy;
+        await db('photo_trash').where({ id: row.id })
+          .update({ state_changed_at: new Date(Date.now() - 3600000).toISOString() });
+        await photoTrash.purgeExpired();
+        expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed' });
+        await copy(src, dst);
+      };
+      let res;
+      try {
+        res = await restore(event, [row.id]);
+      } finally {
+        backend.adapter.copy = copy;
+      }
+      expect(res.status).toBe(409);
+      // No object without a row for the importer to publish; the photo is whole in the trash.
+      expect(objects.has(photo.key)).toBe(false);
+      expect(objects.has(row.trash_key)).toBe(true);
+      expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed', restore_move_at: null });
+      expect(await photoTrash.claimsIncomingFile(photo.key)).toBe(false);
+
+      expect((await restore(event, [row.id])).status).toBe(200);
+      expect(objects.has(photo.key)).toBe(true);
+    });
+
+    it('does not let the bucket import publish an object a restore has just put back', async () => {
+      const importer = require('../../src/services/s3AutoImporter').__test;
+      const event = await mkEvent();
+      const photo = await mkPhoto(event, { visibility: 'hidden' });
+      expect((await del(event, photo)).body).toMatchObject({ trashed: 1 });
+      const row = await trashRowOf(photo.id);
+      webhookFire.mockClear();
+
+      // The importer has listed the object and read which paths have a row;
+      // the restore commits before it gets to this one.
+      importer.previousSnapshot.set(event.id, new Set([photo.key]));
+      const listing = { list: async () => [{ key: photo.key, size: 10 }] };
+      const claims = photoTrash.claimsIncomingFile;
+      const spy = jest.spyOn(photoTrash, 'claimsIncomingFile').mockImplementation(async (key) => {
+        spy.mockRestore();
+        expect((await restore(event, [row.id])).status).toBe(200);
+        return claims(key);
+      });
+      try {
+        await importer.processEvent(event, listing);
+      } finally {
+        spy.mockRestore();
+        importer.previousSnapshot.delete(event.id);
+      }
+      const rows = await db('photos').where({ event_id: event.id });
+      expect(rows.map((p) => [p.id, p.visibility])).toEqual([[photo.id, 'hidden']]);
+      expect(webhookFire).not.toHaveBeenCalled();
     });
 
     it('drops the surplus copy when a trashing crashed between copy and delete', async () => {
