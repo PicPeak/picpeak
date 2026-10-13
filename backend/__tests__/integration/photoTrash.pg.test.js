@@ -41,6 +41,8 @@ pg('photo trash on PostgreSQL', () => {
     await db.schema.createTable('photos', (t) => {
       t.increments('id'); t.integer('event_id'); t.string('filename'); t.string('path');
       t.timestamp('uploaded_at'); t.string('processing_status'); t.string('moderation_status');
+      // What a restore always writes, checked against what still exists.
+      t.integer('category_id'); t.integer('folder_id'); t.integer('uploaded_by_admin_id');
     });
     const migration = require('../../migrations/core/294_photo_trash');
     await migration.up(db);

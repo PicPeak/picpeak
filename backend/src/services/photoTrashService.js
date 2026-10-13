@@ -429,14 +429,36 @@ async function claimPending(base) {
 /**
  * For a trashing that lost its claim. Whoever took the row over has settled
  * the file, with one exception: nobody did when the row is simply gone (its
- * gallery was deleted meanwhile) or was settled before an S3 copy arrived.
- * What then lies under this trashing's own key, which no row names and none
- * ever will again, is nobody's, and nothing would ever purge it.
+ * gallery was deleted meanwhile) or was settled before this trashing's move
+ * arrived (an S3 copy, or a rename that hung on a network mount, past
+ * STALE_MS). What then lies under this trashing's own key, which no row
+ * names and none ever will again, would never be purged. Whether it may go
+ * depends on the photo:
+ *   - the photo row is gone too: the file is nobody's, it goes
+ *   - the photo is still in the gallery and its place is empty: the file
+ *     under trash_key is its original, and goes back
+ *   - its place holds the same file (isSameObject): the copy goes
+ *   - its place holds another file: both stay, and it is logged
  */
 async function dropAbandonedTrashFile(row) {
   if (!row.trash_key) return;
   if (await db('photo_trash').where({ trash_key: row.trash_key }).first('id')) return;
-  await getStorage().delete(row.trash_key);
+  const storage = getStorage();
+  if (!(await db('photos').where({ id: row.photo_id, event_id: row.event_id }).first('id'))) {
+    await storage.delete(row.trash_key);
+    return;
+  }
+  const inTrash = await storage.stat(row.trash_key);
+  if (!inTrash) return;
+  const inPlace = await storage.stat(row.original_key);
+  if (!inPlace) {
+    if (storage.kind() === 's3') await storage.rename(row.trash_key, row.original_key);
+    else await moveIntoPlace(storage, row.trash_key, row.original_key, async () => {});
+  } else if (await isSameObject(storage, row, row.original_key, inPlace, inTrash)) {
+    await storage.delete(row.trash_key);
+  } else {
+    logger.error(`Photo ${row.photo_id}: its original is under ${row.trash_key} and another file is at its place; neither was touched`);
+  }
 }
 
 /**

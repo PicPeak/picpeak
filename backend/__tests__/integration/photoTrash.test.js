@@ -1407,11 +1407,35 @@ describe('photo trash (issue 1733)', () => {
         trashKey = to;
         await rename(from, to);
         await db('photo_trash').where({ event_id: event.id }).del();
+        await db('photos').where({ event_id: event.id }).del();
       });
       const res = await del(event, photo);
       expect(res.status).toBe(409);
       expect(await storage.exists(trashKey)).toBe(false);
       expect(await count('photo_trash', { event_id: event.id })).toBe(0);
+    });
+
+    it('gives the original back when its move lands after the sweep gave the trashing up', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      // The rename hangs past the stale threshold: the sweep sees nothing moved and drops the claim.
+      let trashKey;
+      const rename = storage.rename.bind(storage);
+      const spy = jest.spyOn(storage, 'rename').mockImplementation(async (from, to) => {
+        spy.mockRestore();
+        trashKey = to;
+        await age((await trashRowOf(photo.id)).id, 'pending');
+        await photoTrash.purgeExpired();
+        expect(await trashRowOf(photo.id)).toBeUndefined();
+        await rename(from, to);
+      });
+      const res = await del(event, photo);
+      expect(res.status).toBe(409);
+      // The photo is still in the gallery, and so is its file.
+      expect(await db('photos').where({ id: photo.id }).first()).toBeDefined();
+      expect(bytes(photo.key)).toMatch(/^original/);
+      expect(await storage.exists(trashKey)).toBe(false);
+      expect(await trashRowOf(photo.id)).toBeUndefined();
     });
 
     it('steps back when the sweep took its trashing over', async () => {
