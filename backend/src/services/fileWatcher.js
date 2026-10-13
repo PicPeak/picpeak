@@ -4,6 +4,7 @@ const fs = require('fs').promises;
 const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
 const { resolveCredit } = require('./photoCredit');
+const { exifColumn } = require('./photoExif');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -203,6 +204,8 @@ async function processNewPhoto(filePath) {
     // Credit from the file's EXIF (#1561). Only for a row about to be created,
     // so a re-sweep of an imported folder reads nothing.
     const credit = await resolveCredit({ localPath: filePath, isVideo });
+    // Camera details (issue 1733, D1), under the same condition.
+    const exif = isVideo ? {} : await exifColumn(filePath);
     // Browser-playable copy (issue 1430): a video the watcher picks up is
     // queued like an uploaded one while the setting is on; otherwise it would
     // wait for the next switch-on backfill. No transaction is open here.
@@ -223,7 +226,8 @@ async function processNewPhoto(filePath) {
       mime_type: mimeType,
       ...(dimensions && { width: dimensions.width, height: dimensions.height }),
       ...(webCopyEnabled ? { web_status: 'pending' } : {}),
-      ...credit
+      ...credit,
+      ...exif
     }).returning('id');
     const photoId = insertResult[0]?.id || insertResult[0];
 

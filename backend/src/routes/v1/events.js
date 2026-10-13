@@ -611,6 +611,8 @@ async function handleV1PhotoUpload(req, res) {
 
     // Credit from EXIF (#1561), read before the temp file is moved away.
     const credit = await require('../../services/photoCredit').resolveCredit({ localPath: tempPath });
+    // Camera details (issue 1733, D1), from the same temp file.
+    const exif = await require('../../services/photoExif').exifColumn(tempPath);
 
     let thumbRel = null;
     try {
@@ -654,7 +656,8 @@ async function handleV1PhotoUpload(req, res) {
       uploaded_by: 'admin',
       // Retain uploader identity and held-review visibility with the quota commit.
       ...uploadColumns,
-      ...credit
+      ...credit,
+      ...exif
     };
     const id = await uploadQuota.commitObject(object, 'photo', async conn => {
       const insertResult = await conn('photos').insert(photoData).returning('id');

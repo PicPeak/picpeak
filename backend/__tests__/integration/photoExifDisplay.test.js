@@ -7,7 +7,34 @@
  *  - the switch is stored through the event update
  *  - the capture-date backfill fills exif_json for existing photos, writes
  *    '{}' for a file that carries none, and reads neither kind again
+ *  - the ingest paths that complete a row without the worker (chunked admin
+ *    upload, API v1 upload, file watcher, S3 auto-import) read them too
  */
+// processUploadedPhotos() holds a transaction across thumbnail generation,
+// and on this suite's one-connection SQLite pool the thumbnail settings read
+// then waits out the 60 s acquire timeout (see videoPlaceholderNoDbLookup).
+// The chunked case below skips the thumbnail; everything else is the real module.
+const mockThumbnail = { skip: false };
+jest.mock('../../src/services/imageProcessor', () => {
+  const actual = jest.requireActual('../../src/services/imageProcessor');
+  return {
+    ...actual,
+    generateThumbnail: (...args) => (mockThumbnail.skip ? null : actual.generateThumbnail(...args)),
+  };
+});
+
+// The watcher's 'add' handler is driven by hand; nothing is really watched.
+const mockWatcherHandlers = {};
+jest.mock('chokidar', () => ({
+  watch: jest.fn(() => {
+    const watcher = {
+      on: jest.fn((event, handler) => { mockWatcherHandlers[event] = handler; return watcher; }),
+      close: jest.fn().mockResolvedValue(),
+    };
+    return watcher;
+  }),
+}));
+
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'photo-exif-secret-at-least-32-characters';
 
@@ -81,6 +108,7 @@ describe('camera details (issue 1733, D1)', () => {
     app.use('/api/admin/photos', require('../../src/routes/adminPhotoDimensions'));
     app.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
+    app.use('/api/v1', require('../../src/routes/v1/events'));
   }, 180000);
 
   afterAll(async () => { if (cleanup) await cleanup(); });
@@ -138,6 +166,62 @@ describe('camera details (issue 1733, D1)', () => {
       { originalFilename: 'new.jpg', mimeType: 'image/jpeg', event });
     expect(result.success).toBe(true);
     expect((await db('photos').where({ id }).first()).exif_json).toBe('{}');
+  }, 30000);
+
+  it('the paths that complete a row without the worker read them too', async () => {
+    const { event } = await makeEvent();
+    const dir = path.join(process.env.STORAGE_PATH, 'events', 'active', event.slug);
+    const shot = await sharp({ create: { width: 32, height: 24, channels: 3, background: { r: 10, g: 120, b: 200 } } })
+      .jpeg().withExif({ IFD0: { Model: 'X-T5' }, IFD2: { ISOSpeedRatings: '160', ExposureTime: '1/3200' } }).toBuffer();
+    const expected = { model: 'X-T5', iso: 160, exposure_time: 0.0003125 };
+    const stored = async (where) => {
+      const row = await db('photos').where({ event_id: event.id, ...where }).first();
+      expect(row).toBeTruthy();
+      return row.exif_json && JSON.parse(row.exif_json);
+    };
+
+    // Chunked admin upload (adminPhotos.js hands the assembled file here).
+    const { processUploadedPhotos } = require('../../src/services/photoProcessor');
+    const temp = path.join(process.env.STORAGE_PATH, 'chunked-exif.jpg');
+    await fs.promises.writeFile(temp, shot);
+    mockThumbnail.skip = true;
+    let uploaded;
+    try {
+      [uploaded] = await processUploadedPhotos(
+        [{ path: temp, originalname: 'chunked.jpg', mimetype: 'image/jpeg', size: shot.length }], event.id
+      );
+    } finally {
+      mockThumbnail.skip = false;
+    }
+    expect(await stored({ id: uploaded.id })).toEqual(expected);
+
+    // API v1 upload.
+    const { generateApiToken } = require('../../src/middleware/apiTokenAuth');
+    const owner = await db('admin_users').where({ username: 'exif-admin' }).first();
+    const { plaintext, hashed } = generateApiToken();
+    await db('api_tokens').insert({
+      name: 'exif-token', hashed_token: hashed, scopes: 'admin', created_by: owner.id, created_at: new Date().toISOString(),
+    });
+    const v1 = await request(app).post(`/api/v1/events/${event.id}/photos`)
+      .set('Authorization', `Bearer ${plaintext}`).attach('photo', shot, 'v1.jpg');
+    expect(v1.status).toBe(201);
+    expect(await stored({ original_filename: 'v1.jpg' })).toEqual(expected);
+
+    // File watcher: a file dropped into the gallery's folder.
+    const { startFileWatcher, stopFileWatcher } = require('../../src/services/fileWatcher');
+    await fs.promises.writeFile(path.join(dir, 'watched.jpg'), shot);
+    startFileWatcher();
+    mockWatcherHandlers.add(path.join(dir, 'watched.jpg'));
+    await stopFileWatcher();
+    expect(await stored({ filename: 'watched.jpg' })).toEqual(expected);
+
+    // S3 auto-import: a key is imported on the second poll that lists it.
+    const { processEvent } = require('../../src/services/s3AutoImporter').__test;
+    await fs.promises.writeFile(path.join(dir, 'bucket.jpg'), shot);
+    const bucket = { list: async () => [{ key: `events/active/${event.slug}/bucket.jpg`, size: shot.length }] };
+    await processEvent(event, bucket);
+    await processEvent(event, bucket);
+    expect(await stored({ filename: 'bucket.jpg' })).toEqual(expected);
   }, 30000);
 
   it('backfills existing photos once and does not read them again', async () => {

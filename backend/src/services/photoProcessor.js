@@ -220,6 +220,9 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       // Credit (#1561), read from the temp file before it is moved.
       const credit = await resolveCredit({ uploadedBy, localPath: tempPath, isVideo });
+      // Camera details (issue 1733, D1), from the same temp file: this path
+      // completes the row itself, so the worker never reads them.
+      const exif = isVideo ? {} : await exifColumn(tempPath);
 
       // Now upload the original through the storage backend and remove the
       // local temp copy.
@@ -273,7 +276,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         ...(isVideo && webCopyEnabled ? { web_status: 'pending' } : {}),
         ...(processingError ? { processing_error: processingError } : {}),
         ...placement,
-        ...credit
+        ...credit,
+        ...exif
       };
 
       // Add video-specific metadata if applicable
