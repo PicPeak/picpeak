@@ -661,6 +661,13 @@ async function handleV1PhotoUpload(req, res) {
       return insertResult[0]?.id || insertResult[0];
     });
 
+    // Scene tagging (issue 1733): this route writes a finished row itself.
+    try {
+      await require('../../services/tagSettings').enqueueFinishedPhotos(event.id, [id]);
+    } catch (e) {
+      logger.warn(`v1 upload: tag enqueue failed for photo ${id}`, { error: e.message });
+    }
+
     await logActivity('photo_uploaded', { via: 'api_v1', filename: finalName }, event.id, {
       type: 'admin', id: req.admin.id, name: req.admin.username
     });

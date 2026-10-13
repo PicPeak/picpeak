@@ -19,10 +19,11 @@
  *   TAG_PROCESSOR_DISABLED           default false ('true' to opt out)
  */
 
+const crypto = require('crypto');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
-const { processPhotoTags } = require('./tagProcessor');
+const { processPhotoTags, claimGuard } = require('./tagProcessor');
 const { SidecarUnavailableError } = require('./faceClient');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { isFeatureEnabled } = require('./tagSettings');
@@ -48,6 +49,11 @@ function isPostgres() {
 /**
  * Atomically claim the oldest pending photo. SKIP LOCKED on Postgres so
  * several pods race cleanly, a status-guarded UPDATE on SQLite.
+ *
+ * Every claim gets its own id, and everything this worker writes afterwards
+ * is guarded on it. 'processing' alone says only that somebody holds the
+ * row: after a replacement or a janitor reset that can be a newer claim,
+ * and a late answer for the old picture must not land on it.
  */
 async function claimNextPhoto() {
   return db.transaction(async (trx) => {
@@ -55,19 +61,19 @@ async function claimNextPhoto() {
     if (isPostgres()) query.forUpdate().skipLocked();
     const row = await query.first();
     if (!row) return null;
+    const attemptId = crypto.randomUUID();
     const updated = await trx('photos')
       .where({ id: row.id, tag_status: 'pending' })
-      .update({ tag_status: 'processing', tag_started_at: new Date().toISOString() });
-    return updated > 0 ? row : null;
+      .update({ tag_status: 'processing', tag_started_at: new Date().toISOString(), tag_attempt_id: attemptId });
+    return updated > 0 ? { ...row, tag_status: 'processing', tag_attempt_id: attemptId } : null;
   });
 }
 
-// Guarded on 'processing': a photo deleted or reset while the request was in
-// flight must not come back as 'pending'.
-function releaseToPending(photoId) {
-  return db('photos')
-    .where({ id: photoId, tag_status: 'processing' })
-    .update({ tag_status: 'pending', tag_started_at: null });
+// Guarded on this worker's claim: a photo deleted, reset or claimed again
+// while the request was in flight must not come back as 'pending'.
+function releaseToPending(claimed) {
+  return claimGuard(claimed)
+    .update({ tag_status: 'pending', tag_started_at: null, tag_attempt_id: null });
 }
 
 /**
@@ -79,21 +85,21 @@ function releaseToPending(photoId) {
  */
 async function runClaimed(claimed) {
   try {
-    const outcome = await processPhotoTags(claimed.id);
+    const outcome = await processPhotoTags(claimed);
     return outcome.status;
   } catch (err) {
     // Either failure stops every photo alike and says nothing about this one.
     if (err instanceof SidecarUnavailableError || isStorageUnavailableError(err)) {
-      await releaseToPending(claimed.id).catch(() => {});
+      await releaseToPending(claimed).catch(() => {});
       return 'retry';
     }
 
     logger.error(`tagQueue: photo ${claimed.id} failed`, { error: err.message });
-    await db('photos')
-      .where({ id: claimed.id, tag_status: 'processing' })
+    await claimGuard(claimed)
       .update({
         tag_status: 'failed',
         tag_started_at: null,
+        tag_attempt_id: null,
         tag_error: String(err.message || err).slice(0, 1000),
       })
       .catch((updateErr) => logger.error(`tagQueue: could not mark photo ${claimed.id} failed`, {
@@ -109,7 +115,7 @@ async function resetStuck() {
   return db('photos')
     .where('tag_status', 'processing')
     .where('tag_started_at', '<', cutoff)
-    .update({ tag_status: 'pending', tag_started_at: null });
+    .update({ tag_status: 'pending', tag_started_at: null, tag_attempt_id: null });
 }
 
 async function workerLoop(workerIdx) {

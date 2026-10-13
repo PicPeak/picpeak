@@ -129,11 +129,14 @@ const deletePhoto = async (photoId, options = {}) => {
       } catch (err) {
         logger.warn(`deletePhoto: face purge failed for photo ${photoId}`, { error: err.message });
       }
-      // Scene tags (issue 1733): the same inert cascade on SQLite.
-      await db('photo_tags').where({ photo_id: photoId }).del();
 
-      // Delete from database
-      await db('photos').where('id', photoId).delete();
+      // Delete from database. Scene tags (issue 1733) in the same
+      // transaction: the cascade is inert on SQLite, and a tagging result in
+      // flight must not be stored between the two deletes.
+      await db.transaction(async (trx) => {
+        await trx('photo_tags').where({ photo_id: photoId }).del();
+        await trx('photos').where('id', photoId).delete();
+      });
     }
   } else {
     // Soft delete

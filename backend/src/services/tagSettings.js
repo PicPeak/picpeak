@@ -11,6 +11,7 @@
  * faceSettings.isSingleContainerImage).
  */
 
+const { db } = require('../database/db');
 const { isFeatureEnabled: isFlagEnabled } = require('../middleware/requireFeatureFlag');
 const { isSingleContainerImage } = require('./faceSettings');
 const logger = require('../utils/logger');
@@ -39,4 +40,32 @@ async function isEnabledForEvent(event) {
   return isFeatureEnabled();
 }
 
-module.exports = { FLAG_KEY, isFeatureEnabled, isSwitchedOnForEvent, isEnabledForEvent };
+/**
+ * Queue photos that just became complete, if tagging is on for the gallery.
+ *
+ * The switch is read here, AFTER the caller committed the finished rows,
+ * and that order is what makes this safe against the backfill of a gallery
+ * being switched on at the same moment: either this read already sees the
+ * switch on, or the switch is written after it and the backfill that
+ * follows finds the finished row. A switch read before processing began
+ * (the `event` an upload started with) misses both.
+ *
+ * Only rows never queued: a status somebody else set is theirs.
+ */
+async function enqueueFinishedPhotos(eventId, photoIds) {
+  if (!photoIds.length || !(await isFeatureEnabled())) return 0;
+  const event = await db('events').where({ id: eventId }).first('auto_tagging_enabled');
+  if (!isSwitchedOnForEvent(event)) return 0;
+  let queued = 0;
+  for (let i = 0; i < photoIds.length; i += 500) {
+    queued += await db('photos')
+      .whereIn('id', photoIds.slice(i, i + 500))
+      .whereNull('tag_status')
+      .update({ tag_status: 'pending' });
+  }
+  return queued;
+}
+
+module.exports = {
+  FLAG_KEY, isFeatureEnabled, isSwitchedOnForEvent, isEnabledForEvent, enqueueFinishedPhotos,
+};

@@ -230,6 +230,16 @@ async function processNewPhoto(filePath) {
     logger.info(`Added new photo: ${relativePath}`);
     downloadZipService.invalidate(event.id);
 
+    // Scene tagging (issue 1733): this path writes a finished row itself and
+    // never reaches photoProcessor's enqueue.
+    if (!isVideo) {
+      try {
+        await require('./tagSettings').enqueueFinishedPhotos(event.id, [photoId]);
+      } catch (err) {
+        logger.warn(`Could not queue ${relativePath} for tagging: ${err.message}`);
+      }
+    }
+
     // Webhook (#327) — auto-import path. Only fires in local mode since
     // the watcher is disabled in S3 mode.
     try {
@@ -250,8 +260,17 @@ async function removePhoto(filePath) {
   // Look up event before deleting to invalidate zip cache
   const photo = await db('photos').where({ path: relativePath }).first();
 
-  // Remove from database
-  await db('photos').where({ path: relativePath }).delete();
+  // Remove from database. Scene tags (issue 1733) go in the same
+  // transaction: the FK cascade is inert on SQLite, and a tagging result in
+  // flight then lands either before this (and is deleted here) or after it
+  // (and finds no row to settle).
+  if (photo) {
+    await db.transaction(async (trx) => {
+      await trx('photo_tags')
+        .whereIn('photo_id', trx('photos').where({ path: relativePath }).select('id')).del();
+      await trx('photos').where({ path: relativePath }).delete();
+    });
+  }
 
   if (photo) {
     downloadZipService.invalidate(photo.event_id);
@@ -270,4 +289,4 @@ async function removePhoto(filePath) {
   logger.info(`Removed photo: ${relativePath}`);
 }
 
-module.exports = { stopFileWatcher, startFileWatcher, findExistingPhoto };
+module.exports = { stopFileWatcher, startFileWatcher, findExistingPhoto, removePhoto };

@@ -5,10 +5,13 @@
  * for a photo: a key from the fixed vocabulary (ml/app/tag_vocabulary.json)
  * and its score. No image embedding is stored.
  *
- * The queue is three columns on `photos`, modelled on the face queue of
+ * The queue is four columns on `photos`, modelled on the face queue of
  * migration 177, and for the same reason `tag_status` is nullable with no
  * default: this migration queues nothing. A photo is queued only once the
  * `autoTagging` feature flag and the gallery's own switch are both on.
+ * `tag_attempt_id` names one claim, as `web_attempt_id` does for the
+ * rendition queue (migration 279): a result is written only while the row
+ * still carries the id of the claim that produced it.
  */
 
 exports.up = async function (knex) {
@@ -36,6 +39,9 @@ exports.up = async function (knex) {
       // Set when a row is claimed, so the janitor can return it after a
       // worker died mid-photo.
       tag_started_at: (t) => t.timestamp('tag_started_at'),
+      // The claim a result must belong to. NULL whenever the row is not
+      // 'processing'.
+      tag_attempt_id: (t) => t.string('tag_attempt_id', 36),
       tag_error: (t) => t.text('tag_error'),
     };
     const missing = [];
@@ -71,7 +77,7 @@ exports.down = async function (knex) {
         table.dropIndex(['tag_status'], 'photos_tag_status_idx');
       });
     }
-    for (const name of ['tag_status', 'tag_started_at', 'tag_error']) {
+    for (const name of ['tag_status', 'tag_started_at', 'tag_attempt_id', 'tag_error']) {
       if (await knex.schema.hasColumn('photos', name)) {
         await knex.schema.alterTable('photos', (table) => table.dropColumn(name));
       }

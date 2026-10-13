@@ -58,43 +58,58 @@ function sanitizeTags(raw) {
 }
 
 /**
- * Close a claimed row. Guarded on 'processing', the state this worker put it
- * in: a row that was deleted, re-queued or reset meanwhile is left alone.
+ * The row as long as it still belongs to this claim. `tag_attempt_id` is
+ * written by the claim and cleared by everything that takes the row away
+ * (delete, replacement, re-queue, janitor), so a second claim of the same
+ * photo never matches the first one's guard.
  */
-function settle(photoId, status, error = null) {
-  return db('photos')
-    .where({ id: photoId, tag_status: 'processing' })
-    .update({ tag_status: status, tag_started_at: null, tag_error: error });
+function claimGuard(claimed, conn = db) {
+  return conn('photos').where({
+    id: claimed.id, tag_status: 'processing', tag_attempt_id: claimed.tag_attempt_id,
+  });
 }
 
 /**
- * Tag one claimed photo. Returns `{ status }`: done | skipped | failed.
+ * Close a claimed row. A row that was deleted, re-queued, reset or claimed
+ * again meanwhile is left alone.
+ */
+function settle(claimed, status, error = null) {
+  return claimGuard(claimed)
+    .update({ tag_status: status, tag_started_at: null, tag_attempt_id: null, tag_error: error });
+}
+
+/**
+ * Tag one claimed photo (the row tagQueue.claimNextPhoto returned). Returns
+ * `{ status }`: done | skipped | failed.
  *
  * Throws SidecarUnavailableError when the sidecar is down and a storage
  * error when the backend is unreachable; the caller returns the row to
  * 'pending' for both rather than failing it.
  */
-async function processPhotoTags(photoId) {
-  const photo = await db('photos').where({ id: photoId }).first();
+async function processPhotoTags(claimed) {
+  const photoId = claimed.id;
+  // Read under the claim: a replacement between the claim and here already
+  // took the row away, and its new file is the next claim's to tag.
+  const photo = await claimGuard(claimed).first();
   if (!photo) return { status: 'skipped' };
 
   const event = await db('events').where({ id: photo.event_id }).first();
   if (!(await isEnabledForEvent(event))) {
     // Switched off between enqueue and claim. Not an error.
-    await settle(photoId, 'skipped');
+    await settle(claimed, 'skipped');
     return { status: 'skipped' };
   }
 
   const isVideo = photo.media_type === 'video'
     || (photo.mime_type && photo.mime_type.startsWith('video/'));
   if (isVideo) {
-    await settle(photoId, 'skipped');
+    await settle(claimed, 'skipped');
     return { status: 'skipped' };
   }
 
   const thumbnailKey = await ensureThumbnail(photo);
   if (!thumbnailKey) {
-    await settle(photoId, 'failed', 'No thumbnail to tag');
+    await settle(claimed, 'failed', 'No thumbnail to tag');
     return { status: 'failed' };
   }
   const buffer = await streamToBuffer(await getStorage().get(thumbnailKey));
@@ -104,6 +119,13 @@ async function processPhotoTags(photoId) {
 
   try {
     await db.transaction(async (trx) => {
+      // The claim first: it locks the row, and when the photo was deleted,
+      // replaced or re-queued while the sidecar was working nothing is
+      // written at all, instead of tags for a different picture (or, on
+      // PostgreSQL, a foreign-key error for a photo that is gone).
+      const committed = await claimGuard(claimed, trx)
+        .update({ tag_status: 'done', tag_started_at: null, tag_attempt_id: null, tag_error: null });
+      if (committed === 0) throw new StaleTagScanError(photoId);
       // Replace rather than append: a re-run must not keep a tag the model
       // no longer reports.
       await trx('photo_tags').where({ photo_id: photoId }).del();
@@ -117,12 +139,6 @@ async function processPhotoTags(photoId) {
           created_at: createdAt,
         })));
       }
-      const committed = await trx('photos')
-        .where({ id: photoId, tag_status: 'processing' })
-        .update({ tag_status: 'done', tag_started_at: null, tag_error: null });
-      // Deleted, replaced or re-queued while the sidecar was working: roll
-      // the rows back instead of attaching them to a different picture.
-      if (committed === 0) throw new StaleTagScanError(photoId);
     });
   } catch (err) {
     if (err instanceof StaleTagScanError) return { status: 'skipped' };
@@ -150,7 +166,9 @@ async function enqueueEvent(eventId, { onlyUntagged = false } = {}) {
     });
   }
 
-  const updated = await query.update({ tag_status: 'pending', tag_started_at: null, tag_error: null });
+  const updated = await query.update({
+    tag_status: 'pending', tag_started_at: null, tag_attempt_id: null, tag_error: null,
+  });
   logger.info(`tagProcessor: queued ${updated} photo(s) for tagging in event ${eventId}`);
   return updated;
 }
@@ -164,7 +182,7 @@ async function enqueueEvent(eventId, { onlyUntagged = false } = {}) {
  */
 async function purgePhotoTags(photoId, trx = db) {
   await trx('photos').where({ id: photoId })
-    .update({ tag_status: null, tag_started_at: null, tag_error: null });
+    .update({ tag_status: null, tag_started_at: null, tag_attempt_id: null, tag_error: null });
   return trx('photo_tags').where({ photo_id: photoId }).del();
 }
 
@@ -189,5 +207,5 @@ async function getTagStatus(eventId) {
 }
 
 module.exports = {
-  processPhotoTags, enqueueEvent, purgePhotoTags, getTagStatus, sanitizeTags,
+  processPhotoTags, claimGuard, enqueueEvent, purgePhotoTags, getTagStatus, sanitizeTags,
 };

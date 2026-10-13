@@ -148,6 +148,16 @@ async function processEvent(event, storage) {
 
         logger.info(`[s3AutoImporter] imported s3://.../${entry.key} → photo #${photoId} for event ${event.slug}`);
 
+        // Scene tagging (issue 1733): same as fileWatcher, a finished row
+        // that never passes photoProcessor's enqueue.
+        if (isImage) {
+          try {
+            await require('./tagSettings').enqueueFinishedPhotos(event.id, [photoId]);
+          } catch (err) {
+            logger.warn(`[s3AutoImporter] could not queue photo #${photoId} for tagging: ${err.message}`);
+          }
+        }
+
         // Webhook (#327): same shape as fileWatcher.
         try {
           const webhookService = require('./webhookService');

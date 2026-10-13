@@ -319,6 +319,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       const event = await db('events').where({ id: existingPhoto.event_id }).first();
       updates.tag_status = (await require('./tagSettings').isEnabledForEvent(event)) ? 'pending' : null;
       updates.tag_started_at = null;
+      updates.tag_attempt_id = null;
       updates.tag_error = null;
     } catch (err) {
       logger.warn(`replacePhoto: tag reset failed for photo ${existingPhoto.id}`, {

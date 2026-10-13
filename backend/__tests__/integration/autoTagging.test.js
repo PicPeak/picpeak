@@ -90,8 +90,11 @@ async function mkPhoto(eventId, extra = {}) {
 
 const photoRow = (id) => db('photos').where({ id }).first();
 const tagsOf = async (id) => (await db('photo_tags').where({ photo_id: id }).orderBy('tag')).map((r) => r.tag);
+// A claim as the worker makes one, on a row that need not be the oldest.
 const claim = async (id) => {
-  await db('photos').where({ id }).update({ tag_status: 'processing', tag_started_at: new Date().toISOString() });
+  await db('photos').where({ id }).update({
+    tag_status: 'processing', tag_started_at: new Date().toISOString(), tag_attempt_id: `attempt-${++seq}`,
+  });
   return photoRow(id);
 };
 const addTags = (eventId, photoId, tags) => db('photo_tags').insert(
@@ -115,7 +118,7 @@ beforeEach(async () => {
   mockTagImage.mockReset().mockResolvedValue({ model_version: 'test', tags: [] });
   mockEnsureThumbnail.mockReset().mockImplementation(async (photo) => photo.thumbnail_path);
   mockStorageGet.mockReset().mockResolvedValue(Buffer.from('thumbnail-bytes'));
-  await db('photos').whereNotNull('tag_status').update({ tag_status: null });
+  await db('photos').whereNotNull('tag_status').update({ tag_status: null, tag_attempt_id: null });
   await setFlag(true);
 });
 
@@ -137,6 +140,7 @@ describe('tag queue state machine', () => {
     expect((await tagQueue.claimNextPhoto()).id).toBe(first);
     expect((await photoRow(first)).tag_status).toBe('processing');
     expect((await photoRow(first)).tag_started_at).toBeTruthy();
+    expect((await photoRow(first)).tag_attempt_id).toMatch(/^[0-9a-f-]{36}$/);
     expect((await tagQueue.claimNextPhoto()).id).toBe(second);
     expect(await tagQueue.claimNextPhoto()).toBeNull();
   });
@@ -163,7 +167,7 @@ describe('tag queue state machine', () => {
     expect(rows.map((r) => [r.tag, r.event_id])).toEqual([['cake', eventId], ['food', eventId]]);
     expect(rows[0].score).toBeCloseTo(0.91, 5);
     const row = await photoRow(photoId);
-    expect([row.tag_status, row.tag_started_at, row.tag_error]).toEqual(['done', null, null]);
+    expect([row.tag_status, row.tag_started_at, row.tag_attempt_id, row.tag_error]).toEqual(['done', null, null, null]);
   });
 
   it('a re-run replaces the earlier tags', async () => {
@@ -255,10 +259,106 @@ describe('tag queue state machine', () => {
     expect((await photoRow(photoId)).tag_status).toBeNull();
   });
 
+  // A replacement purges and re-queues the row; a second worker (or another
+  // replica) can claim it before the first sidecar call returns. Both claims
+  // are 'processing', so only the claim's own id tells them apart.
+  describe('a claim that was replaced by a newer one', () => {
+    const supersede = async (photoId) => {
+      await tagProcessor.purgePhotoTags(photoId);
+      await db('photos').where({ id: photoId }).update({ tag_status: 'pending' });
+      return tagQueue.claimNextPhoto();
+    };
+
+    it('stores nothing and leaves the newer claim alone', async () => {
+      const eventId = await mkEvent();
+      const photoId = await mkPhoto(eventId, { tag_status: 'pending' });
+      const first = await tagQueue.claimNextPhoto();
+      let second;
+      mockTagImage.mockImplementationOnce(async () => {
+        second = await supersede(photoId);
+        return { tags: [{ tag: 'cake', score: 0.9 }] };
+      });
+
+      expect(await tagQueue.runClaimed(first)).toBe('skipped');
+      expect(await tagsOf(photoId)).toEqual([]);
+      const row = await photoRow(photoId);
+      expect([row.tag_status, row.tag_attempt_id]).toEqual(['processing', second.tag_attempt_id]);
+
+      // The newer claim's own result still lands.
+      mockTagImage.mockResolvedValue({ tags: [{ tag: 'dancing', score: 0.8 }] });
+      expect(await tagQueue.runClaimed(second)).toBe('done');
+      expect(await tagsOf(photoId)).toEqual(['dancing']);
+    });
+
+    it.each([
+      ['an unreachable sidecar', () => new (jest.requireActual('../../src/services/faceClient').SidecarUnavailableError)('down'), 'retry'],
+      ['a rejected image', () => new Error('unreadable'), 'failed'],
+    ])('does not release or fail the newer claim after %s', async (_name, makeError, outcome) => {
+      const eventId = await mkEvent();
+      const photoId = await mkPhoto(eventId, { tag_status: 'pending' });
+      const first = await tagQueue.claimNextPhoto();
+      let second;
+      mockTagImage.mockImplementationOnce(async () => {
+        second = await supersede(photoId);
+        throw makeError();
+      });
+
+      expect(await tagQueue.runClaimed(first)).toBe(outcome);
+      const row = await photoRow(photoId);
+      expect([row.tag_status, row.tag_attempt_id, row.tag_error]).toEqual(['processing', second.tag_attempt_id, null]);
+    });
+
+    it('does not tag a photo whose claim is gone before the scan starts', async () => {
+      const eventId = await mkEvent();
+      const photoId = await mkPhoto(eventId, { tag_status: 'pending' });
+      const first = await tagQueue.claimNextPhoto();
+      await supersede(photoId);
+
+      expect(await tagQueue.runClaimed(first)).toBe('skipped');
+      expect(mockTagImage).not.toHaveBeenCalled();
+    });
+  });
+
+  it('a result that arrives after the photo was deleted stores nothing', async () => {
+    const eventId = await mkEvent();
+    const photoId = await mkPhoto(eventId, { path: 'watched/gone.jpg' });
+    await addTags(eventId, photoId, [['food', 0.5]]);
+    const claimed = await claim(photoId);
+    mockTagImage.mockImplementation(async () => {
+      // The watched-folder delete, which had no tag purge at all.
+      const fileWatcher = require('../../src/services/fileWatcher');
+      const { getStoragePath } = require('../../src/config/storage');
+      await fileWatcher.removePhoto(path.join(getStoragePath(), 'events/active', 'watched/gone.jpg'));
+      return { tags: [{ tag: 'cake', score: 0.9 }] };
+    });
+
+    expect(await tagQueue.runClaimed(claimed)).toBe('skipped');
+    expect(await photoRow(photoId)).toBeUndefined();
+    expect(await db('photo_tags').where({ photo_id: photoId })).toEqual([]);
+  });
+
+  it('queues a finished photo only while both switches are on, and only if never queued', async () => {
+    const { enqueueFinishedPhotos } = require('../../src/services/tagSettings');
+    const eventId = await mkEvent({ auto_tagging_enabled: false });
+    const fresh = await mkPhoto(eventId);
+    const done = await mkPhoto(eventId, { tag_status: 'done' });
+    const status = async (id) => (await photoRow(id)).tag_status;
+
+    expect(await enqueueFinishedPhotos(eventId, [fresh, done])).toBe(0);
+    // The switch is read at this moment, not carried in from the caller: a
+    // gallery switched on while the photo was still processing is honoured.
+    await db('events').where({ id: eventId }).update({ auto_tagging_enabled: true });
+    await setFlag(false);
+    expect(await enqueueFinishedPhotos(eventId, [fresh, done])).toBe(0);
+    await setFlag(true);
+    expect(await enqueueFinishedPhotos(eventId, [fresh, done])).toBe(1);
+    expect([await status(fresh), await status(done)]).toEqual(['pending', 'done']);
+  });
+
   it('the janitor returns only rows stuck past the timeout', async () => {
     const eventId = await mkEvent();
     const stuck = await mkPhoto(eventId, {
-      tag_status: 'processing', tag_started_at: new Date(Date.now() - 3600e3).toISOString(),
+      tag_status: 'processing', tag_started_at: new Date(Date.now() - 3600e3).toISOString(), tag_attempt_id: 'dead-worker',
     });
     const fresh = await mkPhoto(eventId, {
       tag_status: 'processing', tag_started_at: new Date().toISOString(),
@@ -266,6 +366,7 @@ describe('tag queue state machine', () => {
 
     expect(await tagQueue.resetStuck()).toBe(1);
     expect((await photoRow(stuck)).tag_status).toBe('pending');
+    expect((await photoRow(stuck)).tag_attempt_id).toBeNull();
     expect((await photoRow(fresh)).tag_status).toBe('processing');
   });
 

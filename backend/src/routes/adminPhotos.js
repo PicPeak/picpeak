@@ -806,13 +806,17 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     } catch (err) {
       logger.warn(`deletePhoto: face purge failed for photo ${photoId}`, { error: err.message });
     }
-    // Scene tags (issue 1733): the same inert cascade on SQLite.
-    await db('photo_tags').where({ photo_id: photoId }).del();
 
     // An external photo's file stays on the NAS; make sure the folder watcher
     // (issue 1187) does not re-import it on its next pass.
     await require('../services/externalImportService').recordExclusions(Number(eventId), [photo]);
-    await db('photos').where({ id: photoId }).delete();
+    // Scene tags (issue 1733) go with the row in one transaction: the cascade
+    // is inert on SQLite, and a tagging result in flight then lands either
+    // before this (and is deleted here) or after it (and finds no row).
+    await db.transaction(async (trx) => {
+      await trx('photo_tags').where({ photo_id: photoId }).del();
+      await trx('photos').where({ id: photoId }).delete();
+    });
 
     // Log activity (event was fetched above for storage key resolution)
     await logActivity('photo_deleted',
@@ -1073,18 +1077,21 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
         logger.warn(`bulk delete: face purge failed for photo ${photo.id}`, { error: err.message });
       }
     }
-    // Scene tags (issue 1733), from the validated rows for the same reason.
-    if (photos.length) {
-      await db('photo_tags').whereIn('photo_id', photos.map((photo) => photo.id)).del();
-    }
 
     // Delete from database
     // Same as the single delete: keep the watcher from bringing these back.
     await require('../services/externalImportService').recordExclusions(Number(eventId), photos);
-    await db('photos')
-      .whereIn('id', photoIds)
-      .where('event_id', eventId)
-      .delete();
+    // Scene tags (issue 1733) in the same transaction as the rows, as in the
+    // single delete, and from the validated rows for the reason above.
+    await db.transaction(async (trx) => {
+      if (photos.length) {
+        await trx('photo_tags').whereIn('photo_id', photos.map((photo) => photo.id)).del();
+      }
+      await trx('photos')
+        .whereIn('id', photoIds)
+        .where('event_id', eventId)
+        .delete();
+    });
 
     // Webhook (#327): one photo.deleted per row in the bulk batch.
     try {

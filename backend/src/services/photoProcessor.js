@@ -358,11 +358,11 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       }
 
       // Scene tagging (issue 1733), for the same reason and guarded the same
-      // way: the feature flag and the gallery's own switch.
+      // way: the feature flag and the gallery's own switch. The switch is
+      // re-read rather than taken from `event`, which was loaded before the
+      // first file of this batch was processed.
       try {
-        if (!isVideo && await require('./tagSettings').isEnabledForEvent(event)) {
-          await db('photos').where({ id: photoId }).update({ tag_status: 'pending' });
-        }
+        if (!isVideo) await require('./tagSettings').enqueueFinishedPhotos(eventId, [photoId]);
       } catch (err) {
         logger.warn(`processUploadedPhotos: tag enqueue failed for photo ${photoId}`, {
           error: err.message,
@@ -785,6 +785,18 @@ async function processPhoto(photoId) {
     throw mediaRefusal('Photo attempt was superseded', 'MEDIA_SUPERSEDED');
   }
   if (updateData.thumbnail_path) await mediaAttempts.dropSuperseded(storage, photo.thumbnail_path, updateData.thumbnail_path);
+
+  // Scene tagging (issue 1733): `event` was read before the processing
+  // above, so a gallery switched on meanwhile was not queued in the UPDATE,
+  // and its backfill skipped this row for not being complete yet. Now that
+  // it is, ask again.
+  if (!isVideo && !updateData.tag_status) {
+    try {
+      await require('./tagSettings').enqueueFinishedPhotos(photo.event_id, [photoId]);
+    } catch (err) {
+      logger.warn(`processPhoto: tag enqueue failed for ${photoId}`, { error: err.message });
+    }
+  }
 
   // Separate, fenced write: an admin who set a credit while this row was in
   // the queue made the final call, and this must not overwrite it. Fenced on
