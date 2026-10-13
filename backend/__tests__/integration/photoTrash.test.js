@@ -1555,6 +1555,11 @@ describe('photo trash (issue 1733)', () => {
       storage = storageModule.getStorage();
     });
 
+    // The calls that name one of these keys. Not all calls: work an earlier
+    // test left running (a processing run, say) reads its own objects
+    // through this backend too.
+    const callsOn = (...keys) => calls.filter(([, ...named]) => named.some((key) => keys.includes(key)));
+
     it('moves the original with copy + delete, there and back', async () => {
       const event = await mkEvent();
       const photo = await mkPhoto(event);
@@ -1562,14 +1567,14 @@ describe('photo trash (issue 1733)', () => {
 
       expect((await del(event, photo)).body).toMatchObject({ trashed: 1 });
       const row = await trashRowOf(photo.id);
-      expect(calls.slice(0, 2)).toEqual([['copy', photo.key, row.trash_key], ['delete', photo.key]]);
+      expect(callsOn(photo.key, row.trash_key)).toEqual([['copy', photo.key, row.trash_key], ['delete', photo.key]]);
       expect(objects.has(photo.key)).toBe(false);
       expect(objects.get(row.trash_key).toString()).toMatch(/^original/);
       expect(objects.has(photo.thumb)).toBe(false);
 
       calls.length = 0;
       expect((await restore(event, [row.id])).status).toBe(200);
-      expect(calls).toEqual([['copy', row.trash_key, photo.key], ['delete', row.trash_key]]);
+      expect(callsOn(photo.key, row.trash_key)).toEqual([['copy', row.trash_key, photo.key], ['delete', row.trash_key]]);
       expect(objects.has(photo.key)).toBe(true);
       expect(await db('photos').where({ id: photo.id }).first()).toMatchObject({ processing_status: 'pending' });
     });
@@ -1603,7 +1608,7 @@ describe('photo trash (issue 1733)', () => {
       }
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('TRASH_TOO_LARGE');
-      expect(calls).toEqual([]);
+      expect(callsOn(photo.key)).toEqual([]);
       expect(await db('photos').where({ id: photo.id }).first()).toBeDefined();
       expect(objects.has(photo.key)).toBe(true);
       expect(await trashRowOf(photo.id)).toBeUndefined();
