@@ -385,6 +385,12 @@ describe('adaptive streaming routes (issue 1733)', () => {
       try {
         expect((await get(`${streamed}/master.m3u8`)).status).toBe(200);
         expect((await get(`${streamed}/480p/seg_00000.m4s`)).status).toBe(200);
+        // Another video's copy is not this one's, though storage has it.
+        await db('photos').where({ id: streamed }).update({ web_path: `videos/web_${hidden}_gone.mp4` });
+        await storage.put(`videos/web_${hidden}_gone.mp4`, Buffer.from('copy'));
+        expect((await get(`${streamed}/master.m3u8`)).status).toBe(403);
+        await storage.delete(`videos/web_${hidden}_gone.mp4`);
+        await db('photos').where({ id: streamed }).update({ web_path: copy });
         await storage.delete(copy);
         expect((await get(`${streamed}/master.m3u8`)).status).toBe(403);
         expect((await get(`${streamed}/480p/index.m3u8`)).status).toBe(403);
@@ -509,6 +515,8 @@ describe('adaptive streaming routes (issue 1733)', () => {
       const id = await insertVideo('captured.mp4');
       const sweep = await hls.captureLadder(await db('photos').where({ id }).first());
       const newer = await writeLadder(id, '44444444-4444-4444-8444-444444444444');
+      // The old attempt's worker was still uploading when its files were listed.
+      await storage.put(`hls/${id}/${ATTEMPT}/480p/seg_00001.m4s`, SEGMENT);
       await sweep();
       expect(await keysUnder(`hls/${id}`)).toEqual(await keysUnder(newer));
       expect(await keysUnder(newer)).toHaveLength(4);

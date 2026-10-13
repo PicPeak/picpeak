@@ -472,8 +472,8 @@ async function loadStreamedVideo(req, res) {
 
 /**
  * Download limit (issue 1560) for a stream. The ladder stands in for what
- * the photo route would play: free where that is the web copy (a key in its
- * namespace that storage still has, not the row's word for it), one slot
+ * the photo route would play: free where that is the web copy (this video's
+ * own key in its namespace, and in storage, not the row's word for it), one slot
  * where it is the original. Fetching the master playlist is the playback, so
  * that is what takes the slot, once per video and for the client only, as
  * admitVideoStream does for the file. Unlike a file the grant is delivered
@@ -486,6 +486,7 @@ async function loadStreamedVideo(req, res) {
 async function admitStream(req, res, photo, { playback }) {
   if (req.isAdminPreview || !(await currentDownloadLimit(req.event))) return true;
   if (photo.web_path && photo.web_status === 'complete' && isPresentationRenditionKey(photo.web_path, 'web')
+      && photo.web_path.startsWith(`videos/web_${photo.id}_`) && photo.web_path.endsWith('.mp4')
       && await getStorage().stat(photo.web_path).catch(() => null)) return true;
   const photoId = Number(photo.id);
   if ((await grantedPhotoIds(req.event.id, [photoId], db, { deliveredOnly: true })).has(photoId)) return true;

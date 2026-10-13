@@ -297,16 +297,24 @@ async function deleteLadder(photo) {
 }
 
 /**
- * A photo's ladder files as they are now, for a caller that resets the row
- * before it removes them (a replacement): resolves the function that deletes
- * exactly these. What a later attempt writes in between is not among them.
+ * A photo's ladder attempts as they are now, for a caller that resets the
+ * row before it removes them (a replacement): resolves the function that
+ * deletes everything under these attempts' prefixes, whatever a worker still
+ * busy with one of them wrote in between. An attempt that starts after this
+ * (the new file's, on another replica) has a prefix of its own and is kept.
  */
 async function captureLadder(photo) {
   if (!photo?.id || (!photo.hls_status && !photo.hls_path)) return async () => {};
   const root = `hls/${Number(photo.id)}`;
+  const attemptOf = key => key.split('/').slice(0, 3).join('/');
   const warn = error => logger.warn(`videoHls: could not remove the ladder of photo ${photo.id}: ${error.message}`);
-  const keys = await keysUnder(root).catch((error) => { warn(error); return []; });
-  return () => removeKeys(root, keys).catch(warn);
+  const attempts = new Set((await keysUnder(root).catch((error) => { warn(error); return []; })).map(attemptOf));
+  // A claimed attempt that has not uploaded anything yet.
+  if (photo.hls_attempt_id) attempts.add(`${root}/${photo.hls_attempt_id}`);
+  return async () => {
+    if (!attempts.size) return;
+    await keysUnder(root).then(keys => removeKeys(root, keys.filter(key => attempts.has(attemptOf(key))))).catch(warn);
+  };
 }
 
 async function probe(localPath) {
