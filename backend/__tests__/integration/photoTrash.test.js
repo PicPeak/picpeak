@@ -341,6 +341,33 @@ describe('photo trash (issue 1733)', () => {
       expect(new Date(feedback[0].created_at).toISOString()).toBe('2026-01-02T10:00:00.000Z');
     });
 
+    it('counts the feedback again on restore: a merge without duplicates changes who gave it', async () => {
+      const event = await mkEvent();
+      const mkGuest = async (name) => firstId(await db('gallery_guests').insert({
+        event_id: event.id, name, identifier: `${name.toLowerCase()}-count-ident`, created_at: now(),
+      }).returning('id'));
+      const keepId = await mkGuest('Kai');
+      const goneId = await mkGuest('Kay');
+      const photo = await mkPhoto(event, { like_count: 1, feedback_count: 2 });
+      await db('photo_feedback').insert([
+        { photo_id: photo.id, event_id: event.id, feedback_type: 'like', guest_identifier: 'kai-count-ident', guest_id: keepId },
+        { photo_id: photo.id, event_id: event.id, feedback_type: 'rating', rating: 5, guest_identifier: 'kay-count-ident', guest_id: goneId },
+      ]);
+      await require('../../src/services/feedbackService').updatePhotoFeedbackStats(photo.id);
+      const before = await db('photos').where({ id: photo.id }).first();
+      expect(Number(before.feedback_count)).toBe(2);
+      expect((await del(event, photo)).status).toBe(200);
+
+      const merge = await as(request(app).post(`/api/admin/events/${event.id}/guests/${keepId}/merge`), 'owner').send({ mergeIds: [goneId] });
+      expect(merge.status).toBe(200);
+      expect((await restore(event, [(await trashRowOf(photo.id)).id])).status).toBe(200);
+      // Two choices, one person.
+      expect(await count('photo_feedback', { photo_id: photo.id })).toBe(2);
+      const after = await db('photos').where({ id: photo.id }).first();
+      expect(Number(after.feedback_count)).toBe(1);
+      expect(Number(after.like_count)).toBe(1);
+    });
+
     it('a merge the route refuses leaves the trash as it was', async () => {
       const event = await mkEvent();
       const other = await mkEvent();
@@ -414,6 +441,30 @@ describe('photo trash (issue 1733)', () => {
       expect((await restore(event, rows.map((row) => row.id))).body.restored).toBe(2);
       expect(await db('photos').where({ id: approved.id }).first()).toMatchObject({ folder_id: folderId, pending_folder_request_id: null });
       expect(await db('photos').where({ id: rejected.id }).first()).toMatchObject({ folder_id: null, pending_folder_request_id: null });
+    });
+
+    it('follows an approval when the folder the photo waited in was deleted meanwhile', async () => {
+      const event = await mkEvent();
+      const mkFolder = async (name) => firstId(await db('photo_categories').insert({ name, slug: `${name.toLowerCase()}-${seq}`, event_id: event.id }).returning('id'));
+      const parentId = await mkFolder('Parent');
+      const waitedInId = await mkFolder('Waited');
+      const approvedId = await mkFolder('Approved');
+      const requestId = firstId(await db('folder_requests').insert({
+        event_id: event.id, path: 'Parent/New', status: 'pending', fallback_folder_id: waitedInId,
+      }).returning('id'));
+      const photo = await mkPhoto(event, { folder_id: waitedInId, pending_folder_request_id: requestId });
+      // Moved by the admin before the delete: not where the request parked it.
+      const moved = await mkPhoto(event, { folder_id: parentId, pending_folder_request_id: requestId });
+      for (const p of [photo, moved]) expect((await del(event, p)).status).toBe(200);
+
+      // The folder goes, the request falls back to its parent, then it is approved.
+      await db('photo_categories').where({ id: waitedInId }).del();
+      await db('folder_requests').where({ id: requestId }).update({ fallback_folder_id: null, status: 'approved', approved_folder_id: approvedId });
+
+      const rows = await db('photo_trash').where({ event_id: event.id });
+      expect((await restore(event, rows.map((row) => row.id))).body.restored).toBe(2);
+      expect(await db('photos').where({ id: photo.id }).first()).toMatchObject({ folder_id: approvedId, pending_folder_request_id: null });
+      expect(await db('photos').where({ id: moved.id }).first()).toMatchObject({ folder_id: parentId, pending_folder_request_id: null });
     });
 
     it('does not place a restored photo in an approved folder that is gone again', async () => {

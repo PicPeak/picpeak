@@ -645,12 +645,10 @@ async function mergeGuests(trx, survivor, sourceGuestIds) {
       else seen.add(entry.feedback_type);
     }
     feedback = feedback.filter((entry) => !duplicates.has(entry));
-    await trx('photo_trash').where({ id: rowId }).update({
-      photo_row: JSON.stringify(photoRow),
-      // The counters in photo_row were taken with the duplicates in: the
-      // restore counts again (insertRestored).
-      children: JSON.stringify({ ...children, feedback, ...(duplicates.size ? { recount: true } : {}) }),
-    });
+    // The counters in photo_row are from before the merge; the restore
+    // counts again (insertRestored).
+    await trx('photo_trash').where({ id: rowId })
+      .update({ photo_row: JSON.stringify(photoRow), children: JSON.stringify({ ...children, feedback }) });
     changed += 1;
   }
   return changed;
@@ -803,8 +801,10 @@ async function insertRestored(trx, event, row, columns, forEngine) {
       await trx('transfer_files').insert(forEngine('transfer_files', { ...rest, photo_id: photoId }));
     }
   }
-  if (children.recount) {
-    // A guest merge dropped duplicate choices from the snapshot (mergeGuests).
+  if ((children.feedback || []).length) {
+    // The counters in the snapshot are from when the photo was trashed. What
+    // they count can have changed since: guests merged or forgotten, the
+    // gallery's feedback mode switched. Counted from the rows that came back.
     await require('./feedbackService').updatePhotoFeedbackStats(photoId, trx);
   }
   if (children.event_hero) {
@@ -918,27 +918,34 @@ async function dropAbandonedRestoreCopy(claim, lateCopyTag) {
  * the trash; the decision only reached the photos that were in the gallery.
  * After the commit, like an upload that outlived the decision
  * (uploadPlacement.afterUploadPlacement): a decision made since sees the row
- * itself. The restore stands either way.
+ * itself. The restore stands either way. Guarded on the photo still waiting
+ * on that request, so a decision that got there first is not undone.
  */
 async function settleFolderRequest(event, photoId) {
   try {
     const restored = await db('photos').where({ id: photoId }).first('pending_folder_request_id');
     if (!restored || !restored.pending_folder_request_id) return;
-    const request = await db('folder_requests')
-      .where({ id: restored.pending_folder_request_id, event_id: event.id }).first('status', 'approved_folder_id');
+    const requestId = restored.pending_folder_request_id;
+    const request = await db('folder_requests').where({ id: requestId, event_id: event.id })
+      .first('status', 'approved_folder_id', 'fallback_folder_id');
     if (request && request.status === 'pending') return;
-    // The folder the request was approved into can be gone again by now,
-    // and so can the request: the photo keeps the placement the restore
-    // checked and only stops waiting.
-    const folderStands = request && request.status === 'approved' && request.approved_folder_id
-      ? await db('photo_categories').where({ id: request.approved_folder_id, event_id: event.id }).first('id')
-      : true;
-    if (!request || !folderStands) {
-      await db('photos').where({ id: photoId, pending_folder_request_id: restored.pending_folder_request_id })
-        .update({ pending_folder_request_id: null });
-      return;
+    const waiting = () => db('photos').where({ id: photoId, pending_folder_request_id: requestId });
+    // Approved: the photo follows into the approved folder if that still
+    // stands and the photo is where it waited: in the request's fallback
+    // folder, or in none (the restore takes a photo out of a folder that was
+    // deleted, and the request's fallback has moved on since). What
+    // folderRequestService.approveRequest does to the photos in the gallery.
+    if (request && request.status === 'approved' && request.approved_folder_id
+      && await db('photo_categories').where({ id: request.approved_folder_id, event_id: event.id }).first('id')) {
+      await waiting()
+        .where((q) => {
+          q.whereNull('folder_id');
+          if (request.fallback_folder_id != null) q.orWhere('folder_id', request.fallback_folder_id);
+        })
+        .update({ folder_id: Number(request.approved_folder_id), pending_folder_request_id: null });
     }
-    await require('./folderRequestService').settleLateArrivals(Number(event.id), restored.pending_folder_request_id);
+    // Decided either way, or gone: the photo stops waiting.
+    await waiting().update({ pending_folder_request_id: null });
   } catch (error) {
     logger.warn(`Could not settle the folder request of restored photo ${photoId}`, { error: error.message });
   }

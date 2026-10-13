@@ -328,7 +328,13 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           eventId={eventId}
           open={showTrash}
           onClose={() => setShowTrash(false)}
-          onRestored={refreshAfterPhotoChange}
+          // Photos come back with their labels, decisions and folders: the
+          // filter panel's sections and the folder counts depend on them.
+          onRestored={() => {
+            refreshAfterPhotoChange();
+            queryClient.invalidateQueries({ queryKey: ['admin-event-filter-summary', id] });
+            queryClient.invalidateQueries({ queryKey: folderQueryKey(eventId) });
+          }}
         />
       )}
 
