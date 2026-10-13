@@ -21,13 +21,16 @@ interface DraftChecklistCardProps {
   onPublish?: () => void;
 }
 
-/** Whether the gallery has someone to send it to: a customer email or an assigned account. */
+/**
+ * Whether the gallery has someone to send it to: a customer email, or an
+ * assigned account a gallery notice reaches. That is the server's count
+ * (`gallery_notice`: active, can sign in, portal on), which every admin gets;
+ * the assigned list is customers.view data and also holds inactive and
+ * passive accounts, so counting it would show two admins different progress.
+ */
 function hasCustomer(event: Event): boolean {
-  const extra = event as { customer_accounts?: unknown[]; gallery_notice?: { account_count?: number } | null };
-  return !!event.customer_email?.trim()
-    || (extra.customer_accounts?.length ?? 0) > 0
-    // Without customers.view the accounts are not listed, only counted.
-    || (extra.gallery_notice?.account_count ?? 0) > 0;
+  const notice = (event as { gallery_notice?: { account_count?: number } | null }).gallery_notice;
+  return !!event.customer_email?.trim() || (notice?.account_count ?? 0) > 0;
 }
 
 export const DraftChecklistCard: React.FC<DraftChecklistCardProps> = ({ event, setActiveTab, openSettings, onPublish }) => {

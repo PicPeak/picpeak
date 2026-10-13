@@ -60,13 +60,33 @@ describe('DraftChecklistCard', () => {
     expect(row('publish').getByText('To do')).toBeInTheDocument();
   });
 
-  it('counts an assigned customer account as the customer, listed or only counted', () => {
-    const { unmount } = renderCard({ customer_accounts: [{ id: 11, email: 'nico@example.com' }] });
+  it('counts an account the gallery notice reaches as the customer, listed or only counted', () => {
+    // With customers.view the route sends the list as well as the count.
+    const { unmount } = renderCard({
+      customer_accounts: [{ id: 11, email: 'nico@example.com', is_active: true, can_sign_in: true }],
+      gallery_notice: { account_count: 1, folds_inline: false },
+    });
     expect(row('customer').getByText('Done')).toBeInTheDocument();
     unmount();
-    // Without customers.view the route sends the count, not the list.
+    // Without it, the count alone.
     renderCard({ gallery_notice: { account_count: 1, folds_inline: false } });
     expect(row('customer').getByText('Done')).toBeInTheDocument();
+  });
+
+  it('does not count assigned accounts no notice reaches, whoever looks', () => {
+    // Inactive, or passive (no password): listed for customers.view, but the
+    // server counts neither, so both admins see the same open step.
+    const { unmount } = renderCard({
+      customer_accounts: [
+        { id: 11, email: 'nico@example.com', is_active: false, can_sign_in: true },
+        { id: 12, email: 'ida@example.com', is_active: true, can_sign_in: false },
+      ],
+      gallery_notice: { account_count: 0, folds_inline: false },
+    });
+    expect(row('customer').getByText('To do')).toBeInTheDocument();
+    unmount();
+    renderCard({ gallery_notice: { account_count: 0, folds_inline: false } });
+    expect(row('customer').getByText('To do')).toBeInTheDocument();
   });
 
   it('offers no Publish link to an admin who may not publish', () => {
