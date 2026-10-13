@@ -23,8 +23,9 @@ const reloadList = () => act(async () => {
 });
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => { resolve = r; });
-  return { promise, resolve };
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
 }
 
 function setHidden(hidden: boolean) {
@@ -128,6 +129,37 @@ describe('useLiveRefresh', () => {
     expect(result.current).toBe(2);
     // A list asked for after the answer still clears it.
     await reloadList();
+    expect(result.current).toBe(0);
+  });
+
+  it('keeps the notice when the older list request was already out as the hook mounted', async () => {
+    const oldList = deferred<{ photos: never[] }>();
+    let listRequest!: Promise<unknown>;
+    act(() => { listRequest = queryClient.fetchQuery({ queryKey: LIST_KEY, queryFn: () => oldList.promise }); });
+    getPhotoState.mockResolvedValue({ count: 12, max_id: 102 });
+    const { result } = renderHook(() => useLiveRefresh(base), { wrapper });
+    await advance(LIVE_REFRESH_INTERVAL_MS);
+    expect(result.current).toBe(2);
+    await act(async () => { oldList.resolve({ photos: [] }); await listRequest; });
+    expect(result.current).toBe(2);
+  });
+
+  it('dates a retried list request from its retry, not from the attempt that failed', async () => {
+    const firstAttempt = deferred<{ photos: never[] }>();
+    const queryFn = vi.fn()
+      .mockImplementationOnce(() => firstAttempt.promise)
+      .mockResolvedValue({ photos: [] });
+    getPhotoState.mockResolvedValue({ count: 12, max_id: 102 });
+    const { result, rerender } = renderHook((props) => useLiveRefresh(props), { initialProps: base, wrapper });
+    act(() => { void queryClient.fetchQuery({ queryKey: LIST_KEY, queryFn, retry: 1, retryDelay: 100 }); });
+    await advance(LIVE_REFRESH_INTERVAL_MS);
+    expect(result.current).toBe(2);
+    // The first attempt fails after the poll; the retry reads the gallery
+    // after a deletion and is the newer of the two.
+    await act(async () => { firstAttempt.reject(new Error('network')); });
+    await advance(100);
+    expect(queryFn).toHaveBeenCalledTimes(2);
+    rerender({ ...base, loadedCount: 11, loadedMaxId: 102 });
     expect(result.current).toBe(0);
   });
 

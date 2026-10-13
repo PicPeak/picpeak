@@ -44,23 +44,28 @@ export function useLiveRefresh({ slug, enabled, loadedCount, loadedMaxId }: Opti
   // Only an answer asked for after that list survives it. (A request that
   // is restarted while out keeps its first start time, the cache reports no
   // second one; a notice from in between then lasts until the next poll.)
-  useEffect(() => queryClient.getQueryCache().subscribe((event) => {
-    if (event.type !== 'updated') return;
-    const [scope, eventSlug] = event.query.queryKey as unknown[];
-    if (scope !== 'gallery-photos' || eventSlug !== slug) return;
-    const hash = event.query.queryHash;
-    if (event.action.type === 'fetch') {
-      clock.current += 1;
-      listFetchStarted.current.set(hash, clock.current);
-      return;
-    }
-    if (event.action.type !== 'success' || event.action.manual) return;
-    // A request this hook did not see start counts as asked for just now.
-    const asked = listFetchStarted.current.get(hash) ?? (clock.current += 1);
-    listFetchStarted.current.delete(hash);
-    listAsked.current = Math.max(listAsked.current, asked);
-    setState((current) => (current && current.asked > asked ? current : null));
-  }), [queryClient, slug]);
+  useEffect(() => {
+    const started = listFetchStarted.current;
+    const stamp = (hash: string) => { clock.current += 1; started.set(hash, clock.current); };
+    // A request already out was sent before any poll from here on.
+    queryClient.getQueryCache()
+      .findAll({ queryKey: ['gallery-photos', slug], fetchStatus: 'fetching' })
+      .forEach((query) => stamp(query.queryHash));
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated') return;
+      const [scope, eventSlug] = event.query.queryKey as unknown[];
+      if (scope !== 'gallery-photos' || eventSlug !== slug) return;
+      const hash = event.query.queryHash;
+      // 'failed' is one attempt failing: the retry that follows is a new read.
+      if (event.action.type === 'fetch' || event.action.type === 'failed') { stamp(hash); return; }
+      if (event.action.type !== 'success' || event.action.manual) return;
+      const asked = started.get(hash) ?? (clock.current += 1);
+      started.delete(hash);
+      listAsked.current = Math.max(listAsked.current, asked);
+      setState((current) => (current && current.asked > asked ? current : null));
+    });
+    return () => { unsubscribe(); started.clear(); };
+  }, [queryClient, slug]);
 
   useEffect(() => {
     if (!enabled) return undefined;
