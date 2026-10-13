@@ -18,7 +18,10 @@ interface BulkRatingProps {
   className?: string;
 }
 
-type Submission = { rating: number; guest_name?: string; guest_email?: string; identityChanged?: boolean };
+type Rating = { rating: number; guest_name?: string; guest_email?: string; identityChanged?: boolean };
+// The selection and the guest are taken at the press: offline, the request
+// waits for the network and runs with whatever the component renders by then.
+type Submission = Rating & { photoIds: number[]; guestId: number | null };
 type RatedRow = { average_rating?: number; total_ratings?: number };
 
 /**
@@ -45,13 +48,13 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
       // The API client reads the stored guest token per request. Once another
       // tab has switched the guest, the rest of the run would be filed under
       // the new one, so it ends there.
-      const startedAs = getGuestIdentity(slug)?.id ?? null;
-      const sameGuest = () => (getGuestIdentity(slug)?.id ?? null) === startedAs;
-      for (let i = 0; i < photoIds.length && !error && sameGuest(); i += BULK_RATING_MAX_PHOTOS) {
+      const { photoIds: ids } = data;
+      const sameGuest = () => (getGuestIdentity(slug)?.id ?? null) === data.guestId;
+      for (let i = 0; i < ids.length && !error && sameGuest(); i += BULK_RATING_MAX_PHOTOS) {
         try {
           const response = await feedbackService.submitBulkRating(
             slug,
-            photoIds.slice(i, i + BULK_RATING_MAX_PHOTOS),
+            ids.slice(i, i + BULK_RATING_MAX_PHOTOS),
             data.rating,
             { guest_name: data.guest_name, guest_email: data.guest_email },
           );
@@ -107,14 +110,17 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
         } else {
           toast.error(t('feedback.ratingError', 'Failed to submit rating'));
         }
-      } else if (rated.size < photoIds.length) {
+      } else if (rated.size < data.photoIds.length) {
         toast.error(t('feedback.bulkRatingPartial', '{{rated}} of {{total}} photos were rated', {
           rated: rated.size,
-          total: photoIds.length,
+          total: data.photoIds.length,
         }));
       }
     },
   });
+
+  const submit = (data: Rating) =>
+    mutation.mutate({ ...data, photoIds, guestId: getGuestIdentity(slug)?.id ?? null });
 
   const rate = async (rating: number) => {
     if (mutation.isPending || photoIds.length === 0) return;
@@ -126,11 +132,11 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
       } catch {
         return;
       }
-      mutation.mutate({ rating, identityChanged: (ensured?.id ?? null) !== identityBefore });
+      submit({ rating, identityChanged: (ensured?.id ?? null) !== identityBefore });
     } else if (requireNameEmail && !identity) {
       setPendingRating(rating);
     } else {
-      mutation.mutate({ rating, guest_name: identity?.name, guest_email: identity?.email });
+      submit({ rating, guest_name: identity?.name, guest_email: identity?.email });
     }
   };
 
@@ -175,7 +181,7 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
           onSubmit={(name, email) => {
             setIdentity({ name, email });
             setPendingRating(null);
-            mutation.mutate({ rating: pendingRating, guest_name: name, guest_email: email });
+            submit({ rating: pendingRating, guest_name: name, guest_email: email });
           }}
           feedbackType={t('feedback.rating', 'rating')}
         />,

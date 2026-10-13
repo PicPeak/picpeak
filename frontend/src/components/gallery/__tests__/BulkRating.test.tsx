@@ -6,7 +6,7 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 
 import { BulkRating } from '../BulkRating';
@@ -185,6 +185,52 @@ describe('BulkRating', () => {
     expect(invalidate).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
     stored.mockReturnValue(null);
+  });
+
+  // Offline, React Query parks the mutation and runs it on reconnect, with
+  // whatever the component last rendered. The press decides what is rated
+  // and for whom, not the moment the network returns.
+  it('rates the selection as it was at the press when the request waits for the network', async () => {
+    seedCache([makePhoto(1), makePhoto(2), makePhoto(3)]);
+    submit.mockImplementation(async (_slug, chunk, rating) => ok(chunk as number[], rating as number));
+    onlineManager.setOnline(false);
+    try {
+      const view = renderControl([1, 2]);
+      fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+      view.rerender(
+        <QueryClientProvider client={queryClient}>
+          <BulkRating slug={SLUG} photoIds={[3]} />
+        </QueryClientProvider>,
+      );
+      expect(submit).not.toHaveBeenCalled();
+      onlineManager.setOnline(true);
+      await waitFor(() => expect(cached()[0].my_rating).toBe(4));
+      expect(submit.mock.calls.map((call) => call[1])).toEqual([[1, 2]]);
+      expect(cached()[2].my_rating).toBeNull();
+      expect(toast.error).not.toHaveBeenCalled();
+    } finally {
+      onlineManager.setOnline(true);
+    }
+  });
+
+  it('sends nothing when the guest changed while the request waited for the network', async () => {
+    seedCache([makePhoto(1)]);
+    submit.mockResolvedValue(ok([1], 4));
+    const stored = vi.mocked(getGuestIdentity);
+    stored.mockReturnValue({ id: 1 } as ReturnType<typeof getGuestIdentity>);
+    onlineManager.setOnline(false);
+    try {
+      renderControl([1]);
+      fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+      stored.mockReturnValue({ id: 2 } as ReturnType<typeof getGuestIdentity>);
+      onlineManager.setOnline(true);
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Rate 4 stars' })).toHaveProperty('disabled', false));
+      expect(submit).not.toHaveBeenCalled();
+      expect(cached()[0].my_rating).toBeNull();
+    } finally {
+      onlineManager.setOnline(true);
+      stored.mockReturnValue(null);
+    }
   });
 
   it('asks for name and email first when the gallery requires them', async () => {
