@@ -189,12 +189,20 @@ async function deliverable(jobId) {
  * Asked by the queue processor right before it sends a download_ready mail:
  * why the mail no longer applies, or null. A queue that was held up can
  * reach the mail after the archive is gone, and the sweep that cancels such
- * mails only runs every 20 minutes.
+ * mails only runs every 20 minutes; an address can change hands meanwhile.
  */
-async function staleMailReason(emailData) {
+async function staleMailReason(emailData, recipientEmail) {
   const jobId = emailData?.__downloadJobId;
   if (jobId == null) return null;
-  return (await deliverable(jobId)) ? null : 'The prepared download is no longer available';
+  if (!(await deliverable(jobId))) return 'The prepared download is no longer available';
+  // The same rule as when the mail was queued: only while the guest or
+  // account that asked still holds this address (changed or deactivated since).
+  const recipient = await db('download_job_recipients')
+    .where({ job_id: jobId, email: normalise(recipientEmail) }).first();
+  if (!recipient || !(await stillHolds(recipient))) {
+    return 'The requester no longer holds this address';
+  }
+  return null;
 }
 
 /**

@@ -560,11 +560,26 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
         await makeJob(event, photoIds, { status: 'building' }),
         await makeJob(event, photoIds, { status: 'building' }),
       ];
+      // A second requester of the live job, deactivated while the mail waited.
+      const acct = await db('customer_accounts').insert({
+        email: 'held-up-account@example.com',
+        password_hash: 'x',
+        is_active: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).returning('id');
+      const customerId = acct[0]?.id ?? acct[0];
+      await db('event_customer_assignments').insert({ event_id: event.id, customer_account_id: customerId });
+      await request(app)
+        .post(`/api/gallery/${event.slug}/download-jobs/${live.token}/notify`)
+        .set('Authorization', `Bearer ${galleryToken(event, { via: 'customer', customerId })}`)
+        .send({}).expect(200);
       for (const job of [gone, live]) {
         await askForMail(event, job, guestToken);
         await db('download_jobs').where({ id: job.id }).update({ status: 'ready' });
         await notifier.notifyReady(job.id);
       }
+      await db('customer_accounts').where({ id: customerId }).update({ is_active: 0 });
       // The queue was held up; one archive ran out before the sweep got to it.
       await db('download_jobs').where({ id: gone.id })
         .update({ expires_at: new Date(Date.now() - 1000).toISOString() });
@@ -577,7 +592,7 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
       const send = jest.spyOn(transport, 'send')
         .mockImplementation(async (mail) => { sentTo.push(mail); return { messageId: 'm-1' }; });
       try {
-        await db('email_queue').whereNot({ recipient_email: 'held-up@example.com' })
+        await db('email_queue').whereNotIn('recipient_email', ['held-up@example.com', 'held-up-account@example.com'])
           .whereIn('status', ['pending']).update({ status: 'cancelled' });
         await require('../../src/services/emailProcessor').processEmailQueue();
       } finally {
@@ -590,6 +605,8 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
       expect(statusOf(gone)).toBe('cancelled');
       expect(statusOf(live)).toBe('sent');
       expect(sentTo).toHaveLength(1);
+      const [toAccount] = await readyMails('held-up-account@example.com');
+      expect(toAccount.status).toBe('cancelled');
     });
 
     it('does not announce an archive that can no longer be delivered', async () => {

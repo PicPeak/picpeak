@@ -1527,7 +1527,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         // re-check: the archive can be gone by the time the queue is here.
         const staleDocumentReason = await staleDocumentNotificationReason(email.email_type, emailData)
           || (email.email_type === 'download_ready'
-            ? await require('./downloadJobNotifier').staleMailReason(emailData) : null);
+            ? await require('./downloadJobNotifier').staleMailReason(emailData, email.recipient_email) : null);
         if (staleDocumentReason) {
           await db('email_queue').where('id', email.id).update({
             status: 'cancelled',
