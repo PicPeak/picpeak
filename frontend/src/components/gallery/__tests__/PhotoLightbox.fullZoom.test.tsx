@@ -39,12 +39,16 @@ vi.mock('../../common', async () => {
       alt: string; style?: React.CSSProperties; onLoad?: (d: { width: number; height: number }) => void;
     }) => {
       useEffect(() => { onLoad?.({ width: 1920, height: 1280 }); }, [onLoad]);
+      previewLoaded = () => onLoad?.({ width: 1920, height: 1280 });
       return <img alt={alt} style={style} />;
     },
   };
 });
 
 import { PhotoLightbox } from '../PhotoLightbox';
+
+// The preview reporting a (new) load, as after a refetched photo list.
+let previewLoaded: () => void = () => {};
 
 // Records the observers so a test can report a resize of the slide.
 let resizeObservers: Array<() => void> = [];
@@ -101,7 +105,9 @@ afterEach(() => {
 });
 
 const setup = (photos: Photo[], props: Partial<React.ComponentProps<typeof PhotoLightbox>> = {}) => {
-  const { container } = render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" {...props} />);
+  const onClose = vi.fn();
+  const { container, rerender } = render(<PhotoLightbox photos={photos} initialIndex={1} onClose={onClose} slug="g" {...props} />);
+  const update = (next: Photo[]) => rerender(<PhotoLightbox photos={next} initialIndex={1} onClose={onClose} slug="g" {...props} />);
   const image = () => screen.getByAltText(photos[1].filename);
   const surface = image().parentElement!.parentElement!.parentElement as HTMLElement;
   const overlay = () => container.querySelector<HTMLImageElement>('img[data-full-resolution]');
@@ -112,7 +118,7 @@ const setup = (photos: Photo[], props: Partial<React.ComponentProps<typeof Photo
     fireEvent.touchMove(surface, { touches: [finger(100), finger(100 + 100 * factor)] });
     fireEvent.touchEnd(surface, { touches: [], changedTouches: [finger(100)] });
   };
-  return { container, image, surface, overlay, hint, readout, pinch };
+  return { container, image, surface, overlay, hint, readout, pinch, update };
 };
 
 // Lets the fetch, the blob read and the queue's microtasks settle.
@@ -272,6 +278,40 @@ describe('PhotoLightbox with a full resolution', () => {
     pinch(40);
     expect(overlay()!.style.transform).toContain('scale(20)');
     expect(readout()).toBe('100%');
+  });
+
+  it('drops a loaded original when a refreshed list withdraws the offer', async () => {
+    const { image, overlay, readout, update } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    await finishDecode();
+    fireEvent.load(overlay()!);
+    expect(image().style.opacity).toBe('0');
+
+    // The same photos, as listed once a watermark was switched on.
+    update([photo(1), photo(2), photo(3)]);
+    expect(overlay()).toBeNull();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:original');
+    // The preview loading again must not bring the original back.
+    act(() => { previewLoaded(); });
+    expect(overlay()).toBeNull();
+    expect(image().style.opacity).toBe('');
+    expect(readout()).toBe('150%');
+  });
+
+  it('measures an image that loads without reporting it, like the thumbnail after an undecodable preview', async () => {
+    // Nothing measurable yet: the preview is still a placeholder.
+    FIT = { width: 0, height: 0 };
+    const { image, overlay, readout } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    expect(readout()).toBe('100%');
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    await finishDecode();
+    expect(overlay()).toBeNull();
+
+    FIT = { width: 300, height: 300 };
+    fireEvent.load(image());
+    expect(overlay()).not.toBeNull();
+    expect(overlay()!.style.width).toBe('300px');
+    expect(overlay()!.style.height).toBe('200px');
   });
 
   it('keeps the right-click block on the zoomed original', async () => {

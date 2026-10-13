@@ -85,7 +85,7 @@ interface Options {
   containerRef: RefObject<HTMLElement>;
 }
 
-interface LoadedOriginal extends Size { photoId: number; src: string }
+interface LoadedOriginal extends Size { photoId: number; url: string; src: string }
 
 export function useFullResolutionZoom({
   photo, slug, enabled, zoom, dragOffset, setZoom, setDragOffset, containerRef,
@@ -107,9 +107,9 @@ export function useFullResolutionZoom({
   // renders, and for the load that ends after the render that started it.
   const live = useRef({ zoom, dragOffset, actualZoom: null as number | null, maxZoom: BASE_MAX_ZOOM });
 
-  // State of another photo is never shown: the reset below lands one render
-  // after the navigation.
-  const original = loaded && loaded.photoId === photoId ? loaded : null;
+  // State of another photo is never shown, nor an original the server no
+  // longer offers: the reset below lands one render after the change.
+  const original = loaded && loaded.photoId === photoId && loaded.url === url ? loaded : null;
   const requested = requestedId !== null && requestedId === photoId;
 
   // The preview's layout box (untransformed). The overlay is fitted into this
@@ -129,20 +129,27 @@ export function useFullResolutionZoom({
     }
     measure();
     const el = slideRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
+    if (!el) return;
+    // `load` does not bubble, so it is captured: the thumbnail that stands in
+    // for an undecodable preview loads without telling onPreviewLoad.
+    el.addEventListener('load', measure, true);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(el);
+    return () => {
+      el.removeEventListener('load', measure, true);
+      observer?.disconnect();
+    };
   }, [url, photoId, measure]);
 
-  // Navigating away releases the original. Its object URL goes in the effect
-  // after this one.
+  // Navigating away releases the original, and so does a refreshed photo list
+  // that withdraws the offer or points it elsewhere. Its object URL goes in
+  // the effect after this one.
   useEffect(() => {
     setLoaded(null);
     setRequestedId(null);
     setFailedId(null);
     setPaintedSrc(null);
-  }, [photoId]);
+  }, [photoId, url]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -185,7 +192,7 @@ export function useFullResolutionZoom({
         await image.decode();
         if (cancelled) return;
         handedOver = true;
-        setLoaded({ photoId, src: objectUrl, width: image.naturalWidth, height: image.naturalHeight });
+        setLoaded({ photoId, url, src: objectUrl, width: image.naturalWidth, height: image.naturalHeight });
       } catch {
         // Refused, aborted, or not decodable: the preview stays, silently.
         if (cancelled) return;
