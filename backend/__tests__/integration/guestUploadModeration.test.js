@@ -269,6 +269,52 @@ describe('guest uploads with approval (issue 1733)', () => {
     expect(after.map((r) => JSON.parse(r.metadata).count)).toEqual([2, 1]);
   });
 
+  it('moves a grown entry back to the top of the bell, also after it was cleared', async () => {
+    const { event, token } = await makeEvent();
+    const { id: adminId } = jwt.decode(adminToken);
+    // Earlier tests' entries share this second; out of the way of the order.
+    await db('activity_logs').update({ created_at: '2026-01-01 00:00:00' });
+    await upload(event, token);
+    const entry = await db('activity_logs')
+      .where({ event_id: event.id, activity_type: 'guest_uploads_pending_review' }).first();
+
+    // An old entry the admin cleared, behind a full page of newer ones. The
+    // timestamps carry the shape the column default writes on SQLite.
+    const stamp = (ms) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+    await db('activity_logs').where({ id: entry.id }).update({ created_at: stamp(Date.now() - 2 * 3600 * 1000) });
+    await db('activity_logs').insert(Array.from({ length: 20 }, (_, i) => ({
+      activity_type: 'gallery_viewed',
+      actor_type: 'guest',
+      metadata: '{}',
+      event_id: event.id,
+      created_at: stamp(Date.now() - 3600 * 1000 + i * 1000),
+    })));
+    await db('notification_dismissals').insert({
+      admin_id: adminId, activity_log_id: entry.id, dismissed_at: new Date().toISOString(),
+    });
+    const bellIds = async () => (await admin(request(app).get('/api/admin/notifications')))
+      .body.notifications.map((n) => n.id);
+    expect(await bellIds()).not.toContain(entry.id);
+
+    await upload(event, token);
+    const bell = await admin(request(app).get('/api/admin/notifications'));
+    expect(bell.body.notifications).toHaveLength(20);
+    expect(bell.body.notifications[0]).toMatchObject({ id: entry.id, metadata: { count: 2 } });
+  });
+
+  it('keeps parallel uploads in one entry', async () => {
+    const { notifyGuestUploadsPending } = require('../../src/services/uploadReviewService');
+    const { event } = await makeEvent();
+    await Promise.all(Array.from({ length: 6 }, () => notifyGuestUploadsPending(event, 1)));
+    const first = await db('activity_logs').where({ event_id: event.id, activity_type: 'guest_uploads_pending_review' });
+    expect(first.map((r) => JSON.parse(r.metadata).count)).toEqual([6]);
+
+    // And into an entry that exists: no increment is lost.
+    await Promise.all(Array.from({ length: 6 }, () => notifyGuestUploadsPending(event, 2)));
+    const grown = await db('activity_logs').where({ event_id: event.id, activity_type: 'guest_uploads_pending_review' });
+    expect(grown.map((r) => JSON.parse(r.metadata).count)).toEqual([18]);
+  });
+
   it('counts a held upload toward the photo cap', async () => {
     const { event, token } = await makeEvent({ photo_cap: 1 });
     expect((await upload(event, token)).status).toBe(202);

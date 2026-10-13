@@ -64,39 +64,46 @@ function holdsGuestUploads(event) {
  * Tell the bell that `count` guest uploads wait for review. The gallery sends
  * one file per request, so an unread entry for the event grows instead of a
  * new one being written per photo; it comes back for an admin who had cleared
- * it, as the API download summary does (apiDownloadNotifications). The update
- * is a compare-and-set on the stored metadata, so parallel uploads do not lose
- * each other's count. Best effort: the upload never fails on it.
+ * it, as the API download summary does (apiDownloadNotifications).
+ *
+ * A grown entry takes the time of the newest upload: the bell orders by
+ * created_at and loads one page, so an entry left at its first upload would
+ * stay behind whatever came since. db.fn.now() writes the shape the column
+ * default does, which is what keeps SQLite's text order intact.
+ *
+ * Lookup and write share one transaction per event: on PostgreSQL behind the
+ * event's row lock, on SQLite because it runs one transaction at a time. So
+ * parallel uploads, on one replica or several, neither open two entries nor
+ * lose each other's count. Best effort: the upload never fails on it.
  */
 async function notifyGuestUploadsPending(event, count) {
   try {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      const open = await db('activity_logs')
+    await db.transaction(async (trx) => {
+      if (trx.client.config.client === 'pg') await trx('events').where({ id: event.id }).forUpdate().first('id');
+      const open = await trx('activity_logs')
         .where({ activity_type: GUEST_UPLOADS_PENDING_TYPE, event_id: event.id })
         .whereNull('read_at')
         .orderBy('id', 'desc')
-        .first('id', db.raw('CAST(metadata AS TEXT) AS metadata_text'));
-      if (!open) {
-        // eslint-disable-next-line no-await-in-loop
-        await logActivity(GUEST_UPLOADS_PENDING_TYPE, { count, eventName: event.event_name }, event.id, { type: 'guest' });
-        return;
-      }
-      let metadata = {};
-      try { metadata = JSON.parse(open.metadata_text) || {}; } catch { /* written by logActivity, so JSON */ }
-      // eslint-disable-next-line no-await-in-loop
-      const updated = await db.transaction(async (trx) => {
-        const n = await trx('activity_logs')
+        .first('id', trx.raw('CAST(metadata AS TEXT) AS metadata_text'));
+      if (open) {
+        let metadata = {};
+        try { metadata = JSON.parse(open.metadata_text) || {}; } catch { /* written by logActivity, so JSON */ }
+        // Marking read does not take the event lock: an entry read since the
+        // lookup stays as the admin saw it, and a new one is opened below.
+        const grown = await trx('activity_logs')
           .where({ id: open.id })
           .whereNull('read_at')
-          .whereRaw('CAST(metadata AS TEXT) = ?', [open.metadata_text])
-          .update({ metadata: JSON.stringify({ ...metadata, count: (Number(metadata.count) || 0) + count }) });
-        if (n) await trx('notification_dismissals').where({ activity_log_id: open.id }).del();
-        return n;
-      });
-      if (updated) return;
-    }
-    logger.warn('upload review: guest upload notification lost an increment under contention', { eventId: event.id });
+          .update({
+            metadata: JSON.stringify({ ...metadata, count: (Number(metadata.count) || 0) + count }),
+            created_at: trx.fn.now(),
+          });
+        if (grown) {
+          await trx('notification_dismissals').where({ activity_log_id: open.id }).del();
+          return;
+        }
+      }
+      await logActivity(GUEST_UPLOADS_PENDING_TYPE, { count, eventName: event.event_name }, event.id, { type: 'guest' }, trx);
+    });
   } catch (e) {
     logger.warn(`upload review: guest upload notification failed for event ${event.id}`, { error: e.message });
   }
