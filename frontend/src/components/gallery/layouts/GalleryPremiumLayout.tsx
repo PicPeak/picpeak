@@ -511,7 +511,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         });
         onFeedbackChange?.(pendingLikePhotoId);
       } catch (err) {
-        console.warn('Like submit failed', err);
+        if (feedbackLockKind(err)) toggleLiked(pendingLikePhotoId);
+        else console.warn('Like submit failed', err);
       }
       setPendingLikePhotoId(null);
     }

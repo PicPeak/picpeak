@@ -1,5 +1,7 @@
 import { api } from '../config/api';
 import { explainFeedbackLock } from '../utils/feedbackLock';
+import { FEEDBACK_SUBMITTED_EVENT } from '../utils/feedbackEvents';
+import type { FeedbackSubmittedDetail } from '../utils/feedbackEvents';
 
 export type IdentityMode = 'simple' | 'guest' | 'shared';
 
@@ -345,6 +347,9 @@ class FeedbackService {
   }) {
     try {
       const response = await api.post(`/gallery/${slug}/photos/${photoId}/feedback`, feedback);
+      window.dispatchEvent(new CustomEvent<FeedbackSubmittedDetail>(FEEDBACK_SUBMITTED_EVENT, {
+        detail: { slug, feedback_type: feedback.feedback_type },
+      }));
       return response.data;
     } catch (error) {
       // A finished selection locks the picks (issue 1733). Said here, once,

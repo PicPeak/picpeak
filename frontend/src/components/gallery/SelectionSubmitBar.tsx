@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -9,6 +9,8 @@ import { Button } from '../common';
 import { feedbackService } from '../../services/feedback.service';
 import type { SelectionState, SubmissionKind } from '../../services/feedback.service';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
+import { FEEDBACK_SUBMITTED_EVENT } from '../../utils/feedbackEvents';
+import type { FeedbackSubmittedDetail } from '../../utils/feedbackEvents';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
 
@@ -25,6 +27,26 @@ import { useGalleryDialog } from './hooks/useGalleryDialog';
  */
 
 export const selectionStateKey = (slug: string) => ['gallery-selection', slug];
+
+/**
+ * Keep the counter's source, /my-feedback, in step with every stored like and
+ * favourite, whichever layout, lightbox or name dialog sent it: several of
+ * them do not call the gallery's feedback-change callback.
+ */
+export function useSelectionPickRefresh(slug: string, enabled: boolean) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const onSubmitted = (event: Event) => {
+      const detail = (event as CustomEvent<FeedbackSubmittedDetail>).detail;
+      if (detail?.slug !== slug) return;
+      if (detail.feedback_type !== 'like' && detail.feedback_type !== 'favorite') return;
+      queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+    };
+    window.addEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
+    return () => window.removeEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
+  }, [queryClient, slug, enabled]);
+}
 
 interface SelectionSubmitBarProps {
   slug: string;
@@ -58,10 +80,10 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
       setNote('');
     },
     onError: (error: unknown) => {
-      const response = (error as { response?: { data?: { code?: string } } })?.response;
-      // A cancelled name prompt is not a failure.
-      if (!response) return;
-      const code = response.data?.code;
+      // A cancelled name prompt is not a failure; a request that never got an
+      // answer (offline, timed out) is, and is told like any other.
+      if ((error as Error)?.message === 'user_cancelled') return;
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
       if (code === 'ALREADY_SUBMITTED') {
         setConfirming(null);
         return;

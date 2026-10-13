@@ -559,11 +559,17 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                   if (pendingAction.type === 'like' && onLikeSuccess) {
                     onLikeSuccess();
                   }
-                  await feedbackService.submitFeedback(slug!, String(pendingAction.photoId), {
-                    feedback_type: pendingAction.type,
-                    guest_name: name,
-                    guest_email: email,
-                  });
+                  try {
+                    await feedbackService.submitFeedback(slug!, String(pendingAction.photoId), {
+                      feedback_type: pendingAction.type,
+                      guest_name: name,
+                      guest_email: email,
+                    });
+                  } catch (err) {
+                    // Refused by a finished selection: the heart goes back.
+                    if (!feedbackLockKind(err)) throw err;
+                    if (pendingAction.type === 'like') onLikeSuccess?.();
+                  }
                   setPendingAction(null);
                 }
               }}

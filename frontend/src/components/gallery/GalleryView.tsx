@@ -65,7 +65,7 @@ import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { PeopleStrip } from './PeopleStrip';
 import { PeopleSheet } from './PeopleSheet';
 import { GuestIdentityProvider } from '../../contexts/GuestIdentityContext';
-import { SelectionSubmitBar, selectionStateKey } from './SelectionSubmitBar';
+import { SelectionSubmitBar, selectionStateKey, useSelectionPickRefresh } from './SelectionSubmitBar';
 import { DownloadQuotaProvider, buildDownloadQuotaValue } from '../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, quotaFromEvent, showDownloadLimitReached, type QuotaPhoto } from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
@@ -527,6 +527,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     staleTime: 30 * 1000,
   });
   const selectionCounterOn = !!selectionState?.selection.counter;
+  useSelectionPickRefresh(slug, selectionCounterOn);
 
   const { data: myFeedbackRows } = useQuery<Array<{
     photo_id: number;

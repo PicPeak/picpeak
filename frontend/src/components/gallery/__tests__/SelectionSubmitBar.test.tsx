@@ -7,13 +7,15 @@
  * it locks that part of the guest's feedback, and afterwards the bar says when
  * it was handed in instead of offering the button again.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
-import { SelectionSubmitBar } from '../SelectionSubmitBar';
+import { SelectionSubmitBar, useSelectionPickRefresh } from '../SelectionSubmitBar';
+import { FEEDBACK_SUBMITTED_EVENT } from '../../../utils/feedbackEvents';
+import { toast } from 'react-toastify';
 import type { SelectionState } from '../../../services/feedback.service';
 import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { parseFeedbackLimitError } from '../../../hooks/useFeedbackLimitModal';
@@ -145,6 +147,39 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     answer.resolve({ id: 7, name: 'Anna' });
     expect(await screen.findByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
     expect(submitSelection).not.toHaveBeenCalled();
+  });
+
+  it('says so when the request never got an answer', async () => {
+    // Offline or timed out: an axios error without a response.
+    submitSelection.mockRejectedValue(new Error('Network Error'));
+    renderBar(state({ approval: { can_submit: true } }), 0);
+    await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Could not send it. Please try again.'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('refreshes the picks after any stored like or favourite of this gallery', () => {
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    const send = (detail: { slug: string; feedback_type: string }) =>
+      window.dispatchEvent(new CustomEvent(FEEDBACK_SUBMITTED_EVENT, { detail }));
+    const { rerender } = renderHook(({ on }) => useSelectionPickRefresh('g', on), {
+      initialProps: { on: true },
+      wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+    });
+
+    send({ slug: 'g', feedback_type: 'like' });
+    send({ slug: 'g', feedback_type: 'favorite' });
+    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['my-feedback', 'g'] });
+
+    // Not a pick, another gallery, or no counter to feed.
+    send({ slug: 'g', feedback_type: 'rating' });
+    send({ slug: 'other', feedback_type: 'like' });
+    rerender({ on: false });
+    send({ slug: 'g', feedback_type: 'like' });
+    expect(invalidate).toHaveBeenCalledTimes(2);
   });
 
   it('shows a finished selection with its date instead of the button', () => {
