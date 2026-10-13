@@ -25,10 +25,13 @@ vi.mock('../../../hooks/useDevToolsProtection', () => ({ useDevToolsProtection: 
 vi.mock('../../../hooks/useGallery', () => ({ useSavePhotoToDevice: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock('../../../hooks/useFeedbackLimitModal', () => ({ useFeedbackLimitModal: () => ({ modal: null, handleError: () => false }) }));
 vi.mock('../../../contexts/GuestIdentityContext', () => ({ useGuestIdentityOptional: () => null }));
-vi.mock('../../../services/feedback.service', () => ({
+vi.mock('../../../services/feedback.service', async (importOriginal) => ({
+  // The keybind schemes live in this module too.
+  ...await importOriginal<typeof import('../../../services/feedback.service')>(),
   feedbackService: {
     getGalleryFeedbackSettings: vi.fn().mockResolvedValue({ feedback_enabled: false }),
     getPhotoFeedback: vi.fn().mockResolvedValue(null),
+    submitFeedback: vi.fn().mockResolvedValue({}),
   },
 }));
 vi.mock('../../../services/gallery.service', () => ({ galleryService: { trackPhotoView: vi.fn() } }));
@@ -50,6 +53,7 @@ vi.mock('../PhotoFeedback', () => ({
 
 import { PhotoLightbox } from '../PhotoLightbox';
 import { galleryService } from '../../../services/gallery.service';
+import { feedbackService } from '../../../services/feedback.service';
 import { SCRUB_IDLE_RELEASE_MS } from '../hooks/useLightboxScrub';
 
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
@@ -270,13 +274,39 @@ describe('lightbox hold-to-scrub', () => {
     // The panel fetches per photo id: it is not handed the ones passed over.
     expect(counter('109 / 500')).toBeInTheDocument();
     expect(panelPhoto()).toBe('101');
-    // And takes no click meanwhile: it would rate a photo that is not on screen.
+    // And takes no click or key meanwhile: it would rate a photo that is not on screen.
     const panel = screen.getByTestId('feedback-panel').parentElement as HTMLElement;
-    expect(panel.style.pointerEvents).toBe('none');
+    expect(panel).toHaveAttribute('inert');
 
     fireEvent.keyUp(document, { key: 'ArrowRight' });
     expect(panelPhoto()).toBe('109');
-    expect(panel.style.pointerEvents).toBe('');
+    expect(panel).not.toHaveAttribute('inert');
+  });
+
+  it('takes no rating, by key or by click, for a photo a scrub is passing over', async () => {
+    vi.mocked(feedbackService.getGalleryFeedbackSettings).mockResolvedValueOnce({
+      feedback_enabled: true, allow_ratings: true, keybind_mode: 'lightroom',
+    } as never);
+    const submitFeedback = vi.mocked(feedbackService.submitFeedback);
+    submitFeedback.mockClear();
+    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={100} onClose={vi.fn()} slug="g" feedbackEnabled />);
+    await act(async () => {});
+    const stars = () => screen.getByLabelText('Rate photo');
+
+    holdKey('ArrowRight', 30);
+    // The stars still show the photo the scrub started from: a shortcut or a
+    // click now would be worked out against that state and saved for this one.
+    fireEvent.keyDown(document, { key: '3' });
+    await act(async () => {});
+    expect(submitFeedback).not.toHaveBeenCalled();
+    expect(stars()).toHaveAttribute('inert');
+
+    fireEvent.keyUp(document, { key: 'ArrowRight' });
+    expect(stars()).not.toHaveAttribute('inert');
+    fireEvent.keyDown(document, { key: '3' });
+    await act(async () => {});
+    expect(submitFeedback).toHaveBeenCalledTimes(1);
+    expect(submitFeedback).toHaveBeenCalledWith('g', '109', expect.objectContaining({ feedback_type: 'rating', rating: 3 }));
   });
 
   it('leaves the carousel centred and swipeable when a scrub interrupts a committing swipe', () => {

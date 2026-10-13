@@ -204,6 +204,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // the scrub started from and moves to the one landed on.
   const feedbackPhotoIdRef = useRef(currentPhotoId);
   if (!scrubbing) feedbackPhotoIdRef.current = currentPhotoId;
+  // Mid-scrub every feedback control still shows another photo's state: the
+  // toolbar's is not fetched for a photo passed over, and the panel is on
+  // the one the scrub started from. A toggle worked out against that state
+  // would be saved wrongly, so none of them takes a click or a key until the
+  // scrub has landed. Spread, as React 18 does not know `inert` as a prop.
+  const feedbackHold = scrubbing ? { inert: '' } : undefined;
   // A scrub that ends on the photo it started from is not a second view.
   const lastTrackedPhotoIdRef = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -634,7 +640,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // Refreshed on every render (see the ref's declaration above): the keydown
   // listener reads current settings and handlers without being re-registered.
   proofingRef.current = {
-    feedbackEnabled: !!feedbackEnabled && !!feedbackSettings?.feedback_enabled,
+    // Not mid-scrub: see `feedbackHold`.
+    feedbackEnabled: !!feedbackEnabled && !!feedbackSettings?.feedback_enabled && !scrubbing,
     allowColorLabels: !!feedbackSettings?.allow_color_labels,
     allowRatings: !!feedbackSettings?.allow_ratings,
     keybindMode,
@@ -1169,7 +1176,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
             {/* Inline Like */}
             {feedbackEnabled && feedbackSettings?.allow_likes && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1" {...feedbackHold}>
                 <button
                   onClick={submitLike}
                   className={`p-2 rounded-full transition-colors ${myLiked ? 'bg-danger hover:opacity-90' : 'bg-white/10 hover:bg-white/20'}`}
@@ -1194,7 +1201,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
             {/* Inline Rating */}
             {feedbackEnabled && feedbackSettings?.allow_ratings && (
-              <div className="flex items-center gap-1 ml-1" aria-label="Rate photo">
+              <div className="flex items-center gap-1 ml-1" aria-label="Rate photo" {...feedbackHold}>
                 {[1,2,3,4,5].map((i) => (
                   <button
                     key={i}
@@ -1220,7 +1227,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 feedback panel: the whole point is a fast keyboard/click
                 proofing pass, which a panel toggle would interrupt. */}
             {feedbackEnabled && feedbackSettings?.allow_color_labels && (
-              <div className="flex items-center gap-1 ml-1">
+              <div className="flex items-center gap-1 ml-1" {...feedbackHold}>
                 <PhotoColorLabels
                   photoId={String(currentPhoto.id)}
                   gallerySlug={slug}
@@ -1240,7 +1247,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             {/* Approve / reject (issue 744), beside the colour labels for the
                 same reason: a proofing pass, not a panel detour. */}
             {feedbackEnabled && feedbackSettings?.allow_decisions && (
-              <div className="flex items-center ml-1">
+              <div className="flex items-center ml-1" {...feedbackHold}>
                 <PhotoDecision
                   photoId={String(currentPhoto.id)}
                   gallerySlug={slug}
@@ -1496,14 +1503,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               <X className="w-5 h-5" />
             </button>
           </div>
-          {/* Mid-scrub the panel still belongs to the photo the scrub started
-              from, not the one on screen: nothing in it takes a click until
-              it has caught up. */}
-          <div
-            className="p-4 flex-1 overflow-y-auto"
-            style={scrubbing ? { pointerEvents: 'none' } : undefined}
-            aria-busy={scrubbing || undefined}
-          >
+          <div className="p-4 flex-1 overflow-y-auto" {...feedbackHold}>
             <PhotoFeedback
               photoId={String(feedbackPhotoIdRef.current ?? currentPhoto.id)}
               gallerySlug={slug}
