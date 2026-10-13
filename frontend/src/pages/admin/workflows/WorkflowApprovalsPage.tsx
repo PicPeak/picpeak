@@ -12,6 +12,7 @@ import { Check, CheckSquare, X } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, Loading } from '../../../components/common';
 import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 import { workflowsService, type WorkflowApproval } from '../../../services/workflows.service';
+import { approvalEntityHref, approvalPrompt } from '../../../utils/workflowApprovals';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../../hooks';
 
@@ -32,18 +33,7 @@ export const WorkflowApprovalsPage: React.FC = () => {
     errorMessage: t('common.error', 'Something went wrong') as string,
   });
 
-  const promptOf = (a: WorkflowApproval) => (a.payload && (a.payload.prompt as string)) || t('workflows.approvals.defaultPrompt', 'A workflow needs your confirmation.');
-
-  // The admin detail route for the run's entity, so a row click opens the
-  // document they're being asked to approve. `invoice` lives under /bills.
-  const entityHref = (a: WorkflowApproval): string | null => {
-    if (!a.entity_type || a.entity_id == null) return null;
-    const base: Record<string, string> = {
-      quote: 'quotes', invoice: 'bills', event: 'events', contract: 'contracts', customer: 'customers',
-    };
-    const seg = base[a.entity_type];
-    return seg ? `/admin/${seg}/${a.entity_id}` : null;
-  };
+  const promptOf = (a: WorkflowApproval) => approvalPrompt(a) || t('workflows.approvals.defaultPrompt', 'A workflow needs your confirmation.');
 
   return (
     <div className="space-y-6">
@@ -75,7 +65,7 @@ export const WorkflowApprovalsPage: React.FC = () => {
         ) : (
           <ul className="divide-y divide-line">
             {approvals.map((a) => {
-              const href = entityHref(a);
+              const href = approvalEntityHref(a);
               const meta = (
                 <>
                   <div className="text-sm text-heading">{promptOf(a)}</div>

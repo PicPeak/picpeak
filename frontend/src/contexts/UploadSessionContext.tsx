@@ -40,6 +40,17 @@ export interface UploadFailure {
   kind: UploadFailureKind;
 }
 
+// A file the server did not store because the gallery already holds the
+// same bytes (issue 1733, C2). Not a failure: the bar lists these apart and
+// offers "upload anyway", which is why the file and its placement are kept.
+export interface UploadDuplicate {
+  filename: string;
+  /** Name of the photo already in the gallery. */
+  duplicateOf: string;
+  file: File;
+  placement: UploadPlacement;
+}
+
 export interface UploadSession {
   eventId: number;
   /** Files handed to startUpload, before any server-side rejection. */
@@ -54,6 +65,8 @@ export interface UploadSession {
   /** Files that landed in the gallery, known once the session is done. */
   uploadedCount: number;
   failures: UploadFailure[];
+  /** Files skipped as duplicates, known once the transfer is through. */
+  duplicates: UploadDuplicate[];
   /**
    * Done, but the worker's status could not be read: the photos are queued
    * and appear as it finishes; the counts above stop at what was known.
@@ -83,6 +96,10 @@ export interface StartUploadOptions {
   /** Per-request caps, resolved by the picker from admin settings. */
   maxFilesPerChunk: number;
   maxBytesPerChunk: number;
+  /** "Upload anyway": the server is not asked to detect duplicates and stores every file. */
+  allowDuplicates?: boolean;
+  /** Duplicates of the session before this one that were not sent again. */
+  remainingDuplicates?: UploadDuplicate[];
 }
 
 interface UploadSessionContextValue {
@@ -90,6 +107,11 @@ interface UploadSessionContextValue {
   /** True while bytes are moving or the worker is still processing. */
   isUploading: boolean;
   startUpload: (options: StartUploadOptions) => void;
+  /**
+   * Uploads the finished session's duplicates anyway: the ones at `indexes`,
+   * or all of them. The rest stay listed. No-op while uploading.
+   */
+  uploadDuplicates: (indexes?: number[]) => void;
   /** Clears a finished session from the bar. No-op while uploading. */
   dismiss: () => void;
 }
@@ -150,7 +172,15 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
     queryClient.invalidateQueries({ queryKey: folderQueryKey(eventId) });
   }, [queryClient]);
 
-  const startUpload = useCallback(({ eventId, batches, replaceByName, maxFilesPerChunk, maxBytesPerChunk }: StartUploadOptions) => {
+  // What the running or finished session was started with, for "upload anyway".
+  const lastOptionsRef = useRef<StartUploadOptions | null>(null);
+
+  const startUpload = useCallback((options: StartUploadOptions) => {
+    const {
+      eventId, batches, replaceByName, maxFilesPerChunk, maxBytesPerChunk,
+      allowDuplicates = false, remainingDuplicates = [],
+    } = options;
+    lastOptionsRef.current = options;
     const fileCount = batches.reduce((sum, batch) => sum + batch.files.length, 0);
     if (fileCount === 0) return;
 
@@ -219,6 +249,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
       processing: { complete: 0, failed: 0, total: 0 },
       uploadedCount: 0,
       failures: [],
+      duplicates: [],
       processingUnknown: false,
     });
 
@@ -227,6 +258,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
       // Accumulates transfer-stage failures (per-file rejections + whole-chunk
       // failures) with their reasons, so the report can name each one.
       const collected: UploadFailure[] = [...skippedForReplace];
+      const duplicates: UploadDuplicate[] = [...remainingDuplicates];
       // Whether at least one chunk was accepted for background processing.
       let anyQueued = false;
       // Large-file chunked path processes synchronously on complete — count
@@ -255,14 +287,19 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
                 progress: Math.round(overall),
                 phase: { kind: 'transferring', chunkIndex: index, totalChunks: totalUnits, bytePct: Math.round(Math.min(pct, 100)) },
               });
-            }, folder), whileBusy);
+            }, folder, !allowDuplicates), whileBusy);
             largeSucceeded += 1;
             // complete() already ran ffmpeg + insert — refresh grid
             refreshEvent(eventId);
           } catch (error: any) {
             if (controller.signal.aborted) return;
-            console.error(`Error uploading large file ${file.name}:`, error);
             const code = error?.response?.data?.code;
+            if (code === 'DUPLICATE_PHOTO') {
+              duplicates.push({ filename: file.name, duplicateOf: error.response.data.duplicate_of || '', file, placement });
+              unitIndex += 1;
+              continue;
+            }
+            console.error(`Error uploading large file ${file.name}:`, error);
             const capacityKey = adminUploadErrorKey(code);
             const reason = capacityKey ? t(capacityKey) : error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed');
             collected.push({ filename: file.name, reason, kind: 'transfer' });
@@ -286,6 +323,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
           chunk.forEach((file) => formData.append('photos', file));
           appendUploadPlacement(formData, placement);
           if (replaceByName) formData.append('replace_by_name', 'true');
+          if (!allowDuplicates) formData.append('detect_duplicates', 'true');
 
           patch({ currentChunk: index + 1, phase: { kind: 'transferring', chunkIndex: index, totalChunks: totalUnits, bytePct: 0 } });
 
@@ -326,6 +364,17 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
                 });
               }
             }
+            // Files the gallery already holds come back under `duplicates`,
+            // each with its place among this request's files: two files of
+            // one request can share a name, so the name does not say which.
+            const skipped = response.data?.duplicates;
+            if (Array.isArray(skipped)) {
+              for (const d of skipped) {
+                const file = chunk[d?.index];
+                if (!file) continue;
+                duplicates.push({ filename: file.name, duplicateOf: d.duplicate_of || '', file, placement });
+              }
+            }
             // Track the per-request upload_id so the processing hook can poll
             // for live progress — but only when photos were actually queued
             // (count > 0). The backend returns an upload_id even when every
@@ -363,7 +412,12 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
         transferFailuresRef.current = collected;
         syncSucceededRef.current = largeSucceeded + totalReplaced;
         setTransferSettled(true);
-        patch({ failures: collected });
+        patch({ failures: collected, duplicates });
+        if (duplicates.length > remainingDuplicates.length) {
+          toast.info(
+            t('upload.duplicates.toast', '{{count}} file(s) are already in this gallery and were skipped — details in the upload bar at the top.', { count: duplicates.length - remainingDuplicates.length })
+          );
+        }
         if (collected.length > 0) {
           toast.warning(
             t('upload.failures.toast', '{{count}} file(s) could not be uploaded — details in the upload bar at the top.', { count: collected.length })
@@ -511,9 +565,10 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [transferring]);
 
   // A clean finish needs no acknowledgement: the toast said it, the grid
-  // shows it. Failures stay until dismissed so the list can be acted on.
+  // shows it. Failures and duplicates stay until dismissed so the list can
+  // be acted on.
   useEffect(() => {
-    if (!session || session.phase.kind !== 'done' || session.failures.length > 0 || session.processingUnknown) return;
+    if (!session || session.phase.kind !== 'done' || session.failures.length > 0 || session.duplicates.length > 0 || session.processingUnknown) return;
     const handle = setTimeout(() => setSession(null), 4000);
     return () => clearTimeout(handle);
   }, [session]);
@@ -522,9 +577,33 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
     setSession((prev) => (prev && prev.phase.kind === 'done' ? null : prev));
   }, []);
 
+  // The duplicates are sent again as a session of their own, one batch per
+  // placement, never as replacements. The ones not chosen ride along so the
+  // bar keeps listing them.
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const uploadDuplicates = useCallback((indexes?: number[]) => {
+    const current = sessionRef.current;
+    const last = lastOptionsRef.current;
+    if (!current || !last || current.phase.kind !== 'done') return;
+    const chosen = current.duplicates.filter((_, i) => !indexes || indexes.includes(i));
+    if (chosen.length === 0) return;
+    const byPlacement = new Map<UploadPlacement, File[]>();
+    for (const { file, placement } of chosen) {
+      byPlacement.set(placement, [...(byPlacement.get(placement) ?? []), file]);
+    }
+    startUpload({
+      ...last,
+      batches: Array.from(byPlacement, ([placement, files]) => ({ files, placement })),
+      replaceByName: false,
+      allowDuplicates: true,
+      remainingDuplicates: current.duplicates.filter((d) => !chosen.includes(d)),
+    });
+  }, [startUpload]);
+
   const value = useMemo(
-    () => ({ session, isUploading, startUpload, dismiss }),
-    [session, isUploading, startUpload, dismiss]
+    () => ({ session, isUploading, startUpload, uploadDuplicates, dismiss }),
+    [session, isUploading, startUpload, uploadDuplicates, dismiss]
   );
 
   return <UploadSessionContext.Provider value={value}>{children}</UploadSessionContext.Provider>;

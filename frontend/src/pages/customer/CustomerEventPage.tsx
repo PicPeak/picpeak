@@ -8,7 +8,7 @@
  * expiry date and can't be opened.
  */
 import React, { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Calendar, Clock, Download, ExternalLink } from 'lucide-react';
@@ -20,6 +20,7 @@ import { formatMoneyMinor } from '../../utils/money';
 import { customerService } from '../../services/customer.service';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
 import { CustomerDocumentList } from './CustomerDocumentsPage';
+import { DOWNLOAD_JOB_QUERY_PARAM, readDownloadJobParam } from '../../components/gallery/downloadJobLink';
 
 /** Open a blob URL produced by `load` in a new tab, keeping the click gesture. */
 async function openPdf(load: () => Promise<string>, blockedMessage: string, failedMessage: string) {
@@ -46,6 +47,7 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 export const CustomerEventPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { slug = '' } = useParams<{ slug: string }>();
   const { format: fmtDate } = useLocalizedDate();
   const [opening, setOpening] = useState(false);
@@ -82,7 +84,11 @@ export const CustomerEventPage: React.FC = () => {
       const { token } = await customerService.getEventAccessToken(event.slug);
       storeGalleryToken(event.slug, token);
       setActiveGallerySlug(event.slug);
-      navigate(`/gallery/${encodeURIComponent(event.slug)}`);
+      // A "your download is ready" mail links here for an account (issue
+      // 1733); the gallery is what offers the job, so hand the token on.
+      const downloadJob = readDownloadJobParam(location.search);
+      navigate(`/gallery/${encodeURIComponent(event.slug)}${
+        downloadJob ? `?${DOWNLOAD_JOB_QUERY_PARAM}=${downloadJob}` : ''}`);
     } catch {
       toast.error(t('customer.dashboard.openError', 'Could not open this gallery. Please try again.'));
     } finally {

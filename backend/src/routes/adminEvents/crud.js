@@ -44,6 +44,7 @@ const {
 const downloadZipService = require('../../services/downloadZipService');
 const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
+const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
 const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade } = require('./helpers');
 
 // Client PIN floor. The PIN guards the client review page and used to accept
@@ -974,13 +975,18 @@ module.exports = (router) => {
         created_by: req.admin.id,
         allow_user_uploads: source.allow_user_uploads,
         upload_category_id: source.upload_category_id,
+        moderate_guest_uploads: formatBoolean(parseBooleanInput(source.moderate_guest_uploads, false)),
+        guest_upload_max_edge: source.guest_upload_max_edge || null,
         // Uploader names are part of the gallery's configuration (#1561).
         guest_name_mode: source.guest_name_mode || 'off',
         show_credits_to_guests: formatBoolean(parseBooleanInput(source.show_credits_to_guests, false)),
+        show_exif_to_guests: formatBoolean(parseBooleanInput(source.show_exif_to_guests, false)),
         // Folder structure is configuration (issue 1786); the delivery state
         // of the source (issue 1562) is not — a copy starts complete.
         folder_structure: formatBoolean(parseBooleanInput(source.folder_structure, false)),
         delivery_badge_label: source.delivery_badge_label || null,
+        // Live refresh is guest-facing behaviour of the gallery (issue 1733).
+        live_refresh: formatBoolean(parseBooleanInput(source.live_refresh, false)),
         allow_downloads: source.allow_downloads,
         disable_right_click: source.disable_right_click,
         enable_devtools_protection: source.enable_devtools_protection,
@@ -1140,9 +1146,20 @@ module.exports = (router) => {
     body('welcome_message').optional({ nullable: true, checkFalsy: true }).trim(),
     body('color_theme').optional({ nullable: true }),
     body('allow_user_uploads').optional().isBoolean(),
+    // Hold guest uploads until they are approved (issue 1733).
+    body('moderate_guest_uploads').optional().isBoolean(),
+    // Longest edge guest photos are scaled to in the browser (issue 1733).
+    // null uploads originals.
+    body('guest_upload_max_edge').optional({ nullable: true }).custom(isGuestUploadMaxEdge)
+      .withMessage(`guest_upload_max_edge must be a whole number from ${GUEST_UPLOAD_MIN_EDGE} to ${GUEST_UPLOAD_MAX_EDGE}, or null`)
+      .toInt(),
     // Uploader names (#1561).
     body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
     body('show_credits_to_guests').optional().isBoolean(),
+    // Live refresh of an open gallery (issue 1733, C5).
+    body('live_refresh').optional().isBoolean(),
+    // Camera details in the guest lightbox (issue 1733, D1).
+    body('show_exif_to_guests').optional().isBoolean(),
     // Reveal mode (#838): hide the gallery from guests until reveal.
     body('reveal_mode').optional().isBoolean(),
     body('reveal_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
@@ -1879,9 +1896,21 @@ module.exports = (router) => {
         updates.custom_theme_enabled = formatBoolean(parseBooleanInput(updates.custom_theme_enabled, false));
       }
 
+      // Guest uploads with approval (issue 1733). Switching it off leaves the
+      // photos already waiting where they are: they still need a decision.
+      if (Object.prototype.hasOwnProperty.call(updates, 'moderate_guest_uploads')) {
+        updates.moderate_guest_uploads = formatBoolean(parseBooleanInput(updates.moderate_guest_uploads, false));
+      }
+
       // Written through formatBoolean like the other event flags (#1561).
       if (Object.prototype.hasOwnProperty.call(updates, 'show_credits_to_guests')) {
         updates.show_credits_to_guests = formatBoolean(parseBooleanInput(updates.show_credits_to_guests, false));
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'live_refresh')) {
+        updates.live_refresh = formatBoolean(parseBooleanInput(updates.live_refresh, false));
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'show_exif_to_guests')) {
+        updates.show_exif_to_guests = formatBoolean(parseBooleanInput(updates.show_exif_to_guests, false));
       }
 
       // Reveal mode (#838). Turning the toggle ON from off clears

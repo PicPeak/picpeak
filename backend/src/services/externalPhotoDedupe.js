@@ -244,7 +244,25 @@ async function deleteDuplicatePhotos(knex, doomedToSurvivor) {
     }
   }
 
+  // Adaptive streaming ladders (issue 1733) live under hls/<photoId>/, so the
+  // duplicate's would be unreachable once its row is gone. The column is
+  // younger than migration 186, so the migration itself never gets here; a
+  // restore or a relpath fold at runtime does. Storage only, best effort:
+  // a ladder is rebuilt from the original, and a rolled-back caller is left
+  // with a row whose missing ladder the playlist route re-queues.
+  const laddered = [];
+  if (await knex.schema.hasColumn('photos', 'hls_status')) {
+    for (const ids of chunked(doomed)) {
+      laddered.push(...await knex('photos').whereIn('id', ids).whereNotNull('hls_status').select('id', 'hls_status', 'hls_path'));
+    }
+  }
+
   for (const ids of chunked(doomed)) await knex('photos').whereIn('id', ids).del();
+
+  if (laddered.length) {
+    const { deleteLadder } = require('./videoHlsService');
+    for (const photo of laddered) await deleteLadder(photo);
+  }
 
   // The pre-built "download everything" zip still contains the rows just
   // removed. Every ordinary photo-deletion path calls

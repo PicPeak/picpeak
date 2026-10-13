@@ -104,7 +104,11 @@ export const MfaSettingsCard: React.FC = () => {
   const [regenerateCode, setRegenerateCode] = useState('');
   const [regenerateError, setRegenerateError] = useState<string | null>(null);
 
-  const invalidateStatus = () => queryClient.invalidateQueries({ queryKey: ['admin-mfa-status'] });
+  const invalidateStatus = () => {
+    queryClient.invalidateQueries({ queryKey: ['admin-mfa-status'] });
+    // The Passkeys card asks for a code only while this is on.
+    queryClient.invalidateQueries({ queryKey: ['admin-passkeys'] });
+  };
 
   const errorMessage = (error: any, fallbackKey: string): string =>
     error?.response?.data?.error || t(fallbackKey);

@@ -8,6 +8,10 @@
  *                           brings the customer back.
  *   delivery_due_reminder   to the studio when a promised completion date is
  *                           close or has passed.
+ *   download_ready          to a gallery visitor who asked to be mailed when a
+ *                           prepared download is ready (issue 1733). Lives
+ *                           here because it is the same kind of mail: a
+ *                           gallery link with nothing secret in it.
  *   selection_submitted     to the gallery's admin address when a guest
  *                           finishes their selection or approves the edited
  *                           photos (issue 1733, A1).
@@ -41,6 +45,27 @@ const TEMPLATES = {
 <p><a href="{{gallery_link}}">Galerie öffnen</a></p>
 {{#if expiry_date}}<p>Die Galerie ist bis zum {{expiry_date}} verfügbar.</p>{{/if}}`,
       body_text: 'Ihre vollständige Galerie ist da\n\nGuten Tag {{host_name}},\n\nAlle Fotos von „{{event_name}}“ sind jetzt in Ihrer Galerie: {{photo_count}} Fotos, inklusive der ersten Auswahl, die Sie bereits erhalten haben.\n\nGalerie öffnen: {{gallery_link}}{{#if expiry_date}}\n\nDie Galerie ist bis zum {{expiry_date}} verfügbar.{{/if}}',
+    },
+  },
+  // "Email me when it is ready" for a prepared download (issue 1733). The link
+  // opens the gallery, which then offers the archive; it is not the archive.
+  download_ready: {
+    variables: ['event_name', 'gallery_link', 'available_hours'],
+    en: {
+      subject: 'Your download is ready: {{event_name}}',
+      body_html: `<h2>Your download is ready</h2>
+<p>The photos you asked for from "{{event_name}}" have been prepared.</p>
+<p><a href="{{gallery_link}}">Open the gallery to download them</a></p>
+<p>The download is kept for about {{available_hours}} more hour(s). After that you can simply request it again in the gallery.</p>`,
+      body_text: 'Your download is ready\n\nThe photos you asked for from "{{event_name}}" have been prepared.\n\nOpen the gallery to download them: {{gallery_link}}\n\nThe download is kept for about {{available_hours}} more hour(s). After that you can simply request it again in the gallery.',
+    },
+    de: {
+      subject: 'Ihr Download ist bereit: {{event_name}}',
+      body_html: `<h2>Ihr Download ist bereit</h2>
+<p>Die angeforderten Fotos aus „{{event_name}}“ wurden vorbereitet.</p>
+<p><a href="{{gallery_link}}">Galerie öffnen und herunterladen</a></p>
+<p>Der Download wird noch etwa {{available_hours}} Stunde(n) aufbewahrt. Danach können Sie ihn in der Galerie einfach erneut anfordern.</p>`,
+      body_text: 'Ihr Download ist bereit\n\nDie angeforderten Fotos aus „{{event_name}}“ wurden vorbereitet.\n\nGalerie öffnen und herunterladen: {{gallery_link}}\n\nDer Download wird noch etwa {{available_hours}} Stunde(n) aufbewahrt. Danach können Sie ihn in der Galerie einfach erneut anfordern.',
     },
   },
   delivery_due_reminder: {
