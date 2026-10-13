@@ -6,6 +6,7 @@ import { Fingerprint, Lock, Plus } from 'lucide-react';
 
 import { Button, Card, ErrorState, Input, Loading, Notice } from '../../../components/common';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
+import { PUBLIC_SETTINGS_QUERY_KEY } from '../../../hooks/usePublicSettings';
 import { passkeyService, type Passkey } from '../../../services/passkey.service';
 import { isPasskeySupported, passkeyErrorKind } from '../../../utils/webauthn';
 
@@ -42,7 +43,11 @@ export const PasskeysCard: React.FC = () => {
   const [removePassword, setRemovePassword] = useState('');
   const [removeError, setRemoveError] = useState<string | null>(null);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    // The login page offers a passkey only while one is registered.
+    queryClient.invalidateQueries({ queryKey: PUBLIC_SETTINGS_QUERY_KEY });
+  };
 
   // A dismissed browser prompt, a code the API names, or the API's own words.
   const errorText = (error: any, fallbackKey: string): string => {

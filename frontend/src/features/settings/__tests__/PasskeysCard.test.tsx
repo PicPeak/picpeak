@@ -106,6 +106,23 @@ describe('PasskeysCard', () => {
     expect(service.getStatus.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
+  // The login page offers a passkey only while one is registered, and reads
+  // that from the cached public settings.
+  it('marks the public settings stale after a passkey is added', async () => {
+    service.getStatus.mockResolvedValue(status());
+    service.register.mockResolvedValue({ ...laptop });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(['public-settings'], { passkey_origin: null });
+    render(<QueryClientProvider client={qc}><PasskeysCard /></QueryClientProvider>);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'settings.passkeys.add' }));
+    fireEvent.change(screen.getByLabelText('settings.passkeys.nameLabel'), { target: { value: 'Laptop' } });
+    fireEvent.change(screen.getByLabelText('settings.passkeys.passwordLabel'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'settings.passkeys.continue' }));
+
+    await waitFor(() => expect(qc.getQueryState(['public-settings'])?.isInvalidated).toBe(true));
+  });
+
   // A passkey signs in without the authenticator code, so an account with
   // two-factor authentication gives one to add it.
   it('asks for an authenticator code as well when the account has two-factor authentication', async () => {
