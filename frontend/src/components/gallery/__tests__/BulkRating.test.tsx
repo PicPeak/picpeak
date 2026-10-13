@@ -105,6 +105,19 @@ describe('BulkRating', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+  // The lightbox's feedback panel reads the rating from its own per-photo
+  // query; one that is open, or cached from an earlier look, would keep the
+  // stars from before the bulk rating.
+  it('marks the per-photo feedback of the gallery stale', async () => {
+    seedCache([makePhoto(1)]);
+    queryClient.setQueryData(['photo-feedback', SLUG, '1'], { my_feedback: { rating: 2 } });
+    submit.mockResolvedValue(ok([1], 5));
+    renderControl([1]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 5 stars' }));
+    await waitFor(() => expect(queryClient.getQueryState(['photo-feedback', SLUG, '1'])?.isInvalidated).toBe(true));
+  });
+
   it('keeps the list aggregates when the gallery does not share them', async () => {
     seedCache([makePhoto(1, { average_rating: 3, total_ratings: 2 })]);
     submit.mockResolvedValue(ok([1], 5));

@@ -106,6 +106,9 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
       if (ratedCount > 0) {
         // Guest-mode Rated chip + filter are built from /my-feedback (#538).
         queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+        // The lightbox's feedback panel has its own per-photo copy of the
+        // rating, open or cached from an earlier look.
+        queryClient.invalidateQueries({ queryKey: ['photo-feedback', slug] });
         if (listMustRestart) {
           void queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
         }
