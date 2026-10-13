@@ -87,6 +87,8 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     onShowRef.current();
   }, [shown]);
 
+  const hideShown = useCallback(() => setShown(null), []);
+
   const atLimit = strokes.length >= ANNOTATION_MAX_STROKES;
   const addStroke = (stroke: AnnotationStroke) => {
     setStrokes((prev) => (prev.length >= ANNOTATION_MAX_STROKES ? prev : [...prev, stroke]));
@@ -100,7 +102,8 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     discard,
     shownCommentId: shown?.commentId ?? null,
     toggleShown,
-  }), [canDraw, drawing, draft, startDrawing, discard, shown, toggleShown]);
+    hideShown,
+  }), [canDraw, drawing, draft, startDrawing, discard, shown, toggleShown, hideShown]);
 
   // What lies on the photo: the strokes in progress, else the drawing picked
   // from the comment list, else the one waiting on the comment form.

@@ -113,4 +113,37 @@ describe('ImageAnnotationOverlay', () => {
     expect(onStroke).toHaveBeenCalledWith({ t: 'arrow', c: 2, p: [[0, 0], [1, 0.5]] });
     expect(svg.querySelectorAll('path')).toHaveLength(0);
   });
+
+  // Escape while the pointer is still down, on a drawing being edited: the
+  // overlay stays for the attached drawing, and with `draw` gone no pointerup
+  // handler is left to take the half-drawn stroke away.
+  it('drops the stroke under the pointer when drawing ends mid-stroke', () => {
+    const onStroke = vi.fn();
+    const ui = (drawing: boolean) => (
+      <div>
+        <img alt="photo" />
+        <ImageAnnotationOverlay annotation={FIXTURE} draw={drawing ? { tool: 'free', color: 2, onStroke } : undefined} />
+      </div>
+    );
+    const { rerender } = render(ui(true));
+    const svg = screen.getByTestId('annotation-overlay');
+    svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 200 } as DOMRect);
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
+      Object.assign(event, { isPrimary: true, pointerId: 1, pointerType: 'mouse' });
+      act(() => { fireEvent(svg, event); });
+    };
+    pointer('pointerdown', 10, 10);
+    pointer('pointermove', 200, 100);
+    expect(svg.querySelectorAll('path')).toHaveLength(4);
+
+    rerender(ui(false));
+    expect(svg.querySelectorAll('path')).toHaveLength(3);
+    // Drawing again does not pick the abandoned trail back up.
+    rerender(ui(true));
+    pointer('pointermove', 300, 150);
+    pointer('pointerup', 300, 150);
+    expect(svg.querySelectorAll('path')).toHaveLength(3);
+    expect(onStroke).not.toHaveBeenCalled();
+  });
 });

@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnnotationSvg } from './AnnotationSvg';
 import {
   finishFreehand,
@@ -101,6 +101,16 @@ export const ImageAnnotationOverlay: React.FC<ImageAnnotationOverlayProps> = ({
   // The pointer trail of the stroke being drawn, in 0..1 image coordinates.
   const trailRef = useRef<AnnotationPoint[] | null>(null);
   const [pending, setPending] = useState<AnnotationStroke | null>(null);
+
+  // Drawing can end with the pointer still down (Escape mid-stroke). The
+  // overlay may stay mounted for an attached drawing, and without `draw`
+  // nothing handles the pointerup any more: drop the unfinished stroke here.
+  const drawing = !!draw;
+  useEffect(() => {
+    if (drawing) return;
+    trailRef.current = null;
+    setPending(null);
+  }, [drawing]);
 
   const toPoint = (e: React.PointerEvent<SVGSVGElement>): AnnotationPoint | null => {
     const rect = e.currentTarget.getBoundingClientRect();

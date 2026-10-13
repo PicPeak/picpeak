@@ -20,6 +20,11 @@ interface PhotoCommentsProps {
   showToGuests: boolean;
   /** The gallery lets a guest draw on the photo with a comment (issue 1733). */
   allowAnnotations?: boolean;
+  /**
+   * `comments` is the fetched list, not the empty stand-in used while it
+   * loads. Only then can a comment be said to be gone.
+   */
+  commentsLoaded?: boolean;
   onCommentAdded?: () => void;
 }
 
@@ -31,6 +36,7 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
   requireNameEmail,
   showToGuests,
   allowAnnotations = false,
+  commentsLoaded = false,
   onCommentAdded
 }) => {
   const { t } = useTranslation();
@@ -140,12 +146,24 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
     });
   };
 
-  if (!isEnabled) return null;
-
   // Filter comments based on visibility settings
   const visibleComments = showToGuests 
     ? comments.filter(c => c.is_approved && !c.is_hidden)
     : comments.filter(c => c.is_mine);
+
+  // The drawing on the photo is a copy taken when its marker was clicked
+  // (issue 1733). When its comment leaves this list (hidden or deleted by the
+  // photographer, seen on the next fetch) the marker goes too, so the drawing
+  // has to come off the photo with it.
+  const shownCommentId = annotation?.shownCommentId ?? null;
+  const hideShown = annotation?.hideShown;
+  const shownCommentGone = isEnabled && commentsLoaded && shownCommentId !== null
+    && !visibleComments.some(c => c.id === shownCommentId && parseAnnotation(c.annotation));
+  useEffect(() => {
+    if (shownCommentGone) hideShown?.();
+  }, [shownCommentGone, hideShown]);
+
+  if (!isEnabled) return null;
 
   return (
     <div className="space-y-4">

@@ -19,6 +19,8 @@ export interface CommentAnnotationContextValue {
   /** Which comment's drawing is on the photo, if any. */
   shownCommentId: number | null;
   toggleShown: (commentId: number, annotation: PhotoAnnotation) => void;
+  /** Take the shown drawing off the photo. */
+  hideShown: () => void;
 }
 
 export const CommentAnnotationContext = createContext<CommentAnnotationContextValue | null>(null);

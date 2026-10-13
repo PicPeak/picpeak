@@ -68,10 +68,12 @@ afterAll(() => {
 });
 
 const onClose = vi.fn();
+let queryClient: QueryClient;
 function open(settings: Record<string, unknown> = SETTINGS) {
   vi.mocked(feedbackService.getGalleryFeedbackSettings).mockResolvedValue(settings as never);
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider client={queryClient}>
       <PhotoLightbox photos={photos} initialIndex={0} onClose={onClose} slug="g" feedbackEnabled initialShowFeedback />
     </QueryClientProvider>,
   );
@@ -227,6 +229,26 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     expect(overlay.style.pointerEvents).toBe('none');
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide drawing' }));
+    expect(screen.queryByTestId('annotation-overlay')).toBeNull();
+  });
+
+  // The drawing on the photo is a copy taken when its marker was clicked. A
+  // comment the photographer hides meanwhile leaves the list on the next
+  // fetch, and its marker with it: the drawing must not stay behind.
+  it('takes a shown drawing off the photo when its comment leaves the list', async () => {
+    const comment = { id: 7, feedback_type: 'comment', comment_text: 'Look here', annotation: STORED, is_approved: true, is_hidden: false, created_at: '2026-10-01T10:00:00Z' };
+    vi.mocked(feedbackService.getPhotoFeedback).mockResolvedValue({ feedback: [comment], my_feedback: {}, summary: {} } as never);
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Show drawing' }));
+    expect(screen.getByTestId('annotation-overlay')).toBeTruthy();
+
+    // A refetch that still has the comment changes nothing.
+    await act(() => queryClient.invalidateQueries({ queryKey: ['photo-feedback'] }));
+    expect(screen.getByTestId('annotation-overlay')).toBeTruthy();
+
+    vi.mocked(feedbackService.getPhotoFeedback).mockResolvedValue({ feedback: [], my_feedback: {}, summary: {} } as never);
+    await act(() => queryClient.invalidateQueries({ queryKey: ['photo-feedback'] }));
+    await waitFor(() => expect(screen.queryByText('Look here')).toBeNull());
     expect(screen.queryByTestId('annotation-overlay')).toBeNull();
   });
 });
