@@ -26,6 +26,8 @@ const { accountCreditFields } = require('./photoCredit');
 const MODERATION_STATUSES = ['pending', 'rejected'];
 const MAX_MODERATION_IDS = 500;
 const GUEST_UPLOADS_PENDING_TYPE = 'guest_uploads_pending_review';
+// pg_advisory_xact_lock class for one event's guest upload bell entry.
+const GUEST_UPLOADS_PENDING_LOCK = 1076;
 
 /**
  * Whether `admin` approves and rejects uploads on `event`, which it is known
@@ -71,15 +73,20 @@ function holdsGuestUploads(event) {
  * stay behind whatever came since. db.fn.now() writes the shape the column
  * default does, which is what keeps SQLite's text order intact.
  *
- * Lookup and write share one transaction per event: on PostgreSQL behind the
- * event's row lock, on SQLite because it runs one transaction at a time. So
+ * Lookup and write share one transaction per event: on PostgreSQL behind an
+ * advisory lock, on SQLite because it runs one transaction at a time. So
  * parallel uploads, on one replica or several, neither open two entries nor
- * lose each other's count. Best effort: the upload never fails on it.
+ * lose each other's count. An advisory lock, not the event's row lock:
+ * deleting an admin removes their dismissals and then touches the events they
+ * created (created_by SET NULL), the reverse of the order here, and the two
+ * would deadlock. Best effort: the upload never fails on it.
  */
 async function notifyGuestUploadsPending(event, count) {
   try {
     await db.transaction(async (trx) => {
-      if (trx.client.config.client === 'pg') await trx('events').where({ id: event.id }).forUpdate().first('id');
+      if (trx.client.config.client === 'pg') {
+        await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [GUEST_UPLOADS_PENDING_LOCK, Number(event.id)]);
+      }
       const open = await trx('activity_logs')
         .where({ activity_type: GUEST_UPLOADS_PENDING_TYPE, event_id: event.id })
         .whereNull('read_at')
