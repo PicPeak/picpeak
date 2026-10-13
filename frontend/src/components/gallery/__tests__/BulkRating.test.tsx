@@ -12,11 +12,14 @@ import { toast } from 'react-toastify';
 import { BulkRating } from '../BulkRating';
 import { GallerySidebar } from '../GallerySidebar';
 import { feedbackService } from '../../../services/feedback.service';
+import { getGuestIdentity } from '../../../utils/guestIdentityStorage';
 import type { GalleryData, Photo } from '../../../types';
 
 vi.mock('../../../contexts/GuestIdentityContext', () => ({
   useGuestIdentityOptional: () => null,
 }));
+
+vi.mock('../../../utils/guestIdentityStorage', () => ({ getGuestIdentity: vi.fn(() => null) }));
 
 vi.mock('../../../services/feedback.service', () => ({
   BULK_RATING_MAX_PHOTOS: 200,
@@ -159,6 +162,29 @@ describe('BulkRating', () => {
 
     await waitFor(() => expect(cached()[449].my_rating).toBe(2));
     expect(submit.mock.calls.map((call) => call[1].length)).toEqual([200, 200, 50]);
+  });
+
+  // The API client reads the stored guest token per request, so a guest
+  // switched in another tab would get the rest of the run filed under them.
+  it('stops between requests when the guest on this device changes, and patches nothing', async () => {
+    const ids = Array.from({ length: 450 }, (_, i) => i + 1);
+    seedCache(ids.map((id) => makePhoto(id)));
+    const stored = vi.mocked(getGuestIdentity);
+    stored.mockReturnValue({ id: 1 } as ReturnType<typeof getGuestIdentity>);
+    submit.mockImplementation(async (_slug, chunk, rating) => {
+      stored.mockReturnValue({ id: 2 } as ReturnType<typeof getGuestIdentity>);
+      return ok(chunk as number[], rating as number);
+    });
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    renderControl(ids);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 2 stars' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rate 2 stars' })).toHaveProperty('disabled', false));
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(cached().every((photo) => photo.my_rating === null)).toBe(true);
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+    stored.mockReturnValue(null);
   });
 
   it('asks for name and email first when the gallery requires them', async () => {

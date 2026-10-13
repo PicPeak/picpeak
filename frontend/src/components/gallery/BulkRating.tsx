@@ -7,6 +7,7 @@ import { toast } from 'react-toastify';
 import { BULK_RATING_MAX_PHOTOS, feedbackService } from '../../services/feedback.service';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
+import { getGuestIdentity } from '../../utils/guestIdentityStorage';
 import type { GalleryData, Photo } from '../../types';
 
 interface BulkRatingProps {
@@ -41,7 +42,12 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
       // rated is reported so the tiles still show it.
       const rated = new Map<number, RatedRow>();
       let error: unknown = null;
-      for (let i = 0; i < photoIds.length && !error; i += BULK_RATING_MAX_PHOTOS) {
+      // The API client reads the stored guest token per request. Once another
+      // tab has switched the guest, the rest of the run would be filed under
+      // the new one, so it ends there.
+      const startedAs = getGuestIdentity(slug)?.id ?? null;
+      const sameGuest = () => (getGuestIdentity(slug)?.id ?? null) === startedAs;
+      for (let i = 0; i < photoIds.length && !error && sameGuest(); i += BULK_RATING_MAX_PHOTOS) {
         try {
           const response = await feedbackService.submitBulkRating(
             slug,
@@ -56,9 +62,12 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
           error = caught;
         }
       }
-      return { rated, error };
+      return { rated, error, guestChanged: !sameGuest() };
     },
-    onSuccess: async ({ rated, error }, data) => {
+    onSuccess: async ({ rated, error, guestChanged }, data) => {
+      // The lists now belong to another guest and the provider has already
+      // restarted them; these ratings are not theirs to see.
+      if (guestChanged) return;
       if (rated.size > 0) {
         // Same care as TileRating: a list request that is out carries the
         // rows from before the rating and would land on top of the patch.
