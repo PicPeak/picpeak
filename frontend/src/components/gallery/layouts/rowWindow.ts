@@ -109,13 +109,18 @@ export function useWindowedItems(
   const model = useMemo(() => {
     const rows = enabled ? buildRows(items) : [];
     const rowOf = new Map<number, number>();
+    const indexOf = new Map<number, number>();
     rows.forEach((row, index) => {
-      for (let i = row.from; i < row.to; i++) rowOf.set(items[i].photoId, index);
+      for (let i = row.from; i < row.to; i++) {
+        rowOf.set(items[i].photoId, index);
+        indexOf.set(items[i].photoId, i);
+      }
     });
-    return { items, rows, rowOf };
+    return { items, rows, rowOf, indexOf };
   }, [items, enabled]);
 
-  const [range, setRange] = useState<RowRange>({ start: 0, end: 0 });
+  // The rows in the window, and the layout they were measured in.
+  const [win, setWin] = useState({ model, start: 0, end: 0 });
   const modelRef = useRef(model);
   const anchorRef = useRef<ScrollAnchor | null>(null);
   const widthRef = useRef(width);
@@ -124,22 +129,34 @@ export function useWindowedItems(
   // header, folder bar or notice that grows above the grid moves it.
   const measure = useCallback(() => {
     const container = containerRef.current;
-    const { rows } = modelRef.current;
+    const current = modelRef.current;
+    const { rows } = current;
     if (!container || rows.length === 0) return;
     const viewTop = -container.getBoundingClientRect().top;
     const viewport = window.innerHeight;
     const next = visibleRowRange(rows, viewTop, viewTop + viewport, viewport * WINDOW_OVERSCAN_VIEWPORTS);
-    setRange((prev) => (prev.start === next.start && prev.end === next.end ? prev : next));
+    setWin((prev) => (prev.model === current && prev.start === next.start && prev.end === next.end
+      ? prev
+      : { model: current, ...next }));
   }, [containerRef]);
 
-  // Remember what is at the top of the viewport. Taken when the viewer
-  // scrolls or the list changes, not on a resize: by then the toolbar above
-  // may already have re-wrapped and pushed the grid a few pixels, and going
-  // there and back would not return to the same place.
-  const markAnchor = useCallback(() => {
+  // Remember what is at the top of the viewport. Taken whenever the grid may
+  // have moved under it, except while a width change is on its way to the
+  // layout: by then the toolbar above may already have re-wrapped and pushed
+  // the grid a few pixels, and going there and back would not return to the
+  // same place.
+  //
+  // `rearranged`: the list changed under the anchor, which then means
+  // nothing any more; what is at the top now is the better guess even then.
+  const markAnchor = useCallback((rearranged = false) => {
     const container = containerRef.current;
     const { rows } = modelRef.current;
     if (!container || rows.length === 0) return;
+    // The rows must still be those of the container's width: the content
+    // box, which is what the layouts measure (a CSS template may pad the grid).
+    const style = getComputedStyle(container);
+    const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    if (!rearranged && Math.abs(container.clientWidth - padding - widthRef.current) >= 1) return;
     const viewTop = -container.getBoundingClientRect().top;
     const top = firstRow(rows, (row) => row.bottom > viewTop);
     if (viewTop <= 0 || top >= rows.length) {
@@ -160,49 +177,48 @@ export function useWindowedItems(
   // A new layout (sort, filter, more photos, another width) invalidates the
   // range at once, before paint.
   useLayoutEffect(() => {
+    const previous = modelRef.current;
     modelRef.current = model;
     const container = containerRef.current;
     const anchor = anchorRef.current;
-    if (widthRef.current === width) {
-      markAnchor();
-    } else if (container && anchor && widthRef.current > 0) {
-      const index = model.rowOf.get(anchor.photoId);
-      if (index !== undefined) {
-        const row = model.rows[index];
-        const viewTop = -container.getBoundingClientRect().top;
-        const delta = row.top + anchor.ratio * (row.bottom - row.top) - viewTop;
-        if (Math.abs(delta) >= 1) window.scrollBy(0, delta);
-      }
-    }
+    const index = anchor ? model.rowOf.get(anchor.photoId) : undefined;
+    // Sorted, filtered or grown ahead of the anchor: its photo is somewhere
+    // else in the list, or gone. A cache patch leaves it where it was.
+    const rearranged = anchor !== null
+      && model.indexOf.get(anchor.photoId) !== previous.indexOf.get(anchor.photoId);
+    const resized = widthRef.current !== width && widthRef.current > 0;
     widthRef.current = width;
+    if (resized && !rearranged && container && anchor && index !== undefined) {
+      const row = model.rows[index];
+      const viewTop = -container.getBoundingClientRect().top;
+      const delta = row.top + anchor.ratio * (row.bottom - row.top) - viewTop;
+      if (Math.abs(delta) >= 1) window.scrollBy(0, delta);
+    } else {
+      // Same width, or nothing to restore to.
+      markAnchor(rearranged);
+    }
     measure();
   }, [model, width, measure, markAnchor, containerRef]);
 
   useEffect(() => {
     if (!enabled) return;
     let frame = 0;
-    let scrolled = false;
     const schedule = () => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
         measure();
-        if (scrolled) markAnchor();
-        scrolled = false;
+        markAnchor();
       });
     };
-    const onScroll = () => {
-      scrolled = true;
-      schedule();
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
     // Content above the grid can grow without a scroll event (no scroll
     // anchoring in Safari); the document's height changes when it does.
     const observer = new ResizeObserver(schedule);
     observer.observe(document.body);
     return () => {
-      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
       observer.disconnect();
       if (frame) cancelAnimationFrame(frame);
@@ -210,13 +226,27 @@ export function useWindowedItems(
   }, [enabled, measure, markAnchor]);
 
   const visible = useMemo(() => {
-    const { items, rows } = model;
+    const { items, rows, indexOf } = model;
     if (!enabled) return items;
-    // The range may predate this layout for one unpainted render.
-    const end = Math.min(range.end, rows.length);
-    const start = Math.min(range.start, end);
+    const { start, end } = win;
+    if (win.model !== model) {
+      // The window predates this layout for one unpainted render. Its row
+      // numbers mean other photos here; mounting those would unmount every
+      // tile in view (and whatever has focus) only to mount it again once
+      // the window is measured, images refetched. Keep the same photos.
+      const was = win.model;
+      const shown = was.rows.length === 0
+        ? was.items
+        : start < end ? was.items.slice(was.rows[start].from, was.rows[end - 1].to) : [];
+      const keep = new Set<number>();
+      for (const item of shown) {
+        const index = indexOf.get(item.photoId);
+        if (index !== undefined) keep.add(index);
+      }
+      return [...keep].sort((a, b) => a - b).map((index) => items[index]);
+    }
     return start < end ? items.slice(rows[start].from, rows[end - 1].to) : [];
-  }, [enabled, model, range]);
+  }, [enabled, model, win]);
 
   return { visible };
 }

@@ -21,7 +21,9 @@ vi.mock('../../PhotoCard', () => ({
   }) => {
     React.useEffect(() => { mounts.push(photo.id); }, [photo.id]);
     return (
-      <div data-testid="tile" data-photo={photo.id} data-likes={photo.like_count ?? 0} style={style} tabIndex={0} {...containerProps} />
+      <div data-testid="tile" data-photo={photo.id} data-likes={photo.like_count ?? 0} style={style} tabIndex={0} {...containerProps}>
+        <button type="button" data-testid="tile-action" />
+      </div>
     );
   },
 }));
@@ -55,6 +57,8 @@ const layoutProps = (photos: Photo[]) => ({
 
 let gridTop = 0;
 let gridWidth = 1200;
+/** Padding a CSS template puts on the grid, each side; the layout gets the width inside it. */
+let gridPadding = 0;
 let resizeCallbacks: Array<{ target: Element; run: (width: number) => void }> = [];
 
 const tiles = () => screen.queryAllByTestId('tile');
@@ -74,6 +78,18 @@ beforeEach(() => {
   resizeCallbacks = [];
   Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => gridWidth });
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => gridWidth });
+  gridPadding = 0;
+  const computed = window.getComputedStyle.bind(window);
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+    const style = computed(element, pseudo);
+    if (!String((element as HTMLElement).className).includes('photo-grid')) return style;
+    return new Proxy(style, {
+      get: (target, key) => (key === 'paddingLeft' || key === 'paddingRight'
+        ? `${gridPadding}px`
+        : Reflect.get(target, key)),
+    });
+  });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     const top = String(this.className).includes('photo-grid') ? gridTop : 0;
     return { top, bottom: top, left: 0, right: 0, width: gridWidth, height: 0, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
@@ -244,6 +260,192 @@ describe.each([
     expect(ratioOf(find(anchorId))).toBeCloseTo(ratio, 5);
   });
 
+  it('anchors on what is at the top after content above the grid moved without a scroll', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-40000);
+    const ratioOf = (tile: HTMLElement) =>
+      (-gridTop - parseFloat(tile.style.top)) / parseFloat(tile.style.height);
+    const offsetInto = (tile: HTMLElement, fraction: number) =>
+      parseFloat(tile.style.top) + parseFloat(tile.style.height) * fraction;
+    const before = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    scrollGridTo(-offsetInto(before, 0.4));
+
+    // A notice above the grid pushes it down, to 70% down a photo some rows
+    // earlier; only the body observer hears of it.
+    const moved = tiles().find((tile) => parseFloat(tile.style.top) > 38000)!;
+    const movedId = Number(moved.dataset.photo);
+    expect(movedId).toBeLessThan(Number(before.dataset.photo));
+    gridTop = -offsetInto(moved, 0.7);
+    act(() => { resizeCallbacks.find((entry) => entry.target === document.body)!.run(0); });
+
+    // The width change holds that photo, not the one from before the notice.
+    gridWidth = 600;
+    act(() => {
+      resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
+    });
+    const held = tiles().find((tile) => Number(tile.dataset.photo) === movedId)!;
+    expect(ratioOf(held)).toBeCloseTo(0.7, 5);
+  });
+
+  it('does not take an anchor while a width change has not reached the layout yet', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+
+    // The window is already narrower and the toolbar above has re-wrapped,
+    // pushing the grid 5000px; the layout still has the old width.
+    gridWidth = 600;
+    gridTop += 5000;
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    act(() => {
+      resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
+    });
+    const held = tiles().find((tile) => Number(tile.dataset.photo) === anchorId)!;
+    expect((-gridTop - parseFloat(held.style.top)) / parseFloat(held.style.height)).toBeCloseTo(0.4, 5);
+  });
+
+  it('takes the anchor in a grid a CSS template has padded', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    const resizeTo = (width: number) => {
+      gridWidth = width;
+      act(() => {
+        resizeCallbacks.filter((entry) => entry.target !== document.body)
+          .forEach((entry) => entry.run(width - 2 * gridPadding));
+      });
+    };
+    gridPadding = 16;
+    resizeTo(1200);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+
+    resizeTo(600);
+    const held = tiles().find((tile) => Number(tile.dataset.photo) === anchorId)!;
+    expect((-gridTop - parseFloat(held.style.top)) / parseFloat(held.style.height)).toBeCloseTo(0.4, 5);
+  });
+
+  it('keeps the anchor when a photo is patched while a width change is pending', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<Layout {...layoutProps(photos)} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+
+    // Narrower already, the toolbar re-wrapped; a like lands before the
+    // layout has the new width.
+    gridWidth = 600;
+    gridTop += 5000;
+    rerender(<Layout {...layoutProps(photos.map((p) => (p.id === 1 ? { ...p, like_count: 1 } : p)))} />);
+    act(() => {
+      resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
+    });
+    const held = tiles().find((tile) => Number(tile.dataset.photo) === anchorId)!;
+    expect((-gridTop - parseFloat(held.style.top)) / parseFloat(held.style.height)).toBeCloseTo(0.4, 5);
+  });
+
+  // The first photo of the row crossing the top of the viewport, and how far
+  // down it the viewport top is.
+  const atTop = () => {
+    const tile = tiles().find((t) => parseFloat(t.style.top) + parseFloat(t.style.height) > -gridTop)!;
+    return {
+      id: Number(tile.dataset.photo),
+      ratio: Math.max(0, (-gridTop - parseFloat(tile.style.top)) / parseFloat(tile.style.height)),
+    };
+  };
+  const ratioOfPhoto = (id: number) => {
+    const tile = tiles().find((t) => Number(t.dataset.photo) === id)!;
+    return (-gridTop - parseFloat(tile.style.top)) / parseFloat(tile.style.height);
+  };
+  const deliverWidth = (width: number) => {
+    resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(width));
+  };
+
+  it('anchors on the new order when the list is re-sorted while a width change is pending', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<Layout {...layoutProps(photos)} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+
+    gridWidth = 600;
+    rerender(<Layout {...layoutProps([...photos].reverse())} />);
+    const sorted = atTop();
+    expect(sorted.id).not.toBe(Number(anchorTile.dataset.photo));
+    act(() => { deliverWidth(600); });
+    expect(ratioOfPhoto(sorted.id)).toBeCloseTo(sorted.ratio, 5);
+  });
+
+  it('takes a new anchor when the old one left the list in the same commit as a width change', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<Layout {...layoutProps(photos)} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+
+    gridWidth = 600;
+    act(() => {
+      deliverWidth(600);
+      rerender(<Layout {...layoutProps(photos.filter((p) => p.id !== anchorId))} />);
+    });
+    const next = atTop();
+
+    gridWidth = 900;
+    act(() => { deliverWidth(900); });
+    expect(ratioOfPhoto(next.id)).toBeCloseTo(next.ratio, 5);
+  });
+
+  it('keeps a tile with a focused control mounted across a width change', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-40000);
+    const card = tiles()[Math.floor(tiles().length / 2)];
+    const control = card.querySelector('button')!;
+    act(() => { control.focus(); });
+    expect(document.activeElement).toBe(control);
+
+    // The old row range applied to the new rows is other photos entirely.
+    gridWidth = 600;
+    act(() => { deliverWidth(600); });
+    expect(control.isConnected).toBe(true);
+    expect(document.activeElement).toBe(control);
+  });
+
+  it('does not remount the tiles in view when the rows are re-packed', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+    const mountsOf = (id: number) => mounts.filter((mounted) => mounted === id).length;
+    const before = mountsOf(anchorId);
+
+    gridWidth = 600;
+    act(() => { deliverWidth(600); });
+    expect(tiles().find((tile) => Number(tile.dataset.photo) === anchorId)).toBe(anchorTile);
+    expect(mountsOf(anchorId)).toBe(before);
+    expect(tiles().length).toBeLessThan(150);
+  });
+
+  it('holds the place in the new order when a sort and a width change land together', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<Layout {...layoutProps(photos)} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+    const top = gridTop;
+
+    gridWidth = 600;
+    act(() => {
+      deliverWidth(600);
+      rerender(<Layout {...layoutProps([...photos].reverse())} />);
+    });
+    expect(window.scrollBy).not.toHaveBeenCalled();
+    expect(gridTop).toBe(top);
+  });
 });
 
 // The picker's "Google Photos" option stores masonryMode 'justified'. It is
