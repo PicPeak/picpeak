@@ -85,11 +85,21 @@ export const pickedFromInput = (files: File[]): PickedFile[] =>
 // files is seconds of blocked main thread before the cap cuts it to hundreds.
 const byName = new Intl.Collator(undefined, { numeric: true });
 
+// Names the collator calls equal can still be different entries (`1` and
+// `01`, or one name in two Unicode normal forms); code-unit order settles
+// those, so two such folders are never interleaved and a pick and a drop of
+// the same tree agree on the order.
+const compareNames = (a: string, b: string): number => {
+  const order = byName.compare(a, b);
+  if (order !== 0 || a === b) return order;
+  return a < b ? -1 : 1;
+};
+
 const comparePaths = (a: string, b: string): number => {
   const as = a.split('/');
   const bs = b.split('/');
   for (let i = 0; i < Math.min(as.length, bs.length); i += 1) {
-    const order = byName.compare(as[i], bs[i]);
+    const order = compareNames(as[i], bs[i]);
     if (order !== 0) return order;
   }
   return as.length - bs.length;
@@ -170,7 +180,7 @@ async function walkEntry(entry: FileSystemEntry, dir: string, walk: Walk, depth:
   if (!entry.isDirectory) return;
   const children = (await readAllEntries((entry as FileSystemDirectoryEntry).createReader()))
     .filter((child) => !child.name.startsWith('.'))
-    .sort((a, b) => byName.compare(a.name, b.name));
+    .sort((a, b) => compareNames(a.name, b.name));
   const childDir = dir ? `${dir}/${entry.name}` : entry.name;
   for (const child of children) {
     if (spent(walk)) return;
