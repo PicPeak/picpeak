@@ -1541,6 +1541,10 @@ async function startServerInternal() {
     // setting every tick, so nothing runs until an admin switches it on.
     require('./src/services/videoRenditionQueue').start();
 
+    // Adaptive streaming ladders (issue 1733). Idle in the same way until
+    // general_video_adaptive_streaming is switched on.
+    require('./src/services/videoHlsQueue').start();
+
     // Coordinated portable restore is optional. Where this host cannot run it
     // one startup line says why, the import answers 503 and nothing else
     // changes; where it can, requests are tracked so a restore can drain them.

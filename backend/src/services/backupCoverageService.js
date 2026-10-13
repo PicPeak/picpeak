@@ -66,10 +66,15 @@ const STORAGE_ROOT = () => getStoragePath();
  * `tmp`        — short-lived scratch space (e.g. PDF render staging,
  *                S3 multipart uploads). Re-created on demand, never
  *                holds the only copy of anything.
+ *
+ * `hls`        — adaptive streaming ladders (issue 1733). Transcoded from
+ *                the originals, as large again as the videos, and rebuilt
+ *                by the queue when a restore leaves a row without one.
  */
 const EXPECTED_NON_BACKUP_DIRS = new Set([
   'backups',
   'tmp',
+  'hls',
 ]);
 
 /**

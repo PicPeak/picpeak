@@ -22,7 +22,7 @@ const resources = [
   ['./whatsappProcessor', 'stopWhatsAppQueueProcessor', 'startWhatsAppQueueProcessor'], ['./emailIntakeService', 'stopIncomingMailPoller', 'startIncomingMailPoller'],
   ['./webhookDeliveryWorker', 'stopWebhookDeliveryWorker', 'startWebhookDeliveryWorker'], ['./s3AutoImporter', 'stopS3AutoImporter', 'startS3AutoImporter'],
   ['./backupService', 'stopBackupService', 'startBackupService'], ['./databaseBackup', 'stopScheduledBackups', 'startScheduledBackups'],
-  ['./backgroundProcessor', 'stop', 'start'], ['./faceQueue', 'stop', 'start'], ['./videoRenditionQueue', 'stop', 'start'],
+  ['./backgroundProcessor', 'stop', 'start'], ['./faceQueue', 'stop', 'start'], ['./videoRenditionQueue', 'stop', 'start'], ['./videoHlsQueue', 'stop', 'start'],
   ['./mediaProcessService', 'stop', 'start'], ['./nativeProcessRunner', 'stop', 'start'],
   ['./secureImageService', 'dispose'],
   ['../utils/authSecurity', 'stopCleanupJob', 'initializeCleanupJob'], ['../utils/tokenRevocation', 'stopRevocationCleanup'],

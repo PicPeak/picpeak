@@ -184,7 +184,7 @@ describe('admin upload per-file size limit (general_max_file_size_mb)', () => {
   });
 
   // The multipart parser used to allow 10,000 parts with 10 MB per text field
-  // and the handler then logged the whole parsed body. The handler reads three
+  // and the handler then logged the whole parsed body. The handler reads seven
   // short fields, so the parser budget is sized to that.
   describe('text-field budget on the multipart parser', () => {
     const withFields = (fields) => {
@@ -197,7 +197,7 @@ describe('admin upload per-file size limit (general_max_file_size_mb)', () => {
 
     it('rejects more text fields than the handler reads', async () => {
       await setLimitMb(10);
-      const res = await withFields(Array.from({ length: 6 }, (_, i) => [`extra_${i}`, 'x']));
+      const res = await withFields(Array.from({ length: 8 }, (_, i) => [`extra_${i}`, 'x']));
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Upload error: Too many fields');
     });

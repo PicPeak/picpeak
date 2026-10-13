@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, Save } from 'lucide-react';
 import { Button } from '../common';
-import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext';
+import { useLeaveGuard, useUnsavedChanges } from '../../contexts/UnsavedChangesContext';
 import { useBottomBarSlot } from './bottomBarSlot';
 
 interface SettingsSaveBarProps {
@@ -54,6 +54,9 @@ export const SettingsSaveBar: React.FC<SettingsSaveBarProps> = ({
 }) => {
   const { t } = useTranslation();
   useUnsavedChanges(isDirty, onDiscard);
+  // A Discard that leaves the page (the "new document" editors) is the
+  // answer already; the leave guard does not ask it again.
+  const { unguarded } = useLeaveGuard();
   const slot = useBottomBarSlot();
 
   const bar = (
@@ -72,7 +75,7 @@ export const SettingsSaveBar: React.FC<SettingsSaveBarProps> = ({
           </span>
         )}
         {extra}
-        <Button variant="outline" size="sm" disabled={!isDirty || isSaving} onClick={onDiscard}>
+        <Button variant="outline" size="sm" disabled={!isDirty || isSaving} onClick={() => unguarded(onDiscard)}>
           {t('common.discard', 'Discard')}
         </Button>
         <Button

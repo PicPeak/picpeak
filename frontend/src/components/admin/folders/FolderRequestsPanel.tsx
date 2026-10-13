@@ -40,7 +40,7 @@ export const FolderRequestsPanel: React.FC<FolderRequestsPanelProps> = ({
 
   const waitingPhotos = requests.reduce((sum, r) => sum + r.photo_count, 0);
   const failed = (error: unknown) =>
-    toast.error(folderErrorMessage(error) || t('photos.folderRequests.failed', 'The folder request could not be updated'));
+    toast.error(folderErrorMessage(error, t) || t('photos.folderRequests.failed', 'The folder request could not be updated'));
 
   const approve = useMutation({
     mutationFn: ({ request, target }: { request: FolderRequest; target: number | null }) =>

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Badge, Card, ErrorState, Loading, Button, useConfirm } from '../common';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
+import { AnnotatedPhotoPreview } from './AnnotatedPhotoPreview';
 import { feedbackService, type FeedbackResponse, type PhotoFeedback } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -122,6 +123,15 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
                           </span>
                         </div>
                         <p className="mt-1 text-sm text-body">{item.comment_text || item.comment}</p>
+                        {/* The drawing is published with the comment (issue
+                            1733), so the moderator sees it before approving. */}
+                        <AnnotatedPhotoPreview
+                          eventId={eventId}
+                          photoId={item.photo_id}
+                          annotation={item.annotation}
+                          alt={item.filename || 'Photo'}
+                          className="mt-2"
+                        />
                         {item.photo_id && (
                           <div className="mt-2 flex items-center gap-2">
                             <div className="w-16 h-16 overflow-hidden rounded">

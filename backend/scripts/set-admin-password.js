@@ -22,6 +22,7 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 // a name no other component uses. Setting a password could therefore silently
 // target a different database than the one the application serves (#1038).
 const { db } = require('../src/database/db');
+const { deleteAllForAdmin } = require('../src/services/passkeyService');
 
 /**
  * Validate password strength
@@ -103,24 +104,30 @@ async function setAdminPassword() {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Update database
-    const updated = await db('admin_users')
-      .where('username', 'admin')
-      .update({
-        password_hash: hashedPassword,
-        // ISO strings, not Date objects — they round-trip on both engines, and
-        // this script now runs on SQLite installs too.
-        password_changed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-
-    if (updated === 0) {
+    // Update database. The account's passkeys go in the same transaction: this
+    // is a reset done by an operator, and a passkey signs in without the
+    // password (see src/services/adminPasswordReset.js).
+    const admin = await db('admin_users').where('username', 'admin').first();
+    if (!admin) {
       console.error('❌ Error: Admin user not found');
       process.exit(1);
     }
+    const passkeysRemoved = await db.transaction(async (trx) => {
+      await trx('admin_users')
+        .where('id', admin.id)
+        .update({
+          password_hash: hashedPassword,
+          // ISO strings, not Date objects — they round-trip on both engines, and
+          // this script now runs on SQLite installs too.
+          password_changed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      return deleteAllForAdmin(admin.id, trx);
+    });
 
     console.log('✅ Admin password updated successfully');
     console.log('   Note: All existing sessions have been invalidated');
+    if (passkeysRemoved) console.log(`   Passkeys removed: ${passkeysRemoved}`);
 
     await db.destroy();
     process.exit(0);

@@ -10,6 +10,7 @@
 require('dotenv').config();
 const bcrypt = require('bcrypt');
 const { db } = require('../src/database/db');
+const { deleteAllForAdmin } = require('../src/services/passkeyService');
 const crypto = require('crypto');
 
 // Parse command line arguments
@@ -48,18 +49,24 @@ async function createAdmin() {
     const passwordHash = await bcrypt.hash(password, 10);
 
     if (existingUser) {
-      // Update existing user's password
-      await db('admin_users')
-        .where('id', existingUser.id)
-        .update({
-          password_hash: passwordHash,
-          updated_at: new Date()
-        });
+      // Update existing user's password. Their passkeys go in the same
+      // transaction: this is a reset done by an operator, and a passkey signs
+      // in without the password (see src/services/adminPasswordReset.js).
+      const passkeysRemoved = await db.transaction(async (trx) => {
+        await trx('admin_users')
+          .where('id', existingUser.id)
+          .update({
+            password_hash: passwordHash,
+            updated_at: new Date()
+          });
+        return deleteAllForAdmin(existingUser.id, trx);
+      });
 
       console.log(`✅ Admin user updated successfully!`);
       console.log(`   Email: ${existingUser.email}`);
       console.log(`   Username: ${existingUser.username}`);
       console.log(`   Password has been reset to the provided value`);
+      if (passkeysRemoved) console.log(`   Passkeys removed: ${passkeysRemoved}`);
       console.log(`   Login URL: ${process.env.ADMIN_URL || 'http://localhost:3000'}/admin/login`);
     } else {
       // Create new admin user

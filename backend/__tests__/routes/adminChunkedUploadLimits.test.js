@@ -21,6 +21,12 @@ jest.mock('../../src/services/photoProcessor', () => ({
   processUploadedPhotos: (...args) => mockProcessUploadedPhotos(...args),
 }));
 
+// The merge is mocked, so there is no merged file to hash (issue 1733, C2).
+jest.mock('../../src/services/photoDuplicates', () => ({
+  ...jest.requireActual('../../src/services/photoDuplicates'),
+  sha256File: jest.fn(async () => 'a'.repeat(64)),
+}));
+
 const request = require('supertest');
 const express = require('express');
 const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('../integration/helpers/crmDb');

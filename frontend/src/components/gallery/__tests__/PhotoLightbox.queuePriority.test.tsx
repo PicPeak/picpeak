@@ -6,7 +6,7 @@
  *  - the two neighbours are `prefetch`, so they never take a freed slot ahead
  *    of the image the guest is looking at
  */
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Photo } from '../../../types';
 
@@ -50,5 +50,21 @@ describe('PhotoLightbox image queue priority', () => {
     expect(priorityOf('photo-1')).toBe('high');
     expect(priorityOf('photo-2')).toBe('prefetch');
     expect(priorityOf('photo-3')).toBe('prefetch');
+  });
+
+  // The neighbour was prefetched so that stepping onto it shows a loaded
+  // picture. That only holds while React keeps the same image instance: a
+  // remount aborts the fetch (or drops the loaded blob) and starts over.
+  it('keeps a prefetched neighbour mounted when it becomes the slide on screen', () => {
+    render(<PhotoLightbox photos={photos} initialIndex={0} onClose={vi.fn()} slug="g" />);
+    const next = screen.getByAltText('photo-2');
+    const current = screen.getByAltText('photo-1');
+
+    act(() => { fireEvent.keyDown(document, { key: 'ArrowRight' }); });
+
+    expect(priorityOf('photo-2')).toBe('high');
+    expect(screen.getByAltText('photo-2')).toBe(next);
+    // And the one stepped away from stays for the way back.
+    expect(screen.getByAltText('photo-1')).toBe(current);
   });
 });

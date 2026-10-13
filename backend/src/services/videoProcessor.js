@@ -96,6 +96,8 @@ async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
     await attemptContext.current()?.assertCurrent();
     await storage.putFromFile(thumbnailKey, tmpPath, { contentType: 'image/jpeg' });
     await attemptContext.current()?.assertCurrent();
+    // Tile placeholder (issue 1733), from the poster frame while it is on disk.
+    if (options.meta) options.meta.thumbHash = await require('./thumbHash').computeThumbHash(tmpPath);
     logger.info('Video thumbnail generated', { videoPath, thumbnailKey });
     return thumbnailKey;
   } finally {
@@ -182,8 +184,9 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
   // poster frame, so the admin saw a grey tile and nothing to act on
   // (issue 1430, item 6).
   let thumbnailError = null;
+  const meta = {};
   try {
-    await generateVideoThumbnail(videoPath, thumbnailKey, options);
+    await generateVideoThumbnail(videoPath, thumbnailKey, { ...options, meta });
     const storage = getStorage();
     if (await storage.exists(thumbnailKey)) {
       generatedThumbnailKey = thumbnailKey;
@@ -200,7 +203,7 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
   }
 
   // Never return "success" with no thumbnail at all: the gallery grid
-  // (GridGalleryLayout/JustifiedGalleryLayout) falls back to
+  // (GridGalleryLayout) falls back to
   // `photo.thumbnail_url || photo.url` when there's no thumbnail, which
   // makes AuthenticatedImage download the full ORIGINAL VIDEO and try to
   // render it as an <img> — a broken tile and a multi-GB fetch just from
@@ -258,7 +261,9 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
     thumbnailKey: generatedThumbnailKey,
     // True when thumbnailKey holds the SVG placeholder, not a frame of the video.
     placeholder: usedPlaceholder,
-    thumbnailError: usedPlaceholder ? thumbnailError : null
+    thumbnailError: usedPlaceholder ? thumbnailError : null,
+    // Placeholder hash of the poster frame; none for the SVG placeholder.
+    thumbHash: usedPlaceholder ? null : (meta.thumbHash || null)
   };
 }
 

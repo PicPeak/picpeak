@@ -91,8 +91,11 @@ export const NewsletterDetailPage: React.FC = () => {
 
   if (isLoading || !data) return <Loading />;
   const { campaign } = data;
-  // One page per campaign: a draft's page is its composer.
-  if (campaign.status === 'draft' && canSend) return <NewsletterComposerPage campaignId={campaignId} />;
+  // One page per campaign: a draft's page is its composer. Keyed by the
+  // campaign: going from one draft to another keeps this page mounted (same
+  // route), and the composer's editor holds a source buffer of its own that
+  // would otherwise be saved under the next campaign.
+  if (campaign.status === 'draft' && canSend) return <NewsletterComposerPage key={campaignId} campaignId={campaignId} />;
   const inFlight = campaign.status === 'queued' || campaign.status === 'sending';
   const progress = campaign.recipientCount > 0
     ? Math.round(((campaign.sentCount + campaign.failedCount) / campaign.recipientCount) * 100)

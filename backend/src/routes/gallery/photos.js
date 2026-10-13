@@ -8,6 +8,7 @@ const { noStoreCache } = require('../../middleware/noStoreCache');
 const { generateGuestIdentifier } = require('../../middleware/feedbackRateLimit');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { guestBlockedByReveal } = require('../../utils/revealMode');
+const { parseBooleanInput } = require('../../utils/parsers');
 const downloadZipService = require('../../services/downloadZipService');
 const GALLERY_OPENED_DEBOUNCE_MS = 6 * 60 * 60 * 1000;
 const galleryOpenedNotifiedAt = new Map();
@@ -61,6 +62,28 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, scopeGuestToFeedb
     
     res.json(payload);
   } catch (error) { errorResponse(res, error, 500, 'Failed to fetch photos'); }
+});
+
+/**
+ * Live refresh (issue 1733, C5): the number of photos in this viewer's list
+ * and the highest id among them, so an open gallery can tell that photos
+ * arrived without refetching the list. Same middleware and the same query as
+ * the list (galleryListQuery), so a hidden, held or still-processing photo
+ * never moves the numbers. 404 while the gallery has the option off. Not
+ * logged as a view: it is a poll, not a visit.
+ */
+router.get('/:slug/photos/state', verifyGalleryAccess, resolveGuest, scopeGuestToFeedback, noStoreCache, async (req, res) => {
+  try {
+    if (!parseBooleanInput(req.event.live_refresh, false)) {
+      return res.status(404).json({ error: 'Live refresh is not enabled for this gallery' });
+    }
+    const guestIdentifier = await generateGuestIdentifier(req);
+    res.json(await require('../../services/galleryQueryService').getGalleryPhotoState({
+      event: req.event, query: req.query,
+      identity: { guestId: req.guest?.id, guestIdentifier },
+      accessLevel: req.accessLevel, hiddenForGuest: guestBlockedByReveal(req),
+    }));
+  } catch (error) { errorResponse(res, error, 500, 'Failed to fetch photo state'); }
 });
 
 /**

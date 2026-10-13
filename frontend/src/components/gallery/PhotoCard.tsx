@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, Maximize2, Check, MessageSquare, Heart } from 'lucide-react';
 import { useInView } from 'react-intersection-observer';
 import { AuthenticatedImage } from '../common';
 import { thumbnailUrlForTile } from './imageTiers';
+import { TileImage } from './TileImage';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { feedbackService } from '../../services/feedback.service';
+import { feedbackLockKind } from '../../utils/feedbackLock';
 import { ColorLabelBadge } from './ColorLabelBadge';
 import { TileRating } from './TileRating';
 import { FirstLookBadge, FolderHintPill } from './GalleryTileBadges';
@@ -352,7 +355,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           feedback_type: 'like',
         });
       } catch (err) {
-        console.warn('Like submit failed, keeping optimistic UI', err);
+        // Refused by a finished selection (issue 1733): nothing was written,
+        // so the heart goes back. Any other failure keeps the optimistic UI.
+        if (feedbackLockKind(err)) onLikeSuccess?.();
+        else console.warn('Like submit failed, keeping optimistic UI', err);
       }
       if (onFeedbackChange) onFeedbackChange(photo.id);
       hideOverlay();
@@ -381,8 +387,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
         guest_email: savedIdentityValue?.email,
       });
     } catch (err) {
-      // Keep optimistic state; a refresh will reconcile
-      console.warn('Like submit failed, keeping optimistic UI', err);
+      // A locked pick goes back; otherwise keep the optimistic state, a
+      // refresh will reconcile.
+      if (feedbackLockKind(err)) onLikeSuccess?.();
+      else console.warn('Like submit failed, keeping optimistic UI', err);
     }
     if (onFeedbackChange) onFeedbackChange(photo.id);
     hideOverlay();
@@ -475,7 +483,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     >
       {inView && tile ? (
         <>
-          <AuthenticatedImage {...imageProps} src={tileSrc} />
+          {/* Inside the mounted branch on purpose: the blurred placeholder
+              (issue 1733) is decoded only for tiles that are mounted, and
+              goes with them when the release band lets a tile go. */}
+          <TileImage {...imageProps} src={tileSrc} thumbHash={photo.thumb_hash} />
 
           {/* The guest's own colour label (#1044) — visible without hovering
               or opening anything, which is the point: the client watches
@@ -540,29 +551,44 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
             )}
           </div>
 
-          {/* Identity Modal (self-managed mode) */}
-          {identityMode === 'self' && (
-            <FeedbackIdentityModal
-              isOpen={showIdentityModal}
-              onClose={() => { setShowIdentityModal(false); setPendingAction(null); }}
-              onSubmit={async (name, email) => {
-                setSelfIdentity({ name, email });
-                onIdentitySaved?.({ name, email });
-                setShowIdentityModal(false);
-                if (pendingAction) {
-                  if (pendingAction.type === 'like' && onLikeSuccess) {
-                    onLikeSuccess();
+          {/* Identity Modal (self-managed mode). Portalled to the body, as
+              TileRating's is: a tile with `content-visibility` (Masonry rows,
+              flickr, quilted) is the containing block of a `position: fixed`
+              descendant and clips it. React events still bubble through a
+              portal, so the wrapper keeps a click in the form from reaching
+              the tile and opening the photo. */}
+          {identityMode === 'self' && showIdentityModal && createPortal(
+            <div onClick={(e) => e.stopPropagation()}>
+              <FeedbackIdentityModal
+                isOpen
+                onClose={() => { setShowIdentityModal(false); setPendingAction(null); }}
+                onSubmit={async (name, email) => {
+                  setSelfIdentity({ name, email });
+                  onIdentitySaved?.({ name, email });
+                  setShowIdentityModal(false);
+                  if (pendingAction) {
+                    if (pendingAction.type === 'like' && onLikeSuccess) {
+                      onLikeSuccess();
+                    }
+                    try {
+                      await feedbackService.submitFeedback(slug!, String(pendingAction.photoId), {
+                        feedback_type: pendingAction.type,
+                        guest_name: name,
+                        guest_email: email,
+                      });
+                    } catch (err) {
+                      // Refused by a finished selection: the heart goes back.
+                      if (!feedbackLockKind(err)) throw err;
+                      if (pendingAction.type === 'like') onLikeSuccess?.();
+                    }
+                    if (onFeedbackChange) onFeedbackChange(pendingAction.photoId);
+                    setPendingAction(null);
                   }
-                  await feedbackService.submitFeedback(slug!, String(pendingAction.photoId), {
-                    feedback_type: pendingAction.type,
-                    guest_name: name,
-                    guest_email: email,
-                  });
-                  setPendingAction(null);
-                }
-              }}
-              feedbackType="like"
-            />
+                }}
+                feedbackType="like"
+              />
+            </div>,
+            document.body,
           )}
 
           {afterOverlay}

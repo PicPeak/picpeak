@@ -130,6 +130,12 @@ async function rotateLegacyAdminReset(knex, row, data, hasRenderedHtml) {
     await knex('api_tokens').where({ created_by: admin.id }).whereNull('revoked_at')
       .update({ revoked_at: now });
   }
+  // Passkeys go with a reset (see adminPasswordReset.js). Inline rather than
+  // through passkeyService: this also runs inside migration 273, before the
+  // table exists and without the app's own connection.
+  if (await knex.schema.hasTable('admin_webauthn_credentials')) {
+    await knex('admin_webauthn_credentials').where({ admin_user_id: admin.id }).del();
+  }
   // The queued address may have changed since this temporary password was
   // issued. Bind and deliver the replacement only to the account's current
   // address, including when the account was found by its password hash.

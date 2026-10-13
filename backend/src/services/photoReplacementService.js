@@ -21,6 +21,7 @@ const watermarkGeneratorService = require('./watermarkGeneratorService');
 const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey } = require('./photoResolver');
 const { resolveCredit } = require('./photoCredit');
+const { exifColumn } = require('./photoExif');
 const logger = require('../utils/logger');
 const uploadQuota = require('./publicUploadQuota');
 
@@ -159,11 +160,15 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     }
 
     const stats = await fsp.stat(newFileTempPath);
+    // The row now holds other bytes: its content hash follows (issue 1733, C2).
+    const contentSha256 = await require('./photoDuplicates').sha256File(newFileTempPath);
 
     // Credit (#1561): an automatic one describes the file, so the new file's
     // EXIF replaces it. Guest and manual credits are decisions about the
     // photo and stay.
     const isVideoReplacement = !!mimeType?.startsWith('video/');
+    // Read while the temp file is still here, like the date above.
+    const exif = isVideoReplacement ? {} : await exifColumn(newFileTempPath);
     const autoCredit = existingPhoto.uploaded_by !== 'guest'
       && (!existingPhoto.credit_source || existingPhoto.credit_source === 'exif')
       ? await resolveCredit({ localPath: newFileTempPath, isVideo: isVideoReplacement })
@@ -175,6 +180,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     let width = null;
     let height = null;
     let thumbnailPath = null;
+    const thumbMeta = {};
     // Detect/name by the unique stored filename (newFilename), not the
     // client-supplied original, so RAW derivative keys can't collide.
     const proc = await withProcessableImage(newFileTempPath, newFilename);
@@ -188,7 +194,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         // Non-image or corrupt
       }
       try {
-        thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
+        thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename, meta: thumbMeta });
       } catch (error) {
         if (isResourceError(error)) throw error;
         logger.warn('Failed to generate thumbnail for replaced photo', { photoId: existingPhoto.id });
@@ -253,10 +259,17 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         : { source_filename: existingPhoto.original_filename || originalFilename }),
       path: relativePath,
       thumbnail_path: thumbnailPath,
+      // The old hash describes the replaced image; none beats a wrong one.
+      thumb_hash: thumbMeta.thumbHash || null,
       size_bytes: stats.size,
+      content_sha256: contentSha256,
       width,
       height,
       captured_at: capturedAt,
+      // Camera details describe the file (issue 1733, D1): the new file's,
+      // or none. NULL leaves an unreadable one to the backfill.
+      exif_json: null,
+      ...exif,
       mime_type: mimeType,
       media_type: mimeType?.startsWith('video/') ? 'video' : 'image',
       // A replaced video is queued for a new copy while the setting is on;
@@ -271,6 +284,14 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       web_status: isVideoReplacement && await videoRendition.isEnabled() ? 'pending' : null,
       web_started_at: null,
       web_error: null,
+      // The ladder starts over the same way; the queue picks a video up.
+      hls_path: null,
+      hls_status: null,
+      hls_attempt_id: null,
+      hls_attempts: 0,
+      hls_retry_at: null,
+      hls_started_at: null,
+      hls_error: null,
       // The replacement lives in the managed backend, so the row has to say
       // so. resolvePhotoStorageKey gives photo.source_origin precedence over
       // everything and returns null for 'reference'/'external' — so leaving
@@ -312,6 +333,12 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       });
     }
 
+    // The adaptive streaming ladder (issue 1733) describes the old bytes too.
+    // Its files are listed now and removed once the row has started over:
+    // by then a transcode of the old file has lost its claim and cannot
+    // publish behind the sweep, and whatever another replica writes for the
+    // new file in between is not on the list.
+    const sweepOldLadder = await require('./videoHlsService').captureLadder(existingPhoto);
     if (object) {
       await uploadQuota.commitObject(object, 'photo', async conn => {
         if (await conn('photos').where({ id: existingPhoto.id, event_id: event.id }).update(updates) !== 1) {
@@ -320,6 +347,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         return existingPhoto.id;
       });
     } else await db('photos').where({ id: existingPhoto.id }).update(updates);
+    await sweepOldLadder();
     if (autoCredit) {
       // Fenced like the upload worker: a manual credit set meanwhile wins,
       // and so does a replacement that installed another file since.

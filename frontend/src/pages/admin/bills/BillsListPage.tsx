@@ -15,6 +15,7 @@ import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { toast } from 'react-toastify';
 import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 import { useEscapeClose } from '../../../components/common/useEscapeClose';
+import { todayIsoDate } from '../../../utils/localDate';
 
 const STATUSES: InvoiceStatus[] = ['scheduled', 'pending_delivery', 'sent', 'paid', 'overdue', 'cancelled', 'skipped'];
 
@@ -232,7 +233,7 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [eventName, setEventName] = useState('');
   const [eventDate, setEventDate] = useState('');
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [issueDate, setIssueDate] = useState(todayIsoDate());
   const [dueDate, setDueDate] = useState('');
   const [totalMajor, setTotalMajor] = useState('');
   const [currency, setCurrency] = useState('CHF');

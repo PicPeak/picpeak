@@ -478,6 +478,9 @@ const contentTypeFor = (format) => {
  * photos where the source basename can collide across events (#423) — the
  * import path passes a per-photo unique basename so two events both
  * referencing `IMG_0001.jpg` don't clobber each other's thumbnail.
+ *
+ * options.meta — an object that receives `thumbHash`, the placeholder hash of
+ * the thumbnail just written (or null), for photos.thumb_hash.
  */
 async function generateThumbnail(imagePath, options = {}) {
   const sourceBasename = path.basename(imagePath);
@@ -587,6 +590,8 @@ async function generateThumbnail(imagePath, options = {}) {
     }
 
     await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: contentTypeFor(settings.format) }));
+    // Tile placeholder (issue 1733): for a caller that writes the photo row.
+    if (options.meta) options.meta.thumbHash = await require('./thumbHash').computeThumbHash(buffer);
 
     return thumbnailRelKey;
   } catch (error) {
@@ -830,6 +835,8 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
   // "Regenerate thumbnails" button rebuilt the frame and the tile kept the
   // stale warning and Retry (issue 1430, item 6).
   let posterNote;
+  // Receives the placeholder hash of whatever thumbnail gets written.
+  const meta = {};
   if (isVideoPhoto(photo)) {
     // A video's thumbnail is a poster frame, not a Sharp resize of the stored
     // file (#1414). Without this branch the generic path below hands the mp4
@@ -840,6 +847,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
     // pressed regenerate.
     const video = await regenerateVideoThumbnail(event, photo, isExternal, { boundSource: boundVideoSource });
     newThumbnailPath = video?.thumbnailKey || null;
+    meta.thumbHash = video?.thumbHash;
     if (video && photo.processing_status === 'complete') {
       const { posterFrameError } = require('./videoProcessor');
       posterNote = video.placeholder ? posterFrameError(video.thumbnailError) : null;
@@ -865,7 +873,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
     // permanently rather than being repaired on the next view.
     const proc = await withProcessableImage(localPath, sourceBasename);
     try {
-      newThumbnailPath = await generateThumbnail(proc.path, { regenerate: true, outputBasename });
+      newThumbnailPath = await generateThumbnail(proc.path, { regenerate: true, outputBasename, meta });
     } finally {
       await proc.cleanup();
     }
@@ -881,7 +889,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
     newThumbnailPath = await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename) });
+        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename), meta });
       } finally {
         await proc.cleanup();
       }
@@ -891,6 +899,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
   if (newThumbnailPath) {
     await publishPhotoDerivative(photo, newThumbnailPath, {
       thumbnail_path: newThumbnailPath,
+      thumb_hash: meta.thumbHash || null,
       ...(posterNote !== undefined ? { processing_error: posterNote } : {}),
     });
 
@@ -944,7 +953,7 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   const generate = async (localPath) => {
     const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey));
     if (!result?.thumbnailKey) return null;
-    return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null };
+    return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null, thumbHash: result.thumbHash || null };
   };
 
   try {

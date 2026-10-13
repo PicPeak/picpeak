@@ -20,7 +20,7 @@ const maintenanceJobs = require('../services/maintenanceJobState');
 // Two separate rows, for the same reason the two objects were separate: the
 // jobs walk the same photos but read different things out of them, and one
 // running must not block or report for the other.
-const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFILL, JOB_CREDIT_BACKFILL } = maintenanceJobs;
+const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFILL, JOB_CREDIT_BACKFILL, JOB_THUMB_HASH_BACKFILL } = maintenanceJobs;
 
 const { HEARTBEAT_INTERVAL_MS } = maintenanceJobs;
 
@@ -305,7 +305,12 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
     try {
       photos = await db('photos')
         .join('events', 'photos.event_id', 'events.id')
-        .whereNull('photos.captured_at')
+        // Also every photo whose camera details were never read (issue 1733,
+        // D1). exif_json is written even when a file carries none ('{}'), so
+        // a photo is read for them once and never again.
+        .where(function () {
+          this.whereNull('photos.captured_at').orWhereNull('photos.exif_json');
+        })
         // Three markers, because no single one is reliable. fileWatcher's
         // auto-import sets type='video' and a video/* mime but never
         // media_type (fileWatcher.js:128-130), so those rows keep the 'image'
@@ -331,6 +336,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
         .select(
           'photos.id', 'photos.path', 'photos.filename',
           'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
+          'photos.captured_at', 'photos.exif_json',
           'events.source_mode', 'events.external_path', 'events.slug'
         );
     } catch (err) {
@@ -353,7 +359,9 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
 
     applicationWork.defer('dimension repair', async () => {
       const { extractCaptureDate, withLocalCopy } = require('../services/imageProcessor');
+      const { extractPhotoExif } = require('../services/photoExif');
       const { resolvePhotoStorageKey } = require('../services/photoResolver');
+      let exifCount = 0;
       let successCount = 0;
       let missingCount = 0;
       let errorCount = 0;
@@ -377,7 +385,15 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             // backend, which on an S3 install is not a filesystem at all — going
             // through resolvePhotoFilePath there would build a STORAGE_PATH that
             // holds nothing and fail every managed photo.
+            // One open of the original serves both reads; each is skipped
+            // when the row already has its value.
+            const needsDate = !photo.captured_at;
+            const readFile = async (localPath) => ({
+              captured: needsDate ? await extractCaptureDate(localPath) : null,
+              exif: photo.exif_json ? null : await extractPhotoExif(localPath),
+            });
             let captured;
+            let exif;
             if (isExternal) {
               let fullPath;
               try {
@@ -396,7 +412,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
                 continue;
               }
 
-              captured = await extractCaptureDate(fullPath);
+              ({ captured, exif } = await readFile(fullPath));
             } else {
               let sourceKey;
               try {
@@ -412,11 +428,25 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
               // mode a missing object throws out of getToFile and lands in the
               // outer catch — both end up counted as failures, which is what a
               // missing original is.
-              captured = await withLocalCopy(sourceKey, async (localPath) => {
+              ({ captured, exif } = await withLocalCopy(sourceKey, async (localPath) => {
                 await fs.access(localPath);
-                return extractCaptureDate(localPath);
-              });
+                return readFile(localPath);
+              }));
             }
+
+            // Same fence as the date below, and whereNull for the same
+            // reason. A null read (the file could not be read) writes nothing
+            // and stays for the next run.
+            if (exif) {
+              exifCount += await db('photos')
+                .where({ id: photo.id, path: photo.path, filename: photo.filename })
+                .whereNull('exif_json')
+                .update({ exif_json: JSON.stringify(exif) });
+            }
+
+            // The counters below are about capture dates; a photo that was
+            // only missing its camera details is done here.
+            if (!needsDate) continue;
 
             if (!captured) {
             // No date recovered. Usually genuine — plenty of sources carry no
@@ -469,15 +499,16 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
           logger.warn(`Capture date backfill stopped: claim taken over after ${successCount} updated, ${errorCount} errors`);
           return;
         }
-        await maintenanceJobs.release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount });
+        await maintenanceJobs.release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, exif: exifCount });
         logger.info(
           `Capture date backfill complete: ${successCount} updated, ${missingCount} without EXIF, `
-          + `${errorCount} errors, ${skippedCount} skipped (dated or replaced mid-run)`
+          + `${errorCount} errors, ${skippedCount} skipped (dated or replaced mid-run), `
+          + `${exifCount} with camera details read`
         );
       } catch (err) {
         logger.error('Capture date backfill aborted:', err);
         await maintenanceJobs
-          .release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, error: err.message })
+          .release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, exif: exifCount, error: err.message })
           .catch(() => {});
       } finally {
         lease.stop();
@@ -522,6 +553,7 @@ router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.
     const counts = await scoped()
       .count('photos.id as total')
       .count({ dated: db.raw('CASE WHEN photos.captured_at IS NOT NULL THEN 1 END') })
+      .count({ pending: db.raw('CASE WHEN photos.captured_at IS NULL OR photos.exif_json IS NULL THEN 1 END') })
       .first();
 
     const total = Number(counts.total);
@@ -533,6 +565,9 @@ router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.
       total,
       withCaptureDate,
       withoutCaptureDate: total - withCaptureDate,
+      // What a run would read: no capture date, or camera details never read
+      // (issue 1733, D1).
+      pending: Number(counts.pending),
       isRunning: state.isRunning,
       lastResult: state.lastResult
     });
@@ -1072,6 +1107,154 @@ router.get('/repair-credits/status', adminAuth, requirePermission('system.manage
   } catch (error) {
     logger.error('Error fetching credit backfill status:', error);
     res.status(500).json({ error: 'Failed to fetch credit backfill status' });
+  }
+});
+
+/**
+ * Backfill tile placeholders (issue 1733, B1).
+ *
+ * New thumbnails get their ThumbHash when they are generated
+ * (services/thumbHash.js). A library that predates the column has none, and
+ * its tiles simply keep the plain loading state until this has run. Opt-in
+ * and an endpoint rather than a migration, like the backfills above: it reads
+ * through the storage backend, which may be unreachable at upgrade time.
+ *
+ * It reads THUMBNAILS, never originals: a few kilobytes per photo, on S3 and
+ * for external libraries alike (their thumbnails are managed objects too).
+ *
+ * Resumable by construction. A candidate is a row with a thumbnail and no
+ * hash, so a run that was interrupted leaves the rest as candidates and the
+ * next run picks up there. Rows are fetched in id order, a batch at a time,
+ * so memory stays flat however large the library is, and a thumbnail that
+ * cannot be read is passed over for this run instead of being retried in a
+ * loop.
+ */
+const THUMB_HASH_BATCH = 200;
+
+function thumbHashCandidates() {
+  return db('photos')
+    .join('events', 'photos.event_id', 'events.id')
+    .whereNotNull('photos.thumbnail_path')
+    // An archived event's renditions are gone with the archive.
+    .where(function () {
+      this.where('events.is_archived', false).orWhereNull('events.is_archived');
+    });
+}
+
+router.post('/repair-thumb-hashes', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    const token = await maintenanceJobs.claim(JOB_THUMB_HASH_BACKFILL);
+    if (!token) {
+      return res.status(409).json({ error: 'Placeholder backfill is already running' });
+    }
+    const lease = startLeaseKeeper(JOB_THUMB_HASH_BACKFILL, token);
+
+    let count;
+    try {
+      const pending = await thumbHashCandidates().whereNull('photos.thumb_hash').count('photos.id as count').first();
+      count = Number(pending.count);
+    } catch (err) {
+      lease.stop();
+      await maintenanceJobs.release(JOB_THUMB_HASH_BACKFILL, token);
+      throw err;
+    }
+
+    if (count === 0) {
+      lease.stop();
+      await maintenanceJobs.release(JOB_THUMB_HASH_BACKFILL, token);
+      return res.json({ message: 'No photos need a placeholder', count: 0 });
+    }
+
+    res.json({ message: `Started computing placeholders for ${count} photos`, count });
+
+    applicationWork.defer('photo rendition repair', async () => {
+      const { withLocalCopy } = require('../services/imageProcessor');
+      const { computeThumbHash } = require('../services/thumbHash');
+      let successCount = 0;
+      let errorCount = 0;
+      let skippedCount = 0;
+      let lostClaim = false;
+      let lastId = 0;
+
+      try {
+        for (;;) {
+          const batch = await thumbHashCandidates()
+            .whereNull('photos.thumb_hash')
+            .where('photos.id', '>', lastId)
+            .orderBy('photos.id')
+            .limit(THUMB_HASH_BATCH)
+            .select('photos.id', 'photos.thumbnail_path');
+          if (batch.length === 0) break;
+
+          for (const photo of batch) {
+            if (lease.lost()) { lostClaim = true; break; }
+            lastId = photo.id;
+
+            try {
+              const hash = await withLocalCopy(photo.thumbnail_path, (localPath) => computeThumbHash(localPath));
+              if (!hash) {
+                errorCount++;
+                continue;
+              }
+              // Fenced on the thumbnail that was read: a replacement or a
+              // regeneration mid-run writes its own hash with its own key.
+              const updated = await db('photos')
+                .where({ id: photo.id, thumbnail_path: photo.thumbnail_path })
+                .whereNull('thumb_hash')
+                .update({ thumb_hash: hash });
+              if (updated) successCount++; else skippedCount++;
+            } catch (error) {
+              logger.warn(`Placeholder backfill: thumbnail of photo ${photo.id} could not be read: ${error.message}`);
+              errorCount++;
+            }
+          }
+          if (lostClaim) break;
+        }
+
+        if (lostClaim) {
+          logger.warn(`Placeholder backfill stopped: claim taken over after ${successCount} updated, ${errorCount} errors`);
+          return;
+        }
+        await maintenanceJobs.release(JOB_THUMB_HASH_BACKFILL, token, { success: successCount, failed: errorCount, skipped: skippedCount });
+        logger.info(
+          `Placeholder backfill complete: ${successCount} updated, ${errorCount} unreadable, `
+          + `${skippedCount} skipped (changed mid-run)`
+        );
+      } catch (err) {
+        logger.error('Placeholder backfill aborted:', err);
+        await maintenanceJobs
+          .release(JOB_THUMB_HASH_BACKFILL, token, { success: successCount, failed: errorCount, skipped: skippedCount, error: err.message })
+          .catch(() => {});
+      } finally {
+        lease.stop();
+      }
+    });
+  } catch (error) {
+    logger.error('Error starting placeholder backfill:', error);
+    res.status(500).json({ error: 'Failed to start placeholder backfill' });
+  }
+});
+
+// system.manage for the same reason as the capture-date status above.
+router.get('/repair-thumb-hashes/status', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    const counts = await thumbHashCandidates()
+      .count('photos.id as total')
+      .count({ hashed: db.raw('CASE WHEN photos.thumb_hash IS NOT NULL THEN 1 END') })
+      .first();
+    const total = Number(counts.total);
+    const withPlaceholder = Number(counts.hashed);
+    const state = await maintenanceJobs.read(JOB_THUMB_HASH_BACKFILL);
+    res.json({
+      total,
+      withPlaceholder,
+      withoutPlaceholder: total - withPlaceholder,
+      isRunning: state.isRunning,
+      lastResult: state.lastResult
+    });
+  } catch (error) {
+    logger.error('Error fetching placeholder backfill status:', error);
+    res.status(500).json({ error: 'Failed to fetch placeholder backfill status' });
   }
 });
 

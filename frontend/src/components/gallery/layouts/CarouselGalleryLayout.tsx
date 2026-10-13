@@ -8,6 +8,7 @@ import { useGalleryTileBadges } from '../GalleryTileBadges';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
+import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { downloadLimitReachedMessage } from '../../../utils/downloadLimit';
@@ -20,7 +21,8 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   onDownload,
   allowDownloads = true,
   feedbackEnabled = false,
-  feedbackOptions
+  feedbackOptions,
+  onFeedbackChange
 }) => {
   const { theme } = useTheme();
   const { currentPhoto, currentIndex, setCurrentIndex } = usePhotoSelection(photos);
@@ -77,6 +79,13 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // all taken (see the colour-label note below).
   const tileBadges = useGalleryTileBadges();
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
+  // The like endpoint is a toggle (#590), and so is taking one back.
+  const toggleLiked = (photoId: number) => setLikedIds(prev => {
+    const next = new Set(prev);
+    if (next.has(photoId)) next.delete(photoId);
+    else next.add(photoId);
+    return next;
+  });
   // Seed from server is_liked on first non-empty payload (#590 follow-up).
   // Mount-only so refetches don't clobber in-session optimistic toggles.
   const likedSeededRef = useRef(false);
@@ -213,10 +222,15 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       await feedbackService.submitFeedback(slug!, String(currentPhoto.id), {
                         feedback_type: 'like',
                       });
+                      // The "x selected" counter and the Liked filter read
+                      // /my-feedback, which this refreshes (issue 1733).
+                      onFeedbackChange?.(currentPhoto.id);
                     } catch (err) {
-                      // Same rule as PhotoCard: keep the optimistic state, a
-                      // refresh reconciles; but never swallow it silently.
-                      console.warn('Like submit failed, keeping optimistic UI', err);
+                      // Same rule as PhotoCard: a pick refused by a finished
+                      // selection goes back; otherwise keep the optimistic
+                      // state, a refresh reconciles.
+                      if (feedbackLockKind(err)) toggleLiked(currentPhoto.id);
+                      else console.warn('Like submit failed, keeping optimistic UI', err);
                     }
                     return;
                   }
@@ -238,8 +252,10 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       guest_name: savedIdentity?.name,
                       guest_email: savedIdentity?.email,
                     });
+                    onFeedbackChange?.(currentPhoto.id);
                   } catch (err) {
-                    console.warn('Like submit failed, keeping optimistic UI', err);
+                    if (feedbackLockKind(err)) toggleLiked(currentPhoto.id);
+                    else console.warn('Like submit failed, keeping optimistic UI', err);
                   }
                 }}
                 className={`bg-black/30 hover:bg-black/50 rounded-full border border-white/40 ${likedIds.has(currentPhoto.id) ? 'text-danger' : 'text-white'}`}
@@ -328,6 +344,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               guest_name: name,
               guest_email: email,
             });
+            onFeedbackChange?.(pendingAction.photoId);
             setPendingAction(null);
           }
         }}

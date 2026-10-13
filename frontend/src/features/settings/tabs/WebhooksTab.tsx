@@ -18,6 +18,7 @@ const WEBHOOK_EVENT_TYPES = [
   'event.expired',
   'photo.uploaded',
   'photo.deleted',
+  'selection.submitted',
 ] as const;
 type WebhookEventType = typeof WEBHOOK_EVENT_TYPES[number];
 

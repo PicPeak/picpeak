@@ -799,7 +799,7 @@ router.get('/downloads', adminAuth, requirePermission('settings.view'), async (r
 router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
     const {
-      invalidateDownloadGlobals, getDownloadGlobals, ORIGINAL,
+      invalidateDownloadGlobals, getDownloadGlobals, ORIGINAL, JOB_RETENTION_HOURS, parseJobRetentionHours,
     } = require('../utils/downloadResolutions');
     const has = (k) => Object.prototype.hasOwnProperty.call(req.body, k);
     const updates = [];
@@ -855,6 +855,17 @@ router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (r
     }
     if (has('download_allow_original')) {
       push('download_allow_original', !!req.body.download_allow_original);
+    }
+    // How long a prepared archive is kept (issue 1733). Refused rather than
+    // clamped: a typo must not quietly become a week of archives on disk.
+    if (has('download_job_retention_hours')) {
+      const hours = parseJobRetentionHours(req.body.download_job_retention_hours);
+      if (hours === null) {
+        return res.status(400).json({
+          error: `download_job_retention_hours must be a whole number between ${JOB_RETENTION_HOURS.min} and ${JOB_RETENTION_HOURS.max}`,
+        });
+      }
+      push('download_job_retention_hours', hours);
     }
 
     for (const u of updates) {
@@ -1852,6 +1863,11 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       const raw = settings.general_video_web_rendition;
       settings.general_video_web_rendition = raw === true || raw === 'true' || raw === 1 || raw === '1';
     }
+    // Adaptive video streaming (issue 1733): a plain boolean too.
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_adaptive_streaming')) {
+      const raw = settings.general_video_adaptive_streaming;
+      settings.general_video_adaptive_streaming = raw === true || raw === 'true' || raw === 1 || raw === '1';
+    }
 
     // Default download limit for new events (issue 1560). Empty, 0 or null
     // clears it (unlimited); anything else must be a positive integer.
@@ -1996,6 +2012,16 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
         } catch (e) {
           logger.warn('videoRendition: failed to queue existing videos:', e.message);
         }
+      }
+    }
+    // Adaptive streaming: the queue marks the videos nobody has looked at by
+    // itself; switching it on also gives the failed ones another try.
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_adaptive_streaming')) {
+      const videoHls = require('../services/videoHlsService');
+      videoHls.clearCache();
+      if (settings.general_video_adaptive_streaming) {
+        await videoHls.queuePending({ retryFailed: true })
+          .catch(e => logger.warn('videoHls: failed to queue existing videos:', e.message));
       }
     }
     // The public origin is cached (it now sits in per-request CORS paths and

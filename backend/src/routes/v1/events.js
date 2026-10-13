@@ -612,14 +612,21 @@ async function handleV1PhotoUpload(req, res) {
 
     // Credit from EXIF (#1561), read before the temp file is moved away.
     const credit = await require('../../services/photoCredit').resolveCredit({ localPath: tempPath });
+    // Camera details (issue 1733, D1), from the same temp file.
+    const exif = await require('../../services/photoExif').exifColumn(tempPath);
 
     let thumbRel = null;
+    const thumbMeta = {};
     try {
-      thumbRel = await generateThumbnail(tempPath);
+      thumbRel = await generateThumbnail(tempPath, { meta: thumbMeta });
     } catch (err) {
       if (require('../../services/imageResourcePolicy').isResourceError(err)) throw err;
       logger.warn('v1 thumbnail generation failed', { err: err.message });
     }
+
+    // Content hash (issue 1733, C2), stored for the admin uploader's
+    // duplicate check; this route itself refuses nothing.
+    const contentSha256 = await require('../../services/photoDuplicates').sha256File(tempPath);
 
     // Upload the original via the storage backend (local fs OR S3),
     // then drop the multer temp file.
@@ -643,10 +650,12 @@ async function handleV1PhotoUpload(req, res) {
       source_filename: req.file.originalname,
       path: relPath,
       thumbnail_path: thumbRel,
+      thumb_hash: thumbMeta.thumbHash || null,
       type: photoType,
       category_id: folderId ? null : categoryId,
       folder_id: folderId,
       size_bytes: stat.size,
+      content_sha256: contentSha256,
       width,
       height,
       media_type: 'image',
@@ -655,7 +664,8 @@ async function handleV1PhotoUpload(req, res) {
       uploaded_by: 'admin',
       // Retain uploader identity and held-review visibility with the quota commit.
       ...uploadColumns,
-      ...credit
+      ...credit,
+      ...exif
     };
     const id = await uploadQuota.commitObject(object, 'photo', async conn => {
       const insertResult = await conn('photos').insert(photoData).returning('id');

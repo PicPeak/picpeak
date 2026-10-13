@@ -5,6 +5,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const feedbackService = require('../services/feedbackService');
 const feedbackModeration = require('../services/feedbackModeration');
+const selectionSubmissions = require('../services/selectionSubmissions');
 const { db, logActivity } = require('../database/db');
 const { joinLivePhotos, livePhotos, wherePhotoLive } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
@@ -15,6 +16,7 @@ const {
   checkValidation
 } = require('../utils/feedbackValidation');
 const { requireEventOwnership, canAccessEvent, scopeEventsQuery } = require('../middleware/ownership');
+const { withParsedAnnotation } = require('../utils/photoAnnotation');
 
 // Get event feedback settings
 router.get('/events/:eventId/feedback-settings',
@@ -152,7 +154,9 @@ router.get('/events/:eventId/feedback',
         .offset(offset);
       
       res.json({
-        feedback,
+        // photo_feedback.* carries the raw annotation text (issue 1733):
+        // hand out the parsed structure only.
+        feedback: feedback.map(withParsedAnnotation),
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -163,6 +167,54 @@ router.get('/events/:eventId/feedback',
     } catch (error) {
       logger.error('Error getting feedback:', error);
       res.status(500).json({ error: 'Failed to get feedback' });
+    }
+  }
+);
+
+// Finished selections and approvals, per guest (issue 1733, A1).
+router.get('/events/:eventId/selection-submissions',
+  adminAuth,
+  requirePermission('events.view'),
+  requireEventOwnership,
+  validateEventId,
+  checkValidation,
+  async (req, res) => {
+    try {
+      res.json({ submissions: await selectionSubmissions.listForEvent(req.params.eventId) });
+    } catch (error) {
+      logger.error('Error getting selection submissions:', error);
+      res.status(500).json({ error: 'Failed to get submissions' });
+    }
+  }
+);
+
+// Reopen one: the guest can change their picks (or decisions) again and
+// submit anew. The row stays as history.
+router.post('/events/:eventId/selection-submissions/:submissionId/reopen',
+  adminAuth,
+  requirePermission(['events.edit', 'events.support']),
+  requireEventOwnership,
+  validateEventId,
+  checkValidation,
+  async (req, res) => {
+    try {
+      const { eventId, submissionId } = req.params;
+      if (!/^\d+$/.test(submissionId)) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+      // Scoped to this gallery: an id from another one is not found here.
+      const reopened = await selectionSubmissions.reopen(eventId, Number(submissionId), req.admin.id);
+      if (!reopened) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+      await logActivity('selection_reopened', {
+        kind: reopened.kind,
+        guestName: reopened.guest_name || 'Anonymous',
+      }, eventId, { type: 'admin', id: req.admin.id, name: req.admin.username });
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Error reopening selection submission:', error);
+      res.status(500).json({ error: 'Failed to reopen the submission' });
     }
   }
 );

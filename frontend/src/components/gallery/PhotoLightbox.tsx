@@ -1,17 +1,18 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
-import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock, Loader2 } from 'lucide-react';
 import type { Photo, GalleryPerson } from '../../types';
 import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { AuthenticatedImage } from '../common';
+import { useFullResolutionZoom, FullResolutionImage } from './hooks/useFullResolutionZoom';
 import { PhotoFeedback } from './PhotoFeedback';
 import { lightboxImageUrl } from './imageTiers';
 import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
 import { PhotoColorLabels } from './PhotoColorLabels';
 import { PhotoDecision } from './PhotoDecision';
-import { resolveFeedbackKey, colorShortcutHints } from '../../utils/feedbackKeybinds';
+import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
 import { galleryService } from '../../services/gallery.service';
 import { analyticsService } from '../../services/analytics.service';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
@@ -21,6 +22,13 @@ import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableMessage } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 import { lockBodyScroll } from '../../utils/scrollLock';
+import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
+import { useLightboxScrub } from './hooks/useLightboxScrub';
+import { exifLine } from '../../utils/photoExif';
+import { useLightboxAnnotation } from './annotation/useLightboxAnnotation';
+import { CommentAnnotationContext } from './annotation/CommentAnnotationContext';
+import { ImageAnnotationOverlay } from './annotation/ImageAnnotationOverlay';
+import { AnnotationToolbar } from './annotation/AnnotationToolbar';
 
 interface PhotoLightboxProps {
   photos: Photo[];
@@ -123,6 +131,24 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     show_feedback_to_guests?: boolean;
     require_name_email?: boolean;
   } | null>(null);
+  // The photo whose slide shows its fallback thumbnail instead of itself.
+  const [fallbackPhotoId, setFallbackPhotoId] = useState<Photo['id'] | null>(null);
+  // Annotate mode (issue 1733): drawing on the photo for a comment. While it
+  // is on, every navigation and zoom gesture below stands down.
+  const annotation = useLightboxAnnotation({
+    photoId: photos[currentIndex]?.id,
+    // Not on a video, and not while the thumbnail stands in for a picture
+    // that did not load: the overlay stays off it, so there is nothing to
+    // draw on.
+    canDraw: photos[currentIndex]?.media_type !== 'video' && fallbackPhotoId !== photos[currentIndex]?.id,
+    panelOpen: showFeedback,
+    onStart: () => resetZoom(),
+    // On a phone the panel covers the photo: step aside to show the drawing.
+    onShow: () => { if (isSmallScreen) setShowFeedback(false); },
+  });
+  const annotating = annotation.drawing;
+  const annotationRef = useRef(annotation);
+  annotationRef.current = annotation;
   const [myLiked, setMyLiked] = useState<boolean>(false);
   const [myRating, setMyRating] = useState<number>(0);
   const [myColorLabel, setMyColorLabel] = useState<ColorLabel | null>(null);
@@ -180,11 +206,43 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // neighbours would inflate, and a neighbour promoted by a swipe is
   // never re-fetched (#505).
   const currentPhotoId = photos[currentIndex]?.id;
+  // Hold-to-scrub (issue 1733): while an arrow key repeats, the photos passed
+  // over are neither counted nor mirrored to the URL; the one landed on is,
+  // once, when the key is let go.
+  const scrub = useLightboxScrub(
+    (direction) => (direction === 1 ? goToNext() : goToPrevious()),
+    currentPhotoId,
+  );
+  const { scrubbing } = scrub;
+  // The slides are unmounted for the length of a scrub, so a swipe under way
+  // has no track left to fire the `transitionend` that would end it: without
+  // this the track came back parked on the neighbour, or in a phase that
+  // takes no new touch.
   useEffect(() => {
+    if (!scrubbing) return;
+    swipeStartRef.current = null;
+    setDragX(0);
+    setPhase('idle');
+  }, [scrubbing]);
+  // The open feedback panel fetches per photo id, so it stays on the photo
+  // the scrub started from and moves to the one landed on.
+  const feedbackPhotoIdRef = useRef(currentPhotoId);
+  if (!scrubbing) feedbackPhotoIdRef.current = currentPhotoId;
+  // Mid-scrub every feedback control still shows another photo's state: the
+  // toolbar's is not fetched for a photo passed over, and the panel is on
+  // the one the scrub started from. A toggle worked out against that state
+  // would be saved wrongly, so none of them takes a click or a key until the
+  // scrub has landed. Spread, as React 18 does not know `inert` as a prop.
+  const feedbackHold = scrubbing ? { inert: '' } : undefined;
+  // A scrub that ends on the photo it started from is not a second view.
+  const lastTrackedPhotoIdRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (scrubbing || currentPhotoId === lastTrackedPhotoIdRef.current) return;
+    lastTrackedPhotoIdRef.current = currentPhotoId;
     if (currentPhotoId !== undefined) {
       galleryService.trackPhotoView(slug, currentPhotoId);
     }
-  }, [slug, currentPhotoId]);
+  }, [slug, currentPhotoId, scrubbing]);
 
   // Mirror the visible photo to the URL (issue 1733). Through a ref so an
   // inline callback from the host does not re-fire this — and rewrite the
@@ -192,10 +250,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const onCurrentPhotoChangeRef = useRef(onCurrentPhotoChange);
   onCurrentPhotoChangeRef.current = onCurrentPhotoChange;
   useEffect(() => {
-    if (currentPhotoId !== undefined) {
+    if (!scrubbing && currentPhotoId !== undefined) {
       onCurrentPhotoChangeRef.current?.(currentPhotoId);
     }
-  }, [currentPhotoId]);
+  }, [currentPhotoId, scrubbing]);
 
 
   // Save-aware download. On mobile (where Web Share + files is supported)
@@ -210,8 +268,33 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // leaving currentIndex past the end. The effect below re-syncs the
   // index (or closes the lightbox when nothing is left).
   const currentPhoto = photos[currentIndex] ?? photos[photos.length - 1];
+  // Zoom to original pixels (issue 1733). Inert, with the old 3x ceiling,
+  // unless the server offered this photo's original.
+  const fullZoom = useFullResolutionZoom({
+    photo: currentPhoto,
+    slug,
+    enabled: currentPhoto?.media_type !== 'video' && !(useCanvasRendering || protectionLevel === 'maximum'),
+    zoom,
+    dragOffset,
+    setZoom,
+    setDragOffset,
+    gesturing: isDragging || isPinching,
+    containerRef: trackContainerRef,
+  });
+  const fullZoomLive = fullZoom.live;
+  // One stable onLoad for the slide on screen (AuthenticatedImage re-runs its
+  // load effect when the callback changes): the zoom measures the preview,
+  // and the scrub's stand-in leaves once it is in.
+  const { onPreviewLoad } = fullZoom;
+  const { handlePreviewLoaded } = scrub;
+  const handleSlidePreviewLoad = useCallback(() => {
+    onPreviewLoad();
+    handlePreviewLoaded();
+  }, [onPreviewLoad, handlePreviewLoaded]);
 
   const { t } = useTranslation();
+
+  const exifText = exifLine(currentPhoto?.exif);
 
   // People detected in the open photo (#1074). Resolved against the list the
   // server returned rather than the raw ids, so a person the photographer
@@ -297,6 +380,17 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   });
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Annotate mode (issue 1733): Escape leaves the mode, not the lightbox,
+      // and no other key navigates, zooms, downloads or rates.
+      if (annotationRef.current.drawing) {
+        if (e.key === 'Escape') annotationRef.current.cancel();
+        return;
+      }
+      // A held arrow key: the scrub steps at its own rate. Not from a field,
+      // where the key moves the caret and the scrub would take the field's
+      // panel away from under it; and not in a gallery of one, where it
+      // could only unmount the slide (a playing video with it) for nothing.
+      if (photos.length > 1 && !isTypingTarget(e.target) && scrub.handleKeyDown(e)) return;
       switch (e.key) {
         case 'Escape':
           onClose();
@@ -404,7 +498,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     let mounted = true;
     (async () => {
       try {
-        if (!feedbackSettings?.feedback_enabled || !currentPhoto) return;
+        // Not for the photos a scrub passes over, only the one it lands on.
+        if (scrubbing || !feedbackSettings?.feedback_enabled || !currentPhoto) return;
         const data = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
         if (!mounted) return;
         setMyLiked(!!data.my_feedback.liked);
@@ -421,7 +516,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       }
     })();
     return () => { mounted = false; };
-  }, [slug, currentPhoto?.id, currentPhoto?.my_rating, feedbackSettings?.feedback_enabled]);
+  }, [slug, currentPhoto?.id, currentPhoto?.my_rating, feedbackSettings?.feedback_enabled, scrubbing]);
 
   // Said out loud, as the grid's like button does (PhotoLikes): a 429 was
   // only logged, so to the guest the heart did nothing (issue 1891).
@@ -603,7 +698,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // Refreshed on every render (see the ref's declaration above): the keydown
   // listener reads current settings and handlers without being re-registered.
   proofingRef.current = {
-    feedbackEnabled: !!feedbackEnabled && !!feedbackSettings?.feedback_enabled,
+    // Not mid-scrub: see `feedbackHold`.
+    feedbackEnabled: !!feedbackEnabled && !!feedbackSettings?.feedback_enabled && !scrubbing,
     allowColorLabels: !!feedbackSettings?.allow_color_labels,
     allowRatings: !!feedbackSettings?.allow_ratings,
     keybindMode,
@@ -613,12 +709,19 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   };
 
   const goToPrevious = () => {
+    if (annotating) return;
     setCurrentIndex((prev) => (prev > 0 ? prev - 1 : photos.length - 1));
     resetZoom();
   };
 
   const goToNext = () => {
+    if (annotating) return;
     setCurrentIndex((prev) => (prev < photos.length - 1 ? prev + 1 : 0));
+    resetZoom();
+  };
+
+  const goToIndex = (index: number) => {
+    setCurrentIndex(index);
     resetZoom();
   };
 
@@ -628,7 +731,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   };
 
   const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev + 0.5, 3));
+    if (annotating) return;
+    // Through the ref: the keydown listener holds a handler from an older render.
+    setZoom((prev) => Math.min(prev + 0.5, fullZoomLive.current.maxZoom));
   };
 
   const handleZoomOut = () => {
@@ -673,8 +778,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   };
 
   // Double-click returns a zoomed image to fit-to-screen (#886). At zoom 1
-  // it does nothing.
-  const handleDoubleClick = () => {
+  // it does nothing, unless the original may be loaded: then it goes to
+  // 100 % at the cursor (issue 1733).
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    if (fullZoom.onDoubleClick(e)) return;
     if (zoom > 1) {
       resetZoom();
     }
@@ -692,13 +799,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     if (!el || currentPhoto?.media_type === 'video') return;
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
+      if (annotationRef.current.drawing) return;
       const { zoom: prevZoom, dragOffset: prevOffset } = wheelStateRef.current;
       // Normalise deltaY to pixels: deltaMode 1 = lines (Firefox),
       // deltaMode 2 = pages (rare; deltaY is ±1 per notch there).
       const deltaPx = e.deltaMode === 1 ? e.deltaY * 33
         : e.deltaMode === 2 ? e.deltaY * 300
         : e.deltaY;
-      const nextZoom = Math.min(3, Math.max(1, prevZoom * Math.exp(-deltaPx * 0.002)));
+      const nextZoom = Math.min(fullZoomLive.current.maxZoom, Math.max(1, prevZoom * Math.exp(-deltaPx * 0.002)));
       if (nextZoom === prevZoom) return;
       if (nextZoom <= 1) {
         // Sync the ref before the async setState so a burst of wheel
@@ -727,7 +835,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     };
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
-  }, [currentPhoto]);
+  }, [currentPhoto, fullZoomLive]);
 
   // iOS Safari ignores user-scalable=no, so a pinch with one finger on the
   // toolbar or a button zoomed the page while the handlers below zoomed the
@@ -747,6 +855,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // carousel-style swipe nav. Swipe is suppressed while zoomed in so the
   // user can pan instead. The carousel is also disabled mid-animation.
   const handleTouchStart = (e: React.TouchEvent) => {
+    // Annotate mode (issue 1733): no pinch, pan or swipe starts, so the move
+    // and end handlers below have nothing to continue.
+    if (annotating) return;
+    fullZoom.onTouchStart(e);
     if (e.touches.length === 2) {
       pinchRef.current = { distance: touchSpan(e.touches), zoom };
       setIsPinching(true);
@@ -771,7 +883,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       const t = e.touches[0];
       setIsDragging(true);
       setDragStart({ x: t.clientX - dragOffset.x, y: t.clientY - dragOffset.y });
-    } else if (e.touches.length === 1 && zoom <= 1 && (phase === 'idle' || phase === 'dragging')) {
+    } else if (e.touches.length === 1 && zoom <= 1 && !scrubbing && (phase === 'idle' || phase === 'dragging')) {
       const t = e.touches[0];
       swipeStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
       setPhase('dragging');
@@ -783,7 +895,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     const pinch = pinchRef.current;
     if (e.touches.length === 2 && pinch) {
       const newDistance = touchSpan(e.touches);
-      const newZoom = Math.max(1, Math.min(3, pinch.zoom * (newDistance / pinch.distance)));
+      const newZoom = Math.max(1, Math.min(fullZoom.maxZoom, pinch.zoom * (newDistance / pinch.distance)));
       pinchRef.current = { distance: newDistance, zoom: newZoom };
       setZoom(newZoom);
       // Pinch-out back down to 1.0 has to re-centre the image — without
@@ -833,6 +945,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    fullZoom.onTouchEnd(e);
     if (e.touches.length === 2 && pinchRef.current) {
       // A third finger (palm) lifted: the remaining pair may be a different
       // two touches, so re-baseline or the zoom jumps on the next move.
@@ -891,6 +1004,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     swipeStartRef.current = null;
     pinchRef.current = null;
     setIsPinching(false);
+    // A cancelled pan is over too; left set, it would hold off the zoom
+    // clamp (issue 1733) until the next drag ended.
+    setIsDragging(false);
   };
 
   // Track transform. Percentages on translateX are self-referential (a
@@ -961,6 +1077,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
          disappear under the camera/dynamic-island. */}
       <button
         onClick={onClose}
+        // Not while drawing (issue 1733): it sits on the photo's corner, where
+        // a stroke would close the lightbox. Cancel is the way out then.
+        hidden={annotating}
         className="absolute p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-30"
         aria-label="Close"
         style={{
@@ -974,6 +1093,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       {/* Navigation buttons */}
       <button
         onClick={goToPrevious}
+        hidden={annotating}
         className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-20"
         aria-label="Previous photo"
       >
@@ -983,6 +1103,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       {!showFeedback || !isSmallScreen ? (
         <button
           onClick={goToNext}
+          hidden={annotating}
           className="absolute top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-30"
           aria-label="Next photo"
           style={{ right: isDesktopFeedback ? `${desktopFeedbackWidth + 16}px` : '1rem' }}
@@ -1002,9 +1123,22 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         className="absolute bottom-0 left-0 bg-black px-3 pt-3 pb-3 sm:p-4 z-20"
         style={{
           right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
-          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))'
+          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+          // The drawing toolbar lies over this one while annotating (issue
+          // 1733). Covered is not enough: Tab would still reach Download, Like
+          // and the feedback toggle, and the last one throws the drawing
+          // away. Hidden this way it leaves the tab order but keeps its
+          // height, which the photo area and the drawing toolbar build on.
+          visibility: annotating ? 'hidden' : undefined,
         }}
       >
+        <LightboxFilmStrip
+          photos={photos}
+          currentIndex={currentIndex}
+          onSelect={goToIndex}
+          slug={slug}
+          showFilenames={showOriginalFilename}
+        />
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2 flex-wrap">
           <div className="text-white min-w-0">
             <p className="text-sm opacity-75">
@@ -1038,6 +1172,18 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 {currentPhoto.uploaded_by_guest
                   ? t('gallery.credits.uploadedBy', { name: currentPhoto.credit_name })
                   : t('gallery.credits.photoBy', { name: currentPhoto.credit_name })}
+              </p>
+            )}
+
+            {/* Camera details (issue 1733, D1). In the payload only when the
+                gallery shows them; the row is left out when nothing is known. */}
+            {exifText && (
+              <p
+                className="text-xs opacity-60 truncate max-w-[14rem] sm:max-w-md mt-0.5"
+                title={exifText}
+                data-testid="lightbox-exif"
+              >
+                {exifText}
               </p>
             )}
 
@@ -1082,12 +1228,15 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             >
               <ZoomOut className="w-5 h-5 text-white" />
             </button>
-            <span className="text-white text-sm w-12 text-center">
-              {Math.round(zoom * 100)}%
+            <span
+              className="text-white text-sm w-12 text-center"
+              title={fullZoom.percent === null ? undefined : t('gallery.fullResolution.readout', '100% is the original size, pixel for pixel')}
+            >
+              {fullZoom.percent ?? Math.round(zoom * 100)}%
             </span>
             <button
               onClick={handleZoomIn}
-              disabled={zoom >= 3}
+              disabled={zoom >= fullZoom.maxZoom}
               className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Zoom in"
             >
@@ -1126,7 +1275,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
             {/* Inline Like */}
             {feedbackEnabled && feedbackSettings?.allow_likes && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1" {...feedbackHold}>
                 <button
                   onClick={submitLike}
                   className={`p-2 rounded-full transition-colors ${myLiked ? 'bg-danger hover:opacity-90' : 'bg-white/10 hover:bg-white/20'}`}
@@ -1151,7 +1300,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
             {/* Inline Rating */}
             {feedbackEnabled && feedbackSettings?.allow_ratings && (
-              <div className="flex items-center gap-1 ml-1" aria-label="Rate photo">
+              <div className="flex items-center gap-1 ml-1" aria-label="Rate photo" {...feedbackHold}>
                 {[1,2,3,4,5].map((i) => (
                   <button
                     key={i}
@@ -1177,7 +1326,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 feedback panel: the whole point is a fast keyboard/click
                 proofing pass, which a panel toggle would interrupt. */}
             {feedbackEnabled && feedbackSettings?.allow_color_labels && (
-              <div className="flex items-center gap-1 ml-1">
+              <div className="flex items-center gap-1 ml-1" {...feedbackHold}>
                 <PhotoColorLabels
                   photoId={String(currentPhoto.id)}
                   gallerySlug={slug}
@@ -1197,7 +1346,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             {/* Approve / reject (issue 744), beside the colour labels for the
                 same reason: a proofing pass, not a panel detour. */}
             {feedbackEnabled && feedbackSettings?.allow_decisions && (
-              <div className="flex items-center ml-1">
+              <div className="flex items-center ml-1" {...feedbackHold}>
                 <PhotoDecision
                   photoId={String(currentPhoto.id)}
                   gallerySlug={slug}
@@ -1310,10 +1459,24 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             );
           }
 
+          const imageStyle: React.CSSProperties = {
+            transform: `scale(${zoom}) translate(${dragOffset.x / zoom}px, ${dragOffset.y / zoom}px)`,
+            // No transition while a finger drives the transform: a pinch
+            // retargeting a 0.2s transition on every touchmove makes
+            // Safari promote and demote the image layer per frame, which
+            // flickers. The toolbar buttons and wheel keep the easing.
+            transition: isDragging || isPinching ? 'none' : 'transform 0.2s',
+            // Own compositor layer for the gesture only, so Safari scales
+            // a texture instead of repainting the 300%-wide track layer —
+            // and repaints sharp once the fingers lift.
+            willChange: isDragging || isPinching ? 'transform' : undefined,
+          };
+
           return (
             <div
               key={slideKey(photo, slot)}
-              className="h-full flex items-center justify-center"
+              ref={fullZoom.slideRef}
+              className="relative h-full flex items-center justify-center"
               style={{ flex: '0 0 33.3333%' }}
             >
               <AuthenticatedImage
@@ -1327,22 +1490,20 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 alt={photo.filename}
                 fallbackSrc={photo.thumbnail_url || undefined}
                 className="max-w-full max-h-full object-contain select-none"
-                style={{
-                  transform: `scale(${zoom}) translate(${dragOffset.x / zoom}px, ${dragOffset.y / zoom}px)`,
-                  // No transition while a finger drives the transform: a pinch
-                  // retargeting a 0.2s transition on every touchmove makes
-                  // Safari promote and demote the image layer per frame, which
-                  // flickers. The toolbar buttons and wheel keep the easing.
-                  transition: isDragging || isPinching ? 'none' : 'transform 0.2s',
-                  // Own compositor layer for the gesture only, so Safari scales
-                  // a texture instead of repainting the 300%-wide track layer —
-                  // and repaints sharp once the fingers lift.
-                  willChange: isDragging || isPinching ? 'transform' : undefined,
-                }}
+                // Invisible under the painted original, still laid out and
+                // still the target of every click, drag and context menu.
+                style={fullZoom.previewHidden ? { ...imageStyle, opacity: 0 } : imageStyle}
                 draggable={false}
                 isGallery={true}
                 slug={slug}
+                // Stable callback: the zoom measures the preview and the scrub's
+                // stand-in leaves once this is in.
+                onLoad={handleSlidePreviewLoad}
+                // A preview that does not decode is replaced by the fallback,
+                // which reports no load: the stand-in leaves here instead.
+                onError={scrub.handlePreviewLoaded}
                 useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
+                onFallbackChange={(shown) => setFallbackPhotoId((prev) => (shown ? photo.id : prev === photo.id ? null : prev))}
                 onProtectionViolation={(violationType) => {
                   console.warn(`Protection violation in lightbox for photo ${photo.id}: ${violationType}`);
 
@@ -1354,6 +1515,28 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   }
                 }}
               />
+              <FullResolutionImage overlay={fullZoom.overlay} style={imageStyle} />
+              {/* A drawing on this photo (issue 1733): the strokes being
+                  drawn, or a stored one picked from the comments. It shares
+                  the image's centre and transform, so it follows zoom and
+                  pan, and rides the track with the slide. It comes after the
+                  image on purpose: the image has to stay this slide's first
+                  child, as it is on a neighbouring slide, or React remounts
+                  it (and fetches it again) when a prefetched neighbour
+                  becomes the slide on screen. */}
+              {(annotating || annotation.visible) && (
+                <ImageAnnotationOverlay
+                  annotation={annotation.visible}
+                  label={t('feedback.annotation.overlayLabel', 'Drawing on the photo')}
+                  svgStyle={{
+                    transform: `scale(${zoom}) translate(${dragOffset.x / zoom}px, ${dragOffset.y / zoom}px)`,
+                    transition: isDragging || isPinching ? 'none' : 'transform 0.2s',
+                  }}
+                  draw={annotating && !annotation.atLimit
+                    ? { tool: annotation.tool, color: annotation.color, onStroke: annotation.addStroke }
+                    : undefined}
+                />
+              )}
             </div>
           );
         };
@@ -1376,14 +1559,22 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
               // Stop above the opaque toolbar so it never masks the
               // photo (#888).
-              bottom: `${toolbarHeight}px`,
+              // The drawing toolbar (issue 1733) can be taller.
+              bottom: `${Math.max(toolbarHeight, annotation.toolbarHeight)}px`,
               // Tell the browser we handle horizontal gestures ourselves so
               // it doesn't fight us with edge-swipe back navigation, native
               // pinch-zoom, etc. Videos keep default touch behaviour.
               touchAction: isVideoCurrent ? 'auto' : 'none',
             }}
           >
-            {isVideoCurrent && videoLocked ? (
+            {/* Hold-to-scrub stand-in (issue 1733): the thumbnail, in place of
+                the slides while a key is held — so no preview is requested for
+                a photo passed over — and underneath the landed slide until its
+                preview has loaded. */}
+            {(scrubbing || (scrub.standIn && !isVideoCurrent)) && (
+              <LightboxScrubStandIn photos={photos} currentIndex={currentIndex} slug={slug} />
+            )}
+            {scrubbing ? null : isVideoCurrent && videoLocked ? (
               <div className="w-full h-full flex items-center justify-center p-6">
                 {/* Theme-token panel, like the feedback panel: the lightbox
                     ground is black, so a black panel would leave bare text. */}
@@ -1401,6 +1592,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               <div className="w-full h-full flex items-center justify-center">
                 <VideoPlayer
                   src={currentPhoto.url}
+                  hlsSrc={currentPhoto.hls_url}
                   poster={currentPhoto.thumbnail_url}
                   className="max-w-full max-h-full"
                   controls={true}
@@ -1426,13 +1618,36 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 {renderSlide(nextPhoto, false, 'next')}
               </div>
             )}
+            {fullZoom.loading && (
+              <div
+                role="status"
+                data-testid="lightbox-full-resolution-loading"
+                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-xs text-white pointer-events-none"
+              >
+                <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+                {t('gallery.fullResolution.loading', 'Loading full resolution…')}
+              </div>
+            )}
           </div>
         );
       })()}
 
       {/* Feedback Panel */}
+      {/* Drawing controls (issue 1733), over the toolbar while annotating. */}
+      {annotating && (
+        <AnnotationToolbar
+          annotation={annotation}
+          style={{ right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0, minHeight: toolbarHeight }}
+        />
+      )}
+
       {showFeedback && (
-        <div className="absolute right-0 top-0 bottom-0 w-full sm:w-[26rem] bg-surface text-theme shadow-xl z-20 overflow-y-auto flex flex-col border-l border-border-token">
+        <div
+          className="absolute right-0 top-0 bottom-0 w-full sm:w-[26rem] bg-surface text-theme shadow-xl z-20 overflow-y-auto flex flex-col border-l border-border-token"
+          // On a phone the panel covers the photo: out of the way while
+          // drawing, but still mounted so the comment being written is kept.
+          style={annotating && isSmallScreen ? { display: 'none' } : undefined}
+        >
           <div className="sticky top-0 bg-surface border-b border-border-token px-4 py-3 flex items-center justify-between">
             <h3 className="font-semibold text-theme">{t('feedback.panelTitle', 'Photo feedback')}</h3>
             <button
@@ -1444,16 +1659,18 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="p-4 flex-1 overflow-y-auto">
-            <PhotoFeedback
-              photoId={String(currentPhoto.id)}
-              gallerySlug={slug}
-              showComments={true}
-              className="space-y-4"
-              // Only when someone above refreshes the row; otherwise the
-              // panel's buttons invalidate the list themselves.
-              onFeedbackUpdate={onFeedbackChange ? (toggledPhotoId) => onFeedbackChange(toggledPhotoId) : undefined}
-            />
+          <div className="p-4 flex-1 overflow-y-auto" {...feedbackHold}>
+            <CommentAnnotationContext.Provider value={annotation.context}>
+              <PhotoFeedback
+                photoId={String(feedbackPhotoIdRef.current ?? currentPhoto.id)}
+                gallerySlug={slug}
+                showComments={true}
+                className="space-y-4"
+                // Only when someone above refreshes the row; otherwise the
+                // panel's buttons invalidate the list themselves.
+                onFeedbackUpdate={onFeedbackChange ? (toggledPhotoId) => onFeedbackChange(toggledPhotoId) : undefined}
+              />
+            </CommentAnnotationContext.Provider>
           </div>
         </div>
       )}

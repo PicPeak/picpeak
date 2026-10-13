@@ -177,7 +177,13 @@ async function deletePhotoForGood(event, photo, { strict = false } = {}) {
   // An external photo's file stays on the NAS; make sure the folder watcher
   // (issue 1187) does not re-import it on its next pass.
   await require('./externalImportService').recordExclusions(Number(photo.event_id), [photo]);
+  // Adaptive streaming ladder (issue 1733): derived as well. Its state is
+  // read again, the row in hand may be weeks old by the time a purge runs;
+  // removed after the row, so a transcode still running cannot publish one
+  // behind this.
+  const ladder = await db('photos').where({ id: photo.id, event_id: photo.event_id }).first('id', 'hls_status', 'hls_path');
   await db('photos').where({ id: photo.id, event_id: photo.event_id }).delete();
+  await require('./videoHlsService').deleteLadder(ladder);
 }
 
 /**
