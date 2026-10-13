@@ -19,6 +19,7 @@
 
 const { scheduledTask } = require('./scheduledTask');
 const { db } = require('../database/db');
+const { wherePhotoLive } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
 const { sendTemplateEmail } = require('./emailProcessor');
@@ -89,7 +90,7 @@ async function notifyExpiredTransfers() {
   const adminUrl = `${await transferService.getFrontendUrl()}/admin/transfers`;
 
   for (const t of pending) {
-    const fileCount = await db('transfer_files').where('transfer_id', t.id).count('* as c').first();
+    const fileCount = await db('transfer_files').modify(wherePhotoLive, 'transfer_files.photo_id').where('transfer_id', t.id).count('* as c').first();
     const uploadCount = await db('transfer_uploads').where('transfer_id', t.id).count('* as c').first();
     const grace = Number(t.grace_days) || 0;
     const deleteDate = new Date(new Date(t.disabled_at).getTime() + grace * DAY_MS);

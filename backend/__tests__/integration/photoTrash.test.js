@@ -131,6 +131,7 @@ describe('photo trash (issue 1733)', () => {
     app.use(cookieParser());
     app.use('/api/admin/events', require('../../src/routes/adminPhotos'));
     app.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
+    app.use('/api/admin', require('../../src/routes/adminGuests'));
     app.use('/api/gallery', require('../../src/routes/gallery'));
     app.use('/api/gallery', require('../../src/routes/galleryFeedback'));
     app.use('/api/v1', require('../../src/routes/v1/events'));
@@ -389,6 +390,76 @@ describe('photo trash (issue 1733)', () => {
         expect(await generator.getPendingCount()).toBe(before + 1);
       } finally {
         settings.mockRestore();
+      }
+    });
+
+    it('the guest list counts no feedback on it, and keeps the guest', async () => {
+      const guestId = firstId(await db('gallery_guests').insert({
+        event_id: event.id, name: 'Cara', identifier: crypto.randomUUID(), created_at: now(),
+      }).returning('id'));
+      await db('photo_feedback').insert([
+        { photo_id: photo.id, event_id: event.id, feedback_type: 'favorite', guest_identifier: 'cara', guest_id: guestId },
+        { photo_id: live.id, event_id: event.id, feedback_type: 'like', guest_identifier: 'cara', guest_id: guestId },
+      ]);
+      const res = await as(request(app).get(`/api/admin/events/${event.id}/guests`), 'owner');
+      expect(res.status).toBe(200);
+      expect(res.body.guests.find((g) => g.id === guestId).stats).toMatchObject({ likes: 1, favorites: 0, distinct_photos: 1 });
+      await db('photo_feedback').where({ guest_id: guestId, photo_id: live.id }).del();
+      const none = await as(request(app).get(`/api/admin/events/${event.id}/guests`), 'owner');
+      expect(none.body.guests.find((g) => g.id === guestId).stats).toMatchObject({ likes: 0, favorites: 0, distinct_photos: 0 });
+    });
+
+    it('feedback and marks on it count toward nothing: like cap, colour chips', async () => {
+      const feedbackService = require('../../src/services/feedbackService');
+      const marks = require('../../src/services/photoAdminMarksService');
+      // g1 liked only the trashed photo (seeded above).
+      expect(await feedbackService.countGuestFeedback(event.id, 'like', null, 'g1')).toBe(0);
+      await db('photo_feedback').insert({ photo_id: live.id, event_id: event.id, feedback_type: 'like', guest_identifier: 'g1' });
+      expect(await feedbackService.countGuestFeedback(event.id, 'like', null, 'g1')).toBe(1);
+      await db('photo_feedback').where({ photo_id: live.id, guest_identifier: 'g1' }).del();
+
+      await db('photo_admin_marks').insert([
+        { photo_id: photo.id, event_id: event.id, admin_id: id.owner, color_label: 'red' },
+        { photo_id: live.id, event_id: event.id, admin_id: id.owner, color_label: 'green' },
+      ]);
+      const chips = JSON.stringify(await marks.getEventMarkColorCounts(event.id, id.owner));
+      expect(chips).toContain('green');
+      expect(chips).not.toContain('red');
+
+      await db('photo_feedback').insert([
+        { photo_id: photo.id, event_id: event.id, feedback_type: 'color_label', color_label: 'blue', guest_identifier: 'g2' },
+        { photo_id: live.id, event_id: event.id, feedback_type: 'color_label', color_label: 'yellow', guest_identifier: 'g2' },
+      ]);
+      const { PhotoFilterBuilder } = require('../../src/utils/photoFilterBuilder');
+      const summary = await (PhotoFilterBuilder || require('../../src/utils/photoFilterBuilder')).getSummary(db, event.id);
+      expect(summary.colorLabelCounts).toMatchObject({ yellow: 1, blue: 0 });
+      await db('photo_feedback').where({ event_id: event.id, feedback_type: 'color_label' }).del();
+    });
+
+    it('a queued guest upload in the trash no longer holds upload capacity', async () => {
+      const queued = await mkPhoto(event, { processing_status: 'pending', uploaded_by: 'guest' });
+      const waiting = await mkPhoto(event, { processing_status: 'pending', uploaded_by: 'guest' });
+      const hold = (ref) => ({
+        id: crypto.randomUUID(), request_id: crypto.randomUUID(), event_id: event.id, bytes: 10, files: 1,
+        object_key: `hold-${ref}`, state: 'stored', pending: 1, reference_type: 'photo', reference_id: ref,
+      });
+      await db('public_upload_objects').insert([hold(queued.id), hold(waiting.id)]);
+      await del(event, queued);
+      await require('../../src/services/publicUploadQuota').reconcilePending();
+      const pendingOf = async (ref) => Number((await db('public_upload_objects').where({ reference_id: ref }).first()).pending);
+      expect(await pendingOf(queued.id)).toBe(0);
+      expect(await pendingOf(waiting.id)).toBe(1);
+    });
+
+    it('a thumbnail that vanishes under the trash dialog is a 404, not a crash', async () => {
+      const gone = await mkPhoto(event);
+      await del(event, gone);
+      const get = jest.spyOn(storage, 'get').mockImplementation(async () => require('fs').createReadStream(`/nonexistent/${crypto.randomUUID()}`));
+      try {
+        const res = await as(request(app).get(`${base(event)}/trash/${gone.id}/thumbnail`), 'owner');
+        expect(res.status).toBe(404);
+      } finally {
+        get.mockRestore();
       }
     });
 

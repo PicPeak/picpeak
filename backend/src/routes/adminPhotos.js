@@ -42,6 +42,7 @@ const { requireEventOwnership, canAccessEvent } = require('../middleware/ownersh
 const { mayReviewUploads, adminUploadColumns, moderatePhotos, moderationCounts, MODERATION_STATUSES, MAX_MODERATION_IDS } = require('../services/uploadReviewService');
 const { getStorage } = require('../services/storage');
 const photoTrash = require('../services/photoTrash');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const { errorResponse } = require('../utils/routeHelpers');
 const { withPublicUpload } = require('../middleware/publicUploadStream');
 const { createUploadFileGuard } = require('../utils/uploadAdmissionType');
@@ -1193,7 +1194,8 @@ router.get('/:eventId/photos/trash/:photoId/thumbnail', adminAuth, requirePermis
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Content-Length', stat.size);
-    (await getStorage().get(photo.thumbnail_path)).pipe(res);
+    // A purge can remove the file between the stat and the read.
+    pipeStreamToResponse(await getStorage().get(photo.thumbnail_path), res, { context: 'trashed photo thumbnail' });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to serve thumbnail');
   }

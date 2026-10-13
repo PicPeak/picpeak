@@ -70,7 +70,10 @@ router.get(
 
       const rows = await db('gallery_guests')
         .leftJoin('photo_feedback', function () {
-          this.on('photo_feedback.guest_id', '=', 'gallery_guests.id');
+          // Feedback on photos in the trash is not counted, as in the guest's
+          // own list and exports below; the guest stays listed with zeros.
+          this.on('photo_feedback.guest_id', '=', 'gallery_guests.id')
+            .andOn(db.raw('NOT EXISTS (SELECT 1 FROM photos WHERE photos.id = photo_feedback.photo_id AND photos.deleted_at IS NOT NULL)'));
         })
         .where('gallery_guests.event_id', eventId)
         .where('gallery_guests.is_deleted', false)

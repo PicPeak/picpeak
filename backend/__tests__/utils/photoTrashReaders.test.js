@@ -54,7 +54,7 @@ const ALL_ROWS = {
   'services/photoService.js': [1, 'hard delete by id'],
   'services/picpeakImportService.js': [1, 'portable import: the flag travels with the row'],
   'services/portableImportMaintenance.js': [1, 'portable import: re-queues every imported row'],
-  'services/publicUploadQuota.js': [2, 'guest upload quota is storage; reconciles uploads in flight'],
+  'services/publicUploadQuota.js': [2, 'guest upload quota is storage; the pending-hold reconcile names the flag on its next line'],
   'services/restoreService.js': [1, 'backup restore: re-queues every restored row'],
   'services/s3AutoImporter.js': [2, 'which object already belongs to a photo; insert'],
   'services/secureImageService.js': [1, 'resolves the gallery for an access-log row'],
@@ -63,6 +63,25 @@ const ALL_ROWS = {
   'services/videoRenditionService.js': [2, 'queues every video (the queue skips trashed rows); rendition in flight'],
   'services/watermarkGeneratorService.js': [10, 'watermarks are made, renewed and cleared for trashed photos too: a restore must not serve one from old settings'],
   'routes/adminThumbnails.js': [4, 'thumbnail and preview regeneration covers trashed photos too: a restore must not bring back stale renditions'],
+};
+
+// Tables that name a photo by id keep their rows while the photo is in the
+// trash, so a query on them alone still shows or counts a trashed photo's
+// feedback, marks, faces, grants or transfer entries. References per file,
+// reviewed as of this list: a reader either works on ids that came from a
+// live-photo query, joins the live photos, or uses wherePhotoLive(). A new
+// reference changes a number here; check it the same way before raising it.
+const CHILD_TABLES = /\(\s*['"`](?:photo_feedback|photo_admin_marks|transfer_files|photo_faces|event_download_grants)(?: as \w+)?['"`]/g;
+const CHILD_REFERENCES = {
+  'routes/adminArchives.js': 3, 'routes/adminEvents/faces.js': 2, 'routes/adminEvents/helpers.js': 3,
+  'routes/adminFeedback.js': 7, 'routes/adminGuests.js': 5, 'routes/adminPhotos.js': 3,
+  'routes/galleryFeedback.js': 3, 'services/downloadQuota.js': 10, 'services/externalPhotoDedupe.js': 4,
+  'services/faceAutoCategories.js': 1, 'services/faceClustering.js': 8, 'services/facePeopleService.js': 3,
+  'services/faceProcessor.js': 7, 'services/feedbackModeration.js': 2, 'services/feedbackService.js': 35,
+  'services/galleryPhotoQuery.js': 1, 'services/galleryQueryService.js': 6,
+  'services/photoAdminMarksService.js': 8, 'services/picpeakImportService.js': 2,
+  'services/transferCleanupService.js': 1, 'services/transferService.js': 11,
+  'utils/anonymousFeedbackIdentity.js': 3, 'utils/photoFilterBuilder.js': 5,
 };
 
 const TABLE_CALL = /(?<![\w.])(\w+)\(\s*['"`]photos(?: as \w+)?['"`]\s*[,)]/g;
@@ -115,6 +134,15 @@ describe('readers of the photos table and the photo trash', () => {
   it('every bare reference to the photos table is on the reviewed list', () => {
     const listed = Object.fromEntries(Object.entries(ALL_ROWS).filter(([, [count]]) => count > 0).map(([file, [count]]) => [file, count]));
     expect(found).toEqual(listed);
+  });
+
+  it('every reference to a table that names photos by id was reviewed', () => {
+    const children = {};
+    for (const file of sourceFiles(SRC)) {
+      const count = [...fs.readFileSync(file, 'utf8').matchAll(CHILD_TABLES)].length;
+      if (count > 0) children[path.relative(SRC, file).split(path.sep).join('/')] = count;
+    }
+    expect(children).toEqual(CHILD_REFERENCES);
   });
 
   it('every entry says why', () => {

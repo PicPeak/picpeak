@@ -24,7 +24,7 @@ const archiver = require('archiver');
 const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 
 const { db } = require('../database/db');
-const { joinLivePhotos, livePhotos } = require('../utils/photoVisibility');
+const { joinLivePhotos, livePhotos, wherePhotoLive } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
@@ -310,7 +310,7 @@ async function listTransfers({ search = '', admin } = {}) {
 
   // File + upload counts in two grouped queries rather than N+1.
   const fileCounts = ids.length
-    ? await db('transfer_files').whereIn('transfer_id', ids)
+    ? await db('transfer_files').modify(wherePhotoLive, 'transfer_files.photo_id').whereIn('transfer_id', ids)
       .select('transfer_id').count('* as count').groupBy('transfer_id')
     : [];
   const uploadCounts = ids.length
@@ -1222,7 +1222,7 @@ async function sendTransferEmails(transferId, emails) {
   const transfer = await db('transfers').where({ id: transferId }).first();
   if (!transfer) return { sent: 0, recipients: [] };
 
-  const fileCountRow = await db('transfer_files').where('transfer_id', transferId).count('* as c').first();
+  const fileCountRow = await db('transfer_files').modify(wherePhotoLive, 'transfer_files.photo_id').where('transfer_id', transferId).count('* as c').first();
   const extraCountRow = await db('transfer_extra_files').where('transfer_id', transferId).count('* as c').first();
   const fileCount = (Number(fileCountRow?.c) || 0) + (Number(extraCountRow?.c) || 0);
 

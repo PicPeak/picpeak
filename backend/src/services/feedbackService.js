@@ -5,7 +5,7 @@ const { REACTION_EMOJIS } = require('../constants/reactions');
 const { isValidColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const { isValidDecision } = require('../constants/photoDecisions');
 const { resolveEventFeedbackDefaults, DEFAULT_KEYBIND_MODE, KEYBIND_MODES } = require('./feedbackDefaults');
-const { applyPhotoVisibilityFilter, joinLivePhotos, livePhotos } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, joinLivePhotos, livePhotos, wherePhotoLive } = require('../utils/photoVisibility');
 
 // The camera-original name, for the feedback exports (#1224). Both exports
 // used to carry only `photos.filename` — the sanitized stored name
@@ -233,6 +233,8 @@ class FeedbackService {
    */
   async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier) {
     const query = db('photo_feedback')
+      // Nor do likes on photos in the trash: the guest cannot see or undo them.
+      .modify(wherePhotoLive, 'photo_feedback.photo_id')
       // Hidden rows do not count against the guest's cap (#1150). They are
       // absent everywhere else — the heart is empty, the tallies skip them,
       // and submitFeedback now treats one as room for a fresh row. Counting
@@ -963,6 +965,7 @@ class FeedbackService {
       const mode = identityMode ?? (await this.getEventFeedbackSettings(eventId)).identity_mode;
       const query = scopeColorLabelsToMode(
         db('photo_feedback')
+          .modify(wherePhotoLive, 'photo_feedback.photo_id')
           .where({ event_id: eventId, feedback_type: 'color_label' })
           .where('is_hidden', false),
         mode,
