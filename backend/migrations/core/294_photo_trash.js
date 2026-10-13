@@ -36,6 +36,9 @@ exports.up = async function up(knex) {
     await knex.schema.alterTable('photos', (t) => t.string('restored_from_trash_at', 32).nullable());
   }
   if (!(await knex.schema.hasTable('photo_trash'))) await createPhotoTrash(knex);
+  if (!(await knex.schema.hasColumn('photo_trash', 'restore_move_at'))) {
+    await knex.schema.alterTable('photo_trash', (t) => t.string('restore_move_at', 32).nullable());
+  }
   // Partial indexes read the same on PostgreSQL and SQLite.
   await knex.raw(
     'CREATE UNIQUE INDEX IF NOT EXISTS photo_trash_pending_photo_uidx ON photo_trash (photo_id) WHERE state = \'pending\''
@@ -56,7 +59,6 @@ async function createPhotoTrash(knex) {
     t.bigInteger('size_bytes').notNullable().defaultTo(0);
     t.string('original_key', 1024).nullable();
     t.string('trash_key', 1024).nullable();
-    t.string('restore_move_at', 32).nullable();
     t.string('deleted_at', 32).notNullable();
     t.integer('deleted_by').nullable();
     t.string('deleted_by_name', 255).nullable();

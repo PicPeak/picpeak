@@ -788,6 +788,24 @@ describe('photo trash (issue 1733)', () => {
       expect(await storage.exists(trashKey)).toBe(false);
     });
 
+    it('finishes a crashed trashing when another file has taken the original\'s place', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      await db('photo_feedback').insert({ photo_id: photo.id, event_id: event.id, feedback_type: 'like', guest_identifier: 'x' });
+      const { rowId, trashKey } = await crashedTrashing(event, photo);
+      await storage.put(photo.key, Buffer.from('dropped into the folder since'));
+
+      await age(rowId, 'pending');
+      await photoTrash.purgeExpired();
+      // Neither file is deleted or overwritten; the photo is in the trash with its children.
+      expect(bytes(photo.key)).toBe('dropped into the folder since');
+      expect(bytes(trashKey)).toMatch(/^original/);
+      const row = await db('photo_trash').where({ id: rowId }).first();
+      expect(row.state).toBe('trashed');
+      expect(JSON.parse(row.children).feedback).toHaveLength(1);
+      expect(await db('photos').where({ id: photo.id }).first()).toBeUndefined();
+    });
+
     it('bulk delete reports a photo with a pending trashing as failed and keeps it', async () => {
       const event = await mkEvent();
       const held = await mkPhoto(event);

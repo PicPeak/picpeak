@@ -241,10 +241,13 @@ async function commitTrash(row, photo, event) {
 /**
  * A trashing that did not reach step 3: put things back, without ever
  * deleting the only copy of the file. For a caller that holds the claim.
- *   - a file at both keys: an S3 move is copy then delete, so the copy under
- *     trash_key is surplus; drop it and the pending row. Anything else at
- *     both keys (local storage renames, so the file in place is not this
- *     photo's) is not for this code to decide: it throws and the row stays.
+ *   - a file at both keys, on S3 and of one size: an S3 move is copy then
+ *     delete, so the copy under trash_key is surplus; drop it and the
+ *     pending row
+ *   - a file at both keys otherwise: local storage renames, so the file in
+ *     place is not this photo's but one somebody put there since. The
+ *     original cannot go back over it and must not be deleted: finish the
+ *     trashing. The other file stays for the importer.
  *   - file in the trash, photo row still there: move it back
  *   - file in the trash, photo row gone (the watcher, see commitTrash):
  *     there is no gallery row to give it back to, so finish the trashing
@@ -255,14 +258,12 @@ async function undoPending(row) {
     const storage = getStorage();
     const inPlace = await storage.stat(row.original_key);
     const inTrash = await storage.stat(row.trash_key);
-    if (inPlace && inTrash) {
-      if (storage.kind() !== 's3' || Number(inPlace.size) !== Number(inTrash.size)) {
-        throw new Error(`Trash row ${row.id}: a different file is at ${row.original_key}; nothing was deleted`);
-      }
+    const surplusCopy = inPlace && inTrash && storage.kind() === 's3' && Number(inPlace.size) === Number(inTrash.size);
+    if (surplusCopy) {
       await holdClaim(row);
       await storage.delete(row.trash_key);
     } else if (inTrash) {
-      if (!(await db('photos').where({ id: row.photo_id, event_id: row.event_id }).first('id'))) {
+      if (inPlace || !(await db('photos').where({ id: row.photo_id, event_id: row.event_id }).first('id'))) {
         const event = await db('events').where({ id: row.event_id }).first();
         await commitTrash(row, JSON.parse(row.photo_row), event || { id: row.event_id });
         return true;
