@@ -68,6 +68,7 @@ interface MasonryPhotoProps {
   savedIdentity?: { name: string; email: string } | null;
   onIdentitySaved?: (identity: { name: string; email: string }) => void;
   onQuickComment?: () => void;
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
   // Column width for calculating proper aspect-ratio-based height
   columnWidth?: number;
   // Optimistic "I liked this" state + callback (lifted to parent)
@@ -88,6 +89,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
   slug,
   feedbackOptions,
   onQuickComment,
+  onFeedbackChange,
   columnWidth = 300,
   liked = false,
   onLikeSuccess,
@@ -162,6 +164,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
       feedbackOptions={feedbackOptions}
       slug={slug}
       onQuickComment={onQuickComment}
+      onFeedbackChange={onFeedbackChange}
       liked={liked}
       onLikeSuccess={onLikeSuccess}
       identityMode="self"
@@ -193,7 +196,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   onPhotoSelect,
   allowDownloads = true,
   feedbackEnabled = false,
-  feedbackOptions
+  feedbackOptions,
+  onFeedbackChange
 }) => {
   const bands = useLazyBands();
   const { theme } = useTheme();
@@ -241,6 +245,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       feedbackOptions: narrow && feedbackOptions ? { ...feedbackOptions, allowRatings: false } : feedbackOptions,
       slug,
       onQuickComment: () => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(index),
+      onFeedbackChange,
       liked: likedPhotoIds.has(photo.id),
       onLikeSuccess: () => toggleLiked(photo.id),
       identityMode: 'self' as const,
@@ -670,6 +675,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 slug={slug}
                 feedbackOptions={feedbackOptions}
                 onQuickComment={() => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(originalIndex)}
+                onFeedbackChange={onFeedbackChange}
                 columnWidth={columnWidth}
                 savedIdentity={savedIdentity}
                 onIdentitySaved={setSavedIdentity}

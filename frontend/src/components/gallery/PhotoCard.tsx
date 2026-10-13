@@ -565,6 +565,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                       guest_name: name,
                       guest_email: email,
                     });
+                    if (onFeedbackChange) onFeedbackChange(pendingAction.photoId);
                     setPendingAction(null);
                   }
                 }}

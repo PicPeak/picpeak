@@ -177,6 +177,40 @@ describe.each(['rows', 'flickr', 'quilted'])('Masonry %s mode tile feedback', (m
   });
 });
 
+// GalleryView's useFeedbackChange hangs off this callback: without it a tile
+// like leaves the like counts and the Liked filter as they were.
+describe.each(['columns', 'rows', 'flickr', 'quilted'])('Masonry %s mode tile like reports the change', (mode) => {
+  beforeEach(() => { masonryMode = mode; });
+
+  it('names the toggled photo after a like', async () => {
+    const onFeedbackChange = vi.fn();
+    renderLayout({ onFeedbackChange });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Like photo' })[1]);
+    await waitFor(() => expect(onFeedbackChange).toHaveBeenCalledWith(2));
+    expect(onFeedbackChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('names it after a like that went through the identity modal', async () => {
+    const onFeedbackChange = vi.fn();
+    renderLayout({
+      onFeedbackChange,
+      feedbackOptions: { allowLikes: true, allowRatings: true, allowComments: true, requireNameEmail: true },
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Like photo' })[0]);
+    expect(onFeedbackChange).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByPlaceholderText('Enter your name'), { target: { value: 'Maria' } });
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'maria@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Feedback' }));
+    await waitFor(() => expect(onFeedbackChange).toHaveBeenCalledWith(1));
+    expect(feedbackService.submitFeedback).toHaveBeenCalledWith(
+      'x', '1', expect.objectContaining({ feedback_type: 'like', guest_name: 'Maria' }),
+    );
+    expect(onFeedbackChange).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe.each(['rows', 'flickr'])('Masonry %s mode, tile narrower than the action buttons', (mode) => {
   beforeEach(() => { masonryMode = mode; });
 
