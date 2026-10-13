@@ -186,6 +186,22 @@ describe('router-level leave guard', () => {
     expect(dialog()).not.toBeInTheDocument();
   });
 
+  it('closes the question when a navigation that needs none overtakes it', async () => {
+    // The dialog is open and the admin presses Back to an entry of this same
+    // page: that goes through, and the router drops the held navigation. The
+    // dialog must not stay behind with buttons that no longer do anything.
+    const user = userEvent.setup();
+    const router = renderApp(<Form />, ['/admin/form?section=one', '/admin/form']);
+
+    await user.click(screen.getByRole('button', { name: 'navigate' }));
+    expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument();
+
+    await act(() => router.navigate(-1));
+    await waitFor(() => expect(where()).toBe('/admin/form?section=one'));
+    await waitFor(() => expect(dialog()).not.toBeInTheDocument());
+    expect(screen.getByText('form page')).toBeInTheDocument();
+  });
+
   it('asks when Back changes the Settings tab', async () => {
     const user = userEvent.setup();
     const router = renderApp(<Form />, ['/admin/settings?tab=email', '/admin/settings?tab=general']);

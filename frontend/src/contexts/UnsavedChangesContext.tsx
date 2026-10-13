@@ -62,7 +62,7 @@ const isSettingsTabChange = (from: Loc, to: Loc) =>
 
 const LeaveBlocker: React.FC<{
   shouldBlock: BlockerFunction;
-  ask: () => Promise<boolean>;
+  ask: (signal?: AbortSignal) => Promise<boolean>;
   discardAll: () => void;
 }> = ({ shouldBlock, ask, discardAll }) => {
   const blocker = useBlocker(shouldBlock);
@@ -77,9 +77,13 @@ const LeaveBlocker: React.FC<{
     if (blocker.state !== 'blocked') return;
     // A second attempt while the dialog is open replaces the first: the
     // dialog resolves the superseded question as "stay", which must not
-    // reset the newer block.
+    // reset the newer block. The block can also end without an answer: a
+    // navigation that needs no question (Back to an entry of this same page)
+    // goes through and the router drops the held one. The question is
+    // withdrawn then, or its dialog would stay open with nothing behind it.
     let superseded = false;
-    void askRef.current().then((ok) => {
+    const withdrawn = new AbortController();
+    void askRef.current(withdrawn.signal).then((ok) => {
       if (superseded) return;
       if (!ok) { blocker.reset(); return; }
       // SettingsPage outlives its tabs and keeps some of their drafts: left
@@ -88,7 +92,7 @@ const LeaveBlocker: React.FC<{
       if (blocker.location && isSettingsTabChange(from, blocker.location)) discard();
       blocker.proceed();
     });
-    return () => { superseded = true; };
+    return () => { superseded = true; withdrawn.abort(); };
   }, [blocker]);
   return null;
 };
@@ -129,12 +133,13 @@ export const UnsavedChangesProvider: React.FC<{ children: React.ReactNode }> = (
     return () => window.removeEventListener('beforeunload', warn);
   }, [isAnyDirty]);
 
-  const ask = useCallback(() => confirm({
+  const ask = useCallback((signal?: AbortSignal) => confirm({
     title: t('settings.saveBar.leaveTitle', 'Discard unsaved changes?'),
     message: t('settings.saveBar.leaveMessage', 'You have unsaved changes on this page. Leaving now discards them.'),
     confirmLabel: t('settings.saveBar.leaveConfirm', 'Discard and leave'),
     cancelLabel: t('settings.saveBar.leaveCancel', 'Stay'),
     variant: 'warning',
+    signal,
   }), [confirm, t]);
 
   // True while a navigation is under way that has already been answered for.
