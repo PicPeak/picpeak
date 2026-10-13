@@ -22,7 +22,9 @@ vi.mock('../../PhotoCard', () => ({
   }) => {
     React.useEffect(() => { mounts.push(photo.id); }, [photo.id]);
     return (
-      <div data-testid="tile" data-photo={photo.id} data-likes={photo.like_count ?? 0} style={style} tabIndex={0} {...containerProps} />
+      <div data-testid="tile" data-photo={photo.id} data-likes={photo.like_count ?? 0} style={style} tabIndex={0} {...containerProps}>
+        <button type="button" data-testid="tile-action" />
+      </div>
     );
   },
 }));
@@ -244,15 +246,91 @@ describe.each([
     expect(ratioOf(find(anchorId))).toBeCloseTo(ratio, 5);
   });
 
+  it('anchors on what is at the top after content above the grid moved without a scroll', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-40000);
+    const ratioOf = (tile: HTMLElement) =>
+      (-gridTop - parseFloat(tile.style.top)) / parseFloat(tile.style.height);
+    const offsetInto = (tile: HTMLElement, fraction: number) =>
+      parseFloat(tile.style.top) + parseFloat(tile.style.height) * fraction;
+    const before = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    scrollGridTo(-offsetInto(before, 0.4));
+
+    // A notice above the grid pushes it down, to 70% down a photo some rows
+    // earlier; only the body observer hears of it.
+    const moved = tiles().find((tile) => parseFloat(tile.style.top) > 38000)!;
+    const movedId = Number(moved.dataset.photo);
+    expect(movedId).toBeLessThan(Number(before.dataset.photo));
+    gridTop = -offsetInto(moved, 0.7);
+    act(() => { resizeCallbacks.find((entry) => entry.target === document.body)!.run(0); });
+
+    // The width change holds that photo, not the one from before the notice.
+    gridWidth = 600;
+    act(() => {
+      resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
+    });
+    const held = tiles().find((tile) => Number(tile.dataset.photo) === movedId)!;
+    expect(ratioOf(held)).toBeCloseTo(0.7, 5);
+  });
+
+  it('does not take an anchor while a width change has not reached the layout yet', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+
+    // The window is already narrower and the toolbar above has re-wrapped,
+    // pushing the grid 5000px; the layout still has the old width.
+    gridWidth = 600;
+    gridTop += 5000;
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    act(() => {
+      resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
+    });
+    const held = tiles().find((tile) => Number(tile.dataset.photo) === anchorId)!;
+    expect((-gridTop - parseFloat(held.style.top)) / parseFloat(held.style.height)).toBeCloseTo(0.4, 5);
+  });
+
+  it('keeps a tile with a focused control mounted across a width change', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-40000);
+    const card = tiles()[Math.floor(tiles().length / 2)];
+    const control = card.querySelector('button')!;
+    act(() => { control.focus(); });
+    expect(document.activeElement).toBe(control);
+
+    // The old row range applied to the new rows is other photos entirely.
+    gridWidth = 600;
+    act(() => {
+      resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
+    });
+    expect(control.isConnected).toBe(true);
+    expect(document.activeElement).toBe(control);
+  });
+
+  it('lets go of the rows once the focused control is gone without a blur', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    const control = tiles()[0].querySelector('button')!;
+    act(() => { control.focus(); });
+    scrollGridTo(-40000);
+    expect(tileIds()[0]).toBe(1);
+
+    // PhotoCard releases a far tile's buttons; no blur is dispatched for a
+    // removed element.
+    control.remove();
+    scrollGridTo(-40100);
+    expect(tileIds()[0]).toBeGreaterThan(100);
+  });
 });
 
-// Justified tiles are focusable themselves. Masonry rows tiles are not: focus
-// sits on a button inside, which PhotoCard already drops with the image.
+// Justified tiles are focusable themselves; in Masonry rows focus sits on a
+// button inside the tile. Both report it from the tile's container.
 describe('Justified windowing and keyboard focus', () => {
   it('keeps the focused tile mounted when its row scrolls out of the window', () => {
     render(<JustifiedGalleryLayout {...layoutProps(makePhotos(2000))} />);
     const first = tiles()[0];
-    fireEvent.focus(first);
+    act(() => { first.focus(); });
     scrollGridTo(-40000);
     // Its row stays, first in document order, ahead of the windowed rows.
     expect(tileIds()[0]).toBe(1);

@@ -285,7 +285,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
 
   // Rows mode mounts only the rows near the viewport in a large gallery
   // (issue 1733); the other modes never have items here.
-  const { visible: visibleRowItems } = useWindowedItems(
+  const { visible: visibleRowItems, pin } = useWindowedItems(
     containerRef,
     rowsLayout.items,
     containerWidth,
@@ -420,6 +420,15 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 // skipped tile occupies exactly what a rendered one would.
                 contentVisibility: 'auto',
                 containIntrinsicSize: `${layoutItem.width}px ${layoutItem.height}px`,
+              }}
+              // The tile's buttons take focus. A width change re-packs the
+              // rows, and the window must not drop the one focus is in.
+              containerProps={{
+                onFocus: () => pin(photo.id),
+                // Focus moving to another tile is that tile's to report.
+                onBlur: (e) => {
+                  if (!e.currentTarget.parentElement?.contains(e.relatedTarget)) pin(null);
+                },
               }}
               // Lazy mount + release with Grid's bands (issue 1733); the
               // absolute px box holds the tile either way.

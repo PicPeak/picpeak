@@ -88,7 +88,7 @@ interface ScrollAnchor {
 export interface WindowedItems {
   /** The items to render, in layout order. */
   visible: JustifiedLayoutItem[];
-  /** Keep a photo's row, and the rows next to it, mounted while its tile has focus. */
+  /** Keep a photo's row, and the rows next to it, mounted while focus is in its tile. */
   pin: (photoId: number | null) => void;
 }
 
@@ -129,16 +129,20 @@ export function useWindowedItems(
     const container = containerRef.current;
     const { rows } = modelRef.current;
     if (!container || rows.length === 0) return;
+    // A focused control can go without a blur: PhotoCard releases a far
+    // tile's buttons, and a removed element fires none. Let go of its rows.
+    if (!container.contains(document.activeElement)) setPinned(null);
     const viewTop = -container.getBoundingClientRect().top;
     const viewport = window.innerHeight;
     const next = visibleRowRange(rows, viewTop, viewTop + viewport, viewport * WINDOW_OVERSCAN_VIEWPORTS);
     setRange((prev) => (prev.start === next.start && prev.end === next.end ? prev : next));
   }, [containerRef]);
 
-  // Remember what is at the top of the viewport. Taken when the viewer
-  // scrolls or the list changes, not on a resize: by then the toolbar above
-  // may already have re-wrapped and pushed the grid a few pixels, and going
-  // there and back would not return to the same place.
+  // Remember what is at the top of the viewport. Taken whenever the grid may
+  // have moved under it, except while a width change is on its way to the
+  // layout: by then the toolbar above may already have re-wrapped and pushed
+  // the grid a few pixels, and going there and back would not return to the
+  // same place.
   const markAnchor = useCallback(() => {
     const container = containerRef.current;
     const { rows } = modelRef.current;
@@ -184,33 +188,29 @@ export function useWindowedItems(
   useEffect(() => {
     if (!enabled) return;
     let frame = 0;
-    let scrolled = false;
     const schedule = () => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
         measure();
-        if (scrolled) markAnchor();
-        scrolled = false;
+        // The rows are still those of the width they were laid out for.
+        const container = containerRef.current;
+        if (container && Math.abs(container.offsetWidth - widthRef.current) < 1) markAnchor();
       });
     };
-    const onScroll = () => {
-      scrolled = true;
-      schedule();
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
     // Content above the grid can grow without a scroll event (no scroll
     // anchoring in Safari); the document's height changes when it does.
     const observer = new ResizeObserver(schedule);
     observer.observe(document.body);
     return () => {
-      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
       observer.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [enabled, measure, markAnchor]);
+  }, [enabled, measure, markAnchor, containerRef]);
 
   const visible = useMemo(() => {
     const { items, rows, rowOf } = model;
