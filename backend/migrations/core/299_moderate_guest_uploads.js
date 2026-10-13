@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Migration 286: guest uploads with approval (issue 1733, item C3).
+ * Migration 299: guest uploads with approval (issue 1733, item C3).
  *
  *   events.moderate_guest_uploads   hold photos guests upload until the owner
  *                                   or a reviewer approves them. Off on every

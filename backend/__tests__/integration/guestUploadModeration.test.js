@@ -1,5 +1,5 @@
 /**
- * Guest uploads with approval (issue 1733, item C3; migration 286).
+ * Guest uploads with approval (issue 1733, item C3; migration 299).
  *
  * Pins the contract:
  *  - with events.moderate_guest_uploads on, an upload through the gallery's
