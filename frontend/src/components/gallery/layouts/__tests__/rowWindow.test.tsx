@@ -347,6 +347,58 @@ describe.each([
     expect((-gridTop - parseFloat(held.style.top)) / parseFloat(held.style.height)).toBeCloseTo(0.4, 5);
   });
 
+  // The first photo of the row crossing the top of the viewport, and how far
+  // down it the viewport top is.
+  const atTop = () => {
+    const tile = tiles().find((t) => parseFloat(t.style.top) + parseFloat(t.style.height) > -gridTop)!;
+    return {
+      id: Number(tile.dataset.photo),
+      ratio: Math.max(0, (-gridTop - parseFloat(tile.style.top)) / parseFloat(tile.style.height)),
+    };
+  };
+  const ratioOfPhoto = (id: number) => {
+    const tile = tiles().find((t) => Number(t.dataset.photo) === id)!;
+    return (-gridTop - parseFloat(tile.style.top)) / parseFloat(tile.style.height);
+  };
+  const deliverWidth = (width: number) => {
+    resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(width));
+  };
+
+  it('anchors on the new order when the list is re-sorted while a width change is pending', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<Layout {...layoutProps(photos)} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+
+    gridWidth = 600;
+    rerender(<Layout {...layoutProps([...photos].reverse())} />);
+    const sorted = atTop();
+    expect(sorted.id).not.toBe(Number(anchorTile.dataset.photo));
+    act(() => { deliverWidth(600); });
+    expect(ratioOfPhoto(sorted.id)).toBeCloseTo(sorted.ratio, 5);
+  });
+
+  it('takes a new anchor when the old one left the list in the same commit as a width change', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<Layout {...layoutProps(photos)} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+
+    gridWidth = 600;
+    act(() => {
+      deliverWidth(600);
+      rerender(<Layout {...layoutProps(photos.filter((p) => p.id !== anchorId))} />);
+    });
+    const next = atTop();
+
+    gridWidth = 900;
+    act(() => { deliverWidth(900); });
+    expect(ratioOfPhoto(next.id)).toBeCloseTo(next.ratio, 5);
+  });
+
   it('keeps a tile with a focused control mounted across a width change', () => {
     render(<Layout {...layoutProps(makePhotos(2000))} />);
     scrollGridTo(-40000);

@@ -143,7 +143,10 @@ export function useWindowedItems(
   // layout: by then the toolbar above may already have re-wrapped and pushed
   // the grid a few pixels, and going there and back would not return to the
   // same place.
-  const markAnchor = useCallback(() => {
+  //
+  // `rearranged`: the list changed under the anchor, which then means
+  // nothing any more; what is at the top now is the better guess even then.
+  const markAnchor = useCallback((rearranged = false) => {
     const container = containerRef.current;
     const { rows } = modelRef.current;
     if (!container || rows.length === 0) return;
@@ -151,7 +154,7 @@ export function useWindowedItems(
     // box, which is what the layouts measure (a CSS template may pad the grid).
     const style = getComputedStyle(container);
     const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-    if (Math.abs(container.clientWidth - padding - widthRef.current) >= 1) return;
+    if (!rearranged && Math.abs(container.clientWidth - padding - widthRef.current) >= 1) return;
     const viewTop = -container.getBoundingClientRect().top;
     const top = firstRow(rows, (row) => row.bottom > viewTop);
     if (viewTop <= 0 || top >= rows.length) {
@@ -172,21 +175,22 @@ export function useWindowedItems(
   // A new layout (sort, filter, more photos, another width) invalidates the
   // range at once, before paint.
   useLayoutEffect(() => {
+    const previous = modelRef.current;
     modelRef.current = model;
     const container = containerRef.current;
     const anchor = anchorRef.current;
-    if (widthRef.current === width) {
-      markAnchor();
-    } else if (container && anchor && widthRef.current > 0) {
-      const index = model.rowOf.get(anchor.photoId);
-      if (index !== undefined) {
-        const row = model.rows[index];
-        const viewTop = -container.getBoundingClientRect().top;
-        const delta = row.top + anchor.ratio * (row.bottom - row.top) - viewTop;
-        if (Math.abs(delta) >= 1) window.scrollBy(0, delta);
-      }
-    }
+    const index = anchor ? model.rowOf.get(anchor.photoId) : undefined;
+    const resized = widthRef.current !== width && widthRef.current > 0;
     widthRef.current = width;
+    if (resized && container && anchor && index !== undefined) {
+      const row = model.rows[index];
+      const viewTop = -container.getBoundingClientRect().top;
+      const delta = row.top + anchor.ratio * (row.bottom - row.top) - viewTop;
+      if (Math.abs(delta) >= 1) window.scrollBy(0, delta);
+    } else {
+      // Same width, or nothing to restore to.
+      markAnchor(!resized && anchor !== null && index !== previous.rowOf.get(anchor.photoId));
+    }
     measure();
   }, [model, width, measure, markAnchor, containerRef]);
 
