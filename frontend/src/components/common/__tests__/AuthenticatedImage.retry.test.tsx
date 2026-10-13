@@ -276,6 +276,121 @@ describe('AuthenticatedImage retry', () => {
       expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
     });
 
+    it('does not arm the next retry while the current one is still in flight', async () => {
+      let release: (value: unknown) => void = () => {};
+      const pending = () => new Promise((resolve) => { release = resolve; });
+      const fetchMock = byUrl({ preview: [status(503), pending], thumb: [ok] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      await advance(2000);
+      expect(calls(fetchMock, '/preview')).toBe(2);
+      // A preview that takes longer than the next backoff step is left alone.
+      await advance(30_000); await flush();
+      expect(calls(fetchMock, '/preview')).toBe(2);
+      await act(async () => { release(await ok()); });
+      await flush();
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-2');
+    });
+
+    it('honours the Retry-After of a retry that failed behind the fallback', async () => {
+      const fetchMock = byUrl({
+        preview: [status(503), status(429, { 'Retry-After': '30' }), ok],
+        thumb: [ok],
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      await advance(2000); await flush();
+      expect(calls(fetchMock, '/preview')).toBe(2);
+      // The 4 s backoff alone would have fired here.
+      await advance(29_999); await flush();
+      expect(calls(fetchMock, '/preview')).toBe(2);
+      await advance(1); await flush();
+      expect(calls(fetchMock, '/preview')).toBe(3);
+    });
+
+    it('stops when a retry behind the fallback gets a final 4xx', async () => {
+      const fetchMock = byUrl({ preview: [status(503), status(404)], thumb: [ok] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      await advance(2000); await flush();
+      await advance(60_000); await flush();
+      expect(calls(fetchMock, '/preview')).toBe(2);
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
+    });
+
+    describe('observed element', () => {
+      type Watch = { cb: IOCallback; el: Element | null; live: boolean };
+      let watches: Watch[];
+      const live = () => watches.filter((w) => w.live);
+      beforeEach(() => {
+        watches = [];
+        vi.stubGlobal('IntersectionObserver', class {
+          watch: Watch;
+          constructor(cb: IOCallback) { this.watch = { cb, el: null, live: true }; watches.push(this.watch); }
+          observe(el: Element) { this.watch.el = el; }
+          disconnect() { this.watch.live = false; }
+          unobserve() {}
+        });
+      });
+
+      it('follows the stand-in when it moves between an img and a canvas', async () => {
+        const fetchMock = byUrl({ preview: [status(503), ok], thumb: [ok] });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const { container, rerender } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+        await flush();
+        expect(live().map((w) => w.el)).toEqual([container.querySelector('img')]);
+
+        // The lightbox flips this prop as a slide becomes the current one.
+        rerender(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" useCanvasRendering />);
+        await flush();
+        expect(container.querySelector('canvas')).not.toBeNull();
+        expect(live().map((w) => w.el)).toEqual([container.querySelector('canvas')]);
+
+        rerender(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+        await flush();
+        expect(live().map((w) => w.el)).toEqual([container.querySelector('img')]);
+
+        // Rebinding did not restart the delay: it ran out while the element
+        // changed, so being seen is all that is left to wait for.
+        await advance(2000); await flush();
+        expect(calls(fetchMock, '/preview')).toBe(1);
+        rerender(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" useCanvasRendering />);
+        await flush();
+        act(() => live()[0].cb([{ isIntersecting: true }]));
+        await flush();
+        expect(calls(fetchMock, '/preview')).toBe(2);
+      });
+
+      it('follows a thumbnail that only arrives on a retry, drawn to a canvas', async () => {
+        const fetchMock = byUrl({ preview: [status(503)], thumb: [status(503), ok] });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" useCanvasRendering />);
+        await flush();
+        expect(live().map((w) => w.el)).toEqual([container.querySelector('img')]);
+
+        await advance(2000); await flush();
+        act(() => live()[0].cb([{ isIntersecting: true }]));
+        await flush();
+        expect(calls(fetchMock, '/thumbnail')).toBe(2);
+        expect(container.querySelector('canvas')).not.toBeNull();
+        expect(live().map((w) => w.el)).toEqual([container.querySelector('canvas')]);
+
+        // The canvas is what is on screen now, and it carries the next retry.
+        await advance(4000); await flush();
+        act(() => live()[0].cb([{ isIntersecting: true }]));
+        await flush();
+        expect(calls(fetchMock, '/preview')).toBe(3);
+      });
+    });
+
     it('releases the stand-in when the image changes and on unmount', async () => {
       const fetchMock = byUrl({ preview: [status(503)], thumb: [ok] });
       vi.stubGlobal('fetch', fetchMock);
