@@ -289,7 +289,23 @@ async function forgetGuest(guest) {
   });
 }
 
+/**
+ * The sweep is about to remove these jobs: cancel their ready mails that have
+ * not gone out yet (a queue held up for longer than the retention), which
+ * would announce a download that no longer exists. The mail carries its job
+ * in the link; email_data is a json column on PostgreSQL, hence the cast.
+ */
+async function cancelPendingMails(jobs) {
+  for (const job of jobs) {
+    await db('email_queue')
+      .where({ event_id: job.event_id, email_type: 'download_ready', status: 'pending' })
+      .whereRaw('CAST(email_data AS TEXT) LIKE ?', [`%${LINK_PARAM}=${job.token}%`])
+      .update({ status: 'cancelled' });
+  }
+}
+
 module.exports = {
   recipientFor, canMail, isRequested, request, notifyReady, retryUnsent, forgetCustomer, forgetGuest,
+  cancelPendingMails,
   MAX_REQUESTS_PER_HOUR, LINK_PARAM,
 };

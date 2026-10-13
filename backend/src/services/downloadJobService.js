@@ -487,6 +487,9 @@ class DownloadJobService {
     // Explicitly, not only through the cascade: SQLite enforces foreign keys
     // per connection.
     await db('download_job_recipients').whereIn('job_id', ids).del();
+    // After the recipients (nothing new is queued for these jobs from here
+    // on) and before the jobs, so a failure leaves them for the next round.
+    await require('./downloadJobNotifier').cancelPendingMails(doomed);
     await db('download_jobs').whereIn('id', ids).del();
     logger.info(`Download job sweep removed ${expired.length} expired and ${undeliverable.length} undeliverable job(s)`);
     return doomed.length;

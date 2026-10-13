@@ -332,6 +332,29 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
       expect(await db('download_job_recipients').where({ job_id: job.id })).toHaveLength(0);
     });
 
+    it('cancels the ready mail of a swept job that has not gone out yet, and only that one', async () => {
+      const { event, photoIds } = await makeEvent();
+      const swept = await makeJob(event, photoIds, { status: 'building' });
+      const kept = await makeJob(event, photoIds, { status: 'building' });
+      const guestToken = await verifiedGuest(event, 'backlog@example.com');
+      for (const job of [swept, kept]) {
+        await askForMail(event, job, guestToken);
+        await db('download_jobs').where({ id: job.id }).update({ status: 'ready' });
+        await notifier.notifyReady(job.id);
+      }
+      expect(await readyMails('backlog@example.com')).toHaveLength(2);
+
+      // The queue was held up for longer than the retention of one of them.
+      await db('download_jobs').where({ id: swept.id })
+        .update({ expires_at: new Date(Date.now() - 1000).toISOString() });
+      await jobs.sweepExpired();
+
+      const mails = await readyMails('backlog@example.com');
+      const statusOf = (job) => mails.find((m) => String(m.email_data).includes(job.token)).status;
+      expect(statusOf(swept)).toBe('cancelled');
+      expect(statusOf(kept)).toBe('pending');
+    });
+
     it('two replicas sweeping at once, and a file already gone, are not errors', async () => {
       const { event, photoIds } = await makeEvent();
       const job = await makeJob(event, photoIds, { expiresIn: -1000 });
