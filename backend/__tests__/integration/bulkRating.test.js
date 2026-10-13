@@ -46,7 +46,7 @@ afterAll(async () => { if (cleanup) await cleanup(); });
 beforeEach(async () => {
   await db('feedback_rate_limits').delete();
   await db('photo_feedback').delete();
-  await db('event_feedback_settings').where({ event_id: eventId }).update({ allow_ratings: true, require_name_email: false });
+  await db('event_feedback_settings').where({ event_id: eventId }).update({ allow_ratings: true, require_name_email: false, show_feedback_to_guests: true });
 });
 
 const bulk = (client, data) => client.post(`/api/gallery/${SLUG}/feedback/bulk`)
@@ -72,6 +72,23 @@ test('rates every listed photo and spends exactly one unit per photo', async () 
   expect(await ratings()).toEqual(Object.fromEntries(ids.map(id => [id, 4])));
   expect(await unitsSpent()).toEqual([3]);
   expect(res.headers['x-ratelimit-remaining']).toBe('2');
+});
+
+// The frontend writes the answer into the cached photo list and does not
+// refetch it, so the answer has to carry what that viewer's list carries: the
+// aggregates for a guest only while feedback is shared, for the PIN client
+// always (galleryQueryService: isClient || show_feedback_to_guests).
+test('with sharing off the aggregates go to the PIN client and not to a guest', async () => {
+  await db('event_feedback_settings').where({ event_id: eventId }).update({ show_feedback_to_guests: false });
+  const guest = await bulk(request.agent(app), { photo_ids: [photoIds[0]], rating: 4 }).expect(200);
+  expect(guest.body.results[0]).not.toHaveProperty('average_rating');
+  expect(guest.body.results[0]).not.toHaveProperty('total_ratings');
+
+  const clientToken = jwt.sign({ eventId, eventSlug: SLUG, type: 'gallery', accessLevel: 'client', jti: randomUUID() },
+    process.env.JWT_SECRET, { issuer: 'picpeak-auth', expiresIn: '1h' });
+  const client = await request(app).post(`/api/gallery/${SLUG}/feedback/bulk`)
+    .set('Authorization', `Bearer ${clientToken}`).send({ photo_ids: [photoIds[1]], rating: 2 }).expect(200);
+  expect(client.body.results[0]).toEqual(expect.objectContaining({ photo_id: photoIds[1], average_rating: 2, total_ratings: 1 }));
 });
 
 test('a selection larger than the remaining budget rates nothing and spends nothing', async () => {

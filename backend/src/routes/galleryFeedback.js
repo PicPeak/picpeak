@@ -527,9 +527,11 @@ router.post('/:slug/feedback/bulk',
 
       const ratedIds = results.filter(r => r.success).map(r => r.photo_id);
       if (ratedIds.length > 0) {
-        // Other guests' ratings are in the aggregates, so they are gated on
-        // show_feedback_to_guests like the per-photo summary.
-        if (settings.show_feedback_to_guests) {
+        // Other guests' ratings are in the aggregates, so they go to whoever
+        // the photo list gives them to (galleryQueryService): a guest while
+        // feedback is shared, the PIN client always. The frontend writes
+        // this answer into that list without refetching it.
+        if (settings.show_feedback_to_guests || req.accessLevel === 'client') {
           const averages = await db('photos').whereIn('id', ratedIds).select('id', 'average_rating');
           const totals = await db('photo_feedback')
             .whereIn('photo_id', ratedIds)
