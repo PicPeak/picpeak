@@ -141,6 +141,22 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('takes the covered toolbar out of reach while drawing', async () => {
+    open();
+    // Present before: the role query only finds what a keyboard can reach.
+    const toggle = await screen.findByRole('button', { name: 'Toggle feedback' });
+    const drawingTools = await startDrawing();
+
+    expect(screen.queryByRole('button', { name: 'Toggle feedback' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Zoom in' })).toBeNull();
+    // Out of the tab order, not unmounted: its height still holds the layout.
+    expect(toggle.isConnected).toBe(true);
+    expect(within(drawingTools).getByRole('button', { name: 'Done' })).toBeTruthy();
+
+    key('Escape');
+    expect(screen.getByRole('button', { name: 'Toggle feedback' })).toBe(toggle);
+  });
+
   it('does not start a swipe from a touch while drawing', async () => {
     open();
     await startDrawing();

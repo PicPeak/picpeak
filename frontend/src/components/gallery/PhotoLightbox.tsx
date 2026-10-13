@@ -1037,7 +1037,13 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         className="absolute bottom-0 left-0 bg-black px-3 pt-3 pb-3 sm:p-4 z-20"
         style={{
           right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
-          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))'
+          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+          // The drawing toolbar lies over this one while annotating (issue
+          // 1733). Covered is not enough: Tab would still reach Download, Like
+          // and the feedback toggle, and the last one throws the drawing
+          // away. Hidden this way it leaves the tab order but keeps its
+          // height, which the photo area and the drawing toolbar build on.
+          visibility: annotating ? 'hidden' : undefined,
         }}
       >
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2 flex-wrap">
@@ -1351,23 +1357,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               className="relative h-full flex items-center justify-center"
               style={{ flex: '0 0 33.3333%' }}
             >
-              {/* A drawing on this photo (issue 1733): the strokes being
-                  drawn, or a stored one picked from the comments. It shares
-                  the image's centre and transform, so it follows zoom and
-                  pan, and rides the track with the slide. */}
-              {(annotating || annotation.visible) && (
-                <ImageAnnotationOverlay
-                  annotation={annotation.visible}
-                  label={t('feedback.annotation.overlayLabel', 'Drawing on the photo')}
-                  svgStyle={{
-                    transform: `scale(${zoom}) translate(${dragOffset.x / zoom}px, ${dragOffset.y / zoom}px)`,
-                    transition: isDragging || isPinching ? 'none' : 'transform 0.2s',
-                  }}
-                  draw={annotating && !annotation.atLimit
-                    ? { tool: annotation.tool, color: annotation.color, onStroke: annotation.addStroke }
-                    : undefined}
-                />
-              )}
               <AuthenticatedImage
                 // The user is looking at this one right now: top tier, ahead of
                 // both the grid backlog and the neighbour prefetches enqueued
@@ -1406,6 +1395,27 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   }
                 }}
               />
+              {/* A drawing on this photo (issue 1733): the strokes being
+                  drawn, or a stored one picked from the comments. It shares
+                  the image's centre and transform, so it follows zoom and
+                  pan, and rides the track with the slide. It comes after the
+                  image on purpose: the image has to stay this slide's first
+                  child, as it is on a neighbouring slide, or React remounts
+                  it (and fetches it again) when a prefetched neighbour
+                  becomes the slide on screen. */}
+              {(annotating || annotation.visible) && (
+                <ImageAnnotationOverlay
+                  annotation={annotation.visible}
+                  label={t('feedback.annotation.overlayLabel', 'Drawing on the photo')}
+                  svgStyle={{
+                    transform: `scale(${zoom}) translate(${dragOffset.x / zoom}px, ${dragOffset.y / zoom}px)`,
+                    transition: isDragging || isPinching ? 'none' : 'transform 0.2s',
+                  }}
+                  draw={annotating && !annotation.atLimit
+                    ? { tool: annotation.tool, color: annotation.color, onStroke: annotation.addStroke }
+                    : undefined}
+                />
+              )}
             </div>
           );
         };
