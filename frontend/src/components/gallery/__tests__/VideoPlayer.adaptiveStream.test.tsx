@@ -108,6 +108,25 @@ describe('VideoPlayer with an adaptive stream', () => {
     expect(hlsInstances[0].destroy).toHaveBeenCalled();
   });
 
+  it('picks the file up where the failed stream had got to', async () => {
+    browser({ nativeHls: false, mse: true });
+    const { container } = render(<VideoPlayer src={FILE} hlsSrc={STREAM} />);
+    const video = container.querySelector('video')!;
+    Object.defineProperty(video, 'currentTime', { value: 0, writable: true });
+    await waitFor(() => expect(hlsInstances).toHaveLength(1));
+    video.currentTime = 95;
+    act(() => hlsInstances[0].handlers.hlsError('hlsError', { fatal: true }));
+    expect(video).toHaveAttribute('src', FILE);
+    // A new source starts at 0:00; the position comes back with its metadata.
+    video.currentTime = 0;
+    fireEvent.loadedMetadata(video);
+    expect(video.currentTime).toBe(95);
+    // Once only: a later reload of the same file is not sent back there.
+    video.currentTime = 0;
+    fireEvent.loadedMetadata(video);
+    expect(video.currentTime).toBe(0);
+  });
+
   it('keeps the source a video was opened with when the photo list is refreshed', () => {
     // A download-limited gallery names the stream only once the video has
     // its slot: the list refetch behind the first play must not swap the

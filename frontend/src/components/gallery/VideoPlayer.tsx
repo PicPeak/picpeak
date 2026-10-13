@@ -76,10 +76,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const mode = hlsSrc && failedStream === hlsSrc ? 'file' : preferred;
   const modeRef = useRef(mode);
   modeRef.current = mode;
-  // Set when the stream fails under a viewer who had already pressed play.
+  // Set when the stream fails under a viewer who had already pressed play,
+  // and where it had got to: the file starts at 0:00.
   const resumeRef = useRef(false);
+  const resumeAtRef = useRef(0);
   const abandonStream = () => {
     resumeRef.current = isPlayingRef.current;
+    resumeAtRef.current = videoRef.current?.currentTime ?? 0;
     setFailedStream(hlsSrc ?? null);
   };
   const abandonStreamRef = useRef(abandonStream);
@@ -120,10 +123,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [mode, hlsSrc]);
 
   useEffect(() => {
-    if (mode !== 'file' || !resumeRef.current) return;
-    resumeRef.current = false;
-    void videoRef.current?.play()?.catch(() => {});
-  }, [mode]);
+    const video = videoRef.current;
+    if (mode !== 'file' || !video) return;
+    const resumeAt = resumeAtRef.current;
+    resumeAtRef.current = 0;
+    const seek = () => { video.currentTime = resumeAt; };
+    if (resumeAt > 0) video.addEventListener('loadedmetadata', seek, { once: true });
+    if (resumeRef.current) {
+      resumeRef.current = false;
+      void video.play()?.catch(() => {});
+    }
+    // Another video opened before the metadata came must not be sent there.
+    return () => video.removeEventListener('loadedmetadata', seek);
+  }, [mode, src]);
 
   useEffect(() => {
     const video = videoRef.current;
