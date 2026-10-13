@@ -175,6 +175,8 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     const kept = standInUrlRef.current;
     if (!kept || swappedInUrlRef.current !== url) return false;
     swappedInUrlRef.current = null;
+    // The bytes that would not decode are of no further use.
+    URL.revokeObjectURL(url);
     attemptsRef.current = MAX_RETRIES;
     setStandIn(true);
     setImageSrc(kept);
@@ -430,12 +432,14 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   const retryable = (standIn || (error && (!fallbackSrc || fetchFailedRef.current)))
     && !fetching && attemptsRef.current < MAX_RETRIES;
   // After every render, because which element is in the document is decided
-  // by the render itself; setting the same element again is a no-op. A
+  // by the render itself. Set only when it changed: an unchanged value still
+  // costs a render, on every tile of a grid where nothing failed. A
   // stand-in drawn to a canvas has no retryRef: the canvas ref has to stay
   // the one stable callback, or every render would release its pixels.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    setRetryEl(retryable ? retryRef.current ?? canvasRef.current : null);
+    const next = retryable ? retryRef.current ?? canvasRef.current : null;
+    if (next !== retryEl) setRetryEl(next);
   });
   useEffect(() => {
     if (!retryable) {

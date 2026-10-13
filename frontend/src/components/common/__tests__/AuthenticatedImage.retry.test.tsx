@@ -303,6 +303,7 @@ describe('AuthenticatedImage retry', () => {
       // The thumbnail already fetched, not a second request for it.
       expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
       expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:mock-1');
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-2');
       await advance(60_000); await flush();
       expect(calls(fetchMock, '/preview')).toBe(2);
       expect(calls(fetchMock, '/thumbnail')).toBe(1);
