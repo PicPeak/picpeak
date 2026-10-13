@@ -110,6 +110,8 @@ export const ImageAnnotationOverlay: React.FC<ImageAnnotationOverlayProps> = ({
 
   // The pointer trail of the stroke being drawn, in 0..1 image coordinates.
   const trailRef = useRef<AnnotationPoint[] | null>(null);
+  // The pointer that started it: only that one's release ends the stroke.
+  const strokePointerRef = useRef<number | null>(null);
   const [pending, setPending] = useState<AnnotationStroke | null>(null);
 
   // Drawing can end with the pointer still down (Escape mid-stroke). The
@@ -137,6 +139,7 @@ export const ImageAnnotationOverlay: React.FC<ImageAnnotationOverlayProps> = ({
     // Keep the stroke when the pointer leaves the picture mid-line.
     e.currentTarget.setPointerCapture?.(e.pointerId);
     trailRef.current = [point];
+    strokePointerRef.current = e.pointerId;
     setPending({ t: draw.tool, c: draw.color, p: [point, point] });
   };
 
@@ -153,7 +156,10 @@ export const ImageAnnotationOverlay: React.FC<ImageAnnotationOverlayProps> = ({
     setPending({ t: draw.tool, c: draw.color, p: [...trail] });
   };
 
-  const endStroke = (commit: boolean) => {
+  const endStroke = (e: React.PointerEvent<SVGSVGElement>, commit: boolean) => {
+    // A second finger is ignored on the way down; lifting it must not end
+    // the stroke the first one is still drawing.
+    if (e.pointerId !== strokePointerRef.current) return;
     const trail = trailRef.current;
     trailRef.current = null;
     setPending(null);
@@ -179,8 +185,8 @@ export const ImageAnnotationOverlay: React.FC<ImageAnnotationOverlayProps> = ({
           data-testid="annotation-overlay"
           onPointerDown={draw ? handlePointerDown : undefined}
           onPointerMove={draw ? handlePointerMove : undefined}
-          onPointerUp={draw ? () => endStroke(true) : undefined}
-          onPointerCancel={draw ? () => endStroke(false) : undefined}
+          onPointerUp={draw ? (e) => endStroke(e, true) : undefined}
+          onPointerCancel={draw ? (e) => endStroke(e, false) : undefined}
           style={{
             position: 'absolute',
             left: `calc(50% - ${box.width / 2}px)`,

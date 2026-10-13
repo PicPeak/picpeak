@@ -255,6 +255,28 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     expect(draw().disabled).toBe(false);
   });
 
+  // Closing the panel unmounts the form, but its request and that request's
+  // success handler live on: reopened, the guest can be drawing again when
+  // the earlier comment comes back.
+  it('keeps a drawing started after the panel was reopened when an earlier comment finishes sending', async () => {
+    let finish!: (value: unknown) => void;
+    vi.mocked(feedbackService.submitFeedback).mockReturnValue(new Promise((resolve) => { finish = resolve; }) as never);
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Comment' }));
+    fireEvent.change(screen.getByPlaceholderText('Write a comment...'), { target: { value: 'First' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle feedback' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle feedback' }));
+    await startDrawing();
+    drag(screen.getByTestId('annotation-overlay'), [40, 20], [200, 100]);
+
+    await act(async () => { finish({ success: true }); });
+    expect(screen.getByRole('toolbar', { name: 'Drawing tools' })).toBeTruthy();
+    expect(screen.getByTestId('annotation-overlay').querySelectorAll('path')).toHaveLength(1);
+  });
+
   // The drawing on the photo is a copy taken when its marker was clicked. A
   // comment the photographer hides meanwhile leaves the list on the next
   // fetch, and its marker with it: the drawing must not stay behind.

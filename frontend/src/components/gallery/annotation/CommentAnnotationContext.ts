@@ -16,6 +16,11 @@ export interface CommentAnnotationContextValue {
   startDrawing: () => void;
   /** Leave drawing mode and drop the draft. */
   discard: () => void;
+  /**
+   * The comment carrying this draft was stored: drop it, unless the guest
+   * has moved on to another drawing since.
+   */
+  discardSent: (sent: PhotoAnnotation | undefined) => void;
   /** Which comment's drawing is on the photo, if any. */
   shownCommentId: number | null;
   toggleShown: (commentId: number, annotation: PhotoAnnotation) => void;

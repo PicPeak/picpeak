@@ -128,6 +128,36 @@ describe('ImageAnnotationOverlay', () => {
     expect(svg.querySelectorAll('path')).toHaveLength(0);
   });
 
+  // A second finger landing on the photo is ignored, so its lifting must not
+  // end the stroke the first finger is still drawing.
+  it('only ends a stroke for the pointer that started it', () => {
+    const onStroke = vi.fn();
+    render(
+      <div>
+        <img alt="photo" />
+        <ImageAnnotationOverlay annotation={null} draw={{ tool: 'arrow', color: 0, onStroke }} />
+      </div>
+    );
+    const svg = screen.getByTestId('annotation-overlay');
+    svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 200 } as DOMRect);
+    const pointer = (type: string, x: number, y: number, pointerId = 1) => {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
+      Object.assign(event, { isPrimary: pointerId === 1, pointerId, pointerType: 'touch' });
+      act(() => { fireEvent(svg, event); });
+    };
+    pointer('pointerdown', 0, 0);
+    pointer('pointermove', 100, 100);
+    pointer('pointerdown', 300, 50, 2);
+    pointer('pointerup', 300, 50, 2);
+    pointer('pointercancel', 300, 50, 2);
+    expect(onStroke).not.toHaveBeenCalled();
+    expect(svg.querySelectorAll('path')).toHaveLength(1);
+
+    pointer('pointermove', 400, 200);
+    pointer('pointerup', 400, 200);
+    expect(onStroke).toHaveBeenCalledWith({ t: 'arrow', c: 0, p: [[0, 0], [1, 1]] });
+  });
+
   // Escape while the pointer is still down, on a drawing being edited: the
   // overlay stays for the attached drawing, and with `draw` gone no pointerup
   // handler is left to take the half-drawn stroke away.

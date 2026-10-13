@@ -78,6 +78,13 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     setDraft(null);
   }, []);
 
+  // Called from a request's success handler, which can arrive late: after
+  // the panel was closed and reopened, or on another photo. Only the very
+  // draft that was sent goes; a drawing made since is not this comment's.
+  const discardSent = useCallback((sent: PhotoAnnotation | undefined) => {
+    if (sent) setDraft((prev) => (prev === sent ? null : prev));
+  }, []);
+
   const toggleShown = useCallback((commentId: number, annotation: PhotoAnnotation) => {
     if (shown?.commentId === commentId) {
       setShown(null);
@@ -100,10 +107,11 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     draft,
     startDrawing,
     discard,
+    discardSent,
     shownCommentId: shown?.commentId ?? null,
     toggleShown,
     hideShown,
-  }), [canDraw, drawing, draft, startDrawing, discard, shown, toggleShown, hideShown]);
+  }), [canDraw, drawing, draft, startDrawing, discard, discardSent, shown, toggleShown, hideShown]);
 
   // What lies on the photo: the strokes in progress, else the drawing picked
   // from the comment list, else the one waiting on the comment form.

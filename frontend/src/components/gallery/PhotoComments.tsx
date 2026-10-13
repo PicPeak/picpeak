@@ -71,10 +71,12 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
         guest_name: data.guest_name,
         guest_email: data.guest_email
       }),
-    onSuccess: (response) => {
+    onSuccess: (response, data) => {
       setCommentText('');
       setShowCommentForm(false);
-      annotation?.discard();
+      // Only the drawing that went with this comment: the handler also runs
+      // for a response that arrives after the panel was closed and reopened.
+      annotation?.discardSent(data.annotation);
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
       
       if (response.message) {
