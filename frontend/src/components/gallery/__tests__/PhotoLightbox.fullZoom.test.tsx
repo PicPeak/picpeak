@@ -50,12 +50,14 @@ import { PhotoLightbox } from '../PhotoLightbox';
 // The preview reporting a (new) load, as after a refetched photo list.
 let previewLoaded: () => void = () => {};
 
-// Records the observers so a test can report a resize of the slide.
-let resizeObservers: Array<() => void> = [];
+// Records the observers so a test can report a resize of the slide. Like the
+// real one, an observer says nothing about an element that left the document.
+let resizeObservers: ResizeObserverStub[] = [];
 class ResizeObserverStub {
-  constructor(callback: () => void) { resizeObservers.push(callback); }
-  observe() {}
-  disconnect() {}
+  target: Element | null = null;
+  constructor(public notify: () => void) { resizeObservers.push(this); }
+  observe(target: Element) { this.target = target; }
+  disconnect() { this.target = null; }
 }
 vi.stubGlobal('ResizeObserver', ResizeObserverStub);
 
@@ -64,7 +66,7 @@ vi.stubGlobal('ResizeObserver', ResizeObserverStub);
 let FIT = { width: 600, height: 400 };
 const resizePreview = (next: typeof FIT) => {
   FIT = next;
-  act(() => { resizeObservers.forEach((notify) => notify()); });
+  act(() => { resizeObservers.forEach((observer) => { if (observer.target?.isConnected) observer.notify(); }); });
 };
 const photo = (id: number, extra: Partial<Photo> = {}) => ({
   id, filename: `photo-${id}`, url: `/p/${id}`, thumbnail_url: `/t/${id}`, width: 6000, height: 4000, ...extra,
@@ -312,6 +314,41 @@ describe('PhotoLightbox with a full resolution', () => {
     expect(overlay()).not.toBeNull();
     expect(overlay()!.style.width).toBe('300px');
     expect(overlay()!.style.height).toBe('200px');
+  });
+
+  it('keeps measuring the slide when the carousel remounts it under the same photo', async () => {
+    const { overlay, update } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    await finishDecode();
+    expect(overlay()!.style.width).toBe('600px');
+
+    // Two photos left: the slides are keyed by slot now, so this is a new element.
+    update([zoomable(1), zoomable(2)]);
+    resizePreview({ width: 900, height: 600 });
+    expect(overlay()!.style.width).toBe('900px');
+  });
+
+  it('waits for a drag to end before it brings the zoom down, so the drag keeps its baseline', () => {
+    const { image, surface } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.doubleClick(surface, { clientX: 0, clientY: 0 });
+    fireEvent.mouseDown(surface, { clientX: 0, clientY: 0 });
+    fireEvent.mouseMove(surface, { clientX: 100, clientY: 0 });
+    expect(image().style.transform).toBe('scale(10) translate(10px, 0px)');
+
+    resizePreview({ width: 1000, height: 667 });
+    expect(image().style.transform).toBe('scale(10) translate(10px, 0px)');
+    fireEvent.mouseUp(surface);
+    expect(image().style.transform).toBe('scale(6) translate(10px, 0px)');
+  });
+
+  it('holds the zoom while the ceiling is unknown instead of dropping it to 3x', () => {
+    const { image, surface } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.doubleClick(surface, { clientX: 0, clientY: 0 });
+    // The preview is a placeholder again (a retry): nothing to measure.
+    resizePreview({ width: 0, height: 0 });
+    fireEvent.wheel(surface, { deltaY: -100 });
+    expect(image().style.transform).toContain('scale(10)');
+    expect(screen.getByLabelText('Zoom in')).toBeDisabled();
   });
 
   it('keeps the right-click block on the zoomed original', async () => {

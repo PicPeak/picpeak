@@ -81,6 +81,8 @@ interface Options {
   dragOffset: Point;
   setZoom: (zoom: number) => void;
   setDragOffset: (offset: Point) => void;
+  /** True while a drag or a pinch drives the transform. */
+  gesturing: boolean;
   /** The element the lightbox measures the cursor against; its centre is the image's. */
   containerRef: RefObject<HTMLElement>;
 }
@@ -88,7 +90,7 @@ interface Options {
 interface LoadedOriginal extends Size { photoId: number; url: string; src: string }
 
 export function useFullResolutionZoom({
-  photo, slug, enabled, zoom, dragOffset, setZoom, setDragOffset, containerRef,
+  photo, slug, enabled, zoom, dragOffset, setZoom, setDragOffset, gesturing, containerRef,
 }: Options) {
   const photoId = photo?.id;
   const stated = photo?.width && photo?.height ? { width: photo.width, height: photo.height } : null;
@@ -103,6 +105,14 @@ export function useFullResolutionZoom({
   const [paintedSrc, setPaintedSrc] = useState<string | null>(null);
   const [fit, setFit] = useState<Size | null>(null);
   const slideRef = useRef<HTMLDivElement | null>(null);
+  // Also as state: the carousel can remount the slide under the same photo
+  // (its keys change when the gallery goes to or from two photos), and the
+  // listeners below have to move to the new element.
+  const [slide, setSlide] = useState<HTMLDivElement | null>(null);
+  const attachSlide = useCallback((el: HTMLDivElement | null) => {
+    slideRef.current = el;
+    setSlide(el);
+  }, []);
   // For handlers the lightbox registers once (wheel) or that fire between
   // renders, and for the load that ends after the render that started it.
   const live = useRef({ zoom, dragOffset, actualZoom: null as number | null, maxZoom: BASE_MAX_ZOOM });
@@ -128,7 +138,7 @@ export function useFullResolutionZoom({
       return;
     }
     measure();
-    const el = slideRef.current;
+    const el = slide;
     if (!el) return;
     // `load` does not bubble, so it is captured: the thumbnail that stands in
     // for an undecodable preview loads without telling onPreviewLoad.
@@ -139,7 +149,7 @@ export function useFullResolutionZoom({
       el.removeEventListener('load', measure, true);
       observer?.disconnect();
     };
-  }, [url, photoId, measure]);
+  }, [url, photoId, slide, measure]);
 
   // Navigating away releases the original, and so does a refreshed photo list
   // that withdraws the offer or points it elsewhere. Its object URL goes in
@@ -218,21 +228,24 @@ export function useFullResolutionZoom({
   const actualZoom = url && !failed && natural && fit
     ? actualPixelsZoom(natural, box ?? fit, typeof window === 'undefined' ? 1 : window.devicePixelRatio)
     : null;
-  const maxZoom = maxZoomFor(actualZoom);
+  // While the ceiling is merely unknown (the preview is between two loads and
+  // has no box), the zoom holds where it is: no further in, and not forced out.
+  const ceilingKnown = !url || failed || actualZoom !== null;
+  const maxZoom = ceilingKnown ? maxZoomFor(actualZoom) : Math.max(BASE_MAX_ZOOM, zoom);
   live.current = { zoom, dragOffset, actualZoom, maxZoom };
 
   // The ceiling can come down under a zoom already past it: the window grew,
   // the decoded original is smaller than the list stated, or the load failed.
-  // The zoom follows at once, about the point at the centre of the view. Not
-  // while the ceiling is merely unknown (the preview is between two loads).
-  const ceilingKnown = !url || failed || actualZoom !== null;
+  // The zoom follows, about the point at the centre of the view. A drag or a
+  // pinch is left to finish first: each holds a baseline taken at its start
+  // and would put the old zoom or offset straight back.
   useEffect(() => {
-    if (!ceilingKnown || zoom <= maxZoom) return;
+    if (gesturing || zoom <= maxZoom) return;
     const ratio = maxZoom / zoom;
     const offset = live.current.dragOffset;
     setZoom(maxZoom);
     setDragOffset({ x: offset.x * ratio, y: offset.y * ratio });
-  }, [ceilingKnown, zoom, maxZoom, setZoom, setDragOffset]);
+  }, [gesturing, zoom, maxZoom, setZoom, setDragOffset]);
 
   // For handlers the lightbox registers once (wheel) or that fire between renders.
 
@@ -306,7 +319,7 @@ export function useFullResolutionZoom({
     /** Zoom as a percentage of the original's pixels, or null where the readout stays relative to fit. */
     percent: actualZoom ? Math.round((zoom / actualZoom) * 100) : null,
     loading: !!url && requested && !original && !failed,
-    slideRef,
+    slideRef: attachSlide,
     /** Pass to the slide's image: the preview's box is only known once it has loaded. */
     onPreviewLoad: measure,
     overlay: original && fit

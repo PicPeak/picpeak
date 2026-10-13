@@ -221,6 +221,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     dragOffset,
     setZoom,
     setDragOffset,
+    gesturing: isDragging || isPinching,
     containerRef: trackContainerRef,
   });
   const fullZoomLive = fullZoom.live;
