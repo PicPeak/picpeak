@@ -319,6 +319,12 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       });
     }
 
+    // The adaptive streaming ladder (issue 1733) describes the old bytes too.
+    // Its files are listed now and removed once the row has started over:
+    // by then a transcode of the old file has lost its claim and cannot
+    // publish behind the sweep, and whatever another replica writes for the
+    // new file in between is not on the list.
+    const sweepOldLadder = await require('./videoHlsService').captureLadder(existingPhoto);
     if (object) {
       await uploadQuota.commitObject(object, 'photo', async conn => {
         if (await conn('photos').where({ id: existingPhoto.id, event_id: event.id }).update(updates) !== 1) {
@@ -327,10 +333,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         return existingPhoto.id;
       });
     } else await db('photos').where({ id: existingPhoto.id }).update(updates);
-    // The adaptive streaming ladder (issue 1733) describes the old bytes too.
-    // Swept after the row started over: a transcode of the old file has lost
-    // its claim by now and cannot publish a ladder behind the sweep.
-    await require('./videoHlsService').deleteLadder(existingPhoto);
+    await sweepOldLadder();
     if (autoCredit) {
       // Fenced like the upload worker: a manual credit set meanwhile wins,
       // and so does a replacement that installed another file since.

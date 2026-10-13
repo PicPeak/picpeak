@@ -503,6 +503,21 @@ describe('adaptive streaming routes (issue 1733)', () => {
       expect(await keysUnder(`hls/${id}`)).toEqual([]);
     });
 
+    test('a captured ladder is removed later without anything written since', async () => {
+      // A replacement captures the old ladder, resets the row and sweeps:
+      // by then another replica may be writing the new file's ladder.
+      const id = await insertVideo('captured.mp4');
+      const sweep = await hls.captureLadder(await db('photos').where({ id }).first());
+      const newer = await writeLadder(id, '44444444-4444-4444-8444-444444444444');
+      await sweep();
+      expect(await keysUnder(`hls/${id}`)).toEqual(await keysUnder(newer));
+      expect(await keysUnder(newer)).toHaveLength(4);
+      expect(fs.readdirSync(path.join(process.env.STORAGE_PATH, 'hls', String(id)))).toEqual([path.basename(newer)]);
+      // A row that never had a ladder costs no listing and sweeps nothing.
+      await (await hls.captureLadder({ id, hls_status: null, hls_path: null }))();
+      expect(await keysUnder(newer)).toHaveLength(4);
+    });
+
     test('the ladder is swept once the row no longer authorises a worker to publish one', () => {
       // A transcode that overlaps the delete publishes against the row. Swept
       // first, its ladder would land after the sweep and outlive the row.
@@ -522,16 +537,18 @@ describe('adaptive streaming routes (issue 1733)', () => {
       // A replacement resets the row (and with it the claim) before it sweeps:
       // replaced by an image, no later transcode would collect a late ladder.
       const replace = read('services/photoReplacementService.js');
-      expect(replace.lastIndexOf('.update(updates)')).toBeGreaterThan(0);
-      expect(replace.indexOf('deleteLadder(existingPhoto)')).toBeGreaterThan(replace.lastIndexOf('.update(updates)'));
+      expect(replace.indexOf('captureLadder(existingPhoto)')).toBeGreaterThan(0);
+      expect(replace.indexOf('.update(updates)')).toBeGreaterThan(replace.indexOf('captureLadder(existingPhoto)'));
+      expect(replace.indexOf('await sweepOldLadder()')).toBeGreaterThan(replace.lastIndexOf('.update(updates)'));
     });
 
     test('every path that removes a video or its file names the ladder', () => {
       const read = file => fs.readFileSync(path.join(__dirname, '../../src', file), 'utf8');
       expect(read('routes/adminPhotos.js').match(/videoHlsService'\)\.deleteLadder\(photo\)/g)).toHaveLength(2);
-      for (const file of ['routes/adminEvents/helpers.js', 'services/archiveService.js', 'services/photoReplacementService.js', 'services/fileWatcher.js', 'services/externalPhotoDedupe.js']) {
+      for (const file of ['routes/adminEvents/helpers.js', 'services/archiveService.js', 'services/fileWatcher.js', 'services/externalPhotoDedupe.js']) {
         expect(read(file)).toMatch(/deleteLadder\(/);
       }
+      expect(read('services/photoReplacementService.js')).toMatch(/captureLadder\(/);
     });
   });
 });

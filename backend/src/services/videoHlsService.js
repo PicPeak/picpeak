@@ -296,6 +296,19 @@ async function deleteLadder(photo) {
     .catch(error => logger.warn(`videoHls: could not remove the ladder of photo ${photo.id}: ${error.message}`));
 }
 
+/**
+ * A photo's ladder files as they are now, for a caller that resets the row
+ * before it removes them (a replacement): resolves the function that deletes
+ * exactly these. What a later attempt writes in between is not among them.
+ */
+async function captureLadder(photo) {
+  if (!photo?.id || (!photo.hls_status && !photo.hls_path)) return async () => {};
+  const root = `hls/${Number(photo.id)}`;
+  const warn = error => logger.warn(`videoHls: could not remove the ladder of photo ${photo.id}: ${error.message}`);
+  const keys = await keysUnder(root).catch((error) => { warn(error); return []; });
+  return () => removeKeys(root, keys).catch(warn);
+}
+
 async function probe(localPath) {
   const metadata = await mediaProcesses.probeVideo(localPath);
   const video = (metadata.streams || []).find(s => s.codec_type === 'video');
@@ -482,6 +495,7 @@ module.exports = {
   rewritePlaylist,
   ladderKey,
   deleteLadder,
+  captureLadder,
   probe,
   transcode,
   renderLadder,
