@@ -63,12 +63,8 @@ module.exports = (router) => {
           ? await tagProcessor.enqueueEvent(event.id, { onlyUntagged: true })
           : 0;
 
-        await logActivity('event_tagging_updated', {
-          actorType: 'admin',
-          actorId: req.admin.id,
-          eventId: event.id,
-          metadata: { enabled: nowEnabled, queued },
-        }).catch(() => {});
+        await logActivity('event_tagging_updated', { enabled: nowEnabled, queued }, event.id,
+          { type: 'admin', id: req.admin.id, name: req.admin.username }).catch(() => {});
 
         res.json({ success: true, queued });
       } catch (error) {
@@ -87,9 +83,8 @@ module.exports = (router) => {
         }
 
         const queued = await tagProcessor.enqueueEvent(event.id, { onlyUntagged: false });
-        await logActivity('event_tagging_rescan', {
-          actorType: 'admin', actorId: req.admin.id, eventId: event.id, metadata: { queued },
-        }).catch(() => {});
+        await logActivity('event_tagging_rescan', { queued }, event.id,
+          { type: 'admin', id: req.admin.id, name: req.admin.username }).catch(() => {});
 
         res.json({ success: true, queued });
       } catch (error) {

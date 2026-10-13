@@ -180,8 +180,6 @@ async function deleteEventCascade(eventId, adminContext) {
     // photos, so the guarantee holds on both engines.
     await trx('photo_faces').where('event_id', eventId).del();
     await trx('event_people').where('event_id', eventId).del();
-    // Scene tags (issue 1733): the same inert-cascade reason.
-    await trx('photo_tags').where('event_id', eventId).del();
     // Separations carry a COPY of each side's centroid since #1132, so this
     // table holds biometric data too — and it deliberately has no event FK, so
     // nothing else would ever reach it. hasTable rather than a catch: a failed
@@ -204,6 +202,10 @@ async function deleteEventCascade(eventId, adminContext) {
     await trx('feedback_rate_limits').where('event_id', eventId).del();
 
     await trx('photos').where('event_id', eventId).del();
+    // Scene tags (issue 1733): the same inert-cascade reason. After the
+    // photos, not with the face data above: a tagging worker locks the photo
+    // row before its tags, and the reverse order can deadlock on PostgreSQL.
+    await trx('photo_tags').where('event_id', eventId).del();
     // 5. Finally delete the event row
     await deleteWithAccountingHistory(trx, 'events', { id: eventId },
       { actor: adminContext?.id ?? null, source: 'event.delete' });

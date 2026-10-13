@@ -175,6 +175,8 @@ services:
       - FACE_ML_URL=${FACE_ML_URL:-http://picpeak-ml:8000}
       - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
       - FACE_PROCESSOR_CONCURRENCY=${FACE_PROCESSOR_CONCURRENCY:-}
+      # Scene tagging workers (issue 1733); empty keeps the default of 1.
+      - TAG_PROCESSOR_CONCURRENCY=${TAG_PROCESSOR_CONCURRENCY:-}
       # Malware scanner for customer documents (#1444). Empty = no scanner;
       # uploads then wait for an admin's review. With the opt-in `clamav`
       # profile below, set CLAMAV_HOST=clamav. See docs/ENVIRONMENT_VARIABLES.md.

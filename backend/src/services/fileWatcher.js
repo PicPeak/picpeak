@@ -263,12 +263,13 @@ async function removePhoto(filePath) {
   // Remove from database. Scene tags (issue 1733) go in the same
   // transaction: the FK cascade is inert on SQLite, and a tagging result in
   // flight then lands either before this (and is deleted here) or after it
-  // (and finds no row to settle).
+  // (and finds no row to settle). The row first, the order tagProcessor
+  // locks in.
   if (photo) {
     await db.transaction(async (trx) => {
-      await trx('photo_tags')
-        .whereIn('photo_id', trx('photos').where({ path: relativePath }).select('id')).del();
-      await trx('photos').where({ path: relativePath }).delete();
+      const ids = await trx('photos').where({ path: relativePath }).pluck('id');
+      await trx('photos').whereIn('id', ids).delete();
+      await trx('photo_tags').whereIn('photo_id', ids).del();
     });
   }
 

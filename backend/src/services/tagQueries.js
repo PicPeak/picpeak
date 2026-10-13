@@ -9,13 +9,18 @@ const { db } = require('../database/db');
 const { applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
 
 /**
- * photo id -> tag keys, best score first, for every tagged photo of the
- * event. The caller only reads the ids it is already showing, so this cannot
- * widen what a viewer sees.
+ * photo id -> tag keys, best score first. The caller only reads the ids it
+ * is already showing, so this cannot widen what a viewer sees.
+ *
+ * `photoIds` is the page being sent (at most 250 ids): without it every page
+ * of a large gallery would read and sort the tags of the whole event. Left
+ * out, for the unpaginated list, it is every tagged photo of the event.
  */
-async function getTagKeysByPhoto(eventId) {
-  const rows = await db('photo_tags')
-    .where({ event_id: eventId })
+async function getTagKeysByPhoto(eventId, photoIds = null) {
+  if (photoIds && photoIds.length === 0) return new Map();
+  const query = db('photo_tags').where({ event_id: eventId });
+  if (photoIds) query.whereIn('photo_id', photoIds);
+  const rows = await query
     .orderBy([{ column: 'score', order: 'desc' }, { column: 'tag', order: 'asc' }])
     .select('photo_id', 'tag');
   const byPhoto = new Map();

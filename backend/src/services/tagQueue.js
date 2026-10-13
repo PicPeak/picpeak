@@ -26,6 +26,8 @@ const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { processPhotoTags, claimGuard } = require('./tagProcessor');
 const { SidecarUnavailableError } = require('./faceClient');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
+const { isTransient } = require('./imageResourcePolicy');
+const { formatBoolean } = require('../utils/dbCompat');
 const { isFeatureEnabled } = require('./tagSettings');
 
 const POLL_INTERVAL_MS = parseInt(process.env.TAG_PROCESSOR_POLL_MS || '2000', 10);
@@ -57,7 +59,12 @@ function isPostgres() {
  */
 async function claimNextPhoto() {
   return db.transaction(async (trx) => {
-    const query = trx('photos').where('tag_status', 'pending').orderBy('id', 'asc');
+    const query = trx('photos').where('tag_status', 'pending')
+      // An archived gallery keeps its photo rows and its switch, but its
+      // thumbnails are gone and its originals are inside the archive: a claim
+      // could only fail. The rows stay 'pending' and resume on restore.
+      .whereNotIn('event_id', trx('events').where('is_archived', formatBoolean(true)).select('id'))
+      .orderBy('id', 'asc');
     if (isPostgres()) query.forUpdate().skipLocked();
     const row = await query.first();
     if (!row) return null;
@@ -80,8 +87,9 @@ function releaseToPending(claimed) {
  * Run one claimed photo to its next state.
  *
  * Returns 'retry' when the sidecar or the storage backend could not be
- * reached (the row is 'pending' again and the caller backs off), otherwise
- * the photo's outcome: done | skipped | failed.
+ * reached (the row is 'pending' again and the caller backs off), 'parked'
+ * when the image worker said "not now" while rebuilding the thumbnail, and
+ * otherwise the photo's outcome: done | skipped | failed.
  */
 async function runClaimed(claimed) {
   try {
@@ -92,6 +100,17 @@ async function runClaimed(claimed) {
     if (err instanceof SidecarUnavailableError || isStorageUnavailableError(err)) {
       await releaseToPending(claimed).catch(() => {});
       return 'retry';
+    }
+
+    // The image worker being busy or timing out is no verdict on the photo
+    // either, but it can be this photo's alone. Released, the oldest-first
+    // claim would take the same row again after every pause and never reach
+    // the next one, so it stays 'processing' and the janitor returns it
+    // after TAG_PROCESSOR_STUCK_TIMEOUT_MS (what faceQueue does for a source
+    // it cannot reach).
+    if (isTransient(err)) {
+      logger.warn(`tagQueue: photo ${claimed.id} deferred (${err.code})`);
+      return 'parked';
     }
 
     logger.error(`tagQueue: photo ${claimed.id} failed`, { error: err.message });

@@ -350,7 +350,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       tagsEnabled = true;
       if (!hiddenForGuest) {
         const tagQueries = require('./tagQueries');
-        tagKeysByPhoto = await tagQueries.getTagKeysByPhoto(event.id);
+        tagKeysByPhoto = await tagQueries.getTagKeysByPhoto(event.id, limit ? photos.map((p) => p.id) : null);
         tagCounts = await tagQueries.getEventTagCounts(event.id, accessLevel);
       }
     }

@@ -927,8 +927,6 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       // nonfatal, so an event can still be carrying it here.
       await trx('photo_faces').where('event_id', req.params.id).del();
       await trx('event_people').where('event_id', req.params.id).del();
-      // Scene tags (issue 1733) stay with an archived gallery's photo rows.
-      await trx('photo_tags').where('event_id', req.params.id).del();
       if (hasMergeDismissals) {
         await trx('event_people_merge_dismissals').where('event_id', req.params.id).del();
       }
@@ -940,6 +938,10 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       }
       await trx('feedback_rate_limits').where('event_id', req.params.id).del();
       await trx('photos').where('event_id', req.params.id).del();
+      // Scene tags (issue 1733) stay with an archived gallery's photo rows.
+      // After the photos: a tagging worker locks the photo row first, and
+      // taking the two in the other order can deadlock on PostgreSQL.
+      await trx('photo_tags').where('event_id', req.params.id).del();
       await deleteWithAccountingHistory(trx, 'events', { id: req.params.id },
         { actor: req.admin.id, source: 'archive.delete' });
     });

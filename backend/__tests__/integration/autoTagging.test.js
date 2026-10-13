@@ -355,6 +355,31 @@ describe('tag queue state machine', () => {
     expect([await status(fresh), await status(done)]).toEqual(['pending', 'done']);
   });
 
+  it('leaves the photos of an archived gallery queued until it is restored', async () => {
+    const eventId = await mkEvent({ is_archived: true });
+    const photoId = await mkPhoto(eventId, { tag_status: 'pending' });
+
+    expect(await tagQueue.claimNextPhoto()).toBeNull();
+    expect((await photoRow(photoId)).tag_status).toBe('pending');
+
+    await db('events').where({ id: eventId }).update({ is_archived: false });
+    expect((await tagQueue.claimNextPhoto()).id).toBe(photoId);
+  });
+
+  it('parks a photo whose thumbnail the image worker could not rebuild right now', async () => {
+    const eventId = await mkEvent();
+    const photoId = await mkPhoto(eventId, { tag_status: 'pending' });
+    const next = await mkPhoto(eventId, { tag_status: 'pending' });
+    mockEnsureThumbnail.mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'IMAGE_WORKER_UNAVAILABLE' }));
+
+    expect(await tagQueue.runClaimed(await tagQueue.claimNextPhoto())).toBe('parked');
+    // Not failed, and not back at the head of the queue either: the janitor
+    // returns it, and the worker gets on with the next photo meanwhile.
+    const row = await photoRow(photoId);
+    expect([row.tag_status, row.tag_error]).toEqual(['processing', null]);
+    expect((await tagQueue.claimNextPhoto()).id).toBe(next);
+  });
+
   it('the janitor returns only rows stuck past the timeout', async () => {
     const eventId = await mkEvent();
     const stuck = await mkPhoto(eventId, {
@@ -421,6 +446,22 @@ describe('guest photo list', () => {
     // Best score first.
     expect(byId[visibleA].tag_keys).toEqual(['cake', 'food']);
     expect(byId[untagged].tag_keys).toEqual([]);
+  });
+
+  it('reads the tag keys of the page it sends, and the counts of the whole gallery', async () => {
+    const { eventId } = await seedGallery();
+    const tagQueries = require('../../src/services/tagQueries');
+    const spy = jest.spyOn(tagQueries, 'getTagKeysByPhoto');
+    try {
+      const payload = await list(await eventRow(eventId), 'guest', { query: { limit: 2, page: 1 } });
+      expect(payload.photos).toHaveLength(2);
+      expect(spy).toHaveBeenCalledWith(eventId, payload.photos.map((p) => p.id));
+      // Newest first: the untagged photo, then one of the two with a cake.
+      expect(payload.photos.map((p) => p.tag_keys)).toEqual([[], ['cake']]);
+      expect(payload.tags.find((tag) => tag.key === 'cake').count).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('counts only the photos this viewer may see', async () => {
@@ -507,6 +548,9 @@ describe('admin routes', () => {
 
     const res = await call('patch', `/${eventId}/tags`).send({ enabled: true });
     expect([res.status, res.body]).toEqual([200, { success: true, queued: 2 }]);
+    // Logged against the gallery and the admin, so its owner sees it.
+    const logged = await db('activity_logs').where({ activity_type: 'event_tagging_updated', event_id: eventId }).first();
+    expect([logged.actor_type, logged.actor_id]).toEqual(['admin', adminId]);
 
     const after = await call('get', `/${eventId}/tags`);
     expect(after.body.enabled).toBe(true);

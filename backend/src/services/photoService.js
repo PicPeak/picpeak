@@ -132,10 +132,11 @@ const deletePhoto = async (photoId, options = {}) => {
 
       // Delete from database. Scene tags (issue 1733) in the same
       // transaction: the cascade is inert on SQLite, and a tagging result in
-      // flight must not be stored between the two deletes.
+      // flight must not be stored between the two deletes. The row first,
+      // the order tagProcessor locks in.
       await db.transaction(async (trx) => {
-        await trx('photo_tags').where({ photo_id: photoId }).del();
         await trx('photos').where('id', photoId).delete();
+        await trx('photo_tags').where({ photo_id: photoId }).del();
       });
     }
   } else {

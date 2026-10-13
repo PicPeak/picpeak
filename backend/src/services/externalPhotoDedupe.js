@@ -56,8 +56,6 @@ const chunked = (arr) => {
 const LOG_TABLES = [
   ['image_access_logs', 'photo_id'],
   ['transfer_downloads', 'photo_id'],
-  // Scene tags (issue 1733): the survivor was tagged from the same picture.
-  ['photo_tags', 'photo_id'],
 ];
 
 /**
@@ -247,6 +245,11 @@ async function deleteDuplicatePhotos(knex, doomedToSurvivor) {
   }
 
   for (const ids of chunked(doomed)) await knex('photos').whereIn('id', ids).del();
+  // Scene tags (issue 1733): the survivor was tagged from the same picture.
+  // After the rows, the order a tagging worker locks in.
+  if (await knex.schema.hasTable('photo_tags')) {
+    for (const ids of chunked(doomed)) await knex('photo_tags').whereIn('photo_id', ids).del();
+  }
 
   // The pre-built "download everything" zip still contains the rows just
   // removed. Every ordinary photo-deletion path calls
