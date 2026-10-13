@@ -260,6 +260,55 @@ describe('relative directories (issue 1786)', () => {
     expect(pickedFromInput([inFolder, plain]).map((p) => p.dir)).toEqual(['Export/Friday', '']);
   });
 
+  it('sorts a folder pick by name level by level, as the drop walk does', () => {
+    const at = (rel: string) => {
+      const file = new File(['x'], rel.split('/').pop()!, { type: 'image/jpeg' });
+      Object.defineProperty(file, 'webkitRelativePath', { value: rel });
+      return file;
+    };
+    const picked = pickedFromInput([
+      at('Export/Reception/IMG_2.jpg'),
+      at('Export/Ceremony/IMG_10.jpg'),
+      at('Export/cover.jpg'),
+      at('Export/Ceremony/IMG_9.jpg'),
+    ]);
+
+    expect(picked.map((p) => `${p.dir}/${p.file.name}`)).toEqual([
+      'Export/Ceremony/IMG_9.jpg',
+      'Export/Ceremony/IMG_10.jpg',
+      'Export/cover.jpg',
+      'Export/Reception/IMG_2.jpg',
+    ]);
+  });
+
+  it('keeps folders apart whose names collate equally, in the pick and in the drop', async () => {
+    // `1` and `01` are equal to a numeric collator; going on to the file
+    // names would interleave the two folders, and the cap would then keep
+    // different files for a pick than for a drop of the same folder.
+    const at = (rel: string) => {
+      const file = new File(['x'], rel.split('/').pop()!, { type: 'image/jpeg' });
+      Object.defineProperty(file, 'webkitRelativePath', { value: rel });
+      return file;
+    };
+    const picked = pickedFromInput([at('S/1/a.jpg'), at('S/1/z.jpg'), at('S/01/b.jpg'), at('S/01/c.jpg')]);
+    const dropped = await collectDroppedEntries(dataTransferFrom([
+      dirEntry('S', [
+        dirEntry('1', [fileEntry('a.jpg'), fileEntry('z.jpg')]),
+        dirEntry('01', [fileEntry('b.jpg'), fileEntry('c.jpg')]),
+      ]),
+    ]));
+
+    const expected = ['S/01/b.jpg', 'S/01/c.jpg', 'S/1/a.jpg', 'S/1/z.jpg'];
+    expect(picked.map((p) => `${p.dir}/${p.file.name}`)).toEqual(expected);
+    expect(dropped.map((p) => `${p.dir}/${p.file.name}`)).toEqual(expected);
+  });
+
+  it('keeps a plain pick in the order it was chosen', () => {
+    const files = ['b.jpg', 'a.jpg'].map((name) => new File(['x'], name, { type: 'image/jpeg' }));
+
+    expect(pickedFromInput(files).map((p) => p.file.name)).toEqual(['b.jpg', 'a.jpg']);
+  });
+
   it('takes the directory part of a relative path', () => {
     expect(directoryOf('a/b/c.jpg')).toBe('a/b');
     expect(directoryOf('c.jpg')).toBe('');

@@ -322,6 +322,9 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     // is back on screen and says why.
     let stoppedForName = false;
     let stoppedForCapacity = false;
+    // Set when the gallery holds uploads for approval (issue 1733): the
+    // photos are stored, but will not show up until they are approved.
+    let heldForReview = false;
 
     for (const [index, file] of files.entries()) {
       // The gallery's photo limit refuses this file and every one after it:
@@ -341,6 +344,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         const response = await api.post<{
           upload_id?: string;
           count?: number;
+          held_for_review?: boolean;
           errors?: Array<{ filename?: string; error?: string; code?: string; limit?: number }>;
         }>(`/gallery/${eventId}/upload`, formData, {
           headers: {
@@ -393,6 +397,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         if (response.data?.upload_id) {
           uploadIds.push(response.data.upload_id);
         }
+        if (response.data?.held_for_review) heldForReview = true;
         successCount++;
       } catch (error: any) {
         if (error.response?.data?.code === 'PHOTO_CAP_REACHED') {
@@ -434,6 +439,9 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
 
     if (successCount > 0) {
       toast.success(t('toast.uploadSuccess') + ` (${successCount} ${t('common.photos')})`);
+      // Said once, and left up longer: nothing else explains why the grid
+      // does not change.
+      if (heldForReview) toast.info(t('upload.heldForReview'), { autoClose: 10000 });
     }
     if (stoppedForName || stoppedForCapacity) {
       // onUploadComplete closes the dialog, and the guest has a name to enter

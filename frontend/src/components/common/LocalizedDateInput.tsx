@@ -1,7 +1,11 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { Calendar } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { DateCalendar } from './DateCalendar';
+import { useEscapeClose } from './useEscapeClose';
 
 /**
  * Date input that displays + accepts values in the admin-configured
@@ -12,10 +16,11 @@ import { useLocalizedDate } from '../../hooks/useLocalizedDate';
  * A native `<input type="date">` always renders in the browser's own
  * locale (en-US users see MM/DD/YYYY) no matter what the app is
  * configured for, so it can't be used directly. This component shows
- * a plain text input in the configured format and parses on blur. A
- * calendar icon button opens the native date picker (via showPicker())
- * off a visually-hidden native input, giving the click-to-pick
- * affordance without rendering a second visible date box.
+ * a plain text input in the configured format and parses on blur. The
+ * calendar icon opens the app's own `DateCalendar` in a popover, portalled
+ * to <body> so a dialog's scrolling body does not clip it. (It used to
+ * call showPicker() on a hidden native date input, which Safari does not
+ * open reliably.)
  */
 interface LocalizedDateInputProps {
   label?: string;
@@ -24,10 +29,12 @@ interface LocalizedDateInputProps {
   error?: string;
   /** Hint rendered below the field, hidden while an error is showing. */
   helperText?: string;
-  /** Forwarded to the native picker so min/max date constraints work. */
+  /** Earliest / latest day the calendar offers (ISO yyyy-MM-dd). */
   min?: string;
   max?: string;
   disabled?: boolean;
+  /** Accessible name when the visible label sits outside the component. */
+  ariaLabel?: string;
 }
 
 export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
@@ -39,10 +46,15 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
   min,
   max,
   disabled,
+  ariaLabel,
 }) => {
-  const { dateFormat } = useLocalizedDate();
-  const nativeRef = React.useRef<HTMLInputElement>(null);
+  const { t } = useTranslation();
+  const { dateFormat, locale } = useLocalizedDate();
   const inputId = React.useId();
+  const fieldRef = React.useRef<HTMLDivElement>(null);
+  const popoverRef = React.useRef<HTMLDivElement>(null);
+  const [open, setOpen] = React.useState(false);
+  const [position, setPosition] = React.useState<React.CSSProperties>({});
 
   // Normalise the configured format down to the four shapes the parser
   // understands. Defaults to DD.MM.YYYY (the operator's primary locale)
@@ -103,25 +115,89 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
     return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
   };
 
+  const isComplete = (raw: string) => /^(\d{2}[./-]\d{2}[./-]\d{4}|\d{4}-\d{2}-\d{2})$/.test(raw.trim());
+
   const [text, setText] = React.useState(toDisplay(value));
+  // Follow a value set from outside (the calendar, a reset, another field),
+  // but leave the text alone when it already means that value: the value is
+  // our own live commit coming back, and reformatting it mid-edit moved the
+  // caret to the end, so the next Delete or digit landed in the wrong place.
+  // A cleared value only keeps a blank field: half-typed text also parses to
+  // '', and a reset from outside must still clear it.
   React.useEffect(() => {
-    setText(toDisplay(value));
+    const iso = String(value || '').slice(0, 10);
+    setText((current) => ((iso ? toIso(current) === iso : !current.trim()) ? current : toDisplay(value)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
-  const openPicker = () => {
-    const el = nativeRef.current;
-    if (!el) return;
-    try {
-      // The native input takes focus while its calendar is open: browsers
-      // (Safari especially) close the calendar when that input loses focus,
-      // so without this it stayed open after moving to another field.
-      el.focus({ preventScroll: true });
-      el.showPicker();
-    } catch {
-      // showPicker throws on unsupported browsers / outside a user
-      // gesture — the text field stays fully usable for typing.
+  const toggleRef = React.useRef<HTMLButtonElement>(null);
+  // Escape hands focus back to the calendar button, as a dialog returns it to
+  // its opener; otherwise it falls to <body> and the next Tab starts over at
+  // the top of the page.
+  const closeFromKeyboard = React.useCallback(() => {
+    setOpen(false);
+    if (popoverRef.current?.contains(document.activeElement)) toggleRef.current?.focus({ preventScroll: true });
+  }, []);
+  useEscapeClose(open, closeFromKeyboard);
+
+  // Below the field, right edges lined up; above it when the window has no
+  // room below; kept inside the window on a phone. The calendar sizes itself
+  // to this width (border included). When neither side has room, it goes on
+  // the roomier side, pushed back inside the window over the field.
+  const place = React.useCallback(() => {
+    const field = fieldRef.current;
+    if (!field) return;
+    const box = field.getBoundingClientRect();
+    const width = Math.min(288, window.innerWidth - 16);
+    const height = popoverRef.current?.offsetHeight || 340;
+    const left = Math.max(8, Math.min(box.right - width, window.innerWidth - width - 8));
+    const below = box.bottom + 4;
+    const above = box.top - 4 - height;
+    const fitsBelow = below + height <= window.innerHeight - 8;
+    const fitsAbove = above >= 8;
+    let top = below;
+    if (!fitsBelow && fitsAbove) top = above;
+    else if (!fitsBelow) {
+      top = window.innerHeight - box.bottom >= box.top ? Math.max(8, window.innerHeight - 8 - height) : 8;
     }
+    setPosition({ position: 'fixed', top, left, width });
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!open) return undefined;
+    place();
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (fieldRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    // Capture: a scroll inside a dialog body moves the field too.
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [open, place]);
+
+  const commitText = () => {
+    const iso = toIso(text);
+    if (iso) {
+      onChange(iso);
+      setText(toDisplay(iso));
+    } else if (!text.trim()) {
+      onChange('');
+    }
+  };
+
+  const pick = (iso: string) => {
+    onChange(iso);
+    setText(toDisplay(iso));
+    setOpen(false);
+    // Back to the visible field, so the next Tab or click behaves as usual.
+    document.getElementById(inputId)?.focus({ preventScroll: true });
   };
 
   return (
@@ -131,7 +207,7 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
           {label}
         </label>
       )}
-      <div className="relative">
+      <div className="relative" ref={fieldRef}>
         <input
           id={inputId}
           value={text}
@@ -144,21 +220,21 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
             // don't wait for blur. Otherwise a value entered then submitted
             // without blurring (or before React re-renders after the
             // blur-time setState) is lost and the parent keeps its previous
-            // value (e.g. the import form's "today" default). toIso returns
-            // '' for partial/invalid input, so intermediate keystrokes emit
-            // nothing.
-            const iso = toIso(next);
+            // value (e.g. the import form's "today" default). Only a fully
+            // typed date commits (two-digit day and month, four-digit year):
+            // editing "15.08.2026" passes through "1.08.2026", which is a
+            // valid date but not the one meant. Blur still accepts the short
+            // forms. toIso returns '' for impossible dates.
+            const iso = isComplete(next) ? toIso(next) : '';
             if (iso) onChange(iso);
           }}
-          onBlur={() => {
-            const iso = toIso(text);
-            if (iso) {
-              onChange(iso);
-              setText(toDisplay(iso));
-            } else if (!text.trim()) {
-              onChange('');
-            }
+          onKeyDown={(e) => {
+            // Enter submits the surrounding form without a blur: commit a
+            // short date ("1.8.2026") first, or the form saves the old value.
+            if (e.key === 'Enter') commitText();
           }}
+          onBlur={commitText}
+          aria-label={label ? undefined : ariaLabel}
           className={clsx('input pr-10', error && 'border-danger focus-visible:ring-accent')}
           aria-invalid={error ? 'true' : 'false'}
           aria-describedby={
@@ -166,37 +242,52 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
           }
         />
         <button
+          ref={toggleRef}
           type="button"
-          onClick={openPicker}
+          onClick={() => setOpen((o) => !o)}
           disabled={disabled}
-          tabIndex={-1}
-          aria-label={label}
+          aria-label={t('common.chooseDate', 'Choose date')}
+          aria-haspopup="dialog"
+          aria-expanded={open}
           className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted hover:text-body disabled:opacity-50"
         >
           <Calendar className="w-5 h-5" />
         </button>
-        {/* Visually hidden native picker — its only job is to provide
-            the calendar popup the icon button triggers. Value stays in
-            ISO so it's always parseable. */}
-        <input
-          ref={nativeRef}
-          type="date"
-          // Bare yyyy-MM-dd — a native date input rejects a full ISO
-          // datetime (pg serialisation), which would blank the picker.
-          value={value ? String(value).slice(0, 10) : ''}
-          min={min}
-          max={max}
-          disabled={disabled}
-          onChange={(e) => {
-            onChange(e.target.value);
-            // Back to the visible field once a date is picked, so the next
-            // Tab or click behaves as usual.
-            document.getElementById(inputId)?.focus({ preventScroll: true });
-          }}
-          tabIndex={-1}
-          aria-hidden="true"
-          className="sr-only"
-        />
+        {open && createPortal(
+          <div
+            ref={popoverRef}
+            // Tab out of the calendar closes it: a portalled popover would
+            // otherwise stay open behind the focus, and inside a Modal it
+            // would hold the top layer and switch off the Modal's Tab trap.
+            onBlur={(e) => {
+              const next = e.relatedTarget as Node | null;
+              if (next && (popoverRef.current?.contains(next) || fieldRef.current?.contains(next))) return;
+              if (next) setOpen(false);
+            }}
+            // The popover is the last node in <body>, so Tab past its last
+            // button leaves the page (relatedTarget null, the blur above
+            // cannot tell that from switching windows). Tab past either end
+            // closes it and returns to the calendar button, which sits where
+            // the popover belongs in the tab order.
+            onKeyDown={(e) => {
+              if (e.key !== 'Tab' || e.altKey || e.metaKey || e.ctrlKey) return;
+              const stops = Array.from(popoverRef.current?.querySelectorAll<HTMLElement>(
+                'button:not(:disabled):not([tabindex="-1"])',
+              ) || []);
+              const edge = e.shiftKey ? stops[0] : stops[stops.length - 1];
+              if (e.target !== edge) return;
+              e.preventDefault();
+              closeFromKeyboard();
+            }}
+            role="dialog"
+            aria-label={label || t('common.chooseDate', 'Choose date')}
+            style={position}
+            className="z-[60] rounded-lg border border-line bg-panel shadow-lg"
+          >
+            <DateCalendar value={value} onSelect={pick} locale={locale} min={min} max={max} label={label} />
+          </div>,
+          document.body,
+        )}
       </div>
       {error && (
         <p id={`${inputId}-error`} className="mt-1.5 text-sm text-danger-text">

@@ -64,6 +64,8 @@ export interface EventFields extends EditFormState {
   assigned_admins: AssignedAdmin[];
   /** Hold the team members' uploads until the owner approves them. */
   review_contributor_uploads: boolean;
+  /** Hold guest uploads until the owner or a reviewer approves them. */
+  moderate_guest_uploads: boolean;
 }
 
 export const INHERIT = '__inherit__';
@@ -146,6 +148,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     upload_category_id: event.upload_category_id || null,
     guest_name_mode: event.guest_name_mode || 'off',
     show_credits_to_guests: truthy(event.show_credits_to_guests),
+    live_refresh: truthy(event.live_refresh),
     hero_photo_id: event.hero_photo_id || null,
     customer_name: event.customer_name || '',
     customer_email: event.customer_email || '',
@@ -196,6 +199,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     delivery_badge_label: event.delivery_badge_label || '',
     assigned_admins: event.assigned_admins || [],
     review_contributor_uploads: truthy(event.review_contributor_uploads),
+    moderate_guest_uploads: truthy(event.moderate_guest_uploads),
   };
 }
 
@@ -240,8 +244,10 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   use_canvas_rendering: 'downloads',
   allow_user_uploads: 'guests',
   upload_category_id: 'guests',
+  moderate_guest_uploads: 'guests',
   guest_name_mode: 'guests',
   show_credits_to_guests: 'guests',
+  live_refresh: 'guests',
   reveal_mode: 'guests',
   reveal_at: 'guests',
   hero_photo_id: 'appearance',
@@ -376,8 +382,10 @@ function requestFields(f: EventFields): Record<string, unknown> {
     require_password: f.require_password,
     allow_user_uploads: f.allow_user_uploads,
     upload_category_id: f.upload_category_id,
+    moderate_guest_uploads: f.moderate_guest_uploads,
     guest_name_mode: f.guest_name_mode,
     show_credits_to_guests: f.show_credits_to_guests,
+    live_refresh: f.live_refresh,
     reveal_mode: reveal,
     reveal_at: reveal && f.reveal_at ? new Date(f.reveal_at).toISOString() : null,
     protection_level: f.protection_level,

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { GalleryEmptyMessage } from '../GalleryEmptyMessage';
 import { createPortal } from 'react-dom';
 import { MasonryPhotoAlbum } from 'react-photo-album';
 import 'react-photo-album/masonry.css';
@@ -16,6 +17,7 @@ import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { parseISO } from 'date-fns';
 import { useInView } from 'react-intersection-observer';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
@@ -207,6 +209,7 @@ interface GalleryPremiumLayoutProps extends BaseGalleryLayoutProps {
 export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   // #1160: folder-only root — render the shell, skip the empty message.
   suppressEmptyState = false,
+  emptyIsFiltered = false,
   afterGrid,
   photos,
   slug,
@@ -239,7 +242,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   void _onPhotoClick;
   void _onOpenPhotoWithFeedback;
   void _onDownload;
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const downloadPhotoMutation = useDownloadPhoto();
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   // The delivered preview can be smaller than the original. Keep Zoom's
@@ -567,7 +570,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }
   }, [allowDownloads, filteredPhotos, slug, downloadPhotoMutation, downloadQuota]);
 
-  const formattedDate = eventDate ? new Date(eventDate).toLocaleDateString('en-US', {
+  // Long form on purpose (the hero's look), in the gallery's language rather
+  // than always US English. parseISO: a bare yyyy-MM-dd read by `new Date`
+  // is UTC midnight, the day before west of UTC.
+  const formattedDate = eventDate ? parseISO(eventDate).toLocaleDateString(i18n.language, {
     year: 'numeric',
     month: 'long',
     day: '2-digit'
@@ -579,7 +585,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
+        <GalleryEmptyMessage filtered={emptyIsFiltered} />
       </div>
     );
   }

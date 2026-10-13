@@ -20,21 +20,13 @@ const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
 const { applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
-async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug }) {
-  // Get filter and sort parameters from query
-  // `guest_id` is deliberately NOT read from the query string: the viewer's
-  // own feedback is resolved from the request identity instead (see the
-  // filter block). The frontend still sends it; it is ignored.
-  const { filter, sort = 'upload_date', order = 'desc' } = query;
-
-  // Get watermark settings to generate cache-busting version for URLs
-  const watermarkSettings = await watermarkService.getWatermarkSettings();
-  const wmVersion = watermarkSettings?.enabled
-    ? `wm=${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
-    : '';
-
-  // Build the query with sorting
-  const sortOrder = order === 'asc' ? 'asc' : 'desc';
+/**
+ * The photos a viewer's list is made of, before sorting and paging: this
+ * event's processed photos, the viewer's visibility rule, the slideshow pin
+ * and the feedback filter. The one place that decides it, so the list, its
+ * total and the live-refresh state (getGalleryPhotoState) cannot disagree.
+ */
+async function galleryListQuery({ event, query = {}, identity, accessLevel }) {
   const isClient = accessLevel === 'client';
   let photosQuery = db('photos')
     .where('photos.event_id', event.id)
@@ -70,6 +62,53 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     }
   }
 
+  // Check if feedback should be visible to guests. Read BEFORE the filter
+  // block, not after: the filters below consult it, because a filter that
+  // selects on other people's feedback is a way of reading that feedback.
+  const feedbackService = require('./feedbackService');
+  const feedbackSettings = await feedbackService.getEventFeedbackSettings(event.id);
+  const showFeedbackToGuests = isClient || parseBooleanInput(feedbackSettings.show_feedback_to_guests, true);
+  // One identity-less colour tag per photo, any guest may overwrite it
+  // (#1197). Read in three places below: the colour filters, the per-viewer
+  // badge, and the "other viewers" dots that must not double-render it.
+  const sharedColorMode = feedbackSettings?.identity_mode === 'shared';
+
+  applyFeedbackFilter(photosQuery, { filter: query.filter, event, identity, sharedColorMode, showFeedbackToGuests });
+  return { photosQuery, feedbackService, feedbackSettings, showFeedbackToGuests, sharedColorMode };
+}
+
+/**
+ * Live refresh (issue 1733, C5): how many photos the viewer's list holds and
+ * the highest id among them. One aggregate over galleryListQuery, no rows.
+ */
+async function getGalleryPhotoState({ event, query = {}, identity, accessLevel, hiddenForGuest }) {
+  if (hiddenForGuest) return { count: 0, max_id: null };
+  const { photosQuery } = await galleryListQuery({ event, query, identity, accessLevel });
+  const row = await photosQuery.clearSelect().count('photos.id as count').max('photos.id as max_id').first();
+  // PostgreSQL hands count back as a string.
+  return { count: Number(row.count), max_id: row.max_id == null ? null : Number(row.max_id) };
+}
+
+async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug }) {
+  // Get filter and sort parameters from query
+  // `guest_id` is deliberately NOT read from the query string: the viewer's
+  // own feedback is resolved from the request identity instead (see the
+  // filter block). The frontend still sends it; it is ignored.
+  const { sort = 'upload_date', order = 'desc' } = query;
+
+  // Get watermark settings to generate cache-busting version for URLs
+  const watermarkSettings = await watermarkService.getWatermarkSettings();
+  const wmVersion = watermarkSettings?.enabled
+    ? `wm=${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
+    : '';
+
+  // Build the query with sorting
+  const sortOrder = order === 'asc' ? 'asc' : 'desc';
+  const isClient = accessLevel === 'client';
+  const list = await galleryListQuery({ event, query, identity, accessLevel });
+  const { feedbackService, feedbackSettings, showFeedbackToGuests, sharedColorMode } = list;
+  let { photosQuery } = list;
+
   // Apply sort option.
   //
   // Every branch carries photos.id as a tiebreaker (#1172). Without one the
@@ -100,18 +139,6 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   // (guestBlockedByReveal). Enforced here, not just in the UI.
 
 
-  // Check if feedback should be visible to guests. Read BEFORE the filter
-  // block, not after: the filters below consult it, because a filter that
-  // selects on other people's feedback is a way of reading that feedback.
-  const feedbackService = require('./feedbackService');
-  const feedbackSettings = await feedbackService.getEventFeedbackSettings(event.id);
-  const showFeedbackToGuests = isClient || parseBooleanInput(feedbackSettings.show_feedback_to_guests, true);
-  // One identity-less colour tag per photo, any guest may overwrite it
-  // (#1197). Read in three places below: the colour filters, the per-viewer
-  // badge, and the "other viewers" dots that must not double-render it.
-  const sharedColorMode = feedbackSettings?.identity_mode === 'shared';
-
-  applyFeedbackFilter(photosQuery, { filter, event, identity, sharedColorMode, showFeedbackToGuests });
   const limit = query.limit === undefined ? null : Math.min(250, Math.max(1, parseInt(query.limit, 10) || 100));
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   const countRow = hiddenForGuest ? { total: 0 } : await photosQuery.clone().clearSelect().clearOrder().count('photos.id as total').first();
@@ -545,6 +572,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // Reveal mode (#838): armed flag lets an open VISIBLE gallery keep
       // polling so a re-hide propagates without a manual reload.
       reveal_armed: parseBooleanInput(event.reveal_mode, false),
+      // Live refresh (issue 1733, C5): the open gallery polls /photos/state
+      // only when this is on.
+      live_refresh: parseBooleanInput(event.live_refresh, false),
       // Two-stage delivery (issue 1562): null for an ordinary gallery.
       delivery: hiddenForGuest ? null : guestDeliveryPayload(event, total),
       disable_right_click: parseBooleanInput(event.disable_right_click, false),
@@ -757,4 +787,4 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     })
   };
 }
-module.exports = { getGalleryPhotos };
+module.exports = { getGalleryPhotos, getGalleryPhotoState };

@@ -4,10 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { feedbackService } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
-import { format } from 'date-fns';
 import { Button, Input } from '../common';
 import type { PhotoFeedback } from '../../services/feedback.service';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
 interface PhotoCommentsProps {
   photoId: string;
@@ -29,6 +29,7 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
   onCommentAdded
 }) => {
   const { t } = useTranslation();
+  const { format } = useLocalizedDate();
   const queryClient = useQueryClient();
   const guestIdentity = useGuestIdentityOptional();
   const isGuestMode = guestIdentity?.identityMode === 'guest';
@@ -237,7 +238,7 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
                     {comment.guest_name || t('feedback.anonymous', 'Anonymous')}
                   </span>
                   <span className="text-xs text-muted-theme">
-                    {format(new Date(comment.created_at), 'PP')}
+                    {format(comment.created_at)}
                   </span>
                   {comment.is_mine && !comment.is_approved && (
                     <span className="text-xs text-status hue-warning">

@@ -71,6 +71,17 @@ describe('a verified viewer working in their gallery', () => {
     expect(await statuses(app, 1, 'get', '/api/public/settings')).toEqual([429]);
   });
 
+  // Every open tab polls photos/state (live refresh): in the viewer bucket
+  // a full venue behind one address took the likes down with it.
+  it('counts the live-refresh poll in a bucket of its own', async () => {
+    const app = await buildApp();
+    const budget = MAX * GALLERY_VIEWER_BUDGET_FACTOR;
+    const POLL = '/api/gallery/wedding-2026/photos/state';
+    expect(await statuses(app, budget + 1, 'get', POLL, viewer())).toEqual([...Array(budget).fill(200), 429]);
+    expect(await statuses(app, budget + 1, 'post', FEEDBACK, viewer())).toEqual([...Array(budget).fill(200), 429]);
+    expect(await statuses(app, 1, 'get', `${POLL}/`, viewer())).toEqual([429]);
+  });
+
   // "Rate selected" is the same guest rating, many photos per request; on the
   // ordinary budget it answered 429 while single ratings still went through.
   it('counts a bulk rating against the viewer budget, through the limiter', async () => {

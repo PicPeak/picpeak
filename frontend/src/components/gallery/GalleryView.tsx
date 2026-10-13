@@ -1,8 +1,10 @@
 import { useGalleryFiltering, resolveMediaType } from './hooks/useGalleryFiltering';
 import { useGalleryUpload } from './hooks/useGalleryUpload';
+import { useLiveRefresh } from './hooks/useLiveRefresh';
 import { useGallerySelection } from './hooks/useGallerySelection';
 import { useFeedbackChange } from './hooks/useFeedbackChange';
 import { UploadProcessingNotice } from './UploadProcessingNotice';
+import { NewPhotosPill } from './NewPhotosPill';
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
@@ -49,6 +51,7 @@ import {
   type LightboxPhotoChangeReason,
 } from './photoLink';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
+import { clearDownloadJobParam, readDownloadJobParam } from './downloadJobLink';
 import { CopyFilenamesDialog } from './CopyFilenamesDialog';
 import { ExpirationBanner } from './ExpirationBanner';
 import { CountdownTimer } from './CountdownTimer';
@@ -77,6 +80,7 @@ import { feedbackService, type ColorLabel } from '../../services/feedback.servic
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
 import { useGalleryCustomCss } from '../../hooks/useGalleryCustomCss';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import type { Photo } from '../../types';
 import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -139,6 +143,7 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
 
 export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
   const { t } = useTranslation();
+  const { formatDateTime } = useLocalizedDate();
   const { logout, isClient, viaCustomer } = useGalleryAuth();
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
@@ -160,6 +165,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Filename list dialog (issue 1733, A3d).
   const [showCopyFilenames, setShowCopyFilenames] = useState(false);
   const [resolutionPickerIds, setResolutionPickerIds] = useState<number[] | null>(null);
+  // The job a "your download is ready" mail links to (issue 1733). This view
+  // only mounts behind the gallery's own access check. The token leaves the
+  // address bar when its dialog is closed.
+  const [resumeJobToken, setResumeJobToken] = useState<string | null>(() => readDownloadJobParam());
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'size' | 'rating' | 'capture_date'>('date');
   const [sortDesc, setSortDesc] = useState(true);
@@ -393,6 +402,24 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     refetchInterval: (query) => (query.state.data?.scan?.in_progress ? 5000 : false),
     staleTime: 30_000,
   });
+  // Live refresh (issue 1733, C5), per-gallery opt-in. Stands down while
+  // something else already keeps the list current: the reveal poll, the
+  // viewer's own upload being followed, a people scan refetching the photos.
+  const loadedMaxId = useMemo(
+    () => (data?.photos || []).reduce<number | null>((max, p) => (max === null || p.id > max ? p.id : max), null),
+    [data?.photos],
+  );
+  const newPhotoCount = useLiveRefresh({
+    slug,
+    // revealArmed too: the reveal poll above keeps refetching the list after
+    // the reveal, for as long as the mode is on.
+    enabled: data?.event?.live_refresh === true && !hiddenUntilReveal && !revealArmed && !uploadProcessing
+      && !peopleData?.scan?.in_progress,
+    loadedCount: data?.photos?.length ?? 0,
+    loadedMaxId,
+  });
+  const newPhotosPill = <NewPhotosPill count={newPhotoCount} onClick={() => { void refetch(); }} />;
+
   // Memoised so the `people` recount below isn't invalidated by a fresh []
   // identity on every render.
   const allPeople = useMemo(() => peopleData?.people || [], [peopleData?.people]);
@@ -812,6 +839,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // allow_ratings as it was, and the chips hide with feedbackEnabled.
     minRating: feedbackSettings?.feedback_enabled && feedbackSettings?.allow_ratings ? minRating : null,
   });
+  // `scopedPhotos` is the same scope with every search and filter off: tells
+  // "nothing matches" from "nothing here yet" when the grid comes out empty.
+  const emptyIsFiltered = filteredPhotos.length === 0 && scopedPhotos.length > 0;
   const creditsVisible = data?.event?.credits_visible === true;
 
   // Resolve a `?photo=` against the photos this viewer has loaded (issue
@@ -933,6 +963,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const deselectAll = useCallback(() => {
     setSelectedPhotos(new Set());
   }, [setSelectedPhotos]);
+  // Selection tray in the sidebar (issue 1733, A3e).
+  const deselectPhoto = useCallback((photoId: number) => {
+    setSelectedPhotos((previous) => {
+      const next = new Set(previous);
+      next.delete(photoId);
+      return next;
+    });
+  }, [setSelectedPhotos]);
 
   // Check if downloads are allowed (both event setting and not expired)
   const allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
@@ -960,6 +998,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const photosForIds = useCallback(
     (ids: number[]): QuotaPhoto[] => ids.map((id) => photosById.get(id) || { id }),
     [photosById]
+  );
+  // Selection tray in the sidebar (issue 1733, A3e), in the order selected.
+  const selectedPhotoList = useMemo(
+    () => Array.from(selectedPhotos).flatMap((id) => photosById.get(id) ?? []),
+    [selectedPhotos, photosById]
   );
   const refuseOverQuota = (photos: QuotaPhoto[]): boolean => {
     if (downloadQuota.allows(photos)) return false;
@@ -1292,7 +1335,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           {data.reveal_at && (
             <p className="text-sm text-muted-theme mb-6">
               {t('gallery.revealScheduledFor', 'Reveal scheduled for {{date}}', {
-                date: new Date(data.reveal_at).toLocaleString(),
+                date: formatDateTime(data.reveal_at),
               })}
             </p>
           )}
@@ -1323,16 +1366,19 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
 
         {/* Download size picker (#858) — "download all", or a selection. */}
-        {(showResolutionPicker || resolutionPickerIds) && (
+        {(showResolutionPicker || resolutionPickerIds || resumeJobToken) && (
           <DownloadResolutionModal
             slug={slug}
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
+            resumeToken={resumeJobToken || undefined}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
+              setResumeJobToken(null);
+              clearDownloadJobParam();
             }}
           />
         )}
@@ -1520,6 +1566,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // component for the full-bleed layouts, so a folder-only root must
           // silence the empty message without unmounting the shell (#1160).
           suppressEmptyState={rootIsFoldersOnly}
+          emptyIsFiltered={emptyIsFiltered}
           // Event-wide, so a layout's own Download All neither skips foldered
           // photos nor truncates at the 500-id cap (#1160).
           eventPhotoCount={data?.photos?.length || 0}
@@ -1591,18 +1638,22 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
         {uploadProcessingNotice}
+        {newPhotosPill}
 
         {/* Download size picker (#858) — "download all", or a selection. */}
-        {(showResolutionPicker || resolutionPickerIds) && (
+        {(showResolutionPicker || resolutionPickerIds || resumeJobToken) && (
           <DownloadResolutionModal
             slug={slug}
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
+            resumeToken={resumeJobToken || undefined}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
+              setResumeJobToken(null);
+              clearDownloadJobParam();
             }}
           />
         )}
@@ -1693,6 +1744,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onCreditChange={setSelectedCreditKey}
           onCopyFilenames={() => setShowCopyFilenames(true)}
           copyFilenamesCount={copyFilenames.photos.length}
+          selectedPhotoList={selectedPhotoList}
+          onDeselectPhoto={deselectPhoto}
+          slug={slug}
           folderTree={hasFolders ? {
             nodes: sidebarFolderTree,
             openPath: folderTrail.map((folder) => folder.id),
@@ -2002,6 +2056,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             openPhotoId={linkedPhotoId}
             onLightboxPhotoChange={handleLightboxPhotoChange}
             suppressEmptyState={rootIsFoldersOnly}
+            emptyIsFiltered={emptyIsFiltered}
             slug={slug}
             people={peopleEnabled ? people : undefined}
             onSelectPerson={togglePerson} 
@@ -2069,18 +2124,22 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
         {uploadProcessingNotice}
+        {newPhotosPill}
 
         {/* Download size picker (#858) — "download all", or a selection. */}
-        {(showResolutionPicker || resolutionPickerIds) && (
+        {(showResolutionPicker || resolutionPickerIds || resumeJobToken) && (
           <DownloadResolutionModal
             slug={slug}
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
+            resumeToken={resumeJobToken || undefined}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
+              setResumeJobToken(null);
+              clearDownloadJobParam();
             }}
           />
         )}

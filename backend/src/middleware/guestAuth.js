@@ -67,6 +67,7 @@ async function resolveGuest(req, res, next) {
       identifier: guest.identifier,
       name: guest.name,
       email: guest.email || null,
+      emailVerified: !!guest.email_verified_at,
       uploadOnly: decoded.scope === 'upload',
     };
 
