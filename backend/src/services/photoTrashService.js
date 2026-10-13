@@ -73,6 +73,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs').promises;
+const { constants: fsConstants } = require('fs');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getStorage } = require('./storage');
@@ -133,12 +134,13 @@ async function sha256Of(storage, key) {
 }
 
 /**
- * After an interrupted S3 move there is an object at the photo's place and
- * one under trash_key. Is the one at the photo's place this operation's, so
- * that one of the two is surplus? Yes when it carries the noted ETag. When
- * nothing could be noted (the request died right after its copy), the bytes
- * decide: of two identical objects either may go, and nothing else may.
- * Read as streams, and only on this path, which a crash leads to.
+ * After an interrupted move there is a file at the photo's place and one
+ * under trash_key (S3 copies and then deletes; local storage links and then
+ * unlinks, see moveIntoPlace). Is the one at the photo's place this
+ * operation's, so that one of the two is surplus? Yes when it carries the
+ * noted ETag (S3). Otherwise the bytes decide: of two identical files either
+ * may go, and nothing else may. Read as streams, and only on this path,
+ * which a crash leads to.
  */
 async function isSameObject(storage, row, placeKey, atPlace, inTrash) {
   if (isTagged(row, atPlace)) return true;
@@ -170,20 +172,56 @@ async function lockClaim(trx, row) {
 }
 
 /**
+ * Local storage: move a file to a photo's place only if nothing is there.
+ * The check a restore makes first leaves a gap, and a rename would overwrite
+ * a file that was dropped into the watched folder in it. A hard link is
+ * refused by the filesystem when the name is taken; where links are not
+ * possible (some network mounts, another device) an exclusive copy is.
+ * Between the link and the unlink the file has both names: isSameObject.
+ */
+async function moveIntoPlace(storage, fromKey, toKey) {
+  const from = storage.resolveLocalPath(fromKey);
+  const to = storage.resolveLocalPath(toKey);
+  const taken = () => trashError('RESTORE_TARGET_EXISTS', `A file has appeared at ${toKey}; it was not overwritten`);
+  await fs.mkdir(path.dirname(to), { recursive: true });
+  try {
+    await fs.link(from, to);
+  } catch (error) {
+    if (error.code === 'EEXIST') throw taken();
+    if (!['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV', 'EMLINK'].includes(error.code)) throw error;
+    try {
+      await fs.copyFile(from, to, fsConstants.COPYFILE_EXCL);
+    } catch (copyError) {
+      if (copyError.code === 'EEXIST') throw taken();
+      // Exclusive: whatever is there after a failed copy is this copy's.
+      await fs.unlink(to).catch(() => {});
+      throw copyError;
+    }
+  }
+  await fs.unlink(from);
+}
+
+/**
  * Move a file for the claim `row`. Local storage renames, which is atomic.
  * S3 copies and then deletes: the claim is renewed in between, so a caller
  * that lost it while the copy ran leaves the source alone, and its callers
  * deal with the copy that arrived late (trashPhoto, restorePhoto).
  *
- * `tagDestination`: the destination is the photo's place, and the ETag of
- * the copy is noted on the row with that renewal (move_tag). Whoever settles
- * the row later knows the object there as this operation's own by it.
+ * `intoPlace`: the destination is the photo's place, where other files can
+ * turn up, not a trash_key. Local storage then moves without overwriting
+ * (moveIntoPlace). On S3 the ETag of the copy is noted on the row with the
+ * renewal (move_tag): whoever settles the row later knows the object there
+ * as this operation's own by it. The S3 adapter has no conditional copy, so
+ * there an object arriving between the caller's check and the copy is
+ * overwritten.
  */
-async function moveClaimed(row, fromKey, toKey, { tagDestination = false } = {}) {
+async function moveClaimed(row, fromKey, toKey, { intoPlace = false } = {}) {
+  const tagDestination = intoPlace;
   const storage = getStorage();
   await holdClaim(row);
   if (storage.kind() !== 's3') {
-    await storage.rename(fromKey, toKey);
+    if (intoPlace) await moveIntoPlace(storage, fromKey, toKey);
+    else await storage.rename(fromKey, toKey);
     return;
   }
   await storage.copy(fromKey, toKey);
@@ -294,13 +332,13 @@ async function commitTrash(row, photo, event) {
 /**
  * A trashing that did not reach step 3: put things back, without ever
  * deleting the only copy of the file. For a caller that holds the claim.
- *   - a file at both keys, and the one in place is the object this trashing
- *     copied (S3, isSameObject): the move stopped between copy and delete,
- *     the copy under trash_key is surplus; drop it and the pending row
+ *   - a file at both keys, and the one in place is the photo's original
+ *     (isSameObject): a move stopped halfway, the copy under trash_key is
+ *     surplus; drop it and the pending row
  *   - a file at both keys otherwise: the file in place is not this photo's
- *     original but one somebody put there since (local storage renames, so
- *     there it always is). The original cannot go back over it and must not
- *     be deleted: finish the trashing. The other file stays for the importer.
+ *     original but one somebody put there since. The original cannot go
+ *     back over it and must not be deleted: finish the trashing. The other
+ *     file stays for the importer.
  *   - file in the trash, photo row still there: move it back
  *   - file in the trash, photo row gone (the watcher, see commitTrash):
  *     there is no gallery row to give it back to, so finish the trashing
@@ -311,8 +349,7 @@ async function undoPending(row) {
     const storage = getStorage();
     const inPlace = await storage.stat(row.original_key);
     const inTrash = await storage.stat(row.trash_key);
-    const surplusCopy = inPlace && inTrash && storage.kind() === 's3'
-      && await isSameObject(storage, row, row.original_key, inPlace, inTrash);
+    const surplusCopy = inPlace && inTrash && await isSameObject(storage, row, row.original_key, inPlace, inTrash);
     if (surplusCopy) {
       await holdClaim(row);
       await storage.delete(row.trash_key);
@@ -324,7 +361,7 @@ async function undoPending(row) {
       }
       // Tagged: should this stop between copy and delete, the next attempt
       // knows the object in place as the original again.
-      await moveClaimed(row, row.trash_key, row.original_key, { tagDestination: true });
+      await moveClaimed(row, row.trash_key, row.original_key, { intoPlace: true });
     }
   }
   await db('photo_trash').where({ id: row.id, state: 'pending', state_changed_at: row.state_changed_at }).del();
@@ -797,11 +834,9 @@ async function insertRestored(trx, event, row, columns, forEngine) {
  * nothing at the destination is its own: a file there was put by somebody
  * else (a drop into the watched folder that awaits import) and stays.
  * Otherwise:
- *   - file in the trash and at the destination: an S3 move is copy then
- *     delete, and the destination holds the copy if it is the object the
- *     restore put there (isSameObject); it goes. Any other object there,
- *     and on local storage (which renames) every file there, is not this
- *     photo's.
+ *   - file in the trash and at the destination: the move stopped halfway
+ *     if the one at the destination is what the restore put there
+ *     (isSameObject); it goes. Any other file there is not this photo's.
  *   - file at the destination only: move it back; on S3, if it is the
  *     object the restore noted
  * A file a photo row names is that photo's, whatever else.
@@ -817,7 +852,7 @@ async function settleRestore(row, moved) {
       && !(await db('photos').where({ event_id: row.event_id }).whereIn('path', [relative, targetKey]).first('id'));
     const s3 = storage.kind() === 's3';
     if (mine && inTrash) {
-      if (s3 && await isSameObject(storage, row, targetKey, atTarget, inTrash)) {
+      if (await isSameObject(storage, row, targetKey, atTarget, inTrash)) {
         await holdClaim(row);
         await storage.delete(targetKey);
       }
@@ -858,6 +893,27 @@ async function retakeRestore(claim, moved, lateCopyTag) {
 }
 
 /**
+ * For a restore that lost its claim because the row is gone altogether: its
+ * gallery was deleted meanwhile, or the sweep had put the entry back and it
+ * was purged. Nobody will settle the copy this restore put at the photo's
+ * place on S3: no photo row names it, the gallery delete did not see it, and
+ * nothing would ever remove it. It is known by its ETag and goes. On local
+ * storage a deleted gallery's folder goes as a whole.
+ */
+async function dropAbandonedRestoreCopy(claim, lateCopyTag) {
+  const storage = getStorage();
+  const tag = claim.move_tag || lateCopyTag;
+  if (storage.kind() !== 's3' || !claim.trash_key || !tag) return;
+  if (await db('photo_trash').where({ id: claim.id }).first('id')) return;
+  const targetKey = claim.original_key;
+  const atTarget = await storage.stat(targetKey);
+  if (!atTarget || atTarget.etag !== tag) return;
+  const relative = targetKey.replace(/^events\/active\//, '');
+  if (await db('photos').where({ event_id: claim.event_id }).whereIn('path', [relative, targetKey]).first('id')) return;
+  await storage.delete(targetKey);
+}
+
+/**
  * A folder request the photo waited on may have been decided while it was in
  * the trash; the decision only reached the photos that were in the gallery.
  * After the commit, like an upload that outlived the decision
@@ -868,6 +924,20 @@ async function settleFolderRequest(event, photoId) {
   try {
     const restored = await db('photos').where({ id: photoId }).first('pending_folder_request_id');
     if (!restored || !restored.pending_folder_request_id) return;
+    const request = await db('folder_requests')
+      .where({ id: restored.pending_folder_request_id, event_id: event.id }).first('status', 'approved_folder_id');
+    if (request && request.status === 'pending') return;
+    // The folder the request was approved into can be gone again by now,
+    // and so can the request: the photo keeps the placement the restore
+    // checked and only stops waiting.
+    const folderStands = request && request.status === 'approved' && request.approved_folder_id
+      ? await db('photo_categories').where({ id: request.approved_folder_id, event_id: event.id }).first('id')
+      : true;
+    if (!request || !folderStands) {
+      await db('photos').where({ id: photoId, pending_folder_request_id: restored.pending_folder_request_id })
+        .update({ pending_folder_request_id: null });
+      return;
+    }
     await require('./folderRequestService').settleLateArrivals(Number(event.id), restored.pending_folder_request_id);
   } catch (error) {
     logger.warn(`Could not settle the folder request of restored photo ${photoId}`, { error: error.message });
@@ -918,7 +988,7 @@ async function restorePhoto(event, row) {
       // destination is this restore's to take back (settleRestore).
       await holdClaim(claim, { restore_move_at: nowIso() });
       moved = true;
-      await moveClaimed(claim, row.trash_key, targetKey, { tagDestination: true });
+      await moveClaimed(claim, row.trash_key, targetKey, { intoPlace: true });
     } else {
       try {
         await fs.access(resolvePhotoFilePath(event, photoRow));
@@ -938,6 +1008,11 @@ async function restorePhoto(event, row) {
     } catch (undoError) {
       // Left `restoring`; the sweep moves the file back.
       logger.error(`Could not undo the restore of trash row ${row.id}`, { error: undoError.message });
+      if (moved) {
+        await dropAbandonedRestoreCopy(claim, error.lateCopyTag).catch((dropError) => {
+          logger.error(`Could not remove the copy of trash row ${row.id}`, { error: dropError.message });
+        });
+      }
     }
     if (!error.statusCode && isUniqueViolation(error)) {
       throw trashError('RESTORE_CONFLICT', `"${row.filename}" is in the gallery again`);
