@@ -10,6 +10,8 @@
  *   POST .../download-jobs   → { token, status: 'pending' }
  *   GET  .../download-jobs/:token        → poll { status, progress }
  *   GET  .../download-jobs/:token/file   → the finished zip
+ *   POST .../download-jobs/:token/notify → mail me when it is ready
+ *                                          (downloadJobNotifier.js)
  *
  * State lives in the `download_jobs` table rather than in memory: an in-memory
  * map loses every "ready" job on restart and is simply wrong the moment the
@@ -32,15 +34,22 @@ const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
 const { renderPhotoForDownload, resolveWatermarkSettings } = require('./downloadRendition');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
-const { parseResolution } = require('../utils/downloadResolutions');
+const { parseResolution, getDownloadGlobals } = require('../utils/downloadResolutions');
+const { isGalleryAvailable, isGalleryExpired } = require('../utils/galleryLifecycle');
+const { parseBooleanInput } = require('../utils/parsers');
 const { applyPhotoVisibilityFilter, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 
 const blockedFoldersOf = (eventId) => require('./folderTreeService').downloadBlockedFolderIds(eventId);
 
-// How long a finished archive stays downloadable before the sweep deletes it.
-const JOB_TTL_MS = 60 * 60 * 1000; // 1 hour
+// How long a finished archive stays downloadable before the sweep deletes it:
+// the "keep prepared downloads for" setting, one hour unless an admin raised
+// it. Read when a job is created, so a change applies to new jobs.
+const HOUR_MS = 60 * 60 * 1000;
+async function jobTtlMs() {
+  return (await getDownloadGlobals()).job_retention_hours * HOUR_MS;
+}
 // Guards against a handful of guests each kicking off a whole-gallery resize.
 const MAX_CONCURRENT_BUILDS = 2;
 // Hard ceiling on queued+running builds. Gallery routes are not behind the
@@ -185,7 +194,7 @@ class DownloadJobService {
 
     try {
       const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + JOB_TTL_MS).toISOString();
+      const expiresAt = new Date(Date.now() + await jobTtlMs()).toISOString();
 
       const inserted = await db('download_jobs').insert({
         token,
@@ -376,6 +385,10 @@ class DownloadJobService {
         completed_at: new Date().toISOString(),
       });
       logger.info('Download job ready', { jobId: id, photos: appended, bytes: stat.size });
+      // Whoever asked to be mailed (issue 1733). The archive is ready either
+      // way, so a mail that cannot be queued must not fail the job.
+      await require('./downloadJobNotifier').notifyReady(id)
+        .catch((err) => logger.warn('Download job mail failed', { jobId: id, error: err.message }));
     } catch (err) {
       logger.error('Download job error', { jobId: id, error: err.message });
       await this._fail(id, err.message).catch(() => {});
@@ -413,24 +426,74 @@ class DownloadJobService {
     return orphaned;
   }
 
-  /** Delete expired jobs and their artifacts. Returns how many were removed. */
+  /**
+   * Can this finished archive still be handed to anyone (issue 1733)?
+   *
+   * The same answers the delivery route gives, asked without a request: the
+   * gallery has to be open (not deleted, archived, deactivated or expired),
+   * downloads have to be on, and the archive has to match the gallery as it
+   * is now (isStillDeliverable: every photo still visible to the scope it was
+   * built for, same watermark, same folder and category permissions). A
+   * draft counts as open, because an admin preview can download from it.
+   */
+  async isDeliverableToAnyone(job, event) {
+    if (!isGalleryAvailable(event, { adminPreview: true }) || isGalleryExpired(event)) return false;
+    if (!parseBooleanInput(event.allow_downloads, true)) return false;
+    // The two scopes map onto the two access levels that differ in what they
+    // see: a 'hidden' archive was built for a client, the rest for a guest.
+    const accessLevel = job.visibility_scope === 'hidden' ? 'client' : 'guest';
+    return this.isStillDeliverable(job, event, accessLevel);
+  }
+
+  /**
+   * Delete jobs past their retention, and finished archives that can no
+   * longer be delivered: with a retention of days instead of an hour, those
+   * would otherwise sit on disk until it ran out.
+   *
+   * Safe on several replicas at once: deleting a file that is already gone
+   * is not an error in either storage backend, and deleting rows by id is a
+   * no-op for the replica that comes second. Returns how many were removed.
+   */
   async sweepExpired() {
     const now = new Date().toISOString();
     const expired = await db('download_jobs').where('expires_at', '<=', now);
-    if (expired.length === 0) return 0;
+
+    const undeliverable = [];
+    const ready = await db('download_jobs').where({ status: 'ready' }).where('expires_at', '>', now);
+    const events = new Map();
+    for (const job of ready) {
+      try {
+        if (!events.has(job.event_id)) {
+          events.set(job.event_id, await db('events').where({ id: job.event_id }).first());
+        }
+        if (!(await this.isDeliverableToAnyone(job, events.get(job.event_id)))) undeliverable.push(job);
+      } catch (e) {
+        // Unknown is not undeliverable: keep it and ask again next round.
+        logger.warn('Could not check a download job for deliverability', { jobId: job.id, error: e.message });
+      }
+    }
+
+    const doomed = [...expired, ...undeliverable];
+    if (doomed.length === 0) return 0;
 
     const storage = getStorage();
-    for (const job of expired) {
+    for (const job of doomed) {
       if (job.zip_path) {
         await storage.delete(job.zip_path).catch((e) =>
           logger.warn('Failed deleting download job artifact', { jobId: job.id, error: e.message }));
       }
     }
-    await db('download_jobs').whereIn('id', expired.map((j) => j.id)).del();
-    logger.info(`Download job sweep removed ${expired.length} expired job(s)`);
-    return expired.length;
+    const ids = doomed.map((j) => j.id);
+    // Explicitly, not only through the cascade: SQLite enforces foreign keys
+    // per connection.
+    await db('download_job_recipients').whereIn('job_id', ids).del();
+    // After the recipients (nothing new is queued for these jobs from here
+    // on) and before the jobs, so a failure leaves them for the next round.
+    await require('./downloadJobNotifier').cancelPendingMails(doomed);
+    await db('download_jobs').whereIn('id', ids).del();
+    logger.info(`Download job sweep removed ${expired.length} expired and ${undeliverable.length} undeliverable job(s)`);
+    return doomed.length;
   }
 }
 
 module.exports = new DownloadJobService();
-module.exports.JOB_TTL_MS = JOB_TTL_MS;

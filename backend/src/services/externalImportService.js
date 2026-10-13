@@ -32,6 +32,7 @@ const {
   importableExtensions,
 } = require('./externalMediaTypes');
 const { generateThumbnail, extractCaptureDate, orientedDimensions } = require('./imageProcessor');
+const { exifColumn } = require('./photoExif');
 const { processUploadedVideo, posterFrameError } = require('./videoProcessor');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { resolveCredit } = require('./photoCredit');
@@ -545,6 +546,9 @@ async function importExternalFolder({
           }
         }
 
+        // Camera details (issue 1733, D1), same best-effort read.
+        const exif = isVideo ? {} : await exifColumn(f.full);
+
         // Credit from EXIF (#1561), same best-effort read as the date above.
         // Videos carry none, as on every other ingest path.
         const credit = await resolveCredit({ localPath: f.full, isVideo });
@@ -557,7 +561,9 @@ async function importExternalFolder({
         if (where.segments.length) {
           const key = folderTree.pathKey(where.segments);
           if (!folderIdByPath.has(key)) {
-            folderIdByPath.set(key, (await folderTree.ensurePath(eventId, where.segments, { canCreate: true })).folderId);
+            // foldAtLimit: past the per-event folder cap the file still imports,
+            // into the deepest existing folder (logged), instead of being skipped.
+            folderIdByPath.set(key, (await folderTree.ensurePath(eventId, where.segments, { canCreate: true, foldAtLimit: true })).folderId);
           }
           folderId = folderIdByPath.get(key);
         }
@@ -588,6 +594,7 @@ async function importExternalFolder({
             // "[object Object]" (see CLAUDE.md). Strings round-trip on both
             // engines.
             captured_at: capturedAt ? capturedAt.toISOString() : null,
+            ...exif,
             // Both columns, as the upload pipeline writes them: every
             // serving route and every image-only job tells a video from a
             // photo by these two.

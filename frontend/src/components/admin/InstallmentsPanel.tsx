@@ -30,6 +30,7 @@ import { Button, Input, LocalizedDateInput } from '../common';
 import { DecimalInput } from '../common/DecimalInput';
 import type { PaymentTermInstallment } from '../../services/quotes.service';
 import { useInstallmentDefaults } from '../../hooks/useInstallmentDefaults';
+import { todayIsoDate } from '../../utils/localDate';
 
 export type InstallmentPlan = PaymentTermInstallment[];
 
@@ -48,10 +49,6 @@ export interface InstallmentsPanelProps {
 const ALL_TRIGGERS: PaymentTermInstallment['trigger'][] = [
   'quote_accepted', 'before_event', 'after_event', 'after_delivery', 'fixed_date',
 ];
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function addDays(base: string, days: number): string {
   const d = new Date(base);
@@ -140,7 +137,7 @@ export const InstallmentsPanel: React.FC<InstallmentsPanelProps> = ({
   // when trigger is fixed_date; for dynamic triggers we display the
   // resolved date if we have eventDate, else show a placeholder.
   const previewDate = (row: PaymentTermInstallment): string | null => {
-    const baseline = todayIso();
+    const baseline = todayIsoDate();
     if (row.trigger === 'fixed_date' || row.trigger === 'quote_accepted') {
       return addDays(baseline, row.offset_days || 0);
     }
@@ -230,7 +227,7 @@ export const InstallmentsPanel: React.FC<InstallmentsPanelProps> = ({
                         value={previewDate(row) || ''}
                         onChange={(next) => {
                           if (!next) return;
-                          const offset = daysBetween(todayIso(), next);
+                          const offset = daysBetween(todayIsoDate(), next);
                           update(idx, { trigger: 'fixed_date', offset_days: offset });
                         }}
                         disabled={disabled}

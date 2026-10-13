@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { generateThumbnail, generateVideoPlaceholder, extractCaptureDate, withLocalCopy, withProcessableImage } = require('./imageProcessor');
+const { exifColumn } = require('./photoExif');
 const { generatePhotoFilename } = require('../utils/filenameSanitizer');
 const { processUploadedVideo, extractVideoMetadata, isVideoMimeType, posterFrameError } = require('./videoProcessor');
 const { getStorage } = require('./storage');
@@ -12,6 +13,7 @@ const { insertPhotoWithinCap, photoCapOf } = require('./photoCap');
 const { resolveCredit, creditOpenForExif, settleGuestCredit } = require('./photoCredit');
 const imageAdmission = require('./imageWorkAdmission');
 const { isResourceError, describe: describeImageError } = require('./imageResourcePolicy');
+const { sha256File } = require('./photoDuplicates');
 const mediaAttempts = require('./mediaAttemptService');
 const { refusal: mediaRefusal, isInterruption } = require('./mediaProcessPolicy');
 
@@ -222,6 +224,12 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       // Credit (#1561), read from the temp file before it is moved.
       const credit = await resolveCredit({ uploadedBy, localPath: tempPath, isVideo });
+      // Content hash (issue 1733, C2), likewise before the move; the chunked
+      // route has already computed it for its duplicate check.
+      const contentSha256 = file.contentSha256 || await sha256File(tempPath);
+      // Camera details (issue 1733, D1), from the same temp file: this path
+      // completes the row itself, so the worker never reads them.
+      const exif = isVideo ? {} : await exifColumn(tempPath);
 
       // Now upload the original through the storage backend and remove the
       // local temp copy.
@@ -267,6 +275,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         thumb_hash: thumbMeta.thumbHash || null,
         type: photoType,
         size_bytes: actualSize,
+        content_sha256: contentSha256,
         uploaded_by: uploadedBy,
         source_origin: 'managed',
         media_type: mediaType,
@@ -276,7 +285,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         ...(isVideo && webCopyEnabled ? { web_status: 'pending' } : {}),
         ...(processingError ? { processing_error: processingError } : {}),
         ...placement,
-        ...credit
+        ...credit,
+        ...exif
       };
 
       // Add video-specific metadata if applicable
@@ -424,6 +434,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
  *   - credit            credit columns resolved by the caller (#1561); for a
  *                       guest upload that is the guest's name, and the
  *                       worker then never reads EXIF for the row
+ *   - heldForReview     store the rows hidden and pending review (a guest
+ *                       upload to a moderated gallery, issue 1733)
+ *   - clientCapturedAt  Date a guest's browser read before scaling the photo
+ *                       down; stored only for an image with no EXIF date
  *
  * Returns: { uploadId, photos: [{id, filename, size, category_id}], errors: [{filename, error}] }
  */
@@ -432,7 +446,8 @@ async function queueFilesForProcessing(files, options = {}) {
   const { countEventPhotos, insertPhotoWithinCap, photoCapError } = require('./photoCap');
   const {
     eventId, photoType = 'individual', categoryId = null, folderId = null, uploadId: providedUploadId, photoCap = null,
-    uploadedBy = 'admin', credit = {}, uploadReservation = null,
+    uploadedBy = 'admin', credit = {}, uploadReservation = null, heldForReview = false,
+    clientCapturedAt = null,
   } = options;
   const uploadId = providedUploadId || crypto.randomBytes(16).toString('hex');
 
@@ -496,6 +511,17 @@ async function queueFilesForProcessing(files, options = {}) {
       // or queue insertion, with a message naming the limit.
       if (!isVideo) await imageAdmission.inspect(tempPath, newFilename, uploadReservation?.signal, preparedImages);
 
+      // Stored, never checked here (issue 1733, C2): this path serves guest
+      // uploads, and a "duplicate" answer would tell a guest what the gallery
+      // already holds.
+      const contentSha256 = await sha256File(tempPath);
+
+      // Read here, while the file is still local: a date in the file always
+      // wins, and the worker reads it as for any other upload.
+      const capturedAt = clientCapturedAt && !isVideo && !(await extractCaptureDate(tempPath))
+        ? clientCapturedAt.toISOString()
+        : null;
+
       if (uploadReservation) {
         uploadCharge = await require('./publicUploadQuota').prepareObject(uploadReservation, finalKey, tempStats.size);
       }
@@ -524,7 +550,8 @@ async function queueFilesForProcessing(files, options = {}) {
         category_id: categoryId,
         folder_id: folderId,
         size_bytes: tempStats.size,
-        captured_at: null,
+        content_sha256: contentSha256,
+        captured_at: capturedAt,
         media_type: isVideo ? 'video' : 'image',
         mime_type: file.mimetype,
         processing_status: 'pending',
@@ -533,6 +560,8 @@ async function queueFilesForProcessing(files, options = {}) {
         // guest upload used to be recorded as the photographer's (#1561).
         uploaded_by: uploadedBy,
         ...credit,
+        // Stored like a team upload under review (uploadReviewService).
+        ...(heldForReview ? { visibility: 'hidden', moderation_status: 'pending' } : {}),
       };
       const writePhoto = async conn => {
         const inserted = await insertPhotoWithinCap(photoRow, photoCap, conn);
@@ -642,6 +671,11 @@ async function processPhoto(photoId) {
       } catch (e) {
         logger.warn(`processPhoto: EXIF extraction failed for ${photoId}`, { error: e.message });
       }
+    }
+
+    // Camera details (issue 1733, D1), from the same original.
+    if (!photo.exif_json && !isVideo) {
+      Object.assign(updateData, await exifColumn(localPath));
     }
 
     if (isVideo) {

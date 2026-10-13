@@ -130,6 +130,9 @@ function _resetCache() { cache = null; }
 
 module.exports = {
   CUTOFF_KEY,
+  // Uncached and throwing: for the rare check that must not trust a cutoff
+  // another replica may have replaced in the last CACHE_MS.
+  readSessionsValidAfter: readCutoffFromDb,
   getSessionsValidAfter,
   setSessionsValidAfter,
   isTokenBeforeCutoff,

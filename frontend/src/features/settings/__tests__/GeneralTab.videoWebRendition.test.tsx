@@ -11,6 +11,7 @@ import { GeneralTab } from '../tabs/GeneralTab';
 import type { GeneralSettings } from '../hooks/useSettingsState';
 
 vi.mock('../components/MfaSettingsCard', () => ({ MfaSettingsCard: () => null }));
+vi.mock('../components/PasskeysCard', () => ({ PasskeysCard: () => null }));
 
 const base: GeneralSettings = {
   site_url: 'https://example.com',

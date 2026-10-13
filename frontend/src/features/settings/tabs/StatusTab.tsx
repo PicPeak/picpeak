@@ -148,6 +148,9 @@ export const StatusTab: React.FC<StatusTabProps> = ({
     enabled: isActive && canManageSystem,
     refetchInterval: 10000,
   });
+  // What a run would read: photos without a capture date or without camera
+  // details on record (issue 1733, D1).
+  const captureDatePending = Number(captureDateStatus?.pending ?? captureDateStatus?.withoutCaptureDate ?? 0);
 
   // Orientation backfill (#1198). No backlog counter of its own: unlike the
   // other two it cannot know how many rows need it without re-reading every
@@ -752,6 +755,14 @@ export const StatusTab: React.FC<StatusTabProps> = ({
             </div>
           </div>
 
+          {/* The run also reads camera details (issue 1733, D1), so it can
+              have work while every photo is dated. */}
+          {captureDatePending > Number(captureDateStatus.withoutCaptureDate) && (
+            <p className="text-sm text-soft mb-4">
+              {t('settings.captureDates.pendingDetails', { photos: captureDatePending })}
+            </p>
+          )}
+
           {captureDateStatus.lastResult && (
             <p className="text-sm text-soft mb-4">
               {/* Two buckets on purpose: "the mount is gone" and "these files
@@ -793,12 +804,12 @@ export const StatusTab: React.FC<StatusTabProps> = ({
               size="sm"
               onClick={() => captureDateMutation.mutate()}
               isLoading={captureDateMutation.isPending || captureDateStatus.isRunning}
-              disabled={Number(captureDateStatus.withoutCaptureDate) === 0 || captureDateStatus.isRunning}
+              disabled={captureDatePending === 0 || captureDateStatus.isRunning}
               leftIcon={<CalendarClock className="w-4 h-4" />}
             >
               {captureDateStatus.isRunning
                 ? t('settings.captureDates.running', 'Backfilling...')
-                : Number(captureDateStatus.withoutCaptureDate) === 0
+                : captureDatePending === 0
                   ? t('settings.captureDates.noneToFill', 'All photos already have a capture date')
                   : t('settings.captureDates.button', 'Backfill Capture Dates')}
             </Button>

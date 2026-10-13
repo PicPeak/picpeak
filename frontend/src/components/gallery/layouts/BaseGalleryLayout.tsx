@@ -50,6 +50,8 @@ export interface BaseGalleryLayoutProps {
   allowDownloads?: boolean;
   /** #1160: folder-only root — render the shell, skip the empty message. */
   suppressEmptyState?: boolean;
+  /** The scope has photos, but the search or filters leave none on screen. */
+  emptyIsFiltered?: boolean;
   /**
    * Event-wide photo count (#1160), for stats a layout renders about the whole
    * gallery. `photos` is only the current folder scope and is empty at a

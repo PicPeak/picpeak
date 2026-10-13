@@ -1,6 +1,6 @@
 import { usePhotoSelection } from '../../hooks/usePhotoSelection';
 import React, { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -16,6 +16,7 @@ import { COLOR_LABELS, COLOR_LABEL_SWATCHES, type ColorLabel, type KeybindMode }
 import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
 import { useTranslation } from 'react-i18next';
 import { defaultCategoryLabel } from '../../utils/mediaCounts';
+import { exifLine } from '../../utils/photoExif';
 import { useMutationWithToast, useModal } from '../../hooks';
 
 type AdminFeedbackResponse = {
@@ -142,6 +143,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
     ? creditOverrides[currentPhoto.id]
     : currentPhoto.credit_name ?? null;
   useEffect(() => { setEditingCredit(false); }, [currentPhoto.id]);
+  const exifText = exifLine(currentPhoto.exif);
 
   const saveCredit = async (value: string | null) => {
     setSavingCredit(true);
@@ -498,6 +500,17 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                 {fmtDateTime(currentPhoto.uploaded_at)}
               </p>
             </div>
+
+            {/* Camera details (issue 1733, D1); left out when none were read. */}
+            {exifText && (
+              <div data-testid="admin-viewer-exif">
+                <span className="text-neutral-400 flex items-center gap-1 mb-1">
+                  <Camera className="w-4 h-4" />
+                  {t('admin.photos.cameraDetails')}
+                </span>
+                <p className="text-white">{exifText}</p>
+              </div>
+            )}
 
             {currentPhoto.view_count !== undefined && (
               <div>

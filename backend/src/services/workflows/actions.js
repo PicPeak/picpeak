@@ -414,13 +414,28 @@ registry.registerAction('send_document', async (ctx) => {
     const ids = ctx.vars.preparedInvoiceIds || [];
     if (!ids.length) return { skipped: true, reason: 'no prepared invoice to send' };
     const invoiceService = require('../invoiceService');
+    // Only invoices still unsent go out. One the admin already sent, paid or
+    // cancelled by hand is reported, never mailed a second time (and
+    // sendInvoice itself refuses an automatic re-send).
     let sent = 0;
-    for (const id of ids) { await invoiceService.sendInvoice(id, adminId); sent += 1; }
-    return { invoices_sent: sent };
+    const alreadySent = [];
+    for (const id of ids) {
+      const row = await ctx.db('invoices').where({ id }).first('status');
+      if (!row || row.status !== 'scheduled') { alreadySent.push(id); continue; }
+      const res = await invoiceService.sendInvoice(id, adminId);
+      if (res && res.sent) sent += 1; else alreadySent.push(id);
+    }
+    if (!sent) return { skipped: true, reason: 'invoice already sent, paid or cancelled', already_sent: alreadySent };
+    return alreadySent.length ? { invoices_sent: sent, already_sent: alreadySent } : { invoices_sent: sent };
   }
   if (doc === 'contract') {
     const cid = ctx.vars.preparedContractId;
     if (!cid) return { skipped: true, reason: 'no prepared contract to send' };
+    // Sent by hand already: report it instead of failing the run on the 409.
+    const contract = await ctx.db('contracts').where({ id: cid }).first('status');
+    if (contract && !['draft', 'awaiting_data'].includes(contract.status)) {
+      return { skipped: true, reason: 'contract already sent', status: contract.status };
+    }
     const sent = await require('../contractService').sendContract(cid, adminId);
     // Sent, but the invitation failed: recorded on the contract, retried by
     // the hourly sweep. The run log says so rather than failing the step.

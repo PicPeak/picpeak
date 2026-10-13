@@ -21,17 +21,11 @@ export interface GalleryLayoutSettings {
   };
   
   // Masonry specific
-  masonryMode?: 'columns' | 'rows' | 'flickr' | 'quilted' | 'justified'; // columns = Pinterest-style, rows = justified rows, flickr = Flickr justified-layout, quilted = mixed sizes, justified = Knuth-Plass
+  masonryMode?: 'columns' | 'rows' | 'flickr' | 'quilted' | 'justified'; // columns = Pinterest-style, rows = justified rows, flickr = Flickr justified-layout, quilted = mixed sizes, justified = rendered as rows
   masonryGutter?: number;
   masonryRowHeight?: number; // Target row height for rows mode (150-400)
   masonryLastRowBehavior?: 'justify' | 'left' | 'center'; // How to align incomplete last row
 
-  // Justified layout specific
-  justifiedRowHeight?: number;
-  justifiedLastRowBehavior?: 'justify' | 'left' | 'center';
-  justifiedShowHero?: boolean;
-  justifiedHeroHeight?: 'small' | 'medium' | 'large';
-  
   // Carousel specific
   carouselAutoplay?: boolean;
   carouselInterval?: number;

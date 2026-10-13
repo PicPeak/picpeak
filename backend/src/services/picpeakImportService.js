@@ -240,6 +240,37 @@ async function reinjectCurrentAdmin(trx, currentAdmin) {
   }
 }
 
+// The operator's passkeys (migration 295) are login credentials like the
+// password and the TOTP secret above, but live in their own table, which the
+// restore replaces with the archive's rows. Left alone, the operator would lose
+// their own keys, and any archived key attached to the account the operator
+// ends up on could sign in as them without the password or the second factor.
+// captureOperatorPasskeys() reads the rows before the wipe;
+// preserveOperatorPasskeys() makes them the only keys of the operator's row.
+const PASSKEY_TABLE = 'admin_webauthn_credentials';
+
+async function captureOperatorPasskeys(executor, adminId) {
+  if (!adminId || !(await executor.schema.hasTable(PASSKEY_TABLE))) return [];
+  return executor(PASSKEY_TABLE).where({ admin_user_id: adminId }).orderBy('id');
+}
+
+async function preserveOperatorPasskeys(trx, operatorId, passkeys) {
+  if (!operatorId || !(await trx.schema.hasTable(PASSKEY_TABLE))) return;
+  // Every archived key on the operator's row goes, whether the row came from
+  // the archive or is new: FK checks are suspended during the load, so the
+  // archive can carry keys for an id it holds no account for.
+  await trx(PASSKEY_TABLE).where({ admin_user_id: operatorId }).del();
+  if (!passkeys || !passkeys.length) return;
+  // credential_id is unique. An archived row claiming one of the operator's
+  // credential ids for another account loses to the operator's own.
+  await trx(PASSKEY_TABLE).whereIn('credential_id', passkeys.map((row) => row.credential_id)).del();
+  // Explicit ids, for the reason reinjectCurrentAdmin gives: batchInsert left
+  // the Postgres sequence unadvanced.
+  const maxRow = await trx(PASSKEY_TABLE).max({ m: 'id' }).first();
+  let nextId = Number(maxRow && maxRow.m) || 0;
+  await trx(PASSKEY_TABLE).insert(passkeys.map((row) => ({ ...row, id: ++nextId, admin_user_id: operatorId })));
+}
+
 // Capture the operator's role and its granted permission NAMES before the wipe,
 // so preserveOperatorRole() can re-establish the operator's authorization after
 // the RBAC tables are replaced. Permission NAMES (not ids) are captured because
@@ -556,6 +587,8 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     // the reinsert loop below replaces it with the archive's rows, and
     // skipping the clear would leave stale local rows colliding with the
     // reinserted ones on unique constraints (e.g. ledger_accounts.number).
+    const operatorPasskeys = await captureOperatorPasskeys(trx, currentAdmin && currentAdmin.id);
+
     const manifestTableSet = new Set(tables);
     const tablesToClear = new Set(allTables || tables);
     // Download limit grants (issue 1560) too: an archive made before they
@@ -626,6 +659,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     if (operatorId && roleSnapshot) {
       await preserveOperatorRole(trx, operatorId, roleSnapshot);
     }
+    await preserveOperatorPasskeys(trx, operatorId, operatorPasskeys);
 
     await hardenAccountRecoveryStorage(trx);
     await installAccountRecoveryWriteGuards(trx);
@@ -706,6 +740,8 @@ module.exports = {
   reinjectCurrentAdmin,
   captureOperatorRole,
   preserveOperatorRole,
+  captureOperatorPasskeys,
+  preserveOperatorPasskeys,
   resyncSequences,
   SEED_ONLY_TABLES,
 };

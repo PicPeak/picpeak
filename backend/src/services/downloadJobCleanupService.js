@@ -8,6 +8,10 @@
  * non-standard resolution would leave a full gallery-sized archive behind in
  * `.download-cache` forever.
  *
+ * The same pass drops finished archives that can no longer be delivered (the
+ * gallery expired or was archived, or changed underneath the archive), so a
+ * retention of days does not keep dead archives on disk (issue 1733).
+ *
  * Runs every 20 minutes, offset from the hourly jobs so the three cleanup
  * schedulers don't all wake at once.
  */
@@ -23,6 +27,8 @@ const stopDownloadJobCleanup = () => task.stop();
 async function runDownloadJobCleanup() {
   try {
     await downloadJobService.sweepExpired();
+    // Ready mails that could not be queued when their job finished.
+    await require('./downloadJobNotifier').retryUnsent();
   } catch (err) {
     logger.error('Download job cleanup failed', { error: err.message });
   }

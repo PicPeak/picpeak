@@ -203,7 +203,7 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
   }
 
   // Never return "success" with no thumbnail at all: the gallery grid
-  // (GridGalleryLayout/JustifiedGalleryLayout) falls back to
+  // (GridGalleryLayout) falls back to
   // `photo.thumbnail_url || photo.url` when there's no thumbnail, which
   // makes AuthenticatedImage download the full ORIGINAL VIDEO and try to
   // render it as an <img> — a broken tile and a multi-GB fetch just from
