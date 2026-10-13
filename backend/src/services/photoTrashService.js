@@ -1140,4 +1140,6 @@ module.exports = {
   claimsIncomingFile,
   startPhotoTrashPurge,
   stopPhotoTrashPurge,
+  // exported for tests
+  _internal: { claimPending, insertRestored },
 };
