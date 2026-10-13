@@ -256,16 +256,22 @@ async function handleAdminPhotoUpload(req, res) {
       // detect_duplicates the files that will be skipped as duplicates: of
       // the gallery, or of an earlier file of this request. Otherwise a batch
       // that fits once they are skipped is refused, and a duplicate-only
-      // upload at the cap never gets its duplicate report. An estimate like
-      // the replacement count; insertPhotoWithinCap below is what holds the cap.
+      // upload at the cap never gets its duplicate report. Replacements run
+      // before the new files, so the bytes they bring in count as held too.
+      // An estimate like the replacement count; insertPhotoWithinCap below is
+      // what holds the cap.
       if ((replaceByName || detectDuplicates) && req.files) {
         const seenHashes = new Set();
+        const newFiles = [];
         for (const file of req.files) {
           const candidate = replaceByName ? await findReplacementCandidate(
             parseInt(eventId), file.originalname, { matchMode }
           ) : null;
-          if (candidate && !candidate.ambiguous) { newFilesCount--; continue; }
-          if (!detectDuplicates) continue;
+          if (!candidate || candidate.ambiguous) { newFiles.push(file); continue; }
+          newFilesCount--;
+          if (detectDuplicates) seenHashes.add(await sha256File(file.path));
+        }
+        for (const file of detectDuplicates ? newFiles : []) {
           file.contentSha256 = await sha256File(file.path);
           if (seenHashes.has(file.contentSha256) || await findDuplicate(event.id, file.contentSha256)) newFilesCount--;
           seenHashes.add(file.contentSha256);

@@ -175,6 +175,17 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
       expect(await photosOf(event)).toHaveLength(1);
     });
 
+    it('counts a file with the bytes a replacement of the same request brings in as a duplicate', async () => {
+      const event = await capped(1);
+      await adminUpload(event, [['first.jpg', jpegA]]);
+      const res = await adminUpload(event, [['first.jpg', jpegB], ['copy.jpg', jpegB]],
+        { detect_duplicates: 'true', replace_by_name: 'true' });
+      expect(res.status).toBe(202);
+      expect(res.body).toMatchObject({ count: 0, replacedCount: 1 });
+      expect(res.body.duplicates).toEqual([{ index: 1, filename: 'copy.jpg', duplicate_of: 'first.jpg' }]);
+      expect(await photosOf(event)).toHaveLength(1);
+    });
+
     it('still refuses a batch whose new files do not fit', async () => {
       const event = await capped(1);
       await adminUpload(event, [['first.jpg', jpegA]]);
