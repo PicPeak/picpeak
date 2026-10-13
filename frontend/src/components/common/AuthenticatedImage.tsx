@@ -160,6 +160,22 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     standInUrlRef.current = null;
   }, []);
   useEffect(() => dropStandIn, [dropStandIn]);
+  // A retried `src` that arrived is only known to be good once it decodes, so
+  // the stand-in's blob outlives the swap: released when `src` has loaded,
+  // put back on screen when it will not decode. That answer is final.
+  const srcDecoded = useCallback((url: string) => {
+    if (standInUrlRef.current && standInUrlRef.current !== url) dropStandIn();
+  }, [dropStandIn]);
+  const backToStandIn = useCallback((url: string) => {
+    const kept = standInUrlRef.current;
+    if (!kept || kept === url) return false;
+    attemptsRef.current = MAX_RETRIES;
+    setStandIn(true);
+    setImageSrc(kept);
+    setCanvasFailed(false);
+    setCanvasReady(false);
+    return true;
+  }, []);
   // Read at enqueue time, never a dependency of the fetch effect (#1734).
   // The lightbox keeps a slide's element across navigation and only flips
   // this prop when the slide moves between neighbour and current; as a
@@ -316,7 +332,6 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
           setError(false);
           fetchFailedRef.current = false;
           if (standInUrlRef.current) {
-            dropStandIn();
             setStandIn(false);
             setCanvasFailed(false);
             setCanvasReady(false);
@@ -475,6 +490,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       imageRef.current = img;
       const dimensions = { width: img.naturalWidth, height: img.naturalHeight };
       const drawn = drawToCanvas();
+      srcDecoded(imageSrc);
       // Once drawImage has copied the pixels into the canvas the source
       // decode is dead weight, so drop it here rather than at unmount. The
       // grid is not virtualised — a 546-photo event mounts 546 of these and
@@ -520,7 +536,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       }
       img.removeAttribute('src');
     };
-  }, [imageSrc, useCanvasRendering, drawToCanvas, onLoad]);
+  }, [imageSrc, useCanvasRendering, drawToCanvas, onLoad, srcDecoded]);
 
   if (isLoading) {
     return (
@@ -576,8 +592,16 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     );
   }
 
-  return <img ref={(el) => { if (standIn) retryRef.current = el; }} src={imageSrc} alt={alt} onLoad={(event) => onLoad?.({
-    width: event.currentTarget.naturalWidth,
-    height: event.currentTarget.naturalHeight,
-  })} {...props} />;
+  // Stable has no decode fallback of its own; the onError here only puts a
+  // kept stand-in back when the retried src will not decode.
+  return <img ref={(el) => { if (standIn) retryRef.current = el; }} src={imageSrc} alt={alt} onLoad={(event) => {
+    srcDecoded(imageSrc);
+    onLoad?.({
+      width: event.currentTarget.naturalWidth,
+      height: event.currentTarget.naturalHeight,
+    });
+  }} {...props} onError={(e) => {
+    backToStandIn(imageSrc);
+    props.onError?.(e);
+  }} />;
 };
