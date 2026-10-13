@@ -84,19 +84,23 @@ function holdsGuestUploads(event) {
 async function notifyGuestUploadsPending(event, count) {
   try {
     await db.transaction(async (trx) => {
-      if (trx.client.config.client === 'pg') {
-        await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [GUEST_UPLOADS_PENDING_LOCK, Number(event.id)]);
-      }
-      const open = await trx('activity_logs')
+      const pg = trx.client.config.client === 'pg';
+      if (pg) await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [GUEST_UPLOADS_PENDING_LOCK, Number(event.id)]);
+      const lookup = trx('activity_logs')
         .where({ activity_type: GUEST_UPLOADS_PENDING_TYPE, event_id: event.id })
         .whereNull('read_at')
-        .orderBy('id', 'desc')
-        .first('id', trx.raw('CAST(metadata AS TEXT) AS metadata_text'));
+        .orderBy('id', 'desc');
+      // Marking read and deleting the event do not take the lock above. An
+      // entry one of them holds is passed over, not waited for: waiting would
+      // leave this transaction holding the row once it turns out read, and
+      // the insert below then waits on the event a deletion has locked while
+      // that deletion waits on the row. NO KEY UPDATE, so a Clear all, which
+      // only references the row, does not make it look taken.
+      if (pg) lookup.forNoKeyUpdate().skipLocked();
+      const open = await lookup.first('id', trx.raw('CAST(metadata AS TEXT) AS metadata_text'));
       if (open) {
         let metadata = {};
         try { metadata = JSON.parse(open.metadata_text) || {}; } catch { /* written by logActivity, so JSON */ }
-        // Marking read does not take the event lock: an entry read since the
-        // lookup stays as the admin saw it, and a new one is opened below.
         const grown = await trx('activity_logs')
           .where({ id: open.id })
           .whereNull('read_at')
