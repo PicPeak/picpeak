@@ -86,6 +86,20 @@ describe('ImageAnnotationOverlay', () => {
     expect(screen.queryByTestId('annotation-overlay')).toBeNull();
   });
 
+  // The thumbnail shown when the picture itself fails to load can be a
+  // centre crop: the same coordinates point somewhere else on it.
+  it('stays off a picture that shows its fallback, and comes back with the real one', async () => {
+    render(
+      <div>
+        <img alt="photo" data-fallback="true" />
+        <ImageAnnotationOverlay annotation={FIXTURE} />
+      </div>
+    );
+    expect(screen.queryByTestId('annotation-overlay')).toBeNull();
+    screen.getByAltText('photo').removeAttribute('data-fallback');
+    expect(await screen.findByTestId('annotation-overlay')).toBeTruthy();
+  });
+
   it('turns a pointer drag into one stroke in image coordinates', () => {
     const onStroke = vi.fn();
     render(

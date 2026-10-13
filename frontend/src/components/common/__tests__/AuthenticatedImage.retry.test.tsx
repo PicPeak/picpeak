@@ -196,6 +196,33 @@ describe('AuthenticatedImage retry', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  // What stands in for a picture that did not load is marked, so a caller
+  // placing something relative to the whole picture can tell (issue 1733).
+  it('marks the element while it shows the fallback, and not the picture itself', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementationOnce(status(503)).mockImplementation(ok));
+    const fetched = render(
+      <AuthenticatedImage src="/api/gallery/demo/photo/1" fallbackSrc="/api/gallery/demo/thumbnail/1" alt="t" />,
+    );
+    await flush();
+    expect(fetched.container.querySelector('img')?.getAttribute('data-fallback')).toBe('true');
+    fetched.unmount();
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(loadFailed));
+    const plain = render(
+      <AuthenticatedImage src="/api/gallery/demo/photo/1" fallbackSrc="/static/fallback.png" alt="t" />,
+    );
+    await flush();
+    expect(plain.container.querySelector('img')?.getAttribute('data-fallback')).toBe('true');
+    plain.unmount();
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(ok));
+    const loaded = render(
+      <AuthenticatedImage src="/api/gallery/demo/photo/1" fallbackSrc="/api/gallery/demo/thumbnail/1" alt="t" />,
+    );
+    await flush();
+    expect(loaded.container.querySelector('img')?.hasAttribute('data-fallback')).toBe(false);
+  });
+
   it('a new src gets a fresh retry budget', async () => {
     const fetchMock = vi.fn().mockImplementation(loadFailed);
     vi.stubGlobal('fetch', fetchMock);

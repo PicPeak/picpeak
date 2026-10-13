@@ -111,6 +111,10 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   const [imageSrc, setImageSrc] = useState<string>('');
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  // What is on screen is `fallbackSrc`, not `src`. Marked on the element as
+  // data-fallback: a fallback thumbnail can be a centre crop, so anything
+  // positioned relative to the whole picture must not trust it.
+  const [showsFallback, setShowsFallback] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
   const [canvasFailed, setCanvasFailed] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -183,6 +187,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     // Determine which token to use based on context
     if (!src) {
       setImageSrc(fallbackSrc || '');
+      setShowsFallback(!!fallbackSrc);
       setError(false);
       setIsLoading(false);
       return;
@@ -273,6 +278,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         const primaryUrl = await fetchWithAuth(src);
         if (!aborted) {
           setImageSrc(primaryUrl);
+          setShowsFallback(false);
           setError(false);
         }
       } catch (err) {
@@ -293,6 +299,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
             const fallbackUrl = await fetchWithAuth(fallbackSrc);
             if (!aborted) {
               setImageSrc(fallbackUrl);
+              setShowsFallback(true);
               setError(false);
             }
             return;
@@ -453,7 +460,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   }
 
   if (error && fallbackSrc) {
-    return <img src={fallbackSrc} alt={alt} {...props} />;
+    return <img src={fallbackSrc} alt={alt} data-fallback="true" {...props} />;
   }
 
   if (error) {
@@ -494,6 +501,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         }}
         aria-label={alt}
         role="img"
+        data-fallback={showsFallback ? 'true' : undefined}
       />
     );
   }
@@ -506,6 +514,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     <img
       src={imageSrc}
       alt={alt}
+      data-fallback={showsFallback ? 'true' : undefined}
       onLoad={(event) => onLoad?.({
         width: event.currentTarget.naturalWidth,
         height: event.currentTarget.naturalHeight,

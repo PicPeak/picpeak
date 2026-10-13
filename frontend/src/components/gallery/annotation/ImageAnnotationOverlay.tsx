@@ -21,10 +21,15 @@ interface ImageBox {
  * purpose: unlike getBoundingClientRect they ignore the zoom transform. The
  * element's box can be wider than the picture under object-fit: contain, so
  * the picture is fitted into it by its natural ratio.
+ *
+ * Null as well while the element shows its fallback (AuthenticatedImage marks
+ * that with data-fallback): a thumbnail standing in for a picture that did
+ * not load can be a centre crop, and coordinates relative to the whole
+ * picture would land in the wrong place on it, drawn or shown.
  */
 function measureImageBox(container: HTMLElement): ImageBox | null {
   const media = container.querySelector<HTMLImageElement | HTMLCanvasElement>(':scope > img, :scope > canvas');
-  if (!media) return null;
+  if (!media || media.dataset.fallback === 'true') return null;
   const naturalWidth = media instanceof HTMLImageElement ? media.naturalWidth : media.width;
   const naturalHeight = media instanceof HTMLImageElement ? media.naturalHeight : media.height;
   const boxWidth = media.offsetWidth;
@@ -79,15 +84,20 @@ export const ImageAnnotationOverlay: React.FC<ImageAnnotationOverlayProps> = ({
     const resizeObserver = new ResizeObserver(update);
     // The image element is swapped as it loads (placeholder, then <img> or
     // <canvas>), so the observed element is re-picked on every child change.
+    const mutationObserver = new MutationObserver(() => observe());
     const observe = () => {
       resizeObserver.disconnect();
       resizeObserver.observe(container);
       const media = container.querySelector(':scope > img, :scope > canvas');
-      if (media) resizeObserver.observe(media);
+      if (media) {
+        resizeObserver.observe(media);
+        // The fallback mark can flip on an element that stays (a picture
+        // that loaded but does not decode).
+        mutationObserver.observe(media, { attributes: true, attributeFilter: ['data-fallback'] });
+      }
       update();
     };
     observe();
-    const mutationObserver = new MutationObserver(observe);
     mutationObserver.observe(container, { childList: true });
     // `load` does not bubble; capture it for the natural size.
     container.addEventListener('load', update, true);
