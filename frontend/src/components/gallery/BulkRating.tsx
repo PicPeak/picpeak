@@ -42,15 +42,17 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
     mutationFn: async (data: Submission) => {
       // The server caps a request; a larger selection goes in several. One
       // the rating budget refuses ends the run, and what the earlier ones
-      // rated is reported so the tiles still show it.
-      const rated = new Map<number, RatedRow>();
+      // rated stays on the tiles.
+      let ratedCount = 0;
       let error: unknown = null;
+      let listMustRestart = data.identityChanged === true;
       // The API client reads the stored guest token per request. Once another
       // tab has switched the guest, the rest of the run would be filed under
       // the new one, so it ends there.
       const { photoIds: ids } = data;
       const sameGuest = () => (getGuestIdentity(slug)?.id ?? null) === data.guestId;
       for (let i = 0; i < ids.length && !error && sameGuest(); i += BULK_RATING_MAX_PHOTOS) {
+        const rated = new Map<number, RatedRow>();
         try {
           const response = await feedbackService.submitBulkRating(
             slug,
@@ -64,19 +66,17 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
         } catch (caught) {
           error = caught;
         }
-      }
-      return { rated, error, guestChanged: !sameGuest() };
-    },
-    onSuccess: async ({ rated, error, guestChanged }, data) => {
-      // The lists now belong to another guest and the provider has already
-      // restarted them; these ratings are not theirs to see.
-      if (guestChanged) return;
-      if (rated.size > 0) {
+        // The lists now belong to another guest and the provider has already
+        // restarted them; these ratings are not theirs to see.
+        if (rated.size === 0 || !sameGuest()) continue;
+        ratedCount += rated.size;
+        // Written per request, not once at the end: by then the viewer may
+        // have rated one of these photos again on its tile, and the late
+        // write would put this run's stars back over theirs.
         // Same care as TileRating: a list request that is out carries the
         // rows from before the rating and would land on top of the patch.
-        const listMustRestart = data.identityChanged === true
-          || queryClient.isFetching({ queryKey: ['gallery-photos', slug] }) > 0;
-        if (listMustRestart) {
+        if (listMustRestart || queryClient.isFetching({ queryKey: ['gallery-photos', slug] }) > 0) {
+          listMustRestart = true;
           await queryClient.cancelQueries({ queryKey: ['gallery-photos', slug] });
         }
         queryClient.setQueriesData<GalleryData>({ queryKey: ['gallery-photos', slug] }, (old) =>
@@ -98,6 +98,12 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
             }
             : old,
         );
+      }
+      return { ratedCount, error, listMustRestart, guestChanged: !sameGuest() };
+    },
+    onSuccess: ({ ratedCount, error, listMustRestart, guestChanged }, data) => {
+      if (guestChanged) return;
+      if (ratedCount > 0) {
         // Guest-mode Rated chip + filter are built from /my-feedback (#538).
         queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
         if (listMustRestart) {
@@ -110,9 +116,9 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
         } else {
           toast.error(t('feedback.ratingError', 'Failed to submit rating'));
         }
-      } else if (rated.size < data.photoIds.length) {
+      } else if (ratedCount < data.photoIds.length) {
         toast.error(t('feedback.bulkRatingPartial', '{{rated}} of {{total}} photos were rated', {
-          rated: rated.size,
+          rated: ratedCount,
           total: data.photoIds.length,
         }));
       }

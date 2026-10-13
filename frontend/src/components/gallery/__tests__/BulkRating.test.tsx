@@ -187,6 +187,33 @@ describe('BulkRating', () => {
     stored.mockReturnValue(null);
   });
 
+  // Each request's rows are written when it answers. Held back to the end
+  // of the run, the write would land on top of a rating the viewer gave one
+  // of the early photos on its tile while the later requests were still out.
+  it('writes each request as it answers, so a later tile rating is not overwritten', async () => {
+    const ids = Array.from({ length: 201 }, (_, i) => i + 1);
+    seedCache(ids.map((id) => makePhoto(id)));
+    let releaseSecond: (value: ReturnType<typeof ok>) => void = () => {};
+    submit
+      .mockResolvedValueOnce(ok(ids.slice(0, 200), 5))
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseSecond = resolve; }) as never);
+    renderControl(ids);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 5 stars' }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
+    expect(cached()[0].my_rating).toBe(5);
+    expect(cached()[200].my_rating).toBeNull();
+
+    // What TileRating does for photo 1 in the meantime.
+    queryClient.setQueryData<GalleryData>(LIST_KEY, (old) => ({
+      ...old!, photos: old!.photos.map((p) => (p.id === 1 ? { ...p, my_rating: 3 } : p)),
+    }));
+    releaseSecond(ok([201], 5));
+    await waitFor(() => expect(cached()[200].my_rating).toBe(5));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rate 5 stars' })).toHaveProperty('disabled', false));
+    expect(cached()[0].my_rating).toBe(3);
+  });
+
   // Offline, React Query parks the mutation and runs it on reconnect, with
   // whatever the component last rendered. The press decides what is rated
   // and for whom, not the moment the network returns.
