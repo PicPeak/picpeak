@@ -51,6 +51,16 @@ export function maxZoomFor(actualZoom: number | null): number {
   return Math.max(BASE_MAX_ZOOM, actualZoom ?? 0);
 }
 
+/**
+ * The box the original is drawn in: its own proportions, inside the box the
+ * preview takes. The two only differ where the preview failed and a
+ * cover-cropped thumbnail stands in for it.
+ */
+export function overlayBox(natural: Size, fit: Size): Size {
+  const scale = Math.min(fit.width / natural.width, fit.height / natural.height);
+  return { width: natural.width * scale, height: natural.height * scale };
+}
+
 /** Whether this device may decode the original at all. Unknown dimensions count as too large on touch. */
 export function withinPixelBudget(natural: Size | null, coarsePointer: boolean): boolean {
   if (!coarsePointer) return true;
@@ -89,6 +99,8 @@ export function useFullResolutionZoom({
   const [loaded, setLoaded] = useState<LoadedOriginal | null>(null);
   const [requestedId, setRequestedId] = useState<number | null>(null);
   const [failedId, setFailedId] = useState<number | null>(null);
+  // The object URL whose <img> has loaded in the document, not just decoded off screen.
+  const [paintedSrc, setPaintedSrc] = useState<string | null>(null);
   const [fit, setFit] = useState<Size | null>(null);
   const slideRef = useRef<HTMLDivElement | null>(null);
   // For handlers the lightbox registers once (wheel) or that fire between
@@ -100,7 +112,7 @@ export function useFullResolutionZoom({
   const original = loaded && loaded.photoId === photoId ? loaded : null;
   const requested = requestedId !== null && requestedId === photoId;
 
-  // The preview's layout box (untransformed). The overlay takes exactly this
+  // The preview's layout box (untransformed). The overlay is fitted into this
   // box, and the ceiling is the original's pixels over it.
   const measure = useCallback(() => {
     const el = slideRef.current?.querySelector<HTMLElement>('img:not([data-full-resolution])');
@@ -129,6 +141,7 @@ export function useFullResolutionZoom({
     setLoaded(null);
     setRequestedId(null);
     setFailedId(null);
+    setPaintedSrc(null);
   }, [photoId]);
 
   useEffect(() => {
@@ -176,15 +189,9 @@ export function useFullResolutionZoom({
       } catch {
         // Refused, aborted, or not decodable: the preview stays, silently.
         if (cancelled) return;
+        // The ceiling falls back to the old one with it; the clamp below
+        // brings back a zoom already past that.
         setFailedId(photoId);
-        // The ceiling falls back to the old one with it. A zoom already past
-        // that comes back at once, about the point at the centre of the view.
-        const { zoom: current, dragOffset: offset } = live.current;
-        if (current > BASE_MAX_ZOOM) {
-          const ratio = BASE_MAX_ZOOM / current;
-          setZoom(BASE_MAX_ZOOM);
-          setDragOffset({ x: offset.x * ratio, y: offset.y * ratio });
-        }
       } finally {
         if (objectUrl && !handedOver) URL.revokeObjectURL(objectUrl);
       }
@@ -194,16 +201,31 @@ export function useFullResolutionZoom({
       cancelled = true;
       controller.abort();
     };
-  }, [url, requested, photoId, slug, setZoom, setDragOffset]);
+  }, [url, requested, photoId, slug]);
 
   const failed = failedId !== null && failedId === photoId;
   // What was decoded wins over what the list stated.
-  const natural = original && original.width > 0 && original.height > 0 ? original : stated;
+  const decoded = original && original.width > 0 && original.height > 0 ? original : null;
+  const natural = decoded ?? stated;
+  const box = decoded && fit ? overlayBox(decoded, fit) : null;
   const actualZoom = url && !failed && natural && fit
-    ? actualPixelsZoom(natural, fit, typeof window === 'undefined' ? 1 : window.devicePixelRatio)
+    ? actualPixelsZoom(natural, box ?? fit, typeof window === 'undefined' ? 1 : window.devicePixelRatio)
     : null;
   const maxZoom = maxZoomFor(actualZoom);
   live.current = { zoom, dragOffset, actualZoom, maxZoom };
+
+  // The ceiling can come down under a zoom already past it: the window grew,
+  // the decoded original is smaller than the list stated, or the load failed.
+  // The zoom follows at once, about the point at the centre of the view. Not
+  // while the ceiling is merely unknown (the preview is between two loads).
+  const ceilingKnown = !url || failed || actualZoom !== null;
+  useEffect(() => {
+    if (!ceilingKnown || zoom <= maxZoom) return;
+    const ratio = maxZoom / zoom;
+    const offset = live.current.dragOffset;
+    setZoom(maxZoom);
+    setDragOffset({ x: offset.x * ratio, y: offset.y * ratio });
+  }, [ceilingKnown, zoom, maxZoom, setZoom, setDragOffset]);
 
   // For handlers the lightbox registers once (wheel) or that fire between renders.
 
@@ -280,7 +302,15 @@ export function useFullResolutionZoom({
     slideRef,
     /** Pass to the slide's image: the preview's box is only known once it has loaded. */
     onPreviewLoad: measure,
-    overlay: original && fit ? { src: original.src, ...fit } : null,
+    overlay: original && fit
+      ? { src: original.src, ...(box ?? fit), onLoad: () => setPaintedSrc(original.src) }
+      : null,
+    /**
+     * True once the original is on screen. The preview then gives up its
+     * pixels (not its box or its pointer events): drawn under the original it
+     * would show through every transparent pixel a second time.
+     */
+    previewHidden: !!original && !!fit && paintedSrc === original.src,
     onDoubleClick,
     onTouchStart,
     onTouchEnd,
@@ -291,8 +321,8 @@ export type FullResolutionZoom = ReturnType<typeof useFullResolutionZoom>;
 
 /**
  * The decoded original, laid over the preview it replaces. A sibling of the
- * preview inside the slide (which must be `relative`), given the preview's
- * own box and the same transform style, so the swap moves nothing.
+ * preview inside the slide (which must be `relative`), centred on the
+ * preview's box under the same transform style, so the swap moves nothing.
  */
 export const FullResolutionImage: React.FC<{
   overlay: FullResolutionZoom['overlay'];
@@ -306,6 +336,7 @@ export const FullResolutionImage: React.FC<{
       alt=""
       aria-hidden="true"
       draggable={false}
+      onLoad={overlay.onLoad}
       // Clicks, drags and the context menu keep landing on the preview below.
       className="absolute max-w-none select-none pointer-events-none"
       style={{

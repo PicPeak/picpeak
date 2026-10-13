@@ -46,11 +46,22 @@ vi.mock('../../common', async () => {
 
 import { PhotoLightbox } from '../PhotoLightbox';
 
-vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+// Records the observers so a test can report a resize of the slide.
+let resizeObservers: Array<() => void> = [];
+class ResizeObserverStub {
+  constructor(callback: () => void) { resizeObservers.push(callback); }
+  observe() {}
+  disconnect() {}
+}
+vi.stubGlobal('ResizeObserver', ResizeObserverStub);
 
 // The preview is laid out 600x400; the original is 6000x4000. At a device
 // pixel ratio of 1 that puts 100 % at 10x of fit.
-const FIT = { width: 600, height: 400 };
+let FIT = { width: 600, height: 400 };
+const resizePreview = (next: typeof FIT) => {
+  FIT = next;
+  act(() => { resizeObservers.forEach((notify) => notify()); });
+};
 const photo = (id: number, extra: Partial<Photo> = {}) => ({
   id, filename: `photo-${id}`, url: `/p/${id}`, thumbnail_url: `/t/${id}`, width: 6000, height: 4000, ...extra,
 } as Photo);
@@ -67,6 +78,8 @@ let coarse = false;
 
 beforeEach(() => {
   coarse = false;
+  FIT = { width: 600, height: 400 };
+  resizeObservers = [];
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get() { return this.tagName === 'IMG' ? FIT.width : 0; } });
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return this.tagName === 'IMG' ? FIT.height : 0; } });
   Object.defineProperty(HTMLImageElement.prototype, 'naturalWidth', { configurable: true, get: () => 6000 });
@@ -84,7 +97,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('ResizeObserver', ResizeObserverStub);
 });
 
 const setup = (photos: Photo[], props: Partial<React.ComponentProps<typeof PhotoLightbox>> = {}) => {
@@ -206,6 +219,59 @@ describe('PhotoLightbox with a full resolution', () => {
     expect(overlay()!.style.transform).toBe(image().style.transform);
     expect(image().style.transform).toContain('scale(2)');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the preview once the original is painted, so transparent pixels are not drawn twice', async () => {
+    const { image, overlay } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    await finishDecode();
+    // In the document, not painted yet: the preview still shows.
+    expect(image().style.opacity).toBe('');
+    fireEvent.load(overlay()!);
+    expect(image().style.opacity).toBe('0');
+    // Still laid out and still the pointer target under the original.
+    expect(image().style.visibility).toBe('');
+    expect(image().style.transform).toBe(overlay()!.style.transform);
+
+    fireEvent.keyDown(document, { key: 'ArrowRight' });
+    expect(screen.getByAltText('photo-3').style.opacity).toBe('');
+  });
+
+  it('comes down with the ceiling when the window grows under a zoom at 100 %', async () => {
+    const { image, surface, readout } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.doubleClick(surface, { clientX: 20, clientY: -10 });
+    expect(image().style.transform).toBe('scale(10) translate(-18px, 9px)');
+
+    // A larger fit puts 100 % at 6x; the zoom follows it about the centre of the view.
+    resizePreview({ width: 1000, height: 667 });
+    expect(image().style.transform).toBe('scale(6) translate(-18px, 9px)');
+    expect(readout()).toBe('100%');
+    expect(screen.getByLabelText('Zoom in')).toBeDisabled();
+  });
+
+  it('leaves a zoom below the ceiling alone when the window grows', () => {
+    const { image, readout } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    resizePreview({ width: 1000, height: 667 });
+    expect(image().style.transform).toContain('scale(1.5)');
+    expect(readout()).toBe('25%');
+  });
+
+  it('gives the original its own proportions over a square thumbnail fallback', async () => {
+    // The preview failed and the cover-cropped thumbnail stands in for it.
+    FIT = { width: 300, height: 300 };
+    const { overlay, pinch, readout } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    await finishDecode();
+    const full = overlay()!;
+    expect(full.style.width).toBe('300px');
+    expect(full.style.height).toBe('200px');
+    expect(full.style.marginLeft).toBe('-150px');
+    expect(full.style.marginTop).toBe('-100px');
+    // 6000 original pixels over the 300 it is drawn at.
+    pinch(40);
+    expect(overlay()!.style.transform).toContain('scale(20)');
+    expect(readout()).toBe('100%');
   });
 
   it('keeps the right-click block on the zoomed original', async () => {

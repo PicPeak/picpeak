@@ -1363,7 +1363,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 alt={photo.filename}
                 fallbackSrc={photo.thumbnail_url || undefined}
                 className="max-w-full max-h-full object-contain select-none"
-                style={imageStyle}
+                // Invisible under the painted original, still laid out and
+                // still the target of every click, drag and context menu.
+                style={fullZoom.previewHidden ? { ...imageStyle, opacity: 0 } : imageStyle}
                 onLoad={fullZoom.onPreviewLoad}
                 draggable={false}
                 isGallery={true}

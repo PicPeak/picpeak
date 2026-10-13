@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BASE_MAX_ZOOM, TOUCH_PIXEL_BUDGET, actualPixelsZoom, maxZoomFor, withinPixelBudget,
+  BASE_MAX_ZOOM, TOUCH_PIXEL_BUDGET, actualPixelsZoom, maxZoomFor, overlayBox, withinPixelBudget,
 } from '../useFullResolutionZoom';
 
 describe('full-resolution zoom maths', () => {
@@ -25,6 +25,13 @@ describe('full-resolution zoom maths', () => {
     expect(maxZoomFor(1.2)).toBe(BASE_MAX_ZOOM);
     expect(maxZoomFor(0.4)).toBe(BASE_MAX_ZOOM);
     expect(maxZoomFor(7.5)).toBe(7.5);
+  });
+
+  it('draws the original in its own proportions inside the preview box', () => {
+    expect(overlayBox({ width: 6000, height: 4000 }, { width: 600, height: 400 })).toEqual({ width: 600, height: 400 });
+    // A square thumbnail standing in for the preview.
+    expect(overlayBox({ width: 6000, height: 4000 }, { width: 300, height: 300 })).toEqual({ width: 300, height: 200 });
+    expect(overlayBox({ width: 4000, height: 6000 }, { width: 300, height: 300 })).toEqual({ width: 200, height: 300 });
   });
 
   it('budgets pixels on touch devices only, and treats unknown dimensions as too large there', () => {
