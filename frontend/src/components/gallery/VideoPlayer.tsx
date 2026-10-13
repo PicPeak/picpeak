@@ -25,7 +25,7 @@ interface VideoPlayerProps {
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   src,
-  hlsSrc,
+  hlsSrc: offeredStream,
   poster,
   className = '',
   autoPlay = false,
@@ -63,6 +63,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Adaptive stream first, the file as the fallback (issue 1733). A stream
   // that fails for any reason, a missing rendition included, is dropped for
   // this video and `src` plays as it always did.
+  // The stream is chosen when a video is opened and kept while it is the
+  // same video. A photo list refetched meanwhile can name one for the first
+  // time (a download-limited gallery does, once the first play has taken the
+  // video's slot) or name a rebuilt one, and swapping the source under a
+  // viewer would send them back to 0:00.
+  const [opened, setOpened] = useState({ src, hlsSrc: offeredStream });
+  if (opened.src !== src) setOpened({ src, hlsSrc: offeredStream });
+  const hlsSrc = opened.src === src ? opened.hlsSrc : offeredStream;
   const [failedStream, setFailedStream] = useState<string | null>(null);
   const preferred = useMemo(() => pickVideoSource(hlsSrc), [hlsSrc]);
   const mode = hlsSrc && failedStream === hlsSrc ? 'file' : preferred;

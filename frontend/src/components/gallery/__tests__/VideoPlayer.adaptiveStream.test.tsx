@@ -108,6 +108,24 @@ describe('VideoPlayer with an adaptive stream', () => {
     expect(hlsInstances[0].destroy).toHaveBeenCalled();
   });
 
+  it('keeps the source a video was opened with when the photo list is refreshed', () => {
+    // A download-limited gallery names the stream only once the video has
+    // its slot: the list refetch behind the first play must not swap the
+    // source under the viewer and send them back to 0:00.
+    browser({ nativeHls: true, mse: true });
+    const { container, rerender } = render(<VideoPlayer src={FILE} hlsSrc={null} />);
+    const video = container.querySelector('video')!;
+    expect(video).toHaveAttribute('src', FILE);
+    rerender(<VideoPlayer src={FILE} hlsSrc={STREAM} />);
+    expect(video).toHaveAttribute('src', FILE);
+    // A stream rebuilt meanwhile (a new `v`) is not swapped in either.
+    const other = '/api/gallery/e/photo/8';
+    rerender(<VideoPlayer src={other} hlsSrc={STREAM} />);
+    expect(video).toHaveAttribute('src', STREAM);
+    rerender(<VideoPlayer src={other} hlsSrc={`${STREAM}2`} />);
+    expect(video).toHaveAttribute('src', STREAM);
+  });
+
   it('plays the file where the browser can do neither', () => {
     browser({ nativeHls: false, mse: false });
     const { container } = render(<VideoPlayer src={FILE} hlsSrc={STREAM} />);
