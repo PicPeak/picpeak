@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { galleryService } from '../../../services/gallery.service';
 
 // 45 requests per 15 minutes per viewer, far inside the gallery viewer
@@ -13,8 +14,6 @@ interface Options {
   /** What the loaded list holds. */
   loadedCount: number;
   loadedMaxId: number | null;
-  /** Changes whenever the list was reloaded (react-query's dataUpdatedAt). */
-  listVersion: number;
 }
 
 /**
@@ -25,34 +24,53 @@ interface Options {
  * Any failure (429 included) doubles the interval up to the cap and stays
  * silent; the next success returns to the base interval.
  */
-export function useLiveRefresh({ slug, enabled, loadedCount, loadedMaxId, listVersion }: Options): number {
+export function useLiveRefresh({ slug, enabled, loadedCount, loadedMaxId }: Options): number {
+  const queryClient = useQueryClient();
   const [state, setState] = useState<{ count: number; max_id: number | null } | null>(null);
+  // How many times the list was fetched. An answer asked for before the
+  // latest fetch describes an older gallery than the list on screen.
+  const listFetches = useRef(0);
 
+  useEffect(() => { setState(null); }, [slug]);
   // A reloaded list makes the last answer stale: it may count photos that
   // were deleted since, and the pill would outlive the click that cleared it.
-  useEffect(() => { setState(null); }, [listVersion, slug]);
+  // Read from the cache's own events, as useFeedbackChange does: the list's
+  // dataUpdatedAt also moves when a like or a rating patches its rows, and
+  // that brings no new photos in.
+  useEffect(() => queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== 'updated' || event.action.type !== 'success' || event.action.manual) return;
+    const [scope, eventSlug] = event.query.queryKey as unknown[];
+    if (scope !== 'gallery-photos' || eventSlug !== slug) return;
+    listFetches.current += 1;
+    setState(null);
+  }), [queryClient, slug]);
 
   useEffect(() => {
     if (!enabled) return undefined;
     let delay = LIVE_REFRESH_INTERVAL_MS;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight = false;
     let stopped = false;
     const controller = new AbortController();
 
     const schedule = () => {
-      if (stopped || timer || document.hidden) return;
+      // A request still out schedules the next one itself when it settles.
+      if (stopped || timer || inFlight || document.hidden) return;
       timer = setTimeout(poll, delay);
     };
     const poll = async () => {
+      timer = null;
+      inFlight = true;
+      const fetchesAtRequest = listFetches.current;
       try {
         const next = await galleryService.getPhotoState(slug, controller.signal);
         if (stopped) return;
-        setState(next);
+        if (fetchesAtRequest === listFetches.current) setState(next);
         delay = LIVE_REFRESH_INTERVAL_MS;
       } catch {
         delay = Math.min(delay * 2, LIVE_REFRESH_MAX_INTERVAL_MS);
       }
-      timer = null;
+      inFlight = false;
       schedule();
     };
     // A hidden tab stops asking; coming back waits one interval (the current

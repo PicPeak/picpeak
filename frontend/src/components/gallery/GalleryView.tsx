@@ -251,7 +251,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   
   // Fetch photos WITHOUT filter (always get all photos, filter on frontend)
   // This ensures counts are always calculated from the full dataset
-  const { data, isLoading, error, refetch, dataUpdatedAt } = useGalleryPhotos(slug, 'all', guestId);
+  const { data, isLoading, error, refetch } = useGalleryPhotos(slug, 'all', guestId);
   const handleFeedbackChange = useFeedbackChange(slug, refetch, { patchRows: !isClient });
   const { isSelectionMode, setIsSelectionMode, selectedPhotos, setSelectedPhotos } = useGallerySelection(data?.photos);
   
@@ -408,7 +408,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       && !peopleData?.scan?.in_progress,
     loadedCount: data?.photos?.length ?? 0,
     loadedMaxId,
-    listVersion: dataUpdatedAt,
   });
   const newPhotosPill = <NewPhotosPill count={newPhotoCount} onClick={() => { void refetch(); }} />;
 
