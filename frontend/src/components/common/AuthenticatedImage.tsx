@@ -134,7 +134,56 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // and leave the tile blank after the limit had actually lifted.
   const retryAfterRef = useRef(0);
   const lastSrcRef = useRef<string | undefined>(undefined);
-  const retryRef = useRef<HTMLDivElement | null>(null);
+  const retryRef = useRef<HTMLElement | null>(null);
+  // The element the retry waits on, in state so the observer is bound again
+  // when a render swaps it (<img> for <canvas>, or the reverse). `retryAtRef`
+  // is when the pending retry is due, so rebinding does not restart its delay.
+  const [retryEl, setRetryEl] = useState<HTMLElement | null>(null);
+  const retryAtRef = useRef(0);
+  // A fetch run is under way. A quiet retry behind a fallback changes nothing
+  // on screen, so without this the next retry would be armed the moment the
+  // current one starts instead of when it fails.
+  const [fetching, setFetching] = useState(true);
+  // The fallback shown in place of a `src` that failed for a reason a retry
+  // can cure (issue 1936). The lightbox passes the thumbnail as fallback, so
+  // a preview answered 503 while storage was briefly unreachable used to
+  // stay a thumbnail for good. The stand-in stays on screen while `src` is
+  // asked again; `standInUrlRef` keeps its blob alive across those runs,
+  // which the per-run cleanup below would otherwise revoke.
+  const [standIn, setStandIn] = useState(false);
+  const standInUrlRef = useRef<string | null>(null);
+  // Both fetches rejected (not a decode failure of a 200), with a fallback.
+  const fetchFailedRef = useRef(false);
+  const imageKeyRef = useRef<string | undefined>(undefined);
+  // The retried `src` that took the stand-in's place and has yet to decode.
+  const swappedInUrlRef = useRef<string | null>(null);
+  const dropStandIn = useCallback(() => {
+    if (standInUrlRef.current) URL.revokeObjectURL(standInUrlRef.current);
+    standInUrlRef.current = null;
+    swappedInUrlRef.current = null;
+  }, []);
+  useEffect(() => dropStandIn, [dropStandIn]);
+  // A retried `src` that arrived is only known to be good once it decodes, so
+  // the stand-in's blob outlives the swap: released when `src` has loaded,
+  // put back on screen when it will not decode. That answer is final. Both
+  // act only on the URL that was swapped in: a canvas decode of the previous
+  // image can still report after the next image's stand-in has been fetched.
+  const srcDecoded = useCallback((url: string) => {
+    if (swappedInUrlRef.current === url) dropStandIn();
+  }, [dropStandIn]);
+  const backToStandIn = useCallback((url: string) => {
+    const kept = standInUrlRef.current;
+    if (!kept || swappedInUrlRef.current !== url) return false;
+    swappedInUrlRef.current = null;
+    // The bytes that would not decode are of no further use.
+    URL.revokeObjectURL(url);
+    attemptsRef.current = MAX_RETRIES;
+    setStandIn(true);
+    setImageSrc(kept);
+    setCanvasFailed(false);
+    setCanvasReady(false);
+    return true;
+  }, []);
   // Read at enqueue time, never a dependency of the fetch effect (#1734).
   // The lightbox keeps a slide's element across navigation and only flips
   // this prop when the slide moves between neighbour and current; as a
@@ -179,19 +228,34 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       lastSrcRef.current = src;
       attemptsRef.current = 0;
     }
+    // A retry of the same image that has a fallback on screen keeps showing
+    // it; anything else starts from the loading placeholder.
+    const imageKey = `${src ?? ''}\n${fallbackSrc ?? ''}\n${slug ?? ''}`;
+    const sameImage = imageKeyRef.current === imageKey;
+    imageKeyRef.current = imageKey;
+    if (!sameImage) {
+      dropStandIn();
+      setStandIn(false);
+      fetchFailedRef.current = false;
+    }
+    const quietRetry = sameImage && Boolean(fallbackSrc) && (standInUrlRef.current !== null || fetchFailedRef.current);
 
     // Determine which token to use based on context
     if (!src) {
       setImageSrc(fallbackSrc || '');
       setError(false);
       setIsLoading(false);
+      setFetching(false);
       return;
     }
 
-    setIsLoading(true);
-    setError(false);
-    setCanvasFailed(false);
-    setCanvasReady(false);
+    setFetching(true);
+    if (!quietRetry) {
+      setIsLoading(true);
+      setError(false);
+      setCanvasFailed(false);
+      setCanvasReady(false);
+    }
 
     const resolveSlug = (candidateSrc?: string): string | null => {
       if (slug) {
@@ -274,6 +338,14 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         if (!aborted) {
           setImageSrc(primaryUrl);
           setError(false);
+          fetchFailedRef.current = false;
+          if (standInUrlRef.current) {
+            // The canvas keeps the stand-in's pixels, and stays visible,
+            // until the new image has been drawn over them.
+            swappedInUrlRef.current = primaryUrl;
+            setStandIn(false);
+            setCanvasFailed(false);
+          }
         }
       } catch (err) {
         // Torn down mid-flight (#1287): the abort is expected, not a failure.
@@ -288,17 +360,29 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         }
         retryAfterRef.current = err instanceof HttpError ? err.retryAfterMs : 0;
         setIsLoading(false);
+        // The stand-in from an earlier attempt is still on screen: keep it.
+        if (standInUrlRef.current) return;
         if (fallbackSrc && fallbackSrc !== src) {
           try {
             const fallbackUrl = await fetchWithAuth(fallbackSrc);
             if (!aborted) {
+              // Out of this run's list: it has to outlive the run's cleanup
+              // for as long as it stands in (dropStandIn revokes it).
+              objectUrls.splice(objectUrls.indexOf(fallbackUrl), 1);
+              standInUrlRef.current = fallbackUrl;
+              setStandIn(true);
               setImageSrc(fallbackUrl);
               setError(false);
             }
             return;
           } catch (fallbackError) {
-            // Swallow and mark error below
+            // Swallow and mark error below. The retry asks for both again,
+            // so it waits out the longer of the two cooldowns.
+            if (fallbackError instanceof HttpError) {
+              retryAfterRef.current = Math.max(retryAfterRef.current, fallbackError.retryAfterMs);
+            }
           }
+          if (!aborted) fetchFailedRef.current = true;
         }
         if (!aborted) {
           setError(true);
@@ -311,7 +395,9 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       }
     };
 
-    fetchImage();
+    fetchImage().finally(() => {
+      if (!aborted) setFetching(false);
+    });
 
     // Cleanup function
     return () => {
@@ -321,7 +407,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       controller.abort();
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [src, fallbackSrc, slug, retryNonce]);
+  }, [src, fallbackSrc, slug, retryNonce, dropStandIn]);
 
   // Retry a failed fetch once the tile is back on screen (#1287).
   //
@@ -340,11 +426,34 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // visible — a tile that failed while backgrounded retries when the user
   // comes back, not while they are still away. Without IntersectionObserver
   // the placeholder counts as visible.
-  const retryable = error && !fallbackSrc && attemptsRef.current < MAX_RETRIES;
+  // With a fallback the retry is for `src` behind it: while the fallback
+  // stands in, or when both fetches were rejected. A fallback shown because
+  // a 200 would not decode is final, as before.
+  const retryable = (standIn || (error && (!fallbackSrc || fetchFailedRef.current)))
+    && !fetching && attemptsRef.current < MAX_RETRIES;
+  // After every render, because which element is in the document is decided
+  // by the render itself. Set only when it changed: an unchanged value still
+  // costs a render, on every tile of a grid where nothing failed. A
+  // stand-in drawn to a canvas has no retryRef: the canvas ref has to stay
+  // the one stable callback, or every render would release its pixels.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!retryable) return;
-    const el = retryRef.current;
+    const next = retryable ? retryRef.current ?? canvasRef.current : null;
+    if (next !== retryEl) setRetryEl(next);
+  });
+  useEffect(() => {
+    if (!retryable) {
+      retryAtRef.current = 0;
+      return;
+    }
+    const el = retryEl;
     if (!el) return;
+    // Armed once per failure, with what that failure said: the attempt count
+    // and the server's cooldown are both final by the time `fetching` clears.
+    if (!retryAtRef.current) {
+      retryAtRef.current = Date.now()
+        + Math.max(RETRY_BASE_DELAY_MS * 2 ** attemptsRef.current, retryAfterRef.current);
+    }
 
     let cancelled = false;
     let delayElapsed = false;
@@ -361,7 +470,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     const timer = setTimeout(() => {
       delayElapsed = true;
       retry();
-    }, Math.max(RETRY_BASE_DELAY_MS * 2 ** attemptsRef.current, retryAfterRef.current));
+    }, Math.max(0, retryAtRef.current - Date.now()));
 
     let observer: IntersectionObserver | null = null;
     if (typeof IntersectionObserver !== 'undefined') {
@@ -379,7 +488,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       observer?.disconnect();
       document.removeEventListener('visibilitychange', retry);
     };
-  }, [retryable, retryNonce]);
+  }, [retryable, retryEl]);
 
   // Effect to draw to canvas when image is loaded and canvas rendering is enabled
   useEffect(() => {
@@ -397,6 +506,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       imageRef.current = img;
       const dimensions = { width: img.naturalWidth, height: img.naturalHeight };
       const drawn = drawToCanvas();
+      srcDecoded(imageSrc);
       // Once drawImage has copied the pixels into the canvas the source
       // decode is dead weight, so drop it here rather than at unmount. The
       // grid is not virtualised — a 546-photo event mounts 546 of these and
@@ -442,7 +552,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       }
       img.removeAttribute('src');
     };
-  }, [imageSrc, useCanvasRendering, drawToCanvas, onLoad]);
+  }, [imageSrc, useCanvasRendering, drawToCanvas, onLoad, srcDecoded]);
 
   if (isLoading) {
     return (
@@ -453,7 +563,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   }
 
   if (error && fallbackSrc) {
-    return <img src={fallbackSrc} alt={alt} {...props} />;
+    return <img ref={(el) => { retryRef.current = el; }} src={fallbackSrc} alt={alt} {...props} />;
   }
 
   if (error) {
@@ -461,7 +571,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     // observes. Returning null here (as this used to) left nothing to watch
     // and nothing for the user to see either.
     return (
-      <div ref={retryRef} className={props.className} style={{ backgroundColor: '#f3f4f6', ...props.style }} />
+      <div ref={(el) => { retryRef.current = el; }} className={props.className} style={{ backgroundColor: '#f3f4f6', ...props.style }} />
     );
   }
 
@@ -498,8 +608,16 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     );
   }
 
-  return <img src={imageSrc} alt={alt} onLoad={(event) => onLoad?.({
-    width: event.currentTarget.naturalWidth,
-    height: event.currentTarget.naturalHeight,
-  })} {...props} />;
+  // Stable has no decode fallback of its own; the onError here only puts a
+  // kept stand-in back when the retried src will not decode.
+  return <img ref={(el) => { if (standIn) retryRef.current = el; }} src={imageSrc} alt={alt} onLoad={(event) => {
+    srcDecoded(imageSrc);
+    onLoad?.({
+      width: event.currentTarget.naturalWidth,
+      height: event.currentTarget.naturalHeight,
+    });
+  }} {...props} onError={(e) => {
+    backToStandIn(imageSrc);
+    props.onError?.(e);
+  }} />;
 };
