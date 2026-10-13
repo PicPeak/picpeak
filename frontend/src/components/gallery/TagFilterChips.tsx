@@ -14,6 +14,8 @@ export interface TagChip {
  * server's order (most used first), counted over the photos in scope so a
  * chip never advertises a count the grid won't show. A tag with no photo in
  * scope is dropped, unless it is selected: its chip is the way to clear it.
+ * That holds for a selected tag the gallery no longer lists at all, too (a
+ * refresh after its last photo was deleted or re-tagged): it stays, last.
  */
 export function tagChipsFor(
   galleryTags: TagChip[] | undefined,
@@ -24,8 +26,10 @@ export function tagChipsFor(
   for (const photo of scopedPhotos) {
     for (const key of photo.tag_keys || []) counts.set(key, (counts.get(key) || 0) + 1);
   }
-  return (galleryTags || [])
-    .map(({ key }) => ({ key, count: counts.get(key) || 0 }))
+  const listed = (galleryTags || []).map(({ key }) => key);
+  const gone = selectedKeys.filter((key) => !listed.includes(key));
+  return [...listed, ...gone]
+    .map((key) => ({ key, count: counts.get(key) || 0 }))
     .filter((chip) => chip.count > 0 || selectedKeys.includes(chip.key));
 }
 

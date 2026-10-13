@@ -38,6 +38,15 @@ describe('tagChipsFor (issue 1733)', () => {
     ]);
   });
 
+  it('keeps a selected tag the gallery no longer lists, so the filter stays visible', () => {
+    // A refresh after the last "night" photo was deleted or re-tagged.
+    const refreshed = [{ key: 'cake', count: 9 }];
+    expect(tagChipsFor(refreshed, [photo(1, ['cake'])], ['night'])).toEqual([
+      { key: 'cake', count: 1 }, { key: 'night', count: 0 },
+    ]);
+    expect(tagChipsFor([], [photo(1)], ['night'])).toEqual([{ key: 'night', count: 0 }]);
+  });
+
   it('is empty for a gallery without tags', () => {
     expect(tagChipsFor(undefined, [photo(1, ['cake'])], [])).toEqual([]);
     expect(tagChipsFor([], [photo(1)], [])).toEqual([]);
