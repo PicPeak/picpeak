@@ -462,14 +462,25 @@ describe('adaptive streaming routes (issue 1733)', () => {
       expect((await get(`${survivor}/master.m3u8`)).status).toBe(200);
     });
 
-    test('a batch of duplicates beyond one statement\'s parameters is still removed', async () => {
-      // SQLite takes 32,766 variables per statement; a restore can fold more rows than that.
+    test('the ladders of a large batch of duplicates are looked up in chunks, never in one statement', async () => {
+      // SQLite takes 32,766 variables per statement and a restore can fold
+      // more rows than that; one whereIn over every id aborted the dedupe,
+      // with adaptive streaming off as well.
       const survivor = await insertVideo('twin-many.mp4');
       const duplicate = await insertVideo('twin-many-again.mp4');
       const doomed = new Map([[duplicate, survivor]]);
-      for (let id = 5000000; doomed.size < 33000; id++) doomed.set(id, survivor);
-      const { deleteDuplicatePhotos } = require('../../src/services/externalPhotoDedupe');
-      await deleteDuplicatePhotos(db, doomed);
+      for (let id = 5000000; doomed.size < 2500; id++) doomed.set(id, survivor);
+      const lookups = [];
+      const record = (query) => { if (/`hls_status`/.test(query.sql) && /^select/i.test(query.sql)) lookups.push(query.bindings.length); };
+      db.on('query', record);
+      try {
+        const { deleteDuplicatePhotos } = require('../../src/services/externalPhotoDedupe');
+        await deleteDuplicatePhotos(db, doomed);
+      } finally {
+        db.removeListener('query', record);
+      }
+      expect(lookups.length).toBeGreaterThan(1);
+      expect(Math.max(...lookups)).toBeLessThan(1000);
       expect(await db('photos').where({ id: duplicate }).first()).toBeUndefined();
       expect(await keysUnder(`hls/${duplicate}`)).toEqual([]);
       expect(await keysUnder(`hls/${survivor}`)).toHaveLength(4);
