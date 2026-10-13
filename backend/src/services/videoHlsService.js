@@ -251,7 +251,11 @@ function ladderKey(photo, rung, file) {
 
 /** The keys under `prefix`, except those under `keep`. */
 async function keysUnder(prefix, keep = null) {
-  return (await getStorage().list(prefix)).map(entry => entry.key)
+  const storage = getStorage();
+  // The slash confines an object store's listing to this prefix: 'hls/1'
+  // would fetch hls/10/, hls/100/ ... as well, to be dropped below. The local
+  // backend walks a directory and builds its keys from the name as given.
+  return (await storage.list(storage.kind() === 'local' ? prefix : `${prefix}/`)).map(entry => entry.key)
     .filter(key => key.startsWith(`${prefix}/`) && !(keep && key.startsWith(`${keep}/`)));
 }
 

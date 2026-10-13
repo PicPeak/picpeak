@@ -5,11 +5,37 @@
  */
 jest.mock('../../src/utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }));
 jest.mock('../../src/database/db', () => ({ db: Object.assign(jest.fn(), { client: { config: { client: 'sqlite3' } } }) }));
+const mockStorage = { kind: jest.fn(), list: jest.fn(), delete: jest.fn() };
+jest.mock('../../src/services/storage', () => ({ getStorage: () => mockStorage }));
 
 const hls = require('../../src/services/videoHlsService');
 const { HDR_TO_SDR_FILTER } = require('../../src/services/videoRenditionService');
 
 const ATTEMPT = '0b6f6d0e-5f0b-4c55-9f0e-2a4d3c1b7e9a';
+
+describe('deleteLadder', () => {
+  const entries = keys => keys.map(key => ({ key, size: 1 }));
+
+  it('confines an object store listing to this photo, and deletes nothing of its neighbours', async () => {
+    // Without the slash S3 lists hls/10/, hls/100/ ... for photo 1 as well:
+    // every ladder whose id starts with the same digits, fetched to be dropped.
+    mockStorage.kind.mockReturnValue('s3');
+    mockStorage.list.mockResolvedValue(entries([`hls/1/${ATTEMPT}/master.m3u8`, `hls/1/${ATTEMPT}/480p/seg_00000.m4s`]));
+    mockStorage.delete.mockResolvedValue();
+    await hls.deleteLadder({ id: 1, hls_status: 'complete' });
+    expect(mockStorage.list).toHaveBeenCalledWith('hls/1/');
+    expect(mockStorage.delete.mock.calls.map(call => call[0]).sort())
+      .toEqual([`hls/1/${ATTEMPT}/480p/seg_00000.m4s`, `hls/1/${ATTEMPT}/master.m3u8`]);
+  });
+
+  it('still drops a key of another photo that a listing hands back', async () => {
+    mockStorage.kind.mockReturnValue('s3');
+    mockStorage.list.mockResolvedValue(entries([`hls/1/${ATTEMPT}/master.m3u8`, `hls/10/${ATTEMPT}/master.m3u8`]));
+    mockStorage.delete.mockClear();
+    await hls.deleteLadder({ id: 1, hls_status: 'complete' });
+    expect(mockStorage.delete.mock.calls.map(call => call[0])).toEqual([`hls/1/${ATTEMPT}/master.m3u8`]);
+  });
+});
 
 describe('selectLadder', () => {
   const names = source => hls.selectLadder(source).map(rung => rung.name);

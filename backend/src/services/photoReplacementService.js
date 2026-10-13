@@ -210,8 +210,6 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     // The browser-playable copy (issue 1430) describes the old bytes.
     const videoRendition = require('./videoRenditionService');
     await videoRendition.deleteWebCopy(existingPhoto);
-    // So does the adaptive streaming ladder (issue 1733).
-    await require('./videoHlsService').deleteLadder(existingPhoto);
     // Responsive tiers, keyed off the OLD row (#1095 / #492). Their key embeds
     // the basename, which the update below replaces — so this is the last
     // moment they can be derived at all. Miss it and a later delete or archive
@@ -329,6 +327,10 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         return existingPhoto.id;
       });
     } else await db('photos').where({ id: existingPhoto.id }).update(updates);
+    // The adaptive streaming ladder (issue 1733) describes the old bytes too.
+    // Swept after the row started over: a transcode of the old file has lost
+    // its claim by now and cannot publish a ladder behind the sweep.
+    await require('./videoHlsService').deleteLadder(existingPhoto);
     if (autoCredit) {
       // Fenced like the upload worker: a manual credit set meanwhile wins,
       // and so does a replacement that installed another file since.

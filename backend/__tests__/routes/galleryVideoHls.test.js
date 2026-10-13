@@ -465,6 +465,11 @@ describe('adaptive streaming routes (issue 1733)', () => {
       const archive = read('services/archiveService.js');
       expect(archive.indexOf('hls_attempt_id: null')).toBeGreaterThan(0);
       expect(archive.indexOf('deleteLadder(photo)')).toBeGreaterThan(archive.indexOf('hls_attempt_id: null'));
+      // A replacement resets the row (and with it the claim) before it sweeps:
+      // replaced by an image, no later transcode would collect a late ladder.
+      const replace = read('services/photoReplacementService.js');
+      expect(replace.lastIndexOf('.update(updates)')).toBeGreaterThan(0);
+      expect(replace.indexOf('deleteLadder(existingPhoto)')).toBeGreaterThan(replace.lastIndexOf('.update(updates)'));
     });
 
     test('every path that removes a video or its file names the ladder', () => {
