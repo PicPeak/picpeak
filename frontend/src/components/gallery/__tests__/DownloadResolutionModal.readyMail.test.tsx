@@ -88,6 +88,13 @@ describe('DownloadResolutionModal: email me when it is ready', () => {
     // Nothing to prepare again from here: the selection is not known.
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
+
+  it('does not offer a job that is past its retention but not swept yet', async () => {
+    vi.mocked(galleryService.getDownloadJob).mockResolvedValue(job({ status: 'ready', expired: true }) as never);
+    render(<DownloadResolutionModal slug="party" choices={choices} resumeToken={TOKEN} onClose={vi.fn()} />);
+    expect(await screen.findByText(/no longer available/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
+  });
 });
 
 describe('download job link', () => {

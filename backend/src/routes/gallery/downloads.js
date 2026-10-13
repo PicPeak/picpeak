@@ -1245,10 +1245,15 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
     // "Email me when it is ready" (issue 1733): offered while the build runs,
     // and only to a requester the instance already holds an address for.
     let notify;
-    if (job.status === 'pending' || job.status === 'building') {
-      const email = await downloadJobNotifier.recipientFor(req);
-      if (email) notify = (await downloadJobNotifier.isRequested(job.id, email)) ? 'requested' : 'available';
+    if ((job.status === 'pending' || job.status === 'building') && downloadJobNotifier.canMail(job)) {
+      const recipient = await downloadJobNotifier.recipientFor(req);
+      if (recipient) {
+        notify = (await downloadJobNotifier.isRequested(job.id, recipient.email)) ? 'requested' : 'available';
+      }
     }
+    // Past its retention but not swept yet: the file route answers 410, so
+    // the dialog opened from a ready-mail must not offer it (issue 1733).
+    const expired = job.status === 'ready' && new Date(job.expires_at).getTime() <= Date.now();
     res.json({
       status: job.status,
       resolution: job.resolution,
@@ -1257,6 +1262,7 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
       error: job.status === 'failed' ? (job.error || 'Preparation failed') : undefined,
       download_limit_reached: limitReached,
       notify,
+      expired: expired || undefined,
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to read download job');
@@ -1273,14 +1279,15 @@ router.post('/:slug/download-jobs/:token/notify', verifyGalleryAccess, denySlide
         || job.visibility_scope !== downloadJobService.visibilityScopeFor(req.accessLevel)) {
       return res.status(404).json({ error: 'Download job not found' });
     }
-    const email = await downloadJobNotifier.recipientFor(req);
-    if (!email) {
+    // A client's job: the link in the mail could not reach it (canMail).
+    const recipient = downloadJobNotifier.canMail(job) ? await downloadJobNotifier.recipientFor(req) : null;
+    if (!recipient) {
       return res.status(403).json({ error: 'Email notification is not available for this visit' });
     }
     if (job.status !== 'pending' && job.status !== 'building') {
       return res.status(409).json({ error: 'This download is no longer being prepared', status: job.status });
     }
-    if ((await downloadJobNotifier.request(job, email)) === 'limit') {
+    if ((await downloadJobNotifier.request(job, recipient)) === 'limit') {
       return res.status(429).json({ error: 'Too many email notifications requested. Please try again later' });
     }
     res.json({ notify: 'requested' });

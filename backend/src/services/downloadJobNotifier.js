@@ -17,6 +17,16 @@
  * Everyone else is simply not offered the option. On top of that an address
  * is capped per hour, and mailed once per job.
  *
+ * The request is remembered with its owner (guest or account), and the mail
+ * only goes out while that owner still holds the address: a guest removed, an
+ * account erased or deactivated, or an address changed since is not mailed.
+ * Removal and erasure also delete the rows outright (forgetGuest,
+ * forgetCustomer), so the address does not sit here until the job is swept.
+ *
+ * Not offered for a PIN-client's job (visibility scope 'hidden'): the link in
+ * the mail opens the gallery at guest level, and the archive is only handed
+ * to a client session.
+ *
  * The mail links to the gallery, never to the archive. Opening it goes through
  * the normal gallery access (password, expiry, revoked assignment), and the
  * gallery then offers the finished download. After a password change or an
@@ -32,12 +42,22 @@ const MAX_REQUESTS_PER_HOUR = 5;
 const HOUR_MS = 60 * 60 * 1000;
 // Carried on the gallery link; the gallery reads it and offers the job.
 const LINK_PARAM = 'download_job';
+// pg_advisory_xact_lock class for the per-address cap (1074 and 1075 are taken).
+const ADDRESS_LOCK = 1076;
 
 const normalise = (email) => String(email || '').trim().toLowerCase();
 
 /**
- * The address this requester may be mailed at, or null. Reads the session
- * (req.guest from resolveGuest, the gallery grant) and nothing else.
+ * Can a mail link lead back to this job? It opens the gallery through the
+ * share link or the portal, which are guest level; a job built for a
+ * PIN-client is refused there (the file route answers 404).
+ */
+const canMail = (job) => job.visibility_scope !== 'hidden';
+
+/**
+ * Who this requester is and the address they may be mailed at, or null.
+ * Reads the session (req.guest from resolveGuest, the gallery grant) and
+ * nothing else.
  */
 async function recipientFor(req) {
   if (req.isAdminPreview) return null;
@@ -46,10 +66,27 @@ async function recipientFor(req) {
     if (!Number.isInteger(customerId)) return null;
     const account = await db('customer_accounts')
       .where({ id: customerId, is_active: formatBoolean(true) }).first('email');
-    return normalise(account?.email) || null;
+    const email = normalise(account?.email);
+    return email ? { email, customerId } : null;
   }
-  if (req.guest?.emailVerified && req.guest.email) return normalise(req.guest.email);
+  if (req.guest?.emailVerified && req.guest.email) {
+    return { email: normalise(req.guest.email), guestId: req.guest.id };
+  }
   return null;
+}
+
+/** Does the owner of this request still hold the address it was made with? */
+async function stillHolds(recipient) {
+  let owner;
+  if (recipient.customer_account_id) {
+    owner = await db('customer_accounts')
+      .where({ id: recipient.customer_account_id, is_active: formatBoolean(true) }).first('email');
+  } else if (recipient.guest_id) {
+    owner = await db('gallery_guests')
+      .where({ id: recipient.guest_id, is_deleted: formatBoolean(false) })
+      .whereNotNull('email_verified_at').first('email');
+  }
+  return !!owner && normalise(owner.email) === recipient.email;
 }
 
 /** Has this address already asked to be told about this job? */
@@ -58,25 +95,38 @@ async function isRequested(jobId, email) {
 }
 
 /**
- * Record that `email` wants the mail for `job`.
+ * Record that `recipient` (from recipientFor) wants the mail for `job`.
  * Returns 'requested', or 'limit' when the address has used up its hour.
+ *
+ * The count and the insert are one step per address. Checked apart, parallel
+ * requests for different jobs all read a count below the cap before any of
+ * them inserted. SQLite has one pooled connection, so the transaction is
+ * enough there; on PostgreSQL an advisory lock on the address holds the
+ * others back, across replicas, until this one committed.
  */
-async function request(job, email) {
-  if (await isRequested(job.id, email)) return 'requested';
+async function request(job, recipient) {
+  const { email } = recipient;
+  const outcome = await db.transaction(async (trx) => {
+    if (trx.client.config.client === 'pg') {
+      await trx.raw('SELECT pg_advisory_xact_lock(?, hashtext(?))', [ADDRESS_LOCK, email]);
+    }
+    if (await trx('download_job_recipients').where({ job_id: job.id, email }).first('id')) return 'requested';
 
-  const since = new Date(Date.now() - HOUR_MS).toISOString();
-  const recent = await db('download_job_recipients')
-    .where({ email }).where('created_at', '>', since).count({ n: '*' }).first();
-  if (Number(recent?.n || 0) >= MAX_REQUESTS_PER_HOUR) return 'limit';
+    const since = new Date(Date.now() - HOUR_MS).toISOString();
+    const recent = await trx('download_job_recipients')
+      .where({ email }).where('created_at', '>', since).count({ n: '*' }).first();
+    if (Number(recent?.n || 0) >= MAX_REQUESTS_PER_HOUR) return 'limit';
 
-  try {
-    await db('download_job_recipients').insert({
-      job_id: job.id, email, created_at: new Date().toISOString(),
+    await trx('download_job_recipients').insert({
+      job_id: job.id,
+      email,
+      guest_id: recipient.guestId ?? null,
+      customer_account_id: recipient.customerId ?? null,
+      created_at: new Date().toISOString(),
     });
-  } catch (err) {
-    // Two tabs asking at once: the unique index kept one row, which is the point.
-    if (!(await isRequested(job.id, email))) throw err;
-  }
+    return 'requested';
+  });
+  if (outcome === 'limit') return outcome;
 
   // The build may have finished between the caller's read and this insert,
   // in which case its own notify pass ran before the row existed.
@@ -105,6 +155,12 @@ async function galleryLink(event, email, token) {
  * Mail everyone waiting on a job that just became ready. Safe to call more
  * than once and from more than one replica: a recipient is claimed with a
  * conditional update, and only the caller that wins the claim queues the mail.
+ *
+ * The claim and the queued mail commit together. Claimed first and queued
+ * after, a failure (or a restart) in between left `notified_at` set with no
+ * mail behind it, and every later pass skipped the recipient for good. A
+ * recipient whose mail could not be queued stays unclaimed, and retryUnsent
+ * picks it up on the next cleanup pass.
  */
 async function notifyReady(jobId) {
   const waiting = await db('download_job_recipients').where({ job_id: jobId }).whereNull('notified_at');
@@ -112,22 +168,33 @@ async function notifyReady(jobId) {
 
   const job = await db('download_jobs').where({ id: jobId }).first();
   if (!job || job.status !== 'ready') return 0;
+  const msLeft = new Date(job.expires_at).getTime() - Date.now();
+  if (msLeft <= 0) return 0;
   const event = await db('events').where({ id: job.event_id }).first();
   if (!event) return 0;
 
   const { queueEmail } = require('./emailProcessor');
-  const hoursLeft = Math.max(1, Math.round((new Date(job.expires_at).getTime() - Date.now()) / HOUR_MS));
+  const hoursLeft = Math.max(1, Math.round(msLeft / HOUR_MS));
   let sent = 0;
   for (const recipient of waiting) {
-    const claimed = await db('download_job_recipients')
-      .where({ id: recipient.id }).whereNull('notified_at')
-      .update({ notified_at: new Date().toISOString() });
-    if (!claimed) continue;
     try {
-      const queued = await queueEmail(event.id, recipient.email, 'download_ready', {
+      if (!(await stillHolds(recipient))) {
+        await db('download_job_recipients').where({ id: recipient.id }).del();
+        continue;
+      }
+      // Everything that reads is done before the transaction: on SQLite it
+      // holds the only connection.
+      const data = {
         event_name: event.event_name,
         gallery_link: await galleryLink(event, recipient.email, job.token),
         available_hours: hoursLeft,
+      };
+      const queued = await db.transaction(async (trx) => {
+        const claimed = await trx('download_job_recipients')
+          .where({ id: recipient.id }).whereNull('notified_at')
+          .update({ notified_at: new Date().toISOString() });
+        if (!claimed) return false;
+        return queueEmail(event.id, recipient.email, 'download_ready', data, { trx });
       });
       if (queued) sent += 1;
     } catch (err) {
@@ -137,4 +204,58 @@ async function notifyReady(jobId) {
   return sent;
 }
 
-module.exports = { recipientFor, isRequested, request, notifyReady, MAX_REQUESTS_PER_HOUR, LINK_PARAM };
+/**
+ * Second chance for recipients of finished jobs whose mail was not queued
+ * (queueing failed, or the process stopped between "ready" and the notify
+ * pass). Called by the cleanup pass, after the sweep.
+ */
+async function retryUnsent() {
+  const rows = await db('download_job_recipients as r')
+    .join('download_jobs as j', 'j.id', 'r.job_id')
+    .where('j.status', 'ready').whereNull('r.notified_at')
+    .distinct('r.job_id');
+  let sent = 0;
+  for (const row of rows) sent += await notifyReady(row.job_id);
+  return sent;
+}
+
+/**
+ * Customer erasure (customerAccountsService.eraseCustomer): drop the
+ * account's requests, and any other request for its address. Runs inside the
+ * erasure transaction and BEFORE it cancels the queued mail: a notify pass
+ * that claimed a row first holds it until its mail is committed, so this
+ * delete waits for it and the cancellation that follows sees that mail; one
+ * that comes later finds no row to claim.
+ */
+function forgetCustomer(trx, customerId, email) {
+  return trx('download_job_recipients')
+    .where({ customer_account_id: customerId }).orWhere({ email: normalise(email) }).del();
+}
+
+/**
+ * A guest removed by an admin or by "forget me". Call it once the guest row
+ * is soft-deleted (no new request, and no notify pass, accepts it from then
+ * on), with the row as it was before its address was cleared. Their requests
+ * go, and so does the
+ * ready-mail already queued or sent to them for this gallery: nothing else
+ * in the queue is addressed to a guest, so nothing else would scrub it.
+ */
+async function forgetGuest(guest) {
+  await db('download_job_recipients').where({ guest_id: guest.id }).del();
+  const email = normalise(guest.email);
+  if (!email) return;
+  const mails = () => db('email_queue')
+    .where({ event_id: guest.event_id, email_type: 'download_ready' })
+    .whereRaw('LOWER(recipient_email) = ?', [email]);
+  await mails().where({ status: 'pending' }).update({ status: 'cancelled' });
+  await mails().whereIn('status', ['sent', 'failed', 'cancelled']).update({
+    recipient_email: `deleted-guest-${guest.id}@deleted.invalid`,
+    email_data: JSON.stringify({ redacted: true, reason: 'guest_removed' }),
+    rendered_html: null,
+  });
+}
+
+module.exports = {
+  recipientFor, canMail, isRequested, request, notifyReady, retryUnsent, forgetCustomer, forgetGuest,
+  MAX_REQUESTS_PER_HOUR, LINK_PARAM,
+};

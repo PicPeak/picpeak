@@ -599,6 +599,8 @@ router.delete(
         email: null,
         last_seen_at: db.fn.now(),
       });
+      // Their "mail me when the download is ready" requests (issue 1733).
+      await require('../services/downloadJobNotifier').forgetGuest(guest);
       // The denormalised uploader name must not outlive the guest (#1561).
       // After the soft delete: an upload still in flight checks for it once
       // its row is in (photoCredit.settleGuestCredit).

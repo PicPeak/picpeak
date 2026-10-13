@@ -1810,7 +1810,9 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
       // time forward (inside hours → stays null → processor sends at once).
       if (options.scheduledAt || snappedFrom) row.scheduled_at = snapped;
     }
-    await db('email_queue').insert(row);
+    // options.trx: the caller's transaction, when the row must commit or roll
+    // back together with its own write (downloadJobNotifier's claim).
+    await (options.trx || db)('email_queue').insert(row);
 
     logger.info(`Email queued: ${emailType} to ${recipientEmail}${
       row.scheduled_at ? ` (scheduled ${row.scheduled_at.toISOString()}${

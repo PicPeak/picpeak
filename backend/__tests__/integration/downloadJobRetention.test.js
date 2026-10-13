@@ -143,6 +143,12 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
     return req.send(body);
   };
 
+  // What recipientFor() hands the notifier for this guest.
+  const guestRecipient = async (email) => {
+    const guest = await db('gallery_guests').where({ email }).first();
+    return { email: guest.email.toLowerCase(), guestId: guest.id };
+  };
+
   const readyMails = (email) => db('email_queue').where({ email_type: 'download_ready', recipient_email: email });
 
   const setRetention = async (hours) => {
@@ -191,6 +197,7 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
     app.use(express.json());
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/gallery'));
+    app.use('/api/gallery', require('../../src/routes/galleryGuests'));
     app.use('/api/admin/settings', require('../../src/routes/adminSettings'));
   }, 120000);
 
@@ -462,8 +469,166 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
       const job = await makeJob(event, photoIds, { status: 'building' });
       // The row the caller read says building; the build has finished since.
       await db('download_jobs').where({ id: job.id }).update({ status: 'ready' });
-      expect(await notifier.request(job, 'race@example.com')).toBe('requested');
+      await verifiedGuest(event, 'race@example.com');
+      expect(await notifier.request(job, await guestRecipient('race@example.com'))).toBe('requested');
       expect(await readyMails('race@example.com')).toHaveLength(1);
+    });
+
+    it('holds the hourly cap when the requests arrive at once', async () => {
+      const { event, photoIds } = await makeEvent();
+      const guestToken = await verifiedGuest(event, 'burst@example.com');
+      const burst = [];
+      for (let i = 0; i < notifier.MAX_REQUESTS_PER_HOUR + 3; i += 1) {
+        burst.push(await makeJob(event, photoIds, { status: 'building' }));
+      }
+      const statuses = (await Promise.all(burst.map((job) => askForMail(event, job, guestToken))))
+        .map((res) => res.status);
+      expect(statuses.filter((status) => status === 200)).toHaveLength(notifier.MAX_REQUESTS_PER_HOUR);
+      expect(statuses.filter((status) => status === 429)).toHaveLength(3);
+      expect(await db('download_job_recipients').where({ email: 'burst@example.com' }))
+        .toHaveLength(notifier.MAX_REQUESTS_PER_HOUR);
+    });
+
+    it('is not offered for a client job, which the link in the mail could not reach', async () => {
+      const { event, photoIds } = await makeEvent();
+      const job = await makeJob(event, photoIds, { status: 'building', scope: 'hidden' });
+      const guestToken = await verifiedGuest(event, 'client@example.com');
+      const client = `Bearer ${galleryToken(event, { accessLevel: 'client' })}`;
+
+      const status = await request(app)
+        .get(`/api/gallery/${event.slug}/download-jobs/${job.token}`)
+        .set('Authorization', client).set('x-guest-token', guestToken);
+      expect(status.status).toBe(200);
+      expect(status.body.notify).toBeUndefined();
+
+      const res = await request(app)
+        .post(`/api/gallery/${event.slug}/download-jobs/${job.token}/notify`)
+        .set('Authorization', client).set('x-guest-token', guestToken).send({});
+      expect(res.status).toBe(403);
+      expect(await db('download_job_recipients').where({ job_id: job.id })).toHaveLength(0);
+    });
+
+    it('keeps a recipient whose mail could not be queued, and mails them on the next pass', async () => {
+      const { event, photoIds } = await makeEvent();
+      const job = await makeJob(event, photoIds, { status: 'building' });
+      await askForMail(event, job, await verifiedGuest(event, 'retry@example.com'));
+      await db('download_jobs').where({ id: job.id }).update({ status: 'ready' });
+
+      const emailProcessor = require('../../src/services/emailProcessor');
+      const queueEmail = jest.spyOn(emailProcessor, 'queueEmail').mockRejectedValueOnce(new Error('queue down'));
+      try {
+        expect(await notifier.notifyReady(job.id)).toBe(0);
+      } finally {
+        queueEmail.mockRestore();
+      }
+      expect(await readyMails('retry@example.com')).toHaveLength(0);
+      const [waiting] = await db('download_job_recipients').where({ job_id: job.id });
+      expect(waiting.notified_at).toBeNull();
+
+      // The cleanup pass is what retries.
+      await require('../../src/services/downloadJobCleanupService').runDownloadJobCleanup();
+      expect(await readyMails('retry@example.com')).toHaveLength(1);
+    });
+
+    it('does not mail a job that is past its retention', async () => {
+      const { event, photoIds } = await makeEvent();
+      const job = await makeJob(event, photoIds, { status: 'building' });
+      await askForMail(event, job, await verifiedGuest(event, 'toolate@example.com'));
+      await db('download_jobs').where({ id: job.id })
+        .update({ status: 'ready', expires_at: new Date(Date.now() - 1000).toISOString() });
+      expect(await notifier.notifyReady(job.id)).toBe(0);
+      expect(await readyMails('toolate@example.com')).toHaveLength(0);
+    });
+  });
+
+  describe('ready mail and erasure', () => {
+    it('customer erasure drops the request, so the finished job mails nobody', async () => {
+      const { event, photoIds } = await makeEvent();
+      const building = await makeJob(event, photoIds, { status: 'building' });
+      const earlier = await makeJob(event, photoIds, { status: 'building' });
+      const acct = await db('customer_accounts').insert({
+        email: 'erase-me@example.com',
+        password_hash: 'x',
+        is_active: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).returning('id');
+      const customerId = acct[0]?.id ?? acct[0];
+      await db('event_customer_assignments').insert({ event_id: event.id, customer_account_id: customerId });
+      const portal = `Bearer ${galleryToken(event, { via: 'customer', customerId })}`;
+      for (const job of [building, earlier]) {
+        const res = await request(app)
+          .post(`/api/gallery/${event.slug}/download-jobs/${job.token}/notify`)
+          .set('Authorization', portal).send({});
+        expect(res.status).toBe(200);
+      }
+      // One of the two was mailed before the erasure.
+      await db('download_jobs').where({ id: earlier.id }).update({ status: 'ready' });
+      await notifier.notifyReady(earlier.id);
+      expect(await readyMails('erase-me@example.com')).toHaveLength(1);
+
+      await require('../../src/services/customerAccountsService').eraseCustomer(customerId, null);
+      expect(await db('download_job_recipients').where({ email: 'erase-me@example.com' })).toHaveLength(0);
+      expect(await db('download_job_recipients').where({ customer_account_id: customerId })).toHaveLength(0);
+
+      await db('download_jobs').where({ id: building.id }).update({ status: 'ready' });
+      expect(await notifier.notifyReady(building.id)).toBe(0);
+      expect(await readyMails('erase-me@example.com')).toHaveLength(0);
+    });
+
+    it('"forget me" drops a guest\'s request and the ready mail already queued for them', async () => {
+      const { event, photoIds } = await makeEvent();
+      const building = await makeJob(event, photoIds, { status: 'building' });
+      const earlier = await makeJob(event, photoIds, { status: 'building' });
+      const guestToken = await verifiedGuest(event, 'forget-me@example.com');
+      const { guestId } = await guestRecipient('forget-me@example.com');
+      await askForMail(event, building, guestToken);
+      await askForMail(event, earlier, guestToken);
+      await db('download_jobs').where({ id: earlier.id }).update({ status: 'ready' });
+      await notifier.notifyReady(earlier.id);
+      expect(await readyMails('forget-me@example.com')).toHaveLength(1);
+
+      const res = await request(app)
+        .delete(`/api/gallery/${event.slug}/guest/me`)
+        .set('Authorization', `Bearer ${galleryToken(event)}`)
+        .set('x-guest-token', guestToken);
+      expect(res.status).toBe(200);
+
+      expect(await db('download_job_recipients').where({ guest_id: guestId })).toHaveLength(0);
+      expect(await readyMails('forget-me@example.com')).toHaveLength(0);
+      const [scrubbed] = await db('email_queue').where({ event_id: event.id, email_type: 'download_ready' });
+      expect(scrubbed.status).toBe('cancelled');
+      expect(scrubbed.email_data).not.toContain('forget-me');
+
+      await db('download_jobs').where({ id: building.id }).update({ status: 'ready' });
+      expect(await notifier.notifyReady(building.id)).toBe(0);
+      expect(await db('email_queue').where({ event_id: event.id, email_type: 'download_ready' })).toHaveLength(1);
+    });
+
+    it('does not mail an owner who no longer holds the address', async () => {
+      const { event, photoIds } = await makeEvent();
+      const job = await makeJob(event, photoIds, { status: 'building' });
+      await askForMail(event, job, await verifiedGuest(event, 'moved@example.com'));
+      // Removed on a path that did not clean up after itself (a merge).
+      await db('gallery_guests').where({ email: 'moved@example.com' }).update({ is_deleted: 1 });
+      await db('download_jobs').where({ id: job.id }).update({ status: 'ready' });
+      expect(await notifier.notifyReady(job.id)).toBe(0);
+      expect(await readyMails('moved@example.com')).toHaveLength(0);
+      expect(await db('download_job_recipients').where({ job_id: job.id })).toHaveLength(0);
+    });
+  });
+
+  describe('resume link', () => {
+    it('says so when a ready job is past its retention but not swept yet', async () => {
+      const { event, photoIds } = await makeEvent();
+      const status = (job) => request(app)
+        .get(`/api/gallery/${event.slug}/download-jobs/${job.token}`)
+        .set('Authorization', `Bearer ${galleryToken(event)}`);
+      const live = await status(await makeJob(event, photoIds));
+      expect(live.body).toMatchObject({ status: 'ready' });
+      expect(live.body.expired).toBeUndefined();
+      const gone = await status(await makeJob(event, photoIds, { expiresIn: -1000 }));
+      expect(gone.body).toMatchObject({ status: 'ready', expired: true });
     });
   });
 });
