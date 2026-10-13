@@ -57,6 +57,8 @@ const layoutProps = (photos: Photo[]) => ({
 
 let gridTop = 0;
 let gridWidth = 1200;
+/** Padding a CSS template puts on the grid, each side; the layout gets the width inside it. */
+let gridPadding = 0;
 let resizeCallbacks: Array<{ target: Element; run: (width: number) => void }> = [];
 
 const tiles = () => screen.queryAllByTestId('tile');
@@ -75,6 +77,18 @@ beforeEach(() => {
   resizeCallbacks = [];
   Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => gridWidth });
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => gridWidth });
+  gridPadding = 0;
+  const computed = window.getComputedStyle.bind(window);
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+    const style = computed(element, pseudo);
+    if (!String((element as HTMLElement).className).includes('photo-grid')) return style;
+    return new Proxy(style, {
+      get: (target, key) => (key === 'paddingLeft' || key === 'paddingRight'
+        ? `${gridPadding}px`
+        : Reflect.get(target, key)),
+    });
+  });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     const top = String(this.className).includes('photo-grid') ? gridTop : 0;
     return { top, bottom: top, left: 0, right: 0, width: gridWidth, height: 0, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
@@ -285,6 +299,47 @@ describe.each([
     gridWidth = 600;
     gridTop += 5000;
     act(() => { window.dispatchEvent(new Event('resize')); });
+    act(() => {
+      resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
+    });
+    const held = tiles().find((tile) => Number(tile.dataset.photo) === anchorId)!;
+    expect((-gridTop - parseFloat(held.style.top)) / parseFloat(held.style.height)).toBeCloseTo(0.4, 5);
+  });
+
+  it('takes the anchor in a grid a CSS template has padded', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    const resizeTo = (width: number) => {
+      gridWidth = width;
+      act(() => {
+        resizeCallbacks.filter((entry) => entry.target !== document.body)
+          .forEach((entry) => entry.run(width - 2 * gridPadding));
+      });
+    };
+    gridPadding = 16;
+    resizeTo(1200);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+
+    resizeTo(600);
+    const held = tiles().find((tile) => Number(tile.dataset.photo) === anchorId)!;
+    expect((-gridTop - parseFloat(held.style.top)) / parseFloat(held.style.height)).toBeCloseTo(0.4, 5);
+  });
+
+  it('keeps the anchor when a photo is patched while a width change is pending', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<Layout {...layoutProps(photos)} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+
+    // Narrower already, the toolbar re-wrapped; a like lands before the
+    // layout has the new width.
+    gridWidth = 600;
+    gridTop += 5000;
+    rerender(<Layout {...layoutProps(photos.map((p) => (p.id === 1 ? { ...p, like_count: 1 } : p)))} />);
     act(() => {
       resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
     });

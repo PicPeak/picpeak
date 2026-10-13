@@ -147,6 +147,11 @@ export function useWindowedItems(
     const container = containerRef.current;
     const { rows } = modelRef.current;
     if (!container || rows.length === 0) return;
+    // The rows must still be those of the container's width: the content
+    // box, which is what the layouts measure (a CSS template may pad the grid).
+    const style = getComputedStyle(container);
+    const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    if (Math.abs(container.clientWidth - padding - widthRef.current) >= 1) return;
     const viewTop = -container.getBoundingClientRect().top;
     const top = firstRow(rows, (row) => row.bottom > viewTop);
     if (viewTop <= 0 || top >= rows.length) {
@@ -193,9 +198,7 @@ export function useWindowedItems(
       frame = requestAnimationFrame(() => {
         frame = 0;
         measure();
-        // The rows are still those of the width they were laid out for.
-        const container = containerRef.current;
-        if (container && Math.abs(container.offsetWidth - widthRef.current) < 1) markAnchor();
+        markAnchor();
       });
     };
     window.addEventListener('scroll', schedule, { passive: true });
@@ -210,7 +213,7 @@ export function useWindowedItems(
       observer.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [enabled, measure, markAnchor, containerRef]);
+  }, [enabled, measure, markAnchor]);
 
   const visible = useMemo(() => {
     const { items, rows, rowOf } = model;
