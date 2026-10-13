@@ -135,6 +135,15 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   const retryAfterRef = useRef(0);
   const lastSrcRef = useRef<string | undefined>(undefined);
   const retryRef = useRef<HTMLElement | null>(null);
+  // The element the retry waits on, in state so the observer is bound again
+  // when a render swaps it (<img> for <canvas>, or the reverse). `retryAtRef`
+  // is when the pending retry is due, so rebinding does not restart its delay.
+  const [retryEl, setRetryEl] = useState<HTMLElement | null>(null);
+  const retryAtRef = useRef(0);
+  // A fetch run is under way. A quiet retry behind a fallback changes nothing
+  // on screen, so without this the next retry would be armed the moment the
+  // current one starts instead of when it fails.
+  const [fetching, setFetching] = useState(true);
   // The fallback shown in place of a `src` that failed for a reason a retry
   // can cure (issue 1936). The lightbox passes the thumbnail as fallback, so
   // a preview answered 503 while storage was briefly unreachable used to
@@ -212,9 +221,11 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       setImageSrc(fallbackSrc || '');
       setError(false);
       setIsLoading(false);
+      setFetching(false);
       return;
     }
 
+    setFetching(true);
     if (!quietRetry) {
       setIsLoading(true);
       setError(false);
@@ -355,7 +366,9 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       }
     };
 
-    fetchImage();
+    fetchImage().finally(() => {
+      if (!aborted) setFetching(false);
+    });
 
     // Cleanup function
     return () => {
@@ -388,13 +401,28 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // stands in, or when both fetches were rejected. A fallback shown because
   // a 200 would not decode is final, as before.
   const retryable = (standIn || (error && (!fallbackSrc || fetchFailedRef.current)))
-    && attemptsRef.current < MAX_RETRIES;
+    && !fetching && attemptsRef.current < MAX_RETRIES;
+  // After every render, because which element is in the document is decided
+  // by the render itself; setting the same element again is a no-op. A
+  // stand-in drawn to a canvas has no retryRef: the canvas ref has to stay
+  // the one stable callback, or every render would release its pixels.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!retryable) return;
-    // A stand-in drawn to a canvas has no retryRef: the canvas ref has to
-    // stay the one stable callback, or every render would release its pixels.
-    const el = retryRef.current ?? canvasRef.current;
+    setRetryEl(retryable ? retryRef.current ?? canvasRef.current : null);
+  });
+  useEffect(() => {
+    if (!retryable) {
+      retryAtRef.current = 0;
+      return;
+    }
+    const el = retryEl;
     if (!el) return;
+    // Armed once per failure, with what that failure said: the attempt count
+    // and the server's cooldown are both final by the time `fetching` clears.
+    if (!retryAtRef.current) {
+      retryAtRef.current = Date.now()
+        + Math.max(RETRY_BASE_DELAY_MS * 2 ** attemptsRef.current, retryAfterRef.current);
+    }
 
     let cancelled = false;
     let delayElapsed = false;
@@ -411,7 +439,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     const timer = setTimeout(() => {
       delayElapsed = true;
       retry();
-    }, Math.max(RETRY_BASE_DELAY_MS * 2 ** attemptsRef.current, retryAfterRef.current));
+    }, Math.max(0, retryAtRef.current - Date.now()));
 
     let observer: IntersectionObserver | null = null;
     if (typeof IntersectionObserver !== 'undefined') {
@@ -429,7 +457,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       observer?.disconnect();
       document.removeEventListener('visibilitychange', retry);
     };
-  }, [retryable, retryNonce]);
+  }, [retryable, retryEl]);
 
   // Effect to draw to canvas when image is loaded and canvas rendering is enabled
   useEffect(() => {
