@@ -10,6 +10,7 @@
  */
 
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const { bootCrmDb } = require('./helpers/crmDb');
@@ -27,6 +28,8 @@ afterAll(async () => {
   if (cleanup) await cleanup();
 });
 
+// Generated per run; meets set-admin-password.js's strength rules.
+const newPassword = () => `Aa1!${crypto.randomBytes(9).toString('hex')}`;
 const script = (name) => path.resolve(__dirname, '..', '..', 'scripts', name);
 const run = (name, args) => execFileSync('node', [script(name), ...args], {
   env: { ...process.env, NODE_ENV: 'test', TEST_DATABASE_PATH: process.env.TEST_DATABASE_PATH },
@@ -54,7 +57,7 @@ it('set-admin-password.js removes the passkeys of the account it resets and nobo
   const bystanderId = await seedAdmin('cli-bystander-1');
   await db('admin_webauthn_credentials').insert([passkey(adminId, 1), passkey(adminId, 2), passkey(bystanderId, 1)]);
 
-  run('set-admin-password.js', ['Str0ng@Passw0rd']);
+  run('set-admin-password.js', [newPassword()]);
 
   expect((await db('admin_users').where({ id: adminId }).first()).password_hash).not.toBe('old-hash');
   expect(await passkeysOf(adminId)).toHaveLength(0);
@@ -66,7 +69,7 @@ it('create-admin.js removes the passkeys of an existing account whose password i
   const bystanderId = await seedAdmin('cli-bystander-2');
   await db('admin_webauthn_credentials').insert([passkey(targetId, 1), passkey(bystanderId, 1)]);
 
-  run('create-admin.js', ['--email', 'cli-target@example.com', '--password', 'Str0ng@Passw0rd']);
+  run('create-admin.js', ['--email', 'cli-target@example.com', '--password', newPassword()]);
 
   expect((await db('admin_users').where({ id: targetId }).first()).password_hash).not.toBe('old-hash');
   expect(await passkeysOf(targetId)).toHaveLength(0);

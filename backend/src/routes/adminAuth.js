@@ -561,7 +561,9 @@ router.post('/passkeys/:id/delete', [
 
   await db.transaction(async (trx) => {
     // Never remove the last way in: without a password (and without SSO) the
-    // last passkey is the only login this account has.
+    // last passkey is the only login this account has. The account row is
+    // locked first: on PostgreSQL two removals would otherwise both count two.
+    await trx('admin_users').where('id', admin.id).forUpdate().first();
     if (!hasPassword && !ssoAccount && await passkeyService.countForAdmin(admin.id, trx) <= 1) {
       throw new ConflictError('This passkey is the only way to sign in to this account. Set a password first.');
     }

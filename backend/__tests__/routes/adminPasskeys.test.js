@@ -285,6 +285,28 @@ describe('registration', () => {
     expect(mockVerifyRegistration).not.toHaveBeenCalled();
   });
 
+  // A reset by somebody else removes the account's passkeys. A registration
+  // that was authorized with the old password must not land after it.
+  it('refuses to finish a registration when the password changed since the options step', async () => {
+    const admin = await seedAdmin();
+    const options = await registerOptions(admin);
+    expect(options.status).toBe(200);
+    await db('admin_users').where({ id: admin.id }).update({ password_hash: await bcrypt.hash('reset-by-operator', 4) });
+
+    mockVerifyRegistration.mockResolvedValueOnce({
+      verified: true,
+      registrationInfo: {
+        aaguid: '00000000-0000-0000-0000-000000000000',
+        credential: { id: 'cred-after-reset', publicKey: new Uint8Array([1, 2, 3, 4]), counter: 0, transports: ['internal'] },
+      },
+    });
+    const res = await registerVerify(admin, cookieOf(options));
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('PASSKEY_CHALLENGE_INVALID');
+    expect(await passkeyService.countForAdmin(admin.id)).toBe(0);
+    mockVerifyRegistration.mockReset();
+  });
+
   it('refuses a credential that is already registered', async () => {
     const admin = await seedAdmin();
     const other = await seedAdmin();

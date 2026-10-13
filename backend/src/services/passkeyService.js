@@ -94,12 +94,20 @@ async function requireRelyingParty(req) {
 // the login routes (/api/auth/admin/passkey).
 const CHALLENGE_COOKIE_PATH = '/api';
 
-function setChallenge(res, { purpose, challenge, adminId = null, rememberMe = false }) {
+// What a registration challenge is bound to besides the account: the password
+// that authorized it. Keyed, so the cookie says nothing about the stored hash.
+function passwordState(passwordHash) {
+  return crypto.createHmac('sha256', process.env.JWT_SECRET)
+    .update(`passkey-password-state:${passwordHash || ''}`).digest('base64url');
+}
+
+function setChallenge(res, { purpose, challenge, adminId = null, rememberMe = false, pw = null }) {
   const token = jwt.sign({
     type: CHALLENGE_TOKEN_TYPE,
     purpose,
     c: challenge,
     uid: adminId,
+    pw,
     rememberMe: rememberMe === true,
   }, process.env.JWT_SECRET, {
     expiresIn: CHALLENGE_TTL_SECONDS,
@@ -155,7 +163,12 @@ async function takeChallenge(req, res, purpose) {
     throw invalid();
   }
 
-  return { challenge: payload.c, adminId: payload.uid ?? null, rememberMe: payload.rememberMe === true };
+  return {
+    challenge: payload.c,
+    adminId: payload.uid ?? null,
+    rememberMe: payload.rememberMe === true,
+    pw: typeof payload.pw === 'string' ? payload.pw : null,
+  };
 }
 
 // ── credential rows ────────────────────────────────────────────────────────
@@ -233,12 +246,14 @@ async function beginRegistration(req, res, admin) {
     // so one gesture is possession plus PIN/biometric.
     authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
   });
-  setChallenge(res, { purpose: 'register', challenge: options.challenge, adminId: admin.id });
+  setChallenge(res, {
+    purpose: 'register', challenge: options.challenge, adminId: admin.id, pw: passwordState(admin.password_hash),
+  });
   return options;
 }
 
 async function finishRegistration(req, res, admin, response, name) {
-  const { challenge, adminId } = await takeChallenge(req, res, 'register');
+  const { challenge, adminId, pw } = await takeChallenge(req, res, 'register');
   if (adminId !== admin.id) {
     throw new PasskeyError('PASSKEY_CHALLENGE_INVALID', 'The passkey request expired. Please try again.');
   }
@@ -281,7 +296,14 @@ async function finishRegistration(req, res, admin, response, name) {
       // serialize them on PostgreSQL (READ COMMITTED: both would count nine
       // and both insert), so they queue on the account row first. SQLite has
       // one writer, and knex drops the lock clause there.
-      await trx('admin_users').where('id', admin.id).forUpdate().first();
+      const current = await trx('admin_users').where('id', admin.id).forUpdate().first();
+      // The ceremony was authorized with the password at the options step. A
+      // reset by somebody else since then removed the account's passkeys, and
+      // this one must not land after it. Read under the lock the reset's own
+      // update takes, so the two cannot interleave.
+      if (!current || passwordState(current.password_hash) !== pw) {
+        throw new PasskeyError('PASSKEY_CHALLENGE_INVALID', 'The passkey request expired. Please try again.');
+      }
       if (await countForAdmin(admin.id, trx) >= MAX_PASSKEYS_PER_ADMIN) {
         throw new PasskeyError('PASSKEY_LIMIT', `You can register at most ${MAX_PASSKEYS_PER_ADMIN} passkeys`, 409);
       }
