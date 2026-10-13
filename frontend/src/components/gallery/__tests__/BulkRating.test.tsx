@@ -211,4 +211,32 @@ describe('GallerySidebar', () => {
     sidebar({ bulkRating: { slug: SLUG, photoIds: [] }, selectedCount: 0 });
     expect(screen.queryByRole('group', { name: 'Rate selected' })).toBeNull();
   });
+
+  // A proofing gallery often has downloads off; the tile checkboxes still
+  // select there, and rating is not a download action.
+  it('offers it with downloads off', () => {
+    sidebar({ allowDownloads: false, bulkRating: { slug: SLUG, photoIds: [1, 2] } });
+    expect(screen.getByRole('group', { name: 'Rate selected' })).toBeTruthy();
+  });
+
+  // The drawer slides with a CSS transform, which would confine a fixed
+  // overlay rendered inside it to the drawer.
+  it('opens the identity dialog outside the drawer, and a press in it leaves the drawer open', async () => {
+    const onClose = vi.fn();
+    const { container } = sidebar({
+      isMobile: true,
+      onClose,
+      bulkRating: { slug: SLUG, photoIds: [1, 2], requireNameEmail: true },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(container.querySelector('.gallery-sidebar')!.contains(dialog)).toBe(false);
+
+    fireEvent.mouseDown(dialog);
+    expect(onClose).not.toHaveBeenCalled();
+    // A press on the page behind the drawer still closes it.
+    fireEvent.mouseDown(document.body);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

@@ -169,7 +169,12 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   useEffect(() => {
     if (isMobile && isOpen) {
       const handleClickOutside = (event: MouseEvent) => {
-        if (sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
+        const target = event.target as Element;
+        // A dialog opened from the drawer is portalled to the body (the
+        // drawer's transform would confine it); a press in it is not a press
+        // on the page behind the drawer.
+        if (target.closest?.('[role="dialog"]')) return;
+        if (sidebarRef.current && !sidebarRef.current.contains(target)) {
           onClose();
         }
       };
@@ -335,11 +340,16 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                 {isSelectionMode && selectedCount > 0 && selectedPhotosForQuota && (
                   <DownloadQuotaNotice photos={selectedPhotosForQuota} />
                 )}
-                {/* Rate the selection (issue 1733) */}
-                {isSelectionMode && bulkRating && bulkRating.photoIds.length > 0 && (
-                  <BulkRating {...bulkRating} />
-                )}
               </div>
+            </div>
+          )}
+
+          {/* Rate the selection (issue 1733). Its own section, like the
+              filename list below: with downloads off the tile checkboxes
+              still select, and rating is what a proofing gallery is for. */}
+          {isSelectionMode && bulkRating && bulkRating.photoIds.length > 0 && (
+            <div className="gallery-sidebar-section gallery-sidebar-bulk-rating p-4 border-b border-border-token">
+              <BulkRating {...bulkRating} />
             </div>
           )}
 

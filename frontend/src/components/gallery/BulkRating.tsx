@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Star, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -155,7 +156,10 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
           <X className="w-4 h-4" />
         </button>
       </div>
-      {pendingRating !== null && (
+      {/* Portalled to the body: the sidebar this sits in slides with a CSS
+          transform, and a fixed overlay inside a transformed box is laid out
+          against that box, not the viewport. */}
+      {pendingRating !== null && createPortal(
         <FeedbackIdentityModal
           isOpen
           onClose={() => setPendingRating(null)}
@@ -165,7 +169,8 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
             mutation.mutate({ rating: pendingRating, guest_name: name, guest_email: email });
           }}
           feedbackType={t('feedback.rating', 'rating')}
-        />
+        />,
+        document.body,
       )}
     </>
   );
