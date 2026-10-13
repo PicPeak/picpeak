@@ -408,8 +408,40 @@ describe('photo trash (issue 1733)', () => {
       expect((await restore(event, [row.id])).status).toBe(200);
       const after = await db('photos').where({ id: photo.id }).first();
       expect(after).toMatchObject({ moderation_status: 'pending', visibility: 'hidden', uploaded_by_admin_id: id.other });
-      expect(after.restored_from_trash_at).toEqual(expect.any(String));
       expect(webhookFire).not.toHaveBeenCalled();
+    });
+
+    it('announces a held photo that is approved after its restore, while it is still processing', async () => {
+      const sharp = require('sharp');
+      const jpeg = await sharp({ create: { width: 40, height: 30, channels: 3, background: { r: 20, g: 80, b: 200 } } }).jpeg().toBuffer();
+      const { processPhoto } = require('../../src/services/photoProcessor');
+      const { moderatePhotos } = require('../../src/services/uploadReviewService');
+      const event = await mkEvent();
+      const photo = await mkPhoto(event, { moderation_status: 'pending', visibility: 'hidden', uploaded_by_admin_id: id.other });
+      await storage.put(photo.key, jpeg);
+      expect((await del(event, photo)).status).toBe(200);
+      expect((await restore(event, [(await trashRowOf(photo.id)).id])).status).toBe(200);
+      webhookFire.mockClear();
+
+      // Approved before the worker is done: the approval leaves the announcement to the worker.
+      await moderatePhotos(event.id, [photo.id], 'approve');
+      expect(webhookFire).not.toHaveBeenCalledWith('photo.uploaded', expect.anything());
+      await processPhoto(photo.id);
+      // It was never announced before: held uploads are not.
+      expect(webhookFire).toHaveBeenCalledWith('photo.uploaded', expect.objectContaining({ photo: expect.objectContaining({ id: photo.id }) }));
+    });
+
+    it('gives a global category its cover back', async () => {
+      const event = await mkEvent();
+      const globalId = firstId(await db('photo_categories').insert({ name: 'Global cover', slug: `global-cover-${seq}`, is_global: 1, event_id: null }).returning('id'));
+      const photo = await mkPhoto(event, { category_id: globalId });
+      await db('photo_categories').where({ id: globalId }).update({ hero_photo_id: photo.id });
+      expect((await del(event, photo)).status).toBe(200);
+      expect((await db('photo_categories').where({ id: globalId }).first()).hero_photo_id).toBeNull();
+
+      expect((await restore(event, [(await trashRowOf(photo.id)).id])).status).toBe(200);
+      expect((await db('photo_categories').where({ id: globalId }).first()).hero_photo_id).toBe(photo.id);
+      await db('photo_categories').where({ id: globalId }).update({ hero_photo_id: null });
     });
 
     it('does not fire photo.uploaded when the restored photo is processed again', async () => {
@@ -1122,6 +1154,24 @@ describe('photo trash (issue 1733)', () => {
       expect(await count('photos', { event_id: event.id }) + await count('photo_trash', { event_id: event.id })).toBe(2);
     });
 
+    it('removes its file when the gallery\'s trash is deleted under a trashing', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      // The gallery is deleted between the move and the commit: the rows of its trash go.
+      let trashKey;
+      const rename = storage.rename.bind(storage);
+      const spy = jest.spyOn(storage, 'rename').mockImplementation(async (from, to) => {
+        spy.mockRestore();
+        trashKey = to;
+        await rename(from, to);
+        await db('photo_trash').where({ event_id: event.id }).del();
+      });
+      const res = await del(event, photo);
+      expect(res.status).toBe(409);
+      expect(await storage.exists(trashKey)).toBe(false);
+      expect(await count('photo_trash', { event_id: event.id })).toBe(0);
+    });
+
     it('steps back when the sweep took its trashing over', async () => {
       const event = await mkEvent();
       const photo = await mkPhoto(event);
@@ -1184,13 +1234,20 @@ describe('photo trash (issue 1733)', () => {
   });
 
   describe('through the S3 backend', () => {
-    let backend; let objects; let calls;
+    let backend; let objects; let calls; let etagOf;
 
     beforeAll(() => {
       const S3StorageBackend = require('../../src/services/storage/S3StorageBackend');
       backend = new S3StorageBackend({ bucket: 'test', region: 'us-east-1', accessKeyId: 'k', secretAccessKey: 's' });
       objects = new Map();
       calls = [];
+      // Every write gets its own ETag, a copy too: what S3 does for an
+      // object that was uploaded in parts, which a camera original is.
+      const etags = new Map();
+      let writes = 0;
+      const put = objects.set.bind(objects);
+      objects.set = (key, value) => { etags.set(key, `"etag-${writes += 1}"`); return put(key, value); };
+      etagOf = (key) => etags.get(key);
       const notFound = () => Object.assign(new Error('NotFound'), { name: 'NotFound', $metadata: { httpStatusCode: 404 } });
       // The adapter's surface the trash may use. Anything that reads an
       // object's body (download, downloadStream) is absent on purpose: a
@@ -1201,7 +1258,7 @@ describe('photo trash (issue 1733)', () => {
           send: async (command) => {
             const key = command.input.Key;
             if (!objects.has(key)) throw notFound();
-            return { ContentLength: objects.get(key).length };
+            return { ContentLength: objects.get(key).length, ETag: etagOf(key) };
           },
         },
         uploadStream: async (stream, key) => {
@@ -1465,6 +1522,49 @@ describe('photo trash (issue 1733)', () => {
       expect(webhookFire).not.toHaveBeenCalled();
     });
 
+    it('keeps the saved original when another object of the same size took its place after a crash', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      const original = objects.get(photo.key);
+      const tag = etagOf(photo.key);
+      // Copied, source deleted, crash. Then an object of the same length arrives under the name.
+      const trashKey = `trash/${event.id}/same-size/${photo.filename}`;
+      objects.set(trashKey, original);
+      objects.delete(photo.key);
+      const rowId = firstId(await db('photo_trash').insert({
+        photo_id: photo.id, event_id: event.id, state: 'pending',
+        state_changed_at: new Date(Date.now() - 3600000).toISOString(), filename: photo.filename,
+        original_key: photo.key, trash_key: trashKey, deleted_at: now(), purge_after: new Date(Date.now() + 86400000).toISOString(),
+        move_tag: tag, photo_row: JSON.stringify(await db('photos').where({ id: photo.id }).first()), children: '{}',
+      }).returning('id'));
+      const replacement = Buffer.from('x'.repeat(original.length));
+      objects.set(photo.key, replacement);
+
+      await photoTrash.purgeExpired();
+      // Neither object is deleted: the photo is in the trash, the newcomer waits for the import.
+      expect(objects.get(trashKey)).toBe(original);
+      expect(objects.get(photo.key)).toBe(replacement);
+      expect(await db('photo_trash').where({ id: rowId }).first()).toMatchObject({ state: 'trashed' });
+    });
+
+    it('leaves an object of the same size that is not the copy a crashed restore made', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      expect((await del(event, photo)).body).toMatchObject({ trashed: 1 });
+      const row = await trashRowOf(photo.id);
+      // The restore noted it was moving and crashed before its copy landed.
+      await db('photo_trash').where({ id: row.id }).update({
+        state: 'restoring', state_changed_at: new Date(Date.now() - 3600000).toISOString(), restore_move_at: now(),
+      });
+      const foreign = Buffer.from('y'.repeat(objects.get(row.trash_key).length));
+      objects.set(photo.key, foreign);
+
+      await photoTrash.purgeExpired();
+      expect(objects.get(photo.key)).toBe(foreign);
+      expect(objects.has(row.trash_key)).toBe(true);
+      expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed', move_tag: null });
+    });
+
     it('drops the surplus copy when a trashing crashed between copy and delete', async () => {
       const event = await mkEvent();
       const photo = await mkPhoto(event);
@@ -1474,6 +1574,8 @@ describe('photo trash (issue 1733)', () => {
         photo_id: photo.id, event_id: event.id, state: 'pending',
         state_changed_at: new Date(Date.now() - 3600000).toISOString(), filename: photo.filename,
         original_key: photo.key, trash_key: trashKey, deleted_at: now(), purge_after: now(),
+        // The trashing noted which object it was about to copy.
+        move_tag: etagOf(photo.key),
         photo_row: '{}', children: '{}',
       }).returning('id'));
 

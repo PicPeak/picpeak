@@ -22,6 +22,11 @@
  * crashed restore without it moved nothing, so whatever lies at the
  * destination is not its own.
  *
+ * `move_tag` (S3 only, where a move is copy then delete) is the ETag of the
+ * object at the photo's place that the running operation knows: the original
+ * before a trashing copies it, the copy a restore put there. An object there
+ * with another ETag is somebody else's and is never deleted or overwritten.
+ *
  * Timestamps are ISO strings in varchar columns, like
  * event_download_grants.granted_at: the same text on both engines, so
  * `purge_after <= now` compares the same way on SQLite and PostgreSQL.
@@ -38,6 +43,9 @@ exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('photo_trash'))) await createPhotoTrash(knex);
   if (!(await knex.schema.hasColumn('photo_trash', 'restore_move_at'))) {
     await knex.schema.alterTable('photo_trash', (t) => t.string('restore_move_at', 32).nullable());
+  }
+  if (!(await knex.schema.hasColumn('photo_trash', 'move_tag'))) {
+    await knex.schema.alterTable('photo_trash', (t) => t.string('move_tag', 255).nullable());
   }
   // Partial indexes read the same on PostgreSQL and SQLite.
   await knex.raw(

@@ -113,14 +113,6 @@ async function deleteEventCascade(eventId, adminContext) {
   // backend refuses such a key.
   if (event.archive_path) storageKeys.add(event.archive_path);
 
-  // The gallery's trash (issue 1733) goes with it: the files under trash/
-  // with the other objects after the commit, the rows in the transaction.
-  try {
-    for (const key of await require('../../services/photoTrashService').eventTrashKeys(eventId)) storageKeys.add(key);
-  } catch (trashErr) {
-    logger.warn('Could not enumerate the photo trash before cascade delete', { eventId, error: trashErr.message });
-  }
-
   // The download caches are the subtle ones: they live UNDER
   // events/active/{slug}/.download-cache/, so the recursive fs.rm below covers
   // them on local disk and nothing covers them on S3, where the prefix is not
@@ -208,8 +200,11 @@ async function deleteEventCascade(eventId, adminContext) {
     // SQLite caveat as photo_faces above — delete explicitly so an event's
     // rate-limit tracking rows don't outlive it on the SQLite path.
     await trx('feedback_rate_limits').where('event_id', eventId).del();
-    // The photo trash (migration 294): the same inert-cascade reason.
+    // The photo trash (migration 294): the same inert-cascade reason. Its
+    // files under trash/ go with the other objects after the commit; the
+    // keys are read here, with the rows still there (eventTrashKeys).
     if (await trx.schema.hasTable('photo_trash')) {
+      for (const key of await require('../../services/photoTrashService').eventTrashKeys(eventId, trx)) storageKeys.add(key);
       await trx('photo_trash').where('event_id', eventId).del();
     }
 
