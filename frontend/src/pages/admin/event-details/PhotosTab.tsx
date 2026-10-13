@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ClipboardCheck, Folders, FolderTree, Upload } from 'lucide-react';
+import { AlertCircle, ClipboardCheck, Folders, FolderTree, Trash2, Upload } from 'lucide-react';
 import type { Event } from '../../../types';
-import { Button, Card, Loading } from '../../../components/common';
-import { AdminPhotoGrid, AdminPhotoViewer, PhotoFilters, PhotoUploadModal, PhotoFilterPanel, PhotoExportMenu, EventCategoryManager } from '../../../components/admin';
+import { Badge, Button, Card, Loading } from '../../../components/common';
+import { AdminPhotoGrid, AdminPhotoViewer, PhotoFilters, PhotoUploadModal, PhotoFilterPanel, PhotoExportMenu, EventCategoryManager, PhotoTrashModal, photoTrashQueryKey } from '../../../components/admin';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
+import { usePermissions } from '../../../contexts/PermissionsContext';
 import { AdminPhoto, photosService, CREDIT_FILTER_NONE, type PhotoFilters as PhotoFilterParams, type FeedbackFilters, type FilterSummary } from '../../../services/photos.service';
 import { FolderBrowser, FolderRequestsPanel } from '../../../components/admin/folders';
 import { folderQueryKey, foldersService } from '../../../services/folders.service';
@@ -101,6 +102,18 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
     enabled: Number.isFinite(eventId),
   });
 
+  // The trash (issue 1733): what deleting says depends on its retention, and
+  // the button shows how many photos wait there. Same permission as its route.
+  const { hasPermission, isSuperAdmin } = usePermissions();
+  const canDelete = isSuperAdmin || hasPermission('photos.delete');
+  const [showTrash, setShowTrash] = useState(false);
+  const { data: trash } = useQuery({
+    queryKey: photoTrashQueryKey(eventId),
+    queryFn: () => photosService.getTrash(eventId),
+    enabled: Number.isFinite(eventId) && canDelete,
+  });
+  const trashCount = trash?.items.length ?? 0;
+
   // Deleting, hiding/showing or reviewing photos from this tab changes the
   // review bar's counts too, so every refresh also re-reads them.
   const refreshAfterPhotoChange = () => {
@@ -108,6 +121,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
     queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
     queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
     queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id, 'moderation'] });
+    queryClient.invalidateQueries({ queryKey: photoTrashQueryKey(eventId) });
   };
   const moderationFilter = photoFilters.moderation;
   const setModerationFilter = (value: PhotoFilterParams['moderation']) =>
@@ -285,14 +299,44 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
             </Button>
           )}
         </div>
-        <PermissionGate permission="photos.download">
-          <PhotoExportMenu
-            eventId={parseInt(id!)}
-            selectedPhotoIds={selectedPhotoIds}
-            filters={feedbackFilters}
-          />
-        </PermissionGate>
+        <div className="flex flex-wrap items-start gap-3">
+          {/* Only while deleting goes to the trash, or something is still in it. */}
+          {canDelete && ((trash?.retention_days ?? 0) > 0 || trashCount > 0) && (
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<Trash2 className="w-4 h-4" />}
+              onClick={() => setShowTrash(true)}
+              data-testid="photo-trash-open"
+            >
+              {t('admin.photos.trash.title')}
+              {trashCount > 0 && <Badge className="ml-2">{trashCount}</Badge>}
+            </Button>
+          )}
+          <PermissionGate permission="photos.download">
+            <PhotoExportMenu
+              eventId={parseInt(id!)}
+              selectedPhotoIds={selectedPhotoIds}
+              filters={feedbackFilters}
+            />
+          </PermissionGate>
+        </div>
       </div>
+
+      {canDelete && (
+        <PhotoTrashModal
+          eventId={eventId}
+          open={showTrash}
+          onClose={() => setShowTrash(false)}
+          // Photos come back with their labels, decisions and folders: the
+          // filter panel's sections and the folder counts depend on them.
+          onRestored={() => {
+            refreshAfterPhotoChange();
+            queryClient.invalidateQueries({ queryKey: ['admin-event-filter-summary', id] });
+            queryClient.invalidateQueries({ queryKey: folderQueryKey(eventId) });
+          }}
+        />
+      )}
 
       {/* Photo Grid */}
       {photosLoading ? (
@@ -327,6 +371,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           sortOrder={photoFilters.order ?? 'desc'}
           onSortChange={(sort, order) => setPhotoFilters(prev => ({ ...prev, sort, order }))}
           canModerate={canModerate}
+          trashRetentionDays={trash?.retention_days}
         />
       )}
 
@@ -342,6 +387,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
             setSelectedPhoto(null);
           }}
           categories={filterCategories}
+          trashRetentionDays={trash?.retention_days}
         />
       )}
 

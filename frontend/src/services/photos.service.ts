@@ -75,6 +75,45 @@ export interface PhotoModerationCounts {
 // backend/src/services/photoCredit.js.
 export const CREDIT_FILTER_NONE = '__none__';
 
+/**
+ * What a delete did (issue 1733): `trashed` photos can be restored for
+ * `retention_days`, `deleted` ones are gone, `failed` ids are still in the
+ * gallery.
+ */
+export interface PhotoDeleteResult {
+  trashed?: number;
+  deleted?: number;
+  failed?: number[];
+  retention_days?: number;
+}
+
+export interface TrashedPhoto {
+  /** The photo's own id: trash and restore do not change it. */
+  id: number;
+  filename: string;
+  media_type: string;
+  size_bytes: number;
+  deleted_at: string;
+  deleted_by_name: string | null;
+  purge_after: string;
+  /** It was under review when deleted and comes back that way. */
+  held: boolean;
+  /** Admin-only; null when the photo has no thumbnail. */
+  thumbnail_url: string | null;
+}
+
+export interface PhotoTrash {
+  items: TrashedPhoto[];
+  /** 0: deleting is final, nothing goes to the trash. */
+  retention_days: number;
+}
+
+export interface TrashRestoreResult {
+  restored: number;
+  photo_ids: number[];
+  failed: Array<{ id: number; filename: string; code: string; error: string }>;
+}
+
 /** Admin filter on the guests' approve / reject (issue 744). */
 export type DecisionFilter = 'approved' | 'rejected' | 'undecided';
 
@@ -249,12 +288,33 @@ class PhotosService {
     return response.data;
   }
 
-  async deletePhoto(eventId: number, photoId: number): Promise<void> {
-    await api.delete(`/admin/events/${eventId}/photos/${photoId}`);
+  async deletePhoto(eventId: number, photoId: number): Promise<PhotoDeleteResult> {
+    const response = await api.delete(`/admin/events/${eventId}/photos/${photoId}`);
+    return response.data;
   }
 
-  async deletePhotos(eventId: number, photoIds: number[]): Promise<void> {
-    await api.post(`/admin/events/${eventId}/photos/bulk-delete`, { photoIds });
+  async deletePhotos(eventId: number, photoIds: number[]): Promise<PhotoDeleteResult> {
+    const response = await api.post(`/admin/events/${eventId}/photos/bulk-delete`, { photoIds });
+    return response.data;
+  }
+
+  /** The gallery's trash (issue 1733): deleted photos that can still be restored. */
+  async getTrash(eventId: number): Promise<PhotoTrash> {
+    const response = await api.get(`/admin/events/${eventId}/photos/trash`);
+    return response.data;
+  }
+
+  async restoreFromTrash(eventId: number, ids: number[]): Promise<TrashRestoreResult> {
+    // 409 carries the same body: nothing could be restored, and why.
+    const response = await api.post(`/admin/events/${eventId}/photos/trash/restore`, { ids }, {
+      validateStatus: (status) => (status >= 200 && status < 300) || status === 409,
+    });
+    return response.data;
+  }
+
+  async purgeFromTrash(eventId: number, ids: number[]): Promise<{ purged: number; failed: number[] }> {
+    const response = await api.post(`/admin/events/${eventId}/photos/trash/purge`, { ids });
+    return response.data;
   }
 
   async updatePhotoCategory(eventId: number, photoId: number, categoryId: number | string | null): Promise<AdminPhoto> {

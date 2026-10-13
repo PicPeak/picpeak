@@ -162,6 +162,8 @@ export type ActivityType =
   | "event_deactivated"
   | "photo_deleted"
   | "photos_bulk_deleted"
+  | "photos_restored"
+  | "photos_trash_purged"
   | "settings_updated"
   | "event_updated"
   | "event_renamed"
