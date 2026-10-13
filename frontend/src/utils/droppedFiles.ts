@@ -80,11 +80,16 @@ export const pickedFromInput = (files: File[]): PickedFile[] =>
     .sort((a, b) => (a.rel && b.rel ? comparePaths(a.rel, b.rel) : 0))
     .map(({ file, rel }) => ({ file, dir: directoryOf(rel) }));
 
+// One collator for every name comparison: `localeCompare` with options sets
+// up collation anew on each call, which for a pick of tens of thousands of
+// files is seconds of blocked main thread before the cap cuts it to hundreds.
+const byName = new Intl.Collator(undefined, { numeric: true });
+
 const comparePaths = (a: string, b: string): number => {
   const as = a.split('/');
   const bs = b.split('/');
   for (let i = 0; i < Math.min(as.length, bs.length); i += 1) {
-    const order = as[i].localeCompare(bs[i], undefined, { numeric: true });
+    const order = byName.compare(as[i], bs[i]);
     if (order !== 0) return order;
   }
   return as.length - bs.length;
@@ -165,7 +170,7 @@ async function walkEntry(entry: FileSystemEntry, dir: string, walk: Walk, depth:
   if (!entry.isDirectory) return;
   const children = (await readAllEntries((entry as FileSystemDirectoryEntry).createReader()))
     .filter((child) => !child.name.startsWith('.'))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    .sort((a, b) => byName.compare(a.name, b.name));
   const childDir = dir ? `${dir}/${entry.name}` : entry.name;
   for (const child of children) {
     if (spent(walk)) return;
