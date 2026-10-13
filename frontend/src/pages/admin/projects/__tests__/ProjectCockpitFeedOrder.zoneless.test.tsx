@@ -30,7 +30,7 @@ vi.mock('react-i18next', async () => {
 
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-const mail = (id: number, recipient: string, queuedAt: string, sentAt: string | null) => ({
+const mail = (id: number, recipient: string, queuedAt: string | number, sentAt: string | null) => ({
   id, recipient, type: 'gallery_ready', status: sentAt ? 'sent' : 'pending',
   queuedAt, sentAt, error: null, eventId: 42, stored: true, canAct: false,
 });
@@ -103,5 +103,13 @@ describe('ProjectCockpitPage feed order with a zone-less SQLite timestamp', () =
     // local time east of UTC, it would sort hours before it.
     expect(await feedOrder([sent, mail(1, 'queued@example.com', '2026-10-05 12:45:00', null)]))
       .toEqual(['queued@example.com', 'sent@example.com']);
+  });
+
+  it('still orders a mail whose date is epoch milliseconds', async () => {
+    // queueEmail writes created_at through knex as a Date, which SQLite keeps
+    // as a number; the overview passes it on as it is.
+    const sent = mail(2, 'sent@example.com', '2026-10-05T12:29:00.000Z', '2026-10-05T12:30:00.000Z');
+    const queued = mail(1, 'queued@example.com', Date.parse('2026-10-05T12:45:00Z'), null);
+    expect(await feedOrder([sent, queued])).toEqual(['queued@example.com', 'sent@example.com']);
   });
 });
