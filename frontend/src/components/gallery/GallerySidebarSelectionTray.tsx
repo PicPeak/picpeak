@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useInView } from 'react-intersection-observer';
 import { useTranslation } from 'react-i18next';
@@ -80,7 +80,10 @@ export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayPr
       : null;
     onRemove(photoId);
   };
-  useEffect(() => {
+  // A layout effect, so it has always run for one commit before the next click
+  // is handled. A passive effect left over from an earlier commit would be
+  // flushed after the click, see the photo still listed and drop the record.
+  useLayoutEffect(() => {
     const removed = focusAfterRemove.current;
     if (!removed) return;
     focusAfterRemove.current = null;
