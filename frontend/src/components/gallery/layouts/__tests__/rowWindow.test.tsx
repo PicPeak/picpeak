@@ -409,35 +409,52 @@ describe.each([
 
     // The old row range applied to the new rows is other photos entirely.
     gridWidth = 600;
-    act(() => {
-      resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
-    });
+    act(() => { deliverWidth(600); });
     expect(control.isConnected).toBe(true);
     expect(document.activeElement).toBe(control);
   });
 
-  it('lets go of the rows once the focused control is gone without a blur', () => {
+  it('does not remount the tiles in view when the rows are re-packed', () => {
     render(<Layout {...layoutProps(makePhotos(2000))} />);
-    const control = tiles()[0].querySelector('button')!;
-    act(() => { control.focus(); });
     scrollGridTo(-40000);
-    expect(tileIds()[0]).toBe(1);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+    const mountsOf = (id: number) => mounts.filter((mounted) => mounted === id).length;
+    const before = mountsOf(anchorId);
 
-    // PhotoCard releases a far tile's buttons; no blur is dispatched for a
-    // removed element.
-    control.remove();
-    scrollGridTo(-40100);
-    expect(tileIds()[0]).toBeGreaterThan(100);
+    gridWidth = 600;
+    act(() => { deliverWidth(600); });
+    expect(tiles().find((tile) => Number(tile.dataset.photo) === anchorId)).toBe(anchorTile);
+    expect(mountsOf(anchorId)).toBe(before);
+    expect(tiles().length).toBeLessThan(150);
+  });
+
+  it('holds the place in the new order when a sort and a width change land together', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<Layout {...layoutProps(photos)} />);
+    scrollGridTo(-40000);
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+    const top = gridTop;
+
+    gridWidth = 600;
+    act(() => {
+      deliverWidth(600);
+      rerender(<Layout {...layoutProps([...photos].reverse())} />);
+    });
+    expect(window.scrollBy).not.toHaveBeenCalled();
+    expect(gridTop).toBe(top);
   });
 });
 
-// Justified tiles are focusable themselves; in Masonry rows focus sits on a
-// button inside the tile. Both report it from the tile's container.
+// Justified tiles are focusable themselves. Masonry rows tiles are not: focus
+// sits on a button inside, which PhotoCard already drops with the image.
 describe('Justified windowing and keyboard focus', () => {
   it('keeps the focused tile mounted when its row scrolls out of the window', () => {
     render(<JustifiedGalleryLayout {...layoutProps(makePhotos(2000))} />);
     const first = tiles()[0];
-    act(() => { first.focus(); });
+    fireEvent.focus(first);
     scrollGridTo(-40000);
     // Its row stays, first in document order, ahead of the windowed rows.
     expect(tileIds()[0]).toBe(1);

@@ -88,7 +88,7 @@ interface ScrollAnchor {
 export interface WindowedItems {
   /** The items to render, in layout order. */
   visible: JustifiedLayoutItem[];
-  /** Keep a photo's row, and the rows next to it, mounted while focus is in its tile. */
+  /** Keep a photo's row, and the rows next to it, mounted while its tile has focus. */
   pin: (photoId: number | null) => void;
 }
 
@@ -111,13 +111,18 @@ export function useWindowedItems(
   const model = useMemo(() => {
     const rows = enabled ? buildRows(items) : [];
     const rowOf = new Map<number, number>();
+    const indexOf = new Map<number, number>();
     rows.forEach((row, index) => {
-      for (let i = row.from; i < row.to; i++) rowOf.set(items[i].photoId, index);
+      for (let i = row.from; i < row.to; i++) {
+        rowOf.set(items[i].photoId, index);
+        indexOf.set(items[i].photoId, i);
+      }
     });
-    return { items, rows, rowOf };
+    return { items, rows, rowOf, indexOf };
   }, [items, enabled]);
 
-  const [range, setRange] = useState<RowRange>({ start: 0, end: 0 });
+  // The rows in the window, and the layout they were measured in.
+  const [win, setWin] = useState({ model, start: 0, end: 0 });
   const [pinned, setPinned] = useState<number | null>(null);
   const modelRef = useRef(model);
   const anchorRef = useRef<ScrollAnchor | null>(null);
@@ -127,15 +132,15 @@ export function useWindowedItems(
   // header, folder bar or notice that grows above the grid moves it.
   const measure = useCallback(() => {
     const container = containerRef.current;
-    const { rows } = modelRef.current;
+    const current = modelRef.current;
+    const { rows } = current;
     if (!container || rows.length === 0) return;
-    // A focused control can go without a blur: PhotoCard releases a far
-    // tile's buttons, and a removed element fires none. Let go of its rows.
-    if (!container.contains(document.activeElement)) setPinned(null);
     const viewTop = -container.getBoundingClientRect().top;
     const viewport = window.innerHeight;
     const next = visibleRowRange(rows, viewTop, viewTop + viewport, viewport * WINDOW_OVERSCAN_VIEWPORTS);
-    setRange((prev) => (prev.start === next.start && prev.end === next.end ? prev : next));
+    setWin((prev) => (prev.model === current && prev.start === next.start && prev.end === next.end
+      ? prev
+      : { model: current, ...next }));
   }, [containerRef]);
 
   // Remember what is at the top of the viewport. Taken whenever the grid may
@@ -180,16 +185,20 @@ export function useWindowedItems(
     const container = containerRef.current;
     const anchor = anchorRef.current;
     const index = anchor ? model.rowOf.get(anchor.photoId) : undefined;
+    // Sorted, filtered or grown ahead of the anchor: its photo is somewhere
+    // else in the list, or gone. A cache patch leaves it where it was.
+    const rearranged = anchor !== null
+      && model.indexOf.get(anchor.photoId) !== previous.indexOf.get(anchor.photoId);
     const resized = widthRef.current !== width && widthRef.current > 0;
     widthRef.current = width;
-    if (resized && container && anchor && index !== undefined) {
+    if (resized && !rearranged && container && anchor && index !== undefined) {
       const row = model.rows[index];
       const viewTop = -container.getBoundingClientRect().top;
       const delta = row.top + anchor.ratio * (row.bottom - row.top) - viewTop;
       if (Math.abs(delta) >= 1) window.scrollBy(0, delta);
     } else {
       // Same width, or nothing to restore to.
-      markAnchor(!resized && anchor !== null && index !== previous.rowOf.get(anchor.photoId));
+      markAnchor(rearranged);
     }
     measure();
   }, [model, width, measure, markAnchor, containerRef]);
@@ -220,18 +229,35 @@ export function useWindowedItems(
   }, [enabled, measure, markAnchor]);
 
   const visible = useMemo(() => {
-    const { items, rows, rowOf } = model;
+    const { items, rows, rowOf, indexOf } = model;
     if (!enabled) return items;
-    // The range may predate this layout for one unpainted render.
-    const end = Math.min(range.end, rows.length);
-    const start = Math.min(range.start, end);
-    const take = (from: number, to: number) => (from < to ? items.slice(rows[from].from, rows[to - 1].to) : []);
+    const { start, end } = win;
     const pinnedRow = pinned === null ? undefined : rowOf.get(pinned);
-    if (pinnedRow === undefined) return take(start, end);
     // The focused row and its two neighbours, so Tab and Shift+Tab land on
     // the next photo (and scroll to it) wherever the window has gone since.
-    const keepStart = Math.max(0, pinnedRow - 1);
-    const keepEnd = Math.min(rows.length, pinnedRow + 2);
+    const keepStart = Math.max(0, (pinnedRow ?? 0) - 1);
+    const keepEnd = Math.min(rows.length, (pinnedRow ?? 0) + 2);
+    if (win.model !== model) {
+      // The window predates this layout for one unpainted render. Its row
+      // numbers mean other photos here; mounting those would unmount every
+      // tile in view (and whatever has focus) only to mount it again once
+      // the window is measured, images refetched. Keep the same photos.
+      const was = win.model;
+      const shown = was.rows.length === 0
+        ? was.items
+        : start < end ? was.items.slice(was.rows[start].from, was.rows[end - 1].to) : [];
+      const keep = new Set<number>();
+      for (const item of shown) {
+        const index = indexOf.get(item.photoId);
+        if (index !== undefined) keep.add(index);
+      }
+      if (pinnedRow !== undefined) {
+        for (let i = rows[keepStart].from; i < rows[keepEnd - 1].to; i++) keep.add(i);
+      }
+      return [...keep].sort((a, b) => a - b).map((index) => items[index]);
+    }
+    const take = (from: number, to: number) => (from < to ? items.slice(rows[from].from, rows[to - 1].to) : []);
+    if (pinnedRow === undefined) return take(start, end);
     if (start === end || (keepStart <= end && keepEnd >= start)) {
       return start === end ? take(keepStart, keepEnd) : take(Math.min(start, keepStart), Math.max(end, keepEnd));
     }
@@ -239,7 +265,7 @@ export function useWindowedItems(
     return keepEnd < start
       ? [...take(keepStart, keepEnd), ...take(start, end)]
       : [...take(start, end), ...take(keepStart, keepEnd)];
-  }, [enabled, model, range, pinned]);
+  }, [enabled, model, win, pinned]);
 
   return { visible, pin: setPinned };
 }
