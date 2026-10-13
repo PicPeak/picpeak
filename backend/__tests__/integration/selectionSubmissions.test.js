@@ -391,6 +391,21 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
       expect(res.body.code).toBe('GUEST_IDENTITY_REQUIRED');
     });
 
+    it('refuses a guest who was deleted after the request was let in', async () => {
+      const selectionSubmissions = require('../../src/services/selectionSubmissions');
+      await setSettings({ allow_decisions: true });
+      const settings = await feedbackService.getEventFeedbackSettings(eventId);
+      const [anna] = guests;
+      await db('gallery_guests').where({ id: anna.id }).update({ is_deleted: true });
+
+      // An approval needs no decision, so nothing else would stop it.
+      const result = await selectionSubmissions.submit(
+        eventId, settings, { guestId: anna.id, guestIdentifier: anna.identifier }, { kind: 'approval' },
+      );
+      expect(result).toEqual({ guest_missing: true });
+      expect(await db('selection_submissions').where({ event_id: eventId })).toHaveLength(0);
+    });
+
     it('keeps one guest\'s submission from another', async () => {
       const [anna, ben] = guests;
       await feedback(anna, photoIds[0], { feedback_type: 'like' });

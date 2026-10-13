@@ -648,6 +648,11 @@ router.post('/:slug/selection/submit',
       const guestName = req.guest?.name ?? await selectionSubmissions.feedbackName(event.id, viewer);
       const result = await selectionSubmissions.submit(event.id, settings, viewer, { kind, note, guestName });
 
+      // Merged away or deleted while this request was running: the answer
+      // resolveGuest gives the next request from that token.
+      if (result.guest_missing) {
+        return res.status(401).json({ error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' });
+      }
       if (result.disabled) {
         return res.status(403).json({ error: `${kind} cannot be submitted in this gallery`, code: 'SUBMISSION_DISABLED' });
       }

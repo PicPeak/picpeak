@@ -189,6 +189,7 @@ async function getState(eventId, settings, viewer, executor = db) {
  *   { disabled: true }            this gallery does not take that kind
  *   { empty: true }               a selection with nothing picked
  *   { already: submission }       this guest already has an active one
+ *   { guest_missing: true }       the registered guest was merged or deleted
  *   { submission, rejected }      written; `rejected` only for an approval
  */
 async function submit(eventId, settings, viewer, { kind, note, guestName }) {
@@ -196,6 +197,16 @@ async function submit(eventId, settings, viewer, { kind, note, guestName }) {
     // Count and insert under the viewer's lock: a like still in flight has
     // either landed and is counted, or finds the submission and is refused.
     return await withViewerLock(eventId, viewer, async (trx) => {
+      // resolveGuest ran before a merge or a deletion that may have finished
+      // since. As for a feedback insert (feedbackService): FOR SHARE waits
+      // for the merge, which has moved this guest's submissions already, so a
+      // row stored now would stay behind under a guest nobody is any more.
+      if (viewer.guestId) {
+        const guest = trx('gallery_guests').where({ id: viewer.guestId }).first('is_deleted');
+        if (trx.client.config.client === 'pg') guest.forShare();
+        const row = await guest;
+        if (!row || row.is_deleted) return { guest_missing: true };
+      }
       const state = await getState(eventId, settings, viewer, trx);
       if (!state[kind].can_submit) return { disabled: true };
       if (state[kind].submission) return { already: state[kind].submission };
