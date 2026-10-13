@@ -428,6 +428,21 @@ describe('registration on an account with two-factor authentication', () => {
     expect(await recoveryCodesLeft(admin)).toBe(before - 1);
   });
 
+  it('does not spend a code on a request the cap refuses anyway', async () => {
+    const { admin, recoveryCodes } = await seedMfaAdmin();
+    const now = new Date().toISOString();
+    await db('admin_webauthn_credentials').insert(
+      Array.from({ length: passkeyService.MAX_PASSKEYS_PER_ADMIN }, (_, i) => ({
+        admin_user_id: admin.id, credential_id: `mfa-cap-${admin.id}-${i}`, public_key: 'AQ', counter: 0, name: `k${i}`, created_at: now,
+      }))
+    );
+    const before = await recoveryCodesLeft(admin);
+    const res = await registerOptions(admin, { currentPassword: PASSWORD, code: recoveryCodes[0] });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('PASSKEY_LIMIT');
+    expect(await recoveryCodesLeft(admin)).toBe(before);
+  });
+
   it('a challenge issued before two-factor authentication was switched on cannot finish after it', async () => {
     const admin = await seedAdmin();
     const options = await registerOptions(admin);

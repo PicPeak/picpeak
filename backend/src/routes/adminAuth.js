@@ -530,6 +530,12 @@ router.post('/passkeys/register/options', [
     return res.status(400).json({ error: 'Passkeys are not available', code: 'PASSKEY_UNAVAILABLE', reason });
   }
   await assertCurrentPassword(admin, req.body.currentPassword);
+  // The cap before the code, so a request it refuses anyway does not spend a
+  // recovery code. beginRegistration checks it again.
+  if (await passkeyService.countForAdmin(admin.id) >= passkeyService.MAX_PASSKEYS_PER_ADMIN) {
+    return passkeyFailure(res, new passkeyService.PasskeyError('PASSKEY_LIMIT',
+      `You can register at most ${passkeyService.MAX_PASSKEYS_PER_ADMIN} passkeys`, 409));
+  }
   // After the password, so a wrong password never spends a code. No challenge
   // exists without it, and register/verify only accepts a challenge from here.
   if (isMfaEnabled(admin)) await assertFreshSecondFactor(admin, req.body.code);

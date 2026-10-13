@@ -634,15 +634,7 @@ async function deleteAdminUser(id, deletedById) {
   // Their gallery assignments (migration 269) the same way: CASCADE, SET NULL
   // on assigned_by and on the photos they uploaded.
   await db.transaction(async (trx) => {
-    // Account row first, the order passkey registration, removal and the
-    // password reset take: deleting the passkeys below before it would let
-    // PostgreSQL deadlock against one of those running for the same account.
-    await trx('admin_users').where('id', id).forUpdate().first();
     await trx('notification_dismissals').where('admin_id', id).del();
-    // Their passkeys (migration 295), for the same reason.
-    if (await trx.schema.hasTable('admin_webauthn_credentials')) {
-      await trx('admin_webauthn_credentials').where('admin_user_id', id).del();
-    }
     if (await trx.schema.hasTable('event_admin_assignments')) {
       await trx('event_admin_assignments').where('admin_user_id', id).del();
       await trx('event_admin_assignments').where('assigned_by', id).update({ assigned_by: null });
@@ -652,6 +644,14 @@ async function deleteAdminUser(id, deletedById) {
     }
     await deleteWithAccountingHistory(trx, 'admin_users', { id },
       { actor: deletedById, source: 'admin_user.delete' });
+    // Their passkeys (migration 295), for the same reason as the dismissals.
+    // After the account row, not before it: PostgreSQL has cascaded them by
+    // now, so this only does work on SQLite, and the account row was locked
+    // first, the order passkey registration, removal and the password reset
+    // take. Deleting them up front could deadlock against one of those.
+    if (await trx.schema.hasTable('admin_webauthn_credentials')) {
+      await trx('admin_webauthn_credentials').where('admin_user_id', id).del();
+    }
   });
 
   await logActivity('admin_user_deleted',
