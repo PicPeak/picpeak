@@ -81,6 +81,17 @@ export interface ResolveResponse {
   results: Record<string, ResolvedDirectory>;
   /** Keyed by target path prefix ("Friday", "Friday/Activity A"). */
   nodes: Record<string, FolderNodeStatus>;
+  /** Dry run: set when the upload would take the gallery past its folder or open-request limit. */
+  limit?: ResolveLimit | null;
+}
+
+export interface ResolveLimit {
+  code: 'FOLDER_LIMIT_REACHED' | 'FOLDER_REQUEST_LIMIT_REACHED';
+  limit: number;
+  /** Folders (or open requests) the gallery has now. */
+  current: number;
+  /** New ones this upload would add. */
+  adding: number;
 }
 
 export interface ResolveOptions {
@@ -145,8 +156,9 @@ export const foldersService = {
   },
 
   /** Reference-mode events: mirror the external folder tree onto photos not in a folder yet. */
-  async applyExternalStructure(eventId: number): Promise<{ moved: number; folders: GalleryFolder[] }> {
-    const response = await api.post<{ moved: number; folders: GalleryFolder[] }>(
+  /** `limited`: the folder limit was reached and some photos went into the closest existing folder. */
+  async applyExternalStructure(eventId: number): Promise<{ moved: number; limited: boolean; folders: GalleryFolder[] }> {
+    const response = await api.post<{ moved: number; limited: boolean; folders: GalleryFolder[] }>(
       `${base(eventId)}/folders/apply-external-structure`
     );
     return response.data;

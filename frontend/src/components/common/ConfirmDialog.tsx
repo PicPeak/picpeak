@@ -44,6 +44,9 @@ export interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: ConfirmVariant;
+  /** Withdraws the question: aborting closes the dialog as cancelled, unless
+   *  it was answered or replaced by another question in the meantime. */
+  signal?: AbortSignal;
 }
 
 type Resolver = (value: boolean) => void;
@@ -71,6 +74,14 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
   const resolverRef = useRef<Resolver | null>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
+  const settle = useCallback((value: boolean) => {
+    if (resolverRef.current) {
+      resolverRef.current(value);
+      resolverRef.current = null;
+    }
+    setOptions(null);
+  }, []);
+
   const confirm = useCallback((opts: ConfirmOptions): Promise<boolean> => {
     return new Promise<boolean>((resolve) => {
       // If a prior confirm is still open (shouldn't happen in practice but
@@ -80,16 +91,11 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       resolverRef.current = resolve;
       setOptions(opts);
+      opts.signal?.addEventListener('abort', () => {
+        if (resolverRef.current === resolve) settle(false);
+      }, { once: true });
     });
-  }, []);
-
-  const settle = useCallback((value: boolean) => {
-    if (resolverRef.current) {
-      resolverRef.current(value);
-      resolverRef.current = null;
-    }
-    setOptions(null);
-  }, []);
+  }, [settle]);
 
   const optionsRef = useRef(options);
   optionsRef.current = options;

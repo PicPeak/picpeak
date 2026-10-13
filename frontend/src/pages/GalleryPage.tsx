@@ -382,7 +382,7 @@ export const GalleryPage: React.FC = () => {
                 <h2 className="text-xl font-semibold mb-2">{t('gallery.expired')}</h2>
                 {galleryInfo.expires_at && (
                   <p className="text-muted-theme mb-4">
-                    {t('gallery.expiredOn', { date: format(parseISO(galleryInfo.expires_at), 'PP') })}
+                    {t('gallery.expiredOn', { date: format(parseISO(galleryInfo.expires_at)) })}
                   </p>
                 )}
                 <p className="text-sm text-muted-theme">

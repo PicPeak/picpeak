@@ -51,7 +51,8 @@ vi.mock('../../../../contexts/ThemeContext', () => ({
 vi.mock('../../../../contexts/GuestIdentityContext', () => ({
   useGuestIdentityOptional: () => null,
 }));
-vi.mock('../../../../hooks/useLocalizedDate', () => ({
+vi.mock('../../../../hooks/useLocalizedDate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../hooks/useLocalizedDate')>()),
   useLocalizedDate: () => ({ formatTime: (v: string) => v }),
 }));
 

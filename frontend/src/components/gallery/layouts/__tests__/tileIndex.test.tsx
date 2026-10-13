@@ -41,7 +41,8 @@ vi.mock('../../../../hooks/useInputMode', () => ({
 }));
 
 // Timeline's time badge reads the public settings through react-query.
-vi.mock('../../../../hooks/useLocalizedDate', () => ({
+vi.mock('../../../../hooks/useLocalizedDate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../hooks/useLocalizedDate')>()),
   useLocalizedDate: () => ({ formatTime: (v: string) => v }),
 }));
 

@@ -159,6 +159,8 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     }
 
     const stats = await fsp.stat(newFileTempPath);
+    // The row now holds other bytes: its content hash follows (issue 1733, C2).
+    const contentSha256 = await require('./photoDuplicates').sha256File(newFileTempPath);
 
     // Credit (#1561): an automatic one describes the file, so the new file's
     // EXIF replaces it. Guest and manual credits are decisions about the
@@ -256,6 +258,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       path: relativePath,
       thumbnail_path: thumbnailPath,
       size_bytes: stats.size,
+      content_sha256: contentSha256,
       width,
       height,
       captured_at: capturedAt,

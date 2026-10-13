@@ -11,7 +11,7 @@ import { lightboxImageUrl } from './imageTiers';
 import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
 import { PhotoColorLabels } from './PhotoColorLabels';
 import { PhotoDecision } from './PhotoDecision';
-import { resolveFeedbackKey, colorShortcutHints } from '../../utils/feedbackKeybinds';
+import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
 import { galleryService } from '../../services/gallery.service';
 import { analyticsService } from '../../services/analytics.service';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
@@ -21,6 +21,8 @@ import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableMessage } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 import { lockBodyScroll } from '../../utils/scrollLock';
+import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
+import { useLightboxScrub } from './hooks/useLightboxScrub';
 import { exifLine } from '../../utils/photoExif';
 
 interface PhotoLightboxProps {
@@ -181,11 +183,43 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // neighbours would inflate, and a neighbour promoted by a swipe is
   // never re-fetched (#505).
   const currentPhotoId = photos[currentIndex]?.id;
+  // Hold-to-scrub (issue 1733): while an arrow key repeats, the photos passed
+  // over are neither counted nor mirrored to the URL; the one landed on is,
+  // once, when the key is let go.
+  const scrub = useLightboxScrub(
+    (direction) => (direction === 1 ? goToNext() : goToPrevious()),
+    currentPhotoId,
+  );
+  const { scrubbing } = scrub;
+  // The slides are unmounted for the length of a scrub, so a swipe under way
+  // has no track left to fire the `transitionend` that would end it: without
+  // this the track came back parked on the neighbour, or in a phase that
+  // takes no new touch.
   useEffect(() => {
+    if (!scrubbing) return;
+    swipeStartRef.current = null;
+    setDragX(0);
+    setPhase('idle');
+  }, [scrubbing]);
+  // The open feedback panel fetches per photo id, so it stays on the photo
+  // the scrub started from and moves to the one landed on.
+  const feedbackPhotoIdRef = useRef(currentPhotoId);
+  if (!scrubbing) feedbackPhotoIdRef.current = currentPhotoId;
+  // Mid-scrub every feedback control still shows another photo's state: the
+  // toolbar's is not fetched for a photo passed over, and the panel is on
+  // the one the scrub started from. A toggle worked out against that state
+  // would be saved wrongly, so none of them takes a click or a key until the
+  // scrub has landed. Spread, as React 18 does not know `inert` as a prop.
+  const feedbackHold = scrubbing ? { inert: '' } : undefined;
+  // A scrub that ends on the photo it started from is not a second view.
+  const lastTrackedPhotoIdRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (scrubbing || currentPhotoId === lastTrackedPhotoIdRef.current) return;
+    lastTrackedPhotoIdRef.current = currentPhotoId;
     if (currentPhotoId !== undefined) {
       galleryService.trackPhotoView(slug, currentPhotoId);
     }
-  }, [slug, currentPhotoId]);
+  }, [slug, currentPhotoId, scrubbing]);
 
   // Mirror the visible photo to the URL (issue 1733). Through a ref so an
   // inline callback from the host does not re-fire this — and rewrite the
@@ -193,10 +227,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const onCurrentPhotoChangeRef = useRef(onCurrentPhotoChange);
   onCurrentPhotoChangeRef.current = onCurrentPhotoChange;
   useEffect(() => {
-    if (currentPhotoId !== undefined) {
+    if (!scrubbing && currentPhotoId !== undefined) {
       onCurrentPhotoChangeRef.current?.(currentPhotoId);
     }
-  }, [currentPhotoId]);
+  }, [currentPhotoId, scrubbing]);
 
 
   // Save-aware download. On mobile (where Web Share + files is supported)
@@ -300,6 +334,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   });
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // A held arrow key: the scrub steps at its own rate. Not from a field,
+      // where the key moves the caret and the scrub would take the field's
+      // panel away from under it; and not in a gallery of one, where it
+      // could only unmount the slide (a playing video with it) for nothing.
+      if (photos.length > 1 && !isTypingTarget(e.target) && scrub.handleKeyDown(e)) return;
       switch (e.key) {
         case 'Escape':
           onClose();
@@ -407,7 +446,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     let mounted = true;
     (async () => {
       try {
-        if (!feedbackSettings?.feedback_enabled || !currentPhoto) return;
+        // Not for the photos a scrub passes over, only the one it lands on.
+        if (scrubbing || !feedbackSettings?.feedback_enabled || !currentPhoto) return;
         const data = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
         if (!mounted) return;
         setMyLiked(!!data.my_feedback.liked);
@@ -424,7 +464,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       }
     })();
     return () => { mounted = false; };
-  }, [slug, currentPhoto?.id, currentPhoto?.my_rating, feedbackSettings?.feedback_enabled]);
+  }, [slug, currentPhoto?.id, currentPhoto?.my_rating, feedbackSettings?.feedback_enabled, scrubbing]);
 
   // Said out loud, as the grid's like button does (PhotoLikes): a 429 was
   // only logged, so to the guest the heart did nothing (issue 1891).
@@ -606,7 +646,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // Refreshed on every render (see the ref's declaration above): the keydown
   // listener reads current settings and handlers without being re-registered.
   proofingRef.current = {
-    feedbackEnabled: !!feedbackEnabled && !!feedbackSettings?.feedback_enabled,
+    // Not mid-scrub: see `feedbackHold`.
+    feedbackEnabled: !!feedbackEnabled && !!feedbackSettings?.feedback_enabled && !scrubbing,
     allowColorLabels: !!feedbackSettings?.allow_color_labels,
     allowRatings: !!feedbackSettings?.allow_ratings,
     keybindMode,
@@ -622,6 +663,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
   const goToNext = () => {
     setCurrentIndex((prev) => (prev < photos.length - 1 ? prev + 1 : 0));
+    resetZoom();
+  };
+
+  const goToIndex = (index: number) => {
+    setCurrentIndex(index);
     resetZoom();
   };
 
@@ -774,7 +820,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       const t = e.touches[0];
       setIsDragging(true);
       setDragStart({ x: t.clientX - dragOffset.x, y: t.clientY - dragOffset.y });
-    } else if (e.touches.length === 1 && zoom <= 1 && (phase === 'idle' || phase === 'dragging')) {
+    } else if (e.touches.length === 1 && zoom <= 1 && !scrubbing && (phase === 'idle' || phase === 'dragging')) {
       const t = e.touches[0];
       swipeStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
       setPhase('dragging');
@@ -1008,6 +1054,13 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))'
         }}
       >
+        <LightboxFilmStrip
+          photos={photos}
+          currentIndex={currentIndex}
+          onSelect={goToIndex}
+          slug={slug}
+          showFilenames={showOriginalFilename}
+        />
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2 flex-wrap">
           <div className="text-white min-w-0">
             <p className="text-sm opacity-75">
@@ -1141,7 +1194,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
             {/* Inline Like */}
             {feedbackEnabled && feedbackSettings?.allow_likes && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1" {...feedbackHold}>
                 <button
                   onClick={submitLike}
                   className={`p-2 rounded-full transition-colors ${myLiked ? 'bg-danger hover:opacity-90' : 'bg-white/10 hover:bg-white/20'}`}
@@ -1166,7 +1219,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
             {/* Inline Rating */}
             {feedbackEnabled && feedbackSettings?.allow_ratings && (
-              <div className="flex items-center gap-1 ml-1" aria-label="Rate photo">
+              <div className="flex items-center gap-1 ml-1" aria-label="Rate photo" {...feedbackHold}>
                 {[1,2,3,4,5].map((i) => (
                   <button
                     key={i}
@@ -1192,7 +1245,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 feedback panel: the whole point is a fast keyboard/click
                 proofing pass, which a panel toggle would interrupt. */}
             {feedbackEnabled && feedbackSettings?.allow_color_labels && (
-              <div className="flex items-center gap-1 ml-1">
+              <div className="flex items-center gap-1 ml-1" {...feedbackHold}>
                 <PhotoColorLabels
                   photoId={String(currentPhoto.id)}
                   gallerySlug={slug}
@@ -1212,7 +1265,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             {/* Approve / reject (issue 744), beside the colour labels for the
                 same reason: a proofing pass, not a panel detour. */}
             {feedbackEnabled && feedbackSettings?.allow_decisions && (
-              <div className="flex items-center ml-1">
+              <div className="flex items-center ml-1" {...feedbackHold}>
                 <PhotoDecision
                   photoId={String(currentPhoto.id)}
                   gallerySlug={slug}
@@ -1357,6 +1410,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 draggable={false}
                 isGallery={true}
                 slug={slug}
+                // Stable callback: the scrub's stand-in leaves once this is in.
+                onLoad={scrub.handlePreviewLoaded}
+                // A preview that does not decode is replaced by the fallback,
+                // which reports no load: the stand-in leaves here instead.
+                onError={scrub.handlePreviewLoaded}
                 useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
                 onProtectionViolation={(violationType) => {
                   console.warn(`Protection violation in lightbox for photo ${photo.id}: ${violationType}`);
@@ -1398,7 +1456,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               touchAction: isVideoCurrent ? 'auto' : 'none',
             }}
           >
-            {isVideoCurrent && videoLocked ? (
+            {/* Hold-to-scrub stand-in (issue 1733): the thumbnail, in place of
+                the slides while a key is held — so no preview is requested for
+                a photo passed over — and underneath the landed slide until its
+                preview has loaded. */}
+            {(scrubbing || (scrub.standIn && !isVideoCurrent)) && (
+              <LightboxScrubStandIn photos={photos} currentIndex={currentIndex} slug={slug} />
+            )}
+            {scrubbing ? null : isVideoCurrent && videoLocked ? (
               <div className="w-full h-full flex items-center justify-center p-6">
                 {/* Theme-token panel, like the feedback panel: the lightbox
                     ground is black, so a black panel would leave bare text. */}
@@ -1459,9 +1524,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="p-4 flex-1 overflow-y-auto">
+          <div className="p-4 flex-1 overflow-y-auto" {...feedbackHold}>
             <PhotoFeedback
-              photoId={String(currentPhoto.id)}
+              photoId={String(feedbackPhotoIdRef.current ?? currentPhoto.id)}
               gallerySlug={slug}
               showComments={true}
               className="space-y-4"

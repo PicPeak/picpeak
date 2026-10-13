@@ -48,6 +48,8 @@ export interface Event {
   // see the names. SQLite hands the flag back as 0/1.
   guest_name_mode?: GuestNameMode;
   show_credits_to_guests?: boolean | number;
+  // Live refresh of an open gallery (issue 1733, C5)
+  live_refresh?: boolean | number;
   // Camera details in the guest lightbox (issue 1733, D1).
   show_exif_to_guests?: boolean | number;
   // Reveal mode (#838)
@@ -55,6 +57,7 @@ export interface Event {
   reveal_at?: string | null;
   revealed_at?: string | null;
   upload_category_id?: number | null;
+  guest_upload_max_edge?: number | null;
   hero_photo_id?: number | null;
   total_views?: number;
   total_downloads?: number;
@@ -129,6 +132,8 @@ export interface Event {
   can_link_crm?: boolean;
   can_review_uploads?: boolean;
   review_contributor_uploads?: boolean | number;
+  // Guest uploads wait for approval the same way (issue 1733).
+  moderate_guest_uploads?: boolean | number;
   // Live Slideshow / "Diashow" (migration 138). Token-only fullscreen kiosk
   // link minted on demand; null token = disabled. Settings drive the running
   // projector and can be changed live.
@@ -342,6 +347,16 @@ export interface DownloadJobState {
   error?: string;
   /** Set on a ready job the download limit would now refuse (issue 1560). */
   download_limit_reached?: { limit?: number; used?: number; remaining?: number };
+  /**
+   * "Email me when it is ready" (issue 1733). Present only while the job is
+   * being prepared and the server holds an address for this visitor.
+   */
+  notify?: 'available' | 'requested';
+  /**
+   * A ready job the server would no longer hand over (past its retention, or
+   * the gallery changed since) that the sweep has not removed yet.
+   */
+  unavailable?: boolean;
 }
 
 export interface PhotoCategory {
@@ -432,6 +447,8 @@ export interface GalleryData {
     hero_image_anchor?: string;
     // Default photo sort order
     default_photo_sort?: string;
+    // Live refresh (issue 1733, C5): poll /photos/state for new photos.
+    live_refresh?: boolean;
     // Mirror of admin's `general_use_original_filenames_for_downloads`.
     // When true, the lightbox surfaces each photo's `original_filename`
     // alongside the position counter (#508).
@@ -445,6 +462,8 @@ export interface GalleryData {
     // step; credits_visible says whether photos carry credit_name at all.
     guest_name_mode?: GuestNameMode;
     credits_visible?: boolean;
+    // Longest edge guest photos are scaled to before upload (issue 1733).
+    guest_upload_max_edge?: number | null;
   };
   categories?: PhotoCategory[];
   photos: Photo[];

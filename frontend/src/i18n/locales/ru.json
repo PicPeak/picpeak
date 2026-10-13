@@ -129,6 +129,20 @@
     "poweredBy": "Работает на"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} файл уже есть в этой галерее",
+      "title_few": "{{count}} файла уже есть в этой галерее",
+      "title_many": "{{count}} файлов уже есть в этой галерее",
+      "title_other": "{{count}} файлов уже есть в этой галерее",
+      "toast_one": "{{count}} файл уже есть в этой галерее и был пропущен — подробности в панели загрузки вверху.",
+      "toast_few": "{{count}} файла уже есть в этой галерее и были пропущены — подробности в панели загрузки вверху.",
+      "toast_many": "{{count}} файлов уже есть в этой галерее и были пропущены — подробности в панели загрузки вверху.",
+      "toast_other": "{{count}} файлов уже есть в этой галерее и были пропущены — подробности в панели загрузки вверху.",
+      "badge": "Дубликат",
+      "sameAs": "то же содержимое, что и {{name}}",
+      "uploadAnyway": "Всё равно загрузить",
+      "uploadAllAnyway": "Всё равно загрузить все"
+    },
     "photoCategory": "Категория фото",
     "noCategory": "Без категории",
     "eventSpecific": "(Для конкретного события)",
@@ -145,6 +159,7 @@
     "uploadMedia": "Загрузить фото и видео",
     "maxFilesReached": "Максимальное количество файлов: {{limit}}",
     "someFilesSkipped": "Можно добавить ещё только {{allowed}} файла(ов) (лимит {{limit}})",
+    "filesOverLimit": "Добавлено файлов: {{allowed}} из {{found}}. Одна загрузка вмещает не более {{limit}} файлов; остальные загрузите отдельно.",
     "tooManyFiles": "За один раз можно загрузить не более {{limit}} файлов",
     "limitInfo": "{{selected}} из {{limit}} файлов выбрано (осталось {{remaining}})",
     "limitReached": "Достигнут лимит загрузки ({{limit}} файлов за раз)",
@@ -156,6 +171,7 @@
     "processingFailed_many": "{{count}} фото не удалось обработать",
     "processingFailed_one": "{{count}} фото не удалось обработать",
     "processingFailed_other": "{{count}} фото не удалось обработать",
+    "heldForReview": "Спасибо! Ваши фото появятся в галерее после одобрения фотографом.",
     "processing": "Обработка фото…",
     "processingProgress": "{{complete}} из {{total}} готово",
     "processingHint": "Файлы загружены. PicPeak создаёт миниатюры и читает метаданные. Вы можете покинуть страницу — работа продолжается в фоне.",
@@ -328,6 +344,10 @@
     "cancelSelection": "Отменить выбор",
     "selectAll": "Выбрать все",
     "deselectAll": "Снять выбор",
+    "selectionTray": {
+      "title": "Выбрано ({{count}})",
+      "remove": "Убрать {{name}} из выбора"
+    },
     "copyFilenames": {
       "button": "Скопировать имена файлов",
       "title": "Скопировать имена файлов",
@@ -437,6 +457,10 @@
     "backToGallery": "Все фото",
     "downloadFolder": "Скачать папку ({{count}})",
     "downloadFolderCapped": "Скачать первые {{limit}} из {{total}}",
+    "newPhotos_one": "{{count}} новое фото",
+    "newPhotos_few": "{{count}} новых фото",
+    "newPhotos_many": "{{count}} новых фото",
+    "newPhotos_other": "{{count}} новых фото",
     "downloadEverything": "Скачать все фото",
     "videoFormatUnsupported": "Этот формат видео не воспроизводится в этом браузере. Скачайте файл, чтобы посмотреть его.",
     "videoLoadFailed": "Не удалось загрузить это видео.",
@@ -457,6 +481,11 @@
       "photographer": "Фотограф",
       "uploadedBy": "Загрузил(а): {{name}}",
       "photoBy": "Фото: {{name}}"
+    },
+    "filmStrip": {
+      "label": "Фотографии",
+      "photo": "Фото {{position}} из {{total}}",
+      "photoNamed": "Фото {{position}} из {{total}}: {{name}}"
     },
     "firstLook": "Первая подборка",
     "viewAllPhotos": "Все фото",
@@ -483,7 +512,12 @@
       "withDate": "Остальные снимки ещё обрабатываются — полная галерея появится не позднее {{date}}.",
       "noDetails": "Остальные снимки ещё обрабатываются.",
       "progressLabel": "Уже переданные фото"
-    }
+    },
+    "preparedDownload": "Ваша подготовленная загрузка",
+    "downloadNotify": "Сообщить по почте, когда будет готово",
+    "downloadNotifyRequested": "Мы отправим вам письмо, когда загрузка будет готова. Это окно можно закрыть.",
+    "downloadNotifyFailed": "Не удалось настроить уведомление по почте. Не закрывайте это окно.",
+    "downloadGone": "Эта загрузка больше недоступна. Запросите её ещё раз."
   },
   "categories": {
     "title": "Категории фото",
@@ -510,8 +544,8 @@
   "events": {
     "revealMode": "Режим сюрприза (скрыть галерею до открытия)",
     "revealModeHelp": "Гости могут загружать фото, но не видят их, пока вы не откроете галерею — вручную или в запланированное время. Слайд-шоу и клиентский доступ продолжают работать.",
-    "showExifToGuests": "Показывать гостям параметры съёмки",
-    "showExifToGuestsHelp": "Камера, объектив, фокусное расстояние, диафрагма, выдержка и ISO отображаются под фото в полноэкранном просмотре. Местоположение и серийные номера никогда не сохраняются и не показываются.",
+    "liveRefresh": "Живое обновление (сообщать гостям о новых фото)",
+    "liveRefreshHelp": "Открытая галерея каждые 20 секунд проверяет, появились ли новые фото, и предлагает гостям кнопку «Новые фото». Сама страница не перезагружается.",
     "revealAt": "Запланированное открытие (необязательно)",
     "revealAtHelp": "Оставьте пустым, чтобы открыть вручную кнопкой «Открыть сейчас».",
     "revealModeStatus": "Режим сюрприза",
@@ -651,10 +685,15 @@
     "userUploads": "Настройки загрузки пользователями",
     "allowUserUploads": "Разрешить гостям загружать фото",
     "allowUserUploadsHelp": "Разрешить гостям загружать собственные фотографии в эту галерею",
+    "moderateGuestUploads": "Одобрять загрузки гостей перед публикацией",
+    "moderateGuestUploadsHelp": "Загрузки гостей остаются скрытыми от гостей и клиентов, пока вы или проверяющий не одобрите их на вкладке «Фото». Отклонённые загрузки остаются скрытыми. Ожидающие загрузки учитываются в лимите фотографий.",
     "allowUserUploadsDescription": "Разрешить гостям загружать собственные фотографии в эту галерею",
     "uploadCategory": "Категория загрузки",
     "selectCategory": "Выберите категорию для загрузок пользователей",
     "uploadCategoryHelp": "Все загружаемые гостями фото будут добавлены в эту категорию",
+    "guestUploadMaxEdge": "Длинная сторона фото гостей (пикс.)",
+    "guestUploadMaxEdgeHelp": "Фотографии JPEG, PNG и WebP большего размера уменьшаются на устройстве гостя перед загрузкой, что экономит трафик и место в хранилище. Оставьте поле пустым, чтобы сохранять оригиналы. Другие форматы и видео всегда отправляются без изменений.",
+    "guestUploadMaxEdgeInvalid": "Длинная сторона должна быть целым числом от 1024 до 16384 или пустой.",
     "allowDownloads": "Разрешить скачивание фото",
     "downloadsDisabled": "Скачивание запрещено",
     "downloadProtection": "Защита от скачивания",
@@ -904,7 +943,8 @@
         "teamMembers_few": "{{count}} участника команды",
         "teamMembers_many": "{{count}} участников команды",
         "teamMembers_other": "{{count}} участников команды",
-        "teamReview": "загрузки команды проверяются"
+        "teamReview": "загрузки команды проверяются",
+        "uploadsApproved": "требуется одобрение"
       },
       "passwordOwnerOnly": "Только владелец галереи может изменить пароль или отключить его."
     },
@@ -981,7 +1021,26 @@
       "reviewUploadsHelp": "Задерживает загрузки участников команды, чья роль не имеет разрешения «Review Team Uploads»: они скрыты от гостей и клиентов, пока вы или проверяющий не одобрите их на вкладке «Фото». Роли Admin, Editor и Solo Photographer имеют это разрешение по умолчанию, поэтому их загрузки никогда не задерживаются.",
       "reviewUploadsHelpMember": "Ваши загрузки в эту галерею скрыты от гостей и клиентов, пока владелец или проверяющий их не одобрит.",
       "reviewUploadsHelpReviewer": "Загрузки участников команды без разрешения «Review Team Uploads» ждут одобрения на вкладке «Фото». Ваши публикуются сразу."
-    }
+    },
+    "expiryPresets": {
+      "label": "Быстрый выбор срока действия",
+      "days": "{{days}} дней",
+      "fromToday": "С сегодняшнего дня:"
+    },
+    "nextSteps": {
+      "title": "Перед тем как поделиться",
+      "progress": "Готово: {{done}} из {{total}}",
+      "done": "Готово",
+      "todo": "Не сделано",
+      "photos": "Добавить фотографии",
+      "photosLink": "Открыть «Фото»",
+      "customer": "Добавить e-mail или учётную запись клиента",
+      "customerLink": "Открыть настройки",
+      "publish": "Опубликовать галерею",
+      "publishLink": "Опубликовать"
+    },
+    "showExifToGuests": "Показывать гостям параметры съёмки",
+    "showExifToGuestsHelp": "Камера, объектив, фокусное расстояние, диафрагма, выдержка и ISO отображаются под фото в полноэкранном просмотре. Местоположение и серийные номера никогда не сохраняются и не показываются."
   },
   "settings": {
     "title": "Системные настройки",
@@ -1537,6 +1596,11 @@
       "label": "Поиск по настройкам",
       "noResults": "Ничего не найдено по запросу «{{query}}»."
     },
+    "downloads": {
+      "retention": "Хранить подготовленные загрузки (часов)",
+      "retentionHint": "Как долго загрузка, подготовленная в выбранном размере, остаётся доступной до удаления. Более долгий срок позволяет гостям вернуться за ней позже, но каждая подготовленная загрузка занимает на диске примерно столько же места, сколько входящие в неё фотографии. Действует для загрузок, подготовленных с этого момента.",
+      "retentionInvalid": "Введите целое число часов от {{min}} до {{max}}."
+    },
     "captureDates": {
       "pendingDetails": "Фото, ожидающие этого запуска: {{photos}}. Он также считывает параметры съёмки (камера, объектив, экспозиция) для фото, у которых они ещё не записаны."
     }
@@ -1993,14 +2057,18 @@
       "cmsPageLogoUploaded": "Логотип CMS-страницы загружен: {{slug}}",
       "adminPasswordResetByAdmin": "Пароль администратора сброшен другим администратором: {{username}}",
       "eventTeamChanged": "Команда изменена: {{eventName}}",
-      "photosReviewApproved_one": "{{count}} загрузка команды одобрена в {{eventName}}",
-      "photosReviewApproved_few": "{{count}} загрузки команды одобрены в {{eventName}}",
-      "photosReviewApproved_many": "{{count}} загрузок команды одобрено в {{eventName}}",
-      "photosReviewApproved_other": "{{count}} загрузок команды одобрено в {{eventName}}",
-      "photosReviewRejected_one": "{{count}} загрузка команды отклонена в {{eventName}}",
-      "photosReviewRejected_few": "{{count}} загрузки команды отклонены в {{eventName}}",
-      "photosReviewRejected_many": "{{count}} загрузок команды отклонено в {{eventName}}",
-      "photosReviewRejected_other": "{{count}} загрузок команды отклонено в {{eventName}}",
+      "photosReviewApproved_one": "{{count}} загрузка одобрена в {{eventName}}",
+      "photosReviewApproved_few": "{{count}} загрузки одобрены в {{eventName}}",
+      "photosReviewApproved_many": "{{count}} загрузок одобрено в {{eventName}}",
+      "photosReviewApproved_other": "{{count}} загрузок одобрено в {{eventName}}",
+      "photosReviewRejected_one": "{{count}} загрузка отклонена в {{eventName}}",
+      "photosReviewRejected_few": "{{count}} загрузки отклонены в {{eventName}}",
+      "photosReviewRejected_many": "{{count}} загрузок отклонено в {{eventName}}",
+      "photosReviewRejected_other": "{{count}} загрузок отклонено в {{eventName}}",
+      "guestUploadsPendingReview_one": "{{count}} загрузка гостя ждёт проверки в {{eventName}}",
+      "guestUploadsPendingReview_few": "{{count}} загрузки гостей ждут проверки в {{eventName}}",
+      "guestUploadsPendingReview_many": "{{count}} загрузок гостей ждут проверки в {{eventName}}",
+      "guestUploadsPendingReview_other": "{{count}} загрузок гостей ждут проверки в {{eventName}}",
       "photoDecision": "Фото одобрено или отклонено в {{eventName}}",
       "guestFeedbackDecision": "Гость одобрил или отклонил фото в {{eventName}}"
     },
@@ -2279,14 +2347,18 @@
       "photo_decision": "Фото одобрено или отклонено в {{eventName}}",
       "guest_feedback_decision": "Гость одобрил или отклонил фото в {{eventName}}",
       "event_team_changed": "Команда изменена: {{eventName}}",
-      "photos_review_approved_one": "{{count}} загрузка команды одобрена в {{eventName}}",
-      "photos_review_approved_few": "{{count}} загрузки команды одобрены в {{eventName}}",
-      "photos_review_approved_many": "{{count}} загрузок команды одобрено в {{eventName}}",
-      "photos_review_approved_other": "{{count}} загрузок команды одобрено в {{eventName}}",
-      "photos_review_rejected_one": "{{count}} загрузка команды отклонена в {{eventName}}",
-      "photos_review_rejected_few": "{{count}} загрузки команды отклонены в {{eventName}}",
-      "photos_review_rejected_many": "{{count}} загрузок команды отклонено в {{eventName}}",
-      "photos_review_rejected_other": "{{count}} загрузок команды отклонено в {{eventName}}"
+      "photos_review_approved_one": "{{count}} загрузка одобрена в {{eventName}}",
+      "photos_review_approved_few": "{{count}} загрузки одобрены в {{eventName}}",
+      "photos_review_approved_many": "{{count}} загрузок одобрено в {{eventName}}",
+      "photos_review_approved_other": "{{count}} загрузок одобрено в {{eventName}}",
+      "photos_review_rejected_one": "{{count}} загрузка отклонена в {{eventName}}",
+      "photos_review_rejected_few": "{{count}} загрузки отклонены в {{eventName}}",
+      "photos_review_rejected_many": "{{count}} загрузок отклонено в {{eventName}}",
+      "photos_review_rejected_other": "{{count}} загрузок отклонено в {{eventName}}",
+      "guest_uploads_pending_review_one": "{{count}} загрузка гостя ждёт проверки в {{eventName}}",
+      "guest_uploads_pending_review_few": "{{count}} загрузки гостей ждут проверки в {{eventName}}",
+      "guest_uploads_pending_review_many": "{{count}} загрузок гостей ждут проверки в {{eventName}}",
+      "guest_uploads_pending_review_other": "{{count}} загрузок гостей ждут проверки в {{eventName}}"
     },
     "catalogedMedia": "{{size}} в каталоге",
     "storageUnavailable": "недоступно",
@@ -3090,6 +3162,9 @@
     "rateStar_one": "Оценить {{count}} звезду",
     "rateStar_other": "Оценить {{count}} звёзд",
     "removeRating": "Убрать оценку",
+    "rateSelected": "Оценить выбранные",
+    "bulkRatingPartial": "Оценено фото: {{rated}} из {{total}}",
+    "ratingLimitReached": "Достигнут лимит оценок. Повторите попытку позже.",
     "ratingsCount_few": "{{count}} оценки",
     "ratingsCount_many": "{{count}} оценок",
     "ratingsCount_one": "{{count}} оценка",
@@ -3345,14 +3420,14 @@
       "waitingForAdmin_other": "Запросов на папки, ожидающих администратора: {{count}}. До тех пор их фото ({{photos}}) находятся в ближайшей существующей папке."
     },
     "review": {
-      "pendingOwner_one": "{{count}} загрузка вашей команды ждёт проверки",
-      "pendingOwner_few": "{{count}} загрузки вашей команды ждут проверки",
-      "pendingOwner_many": "{{count}} загрузок вашей команды ждут проверки",
-      "pendingOwner_other": "{{count}} загрузок вашей команды ждут проверки",
-      "pendingMember_one": "{{count}} загрузка команды ждёт проверки владельцем",
-      "pendingMember_few": "{{count}} загрузки команды ждут проверки владельцем",
-      "pendingMember_many": "{{count}} загрузок команды ждут проверки владельцем",
-      "pendingMember_other": "{{count}} загрузок команды ждут проверки владельцем",
+      "pendingOwner_one": "{{count}} загрузка ждёт проверки",
+      "pendingOwner_few": "{{count}} загрузки ждут проверки",
+      "pendingOwner_many": "{{count}} загрузок ждут проверки",
+      "pendingOwner_other": "{{count}} загрузок ждут проверки",
+      "pendingMember_one": "{{count}} загрузка ждёт проверки владельцем",
+      "pendingMember_few": "{{count}} загрузки ждут проверки владельцем",
+      "pendingMember_many": "{{count}} загрузок ждут проверки владельцем",
+      "pendingMember_other": "{{count}} загрузок ждут проверки владельцем",
       "nonePending": "Нет загрузок, ожидающих проверки.",
       "filterPending": "На проверке ({{count}})",
       "filterRejected": "Отклонены ({{count}})",
@@ -3371,6 +3446,8 @@
       "pendingBadge": "На проверке",
       "rejectedBadge": "Отклонено",
       "uploadedBy": "Загрузил(а) {{name}}",
+      "sourceGuest": "Гость",
+      "sourceTeam": "Команда",
       "hiddenUntilApproved": "Скрыто от гостей и клиентов до одобрения",
       "skippedOnShow_one": "{{count}} фото ждёт проверки и остаётся скрытым до одобрения",
       "skippedOnShow_few": "{{count}} фото ждут проверки и остаются скрытыми до одобрения",
