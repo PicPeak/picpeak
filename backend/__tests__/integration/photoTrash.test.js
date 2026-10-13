@@ -377,6 +377,21 @@ describe('photo trash (issue 1733)', () => {
       expect(claimed).toMatchObject({ id: queued.id });
     });
 
+    it('watermark and thumbnail regeneration still cover it, so a restore brings back nothing stale', async () => {
+      const watermarkService = require('../../src/services/watermarkService');
+      const generator = require('../../src/services/watermarkGeneratorService');
+      const settings = jest.spyOn(watermarkService, 'getWatermarkSettings').mockResolvedValue({ enabled: true });
+      try {
+        const before = await generator.getPendingCount();
+        const fresh = await mkPhoto(event);
+        expect(await generator.getPendingCount()).toBe(before + 1);
+        await del(event, fresh);
+        expect(await generator.getPendingCount()).toBe(before + 1);
+      } finally {
+        settings.mockRestore();
+      }
+    });
+
     it('erasing a guest clears their name on a trashed upload too', async () => {
       const guestId = firstId(await db('gallery_guests').insert({
         event_id: event.id, name: 'Ben', identifier: crypto.randomUUID(), created_at: now(),

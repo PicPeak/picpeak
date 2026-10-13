@@ -4,7 +4,7 @@
  * or a selection, and the states around it: empty is not "could not load",
  * and a restore that the server refused says why.
  */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -101,6 +101,24 @@ describe('PhotoTrashModal', () => {
     const second = screen.getByTestId('photo-trash-row-12');
     expect(within(second).queryByTestId('trash-thumb')).toBeNull();
     expect(second).toHaveTextContent('admin.photos.trash.heldForReview');
+  });
+
+  it('fetches a thumbnail only once its row is near the viewport', async () => {
+    let seen: (entries: Array<{ isIntersecting: boolean }>) => void = () => {};
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: typeof seen) { seen = callback; }
+      observe() {}
+      disconnect() {}
+    });
+    try {
+      renderTrash();
+      const first = await screen.findByTestId('photo-trash-row-11');
+      expect(within(first).queryByTestId('trash-thumb')).toBeNull();
+      act(() => seen([{ isIntersecting: true }]));
+      expect(within(first).getByTestId('trash-thumb')).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('says that deleting is final now when the retention is 0 but photos are still listed', async () => {

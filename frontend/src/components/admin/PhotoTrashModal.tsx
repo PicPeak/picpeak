@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
@@ -56,6 +56,36 @@ const mergeRestores = (a: TrashRestoreResult, b: TrashRestoreResult): TrashResto
 const mediaIcon = (item: TrashedPhoto) => (item.media_type === 'video'
   ? <Film className="w-4 h-4" aria-hidden="true" />
   : <ImageIcon className="w-4 h-4" aria-hidden="true" />);
+
+/**
+ * A row's thumbnail, fetched only once the row is near the viewport: the
+ * authenticated image downloads as soon as it mounts, and a trash can hold
+ * thousands of rows.
+ */
+const TrashThumbnail: React.FC<{ item: TrashedPhoto }> = ({ item }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [near, setNear] = useState(!item.thumbnail_url || typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    if (near || !ref.current) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) setNear(true);
+    }, { rootMargin: '200px' });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [near]);
+  return (
+    <span ref={ref} className="flex-shrink-0 w-10 h-10 rounded overflow-hidden bg-inset flex items-center justify-center text-faint">
+      {item.thumbnail_url && near ? (
+        <AdminAuthenticatedImage
+          src={item.thumbnail_url}
+          alt=""
+          className="w-full h-full object-cover"
+          fallback={mediaIcon(item)}
+        />
+      ) : mediaIcon(item)}
+    </span>
+  );
+};
 
 interface PhotoTrashModalProps {
   eventId: number;
@@ -240,17 +270,7 @@ export const PhotoTrashModal: React.FC<PhotoTrashModalProps> = ({ eventId, open,
                 </TableCell>
                 <TableCell className="text-heading">
                   <span className="flex items-center gap-3 min-w-0">
-                    <span className="flex-shrink-0 w-10 h-10 rounded overflow-hidden bg-inset flex items-center justify-center text-faint">
-                      {item.thumbnail_url ? (
-                        <AdminAuthenticatedImage
-                          src={item.thumbnail_url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                          fallback={mediaIcon(item)}
-                        />
-                      ) : mediaIcon(item)}
-                    </span>
+                    <TrashThumbnail item={item} />
                     <span className="min-w-0">
                       <span className="block truncate max-w-xs" title={item.filename}>{item.filename}</span>
                       {item.held && (

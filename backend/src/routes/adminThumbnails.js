@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../database/db');
-const { livePhotos } = require('../utils/photoVisibility');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { canAccessEvent } = require('../middleware/ownership');
@@ -190,7 +189,7 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
     // wrote them with) and ensureThumbnail, which branches on them to resolve
     // an external source off its mount instead of under events/active.
     // thumbnail_path is selected so it can be nulled — see below.
-    let query = livePhotos(db)
+    let query = db('photos')
       .select(
         'id', 'event_id', 'path', 'media_type', 'mime_type', 'thumbnail_path',
         // ensureThumbnail keeps a complete video's poster note in step with
@@ -335,7 +334,7 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
     // source_origin/external_relpath/filename are what ensurePreviewImage
     // branches on for external/reference rows (#1078) — without them every
     // external photo looks managed here and generation is skipped.
-    let query = livePhotos(db).select(
+    let query = db('photos').select(
       'id', 'event_id', 'path', 'media_type', 'mime_type', 'preview_path',
       'source_origin', 'external_relpath', 'filename'
     );
@@ -396,8 +395,8 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
 router.get('/regenerate/status', adminAuth, requirePermission('photos.view'), async (req, res) => {
   try {
     // Count photos with and without thumbnails
-    const totalPhotos = await livePhotos(db).count('id as count').first();
-    const photosWithThumbnails = await livePhotos(db)
+    const totalPhotos = await db('photos').count('id as count').first();
+    const photosWithThumbnails = await db('photos')
       .whereNotNull('thumbnail_path')
       .count('id as count')
       .first();

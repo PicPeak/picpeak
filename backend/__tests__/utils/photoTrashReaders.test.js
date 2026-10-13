@@ -61,7 +61,8 @@ const ALL_ROWS = {
   'services/userManagementService.js': [2, 'deleting an admin clears their id on every photo'],
   'services/videoRenditionQueue.js': [1, 'state of a rendition in flight'],
   'services/videoRenditionService.js': [2, 'queues every video (the queue skips trashed rows); rendition in flight'],
-  'services/watermarkGeneratorService.js': [7, 'watermark of a photo in flight; clearing all watermarks removes trashed photos files too'],
+  'services/watermarkGeneratorService.js': [10, 'watermarks are made, renewed and cleared for trashed photos too: a restore must not serve one from old settings'],
+  'routes/adminThumbnails.js': [4, 'thumbnail and preview regeneration covers trashed photos too: a restore must not bring back stale renditions'],
 };
 
 const TABLE_CALL = /(?<![\w.])(\w+)\(\s*['"`]photos(?: as \w+)?['"`]\s*[,)]/g;
