@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 
 const { formatBoolean } = require('../utils/dbCompat');
 const { hasColumnCached } = require('../utils/schemaCache');
@@ -182,7 +183,7 @@ const getAllEvents = async (options = {}) => {
 
   // Add photo counts
   for (const event of events) {
-    const photoCount = await db('photos').where('event_id', event.id).count('id as count').first();
+    const photoCount = await livePhotos(db).where('event_id', event.id).count('id as count').first();
     event.photo_count = photoCount.count;
   }
 

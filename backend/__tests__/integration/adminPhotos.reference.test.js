@@ -119,6 +119,10 @@ describe('Admin photos in reference mode', () => {
       // relies on the NOT NULL DEFAULT 'managed' to mark managed originals.
       table.string('source_origin').notNullable().defaultTo('managed');
       table.string('external_relpath');
+      // Migration 294: the photo trash flag every reader filters on.
+      table.timestamp('deleted_at');
+      table.timestamp('purge_after');
+      table.integer('deleted_by_admin_id');
       // Columns the upload insert writes (migrations 048, 062, 071, 085, 193)
       // and the PATCH handler writes (migration 178). Without them the insert
       // and the update both fail on "no such column".

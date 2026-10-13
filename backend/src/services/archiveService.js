@@ -28,6 +28,11 @@ async function archiveEvent(event) {
   const tmpArchive = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}-${archiveName}`);
 
   try {
+    // The gallery's trash (issue 1733) is deleted for good first: the zip
+    // below takes every file under the gallery's prefix, and a photo the
+    // admin deleted does not belong in the archive that is handed on.
+    await require('./photoTrash').purgeEventTrash(event);
+
     // Photos manifest — the gallery filenames are renamed on upload, so
     // `original_filename` (and category linkage) can't be derived from the
     // extracted files alone. Persisting a manifest inside the archive lets a

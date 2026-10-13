@@ -4,6 +4,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { safeValidationErrors } = require('../utils/routeHelpers');
 const { db, logActivity } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { formatBoolean } = require('../utils/dbCompat');
 const { parseBooleanInput } = require('../utils/parsers');
 const { adminAuth } = require('../middleware/auth');
@@ -51,11 +52,11 @@ async function refuseForeignCategoryEvent(req, res, eventId) {
 async function heroCandidate(category, photoId) {
   if (parseBooleanInput(category.is_folder, false) && category.event_id) {
     const ids = await folderTree.subtreeIds(category.event_id, category.id);
-    return db('photos').where('id', photoId).whereIn('folder_id', ids)
+    return livePhotos(db).where('id', photoId).whereIn('folder_id', ids)
       .whereNull('moderation_status').first();
   }
   // A team upload still under review (issue 743) cannot be a hero yet.
-  return db('photos').where({ id: photoId, category_id: category.id })
+  return livePhotos(db).where({ id: photoId, category_id: category.id })
     .whereNull('moderation_status').first();
 }
 
@@ -396,13 +397,15 @@ router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req,
     }
     
     // Check if category has photos
-    const photoCount = await db('photos').where('category_id', id).count('id as count').first();
+    const photoCount = await livePhotos(db).where('category_id', id).count('id as count').first();
     if (photoCount.count > 0) {
       return res.status(400).json({ 
         error: 'Cannot delete category with photos. Please reassign photos first.' 
       });
     }
     
+    // Only photos in the trash are left in it: they come back uncategorised.
+    await db('photos').where('category_id', id).update({ category_id: null });
     await db('photo_categories').where('id', id).delete();
     
     // Log activity

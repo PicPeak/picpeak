@@ -9,6 +9,7 @@ const path = require('path');
 const logger = require('../utils/logger');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { formatBoolean } = require('../utils/dbCompat');
 
 const { getStoragePath } = require('../config/storage');
@@ -22,7 +23,7 @@ const { getStoragePath } = require('../config/storage');
 const getPhotosForEvent = async (eventId, options = {}) => {
   const { categoryId, uploadSource, includeHidden = false } = options;
 
-  let query = db('photos')
+  let query = livePhotos(db)
     .where('event_id', eventId)
     .orderBy('sort_order', 'asc')
     .orderBy('created_at', 'desc');
@@ -48,7 +49,7 @@ const getPhotosForEvent = async (eventId, options = {}) => {
  * @returns {Promise<Object|null>}
  */
 const getPhotoById = async (photoId) => {
-  return await db('photos').where('id', photoId).first();
+  return await livePhotos(db).where('id', photoId).first();
 };
 
 /**
@@ -57,7 +58,7 @@ const getPhotoById = async (photoId) => {
  * @returns {Promise<number>}
  */
 const getPhotoCount = async (eventId) => {
-  const result = await db('photos')
+  const result = await livePhotos(db)
     .where('event_id', eventId)
     .where('is_hidden', formatBoolean(false))
     .count('id as count')
@@ -86,7 +87,7 @@ const updatePhoto = async (photoId, updates) => {
     updates.is_hero = formatBoolean(updates.is_hero);
   }
 
-  await db('photos').where('id', photoId).update(updates);
+  await livePhotos(db).where('id', photoId).update(updates);
   return { success: true };
 };
 
@@ -135,7 +136,7 @@ const deletePhoto = async (photoId, options = {}) => {
     }
   } else {
     // Soft delete
-    await db('photos').where('id', photoId).update({ is_hidden: formatBoolean(true) });
+    await livePhotos(db).where('id', photoId).update({ is_hidden: formatBoolean(true) });
   }
 
   return { success: true };
@@ -155,7 +156,7 @@ const bulkDeletePhotos = async (photoIds, options = {}) => {
       await deletePhoto(photoId, { hard: true });
     }
   } else {
-    await db('photos').whereIn('id', photoIds).update({ is_hidden: formatBoolean(true) });
+    await livePhotos(db).whereIn('id', photoIds).update({ is_hidden: formatBoolean(true) });
   }
 
   return { success: true, count: photoIds.length };
@@ -171,7 +172,7 @@ const updateSortOrder = async (photoOrders) => {
 
   try {
     for (const { id, sort_order } of photoOrders) {
-      await trx('photos').where('id', id).update({ sort_order });
+      await livePhotos(trx).where('id', id).update({ sort_order });
     }
     await trx.commit();
     return { success: true };
@@ -188,7 +189,7 @@ const updateSortOrder = async (photoOrders) => {
  * @returns {Promise<Object>}
  */
 const moveToCategory = async (photoIds, categoryId) => {
-  await db('photos').whereIn('id', photoIds).update({ category_id: categoryId });
+  await livePhotos(db).whereIn('id', photoIds).update({ category_id: categoryId });
   return { success: true, count: photoIds.length };
 };
 
@@ -203,12 +204,12 @@ const setHeroPhoto = async (eventId, photoId) => {
 
   try {
     // Remove hero status from all photos in event
-    await trx('photos')
+    await livePhotos(trx)
       .where('event_id', eventId)
       .update({ is_hero: formatBoolean(false) });
 
     // Set new hero photo
-    await trx('photos')
+    await livePhotos(trx)
       .where('id', photoId)
       .where('event_id', eventId)
       .update({ is_hero: formatBoolean(true) });

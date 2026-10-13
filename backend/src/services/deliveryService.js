@@ -13,6 +13,7 @@
  */
 
 const { db, logActivity } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
 const { parseBooleanInput } = require('../utils/parsers');
@@ -111,7 +112,7 @@ function guestDeliveryPayload(event, deliveredCount) {
  * Returns [{ first_look_id, full_id }].
  */
 async function findFirstLookDuplicates(eventId, conn = db) {
-  const rows = await conn('photos')
+  const rows = await livePhotos(conn)
     .where('event_id', eventId)
     .select('id', 'first_look', 'original_filename', 'source_filename', 'filename',
       'captured_at', 'width', 'height', 'size_bytes');
@@ -172,7 +173,7 @@ async function completeDelivery(eventId, { transferBadges = true } = {}) {
       .where({ id: eventId, delivery_status: 'partial' })
       .update({ delivery_status: 'complete', delivery_completed_at: now });
     if (changed && transferBadges && duplicates.length) {
-      await trx('photos').whereIn('id', duplicates.map((d) => d.full_id)).update({ first_look: formatBoolean(true) });
+      await livePhotos(trx).whereIn('id', duplicates.map((d) => d.full_id)).update({ first_look: formatBoolean(true) });
     }
     return changed > 0;
   });
@@ -218,7 +219,7 @@ async function runDeliveryReminderPass({ now = new Date() } = {}) {
     const claimed = await db('events').where('id', event.id).whereNull(column).update({ [column]: now.toISOString() });
     if (!claimed) continue;
     try {
-      const delivered = Number((await db('photos').where('event_id', event.id).count('id as c').first()).c) || 0;
+      const delivered = Number((await livePhotos(db).where('event_id', event.id).count('id as c').first()).c) || 0;
       const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
       const base = await getAbsoluteFrontendUrl(null, { override: process.env.ADMIN_URL });
       await queueEmail(event.id, to, 'delivery_due_reminder', {

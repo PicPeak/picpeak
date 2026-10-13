@@ -88,6 +88,8 @@ async function backfillPending({ eventId } = {}) {
   // One UPDATE and nothing else: the settings request that switches the
   // feature on must not probe a back catalogue. The queue probes each video
   // when its turn comes, and a long backlog simply waits.
+  // Videos in the trash are queued too; the queue leaves them alone until
+  // they are restored (mediaAttemptService.claimNext).
   return db('photos')
     .modify((q) => { if (eventId != null) q.where('event_id', eventId); })
     // An archived gallery's originals are in its zip, not in storage: queuing

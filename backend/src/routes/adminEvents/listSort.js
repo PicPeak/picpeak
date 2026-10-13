@@ -131,7 +131,7 @@ function applyEventListSort(query, sortBy, sortOrder) {
     }
   } else if (kind === 'photos') {
     query = query.orderByRaw(
-      `(select count(*) from photos where photos.event_id = events.id) ${dir}`,
+      `(select count(*) from photos where photos.event_id = events.id and photos.deleted_at is null) ${dir}`,
     );
   } else if (kind === 'status') {
     const now = new Date();

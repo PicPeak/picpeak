@@ -8,6 +8,7 @@ const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const router = express.Router();
 const { body, query, validationResult } = require('express-validator');
 const { db, withRetry } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
@@ -87,7 +88,7 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), re
 
     // Build filtered query
     const filterBuilder = new PhotoFilterBuilder(
-      db('photos')
+      livePhotos(db)
         .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
         .select(
           'photos.id',
@@ -216,7 +217,7 @@ router.post('/:eventId/export', adminAuth, requirePermission('photos.download'),
       const { identity_mode: identityMode } =
         await feedbackService.getEventFeedbackSettings(eventId);
       const filterBuilder = new PhotoFilterBuilder(
-        db('photos').select('id'),
+        livePhotos(db).select('id'),
         eventId,
         identityMode
       );

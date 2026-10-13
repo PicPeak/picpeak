@@ -27,6 +27,7 @@
  */
 
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { processPhotoFaces } = require('./faceProcessor');
@@ -174,7 +175,7 @@ async function drainConsolidation() {
     if (retryAt && Date.now() < retryAt) continue;
 
     try {
-      const outstanding = await db('photos')
+      const outstanding = await livePhotos(db)
         .where({ event_id: eventId })
         .whereIn('face_status', ['pending', 'processing'])
         .count({ c: '*' })
@@ -250,7 +251,7 @@ function isPostgres() {
 async function claimNextPhoto(excludeEventIds = []) {
   if (isPostgres()) {
     return db.transaction(async (trx) => {
-      const row = await trx('photos')
+      const row = await livePhotos(trx)
         .where('face_status', 'pending')
         .modify((q) => applySourceBackoff(q, excludeEventIds))
         .orderBy('id', 'asc')
@@ -267,7 +268,7 @@ async function claimNextPhoto(excludeEventIds = []) {
   }
 
   return db.transaction(async (trx) => {
-    const row = await trx('photos')
+    const row = await livePhotos(trx)
       .where('face_status', 'pending')
       .modify((q) => applySourceBackoff(q, excludeEventIds))
       .orderBy('id', 'asc')

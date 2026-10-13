@@ -1,12 +1,13 @@
 'use strict';
 const { MAX_INVENTORY_COUNT } = require('./schema.cjs');
+const { livePhotos } = require('../utils/photoVisibility');
 
 // Two installation totals only. No entity rows, IDs, names, file metadata,
 // groupings, logs, processing results or visitor actions reach this layer.
 async function inventorySnapshot(db) {
   return db.transaction(async (tx) => {
     const [{ count: galleries }] = await tx('events').count('* as count');
-    const photosQuery = tx('photos');
+    const photosQuery = livePhotos(tx);
     if (await tx.schema.hasColumn('photos', 'media_type'))
       photosQuery.where((q) => q.whereNull('media_type').orWhereNot('media_type', 'video'));
     const [{ count: photos }] = await photosQuery.count('* as count');

@@ -4,6 +4,7 @@
 
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../../database/db');
+const { livePhotos } = require('../../utils/photoVisibility');
 const { formatBoolean, whereTimestamp } = require('../../utils/dbCompat');
 const { parseExpiresAtText } = require('../../utils/expiresAtText');
 
@@ -359,7 +360,7 @@ module.exports = (router) => {
       // of either type (it is what the list sorts on and what the photo cap
       // counts); video_count and video_duration say how much of it is video.
       const eventIds = events.map(e => e.id);
-      const photoCounts = await db('photos')
+      const photoCounts = await livePhotos(db)
         .whereIn('event_id', eventIds)
         .groupBy('event_id')
         .select('event_id')
@@ -430,7 +431,7 @@ module.exports = (router) => {
       }
 
       // Get photo count, and how much of it is video
-      const [{ count: photoCount, video_count: videoCount, video_duration: videoDuration }] = await db('photos')
+      const [{ count: photoCount, video_count: videoCount, video_duration: videoDuration }] = await livePhotos(db)
         .where('event_id', id)
         .count('* as count')
         .select(db.raw(`${VIDEO_COUNT_SQL} as video_count`))
@@ -442,7 +443,7 @@ module.exports = (router) => {
         .sum('size_bytes as totalSize');
 
       // Get recent photos
-      const recentPhotos = await db('photos')
+      const recentPhotos = await livePhotos(db)
         .where('event_id', id)
         .orderBy('uploaded_at', 'desc')
         .limit(10)
@@ -1710,7 +1711,7 @@ module.exports = (router) => {
       // chosen once the owner has approved the photo.
       if (updates.hero_photo_id != null
         && Number(updates.hero_photo_id) !== Number(event.hero_photo_id)) {
-        const underReview = await db('photos')
+        const underReview = await livePhotos(db)
           .where({ id: updates.hero_photo_id, event_id: event.id })
           .whereNotNull('moderation_status')
           .first('id');

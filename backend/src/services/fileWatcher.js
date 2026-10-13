@@ -256,8 +256,9 @@ async function removePhoto(filePath) {
   if (photo) {
     downloadZipService.invalidate(photo.event_id);
 
-    // Webhook (#327) — fire only if the row actually existed.
-    try {
+    // Webhook (#327) — fire only if the row actually existed. A photo in the
+    // trash (issue 1733) announced its deletion when it was trashed.
+    if (!photo.deleted_at) try {
       const event = await db('events').where({ id: photo.event_id }).first();
       const webhookService = require('./webhookService');
       await webhookService.fire('photo.deleted', {

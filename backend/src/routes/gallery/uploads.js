@@ -1,5 +1,6 @@
 const express = require('express');
 const { db } = require('../../database/db');
+const { livePhotos } = require('../../utils/photoVisibility');
 
 const router = express.Router();
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
@@ -254,7 +255,7 @@ router.get('/:slug/uploads/status', verifyGalleryAccess, denySlideshowToken, noS
       return res.status(400).json({ error: 'Invalid upload ids' });
     }
 
-    const rows = await db('photos')
+    const rows = await livePhotos(db)
       .where('event_id', req.event.id)
       .whereIn('upload_id', ids)
       .select('processing_status');

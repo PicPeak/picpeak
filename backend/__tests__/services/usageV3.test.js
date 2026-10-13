@@ -29,7 +29,7 @@ for (const engine of ['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : 
         t.increments('id'); t.text('color_theme'); t.string('external_path'); t.integer('css_template_id');
         t.string('default_photo_sort'); t.boolean('is_archived'); t.boolean('is_draft'); t.boolean('allow_downloads');
       });
-      await db.schema.createTable('photos', t => { t.increments('id'); t.integer('event_id'); t.string('media_type'); t.string('filename'); });
+      await db.schema.createTable('photos', t => { t.increments('id'); t.integer('event_id'); t.string('media_type'); t.string('filename'); t.timestamp('deleted_at'); });
       await db.schema.createTable('css_templates', t => { t.increments('id'); t.boolean('is_enabled'); t.text('css_content'); });
       await db.schema.createTable('photo_categories', t => { t.increments('id'); t.integer('event_id'); t.boolean('is_folder'); });
       await db.schema.createTable('workflows', t => { t.increments('id'); t.boolean('enabled'); });

@@ -8,7 +8,7 @@ const feedbackService = require('../services/feedbackService');
 const feedbackModeration = require('../services/feedbackModeration');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
-const { isPhotoHiddenFromViewer, applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
+const { isPhotoHiddenFromViewer, applyPhotoVisibilityFilter, joinLivePhotos, livePhotos } = require('../utils/photoVisibility');
 const {
   validatePhotoId,
   validateFeedbackSubmission,
@@ -79,7 +79,7 @@ router.get('/:slug/photos/:photoId/feedback',
       }
       
       // Verify photo belongs to event
-      const photo = await db('photos')
+      const photo = await livePhotos(db)
         .where({ id: photoId, event_id: event.id })
         .first();
       
@@ -259,7 +259,7 @@ router.post('/:slug/photos/:photoId/feedback',
       }
 
       // Verify photo belongs to event
-      const photo = await db('photos')
+      const photo = await livePhotos(db)
         .where({ id: photoId, event_id: event.id })
         .first();
 
@@ -503,7 +503,7 @@ router.get('/:slug/my-feedback',
 
       const query = applyPhotoVisibilityFilter(
         db('photo_feedback')
-          .join('photos', 'photo_feedback.photo_id', 'photos.id')
+          .modify(joinLivePhotos, 'photo_feedback.photo_id', 'photos.id')
           .where('photo_feedback.event_id', event.id)
           // Hidden rows are absent for the guest who left them too (#1150). In
           // guest identity mode GalleryView builds its Liked/Favorited/Rated

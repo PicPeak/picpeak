@@ -24,6 +24,7 @@ const archiver = require('archiver');
 const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 
 const { db } = require('../database/db');
+const { joinLivePhotos, livePhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
@@ -118,7 +119,7 @@ function generateUploadTokenCandidate(length = UPLOAD_TOKEN_LENGTH) {
 async function filterOwnedPhotoIds(admin, photoIds) {
   const ids = [...new Set((photoIds || []).map((n) => parseInt(n, 10)).filter(Boolean))];
   if (!ids.length) return [];
-  const photos = await db('photos').whereIn('id', ids).select('id', 'event_id');
+  const photos = await livePhotos(db).whereIn('id', ids).select('id', 'event_id');
   const eventIds = [...new Set(photos.map((p) => p.event_id))];
   if (!eventIds.length) return [];
   const { allowed } = await filterOwnedEventIds(admin, eventIds);
@@ -386,7 +387,7 @@ async function getTransfer(id) {
   if (!row) return null;
 
   const files = await db('transfer_files')
-    .join('photos', 'photos.id', 'transfer_files.photo_id')
+    .modify(joinLivePhotos, 'photos.id', 'transfer_files.photo_id')
     .join('events', 'events.id', 'photos.event_id')
     .where('transfer_files.transfer_id', id)
     .orderBy('transfer_files.sort_order', 'asc')
@@ -645,7 +646,7 @@ async function getTransferByUploadToken(uploadToken) {
  */
 async function getPublicView(transfer) {
   const files = await db('transfer_files')
-    .join('photos', 'photos.id', 'transfer_files.photo_id')
+    .modify(joinLivePhotos, 'photos.id', 'transfer_files.photo_id')
     .where('transfer_files.transfer_id', transfer.id)
     .orderBy('transfer_files.sort_order', 'asc')
     .orderBy('transfer_files.id', 'asc')
@@ -767,7 +768,7 @@ async function claimDownload(transfer, { kind = 'all', photoId = null, ip = null
 /** Load the ordered photos for a transfer, each joined to its event. */
 async function loadTransferPhotos(transferId) {
   const rows = await db('transfer_files')
-    .join('photos', 'photos.id', 'transfer_files.photo_id')
+    .modify(joinLivePhotos, 'photos.id', 'transfer_files.photo_id')
     .join('events', 'events.id', 'photos.event_id')
     .where('transfer_files.transfer_id', transferId)
     .orderBy('transfer_files.sort_order', 'asc')
@@ -1064,7 +1065,7 @@ async function streamTransferFile(transfer, rawFileId, res, { beforeStream = nul
   }
 
   const row = await db('transfer_files')
-    .join('photos', 'photos.id', 'transfer_files.photo_id')
+    .modify(joinLivePhotos, 'photos.id', 'transfer_files.photo_id')
     .join('events', 'events.id', 'photos.event_id')
     .where('transfer_files.transfer_id', transfer.id)
     .where('transfer_files.id', numId)

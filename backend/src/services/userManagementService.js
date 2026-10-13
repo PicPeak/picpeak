@@ -642,6 +642,10 @@ async function deleteAdminUser(id, deletedById) {
     if (await trx.schema.hasColumn('photos', 'uploaded_by_admin_id')) {
       await trx('photos').where('uploaded_by_admin_id', id).update({ uploaded_by_admin_id: null });
     }
+    // Who trashed a photo (migration 294) has no foreign key; same outcome.
+    if (await trx.schema.hasColumn('photos', 'deleted_by_admin_id')) {
+      await trx('photos').where('deleted_by_admin_id', id).update({ deleted_by_admin_id: null });
+    }
     await deleteWithAccountingHistory(trx, 'admin_users', { id },
       { actor: deletedById, source: 'admin_user.delete' });
   });

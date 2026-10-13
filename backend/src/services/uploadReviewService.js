@@ -13,6 +13,7 @@
  */
 
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { ownsEvent } = require('../middleware/ownership');
 const { roleHasPermission } = require('../middleware/permissions');
@@ -58,7 +59,7 @@ async function adminUploadColumns(admin, event) {
  *   which, for the activity log
  */
 async function moderatePhotos(eventId, photoIds, action) {
-  const rows = db('photos')
+  const rows = livePhotos(db)
     .where('event_id', eventId)
     .whereIn('id', photoIds)
     .whereNotNull('moderation_status');
@@ -107,7 +108,7 @@ async function announceApproved(eventId, photos) {
 
 /** Photos of an event under review, by status, for the grid's banner. */
 async function moderationCounts(eventId) {
-  const rows = await db('photos')
+  const rows = await livePhotos(db)
     .where('event_id', eventId)
     .whereNotNull('moderation_status')
     .groupBy('moderation_status')

@@ -1310,6 +1310,9 @@ async function startServerInternal() {
     // Customer documents retention (#1444): delete long-rejected files and
     // remove the bytes of deleted ones once the retention window elapses.
     require('./src/services/customerDocumentRetentionService').startCustomerDocumentRetention();
+    // Photo trash (issue 1733): hourly, deletes for good what is past its
+    // retention.
+    require('./src/services/photoTrash').startPhotoTrashPurge();
     // Malware scanner for customer documents (#1444): clamd over TCP, only
     // when CLAMAV_HOST is set. Without it uploads stay pending until an admin
     // reviews them. The hourly re-scan picks up rows left pending while the

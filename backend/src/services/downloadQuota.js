@@ -13,6 +13,7 @@
  */
 
 const { db } = require('../database/db');
+const { joinLivePhotos, livePhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 
 const INSERT_CHUNK = 200; // 4 bound values per row, under SQLite's 999.
@@ -62,7 +63,7 @@ async function currentDownloadLimit(event) {
  */
 async function grantedPhotoIds(eventId, photoIds = null, conn = db, { deliveredOnly = false } = {}) {
   let query = whereLive(conn('event_download_grants')
-    .join('photos', 'photos.id', 'event_download_grants.photo_id')
+    .modify(joinLivePhotos, 'photos.id', 'event_download_grants.photo_id')
     .where('event_download_grants.event_id', eventId)
     .where('photos.event_id', eventId));
   // A pending row belongs to a download still in flight: counted, not yet
@@ -78,7 +79,7 @@ async function grantedPhotoIds(eventId, photoIds = null, conn = db, { deliveredO
 
 async function countGrants(eventId, conn = db) {
   const row = await whereLive(conn('event_download_grants')
-    .join('photos', 'photos.id', 'event_download_grants.photo_id')
+    .modify(joinLivePhotos, 'photos.id', 'event_download_grants.photo_id')
     .where('event_download_grants.event_id', eventId)
     .where('photos.event_id', eventId))
     .count('event_download_grants.id as count')
@@ -254,7 +255,7 @@ async function settleReservation(eventId, quota, deliveredIds) {
       // A photo deleted since it shipped has nothing left to count, and on
       // PostgreSQL its grant would fail the foreign key and roll back the
       // whole settlement. Held against deletion until this commits.
-      const surviving = trx('photos')
+      const surviving = livePhotos(trx)
         .where('event_id', eventId)
         .whereIn('id', delivered.slice(i, i + INSERT_CHUNK));
       if (isPg) surviving.forShare();

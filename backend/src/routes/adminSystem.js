@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit');
 const { db, logActivity } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission, requireSuperAdmin } = require('../middleware/permissions');
 const fs = require('fs').promises;
@@ -382,7 +383,7 @@ router.get('/status', adminAuth, requirePermission(['settings.view', 'system.vie
 
     // Count various entities
     const [eventsCount] = await db('events').count('* as count');
-    const [photosCount] = await db('photos').count('* as count');
+    const [photosCount] = await livePhotos(db).count('* as count');
     const [adminsCount] = await db('admin_users').count('* as count');
     const [categoriesCount] = await db('photo_categories').count('* as count');
     

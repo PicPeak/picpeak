@@ -30,7 +30,7 @@ const {
   pickRequestedResolution,
   parseResolution,
 } = require('../../utils/downloadResolutions');
-const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, isPhotoHiddenFromViewer, livePhotos } = require('../../utils/photoVisibility');
 const {
   getUseOriginalFilenames,
   pickRawDownloadName,
@@ -113,7 +113,7 @@ function galleryActor(req) {
 }
 // Download count + access log of one single-photo download.
 async function recordSingleDownload(req, photoId) {
-  await db('photos').where('id', photoId).increment('download_count', 1);
+  await livePhotos(db).where('id', photoId).increment('download_count', 1);
   await db('access_logs').insert({
     event_id: req.event.id,
     ip_address: req.ip,
@@ -140,7 +140,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     const denial = await originalAssetDenial(req);
     if (denial) return res.status(403).json(denial);
 
-    const photo = await db('photos')
+    const photo = await livePhotos(db)
       .where({ id: photoId, event_id: req.event.id })
       .first();
 
@@ -596,7 +596,7 @@ async function finalizeOrClose(archive, res) {
 // that tail case. Fire-and-forget at the call sites: counters must
 // never fail a download.
 async function bumpEventDownloadCounts(eventId) {
-  await db('photos').where('event_id', eventId).increment('download_count', 1);
+  await livePhotos(db).where('event_id', eventId).increment('download_count', 1);
 }
 
 router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
@@ -621,7 +621,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // hidden photos exist, guests fall through to the visibility-filtered
     // stream below. PIN-clients always stream a full archive.
     const isClient = canSeeHiddenPhotos(req.accessLevel);
-    const eventHasHidden = await db('photos')
+    const eventHasHidden = await livePhotos(db)
       .where({ event_id: req.event.id, visibility: 'hidden' })
       .first()
       .then(Boolean);
@@ -631,7 +631,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // prebuilt zip would hand them exactly the photos they may not download.
     const eventHasDownloadRestrictedPhotos = (isClient || eventHasHidden)
       ? false
-      : (await db('photos')
+      : (await livePhotos(db)
         .join('photo_categories', 'photos.category_id', 'photo_categories.id')
         .where('photos.event_id', req.event.id)
         .where('photo_categories.allow_downloads', false)
@@ -695,7 +695,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // (pre-migration-135) fall through the LEFT JOIN's null and are included.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
     const photos = await applyPhotoVisibilityFilter(
-      db('photos')
+      livePhotos(db)
         .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
         .where('photos.event_id', req.event.id)
         .where(function () {
@@ -904,7 +904,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       // Exactly the photos that made it into this archive (#895) — skipped
       // (missing/corrupt) sources don't count.
       if (appendedIds.length > 0) {
-        db('photos').whereIn('id', appendedIds)
+        livePhotos(db).whereIn('id', appendedIds)
           .increment('download_count', 1).catch(statsWriteFailed('photo download count'));
       }
     }
@@ -951,7 +951,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // Same LEFT JOIN pattern as the download-all endpoint.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
     const photos = await applyPhotoVisibilityFilter(
-      db('photos')
+      livePhotos(db)
         .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
         .where('photos.event_id', req.event.id)
         .whereIn('photos.id', photoIds)
@@ -1124,7 +1124,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       // Exactly the photos that made it into this archive (#895) — skipped
       // (missing/corrupt) sources don't count.
       if (appendedIds.length > 0) {
-        db('photos').whereIn('id', appendedIds)
+        livePhotos(db).whereIn('id', appendedIds)
           .increment('download_count', 1).catch(statsWriteFailed('photo download count'));
       }
     }
@@ -1330,7 +1330,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
       if (res.statusCode >= 400 || req.isAdminPreview) return;
       const ids = Array.isArray(deliveredIds) ? deliveredIds : [];
       if (ids.length > 0) {
-        db('photos').whereIn('id', ids).increment('download_count', 1).catch(statsWriteFailed('photo download count'));
+        livePhotos(db).whereIn('id', ids).increment('download_count', 1).catch(statsWriteFailed('photo download count'));
       }
       db('access_logs').insert({
         event_id: req.event.id,

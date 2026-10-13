@@ -13,7 +13,7 @@ const { pipeStreamToResponse } = require('../../utils/streamResponse');
 
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
-const { isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
+const { isPhotoHiddenFromViewer, livePhotos } = require('../../utils/photoVisibility');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../../services/imageProcessor');
 const { isStorageUnavailableError } = require('../../services/storage/storageErrors');
 const { heroQueryRedirect } = require('../../utils/heroAnchor');
@@ -82,7 +82,7 @@ router.post('/:slug/photo/:photoId/view',
   blockHiddenGallery,
   async (req, res) => {
     try {
-      const photo = await db('photos')
+      const photo = await livePhotos(db)
         .where({ id: req.params.photoId, event_id: req.event.id })
         .first('id', 'visibility', 'moderation_status', 'category_id');
       if (!photo) {
@@ -93,7 +93,7 @@ router.post('/:slug/photo/:photoId/view',
       }
       // Admin preview (#981 review) is excluded from per-photo view analytics.
       if (!req.isAdminPreview) {
-        await db('photos').where('id', photo.id).increment('view_count', 1);
+        await livePhotos(db).where('id', photo.id).increment('view_count', 1);
       }
       res.status(204).end();
     } catch (error) {
@@ -113,7 +113,7 @@ router.get('/:slug/photo/:photoId',
     try {
       const { photoId } = req.params;
 
-      const photo = await db('photos')
+      const photo = await livePhotos(db)
         .where({ id: photoId, event_id: req.event.id })
         .first();
 
@@ -272,7 +272,7 @@ router.get('/:slug/photo/:photoId',
             // worker's fresh publish is not undone.
             const { isEnabled } = require('../../services/videoRenditionService');
             const enabled = await isEnabled().catch(() => false);
-            await db('photos').where({ id: photo.id, web_path: photo.web_path, web_status: 'complete' }).update({
+            await livePhotos(db).where({ id: photo.id, web_path: photo.web_path, web_status: 'complete' }).update({
               web_path: null,
               web_status: enabled ? 'pending' : 'failed',
               web_started_at: null,
@@ -449,7 +449,7 @@ router.get('/:slug/thumbnail/:photoId',
     try {
       const { photoId } = req.params;
 
-      const photo = await db('photos')
+      const photo = await livePhotos(db)
         .where({ id: photoId, event_id: req.event.id })
         .first();
 
@@ -571,7 +571,7 @@ router.get('/:slug/hero/:photoId',
     try {
       const { photoId } = req.params;
 
-      const photo = await db('photos')
+      const photo = await livePhotos(db)
         .where({ id: photoId, event_id: req.event.id })
         .first();
 
@@ -704,7 +704,7 @@ function answerStorageUnavailable(res) {
 // 1560): /photo would send the request straight back here.
 // Nor for a slideshow session, which /photo refuses (denySlideshowToken).
 async function fallBackToOriginal(req, res, photo) {
-  if (!photo?.event_id) photo = await db('photos').where({ id: req.params.photoId, event_id: req.event.id }).first();
+  if (!photo?.event_id) photo = await livePhotos(db).where({ id: req.params.photoId, event_id: req.event.id }).first();
   if (!photo || await originalAssetDenial(req, photo, { display: true })) {
     res.removeHeader('ETag');
     res.removeHeader('Content-Type');
@@ -722,7 +722,7 @@ router.get('/:slug/preview/:photoId',
     try {
       const { photoId } = req.params;
 
-      const photo = await db('photos')
+      const photo = await livePhotos(db)
         .where({ id: photoId, event_id: req.event.id })
         .first();
 

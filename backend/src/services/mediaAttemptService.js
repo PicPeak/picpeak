@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const processLease = require('./linuxProcessLease');
 const kernelLease = require('./linuxKernelLease');
@@ -149,7 +150,7 @@ async function claimNext(kind, photoId) {
   const caps = await capabilities.probe();
   const names = fields(kind), now = new Date().toISOString();
   const pending = conn => {
-    let query = conn('photos').where(names.status, 'pending');
+    let query = livePhotos(conn).where(names.status, 'pending');
     // A row put back after a "not now" is not due before its time; an
     // explicit request for one row is.
     if (photoId === undefined) query = query.where(function () { this.whereNull(names.retry).orWhere(names.retry, '<=', now); });

@@ -10,6 +10,7 @@
 
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const watermarkService = require('./watermarkService');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { withLocalCopy, isRawFilename } = require('./imageProcessor');
@@ -135,7 +136,7 @@ class WatermarkGeneratorService {
 
     try {
       // Get all photos for the event (excluding videos)
-      const photos = await db('photos')
+      const photos = await livePhotos(db)
         .join('events', 'photos.event_id', 'events.id')
         .where('photos.event_id', eventId)
         .whereNot(function() {
@@ -271,7 +272,7 @@ class WatermarkGeneratorService {
       // This ensures stale paths don't persist if regeneration fails
 
       // Get all image photos (exclude videos)
-      const photos = await db('photos')
+      const photos = await livePhotos(db)
         .join('events', 'photos.event_id', 'events.id')
         .whereNot(function() {
           this.where('photos.media_type', 'video')
@@ -459,7 +460,7 @@ class WatermarkGeneratorService {
       return 0;
     }
 
-    const result = await db('photos')
+    const result = await livePhotos(db)
       .whereNull('watermark_path')
       .whereNot(function() {
         this.where('media_type', 'video')

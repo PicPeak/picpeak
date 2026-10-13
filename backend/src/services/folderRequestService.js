@@ -18,6 +18,7 @@
  */
 
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const tree = require('./folderTreeService');
 
@@ -58,7 +59,7 @@ async function listRequests(eventId, { status = 'pending' } = {}, conn = db) {
     .orderBy('folder_requests.path', 'asc')
     .select('folder_requests.*', 'admin_users.username as requested_by_name');
   if (rows.length === 0) return [];
-  const counts = await conn('photos')
+  const counts = await livePhotos(conn)
     .whereIn('pending_folder_request_id', rows.map((r) => r.id))
     .groupBy('pending_folder_request_id')
     .select('pending_folder_request_id')

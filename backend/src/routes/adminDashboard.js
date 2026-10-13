@@ -1,5 +1,6 @@
 const express = require('express');
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { seesAllEvents, scopeEventsQuery } = require('../middleware/ownership');
@@ -91,13 +92,13 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
       .first();
 
     // Get total photos count
-    const totalPhotos = await applyEventScope(db('photos'), req.admin, 'event_id')
+    const totalPhotos = await applyEventScope(livePhotos(db), req.admin, 'event_id')
       .count('id as count')
       .first();
 
     // How many of those rows are videos. totalPhotos stays the count of both
     // types; the dashboard shows the split when this is non-zero.
-    const totalVideos = await applyEventScope(db('photos'), req.admin, 'event_id')
+    const totalVideos = await applyEventScope(livePhotos(db), req.admin, 'event_id')
       .whereRaw(IS_VIDEO_SQL)
       .count('id as count')
       .first();

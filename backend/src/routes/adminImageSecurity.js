@@ -1,6 +1,7 @@
 const express = require('express');
 const net = require('net');
 const { db } = require('../database/db');
+const { joinLivePhotos } = require('../utils/photoVisibility');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership, scopeEventsQuery } = require('../middleware/ownership');
@@ -171,7 +172,7 @@ router.get('/dashboard', adminAuth, requirePermission(['settings.view', 'image_s
 
     // Get most accessed photos
     const topPhotos = await accessLogsFor(req.admin)
-      .join('photos', 'image_access_logs.photo_id', 'photos.id')
+      .modify(joinLivePhotos, 'image_access_logs.photo_id', 'photos.id')
       .join('events', 'photos.event_id', 'events.id')
       .where('image_access_logs.accessed_at', '>', timeFilter.toISOString())
       .select('photos.filename', 'events.event_name', 'photos.id')

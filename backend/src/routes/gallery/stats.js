@@ -4,7 +4,7 @@ const router = express.Router();
 const { verifyGalleryAccess } = require('../../middleware/gallery');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const { blockHiddenGallery } = require('../../utils/revealMode');
-const { applyPhotoVisibilityFilter } = require('../../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, livePhotos } = require('../../utils/photoVisibility');
 
 // Guest-facing. The count is scoped to the photos this viewer may see, so a
 // guest cannot infer the number of client-hidden photos. The event-wide view,
@@ -14,7 +14,7 @@ const { applyPhotoVisibilityFilter } = require('../../utils/photoVisibility');
 router.get('/:slug/stats', verifyGalleryAccess, blockHiddenGallery, noStoreCache, async (req, res) => {
   try {
     const totalPhotos = await applyPhotoVisibilityFilter(
-      db('photos').where('photos.event_id', req.event.id),
+      livePhotos(db).where('photos.event_id', req.event.id),
       req.accessLevel
     )
       .count('photos.id as count')

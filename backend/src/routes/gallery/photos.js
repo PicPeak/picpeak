@@ -1,5 +1,6 @@
 const express = require('express');
 const { db, logActivity } = require('../../database/db');
+const { livePhotos } = require('../../utils/photoVisibility');
 const router = express.Router();
 const { verifyGalleryAccess } = require('../../middleware/gallery');
 const { resolveGuest, scopeGuestToFeedback } = require('../../middleware/guestAuth');
@@ -136,7 +137,7 @@ router.patch('/:slug/photos/:photoId/visibility', verifyGalleryAccess, async (re
 
     // A photo under review (migration 269) is not the client's to publish,
     // and does not exist for them.
-    const photo = await db('photos')
+    const photo = await livePhotos(db)
       .where({ id: photoId, event_id: req.event.id })
       .whereNull('moderation_status')
       .first();
@@ -145,7 +146,7 @@ router.patch('/:slug/photos/:photoId/visibility', verifyGalleryAccess, async (re
       return res.status(404).json({ error: 'Photo not found' });
     }
 
-    await db('photos')
+    await livePhotos(db)
       .where({ id: photoId, event_id: req.event.id })
       .update({ visibility });
 
@@ -176,7 +177,7 @@ router.patch('/:slug/photos/visibility/bulk', verifyGalleryAccess, async (req, r
       return res.status(400).json({ error: 'Invalid visibility value' });
     }
 
-    const count = await db('photos')
+    const count = await livePhotos(db)
       .whereIn('id', photoIds)
       .where('event_id', req.event.id)
       .whereNull('moderation_status')

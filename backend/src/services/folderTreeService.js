@@ -17,6 +17,7 @@
  */
 
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
 const { parseBooleanInput } = require('../utils/parsers');
 const { isUniqueViolation } = require('../utils/dbErrors');
@@ -467,7 +468,7 @@ async function movePhotos(eventId, photoIds, folderId, conn = db) {
   }
   let moved = 0;
   for (let i = 0; i < ids.length; i += 500) {
-    moved += await conn('photos')
+    moved += await livePhotos(conn)
       .where('event_id', eventId)
       .whereIn('id', ids.slice(i, i + 500))
       .update({ folder_id: folderId == null ? null : Number(folderId), pending_folder_request_id: null });
@@ -478,7 +479,7 @@ async function movePhotos(eventId, photoIds, folderId, conn = db) {
 /** The tree for the admin UI: folders with direct photo counts, ordered. */
 async function folderTree(eventId, conn = db) {
   const folders = await eventFolders(eventId, conn);
-  const counts = await conn('photos')
+  const counts = await livePhotos(conn)
     .where('event_id', eventId)
     .whereNotNull('folder_id')
     .groupBy('folder_id')

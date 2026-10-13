@@ -11,6 +11,7 @@ const fsp = require('fs/promises');
 const sharp = require('./isolatedSharp');
 const { isResourceError } = require('./imageResourcePolicy');
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const {
   generateThumbnail, extractCaptureDate, withProcessableImage,
   deleteThumbnailTiers, deletePreviewTiers,
@@ -92,7 +93,7 @@ async function findReplacementCandidate(eventId, originalFilename, opts = {}) {
     // the exact trailing-run check below is still what decides, so semantics
     // are unchanged and only the row count drops.
     const pattern = '%' + token + '%';
-    const rows = await db('photos')
+    const rows = await livePhotos(db)
       .where({ event_id: eventId })
       .where(function () {
         this.where('source_filename', 'like', pattern)
@@ -109,12 +110,12 @@ async function findReplacementCandidate(eventId, originalFilename, opts = {}) {
     if (matches.length === 1) {
       // Re-read the full row: replacePhoto() needs the columns the narrowed
       // select above deliberately skipped (type, filename, source_filename).
-      return db('photos').where({ id: matches[0].id }).first();
+      return livePhotos(db).where({ id: matches[0].id }).first();
     }
     return null;
   }
 
-  const matches = await db('photos')
+  const matches = await livePhotos(db)
     .where({ event_id: eventId })
     .where(function () {
       this.whereRaw('LOWER(original_filename) = LOWER(?)', [originalFilename])

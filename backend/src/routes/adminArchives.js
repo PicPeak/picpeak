@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
 const { db } = require('../database/db');
+const { leftJoinLivePhotos, livePhotos } = require('../utils/photoVisibility');
 const { deleteWithAccountingHistory } = require('../services/accountingHistory');
 const { formatBoolean } = require('../utils/dbCompat');
 const { slugify } = require('../utils/slug');
@@ -97,7 +98,7 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
     const photoTotal = await applyFilters(
       db('events').where('events.is_archived', formatBoolean(true))
     )
-      .leftJoin('photos', 'events.id', 'photos.event_id')
+      .modify(leftJoinLivePhotos, 'events.id', 'photos.event_id')
       .count('photos.id as count')
       .first();
 
@@ -109,7 +110,7 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
           db.raw('COUNT(DISTINCT photos.id) as photo_count'),
           db.raw('SUM(photos.size_bytes) as total_size')
         )
-        .leftJoin('photos', 'events.id', 'photos.event_id')
+        .modify(leftJoinLivePhotos, 'events.id', 'photos.event_id')
         .where('events.is_archived', formatBoolean(true))
     ).groupBy('events.id');
 
@@ -183,7 +184,7 @@ router.get('/:id', adminAuth, requirePermission('archives.view'), requireEventOw
     }
 
     // Get photo details
-    const photos = await db('photos')
+    const photos = await livePhotos(db)
       .where('event_id', archive.id)
       .select('filename', 'type', 'size_bytes', 'uploaded_at');
 

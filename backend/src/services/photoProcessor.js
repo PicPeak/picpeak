@@ -788,8 +788,9 @@ async function processPhoto(photoId) {
   // Held for review (issue 743): fires when it is approved instead. Read
   // now, not from the row this run started with: an approval while the
   // worker ran skipped this photo because it was not complete yet.
-  const { moderation_status: heldNow } = (await db('photos').where({ id: photoId }).first('moderation_status')) || {};
-  if (!heldNow) {
+  // Nor for a photo that went to the trash meanwhile (issue 1733).
+  const { moderation_status: heldNow, deleted_at: trashedNow } = (await db('photos').where({ id: photoId }).first('moderation_status', 'deleted_at')) || {};
+  if (!heldNow && !trashedNow) {
     try {
       const webhookService = require('./webhookService');
       await webhookService.fire('photo.uploaded', {
