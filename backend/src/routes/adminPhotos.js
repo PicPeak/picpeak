@@ -785,8 +785,6 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     if (photo.web_path) {
       await storage.delete(photo.web_path).catch(() => {});
     }
-    // Adaptive streaming ladder (issue 1733): derived as well.
-    await require('../services/videoHlsService').deleteLadder(photo);
     // Outside the preview_path guard on purpose: a responsive tier (#1095) can
     // exist when the canonical rendition never did — they are generated
     // independently, on demand — so keying their cleanup off preview_path
@@ -813,6 +811,9 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     // (issue 1187) does not re-import it on its next pass.
     await require('../services/externalImportService').recordExclusions(Number(eventId), [photo]);
     await db('photos').where({ id: photoId }).delete();
+    // Adaptive streaming ladder (issue 1733): derived as well. After the row,
+    // so a transcode still running cannot publish one behind the sweep.
+    await require('../services/videoHlsService').deleteLadder(photo);
 
     // Log activity (event was fetched above for storage key resolution)
     await logActivity('photo_deleted',
@@ -1048,7 +1049,6 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
       if (photo.web_path) {
         await storage.delete(photo.web_path).catch(() => {});
       }
-      await require('../services/videoHlsService').deleteLadder(photo);
       // Outside the guard: a tier can exist when the canonical rendition never
       // did, so keying cleanup off preview_path would strand phone-only photos.
       await require('../services/imageProcessor').deletePreviewTiers(photo);
@@ -1082,6 +1082,8 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
       .whereIn('id', photoIds)
       .where('event_id', eventId)
       .delete();
+    // Adaptive streaming ladders (issue 1733), after the rows as above.
+    for (const photo of photos) await require('../services/videoHlsService').deleteLadder(photo);
 
     // Webhook (#327): one photo.deleted per row in the bulk batch.
     try {

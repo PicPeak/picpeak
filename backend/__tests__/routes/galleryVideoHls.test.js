@@ -355,6 +355,29 @@ describe('adaptive streaming routes (issue 1733)', () => {
       }
     });
 
+    test('a web copy the row names but storage no longer has waives nothing', async () => {
+      // The video route stats the copy before it plays it free; the stream
+      // stands in for that route and has to reach the same verdict.
+      await db('events').where({ id: eventId }).update({ download_limit: 1 });
+      const copy = `videos/web_${streamed}_gone.mp4`;
+      await storage.put(copy, Buffer.from('copy'));
+      await db('photos').where({ id: streamed }).update({ web_path: copy, web_status: 'complete' });
+      try {
+        expect((await get(`${streamed}/master.m3u8`)).status).toBe(200);
+        expect((await get(`${streamed}/480p/seg_00000.m4s`)).status).toBe(200);
+        await storage.delete(copy);
+        expect((await get(`${streamed}/master.m3u8`)).status).toBe(403);
+        expect((await get(`${streamed}/480p/index.m3u8`)).status).toBe(403);
+        expect((await get(`${streamed}/480p/seg_00000.m4s`)).status).toBe(403);
+        // A pointer outside the web-copy namespace is not followed either.
+        await db('photos').where({ id: streamed }).update({ web_path: `events/active/${SLUG}/individual/streamed.mp4` });
+        expect((await get(`${streamed}/master.m3u8`)).status).toBe(403);
+        expect(await grants()).toHaveLength(0);
+      } finally {
+        await db('photos').where({ id: streamed }).update({ web_path: null, web_status: null });
+      }
+    });
+
     test('the photo list offers the stream only where playing it is free for this viewer', async () => {
       const list = async headers => (await request(app).get(`/api/gallery/${SLUG}/photos`).set(headers)).body.photos
         .find(photo => photo.id === streamed).hls_url;
@@ -411,6 +434,37 @@ describe('adaptive streaming routes (issue 1733)', () => {
       expect(await keysUnder(`hls/${duplicate}`)).toEqual([]);
       expect(await keysUnder(`hls/${survivor}`)).toHaveLength(4);
       expect((await get(`${survivor}/master.m3u8`)).status).toBe(200);
+    });
+
+    test('a batch of duplicates beyond one statement\'s parameters is still removed', async () => {
+      // SQLite takes 32,766 variables per statement; a restore can fold more rows than that.
+      const survivor = await insertVideo('twin-many.mp4');
+      const duplicate = await insertVideo('twin-many-again.mp4');
+      const doomed = new Map([[duplicate, survivor]]);
+      for (let id = 5000000; doomed.size < 33000; id++) doomed.set(id, survivor);
+      const { deleteDuplicatePhotos } = require('../../src/services/externalPhotoDedupe');
+      await deleteDuplicatePhotos(db, doomed);
+      expect(await db('photos').where({ id: duplicate }).first()).toBeUndefined();
+      expect(await keysUnder(`hls/${duplicate}`)).toEqual([]);
+      expect(await keysUnder(`hls/${survivor}`)).toHaveLength(4);
+    }, 120000);
+
+    test('the ladder is swept once the row no longer authorises a worker to publish one', () => {
+      // A transcode that overlaps the delete publishes against the row. Swept
+      // first, its ladder would land after the sweep and outlive the row.
+      const read = file => fs.readFileSync(path.join(__dirname, '../../src', file), 'utf8');
+      const admin = read('routes/adminPhotos.js');
+      const single = admin.indexOf('await db(\'photos\').where({ id: photoId }).delete();');
+      const bulk = admin.indexOf('.whereIn(\'id\', photoIds)\n      .where(\'event_id\', eventId)\n      .delete();');
+      const sweeps = [...admin.matchAll(/videoHlsService'\)\.deleteLadder\(photo\)/g)].map(match => match.index);
+      expect(single).toBeGreaterThan(0);
+      expect(bulk).toBeGreaterThan(single);
+      expect(sweeps[0]).toBeGreaterThan(single);
+      expect(sweeps[0]).toBeLessThan(bulk);
+      expect(sweeps[1]).toBeGreaterThan(bulk);
+      const archive = read('services/archiveService.js');
+      expect(archive.indexOf('hls_attempt_id: null')).toBeGreaterThan(0);
+      expect(archive.indexOf('deleteLadder(photo)')).toBeGreaterThan(archive.indexOf('hls_attempt_id: null'));
     });
 
     test('every path that removes a video or its file names the ladder', () => {

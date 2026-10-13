@@ -476,12 +476,15 @@ async function loadStreamedVideo(req, res) {
  * where it is the original. Fetching the master playlist is the playback, so
  * that is what takes the slot, once per video (admitVideoStream). Rung
  * playlists and segments never take one; they are answered only for a video
- * that already has its grant, so nobody plays around the master.
+ * that already has its grant, so nobody plays around the master. The web
+ * copy counts where the photo route would serve it: a key in its namespace
+ * that storage still has, not the row's word for it.
  */
 async function admitStream(req, res, photo, { playback }) {
-  if (photo.web_path && photo.web_status === 'complete') return true;
-  if (playback) return admitVideoStream(req, res, photo);
   if (req.isAdminPreview || !(await currentDownloadLimit(req.event))) return true;
+  if (photo.web_path && photo.web_status === 'complete' && isPresentationRenditionKey(photo.web_path, 'web')
+      && await getStorage().stat(photo.web_path).catch(() => null)) return true;
+  if (playback) return admitVideoStream(req, res, photo);
   // Pending counts: the grant of a master playlist settles as its response
   // closes, and the player asks for the first rung right behind it.
   if ((await grantedPhotoIds(req.event.id, [Number(photo.id)])).has(Number(photo.id))) return true;

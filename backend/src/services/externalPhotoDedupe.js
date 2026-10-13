@@ -250,9 +250,12 @@ async function deleteDuplicatePhotos(knex, doomedToSurvivor) {
   // restore or a relpath fold at runtime does. Storage only, best effort:
   // a ladder is rebuilt from the original, and a rolled-back caller is left
   // with a row whose missing ladder the playlist route re-queues.
-  const laddered = await knex.schema.hasColumn('photos', 'hls_status')
-    ? await knex('photos').whereIn('id', doomed).whereNotNull('hls_status').select('id', 'hls_status', 'hls_path')
-    : [];
+  const laddered = [];
+  if (await knex.schema.hasColumn('photos', 'hls_status')) {
+    for (const ids of chunked(doomed)) {
+      laddered.push(...await knex('photos').whereIn('id', ids).whereNotNull('hls_status').select('id', 'hls_status', 'hls_path'));
+    }
+  }
 
   for (const ids of chunked(doomed)) await knex('photos').whereIn('id', ids).del();
 
