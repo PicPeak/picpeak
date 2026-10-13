@@ -553,6 +553,45 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
       expect(await readyMails('retry@example.com')).toHaveLength(1);
     });
 
+    it('a queued mail is not sent once its archive is gone', async () => {
+      const { event, photoIds } = await makeEvent();
+      const guestToken = await verifiedGuest(event, 'held-up@example.com');
+      const [gone, live] = [
+        await makeJob(event, photoIds, { status: 'building' }),
+        await makeJob(event, photoIds, { status: 'building' }),
+      ];
+      for (const job of [gone, live]) {
+        await askForMail(event, job, guestToken);
+        await db('download_jobs').where({ id: job.id }).update({ status: 'ready' });
+        await notifier.notifyReady(job.id);
+      }
+      // The queue was held up; one archive ran out before the sweep got to it.
+      await db('download_jobs').where({ id: gone.id })
+        .update({ expires_at: new Date(Date.now() - 1000).toISOString() });
+
+      const transport = require('../../src/services/emailWebhookTransport');
+      const savedFrom = process.env.EMAIL_FROM;
+      process.env.EMAIL_FROM = 'noreply@example.com';
+      const enabled = jest.spyOn(transport, 'isEnabled').mockReturnValue(true);
+      const sentTo = [];
+      const send = jest.spyOn(transport, 'send')
+        .mockImplementation(async (mail) => { sentTo.push(mail); return { messageId: 'm-1' }; });
+      try {
+        await db('email_queue').whereNot({ recipient_email: 'held-up@example.com' })
+          .whereIn('status', ['pending']).update({ status: 'cancelled' });
+        await require('../../src/services/emailProcessor').processEmailQueue();
+      } finally {
+        enabled.mockRestore(); send.mockRestore();
+        if (savedFrom === undefined) delete process.env.EMAIL_FROM; else process.env.EMAIL_FROM = savedFrom;
+      }
+
+      const mails = await readyMails('held-up@example.com');
+      const statusOf = (job) => mails.find((m) => String(m.email_data).includes(job.token)).status;
+      expect(statusOf(gone)).toBe('cancelled');
+      expect(statusOf(live)).toBe('sent');
+      expect(sentTo).toHaveLength(1);
+    });
+
     it('does not announce an archive that can no longer be delivered', async () => {
       const { event, photoIds } = await makeEvent();
       const job = await makeJob(event, photoIds, { status: 'building' });
@@ -652,6 +691,16 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
         .expect(200);
 
       expect(await notifier.request(job, recipient)).toBe('gone');
+      expect(await db('download_job_recipients').where({ job_id: job.id })).toHaveLength(0);
+    });
+
+    it('deleting the gallery takes the requests with it', async () => {
+      const { event, photoIds } = await makeEvent();
+      const job = await makeJob(event, photoIds, { status: 'building' });
+      await askForMail(event, job, await verifiedGuest(event, 'deleted-gallery@example.com'));
+      expect(await db('download_job_recipients').where({ job_id: job.id })).toHaveLength(1);
+
+      await require('../../src/routes/adminEvents/helpers').deleteEventCascade(event.id, { id: null });
       expect(await db('download_job_recipients').where({ job_id: job.id })).toHaveLength(0);
     });
 

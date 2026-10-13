@@ -169,6 +169,35 @@ async function galleryLink(event, email, token) {
 }
 
 /**
+ * The job and its gallery, when its archive can be handed to someone right
+ * now; null otherwise. Ready is not deliverable: the job may be past its
+ * retention, the gallery may have expired, downloads been switched off or a
+ * packaged photo hidden since. The file route refuses such an archive, so
+ * nobody is told it is ready; the sweep removes the job and its recipients.
+ */
+async function deliverable(jobId) {
+  const job = await db('download_jobs').where({ id: jobId }).first();
+  if (!job || job.status !== 'ready') return null;
+  if (new Date(job.expires_at).getTime() <= Date.now()) return null;
+  const event = await db('events').where({ id: job.event_id }).first();
+  if (!event) return null;
+  if (!(await require('./downloadJobService').isDeliverableToAnyone(job, event))) return null;
+  return { job, event };
+}
+
+/**
+ * Asked by the queue processor right before it sends a download_ready mail:
+ * why the mail no longer applies, or null. A queue that was held up can
+ * reach the mail after the archive is gone, and the sweep that cancels such
+ * mails only runs every 20 minutes.
+ */
+async function staleMailReason(emailData) {
+  const jobId = emailData?.__downloadJobId;
+  if (jobId == null) return null;
+  return (await deliverable(jobId)) ? null : 'The prepared download is no longer available';
+}
+
+/**
  * Mail everyone waiting on a job that just became ready. Safe to call more
  * than once and from more than one replica: a recipient is claimed with a
  * conditional update, and only the caller that wins the claim queues the mail.
@@ -183,20 +212,12 @@ async function notifyReady(jobId) {
   const waiting = await db('download_job_recipients').where({ job_id: jobId }).whereNull('notified_at');
   if (waiting.length === 0) return 0;
 
-  const job = await db('download_jobs').where({ id: jobId }).first();
-  if (!job || job.status !== 'ready') return 0;
-  const msLeft = new Date(job.expires_at).getTime() - Date.now();
-  if (msLeft <= 0) return 0;
-  const event = await db('events').where({ id: job.event_id }).first();
-  if (!event) return 0;
-  // Ready is not deliverable: the gallery may have expired, downloads been
-  // switched off or a packaged photo hidden while the build ran. The file
-  // route refuses such an archive, so nobody is told it is ready; the sweep
-  // removes the job and its recipients.
-  if (!(await require('./downloadJobService').isDeliverableToAnyone(job, event))) return 0;
+  const current = await deliverable(jobId);
+  if (!current) return 0;
+  const { job, event } = current;
 
   const { queueEmail } = require('./emailProcessor');
-  const hoursLeft = Math.max(1, Math.round(msLeft / HOUR_MS));
+  const hoursLeft = Math.max(1, Math.round((new Date(job.expires_at).getTime() - Date.now()) / HOUR_MS));
   let sent = 0;
   for (const recipient of waiting) {
     try {
@@ -210,6 +231,8 @@ async function notifyReady(jobId) {
         event_name: event.event_name,
         gallery_link: await galleryLink(event, recipient.email, job.token),
         available_hours: hoursLeft,
+        // For staleMailReason, when the queue gets to this mail.
+        __downloadJobId: job.id,
       };
       const queued = await db.transaction(async (trx) => {
         // Event row first on PostgreSQL, the order gallery deletion takes
@@ -306,6 +329,6 @@ async function cancelPendingMails(jobs) {
 
 module.exports = {
   recipientFor, canMail, isRequested, request, notifyReady, retryUnsent, forgetCustomer, forgetGuest,
-  cancelPendingMails,
+  cancelPendingMails, staleMailReason,
   MAX_REQUESTS_PER_HOUR, LINK_PARAM,
 };
