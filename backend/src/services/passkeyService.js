@@ -248,7 +248,10 @@ function userHandle(admin) {
   return `picpeak-admin-${admin.id}-${Number.isFinite(created) ? created : 0}`;
 }
 
-async function beginRegistration(req, res, admin) {
+// `authorize`, when given, is the caller's last word before a challenge
+// exists: it runs once everything that could still refuse the request has
+// passed, and a rejection from it leaves no challenge behind.
+async function beginRegistration(req, res, admin, { authorize } = {}) {
   const rp = await requireRelyingParty(req);
   const existing = await listForAdmin(admin.id);
   if (existing.length >= MAX_PASSKEYS_PER_ADMIN) {
@@ -271,6 +274,7 @@ async function beginRegistration(req, res, admin) {
     // so one gesture is possession plus PIN/biometric.
     authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
   });
+  if (authorize) await authorize();
   setChallenge(res, {
     purpose: 'register', challenge: options.challenge, adminId: admin.id, pw: authState(admin),
   });
