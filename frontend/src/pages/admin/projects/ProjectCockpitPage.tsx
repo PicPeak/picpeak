@@ -23,7 +23,7 @@ import {
   type ProjectMilestone,
 } from '../../../services/projects.service';
 import { eventsService } from '../../../services/events.service';
-import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
+import { toDisplayDate, useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../../hooks';
 import { formatMoneyMinor } from '../../../utils/money';
 import { useFeatureFlags, type FeatureKey } from '../../../contexts/FeatureFlagsContext';
@@ -249,9 +249,11 @@ export const ProjectCockpitPage: React.FC = () => {
         subtitle: h.description || undefined, status: h.status || undefined,
       });
     }
+    // Ordered by the reading the row prints: the date hook's parser takes
+    // SQLite's zone-less created_at of a queued mail as UTC (issue 1815).
     return items.sort((a, b) => {
-      const da = a.date ? new Date(a.date).getTime() : 0;
-      const db = b.date ? new Date(b.date).getTime() : 0;
+      const da = a.date ? toDisplayDate(a.date).getTime() : 0;
+      const db = b.date ? toDisplayDate(b.date).getTime() : 0;
       return db - da;
     });
   }, [data, t, flags]);
