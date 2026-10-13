@@ -189,7 +189,7 @@ async function detachChildren(trx, photo, event) {
   const photoId = photo.id;
   const children = {
     event_slug: event.slug,
-    feedback: await trx('photo_feedback').where({ photo_id: photoId }),
+    feedback: await trx('photo_feedback').where({ photo_id: photoId }).forUpdate(),
     admin_marks: await trx('photo_admin_marks').where({ photo_id: photoId }),
     transfer_files: await trx('transfer_files').where({ photo_id: photoId }),
     event_hero: Number(event.hero_photo_id) === Number(photoId),
@@ -226,7 +226,10 @@ async function detachChildren(trx, photo, event) {
 async function commitTrash(row, photo, event) {
   await db.transaction(async (trx) => {
     await lockClaim(trx, row);
-    const live = (await trx('photos').where({ id: row.photo_id, event_id: row.event_id }).first()) || photo;
+    // FOR UPDATE on PostgreSQL, here and for the feedback: a guest merge that
+    // is rewriting these rows finishes first, and the snapshot holds what it
+    // wrote (mergeGuests).
+    const live = (await trx('photos').where({ id: row.photo_id, event_id: row.event_id }).forUpdate().first()) || photo;
     const children = await detachChildren(trx, live, event);
     await trx('photos').where({ id: row.photo_id, event_id: row.event_id }).del();
     await trx('photo_trash').where({ id: row.id }).update({
@@ -479,13 +482,79 @@ async function forgetGuest(guestId) {
 }
 
 /**
+ * Guests were merged into `survivor` (adminGuests): what the trash holds of
+ * the merged ones follows, as their live rows do. Their uploads and feedback
+ * in the snapshots move to the survivor, and of two choices of one kind on a
+ * photo the later one stays (feedbackService.mergeGuestFeedback). Without
+ * this a restore would find the merged guest marked deleted and bring the
+ * rows back without a name.
+ *
+ * Runs in the merge's transaction and before it locks the guest rows: every
+ * writer takes a trash row first and guest or feedback rows after, so a
+ * restore that is inserting rows for these guests and the merge cannot wait
+ * on each other. A trashing or restore that holds a row finishes before the
+ * merge reads it; one that comes later waits for the merge to commit.
+ */
+async function mergeGuests(trx, survivor, sourceGuestIds) {
+  const sources = new Set(sourceGuestIds.map(Number));
+  const keepId = Number(survivor.id);
+  const name = require('./photoCredit').creditName(survivor.name);
+  const { lastMutatedFirst } = require('./feedbackService');
+  let changed = 0;
+  for (const rowId of await trx('photo_trash').where({ event_id: survivor.event_id }).pluck('id')) {
+    const row = await trx('photo_trash').where({ id: rowId }).forUpdate().first('photo_row', 'children');
+    if (!row) continue;
+    let photoRow = JSON.parse(row.photo_row);
+    const children = JSON.parse(row.children || '{}');
+    let touched = false;
+    if (sources.has(Number(photoRow.uploader_guest_id))) {
+      // photoCredit.reassignGuestCredits
+      photoRow = {
+        ...photoRow,
+        uploader_guest_id: keepId,
+        ...(name && photoRow.credit_source === 'guest' ? { credit_name: name } : {}),
+      };
+      touched = true;
+    }
+    let feedback = (children.feedback || []).map((entry) => {
+      if (!sources.has(Number(entry.guest_id))) return entry;
+      touched = true;
+      return { ...entry, guest_id: keepId, guest_identifier: survivor.identifier };
+    });
+    if (!touched) continue;
+
+    const seen = new Set();
+    const duplicates = new Set();
+    for (const entry of feedback.filter((e) => Number(e.guest_id) === keepId).sort(lastMutatedFirst)) {
+      if (entry.feedback_type === 'comment' || entry.is_hidden === true || Number(entry.is_hidden) === 1) continue;
+      if (seen.has(entry.feedback_type)) duplicates.add(entry);
+      else seen.add(entry.feedback_type);
+    }
+    feedback = feedback.filter((entry) => !duplicates.has(entry));
+    await trx('photo_trash').where({ id: rowId }).update({
+      photo_row: JSON.stringify(photoRow),
+      // The counters in photo_row were taken with the duplicates in: the
+      // restore counts again (insertRestored).
+      children: JSON.stringify({ ...children, feedback, ...(duplicates.size ? { recount: true } : {}) }),
+    });
+    changed += 1;
+  }
+  return changed;
+}
+
+/**
  * For the folder watcher: is the file that just left `storageKey` this
  * photo's original on its way into the trash? Then the removal is the app's
  * own move, not someone deleting the file, and the photo row and its children
  * belong to the trashing transaction.
+ *
+ * Only a pending row: once the trashing has committed the photo row is gone,
+ * and a row the watcher still finds under that id and path is another photo
+ * (an id handed out again after a database restore), whose file really left.
  */
 async function ownsOutgoingFile(photoId, storageKey) {
-  return Boolean(await db('photo_trash').where({ photo_id: photoId, original_key: storageKey }).first('id'));
+  return Boolean(await db('photo_trash')
+    .where({ photo_id: photoId, original_key: storageKey, state: 'pending' }).first('id'));
 }
 
 /**
@@ -505,6 +574,36 @@ function restoredPath(event, photoRow, children) {
   return photoRow.path.replace(oldSlug, event.slug);
 }
 
+const SNAPSHOT_TABLES = ['photos', 'photo_feedback', 'photo_admin_marks', 'transfer_files'];
+
+/**
+ * A snapshot is JSON of rows as the engine returned them. One taken on SQLite
+ * holds epoch numbers where PostgreSQL wants a timestamp and 0/1 where it
+ * wants a boolean, and the supported move from SQLite to PostgreSQL carries
+ * the trash along with those values inside: PostgreSQL would reject the
+ * insert and the photo could never be restored. Returns (table, row) => row
+ * for the engine in use, coercing per column type the way the importer does
+ * for the tables themselves (picpeakImportService.coerceForTargetEngine).
+ * The identity on SQLite, where a row goes back as it was. Read before the
+ * restore's transaction: a schema lookup inside one deadlocks SQLite.
+ */
+async function snapshotCoercion() {
+  if (db.client.config.client !== 'pg') return (table, row) => row;
+  const { coerceForTargetEngine } = require('./picpeakImportService');
+  const types = {};
+  for (const table of SNAPSHOT_TABLES) {
+    const timestamps = [];
+    const booleans = [];
+    for (const [name, meta] of Object.entries(await db(table).columnInfo())) {
+      const type = String(meta.type || '').toLowerCase();
+      if (type.includes('timestamp') || type === 'date' || type === 'datetime') timestamps.push(name);
+      else if (type === 'boolean' || type === 'bool') booleans.push(name);
+    }
+    types[table] = { timestamps, booleans };
+  }
+  return (table, row) => coerceForTargetEngine([row], types[table])[0];
+}
+
 /**
  * Step 3 of a restore. The photo gets its old id back when that is still
  * free. It is not always: restoring a database backup resets the id sequence
@@ -513,7 +612,7 @@ function restoredPath(event, photoRow, children) {
  * rows are written from the snapshot either way and follow it.
  * Returns the id the photo now has.
  */
-async function insertRestored(trx, event, row, columns) {
+async function insertRestored(trx, event, row, columns, forEngine) {
   await lockClaim(trx, row);
   // The snapshot as it is now, under the lock: a guest forgotten since the
   // caller read the row is already out of it (forgetGuest).
@@ -551,7 +650,7 @@ async function insertRestored(trx, event, row, columns) {
     Object.assign(record, withoutGuest(record, record.uploader_guest_id));
   }
 
-  const inserted = await insertPhotoWithinCap(record, photoCapOf(event), trx);
+  const inserted = await insertPhotoWithinCap(forEngine('photos', record), photoCapOf(event), trx);
   if (!inserted) throw trashError('PHOTO_CAP_REACHED', photoCapError(photoCapOf(event)).error);
   const photoId = keepsId ? row.photo_id : (inserted[0]?.id ?? inserted[0]);
   if (keepsId && trx.client.config.client === 'pg') {
@@ -570,17 +669,23 @@ async function insertRestored(trx, event, row, columns) {
     const kept = rest.guest_id && !(await guestStands(rest.guest_id))
       ? { ...rest, guest_id: null, guest_name: null, guest_email: null }
       : rest;
-    await trx('photo_feedback').insert({ ...kept, photo_id: photoId, event_id: event.id });
+    await trx('photo_feedback').insert(forEngine('photo_feedback', { ...kept, photo_id: photoId, event_id: event.id }));
   }
   for (const mark of children.admin_marks || []) {
     const { id: _id, ...rest } = mark;
     if (await exists('admin_users', rest.admin_id)) {
-      await trx('photo_admin_marks').insert({ ...rest, photo_id: photoId, event_id: event.id });
+      await trx('photo_admin_marks').insert(forEngine('photo_admin_marks', { ...rest, photo_id: photoId, event_id: event.id }));
     }
   }
   for (const file of children.transfer_files || []) {
     const { id: _id, ...rest } = file;
-    if (await exists('transfers', rest.transfer_id)) await trx('transfer_files').insert({ ...rest, photo_id: photoId });
+    if (await exists('transfers', rest.transfer_id)) {
+      await trx('transfer_files').insert(forEngine('transfer_files', { ...rest, photo_id: photoId }));
+    }
+  }
+  if (children.recount) {
+    // A guest merge dropped duplicate choices from the snapshot (mergeGuests).
+    await require('./feedbackService').updatePhotoFeedbackStats(photoId, trx);
   }
   if (children.event_hero) {
     await trx('events').where({ id: event.id }).whereNull('hero_photo_id').update({ hero_photo_id: photoId });
@@ -689,7 +794,8 @@ async function restorePhoto(event, row) {
       }
     }
 
-    return await db.transaction((trx) => insertRestored(trx, event, claim, columns));
+    const forEngine = await snapshotCoercion();
+    return await db.transaction((trx) => insertRestored(trx, event, claim, columns, forEngine));
   } catch (error) {
     try {
       // Not this caller's any more (the sweep took it over): no file is touched.
@@ -809,6 +915,8 @@ module.exports = {
   purgeExpired,
   eventTrashKeys,
   forgetGuest,
+  mergeGuests,
+  snapshotCoercion,
   ownsOutgoingFile,
   claimsIncomingFile,
   startPhotoTrashPurge,

@@ -260,7 +260,7 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     let tableBytes = 0;
     for (const table of tables) {
       const { largestRowBytes: largest, ...meta } = await writeTableNdjson(table, dataDir, pathMap, (name, rows) => {
-        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files'].includes(name)) referenceRows.set(name, rows);
+        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files', 'photo_trash'].includes(name)) referenceRows.set(name, rows);
       });
       tableMeta[table] = meta;
       largestRowBytes = Math.max(largestRowBytes, largest);

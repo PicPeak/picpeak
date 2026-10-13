@@ -30,7 +30,11 @@ const REFERENCE_COLUMNS = {
   customer_documents: ['id', 'storage_key', 'purged_at'],
   transfer_uploads: ['id', 'stored_path'],
   transfer_extra_files: ['id', 'stored_path'],
+  photo_trash: ['id', 'state', 'trash_key', 'purge_after'],
 };
+// A trashed original this close to its purge is not required: the sweep may
+// delete it while the backup runs, which is its lifecycle, not corruption.
+const TRASH_PURGE_MARGIN_MS = 24 * 60 * 60 * 1000;
 const REFERENCE_BATCH = 1000;
 const hasControl = value => [...value].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
 const badHeader = value => ['\r', '\n', '\0'].some(character => value.includes(character));
@@ -155,6 +159,12 @@ async function requiredKeys(knex, selected, derived) {
   }
   for await (const doc of rows(knex, 'customer_documents')) {
     if (!doc.purged_at) add(doc.storage_key, 'business-docs/customer-documents', `Customer document ${doc.id}`);
+  }
+  // The photo trash (issue 1733): an entry at rest keeps its original under
+  // trash/, and without it the entry cannot be restored. One that is moving
+  // has its file at either key and is left to the next backup.
+  for await (const row of rows(knex, 'photo_trash')) {
+    if (row.state === 'trashed' && Date.parse(row.purge_after) - Date.now() > TRASH_PURGE_MARGIN_MS) add(row.trash_key);
   }
   for (const table of ['transfer_uploads', 'transfer_extra_files']) {
     for await (const row of rows(knex, table)) add(row.stored_path,

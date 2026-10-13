@@ -660,6 +660,14 @@ router.post(
       }
 
       const result = await db.transaction(async (trx) => {
+        // The photo trash (issue 1733) holds uploads and feedback of these
+        // guests too. First, before the guest rows are locked: see
+        // photoTrashService.mergeGuests for the order. The checks below
+        // still decide; a merge they refuse rolls this back with it.
+        const trashSurvivor = await trx('gallery_guests')
+          .where({ id: keepId, event_id: eventId, is_deleted: formatBoolean(false) }).first();
+        if (trashSurvivor) await require('../services/photoTrashService').mergeGuests(trx, trashSurvivor, mergeIds);
+
         // Lock in a stable order on PostgreSQL so overlapping merges cannot
         // move feedback into an identity another merge has just deleted.
         const guestQuery = trx('gallery_guests')

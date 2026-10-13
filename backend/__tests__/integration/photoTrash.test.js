@@ -15,7 +15,10 @@
  *    trash nor imports a file a restore is putting back, whichever comes first
  *  - a restore announces nothing: no photo.uploaded, and a photo held for
  *    review comes back held
- *  - forgetting a guest reaches what the trash holds of them
+ *  - forgetting a guest reaches what the trash holds of them, and so does
+ *    merging guests
+ *  - a snapshot taken on SQLite restores on PostgreSQL
+ *  - a backup requires the originals of trashed photos
  *  - trashed photos do not count toward the photo cap
  *  - the trash routes are scoped to the gallery like delete is
  *  - retention 0 deletes at once, as before the trash
@@ -120,6 +123,7 @@ describe('photo trash (issue 1733)', () => {
     app.use(express.json());
     app.use(cookieParser());
     app.use('/api/admin/events', require('../../src/routes/adminPhotos'));
+    app.use('/api/admin', require('../../src/routes/adminGuests'));
   }, 120000);
 
   afterAll(async () => {
@@ -280,6 +284,96 @@ describe('photo trash (issue 1733)', () => {
       expect((await restore(event, [row.id])).status).toBe(200);
       expect(await db('photos').where({ id: photo.id }).first()).toMatchObject({ uploader_guest_id: null, credit_name: null, credit_source: null });
       expect(await count('photo_feedback', { photo_id: photo.id })).toBe(2);
+    });
+
+    it('carries a guest merge into the trash: uploads and feedback come back as the survivor\'s', async () => {
+      const event = await mkEvent();
+      const mkGuest = async (name) => firstId(await db('gallery_guests').insert({
+        event_id: event.id, name, email: `${name.toLowerCase()}@example.com`, identifier: `${name.toLowerCase()}-merge-ident`, created_at: now(),
+      }).returning('id'));
+      const keepId = await mkGuest('Hana');
+      const goneId = await mkGuest('Hanna');
+      const photo = await mkPhoto(event, { uploader_guest_id: goneId, credit_name: 'Hanna', credit_source: 'guest', uploaded_by: 'guest', like_count: 2 });
+      const fb = (extra) => ({ photo_id: photo.id, event_id: event.id, ...extra });
+      await db('photo_feedback').insert([
+        fb({ feedback_type: 'like', guest_identifier: 'hana-merge-ident', guest_id: keepId, guest_name: 'Hana', created_at: '2026-01-01T10:00:00.000Z', updated_at: '2026-01-01T10:00:00.000Z' }),
+        fb({ feedback_type: 'like', guest_identifier: 'hanna-merge-ident', guest_id: goneId, guest_name: 'Hanna', created_at: '2026-01-02T10:00:00.000Z', updated_at: '2026-01-02T10:00:00.000Z' }),
+        fb({ feedback_type: 'comment', comment_text: 'From the other phone', guest_identifier: 'hanna-merge-ident', guest_id: goneId, guest_name: 'Hanna' }),
+        fb({ feedback_type: 'like', guest_identifier: 'someone-else', guest_name: 'Ida' }),
+      ]);
+      expect((await del(event, photo)).status).toBe(200);
+
+      const merge = await as(request(app).post(`/api/admin/events/${event.id}/guests/${keepId}/merge`), 'owner').send({ mergeIds: [goneId] });
+      expect(merge.status).toBe(200);
+      const row = await trashRowOf(photo.id);
+      expect(JSON.parse(row.photo_row)).toMatchObject({ uploader_guest_id: keepId, credit_name: 'Hana', credit_source: 'guest' });
+
+      expect((await restore(event, [row.id])).status).toBe(200);
+      // The uploader and their choices are the survivor's; of the two likes one is left.
+      expect(await db('photos').where({ id: photo.id }).first()).toMatchObject({
+        uploader_guest_id: keepId, credit_name: 'Hana', credit_source: 'guest', like_count: 2,
+      });
+      const feedback = await db('photo_feedback').where({ photo_id: photo.id }).orderBy('id');
+      expect(feedback.map((f) => [f.feedback_type, f.guest_id, f.guest_identifier])).toEqual([
+        ['like', keepId, 'hana-merge-ident'],
+        ['comment', keepId, 'hana-merge-ident'],
+        ['like', null, 'someone-else'],
+      ]);
+      // The like that stayed is the later one.
+      expect(new Date(feedback[0].created_at).toISOString()).toBe('2026-01-02T10:00:00.000Z');
+    });
+
+    it('a merge the route refuses leaves the trash as it was', async () => {
+      const event = await mkEvent();
+      const other = await mkEvent();
+      const mkGuest = async (eventId, name) => firstId(await db('gallery_guests').insert({
+        event_id: eventId, name, identifier: `${name.toLowerCase()}-ident-${seq}-${eventId}`, created_at: now(),
+      }).returning('id'));
+      const keepId = await mkGuest(event.id, 'Jo');
+      const foreignId = await mkGuest(other.id, 'Joe');
+      const photo = await mkPhoto(other, { uploader_guest_id: foreignId, credit_name: 'Joe', credit_source: 'guest' });
+      expect((await del(other, photo)).status).toBe(200);
+      const before = await trashRowOf(photo.id);
+
+      const merge = await as(request(app).post(`/api/admin/events/${event.id}/guests/${keepId}/merge`), 'owner').send({ mergeIds: [foreignId] });
+      expect(merge.status).toBe(400);
+      expect((await trashRowOf(photo.id)).photo_row).toBe(before.photo_row);
+    });
+
+    it('restores a snapshot whose timestamps are epoch numbers, as SQLite wrote them', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      await db('photo_feedback').insert({ photo_id: photo.id, event_id: event.id, feedback_type: 'like', guest_identifier: 'x' });
+      expect((await del(event, photo)).status).toBe(200);
+      const row = await trashRowOf(photo.id);
+      const at = Date.parse('2026-03-04T05:06:07.000Z');
+      const children = JSON.parse(row.children);
+      children.feedback = children.feedback.map((f) => ({ ...f, created_at: at, updated_at: at, is_hidden: 0 }));
+      await db('photo_trash').where({ id: row.id }).update({
+        photo_row: JSON.stringify({ ...JSON.parse(row.photo_row), uploaded_at: at }), children: JSON.stringify(children),
+      });
+
+      expect((await restore(event, [row.id])).status).toBe(200);
+      expect(new Date((await db('photos').where({ id: photo.id }).first()).uploaded_at).getTime()).toBe(at);
+      expect(new Date((await db('photo_feedback').where({ photo_id: photo.id }).first()).created_at).getTime()).toBe(at);
+    });
+
+    it('turns SQLite values in a snapshot into what PostgreSQL takes', async () => {
+      // SQLite cannot show the insert failing; this pins the conversion PostgreSQL gets.
+      const config = db.client.config;
+      const engine = config.client;
+      config.client = 'pg';
+      let forEngine;
+      try {
+        forEngine = await photoTrash.snapshotCoercion();
+      } finally {
+        config.client = engine;
+      }
+      expect(forEngine('photo_feedback', { created_at: 1786548038763, updated_at: '1786548038763', is_hidden: 0, comment_text: '12345', rating: 4 })).toEqual({
+        created_at: '2026-08-12T15:20:38.763Z', updated_at: '2026-08-12T15:20:38.763Z', is_hidden: false, comment_text: '12345', rating: 4,
+      });
+      expect(forEngine('photos', { uploaded_at: '2026-01-01T00:00:00.000Z', size_bytes: 12 })).toEqual({ uploaded_at: '2026-01-01T00:00:00.000Z', size_bytes: 12 });
+      expect((await photoTrash.snapshotCoercion())('photos', { uploaded_at: 5 })).toEqual({ uploaded_at: 5 });
     });
 
     it('brings a photo held for review back held, and announces nothing', async () => {
@@ -578,6 +672,23 @@ describe('photo trash (issue 1733)', () => {
       await watcher.processNewPhoto(abs(photo.key));
       expect(await count('photos', { event_id: event.id })).toBe(1);
     });
+    it('removes a photo that reuses the id and path of one at rest in the trash when its file is deleted', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      expect((await del(event, photo)).status).toBe(200);
+      // After a database restore: a new photo under the old id and name.
+      await storage.put(photo.key, Buffer.from('new photo'));
+      await db('photos').insert({
+        id: photo.id, event_id: event.id, filename: photo.filename, path: `${event.slug}/${photo.filename}`, type: 'individual',
+        uploaded_at: now(), processing_status: 'complete',
+      });
+      await storage.delete(photo.key);
+
+      await watcher.removePhoto(abs(photo.key));
+      expect(await db('photos').where({ id: photo.id }).first()).toBeUndefined();
+      expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed' });
+    });
+
     it('ignores an unlink it gets to only after the photo was restored', async () => {
       const event = await mkEvent();
       const photo = await mkPhoto(event);
@@ -1005,6 +1116,27 @@ describe('photo trash (issue 1733)', () => {
       expect(await db('photos').where({ id: photo.id }).first()).toBeDefined();
       expect(await storage.exists(photo.key)).toBe(true);
       expect(await trashRowOf(photo.id)).toBeUndefined();
+    });
+  });
+
+  describe('backups', () => {
+    it('require the original of a photo at rest in the trash, not one that is moving or about to be purged', async () => {
+      const recovery = require('../../src/services/recoveryFiles');
+      const event = await mkEvent();
+      const [atRest, moving, expiring] = [await mkPhoto(event), await mkPhoto(event), await mkPhoto(event)];
+      for (const photo of [atRest, moving, expiring]) expect((await del(event, photo)).status).toBe(200);
+      const rows = await Promise.all([atRest, moving, expiring].map((photo) => trashRowOf(photo.id)));
+      await db('photo_trash').where({ id: rows[1].id }).update({ state: 'restoring' });
+      await db('photo_trash').where({ id: rows[2].id }).update({ purge_after: new Date(Date.now() + 3600000).toISOString() });
+
+      const required = await recovery.requiredKeys(db, () => true);
+      expect(required.has(rows[0].trash_key)).toBe(true);
+      expect(required.has(rows[1].trash_key)).toBe(false);
+      expect(required.has(rows[2].trash_key)).toBe(false);
+      // The same from the rows a portable export captured.
+      const captured = new Map([['photo_trash', await db('photo_trash').where({ event_id: event.id })]]);
+      expect([...await recovery.requiredKeys(captured, () => true)]).toEqual([rows[0].trash_key]);
+      await db('photo_trash').where({ id: rows[1].id }).update({ state: 'trashed' });
     });
   });
 

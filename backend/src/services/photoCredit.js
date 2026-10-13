@@ -333,6 +333,7 @@ module.exports = {
   clearGuestCredits,
   settleGuestCredit,
   reassignGuestCredits,
+  creditName,
   CREDIT_SOURCES,
   CREDIT_NONE,
   GUEST_NAME_MODES,
