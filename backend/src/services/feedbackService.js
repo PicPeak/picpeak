@@ -1468,10 +1468,6 @@ class FeedbackService {
       for (const pid of photoIds) {
         await this.updatePhotoFeedbackStats(pid);
       }
-      // The same for what the photo trash holds of this guest (issue 1733):
-      // their feedback on trashed photos, and their name on trashed uploads.
-      await require('./photoTrashService').forgetGuest(guestId);
-
       return { anonymized: affected.length, photos: photoIds.length };
     } catch (error) {
       logger.error('Error anonymizing guest feedback:', error);

@@ -6,7 +6,7 @@ import { Film, Image as ImageIcon, RotateCcw, Trash2 } from 'lucide-react';
 import {
   Button, EmptyState, ErrorState, Loading, Modal, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow, useConfirm,
 } from '../common';
-import { photosService, type TrashedPhoto } from '../../services/photos.service';
+import { photosService, type TrashedPhoto, type TrashRestoreResult } from '../../services/photos.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { formatFileSize } from '../../utils/fileSize';
 
@@ -17,6 +17,41 @@ export function daysLeft(purgeAfter: string, now = Date.now()): number {
   const ms = Date.parse(purgeAfter) - now;
   return Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 86400000) : 0;
 }
+
+/** What one restore or purge request may name (MAX_TRASH_IDS in backend/src/routes/adminPhotos.js). */
+export const TRASH_BATCH_SIZE = 500;
+
+/**
+ * Runs `send` over `ids` in requests the server accepts and merges the
+ * results. A request that fails after others went through does not hide what
+ * those did: the ids that were not sent come back as failed (`unsent`), and
+ * only a failure of the very first request is thrown.
+ */
+async function inBatches<T>(
+  ids: number[],
+  send: (batch: number[]) => Promise<T>,
+  merge: (a: T, b: T) => T,
+  unsent: (rest: number[], error: any) => T,
+): Promise<T> {
+  let merged: T | undefined;
+  for (let start = 0; start < ids.length; start += TRASH_BATCH_SIZE) {
+    try {
+      const result = await send(ids.slice(start, start + TRASH_BATCH_SIZE));
+      merged = merged === undefined ? result : merge(merged, result);
+    } catch (error) {
+      if (merged === undefined) throw error;
+      return merge(merged, unsent(ids.slice(start), error));
+    }
+  }
+  return merged as T;
+}
+
+const mergeRestores = (a: TrashRestoreResult, b: TrashRestoreResult): TrashRestoreResult => ({
+  restored: a.restored + b.restored,
+  photo_ids: [...a.photo_ids, ...b.photo_ids],
+  reassigned: [...(a.reassigned ?? []), ...(b.reassigned ?? [])],
+  failed: [...a.failed, ...b.failed],
+});
 
 interface PhotoTrashModalProps {
   eventId: number;
@@ -55,7 +90,16 @@ export const PhotoTrashModal: React.FC<PhotoTrashModalProps> = ({ eventId, open,
   };
 
   const restore = useMutation({
-    mutationFn: (ids: number[]) => photosService.restoreFromTrash(eventId, ids),
+    mutationFn: (ids: number[]) => inBatches(
+      ids,
+      (batch) => photosService.restoreFromTrash(eventId, batch),
+      mergeRestores,
+      (rest, error) => ({
+        restored: 0,
+        photo_ids: [],
+        failed: rest.map((id) => ({ id, filename: '', code: 'REQUEST_FAILED', error: error?.response?.data?.error || '' })),
+      }),
+    ),
     onSuccess: (result) => {
       if (result.restored > 0) {
         toast.success(t('admin.photos.trash.restored', { count: result.restored }));
@@ -73,7 +117,12 @@ export const PhotoTrashModal: React.FC<PhotoTrashModalProps> = ({ eventId, open,
   });
 
   const purge = useMutation({
-    mutationFn: (ids: number[]) => photosService.purgeFromTrash(eventId, ids),
+    mutationFn: (ids: number[]) => inBatches(
+      ids,
+      (batch) => photosService.purgeFromTrash(eventId, batch),
+      (a, b) => ({ purged: a.purged + b.purged, failed: [...a.failed, ...b.failed] }),
+      (rest) => ({ purged: 0, failed: rest }),
+    ),
     onSuccess: (result) => {
       if (result.purged > 0) toast.success(t('admin.photos.trash.purged', { count: result.purged }));
       if (result.failed.length > 0) toast.error(t('admin.photos.trash.purgeFailed'));

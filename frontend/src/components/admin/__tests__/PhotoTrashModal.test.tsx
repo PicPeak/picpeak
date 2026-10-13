@@ -148,6 +148,39 @@ describe('PhotoTrashModal', () => {
     await waitFor(() => expect(restoreFromTrash).toHaveBeenCalledWith(7, [12]));
   });
 
+  describe('a selection larger than one request may name', () => {
+    const many = Array.from({ length: 501 }, (_, index) => ({ ...items[0], id: 1000 + index, photo_id: 5000 + index, filename: `IMG_${index}.jpg` }));
+    const ids = many.map((item) => item.id);
+    const selectAll = async () => {
+      getTrash.mockResolvedValue({ items: many, retention_days: 30 });
+      const user = userEvent.setup();
+      renderTrash();
+      await screen.findByTestId('photo-trash-row-1000');
+      await user.click(screen.getByRole('checkbox', { name: 'gallery.selectAll' }));
+      return user;
+    };
+
+    it('restores it in requests of at most 500 and adds the results up', async () => {
+      restoreFromTrash.mockImplementation(async (_eventId: number, batch: number[]) => ({ restored: batch.length, photo_ids: batch, failed: [] }));
+      const user = await selectAll();
+      await user.click(screen.getByRole('button', { name: 'admin.photos.trash.restoreSelected:501' }));
+
+      await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('admin.photos.trash.restored:501'));
+      expect(restoreFromTrash.mock.calls).toEqual([[7, ids.slice(0, 500)], [7, ids.slice(500)]]);
+      expect(toastError).not.toHaveBeenCalled();
+    }, 30000);
+
+    it('deletes it in requests of at most 500, and reports what a failed request left', async () => {
+      purgeFromTrash.mockResolvedValueOnce({ purged: 500, failed: [] }).mockRejectedValueOnce(new Error('offline'));
+      const user = await selectAll();
+      await user.click(screen.getByRole('button', { name: 'admin.photos.trash.purgeSelected:501' }));
+
+      await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('admin.photos.trash.purged:500'));
+      expect(purgeFromTrash.mock.calls).toEqual([[7, ids.slice(0, 500)], [7, ids.slice(500)]]);
+      expect(toastError).toHaveBeenCalledWith('admin.photos.trash.purgeFailed');
+    }, 30000);
+  });
+
   it('shows the empty state for an empty trash', async () => {
     getTrash.mockResolvedValue({ items: [], retention_days: 30 });
     renderTrash();

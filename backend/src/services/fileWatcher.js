@@ -270,22 +270,35 @@ async function removePhoto(filePath) {
     return;
   }
 
-  // Remove from database
-  await db('photos').where({ path: relativePath }).delete();
-
-  if (photo) {
-    downloadZipService.invalidate(photo.event_id);
-
-    // Webhook (#327) — fire only if the row actually existed.
-    try {
-      const event = await db('events').where({ id: photo.event_id }).first();
-      const webhookService = require('./webhookService');
-      await webhookService.fire('photo.deleted', {
-        event: { id: photo.event_id, slug: event?.slug, event_name: event?.event_name },
-        photo: { id: photo.id, filename: photo.filename, source: 'auto-import' },
-      });
-    } catch (e) { /* non-fatal */ }
+  // An unlink waits in the queue behind imports, and the file can be back by
+  // the time it is looked at: a photo restored from the trash (the unlink
+  // was the move into it), or a file somebody put back. Not a removed photo.
+  if (await fs.access(filePath).then(() => true, () => false)) {
+    logger.debug(`Ignoring the removal of a file that is there again: ${relativePath}`);
+    return;
   }
+  if (!photo) return;
+
+  // Remove from database: the row that was read above, not one a restore
+  // inserted under this path since (it carries a new restored_from_trash_at).
+  const removed = await db('photos').where({ id: photo.id, path: relativePath })
+    .where((q) => (photo.restored_from_trash_at
+      ? q.where('restored_from_trash_at', photo.restored_from_trash_at)
+      : q.whereNull('restored_from_trash_at')))
+    .delete();
+  if (!removed) return;
+
+  downloadZipService.invalidate(photo.event_id);
+
+  // Webhook (#327) — fire only if the row actually existed.
+  try {
+    const event = await db('events').where({ id: photo.event_id }).first();
+    const webhookService = require('./webhookService');
+    await webhookService.fire('photo.deleted', {
+      event: { id: photo.event_id, slug: event?.slug, event_name: event?.event_name },
+      photo: { id: photo.id, filename: photo.filename, source: 'auto-import' },
+    });
+  } catch (e) { /* non-fatal */ }
 
   logger.info(`Removed photo: ${relativePath}`);
 }

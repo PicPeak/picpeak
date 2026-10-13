@@ -14,6 +14,13 @@
  *   trashed    at rest
  *   restoring  being put back
  *   purging    being deleted for good
+ * A photo has at most one `pending` row: the partial unique index is what
+ * makes "this request is the one trashing it" an atomic claim. Rows at rest
+ * are not limited (see photo_id below).
+ *
+ * `restore_move_at` is set when a restore starts moving the file back. A
+ * crashed restore without it moved nothing, so whatever lies at the
+ * destination is not its own.
  *
  * Timestamps are ISO strings in varchar columns, like
  * event_download_grants.granted_at: the same text on both engines, so
@@ -28,7 +35,14 @@ exports.up = async function up(knex) {
   if (!(await knex.schema.hasColumn('photos', 'restored_from_trash_at'))) {
     await knex.schema.alterTable('photos', (t) => t.string('restored_from_trash_at', 32).nullable());
   }
-  if (await knex.schema.hasTable('photo_trash')) return;
+  if (!(await knex.schema.hasTable('photo_trash'))) await createPhotoTrash(knex);
+  // Partial indexes read the same on PostgreSQL and SQLite.
+  await knex.raw(
+    'CREATE UNIQUE INDEX IF NOT EXISTS photo_trash_pending_photo_uidx ON photo_trash (photo_id) WHERE state = \'pending\''
+  );
+};
+
+async function createPhotoTrash(knex) {
   await knex.schema.createTable('photo_trash', (t) => {
     t.increments('id').primary();
     // The id the photo had, and gets back on restore. Not unique: restoring
@@ -42,6 +56,7 @@ exports.up = async function up(knex) {
     t.bigInteger('size_bytes').notNullable().defaultTo(0);
     t.string('original_key', 1024).nullable();
     t.string('trash_key', 1024).nullable();
+    t.string('restore_move_at', 32).nullable();
     t.string('deleted_at', 32).notNullable();
     t.integer('deleted_by').nullable();
     t.string('deleted_by_name', 255).nullable();
@@ -51,7 +66,7 @@ exports.up = async function up(knex) {
     t.index(['event_id', 'state'], 'photo_trash_event_state_idx');
     t.index(['state', 'purge_after'], 'photo_trash_state_purge_idx');
   });
-};
+}
 
 exports.down = async function down(knex) {
   // The files under trash/ stay; without the rows nothing can restore them.

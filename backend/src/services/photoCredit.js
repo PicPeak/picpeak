@@ -244,6 +244,21 @@ function manualCreditFields(raw) {
 async function clearGuestCredits(guestIds, trx = db) {
   const ids = (Array.isArray(guestIds) ? guestIds : [guestIds]).map(Number).filter(Number.isFinite);
   if (ids.length === 0) return 0;
+  const cleared = await clearLiveGuestCredits(ids, trx);
+  // The photo trash (issue 1733) holds these guests' uploads and feedback
+  // too. In this order: live rows, trash, live rows again. A photo on its
+  // way into the trash was cleared above or is scrubbed in the trash; one on
+  // its way out was scrubbed in the trash or is cleared below. Not inside a
+  // caller's transaction: the trash takes its own.
+  if (trx === db) {
+    const photoTrash = require('./photoTrashService');
+    for (const id of ids) await photoTrash.forgetGuest(id);
+    await clearLiveGuestCredits(ids, trx);
+  }
+  return cleared;
+}
+
+async function clearLiveGuestCredits(ids, trx) {
   const cleared = await trx('photos')
     .whereIn('uploader_guest_id', ids)
     .where('credit_source', 'guest')
