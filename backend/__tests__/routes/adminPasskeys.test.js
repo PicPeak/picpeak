@@ -216,6 +216,21 @@ describe('registration', () => {
     expect(payload).toMatchObject({ type: 'passkey_challenge', purpose: 'register', uid: admin.id, c: options.challenge });
   });
 
+  // An authenticator keeps one discoverable credential per RP ID and user
+  // handle, and a registration replaces it. A portable restore can move the
+  // operator to another row and hand their old id to an archived account, so
+  // the handle must not be the id alone: that account registering on the same
+  // authenticator would overwrite the operator's preserved passkey.
+  it('derives a user handle that is stable for an account and not reused with its id', async () => {
+    const admin = await seedAdmin({ created_at: '2026-01-01T00:00:00.000Z' });
+    const handleOf = async () => (await registerOptions(admin)).body.options.user.id;
+    const first = await handleOf();
+    expect(await handleOf()).toBe(first);
+
+    await db('admin_users').where({ id: admin.id }).update({ created_at: '2026-02-02T00:00:00.000Z' });
+    expect(await handleOf()).not.toBe(first);
+  });
+
   it('stores the credential the library verified against this origin and RP ID', async () => {
     const admin = await seedAdmin();
     const options = await registerOptions(admin);

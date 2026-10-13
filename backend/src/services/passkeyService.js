@@ -238,6 +238,16 @@ function cleanName(name) {
 
 // ── registration ───────────────────────────────────────────────────────────
 
+// The id alone is not an account's identity across a portable restore, which
+// can move the operator to another row and give their old id to an archived
+// account: with the same handle, that account registering on the operator's
+// authenticator would replace the passkey the restore preserved. The row's
+// creation time tells the two apart.
+function userHandle(admin) {
+  const created = new Date(admin.created_at).getTime();
+  return `picpeak-admin-${admin.id}-${Number.isFinite(created) ? created : 0}`;
+}
+
 async function beginRegistration(req, res, admin) {
   const rp = await requireRelyingParty(req);
   const existing = await listForAdmin(admin.id);
@@ -251,7 +261,7 @@ async function beginRegistration(req, res, admin) {
     userDisplayName: admin.email || admin.username,
     // Stable per account, so registering again on the same authenticator
     // replaces its entry instead of piling up duplicates. No personal data.
-    userID: new Uint8Array(Buffer.from(`picpeak-admin-${admin.id}`, 'utf8')),
+    userID: new Uint8Array(Buffer.from(userHandle(admin), 'utf8')),
     attestationType: 'none',
     excludeCredentials: existing.map((row) => ({
       id: row.credential_id,
