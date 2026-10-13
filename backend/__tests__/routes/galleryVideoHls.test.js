@@ -562,7 +562,7 @@ describe('adaptive streaming routes (issue 1733)', () => {
       const read = file => fs.readFileSync(path.join(__dirname, '../../src', file), 'utf8');
       // An admin delete and a purge of the trash share one hard delete.
       const trash = read('services/photoTrash.js');
-      const rowDelete = trash.indexOf('await db(\'photos\').where({ id: photo.id, event_id: photo.event_id }).delete();');
+      const rowDelete = trash.indexOf('(\'photos\').where({ id: photo.id, event_id: photo.event_id }).delete();');
       expect(rowDelete).toBeGreaterThan(0);
       expect(trash.indexOf('videoHlsService\').deleteLadder(ladder)')).toBeGreaterThan(rowDelete);
       const archive = read('services/archiveService.js');
