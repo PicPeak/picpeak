@@ -32,7 +32,7 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { buildCookieOptionsWithExpiry, buildClearCookieOptions } = require('../utils/tokenUtils');
-const { isTokenBeforeCutoff } = require('../utils/sessionCutoff');
+const { readSessionsValidAfter } = require('../utils/sessionCutoff');
 const { isEnrolled } = require('./mfaService');
 
 const TABLE = 'admin_webauthn_credentials';
@@ -149,8 +149,18 @@ async function takeChallenge(req, res, purpose) {
   }
   // A restore or rollback replaces revoked_tokens, so a challenge spent before
   // it may no longer be on record. The cutoff it publishes refuses those, like
-  // every session issued before it.
-  if (await isTokenBeforeCutoff(payload)) throw invalid();
+  // every session issued before it. Read from the database, not the 30 s
+  // cache the session checks use: a replica that did not run the restore
+  // would otherwise accept the spent challenge once more and hand out a
+  // session issued after the cutoff. Fails closed, like the insert below.
+  let cutoff;
+  try {
+    cutoff = await readSessionsValidAfter();
+  } catch (error) {
+    logger.warn('Passkey challenge refused: session cutoff not readable', { purpose, error: error.message });
+    throw invalid();
+  }
+  if (cutoff && payload.iat < cutoff) throw invalid();
 
   // Single use on every replica: the unique index on token_id refuses the
   // second insert. Any failure here fails closed.

@@ -598,7 +598,10 @@ describe('passwordless login', () => {
 
     const { jti } = jwt.decode(cookie.split('=')[1]);
     expect(await db('revoked_tokens').where({ token_id: jti }).del()).toBe(1);
-    await sessionCutoff.setSessionsValidAfter(sessionCutoff.nextSessionCutoff());
+    // Published by another replica: this process still has the old cutoff in
+    // its short-lived cache, which the challenge check must not rely on.
+    expect(await sessionCutoff.getSessionsValidAfter()).toBe(0);
+    await sessionCutoff.setSessionsValidAfter(sessionCutoff.nextSessionCutoff(), { refreshCache: false });
     try {
       accept();
       const replay = await loginVerify(cookie, { response: { id: 'cred-restore' } });

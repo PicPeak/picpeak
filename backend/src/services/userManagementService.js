@@ -634,6 +634,10 @@ async function deleteAdminUser(id, deletedById) {
   // Their gallery assignments (migration 269) the same way: CASCADE, SET NULL
   // on assigned_by and on the photos they uploaded.
   await db.transaction(async (trx) => {
+    // Account row first, the order passkey registration, removal and the
+    // password reset take: deleting the passkeys below before it would let
+    // PostgreSQL deadlock against one of those running for the same account.
+    await trx('admin_users').where('id', id).forUpdate().first();
     await trx('notification_dismissals').where('admin_id', id).del();
     // Their passkeys (migration 295), for the same reason.
     if (await trx.schema.hasTable('admin_webauthn_credentials')) {
