@@ -9,7 +9,7 @@
  */
 import { render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
@@ -147,6 +147,32 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     answer.resolve({ id: 7, name: 'Anna' });
     expect(await screen.findByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
     expect(submitSelection).not.toHaveBeenCalled();
+  });
+
+  it('holds the confirmation until the counts it shows are fresh', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let answer!: (value: SelectionState) => void;
+    const stale = state({ approval: { can_submit: true, rejected: 0 } });
+    const fresh = state({ approval: { can_submit: true, rejected: 2 } });
+    // The refetch the dialog starts, still on its way.
+    client.setQueryData(['gallery-selection', 'g'], stale);
+    client.setQueryDefaults(['gallery-selection', 'g'], {
+      queryFn: () => new Promise<SelectionState>((resolve) => { answer = resolve; }),
+    });
+    const Bar = () => {
+      const { data } = useQuery<SelectionState>({ queryKey: ['gallery-selection', 'g'], staleTime: Infinity });
+      return <SelectionSubmitBar slug="g" state={data} used={0} />;
+    };
+    render(<QueryClientProvider client={client}><Bar /></QueryClientProvider>);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+    const confirm = screen.getByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(confirm).toBeDisabled());
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Photos still marked as rejected');
+
+    answer(fresh);
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(screen.getByRole('dialog')).toHaveTextContent('Photos still marked as rejected: 2');
   });
 
   it('says so when the request never got an answer', async () => {

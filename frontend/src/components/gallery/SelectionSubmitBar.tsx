@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle, Heart, Lock, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -97,6 +97,11 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
     // Whatever happened, the server knows the state.
     onSettled: () => queryClient.invalidateQueries({ queryKey: selectionStateKey(slug) }),
   });
+
+  // The dialog names the counts and warns about rejected photos. Opening it
+  // asks the server again, and until that answer is in, the numbers on show
+  // may predate the guest's last decisions: nothing is confirmed on them.
+  const refreshing = useIsFetching({ queryKey: selectionStateKey(slug) }) > 0;
 
   const closeDialog = () => {
     if (!mutation.isPending) setConfirming(null);
@@ -244,6 +249,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
                 variant="primary"
                 size="sm"
                 isLoading={mutation.isPending}
+                disabled={refreshing}
                 onClick={() => mutation.mutate(confirming)}
               >
                 {isApproval
