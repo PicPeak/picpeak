@@ -462,6 +462,33 @@ describe('passwordless login', () => {
     mockVerifyAuthentication.mockReset();
   });
 
+  // A restore replaces revoked_tokens, so a challenge spent before it is no
+  // longer on record; the cutoff the restore publishes is what still refuses it.
+  it('refuses a challenge issued before a restore, even when its use is no longer on record', async () => {
+    const sessionCutoff = require('../../src/utils/sessionCutoff');
+    const admin = await seedAdmin();
+    await addPasskey(admin, 'cred-restore');
+    const cookie = cookieOf(await loginOptions());
+    accept();
+    expect((await loginVerify(cookie, { response: { id: 'cred-restore' } })).status).toBe(200);
+
+    const { jti } = jwt.decode(cookie.split('=')[1]);
+    expect(await db('revoked_tokens').where({ token_id: jti }).del()).toBe(1);
+    await sessionCutoff.setSessionsValidAfter(sessionCutoff.nextSessionCutoff());
+    try {
+      accept();
+      const replay = await loginVerify(cookie, { response: { id: 'cred-restore' } });
+      expect(replay.status).toBe(400);
+      expect(replay.body.code).toBe('PASSKEY_CHALLENGE_INVALID');
+      expect(replay.headers['set-cookie'].some((c) => c.startsWith('admin_token='))).toBe(false);
+      expect(await db('revoked_tokens').where({ token_id: jti }).first()).toBeUndefined();
+    } finally {
+      await db('app_settings').where({ setting_key: sessionCutoff.CUTOFF_KEY }).del();
+      sessionCutoff._resetCache();
+      mockVerifyAuthentication.mockReset();
+    }
+  });
+
   it('rejects a missing challenge and a registration challenge', async () => {
     const admin = await seedAdmin();
     await addPasskey(admin, 'cred-purpose');

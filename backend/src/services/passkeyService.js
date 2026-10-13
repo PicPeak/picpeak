@@ -32,6 +32,7 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { buildCookieOptionsWithExpiry, buildClearCookieOptions } = require('../utils/tokenUtils');
+const { isTokenBeforeCutoff } = require('../utils/sessionCutoff');
 
 const TABLE = 'admin_webauthn_credentials';
 const RP_NAME = 'PicPeak';
@@ -133,6 +134,10 @@ async function takeChallenge(req, res, purpose) {
     || typeof payload.c !== 'string' || !payload.jti) {
     throw invalid();
   }
+  // A restore or rollback replaces revoked_tokens, so a challenge spent before
+  // it may no longer be on record. The cutoff it publishes refuses those, like
+  // every session issued before it.
+  if (await isTokenBeforeCutoff(payload)) throw invalid();
 
   // Single use on every replica: the unique index on token_id refuses the
   // second insert. Any failure here fails closed.
@@ -272,7 +277,11 @@ async function finishRegistration(req, res, admin, response, name) {
   try {
     id = await db.transaction(async (trx) => {
       // Re-checked with the insert: two verify calls must not both pass a cap
-      // that was only read at the options step.
+      // that was only read at the options step. The count alone does not
+      // serialize them on PostgreSQL (READ COMMITTED: both would count nine
+      // and both insert), so they queue on the account row first. SQLite has
+      // one writer, and knex drops the lock clause there.
+      await trx('admin_users').where('id', admin.id).forUpdate().first();
       if (await countForAdmin(admin.id, trx) >= MAX_PASSKEYS_PER_ADMIN) {
         throw new PasskeyError('PASSKEY_LIMIT', `You can register at most ${MAX_PASSKEYS_PER_ADMIN} passkeys`, 409);
       }
