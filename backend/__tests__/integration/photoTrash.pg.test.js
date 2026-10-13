@@ -38,6 +38,7 @@ pg('PostgreSQL photo trash', () => {
       table.string('media_type'); table.bigInteger('size_bytes'); table.string('thumbnail_path'); table.string('hero_path');
       table.string('preview_path'); table.string('web_path'); table.string('watermark_path'); table.string('source_origin');
       table.string('external_relpath'); table.string('moderation_status');
+      table.string('hls_status'); table.string('hls_path');
     });
     await db('events').insert({ id: event.id, slug: event.slug });
 
