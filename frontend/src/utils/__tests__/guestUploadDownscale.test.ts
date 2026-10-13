@@ -113,6 +113,15 @@ describe('readExifCaptureDate', () => {
     expect(() => readExifCaptureDate(pointerAsDouble)).toThrow();
   });
 
+  it('cannot tell when an entry beside the date has no TIFF type', () => {
+    const bytes = jpegWithDates({ [DATE_TIME_ORIGINAL]: '2024:05:01 09:10:11', [CREATE_DATE]: '2023:05:01 09:10:11' }, { app0: false });
+    // TIFF at 12, IFD0 (one entry) at 20, Exif IFD at 38: its second entry is CreateDate.
+    const view = new DataView(bytes.buffer);
+    expect(view.getUint16(38 + 2 + 12, true)).toBe(CREATE_DATE);
+    view.setUint16(38 + 2 + 12 + 2, 14, true);
+    expect(() => readExifCaptureDate(bytes)).toThrow();
+  });
+
   it('cannot tell for another format or no bytes', () => {
     expect(() => readExifCaptureDate(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toThrow();
     expect(() => readExifCaptureDate(new Uint8Array())).toThrow();
@@ -142,6 +151,11 @@ describe('inspectPng', () => {
   it('reads the eXIf date ahead of or behind the image data', () => {
     expect(inspectPng(png(['IHDR', 13], ['eXIf', exif], ['IDAT', 40], ['IEND', 0])).capturedAt).toBe('2024:05:01 09:10:11');
     expect(inspectPng(png(['IHDR', 13], ['IDAT', 40], ['IDAT', 40], ['eXIf', exif], ['IEND', 0])).capturedAt).toBe('2024:05:01 09:10:11');
+  });
+
+  it('reads the chunk in another letter case and behind IEND, where the server finds it too', () => {
+    expect(inspectPng(png(['IHDR', 13], ['exIf', exif], ['IDAT', 40], ['IEND', 0])).capturedAt).toBe('2024:05:01 09:10:11');
+    expect(inspectPng(png(['IHDR', 13], ['IDAT', 40], ['IEND', 0], ['eXIf', exif])).capturedAt).toBe('2024:05:01 09:10:11');
   });
 
   it('sees acTL behind a chunk of any size', () => {

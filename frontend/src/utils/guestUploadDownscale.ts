@@ -48,7 +48,8 @@ const readBytes = (blob: Blob): Promise<Uint8Array> => new Promise((resolve, rej
 
 /**
  * Animation and capture date of a whole PNG. The whole file, because eXIf may
- * sit behind the image data and a large text chunk may sit ahead of acTL.
+ * sit behind the image data (the server's reader takes it in any letter case,
+ * and behind IEND too) and a large text chunk may sit ahead of acTL.
  * Throws when the chunks cannot be followed to the image data.
  */
 export function inspectPng(bytes: Uint8Array): Inspection {
@@ -64,11 +65,10 @@ export function inspectPng(bytes: Uint8Array): Inspection {
     // canvas would keep the first frame only.
     if (chunk === 'acTL' && !seenData) return { animated: true, capturedAt: null };
     if (chunk === 'IDAT') seenData = true;
-    if (chunk === 'eXIf' && !seenExif) {
+    if (chunk.toLowerCase() === 'exif' && !seenExif) {
       seenExif = true;
       capturedAt = dateFromTiff(view, offset + 8, offset + 8 + length);
     }
-    if (chunk === 'IEND') break;
     offset += 12 + length;
   }
   if (!seenData) return undecidable();
@@ -125,25 +125,29 @@ function dateFromTiff(view: DataView, start: number, end: number): string | null
   const little = byteOrder === 0x4949;
   if (view.getUint16(start + 2, little) !== 42) return undecidable();
 
-  // Offset of a tag's 12-byte entry within one IFD, or null.
+  // Offset of a tag's 12-byte entry within one IFD, or null. An entry of a
+  // type outside the TIFF ones makes the server's reader give up on the IFD.
   const findEntry = (ifdOffset: number, tag: number): number | null => {
     const ifd = start + ifdOffset;
     if (ifdOffset < 8 || ifd + 2 > end) return undecidable();
     const count = view.getUint16(ifd, little);
     if (ifd + 2 + count * 12 > end) return undecidable();
+    let found: number | null = null;
     for (let index = 0; index < count; index++) {
       const entry = ifd + 2 + index * 12;
-      if (view.getUint16(entry, little) === tag) return entry;
+      const type = view.getUint16(entry + 2, little);
+      if (type < 1 || type > 12) return undecidable();
+      if (found === null && view.getUint16(entry, little) === tag) found = entry;
     }
-    return null;
+    return found;
   };
 
   // IFD0 → Exif sub-IFD (0x8769) → DateTimeOriginal (0x9003), CreateDate
   // (0x9004); ModifyDate (0x0132) is in IFD0 itself.
   const ifd0 = view.getUint32(start + 4, little);
   const exifPointer = findEntry(ifd0, 0x8769);
-  // The pointer is one LONG (or IFD) held in the entry itself.
-  if (exifPointer !== null && (![4, 13].includes(view.getUint16(exifPointer + 2, little)) || view.getUint32(exifPointer + 4, little) !== 1)) {
+  // The pointer is one LONG held in the entry itself.
+  if (exifPointer !== null && (view.getUint16(exifPointer + 2, little) !== 4 || view.getUint32(exifPointer + 4, little) !== 1)) {
     return undecidable();
   }
   const exifIfd = exifPointer === null ? null : view.getUint32(exifPointer + 8, little);
