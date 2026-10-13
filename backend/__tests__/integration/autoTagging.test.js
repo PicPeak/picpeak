@@ -34,9 +34,13 @@ jest.mock('../../src/services/imageProcessor', () => ({
   ensureThumbnail: (...args) => mockEnsureThumbnail(...args),
 }));
 const mockStorageGet = jest.fn();
+const mockStorageStat = jest.fn();
 jest.mock('../../src/services/storage', () => ({
   ...jest.requireActual('../../src/services/storage'),
-  getStorage: () => ({ get: (...args) => mockStorageGet(...args) }),
+  getStorage: () => ({
+    get: (...args) => mockStorageGet(...args),
+    stat: (...args) => mockStorageStat(...args),
+  }),
 }));
 
 const request = require('supertest');
@@ -118,6 +122,7 @@ beforeEach(async () => {
   mockTagImage.mockReset().mockResolvedValue({ model_version: 'test', tags: [] });
   mockEnsureThumbnail.mockReset().mockImplementation(async (photo) => photo.thumbnail_path);
   mockStorageGet.mockReset().mockResolvedValue(Buffer.from('thumbnail-bytes'));
+  mockStorageStat.mockReset().mockResolvedValue(null);
   await db('photos').whereNotNull('tag_status').update({ tag_status: null, tag_attempt_id: null });
   await setFlag(true);
 });
@@ -242,6 +247,56 @@ describe('tag queue state machine', () => {
 
     expect(await tagQueue.runClaimed(await claim(photoId))).toBe('failed');
     expect(mockTagImage).not.toHaveBeenCalled();
+  });
+
+  // The image pipeline reports these three the way it reports a broken
+  // file: no thumbnail. A failed row is never retried, so none may fail it.
+  describe('a missing thumbnail that is not the photo\'s fault', () => {
+    it('retries when the storage backend is away while it is rebuilt', async () => {
+      const eventId = await mkEvent();
+      const photoId = await mkPhoto(eventId, { thumbnail_path: null });
+      mockEnsureThumbnail.mockResolvedValue(null);
+      mockStorageStat.mockRejectedValue(Object.assign(new Error('S3 timed out'), { name: 'TimeoutError' }));
+
+      expect(await tagQueue.runClaimed(await claim(photoId))).toBe('retry');
+      expect((await photoRow(photoId)).tag_status).toBe('pending');
+    });
+
+    it('parks an external photo when opening its source throws on a detached mount', async () => {
+      const eventId = await mkEvent({ source_mode: 'reference', external_path: `/nonexistent-mount-${seq}` });
+      const photoId = await mkPhoto(eventId, {
+        thumbnail_path: null, source_origin: 'reference', external_relpath: 'a.dng',
+      });
+      mockEnsureThumbnail.mockRejectedValue(Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' }));
+
+      expect(await tagQueue.runClaimed(await claim(photoId))).toBe('parked');
+      expect((await photoRow(photoId)).tag_status).toBe('processing');
+    });
+
+    it('returns the photo to the queue when its gallery was archived under the claim', async () => {
+      const eventId = await mkEvent();
+      const photoId = await mkPhoto(eventId);
+      const claimed = await claim(photoId);
+      mockStorageGet.mockImplementation(async () => {
+        // archiveEvent: the flag first, then the thumbnails go.
+        await db('events').where({ id: eventId }).update({ is_archived: true });
+        throw Object.assign(new Error('NoSuchKey'), { code: 'ENOENT' });
+      });
+
+      expect(await tagQueue.runClaimed(claimed)).toBe('requeued');
+      const row = await photoRow(photoId);
+      expect([row.tag_status, row.tag_attempt_id, row.tag_error]).toEqual(['pending', null, null]);
+      expect(await tagQueue.claimNextPhoto()).toBeNull();
+    });
+
+    it('still fails a photo whose thumbnail cannot be read for its own reasons', async () => {
+      const eventId = await mkEvent();
+      const photoId = await mkPhoto(eventId);
+      mockStorageGet.mockRejectedValue(new Error('corrupt object'));
+
+      expect(await tagQueue.runClaimed(await claim(photoId))).toBe('failed');
+      expect((await photoRow(photoId)).tag_error).toBe('corrupt object');
+    });
   });
 
   it('keeps nothing when the photo was reset while the sidecar worked', async () => {

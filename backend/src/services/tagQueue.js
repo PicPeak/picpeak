@@ -90,7 +90,7 @@ function releaseToPending(claimed) {
  * reached (the row is 'pending' again and the caller backs off), 'parked'
  * when the image worker said "not now" while rebuilding the thumbnail or
  * the photo's external source is not mounted, and
- * otherwise the photo's outcome: done | skipped | failed.
+ * otherwise the photo's outcome: done | skipped | failed | requeued.
  */
 async function runClaimed(claimed) {
   try {

@@ -17,6 +17,8 @@ const { ensureThumbnail } = require('./imageProcessor');
 // tagQueue, which is the only layer that knows to retry rather than fail.
 const { tagImage } = require('./faceClient');
 const { isEnabledForEvent } = require('./tagSettings');
+const { isStorageUnavailableError } = require('./storage/storageErrors');
+const { isTransient } = require('./imageResourcePolicy');
 
 // The sidecar answers with keys from its fixed vocabulary. Anything else is
 // dropped rather than stored: the key ends up in a guest payload and in a
@@ -92,7 +94,8 @@ function settle(claimed, status, error = null) {
 
 /**
  * Tag one claimed photo (the row tagQueue.claimNextPhoto returned). Returns
- * `{ status }`: done | skipped | failed.
+ * `{ status }`: done | skipped | failed, or requeued when the gallery was
+ * archived under the claim.
  *
  * Throws SidecarUnavailableError when the sidecar is down and a storage
  * error when the backend is unreachable; the caller returns the row to
@@ -119,16 +122,43 @@ async function processPhotoTags(claimed) {
     return { status: 'skipped' };
   }
 
-  const thumbnailKey = await ensureThumbnail(photo);
-  if (!thumbnailKey) {
-    // ensureThumbnail answers null for a missing file and for a missing
-    // mount alike; only the first is this photo's fault.
+  let buffer = null;
+  let thumbnailError = null;
+  try {
+    const thumbnailKey = await ensureThumbnail(photo);
+    if (thumbnailKey) buffer = await streamToBuffer(await getStorage().get(thumbnailKey));
+  } catch (err) {
+    // The two "not now" kinds tagQueue already knows what to do with.
+    if (isStorageUnavailableError(err) || isTransient(err)) throw err;
+    thumbnailError = err;
+  }
+  if (!buffer) {
+    // No thumbnail, by a null or by an error. That fails the photo only when
+    // it is the photo's fault, and the image pipeline reports three outages
+    // the same way as a broken file. A failed row is not retried, so each is
+    // ruled out first.
+    //
+    // 1. Storage: generateThumbnail logs a failed upload and answers null.
+    //    Asking the backend anything throws while it is away.
+    await getStorage().stat(photo.thumbnail_path || `thumbnails/thumb_${photo.filename}`).catch((err) => {
+      if (isStorageUnavailableError(err)) throw err;
+    });
+    // 2. An external source whose mount is not attached.
     const unreachable = await require('./faceProcessor').externalSourceUnreachable(photo);
     if (unreachable) throw new TagSourceUnreachableError(photoId, unreachable);
+    // 3. The gallery was archived after this claim: its files are in the
+    //    archive now. Back to the queue, which leaves archived galleries
+    //    alone until they are restored.
+    const { is_archived: archived } = (await db('events').where({ id: photo.event_id }).first('is_archived')) || {};
+    if (archived === true || archived === 1) {
+      await claimGuard(claimed).update({ tag_status: 'pending', tag_started_at: null, tag_attempt_id: null });
+      return { status: 'requeued' };
+    }
+
+    if (thumbnailError) throw thumbnailError;
     await settle(claimed, 'failed', 'No thumbnail to tag');
     return { status: 'failed' };
   }
-  const buffer = await streamToBuffer(await getStorage().get(thumbnailKey));
 
   const result = await tagImage(buffer, photo.filename || 'photo.jpg');
   const tags = sanitizeTags(result?.tags);
