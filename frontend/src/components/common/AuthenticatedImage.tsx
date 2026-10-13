@@ -155,20 +155,26 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // Both fetches rejected (not a decode failure of a 200), with a fallback.
   const fetchFailedRef = useRef(false);
   const imageKeyRef = useRef<string | undefined>(undefined);
+  // The retried `src` that took the stand-in's place and has yet to decode.
+  const swappedInUrlRef = useRef<string | null>(null);
   const dropStandIn = useCallback(() => {
     if (standInUrlRef.current) URL.revokeObjectURL(standInUrlRef.current);
     standInUrlRef.current = null;
+    swappedInUrlRef.current = null;
   }, []);
   useEffect(() => dropStandIn, [dropStandIn]);
   // A retried `src` that arrived is only known to be good once it decodes, so
   // the stand-in's blob outlives the swap: released when `src` has loaded,
-  // put back on screen when it will not decode. That answer is final.
+  // put back on screen when it will not decode. That answer is final. Both
+  // act only on the URL that was swapped in: a canvas decode of the previous
+  // image can still report after the next image's stand-in has been fetched.
   const srcDecoded = useCallback((url: string) => {
-    if (standInUrlRef.current && standInUrlRef.current !== url) dropStandIn();
+    if (swappedInUrlRef.current === url) dropStandIn();
   }, [dropStandIn]);
   const backToStandIn = useCallback((url: string) => {
     const kept = standInUrlRef.current;
-    if (!kept || kept === url) return false;
+    if (!kept || swappedInUrlRef.current !== url) return false;
+    swappedInUrlRef.current = null;
     attemptsRef.current = MAX_RETRIES;
     setStandIn(true);
     setImageSrc(kept);
@@ -332,9 +338,11 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
           setError(false);
           fetchFailedRef.current = false;
           if (standInUrlRef.current) {
+            // The canvas keeps the stand-in's pixels, and stays visible,
+            // until the new image has been drawn over them.
+            swappedInUrlRef.current = primaryUrl;
             setStandIn(false);
             setCanvasFailed(false);
-            setCanvasReady(false);
           }
         }
       } catch (err) {

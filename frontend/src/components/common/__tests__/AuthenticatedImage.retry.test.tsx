@@ -325,6 +325,68 @@ describe('AuthenticatedImage retry', () => {
       expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
     });
 
+    describe('drawn to a canvas', () => {
+      /** Every hidden Image the canvas path creates; tests fire their load. */
+      let created: HTMLImageElement[];
+      const load = (img: HTMLImageElement) => img.onload?.(new Event('load'));
+      beforeEach(() => {
+        created = [];
+        const RealImage = globalThis.Image;
+        vi.stubGlobal('Image', class extends RealImage {
+          constructor() {
+            super();
+            created.push(this as unknown as HTMLImageElement);
+            Object.defineProperty(this, 'complete', { get: () => true });
+            Object.defineProperty(this, 'naturalWidth', { get: () => 10 });
+            Object.defineProperty(this, 'naturalHeight', { get: () => 10 });
+          }
+        });
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+          .mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+      });
+      afterEach(() => vi.restoreAllMocks());
+
+      it('keeps the drawn fallback visible until the retried src has decoded', async () => {
+        const fetchMock = byUrl({ preview: [status(503), ok], thumb: [ok] });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" useCanvasRendering />);
+        await flush();
+        act(() => load(created[0]));
+        expect(container.querySelector('canvas')?.style.opacity).toBe('1');
+
+        await advance(2000); await flush();
+        expect(calls(fetchMock, '/preview')).toBe(2);
+        expect(created).toHaveLength(2);
+        // The preview's bytes are here but not decoded: the thumbnail stays.
+        expect(container.querySelector('canvas')?.style.opacity).toBe('1');
+        expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:mock-1');
+
+        act(() => load(created[1]));
+        expect(container.querySelector('canvas')?.style.opacity).toBe('1');
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-1');
+      });
+
+      it('does not let a late decode of the previous image release the new fallback', async () => {
+        const fetchMock = byUrl({ preview: [ok, status(404)], thumb: [ok] });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const { rerender } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" useCanvasRendering />);
+        await flush();
+        expect(created).toHaveLength(1);
+
+        rerender(<AuthenticatedImage src="/api/gallery/demo/photo/2/preview" fallbackSrc="/api/gallery/demo/thumbnail/2" alt="t" useCanvasRendering />);
+        // Inside one act, so the old Image's load lands after the new
+        // fallback was fetched and before React has committed it.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+          load(created[0]);
+        });
+        expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+        expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:mock-2');
+      });
+    });
+
     it('does not arm the next retry while the current one is still in flight', async () => {
       let release: (value: unknown) => void = () => {};
       const pending = () => new Promise((resolve) => { release = resolve; });
