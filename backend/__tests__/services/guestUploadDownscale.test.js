@@ -37,15 +37,37 @@ describe('client capture date (issue 1733)', () => {
     expect(date).toEqual(new Date(2026, 9, 11, 18, 30, 5));
   });
 
-  test('keeps a wall time the server zone skips, as exifr does for the file', () => {
-    const zone = process.env.TZ;
-    process.env.TZ = 'Europe/Berlin';
-    try {
-      // 02:30 does not exist in Berlin on this day; a camera elsewhere wrote it.
-      expect(parseClientCaptureDate('2026:03:29 02:30:00', now)).toEqual(new Date(2026, 2, 29, 2, 30, 0));
-    } finally {
-      if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
-    }
+  // In a child process: the zone of a running jest worker cannot be changed.
+  // Prints the instant of the form field and of the same text read by exifr
+  // from a file, as the server would have for the original.
+  const instantsIn = (zone, text) => {
+    const script = `
+      const sharp = require('sharp');
+      const exifr = require('exifr');
+      const { parseClientCaptureDate } = require('./src/services/guestUploadDownscale');
+      (async () => {
+        const jpeg = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#888' } })
+          .withExif({ IFD2: { DateTimeOriginal: ${JSON.stringify(text)} } }).jpeg().toBuffer();
+        const fromFile = (await exifr.parse(jpeg, { pick: ['DateTimeOriginal'] })).DateTimeOriginal;
+        const fromField = parseClientCaptureDate(${JSON.stringify(text)});
+        console.log(JSON.stringify({ fromFile: fromFile.getTime(), fromField: fromField && fromField.getTime() }));
+      })();`;
+    const out = require('child_process').execFileSync(process.execPath, ['-e', script], {
+      cwd: require('path').join(__dirname, '../..'),
+      env: { ...process.env, TZ: zone },
+    });
+    return JSON.parse(out.toString());
+  };
+
+  test.each([
+    // 02:30 does not exist in Berlin on this day; a camera elsewhere wrote it.
+    ['Europe/Berlin', '2026:03:29 02:30:00'],
+    // Gaza moved its clock at one minute past midnight.
+    ['Asia/Gaza', '2010:03:27 01:15:45'],
+    ['UTC', '2024:05:01 09:10:11'],
+  ])('lands on the instant exifr reads from the file (%s, %s)', (zone, text) => {
+    const { fromFile, fromField } = instantsIn(zone, text);
+    expect(fromField).toBe(fromFile);
   });
 
   test('accepts the present moment and refuses the future', () => {

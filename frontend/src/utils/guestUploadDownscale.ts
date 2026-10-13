@@ -142,15 +142,22 @@ function dateFromTiff(view: DataView, start: number, end: number): string | null
   // (0x9004); ModifyDate (0x0132) is in IFD0 itself.
   const ifd0 = view.getUint32(start + 4, little);
   const exifPointer = findEntry(ifd0, 0x8769);
+  // The pointer is one LONG (or IFD) held in the entry itself.
+  if (exifPointer !== null && (![4, 13].includes(view.getUint16(exifPointer + 2, little)) || view.getUint32(exifPointer + 4, little) !== 1)) {
+    return undecidable();
+  }
   const exifIfd = exifPointer === null ? null : view.getUint32(exifPointer + 8, little);
   const dateEntry = (exifIfd === null ? null : findEntry(exifIfd, 0x9003) ?? findEntry(exifIfd, 0x9004))
     ?? findEntry(ifd0, 0x0132);
   if (dateEntry === null) return null;
 
-  // An ASCII value of 20 bytes stored at an offset.
-  if (view.getUint16(dateEntry + 2, little) !== 2 || view.getUint32(dateEntry + 4, little) < 19) return undecidable();
+  // An ASCII value stored at an offset: the 19 characters, with or without
+  // the closing NUL. Anything longer is not the plain date read below.
+  const count = view.getUint32(dateEntry + 4, little);
+  if (view.getUint16(dateEntry + 2, little) !== 2 || (count !== 19 && count !== 20)) return undecidable();
   const valueAt = start + view.getUint32(dateEntry + 8, little);
-  if (valueAt + 19 > end) return undecidable();
+  if (valueAt + count > end) return undecidable();
+  if (count === 20 && view.getUint8(valueAt + 19) !== 0) return undecidable();
   let text = '';
   for (let index = 0; index < 19; index++) text += String.fromCharCode(view.getUint8(valueAt + index));
   return isExifDate(text) ? text : undecidable();

@@ -52,7 +52,12 @@ function parseClientCaptureDate(raw, now = new Date()) {
     || utc.getUTCHours() !== hour || utc.getUTCMinutes() !== minute || utc.getUTCSeconds() !== second) {
     return null;
   }
-  const date = new Date(year, month - 1, day, hour, minute, second);
+  // Built the way exifr builds it, midnight first, so both land on the same
+  // instant on a day the server's zone changes its clock at midnight.
+  const date = new Date(year, month - 1, day);
+  date.setHours(hour);
+  date.setMinutes(minute);
+  date.setSeconds(second);
   return date > MIN_CAPTURE_DATE && date <= now ? date : null;
 }
 

@@ -103,6 +103,16 @@ describe('readExifCaptureDate', () => {
     expect(() => readExifCaptureDate(jpegWithDates({ [DATE_TIME_ORIGINAL]: value, [CREATE_DATE]: '2023:05:01 09:10:11' }))).toThrow();
   });
 
+  it('cannot tell for a date longer than the plain shape, or an Exif pointer of another type', () => {
+    const longer = jpegWithExifDate('2024:05:01 09:10:11Z');
+    expect(() => readExifCaptureDate(longer)).toThrow();
+
+    const pointerAsDouble = jpegWithExifDate('2024:05:01 09:10:11', { app0: false });
+    // SOI(2) + APP1 header(4) + "Exif\0\0"(6) + TIFF header(8) + entry count(2), then the pointer entry's type.
+    new DataView(pointerAsDouble.buffer).setUint16(22 + 2, 12, true);
+    expect(() => readExifCaptureDate(pointerAsDouble)).toThrow();
+  });
+
   it('cannot tell for another format or no bytes', () => {
     expect(() => readExifCaptureDate(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toThrow();
     expect(() => readExifCaptureDate(new Uint8Array())).toThrow();
