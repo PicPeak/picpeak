@@ -179,7 +179,7 @@ async function lockClaim(trx, row) {
  * possible (some network mounts, another device) an exclusive copy is.
  * Between the link and the unlink the file has both names: isSameObject.
  */
-async function moveIntoPlace(storage, fromKey, toKey) {
+async function moveIntoPlace(storage, fromKey, toKey, beforeUnlink) {
   const from = storage.resolveLocalPath(fromKey);
   const to = storage.resolveLocalPath(toKey);
   const taken = () => trashError('RESTORE_TARGET_EXISTS', `A file has appeared at ${toKey}; it was not overwritten`);
@@ -198,6 +198,11 @@ async function moveIntoPlace(storage, fromKey, toKey) {
       throw copyError;
     }
   }
+  // A copy of a large file on a slow mount can outlast the claim: the trash
+  // name goes only while the claim still holds (as between copy and delete
+  // on S3). Otherwise the sweep has settled the row with the file under
+  // trash_key, and that name is the one that must stay.
+  await beforeUnlink();
   await fs.unlink(from);
 }
 
@@ -220,7 +225,7 @@ async function moveClaimed(row, fromKey, toKey, { intoPlace = false } = {}) {
   const storage = getStorage();
   await holdClaim(row);
   if (storage.kind() !== 's3') {
-    if (intoPlace) await moveIntoPlace(storage, fromKey, toKey);
+    if (intoPlace) await moveIntoPlace(storage, fromKey, toKey, () => holdClaim(row));
     else await storage.rename(fromKey, toKey);
     return;
   }
@@ -300,6 +305,22 @@ async function detachChildren(trx, photo, event) {
   return children;
 }
 
+function storageKeyOrNull(event, photo) {
+  try { return resolvePhotoStorageKey(event, photo); } catch { return null; }
+}
+
+/**
+ * A trashing found its photo replaced (commitTrash): the file under
+ * trash_key is the original the replacement did away with. It goes, as the
+ * replacement meant it to, and the claim with it; the photo stays in the
+ * gallery with its new file. For a caller that holds the claim.
+ */
+async function dropReplacedOriginal(row) {
+  await holdClaim(row);
+  if (row.trash_key) await getStorage().delete(row.trash_key);
+  await db('photo_trash').where({ id: row.id, state: 'pending', state_changed_at: row.state_changed_at }).del();
+}
+
 /**
  * Step 3 of a trashing: the photo row and its children go, the trash row
  * comes to rest, in one transaction.
@@ -316,7 +337,14 @@ async function commitTrash(row, photo, event) {
     // FOR UPDATE on PostgreSQL, here and for the feedback: a guest merge that
     // is rewriting these rows finishes first, and the snapshot holds what it
     // wrote (mergeGuests).
-    const live = (await trx('photos').where({ id: row.photo_id, event_id: row.event_id }).forUpdate().first()) || photo;
+    const current = await trx('photos').where({ id: row.photo_id, event_id: row.event_id }).forUpdate().first();
+    // The file under trash_key came from original_key. A replacement that
+    // finished since the move gave the photo another file: its row is not
+    // this trashing's to take, and row and file would no longer match.
+    if (current && row.original_key && storageKeyOrNull(event, current) !== row.original_key) {
+      throw trashError('PHOTO_CHANGED', `Photo ${row.photo_id} was replaced while it was being deleted`);
+    }
+    const live = current || photo;
     const children = await detachChildren(trx, live, event);
     await trx('photos').where({ id: row.photo_id, event_id: row.event_id }).del();
     await trx('photo_trash').where({ id: row.id }).update({
@@ -356,7 +384,13 @@ async function undoPending(row) {
     } else if (inTrash) {
       if (inPlace || !(await db('photos').where({ id: row.photo_id, event_id: row.event_id }).first('id'))) {
         const event = await db('events').where({ id: row.event_id }).first();
-        await commitTrash(row, JSON.parse(row.photo_row), event || { id: row.event_id });
+        try {
+          await commitTrash(row, JSON.parse(row.photo_row), event || { id: row.event_id });
+        } catch (error) {
+          if (error.code !== 'PHOTO_CHANGED') throw error;
+          await dropReplacedOriginal(row);
+          return false;
+        }
         return true;
       }
       // Tagged: should this stop between copy and delete, the next attempt
@@ -497,7 +531,8 @@ async function trashPhoto(event, photo, admin, retentionDays) {
       held = false;
     }
     try {
-      if (held) trashedAfterAll = await undoPending(row);
+      if (held && error.code === 'PHOTO_CHANGED') await dropReplacedOriginal(row);
+      else if (held) trashedAfterAll = await undoPending(row);
       // Not this caller's any more: the sweep took the row over and settles
       // it, or the row went with its gallery.
       else await dropAbandonedTrashFile(row);
@@ -774,9 +809,13 @@ async function insertRestored(trx, event, row, columns, forEngine) {
   if (keepsId && trx.client.config.client === 'pg') {
     // An explicit id does not move a PostgreSQL sequence, and after a backup
     // restore the id can lie ahead of it: a later upload would collide.
+    // Moved with nextval, which only ever goes forward, once per id the
+    // sequence is behind: setval could set it back under an upload that took
+    // a value in between.
     await trx.raw(
-      'SELECT setval(seq, GREATEST(nextval(seq), (SELECT MAX(id) FROM photos))) FROM (SELECT pg_get_serial_sequence(?, ?) AS seq) s',
-      ['photos', 'id']
+      'SELECT count(nextval(s.seq)) FROM (SELECT pg_get_serial_sequence(?, ?) AS seq) s, '
+      + 'generate_series(1, GREATEST(?::bigint - COALESCE(pg_sequence_last_value(s.seq::regclass), 0), 0))',
+      ['photos', 'id', photoId]
     );
   }
 
@@ -881,11 +920,13 @@ async function retakeRestore(claim, moved, lateCopyTag) {
     await holdClaim(claim);
     return;
   } catch (error) {
-    if (!moved || !lateCopyTag) throw error;
+    // On S3 the copy is known by its ETag; on local storage settleRestore
+    // compares the two files.
+    if (!moved || (getStorage().kind() === 's3' && !lateCopyTag)) throw error;
   }
   const retaken = {
     state: 'restoring', state_changed_at: nowIso(), original_key: claim.original_key,
-    restore_move_at: nowIso(), move_tag: lateCopyTag,
+    restore_move_at: nowIso(), move_tag: lateCopyTag || null,
   };
   const count = await db('photo_trash').where({ id: claim.id, state: 'trashed' }).update(retaken);
   if (count !== 1) throw trashError('TRASH_BUSY', `Trash row ${claim.id} was taken over by another process`);
@@ -991,6 +1032,12 @@ async function restorePhoto(event, row) {
       }
       if (!(await storage.stat(row.trash_key))) throw trashError('TRASH_FILE_MISSING', `The file of "${row.filename}" is no longer in the trash`);
       if (await storage.stat(targetKey)) throw trashError('RESTORE_TARGET_EXISTS', `The gallery already holds a file named like "${row.filename}"`);
+      // A photo row can name the place while its file is missing. The file
+      // must not go there: it would become that photo's.
+      const relative = targetKey.replace(/^events\/active\//, '');
+      if (await db('photos').where({ event_id: event.id }).whereIn('path', [relative, targetKey]).first('id')) {
+        throw trashError('RESTORE_CONFLICT', `"${row.filename}" is in the gallery again`);
+      }
       // On the row before the first byte moves: from here on a file at the
       // destination is this restore's to take back (settleRestore).
       await holdClaim(claim, { restore_move_at: nowIso() });

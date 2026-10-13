@@ -1272,6 +1272,105 @@ describe('photo trash (issue 1733)', () => {
       expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed' });
     });
 
+    describe('where hard links are not possible', () => {
+      let link;
+      beforeEach(() => {
+        link = jest.spyOn(fs.promises, 'link').mockRejectedValue(Object.assign(new Error('EXDEV'), { code: 'EXDEV' }));
+      });
+      afterEach(() => link.mockRestore());
+
+      it('restores with an exclusive copy', async () => {
+        const event = await mkEvent();
+        const photo = await mkPhoto(event);
+        expect((await del(event, photo)).status).toBe(200);
+        const row = await trashRowOf(photo.id);
+        expect((await restore(event, [row.id])).status).toBe(200);
+        expect(bytes(photo.key)).toMatch(/^original/);
+        expect(await storage.exists(row.trash_key)).toBe(false);
+      });
+
+      it('keeps the file in the trash when the sweep took the restore over while it copied', async () => {
+        const event = await mkEvent();
+        const photo = await mkPhoto(event);
+        expect((await del(event, photo)).status).toBe(200);
+        const row = await trashRowOf(photo.id);
+
+        // The copy outlasts the claim: the sweep removes it and returns the entry to the trash.
+        const copyFile = fs.promises.copyFile;
+        const spy = jest.spyOn(fs.promises, 'copyFile').mockImplementation(async (...args) => {
+          spy.mockRestore();
+          await copyFile(...args);
+          await age(row.id, 'restoring');
+          await photoTrash.purgeExpired();
+          expect(await storage.exists(photo.key)).toBe(false);
+        });
+        let res;
+        try {
+          res = await restore(event, [row.id]);
+        } finally {
+          spy.mockRestore();
+        }
+        expect(res.status).toBe(409);
+        // The one name the file has left was not unlinked.
+        expect(bytes(row.trash_key)).toMatch(/^original/);
+        expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed' });
+
+        expect((await restore(event, [row.id])).status).toBe(200);
+        expect(bytes(photo.key)).toMatch(/^original/);
+      });
+    });
+
+    it('does not put a file at a place a photo row names, even when that photo\'s file is missing', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      expect((await del(event, photo)).status).toBe(200);
+      const row = await trashRowOf(photo.id);
+      // Another photo under the same path, its file gone.
+      const otherId = firstId(await db('photos').insert({
+        event_id: event.id, filename: photo.filename, path: `${event.slug}/${photo.filename}`, type: 'individual',
+        uploaded_at: now(), processing_status: 'complete',
+      }).returning('id'));
+
+      const res = await restore(event, [row.id]);
+      expect(res.status).toBe(409);
+      expect(res.body.failed[0].code).toBe('RESTORE_CONFLICT');
+      expect(await storage.exists(photo.key)).toBe(false);
+      expect(bytes(row.trash_key)).toMatch(/^original/);
+      expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed' });
+      await db('photos').where({ id: otherId }).del();
+    });
+
+    it('leaves a photo that was replaced while it was being deleted, and drops the old original', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      await db('photo_feedback').insert({ photo_id: photo.id, event_id: event.id, feedback_type: 'like', guest_identifier: 'x' });
+      const newKey = `events/active/${event.slug}/replacement-${photo.id}.jpg`;
+      let trashKey;
+      // What replacePhoto does, between the move and the commit: a new file, the row pointed at it.
+      const rename = storage.rename.bind(storage);
+      const spy = jest.spyOn(storage, 'rename').mockImplementation(async (from, to) => {
+        spy.mockRestore();
+        trashKey = to;
+        await rename(from, to);
+        await storage.put(newKey, Buffer.from('the replacement'));
+        await db('photos').where({ id: photo.id }).update({ path: `${event.slug}/replacement-${photo.id}.jpg`, filename: `replacement-${photo.id}.jpg` });
+      });
+      const res = await del(event, photo);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('PHOTO_CHANGED');
+      // The photo is in the gallery with its new file and its feedback; nothing of the old one is left.
+      expect(await db('photos').where({ id: photo.id }).first()).toMatchObject({ filename: `replacement-${photo.id}.jpg` });
+      expect(await count('photo_feedback', { photo_id: photo.id })).toBe(1);
+      expect(bytes(newKey)).toBe('the replacement');
+      expect(await storage.exists(trashKey)).toBe(false);
+      expect(await storage.exists(photo.key)).toBe(false);
+      expect(await trashRowOf(photo.id)).toBeUndefined();
+
+      // And it can be deleted as what it is now.
+      expect((await del(event, photo)).body).toMatchObject({ trashed: 1 });
+      expect((await trashRowOf(photo.id)).original_key).toBe(newKey);
+    });
+
     it('lets one of two restores into the same place through', async () => {
       const event = await mkEvent();
       const first = await mkPhoto(event);
