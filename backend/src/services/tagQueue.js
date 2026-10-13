@@ -23,7 +23,7 @@ const crypto = require('crypto');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
-const { processPhotoTags, claimGuard } = require('./tagProcessor');
+const { processPhotoTags, claimGuard, TagSourceUnreachableError } = require('./tagProcessor');
 const { SidecarUnavailableError } = require('./faceClient');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { isTransient } = require('./imageResourcePolicy');
@@ -88,7 +88,8 @@ function releaseToPending(claimed) {
  *
  * Returns 'retry' when the sidecar or the storage backend could not be
  * reached (the row is 'pending' again and the caller backs off), 'parked'
- * when the image worker said "not now" while rebuilding the thumbnail, and
+ * when the image worker said "not now" while rebuilding the thumbnail or
+ * the photo's external source is not mounted, and
  * otherwise the photo's outcome: done | skipped | failed.
  */
 async function runClaimed(claimed) {
@@ -108,8 +109,9 @@ async function runClaimed(claimed) {
     // the next one, so it stays 'processing' and the janitor returns it
     // after TAG_PROCESSOR_STUCK_TIMEOUT_MS (what faceQueue does for a source
     // it cannot reach).
-    if (isTransient(err)) {
-      logger.warn(`tagQueue: photo ${claimed.id} deferred (${err.code})`);
+    // An external source that is not mounted is parked the same way.
+    if (isTransient(err) || err instanceof TagSourceUnreachableError) {
+      logger.warn(`tagQueue: photo ${claimed.id} deferred (${err.code || err.message})`);
       return 'parked';
     }
 

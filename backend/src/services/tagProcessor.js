@@ -32,6 +32,18 @@ class StaleTagScanError extends Error {
   }
 }
 
+/**
+ * No thumbnail could be made because the photo's external source (a NAS
+ * mount) is not there. Says nothing about the photo: tagQueue keeps the row
+ * claimed and the janitor returns it, as faceQueue does for the same outage.
+ */
+class TagSourceUnreachableError extends Error {
+  constructor(photoId, reason) {
+    super(`Tagging of photo ${photoId} deferred: ${reason}`);
+    this.name = 'TagSourceUnreachableError';
+  }
+}
+
 async function streamToBuffer(stream) {
   if (Buffer.isBuffer(stream)) return stream;
   const chunks = [];
@@ -109,6 +121,10 @@ async function processPhotoTags(claimed) {
 
   const thumbnailKey = await ensureThumbnail(photo);
   if (!thumbnailKey) {
+    // ensureThumbnail answers null for a missing file and for a missing
+    // mount alike; only the first is this photo's fault.
+    const unreachable = await require('./faceProcessor').externalSourceUnreachable(photo);
+    if (unreachable) throw new TagSourceUnreachableError(photoId, unreachable);
     await settle(claimed, 'failed', 'No thumbnail to tag');
     return { status: 'failed' };
   }
@@ -161,8 +177,12 @@ async function enqueueEvent(eventId, { onlyUntagged = false } = {}) {
     });
 
   if (onlyUntagged) {
+    // 'processing' too: a worker that read the switch as off a moment ago is
+    // about to settle its claim as 'skipped', after this backfill has been
+    // and gone. Re-queued, that claim is void (its id is cleared) and the
+    // photo is scanned under the new switch; at worst a scan runs twice.
     query.where(function () {
-      this.whereNull('tag_status').orWhereIn('tag_status', ['failed', 'skipped']);
+      this.whereNull('tag_status').orWhereIn('tag_status', ['failed', 'skipped', 'processing']);
     });
   }
 
@@ -208,4 +228,5 @@ async function getTagStatus(eventId) {
 
 module.exports = {
   processPhotoTags, claimGuard, enqueueEvent, purgePhotoTags, getTagStatus, sanitizeTags,
+  TagSourceUnreachableError,
 };

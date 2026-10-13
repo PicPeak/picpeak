@@ -55,11 +55,14 @@ module.exports = (router) => {
         const event = await loadOwnedEvent(req);
         if (!event) return res.status(404).json({ error: 'Event not found' });
 
-        const wasEnabled = tagSettings.isSwitchedOnForEvent(event);
         const nowEnabled = parseBooleanInput(req.body.enabled, false);
         await db('events').where({ id: event.id }).update({ auto_tagging_enabled: nowEnabled });
 
-        const queued = !wasEnabled && nowEnabled
+        // On every "on", not only on the off-to-on edge: if the backfill
+        // failed after the switch was written, repeating the request must
+        // finish it rather than find the switch on and queue nothing. Photos
+        // that are tagged or already waiting are left as they are.
+        const queued = nowEnabled
           ? await tagProcessor.enqueueEvent(event.id, { onlyUntagged: true })
           : 0;
 

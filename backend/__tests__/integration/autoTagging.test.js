@@ -380,6 +380,18 @@ describe('tag queue state machine', () => {
     expect((await tagQueue.claimNextPhoto()).id).toBe(next);
   });
 
+  it('parks an external photo whose source is not mounted instead of failing it', async () => {
+    const eventId = await mkEvent({ source_mode: 'reference', external_path: `/nonexistent-mount-${seq}` });
+    const photoId = await mkPhoto(eventId, {
+      tag_status: 'pending', thumbnail_path: null, source_origin: 'reference', external_relpath: 'a.jpg',
+    });
+    mockEnsureThumbnail.mockResolvedValue(null);
+
+    expect(await tagQueue.runClaimed(await tagQueue.claimNextPhoto())).toBe('parked');
+    const row = await photoRow(photoId);
+    expect([row.tag_status, row.tag_error]).toEqual(['processing', null]);
+  });
+
   it('the janitor returns only rows stuck past the timeout', async () => {
     const eventId = await mkEvent();
     const stuck = await mkPhoto(eventId, {
@@ -403,12 +415,20 @@ describe('tag queue state machine', () => {
     const uploading = await mkPhoto(eventId, { processing_status: 'pending' });
     const status = async (id) => (await photoRow(id)).tag_status;
 
-    expect(await tagProcessor.enqueueEvent(eventId, { onlyUntagged: true })).toBe(2);
+    // A claim made while the switch was off is about to be settled as
+    // 'skipped'; the backfill takes it back instead of missing it.
+    const midSkip = await claim(await mkPhoto(eventId));
+
+    expect(await tagProcessor.enqueueEvent(eventId, { onlyUntagged: true })).toBe(3);
     expect([await status(untouched), await status(failed), await status(done), await status(uploading)])
       .toEqual(['pending', 'pending', 'done', null]);
+    await db('events').where({ id: eventId }).update({ auto_tagging_enabled: false });
+    expect(await tagQueue.runClaimed(midSkip)).toBe('skipped');
+    await db('events').where({ id: eventId }).update({ auto_tagging_enabled: true });
+    expect(await status(midSkip.id)).toBe('pending');
     expect((await photoRow(failed)).tag_error).toBeNull();
 
-    expect(await tagProcessor.enqueueEvent(eventId)).toBe(3);
+    expect(await tagProcessor.enqueueEvent(eventId)).toBe(4);
     expect(await status(done)).toBe('pending');
     expect(await status(uploading)).toBeNull();
   });
@@ -536,7 +556,7 @@ describe('admin routes', () => {
 
   it('switching a gallery on queues its untagged photos and reports progress', async () => {
     const eventId = await mkEvent({ created_by: adminId, auto_tagging_enabled: false });
-    await mkPhoto(eventId);
+    const missed = await mkPhoto(eventId);
     await mkPhoto(eventId);
     await mkPhoto(eventId, { tag_status: 'done' });
 
@@ -555,6 +575,12 @@ describe('admin routes', () => {
     const after = await call('get', `/${eventId}/tags`);
     expect(after.body.enabled).toBe(true);
     expect(after.body.status).toMatchObject({ tagged: 1, total: 3, pending: 2, in_progress: true });
+
+    // Repeating "on" finishes a backfill that did not get through the first
+    // time, and leaves what is queued or tagged alone.
+    await db('photos').where({ id: missed }).update({ tag_status: null });
+    const again = await call('patch', `/${eventId}/tags`).send({ enabled: true });
+    expect(again.body).toEqual({ success: true, queued: 1 });
 
     // Switching it off queues nothing and deletes nothing.
     const off = await call('patch', `/${eventId}/tags`).send({ enabled: false });

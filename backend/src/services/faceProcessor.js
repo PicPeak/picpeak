@@ -443,5 +443,5 @@ async function purgePhotoFaces(photoId, trx = db) {
 
 module.exports = {
   processPhotoFaces, enqueueEvent, purgeEvent, purgePhotoFaces, StaleScanError,
-  TransientSourceError,
+  TransientSourceError, externalSourceUnreachable,
 };
