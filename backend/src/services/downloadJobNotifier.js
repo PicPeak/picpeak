@@ -126,6 +126,9 @@ async function request(job, recipient) {
   const outcome = await db.transaction(async (trx) => {
     if (trx.client.config.client === 'pg') {
       await trx.raw('SELECT pg_advisory_xact_lock(?, hashtext(?))', [ADDRESS_LOCK, email]);
+      // Event row before the guest and job rows this touches: the order
+      // gallery deletion takes them in (see notifyReady).
+      if (!(await trx('events').where({ id: job.event_id }).forShare().first('id'))) return 'gone';
     }
     // The caller's read of the owner may predate an erasure that has already
     // deleted this owner's rows; inserting now would bring the address back.
@@ -209,6 +212,12 @@ async function notifyReady(jobId) {
         available_hours: hoursLeft,
       };
       const queued = await db.transaction(async (trx) => {
+        // Event row first on PostgreSQL, the order gallery deletion takes
+        // (event, then the cascade down to these rows). Claiming first and
+        // letting the queue insert's foreign key reach for the event after
+        // could deadlock against it.
+        if (trx.client.config.client === 'pg'
+            && !(await trx('events').where({ id: event.id }).forShare().first('id'))) return false;
         const claimed = await trx('download_job_recipients')
           .where({ id: recipient.id }).whereNull('notified_at')
           .update({ notified_at: new Date().toISOString() });
