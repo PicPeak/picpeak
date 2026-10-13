@@ -196,6 +196,10 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     }),
   }, options => createUpload(Math.max(req.maxFileSizeBytes, req.maxVideoSizeBytes), options.maxFiles, options).array('photos', options.maxFiles),
   async (_session, reply) => {
+    // Each file's place among the request's `photos` parts, noted before the
+    // validation below drops any: a duplicate is reported by it, since two
+    // files of one request can share a name (issue 1733, C2).
+    (req.files || []).forEach((file, index) => { file.requestIndex = index; });
     let proceed = false;
     await validateUploadContent(req, reply, () => { proceed = true; });
     if (!proceed) return;
@@ -248,13 +252,23 @@ async function handleAdminPhotoUpload(req, res) {
         .first();
       const currentCount = parseInt(existingPhotoCount.count) || 0;
       let newFilesCount = (req.files && req.files.length) || 0;
-      // Subtract likely replacements from cap calculation
-      if (replaceByName && req.files) {
+      // Subtract likely replacements from cap calculation, and with
+      // detect_duplicates the files that will be skipped as duplicates: of
+      // the gallery, or of an earlier file of this request. Otherwise a batch
+      // that fits once they are skipped is refused, and a duplicate-only
+      // upload at the cap never gets its duplicate report. An estimate like
+      // the replacement count; insertPhotoWithinCap below is what holds the cap.
+      if ((replaceByName || detectDuplicates) && req.files) {
+        const seenHashes = new Set();
         for (const file of req.files) {
-          const candidate = await findReplacementCandidate(
+          const candidate = replaceByName ? await findReplacementCandidate(
             parseInt(eventId), file.originalname, { matchMode }
-          );
-          if (candidate && !candidate.ambiguous) newFilesCount--;
+          ) : null;
+          if (candidate && !candidate.ambiguous) { newFilesCount--; continue; }
+          if (!detectDuplicates) continue;
+          file.contentSha256 = await sha256File(file.path);
+          if (seenHashes.has(file.contentSha256) || await findDuplicate(event.id, file.contentSha256)) newFilesCount--;
+          seenHashes.add(file.contentSha256);
         }
       }
       if (currentCount + newFilesCount > event.photo_cap) {
@@ -405,11 +419,11 @@ async function handleAdminPhotoUpload(req, res) {
         // Hashed here, while the file is still local and before anything is
         // stored or queued: this response is the only place the uploader
         // hears about the file again. Same gallery only.
-        const contentSha256 = await sha256File(file.path);
+        const contentSha256 = file.contentSha256 || await sha256File(file.path);
         const existing = detectDuplicates ? await findDuplicate(event.id, contentSha256) : null;
         if (existing) {
           await fs.unlink(file.path).catch(() => {});
-          duplicates.push({ filename: file.originalname, duplicate_of: duplicateName(existing) });
+          duplicates.push({ index: file.requestIndex, filename: file.originalname, duplicate_of: duplicateName(existing) });
           continue;
         }
 
@@ -555,7 +569,8 @@ async function handleAdminPhotoUpload(req, res) {
       replacedCount: replacedPhotos.length,
       skippedReplacements,
       // Not stored: this gallery already holds the same bytes. Kept apart
-      // from `errors`, the uploader offers "upload anyway" for these. Always
+      // from `errors`, the uploader offers "upload anyway" for these; `index`
+      // is the file's place among the request's `photos` parts. Always
       // empty unless the request asked for detect_duplicates.
       duplicates,
       duplicateCount: duplicates.length,
@@ -2089,15 +2104,23 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
       return res.status(400).json(placementError);
     }
+    const detectDuplicates = detect_duplicates === true || detect_duplicates === 'true';
     const photoCap = photoCapOf(event);
+    let capRefusal = null;
     if (photoCap) {
       const currentCount = await countEventPhotos(event.id);
       if (currentCount + 1 > photoCap) {
-        await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
-        return res.status(400).json({
+        capRefusal = {
           error: `Photo cap exceeded. This event allows a maximum of ${photoCap} photos. Currently ${currentCount} photos exist, and you are trying to upload 1 more.`
-        });
+        };
       }
+    }
+    // With detect_duplicates a full gallery still merges first: a duplicate
+    // would not have been stored, so it is reported as one, and only another
+    // file is refused for the cap (below).
+    if (capRefusal && !detectDuplicates) {
+      await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
+      return res.status(400).json(capRefusal);
     }
 
     // Complete the chunked upload (merge chunks)
@@ -2107,8 +2130,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     // merged file is the first moment the whole content exists here, so this
     // is the earliest a large file can be recognised.
     const contentSha256 = await sha256File(mergedFile.path);
-    const existing = detect_duplicates === true || detect_duplicates === 'true'
-      ? await findDuplicate(mergedFile.eventId, contentSha256) : null;
+    const existing = detectDuplicates ? await findDuplicate(mergedFile.eventId, contentSha256) : null;
     if (existing) {
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
       return res.status(409).json({
@@ -2116,6 +2138,10 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
         code: 'DUPLICATE_PHOTO',
         duplicate_of: duplicateName(existing),
       });
+    }
+    if (capRefusal) {
+      await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
+      return res.status(400).json(capRefusal);
     }
 
     // Process the merged file as a regular upload

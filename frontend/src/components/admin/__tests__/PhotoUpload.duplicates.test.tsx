@@ -97,7 +97,7 @@ describe('PhotoUpload duplicates', () => {
       data: {
         count: 1, upload_id: 'u1',
         errors: [{ filename: 'broken.jpg', error: 'Corrupt file' }],
-        duplicates: [{ filename: 'copy.jpg', duplicate_of: 'IMG_0001.jpg' }],
+        duplicates: [{ index: 2, filename: 'copy.jpg', duplicate_of: 'IMG_0001.jpg' }],
       },
     });
     const { container } = renderWithClient(<PhotoUpload eventId={1} />);
@@ -120,7 +120,7 @@ describe('PhotoUpload duplicates', () => {
 
   it('a duplicate alone is no failure and does not clear itself', async () => {
     postMock.mockResolvedValue({
-      data: { count: 0, upload_id: 'u1', duplicates: [{ filename: 'copy.jpg', duplicate_of: 'IMG_0001.jpg' }] },
+      data: { count: 0, upload_id: 'u1', duplicates: [{ index: 0, filename: 'copy.jpg', duplicate_of: 'IMG_0001.jpg' }] },
     });
     const { container } = renderWithClient(<PhotoUpload eventId={1} />);
 
@@ -139,8 +139,8 @@ describe('PhotoUpload duplicates', () => {
         data: {
           count: 0, upload_id: 'u1',
           duplicates: [
-            { filename: 'a.jpg', duplicate_of: 'first.jpg' },
-            { filename: 'b.jpg', duplicate_of: 'second.jpg' },
+            { index: 0, filename: 'a.jpg', duplicate_of: 'first.jpg' },
+            { index: 1, filename: 'b.jpg', duplicate_of: 'second.jpg' },
           ],
         },
       })
@@ -164,14 +164,35 @@ describe('PhotoUpload duplicates', () => {
     });
   });
 
+  it('"upload anyway" re-sends the skipped one of two files that share a name', async () => {
+    postMock
+      .mockResolvedValueOnce({
+        data: { count: 1, upload_id: 'u1', duplicates: [{ index: 1, filename: 'same.jpg', duplicate_of: 'first.jpg' }] },
+      })
+      .mockResolvedValueOnce({ data: { count: 1, upload_id: 'u2', duplicates: [] } });
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+
+    const stored = new File([new Uint8Array([1])], 'same.jpg', { type: 'image/jpeg' });
+    const skipped = new File([new Uint8Array([1, 2, 3, 4, 5])], 'same.jpg', { type: 'image/jpeg' });
+    const user = await selectAndUpload(container, [stored, skipped]);
+    expect((postMock.mock.calls[0][1] as FormData).getAll('photos').map((f) => (f as File).size)).toEqual([1, 5]);
+    const report = await screen.findByTestId('upload-duplicate-report');
+    const anyway = within(report).getByRole('button', { name: 'Upload anyway' });
+    await waitFor(() => expect(anyway).toBeEnabled());
+    await user.click(anyway);
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(2));
+    expect((postMock.mock.calls[1][1] as FormData).getAll('photos').map((f) => (f as File).size)).toEqual([5]);
+  });
+
   it('"upload all anyway" sends every duplicate and clears the list', async () => {
     postMock
       .mockResolvedValueOnce({
         data: {
           count: 1, upload_id: 'u1',
           duplicates: [
-            { filename: 'a.jpg', duplicate_of: 'first.jpg' },
-            { filename: 'b.jpg', duplicate_of: 'second.jpg' },
+            { index: 0, filename: 'a.jpg', duplicate_of: 'first.jpg' },
+            { index: 2, filename: 'b.jpg', duplicate_of: 'second.jpg' },
           ],
         },
       })

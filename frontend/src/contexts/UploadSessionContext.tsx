@@ -365,14 +365,13 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             }
             // Files the gallery already holds come back under `duplicates`,
-            // by name; each is matched to one file of this request.
+            // each with its place among this request's files: two files of
+            // one request can share a name, so the name does not say which.
             const skipped = response.data?.duplicates;
             if (Array.isArray(skipped)) {
-              const unmatched = [...chunk];
               for (const d of skipped) {
-                const at = unmatched.findIndex((f) => f.name === d?.filename);
-                if (at === -1) continue;
-                const [file] = unmatched.splice(at, 1);
+                const file = chunk[d?.index];
+                if (!file) continue;
                 duplicates.push({ filename: file.name, duplicateOf: d.duplicate_of || '', file, placement });
               }
             }

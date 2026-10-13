@@ -111,7 +111,7 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
     const res = await adminUpload(event, [['copy.jpg', jpegA], ['other.jpg', jpegB]], { detect_duplicates: 'true' });
     expect(res.status).toBe(202);
     expect(res.body.count).toBe(1);
-    expect(res.body.duplicates).toEqual([{ filename: 'copy.jpg', duplicate_of: 'first.jpg' }]);
+    expect(res.body.duplicates).toEqual([{ index: 0, filename: 'copy.jpg', duplicate_of: 'first.jpg' }]);
     // A duplicate is not a failure.
     expect(res.body.errors).toBeUndefined();
     expect(res.body.failureCount).toBe(0);
@@ -122,7 +122,77 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
     const event = await makeEvent();
     const res = await adminUpload(event, [['one.jpg', jpegA], ['two.jpg', jpegA]], { detect_duplicates: 'true' });
     expect(res.body.count).toBe(1);
-    expect(res.body.duplicates).toEqual([{ filename: 'two.jpg', duplicate_of: 'one.jpg' }]);
+    expect(res.body.duplicates).toEqual([{ index: 1, filename: 'two.jpg', duplicate_of: 'one.jpg' }]);
+  });
+
+  it('tells two files of one name apart by their place in the request', async () => {
+    const event = await makeEvent();
+    await adminUpload(event, [['first.jpg', jpegA]]);
+    const res = await adminUpload(event, [['same.jpg', jpegB], ['same.jpg', jpegA]], { detect_duplicates: 'true' });
+    expect(res.body.count).toBe(1);
+    expect(res.body.duplicates).toEqual([{ index: 1, filename: 'same.jpg', duplicate_of: 'first.jpg' }]);
+  });
+
+  it('counts the place in the request across a file the validation dropped', async () => {
+    const event = await makeEvent();
+    await adminUpload(event, [['first.jpg', jpegA]]);
+    const res = await adminUpload(event, [['broken.jpg', jpegB.subarray(0, 40)], ['copy.jpg', jpegA]], { detect_duplicates: 'true' });
+    expect(res.body.errors).toMatchObject([{ filename: 'broken.jpg' }]);
+    expect(res.body.duplicates).toEqual([{ index: 1, filename: 'copy.jpg', duplicate_of: 'first.jpg' }]);
+  });
+
+  describe('photo cap', () => {
+    const capped = async (cap) => {
+      const event = await makeEvent();
+      await db('events').where({ id: event.id }).update({ photo_cap: cap });
+      return event;
+    };
+
+    it('does not count a duplicate against the cap', async () => {
+      const event = await capped(2);
+      await adminUpload(event, [['first.jpg', jpegA]]);
+      const res = await adminUpload(event, [['copy.jpg', jpegA], ['other.jpg', jpegB]], { detect_duplicates: 'true' });
+      expect(res.status).toBe(202);
+      expect(res.body.count).toBe(1);
+      expect(res.body.duplicates).toEqual([{ index: 0, filename: 'copy.jpg', duplicate_of: 'first.jpg' }]);
+      expect(await photosOf(event)).toHaveLength(2);
+    });
+
+    it('counts a file sent twice in one request once', async () => {
+      const event = await capped(1);
+      const res = await adminUpload(event, [['one.jpg', jpegA], ['two.jpg', jpegA]], { detect_duplicates: 'true' });
+      expect(res.status).toBe(202);
+      expect(res.body.count).toBe(1);
+      expect(res.body.duplicates).toEqual([{ index: 1, filename: 'two.jpg', duplicate_of: 'one.jpg' }]);
+    });
+
+    it('reports a duplicate-only upload at the cap instead of refusing it', async () => {
+      const event = await capped(1);
+      await adminUpload(event, [['first.jpg', jpegA]]);
+      const res = await adminUpload(event, [['copy.jpg', jpegA]], { detect_duplicates: 'true' });
+      expect(res.status).toBe(202);
+      expect(res.body).toMatchObject({ count: 0, duplicateCount: 1 });
+      expect(await photosOf(event)).toHaveLength(1);
+    });
+
+    it('still refuses a batch whose new files do not fit', async () => {
+      const event = await capped(1);
+      await adminUpload(event, [['first.jpg', jpegA]]);
+      const res = await adminUpload(event, [['copy.jpg', jpegA], ['other.jpg', jpegB]], { detect_duplicates: 'true' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/Photo cap exceeded/);
+      expect(res.body.error).toMatch(/upload 1 more/);
+      expect(await photosOf(event)).toHaveLength(1);
+    });
+
+    it('refuses as before when the request does not ask for detection', async () => {
+      const event = await capped(2);
+      await adminUpload(event, [['first.jpg', jpegA]]);
+      const res = await adminUpload(event, [['copy.jpg', jpegA], ['other.jpg', jpegB]]);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/upload 2 more/);
+      expect(await photosOf(event)).toHaveLength(1);
+    });
   });
 
   it('stores every file when the request does not ask for detection', async () => {
@@ -195,7 +265,7 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
       const event = await makeEvent();
       await guestUpload(event, jpegB);
       const res = await adminUpload(event, [['mine.jpg', jpegB]], { detect_duplicates: 'true' });
-      expect(res.body.duplicates).toEqual([{ filename: 'mine.jpg', duplicate_of: 'guest.jpg' }]);
+      expect(res.body.duplicates).toEqual([{ index: 0, filename: 'mine.jpg', duplicate_of: 'guest.jpg' }]);
     });
   });
 
@@ -230,6 +300,30 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
       expect(anyway.status).toBe(200);
       expect(await photosOf(event)).toHaveLength(2);
     });
+
+    it('at the cap a duplicate is still reported; any other file is refused, as without detection', async () => {
+      const event = await makeEvent();
+      await chunked(event, jpegA);
+      await db('events').where({ id: event.id }).update({ photo_cap: 1 });
+
+      const duplicate = await chunked(event, jpegA, { detect_duplicates: true });
+      expect(duplicate.status).toBe(409);
+      expect(duplicate.body).toMatchObject({ code: 'DUPLICATE_PHOTO', duplicate_of: 'large.jpg' });
+
+      const other = await chunked(event, jpegB, { detect_duplicates: true });
+      expect(other.status).toBe(400);
+      expect(other.body.error).toMatch(/Photo cap exceeded/);
+
+      const plain = await chunked(event, jpegA);
+      expect(plain.status).toBe(400);
+      expect(plain.body.error).toMatch(/Photo cap exceeded/);
+
+      expect(await photosOf(event)).toHaveLength(1);
+      for (let n = 0; n < 100 && await db('public_upload_requests').where({ active: 1 }).first(); n++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
+    });
   });
 
   it('the API v1 upload stores the hash', async () => {
@@ -254,6 +348,6 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
     // The old bytes are no longer in the gallery, the new ones are.
     const res = await adminUpload(event, [['old.jpg', jpegA], ['new.jpg', jpegB]], { detect_duplicates: 'true' });
     expect(res.body.count).toBe(1);
-    expect(res.body.duplicates).toEqual([{ filename: 'new.jpg', duplicate_of: 'first.jpg' }]);
+    expect(res.body.duplicates).toEqual([{ index: 1, filename: 'new.jpg', duplicate_of: 'first.jpg' }]);
   });
 });
