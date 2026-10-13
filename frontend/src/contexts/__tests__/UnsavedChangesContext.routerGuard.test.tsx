@@ -195,6 +195,44 @@ describe('router-level leave guard', () => {
     expect(where()).toBe('/admin/settings?tab=general');
   });
 
+  it('asks on a Settings URL with a trailing slash too', async () => {
+    const user = userEvent.setup();
+    const router = renderApp(<Form />, ['/admin/settings/?tab=email', '/admin/settings/?tab=general']);
+
+    await act(() => router.navigate(-1));
+    await user.click(await screen.findByRole('button', { name: 'Stay' }));
+    expect(where()).toBe('/admin/settings/?tab=general');
+  });
+
+  it('discards the draft of a Settings tab left with Back: the page stays mounted', async () => {
+    // SettingsPage holds the General / Security / ... drafts above its tabs,
+    // so they outlive the tab. Leaving one behind would bring the edits back,
+    // unasked for, on Forward.
+    const user = userEvent.setup();
+    discard.mockClear();
+    const router = renderApp(<Form />, ['/admin/settings?tab=email', '/admin/settings?tab=general']);
+
+    await act(() => router.navigate(-1));
+    await user.click(await screen.findByRole('button', { name: 'Stay' }));
+    expect(discard).not.toHaveBeenCalled();
+
+    await act(() => router.navigate(-1));
+    await user.click(await screen.findByRole('button', { name: 'Discard and leave' }));
+    await waitFor(() => expect(where()).toBe('/admin/settings?tab=email'));
+    expect(discard).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not run discard when the route itself is left: the form unmounts', async () => {
+    const user = userEvent.setup();
+    discard.mockClear();
+    const router = renderApp(<Form />, ['/admin/start', '/admin/settings?tab=general']);
+
+    await act(() => router.navigate(-1));
+    await user.click(await screen.findByRole('button', { name: 'Discard and leave' }));
+    expect(await screen.findByText('start page')).toBeInTheDocument();
+    expect(discard).not.toHaveBeenCalled();
+  });
+
   it("does not question the page's own Cancel", async () => {
     const user = userEvent.setup();
     renderApp(<Form />);

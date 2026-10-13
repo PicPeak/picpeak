@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { UNSAFE_DataRouterContext, useBlocker, useNavigate } from 'react-router-dom';
+import { matchPath, UNSAFE_DataRouterContext, useBlocker, useLocation, useNavigate } from 'react-router-dom';
 import type { BlockerFunction } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useConfirm } from '../components/common/ConfirmDialog';
@@ -18,9 +18,11 @@ import { useConfirm } from '../components/common/ConfirmDialog';
  *  - a router blocker catches everything else — browser Back / Forward, a
  *    plain <Link>, a navigate() from anywhere. "Stay" restores the URL and
  *    the history position; "leave" goes on to the intended target. It does
- *    not run discard: the form unmounts with its route. (A discard that
- *    itself navigates — the "new document" editors — would fight the pending
- *    navigation.) A page that survives a navigation must key its draft by the
+ *    not run discard when the route is left: the form unmounts with it. (A
+ *    discard that itself navigates — the "new document" editors — would
+ *    fight the pending navigation.) Between two Settings tabs it does run
+ *    it: SettingsPage stays mounted and holds drafts above its tabs. Any
+ *    other page that survives a navigation must key its draft by the
  *    record, as EventDetailsPage does.
  *
  * The blocker needs a data router (App.tsx has one). Under a plain
@@ -45,16 +47,32 @@ interface UnsavedChangesContextValue {
   unguarded: (fn: () => void) => void;
 }
 
-/** Settings tabs share one path, and each tab holds its own form. */
-const settingsTab = (l: { pathname: string; search: string }) =>
-  l.pathname === '/admin/settings' ? new URLSearchParams(l.search).get('tab') : null;
+type Loc = { pathname: string; search: string };
 
-const LeaveBlocker: React.FC<{ shouldBlock: BlockerFunction; ask: () => Promise<boolean> }> = ({ shouldBlock, ask }) => {
+// Matched the way the router matches the route: a trailing slash and another
+// letter case reach SettingsPage as well.
+const isSettings = (l: Loc) => matchPath('/admin/settings', l.pathname) !== null;
+
+/** Settings tabs share one path, and each tab holds its own form. */
+const settingsTab = (l: Loc) => (isSettings(l) ? new URLSearchParams(l.search).get('tab') : null);
+
+/** From one Settings tab to another: SettingsPage itself stays mounted. */
+const isSettingsTabChange = (from: Loc, to: Loc) =>
+  isSettings(from) && isSettings(to) && settingsTab(from) !== settingsTab(to);
+
+const LeaveBlocker: React.FC<{
+  shouldBlock: BlockerFunction;
+  ask: () => Promise<boolean>;
+  discardAll: () => void;
+}> = ({ shouldBlock, ask, discardAll }) => {
   const blocker = useBlocker(shouldBlock);
+  const location = useLocation();
   // One question per blocked navigation: `ask` may change identity between
   // renders (it follows the language) and must not ask again when it does.
   const askRef = useRef(ask);
   askRef.current = ask;
+  const leaveRef = useRef({ location, discardAll });
+  leaveRef.current = { location, discardAll };
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
     // A second attempt while the dialog is open replaces the first: the
@@ -63,7 +81,12 @@ const LeaveBlocker: React.FC<{ shouldBlock: BlockerFunction; ask: () => Promise<
     let superseded = false;
     void askRef.current().then((ok) => {
       if (superseded) return;
-      if (ok) blocker.proceed(); else blocker.reset();
+      if (!ok) { blocker.reset(); return; }
+      // SettingsPage outlives its tabs and keeps some of their drafts: left
+      // alone, the edits would be back on Forward.
+      const { location: from, discardAll: discard } = leaveRef.current;
+      if (blocker.location && isSettingsTabChange(from, blocker.location)) discard();
+      blocker.proceed();
     });
     return () => { superseded = true; };
   }, [blocker]);
@@ -117,6 +140,10 @@ export const UnsavedChangesProvider: React.FC<{ children: React.ReactNode }> = (
   // True while a navigation is under way that has already been answered for.
   const skipBlockerRef = useRef(false);
 
+  const discardAll = useCallback(() => {
+    for (const e of entriesRef.current.values()) if (e.isDirty) e.discard?.();
+  }, []);
+
   const confirmLeave = useCallback(async () => {
     let dirty = false;
     for (const e of entriesRef.current.values()) if (e.isDirty) dirty = true;
@@ -127,9 +154,9 @@ export const UnsavedChangesProvider: React.FC<{ children: React.ReactNode }> = (
     // the discards run, because a discard may navigate itself.
     skipBlockerRef.current = true;
     setTimeout(() => { skipBlockerRef.current = false; }, 0);
-    for (const e of entriesRef.current.values()) if (e.isDirty) e.discard?.();
+    discardAll();
     return true;
-  }, [ask]);
+  }, [ask, discardAll]);
 
   const unguarded = useCallback((fn: () => void) => {
     const before = skipBlockerRef.current;
@@ -143,8 +170,10 @@ export const UnsavedChangesProvider: React.FC<{ children: React.ReactNode }> = (
     for (const e of entriesRef.current.values()) if (e.isDirty) dirty = true;
     if (!dirty) return false;
     // A page syncing its own ?tab= / ?section= keeps its form mounted.
-    return currentLocation.pathname !== nextLocation.pathname
-      || settingsTab(currentLocation) !== settingsTab(nextLocation);
+    if (isSettings(currentLocation) && isSettings(nextLocation)) {
+      return settingsTab(currentLocation) !== settingsTab(nextLocation);
+    }
+    return currentLocation.pathname !== nextLocation.pathname;
   }, []);
 
   const value = useMemo(
@@ -156,7 +185,7 @@ export const UnsavedChangesProvider: React.FC<{ children: React.ReactNode }> = (
 
   return (
     <UnsavedChangesContext.Provider value={value}>
-      {hasDataRouter && <LeaveBlocker shouldBlock={shouldBlock} ask={ask} />}
+      {hasDataRouter && <LeaveBlocker shouldBlock={shouldBlock} ask={ask} discardAll={discardAll} />}
       {children}
     </UnsavedChangesContext.Provider>
   );
