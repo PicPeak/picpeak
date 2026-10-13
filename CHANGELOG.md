@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.170.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.169.1-beta.0...v3.170.0-beta.0) (2026-10-13)
+
+
+### Features
+
+* **watcher:** import camera RAW dropped into the watch folder ([#1968](https://github.com/PicPeak/picpeak/issues/1968)) ([ca9c4f5](https://github.com/PicPeak/picpeak/commit/ca9c4f5a96a29d039a069933e50bb48facd6919c))
+
+
+### Bug Fixes
+
+* date fields (own calendar, in-place edit, local today), gallery polish and the folder follow-ups from 1826 ([#1931](https://github.com/PicPeak/picpeak/issues/1931)) ([5ed73f4](https://github.com/PicPeak/picpeak/commit/5ed73f434ac694c51c7bf24de83d999b8371c661))
+* **workflows:** send an invoice once, close a booking gate the admin handled by hand ([#1982](https://github.com/PicPeak/picpeak/issues/1982)) ([b150b49](https://github.com/PicPeak/picpeak/commit/b150b4920cc4fa92b5aa94da061662a7aa5f9b45))
+
 ## [3.169.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.169.0-beta.0...v3.169.1-beta.0) (2026-10-13)
 
 
