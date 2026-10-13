@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, Heart } from 'lucide-react';
-import { format, parseISO, startOfDay, startOfWeek, startOfMonth } from 'date-fns';
+import { format, startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { PhotoCard } from '../PhotoCard';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
-import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
+import { toDisplayDate, useLocalizedDate } from '../../../hooks/useLocalizedDate';
 
 export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   photos,
@@ -45,8 +45,12 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // uploaded_at (pre-fix archive restores) — parseISO throws on numbers
   // and crashed the whole Timeline view (#485 class). The API normalizes
   // to ISO now; this guard covers stale caches and old backends.
+  // Strings go through the date hook's parser, so SQLite's zone-less
+  // 'YYYY-MM-DD HH:MM:SS' is read as UTC here exactly as the time chip reads
+  // it; a local reading filed a photo under a different day than its chip
+  // shows (issue 1815).
   const parseUploadedAt = (value: string | number) =>
-    typeof value === 'string' ? parseISO(value) : new Date(value);
+    typeof value === 'string' ? toDisplayDate(value) : new Date(value);
 
   // Group photos by date
   const groupedPhotos = useMemo(() => {
@@ -84,7 +88,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       .map(([date, photos]) => ({
         date,
         label: photos[0] ? format(parseUploadedAt(photos[0].uploaded_at), grouping === 'month' ? 'MMMM yyyy' : grouping === 'week' ? "'Week of' MMM d, yyyy" : 'EEEE, MMMM d, yyyy') : date,
-        photos: photos.sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime())
+        photos: photos.sort((a, b) => parseUploadedAt(b.uploaded_at).getTime() - parseUploadedAt(a.uploaded_at).getTime())
       }))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [photos, grouping]);
