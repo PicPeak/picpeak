@@ -232,9 +232,10 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     expect(screen.queryByTestId('annotation-overlay')).toBeNull();
   });
 
-  // The comment form is one component reused from photo to photo, so a slow
-  // submission can come back while the guest is already drawing on the next.
-  it('leaves the next photo\'s drawing alone when an earlier comment finishes sending', async () => {
+  // A comment's success clears the form and the drawing. The form is one
+  // component reused from photo to photo, so a slow response would take a
+  // drawing started meanwhile, on this photo or on the next one.
+  it('offers no drawing while a comment is still being sent', async () => {
     let finish!: (value: unknown) => void;
     vi.mocked(feedbackService.submitFeedback).mockReturnValue(new Promise((resolve) => { finish = resolve; }) as never);
     open();
@@ -242,16 +243,16 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     fireEvent.change(screen.getByPlaceholderText('Write a comment...'), { target: { value: 'First' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
     await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalledTimes(1));
+    const draw = () => screen.getByRole('button', { name: 'Draw on photo' }) as HTMLButtonElement;
+    expect(draw().disabled).toBe(true);
 
     key('ArrowRight');
     expect(counter(2)).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name: 'Draw on photo' }));
-    await screen.findByRole('toolbar', { name: 'Drawing tools' });
-    drag(screen.getByTestId('annotation-overlay'), [40, 20], [200, 100]);
+    expect(draw().disabled).toBe(true);
 
     await act(async () => { finish({ success: true }); });
-    expect(screen.getByRole('toolbar', { name: 'Drawing tools' })).toBeTruthy();
-    expect(screen.getByTestId('annotation-overlay').querySelectorAll('path')).toHaveLength(1);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Comment' }));
+    expect(draw().disabled).toBe(false);
   });
 
   // The drawing on the photo is a copy taken when its marker was clicked. A

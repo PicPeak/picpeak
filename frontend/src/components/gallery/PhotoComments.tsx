@@ -62,14 +62,7 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
     }
   }, [commentText]);
 
-  // This form is reused from photo to photo, and the lightbox holds one
-  // drawing for whichever photo is up (issue 1733). A submission that comes
-  // back after the guest moved on must not discard what they draw there.
-  const photoIdRef = useRef(photoId);
-  photoIdRef.current = photoId;
-
   const submitCommentMutation = useMutation({
-    onMutate: () => ({ submittedPhotoId: photoId }),
     mutationFn: (data: any) => 
       feedbackService.submitFeedback(gallerySlug, photoId, {
         feedback_type: 'comment',
@@ -78,10 +71,10 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
         guest_name: data.guest_name,
         guest_email: data.guest_email
       }),
-    onSuccess: (response, _data, context) => {
+    onSuccess: (response) => {
       setCommentText('');
       setShowCommentForm(false);
-      if (context?.submittedPhotoId === photoIdRef.current) annotation?.discard();
+      annotation?.discard();
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
       
       if (response.message) {
@@ -259,6 +252,11 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
                     variant="ghost"
                     leftIcon={annotation.draft ? undefined : <Pencil className="w-4 h-4" />}
                     onClick={annotation.startDrawing}
+                    // Not while a comment is on its way: its success clears
+                    // the form and the drawing, and would take a newer one
+                    // too, on this photo or (the form is reused from photo
+                    // to photo) on the next.
+                    disabled={submitCommentMutation.isPending}
                   >
                     {annotation.draft
                       ? t('feedback.annotation.edit', 'Edit drawing')
@@ -271,6 +269,7 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
                       variant="ghost"
                       leftIcon={<X className="w-4 h-4" />}
                       onClick={annotation.discard}
+                      disabled={submitCommentMutation.isPending}
                     >
                       {t('feedback.annotation.remove', 'Remove drawing')}
                     </Button>
