@@ -216,6 +216,9 @@ describe('AuthenticatedImage retry', () => {
       await flush();
 
       expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-2');
+      // The fallback's blob is let go once the preview has decoded, not before.
+      expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:mock-1');
+      await act(async () => { container.querySelector('img')!.dispatchEvent(new Event('load')); });
       expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-1');
       expect(calls(fetchMock, '/thumbnail')).toBe(1);
       await advance(60_000); await flush();
@@ -286,6 +289,23 @@ describe('AuthenticatedImage retry', () => {
       expect(container.querySelector('img')?.getAttribute('src')).toBe(THUMB);
       await advance(60_000); await flush();
       expect(calls(fetchMock, '/preview')).toBe(1);
+    });
+
+    it('goes back to the fallback when the retried src arrives but will not decode', async () => {
+      const fetchMock = byUrl({ preview: [status(503), ok], thumb: [ok] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      await advance(2000); await flush();
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-2');
+      await act(async () => { container.querySelector('img')!.dispatchEvent(new Event('error')); });
+      // The thumbnail already fetched, not a second request for it.
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
+      expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:mock-1');
+      await advance(60_000); await flush();
+      expect(calls(fetchMock, '/preview')).toBe(2);
+      expect(calls(fetchMock, '/thumbnail')).toBe(1);
     });
 
     it('does not arm the next retry while the current one is still in flight', async () => {
