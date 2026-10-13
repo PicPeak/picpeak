@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.134.6](https://github.com/PicPeak/picpeak/compare/v3.134.5...v3.134.6) (2026-10-13)
+
+
+### Bug Fixes
+
+* **dates:** read SQLite's zone-less default timestamps as UTC in the date hook (stable) ([#1941](https://github.com/PicPeak/picpeak/issues/1941)) ([214a6c5](https://github.com/PicPeak/picpeak/commit/214a6c5ce1f0bfab634a41950b37cac788112b89))
+* **gallery:** ask for a preview again after a 503 instead of keeping the thumbnail (stable) ([#1939](https://github.com/PicPeak/picpeak/issues/1939)) ([354bfee](https://github.com/PicPeak/picpeak/commit/354bfee32304b17493cbe015e92e37ab3be7eedd))
+* **security:** expenses and incoming invoices follow the per-admin owner rule (stable) ([#1935](https://github.com/PicPeak/picpeak/issues/1935)) ([fd1bd17](https://github.com/PicPeak/picpeak/commit/fd1bd1708511886aaece3a88b038614c341e9875))
+
 ## [3.134.5](https://github.com/PicPeak/picpeak/compare/v3.134.4...v3.134.5) (2026-10-12)
 
 
