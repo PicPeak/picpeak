@@ -32,10 +32,20 @@ vi.mock('../../../services/feedback.service', () => ({
   },
 }));
 vi.mock('../../../services/gallery.service', () => ({ galleryService: { trackPhotoView: vi.fn() } }));
-vi.mock('../../common', () => ({
-  AuthenticatedImage: ({ src, alt, queuePriority }: { src: string; alt: string; queuePriority?: string }) => (
-    <img alt={alt} data-src={src} data-priority={queuePriority ?? 'normal'} />
-  ),
+// In the order the real component would ask the shared fetch queue for a slot:
+// its fetch effect runs on mount.
+const fetchOrder: string[] = [];
+vi.mock('../../common', async () => {
+  const { useEffect } = await import('react');
+  return {
+    AuthenticatedImage: ({ src, alt, queuePriority }: { src: string; alt: string; queuePriority?: string }) => {
+      useEffect(() => { fetchOrder.push(src); }, [src]);
+      return <img alt={alt} data-src={src} data-priority={queuePriority ?? 'normal'} />;
+    },
+  };
+});
+vi.mock('../PhotoFeedback', () => ({
+  PhotoFeedback: ({ photoId }: { photoId: string }) => <div data-testid="feedback-panel" data-photo-id={photoId} />,
 }));
 
 import { PhotoLightbox } from '../PhotoLightbox';
@@ -59,12 +69,14 @@ const makePhotos = (count: number) => Array.from({ length: count }, (_, i) => ({
 const trackPhotoView = vi.mocked(galleryService.trackPhotoView);
 const requested = () => Array.from(document.querySelectorAll('[data-src]')).map((el) => el.getAttribute('data-src') || '');
 const previewsRequested = () => requested().filter((src) => src.startsWith('/preview/'));
+const firstFetch = (prefix: string) => fetchOrder.findIndex((src) => src.startsWith(prefix));
 const strip = () => screen.getByRole('list', { name: 'Photos' });
 const counter = (text: string) => screen.getByText(text);
 
 beforeEach(() => {
   stubViewport(true);
   trackPhotoView.mockClear();
+  fetchOrder.length = 0;
 });
 
 describe('lightbox film strip', () => {
@@ -125,6 +137,22 @@ describe('lightbox film strip', () => {
     // The arrow keys still belong to the lightbox.
     fireEvent.keyDown(document, { key: 'ArrowRight' });
     expect(counter('258 / 500')).toBeInTheDocument();
+  });
+
+  it('asks for the open photo before any of its own thumbnails', () => {
+    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={250} onClose={vi.fn()} slug="g" />);
+    // The strip is ahead of the slides in the document, so its effects run
+    // first; six thumbnails would take every fetch slot.
+    expect(fetchOrder.filter((src) => src.startsWith('/thumb/'))).toHaveLength(21);
+    expect(firstFetch('/preview/251')).toBeGreaterThanOrEqual(0);
+    expect(firstFetch('/preview/251')).toBeLessThan(firstFetch('/thumb/'));
+
+    // A jump brings a new slide and new thumbnails in together.
+    fetchOrder.length = 0;
+    fireEvent.click(within(strip()).getByRole('button', { name: 'Photo 261 of 500' }));
+    expect(fetchOrder.filter((src) => src.startsWith('/thumb/'))).toHaveLength(10);
+    expect(firstFetch('/preview/261')).toBeGreaterThanOrEqual(0);
+    expect(firstFetch('/preview/261')).toBeLessThan(firstFetch('/thumb/'));
   });
 
   it('is not mounted on a small or touch screen', () => {
@@ -228,6 +256,48 @@ describe('lightbox hold-to-scrub', () => {
     expect(trackPhotoView).toHaveBeenCalledTimes(2);
     expect(trackPhotoView).toHaveBeenLastCalledWith('g', 104);
     expect(previewsRequested().some((src) => src.startsWith('/preview/104'))).toBe(true);
+  });
+
+  it('keeps the open feedback panel on the photo the scrub started from until it lands', () => {
+    render(<PhotoLightbox photos={makePhotos(500)} initialIndex={100} onClose={vi.fn()} slug="g" initialShowFeedback />);
+    const panelPhoto = () => screen.getByTestId('feedback-panel').getAttribute('data-photo-id');
+    expect(panelPhoto()).toBe('101');
+
+    holdKey('ArrowRight', 30);
+    // The panel fetches per photo id: it is not handed the ones passed over.
+    expect(counter('109 / 500')).toBeInTheDocument();
+    expect(panelPhoto()).toBe('101');
+
+    fireEvent.keyUp(document, { key: 'ArrowRight' });
+    expect(panelPhoto()).toBe('109');
+  });
+
+  it('leaves the carousel centred and swipeable when a scrub interrupts a committing swipe', () => {
+    stubViewport(false);
+    const { container } = render(<PhotoLightbox photos={makePhotos(50)} initialIndex={10} onClose={vi.fn()} slug="g" />);
+    const track = () => container.querySelector('[style*="width: 300%"]') as HTMLElement;
+    const surface = track().parentElement as HTMLElement;
+    Object.defineProperty(surface, 'offsetWidth', { value: 800 });
+    const finger = (clientX: number) => ({ clientX, clientY: 300 });
+    const swipeLeft = () => {
+      fireEvent.touchStart(surface, { touches: [finger(500)] });
+      fireEvent.touchMove(surface, { touches: [finger(200)] });
+      fireEvent.touchEnd(surface, { touches: [], changedTouches: [finger(200)] });
+    };
+
+    swipeLeft();
+    expect(track().style.transform).toBe('translate3d(-66.6666%, 0, 0)');
+
+    // The track is gone before its transition can end and reset the phase.
+    fireEvent.keyDown(document, { key: 'ArrowRight', repeat: true });
+    expect(track()).toBeNull();
+    // A finger that lands mid-scrub has no track to drag either.
+    swipeLeft();
+    fireEvent.keyUp(document, { key: 'ArrowRight' });
+
+    expect(track().style.transform).toBe('translate3d(-33.3333%, 0, 0)');
+    swipeLeft();
+    expect(track().style.transform).toBe('translate3d(-66.6666%, 0, 0)');
   });
 
   it('does not count a photo twice when a scrub ends where it began', () => {

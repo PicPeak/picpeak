@@ -190,6 +190,20 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     currentPhotoId,
   );
   const { scrubbing } = scrub;
+  // The slides are unmounted for the length of a scrub, so a swipe under way
+  // has no track left to fire the `transitionend` that would end it: without
+  // this the track came back parked on the neighbour, or in a phase that
+  // takes no new touch.
+  useEffect(() => {
+    if (!scrubbing) return;
+    swipeStartRef.current = null;
+    setDragX(0);
+    setPhase('idle');
+  }, [scrubbing]);
+  // The open feedback panel fetches per photo id, so it stays on the photo
+  // the scrub started from and moves to the one landed on.
+  const feedbackPhotoIdRef = useRef(currentPhotoId);
+  if (!scrubbing) feedbackPhotoIdRef.current = currentPhotoId;
   // A scrub that ends on the photo it started from is not a second view.
   const lastTrackedPhotoIdRef = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -793,7 +807,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       const t = e.touches[0];
       setIsDragging(true);
       setDragStart({ x: t.clientX - dragOffset.x, y: t.clientY - dragOffset.y });
-    } else if (e.touches.length === 1 && zoom <= 1 && (phase === 'idle' || phase === 'dragging')) {
+    } else if (e.touches.length === 1 && zoom <= 1 && !scrubbing && (phase === 'idle' || phase === 'dragging')) {
       const t = e.touches[0];
       swipeStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
       setPhase('dragging');
@@ -1484,7 +1498,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           </div>
           <div className="p-4 flex-1 overflow-y-auto">
             <PhotoFeedback
-              photoId={String(currentPhoto.id)}
+              photoId={String(feedbackPhotoIdRef.current ?? currentPhoto.id)}
               gallerySlug={slug}
               showComments={true}
               className="space-y-4"

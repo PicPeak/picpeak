@@ -65,6 +65,15 @@ export const LightboxFilmStrip: React.FC<LightboxFilmStripProps> = ({
   const { t } = useTranslation();
   const isDesktop = useDesktopViewport();
 
+  // The photo the strip last loaded thumbnails around: one commit behind the
+  // open one. The strip sits ahead of the slides in the document, so its
+  // images' fetch effects run first, and six thumbnails took every slot of
+  // the shared fetch queue before the open photo's preview could ask for one
+  // (priority only orders requests that are already waiting). A thumbnail
+  // new to the window is a placeholder for that one commit.
+  const [loadedAround, setLoadedAround] = useState<number | null>(null);
+  useEffect(() => setLoadedAround(currentIndex), [currentIndex]);
+
   if (!isDesktop || photos.length < 2) return null;
 
   const first = Math.max(0, currentIndex - FILM_STRIP_REACH);
@@ -115,7 +124,7 @@ export const LightboxFilmStrip: React.FC<LightboxFilmStripProps> = ({
               // painted underneath the thumbnail.
               style={isCurrent ? { outline: '2px solid #fff', outlineOffset: '-2px' } : undefined}
             >
-              {photo.thumbnail_url ? (
+              {photo.thumbnail_url && loadedAround !== null && Math.abs(index - loadedAround) <= FILM_STRIP_REACH ? (
                 <AuthenticatedImage
                   src={photo.thumbnail_url}
                   alt=""
