@@ -992,6 +992,10 @@ async function eraseCustomer(id, erasedByAdminId) {
     erasedDocuments = await customerDocumentsService.markErasedForCustomer(id, trx);
     erasedContracts = await contractErasure.apply(trx, contractPlan, eraseActor);
 
+    // "Mail me when the download is ready" requests (issue 1733). Before the
+    // queue is cancelled below; forgetCustomer says why the order matters.
+    await require('./downloadJobNotifier').forgetCustomer(trx, id, customer.email);
+
     // email_queue (#1593): cancel what hasn't gone out yet, then redact the
     // variables + recipient on every row for this address that isn't
     // already gone (sent, failed, or the row just cancelled above) — done

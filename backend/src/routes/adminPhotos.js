@@ -70,6 +70,7 @@ async function folderIdUpdate(eventId, raw) {
 }
 const { photoCapOf, countEventPhotos, insertPhotoWithinCap } = require('../services/photoCap');
 const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
+const { sha256File, findDuplicate, duplicateName } = require('../services/photoDuplicates');
 
 
 const { validateFileType, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
@@ -85,12 +86,12 @@ const { validateFileType, createFileUploadValidator, normalizeUploadMimeType, is
 // in the dropzone was never enforced anywhere server-side. getMaxFileSizeBytes()
 // clamps to MAX_ALLOWED_FILE_SIZE_MB (10GB), so that hard ceiling still applies.
 //
-// The handler reads three short text fields (category_id, replace_by_name,
-// match_mode). Busboy buffers every text part in memory before the handler
+// The handler reads a few short text fields (category_id, the folder
+// placement, replace_by_name, match_mode, detect_duplicates). Busboy buffers every text part in memory before the handler
 // runs, so without `fields`/`fieldSize`/`parts` sized to that a caller with
 // photos.upload could send thousands of multi-megabyte text parts and hold
 // them all on the heap.
-const UPLOAD_TEXT_FIELDS = 5;
+const UPLOAD_TEXT_FIELDS = 7;
 const createUpload = (maxFileSizeBytes, maxFiles, { storage, streamHandler, rejectBody }) => multer({
   storage,
   streamHandler,
@@ -195,6 +196,10 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     }),
   }, options => createUpload(Math.max(req.maxFileSizeBytes, req.maxVideoSizeBytes), options.maxFiles, options).array('photos', options.maxFiles),
   async (_session, reply) => {
+    // Each file's place among the request's `photos` parts, noted before the
+    // validation below drops any: a duplicate is reported by it, since two
+    // files of one request can share a name (issue 1733, C2).
+    (req.files || []).forEach((file, index) => { file.requestIndex = index; });
     let proceed = false;
     await validateUploadContent(req, reply, () => { proceed = true; });
     if (!proceed) return;
@@ -207,7 +212,11 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
 async function handleAdminPhotoUpload(req, res) {
   try {
     const { eventId } = req.params;
-    const { category_id, replace_by_name, match_mode } = req.body;
+    const { category_id, replace_by_name, match_mode, detect_duplicates } = req.body;
+    // Opt-in per request (issue 1733, C2): with it a file whose bytes this
+    // gallery already holds is reported back instead of stored again. Without
+    // it every file is stored, as before the check existed.
+    const detectDuplicates = detect_duplicates === 'true' || detect_duplicates === true;
     let replaceByName = replace_by_name === 'true' || replace_by_name === true;
     // How replace_by_name finds its target (#745). 'exact' is the historical
     // behaviour and stays the default; 'number_token' matches on the trailing
@@ -243,13 +252,29 @@ async function handleAdminPhotoUpload(req, res) {
         .first();
       const currentCount = parseInt(existingPhotoCount.count) || 0;
       let newFilesCount = (req.files && req.files.length) || 0;
-      // Subtract likely replacements from cap calculation
-      if (replaceByName && req.files) {
+      // Subtract likely replacements from cap calculation, and with
+      // detect_duplicates the files that will be skipped as duplicates: of
+      // the gallery, or of an earlier file of this request. Otherwise a batch
+      // that fits once they are skipped is refused, and a duplicate-only
+      // upload at the cap never gets its duplicate report. Replacements run
+      // before the new files, so the bytes they bring in count as held too.
+      // An estimate like the replacement count; insertPhotoWithinCap below is
+      // what holds the cap.
+      if ((replaceByName || detectDuplicates) && req.files) {
+        const seenHashes = new Set();
+        const newFiles = [];
         for (const file of req.files) {
-          const candidate = await findReplacementCandidate(
+          const candidate = replaceByName ? await findReplacementCandidate(
             parseInt(eventId), file.originalname, { matchMode }
-          );
-          if (candidate && !candidate.ambiguous) newFilesCount--;
+          ) : null;
+          if (!candidate || candidate.ambiguous) { newFiles.push(file); continue; }
+          newFilesCount--;
+          if (detectDuplicates) seenHashes.add(await sha256File(file.path));
+        }
+        for (const file of detectDuplicates ? newFiles : []) {
+          file.contentSha256 = await sha256File(file.path);
+          if (seenHashes.has(file.contentSha256) || await findDuplicate(event.id, file.contentSha256)) newFilesCount--;
+          seenHashes.add(file.contentSha256);
         }
       }
       if (currentCount + newFilesCount > event.photo_cap) {
@@ -308,6 +333,7 @@ async function handleAdminPhotoUpload(req, res) {
     const uploadedPhotos = [];
     const replacedPhotos = [];
     const skippedReplacements = [];
+    const duplicates = [];
     const errors = [];
 
     // Handle replacements first if enabled
@@ -396,6 +422,17 @@ async function handleAdminPhotoUpload(req, res) {
           throw new Error('File is empty - upload may have been interrupted');
         }
 
+        // Hashed here, while the file is still local and before anything is
+        // stored or queued: this response is the only place the uploader
+        // hears about the file again. Same gallery only.
+        const contentSha256 = file.contentSha256 || await sha256File(file.path);
+        const existing = detectDuplicates ? await findDuplicate(event.id, contentSha256) : null;
+        if (existing) {
+          await fs.unlink(file.path).catch(() => {});
+          duplicates.push({ index: file.requestIndex, filename: file.originalname, duplicate_of: duplicateName(existing) });
+          continue;
+        }
+
         const extension = path.extname(file.originalname);
         const newFilename = generatePhotoFilename(
           event.event_name,
@@ -445,6 +482,7 @@ async function handleAdminPhotoUpload(req, res) {
           type: photoType,
           ...placementColumns(placement),
           size_bytes: tempStats.size,
+          content_sha256: contentSha256,
           captured_at: null,
           media_type: isVideo ? 'video' : 'image',
           mime_type: file.mimetype,
@@ -536,6 +574,12 @@ async function handleAdminPhotoUpload(req, res) {
       replaced: replacedPhotos,
       replacedCount: replacedPhotos.length,
       skippedReplacements,
+      // Not stored: this gallery already holds the same bytes. Kept apart
+      // from `errors`, the uploader offers "upload anyway" for these; `index`
+      // is the file's place among the request's `photos` parts. Always
+      // empty unless the request asked for detect_duplicates.
+      duplicates,
+      duplicateCount: duplicates.length,
       totalFiles: totalAttempted,
       successCount: uploadedPhotos.length + replacedPhotos.length,
       failureCount: totalInvalidFiles.length,
@@ -2053,7 +2097,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
   res.once('close', cancel);
   try {
     const { eventId, uploadId } = req.params;
-    const { category_id } = req.body;
+    const { category_id, detect_duplicates } = req.body;
 
     // Same rules as the batch upload route: the photo cap and the category
     // scope. Checked before the merge, so a refused upload writes nothing.
@@ -2066,26 +2110,53 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
       return res.status(400).json(placementError);
     }
+    const detectDuplicates = detect_duplicates === true || detect_duplicates === 'true';
     const photoCap = photoCapOf(event);
+    let capRefusal = null;
     if (photoCap) {
       const currentCount = await countEventPhotos(event.id);
       if (currentCount + 1 > photoCap) {
-        await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
-        return res.status(400).json({
+        capRefusal = {
           error: `Photo cap exceeded. This event allows a maximum of ${photoCap} photos. Currently ${currentCount} photos exist, and you are trying to upload 1 more.`
-        });
+        };
       }
+    }
+    // With detect_duplicates a full gallery still merges first: a duplicate
+    // would not have been stored, so it is reported as one, and only another
+    // file is refused for the cap (below).
+    if (capRefusal && !detectDuplicates) {
+      await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
+      return res.status(400).json(capRefusal);
     }
 
     // Complete the chunked upload (merge chunks)
     mergedFile = await chunkedUpload.completeUpload(uploadId, { owner: uploadOwner(req) });
+
+    // Same opt-in duplicate rule as the batch route (issue 1733, C2). The
+    // merged file is the first moment the whole content exists here, so this
+    // is the earliest a large file can be recognised.
+    const contentSha256 = await sha256File(mergedFile.path);
+    const existing = detectDuplicates ? await findDuplicate(mergedFile.eventId, contentSha256) : null;
+    if (existing) {
+      await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
+      return res.status(409).json({
+        error: 'This gallery already has a photo with the same content.',
+        code: 'DUPLICATE_PHOTO',
+        duplicate_of: duplicateName(existing),
+      });
+    }
+    if (capRefusal) {
+      await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
+      return res.status(400).json(capRefusal);
+    }
 
     // Process the merged file as a regular upload
     const fileObj = {
       originalname: mergedFile.filename,
       mimetype: mergedFile.mimeType,
       size: mergedFile.size,
-      path: mergedFile.path
+      path: mergedFile.path,
+      contentSha256
     };
 
     // The event the upload was initialised for. The owner check above makes

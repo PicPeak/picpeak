@@ -132,6 +132,7 @@ const TEMPLATE_DISPLAY_NAMES: Record<string, string> = {
   // two-stage delivery (issue 1562)
   gallery_completed: 'Complete Gallery Ready',
   delivery_due_reminder: 'Full Gallery Due (Admin)',
+  download_ready: 'Download Ready',
   // core / admin
   admin_invitation: 'Admin Invitation',
   admin_password_reset: 'Admin Password Reset',

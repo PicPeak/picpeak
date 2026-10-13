@@ -19,6 +19,8 @@ export type EditFormState = {
   // Uploader names (#1561)
   guest_name_mode: GuestNameMode;
   show_credits_to_guests: boolean;
+  // Live refresh of an open gallery (issue 1733, C5)
+  live_refresh: boolean;
   hero_photo_id: number | null;
   customer_name: string;
   customer_email: string;

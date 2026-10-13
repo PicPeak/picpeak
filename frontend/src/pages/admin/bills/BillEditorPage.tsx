@@ -16,6 +16,7 @@ import { Eye } from 'lucide-react';
 import { Button, Card, Loading, Input, LocalizedDateInput, TimeField } from '../../../components/common';
 import { DocumentHeader } from '../../../components/admin/DocumentHeader';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
+import { useLeaveGuard } from '../../../contexts/UnsavedChangesContext';
 import { billsService, type InvoiceCreatePayload, type InvoiceQrFormat } from '../../../services/bills.service';
 import { quotesService } from '../../../services/quotes.service';
 import { contractsService } from '../../../services/contracts.service';
@@ -34,6 +35,7 @@ import { userManagementService } from '../../../services/userManagement.service'
 import { settingsService } from '../../../services/settings.service';
 import { useAdminAuth } from '../../../contexts/AdminAuthContext';
 import { toast } from 'react-toastify';
+import { todayIsoDate } from '../../../utils/localDate';
 
 function toMinor(amount: number) {
   return Math.round((Number(amount) || 0) * 100);
@@ -80,7 +82,7 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   const [customerIsPassive, setCustomerIsPassive] = useState(false);
   // Customer search + inline-create state moved into <CustomerPicker> (C.5).
   const [currency, setCurrency] = useState('CHF');
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [issueDate, setIssueDate] = useState(todayIsoDate());
   const [dueDate, setDueDate] = useState('');
   // Due date is normally view-only: it auto-tracks (send date else issue
   // date) + the selected Net-days template, so the payment clock starts
@@ -834,6 +836,7 @@ BillForm.displayName = 'BillForm';
 export const BillEditorPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { unguarded } = useLeaveGuard();
   const formRef = useRef<BillFormHandle>(null);
   const [state, setState] = useState<BillFormState>({ dirty: true, busy: false, valid: true, spawnCount: 0 });
   const [createdId, setCreatedId] = useState<number | null>(null);
@@ -855,7 +858,7 @@ export const BillEditorPage: React.FC = () => {
             <Button variant="outline" onClick={() => formRef.current?.previewUnsaved()} disabled={state.busy} leftIcon={<Eye className="w-4 h-4" />}>
               {t('common.preview', 'Preview')}
             </Button>
-            <Button variant="ghost" onClick={() => navigate('/admin/clients/bills')} disabled={state.busy}>
+            <Button variant="ghost" onClick={() => unguarded(() => navigate('/admin/clients/bills'))} disabled={state.busy}>
               {t('common.cancel', 'Cancel')}
             </Button>
           </>

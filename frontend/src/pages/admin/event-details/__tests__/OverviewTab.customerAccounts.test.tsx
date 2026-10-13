@@ -66,6 +66,7 @@ function renderTab(e: Event = event) {
         onExtendExpiration={() => {}}
         isExtending={false}
         onRevealNow={() => {}}
+        onPublish={() => {}}
       />
     </MemoryRouter>,
   );

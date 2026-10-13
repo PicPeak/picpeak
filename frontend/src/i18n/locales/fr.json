@@ -129,6 +129,16 @@
     "poweredBy": "Propulsé par"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} fichier est déjà dans cette galerie",
+      "title_other": "{{count}} fichiers sont déjà dans cette galerie",
+      "toast_one": "{{count}} fichier est déjà dans cette galerie et a été ignoré — détails dans la barre de téléversement en haut.",
+      "toast_other": "{{count}} fichiers sont déjà dans cette galerie et ont été ignorés — détails dans la barre de téléversement en haut.",
+      "badge": "Doublon",
+      "sameAs": "même contenu que {{name}}",
+      "uploadAnyway": "Téléverser quand même",
+      "uploadAllAnyway": "Tout téléverser quand même"
+    },
     "photoCategory": "Catégorie de la photo",
     "noCategory": "Aucune catégorie",
     "eventSpecific": "(Spécifique à l'événement)",
@@ -150,6 +160,7 @@
     "uploadMedia": "Téléverser des photos & vidéos",
     "maxFilesReached": "Maximum {{limit}} fichiers autorisés",
     "someFilesSkipped": "Seulement {{allowed}} fichiers supplémentaires peuvent être ajoutés (limite {{limit}})",
+    "filesOverLimit": "{{allowed}} fichiers sur {{found}} ajoutés. Un envoi accepte au maximum {{limit}} fichiers ; envoyez le reste séparément.",
     "tooManyFiles": "Maximum {{limit}} fichiers peuvent être téléversés en une seule fois",
     "limitInfo": "{{selected}} sur {{limit}} fichiers sélectionnés ({{remaining}} restants)",
     "limitReached": "Limite de téléversement atteinte ({{limit}} fichiers par lot)",
@@ -157,6 +168,7 @@
     "replacedFiles_other": "{{count}} photos remplacées",
     "processingFailed_one": "{{count}} photo n'a pas pu être traitée",
     "processingFailed_other": "{{count}} photos n'ont pas pu être traitées",
+    "heldForReview": "Merci ! Vos photos apparaîtront dans la galerie une fois approuvées par le photographe.",
     "uploadingChunks_one": "{{count}} bloc en cours de téléversement",
     "uploadingChunks_other": "{{count}} blocs en cours de téléversement",
     "invalidFileType": "Type de fichier non pris en charge : {{names}}",
@@ -315,6 +327,10 @@
     "cancelSelection": "Annuler la sélection",
     "selectAll": "Tout sélectionner",
     "deselectAll": "Tout désélectionner",
+    "selectionTray": {
+      "title": "Sélection ({{count}})",
+      "remove": "Retirer {{name}} de la sélection"
+    },
     "copyFilenames": {
       "button": "Copier les noms de fichiers",
       "title": "Copier les noms de fichiers",
@@ -414,6 +430,9 @@
     "backToGallery": "Toutes les photos",
     "downloadFolder": "Télécharger le dossier ({{count}})",
     "downloadFolderCapped": "Télécharger les {{limit}} premières sur {{total}}",
+    "newPhotos_one": "{{count}} nouvelle photo",
+    "newPhotos_many": "{{count}} nouvelles photos",
+    "newPhotos_other": "{{count}} nouvelles photos",
     "downloadEverything": "Télécharger toutes les photos",
     "videoFormatUnsupported": "Ce format vidéo ne peut pas être lu dans ce navigateur. Téléchargez-la pour la regarder.",
     "videoLoadFailed": "Cette vidéo n'a pas pu être chargée.",
@@ -434,6 +453,11 @@
       "photographer": "Photographe",
       "uploadedBy": "Envoyée par {{name}}",
       "photoBy": "Photo de {{name}}"
+    },
+    "filmStrip": {
+      "label": "Photos",
+      "photo": "Photo {{position}} sur {{total}}",
+      "photoNamed": "Photo {{position}} sur {{total}} : {{name}}"
     },
     "firstLook": "Première sélection",
     "viewAllPhotos": "Toutes les photos",
@@ -458,7 +482,12 @@
       "withDate": "Les images restantes sont encore en cours de retouche ; la galerie complète sera disponible au plus tard le {{date}}.",
       "noDetails": "Les images restantes sont encore en cours de retouche.",
       "progressLabel": "Photos livrées jusqu'à présent"
-    }
+    },
+    "preparedDownload": "Votre téléchargement préparé",
+    "downloadNotify": "M'envoyer un e-mail quand il est prêt",
+    "downloadNotifyRequested": "Nous vous enverrons un e-mail dès que le téléchargement sera prêt. Vous pouvez fermer cette fenêtre.",
+    "downloadNotifyFailed": "La notification par e-mail n'a pas pu être configurée. Veuillez garder cette fenêtre ouverte.",
+    "downloadGone": "Ce téléchargement n'est plus disponible. Veuillez le demander à nouveau."
   },
   "categories": {
     "title": "Catégories de photos",
@@ -485,6 +514,8 @@
   "events": {
     "revealMode": "Mode révélation (masquer la galerie jusqu'à la révélation)",
     "revealModeHelp": "Les invités peuvent téléverser mais ne voient aucune photo tant que vous ne révélez pas la galerie — manuellement ou à l'heure programmée. Le diaporama et l'accès client continuent de fonctionner.",
+    "liveRefresh": "Actualisation en direct (signaler les nouvelles photos aux invités)",
+    "liveRefreshHelp": "Une galerie ouverte vérifie toutes les 20 secondes si de nouvelles photos sont arrivées et propose aux invités un bouton « Nouvelles photos ». Rien ne se recharge tout seul.",
     "revealAt": "Révélation programmée (optionnel)",
     "revealAtHelp": "Laissez vide pour révéler manuellement avec le bouton « Révéler maintenant ».",
     "revealModeStatus": "Mode révélation",
@@ -622,6 +653,8 @@
     "userUploads": "Paramètres de téléversement utilisateur",
     "allowUserUploads": "Autoriser les invités à téléverser des photos",
     "allowUserUploadsHelp": "Permettre aux invités de téléverser leurs propres photos dans cette galerie",
+    "moderateGuestUploads": "Approuver les envois des invités avant leur publication",
+    "moderateGuestUploadsHelp": "Les envois des invités restent masqués pour les invités et les clients jusqu'à ce que vous ou un vérificateur les approuviez dans l'onglet Photos. Les envois refusés restent masqués. Les envois en attente comptent dans la limite de photos.",
     "allowUserUploadsDescription": "Permettre aux invités de téléverser leurs propres photos dans cette galerie",
     "uploadCategory": "Catégorie de téléversement",
     "selectCategory": "Sélectionner une catégorie pour les téléversements utilisateur",
@@ -860,7 +893,8 @@
         "firstLook": "première sélection, la suite après",
         "teamMembers_one": "{{count}} membre de l'équipe",
         "teamMembers_other": "{{count}} membres de l'équipe",
-        "teamReview": "envois de l'équipe vérifiés"
+        "teamReview": "envois de l'équipe vérifiés",
+        "uploadsApproved": "approbation requise"
       },
       "passwordOwnerOnly": "Seul le propriétaire de la galerie peut modifier le mot de passe ou le désactiver."
     },
@@ -936,6 +970,23 @@
       "reviewUploadsHelp": "Retient les envois des membres de l'équipe dont le rôle n'a pas l'autorisation « Review Team Uploads » : ils restent masqués pour les invités et les clients jusqu'à ce que vous ou un réviseur les approuviez dans l'onglet Photos. Les rôles Admin, Editor et Solo Photographer ont cette autorisation par défaut, leurs envois ne sont donc jamais retenus.",
       "reviewUploadsHelpMember": "Vos envois dans cette galerie restent masqués pour les invités et les clients jusqu'à ce que le propriétaire ou un réviseur les approuve.",
       "reviewUploadsHelpReviewer": "Les envois des membres de l'équipe sans l'autorisation « Review Team Uploads » attendent une approbation dans l'onglet Photos. Les vôtres sont publiés immédiatement."
+    },
+    "expiryPresets": {
+      "label": "Choix rapides pour l'expiration",
+      "days": "{{days}} jours",
+      "fromToday": "À partir d'aujourd'hui :"
+    },
+    "nextSteps": {
+      "title": "Avant de partager",
+      "progress": "{{done}} sur {{total}} terminées",
+      "done": "Terminé",
+      "todo": "À faire",
+      "photos": "Ajouter des photos",
+      "photosLink": "Ouvrir Photos",
+      "customer": "Ajouter un e-mail ou un compte client",
+      "customerLink": "Ouvrir les paramètres",
+      "publish": "Publier la galerie",
+      "publishLink": "Publier"
     }
   },
   "settings": {
@@ -1520,6 +1571,11 @@
       "placeholder": "Rechercher dans les paramètres…",
       "label": "Rechercher dans les paramètres",
       "noResults": "Aucun paramètre ne correspond à « {{query}} »."
+    },
+    "downloads": {
+      "retention": "Conserver les téléchargements préparés pendant (heures)",
+      "retentionHint": "Durée pendant laquelle un téléchargement préparé dans une taille personnalisée reste disponible avant d'être supprimé. Une durée plus longue permet aux invités de revenir le chercher plus tard, mais chaque téléchargement préparé occupe à peu près autant d'espace disque que les photos qu'il contient. S'applique aux téléchargements préparés à partir de maintenant.",
+      "retentionInvalid": "Saisissez un nombre entier d'heures entre {{min}} et {{max}}."
     }
   },
   "analytics": {
@@ -1968,10 +2024,12 @@
       "cmsPageLogoUploaded": "Logo de la page CMS téléversé : {{slug}}",
       "adminPasswordResetByAdmin": "Réinitialisation du mot de passe admin par un autre admin : {{username}}",
       "eventTeamChanged": "Équipe modifiée pour {{eventName}}",
-      "photosReviewApproved_one": "{{count}} envoi de l'équipe approuvé dans {{eventName}}",
-      "photosReviewApproved_other": "{{count}} envois de l'équipe approuvés dans {{eventName}}",
-      "photosReviewRejected_one": "{{count}} envoi de l'équipe refusé dans {{eventName}}",
-      "photosReviewRejected_other": "{{count}} envois de l'équipe refusés dans {{eventName}}",
+      "photosReviewApproved_one": "{{count}} envoi approuvé dans {{eventName}}",
+      "photosReviewApproved_other": "{{count}} envois approuvés dans {{eventName}}",
+      "photosReviewRejected_one": "{{count}} envoi refusé dans {{eventName}}",
+      "photosReviewRejected_other": "{{count}} envois refusés dans {{eventName}}",
+      "guestUploadsPendingReview_one": "{{count}} envoi d'invité attend une vérification dans {{eventName}}",
+      "guestUploadsPendingReview_other": "{{count}} envois d'invités attendent une vérification dans {{eventName}}",
       "photoDecision": "Photo approuvée ou refusée dans {{eventName}}",
       "guestFeedbackDecision": "Un invité a approuvé ou refusé une photo dans {{eventName}}"
     },
@@ -2239,10 +2297,12 @@
       "photo_decision": "Photo approuvée ou refusée dans {{eventName}}",
       "guest_feedback_decision": "Un invité a approuvé ou refusé une photo dans {{eventName}}",
       "event_team_changed": "Équipe modifiée pour {{eventName}}",
-      "photos_review_approved_one": "{{count}} envoi de l'équipe approuvé dans {{eventName}}",
-      "photos_review_approved_other": "{{count}} envois de l'équipe approuvés dans {{eventName}}",
-      "photos_review_rejected_one": "{{count}} envoi de l'équipe refusé dans {{eventName}}",
-      "photos_review_rejected_other": "{{count}} envois de l'équipe refusés dans {{eventName}}"
+      "photos_review_approved_one": "{{count}} envoi approuvé dans {{eventName}}",
+      "photos_review_approved_other": "{{count}} envois approuvés dans {{eventName}}",
+      "photos_review_rejected_one": "{{count}} envoi refusé dans {{eventName}}",
+      "photos_review_rejected_other": "{{count}} envois refusés dans {{eventName}}",
+      "guest_uploads_pending_review_one": "{{count}} envoi d'invité attend une vérification dans {{eventName}}",
+      "guest_uploads_pending_review_other": "{{count}} envois d'invités attendent une vérification dans {{eventName}}"
     },
     "catalogedMedia": "{{size}} catalogués",
     "storageUnavailable": "indisponible",
@@ -3040,6 +3100,9 @@
     "rateStar_one": "Noter {{count}} étoile",
     "rateStar_other": "Noter {{count}} étoiles",
     "removeRating": "Retirer la note",
+    "rateSelected": "Noter la sélection",
+    "bulkRatingPartial": "{{rated}} photos sur {{total}} ont été notées",
+    "ratingLimitReached": "Limite de notes atteinte. Réessayez plus tard.",
     "ratingsCount_one": "{{count}} note",
     "ratingsCount_other": "{{count}} notes",
     "likeError": "Échec de la mise à jour du j'aime",
@@ -3278,10 +3341,10 @@
       "waitingForAdmin_other": "{{count}} demandes de dossier attendent un administrateur. D'ici là, leurs {{photos}} photos restent dans le dossier existant le plus proche."
     },
     "review": {
-      "pendingOwner_one": "{{count}} envoi de votre équipe attend votre vérification",
-      "pendingOwner_other": "{{count}} envois de votre équipe attendent votre vérification",
-      "pendingMember_one": "{{count}} envoi de l'équipe attend la vérification du propriétaire",
-      "pendingMember_other": "{{count}} envois de l'équipe attendent la vérification du propriétaire",
+      "pendingOwner_one": "{{count}} envoi attend votre vérification",
+      "pendingOwner_other": "{{count}} envois attendent votre vérification",
+      "pendingMember_one": "{{count}} envoi attend la vérification du propriétaire",
+      "pendingMember_other": "{{count}} envois attendent la vérification du propriétaire",
       "nonePending": "Aucun envoi n'attend de vérification.",
       "filterPending": "À vérifier ({{count}})",
       "filterRejected": "Refusées ({{count}})",
@@ -3296,6 +3359,8 @@
       "pendingBadge": "À vérifier",
       "rejectedBadge": "Refusée",
       "uploadedBy": "Envoyée par {{name}}",
+      "sourceGuest": "Invité",
+      "sourceTeam": "Équipe",
       "hiddenUntilApproved": "Masquée pour les invités et les clients jusqu'à approbation",
       "skippedOnShow_one": "{{count}} photo attend une vérification et reste masquée jusqu'à son approbation",
       "skippedOnShow_other": "{{count}} photos attendent une vérification et restent masquées jusqu'à leur approbation"

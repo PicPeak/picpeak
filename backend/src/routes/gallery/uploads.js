@@ -10,6 +10,7 @@ const { photoCapOf, isPhotoCapReached, photoCapError } = require('../../services
 const categoryScope = require('../../utils/categoryScope');
 const { guestNameModeOf, guestCreditFields } = require('../../services/photoCredit');
 const { withPublicUpload } = require('../../middleware/publicUploadStream');
+const { holdsGuestUploads, notifyGuestUploadsPending } = require('../../services/uploadReviewService');
 const { parseClientCaptureDate } = require('../../services/guestUploadDownscale');
 
 router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolveGuest, async (req, res) => {
@@ -174,6 +175,12 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
           }
         }
 
+        // A moderated gallery (issue 1733) holds what comes in here, whoever
+        // sends it: hidden and pending until the owner or a reviewer approves
+        // it, like a team upload under review. Read from the event row this
+        // request resolved, so the photos and the answer below agree.
+        const heldForReview = holdsGuestUploads(req.event);
+
         // Queue files as 'pending' — the background worker will process
         // thumbnails / EXIF / dimensions off the request thread (#357).
         const result = await queueFilesForProcessing(req.files, {
@@ -185,11 +192,15 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
           uploadedBy: 'guest',
           credit,
           uploadReservation,
+          heldForReview,
           // The date the browser read before scaling the photo down (issue
           // 1733). One field, so it only speaks for a one-file request, which
           // is what the guest UI sends.
           clientCapturedAt: req.files.length === 1 ? parseClientCaptureDate(req.body.captured_at) : null,
         });
+        if (heldForReview && result.photos.length > 0) {
+          await notifyGuestUploadsPending(req.event, result.photos.length);
+        }
 
         // Every file refused for the cap: say so as a refusal, not a 202.
         if (result.photos.length === 0 && result.errors.length > 0
@@ -203,6 +214,8 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
           count: result.photos.length,
           photo_ids: result.photos.map((p) => p.id),
           photos: result.photos,
+          // The photos wait for approval and will not show up in the gallery.
+          held_for_review: heldForReview && result.photos.length > 0 ? true : undefined,
           errors: result.errors.length > 0 ? result.errors : undefined,
         });
       } catch (processError) {
