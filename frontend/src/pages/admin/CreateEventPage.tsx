@@ -18,6 +18,7 @@ import { addDays } from 'date-fns';
 import { toast } from 'react-toastify';
 
 import { Button, Input, Card, Notice, PasswordGenerator, LocalizedDateInput, TimeField } from '../../components/common';
+import { ExpiryPresets, EXPIRY_PRESET_DAYS } from '../../components/admin/ExpiryPresets';
 import { ThemeCustomizerEnhanced, GalleryPreview, WelcomeMessageEditor, FeedbackSettings } from '../../components/admin';
 import { CustomerAccountPicker } from '../../components/admin/CustomerAccountPicker';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
@@ -43,6 +44,8 @@ import { usePermission } from '../../hooks/usePermission';
 import { ExternalFolderPicker } from './event-details/ExternalFolderPicker';
 import { ThemeDisplay } from '../../components/admin';
 import { Code } from 'lucide-react';
+import { todayIsoDate } from '../../utils/localDate';
+import { radioGroupKeyDown } from '../../utils/ariaKeyboard';
 
 interface FormData {
   event_type: string;
@@ -149,7 +152,7 @@ export const CreateEventPage: React.FC = () => {
   const [formData, setFormData] = useState<FormData>({
     event_type: 'wedding',
     event_name: '',
-    event_date: new Date().toISOString().split('T')[0], // Initialize with ISO date format
+    event_date: todayIsoDate(),
     event_time_start: '',
     event_time_end: '',
     is_full_day: true,
@@ -820,13 +823,14 @@ export const CreateEventPage: React.FC = () => {
               <FolderOpen className="w-5 h-5" />
               {t('events.settingsTab.source', 'Photo source')}
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3" role="radiogroup" aria-label={t('events.sourceMode', 'Source Mode')}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3" role="radiogroup" aria-label={t('events.sourceMode', 'Source Mode')} onKeyDown={radioGroupKeyDown}>
               {(['managed', 'reference'] as const).map((sourceMode) => (
                 <button
                   key={sourceMode}
                   type="button"
                   role="radio"
                   aria-checked={formData.source_mode === sourceMode}
+                  tabIndex={formData.source_mode === sourceMode ? 0 : -1}
                   onClick={() => setFormData(prev => ({ ...prev, source_mode: sourceMode }))}
                   className={`flex flex-col items-start gap-1 text-left p-4 rounded-lg border-2 transition-all ${
                     formData.source_mode === sourceMode ? 'tile-selected' : 'border-line hover:border-line-strong'
@@ -1184,6 +1188,16 @@ export const CreateEventPage: React.FC = () => {
                     />
                   </div>
                   <span className="text-sm text-soft">{t('events.daysAfterEvent')}</span>
+                </div>
+                <div className="mt-2">
+                  <ExpiryPresets
+                    selected={EXPIRY_PRESET_DAYS.find((days) => days === Number(formData.expires_in_days)) ?? null}
+                    onSelect={(days) => {
+                      if (days === 'never') return;
+                      setFormData(prev => ({ ...prev, expires_in_days: days }));
+                      setErrors(prev => ({ ...prev, expires_in_days: undefined }));
+                    }}
+                  />
                 </div>
                 {formData.event_date && (
                   <p className="mt-2 text-sm text-muted">

@@ -62,6 +62,9 @@ const photos = [
   { ...basePhoto, id: 1, filename: 'pending.jpg', moderation_status: 'pending', uploaded_by_admin: { id: 7, username: 'anna' } },
   { ...basePhoto, id: 2, filename: 'rejected.jpg', moderation_status: 'rejected', uploaded_by_admin: { id: 7, username: 'anna' } },
   { ...basePhoto, id: 3, filename: 'hidden.jpg', moderation_status: null },
+  // Guest uploads held for approval (issue 1733), with and without a name.
+  { ...basePhoto, id: 4, filename: 'guest.jpg', moderation_status: 'pending', uploaded_by: 'guest', credit_name: 'Ben', uploaded_by_admin: null },
+  { ...basePhoto, id: 5, filename: 'nameless.jpg', moderation_status: 'pending', uploaded_by: 'guest', credit_name: null, uploaded_by_admin: null },
 ] as unknown as AdminPhoto[];
 
 const renderGrid = (canModerate: boolean) => renderWithQueryClient(
@@ -85,6 +88,15 @@ describe('AdminPhotoGrid upload review', () => {
     expect(screen.getByTestId('admin-photo-review-badge-2')).toHaveTextContent('Rejected');
     expect(screen.queryByTestId('admin-photo-hidden-badge-1')).toBeNull();
     expect(screen.getByTestId('admin-photo-hidden-badge-3')).toBeInTheDocument();
+  });
+
+  it('labels whose upload is under review: a team member or a guest (issue 1733)', () => {
+    renderGrid(false);
+    expect(screen.getByTestId('admin-photo-review-source-1')).toHaveTextContent('Team');
+    expect(screen.getByTestId('admin-photo-review-badge-1')).toHaveTextContent('Team· anna');
+    expect(screen.getByTestId('admin-photo-review-source-4')).toHaveTextContent('Guest');
+    expect(screen.getByTestId('admin-photo-review-badge-4')).toHaveTextContent('Guest· Ben');
+    expect(screen.getByTestId('admin-photo-review-badge-5')).toHaveTextContent(/Guest$/);
   });
 
   it('offers Approve / Reject to the owner only, and approves just the photos under review', async () => {

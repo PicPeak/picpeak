@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { GalleryEmptyMessage } from '../GalleryEmptyMessage';
 import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -70,6 +71,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   eventDate,
   allowDownloads = true,
   suppressEmptyState = false,
+  emptyIsFiltered = false,
   afterGrid,
   eventPhotoCount,
   onDownloadEverything,
@@ -425,7 +427,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
+        <GalleryEmptyMessage filtered={emptyIsFiltered} />
       </div>
     );
   }

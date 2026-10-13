@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, Maximize2, Check, MessageSquare, Heart } from 'lucide-react';
 import { useInView } from 'react-intersection-observer';
 import { AuthenticatedImage } from '../common';
@@ -540,29 +541,38 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
             )}
           </div>
 
-          {/* Identity Modal (self-managed mode) */}
-          {identityMode === 'self' && (
-            <FeedbackIdentityModal
-              isOpen={showIdentityModal}
-              onClose={() => { setShowIdentityModal(false); setPendingAction(null); }}
-              onSubmit={async (name, email) => {
-                setSelfIdentity({ name, email });
-                onIdentitySaved?.({ name, email });
-                setShowIdentityModal(false);
-                if (pendingAction) {
-                  if (pendingAction.type === 'like' && onLikeSuccess) {
-                    onLikeSuccess();
+          {/* Identity Modal (self-managed mode). Portalled to the body, as
+              TileRating's is: a tile with `content-visibility` (Masonry rows,
+              flickr, quilted) is the containing block of a `position: fixed`
+              descendant and clips it. React events still bubble through a
+              portal, so the wrapper keeps a click in the form from reaching
+              the tile and opening the photo. */}
+          {identityMode === 'self' && showIdentityModal && createPortal(
+            <div onClick={(e) => e.stopPropagation()}>
+              <FeedbackIdentityModal
+                isOpen
+                onClose={() => { setShowIdentityModal(false); setPendingAction(null); }}
+                onSubmit={async (name, email) => {
+                  setSelfIdentity({ name, email });
+                  onIdentitySaved?.({ name, email });
+                  setShowIdentityModal(false);
+                  if (pendingAction) {
+                    if (pendingAction.type === 'like' && onLikeSuccess) {
+                      onLikeSuccess();
+                    }
+                    await feedbackService.submitFeedback(slug!, String(pendingAction.photoId), {
+                      feedback_type: pendingAction.type,
+                      guest_name: name,
+                      guest_email: email,
+                    });
+                    if (onFeedbackChange) onFeedbackChange(pendingAction.photoId);
+                    setPendingAction(null);
                   }
-                  await feedbackService.submitFeedback(slug!, String(pendingAction.photoId), {
-                    feedback_type: pendingAction.type,
-                    guest_name: name,
-                    guest_email: email,
-                  });
-                  setPendingAction(null);
-                }
-              }}
-              feedbackType="like"
-            />
+                }}
+                feedbackType="like"
+              />
+            </div>,
+            document.body,
           )}
 
           {afterOverlay}

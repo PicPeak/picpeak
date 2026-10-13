@@ -10,6 +10,7 @@
  * dialog. A FirstLook keyword folder switches the gallery to two-stage
  * delivery on upload; this section is also how a gallery without one gets it.
  */
+import { radioGroupKeyDown } from '../../../../utils/ariaKeyboard';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -67,13 +68,14 @@ export const DeliverySection: React.FC<FieldsProps & { event: Event; onChanged: 
         title={t('events.delivery.sectionTitle', 'Two-stage delivery')}
         description={t('events.delivery.sectionHelp', 'Deliver a first look now and the complete gallery later. Guests see the first photos with a badge, a note that more are coming, and placeholder tiles until you mark the full gallery as ready.')}
       >
-        <div className="inline-flex rounded-lg border border-line-strong overflow-hidden" role="radiogroup" aria-label={t('events.delivery.sectionTitle', 'Two-stage delivery')}>
+        <div className="inline-flex rounded-lg border border-line-strong overflow-hidden" role="radiogroup" aria-label={t('events.delivery.sectionTitle', 'Two-stage delivery')} onKeyDown={radioGroupKeyDown}>
           {(['complete', 'partial'] as const).map((value) => (
             <button
               key={value}
               type="button"
               role="radio"
               aria-checked={f.delivery_status === value}
+              tabIndex={f.delivery_status === value ? 0 : -1}
               onClick={() => set({ delivery_status: value })}
               className={`px-4 py-2 text-sm ${f.delivery_status === value
                 ? 'bg-accent text-white font-semibold'

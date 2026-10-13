@@ -318,6 +318,12 @@ export const notificationsService = {
           count: notification.metadata.count || 0,
           eventName: notification.eventName || notification.metadata.eventName,
         });
+      // Guest uploads held for approval (issue 1733).
+      case 'guest_uploads_pending_review':
+        return t('admin.notificationMessages.guestUploadsPendingReview', {
+          count: notification.metadata.count || 0,
+          eventName: notification.eventName || notification.metadata.eventName,
+        });
       case 'category_hero_updated':
         return t('admin.notificationMessages.categoryHeroUpdated');
       case 'public_site_reset_to_default':
@@ -459,6 +465,8 @@ export const notificationsService = {
       case 'photos_review_approved':
       case 'photos_review_rejected':
         return { icon: 'Image', color: 'text-chart-4' };
+      case 'guest_uploads_pending_review':
+        return { icon: 'Image', color: 'text-warning-text' };
       case 'event_team_changed':
         return { icon: 'User', color: 'text-accent' };
       case 'category_hero_updated':

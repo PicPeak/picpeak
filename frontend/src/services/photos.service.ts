@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import type { PhotoExif } from '../types';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
 import { uploadMultipartBudget } from '../utils/uploadMultipartBudget';
 
@@ -51,6 +52,8 @@ export interface AdminPhoto {
   credit_name?: string | null;
   credit_source?: 'guest' | 'exif' | 'manual' | 'account' | null;
   uploaded_by?: 'admin' | 'guest';
+  // Camera details (issue 1733, D1); null when the photo carries none.
+  exif?: PhotoExif | null;
   // Folders (issue 1786): the folder the photo lives in (null = gallery
   // root), and the open folder request it waits on, if any.
   folder_id?: number | null;
@@ -359,11 +362,14 @@ class PhotosService {
     eventId: number,
     uploadId: string,
     categoryId?: number | null,
-    folder: FolderPlacement = {}
+    folder: FolderPlacement = {},
+    detectDuplicates = false
   ): Promise<{ success: boolean; uploaded: number; photos: AdminPhoto[] }> {
     const response = await api.post(
       `/admin/photos/${eventId}/chunked-upload/${uploadId}/complete`,
-      uploadPlacementBody({ ...folder, categoryId }),
+      // detect_duplicates asks the server to refuse a file the gallery already
+      // holds (issue 1733, C2); "upload anyway" leaves it out.
+      { ...uploadPlacementBody({ ...folder, categoryId }), ...(detectDuplicates ? { detect_duplicates: true } : {}) },
       // Merge + ffmpeg thumbnail can take a while on large videos.
       { timeout: 0 }
     );
@@ -379,7 +385,8 @@ class PhotosService {
     file: File,
     categoryId?: number | null,
     onProgress?: (progress: number) => void,
-    folder: FolderPlacement = {}
+    folder: FolderPlacement = {},
+    detectDuplicates = false
   ): Promise<AdminPhoto[]> {
     // Initialize upload
     const { uploadId, expectedChunks } = await this.initChunkedUpload(
@@ -404,7 +411,7 @@ class PhotosService {
       }
 
       // Complete upload
-      const result = await this.completeChunkedUpload(eventId, uploadId, categoryId, folder);
+      const result = await this.completeChunkedUpload(eventId, uploadId, categoryId, folder, detectDuplicates);
       return result.photos;
     } catch (error) {
       // Abort on error

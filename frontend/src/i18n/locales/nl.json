@@ -129,6 +129,16 @@
     "poweredBy": "Mogelijk gemaakt door"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} bestand staat al in deze galerij",
+      "title_other": "{{count}} bestanden staan al in deze galerij",
+      "toast_one": "{{count}} bestand staat al in deze galerij en is overgeslagen — details in de uploadbalk bovenaan.",
+      "toast_other": "{{count}} bestanden staan al in deze galerij en zijn overgeslagen — details in de uploadbalk bovenaan.",
+      "badge": "Duplicaat",
+      "sameAs": "zelfde inhoud als {{name}}",
+      "uploadAnyway": "Toch uploaden",
+      "uploadAllAnyway": "Alles toch uploaden"
+    },
     "photoCategory": "Fotocategorie",
     "noCategory": "Geen categorie",
     "eventSpecific": "(Evenement-specifiek)",
@@ -145,6 +155,7 @@
     "uploadMedia": "Foto's & video's uploaden",
     "maxFilesReached": "Maximaal {{limit}} bestanden toegestaan",
     "someFilesSkipped": "Er kunnen nog maar {{allowed}} bestanden worden toegevoegd (limiet {{limit}})",
+    "filesOverLimit": "{{allowed}} van {{found}} bestanden toegevoegd. Eén upload bevat maximaal {{limit}} bestanden; upload de rest apart.",
     "tooManyFiles": "Maximaal {{limit}} bestanden kunnen tegelijk worden geupload",
     "limitInfo": "{{selected}} van {{limit}} bestanden geselecteerd ({{remaining}} resterend)",
     "limitReached": "Uploadlimiet bereikt ({{limit}} bestanden per batch)",
@@ -152,6 +163,7 @@
     "replacedFiles_other": "{{count}} foto's vervangen",
     "processingFailed_one": "{{count}} foto kon niet worden verwerkt",
     "processingFailed_other": "{{count}} foto's konden niet worden verwerkt",
+    "heldForReview": "Bedankt! Uw foto's verschijnen in de galerij zodra de fotograaf ze heeft goedgekeurd.",
     "processing": "Foto's verwerken…",
     "processingProgress": "{{complete}} van {{total}} klaar",
     "processingHint": "De bestanden zijn geüpload. PicPeak genereert nu miniaturen en leest metadata. U kunt deze pagina verlaten — het werk gaat op de achtergrond verder.",
@@ -308,6 +320,10 @@
     "cancelSelection": "Selectie annuleren",
     "selectAll": "Alles selecteren",
     "deselectAll": "Alles deselecteren",
+    "selectionTray": {
+      "title": "Geselecteerd ({{count}})",
+      "remove": "{{name}} uit de selectie verwijderen"
+    },
     "copyFilenames": {
       "button": "Bestandsnamen kopiëren",
       "title": "Bestandsnamen kopiëren",
@@ -407,6 +423,8 @@
     "backToGallery": "Alle foto's",
     "downloadFolder": "Map downloaden ({{count}})",
     "downloadFolderCapped": "Eerste {{limit}} van {{total}} downloaden",
+    "newPhotos_one": "{{count}} nieuwe foto",
+    "newPhotos_other": "{{count}} nieuwe foto's",
     "downloadEverything": "Alle foto's downloaden",
     "videoFormatUnsupported": "Deze video-indeling kan niet in deze browser worden afgespeeld. Download de video om hem te bekijken.",
     "videoLoadFailed": "Deze video kon niet worden geladen.",
@@ -427,6 +445,11 @@
       "photographer": "Fotograaf",
       "uploadedBy": "Geüpload door {{name}}",
       "photoBy": "Foto door {{name}}"
+    },
+    "filmStrip": {
+      "label": "Foto's",
+      "photo": "Foto {{position}} van {{total}}",
+      "photoNamed": "Foto {{position}} van {{total}}: {{name}}"
     },
     "firstLook": "Eerste selectie",
     "viewAllPhotos": "Alle foto's",
@@ -449,7 +472,12 @@
       "withDate": "De overige foto's worden nog bewerkt — de volledige galerie volgt uiterlijk op {{date}}.",
       "noDetails": "De overige foto's worden nog bewerkt.",
       "progressLabel": "Tot nu toe geleverde foto's"
-    }
+    },
+    "preparedDownload": "Je voorbereide download",
+    "downloadNotify": "Mail mij wanneer hij klaar is",
+    "downloadNotifyRequested": "We sturen je een e-mail zodra de download klaar is. Je kunt dit venster sluiten.",
+    "downloadNotifyFailed": "De e-mailmelding kon niet worden ingesteld. Houd dit venster open.",
+    "downloadGone": "Deze download is niet meer beschikbaar. Vraag hem opnieuw aan."
   },
   "categories": {
     "title": "Fotocategorieen",
@@ -476,6 +504,8 @@
   "events": {
     "revealMode": "Onthullingsmodus (galerij verbergen tot de onthulling)",
     "revealModeHelp": "Gasten kunnen uploaden maar zien geen foto's totdat je de galerij onthult — handmatig of op het geplande tijdstip. Diavoorstelling en klanttoegang blijven werken.",
+    "liveRefresh": "Live verversen (gasten op nieuwe foto's wijzen)",
+    "liveRefreshHelp": "Een geopende galerij controleert elke 20 seconden of er nieuwe foto's zijn en biedt gasten een knop 'Nieuwe foto's' aan. Er wordt niets vanzelf opnieuw geladen.",
     "revealAt": "Geplande onthulling (optioneel)",
     "revealAtHelp": "Laat leeg om handmatig te onthullen met de knop \"Nu onthullen\".",
     "revealModeStatus": "Onthullingsmodus",
@@ -611,10 +641,15 @@
     "userUploads": "Instellingen gastuploads",
     "allowUserUploads": "Gasten toestaan foto's te uploaden",
     "allowUserUploadsHelp": "Sta gasten toe hun eigen foto's naar deze galerij te uploaden",
+    "moderateGuestUploads": "Uploads van gasten goedkeuren voordat ze worden gepubliceerd",
+    "moderateGuestUploadsHelp": "Uploads van gasten blijven verborgen voor gasten en klanten totdat u of een beoordelaar ze goedkeurt op het tabblad Foto's. Afgewezen uploads blijven verborgen. Wachtende uploads tellen mee voor de fotolimiet.",
     "allowUserUploadsDescription": "Sta gasten toe hun eigen foto's naar deze galerij te uploaden",
     "uploadCategory": "Uploadcategorie",
     "selectCategory": "Selecteer een categorie voor gastuploads",
     "uploadCategoryHelp": "Alle door gasten geuploade foto's worden aan deze categorie toegevoegd",
+    "guestUploadMaxEdge": "Langste zijde van gastfoto's (px)",
+    "guestUploadMaxEdgeHelp": "Grotere JPEG-, PNG- en WebP-foto's worden vóór het uploaden op het apparaat van de gast verkleind. Dat bespaart data en opslagruimte. Laat leeg om originelen te behouden. Andere formaten en video's worden altijd ongewijzigd verzonden.",
+    "guestUploadMaxEdgeInvalid": "De langste zijde moet een geheel getal van 1024 tot 16384 zijn, of leeg blijven.",
     "allowDownloads": "Foto-downloads toestaan",
     "downloadsDisabled": "Downloads uitgeschakeld",
     "downloadProtection": "Downloadbeveiliging",
@@ -846,7 +881,8 @@
         "firstLook": "eerste selectie, meer volgt",
         "teamMembers_one": "{{count}} teamlid",
         "teamMembers_other": "{{count}} teamleden",
-        "teamReview": "teamuploads worden gecontroleerd"
+        "teamReview": "teamuploads worden gecontroleerd",
+        "uploadsApproved": "goedkeuring vereist"
       },
       "passwordOwnerOnly": "Alleen de eigenaar van de galerij kan het wachtwoord wijzigen of uitschakelen."
     },
@@ -921,7 +957,26 @@
       "reviewUploadsHelp": "Houdt uploads tegen van teamleden wier rol de machtiging „Review Team Uploads” niet heeft: ze blijven verborgen voor gasten en klanten totdat u of een beoordelaar ze goedkeurt op het tabblad Foto's. De rollen Admin, Editor en Solo Photographer hebben die machtiging standaard, dus hun uploads worden nooit tegengehouden.",
       "reviewUploadsHelpMember": "Uw uploads naar deze galerij blijven verborgen voor gasten en klanten totdat de eigenaar of een beoordelaar ze goedkeurt.",
       "reviewUploadsHelpReviewer": "Uploads van teamleden zonder de machtiging „Review Team Uploads” wachten op goedkeuring op het tabblad Foto's. Die van u worden direct gepubliceerd."
-    }
+    },
+    "expiryPresets": {
+      "label": "Snelkeuze voor de vervaldatum",
+      "days": "{{days}} dagen",
+      "fromToday": "Vanaf vandaag:"
+    },
+    "nextSteps": {
+      "title": "Voordat je deelt",
+      "progress": "{{done}} van {{total}} klaar",
+      "done": "Klaar",
+      "todo": "Te doen",
+      "photos": "Foto's toevoegen",
+      "photosLink": "Foto's openen",
+      "customer": "E-mailadres of account van de klant toevoegen",
+      "customerLink": "Instellingen openen",
+      "publish": "Galerij publiceren",
+      "publishLink": "Publiceren"
+    },
+    "showExifToGuests": "Cameragegevens aan gasten tonen",
+    "showExifToGuestsHelp": "Camera, objectief, brandpuntsafstand, diafragma, sluitertijd en ISO verschijnen onder de foto in de volledige weergave. Locatie en serienummers worden nooit opgeslagen of getoond."
   },
   "settings": {
     "title": "Systeeminstellingen",
@@ -1475,6 +1530,14 @@
       "label": "Instellingen zoeken",
       "noResults": "Geen instelling komt overeen met “{{query}}”."
     },
+    "downloads": {
+      "retention": "Voorbereide downloads bewaren gedurende (uren)",
+      "retentionHint": "Hoe lang een download die in een aangepast formaat is voorbereid beschikbaar blijft voordat hij wordt verwijderd. Met een langere duur kunnen gasten hem later ophalen, maar elke voorbereide download neemt ongeveer evenveel schijfruimte in als de foto's die erin zitten. Geldt voor downloads die vanaf nu worden voorbereid.",
+      "retentionInvalid": "Voer een geheel aantal uren in tussen {{min}} en {{max}}."
+    },
+    "captureDates": {
+      "pendingDetails": "Foto's die op deze run wachten: {{photos}}. De run leest ook de cameragegevens (camera, objectief, belichting) van foto's waarvoor nog niets is vastgelegd."
+    },
     "passkeys": {
       "title": "Passkeys",
       "description": "Log in met je vingerafdruk, gezicht, apparaatpincode of een beveiligingssleutel in plaats van je wachtwoord. Een passkey vervangt ook de code van de authenticator-app.",
@@ -1969,10 +2032,12 @@
       "cmsPageLogoUploaded": "CMS-pagina-logo geüpload: {{slug}}",
       "adminPasswordResetByAdmin": "Beheerderswachtwoord door andere beheerder gereset: {{username}}",
       "eventTeamChanged": "Team gewijzigd voor {{eventName}}",
-      "photosReviewApproved_one": "{{count}} teamupload goedgekeurd in {{eventName}}",
-      "photosReviewApproved_other": "{{count}} teamuploads goedgekeurd in {{eventName}}",
-      "photosReviewRejected_one": "{{count}} teamupload afgewezen in {{eventName}}",
-      "photosReviewRejected_other": "{{count}} teamuploads afgewezen in {{eventName}}",
+      "photosReviewApproved_one": "{{count}} upload goedgekeurd in {{eventName}}",
+      "photosReviewApproved_other": "{{count}} uploads goedgekeurd in {{eventName}}",
+      "photosReviewRejected_one": "{{count}} upload afgewezen in {{eventName}}",
+      "photosReviewRejected_other": "{{count}} uploads afgewezen in {{eventName}}",
+      "guestUploadsPendingReview_one": "{{count}} gastupload wacht op controle in {{eventName}}",
+      "guestUploadsPendingReview_other": "{{count}} gastuploads wachten op controle in {{eventName}}",
       "photoDecision": "Foto goedgekeurd of afgewezen in {{eventName}}",
       "guestFeedbackDecision": "Gast heeft een foto goedgekeurd of afgewezen in {{eventName}}"
     },
@@ -2038,7 +2103,8 @@
         "filterNone": "Geen naam"
       },
       "approvedBy": "Goedgekeurd: {{value}}",
-      "rejectedBy": "Afgewezen: {{value}}"
+      "rejectedBy": "Afgewezen: {{value}}",
+      "cameraDetails": "Cameragegevens"
     },
     "events": {
       "tabs": {
@@ -2240,10 +2306,12 @@
       "photo_decision": "Foto goedgekeurd of afgewezen in {{eventName}}",
       "guest_feedback_decision": "Gast heeft een foto goedgekeurd of afgewezen in {{eventName}}",
       "event_team_changed": "Team gewijzigd voor {{eventName}}",
-      "photos_review_approved_one": "{{count}} teamupload goedgekeurd in {{eventName}}",
-      "photos_review_approved_other": "{{count}} teamuploads goedgekeurd in {{eventName}}",
-      "photos_review_rejected_one": "{{count}} teamupload afgewezen in {{eventName}}",
-      "photos_review_rejected_other": "{{count}} teamuploads afgewezen in {{eventName}}"
+      "photos_review_approved_one": "{{count}} upload goedgekeurd in {{eventName}}",
+      "photos_review_approved_other": "{{count}} uploads goedgekeurd in {{eventName}}",
+      "photos_review_rejected_one": "{{count}} upload afgewezen in {{eventName}}",
+      "photos_review_rejected_other": "{{count}} uploads afgewezen in {{eventName}}",
+      "guest_uploads_pending_review_one": "{{count}} gastupload wacht op controle in {{eventName}}",
+      "guest_uploads_pending_review_other": "{{count}} gastuploads wachten op controle in {{eventName}}"
     },
     "catalogedMedia": "{{size}} gecatalogiseerd",
     "storageUnavailable": "niet beschikbaar",
@@ -3041,6 +3109,9 @@
     "rateStar_one": "{{count}} ster beoordelen",
     "rateStar_other": "{{count}} sterren beoordelen",
     "removeRating": "Beoordeling verwijderen",
+    "rateSelected": "Selectie beoordelen",
+    "bulkRatingPartial": "{{rated}} van {{total}} foto's zijn beoordeeld",
+    "ratingLimitReached": "Limiet voor beoordelingen bereikt. Probeer het later opnieuw.",
     "ratingsCount_one": "{{count}} beoordeling",
     "ratingsCount_other": "{{count}} beoordelingen",
     "likeError": "Bijwerken like mislukt",
@@ -3279,10 +3350,10 @@
       "waitingForAdmin_other": "{{count}} mapaanvragen wachten op een beheerder. Tot die tijd staan de {{photos}} foto's in de dichtstbijzijnde bestaande map."
     },
     "review": {
-      "pendingOwner_one": "{{count}} upload van uw team wacht op uw controle",
-      "pendingOwner_other": "{{count}} uploads van uw team wachten op uw controle",
-      "pendingMember_one": "{{count}} teamupload wacht op controle door de eigenaar",
-      "pendingMember_other": "{{count}} teamuploads wachten op controle door de eigenaar",
+      "pendingOwner_one": "{{count}} upload wacht op uw controle",
+      "pendingOwner_other": "{{count}} uploads wachten op uw controle",
+      "pendingMember_one": "{{count}} upload wacht op controle door de eigenaar",
+      "pendingMember_other": "{{count}} uploads wachten op controle door de eigenaar",
       "nonePending": "Er wachten geen uploads op controle.",
       "filterPending": "Te controleren ({{count}})",
       "filterRejected": "Afgewezen ({{count}})",
@@ -3297,6 +3368,8 @@
       "pendingBadge": "Te controleren",
       "rejectedBadge": "Afgewezen",
       "uploadedBy": "Geüpload door {{name}}",
+      "sourceGuest": "Gast",
+      "sourceTeam": "Team",
       "hiddenUntilApproved": "Verborgen voor gasten en klanten tot goedkeuring",
       "skippedOnShow_one": "{{count}} foto wacht op controle en blijft verborgen tot goedkeuring",
       "skippedOnShow_other": "{{count}} foto's wachten op controle en blijven verborgen tot goedkeuring"

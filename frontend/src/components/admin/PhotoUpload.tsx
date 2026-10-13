@@ -14,6 +14,7 @@ import { collectDroppedEntries, pickedFromInput, type PickedFile } from '../../u
 import { buildUploadPreview, groupFilesByPlacement, hasDirectories, uniqueDirectories } from '../../utils/uploadStructure';
 import { childFolders, folderPathLabel } from '../../utils/folderTree';
 import { UploadStructurePreview } from './UploadStructurePreview';
+import { folderErrorMessage } from './folders/folderQueries';
 
 interface PhotoUploadProps {
   eventId: number;
@@ -195,7 +196,10 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
     toast.error(t('upload.invalidFileType', { names: rejected.join(', ') }));
   };
 
-  const addFiles = (incoming: PickedFile[]) => {
+  // `moreUnread`: the folder walk stopped at its ceiling or ran out of its
+  // scan budget, so `incoming` is only the first part of what was dropped
+  // and its length a lower bound.
+  const addFiles = (incoming: PickedFile[], moreUnread = false) => {
     // Only loose files (chosen or dropped by hand, dir '') are named when
     // rejected: a picked folder of RAW plus XMP sidecars would otherwise put
     // every sidecar in one toast. The folder input has no `accept` to
@@ -216,10 +220,14 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
         );
         return;
       }
-      toast.warning(
-        t('upload.someFilesSkipped', { allowed: allowedNewFiles, limit: maxFilesPerUpload }) ||
-        `Only ${allowedNewFiles} more files can be added (limit ${maxFilesPerUpload})`
-      );
+      // Dropped vs accepted (issue 1733, C1): a folder over the cap is cut
+      // at the tail, which with "Keep folder structure" means whole folders
+      // are missing, so the notice names both numbers.
+      toast.warning(t('upload.filesOverLimit', {
+        allowed: allowedNewFiles,
+        found: moreUnread ? `${imageFiles.length}+` : imageFiles.length,
+        limit: maxFilesPerUpload,
+      }));
       commitSelection([...current, ...imageFiles.slice(0, allowedNewFiles)]);
       return;
     }
@@ -303,12 +311,16 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
       || admitFileRef.current(file, depth === 0 ? rejected : undefined);
     // The walk also stops after examining a multiple of the ceiling (a tree
     // of mostly unsupported files); say so rather than omit the rest silently.
-    const onTruncated = () => toast.warning(t('upload.folderTooLarge'));
+    let truncated = false;
+    const onTruncated = () => {
+      truncated = true;
+      toast.warning(t('upload.folderTooLarge'));
+    };
     void collectDroppedEntries(e.dataTransfer, { limit: FOLDER_WALK_CEILING, accept, onTruncated })
       .then(async (files) => {
         await whenSettingsSettled();
         reportRejectedTypes(rejected);
-        addFilesRef.current(files);
+        addFilesRef.current(files, truncated || files.length >= FOLDER_WALK_CEILING);
       })
       .finally(() => setPendingWalks((n) => n - 1));
   };
@@ -340,6 +352,12 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
     staleTime: 10_000,
   });
   const resolved = withFolders ? previewQuery.data : undefined;
+  // The upload would go past the folder or request limit: the real resolve
+  // would create what fits and then refuse, so say it now and hold the button.
+  const overLimit = keepStructure ? resolved?.limit ?? null : null;
+  // While a new preview loads the previous answer is still shown; it may be
+  // for another selection or toggle, so the button waits for the new one.
+  const limitUnknown = withFolders && keepStructure && previewQuery.isPlaceholderData;
   const preview = useMemo(
     () => (resolved ? buildUploadPreview(selectedFiles, resolved, { skipOuter, keepStructure }) : null),
     [resolved, selectedFiles, skipOuter, keepStructure]
@@ -412,8 +430,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
           looseFolderId,
         }).groups;
       } catch (error: unknown) {
-        const e = error as { response?: { data?: { error?: string } } };
-        toast.error(e.response?.data?.error || t('upload.structure.resolveFailed', 'The folders for this upload could not be prepared. Nothing was uploaded.'));
+        toast.error(folderErrorMessage(error, t) || t('upload.structure.resolveFailed', 'The folders for this upload could not be prepared. Nothing was uploaded.'));
         return;
       } finally {
         setResolving(false);
@@ -623,6 +640,13 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
           looseTargetLabel={looseTargetLabel}
         />
       )}
+      {withFolders && overLimit && !limitUnknown && (
+        <Notice tone="warning">
+          {overLimit.code === 'FOLDER_REQUEST_LIMIT_REACHED'
+            ? t('upload.structure.overRequestLimit', 'This upload would open {{adding}} folder requests, but the gallery already has {{current}} of at most {{limit}} open. Ask an administrator to approve or reject some first, or turn off “Keep folder structure”.', { count: overLimit.adding, adding: overLimit.adding, current: overLimit.current, limit: overLimit.limit })
+            : t('upload.structure.overFolderLimit', 'This upload would add {{adding}} folders, but the gallery already has {{current}} of at most {{limit}}. Turn off “Keep folder structure” or remove folders first.', { count: overLimit.adding, adding: overLimit.adding, current: overLimit.current, limit: overLimit.limit })}
+        </Notice>
+      )}
 
       {/* Selected Files */}
       {selectedFiles.length > 0 && (
@@ -668,7 +692,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
         <Button
           variant="primary"
           onClick={handleUpload}
-          disabled={selectedFiles.length === 0 || isUploading || pendingWalks > 0 || resolving}
+          disabled={selectedFiles.length === 0 || isUploading || pendingWalks > 0 || resolving || !!overLimit || limitUnknown}
           isLoading={pendingWalks > 0 || resolving}
           leftIcon={<Upload className="w-4 h-4" />}
         >
