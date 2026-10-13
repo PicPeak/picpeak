@@ -25,9 +25,14 @@ export const PasskeysCard: React.FC = () => {
     queryFn: () => passkeyService.getStatus(),
   });
 
+  // With two-factor authentication on, adding a passkey takes a code as well:
+  // a passkey signs in without one.
+  const needsCode = status?.mfaEnabled === true;
+
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
 
   const [renamingId, setRenamingId] = useState<number | null>(null);
@@ -48,6 +53,7 @@ export const PasskeysCard: React.FC = () => {
     if (data?.code === 'PASSKEY_ALREADY_REGISTERED') return t('settings.passkeys.errors.exists');
     if (data?.code === 'PASSKEY_CHALLENGE_INVALID') return t('settings.passkeys.errors.expired');
     if (data?.code === 'PASSWORD_INCORRECT') return t('settings.passkeys.errors.wrongPassword');
+    if (data?.code === 'MFA_INVALID' || data?.code === 'MFA_CODE_REQUIRED') return t('settings.passkeys.errors.wrongCode');
     return data?.error || t(fallbackKey);
   };
 
@@ -55,11 +61,14 @@ export const PasskeysCard: React.FC = () => {
     setAdding(false);
     setName('');
     setPassword('');
+    setCode('');
     setAddError(null);
   };
 
   const addMutation = useMutation({
-    mutationFn: () => passkeyService.register(name.trim(), password),
+    mutationFn: () => (needsCode
+      ? passkeyService.register(name.trim(), password, code.trim())
+      : passkeyService.register(name.trim(), password)),
     onSuccess: () => {
       toast.success(t('settings.passkeys.added'));
       closeAdd();
@@ -67,6 +76,8 @@ export const PasskeysCard: React.FC = () => {
     },
     onError: (error) => {
       setAddError(errorText(error, 'settings.passkeys.errors.failed'));
+      // A code is spent by the attempt that used it, whatever came after.
+      setCode('');
       // A browser that already holds this passkey means the list is stale.
       invalidate();
     },
@@ -114,6 +125,7 @@ export const PasskeysCard: React.FC = () => {
     e.preventDefault();
     if (!name.trim()) { setAddError(t('settings.passkeys.nameRequired')); return; }
     if (!password) { setAddError(t('settings.passkeys.passwordRequired')); return; }
+    if (needsCode && !code.trim()) { setAddError(t('settings.passkeys.codeRequired')); return; }
     setAddError(null);
     addMutation.mutate();
   };
@@ -277,6 +289,21 @@ export const PasskeysCard: React.FC = () => {
                 />
                 <p className="text-xs text-muted mt-1">{t('settings.passkeys.passwordHelp')}</p>
               </div>
+              {needsCode && (
+                <div>
+                  <label htmlFor="passkey-code" className="block text-sm font-medium text-body mb-1">
+                    {t('settings.passkeys.codeLabel')}
+                  </label>
+                  <Input
+                    id="passkey-code"
+                    value={code}
+                    onChange={(e) => { setCode(e.target.value); setAddError(null); }}
+                    placeholder={t('settings.mfa.codePlaceholder')}
+                    autoComplete="one-time-code"
+                  />
+                  <p className="text-xs text-muted mt-1">{t('settings.passkeys.codeHelp')}</p>
+                </div>
+              )}
               {addError && <Notice tone="danger" size="sm">{addError}</Notice>}
               <div className="flex gap-2">
                 <Button type="submit" variant="primary" isLoading={addMutation.isPending}>

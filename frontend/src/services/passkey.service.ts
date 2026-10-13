@@ -26,6 +26,8 @@ export interface PasskeyStatus {
   rpId: string | null;
   origin: string | null;
   max: number;
+  // The account has two-factor authentication: adding a passkey needs a code.
+  mfaEnabled: boolean;
   passkeys: Passkey[];
 }
 
@@ -37,9 +39,11 @@ export const passkeyService = {
 
   // Options, the browser prompt, then verification. Rejects with the
   // browser's DOMException when the prompt is dismissed (see passkeyErrorKind).
-  async register(name: string, currentPassword: string): Promise<Passkey> {
+  // `code` is the authenticator (or recovery) code an account with two-factor
+  // authentication has to give as well.
+  async register(name: string, currentPassword: string, code?: string): Promise<Passkey> {
     const { data } = await api.post<{ options: Record<string, any> }>(
-      '/admin/auth/passkeys/register/options', { currentPassword });
+      '/admin/auth/passkeys/register/options', code ? { currentPassword, code } : { currentPassword });
     const response = await createPasskey(data.options);
     const verified = await api.post<{ passkey: Passkey }>(
       '/admin/auth/passkeys/register/verify', { response, name });

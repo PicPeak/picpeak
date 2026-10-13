@@ -1487,6 +1487,9 @@
       "passwordLabel": "Huidig wachtwoord",
       "passwordHelp": "Bevestigt dat jij het bent die een nieuwe manier van inloggen toevoegt.",
       "passwordRequired": "Voer je huidige wachtwoord in.",
+      "codeLabel": "Authenticatorcode",
+      "codeHelp": "Je account gebruikt tweestapsverificatie. Voer een code uit je authenticator-app in, of een herstelcode.",
+      "codeRequired": "Voer een code uit je authenticator-app in.",
       "continue": "Doorgaan",
       "added": "Passkey toegevoegd.",
       "addedOn": "Toegevoegd op {{date}}",
@@ -1506,6 +1509,7 @@
         "limit": "Je hebt het maximale aantal passkeys bereikt. Verwijder er een om een nieuwe toe te voegen.",
         "expired": "Het verzoek is verlopen. Probeer het opnieuw.",
         "wrongPassword": "Het huidige wachtwoord is onjuist.",
+        "wrongCode": "De code is onjuist of al gebruikt.",
         "failed": "Er is iets misgegaan. Probeer het opnieuw."
       },
       "unavailable": {

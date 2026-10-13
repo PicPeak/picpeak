@@ -33,6 +33,7 @@ const logger = require('../utils/logger');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { buildCookieOptionsWithExpiry, buildClearCookieOptions } = require('../utils/tokenUtils');
 const { isTokenBeforeCutoff } = require('../utils/sessionCutoff');
+const { isEnrolled } = require('./mfaService');
 
 const TABLE = 'admin_webauthn_credentials';
 const RP_NAME = 'PicPeak';
@@ -94,11 +95,15 @@ async function requireRelyingParty(req) {
 // the login routes (/api/auth/admin/passkey).
 const CHALLENGE_COOKIE_PATH = '/api';
 
-// What a registration challenge is bound to besides the account: the password
-// that authorized it. Keyed, so the cookie says nothing about the stored hash.
-function passwordState(passwordHash) {
+// What a registration challenge is bound to besides the account: the
+// credentials that authorized it, the password and, where the account has
+// two-factor authentication, its secret. Keyed, so the cookie says nothing
+// about the stored values.
+function authState(admin) {
+  const enrolled = isEnrolled(admin);
   return crypto.createHmac('sha256', process.env.JWT_SECRET)
-    .update(`passkey-password-state:${passwordHash || ''}`).digest('base64url');
+    .update(`passkey-auth-state:${admin.password_hash || ''}:${enrolled ? admin.two_factor_secret || 'on' : ''}`)
+    .digest('base64url');
 }
 
 function setChallenge(res, { purpose, challenge, adminId = null, rememberMe = false, pw = null }) {
@@ -247,7 +252,7 @@ async function beginRegistration(req, res, admin) {
     authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
   });
   setChallenge(res, {
-    purpose: 'register', challenge: options.challenge, adminId: admin.id, pw: passwordState(admin.password_hash),
+    purpose: 'register', challenge: options.challenge, adminId: admin.id, pw: authState(admin),
   });
   return options;
 }
@@ -297,11 +302,13 @@ async function finishRegistration(req, res, admin, response, name) {
       // and both insert), so they queue on the account row first. SQLite has
       // one writer, and knex drops the lock clause there.
       const current = await trx('admin_users').where('id', admin.id).forUpdate().first();
-      // The ceremony was authorized with the password at the options step. A
-      // reset by somebody else since then removed the account's passkeys, and
-      // this one must not land after it. Read under the lock the reset's own
-      // update takes, so the two cannot interleave.
-      if (!current || passwordState(current.password_hash) !== pw) {
+      // The ceremony was authorized with the password (and second factor) at
+      // the options step. A reset by somebody else since then removed the
+      // account's passkeys, and this one must not land after it; nor may a
+      // challenge issued for the password alone finish once two-factor
+      // authentication is on. Read under the lock the reset's own update
+      // takes, so the two cannot interleave.
+      if (!current || authState(current) !== pw) {
         throw new PasskeyError('PASSKEY_CHALLENGE_INVALID', 'The passkey request expired. Please try again.');
       }
       if (await countForAdmin(admin.id, trx) >= MAX_PASSKEYS_PER_ADMIN) {

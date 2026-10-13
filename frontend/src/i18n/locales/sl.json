@@ -2966,6 +2966,9 @@
       "passwordLabel": "Trenutno geslo",
       "passwordHelp": "Potrdi, da nov način prijave dodajate vi.",
       "passwordRequired": "Vnesite trenutno geslo.",
+      "codeLabel": "Koda za preverjanje pristnosti",
+      "codeHelp": "Vaš račun uporablja dvostopenjsko preverjanje pristnosti. Vnesite kodo iz aplikacije za preverjanje pristnosti ali obnovitveno kodo.",
+      "codeRequired": "Vnesite kodo iz aplikacije za preverjanje pristnosti.",
       "continue": "Nadaljuj",
       "added": "Ključ za dostop je dodan.",
       "addedOn": "Dodan {{date}}",
@@ -2985,6 +2988,7 @@
         "limit": "Dosegli ste največje število ključev za dostop. Odstranite enega, da dodate novega.",
         "expired": "Zahteva je potekla. Poskusite znova.",
         "wrongPassword": "Trenutno geslo ni pravilno.",
+        "wrongCode": "Koda ni pravilna ali je bila že uporabljena.",
         "failed": "Nekaj je šlo narobe. Poskusite znova."
       },
       "unavailable": {

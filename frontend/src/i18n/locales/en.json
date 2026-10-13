@@ -3251,6 +3251,9 @@
       "passwordLabel": "Current password",
       "passwordHelp": "Confirms that it is you adding a new way to sign in.",
       "passwordRequired": "Enter your current password.",
+      "codeLabel": "Authenticator code",
+      "codeHelp": "Your account uses two-factor authentication. Enter a code from your authenticator app, or a recovery code.",
+      "codeRequired": "Enter a code from your authenticator app.",
       "continue": "Continue",
       "added": "Passkey added.",
       "addedOn": "Added {{date}}",
@@ -3270,6 +3273,7 @@
         "limit": "You have reached the maximum number of passkeys. Remove one to add another.",
         "expired": "The request expired. Try again.",
         "wrongPassword": "The current password is incorrect.",
+        "wrongCode": "The code is incorrect or has already been used.",
         "failed": "Something went wrong. Try again."
       },
       "unavailable": {

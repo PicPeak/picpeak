@@ -1380,6 +1380,9 @@
       "passwordLabel": "Contraseña actual",
       "passwordHelp": "Confirma que eres tú quien añade una nueva forma de iniciar sesión.",
       "passwordRequired": "Introduce tu contraseña actual.",
+      "codeLabel": "Código de autenticación",
+      "codeHelp": "Tu cuenta usa la autenticación en dos pasos. Introduce un código de tu aplicación de autenticación o un código de recuperación.",
+      "codeRequired": "Introduce un código de tu aplicación de autenticación.",
       "continue": "Continuar",
       "added": "Llave de acceso añadida.",
       "addedOn": "Añadida el {{date}}",
@@ -1399,6 +1402,7 @@
         "limit": "Has alcanzado el número máximo de llaves de acceso. Quita una para añadir otra.",
         "expired": "La solicitud ha caducado. Inténtalo de nuevo.",
         "wrongPassword": "La contraseña actual no es correcta.",
+        "wrongCode": "El código no es correcto o ya se ha utilizado.",
         "failed": "Algo salió mal. Inténtalo de nuevo."
       },
       "unavailable": {

@@ -44,6 +44,7 @@ const status = (over: Record<string, unknown> = {}) => ({
   rpId: 'localhost',
   origin: window.location.origin,
   max: 10,
+  mfaEnabled: false,
   passkeys: [],
   ...over,
 });
@@ -103,6 +104,47 @@ describe('PasskeysCard', () => {
     // Back to the closed state, list refetched.
     await screen.findByRole('button', { name: 'settings.passkeys.add' });
     expect(service.getStatus.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // A passkey signs in without the authenticator code, so an account with
+  // two-factor authentication gives one to add it.
+  it('asks for an authenticator code as well when the account has two-factor authentication', async () => {
+    service.getStatus.mockResolvedValue(status({ mfaEnabled: true }));
+    service.register.mockResolvedValue({ ...laptop });
+    renderCard();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'settings.passkeys.add' }));
+    fireEvent.change(screen.getByLabelText('settings.passkeys.nameLabel'), { target: { value: 'Laptop' } });
+    fireEvent.change(screen.getByLabelText('settings.passkeys.passwordLabel'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'settings.passkeys.continue' }));
+    expect(screen.getByText('settings.passkeys.codeRequired')).toBeInTheDocument();
+    expect(service.register).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('settings.passkeys.codeLabel'), { target: { value: ' 123456 ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'settings.passkeys.continue' }));
+    await waitFor(() => expect(service.register).toHaveBeenCalledWith('Laptop', 'secret', '123456'));
+  });
+
+  it('shows no code field without two-factor authentication', async () => {
+    service.getStatus.mockResolvedValue(status());
+    renderCard();
+    fireEvent.click(await screen.findByRole('button', { name: 'settings.passkeys.add' }));
+    expect(screen.queryByLabelText('settings.passkeys.codeLabel')).toBeNull();
+  });
+
+  it('names a refused code and clears the field', async () => {
+    service.getStatus.mockResolvedValue(status({ mfaEnabled: true }));
+    service.register.mockRejectedValue({ response: { data: { code: 'MFA_INVALID', error: 'Invalid verification code' } } });
+    renderCard();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'settings.passkeys.add' }));
+    fireEvent.change(screen.getByLabelText('settings.passkeys.nameLabel'), { target: { value: 'Laptop' } });
+    fireEvent.change(screen.getByLabelText('settings.passkeys.passwordLabel'), { target: { value: 'secret' } });
+    fireEvent.change(screen.getByLabelText('settings.passkeys.codeLabel'), { target: { value: '000000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'settings.passkeys.continue' }));
+
+    expect(await screen.findByText('settings.passkeys.errors.wrongCode')).toBeInTheDocument();
+    expect((screen.getByLabelText('settings.passkeys.codeLabel') as HTMLInputElement).value).toBe('');
   });
 
   it.each([

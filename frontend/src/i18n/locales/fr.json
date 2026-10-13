@@ -1530,6 +1530,9 @@
       "passwordLabel": "Mot de passe actuel",
       "passwordHelp": "Confirme que c'est bien vous qui ajoutez un nouveau moyen de connexion.",
       "passwordRequired": "Saisissez votre mot de passe actuel.",
+      "codeLabel": "Code d'authentification",
+      "codeHelp": "Votre compte utilise l'authentification à deux facteurs. Saisissez un code de votre application d'authentification ou un code de récupération.",
+      "codeRequired": "Saisissez un code de votre application d'authentification.",
       "continue": "Continuer",
       "added": "Clé d'accès ajoutée.",
       "addedOn": "Ajoutée le {{date}}",
@@ -1549,6 +1552,7 @@
         "limit": "Vous avez atteint le nombre maximal de clés d'accès. Retirez-en une pour en ajouter une autre.",
         "expired": "La demande a expiré. Réessayez.",
         "wrongPassword": "Le mot de passe actuel est incorrect.",
+        "wrongCode": "Le code est incorrect ou a déjà été utilisé.",
         "failed": "Une erreur s'est produite. Réessayez."
       },
       "unavailable": {

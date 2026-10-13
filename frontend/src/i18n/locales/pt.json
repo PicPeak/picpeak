@@ -1615,6 +1615,9 @@
       "passwordLabel": "Senha atual",
       "passwordHelp": "Confirma que é você quem está adicionando uma nova forma de entrar.",
       "passwordRequired": "Digite sua senha atual.",
+      "codeLabel": "Código do autenticador",
+      "codeHelp": "Sua conta usa a autenticação em dois fatores. Digite um código do seu aplicativo autenticador ou um código de recuperação.",
+      "codeRequired": "Digite um código do seu aplicativo autenticador.",
       "continue": "Continuar",
       "added": "Chave de acesso adicionada.",
       "addedOn": "Adicionada em {{date}}",
@@ -1634,6 +1637,7 @@
         "limit": "Você atingiu o número máximo de chaves de acesso. Remova uma para adicionar outra.",
         "expired": "O pedido expirou. Tente novamente.",
         "wrongPassword": "A senha atual está incorreta.",
+        "wrongCode": "O código está incorreto ou já foi usado.",
         "failed": "Algo deu errado. Tente novamente."
       },
       "unavailable": {

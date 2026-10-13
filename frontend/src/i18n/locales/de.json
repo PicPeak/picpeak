@@ -3844,6 +3844,9 @@
       "passwordLabel": "Aktuelles Passwort",
       "passwordHelp": "Bestätigt, dass du es bist, der eine neue Anmeldemöglichkeit hinzufügt.",
       "passwordRequired": "Gib dein aktuelles Passwort ein.",
+      "codeLabel": "Code der Authenticator-App",
+      "codeHelp": "Dein Konto nutzt die Zwei-Faktor-Authentifizierung. Gib einen Code aus deiner Authenticator-App oder einen Wiederherstellungscode ein.",
+      "codeRequired": "Gib einen Code aus deiner Authenticator-App ein.",
       "continue": "Weiter",
       "added": "Passkey hinzugefügt.",
       "addedOn": "Hinzugefügt am {{date}}",
@@ -3863,6 +3866,7 @@
         "limit": "Die maximale Anzahl an Passkeys ist erreicht. Entferne einen, um einen neuen hinzuzufügen.",
         "expired": "Die Anfrage ist abgelaufen. Bitte erneut versuchen.",
         "wrongPassword": "Das aktuelle Passwort ist falsch.",
+        "wrongCode": "Der Code ist falsch oder wurde bereits verwendet.",
         "failed": "Etwas ist schiefgelaufen. Bitte erneut versuchen."
       },
       "unavailable": {

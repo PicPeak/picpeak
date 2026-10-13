@@ -461,6 +461,43 @@ async function assertCurrentPassword(admin, currentPassword) {
   }
 }
 
+// The fresh second factor an account with two-factor authentication owes
+// before a passkey is added: what /mfa/disable accepts, a current
+// authenticator code or a recovery code. A passkey signs in without the code,
+// so without this a stolen session plus the password would be enough to mint
+// a way around the second factor. Both are spent here: the TOTP step is
+// persisted (persistTotpStep) and a recovery code is removed by
+// compare-and-set, as at login, so neither authorizes two requests.
+async function assertFreshSecondFactor(admin, code) {
+  const fail = (message, errorCode) => {
+    const error = new ValidationError(message);
+    error.code = errorCode;
+    return error;
+  };
+  if (typeof code !== 'string' || !code.trim()) {
+    throw fail('A current authenticator code is required to add a passkey', 'MFA_CODE_REQUIRED');
+  }
+  const totpStep = mfaService.verifyTotpEncryptedStep(
+    code, admin.two_factor_secret, admin.two_factor_last_used_step
+  );
+  if (totpStep !== null
+    && await mfaService.persistTotpStep(db, admin.id, totpStep, { updated_at: new Date() })) {
+    return;
+  }
+  const stored = mfaService.parseRecoveryCodes(admin.two_factor_recovery_codes);
+  const result = await mfaService.consumeRecoveryCode(code, stored);
+  const consumed = result.matched ? await db('admin_users')
+    .where('id', admin.id)
+    .where('two_factor_recovery_codes', admin.two_factor_recovery_codes)
+    .update({ two_factor_recovery_codes: JSON.stringify(result.remainingHashes), updated_at: new Date() }) : 0;
+  if (consumed !== 1) throw fail('Invalid verification code', 'MFA_INVALID');
+  await logActivity('admin_mfa_recovery_used',
+    { admin_id: admin.id, remaining: result.remainingHashes.length },
+    null,
+    { type: 'admin', id: admin.id, name: admin.username }
+  );
+}
+
 router.get('/passkeys', adminAuth, handleAsync(async (req, res) => {
   const admin = await db('admin_users').where('id', req.admin.id).first();
   if (!admin) throw new NotFoundError('Admin user');
@@ -474,13 +511,16 @@ router.get('/passkeys', adminAuth, handleAsync(async (req, res) => {
     rpId: rp.rpID || null,
     origin: rp.origin || null,
     max: passkeyService.MAX_PASSKEYS_PER_ADMIN,
+    // Adding a passkey then asks for an authenticator code as well.
+    mfaEnabled: isMfaEnabled(admin),
     passkeys: rows.map(passkeyService.publicView)
   });
 }));
 
 router.post('/passkeys/register/options', [
   adminAuth,
-  body('currentPassword').isString().notEmpty().withMessage('Current password is required')
+  body('currentPassword').isString().notEmpty().withMessage('Current password is required'),
+  body('code').optional().isString().isLength({ max: 64 })
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   const admin = await db('admin_users').where('id', req.admin.id).first();
@@ -490,6 +530,9 @@ router.post('/passkeys/register/options', [
     return res.status(400).json({ error: 'Passkeys are not available', code: 'PASSKEY_UNAVAILABLE', reason });
   }
   await assertCurrentPassword(admin, req.body.currentPassword);
+  // After the password, so a wrong password never spends a code. No challenge
+  // exists without it, and register/verify only accepts a challenge from here.
+  if (isMfaEnabled(admin)) await assertFreshSecondFactor(admin, req.body.code);
   try {
     res.json({ options: await passkeyService.beginRegistration(req, res, admin) });
   } catch (error) {

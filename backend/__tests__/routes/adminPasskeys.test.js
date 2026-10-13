@@ -335,6 +335,108 @@ describe('registration', () => {
   });
 });
 
+// A passkey signs in without the password AND without the authenticator code.
+// On an account with two-factor authentication, adding one therefore needs a
+// fresh code as well, like switching the second factor off does: a stolen
+// session plus the password must not be enough to mint a way around it.
+describe('registration on an account with two-factor authentication', () => {
+  const { authenticator } = require('otplib');
+  const mfaService = require('../../src/services/mfaService');
+
+  async function seedMfaAdmin() {
+    const secret = mfaService.generateSecret();
+    const { plain, hashed } = await mfaService.generateRecoveryCodes();
+    const admin = await seedAdmin({
+      two_factor_enabled: true,
+      two_factor_secret: mfaService.encryptSecret(secret),
+      two_factor_recovery_codes: JSON.stringify(hashed),
+    });
+    return { admin, secret, recoveryCodes: plain };
+  }
+  const recoveryCodesLeft = async (admin) => mfaService.parseRecoveryCodes(
+    (await db('admin_users').where({ id: admin.id }).first()).two_factor_recovery_codes).length;
+
+  it('says in the status whether a code will be asked for', async () => {
+    const { admin } = await seedMfaAdmin();
+    expect((await asAdmin(request(adminApp).get('/api/admin/auth/passkeys'), admin)).body.mfaEnabled).toBe(true);
+    const plain = await seedAdmin();
+    expect((await asAdmin(request(adminApp).get('/api/admin/auth/passkeys'), plain)).body.mfaEnabled).toBe(false);
+  });
+
+  it('issues no challenge for the password alone', async () => {
+    const { admin } = await seedMfaAdmin();
+    const res = await registerOptions(admin);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('MFA_CODE_REQUIRED');
+    expect(cookieOf(res)).toBeNull();
+  });
+
+  it('issues no challenge for a wrong code, and none for a right code with a wrong password', async () => {
+    const { admin, secret } = await seedMfaAdmin();
+    const wrong = await registerOptions(admin, { currentPassword: PASSWORD, code: '000000' });
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.code).toBe('MFA_INVALID');
+    expect(cookieOf(wrong)).toBeNull();
+
+    const code = authenticator.generate(secret);
+    const wrongPassword = await registerOptions(admin, { currentPassword: 'nope', code });
+    expect(wrongPassword.status).toBe(400);
+    expect(wrongPassword.body.code).toBe('PASSWORD_INCORRECT');
+    expect(cookieOf(wrongPassword)).toBeNull();
+    // The code was not spent on the refused request.
+    expect((await registerOptions(admin, { currentPassword: PASSWORD, code })).status).toBe(200);
+  });
+
+  it('accepts a current authenticator code once', async () => {
+    const { admin, secret } = await seedMfaAdmin();
+    const code = authenticator.generate(secret);
+    const first = await registerOptions(admin, { currentPassword: PASSWORD, code });
+    expect(first.status).toBe(200);
+    expect(cookieOf(first)).toBeTruthy();
+
+    const replay = await registerOptions(admin, { currentPassword: PASSWORD, code });
+    expect(replay.status).toBe(400);
+    expect(replay.body.code).toBe('MFA_INVALID');
+    expect(cookieOf(replay)).toBeNull();
+  });
+
+  it('accepts a recovery code and spends it', async () => {
+    const { admin, recoveryCodes } = await seedMfaAdmin();
+    const before = await recoveryCodesLeft(admin);
+    const first = await registerOptions(admin, { currentPassword: PASSWORD, code: recoveryCodes[0] });
+    expect(first.status).toBe(200);
+    expect(await recoveryCodesLeft(admin)).toBe(before - 1);
+
+    const again = await registerOptions(admin, { currentPassword: PASSWORD, code: recoveryCodes[0] });
+    expect(again.status).toBe(400);
+    expect(again.body.code).toBe('MFA_INVALID');
+    expect(await recoveryCodesLeft(admin)).toBe(before - 1);
+  });
+
+  it('a challenge issued before two-factor authentication was switched on cannot finish after it', async () => {
+    const admin = await seedAdmin();
+    const options = await registerOptions(admin);
+    expect(options.status).toBe(200);
+    await db('admin_users').where({ id: admin.id }).update({
+      two_factor_enabled: true,
+      two_factor_secret: mfaService.encryptSecret(mfaService.generateSecret()),
+    });
+
+    mockVerifyRegistration.mockResolvedValueOnce({
+      verified: true,
+      registrationInfo: {
+        aaguid: '00000000-0000-0000-0000-000000000000',
+        credential: { id: 'cred-before-mfa', publicKey: new Uint8Array([1, 2, 3, 4]), counter: 0, transports: ['internal'] },
+      },
+    });
+    const res = await registerVerify(admin, cookieOf(options));
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('PASSKEY_CHALLENGE_INVALID');
+    expect(await passkeyService.countForAdmin(admin.id)).toBe(0);
+    mockVerifyRegistration.mockReset();
+  });
+});
+
 describe('list, rename, delete', () => {
   it('lists only the caller\'s passkeys and renames only its own', async () => {
     const admin = await seedAdmin();
@@ -624,6 +726,15 @@ describe('SSO-only mode', () => {
 });
 
 describe('second factor', () => {
+  // Registered before two-factor authentication is on: adding a passkey to an
+  // account that has it asks for a code, which is covered on its own above.
+  async function seedWithPasskey(credentialId) {
+    const admin = await seedAdmin();
+    await addPasskey(admin, credentialId);
+    await db('admin_users').where({ id: admin.id }).update({ two_factor_enabled: true });
+    return admin;
+  }
+
   async function passwordStep(admin) {
     const res = await request(authApp).post('/api/auth/admin/login').set('Origin', ORIGIN)
       .send({ username: admin.username, password: PASSWORD });
@@ -632,16 +743,14 @@ describe('second factor', () => {
   }
 
   it('the password step says whether a passkey can stand in for the code', async () => {
-    const withKey = await seedAdmin({ two_factor_enabled: true });
-    await addPasskey(withKey, 'cred-2fa-flag');
+    const withKey = await seedWithPasskey('cred-2fa-flag');
     const without = await seedAdmin({ two_factor_enabled: true });
     expect(await passwordStep(withKey)).toMatchObject({ mfaRequired: true, passkeyAvailable: true });
     expect(await passwordStep(without)).toMatchObject({ mfaRequired: true, passkeyAvailable: false });
   });
 
   it('completes the login with one of the account\'s own passkeys', async () => {
-    const admin = await seedAdmin({ two_factor_enabled: true });
-    await addPasskey(admin, 'cred-2fa');
+    const admin = await seedWithPasskey('cred-2fa');
     const { mfaToken } = await passwordStep(admin);
 
     const options = await loginOptions({ mfaToken });
@@ -659,8 +768,7 @@ describe('second factor', () => {
   });
 
   it('does not accept another account\'s passkey, nor a challenge of the other kind', async () => {
-    const admin = await seedAdmin({ two_factor_enabled: true });
-    await addPasskey(admin, 'cred-2fa-own');
+    const admin = await seedWithPasskey('cred-2fa-own');
     const other = await seedAdmin();
     await addPasskey(other, 'cred-2fa-foreign');
     const { mfaToken } = await passwordStep(admin);
