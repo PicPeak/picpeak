@@ -94,24 +94,26 @@ const SLUG = 'hls-transcode';
       `${prefix}/master.m3u8`,
     ]);
 
-    const master = await get(`${photoId}/master.m3u8?v=abc`);
+    // The version the photo list names: the end of the attempt id.
+    const v = prefix.slice(-12);
+    const master = await get(`${photoId}/master.m3u8?v=${v}`);
     expect(master.status).toBe(200);
     const lines = master.body.toString().split('\n');
-    expect(lines.filter(line => line && !line.startsWith('#'))).toEqual(['480p/index.m3u8?v=abc', '720p/index.m3u8?v=abc']);
+    expect(lines.filter(line => line && !line.startsWith('#'))).toEqual([`480p/index.m3u8?v=${v}`, `720p/index.m3u8?v=${v}`]);
     const variants = lines.filter(line => line.startsWith('#EXT-X-STREAM-INF'));
     expect(variants.map(line => /RESOLUTION=(\d+x\d+)/.exec(line)[1])).toEqual(['854x480', '1280x720']);
     for (const line of variants) {
       expect(line).toMatch(/^#EXT-X-STREAM-INF:BANDWIDTH=\d+,AVERAGE-BANDWIDTH=\d+,RESOLUTION=\d+x\d+,CODECS="avc1\.64[0-9a-f]{4},mp4a\.40\.2"$/);
     }
 
-    const media = await get(`${photoId}/720p/index.m3u8?v=abc`);
+    const media = await get(`${photoId}/720p/index.m3u8?v=${v}`);
     expect(media.status).toBe(200);
     const text = media.body.toString();
-    expect(text).toContain('#EXT-X-MAP:URI="init.mp4?v=abc"');
+    expect(text).toContain(`#EXT-X-MAP:URI="init.mp4?v=${v}"`);
     expect(text).toContain('#EXT-X-TARGETDURATION:6');
-    expect(text).toContain('#EXTINF:6.000000,\nseg_00000.m4s?v=abc');
+    expect(text).toContain(`#EXTINF:6.000000,\nseg_00000.m4s?v=${v}`);
     expect(text).toContain('#EXT-X-ENDLIST');
-    const segment = await get(`${photoId}/720p/seg_00000.m4s?v=abc`);
+    const segment = await get(`${photoId}/720p/seg_00000.m4s?v=${v}`);
     expect(segment.status).toBe(200);
     expect(segment.body.subarray(4, 8).toString('latin1')).toMatch(/^(styp|moof|sidx)$/);
 
@@ -142,6 +144,57 @@ const SLUG = 'hls-transcode';
     expect(second).not.toBe(first);
     expect((await keys(photoId)).every(key => key.startsWith(`${second}/`))).toBe(true);
     expect(await keys(photoId)).toHaveLength(4);
+    // No empty directory of the first attempt stays behind on local disk.
+    expect(fs.readdirSync(path.join(process.env.STORAGE_PATH, 'hls', String(photoId)))).toEqual([path.basename(second)]);
+  }, 120000);
+
+  test('the cleanup after a publish takes what earlier attempts left, never what appeared since', async () => {
+    const photoId = await video('fenced.mp4', clip('fenced.mp4', { size: '320x240', seconds: 2 }));
+    const older = `hls/${photoId}/11111111-1111-4111-8111-111111111111/master.m3u8`;
+    const newer = `hls/${photoId}/99999999-9999-4999-8999-999999999999/master.m3u8`;
+    await storage.put(older, Buffer.from('#EXTM3U'));
+    const original = attempts.guard;
+    const guard = jest.spyOn(attempts, 'guard').mockImplementation((attempt, conn, processing) => {
+      const query = original(attempt, conn, processing);
+      if (!processing) return query;
+      // As the row is published, another replica's newer attempt (the row
+      // replaced right after) starts writing its own prefix.
+      const update = query.update.bind(query);
+      query.update = async (values) => {
+        const result = await update(values);
+        await storage.put(newer, Buffer.from('#EXTM3U'));
+        return result;
+      };
+      return query;
+    });
+    try {
+      expect(await render(photoId)).toBe('complete');
+    } finally {
+      guard.mockRestore();
+    }
+    const left = await keys(photoId);
+    expect(left).toContain(newer);
+    expect(left).not.toContain(older);
+    const published = (await row(photoId)).hls_path;
+    expect(left.filter(key => key.startsWith(`${published}/`))).toHaveLength(4);
+  }, 120000);
+
+  test('an attempt that lost its claim stops uploading with the next file', async () => {
+    const photoId = await video('stopped.mp4', clip('stopped.mp4', { size: '320x240', seconds: 2 }));
+    const original = storage.putFromFile;
+    const putFromFile = jest.spyOn(storage, 'putFromFile').mockImplementation(async function (key, ...rest) {
+      const result = await original.call(this, key, ...rest);
+      // The replacement lands as the first file goes up.
+      await db('photos').where({ id: photoId }).update({ hls_attempt_id: null, hls_status: null });
+      return result;
+    });
+    try {
+      await expect(render(photoId)).rejects.toMatchObject({ code: 'MEDIA_SUPERSEDED' });
+      expect(putFromFile).toHaveBeenCalledTimes(1);
+    } finally {
+      putFromFile.mockRestore();
+    }
+    expect(await keys(photoId)).toEqual([]);
   }, 120000);
 
   test('a video that is too long, or too large, is skipped and keeps range-serving', async () => {

@@ -173,8 +173,26 @@ describe('adaptive streaming routes (issue 1733)', () => {
       expect(media.status).toBe(200);
       expect(media.body.toString()).toContain('#EXT-X-MAP:URI="init.mp4?v=2a4d3c1b7e9a"');
       expect(media.body.toString()).toContain('\nseg_00000.m4s?v=2a4d3c1b7e9a\n');
-      // A value that is not a plain token is dropped, not echoed into the playlist.
-      expect((await get(`${streamed}/480p/index.m3u8?v=a%0Ab`)).body.toString()).toBe(MEDIA);
+      // A value that is not this ladder's is refused, never echoed into a playlist.
+      expect((await get(`${streamed}/480p/index.m3u8?v=a%0Ab`)).status).toBe(404);
+    });
+
+    test('a request naming a ladder that was rebuilt since is refused, not answered from the new one', async () => {
+      // A player still holding the old playlists would otherwise get the new
+      // ladder's segments for the old init file, cached under the old URL.
+      const id = await insertVideo('rebuilt.mp4');
+      const rebuilt = '33333333-3333-4333-8333-333333333333';
+      await db('photos').where({ id }).update({ hls_path: await writeLadder(id, rebuilt) });
+      for (const route of ['master.m3u8', '480p/index.m3u8', '480p/init.mp4', '480p/seg_00000.m4s']) {
+        expect((await get(`${id}/${route}?v=${ATTEMPT.slice(-12)}`)).status).toBe(404);
+        expect((await get(`${id}/${route}?v=${rebuilt.slice(-12)}`)).status).toBe(200);
+        expect((await get(`${id}/${route}?v=${rebuilt.slice(-12)}&v=${rebuilt.slice(-12)}`)).status).toBe(404);
+      }
+      // The stale master did not send the row back to the queue.
+      expect(await db('photos').where({ id }).first('hls_status', 'hls_path'))
+        .toEqual({ hls_status: 'complete', hls_path: `hls/${id}/${rebuilt}` });
+      await hls.deleteLadder({ id, hls_status: 'complete' });
+      await db('photos').where({ id }).delete();
     });
 
     test('serves the init file and a segment with their length and type', async () => {
@@ -367,15 +385,6 @@ describe('adaptive streaming routes (issue 1733)', () => {
       expect(await keysUnder(`hls/${b}`)).toHaveLength(4);
       expect(await keysUnder(`hls/${a}0000`)).toHaveLength(1);
       await storage.delete(`hls/${a}0000/${ATTEMPT}/master.m3u8`);
-    });
-
-    test('deleteLadder keeps the published attempt when asked to', async () => {
-      const id = await insertVideo('delete-keep.mp4');
-      await writeLadder(id, '22222222-2222-4222-8222-222222222222');
-      await hls.deleteLadder({ id }, { keep: `hls/${id}/${ATTEMPT}` });
-      expect(await keysUnder(`hls/${id}`)).toEqual((await keysUnder(`hls/${id}/${ATTEMPT}`)));
-      expect(await keysUnder(`hls/${id}`)).toHaveLength(4);
-      expect(fs.readdirSync(path.join(process.env.STORAGE_PATH, 'hls', String(id)))).toEqual([ATTEMPT]);
     });
 
     test('deleting the gallery deletes the ladders of its videos', async () => {

@@ -489,6 +489,17 @@ async function admitStream(req, res, photo, { playback }) {
   return false;
 }
 
+/**
+ * A request that names a ladder (`v`: from the photo list, passed on by the
+ * playlists) is answered from that ladder only. After a re-transcode a
+ * player still holding the old playlists would otherwise be handed the new
+ * ladder's segments for the old init file, cached under the old URL; a 404
+ * makes it fall back to the file instead.
+ */
+function namesAnotherLadder(req, photo) {
+  return req.query.v !== undefined && req.query.v !== String(photo.hls_path).slice(-12);
+}
+
 /** What a playlist passes on to the URLs in it: nothing but these two. */
 function streamQuery(req) {
   const parts = [];
@@ -512,7 +523,7 @@ router.get('/:slug/hls/:photoId/master.m3u8', ...hlsAccess, async (req, res) => 
     const photo = await loadStreamedVideo(req, res);
     if (!photo) return;
     const key = videoHls.ladderKey(photo, undefined, 'master.m3u8');
-    if (!key) return res.status(404).json({ error: 'No stream for this video' });
+    if (!key || namesAnotherLadder(req, photo)) return res.status(404).json({ error: 'No stream for this video' });
     if (!(await getStorage().stat(key))) {
       // The row names a ladder storage does not have (a restore without
       // hls/, a bucket cleaned by hand). The row starts over, the queue
@@ -538,7 +549,7 @@ router.get('/:slug/hls/:photoId/:rung/:file', ...hlsAccess, async (req, res) => 
     const photo = await loadStreamedVideo(req, res);
     if (!photo) return;
     const key = videoHls.ladderKey(photo, req.params.rung, req.params.file);
-    const stat = key ? await getStorage().stat(key) : null;
+    const stat = key && !namesAnotherLadder(req, photo) ? await getStorage().stat(key) : null;
     if (!stat) return res.status(404).json({ error: 'No stream for this video' });
     if (!(await admitStream(req, res, photo, { playback: false }))) return;
     // Authorised, and one of many requests of a single playback: it does

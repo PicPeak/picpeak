@@ -249,11 +249,15 @@ function ladderKey(photo, rung, file) {
   return `${photo.hls_path}/${rung}/${file}`;
 }
 
-/** Delete every object under `prefix`, except those under `keep`. */
-async function removeUnder(prefix, keep = null) {
-  const storage = getStorage();
-  const keys = (await storage.list(prefix)).map(entry => entry.key)
+/** The keys under `prefix`, except those under `keep`. */
+async function keysUnder(prefix, keep = null) {
+  return (await getStorage().list(prefix)).map(entry => entry.key)
     .filter(key => key.startsWith(`${prefix}/`) && !(keep && key.startsWith(`${keep}/`)));
+}
+
+/** Delete `keys`, all of them under `prefix`. */
+async function removeKeys(prefix, keys) {
+  const storage = getStorage();
   let cursor = 0;
   const worker = async () => {
     while (cursor < keys.length) await storage.delete(keys[cursor++]).catch(() => {});
@@ -262,6 +266,11 @@ async function removeUnder(prefix, keep = null) {
   // On local disk the keys were files in directories of their own; what is
   // empty now goes too, or every deleted video leaves a small tree behind.
   if (storage.kind() === 'local') await pruneEmptyDirs(storage.resolveLocalPath(prefix));
+}
+
+/** Delete every object under `prefix`. */
+async function removeUnder(prefix) {
+  await removeKeys(prefix, await keysUnder(prefix));
 }
 
 /** rmdir, bottom-up, every directory under `dir` (and `dir`) that holds nothing. */
@@ -274,12 +283,12 @@ async function pruneEmptyDirs(dir) {
 }
 
 /**
- * Remove a photo's ladder files, every attempt's, except those under `keep`.
- * For the delete, archive and replace paths, and after a publish.
+ * Remove a photo's ladder files, every attempt's. For the delete, archive
+ * and replace paths.
  */
-async function deleteLadder(photo, { keep = null } = {}) {
-  if (!photo?.id || (!keep && !photo.hls_status && !photo.hls_path)) return;
-  await removeUnder(`hls/${Number(photo.id)}`, keep)
+async function deleteLadder(photo) {
+  if (!photo?.id || (!photo.hls_status && !photo.hls_path)) return;
+  await removeUnder(`hls/${Number(photo.id)}`)
     .catch(error => logger.warn(`videoHls: could not remove the ladder of photo ${photo.id}: ${error.message}`));
 }
 
@@ -408,12 +417,25 @@ async function renderLadder(photoId) {
       // The master goes last: a ladder is only ever read through it.
       files.push({ key: `${prefix}/master.m3u8`, local: master });
 
-      await attempt.assertCurrent();
       uploaded = true;
       for (const file of files) {
+        // Before every file: a ladder is hundreds of objects, and an attempt
+        // that was cancelled (a shutdown) or lost its row stops here rather
+        // than after the last of them.
+        await attempt.assertCurrent();
         await storage.putFromFile(file.key, file.local, { contentType: CONTENT_TYPES[path.extname(file.key)] });
       }
       await attempt.assertCurrent();
+      // What earlier attempts or an earlier source left behind, listed
+      // before the publish: at this point every other prefix is older than
+      // this attempt. Listed after it, a newer attempt (the video replaced
+      // right behind the publish, claimed by another replica) could already
+      // be writing its own prefix, and this cleanup would take that.
+      const ladderRoot = `hls/${photo.id}`;
+      const leftovers = await keysUnder(ladderRoot, prefix).catch((error) => {
+        logger.warn(`videoHls: could not list the earlier ladders of photo ${photoId}: ${error.message}`);
+        return [];
+      });
       // Publish only against this worker's claim, as the web copy does: a
       // replacement, a delete or the janitor may have moved the row on.
       const published = await mediaAttempts.guard(attempt, db, true).update({
@@ -425,8 +447,9 @@ async function renderLadder(photoId) {
         return 'superseded';
       }
       uploaded = false;
-      // Whatever an earlier attempt or source left behind is unreferenced now.
-      await deleteLadder(photo, { keep: prefix });
+      // They are unreferenced now.
+      await removeKeys(ladderRoot, leftovers)
+        .catch(error => logger.warn(`videoHls: could not remove the earlier ladders of photo ${photoId}: ${error.message}`));
       logger.info(`videoHls: wrote ${prefix} for photo ${photoId} (${rungs.map(rung => rung.name).join(', ')}${toneMap ? ', HDR tone-mapped' : ''}, ${Math.round(total / 1048576)} MiB)`);
       return 'complete';
     } catch (error) {
