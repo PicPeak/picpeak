@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { radioGroupKeyDown } from '../../utils/ariaKeyboard';
 import { Check, ClipboardCheck, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, FolderInput, Cog, AlertTriangle, RefreshCw, LayoutGrid, List, UserRound, X, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
@@ -21,6 +22,8 @@ import { FolderPickerModal } from './folders/FolderPickerModal';
 import { invalidateFolderViews } from './folders/folderQueries';
 import type { GalleryFolder } from '../../services/folders.service';
 import { folderPathLabel } from '../../utils/folderTree';
+import { folderErrorMessage } from './folders/folderQueries';
+import { deleteManyConfirm, deleteOneConfirm, deletedMessage } from './photoDeleteCopy';
 
 interface CategoryOption {
   id: number;
@@ -46,6 +49,8 @@ interface AdminPhotoGridProps {
   onSortChange?: (sort: PhotoSortKey, order: 'asc' | 'desc') => void;
   /** The gallery's owner may approve or reject team members' uploads (issue 743). */
   canModerate?: boolean;
+  /** Days a deleted photo stays in the trash (issue 1733); 0 or unknown: deleting is final. */
+  trashRetentionDays?: number;
 }
 
 // The moderation route takes this many photo ids per request (issue 743).
@@ -62,7 +67,8 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   sortBy,
   sortOrder,
   onSortChange,
-  canModerate = false
+  canModerate = false,
+  trashRetentionDays
 }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
@@ -83,6 +89,17 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingPhotos, setDeletingPhotos] = useState<Set<number>>(new Set());
+  // A deleted photo's id is forgotten once it has left the list: restored
+  // from the trash it comes back under the same id, and must not come back
+  // dimmed and unclickable.
+  useEffect(() => {
+    setDeletingPhotos((prev) => {
+      if (prev.size === 0) return prev;
+      const present = new Set(photos.map((photo) => photo.id));
+      const next = new Set([...prev].filter((id) => present.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [photos]);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isUpdatingCategory, setIsUpdatingCategory] = useState(false);
   // Move to folder (issue 1786)
@@ -234,7 +251,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     e.stopPropagation();
     
     if (!(await confirm({
-      message: t('admin.photos.deleteOneConfirm', 'Delete "{{name}}"? The photo is removed from the gallery for good. This cannot be undone.', { name: photo.filename }),
+      message: deleteOneConfirm(t, photo.filename, trashRetentionDays),
       variant: 'danger',
       confirmLabel: t('admin.photos.deleteOneAction', 'Delete photo'),
     }))) {
@@ -243,8 +260,8 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
 
     setDeletingPhotos(prev => new Set(prev).add(photo.id));
     try {
-      await photosService.deletePhoto(eventId, photo.id);
-      toast.success('Photo deleted successfully');
+      const result = await photosService.deletePhoto(eventId, photo.id);
+      toast.success(deletedMessage(t, 1, result));
       onPhotosDeleted();
     } catch {
       toast.error('Failed to delete photo');
@@ -261,7 +278,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
 
     const count = selectedPhotos.size;
     if (!(await confirm({
-      message: t('admin.photos.deleteManyConfirm', 'Delete {{count}} photos? They are removed from the gallery. This cannot be undone.', { count }),
+      message: deleteManyConfirm(t, count, trashRetentionDays),
       variant: 'danger',
       confirmLabel: t('admin.photos.deleteManyAction', 'Delete {{count}} photos', { count }),
     }))) {
@@ -273,8 +290,15 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     setDeletingPhotos(new Set(selectedIds));
     
     try {
-      await photosService.deletePhotos(eventId, selectedIds);
-      toast.success(`${count} photo${count > 1 ? 's' : ''} deleted successfully`);
+      const result = await photosService.deletePhotos(eventId, selectedIds);
+      const failed = result?.failed?.length ?? 0;
+      if (failed < count) toast.success(deletedMessage(t, count - failed, result));
+      // Still in the gallery: the refreshed grid shows which.
+      if (failed > 0) {
+        toast.error(t('admin.photos.trash.deleteFailed', { count: failed }));
+        // They stay in the gallery, and usable.
+        setDeletingPhotos(new Set(selectedIds.filter((id) => !result.failed!.includes(id))));
+      }
       setSelectedPhotos(new Set());
       setAnchor(null);
       setIsSelectionMode(false);
@@ -357,8 +381,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       invalidateFolderViews(queryClient, eventId);
       onPhotosDeleted(); // Refresh the photo list
     } catch (error: unknown) {
-      const e = error as { response?: { data?: { error?: string } } };
-      toast.error(e.response?.data?.error || t('photos.folders.moveFailed', 'The photos could not be moved'));
+      toast.error(folderErrorMessage(error, t) || t('photos.folders.moveFailed', 'The photos could not be moved'));
     } finally {
       setIsMovingToFolder(false);
     }
@@ -403,7 +426,13 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       : (pending
         ? 'bg-warning-soft text-warning-text'
         : 'bg-danger-soft text-danger-text');
-    const uploader = photo.uploaded_by_admin?.username;
+    // Whose upload it is: a guest's (issue 1733), named when the gallery
+    // asks guests for a name, or a team member's.
+    const fromGuest = photo.uploaded_by === 'guest';
+    const uploader = fromGuest ? photo.credit_name : photo.uploaded_by_admin?.username;
+    const source = fromGuest
+      ? t('photos.review.sourceGuest', 'Guest')
+      : (uploader ? t('photos.review.sourceTeam', 'Team') : null);
     return (
       <span
         className={`inline-flex max-w-full items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${colors}`}
@@ -414,7 +443,9 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       >
         <ClipboardCheck className="w-3 h-3 shrink-0" />
         <span className="shrink-0">{pending ? t('photos.review.pendingBadge', 'Pending review') : t('photos.review.rejectedBadge', 'Rejected')}</span>
-        {uploader && <span className="min-w-0 truncate font-normal opacity-90">· {uploader}</span>}
+        {/* The source always shows; on a narrow tile only the name gives way. */}
+        {source && <span className="shrink-0 font-normal opacity-90" data-testid={`admin-photo-review-source-${photo.id}`}>· {source}</span>}
+        {source && uploader && <span className="min-w-0 truncate font-normal opacity-90">· {uploader}</span>}
       </span>
     );
   };
@@ -581,12 +612,13 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
           </div>
           {/* Layout toggle: Grid / List — radiogroup so a screen reader
               announces the two options as one mutually-exclusive set. */}
-          <div className="inline-flex rounded-lg border border-line-strong overflow-hidden" role="radiogroup" aria-label={t('admin.photos.viewMode', 'View mode')}>
+          <div className="inline-flex rounded-lg border border-line-strong overflow-hidden" role="radiogroup" aria-label={t('admin.photos.viewMode', 'View mode')} onKeyDown={radioGroupKeyDown}>
             <button
               type="button"
               role="radio"
               onClick={() => selectView('grid')}
               aria-checked={viewMode === 'grid'}
+              tabIndex={viewMode === 'grid' ? 0 : -1}
               title={t('admin.photos.gridView', 'Grid view')}
               className={`p-1.5 transition-colors ${
                 viewMode === 'grid'
@@ -601,6 +633,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
               role="radio"
               onClick={() => selectView('list')}
               aria-checked={viewMode === 'list'}
+              tabIndex={viewMode === 'list' ? 0 : -1}
               title={t('admin.photos.listView', 'List view')}
               className={`p-1.5 transition-colors border-l border-line-strong ${
                 viewMode === 'list'

@@ -28,6 +28,7 @@ const mockLogger = { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: 
 // Chainable no-row query — enough for removePhoto's lookup/delete calls.
 const mockDb = jest.fn(() => ({
   where: jest.fn().mockReturnThis(),
+  whereNot: jest.fn().mockReturnThis(),
   first: jest.fn().mockResolvedValue(null),
   delete: jest.fn().mockResolvedValue(0),
 }));

@@ -6,7 +6,7 @@
  */
 
 const { db } = require('../database/db');
-const { applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, joinLivePhotos } = require('../utils/photoVisibility');
 
 /**
  * photo id -> tag keys, best score first. The caller only reads the ids it
@@ -41,7 +41,7 @@ async function getTagKeysByPhoto(eventId, photoIds = null) {
  */
 async function getEventTagCounts(eventId, accessLevel) {
   const query = db('photo_tags')
-    .join('photos', 'photos.id', 'photo_tags.photo_id')
+    .modify(joinLivePhotos, 'photos.id', 'photo_tags.photo_id')
     .where('photo_tags.event_id', eventId)
     .where('photos.event_id', eventId)
     .where(function () {

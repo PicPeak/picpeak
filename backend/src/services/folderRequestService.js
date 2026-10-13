@@ -18,13 +18,31 @@
  */
 
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { isUniqueViolation } = require('../utils/dbErrors');
+const { toUtcIso } = require('../utils/queueTimestamps');
 const tree = require('./folderTreeService');
+
+async function countOpenRequests(eventId, conn = db) {
+  const row = await conn('folder_requests').where({ event_id: eventId, status: 'pending' }).count('id as count').first();
+  return Number(row?.count) || 0;
+}
 
 async function openRequest(eventId, segments, fallbackFolderId, adminId, conn = db) {
   const pathKey = tree.pathKey(segments);
   const existing = await conn('folder_requests').where({ event_id: eventId, path: pathKey, status: 'pending' }).first('id');
   if (existing) return Number(existing.id);
+  // Joining an open request above is always allowed; a NEW one counts
+  // against the per-event cap (tree.FOLDER_LIMITS).
+  const limit = tree.FOLDER_LIMITS.MAX_OPEN_REQUESTS_PER_EVENT;
+  if ((await countOpenRequests(eventId, conn)) >= limit) {
+    throw new tree.FolderError(
+      `This gallery has reached its limit of ${limit} open folder requests; approve or reject some first`,
+      409,
+      'FOLDER_REQUEST_LIMIT_REACHED',
+      { limit },
+    );
+  }
   try {
     const inserted = await conn('folder_requests').insert({
       event_id: eventId,
@@ -58,7 +76,7 @@ async function listRequests(eventId, { status = 'pending' } = {}, conn = db) {
     .orderBy('folder_requests.path', 'asc')
     .select('folder_requests.*', 'admin_users.username as requested_by_name');
   if (rows.length === 0) return [];
-  const counts = await conn('photos')
+  const counts = await livePhotos(conn)
     .whereIn('pending_folder_request_id', rows.map((r) => r.id))
     .groupBy('pending_folder_request_id')
     .select('pending_folder_request_id')
@@ -71,7 +89,8 @@ async function listRequests(eventId, { status = 'pending' } = {}, conn = db) {
     fallback_folder_id: r.fallback_folder_id == null ? null : Number(r.fallback_folder_id),
     requested_by_name: r.requested_by_name || null,
     status: r.status,
-    created_at: r.created_at,
+    // SQLite's DB-clock default is zone-less UTC (issue 1815).
+    created_at: toUtcIso(r.created_at),
     photo_count: countBy.get(Number(r.id)) || 0,
   }));
 }
@@ -150,4 +169,4 @@ async function rejectRequest(eventId, requestId, adminId) {
   });
 }
 
-module.exports = { openRequest, findOpenRequest, listRequests, approveRequest, rejectRequest, settleLateArrivals };
+module.exports = { countOpenRequests, openRequest, findOpenRequest, listRequests, approveRequest, rejectRequest, settleLateArrivals };

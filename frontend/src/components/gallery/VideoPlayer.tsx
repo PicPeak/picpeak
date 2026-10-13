@@ -1,9 +1,12 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, AlertTriangle } from 'lucide-react';
+import { pickVideoSource } from './videoSource';
 
 interface VideoPlayerProps {
   src: string;
+  /** Adaptive stream of the same video (an HLS master playlist), when there is one. */
+  hlsSrc?: string | null;
   poster?: string;
   className?: string;
   autoPlay?: boolean;
@@ -22,6 +25,7 @@ interface VideoPlayerProps {
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   src,
+  hlsSrc: offeredStream,
   poster,
   className = '',
   autoPlay = false,
@@ -55,6 +59,83 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const onLoadErrorRef = useRef(onLoadError);
   onPlaybackStartRef.current = onPlaybackStart;
   onLoadErrorRef.current = onLoadError;
+
+  // Adaptive stream first, the file as the fallback (issue 1733). A stream
+  // that fails for any reason, a missing rendition included, is dropped for
+  // this video and `src` plays as it always did.
+  // The stream is chosen when a video is opened and kept while it is the
+  // same video. A photo list refetched meanwhile can name one for the first
+  // time (a download-limited gallery does, once the first play has taken the
+  // video's slot) or name a rebuilt one, and swapping the source under a
+  // viewer would send them back to 0:00.
+  const [opened, setOpened] = useState({ src, hlsSrc: offeredStream });
+  if (opened.src !== src) setOpened({ src, hlsSrc: offeredStream });
+  const hlsSrc = opened.src === src ? opened.hlsSrc : offeredStream;
+  const [failedStream, setFailedStream] = useState<string | null>(null);
+  const preferred = useMemo(() => pickVideoSource(hlsSrc), [hlsSrc]);
+  const mode = hlsSrc && failedStream === hlsSrc ? 'file' : preferred;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  // Set when the stream fails under a viewer who had already pressed play,
+  // and where it had got to: the file starts at 0:00.
+  const resumeRef = useRef(false);
+  const resumeAtRef = useRef(0);
+  const abandonStream = () => {
+    resumeRef.current = isPlayingRef.current;
+    resumeAtRef.current = videoRef.current?.currentTime ?? 0;
+    setFailedStream(hlsSrc ?? null);
+  };
+  const abandonStreamRef = useRef(abandonStream);
+  abandonStreamRef.current = abandonStream;
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (mode !== 'hlsjs' || !hlsSrc || !video) return;
+    let cancelled = false;
+    let detach = () => {};
+    import('hls.js').then(({ default: Hls }) => {
+      if (cancelled) return;
+      if (!Hls.isSupported()) {
+        abandonStreamRef.current();
+        return;
+      }
+      // No worker: the segments are fMP4, so there is nothing to transmux,
+      // and a blob: worker would need its own Content-Security-Policy entry.
+      const hls = new Hls({
+        enableWorker: false,
+        // The gallery cookie authenticates the playlists and segments, as it
+        // does the plain <video src>.
+        xhrSetup: (xhr) => { xhr.withCredentials = true; },
+      });
+      detach = () => hls.destroy();
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) abandonStreamRef.current();
+      });
+      hls.loadSource(hlsSrc);
+      hls.attachMedia(video);
+    }).catch(() => {
+      if (!cancelled) abandonStreamRef.current();
+    });
+    return () => {
+      cancelled = true;
+      detach();
+    };
+  }, [mode, hlsSrc]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (mode !== 'file' || !video) return;
+    const resumeAt = resumeAtRef.current;
+    resumeAtRef.current = 0;
+    const seek = () => { video.currentTime = resumeAt; };
+    if (resumeAt > 0) video.addEventListener('loadedmetadata', seek, { once: true });
+    if (resumeRef.current) {
+      resumeRef.current = false;
+      void video.play()?.catch(() => {});
+    }
+    // Another video opened before the metadata came must not be sent there.
+    return () => video.removeEventListener('loadedmetadata', seek);
+  }, [mode, src]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -93,6 +174,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     // HEVC/H.265 phone recording does everywhere except Safari, and the
     // photographer's answer is to download the file rather than retry.
     const handleError = () => {
+      // A stream the browser could not play is not the end: the file is next.
+      if (modeRef.current !== 'file') {
+        abandonStreamRef.current();
+        return;
+      }
       const code = video.error?.code;
       setLoadError(
         code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
@@ -149,7 +235,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // stale error would otherwise stick to a clip that loads fine.
   useEffect(() => {
     setLoadError(null);
-  }, [src]);
+  }, [src, hlsSrc]);
 
   const togglePlayPause = () => {
     const video = videoRef.current;
@@ -272,7 +358,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     >
       <video
         ref={videoRef}
-        src={src}
+        src={mode === 'native' ? hlsSrc ?? undefined : mode === 'file' ? src : undefined}
         poster={poster}
         autoPlay={autoPlay}
         muted={muted}

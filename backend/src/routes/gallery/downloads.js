@@ -25,12 +25,14 @@ const {
   renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, resolveWatermarkSettings,
 } = require('../../services/downloadRendition');
 const downloadJobService = require('../../services/downloadJobService');
+const downloadJobNotifier = require('../../services/downloadJobNotifier');
+const { resolveGuest } = require('../../middleware/guestAuth');
 const {
   resolveEventDownloadPolicy,
   pickRequestedResolution,
   parseResolution,
 } = require('../../utils/downloadResolutions');
-const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, isPhotoHiddenFromViewer, livePhotos } = require('../../utils/photoVisibility');
 const {
   getUseOriginalFilenames,
   pickRawDownloadName,
@@ -113,7 +115,7 @@ function galleryActor(req) {
 }
 // Download count + access log of one single-photo download.
 async function recordSingleDownload(req, photoId) {
-  await db('photos').where('id', photoId).increment('download_count', 1);
+  await livePhotos(db).where('id', photoId).increment('download_count', 1);
   await db('access_logs').insert({
     event_id: req.event.id,
     ip_address: req.ip,
@@ -140,7 +142,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     const denial = await originalAssetDenial(req);
     if (denial) return res.status(403).json(denial);
 
-    const photo = await db('photos')
+    const photo = await livePhotos(db)
       .where({ id: photoId, event_id: req.event.id })
       .first();
 
@@ -596,7 +598,7 @@ async function finalizeOrClose(archive, res) {
 // that tail case. Fire-and-forget at the call sites: counters must
 // never fail a download.
 async function bumpEventDownloadCounts(eventId) {
-  await db('photos').where('event_id', eventId).increment('download_count', 1);
+  await livePhotos(db).where('event_id', eventId).increment('download_count', 1);
 }
 
 router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
@@ -621,7 +623,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // hidden photos exist, guests fall through to the visibility-filtered
     // stream below. PIN-clients always stream a full archive.
     const isClient = canSeeHiddenPhotos(req.accessLevel);
-    const eventHasHidden = await db('photos')
+    const eventHasHidden = await livePhotos(db)
       .where({ event_id: req.event.id, visibility: 'hidden' })
       .first()
       .then(Boolean);
@@ -631,7 +633,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // prebuilt zip would hand them exactly the photos they may not download.
     const eventHasDownloadRestrictedPhotos = (isClient || eventHasHidden)
       ? false
-      : (await db('photos')
+      : (await livePhotos(db)
         .join('photo_categories', 'photos.category_id', 'photo_categories.id')
         .where('photos.event_id', req.event.id)
         .where('photo_categories.allow_downloads', false)
@@ -695,7 +697,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // (pre-migration-135) fall through the LEFT JOIN's null and are included.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
     const photos = await applyPhotoVisibilityFilter(
-      db('photos')
+      livePhotos(db)
         .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
         .where('photos.event_id', req.event.id)
         .where(function () {
@@ -904,7 +906,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       // Exactly the photos that made it into this archive (#895) — skipped
       // (missing/corrupt) sources don't count.
       if (appendedIds.length > 0) {
-        db('photos').whereIn('id', appendedIds)
+        livePhotos(db).whereIn('id', appendedIds)
           .increment('download_count', 1).catch(statsWriteFailed('photo download count'));
       }
     }
@@ -951,7 +953,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // Same LEFT JOIN pattern as the download-all endpoint.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
     const photos = await applyPhotoVisibilityFilter(
-      db('photos')
+      livePhotos(db)
         .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
         .where('photos.event_id', req.event.id)
         .whereIn('photos.id', photoIds)
@@ -1124,7 +1126,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       // Exactly the photos that made it into this archive (#895) — skipped
       // (missing/corrupt) sources don't count.
       if (appendedIds.length > 0) {
-        db('photos').whereIn('id', appendedIds)
+        livePhotos(db).whereIn('id', appendedIds)
           .increment('download_count', 1).catch(statsWriteFailed('photo download count'));
       }
     }
@@ -1222,7 +1224,7 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
 // verifyGalleryAccess still runs and the job must belong to THIS event.
 // no-store: a cached 'preparing' would strand the caller in a poll that can
 // never observe the job finishing.
-router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, noStoreCache, async (req, res) => {
+router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, noStoreCache, async (req, res) => {
   try {
     const job = await downloadJobService.getStatus(req.params.token);
     if (!job || job.event_id !== req.event.id) {
@@ -1240,6 +1242,26 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
       const check = await checkDownloads(req.event, Array.isArray(ids) ? ids : []);
       if (!check.ok) limitReached = downloadLimitError(check);
     }
+    // "Email me when it is ready" (issue 1733): offered while the build runs,
+    // and only to a requester the instance already holds an address for.
+    let notify;
+    if ((job.status === 'pending' || job.status === 'building') && downloadJobNotifier.canMail(job)) {
+      const recipient = await downloadJobNotifier.recipientFor(req);
+      if (recipient) {
+        notify = (await downloadJobNotifier.isRequested(job.id, recipient.email)) ? 'requested' : 'available';
+      }
+    }
+    // A ready job the file route would refuse, not swept yet. The same
+    // checks it runs, in its order: downloads switched off or originals
+    // withheld from this visitor (403), past its retention (410), no longer
+    // matching the gallery or this visitor's scope (409 / 404). The dialog
+    // opened from a ready-mail must not offer it (issue 1733).
+    const unavailable = job.status === 'ready' && (
+      !!(await originalAssetDenial(req))
+      || await isPreviewOnly(req)
+      || new Date(job.expires_at).getTime() <= Date.now()
+      || !(await downloadJobService.isStillDeliverable(job, req.event, req.accessLevel))
+    );
     res.json({
       status: job.status,
       resolution: job.resolution,
@@ -1247,9 +1269,42 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
       size_bytes: job.size_bytes || null,
       error: job.status === 'failed' ? (job.error || 'Preparation failed') : undefined,
       download_limit_reached: limitReached,
+      notify,
+      unavailable: unavailable || undefined,
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to read download job');
+  }
+});
+
+// "Email me when it is ready" (issue 1733). There is deliberately no address
+// in this request: the recipient is the verified guest identity or customer
+// account behind the session, so this cannot be used to mail a stranger.
+router.post('/:slug/download-jobs/:token/notify', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, async (req, res) => {
+  try {
+    const job = await downloadJobService.getStatus(req.params.token);
+    if (!job || job.event_id !== req.event.id
+        || job.visibility_scope !== downloadJobService.visibilityScopeFor(req.accessLevel)) {
+      return res.status(404).json({ error: 'Download job not found' });
+    }
+    // A client's job: the link in the mail could not reach it (canMail).
+    const recipient = downloadJobNotifier.canMail(job) ? await downloadJobNotifier.recipientFor(req) : null;
+    if (!recipient) {
+      return res.status(403).json({ error: 'Email notification is not available for this visit' });
+    }
+    if (job.status !== 'pending' && job.status !== 'building') {
+      return res.status(409).json({ error: 'This download is no longer being prepared', status: job.status });
+    }
+    const outcome = await downloadJobNotifier.request(job, recipient);
+    if (outcome === 'limit') {
+      return res.status(429).json({ error: 'Too many email notifications requested. Please try again later' });
+    }
+    if (outcome === 'gone') {
+      return res.status(403).json({ error: 'Email notification is not available for this visit' });
+    }
+    res.json({ notify: 'requested' });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to request the email notification');
   }
 });
 
@@ -1330,7 +1385,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
       if (res.statusCode >= 400 || req.isAdminPreview) return;
       const ids = Array.isArray(deliveredIds) ? deliveredIds : [];
       if (ids.length > 0) {
-        db('photos').whereIn('id', ids).increment('download_count', 1).catch(statsWriteFailed('photo download count'));
+        livePhotos(db).whereIn('id', ids).increment('download_count', 1).catch(statsWriteFailed('photo download count'));
       }
       db('access_logs').insert({
         event_id: req.event.id,

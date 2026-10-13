@@ -15,6 +15,8 @@ pg('PostgreSQL media attempt fencing', () => {
       table.increments('id'); table.integer('event_id'); table.string('path'); table.string('filename');
       table.string('media_type'); table.string('mime_type'); table.string('processing_status');
       table.timestamp('processing_started_at'); table.string('processing_error');
+      // Migration 294: the claim leaves photos in the trash alone.
+      table.timestamp('deleted_at');
     });
     await require('../../migrations/core/278_image_work_budget').up(db);
     await require('../../migrations/core/279_media_execution_attempts').up(db);

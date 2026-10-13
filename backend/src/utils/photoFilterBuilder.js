@@ -4,6 +4,7 @@
  */
 
 const { COLOR_LABELS, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
+const { livePhotos, wherePhotoLive } = require('./photoVisibility');
 
 // The colour-label rows the event's current mode actually uses (#1197).
 // Switching identity_mode is non-destructive, so an event can hold a dormant
@@ -293,7 +294,7 @@ class PhotoFilterBuilder {
    */
   static buildCountQuery(db, eventId, filters = {}, identityMode = 'simple') {
     const builder = new PhotoFilterBuilder(
-      db('photos').count('* as count'),
+      livePhotos(db).count('* as count'),
       eventId,
       identityMode
     );
@@ -305,7 +306,7 @@ class PhotoFilterBuilder {
    * Build a summary query for feedback counts
    */
   static async getSummary(db, eventId, identityMode = 'simple') {
-    const result = await db('photos')
+    const result = await livePhotos(db)
       .where('event_id', eventId)
       .select(
         db.raw('COUNT(*) as total'),
@@ -325,6 +326,7 @@ class PhotoFilterBuilder {
     // "Green 42" so the photographer knows which colours are worth filtering.
     const colorRows = await scopeColorLabelsToMode(
       db('photo_feedback')
+        .modify(wherePhotoLive, 'photo_feedback.photo_id')
         .where({ event_id: eventId, feedback_type: 'color_label' })
         .where('is_hidden', false),
       identityMode,

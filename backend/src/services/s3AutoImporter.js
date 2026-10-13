@@ -20,6 +20,7 @@ const mime = require('mime-types');
 const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
 const { resolveCredit } = require('./photoCredit');
+const { exifColumn } = require('./photoExif');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getStorage } = require('./storage');
@@ -108,14 +109,16 @@ async function processEvent(event, storage) {
       // a tmp local copy via withLocalCopy — withLocalCopy handles the
       // S3 download + cleanup. Skip videos (would need ffprobe).
       //
-      // The EXIF credit (#1561) is read from the same local copy, so the
-      // object is only fetched once.
+      // The EXIF credit (#1561) and the camera details (issue 1733, D1) are
+      // read from the same local copy, so the object is only fetched once.
       let dimensions = null;
       let credit = {};
+      let exif = {};
       if (isImage) {
         try {
           dimensions = await withLocalCopy(entry.key, async (localPath) => {
             credit = await resolveCredit({ localPath });
+            exif = await exifColumn(localPath);
             const metadata = await retryTransient(() => sharp(localPath).metadata());
             // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
             const dims = require('./imageProcessor').orientedDimensions(metadata);
@@ -143,6 +146,7 @@ async function processEvent(event, storage) {
           uploaded_at: new Date().toISOString(),
           ...(dimensions && { width: dimensions.width, height: dimensions.height }),
           ...credit,
+          ...exif,
         }).returning('id');
         const photoId = insertResult[0]?.id || insertResult[0];
 

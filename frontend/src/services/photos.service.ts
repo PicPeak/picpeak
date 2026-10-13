@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import type { PhotoExif } from '../types';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
 import { uploadMultipartBudget } from '../utils/uploadMultipartBudget';
 
@@ -9,6 +10,8 @@ export interface AdminPhoto {
   path: string;
   url: string;
   thumbnail_url: string | null;
+  // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
+  thumb_hash?: string | null;
   type: string;
   category_id: number | string | null;
   category_name: string | null;
@@ -51,6 +54,8 @@ export interface AdminPhoto {
   credit_name?: string | null;
   credit_source?: 'guest' | 'exif' | 'manual' | 'account' | null;
   uploaded_by?: 'admin' | 'guest';
+  // Camera details (issue 1733, D1); null when the photo carries none.
+  exif?: PhotoExif | null;
   // Folders (issue 1786): the folder the photo lives in (null = gallery
   // root), and the open folder request it waits on, if any.
   folder_id?: number | null;
@@ -74,6 +79,45 @@ export interface PhotoModerationCounts {
 // Filter value for "photos without a credit" — mirrors CREDIT_NONE in
 // backend/src/services/photoCredit.js.
 export const CREDIT_FILTER_NONE = '__none__';
+
+/**
+ * What a delete did (issue 1733): `trashed` photos can be restored for
+ * `retention_days`, `deleted` ones are gone, `failed` ids are still in the
+ * gallery.
+ */
+export interface PhotoDeleteResult {
+  trashed?: number;
+  deleted?: number;
+  failed?: number[];
+  retention_days?: number;
+}
+
+export interface TrashedPhoto {
+  /** The photo's own id: trash and restore do not change it. */
+  id: number;
+  filename: string;
+  media_type: string;
+  size_bytes: number;
+  deleted_at: string;
+  deleted_by_name: string | null;
+  purge_after: string;
+  /** It was under review when deleted and comes back that way. */
+  held: boolean;
+  /** Admin-only; null when the photo has no thumbnail. */
+  thumbnail_url: string | null;
+}
+
+export interface PhotoTrash {
+  items: TrashedPhoto[];
+  /** 0: deleting is final, nothing goes to the trash. */
+  retention_days: number;
+}
+
+export interface TrashRestoreResult {
+  restored: number;
+  photo_ids: number[];
+  failed: Array<{ id: number; filename: string; code: string; error: string }>;
+}
 
 /** Admin filter on the guests' approve / reject (issue 744). */
 export type DecisionFilter = 'approved' | 'rejected' | 'undecided';
@@ -249,12 +293,33 @@ class PhotosService {
     return response.data;
   }
 
-  async deletePhoto(eventId: number, photoId: number): Promise<void> {
-    await api.delete(`/admin/events/${eventId}/photos/${photoId}`);
+  async deletePhoto(eventId: number, photoId: number): Promise<PhotoDeleteResult> {
+    const response = await api.delete(`/admin/events/${eventId}/photos/${photoId}`);
+    return response.data;
   }
 
-  async deletePhotos(eventId: number, photoIds: number[]): Promise<void> {
-    await api.post(`/admin/events/${eventId}/photos/bulk-delete`, { photoIds });
+  async deletePhotos(eventId: number, photoIds: number[]): Promise<PhotoDeleteResult> {
+    const response = await api.post(`/admin/events/${eventId}/photos/bulk-delete`, { photoIds });
+    return response.data;
+  }
+
+  /** The gallery's trash (issue 1733): deleted photos that can still be restored. */
+  async getTrash(eventId: number): Promise<PhotoTrash> {
+    const response = await api.get(`/admin/events/${eventId}/photos/trash`);
+    return response.data;
+  }
+
+  async restoreFromTrash(eventId: number, ids: number[]): Promise<TrashRestoreResult> {
+    // 409 carries the same body: nothing could be restored, and why.
+    const response = await api.post(`/admin/events/${eventId}/photos/trash/restore`, { ids }, {
+      validateStatus: (status) => (status >= 200 && status < 300) || status === 409,
+    });
+    return response.data;
+  }
+
+  async purgeFromTrash(eventId: number, ids: number[]): Promise<{ purged: number; failed: number[] }> {
+    const response = await api.post(`/admin/events/${eventId}/photos/trash/purge`, { ids });
+    return response.data;
   }
 
   async updatePhotoCategory(eventId: number, photoId: number, categoryId: number | string | null): Promise<AdminPhoto> {
@@ -359,11 +424,14 @@ class PhotosService {
     eventId: number,
     uploadId: string,
     categoryId?: number | null,
-    folder: FolderPlacement = {}
+    folder: FolderPlacement = {},
+    detectDuplicates = false
   ): Promise<{ success: boolean; uploaded: number; photos: AdminPhoto[] }> {
     const response = await api.post(
       `/admin/photos/${eventId}/chunked-upload/${uploadId}/complete`,
-      uploadPlacementBody({ ...folder, categoryId }),
+      // detect_duplicates asks the server to refuse a file the gallery already
+      // holds (issue 1733, C2); "upload anyway" leaves it out.
+      { ...uploadPlacementBody({ ...folder, categoryId }), ...(detectDuplicates ? { detect_duplicates: true } : {}) },
       // Merge + ffmpeg thumbnail can take a while on large videos.
       { timeout: 0 }
     );
@@ -379,7 +447,8 @@ class PhotosService {
     file: File,
     categoryId?: number | null,
     onProgress?: (progress: number) => void,
-    folder: FolderPlacement = {}
+    folder: FolderPlacement = {},
+    detectDuplicates = false
   ): Promise<AdminPhoto[]> {
     // Initialize upload
     const { uploadId, expectedChunks } = await this.initChunkedUpload(
@@ -404,7 +473,7 @@ class PhotosService {
       }
 
       // Complete upload
-      const result = await this.completeChunkedUpload(eventId, uploadId, categoryId, folder);
+      const result = await this.completeChunkedUpload(eventId, uploadId, categoryId, folder, detectDuplicates);
       return result.photos;
     } catch (error) {
       // Abort on error

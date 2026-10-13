@@ -162,6 +162,8 @@ export type ActivityType =
   | "event_deactivated"
   | "photo_deleted"
   | "photos_bulk_deleted"
+  | "photos_restored"
+  | "photos_trash_purged"
   | "settings_updated"
   | "event_updated"
   | "event_renamed"
@@ -230,6 +232,7 @@ export type ActivityType =
   | "event_team_changed"
   | "photos_review_approved"
   | "photos_review_rejected"
+  | "guest_uploads_pending_review"
   | "category_hero_updated"
   | "public_site_reset_to_default"
   | "cms_page_logo_uploaded"
@@ -496,8 +499,9 @@ export const adminService = {
       'expiration_warning_viewed': `Expiration warning viewed for ${activity.eventName || 'Unknown'}`,
       'photo_replaced': `Photo replaced in ${activity.eventName || 'Unknown'}`,
       'event_team_changed': `Team changed for ${activity.eventName || md.eventName || 'Unknown'}`,
-      'photos_review_approved': `${md.count || 0} team uploads approved in ${activity.eventName || md.eventName || 'Unknown'}`,
-      'photos_review_rejected': `${md.count || 0} team uploads rejected in ${activity.eventName || md.eventName || 'Unknown'}`,
+      'guest_uploads_pending_review': `${md.count || 0} guest uploads waiting for review in ${activity.eventName || md.eventName || 'Unknown'}`,
+      'photos_review_approved': `${md.count || 0} uploads approved in ${activity.eventName || md.eventName || 'Unknown'}`,
+      'photos_review_rejected': `${md.count || 0} uploads rejected in ${activity.eventName || md.eventName || 'Unknown'}`,
       'photo_uploaded': `Photo uploaded to ${activity.eventName || 'Unknown'}`,
       'category_hero_updated': `Category hero photo updated`,
       'public_site_reset_to_default': 'Public site reset to default',

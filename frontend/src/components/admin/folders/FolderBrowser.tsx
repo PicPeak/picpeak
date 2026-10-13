@@ -60,7 +60,7 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
   const canCreateHere = !current || folderDepth(folders, current.id) < maxDepth;
   const blockedBy = current ? downloadsBlockedBy(folders, current.id) : null;
 
-  const onError = (fallback: string) => (error: unknown) => toast.error(folderErrorMessage(error) || fallback);
+  const onError = (fallback: string) => (error: unknown) => toast.error(folderErrorMessage(error, t) || fallback);
   const done = () => invalidateFolderViews(queryClient, eventId);
 
   const createMutation = useMutation({

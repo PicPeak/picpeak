@@ -62,6 +62,7 @@ import {
   type SigningSession,
   type SigningSessionContract,
 } from '../../services/publicContractSigning.service';
+import { radioGroupKeyDown } from '../../utils/ariaKeyboard';
 
 const PRIMARY_BUTTON = 'px-4 py-2 rounded-md bg-accent-strong text-accent-fg text-sm hover:opacity-90 disabled:opacity-50';
 const SECONDARY_BUTTON = 'px-3 py-1.5 rounded-md border border-border-token text-sm inline-flex items-center gap-1 disabled:opacity-50 text-theme';
@@ -1046,6 +1047,7 @@ const SignForm: React.FC<SignFormProps> = ({
       type="button"
       role="radio"
       aria-checked={mode === value}
+      tabIndex={mode === value ? 0 : -1}
       onClick={() => { setMode(value); setError(null); }}
       className={`px-3 py-1.5 text-sm rounded-md border ${mode === value
         ? 'border-accent-dark bg-elevated text-theme font-medium'
@@ -1077,7 +1079,7 @@ const SignForm: React.FC<SignFormProps> = ({
             <p id="contract-signing-mode" className="block text-sm font-medium mb-1">
               {t('contractSigning.sign.modeLabel', 'How do you want to sign?')}
             </p>
-            <div role="radiogroup" aria-labelledby="contract-signing-mode" className="flex gap-2">
+            <div role="radiogroup" aria-labelledby="contract-signing-mode" className="flex gap-2" onKeyDown={radioGroupKeyDown}>
               {modeButton('drawn', t('contractSigning.sign.modeDrawn', 'Draw'))}
               {modeButton('typed', t('contractSigning.sign.modeTyped', 'Type my name'))}
             </div>

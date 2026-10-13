@@ -75,10 +75,10 @@ describe('regenerating a video thumbnail and the processing note', () => {
   });
 
   it('clears the note when a real poster frame comes back', async () => {
-    mockProcessUploadedVideo.mockResolvedValue({ success: true, thumbnailKey: 'thumbnails/thumb_clip.jpg', placeholder: false, thumbnailError: null });
+    mockProcessUploadedVideo.mockResolvedValue({ success: true, thumbnailKey: 'thumbnails/thumb_clip.jpg', placeholder: false, thumbnailError: null, thumbHash: 'HwgKPZpgh3dw' });
     expect(await imageProcessor.ensureThumbnail(video({ processing_error: 'No poster frame: ffmpeg seek failed' }), { force: true }))
       .toBe('thumbnails/thumb_clip.jpg');
-    expect(db.__state.updates).toEqual([{ criteria: expect.objectContaining({ id: 501, filename: 'clip.mp4' }), values: { thumbnail_path: 'thumbnails/thumb_clip.jpg', processing_error: null } }]);
+    expect(db.__state.updates).toEqual([{ criteria: expect.objectContaining({ id: 501, filename: 'clip.mp4' }), values: { thumbnail_path: 'thumbnails/thumb_clip.jpg', thumb_hash: 'HwgKPZpgh3dw', processing_error: null } }]);
   });
 
   it('writes the note when the regeneration fell back to the placeholder', async () => {
@@ -94,6 +94,6 @@ describe('regenerating a video thumbnail and the processing note', () => {
   it('leaves the note of a row that is not complete alone', async () => {
     mockProcessUploadedVideo.mockResolvedValue({ success: true, thumbnailKey: 'thumbnails/thumb_clip.jpg', placeholder: false, thumbnailError: null });
     await imageProcessor.ensureThumbnail(video({ processing_status: 'failed', processing_error: 'sharp: bad header' }), { force: true });
-    expect(db.__state.updates).toEqual([{ criteria: expect.objectContaining({ id: 501, filename: 'clip.mp4' }), values: { thumbnail_path: 'thumbnails/thumb_clip.jpg' } }]);
+    expect(db.__state.updates).toEqual([{ criteria: expect.objectContaining({ id: 501, filename: 'clip.mp4' }), values: { thumbnail_path: 'thumbnails/thumb_clip.jpg', thumb_hash: null } }]);
   });
 });

@@ -52,10 +52,17 @@ const SORTABLE = {
   // one would land (SQLite ASC first, Postgres ASC last), so it is pinned.
   updated_at: 'nullable',
   expires_at: 'nullable',
+  // Two-stage delivery (issue 1562): the date the full gallery is promised
+  // by. The dashboard's "awaiting delivery" card asks for the soonest first;
+  // sorting here, before LIMIT, keeps it right past the first page.
+  delivery_due_at: 'nullable',
   slug: 'plain',
   photo_count: 'photos',
   status: 'status',
 };
+
+/** Nullable keys SQLite must order as timestamps, not as stored text. */
+const TIMESTAMP_KEYS = new Set(['expires_at', 'delivery_due_at']);
 
 const DEFAULT_SORT_BY = 'created_at';
 const DEFAULT_SORT_ORDER = 'desc';
@@ -120,10 +127,12 @@ function applyEventListSort(query, sortBy, sortOrder) {
     // SQLite only learned in 3.30 — and which the two engines default to
     // opposite ways without.
     query = query.orderByRaw('case when ?? is null then 1 else 0 end asc', [key]);
-    if (key === 'expires_at' && !isPostgreSQL()) {
+    if (TIMESTAMP_KEYS.has(key) && !isPostgreSQL()) {
       // SQLite holds expires_at as ISO text or as epoch ms (the extend path
       // bound a Date), and orders every number below every text; sort the
       // value as a timestamp, like the status filter compares it.
+      // delivery_due_at is written as ISO text today; read the same way so a
+      // future epoch-ms writer cannot reorder it.
       const ms = sqliteTimestampMs(key);
       query = query.orderByRaw(`${ms.sql} ${dir}`, ms.bindings);
     } else {
@@ -131,7 +140,7 @@ function applyEventListSort(query, sortBy, sortOrder) {
     }
   } else if (kind === 'photos') {
     query = query.orderByRaw(
-      `(select count(*) from photos where photos.event_id = events.id) ${dir}`,
+      `(select count(*) from photos where photos.event_id = events.id and photos.deleted_at is null) ${dir}`,
     );
   } else if (kind === 'status') {
     const now = new Date();

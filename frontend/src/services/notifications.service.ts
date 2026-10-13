@@ -82,6 +82,16 @@ export const notificationsService = {
           count: notification.metadata.count || 0, 
           eventName: notification.eventName 
         });
+      case 'photos_restored':
+        return t('admin.notificationMessages.photosRestored', {
+          count: notification.metadata.count || 0,
+          eventName: notification.eventName
+        });
+      case 'photos_trash_purged':
+        return t('admin.notificationMessages.photosTrashPurged', {
+          count: notification.metadata.count || 0,
+          eventName: notification.eventName
+        });
       case 'event_expiring':
         return t('admin.notificationMessages.eventExpiring', { 
           eventName: notification.eventName, 
@@ -318,6 +328,12 @@ export const notificationsService = {
           count: notification.metadata.count || 0,
           eventName: notification.eventName || notification.metadata.eventName,
         });
+      // Guest uploads held for approval (issue 1733).
+      case 'guest_uploads_pending_review':
+        return t('admin.notificationMessages.guestUploadsPendingReview', {
+          count: notification.metadata.count || 0,
+          eventName: notification.eventName || notification.metadata.eventName,
+        });
       case 'category_hero_updated':
         return t('admin.notificationMessages.categoryHeroUpdated');
       case 'public_site_reset_to_default':
@@ -365,7 +381,10 @@ export const notificationsService = {
         return { icon: 'Image', color: 'text-chart-4' };
       case 'photo_deleted':
       case 'photos_bulk_deleted':
+      case 'photos_trash_purged':
         return { icon: 'Image', color: 'text-danger-text' };
+      case 'photos_restored':
+        return { icon: 'Image', color: 'text-success-text' };
       case 'event_expiring':
         return { icon: 'AlertCircle', color: 'text-warning-text' };
       case 'event_expired':
@@ -459,6 +478,8 @@ export const notificationsService = {
       case 'photos_review_approved':
       case 'photos_review_rejected':
         return { icon: 'Image', color: 'text-chart-4' };
+      case 'guest_uploads_pending_review':
+        return { icon: 'Image', color: 'text-warning-text' };
       case 'event_team_changed':
         return { icon: 'User', color: 'text-accent' };
       case 'category_hero_updated':

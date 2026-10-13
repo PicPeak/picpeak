@@ -20,6 +20,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
@@ -34,8 +35,8 @@ const router = express.Router();
 async function deliveryState(eventId) {
   const event = await db('events').where('id', eventId).first();
   if (!event) return null;
-  const [{ total }] = await db('photos').where('event_id', eventId).count('id as total');
-  const [{ firstLook }] = await db('photos').where('event_id', eventId).where('first_look', true).count('id as firstLook');
+  const [{ total }] = await livePhotos(db).where('event_id', eventId).count('id as total');
+  const [{ firstLook }] = await livePhotos(db).where('event_id', eventId).where('first_look', true).count('id as firstLook');
   const duplicates = delivery.isPartial(event) ? await delivery.findFirstLookDuplicates(eventId) : [];
   return {
     status: event.delivery_status || 'complete',
@@ -75,7 +76,7 @@ router.post('/events/:eventId/delivery/complete', adminAuth, requirePermission('
     const sendEmail = !(req.body.send_email === false || req.body.send_email === 'false');
     const recipient = event.customer_email || event.host_email || null;
     const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
-    const [{ total }] = await db('photos').where('event_id', eventId).count('id as total');
+    const [{ total }] = await livePhotos(db).where('event_id', eventId).count('id as total');
     const photoCount = Math.max(0, (Number(total) || 0) - result.duplicates.length);
 
     // The inline address and every assigned customer account the gallery

@@ -8,6 +8,7 @@
  */
 
 const { db } = require('../database/db');
+const { wherePhotoLive } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { isValidColorLabel } = require('../constants/colorLabels');
 
@@ -188,6 +189,7 @@ async function getEventMarks(eventId, adminId, photoIds = null) {
 async function getEventMarkColorCounts(eventId, adminId) {
   try {
     const rows = await db('photo_admin_marks')
+      .modify(wherePhotoLive, 'photo_admin_marks.photo_id')
       .where({ event_id: eventId, admin_id: adminId })
       .whereNotNull('color_label')
       .groupBy('color_label')

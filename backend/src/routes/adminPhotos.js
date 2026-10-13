@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
 const { db, logActivity } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { RECOVERABLE_PASSWORD_COLUMNS } = require('./adminEvents/helpers');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -32,15 +33,17 @@ const {
 const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
+const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
-const watermarkGeneratorService = require('../services/watermarkGeneratorService');
 const downloadZipService = require('../services/downloadZipService');
 const { findReplacementCandidate, replacePhoto } = require('../services/photoReplacementService');
 const { requireEventOwnership, canAccessEvent } = require('../middleware/ownership');
 const { mayReviewUploads, adminUploadColumns, moderatePhotos, moderationCounts, MODERATION_STATUSES, MAX_MODERATION_IDS } = require('../services/uploadReviewService');
 const { getStorage } = require('../services/storage');
+const photoTrash = require('../services/photoTrash');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const { errorResponse } = require('../utils/routeHelpers');
 const { withPublicUpload } = require('../middleware/publicUploadStream');
 const { createUploadFileGuard } = require('../utils/uploadAdmissionType');
@@ -68,8 +71,9 @@ async function folderIdUpdate(eventId, raw) {
   if (!folder) return { error: `Unknown folder_id ${id}` };
   return { folder_id: id };
 }
-const { photoCapOf, countEventPhotos, insertPhotoWithinCap } = require('../services/photoCap');
+const { photoCapOf, countEventPhotos, insertPhotoWithinCap, photoCapError } = require('../services/photoCap');
 const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
+const { sha256File, findDuplicate, duplicateName } = require('../services/photoDuplicates');
 
 
 const { validateFileType, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
@@ -85,12 +89,12 @@ const { validateFileType, createFileUploadValidator, normalizeUploadMimeType, is
 // in the dropzone was never enforced anywhere server-side. getMaxFileSizeBytes()
 // clamps to MAX_ALLOWED_FILE_SIZE_MB (10GB), so that hard ceiling still applies.
 //
-// The handler reads three short text fields (category_id, replace_by_name,
-// match_mode). Busboy buffers every text part in memory before the handler
+// The handler reads a few short text fields (category_id, the folder
+// placement, replace_by_name, match_mode, detect_duplicates). Busboy buffers every text part in memory before the handler
 // runs, so without `fields`/`fieldSize`/`parts` sized to that a caller with
 // photos.upload could send thousands of multi-megabyte text parts and hold
 // them all on the heap.
-const UPLOAD_TEXT_FIELDS = 5;
+const UPLOAD_TEXT_FIELDS = 7;
 const createUpload = (maxFileSizeBytes, maxFiles, { storage, streamHandler, rejectBody }) => multer({
   storage,
   streamHandler,
@@ -195,6 +199,10 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     }),
   }, options => createUpload(Math.max(req.maxFileSizeBytes, req.maxVideoSizeBytes), options.maxFiles, options).array('photos', options.maxFiles),
   async (_session, reply) => {
+    // Each file's place among the request's `photos` parts, noted before the
+    // validation below drops any: a duplicate is reported by it, since two
+    // files of one request can share a name (issue 1733, C2).
+    (req.files || []).forEach((file, index) => { file.requestIndex = index; });
     let proceed = false;
     await validateUploadContent(req, reply, () => { proceed = true; });
     if (!proceed) return;
@@ -207,7 +215,11 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
 async function handleAdminPhotoUpload(req, res) {
   try {
     const { eventId } = req.params;
-    const { category_id, replace_by_name, match_mode } = req.body;
+    const { category_id, replace_by_name, match_mode, detect_duplicates } = req.body;
+    // Opt-in per request (issue 1733, C2): with it a file whose bytes this
+    // gallery already holds is reported back instead of stored again. Without
+    // it every file is stored, as before the check existed.
+    const detectDuplicates = detect_duplicates === 'true' || detect_duplicates === true;
     let replaceByName = replace_by_name === 'true' || replace_by_name === true;
     // How replace_by_name finds its target (#745). 'exact' is the historical
     // behaviour and stays the default; 'number_token' matches on the trailing
@@ -237,19 +249,35 @@ async function handleAdminPhotoUpload(req, res) {
 
     // Enforce photo cap if set (replacements don't count as new)
     if (event.photo_cap && event.photo_cap > 0) {
-      const existingPhotoCount = await db('photos')
+      const existingPhotoCount = await livePhotos(db)
         .where({ event_id: eventId })
         .count('id as count')
         .first();
       const currentCount = parseInt(existingPhotoCount.count) || 0;
       let newFilesCount = (req.files && req.files.length) || 0;
-      // Subtract likely replacements from cap calculation
-      if (replaceByName && req.files) {
+      // Subtract likely replacements from cap calculation, and with
+      // detect_duplicates the files that will be skipped as duplicates: of
+      // the gallery, or of an earlier file of this request. Otherwise a batch
+      // that fits once they are skipped is refused, and a duplicate-only
+      // upload at the cap never gets its duplicate report. Replacements run
+      // before the new files, so the bytes they bring in count as held too.
+      // An estimate like the replacement count; insertPhotoWithinCap below is
+      // what holds the cap.
+      if ((replaceByName || detectDuplicates) && req.files) {
+        const seenHashes = new Set();
+        const newFiles = [];
         for (const file of req.files) {
-          const candidate = await findReplacementCandidate(
+          const candidate = replaceByName ? await findReplacementCandidate(
             parseInt(eventId), file.originalname, { matchMode }
-          );
-          if (candidate && !candidate.ambiguous) newFilesCount--;
+          ) : null;
+          if (!candidate || candidate.ambiguous) { newFiles.push(file); continue; }
+          newFilesCount--;
+          if (detectDuplicates) seenHashes.add(await sha256File(file.path));
+        }
+        for (const file of detectDuplicates ? newFiles : []) {
+          file.contentSha256 = await sha256File(file.path);
+          if (seenHashes.has(file.contentSha256) || await findDuplicate(event.id, file.contentSha256)) newFilesCount--;
+          seenHashes.add(file.contentSha256);
         }
       }
       if (currentCount + newFilesCount > event.photo_cap) {
@@ -308,6 +336,7 @@ async function handleAdminPhotoUpload(req, res) {
     const uploadedPhotos = [];
     const replacedPhotos = [];
     const skippedReplacements = [];
+    const duplicates = [];
     const errors = [];
 
     // Handle replacements first if enabled
@@ -378,6 +407,7 @@ async function handleAdminPhotoUpload(req, res) {
     // requests can compute the same base; there is NO unique index on
     // photos.filename). Uniqueness of the final path comes from the
     // random suffix inside generatePhotoFilename (#931).
+    // Trashed photos count too: their filenames are still taken.
     const existingCount = await db('photos')
       .where({ event_id: eventId, type: photoType })
       .count('id as count')
@@ -394,6 +424,17 @@ async function handleAdminPhotoUpload(req, res) {
         const tempStats = await fs.stat(file.path);
         if (tempStats.size === 0) {
           throw new Error('File is empty - upload may have been interrupted');
+        }
+
+        // Hashed here, while the file is still local and before anything is
+        // stored or queued: this response is the only place the uploader
+        // hears about the file again. Same gallery only.
+        const contentSha256 = file.contentSha256 || await sha256File(file.path);
+        const existing = detectDuplicates ? await findDuplicate(event.id, contentSha256) : null;
+        if (existing) {
+          await fs.unlink(file.path).catch(() => {});
+          duplicates.push({ index: file.requestIndex, filename: file.originalname, duplicate_of: duplicateName(existing) });
+          continue;
         }
 
         const extension = path.extname(file.originalname);
@@ -445,6 +486,7 @@ async function handleAdminPhotoUpload(req, res) {
           type: photoType,
           ...placementColumns(placement),
           size_bytes: tempStats.size,
+          content_sha256: contentSha256,
           captured_at: null,
           media_type: isVideo ? 'video' : 'image',
           mime_type: file.mimetype,
@@ -536,6 +578,12 @@ async function handleAdminPhotoUpload(req, res) {
       replaced: replacedPhotos,
       replacedCount: replacedPhotos.length,
       skippedReplacements,
+      // Not stored: this gallery already holds the same bytes. Kept apart
+      // from `errors`, the uploader offers "upload anyway" for these; `index`
+      // is the file's place among the request's `photos` parts. Always
+      // empty unless the request asked for detect_duplicates.
+      duplicates,
+      duplicateCount: duplicates.length,
       totalFiles: totalAttempted,
       successCount: uploadedPhotos.length + replacedPhotos.length,
       failureCount: totalInvalidFiles.length,
@@ -569,7 +617,7 @@ async function loadUploadGroup(req, res) {
     return null;
   }
 
-  const photos = await db('photos').where({ upload_id: uploadId });
+  const photos = await livePhotos(db).where({ upload_id: uploadId });
   if (photos.length === 0) {
     res.status(404).json({ error: 'Upload group not found' });
     return null;
@@ -655,7 +703,7 @@ router.get(
     const send = async () => {
       if (closed) return;
       try {
-        const photos = await db('photos').where({ upload_id: group.uploadId });
+        const photos = await livePhotos(db).where({ upload_id: group.uploadId });
         const summary = summariseUpload(photos);
         const payload = JSON.stringify({
           upload_id: group.uploadId,
@@ -697,7 +745,7 @@ router.post(
   requirePermission('photos.edit'),
   async (req, res) => {
     try {
-      const photo = await db('photos').where({ id: req.params.photoId }).first();
+      const photo = await livePhotos(db).where({ id: req.params.photoId }).first();
       if (!photo) return res.status(404).json({ error: 'Photo not found' });
 
       // Ownership: the rule requireEventOwnership enforces, which can't run
@@ -720,7 +768,7 @@ router.post(
         });
       }
 
-      await db('photos').where({ id: photo.id }).update({
+      await livePhotos(db).where({ id: photo.id }).update({
         processing_status: 'pending',
         processing_error: null,
         processing_started_at: null,
@@ -743,7 +791,7 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     const { eventId, photoId } = req.params;
     
     // Get photo details
-    const photo = await db('photos')
+    const photo = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
     
@@ -751,83 +799,29 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
       return res.status(404).json({ error: 'Photo not found' });
     }
     
-    // Delete original + thumbnail through the storage backend.
-    const storage = getStorage();
-    const { resolvePhotoStorageKey } = require('../services/photoResolver');
     const event = await db('events').where({ id: eventId }).first();
 
-    try {
-      const originalKey = resolvePhotoStorageKey(event, photo);
-      if (originalKey) await storage.delete(originalKey);
-    } catch (error) {
-      logger.error('Error deleting photo file:', error);
-    }
-
-    // photo.thumbnail_path is stored as the canonical storage key
-    // (e.g. "thumbnails/thumb_foo.jpg"), so pass it through verbatim.
-    if (photo.thumbnail_path) {
-      try {
-        await storage.delete(photo.thumbnail_path);
-      } catch (error) {
-        logger.error('Error deleting thumbnail:', error);
+    // The trash (issue 1733): with a retention the photo is only flagged and
+    // stays restorable; 0 days deletes it outright, as before the trash.
+    const retentionDays = await photoTrash.getRetentionDays();
+    const trashed = retentionDays > 0;
+    if (trashed) {
+      if (!(await photoTrash.trashPhoto(photo, req.admin.id, retentionDays))) {
+        return res.status(404).json({ error: 'Photo not found' });
       }
+    } else {
+      await photoTrash.deletePhotoForGood(event, photo);
     }
-    if (photo.hero_path) {
-      await storage.delete(photo.hero_path).catch(() => {});
-    }
-    // Lightbox preview tier (#492). Same disposable-derived semantics
-    // as thumbnail / hero — wipe on photo delete so we don't leak
-    // orphaned files into previews/ that no DB row references.
-    if (photo.preview_path) {
-      await storage.delete(photo.preview_path).catch(() => {});
-    }
-    // Browser-playable video copy (issue 1430): derived, same semantics.
-    if (photo.web_path) {
-      await storage.delete(photo.web_path).catch(() => {});
-    }
-    // Outside the preview_path guard on purpose: a responsive tier (#1095) can
-    // exist when the canonical rendition never did — they are generated
-    // independently, on demand — so keying their cleanup off preview_path
-    // would strand exactly the photos that were only ever viewed on a phone.
-    await require('../services/imageProcessor').deletePreviewTiers(photo);
-    await require('../services/imageProcessor').deleteThumbnailTiers(photo);
-
-    // Delete pre-generated watermark if exists
-    if (photo.watermark_path) {
-      await watermarkGeneratorService.deleteForPhoto(photo.id);
-    }
-
-    // Remove from database
-    // Face data (#1074): the FK cascade is inert on SQLite, and cannot fix up
-    // event_people counts anyway. See faceProcessor.purgePhotoFaces.
-    try {
-      const { purgePhotoFaces } = require('../services/faceProcessor');
-      await purgePhotoFaces(photoId);
-    } catch (err) {
-      logger.warn(`deletePhoto: face purge failed for photo ${photoId}`, { error: err.message });
-    }
-
-    // An external photo's file stays on the NAS; make sure the folder watcher
-    // (issue 1187) does not re-import it on its next pass.
-    await require('../services/externalImportService').recordExclusions(Number(eventId), [photo]);
-    // Scene tags (issue 1733) go with the row in one transaction: the cascade
-    // is inert on SQLite, and a tagging result in flight then lands either
-    // before this (and is deleted here) or after it (and finds no row). The
-    // row first, the order tagProcessor locks in: the other way round the two
-    // can deadlock on PostgreSQL.
-    await db.transaction(async (trx) => {
-      await trx('photos').where({ id: photoId }).delete();
-      await trx('photo_tags').where({ photo_id: photoId }).del();
-    });
 
     // Log activity (event was fetched above for storage key resolution)
     await logActivity('photo_deleted',
-      { filename: photo.filename, eventName: event.event_name },
+      { filename: photo.filename, eventName: event.event_name, trashed },
       eventId,
       { type: 'admin', id: req.admin.id, name: req.admin.username }
     );
 
-    // Webhook (#327): single-photo delete.
+    // Webhook (#327): single-photo delete. It fires here, when the photo
+    // leaves the gallery, and not again when the trash is purged.
     try {
       const webhookService = require('../services/webhookService');
       await webhookService.fire('photo.deleted', {
@@ -837,7 +831,12 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     } catch (e) { /* non-fatal */ }
 
     downloadZipService.invalidate(parseInt(eventId));
-    res.json({ message: 'Photo deleted successfully' });
+    res.json({
+      message: trashed ? 'Photo moved to trash' : 'Photo deleted successfully',
+      trashed: trashed ? 1 : 0,
+      deleted: trashed ? 0 : 1,
+      retention_days: retentionDays,
+    });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to delete photo');
   }
@@ -863,7 +862,7 @@ router.put('/:eventId/photos/:photoId/mark', adminAuth, requirePermission('photo
     // requireEventOwnership proves the caller owns the EVENT; this proves the
     // photo is in it, so a photo id from another event can't be marked
     // through an event the caller does own.
-    const photo = await db('photos')
+    const photo = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
     if (!photo) {
@@ -905,7 +904,7 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
     const { category_id, visibility } = req.body;
 
     // Verify photo belongs to event
-    const photo = await db('photos')
+    const photo = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
 
@@ -980,7 +979,7 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
     updateData.auto_categorized = false;
 
     // Update photo
-    await db('photos')
+    await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .update(updateData);
 
@@ -996,7 +995,7 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
     }
 
     // Fetch and return the updated photo
-    const updatedPhoto = await db('photos')
+    const updatedPhoto = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
 
@@ -1020,7 +1019,7 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
     }
     
     // Get all photos to delete
-    const photos = await db('photos')
+    const photos = await livePhotos(db)
       .whereIn('id', photoIds)
       .where('event_id', eventId);
     
@@ -1028,78 +1027,34 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
       return res.status(404).json({ error: 'No photos found' });
     }
     
-    // Delete original + thumbnail + hero through the storage backend.
-    const storage = getStorage();
     const event = await db('events').where({ id: eventId }).first();
-    const { resolvePhotoStorageKey } = require('../services/photoResolver');
 
+    // The trash (issue 1733), as in the single delete. `gone` are the photos
+    // this request took out of the gallery; one that another request got to
+    // first is not reported twice.
+    const retentionDays = await photoTrash.getRetentionDays();
+    const trashed = retentionDays > 0;
+    const gone = [];
+    const failedIds = [];
     for (const photo of photos) {
       try {
-        const originalKey = resolvePhotoStorageKey(event, photo);
-        if (originalKey) await storage.delete(originalKey);
+        if (!trashed) await photoTrash.deletePhotoForGood(event, photo);
+        else if (!(await photoTrash.trashPhoto(photo, req.admin.id, retentionDays))) continue;
+        gone.push(photo);
       } catch (error) {
-        logger.error('Error deleting photo file:', error);
-      }
-
-      if (photo.thumbnail_path) {
-        await storage.delete(photo.thumbnail_path).catch(() => {});
-      }
-      if (photo.hero_path) {
-        await storage.delete(photo.hero_path).catch(() => {});
-      }
-      // Lightbox preview tier (#492) — bulk delete cleanup.
-      if (photo.preview_path) {
-        await storage.delete(photo.preview_path).catch(() => {});
-      }
-      if (photo.web_path) {
-        await storage.delete(photo.web_path).catch(() => {});
-      }
-      // Outside the guard: a tier can exist when the canonical rendition never
-      // did, so keying cleanup off preview_path would strand phone-only photos.
-      await require('../services/imageProcessor').deletePreviewTiers(photo);
-      await require('../services/imageProcessor').deleteThumbnailTiers(photo);
-      if (photo.watermark_path) {
-        await watermarkGeneratorService.deleteForPhoto(photo.id);
+        logger.error(`bulk delete: could not delete photo ${photo.id}`, { error: error.message });
+        failedIds.push(photo.id);
       }
     }
-
-    // Face data (#1074), bulk path. Same reasoning as the single delete: the
-    // SQLite FK cascade never fires, and event_people counts need rebuilding
-    // regardless of engine.
-    // Iterate the VALIDATED rows, not the raw request ids. `photos` is already
-    // scoped to this event; `photoIds` is user input, and purgePhotoFaces has
-    // no event scope of its own — so looping the raw ids let an editor delete
-    // face data (and recompute people) in a gallery they do not own, even
-    // though the photo deletion below is correctly scoped.
-    for (const photo of photos) {
-      try {
-        const { purgePhotoFaces } = require('../services/faceProcessor');
-        await purgePhotoFaces(photo.id);
-      } catch (err) {
-        logger.warn(`bulk delete: face purge failed for photo ${photo.id}`, { error: err.message });
-      }
+    if (gone.length === 0 && failedIds.length > 0) {
+      return res.status(500).json({ error: 'Failed to delete photos', failed: failedIds });
     }
 
-    // Delete from database
-    // Same as the single delete: keep the watcher from bringing these back.
-    await require('../services/externalImportService').recordExclusions(Number(eventId), photos);
-    // Scene tags (issue 1733) in the same transaction as the rows and after
-    // them, as in the single delete, and from the validated rows for the
-    // reason above.
-    await db.transaction(async (trx) => {
-      await trx('photos')
-        .whereIn('id', photoIds)
-        .where('event_id', eventId)
-        .delete();
-      if (photos.length) {
-        await trx('photo_tags').whereIn('photo_id', photos.map((photo) => photo.id)).del();
-      }
-    });
-
-    // Webhook (#327): one photo.deleted per row in the bulk batch.
+    // Webhook (#327): one photo.deleted per row in the bulk batch, trashed
+    // or deleted outright.
     try {
       const webhookService = require('../services/webhookService');
-      for (const photo of photos) {
+      for (const photo of gone) {
         await webhookService.fire('photo.deleted', {
           event: { id: parseInt(eventId, 10), slug: event?.slug, event_name: event?.event_name },
           photo: { id: photo.id, filename: photo.filename },
@@ -1109,13 +1064,19 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
 
     // Log activity
     await logActivity('photos_bulk_deleted',
-      { count: photos.length, eventName: event.event_name },
+      { count: gone.length, eventName: event.event_name, trashed: trashed ? gone.length : 0 },
       eventId,
       { type: 'admin', id: req.admin.id, name: req.admin.username }
     );
     
     downloadZipService.invalidate(parseInt(eventId));
-    res.json({ message: `${photos.length} photos deleted successfully` });
+    res.json({
+      message: `${gone.length} photos deleted successfully`,
+      trashed: trashed ? gone.length : 0,
+      deleted: trashed ? 0 : gone.length,
+      failed: failedIds,
+      retention_days: retentionDays,
+    });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to delete photos');
   }
@@ -1132,7 +1093,7 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
     }
     
     // Verify all photos belong to the event
-    const photoCount = await db('photos')
+    const photoCount = await livePhotos(db)
       .whereIn('id', photoIds)
       .where('event_id', eventId)
       .count('id as count')
@@ -1213,7 +1174,7 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
     const { visibility: visibilityUpdate, ...otherUpdates } = updateData;
     let skippedUnderReview = 0;
     if (Object.keys(otherUpdates).length > 0) {
-      await db('photos')
+      await livePhotos(db)
         .whereIn('id', photoIds)
         .where('event_id', eventId)
         .update(otherUpdates);
@@ -1221,13 +1182,13 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
     if (visibilityUpdate !== undefined) {
       // Counted, not derived from the update's row count: PostgreSQL leaves an
       // unchanged row out of it, and foreign ids are not "under review".
-      const [{ count }] = await db('photos')
+      const [{ count }] = await livePhotos(db)
         .whereIn('id', photoIds)
         .where('event_id', eventId)
         .whereNotNull('moderation_status')
         .count('id as count');
       skippedUnderReview = Number(count) || 0;
-      await db('photos')
+      await livePhotos(db)
         .whereIn('id', photoIds)
         .where('event_id', eventId)
         .whereNull('moderation_status')
@@ -1246,6 +1207,121 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
     res.json({ message: `${photoIds.length} photos updated successfully`, skipped_under_review: skippedUnderReview });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to update photos');
+  }
+});
+
+// The gallery's trash (issue 1733): photos an admin deleted, restorable until
+// their retention runs out. Same permission and gallery scope as deleting.
+const MAX_TRASH_IDS = 500;
+const trashActor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
+
+router.get('/:eventId/photos/trash', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+  try {
+    res.json({
+      items: await photoTrash.listTrash(parseInt(req.params.eventId, 10)),
+      retention_days: await photoTrash.getRetentionDays(),
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to list the trash');
+  }
+});
+
+// A trashed photo's thumbnail, for the trash dialog only. Every other photo
+// and thumbnail route answers 404 for it. Served as stored: nothing is
+// generated for a photo in the trash.
+router.get('/:eventId/photos/trash/:photoId/thumbnail', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+  try {
+    const photoId = parseInt(req.params.photoId, 10);
+    const photo = Number.isInteger(photoId) ? await photoTrash.findTrashed(req.params.eventId, photoId) : null;
+    const stat = photo?.thumbnail_path ? await getStorage().stat(photo.thumbnail_path) : null;
+    if (!stat) return res.status(404).json({ error: 'Thumbnail not found' });
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Content-Length', stat.size);
+    // A purge can remove the file between the stat and the read.
+    pipeStreamToResponse(await getStorage().get(photo.thumbnail_path), res, { context: 'trashed photo thumbnail' });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to serve thumbnail');
+  }
+});
+
+/** The event and photo ids a restore or purge request names, or null after answering. */
+async function trashRequest(req, res) {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => Number.isInteger(id) && id > 0)) {
+    res.status(400).json({ error: 'Invalid photo IDs' });
+    return null;
+  }
+  if (ids.length > MAX_TRASH_IDS) {
+    res.status(400).json({ error: `At most ${MAX_TRASH_IDS} photos per request` });
+    return null;
+  }
+  const event = await db('events').where({ id: req.params.eventId }).first();
+  if (!event) {
+    res.status(404).json({ error: 'Event not found' });
+    return null;
+  }
+  return { event, ids: [...new Set(ids)] };
+}
+
+router.post('/:eventId/photos/trash/restore', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+  try {
+    const found = await trashRequest(req, res);
+    if (!found) return;
+    const { event, ids } = found;
+
+    const names = new Map((await db('photos').whereIn('id', ids).where({ event_id: event.id }).select('id', 'filename'))
+      .map((row) => [Number(row.id), row.filename]));
+    const { restored, failed } = await photoTrash.restorePhotos(event, ids);
+    const cap = photoCapError(event.photo_cap).error;
+
+    if (restored.length > 0) {
+      downloadZipService.invalidate(event.id);
+      await logActivity('photos_restored',
+        { count: restored.length, photoIds: restored, eventName: event.event_name },
+        event.id, trashActor(req));
+    }
+    res.status(restored.length > 0 ? 200 : 409).json({
+      restored: restored.length,
+      photo_ids: restored,
+      failed: failed.map(({ id, code }) => ({
+        id,
+        filename: names.get(id) || null,
+        code,
+        error: code === 'PHOTO_CAP_REACHED' ? cap : 'The photo is not in the trash any more',
+      })),
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to restore photos');
+  }
+});
+
+router.post('/:eventId/photos/trash/purge', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+  try {
+    const found = await trashRequest(req, res);
+    if (!found) return;
+    const { event, ids } = found;
+
+    let purged = 0;
+    const failed = [];
+    for (const id of ids) {
+      try {
+        const photo = await photoTrash.findTrashed(event.id, id);
+        // No webhook: photo.deleted fired when the photo was trashed.
+        if (photo && await photoTrash.purgePhoto(event, photo)) purged += 1;
+      } catch (error) {
+        logger.error(`Could not purge trashed photo ${id}`, { error: error.message });
+        failed.push(id);
+      }
+    }
+
+    if (purged > 0) {
+      await logActivity('photos_trash_purged', { count: purged, eventName: event.event_name }, event.id, trashActor(req));
+    }
+    res.status(purged > 0 || failed.length === 0 ? 200 : 500).json({ purged, failed });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to delete photos from the trash');
   }
 });
 
@@ -1309,14 +1385,14 @@ router.post('/:eventId/photos/moderation', adminAuth, requirePermission(['photos
 router.get('/:eventId/photos/credits', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId, 10);
-    const rows = await db('photos')
+    const rows = await livePhotos(db)
       .where('event_id', eventId)
       .whereNotNull('credit_name')
       .groupBy('credit_name')
       .select('credit_name')
       .count('id as count')
       .orderBy('credit_name', 'asc');
-    const none = await db('photos')
+    const none = await livePhotos(db)
       .where('event_id', eventId)
       .whereNull('credit_name')
       .count('id as count')
@@ -1340,7 +1416,7 @@ router.put('/:eventId/photos/:photoId/credit', adminAuth, requirePermission('pho
     if (creditFields.error) {
       return res.status(400).json({ error: creditFields.error });
     }
-    const updated = await db('photos')
+    const updated = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .update(creditFields);
     if (!updated) {
@@ -1360,7 +1436,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
   try {
     const { eventId, photoId } = req.params;
     
-    const photo = await db('photos')
+    const photo = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
     
@@ -1418,7 +1494,7 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     const order = ['asc', 'desc'].includes(req.query.order) ? req.query.order : 'desc';
     const logic = req.query.logic === 'OR' ? 'OR' : 'AND';
 
-    let query = db('photos')
+    let query = livePhotos(db)
       .where({ 'photos.event_id': eventId })
       .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
       // The account that uploaded it (issue 743), shown on photos under review.
@@ -1696,6 +1772,8 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         web_error: photo.web_error || null,
         width: photo.width || null,
         height: photo.height || null,
+        // Blurred tile placeholder (issue 1733): a base64 ThumbHash, or null.
+        thumb_hash: photo.thumb_hash || null,
         duration: photo.duration || null,
         size: photo.size_bytes,
         uploaded_at: photo.uploaded_at,
@@ -1726,6 +1804,8 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         credit_name: photo.credit_name || null,
         credit_source: photo.credit_source || null,
         uploaded_by: photo.uploaded_by === 'guest' ? 'guest' : 'admin',
+        // Camera details (issue 1733, D1); null when none were read.
+        exif: parseStoredExif(photo.exif_json),
         // Review of team members' uploads (issue 743): null, 'pending' or
         // 'rejected', and the admin account that ran the upload.
         moderation_status: photo.moderation_status || null,
@@ -1744,7 +1824,7 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
   try {
     const { eventId, photoId } = req.params;
 
-    const photo = await db('photos')
+    const photo = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
 
@@ -1803,7 +1883,7 @@ router.get('/:eventId/thumbnail/:photoId', adminAuth, requirePermission('photos.
   try {
     const { eventId, photoId } = req.params;
     
-    const photo = await db('photos')
+    const photo = await livePhotos(db)
       .where({ id: photoId, event_id: eventId })
       .first();
 
@@ -1872,7 +1952,7 @@ router.get('/:eventId/preview/:photoId', adminAuth, requirePermission('photos.vi
   try {
     const { eventId, photoId } = req.params;
 
-    const photo = await db('photos').where({ id: photoId, event_id: eventId }).first();
+    const photo = await livePhotos(db).where({ id: photoId, event_id: eventId }).first();
     if (!photo) return res.status(404).json({ error: 'Photo not found' });
 
     if (photo.processing_status === 'pending' || photo.processing_status === 'processing') {
@@ -1913,8 +1993,8 @@ router.get('/:eventId/debug', adminAuth, requirePermission('photos.view'), requi
     const { eventId } = req.params;
     
     const eventRow = await db('events').where({ id: eventId }).first();
-    const photoCount = await db('photos').where({ event_id: eventId }).count('id as count').first();
-    const photos = await db('photos').where({ event_id: eventId }).limit(5);
+    const photoCount = await livePhotos(db).where({ event_id: eventId }).count('id as count').first();
+    const photos = await livePhotos(db).where({ event_id: eventId }).limit(5);
     // Never hand out the hashes or the recoverable copies (#1271) — this is
     // a photos.view surface, not an events.edit one.
     let event = eventRow;
@@ -2069,7 +2149,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
   res.once('close', cancel);
   try {
     const { eventId, uploadId } = req.params;
-    const { category_id } = req.body;
+    const { category_id, detect_duplicates } = req.body;
 
     // Same rules as the batch upload route: the photo cap and the category
     // scope. Checked before the merge, so a refused upload writes nothing.
@@ -2082,26 +2162,53 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
       return res.status(400).json(placementError);
     }
+    const detectDuplicates = detect_duplicates === true || detect_duplicates === 'true';
     const photoCap = photoCapOf(event);
+    let capRefusal = null;
     if (photoCap) {
       const currentCount = await countEventPhotos(event.id);
       if (currentCount + 1 > photoCap) {
-        await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
-        return res.status(400).json({
+        capRefusal = {
           error: `Photo cap exceeded. This event allows a maximum of ${photoCap} photos. Currently ${currentCount} photos exist, and you are trying to upload 1 more.`
-        });
+        };
       }
+    }
+    // With detect_duplicates a full gallery still merges first: a duplicate
+    // would not have been stored, so it is reported as one, and only another
+    // file is refused for the cap (below).
+    if (capRefusal && !detectDuplicates) {
+      await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
+      return res.status(400).json(capRefusal);
     }
 
     // Complete the chunked upload (merge chunks)
     mergedFile = await chunkedUpload.completeUpload(uploadId, { owner: uploadOwner(req) });
+
+    // Same opt-in duplicate rule as the batch route (issue 1733, C2). The
+    // merged file is the first moment the whole content exists here, so this
+    // is the earliest a large file can be recognised.
+    const contentSha256 = await sha256File(mergedFile.path);
+    const existing = detectDuplicates ? await findDuplicate(mergedFile.eventId, contentSha256) : null;
+    if (existing) {
+      await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
+      return res.status(409).json({
+        error: 'This gallery already has a photo with the same content.',
+        code: 'DUPLICATE_PHOTO',
+        duplicate_of: duplicateName(existing),
+      });
+    }
+    if (capRefusal) {
+      await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
+      return res.status(400).json(capRefusal);
+    }
 
     // Process the merged file as a regular upload
     const fileObj = {
       originalname: mergedFile.filename,
       mimetype: mergedFile.mimeType,
       size: mergedFile.size,
-      path: mergedFile.path
+      path: mergedFile.path,
+      contentSha256
     };
 
     // The event the upload was initialised for. The owner check above makes

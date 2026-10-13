@@ -8,6 +8,13 @@
  *                           brings the customer back.
  *   delivery_due_reminder   to the studio when a promised completion date is
  *                           close or has passed.
+ *   download_ready          to a gallery visitor who asked to be mailed when a
+ *                           prepared download is ready (issue 1733). Lives
+ *                           here because it is the same kind of mail: a
+ *                           gallery link with nothing secret in it.
+ *   selection_submitted     to the gallery's admin address when a guest
+ *                           finishes their selection or approves the edited
+ *                           photos (issue 1733, A1).
  *
  * Seeded at boot through _emailTemplateBoot, same rules as
  * eventReminderTemplates.js: a missing key is inserted with EN + DE, an
@@ -40,6 +47,27 @@ const TEMPLATES = {
       body_text: 'Ihre vollständige Galerie ist da\n\nGuten Tag {{host_name}},\n\nAlle Fotos von „{{event_name}}“ sind jetzt in Ihrer Galerie: {{photo_count}} Fotos, inklusive der ersten Auswahl, die Sie bereits erhalten haben.\n\nGalerie öffnen: {{gallery_link}}{{#if expiry_date}}\n\nDie Galerie ist bis zum {{expiry_date}} verfügbar.{{/if}}',
     },
   },
+  // "Email me when it is ready" for a prepared download (issue 1733). The link
+  // opens the gallery, which then offers the archive; it is not the archive.
+  download_ready: {
+    variables: ['event_name', 'gallery_link', 'available_hours'],
+    en: {
+      subject: 'Your download is ready: {{event_name}}',
+      body_html: `<h2>Your download is ready</h2>
+<p>The photos you asked for from "{{event_name}}" have been prepared.</p>
+<p><a href="{{gallery_link}}">Open the gallery to download them</a></p>
+<p>The download is kept for about {{available_hours}} more hour(s). After that you can simply request it again in the gallery.</p>`,
+      body_text: 'Your download is ready\n\nThe photos you asked for from "{{event_name}}" have been prepared.\n\nOpen the gallery to download them: {{gallery_link}}\n\nThe download is kept for about {{available_hours}} more hour(s). After that you can simply request it again in the gallery.',
+    },
+    de: {
+      subject: 'Ihr Download ist bereit: {{event_name}}',
+      body_html: `<h2>Ihr Download ist bereit</h2>
+<p>Die angeforderten Fotos aus „{{event_name}}“ wurden vorbereitet.</p>
+<p><a href="{{gallery_link}}">Galerie öffnen und herunterladen</a></p>
+<p>Der Download wird noch etwa {{available_hours}} Stunde(n) aufbewahrt. Danach können Sie ihn in der Galerie einfach erneut anfordern.</p>`,
+      body_text: 'Ihr Download ist bereit\n\nDie angeforderten Fotos aus „{{event_name}}“ wurden vorbereitet.\n\nGalerie öffnen und herunterladen: {{gallery_link}}\n\nDer Download wird noch etwa {{available_hours}} Stunde(n) aufbewahrt. Danach können Sie ihn in der Galerie einfach erneut anfordern.',
+    },
+  },
   delivery_due_reminder: {
     variables: ['event_name', 'due_date', 'delivered_count', 'expected_count', 'admin_link', 'overdue', 'due_soon'],
     en: {
@@ -59,6 +87,40 @@ const TEMPLATES = {
 <p>Sobald die Galerie vollständig ist, markieren Sie sie als fertig, damit der Kunde Bescheid bekommt.</p>
 <p><a href="{{admin_link}}">Event öffnen</a></p>`,
       body_text: 'Die vollständige Galerie für „{{event_name}}“ wurde bis {{due_date}} zugesagt.\n\nBisher sind {{delivered_count}} von ca. {{expected_count}} Fotos in der Galerie.\n\nSobald die Galerie vollständig ist, markieren Sie sie als fertig, damit der Kunde Bescheid bekommt.\n\n{{admin_link}}',
+    },
+  },
+  // A guest finished their selection or approved the edited photos (issue
+  // 1733, A1). To the gallery's admin address; is_selection / is_approval say
+  // which, exactly one of them is set.
+  selection_submitted: {
+    variables: ['event_name', 'guest_name', 'item_count', 'rejected_count', 'note', 'admin_link', 'is_selection', 'is_approval'],
+    en: {
+      subject: '{{#if is_selection}}Selection finished{{/if}}{{#if is_approval}}Edited photos approved{{/if}}: {{event_name}}',
+      body_html: `<h2>{{#if is_selection}}Selection finished{{/if}}{{#if is_approval}}Edited photos approved{{/if}}</h2>
+<p>Gallery: "{{event_name}}"</p>
+{{#if guest_name}}<p>Guest: {{guest_name}}</p>{{/if}}
+{{#if is_selection}}<p>Selected photos: <strong>{{item_count}}</strong></p>
+<p>The picks are locked for this guest until you reopen the selection.</p>{{/if}}
+{{#if is_approval}}<p>Approved photos: <strong>{{item_count}}</strong></p>{{/if}}
+{{#if rejected_count}}<p>Rejected photos: {{rejected_count}}</p>{{/if}}
+{{#if is_approval}}<p>The decisions are locked for this guest until you reopen the approval.</p>{{/if}}
+{{#if note}}<p>Note: {{note}}</p>{{/if}}
+<p><a href="{{admin_link}}">Open the gallery</a></p>`,
+      body_text: '{{#if is_selection}}Selection finished{{/if}}{{#if is_approval}}Edited photos approved{{/if}}\n\nGallery: "{{event_name}}"{{#if guest_name}}\nGuest: {{guest_name}}{{/if}}{{#if is_selection}}\nSelected photos: {{item_count}}\n\nThe picks are locked for this guest until you reopen the selection.{{/if}}{{#if is_approval}}\nApproved photos: {{item_count}}{{/if}}{{#if rejected_count}}\nRejected photos: {{rejected_count}}{{/if}}{{#if is_approval}}\n\nThe decisions are locked for this guest until you reopen the approval.{{/if}}{{#if note}}\n\nNote: {{note}}{{/if}}\n\n{{admin_link}}',
+    },
+    de: {
+      subject: '{{#if is_selection}}Auswahl abgeschlossen{{/if}}{{#if is_approval}}Bearbeitete Fotos freigegeben{{/if}}: {{event_name}}',
+      body_html: `<h2>{{#if is_selection}}Auswahl abgeschlossen{{/if}}{{#if is_approval}}Bearbeitete Fotos freigegeben{{/if}}</h2>
+<p>Galerie: „{{event_name}}“</p>
+{{#if guest_name}}<p>Gast: {{guest_name}}</p>{{/if}}
+{{#if is_selection}}<p>Ausgewählte Fotos: <strong>{{item_count}}</strong></p>
+<p>Die Auswahl dieses Gastes ist gesperrt, bis Sie sie wieder öffnen.</p>{{/if}}
+{{#if is_approval}}<p>Freigegebene Fotos: <strong>{{item_count}}</strong></p>{{/if}}
+{{#if rejected_count}}<p>Abgelehnte Fotos: {{rejected_count}}</p>{{/if}}
+{{#if is_approval}}<p>Die Entscheidungen dieses Gastes sind gesperrt, bis Sie die Freigabe wieder öffnen.</p>{{/if}}
+{{#if note}}<p>Anmerkung: {{note}}</p>{{/if}}
+<p><a href="{{admin_link}}">Galerie öffnen</a></p>`,
+      body_text: '{{#if is_selection}}Auswahl abgeschlossen{{/if}}{{#if is_approval}}Bearbeitete Fotos freigegeben{{/if}}\n\nGalerie: „{{event_name}}“{{#if guest_name}}\nGast: {{guest_name}}{{/if}}{{#if is_selection}}\nAusgewählte Fotos: {{item_count}}\n\nDie Auswahl dieses Gastes ist gesperrt, bis Sie sie wieder öffnen.{{/if}}{{#if is_approval}}\nFreigegebene Fotos: {{item_count}}{{/if}}{{#if rejected_count}}\nAbgelehnte Fotos: {{rejected_count}}{{/if}}{{#if is_approval}}\n\nDie Entscheidungen dieses Gastes sind gesperrt, bis Sie die Freigabe wieder öffnen.{{/if}}{{#if note}}\n\nAnmerkung: {{note}}{{/if}}\n\n{{admin_link}}',
     },
   },
 };

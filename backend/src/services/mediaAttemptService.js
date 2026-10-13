@@ -1,5 +1,6 @@
 /**
- * Execution attempts for queued photos ('photo') and web renditions ('web').
+ * Execution attempts for queued photos ('photo'), web renditions ('web')
+ * and adaptive streaming ladders ('hls').
  *
  * Every claim gets an id. The row carries it, every result is written with
  * the id in the same UPDATE, and output files carry it in their name, so a
@@ -16,6 +17,7 @@ const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const processLease = require('./linuxProcessLease');
 const kernelLease = require('./linuxKernelLease');
@@ -33,8 +35,10 @@ const HEARTBEAT_MS = 5000;
 const HEARTBEAT_STALE_MS = 120000;
 const LEASE_SWEEP_AGE_MS = 600000;
 const ATTEMPT_SUFFIX = /_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=(?:\.[^./]+)?$)/i;
-const fields = kind => kind === 'web'
-  ? { status: 'web_status', id: 'web_attempt_id', count: 'web_attempts', started: 'web_started_at', error: 'web_error', retry: 'web_retry_at',
+// 'web' and 'hls' (adaptive streaming, issue 1733) carry the same columns
+// under their own prefix.
+const fields = kind => kind === 'web' || kind === 'hls'
+  ? { status: `${kind}_status`, id: `${kind}_attempt_id`, count: `${kind}_attempts`, started: `${kind}_started_at`, error: `${kind}_error`, retry: `${kind}_retry_at`,
     exhausted: `Video conversion did not complete after ${MAX_ATTEMPTS} attempts` }
   : { status: 'processing_status', id: 'processing_attempt_id', count: 'processing_attempts', started: 'processing_started_at', error: 'processing_error', retry: 'processing_retry_at',
     exhausted: `Image processing did not complete after ${MAX_ATTEMPTS} attempts` };
@@ -149,11 +153,11 @@ async function claimNext(kind, photoId) {
   const caps = await capabilities.probe();
   const names = fields(kind), now = new Date().toISOString();
   const pending = conn => {
-    let query = conn('photos').where(names.status, 'pending');
+    let query = livePhotos(conn).where(names.status, 'pending');
     // A row put back after a "not now" is not due before its time; an
     // explicit request for one row is.
     if (photoId === undefined) query = query.where(function () { this.whereNull(names.retry).orWhere(names.retry, '<=', now); });
-    if (kind === 'web') query = query.where(function () { this.where('processing_status', 'complete').orWhereNull('processing_status'); });
+    if (kind === 'web' || kind === 'hls') query = query.where(function () { this.where('processing_status', 'complete').orWhereNull('processing_status'); });
     return query;
   };
   const ids = photoId !== undefined ? [photoId]
@@ -311,6 +315,12 @@ async function resetImportedMediaAttempts(trx) {
       web_attempts: 0, web_retry_at: null, web_started_at: null, web_error: null } : {}) });
   await trx('photos').where({ processing_status: 'processing' }).update({ processing_status: 'pending' });
   if (web) await trx('photos').where({ web_status: 'processing' }).update({ web_status: 'pending' });
+  // The ladder is not part of an export: every row starts over, and the
+  // queue transcodes again while the setting is on.
+  if (await trx.schema.hasColumn('photos', 'hls_status')) {
+    await trx('photos').whereNotNull('hls_status').update({ hls_path: null, hls_status: null, hls_attempt_id: null,
+      hls_attempts: 0, hls_retry_at: null, hls_started_at: null, hls_error: null });
+  }
   if (await trx.schema.hasTable('media_process_attempts')) await trx('media_process_attempts').delete();
 }
 module.exports = { claimNext, execute, recover, cancel, assertDrained, guard, outputName, dropSuperseded, resetImportedMediaAttempts,

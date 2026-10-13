@@ -4,6 +4,7 @@
 
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../../database/db');
+const { livePhotos } = require('../../utils/photoVisibility');
 const { formatBoolean, whereTimestamp } = require('../../utils/dbCompat');
 const { parseExpiresAtText } = require('../../utils/expiresAtText');
 
@@ -44,6 +45,7 @@ const {
 const downloadZipService = require('../../services/downloadZipService');
 const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
+const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
 const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade } = require('./helpers');
 
 // Client PIN floor. The PIN guards the client review page and used to accept
@@ -196,6 +198,8 @@ module.exports = (router) => {
     body('allow_reactions').optional().isBoolean(),
     body('allow_color_labels').optional().isBoolean(),
     body('allow_decisions').optional().isBoolean(),
+    body('allow_selection_submit').optional().isBoolean(),
+    body('allow_annotations').optional().isBoolean(),
     body('keybind_mode').optional().isIn(KEYBIND_MODES),
     body('css_template_id').optional({ nullable: true, checkFalsy: true }).isInt(),
     // Hero logo settings
@@ -359,7 +363,7 @@ module.exports = (router) => {
       // of either type (it is what the list sorts on and what the photo cap
       // counts); video_count and video_duration say how much of it is video.
       const eventIds = events.map(e => e.id);
-      const photoCounts = await db('photos')
+      const photoCounts = await livePhotos(db)
         .whereIn('event_id', eventIds)
         .groupBy('event_id')
         .select('event_id')
@@ -430,7 +434,7 @@ module.exports = (router) => {
       }
 
       // Get photo count, and how much of it is video
-      const [{ count: photoCount, video_count: videoCount, video_duration: videoDuration }] = await db('photos')
+      const [{ count: photoCount, video_count: videoCount, video_duration: videoDuration }] = await livePhotos(db)
         .where('event_id', id)
         .count('* as count')
         .select(db.raw(`${VIDEO_COUNT_SQL} as video_count`))
@@ -442,7 +446,7 @@ module.exports = (router) => {
         .sum('size_bytes as totalSize');
 
       // Get recent photos
-      const recentPhotos = await db('photos')
+      const recentPhotos = await livePhotos(db)
         .where('event_id', id)
         .orderBy('uploaded_at', 'desc')
         .limit(10)
@@ -973,13 +977,18 @@ module.exports = (router) => {
         created_by: req.admin.id,
         allow_user_uploads: source.allow_user_uploads,
         upload_category_id: source.upload_category_id,
+        moderate_guest_uploads: formatBoolean(parseBooleanInput(source.moderate_guest_uploads, false)),
+        guest_upload_max_edge: source.guest_upload_max_edge || null,
         // Uploader names are part of the gallery's configuration (#1561).
         guest_name_mode: source.guest_name_mode || 'off',
         show_credits_to_guests: formatBoolean(parseBooleanInput(source.show_credits_to_guests, false)),
+        show_exif_to_guests: formatBoolean(parseBooleanInput(source.show_exif_to_guests, false)),
         // Folder structure is configuration (issue 1786); the delivery state
         // of the source (issue 1562) is not — a copy starts complete.
         folder_structure: formatBoolean(parseBooleanInput(source.folder_structure, false)),
         delivery_badge_label: source.delivery_badge_label || null,
+        // Live refresh is guest-facing behaviour of the gallery (issue 1733).
+        live_refresh: formatBoolean(parseBooleanInput(source.live_refresh, false)),
         allow_downloads: source.allow_downloads,
         disable_right_click: source.disable_right_click,
         enable_devtools_protection: source.enable_devtools_protection,
@@ -1047,6 +1056,8 @@ module.exports = (router) => {
           // row rather than the global defaults (#1044).
           allow_color_labels: sourceFeedback.allow_color_labels,
           allow_decisions: sourceFeedback.allow_decisions,
+          allow_selection_submit: sourceFeedback.allow_selection_submit,
+          allow_annotations: sourceFeedback.allow_annotations,
           keybind_mode: sourceFeedback.keybind_mode,
           require_name_email: sourceFeedback.require_name_email,
           moderate_comments: sourceFeedback.moderate_comments,
@@ -1138,9 +1149,20 @@ module.exports = (router) => {
     body('welcome_message').optional({ nullable: true, checkFalsy: true }).trim(),
     body('color_theme').optional({ nullable: true }),
     body('allow_user_uploads').optional().isBoolean(),
+    // Hold guest uploads until they are approved (issue 1733).
+    body('moderate_guest_uploads').optional().isBoolean(),
+    // Longest edge guest photos are scaled to in the browser (issue 1733).
+    // null uploads originals.
+    body('guest_upload_max_edge').optional({ nullable: true }).custom(isGuestUploadMaxEdge)
+      .withMessage(`guest_upload_max_edge must be a whole number from ${GUEST_UPLOAD_MIN_EDGE} to ${GUEST_UPLOAD_MAX_EDGE}, or null`)
+      .toInt(),
     // Uploader names (#1561).
     body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
     body('show_credits_to_guests').optional().isBoolean(),
+    // Live refresh of an open gallery (issue 1733, C5).
+    body('live_refresh').optional().isBoolean(),
+    // Camera details in the guest lightbox (issue 1733, D1).
+    body('show_exif_to_guests').optional().isBoolean(),
     // Reveal mode (#838): hide the gallery from guests until reveal.
     body('reveal_mode').optional().isBoolean(),
     body('reveal_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
@@ -1710,7 +1732,7 @@ module.exports = (router) => {
       // chosen once the owner has approved the photo.
       if (updates.hero_photo_id != null
         && Number(updates.hero_photo_id) !== Number(event.hero_photo_id)) {
-        const underReview = await db('photos')
+        const underReview = await livePhotos(db)
           .where({ id: updates.hero_photo_id, event_id: event.id })
           .whereNotNull('moderation_status')
           .first('id');
@@ -1877,9 +1899,21 @@ module.exports = (router) => {
         updates.custom_theme_enabled = formatBoolean(parseBooleanInput(updates.custom_theme_enabled, false));
       }
 
+      // Guest uploads with approval (issue 1733). Switching it off leaves the
+      // photos already waiting where they are: they still need a decision.
+      if (Object.prototype.hasOwnProperty.call(updates, 'moderate_guest_uploads')) {
+        updates.moderate_guest_uploads = formatBoolean(parseBooleanInput(updates.moderate_guest_uploads, false));
+      }
+
       // Written through formatBoolean like the other event flags (#1561).
       if (Object.prototype.hasOwnProperty.call(updates, 'show_credits_to_guests')) {
         updates.show_credits_to_guests = formatBoolean(parseBooleanInput(updates.show_credits_to_guests, false));
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'live_refresh')) {
+        updates.live_refresh = formatBoolean(parseBooleanInput(updates.live_refresh, false));
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'show_exif_to_guests')) {
+        updates.show_exif_to_guests = formatBoolean(parseBooleanInput(updates.show_exif_to_guests, false));
       }
 
       // Reveal mode (#838). Turning the toggle ON from off clears

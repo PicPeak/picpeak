@@ -17,6 +17,7 @@
  */
 
 const { db } = require('../database/db');
+const { joinLivePhotos, livePhotos } = require('../utils/photoVisibility');
 
 /**
  * Apply the visibility predicate a given audience is allowed to see.
@@ -64,7 +65,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, minClus
   // One grouped query for the audience-scoped counts, rather than N queries.
   const counts = await applyVisibilityScope(
     db('photo_faces')
-      .join('photos', 'photos.id', 'photo_faces.photo_id')
+      .modify(joinLivePhotos, 'photos.id', 'photo_faces.photo_id')
       .where('photo_faces.event_id', eventId)
       .whereNotNull('photo_faces.person_id'),
     { isClient, forAdmin }
@@ -81,7 +82,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, minClus
   // a photo this audience cannot see. Pick the best VISIBLE face instead.
   const covers = await applyVisibilityScope(
     db('photo_faces')
-      .join('photos', 'photos.id', 'photo_faces.photo_id')
+      .modify(joinLivePhotos, 'photos.id', 'photo_faces.photo_id')
       .where('photo_faces.event_id', eventId)
       .whereNotNull('photo_faces.person_id'),
     { isClient, forAdmin }
@@ -218,7 +219,7 @@ async function getScanStatus(eventId, { isClient = true, forAdmin = true } = {})
   // many hidden photos the gallery holds — the same leak the people list and
   // covers are already scoped against, arriving through the progress bar.
   const rows = await applyVisibilityScope(
-    db('photos').where({ event_id: eventId }).whereNotNull('face_status'),
+    livePhotos(db).where({ event_id: eventId }).whereNotNull('face_status'),
     { isClient, forAdmin }
   )
     .groupBy('face_status')

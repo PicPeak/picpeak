@@ -17,21 +17,83 @@
  */
 
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
 const { parseBooleanInput } = require('../utils/parsers');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { getAppSetting } = require('../utils/appSettings');
+const logger = require('../utils/logger');
 
 const MAX_FOLDER_DEPTH = 3;
 const MAX_SEGMENT_LENGTH = 100;
 const DEFAULT_FIRST_LOOK_KEYWORDS = ['FirstLook', 'Sneak Peek'];
 
+/**
+ * Per-event caps (PR 1826 follow-up). Far above anything a studio builds by
+ * hand or exports from Lightroom (a large wedding runs to a few dozen
+ * folders); they exist so a scripted client cannot grow one event's tree or
+ * request list without bound. Both are checked before the insert, so N
+ * writers racing at the limit can overshoot it by up to N-1; every later
+ * write is refused. A ceiling, not an exact count.
+ */
+const FOLDER_LIMITS = Object.freeze({
+  MAX_FOLDERS_PER_EVENT: 1000,
+  MAX_OPEN_REQUESTS_PER_EVENT: 200,
+});
+
 class FolderError extends Error {
-  constructor(message, status = 400, code = 'FOLDER_INVALID') {
+  constructor(message, status = 400, code = 'FOLDER_INVALID', details = undefined) {
     super(message);
     this.status = status;
     this.code = code;
+    // Extra fields for the JSON body (e.g. { limit }).
+    this.details = details;
   }
+}
+
+const folderLimitError = () => new FolderError(
+  `This gallery has reached its limit of ${FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT} folders`,
+  409,
+  'FOLDER_LIMIT_REACHED',
+  { limit: FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT },
+);
+
+const folderExistsError = (where = 'here') => new FolderError(
+  `A folder with this name already exists ${where}`, 409, 'FOLDER_EXISTS',
+);
+
+async function countEventFolders(eventId, conn = db) {
+  const row = await conn('photo_categories')
+    .where({ event_id: eventId })
+    .where('is_folder', formatBoolean(true))
+    .count('id as count')
+    .first();
+  return Number(row?.count) || 0;
+}
+
+/** Throws FOLDER_LIMIT_REACHED when the event holds its maximum of folders. */
+async function assertFolderCapacity(eventId, conn = db) {
+  if ((await countEventFolders(eventId, conn)) >= FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT) throw folderLimitError();
+}
+
+/**
+ * The folder under `parentId` (null = top level) whose name equals `name` the
+ * way migration 285's unique index compares it — lower() in SQL — or, failing
+ * that, the way the code compares it (JS toLowerCase, which also folds
+ * non-ASCII letters SQLite's lower() leaves alone). Used to recover from a
+ * unique violation: the row that won the race.
+ */
+async function findSiblingByName(eventId, parentId, name, conn = db, { excludeId = null } = {}) {
+  const scoped = (q) => q
+    .where({ event_id: eventId })
+    .where('is_folder', formatBoolean(true))
+    .modify((b) => { if (parentId == null) b.whereNull('parent_id'); else b.where('parent_id', Number(parentId)); })
+    .modify((b) => { if (excludeId != null) b.whereNot('id', Number(excludeId)); });
+  const bySql = await scoped(conn('photo_categories')).whereRaw('lower(name) = lower(?)', [name]).first('id', 'name');
+  if (bySql) return bySql;
+  const lower = String(name).toLowerCase();
+  const siblings = await scoped(conn('photo_categories')).select('id', 'name');
+  return siblings.find((f) => String(f.name).toLowerCase() === lower) || null;
 }
 
 /**
@@ -263,14 +325,16 @@ async function insertFolder(eventId, { name, parentId = null, sourcePath = null 
     ? (await conn('photo_categories').where('id', parentId).first('slug'))?.slug
     : null;
   if (parentId != null && depthOf(parentId, indexById(await eventFolders(eventId, conn))) >= MAX_FOLDER_DEPTH) {
-    throw new FolderError(`Folders can be nested at most ${MAX_FOLDER_DEPTH} levels deep`, 400, 'FOLDER_TOO_DEEP');
+    throw new FolderError(`Folders can be nested at most ${MAX_FOLDER_DEPTH} levels deep`, 400, 'FOLDER_TOO_DEEP', { limit: MAX_FOLDER_DEPTH });
   }
+  await assertFolderCapacity(eventId, conn);
   const own = slugify(name) || 'folder';
   const base = parentSlug ? `${parentSlug}-${own}`.slice(0, 95) : own.slice(0, 95);
   // The slug is checked, then inserted: two uploads creating different
   // paths that slug alike ("Activity B" / "Activity-B") can collide on
   // UNIQUE(slug, event_id). Such a collision retries with the next suffix;
-  // a source_path collision is the caller's to resolve.
+  // a source_path or sibling-name collision (migration 285) is the caller's
+  // to resolve.
   for (let attempt = 0; ; attempt += 1) {
     const slug = await uniqueSlug(eventId, attempt === 0 ? base : `${base}-${attempt + 1}`, conn);
     try {
@@ -289,7 +353,8 @@ async function insertFolder(eventId, { name, parentId = null, sourcePath = null 
       return id;
     } catch (err) {
       const slugTaken = isUniqueViolation(err)
-        && !(sourcePath && await conn('photo_categories').where({ event_id: eventId, source_path: sourcePath }).first('id'));
+        && !(sourcePath && await conn('photo_categories').where({ event_id: eventId, source_path: sourcePath }).first('id'))
+        && !(await findSiblingByName(eventId, parentId, name, conn));
       if (!slugTaken || attempt >= 5) throw err;
     }
   }
@@ -315,7 +380,13 @@ async function insertFolder(eventId, { name, parentId = null, sourcePath = null 
  */
 const guardedWrite = (conn, fn) => (conn.isTransaction ? conn.transaction((sp) => fn(sp)) : fn(conn));
 
-async function ensurePath(eventId, segments, { canCreate = true, dryRun = false, conn = db } = {}) {
+/**
+ * `foldAtLimit`: for unattended ingest (external import, archive restore),
+ * where refusing would drop photos. At the folder cap the remaining levels
+ * fold into the deepest existing folder instead, logged as a warning, and
+ * `limited` is true. Interactive callers leave it off and get the 409.
+ */
+async function ensurePath(eventId, segments, { canCreate = true, dryRun = false, conn = db, foldAtLimit = false } = {}) {
   // NFC for callers that pass raw names (normalizeSegment does it for paths).
   const segs = (segments || []).slice(0, MAX_FOLDER_DEPTH).map((seg) => String(seg).normalize('NFC'));
   let parentId = null;
@@ -345,12 +416,21 @@ async function ensurePath(eventId, segments, { canCreate = true, dryRun = false,
       created.push(id);
       parentId = id;
     } catch (err) {
+      if (foldAtLimit && err instanceof FolderError && err.code === 'FOLDER_LIMIT_REACHED') {
+        logger.warn('Folder limit reached; placing photos in the closest existing folder', {
+          eventId, path: pathKey(segs), limit: FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT,
+        });
+        return { folderId: parentId, created, missingFrom: -1, limited: true };
+      }
       if (!isUniqueViolation(err)) throw err;
-      // A concurrent upload created the same path first: use theirs.
+      // A concurrent writer created the same path first (source_path index),
+      // or a folder of the same name under this parent (name index, migration
+      // 285): use theirs.
       const row = await conn('photo_categories')
         .where({ event_id: eventId, source_path: sourcePath })
         .where('is_folder', formatBoolean(true))
-        .first('id');
+        .first('id')
+        || await findSiblingByName(eventId, parentId, segs[i], conn);
       if (!row) throw err;
       parentId = Number(row.id);
     }
@@ -375,16 +455,21 @@ async function createFolder(eventId, { name, parentId = null }, conn = db) {
   if (parentId != null) {
     if (!(await findEventFolder(eventId, parentId, conn))) throw new FolderError('Parent folder not found', 404, 'FOLDER_NOT_FOUND');
     if (depthOf(parentId, indexById(folders)) >= MAX_FOLDER_DEPTH) {
-      throw new FolderError(`Folders can be nested at most ${MAX_FOLDER_DEPTH} levels deep`, 400, 'FOLDER_TOO_DEEP');
+      throw new FolderError(`Folders can be nested at most ${MAX_FOLDER_DEPTH} levels deep`, 400, 'FOLDER_TOO_DEEP', { limit: MAX_FOLDER_DEPTH });
     }
   }
   const sibling = childrenOf(parentId, folders).find((f) => String(f.name).toLowerCase() === clean.toLowerCase());
-  if (sibling) throw new FolderError('A folder with this name already exists here', 409, 'FOLDER_EXISTS');
+  if (sibling) throw folderExistsError();
+  const parent = parentId == null ? null : Number(parentId);
   try {
-    return await insertFolder(eventId, { name: clean, parentId: parentId == null ? null : Number(parentId) }, conn);
+    return await guardedWrite(conn, (c) => insertFolder(eventId, { name: clean, parentId: parent }, c));
   } catch (err) {
-    // Two creates of the same name racing past the sibling check above.
-    if (isUniqueViolation(err)) throw new FolderError('A folder with this name already exists here', 409, 'FOLDER_EXISTS');
+    if (!isUniqueViolation(err)) throw err;
+    // Two creates of the same name racing past the sibling check above: the
+    // unique index (migration 285) let one through. Re-read the winner, so the
+    // loser gets the same 409 a sequential duplicate gets — and anything else
+    // (no such row) still surfaces as the error it is.
+    if (await findSiblingByName(eventId, parent, clean, conn)) throw folderExistsError();
     throw err;
   }
 }
@@ -406,7 +491,15 @@ async function renameFolder(eventId, folderId, name, conn = db) {
   const own = slugify(clean) || 'folder';
   const base = (parentSlug ? `${parentSlug}-${own}` : own).slice(0, 95);
   const slug = base === folder.slug ? base : await uniqueSlug(eventId, base, conn);
-  await conn('photo_categories').where('id', folder.id).update({ name: clean, slug });
+  try {
+    await guardedWrite(conn, (c) => c('photo_categories').where('id', folder.id).update({ name: clean, slug }));
+  } catch (err) {
+    // A sibling of that name appeared after the check above (migration 285).
+    if (isUniqueViolation(err) && await findSiblingByName(eventId, folder.parent_id, clean, conn, { excludeId: folder.id })) {
+      throw folderExistsError();
+    }
+    throw err;
+  }
 }
 
 async function moveFolder(eventId, folderId, newParentId, conn = db) {
@@ -428,12 +521,19 @@ async function moveFolder(eventId, folderId, newParentId, conn = db) {
   }
   const targetDepth = target == null ? 0 : depthOf(target, indexById(folders));
   if (targetDepth + subtreeHeight(folder.id, folders) > MAX_FOLDER_DEPTH) {
-    throw new FolderError(`Folders can be nested at most ${MAX_FOLDER_DEPTH} levels deep`, 400, 'FOLDER_TOO_DEEP');
+    throw new FolderError(`Folders can be nested at most ${MAX_FOLDER_DEPTH} levels deep`, 400, 'FOLDER_TOO_DEEP', { limit: MAX_FOLDER_DEPTH });
   }
   const clash = childrenOf(target, folders)
     .find((f) => Number(f.id) !== Number(folder.id) && String(f.name).toLowerCase() === String(folder.name).toLowerCase());
-  if (clash) throw new FolderError('A folder with this name already exists there', 409, 'FOLDER_EXISTS');
-  await conn('photo_categories').where('id', folder.id).update({ parent_id: target });
+  if (clash) throw folderExistsError('there');
+  try {
+    await guardedWrite(conn, (c) => c('photo_categories').where('id', folder.id).update({ parent_id: target }));
+  } catch (err) {
+    if (isUniqueViolation(err) && await findSiblingByName(eventId, target, folder.name, conn, { excludeId: folder.id })) {
+      throw folderExistsError('there');
+    }
+    throw err;
+  }
 }
 
 /**
@@ -448,7 +548,26 @@ async function deleteFolder(eventId, folderId, conn = db) {
   const run = async (trx) => {
     // Same lock as moveFolder, so a move and a delete of the tree serialise.
     if (isPostgreSQL()) await trx('photo_categories').where({ event_id: eventId }).forUpdate().select('id');
+    // The subfolders move up a level; one that shares a name with a folder
+    // already there would break the sibling-name index (migration 285). Refuse
+    // and name it, so the admin renames or moves it first.
+    const folders = await eventFolders(eventId, trx);
+    const above = new Set(childrenOf(parentId, folders)
+      .filter((f) => Number(f.id) !== Number(folder.id))
+      .map((f) => String(f.name).toLowerCase()));
+    const clash = childrenOf(folder.id, folders).find((f) => above.has(String(f.name).toLowerCase()));
+    if (clash) {
+      throw new FolderError(
+        `The subfolder "${clash.name}" cannot move up: a folder with this name already exists there`,
+        409, 'FOLDER_DELETE_NAME_CLASH', { name: clash.name },
+      );
+    }
     const moved = await trx('photos').where({ event_id: eventId, folder_id: folder.id }).update({ folder_id: parentId });
+    // A subfolder may carry the folder's own name (an archive's wrapper
+    // folder: Name/Name). The check above rightly treats that name as free,
+    // but the row is still there until the delete below: take it out of the
+    // sibling-name index (folders only) before its children move up.
+    await trx('photo_categories').where('id', folder.id).update({ is_folder: formatBoolean(false) });
     await trx('photo_categories').where({ event_id: eventId, parent_id: folder.id }).update({ parent_id: parentId });
     await trx('folder_requests').where({ event_id: eventId, fallback_folder_id: folder.id }).update({ fallback_folder_id: parentId });
     await trx('event_category_order').where({ category_id: folder.id }).del();
@@ -467,7 +586,7 @@ async function movePhotos(eventId, photoIds, folderId, conn = db) {
   }
   let moved = 0;
   for (let i = 0; i < ids.length; i += 500) {
-    moved += await conn('photos')
+    moved += await livePhotos(conn)
       .where('event_id', eventId)
       .whereIn('id', ids.slice(i, i + 500))
       .update({ folder_id: folderId == null ? null : Number(folderId), pending_folder_request_id: null });
@@ -478,7 +597,7 @@ async function movePhotos(eventId, photoIds, folderId, conn = db) {
 /** The tree for the admin UI: folders with direct photo counts, ordered. */
 async function folderTree(eventId, conn = db) {
   const folders = await eventFolders(eventId, conn);
-  const counts = await conn('photos')
+  const counts = await livePhotos(conn)
     .where('event_id', eventId)
     .whereNotNull('folder_id')
     .groupBy('folder_id')
@@ -506,8 +625,13 @@ async function folderTree(eventId, conn = db) {
 
 module.exports = {
   MAX_FOLDER_DEPTH,
+  FOLDER_LIMITS,
   DEFAULT_FIRST_LOOK_KEYWORDS,
   FolderError,
+  folderExistsError,
+  countEventFolders,
+  assertFolderCapacity,
+  findSiblingByName,
   normalizeSegment,
   toSegments,
   pathKey,

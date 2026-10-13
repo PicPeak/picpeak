@@ -10,6 +10,7 @@
  */
 
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { getStorage } = require('./storage');
 const { ensureThumbnail } = require('./imageProcessor');
@@ -238,7 +239,7 @@ async function purgePhotoTags(photoId, trx = db) {
 
 /** Queue progress for the admin card. */
 async function getTagStatus(eventId) {
-  const rows = await db('photos')
+  const rows = await livePhotos(db)
     .where({ event_id: eventId })
     .whereNotNull('tag_status')
     .groupBy('tag_status')

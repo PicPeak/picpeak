@@ -20,6 +20,7 @@ const sharp = require('../../services/isolatedSharp');
 const { body, query, validationResult } = require('express-validator');
 const { safeValidationErrors } = require('../../utils/routeHelpers');
 const { db, logActivity } = require('../../database/db');
+const { livePhotos } = require('../../utils/photoVisibility');
 const { parseBooleanInput } = require('../../utils/parsers');
 const { apiTokenAuth, requireApiScope } = require('../../middleware/apiTokenAuth');
 const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
@@ -528,7 +529,7 @@ async function handleV1PhotoUpload(req, res) {
         tempPath = null;
         return res.status(400).json({ error: 'replaces_photo_id must be an integer' });
       }
-      const target = await db('photos')
+      const target = await livePhotos(db)
         .where({ id: replacesId, event_id: event.id })
         .first();
       if (!target) {
@@ -611,14 +612,21 @@ async function handleV1PhotoUpload(req, res) {
 
     // Credit from EXIF (#1561), read before the temp file is moved away.
     const credit = await require('../../services/photoCredit').resolveCredit({ localPath: tempPath });
+    // Camera details (issue 1733, D1), from the same temp file.
+    const exif = await require('../../services/photoExif').exifColumn(tempPath);
 
     let thumbRel = null;
+    const thumbMeta = {};
     try {
-      thumbRel = await generateThumbnail(tempPath);
+      thumbRel = await generateThumbnail(tempPath, { meta: thumbMeta });
     } catch (err) {
       if (require('../../services/imageResourcePolicy').isResourceError(err)) throw err;
       logger.warn('v1 thumbnail generation failed', { err: err.message });
     }
+
+    // Content hash (issue 1733, C2), stored for the admin uploader's
+    // duplicate check; this route itself refuses nothing.
+    const contentSha256 = await require('../../services/photoDuplicates').sha256File(tempPath);
 
     // Upload the original via the storage backend (local fs OR S3),
     // then drop the multer temp file.
@@ -642,10 +650,12 @@ async function handleV1PhotoUpload(req, res) {
       source_filename: req.file.originalname,
       path: relPath,
       thumbnail_path: thumbRel,
+      thumb_hash: thumbMeta.thumbHash || null,
       type: photoType,
       category_id: folderId ? null : categoryId,
       folder_id: folderId,
       size_bytes: stat.size,
+      content_sha256: contentSha256,
       width,
       height,
       media_type: 'image',
@@ -654,7 +664,8 @@ async function handleV1PhotoUpload(req, res) {
       uploaded_by: 'admin',
       // Retain uploader identity and held-review visibility with the quota commit.
       ...uploadColumns,
-      ...credit
+      ...credit,
+      ...exif
     };
     const id = await uploadQuota.commitObject(object, 'photo', async conn => {
       const insertResult = await conn('photos').insert(photoData).returning('id');
@@ -937,7 +948,7 @@ router.get(
       // not filter. Filter to a page of ids first, then enrich just those —
       // which also keeps the per-colour tally query bounded by page size.
       const filterBuilder = new PhotoFilterBuilder(
-        db('photos').select('photos.id'),
+        livePhotos(db).select('photos.id'),
         eventId,
         identityMode
       );
@@ -968,7 +979,7 @@ router.get(
       // the scoping is local to the query rather than inherited from two
       // statements above.
       const mediaRows = pageIds.length
-        ? await db('photos').where('event_id', eventId).whereIn('id', pageIds)
+        ? await livePhotos(db).where('event_id', eventId).whereIn('id', pageIds)
           .select('id', 'media_type', 'mime_type', 'processing_status', 'moderation_status')
         : [];
       const mediaById = new Map(mediaRows.map((r) => [r.id, r]));
@@ -1462,7 +1473,7 @@ router.get(
         if (ids.length > MAX_ZIP_IDS) {
           return res.status(400).json({ error: `At most ${MAX_ZIP_IDS} ids per request`, code: 'TOO_MANY_PHOTO_IDS' });
         }
-        const owned = await db('photos').where('event_id', event.id).whereIn('id', ids).count('id as count').first();
+        const owned = await livePhotos(db).where('event_id', event.id).whereIn('id', ids).count('id as count').first();
         if (Number(owned?.count || 0) !== ids.length) {
           // Deliberately not naming the offenders: an id that isn't in this
           // event is either a typo or someone else's photo.
@@ -1474,7 +1485,7 @@ router.get(
       const { identity_mode: identityMode } =
         await feedbackService.getEventFeedbackSettings(event.id);
       const selection = () => {
-        const builder = new PhotoFilterBuilder(db('photos'), event.id, identityMode);
+        const builder = new PhotoFilterBuilder(livePhotos(db), event.id, identityMode);
         builder.applyFilters(buildPhotoFilters(req));
         if (ids) builder.getQuery().whereIn('photos.id', ids);
         return builder;
@@ -1810,7 +1821,7 @@ router.get(
 
       // One answer for unknown, malformed and other-event ids.
       const photo = isRowId(req.params.photoId)
-        ? await db('photos').where({ id: Number(req.params.photoId), event_id: event.id }).first()
+        ? await livePhotos(db).where({ id: Number(req.params.photoId), event_id: event.id }).first()
         : null;
       if (!photo) return res.status(404).json({ error: 'Photo not found' });
 
@@ -1985,7 +1996,7 @@ router.get(
       if (!event) return;
 
       const photo = isRowId(req.params.photoId)
-        ? await db('photos').where({ id: Number(req.params.photoId), event_id: event.id }).first()
+        ? await livePhotos(db).where({ id: Number(req.params.photoId), event_id: event.id }).first()
         : null;
       if (!photo) return res.status(404).json({ error: 'Photo not found' });
 

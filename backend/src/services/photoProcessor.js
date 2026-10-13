@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { generateThumbnail, generateVideoPlaceholder, extractCaptureDate, withLocalCopy, withProcessableImage } = require('./imageProcessor');
+const { exifColumn } = require('./photoExif');
 const { generatePhotoFilename } = require('../utils/filenameSanitizer');
 const { processUploadedVideo, extractVideoMetadata, isVideoMimeType, posterFrameError } = require('./videoProcessor');
 const { getStorage } = require('./storage');
@@ -12,6 +13,7 @@ const { insertPhotoWithinCap, photoCapOf } = require('./photoCap');
 const { resolveCredit, creditOpenForExif, settleGuestCredit } = require('./photoCredit');
 const imageAdmission = require('./imageWorkAdmission');
 const { isResourceError, describe: describeImageError } = require('./imageResourcePolicy');
+const { sha256File } = require('./photoDuplicates');
 const mediaAttempts = require('./mediaAttemptService');
 const { refusal: mediaRefusal, isInterruption } = require('./mediaProcessPolicy');
 
@@ -156,6 +158,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       // Generate thumbnail and extract metadata FROM the temp file (still on
       // local disk) before uploading the original.
       let thumbnailPath;
+      // Receives the tile placeholder hash of the thumbnail (issue 1733).
+      const thumbMeta = {};
       let videoMetadata = null;
       let imageMetadata = null;
       // A video that completes with the placeholder tile records why, so the
@@ -179,6 +183,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
           const result = await processUploadedVideo(tempPath, videoThumbnailKey);
           videoMetadata = result.metadata;
           thumbnailPath = result.thumbnailKey;
+          thumbMeta.thumbHash = result.thumbHash;
           if (result.placeholder) processingError = posterFrameError(result.thumbnailError);
         } catch (videoErr) {
           logger.warn(`Video processing failed for ${file.originalname}, using placeholder thumbnail:`, videoErr.message);
@@ -199,7 +204,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         // the RAW-derived thumbnail's global key can't collide across galleries.
         const proc = await withProcessableImage(tempPath, newFilename);
         try {
-          thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
+          thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename, meta: thumbMeta });
           try {
             const sharp = require('./isolatedSharp');
             const metadata = await sharp(proc.path).metadata();
@@ -219,6 +224,12 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       // Credit (#1561), read from the temp file before it is moved.
       const credit = await resolveCredit({ uploadedBy, localPath: tempPath, isVideo });
+      // Content hash (issue 1733, C2), likewise before the move; the chunked
+      // route has already computed it for its duplicate check.
+      const contentSha256 = file.contentSha256 || await sha256File(tempPath);
+      // Camera details (issue 1733, D1), from the same temp file: this path
+      // completes the row itself, so the worker never reads them.
+      const exif = isVideo ? {} : await exifColumn(tempPath);
 
       // Now upload the original through the storage backend and remove the
       // local temp copy.
@@ -261,8 +272,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         original_filename: file.originalname,
         path: relativePath,
         thumbnail_path: relativeThumbPath,
+        thumb_hash: thumbMeta.thumbHash || null,
         type: photoType,
         size_bytes: actualSize,
+        content_sha256: contentSha256,
         uploaded_by: uploadedBy,
         source_origin: 'managed',
         media_type: mediaType,
@@ -272,7 +285,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         ...(isVideo && webCopyEnabled ? { web_status: 'pending' } : {}),
         ...(processingError ? { processing_error: processingError } : {}),
         ...placement,
-        ...credit
+        ...credit,
+        ...exif
       };
 
       // Add video-specific metadata if applicable
@@ -432,6 +446,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
  *   - credit            credit columns resolved by the caller (#1561); for a
  *                       guest upload that is the guest's name, and the
  *                       worker then never reads EXIF for the row
+ *   - heldForReview     store the rows hidden and pending review (a guest
+ *                       upload to a moderated gallery, issue 1733)
+ *   - clientCapturedAt  Date a guest's browser read before scaling the photo
+ *                       down; stored only for an image with no EXIF date
  *
  * Returns: { uploadId, photos: [{id, filename, size, category_id}], errors: [{filename, error}] }
  */
@@ -440,7 +458,8 @@ async function queueFilesForProcessing(files, options = {}) {
   const { countEventPhotos, insertPhotoWithinCap, photoCapError } = require('./photoCap');
   const {
     eventId, photoType = 'individual', categoryId = null, folderId = null, uploadId: providedUploadId, photoCap = null,
-    uploadedBy = 'admin', credit = {}, uploadReservation = null,
+    uploadedBy = 'admin', credit = {}, uploadReservation = null, heldForReview = false,
+    clientCapturedAt = null,
   } = options;
   const uploadId = providedUploadId || crypto.randomBytes(16).toString('hex');
 
@@ -504,6 +523,17 @@ async function queueFilesForProcessing(files, options = {}) {
       // or queue insertion, with a message naming the limit.
       if (!isVideo) await imageAdmission.inspect(tempPath, newFilename, uploadReservation?.signal, preparedImages);
 
+      // Stored, never checked here (issue 1733, C2): this path serves guest
+      // uploads, and a "duplicate" answer would tell a guest what the gallery
+      // already holds.
+      const contentSha256 = await sha256File(tempPath);
+
+      // Read here, while the file is still local: a date in the file always
+      // wins, and the worker reads it as for any other upload.
+      const capturedAt = clientCapturedAt && !isVideo && !(await extractCaptureDate(tempPath))
+        ? clientCapturedAt.toISOString()
+        : null;
+
       if (uploadReservation) {
         uploadCharge = await require('./publicUploadQuota').prepareObject(uploadReservation, finalKey, tempStats.size);
       }
@@ -532,7 +562,8 @@ async function queueFilesForProcessing(files, options = {}) {
         category_id: categoryId,
         folder_id: folderId,
         size_bytes: tempStats.size,
-        captured_at: null,
+        content_sha256: contentSha256,
+        captured_at: capturedAt,
         media_type: isVideo ? 'video' : 'image',
         mime_type: file.mimetype,
         processing_status: 'pending',
@@ -541,6 +572,8 @@ async function queueFilesForProcessing(files, options = {}) {
         // guest upload used to be recorded as the photographer's (#1561).
         uploaded_by: uploadedBy,
         ...credit,
+        // Stored like a team upload under review (uploadReviewService).
+        ...(heldForReview ? { visibility: 'hidden', moderation_status: 'pending' } : {}),
       };
       const writePhoto = async conn => {
         const inserted = await insertPhotoWithinCap(photoRow, photoCap, conn);
@@ -652,6 +685,11 @@ async function processPhoto(photoId) {
       }
     }
 
+    // Camera details (issue 1733, D1), from the same original.
+    if (!photo.exif_json && !isVideo) {
+      Object.assign(updateData, await exifColumn(localPath));
+    }
+
     if (isVideo) {
       // The external key carries the `ext<id>_` prefix regenerateVideoThumbnail
       // uses, so a retried external video overwrites its import-time tile
@@ -693,7 +731,10 @@ async function processPhoto(photoId) {
         const placeholderKey = await generateVideoPlaceholder(thumbnailBasename);
         if (placeholderKey) videoResult = { ...(videoResult || {}), thumbnailKey: placeholderKey };
       }
-      if (videoResult?.thumbnailKey) updateData.thumbnail_path = videoResult.thumbnailKey;
+      if (videoResult?.thumbnailKey) {
+        updateData.thumbnail_path = videoResult.thumbnailKey;
+        updateData.thumb_hash = videoResult.thumbHash || null;
+      }
       if (videoResult?.metadata) {
         const m = videoResult.metadata;
         if (m.duration != null) updateData.duration = m.duration;
@@ -711,8 +752,12 @@ async function processPhoto(photoId) {
       const proc = await withProcessableImage(localPath, photo.filename);
       try {
         try {
-          const thumbnailPath = await generateThumbnail(proc.path, { outputBasename: mediaAttempts.outputName(proc.outputBasename || photo.filename) });
-          if (thumbnailPath) updateData.thumbnail_path = thumbnailPath;
+          const meta = {};
+          const thumbnailPath = await generateThumbnail(proc.path, { outputBasename: mediaAttempts.outputName(proc.outputBasename || photo.filename), meta });
+          if (thumbnailPath) {
+            updateData.thumbnail_path = thumbnailPath;
+            updateData.thumb_hash = meta.thumbHash || null;
+          }
         } catch (e) {
           if (isResourceError(e)) throw e;
           logger.warn(`processPhoto: thumbnail generation failed for ${photoId}`, { error: e.message });
@@ -821,8 +866,9 @@ async function processPhoto(photoId) {
   // Held for review (issue 743): fires when it is approved instead. Read
   // now, not from the row this run started with: an approval while the
   // worker ran skipped this photo because it was not complete yet.
-  const { moderation_status: heldNow } = (await db('photos').where({ id: photoId }).first('moderation_status')) || {};
-  if (!heldNow) {
+  // Nor for a photo that went to the trash meanwhile (issue 1733).
+  const { moderation_status: heldNow, deleted_at: trashedNow } = (await db('photos').where({ id: photoId }).first('moderation_status', 'deleted_at')) || {};
+  if (!heldNow && !trashedNow) {
     try {
       const webhookService = require('./webhookService');
       await webhookService.fire('photo.uploaded', {

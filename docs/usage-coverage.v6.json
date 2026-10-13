@@ -274,7 +274,12 @@
         "POST /mfa/setup",
         "POST /mfa/enable",
         "POST /mfa/disable",
-        "POST /mfa/recovery-codes"
+        "POST /mfa/recovery-codes",
+        "GET /passkeys",
+        "POST /passkeys/register/options",
+        "POST /passkeys/register/verify",
+        "PATCH /passkeys/:id",
+        "POST /passkeys/:id/delete"
       ]
     },
     "adminBackup.js": {
@@ -925,6 +930,8 @@
         "GET /events/:eventId/feedback-settings",
         "PUT /events/:eventId/feedback-settings",
         "GET /events/:eventId/feedback",
+        "GET /events/:eventId/selection-submissions",
+        "POST /events/:eventId/selection-submissions/:submissionId/reopen",
         "PUT /feedback/:feedbackId/:action",
         "DELETE /feedback/:feedbackId",
         "GET /events/:eventId/feedback-analytics",
@@ -1069,7 +1076,9 @@
         "POST /repair-orientation",
         "GET /repair-orientation/status",
         "POST /repair-credits",
-        "GET /repair-credits/status"
+        "GET /repair-credits/status",
+        "POST /repair-thumb-hashes",
+        "GET /repair-thumb-hashes/status"
       ]
     },
     "adminPhotoExport.js": {
@@ -1110,6 +1119,10 @@
         "PATCH /:eventId/photos/:photoId",
         "POST /:eventId/photos/bulk-delete",
         "POST /:eventId/photos/bulk-update",
+        "GET /:eventId/photos/trash",
+        "GET /:eventId/photos/trash/:photoId/thumbnail",
+        "POST /:eventId/photos/trash/restore",
+        "POST /:eventId/photos/trash/purge",
         "GET /:eventId/photos/moderation",
         "POST /:eventId/photos/moderation",
         "GET /:eventId/photos/credits",
@@ -1502,6 +1515,8 @@
       "route_signatures": [
         "POST /admin/login",
         "POST /admin/login/mfa",
+        "POST /admin/passkey/options",
+        "POST /admin/passkey/verify",
         "POST /logout",
         "POST /gallery/verify",
         "POST /gallery/:slug/client-login",
@@ -1576,8 +1591,11 @@
         "GET /:slug/feedback-settings",
         "GET /:slug/photos/:photoId/feedback",
         "POST /:slug/photos/:photoId/feedback",
+        "POST /:slug/feedback/bulk",
         "GET /:slug/feedback-summary",
-        "GET /:slug/my-feedback"
+        "GET /:slug/my-feedback",
+        "GET /:slug/selection",
+        "POST /:slug/selection/submit"
       ]
     },
     "galleryGuests.js": {
@@ -1746,6 +1764,7 @@
         "POST /:slug/download-selected",
         "POST /:slug/download-jobs",
         "GET /:slug/download-jobs/:token",
+        "POST /:slug/download-jobs/:token/notify",
         "GET /:slug/download-jobs/:token/file"
       ]
     },
@@ -1756,6 +1775,8 @@
       "route_signatures": [
         "POST /:slug/photo/:photoId/view",
         "GET /:slug/photo/:photoId",
+        "GET /:slug/hls/:photoId/master.m3u8",
+        "GET /:slug/hls/:photoId/:rung/:file",
         "GET /:slug/thumbnail/:photoId",
         "GET /:slug/hero/:photoId",
         "GET /:slug/preview/:photoId"
@@ -1777,6 +1798,7 @@
       "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
       "route_signatures": [
         "GET /:slug/photos",
+        "GET /:slug/photos/state",
         "GET /:slug/people",
         "PATCH /:slug/photos/:photoId/visibility",
         "PATCH /:slug/photos/visibility/bulk"

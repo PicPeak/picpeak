@@ -9,6 +9,7 @@
  */
 
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 
 /** The event's cap as a positive integer, or null when it has none. */
 function photoCapOf(event) {
@@ -17,7 +18,7 @@ function photoCapOf(event) {
 }
 
 async function countEventPhotos(eventId, conn = db) {
-  const row = await conn('photos').where({ event_id: eventId }).count('id as count').first();
+  const row = await livePhotos(conn).where({ event_id: eventId }).count('id as count').first();
   return parseInt(row && row.count, 10) || 0;
 }
 

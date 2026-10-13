@@ -16,11 +16,49 @@
  * A photo under review (moderation_status 'pending' or 'rejected', migration
  * 269) is a contributor upload the event owner has not published yet. It is
  * stored hidden, and kept from clients as well: no gallery viewer sees it.
+ *
+ * A photo in the trash (deleted_at set, migration 294) is shown to nobody,
+ * admins included, outside the trash dialog: livePhotos() is how every reader
+ * that shows, counts or hands out photos opens the table. A bare
+ * db('photos') is for code that must see trashed rows too (what owns a file,
+ * hard deletes, storage, backups, erasure), and
+ * __tests__/photoTrashReaders.test.js keeps the list of those.
  */
+
+/**
+ * The `photos` table without the trash. `alias` for `photos as p`.
+ */
+function livePhotos(conn, alias = 'photos') {
+  return conn(alias === 'photos' ? 'photos' : `photos as ${alias}`).whereNull(`${alias}.deleted_at`);
+}
+
+/** Inner join to the photos that are not in the trash; for knex's .modify(). */
+function joinLivePhotos(query, left, right) {
+  query.join('photos', function () {
+    this.on(left, right).onNull('photos.deleted_at');
+  });
+}
+
+/** The same as a left join: a trashed photo counts as no photo. */
+function leftJoinLivePhotos(query, left, right) {
+  query.leftJoin('photos', function () {
+    this.on(left, right).onNull('photos.deleted_at');
+  });
+}
 
 // PIN-clients see hidden photos; everyone else does not.
 function canSeeHiddenPhotos(accessLevel) {
   return accessLevel === 'client';
+}
+
+/**
+ * For a query on a table that names photos by id only (photo_feedback, ...)
+ * and never joins them: leaves out the rows of photos in the trash.
+ */
+function wherePhotoLive(query, photoIdColumn) {
+  query.whereNotExists(function () {
+    this.select(1).from('photos').whereRaw('?? = ??', ['photos.id', photoIdColumn]).whereNotNull('photos.deleted_at');
+  });
 }
 
 /**
@@ -30,6 +68,7 @@ function canSeeHiddenPhotos(accessLevel) {
  * reference the table as `photos` (all call sites do).
  */
 function applyPhotoVisibilityFilter(query, accessLevel) {
+  query.whereNull('photos.deleted_at');
   if (canSeeHiddenPhotos(accessLevel)) return query.whereNull('photos.moderation_status');
   return query.where(function () {
     this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
@@ -42,11 +81,15 @@ function applyPhotoVisibilityFilter(query, accessLevel) {
  */
 function isPhotoHiddenFromViewer(photo, accessLevel) {
   if (!photo) return false;
-  if (photo.moderation_status != null) return true;
+  if (photo.deleted_at != null || photo.moderation_status != null) return true;
   return photo.visibility === 'hidden' && !canSeeHiddenPhotos(accessLevel);
 }
 
 module.exports = {
+  livePhotos,
+  joinLivePhotos,
+  leftJoinLivePhotos,
+  wherePhotoLive,
   canSeeHiddenPhotos,
   applyPhotoVisibilityFilter,
   isPhotoHiddenFromViewer,

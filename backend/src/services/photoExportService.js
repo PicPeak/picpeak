@@ -11,6 +11,7 @@ const photoAdminMarksService = require('./photoAdminMarksService');
 const feedbackService = require('./feedbackService');
 const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const path = require('path');
 
 /**
@@ -51,7 +52,7 @@ class PhotoExportService {
    * @returns {Promise<Object[]>} Photos with feedback
    */
   async getPhotosWithFeedback(eventId, photoIds = null, adminId = null) {
-    let query = db('photos')
+    let query = livePhotos(db)
       .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
       // The folder a photo lives in (issue 1786, migration 265): since then
       // category_id holds filter categories only.

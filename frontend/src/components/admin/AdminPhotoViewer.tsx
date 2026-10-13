@@ -1,6 +1,6 @@
 import { usePhotoSelection } from '../../hooks/usePhotoSelection';
 import React, { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, ThumbsUp, ThumbsDown, Pencil } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -11,12 +11,16 @@ import { Badge, Button, useConfirm } from '../common';
 import { pushDialogLayer } from '../common/Modal';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { AdminAuthenticatedVideo } from './AdminAuthenticatedVideo';
+import { ImageAnnotationOverlay } from '../gallery/annotation/ImageAnnotationOverlay';
+import { parseAnnotation } from '../../utils/photoAnnotation';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { COLOR_LABELS, COLOR_LABEL_SWATCHES, type ColorLabel, type KeybindMode } from '../../services/feedback.service';
 import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
 import { useTranslation } from 'react-i18next';
 import { defaultCategoryLabel } from '../../utils/mediaCounts';
+import { exifLine } from '../../utils/photoExif';
 import { useMutationWithToast, useModal } from '../../hooks';
+import { deleteOneConfirm, deletedMessage } from './photoDeleteCopy';
 
 type AdminFeedbackResponse = {
   feedback: PhotoFeedback[];
@@ -30,6 +34,8 @@ interface AdminPhotoViewerProps {
   onClose: () => void;
   onPhotoDeleted: () => void;
   categories: Array<{ id: number; name: string; slug: string }>;
+  /** Days a deleted photo stays in the trash (issue 1733); 0 or unknown: deleting is final. */
+  trashRetentionDays?: number;
 }
 
 export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = (props) => {
@@ -45,7 +51,7 @@ type ViewerContentProps = AdminPhotoViewerProps & {
 };
 
 const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
-  photos, eventId, onClose, onPhotoDeleted, categories, currentPhoto, currentIndex, setCurrentIndex
+  photos, eventId, onClose, onPhotoDeleted, categories, trashRetentionDays, currentPhoto, currentIndex, setCurrentIndex
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const { t } = useTranslation();
@@ -82,6 +88,10 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   // Approve / reject (issue 744): who decided which way, and why. Hidden rows
   // are not counted anywhere else either.
   const decisions = (feedbackData?.feedback ?? []).filter((item) => item.feedback_type === 'decision' && !item.is_hidden);
+  // The comment whose drawing lies on the photo (issue 1733). Looked up among
+  // this photo's comments, so stepping to another photo clears it.
+  const [shownAnnotationId, setShownAnnotationId] = useState<number | null>(null);
+  const shownAnnotation = parseAnnotation(comments.find((comment) => comment.id === shownAnnotationId)?.annotation);
 
   const goToPrevious = () => {
     setCurrentIndex((prev) => (prev > 0 ? prev - 1 : photos.length - 1));
@@ -93,7 +103,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
 
   const handleDelete = async () => {
     if (!(await confirm({
-      message: t('admin.photos.deleteOneConfirm', 'Delete "{{name}}"? The photo is removed from the gallery for good. This cannot be undone.', { name: currentPhoto.filename }),
+      message: deleteOneConfirm(t, currentPhoto.filename, trashRetentionDays),
       variant: 'danger',
       confirmLabel: t('admin.photos.deleteOneAction', 'Delete photo'),
     }))) {
@@ -102,8 +112,8 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
 
     setIsDeleting(true);
     try {
-      await photosService.deletePhoto(eventId, currentPhoto.id);
-      toast.success('Photo deleted successfully');
+      const result = await photosService.deletePhoto(eventId, currentPhoto.id);
+      toast.success(deletedMessage(t, 1, result));
       
       // Close viewer if this was the last photo
       if (photos.length === 1) {
@@ -142,6 +152,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
     ? creditOverrides[currentPhoto.id]
     : currentPhoto.credit_name ?? null;
   useEffect(() => { setEditingCredit(false); }, [currentPhoto.id]);
+  const exifText = exifLine(currentPhoto.exif);
 
   const saveCredit = async (value: string | null) => {
     setSavingCredit(true);
@@ -315,7 +326,14 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
       {/* Main content */}
       <div className="flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto p-4 w-full h-full">
         {/* Image */}
-        <div className="flex-1 flex items-center justify-center min-h-0">
+        <div className="relative flex-1 flex items-center justify-center min-h-0">
+          {/* A guest's drawing picked from the comments (issue 1733). */}
+          {!isVideo && shownAnnotation && (
+            <ImageAnnotationOverlay
+              annotation={shownAnnotation}
+              label={t('feedback.annotation.overlayLabel', 'Drawing on the photo')}
+            />
+          )}
           {isVideo ? (
             <AdminAuthenticatedVideo
               src={currentPhoto.url}
@@ -498,6 +516,17 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                 {fmtDateTime(currentPhoto.uploaded_at)}
               </p>
             </div>
+
+            {/* Camera details (issue 1733, D1); left out when none were read. */}
+            {exifText && (
+              <div data-testid="admin-viewer-exif">
+                <span className="text-neutral-400 flex items-center gap-1 mb-1">
+                  <Camera className="w-4 h-4" />
+                  {t('admin.photos.cameraDetails')}
+                </span>
+                <p className="text-white">{exifText}</p>
+              </div>
+            )}
 
             {currentPhoto.view_count !== undefined && (
               <div>
@@ -687,6 +716,21 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                             <p className="text-sm text-neutral-300 mb-3">
                               {comment.comment_text}
                             </p>
+
+                            {/* The guest drew on the photo (issue 1733). */}
+                            {parseAnnotation(comment.annotation) && (
+                              <button
+                                type="button"
+                                aria-pressed={shownAnnotationId === comment.id}
+                                onClick={() => setShownAnnotationId(shownAnnotationId === comment.id ? null : comment.id)}
+                                className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-dark mb-3"
+                              >
+                                <Pencil className="w-3 h-3" aria-hidden="true" />
+                                {shownAnnotationId === comment.id
+                                  ? t('feedback.annotation.hide', 'Hide drawing')
+                                  : t('feedback.annotation.show', 'Show drawing')}
+                              </button>
+                            )}
                             
                             {/* Moderation Actions */}
                             <div className="flex gap-2">

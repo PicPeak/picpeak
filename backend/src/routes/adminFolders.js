@@ -37,7 +37,7 @@ const eventIdOf = (req) => parseInt(req.params.eventId, 10);
 
 function sendFolderError(res, err, fallback) {
   if (err instanceof tree.FolderError) {
-    return res.status(err.status).json({ error: err.message, code: err.code });
+    return res.status(err.status).json({ error: err.message, code: err.code, ...(err.details || {}) });
   }
   return errorResponse(res, err, 500, fallback);
 }
@@ -141,7 +141,36 @@ router.delete('/events/:eventId/folders/:folderId', adminAuth, requirePermission
  *              folder_request_id, status: root|exists|created|new|requested|needs_admin } }
  *   nodes    { ["Friday/Activity A"]: exists|new|needs_admin|created|requested }
  *            per level, for the preview tree
+ *   limit    dry run only: null, or { code, limit, current, adding } when
+ *            the upload would take the gallery past FOLDER_LIMITS (folders
+ *            for a role that creates them, open requests for one that asks),
+ *            so the dialog can say so before anything is sent
  */
+/**
+ * Would the planned folders or requests take the event past its cap? The
+ * real resolve refuses at the cap with a 409 after creating what fit, so
+ * the preview says so first. Joining an open request is free, as in
+ * openRequest.
+ */
+async function forecastLimit(eventId, newFolders, newRequests) {
+  const { MAX_FOLDERS_PER_EVENT, MAX_OPEN_REQUESTS_PER_EVENT } = tree.FOLDER_LIMITS;
+  if (newFolders.size > 0) {
+    const current = await tree.countEventFolders(eventId);
+    if (current + newFolders.size > MAX_FOLDERS_PER_EVENT) {
+      return { code: 'FOLDER_LIMIT_REACHED', limit: MAX_FOLDERS_PER_EVENT, current, adding: newFolders.size };
+    }
+  }
+  if (newRequests.size > 0) {
+    const open = await db('folder_requests').where({ event_id: eventId, status: 'pending' }).select('path');
+    const openPaths = new Set(open.map((row) => row.path));
+    const adding = [...newRequests].filter((path) => !openPaths.has(path)).length;
+    if (adding > 0 && open.length + adding > MAX_OPEN_REQUESTS_PER_EVENT) {
+      return { code: 'FOLDER_REQUEST_LIMIT_REACHED', limit: MAX_OPEN_REQUESTS_PER_EVENT, current: open.length, adding };
+    }
+  }
+  return null;
+}
+
 router.post('/events/:eventId/folders/resolve', adminAuth, requirePermission('photos.upload'), requireEventOwnership, [
   body('paths').isArray({ max: MAX_RESOLVE_PATHS }),
   body('paths.*').isString().isLength({ max: MAX_PATH_LENGTH }),
@@ -165,6 +194,9 @@ router.post('/events/:eventId/folders/resolve', adminAuth, requirePermission('ph
     const byTarget = new Map();
     let created = 0;
     const requested = [];
+    // Dry run: what the real call would add, for the limit forecast.
+    const newFolders = new Set();
+    const newRequests = new Set();
 
     for (const input of inputs) {
       const m = mapped[input] || { segments: null, firstLook: false };
@@ -185,6 +217,13 @@ router.post('/events/:eventId/folders/resolve', adminAuth, requirePermission('ph
             created += r.created.length;
           } else if (dryRun) {
             entry = { folder_id: r.folderId, status: canCreate ? 'new' : 'needs_admin' };
+            if (canCreate) {
+              // Lower-cased: ensurePath matches a sibling case-insensitively,
+              // so "Foo/A" and "foo/B" create one "Foo", not two.
+              for (let i = r.missingFrom + 1; i <= segments.length; i += 1) newFolders.add(tree.pathKey(segments.slice(0, i)).toLowerCase());
+            } else {
+              newRequests.add(key);
+            }
           } else {
             const requestId = await requests.openRequest(eventId, segments, r.folderId, req.admin.id);
             requested.push(key);
@@ -216,7 +255,8 @@ router.post('/events/:eventId/folders/resolve', adminAuth, requirePermission('ph
       }
     }
 
-    res.json({ can_manage: canCreate, single_root: singleRoot, max_depth: tree.MAX_FOLDER_DEPTH, results, nodes });
+    const limit = dryRun ? await forecastLimit(eventId, newFolders, newRequests) : null;
+    res.json({ can_manage: canCreate, single_root: singleRoot, max_depth: tree.MAX_FOLDER_DEPTH, results, nodes, limit });
   } catch (err) {
     sendFolderError(res, err, 'Failed to resolve folders');
   }
@@ -242,20 +282,29 @@ router.post('/events/:eventId/folders/apply-external-structure', adminAuth, requ
     const map = { individual: 'individual', collages: 'collages' };
     const cache = new Map();
     let moved = 0;
+    let limited = false;
     for (const row of rows) {
       const rel = String(row.external_relpath);
       if (base && !rel.startsWith(`${base}/`)) continue;
       const where = externalPlacement(base ? rel.slice(base.length + 1) : rel, { map, keywords, mirror: true });
       if (!where.segments.length) continue;
       const key = tree.pathKey(where.segments);
-      if (!cache.has(key)) cache.set(key, (await tree.ensurePath(eventId, where.segments, { canCreate: true })).folderId);
+      // At the folder cap the photos go into the closest existing folder,
+      // as external import does, instead of stopping halfway with a 409.
+      if (!cache.has(key)) {
+        const placed = await tree.ensurePath(eventId, where.segments, { canCreate: true, foldAtLimit: true });
+        if (placed.limited) limited = true;
+        cache.set(key, placed.folderId);
+      }
       moved += await db('photos').where('id', row.id).whereNull('folder_id').update({ folder_id: cache.get(key) });
     }
     if (moved > 0) {
       await logActivity('folder_structure_applied', { moved, folders: cache.size }, eventId, actorOf(req));
       downloadZipService.invalidate(eventId);
     }
-    res.json({ moved, folders: await tree.folderTree(eventId) });
+    // `limited`: some photos went into a parent folder because the gallery
+    // reached its folder limit; the UI says so.
+    res.json({ moved, limited, folders: await tree.folderTree(eventId) });
   } catch (err) {
     sendFolderError(res, err, 'Failed to apply the folder structure');
   }

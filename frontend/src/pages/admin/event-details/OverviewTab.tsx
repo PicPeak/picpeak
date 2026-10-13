@@ -24,6 +24,7 @@ import { ShareLinkCard } from './ShareLinkCard';
 import { ClientAccessCard } from './ClientAccessCard';
 import { PhotoStatisticsCard } from './PhotoStatisticsCard';
 import { ArchiveStatusCard } from './ArchiveStatusCard';
+import { DraftChecklistCard } from './DraftChecklistCard';
 import { DownloadLimitUsage } from './DownloadLimitUsage';
 import { safeParseDate } from './utils';
 
@@ -43,6 +44,7 @@ interface OverviewTabProps {
   onExtendExpiration: (days: number) => void;
   isExtending: boolean;
   onRevealNow: () => void;
+  onPublish: () => void;
 }
 
 /** The customer accounts assigned to the gallery, as the event detail route returns them. */
@@ -166,6 +168,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   onExtendExpiration,
   isExtending,
   onRevealNow,
+  onPublish,
 }) => {
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
@@ -176,6 +179,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const canHelpClient = useAnyPermission(['events.edit', 'events.support']) && !event.share_secrets_hidden;
   // Revealing changes what guests see; the route needs events.edit.
   const canReveal = usePermission('events.edit') && !event.share_secrets_hidden;
+  // As the header's Publish button: events.edit.
+  const canPublish = usePermission('events.edit');
   const archived = Boolean(event.is_archived);
   const expiresAt = safeParseDate(event.expires_at);
   const hiddenUntilReveal = toBoolean(event.reveal_mode, false) && !event.revealed_at;
@@ -194,6 +199,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6">
       <div className="space-y-6 min-w-0">
+        <DraftChecklistCard event={event} setActiveTab={setActiveTab} openSettings={openSettings} onPublish={canPublish ? onPublish : undefined} />
         <ShareLinkCard event={event} setShowPasswordReset={setShowPasswordReset} passwordVersion={passwordVersion} />
         <ShortUrlsCard eventId={event.id} />
 

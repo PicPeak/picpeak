@@ -43,7 +43,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
   // Same gate as the sidebar's Settings entry: any visible tab, not settings.view.
   const hasVisibleSettings = useHasVisibleSettings();
-  const { confirmLeave } = useLeaveGuard();
+  const { confirmLeave, unguarded } = useLeaveGuard();
   const { user, logout } = useAdminAuth();
   const { isDark, toggle: toggleDarkMode, forcedMode } = useAdminDarkMode();
   const { t, i18n } = useTranslation();
@@ -179,7 +179,8 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
 
   const handleLogout = () => {
     logout();
-    navigate('/admin/login');
+    // Signing out never asked about unsaved edits; it still does not.
+    unguarded(() => navigate('/admin/login'));
   };
 
   // Fetch notifications

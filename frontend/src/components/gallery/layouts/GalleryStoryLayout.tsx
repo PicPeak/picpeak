@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { GalleryEmptyMessage } from '../GalleryEmptyMessage';
 import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -21,6 +22,7 @@ import {
 import { PhotoLightbox } from '../PhotoLightbox';
 import { FeedbackIdentityModal } from '../FeedbackIdentityModal';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
+import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { DownloadQuotaNotice } from '../DownloadQuotaNotice';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/downloadLimit';
@@ -70,6 +72,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   eventDate,
   allowDownloads = true,
   suppressEmptyState = false,
+  emptyIsFiltered = false,
   afterGrid,
   eventPhotoCount,
   onDownloadEverything,
@@ -233,6 +236,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     if (!bulk) apply(ids, unlike);
     ids.forEach((id) => inFlightLikesRef.current.add(id));
     const done: number[] = [];
+    // A finished selection (issue 1733): the feedback service has said so.
+    let locked = false;
     for (let i = 0; i < ids.length; i += 5) {
       const batch = ids.slice(i, i + 5);
       const results = await Promise.allSettled(
@@ -240,6 +245,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       );
       results.forEach((result, index) => {
         if (result.status === 'fulfilled') done.push(batch[index]);
+        else if (feedbackLockKind(result.reason)) locked = true;
       });
     }
     const failed = ids.filter((id) => !done.includes(id));
@@ -251,7 +257,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       onFeedbackChange?.();
     }
     if (failed.length > 0) {
-      if (bulk) toast.error(t('gallery.favoriteSelectedError'));
+      if (bulk && !locked) toast.error(t('gallery.favoriteSelectedError'));
       else console.warn('Like submit failed');
     }
   }, [slug, t, onFeedbackChange]);
@@ -425,7 +431,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
+        <GalleryEmptyMessage filtered={emptyIsFiltered} />
       </div>
     );
   }

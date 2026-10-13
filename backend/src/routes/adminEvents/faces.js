@@ -9,6 +9,7 @@
 
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../../database/db');
+const { joinLivePhotos } = require('../../utils/photoVisibility');
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { requireFeatureFlag } = require('../../middleware/requireFeatureFlag');
@@ -47,7 +48,7 @@ function buildPersonFacesQuery(dbi, eventId, personId) {
     })
     .orderBy('det_score', 'desc')
     .limit(PERSON_FACES_LIMIT)
-    .join('photos', 'photos.id', 'photo_faces.photo_id')
+    .modify(joinLivePhotos, 'photos.id', 'photo_faces.photo_id')
     .select(
       'photo_faces.id', 'photo_faces.photo_id',
       'photo_faces.bbox_x', 'photo_faces.bbox_y',

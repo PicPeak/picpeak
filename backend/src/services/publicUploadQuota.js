@@ -457,10 +457,13 @@ async function releasePending(photoId) {
 }
 
 // A pending photo that was deleted, or failed without reaching the call
-// above, is no longer queued work either.
+// above, is no longer queued work either. Nor is one in the trash (issue
+// 1733): the queue leaves it alone, and its hold would block new uploads for
+// the whole retention. Restored, it is processed without a new hold.
 async function reconcilePending() {
   await db('public_upload_objects').where({ pending: 1, state: 'stored', reference_type: 'photo' })
     .whereNotExists(db('photos as p').select('p.id').whereColumn('p.id', 'public_upload_objects.reference_id')
+      .whereNull('p.deleted_at')
       .whereIn('p.processing_status', ['pending', 'processing']))
     .update({ pending: 0 });
 }

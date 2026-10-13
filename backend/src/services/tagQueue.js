@@ -28,6 +28,7 @@ const { SidecarUnavailableError } = require('./faceClient');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { isTransient } = require('./imageResourcePolicy');
 const { formatBoolean } = require('../utils/dbCompat');
+const { livePhotos } = require('../utils/photoVisibility');
 const { isFeatureEnabled } = require('./tagSettings');
 
 const POLL_INTERVAL_MS = parseInt(process.env.TAG_PROCESSOR_POLL_MS || '2000', 10);
@@ -59,7 +60,8 @@ function isPostgres() {
  */
 async function claimNextPhoto() {
   return db.transaction(async (trx) => {
-    const query = trx('photos').where('tag_status', 'pending')
+    // Live photos only: a photo in the trash (issue 1733) waits for its restore.
+    const query = livePhotos(trx).where('tag_status', 'pending')
       // An archived gallery keeps its photo rows and its switch, but its
       // thumbnails are gone and its originals are inside the archive: a claim
       // could only fail. The rows stay 'pending' and resume on restore.

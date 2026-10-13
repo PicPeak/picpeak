@@ -28,6 +28,11 @@ async function archiveEvent(event) {
   const tmpArchive = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}-${archiveName}`);
 
   try {
+    // The gallery's trash (issue 1733) is deleted for good first: the zip
+    // below takes every file under the gallery's prefix, and a photo the
+    // admin deleted does not belong in the archive that is handed on.
+    await require('./photoTrash').purgeEventTrash(event);
+
     // Photos manifest — the gallery filenames are renamed on upload, so
     // `original_filename` (and category linkage) can't be derived from the
     // extracted files alone. Persisting a manifest inside the archive lets a
@@ -311,6 +316,16 @@ async function archiveEvent(event) {
         await db('photos').where({ id: photo.id }).update({
           web_path: null, web_status: null, web_started_at: null, web_error: null,
         });
+      }
+      // Adaptive streaming ladder (issue 1733): derived, and not in the zip.
+      // The row starts over, so the queue transcodes it again on a restore.
+      // The row first: a transcode still running loses its claim with it and
+      // cannot publish a ladder behind the sweep.
+      if (photo.hls_status || photo.hls_path) {
+        await db('photos').where({ id: photo.id }).update({
+          hls_path: null, hls_status: null, hls_attempt_id: null, hls_started_at: null, hls_error: null,
+        });
+        await require('./videoHlsService').deleteLadder(photo);
       }
       // Outside the guard: a tier can exist when the canonical rendition never
       // did, so keying cleanup off preview_path would strand phone-only photos.
