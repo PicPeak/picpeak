@@ -40,6 +40,14 @@ export const ANNOTATION_MAX_POINTS = 500;
  * drawing (20 x 150 points x 16 characters is about 48 KB).
  */
 export const ANNOTATION_DRAW_MAX_POINTS = 150;
+/**
+ * How much of a pointer trail the simplification below looks at. Its worst
+ * case is quadratic (a dense zig-zag, as in shading an area): 4000 points
+ * took over a second on the main thread when the pointer lifted. A longer
+ * trail is thinned evenly to this many points first, still several times
+ * what is kept in the end.
+ */
+const ANNOTATION_TRAIL_MAX_POINTS = 1000;
 
 const round4 = (n: number) => Math.round(n * 10000) / 10000;
 
@@ -136,6 +144,11 @@ export function finishFreehand(trail: AnnotationPoint[]): AnnotationPoint[] | nu
   let points = trail.map(([x, y]): AnnotationPoint => [clamp(x), clamp(y)]);
   points = points.filter((point, i) => i === 0 || point[0] !== points[i - 1][0] || point[1] !== points[i - 1][1]);
   if (points.length < 2) return null;
+  if (points.length > ANNOTATION_TRAIL_MAX_POINTS) {
+    const all = points;
+    const step = (all.length - 1) / (ANNOTATION_TRAIL_MAX_POINTS - 1);
+    points = Array.from({ length: ANNOTATION_TRAIL_MAX_POINTS }, (_, i) => all[Math.round(i * step)]);
+  }
   for (let epsilon = 0.0015; points.length > ANNOTATION_DRAW_MAX_POINTS; epsilon *= 2) {
     points = simplify(points, epsilon);
   }

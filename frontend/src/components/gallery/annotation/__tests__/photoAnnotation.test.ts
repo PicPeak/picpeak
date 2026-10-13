@@ -62,6 +62,25 @@ describe('finishFreehand', () => {
     expect(points.length).toBeLessThanOrEqual(ANNOTATION_DRAW_MAX_POINTS);
     expect(parseAnnotation({ v: 1, strokes: [{ t: 'free', c: 0, p: points }] })).not.toBeNull();
   });
+
+  // The simplification is quadratic at worst, and it runs on the main thread
+  // when the pointer lifts. Counted rather than timed: 8000 zig-zag points
+  // cost 261 million distance checks before the trail was thinned first.
+  it('bounds the work a very long trail costs, and keeps both ends', () => {
+    const trail: AnnotationPoint[] = Array.from({ length: 8000 }, (_, i) => [i / 8000, i % 2 ? 0.2 : 0.8]);
+    const hypot = Math.hypot;
+    let calls = 0;
+    Math.hypot = (...values: number[]) => { calls += 1; return hypot(...values); };
+    let points: AnnotationPoint[];
+    try {
+      points = finishFreehand(trail)!;
+    } finally {
+      Math.hypot = hypot;
+    }
+    expect(calls).toBeLessThan(10_000_000);
+    expect(points[0]).toEqual([0, 0.8]);
+    expect(points[points.length - 1]).toEqual([0.9999, 0.2]);
+  });
 });
 
 describe('strokePath', () => {
