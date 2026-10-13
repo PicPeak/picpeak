@@ -7,112 +7,164 @@
  * sent as it is. Whenever the step fails, or does not make the file smaller,
  * the original goes out untouched.
  *
- * Re-encoding drops EXIF, so the capture date of a scaled JPEG is read first
- * and sent along as a form field.
+ * Re-encoding drops EXIF, so the capture date the server would have read from
+ * the original is read first and sent along as a form field. A file whose
+ * date or animation cannot be established here is not scaled: the server can
+ * still read the original, it cannot read what a canvas threw away.
  */
 
 const RESIZABLE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-// Enough for the EXIF block of a JPEG and the leading chunks of a PNG or WebP.
+// Enough for the EXIF block of a JPEG and the leading chunk of a WebP.
 const HEAD_BYTES = 128 * 1024;
 const JPEG_QUALITY = 0.9;
 
 export interface PreparedGuestUpload {
   file: File;
-  /** EXIF DateTimeOriginal of the original, "YYYY:MM:DD HH:MM:SS"; only set for a scaled JPEG. */
+  /** EXIF capture date of the original, "YYYY:MM:DD HH:MM:SS"; only set for a scaled photo. */
   capturedAt: string | null;
 }
+
+/** What a canvas re-encode would lose. */
+interface Inspection {
+  animated: boolean;
+  capturedAt: string | null;
+}
+
+/** The bytes do not say what the server would read from this file. */
+const undecidable = (): never => {
+  throw new Error('undecidable');
+};
 
 const ascii = (bytes: Uint8Array, offset: number, length: number): string =>
   String.fromCharCode(...bytes.subarray(offset, offset + length));
 
 // FileReader rather than Blob.arrayBuffer(), which older Safari lacks.
-const readHead = (file: File): Promise<Uint8Array> => new Promise((resolve, reject) => {
+const readBytes = (blob: Blob): Promise<Uint8Array> => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
   reader.onerror = () => reject(reader.error);
-  reader.readAsArrayBuffer(file.slice(0, HEAD_BYTES));
+  reader.readAsArrayBuffer(blob);
 });
 
-/** A canvas would keep the first frame only. */
-function isAnimated(head: Uint8Array, type: string): boolean {
-  if (type === 'image/webp') {
-    // RIFF <size> WEBP VP8X <size> <flags>: bit 1 of the flags is "animation".
-    return head.length > 20 && ascii(head, 12, 4) === 'VP8X' && (head[20] & 0x02) !== 0;
-  }
-  if (type === 'image/png') {
-    // An APNG announces itself with an acTL chunk ahead of the image data.
-    const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
-    let offset = 8;
-    while (offset + 8 <= head.length) {
-      const chunk = ascii(head, offset + 4, 4);
-      if (chunk === 'acTL') return true;
-      if (chunk === 'IDAT') return false;
-      offset += 12 + view.getUint32(offset);
+/**
+ * Animation and capture date of a whole PNG. The whole file, because eXIf may
+ * sit behind the image data and a large text chunk may sit ahead of acTL.
+ * Throws when the chunks cannot be followed to the image data.
+ */
+export function inspectPng(bytes: Uint8Array): Inspection {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let capturedAt: string | null = null;
+  let seenExif = false;
+  let seenData = false;
+  let offset = 8;
+  while (offset + 8 <= bytes.length) {
+    const length = view.getUint32(offset);
+    const chunk = ascii(bytes, offset + 4, 4);
+    // An APNG announces itself with an acTL chunk ahead of the image data; a
+    // canvas would keep the first frame only.
+    if (chunk === 'acTL' && !seenData) return { animated: true, capturedAt: null };
+    if (chunk === 'IDAT') seenData = true;
+    if (chunk === 'eXIf' && !seenExif) {
+      seenExif = true;
+      capturedAt = dateFromTiff(view, offset + 8, offset + 8 + length);
     }
+    if (chunk === 'IEND') break;
+    offset += 12 + length;
   }
-  return false;
+  if (!seenData) return undecidable();
+  return { animated: false, capturedAt };
 }
 
 /**
- * EXIF DateTimeOriginal from the leading bytes of a JPEG, as the raw EXIF
- * text. Bounded to the bytes given; null for anything it cannot follow.
+ * The EXIF capture date in the leading bytes of a JPEG, as the raw EXIF text;
+ * null when the file carries none. Throws when it cannot tell: a date it
+ * cannot read, or metadata running past the bytes given.
  */
 export function readExifCaptureDate(head: Uint8Array): string | null {
-  try {
-    const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
-    if (view.getUint16(0) !== 0xffd8) return null;
-    let offset = 2;
-    while (offset + 4 <= view.byteLength) {
-      if (view.getUint8(offset) !== 0xff) return null;
-      const marker = view.getUint8(offset + 1);
-      // Start of scan / end of image: no metadata segment follows.
-      if (marker === 0xda || marker === 0xd9) return null;
-      const size = view.getUint16(offset + 2);
-      if (size < 2) return null;
-      // APP1 carrying "Exif\0\0" (XMP uses APP1 too, with another header).
-      if (marker === 0xe1 && size >= 8 && view.getUint32(offset + 4) === 0x45786966 && view.getUint16(offset + 8) === 0) {
-        return dateFromTiff(view, offset + 10, Math.min(offset + 2 + size, view.byteLength));
-      }
-      offset += 2 + size;
+  const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  if (view.getUint16(0) !== 0xffd8) return undecidable();
+  let offset = 2;
+  // A read past the end of the bytes throws, which is the answer wanted.
+  for (;;) {
+    if (view.getUint8(offset) !== 0xff) return undecidable();
+    const marker = view.getUint8(offset + 1);
+    // Fill bytes ahead of a marker.
+    if (marker === 0xff) { offset += 1; continue; }
+    // Start of scan / end of image: no metadata segment follows.
+    if (marker === 0xda || marker === 0xd9) return null;
+    const size = view.getUint16(offset + 2);
+    if (size < 2) return undecidable();
+    // APP1 carrying "Exif\0\0" (XMP uses APP1 too, with another header).
+    if (marker === 0xe1 && size >= 8 && view.getUint32(offset + 4) === 0x45786966 && view.getUint16(offset + 8) === 0) {
+      return dateFromTiff(view, offset + 10, offset + 2 + size);
     }
-    return null;
-  } catch {
-    // A read past the end of the bytes: truncated or malformed.
-    return null;
+    offset += 2 + size;
   }
 }
 
+/** A real calendar date in the EXIF shape, the only kind the server takes from the form field. */
+function isExifDate(text: string): boolean {
+  const match = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(text);
+  if (!match) return false;
+  const [year, month, day, hour, minute, second] = match.slice(1).map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+    && date.getUTCHours() === hour && date.getUTCMinutes() === minute && date.getUTCSeconds() === second;
+}
+
+/**
+ * The date the server's extractCaptureDate takes from a TIFF block: the first
+ * tag present of DateTimeOriginal, CreateDate and ModifyDate. Null with none
+ * of them; throws when that tag does not hold a plain date, because the
+ * server reads such values more leniently than the form field allows.
+ */
 function dateFromTiff(view: DataView, start: number, end: number): string | null {
+  if (end > view.byteLength) return undecidable();
   const byteOrder = view.getUint16(start);
-  if (byteOrder !== 0x4949 && byteOrder !== 0x4d4d) return null;
+  if (byteOrder !== 0x4949 && byteOrder !== 0x4d4d) return undecidable();
   const little = byteOrder === 0x4949;
-  if (view.getUint16(start + 2, little) !== 42) return null;
+  if (view.getUint16(start + 2, little) !== 42) return undecidable();
 
   // Offset of a tag's 12-byte entry within one IFD, or null.
   const findEntry = (ifdOffset: number, tag: number): number | null => {
     const ifd = start + ifdOffset;
-    if (ifdOffset < 8 || ifd + 2 > end) return null;
+    if (ifdOffset < 8 || ifd + 2 > end) return undecidable();
     const count = view.getUint16(ifd, little);
+    if (ifd + 2 + count * 12 > end) return undecidable();
     for (let index = 0; index < count; index++) {
       const entry = ifd + 2 + index * 12;
-      if (entry + 12 > end) return null;
       if (view.getUint16(entry, little) === tag) return entry;
     }
     return null;
   };
 
-  // IFD0 → Exif sub-IFD (0x8769) → DateTimeOriginal (0x9003), an ASCII value
-  // of 20 bytes stored at an offset.
-  const exifPointer = findEntry(view.getUint32(start + 4, little), 0x8769);
-  if (exifPointer === null) return null;
-  const dateEntry = findEntry(view.getUint32(exifPointer + 8, little), 0x9003);
+  // IFD0 → Exif sub-IFD (0x8769) → DateTimeOriginal (0x9003), CreateDate
+  // (0x9004); ModifyDate (0x0132) is in IFD0 itself.
+  const ifd0 = view.getUint32(start + 4, little);
+  const exifPointer = findEntry(ifd0, 0x8769);
+  const exifIfd = exifPointer === null ? null : view.getUint32(exifPointer + 8, little);
+  const dateEntry = (exifIfd === null ? null : findEntry(exifIfd, 0x9003) ?? findEntry(exifIfd, 0x9004))
+    ?? findEntry(ifd0, 0x0132);
   if (dateEntry === null) return null;
-  if (view.getUint16(dateEntry + 2, little) !== 2 || view.getUint32(dateEntry + 4, little) < 19) return null;
+
+  // An ASCII value of 20 bytes stored at an offset.
+  if (view.getUint16(dateEntry + 2, little) !== 2 || view.getUint32(dateEntry + 4, little) < 19) return undecidable();
   const valueAt = start + view.getUint32(dateEntry + 8, little);
-  if (valueAt + 19 > end) return null;
+  if (valueAt + 19 > end) return undecidable();
   let text = '';
   for (let index = 0; index < 19; index++) text += String.fromCharCode(view.getUint8(valueAt + index));
-  return /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/.test(text) ? text : null;
+  return isExifDate(text) ? text : undecidable();
+}
+
+async function inspect(file: File): Promise<Inspection> {
+  if (file.type === 'image/png') return inspectPng(await readBytes(file));
+  const head = await readBytes(file.slice(0, HEAD_BYTES));
+  if (file.type === 'image/webp') {
+    // RIFF <size> WEBP VP8X <size> <flags>: bit 1 of the flags is "animation".
+    // The server reads no capture date from a WebP.
+    return { animated: head.length > 20 && ascii(head, 12, 4) === 'VP8X' && (head[20] & 0x02) !== 0, capturedAt: null };
+  }
+  return { animated: false, capturedAt: readExifCaptureDate(head) };
 }
 
 interface DecodedImage {
@@ -180,14 +232,15 @@ export async function prepareGuestUpload(file: File, maxEdge: number | null | un
   const original: PreparedGuestUpload = { file, capturedAt: null };
   if (!maxEdge || maxEdge <= 0 || !RESIZABLE_TYPES.has(file.type)) return original;
   try {
-    const head = await readHead(file);
-    if (isAnimated(head, file.type)) return original;
+    // Throws, and so sends the original, when it cannot tell.
+    const { animated, capturedAt } = await inspect(file);
+    if (animated) return original;
     const blob = await downscale(file, maxEdge);
     // A browser that cannot encode the format answers with a PNG instead.
     if (!blob || blob.type !== file.type || blob.size >= file.size) return original;
     return {
       file: new File([blob], file.name, { type: file.type, lastModified: file.lastModified }),
-      capturedAt: file.type === 'image/jpeg' ? readExifCaptureDate(head) : null,
+      capturedAt,
     };
   } catch {
     return original;

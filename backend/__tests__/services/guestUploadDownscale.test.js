@@ -37,6 +37,17 @@ describe('client capture date (issue 1733)', () => {
     expect(date).toEqual(new Date(2026, 9, 11, 18, 30, 5));
   });
 
+  test('keeps a wall time the server zone skips, as exifr does for the file', () => {
+    const zone = process.env.TZ;
+    process.env.TZ = 'Europe/Berlin';
+    try {
+      // 02:30 does not exist in Berlin on this day; a camera elsewhere wrote it.
+      expect(parseClientCaptureDate('2026:03:29 02:30:00', now)).toEqual(new Date(2026, 2, 29, 2, 30, 0));
+    } finally {
+      if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
+    }
+  });
+
   test('accepts the present moment and refuses the future', () => {
     expect(parseClientCaptureDate('2026:10:12 12:00:00', now)).toEqual(now);
     expect(parseClientCaptureDate('2026:10:12 12:00:01', now)).toBeNull();

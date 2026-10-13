@@ -27,7 +27,8 @@ function guestUploadMaxEdgeOf(event) {
 /**
  * The capture date the browser read from a photo before scaling it down: the
  * canvas re-encode drops EXIF, so the date travels as a form field. It is the
- * raw EXIF DateTimeOriginal text, "YYYY:MM:DD HH:MM:SS", and is read as
+ * raw EXIF text of the tag extractCaptureDate would have used (DateTimeOriginal,
+ * else CreateDate, else ModifyDate), "YYYY:MM:DD HH:MM:SS", and is read as
  * server-local wall time exactly as exifr reads the tag from a file, so a
  * scaled photo sorts where its original would have.
  *
@@ -43,12 +44,15 @@ function parseClientCaptureDate(raw, now = new Date()) {
   const match = EXIF_DATE.exec(raw);
   if (!match) return null;
   const [year, month, day, hour, minute, second] = match.slice(1).map(Number);
-  const date = new Date(year, month - 1, day, hour, minute, second);
-  // Date() rolls 02-30 or 25:00 over instead of refusing it.
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day
-    || date.getHours() !== hour || date.getMinutes() !== minute || date.getSeconds() !== second) {
+  // Date() rolls 02-30 or 25:00 over instead of refusing it. Checked in UTC:
+  // local time would also refuse an hour the server's zone skips for DST,
+  // which exifr reads from a file without complaint.
+  const utc = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (utc.getUTCFullYear() !== year || utc.getUTCMonth() !== month - 1 || utc.getUTCDate() !== day
+    || utc.getUTCHours() !== hour || utc.getUTCMinutes() !== minute || utc.getUTCSeconds() !== second) {
     return null;
   }
+  const date = new Date(year, month - 1, day, hour, minute, second);
   return date > MIN_CAPTURE_DATE && date <= now ? date : null;
 }
 

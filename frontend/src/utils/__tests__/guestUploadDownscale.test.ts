@@ -1,32 +1,53 @@
 /**
  * Optional downscale of guest uploads (issue 1733): which files are scaled,
  * that nothing is ever enlarged, that every failure sends the original, and
- * the bounded EXIF capture-date reader.
+ * the bounded reader of the capture date the server would have taken.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { prepareGuestUpload, readExifCaptureDate } from '../guestUploadDownscale';
+import { inspectPng, prepareGuestUpload, readExifCaptureDate } from '../guestUploadDownscale';
 
-/** A minimal JPEG head: SOI, an optional APP0, then APP1/Exif with DateTimeOriginal. */
-function jpegWithExifDate(date: string | null, { little = true, app0 = true } = {}): Uint8Array {
-  const tiff = new Uint8Array(8 + 18 + 18 + 20);
+const DATE_TIME_ORIGINAL = 0x9003;
+const CREATE_DATE = 0x9004;
+const MODIFY_DATE = 0x0132;
+
+/**
+ * A TIFF block: IFD0 with ModifyDate (if given) and the Exif sub-IFD pointer,
+ * the Exif IFD with the other dates given. Values are 20 ASCII bytes each.
+ */
+function tiffWithDates(dates: Record<number, string>, { little = true } = {}): Uint8Array {
+  const exifTags = [DATE_TIME_ORIGINAL, CREATE_DATE].filter((tag) => dates[tag] !== undefined);
+  const ifd0Tags = [MODIFY_DATE].filter((tag) => dates[tag] !== undefined);
+  const ifd0At = 8;
+  const exifAt = ifd0At + 2 + (ifd0Tags.length + 1) * 12 + 4;
+  let valueAt = exifAt + 2 + exifTags.length * 12 + 4;
+  const tiff = new Uint8Array(valueAt + 20 * (exifTags.length + ifd0Tags.length));
   const view = new DataView(tiff.buffer);
   tiff.set(little ? [0x49, 0x49] : [0x4d, 0x4d], 0);
   view.setUint16(2, 42, little);
-  view.setUint32(4, 8, little);
-  // IFD0 at 8: one entry, the Exif sub-IFD pointer.
-  view.setUint16(8, 1, little);
-  view.setUint16(10, 0x8769, little);
-  view.setUint16(12, 4, little);
-  view.setUint32(14, 1, little);
-  view.setUint32(18, 26, little);
-  // Exif IFD at 26: one entry, DateTimeOriginal, 20 ASCII bytes at 44.
-  view.setUint16(26, 1, little);
-  view.setUint16(28, date === null ? 0x9004 : 0x9003, little);
-  view.setUint16(30, 2, little);
-  view.setUint32(32, 20, little);
-  view.setUint32(36, 44, little);
-  tiff.set(new TextEncoder().encode(date ?? '2024:05:01 09:10:11'), 44);
+  view.setUint32(4, ifd0At, little);
+  const writeDate = (entry: number, tag: number) => {
+    view.setUint16(entry, tag, little);
+    view.setUint16(entry + 2, 2, little);
+    view.setUint32(entry + 4, 20, little);
+    view.setUint32(entry + 8, valueAt, little);
+    tiff.set(new TextEncoder().encode(dates[tag]), valueAt);
+    valueAt += 20;
+  };
+  view.setUint16(ifd0At, ifd0Tags.length + 1, little);
+  ifd0Tags.forEach((tag, index) => writeDate(ifd0At + 2 + index * 12, tag));
+  const pointer = ifd0At + 2 + ifd0Tags.length * 12;
+  view.setUint16(pointer, 0x8769, little);
+  view.setUint16(pointer + 2, 4, little);
+  view.setUint32(pointer + 4, 1, little);
+  view.setUint32(pointer + 8, exifAt, little);
+  view.setUint16(exifAt, exifTags.length, little);
+  exifTags.forEach((tag, index) => writeDate(exifAt + 2 + index * 12, tag));
+  return tiff;
+}
 
+/** A minimal JPEG head: SOI, an optional APP0, APP1/Exif, start of scan. */
+function jpegWithDates(dates: Record<number, string>, { little = true, app0 = true } = {}): Uint8Array {
+  const tiff = tiffWithDates(dates, { little });
   const app1Size = 2 + 6 + tiff.length;
   const bytes = [0xff, 0xd8];
   if (app0) bytes.push(0xff, 0xe0, 0x00, 0x04, 0x4a, 0x46);
@@ -35,29 +56,93 @@ function jpegWithExifDate(date: string | null, { little = true, app0 = true } = 
   return new Uint8Array(bytes);
 }
 
+const jpegWithExifDate = (date: string, options = {}) => jpegWithDates({ [DATE_TIME_ORIGINAL]: date }, options);
+
+/** A PNG from its chunks; CRCs are left zero, nothing here checks them. */
+function png(...chunks: Array<[string, Uint8Array | number]>): Uint8Array {
+  const bodies = chunks.map(([, data]) => (typeof data === 'number' ? new Uint8Array(data) : data));
+  const bytes = new Uint8Array(8 + bodies.reduce((total, body) => total + 12 + body.length, 0));
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  let offset = 8;
+  chunks.forEach(([type], index) => {
+    new DataView(bytes.buffer).setUint32(offset, bodies[index].length);
+    bytes.set(new TextEncoder().encode(type), offset + 4);
+    bytes.set(bodies[index], offset + 8);
+    offset += 12 + bodies[index].length;
+  });
+  return bytes;
+}
+
 describe('readExifCaptureDate', () => {
   it('reads DateTimeOriginal in either byte order', () => {
     expect(readExifCaptureDate(jpegWithExifDate('2024:05:01 09:10:11'))).toBe('2024:05:01 09:10:11');
     expect(readExifCaptureDate(jpegWithExifDate('2023:12:31 23:59:59', { little: false, app0: false }))).toBe('2023:12:31 23:59:59');
   });
 
-  it('answers null without the tag, without EXIF, or for another format', () => {
-    expect(readExifCaptureDate(jpegWithExifDate(null))).toBeNull();
+  it('falls back to CreateDate, then ModifyDate, as the server does', () => {
+    expect(readExifCaptureDate(jpegWithDates({
+      [DATE_TIME_ORIGINAL]: '2024:05:01 09:10:11', [CREATE_DATE]: '2023:05:01 09:10:11', [MODIFY_DATE]: '2022:05:01 09:10:11',
+    }))).toBe('2024:05:01 09:10:11');
+    expect(readExifCaptureDate(jpegWithDates({
+      [CREATE_DATE]: '2023:05:01 09:10:11', [MODIFY_DATE]: '2022:05:01 09:10:11',
+    }))).toBe('2023:05:01 09:10:11');
+    expect(readExifCaptureDate(jpegWithDates({ [MODIFY_DATE]: '2022:05:01 09:10:11' }, { little: false })))
+      .toBe('2022:05:01 09:10:11');
+  });
+
+  it('answers null for a JPEG that carries no date', () => {
+    expect(readExifCaptureDate(jpegWithDates({}))).toBeNull();
     expect(readExifCaptureDate(new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0x00, 0x02]))).toBeNull();
-    expect(readExifCaptureDate(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
-    expect(readExifCaptureDate(new Uint8Array())).toBeNull();
   });
 
-  it('refuses a value that is not an EXIF date', () => {
-    expect(readExifCaptureDate(jpegWithExifDate('not a date at all!!'))).toBeNull();
+  // The server reads these more leniently than the form field allows (a
+  // rolled-over month, another tag behind an unreadable one).
+  it.each([
+    'not a date at all!!', '2024-05-01T09:10:11', '2024:13:41 09:10:11', '2024:02:30 09:10:11', '    :  :     :  :  ',
+  ])('cannot tell for the value %j', (value) => {
+    expect(() => readExifCaptureDate(jpegWithDates({ [DATE_TIME_ORIGINAL]: value, [CREATE_DATE]: '2023:05:01 09:10:11' }))).toThrow();
   });
 
-  it('survives a head cut off anywhere', () => {
+  it('cannot tell for another format or no bytes', () => {
+    expect(() => readExifCaptureDate(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toThrow();
+    expect(() => readExifCaptureDate(new Uint8Array())).toThrow();
+  });
+
+  it('never answers "no date" for a head cut off ahead of the scan', () => {
     const full = jpegWithExifDate('2024:05:01 09:10:11');
-    for (let length = 0; length < full.length - 4; length++) {
-      const result = readExifCaptureDate(full.slice(0, length));
-      expect(result === null || result === '2024:05:01 09:10:11').toBe(true);
+    for (let length = 0; length < full.length; length++) {
+      let result: string | null | undefined;
+      try { result = readExifCaptureDate(full.slice(0, length)); } catch { result = undefined; }
+      expect(result === undefined || result === '2024:05:01 09:10:11').toBe(true);
     }
+    // EXIF behind more leading segments than the head holds.
+    const padded = new Uint8Array(4 + 300);
+    padded.set([0xff, 0xd8, 0xff, 0xec, 0xff, 0xff]);
+    expect(() => readExifCaptureDate(padded)).toThrow();
+  });
+});
+
+describe('inspectPng', () => {
+  const exif = tiffWithDates({ [DATE_TIME_ORIGINAL]: '2024:05:01 09:10:11' });
+
+  it('finds a static PNG without a date', () => {
+    expect(inspectPng(png(['IHDR', 13], ['IDAT', 40], ['IEND', 0]))).toEqual({ animated: false, capturedAt: null });
+  });
+
+  it('reads the eXIf date ahead of or behind the image data', () => {
+    expect(inspectPng(png(['IHDR', 13], ['eXIf', exif], ['IDAT', 40], ['IEND', 0])).capturedAt).toBe('2024:05:01 09:10:11');
+    expect(inspectPng(png(['IHDR', 13], ['IDAT', 40], ['IDAT', 40], ['eXIf', exif], ['IEND', 0])).capturedAt).toBe('2024:05:01 09:10:11');
+  });
+
+  it('sees acTL behind a chunk of any size', () => {
+    expect(inspectPng(png(['IHDR', 13], ['iTXt', 200 * 1024], ['acTL', 8], ['IDAT', 40], ['IEND', 0])).animated).toBe(true);
+  });
+
+  it('cannot tell without image data, or with an unreadable eXIf', () => {
+    expect(() => inspectPng(png(['IHDR', 13], ['iTXt', 64]))).toThrow();
+    expect(() => inspectPng(png(['IHDR', 13], ['iTXt', 64]).slice(0, 40))).toThrow();
+    expect(() => inspectPng(png(['IHDR', 13], ['eXIf', 16], ['IDAT', 40], ['IEND', 0]))).toThrow();
+    expect(() => inspectPng(png(['IHDR', 13], ['IDAT', 40], ['eXIf', exif]).slice(0, -30))).toThrow();
   });
 });
 
@@ -68,7 +153,13 @@ describe('prepareGuestUpload', () => {
   let bitmapSize: { width: number; height: number };
   let encoded: Blob | null;
 
-  const photo = (type: string, name = 'photo.jpg', bytes: Uint8Array = new Uint8Array(5000)) =>
+  /** 5000 bytes of JPEG without a capture date. */
+  const plainJpeg = () => {
+    const bytes = new Uint8Array(5000);
+    bytes.set([0xff, 0xd8, 0xff, 0xda, 0x00, 0x02]);
+    return bytes;
+  };
+  const photo = (type: string, name = 'photo.jpg', bytes: Uint8Array = plainJpeg()) =>
     new File([bytes], name, { type, lastModified: 1234 });
 
   beforeEach(() => {
@@ -115,14 +206,53 @@ describe('prepareGuestUpload', () => {
     expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1500, 2000);
   });
 
-  it('re-encodes PNG and WebP in kind, without a capture date', async () => {
-    for (const type of ['image/png', 'image/webp']) {
+  const staticPng = (...extra: Array<[string, Uint8Array | number]>) =>
+    png(['IHDR', 13], ...extra, ['IDAT', 5000], ['IEND', 0]);
+  const staticWebp = () => {
+    const bytes = new Uint8Array(5000);
+    bytes.set(new TextEncoder().encode('RIFF\0\0\0\0WEBPVP8 '));
+    return bytes;
+  };
+
+  it('re-encodes PNG and WebP in kind', async () => {
+    for (const [type, bytes] of [['image/png', staticPng()], ['image/webp', staticWebp()]] as const) {
       encoded = new Blob([new Uint8Array(100)], { type });
-      const result = await prepareGuestUpload(photo(type, 'a'), 2048);
+      const result = await prepareGuestUpload(photo(type, 'a', bytes), 2048);
       expect(result.file.type).toBe(type);
       expect(result.file.size).toBe(100);
       expect(result.capturedAt).toBeNull();
     }
+  });
+
+  it('sends the date of a scaled PNG read from its eXIf chunk', async () => {
+    encoded = new Blob([new Uint8Array(100)], { type: 'image/png' });
+    const bytes = staticPng(['eXIf', tiffWithDates({ [CREATE_DATE]: '2023:05:01 09:10:11' })]);
+    const result = await prepareGuestUpload(photo('image/png', 'a.png', bytes), 2048);
+    expect(result.file.size).toBe(100);
+    expect(result.capturedAt).toBe('2023:05:01 09:10:11');
+  });
+
+  it('sends the original when the capture date cannot be established', async () => {
+    // A date the server would read from the file but the form field cannot carry.
+    const odd = photo('image/jpeg', 'odd.jpg', (() => {
+      const bytes = new Uint8Array(5000);
+      bytes.set(jpegWithExifDate('2024:13:41 09:10:11'));
+      return bytes;
+    })());
+    expect(await prepareGuestUpload(odd, 2048)).toEqual({ file: odd, capturedAt: null });
+    // Metadata segments running past the bytes read.
+    const long = new Uint8Array(200 * 1024);
+    long.set([0xff, 0xd8]);
+    for (let offset = 2; offset < long.length - 4; offset += 0xffff + 2) long.set([0xff, 0xec, 0xff, 0xff], offset);
+    const deep = photo('image/jpeg', 'deep.jpg', long);
+    expect(await prepareGuestUpload(deep, 2048)).toEqual({ file: deep, capturedAt: null });
+    expect(createImageBitmap).not.toHaveBeenCalled();
+  });
+
+  it('sends a PNG as it is when its animation cannot be established', async () => {
+    const original = photo('image/png', 'a.png', png(['IHDR', 13], ['iTXt', 64]));
+    expect(await prepareGuestUpload(original, 2048)).toEqual({ file: original, capturedAt: null });
+    expect(createImageBitmap).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -151,13 +281,13 @@ describe('prepareGuestUpload', () => {
   });
 
   it('sends the original when the result is not smaller', async () => {
-    const original = photo('image/jpeg', 'small.jpg', new Uint8Array(100));
+    const original = photo('image/jpeg', 'small.jpg', plainJpeg().slice(0, 100));
     expect((await prepareGuestUpload(original, 2048)).file).toBe(original);
   });
 
   it('sends the original when the browser cannot encode the format', async () => {
     encoded = new Blob([new Uint8Array(100)], { type: 'image/png' });
-    const original = photo('image/webp', 'a.webp');
+    const original = photo('image/webp', 'a.webp', staticWebp());
     expect((await prepareGuestUpload(original, 2048)).file).toBe(original);
     encoded = null;
     expect((await prepareGuestUpload(original, 2048)).file).toBe(original);
@@ -200,12 +330,8 @@ describe('prepareGuestUpload', () => {
     const animatedWebp = photo('image/webp', 'a.webp', webp);
     expect((await prepareGuestUpload(animatedWebp, 2048)).file).toBe(animatedWebp);
 
-    const png = new Uint8Array(5000);
-    png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
-    png.set(new TextEncoder().encode('IHDR'), 12);
-    png.set([0, 0, 0, 8], 33);
-    png.set(new TextEncoder().encode('acTL'), 37);
-    const apng = photo('image/png', 'a.png', png);
+    // acTL behind a text chunk larger than any leading slice of the file.
+    const apng = photo('image/png', 'a.png', png(['IHDR', 13], ['iTXt', 200 * 1024], ['acTL', 8], ['IDAT', 5000], ['IEND', 0]));
     expect((await prepareGuestUpload(apng, 2048)).file).toBe(apng);
     expect(createImageBitmap).not.toHaveBeenCalled();
   });
