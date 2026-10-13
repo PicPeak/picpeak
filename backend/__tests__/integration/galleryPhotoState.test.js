@@ -121,6 +121,16 @@ describe('gallery photo state', () => {
     expect(list.body.event.live_refresh).toBe(false);
   });
 
+  it('travels with a duplicated gallery', () => {
+    // Source inspection: the duplicate route builds its insert row by hand,
+    // and a column it does not name falls back to the default (off).
+    const crud = fs.readFileSync(path.join(__dirname, '../../src/routes/adminEvents/crud.js'), 'utf8');
+    const start = crud.indexOf('router.post(\'/:id/duplicate\'');
+    const handler = crud.slice(start, crud.indexOf('logActivity(\'event_duplicated\'', start));
+    expect(start).toBeGreaterThan(-1);
+    expect(handler).toMatch(/live_refresh:\s*formatBoolean\(parseBooleanInput\(source\.live_refresh, false\)\)/);
+  });
+
   it('counts against the gallery viewer budget, not a blanket exemption', () => {
     const jwt = require('jsonwebtoken');
     const { isOwnGalleryViewerRequest, isOwnGalleryImageRequest } = require('../../src/services/rateLimitService');

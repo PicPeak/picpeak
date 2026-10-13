@@ -404,7 +404,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   );
   const newPhotoCount = useLiveRefresh({
     slug,
-    enabled: data?.event?.live_refresh === true && !hiddenUntilReveal && !uploadProcessing
+    // revealArmed too: the reveal poll above keeps refetching the list after
+    // the reveal, for as long as the mode is on.
+    enabled: data?.event?.live_refresh === true && !hiddenUntilReveal && !revealArmed && !uploadProcessing
       && !peopleData?.scan?.in_progress,
     loadedCount: data?.photos?.length ?? 0,
     loadedMaxId,

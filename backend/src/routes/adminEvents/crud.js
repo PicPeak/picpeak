@@ -980,6 +980,8 @@ module.exports = (router) => {
         // of the source (issue 1562) is not — a copy starts complete.
         folder_structure: formatBoolean(parseBooleanInput(source.folder_structure, false)),
         delivery_badge_label: source.delivery_badge_label || null,
+        // Live refresh is guest-facing behaviour of the gallery (issue 1733).
+        live_refresh: formatBoolean(parseBooleanInput(source.live_refresh, false)),
         allow_downloads: source.allow_downloads,
         disable_right_click: source.disable_right_click,
         enable_devtools_protection: source.enable_devtools_protection,
