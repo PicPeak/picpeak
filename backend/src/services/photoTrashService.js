@@ -126,6 +126,37 @@ async function holdClaim(row, extra = {}) {
 /** Is this S3 object the one the operation noted on the row (move_tag)? */
 const isTagged = (row, stat) => Boolean(row.move_tag && stat && stat.etag === row.move_tag);
 
+async function sha256Of(storage, key) {
+  const hash = crypto.createHash('sha256');
+  for await (const chunk of await storage.get(key)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
+/**
+ * After an interrupted S3 move there is an object at the photo's place and
+ * one under trash_key. Is the one at the photo's place this operation's, so
+ * that one of the two is surplus? Yes when it carries the noted ETag. When
+ * nothing could be noted (the request died right after its copy), the bytes
+ * decide: of two identical objects either may go, and nothing else may.
+ * Read as streams, and only on this path, which a crash leads to.
+ */
+async function isSameObject(storage, row, placeKey, atPlace, inTrash) {
+  if (isTagged(row, atPlace)) return true;
+  if (Number(atPlace.size) !== Number(inTrash.size)) return false;
+  return (await sha256Of(storage, placeKey)) === (await sha256Of(storage, row.trash_key));
+}
+
+/**
+ * The gallery's row, before anything else in a transaction that goes on to
+ * lock a trash row and photo, feedback or guest rows: deleting a gallery
+ * takes the event first and those after (deleteEventCascade), and a
+ * transaction that took them the other way round would deadlock with it on
+ * PostgreSQL. SQLite has one writer.
+ */
+async function lockEvent(trx, eventId) {
+  if (trx.client.config.client === 'pg') await trx('events').where({ id: eventId }).forUpdate().first('id');
+}
+
 /**
  * First statement of a transaction that closes a claim. The write takes the
  * row (a row lock on PostgreSQL, the write lock on SQLite) before anything
@@ -158,6 +189,9 @@ async function moveClaimed(row, fromKey, toKey, { tagDestination = false } = {})
   await storage.copy(fromKey, toKey);
   const landed = tagDestination ? await storage.stat(toKey).catch(() => null) : null;
   const tag = (landed && landed.etag) || null;
+  // Without the note the source stays: once it is gone nothing could tell
+  // the copy from another object any more. The caller undoes the move.
+  if (tagDestination && !tag) throw new Error(`Could not identify the copy at ${toKey}; the move was not completed`);
   try {
     await holdClaim(row, tagDestination ? { move_tag: tag } : {});
   } catch (error) {
@@ -239,6 +273,7 @@ async function detachChildren(trx, photo, event) {
  */
 async function commitTrash(row, photo, event) {
   await db.transaction(async (trx) => {
+    await lockEvent(trx, row.event_id);
     await lockClaim(trx, row);
     // FOR UPDATE on PostgreSQL, here and for the feedback: a guest merge that
     // is rewriting these rows finishes first, and the snapshot holds what it
@@ -260,9 +295,8 @@ async function commitTrash(row, photo, event) {
  * A trashing that did not reach step 3: put things back, without ever
  * deleting the only copy of the file. For a caller that holds the claim.
  *   - a file at both keys, and the one in place is the object this trashing
- *     noted before it copied (move_tag, S3): the move stopped between copy
- *     and delete, the copy under trash_key is surplus; drop it and the
- *     pending row
+ *     copied (S3, isSameObject): the move stopped between copy and delete,
+ *     the copy under trash_key is surplus; drop it and the pending row
  *   - a file at both keys otherwise: the file in place is not this photo's
  *     original but one somebody put there since (local storage renames, so
  *     there it always is). The original cannot go back over it and must not
@@ -277,7 +311,8 @@ async function undoPending(row) {
     const storage = getStorage();
     const inPlace = await storage.stat(row.original_key);
     const inTrash = await storage.stat(row.trash_key);
-    const surplusCopy = inPlace && inTrash && storage.kind() === 's3' && isTagged(row, inPlace);
+    const surplusCopy = inPlace && inTrash && storage.kind() === 's3'
+      && await isSameObject(storage, row, row.original_key, inPlace, inTrash);
     if (surplusCopy) {
       await holdClaim(row);
       await storage.delete(row.trash_key);
@@ -531,7 +566,7 @@ async function forgetGuest(guestId) {
  * rows back without a name.
  *
  * Runs in the merge's transaction and before it locks the guest rows: every
- * writer takes a trash row first and guest or feedback rows after, so a
+ * writer takes the event, then a trash row, and guest or feedback rows after, so a
  * restore that is inserting rows for these guests and the merge cannot wait
  * on each other. A trashing or restore that holds a row finishes before the
  * merge reads it; one that comes later waits for the merge to commit.
@@ -542,6 +577,7 @@ async function mergeGuests(trx, survivor, sourceGuestIds) {
   const name = require('./photoCredit').creditName(survivor.name);
   const { lastMutatedFirst } = require('./feedbackService');
   let changed = 0;
+  await lockEvent(trx, survivor.event_id);
   for (const rowId of await trx('photo_trash').where({ event_id: survivor.event_id }).pluck('id')) {
     const row = await trx('photo_trash').where({ id: rowId }).forUpdate().first('photo_row', 'children');
     if (!row) continue;
@@ -654,6 +690,7 @@ async function snapshotCoercion() {
  * Returns the id the photo now has.
  */
 async function insertRestored(trx, event, row, columns, forEngine) {
+  await lockEvent(trx, event.id);
   await lockClaim(trx, row);
   // The snapshot as it is now, under the lock: a guest forgotten since the
   // caller read the row is already out of it (forgetGuest).
@@ -669,11 +706,13 @@ async function insertRestored(trx, event, row, columns, forEngine) {
   delete record.id;
   record.event_id = event.id;
   // Processing reads this: a restored photo was announced when it was
-  // uploaded and is not announced again (photoProcessor.processPhoto). Not a
-  // photo held for review or rejected: that one has never been announced,
-  // and when it is approved before this run completes, the run is what
-  // announces it (uploadReviewService.announceApproved).
-  if (columns.has('restored_from_trash_at')) record.restored_from_trash_at = record.moderation_status ? null : nowIso();
+  // uploaded and is not announced again (photoProcessor.processPhoto). A
+  // photo held for review has not been announced yet: approving it clears
+  // the mark (uploadReviewService.moderatePhotos). Set on every restore all
+  // the same, because it is also what tells this row from the one the
+  // folder watcher may have read before the photo was trashed
+  // (fileWatcher.removePhoto).
+  if (columns.has('restored_from_trash_at')) record.restored_from_trash_at = nowIso();
   const keepsId = !(await trx('photos').where({ id: row.photo_id }).first('id'));
   if (keepsId) record.id = row.photo_id;
 
@@ -760,8 +799,9 @@ async function insertRestored(trx, event, row, columns, forEngine) {
  * Otherwise:
  *   - file in the trash and at the destination: an S3 move is copy then
  *     delete, and the destination holds the copy if it is the object the
- *     restore noted (move_tag); it goes. Any other object there, and on
- *     local storage (which renames) every file there, is not this photo's.
+ *     restore put there (isSameObject); it goes. Any other object there,
+ *     and on local storage (which renames) every file there, is not this
+ *     photo's.
  *   - file at the destination only: move it back; on S3, if it is the
  *     object the restore noted
  * A file a photo row names is that photo's, whatever else.
@@ -777,7 +817,7 @@ async function settleRestore(row, moved) {
       && !(await db('photos').where({ event_id: row.event_id }).whereIn('path', [relative, targetKey]).first('id'));
     const s3 = storage.kind() === 's3';
     if (mine && inTrash) {
-      if (s3 && isTagged(row, atTarget)) {
+      if (s3 && await isSameObject(storage, row, targetKey, atTarget, inTrash)) {
         await holdClaim(row);
         await storage.delete(targetKey);
       }

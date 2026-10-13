@@ -65,7 +65,10 @@ async function moderatePhotos(eventId, photoIds, action) {
   if (action === 'approve') {
     const approving = await rows.clone()
       .select('id', 'filename', 'original_filename', 'size_bytes', 'processing_status');
-    const updated = await rows.update({ visibility: 'visible', moderation_status: null });
+    // A photo under review was never announced, one that came back from the
+    // trash (issue 1733) included: without its mark the processing run
+    // still to come announces it like any other (photoProcessor).
+    const updated = await rows.update({ visibility: 'visible', moderation_status: null, restored_from_trash_at: null });
     if (updated > 0) await announceApproved(eventId, approving);
     return { updated, photoIds: approving.map((p) => Number(p.id)) };
   }

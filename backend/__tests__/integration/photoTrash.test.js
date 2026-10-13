@@ -408,6 +408,8 @@ describe('photo trash (issue 1733)', () => {
       expect((await restore(event, [row.id])).status).toBe(200);
       const after = await db('photos').where({ id: photo.id }).first();
       expect(after).toMatchObject({ moderation_status: 'pending', visibility: 'hidden', uploaded_by_admin_id: id.other });
+      // Marked like every restored row: the folder watcher tells it from the row before the trash by this.
+      expect(after.restored_from_trash_at).toEqual(expect.any(String));
       expect(webhookFire).not.toHaveBeenCalled();
     });
 
@@ -426,6 +428,7 @@ describe('photo trash (issue 1733)', () => {
       // Approved before the worker is done: the approval leaves the announcement to the worker.
       await moderatePhotos(event.id, [photo.id], 'approve');
       expect(webhookFire).not.toHaveBeenCalledWith('photo.uploaded', expect.anything());
+      expect((await db('photos').where({ id: photo.id }).first()).restored_from_trash_at).toBeNull();
       await processPhoto(photo.id);
       // It was never announced before: held uploads are not.
       expect(webhookFire).toHaveBeenCalledWith('photo.uploaded', expect.objectContaining({ photo: expect.objectContaining({ id: photo.id }) }));
@@ -756,6 +759,25 @@ describe('photo trash (issue 1733)', () => {
       expect(await db('photos').where({ id: photo.id }).first()).toBeDefined();
       expect(await count('photo_feedback', { photo_id: photo.id })).toBe(1);
       expect(webhookFire).not.toHaveBeenCalled();
+    });
+
+    it('does not take a restored row for the one it read before the photo was trashed, held photos included', async () => {
+      const event = await mkEvent();
+      for (const fields of [{}, { moderation_status: 'pending', visibility: 'hidden' }]) {
+        const photo = await mkPhoto(event, fields);
+        // The watcher has read the live row; trash and restore both land before its delete.
+        const access = jest.spyOn(fs.promises, 'access').mockImplementationOnce(async () => {
+          expect((await del(event, photo)).status).toBe(200);
+          expect((await restore(event, [(await trashRowOf(photo.id)).id])).status).toBe(200);
+          throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        });
+        try {
+          await watcher.removePhoto(abs(photo.key));
+        } finally {
+          access.mockRestore();
+        }
+        expect(await db('photos').where({ id: photo.id }).first()).toBeDefined();
+      }
     });
 
     it('does not delete a row that was restored while it looked at a removed file', async () => {
@@ -1249,9 +1271,9 @@ describe('photo trash (issue 1733)', () => {
       objects.set = (key, value) => { etags.set(key, `"etag-${writes += 1}"`); return put(key, value); };
       etagOf = (key) => etags.get(key);
       const notFound = () => Object.assign(new Error('NotFound'), { name: 'NotFound', $metadata: { httpStatusCode: 404 } });
-      // The adapter's surface the trash may use. Anything that reads an
-      // object's body (download, downloadStream) is absent on purpose: a
-      // call would throw.
+      // The adapter's surface the trash may use. Reading an object's body is
+      // recorded: a move never does (the `calls` a test compares show it),
+      // only the recovery that has to tell two objects apart.
       backend.adapter = {
         bucket: 'test',
         s3Client: {
@@ -1272,6 +1294,11 @@ describe('photo trash (issue 1733)', () => {
           objects.set(dst, objects.get(src));
         },
         delete: async (key) => { calls.push(['delete', key]); objects.delete(key); },
+        downloadStream: async (key) => {
+          calls.push(['read', key]);
+          if (!objects.has(key)) throw notFound();
+          return require('stream').Readable.from([objects.get(key)]);
+        },
         exists: async (key) => objects.has(key),
       };
       backend.indexLoaded = true;
@@ -1563,6 +1590,55 @@ describe('photo trash (issue 1733)', () => {
       expect(objects.get(photo.key)).toBe(foreign);
       expect(objects.has(row.trash_key)).toBe(true);
       expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed', move_tag: null });
+    });
+
+    it('keeps the source of a restore whose copy it cannot identify, and takes the copy back', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      expect((await del(event, photo)).body).toMatchObject({ trashed: 1 });
+      const row = await trashRowOf(photo.id);
+
+      // The HEAD after the copy fails: there is no ETag to note.
+      const send = backend.adapter.s3Client.send;
+      let copied = false;
+      const copy = backend.adapter.copy;
+      backend.adapter.copy = async (...args) => { await copy(...args); copied = true; };
+      backend.adapter.s3Client.send = async (command) => {
+        if (copied && command.input.Key === photo.key) { copied = false; throw new Error('HEAD timed out'); }
+        return send(command);
+      };
+      let res;
+      try {
+        res = await restore(event, [row.id]);
+      } finally {
+        backend.adapter.s3Client.send = send;
+        backend.adapter.copy = copy;
+      }
+      expect(res.status).toBe(409);
+      // The source was not deleted, and the copy, identical byte for byte, is gone again.
+      expect(objects.has(row.trash_key)).toBe(true);
+      expect(objects.has(photo.key)).toBe(false);
+      expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed', move_tag: null });
+
+      expect((await restore(event, [row.id])).status).toBe(200);
+      expect(objects.has(photo.key)).toBe(true);
+    });
+
+    it('removes the copy of a restore that crashed before it could note it', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event);
+      expect((await del(event, photo)).body).toMatchObject({ trashed: 1 });
+      const row = await trashRowOf(photo.id);
+      // Marked as moving, copied, crash: both objects, no ETag on the row.
+      objects.set(photo.key, objects.get(row.trash_key));
+      await db('photo_trash').where({ id: row.id }).update({
+        state: 'restoring', state_changed_at: new Date(Date.now() - 3600000).toISOString(), restore_move_at: now(),
+      });
+
+      await photoTrash.purgeExpired();
+      expect(objects.has(photo.key)).toBe(false);
+      expect(objects.has(row.trash_key)).toBe(true);
+      expect(await trashRowOf(photo.id)).toMatchObject({ state: 'trashed' });
     });
 
     it('drops the surplus copy when a trashing crashed between copy and delete', async () => {
