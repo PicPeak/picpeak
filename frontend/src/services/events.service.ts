@@ -89,6 +89,7 @@ interface UpdateEventData {
   allow_user_uploads?: boolean;
   guest_name_mode?: GuestNameMode;
   show_credits_to_guests?: boolean;
+  live_refresh?: boolean;
   // Reveal mode (#838)
   reveal_mode?: boolean;
   reveal_at?: string | null;
@@ -109,6 +110,8 @@ interface UpdateEventData {
   // untouched, send [] to clear.
   assigned_admin_ids?: number[];
   review_contributor_uploads?: boolean;
+  // Hold guest uploads until they are approved (issue 1733).
+  moderate_guest_uploads?: boolean;
 }
 
 /** Two-stage delivery state of one gallery (issue 1562). */
@@ -168,7 +171,9 @@ export type EventSortBy =
   | 'expires_at'
   | 'slug'
   | 'photo_count'
-  | 'status';
+  | 'status'
+  // Two-stage delivery (issue 1562): the dashboard's awaiting-delivery card.
+  | 'delivery_due_at';
 
 interface EventsListResponse {
   events: Event[];

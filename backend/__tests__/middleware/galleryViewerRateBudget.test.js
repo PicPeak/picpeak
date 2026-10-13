@@ -71,6 +71,17 @@ describe('a verified viewer working in their gallery', () => {
     expect(await statuses(app, 1, 'get', '/api/public/settings')).toEqual([429]);
   });
 
+  // Every open tab polls photos/state (live refresh): in the viewer bucket
+  // a full venue behind one address took the likes down with it.
+  it('counts the live-refresh poll in a bucket of its own', async () => {
+    const app = await buildApp();
+    const budget = MAX * GALLERY_VIEWER_BUDGET_FACTOR;
+    const POLL = '/api/gallery/wedding-2026/photos/state';
+    expect(await statuses(app, budget + 1, 'get', POLL, viewer())).toEqual([...Array(budget).fill(200), 429]);
+    expect(await statuses(app, budget + 1, 'post', FEEDBACK, viewer())).toEqual([...Array(budget).fill(200), 429]);
+    expect(await statuses(app, 1, 'get', `${POLL}/`, viewer())).toEqual([429]);
+  });
+
   // photo/<id>/view is the beacon the lightbox posts for every slide: left
   // on the ordinary budget, about 300 slides still locked the guest out.
   it.each(['photos', 'photos/42/feedback', 'my-feedback', 'feedback-summary', 'feedback-settings', 'info', 'stats', 'people', 'photo/42/view'])(

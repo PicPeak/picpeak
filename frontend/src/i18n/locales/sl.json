@@ -821,6 +821,20 @@
     "language": "Jezik"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} datoteka je že v tej galeriji",
+      "title_two": "{{count}} datoteki sta že v tej galeriji",
+      "title_few": "{{count}} datoteke so že v tej galeriji",
+      "title_other": "{{count}} datotek je že v tej galeriji",
+      "toast_one": "{{count}} datoteka je že v tej galeriji in je bila preskočena — podrobnosti so v vrstici za nalaganje na vrhu.",
+      "toast_two": "{{count}} datoteki sta že v tej galeriji in sta bili preskočeni — podrobnosti so v vrstici za nalaganje na vrhu.",
+      "toast_few": "{{count}} datoteke so že v tej galeriji in so bile preskočene — podrobnosti so v vrstici za nalaganje na vrhu.",
+      "toast_other": "{{count}} datotek je že v tej galeriji in je bilo preskočenih — podrobnosti so v vrstici za nalaganje na vrhu.",
+      "badge": "Dvojnik",
+      "sameAs": "enaka vsebina kot {{name}}",
+      "uploadAnyway": "Vseeno naloži",
+      "uploadAllAnyway": "Vseeno naloži vse"
+    },
     "photoCategory": "Kategorija fotografije",
     "noCategory": "Brez kategorije",
     "eventSpecific": "(specifično za dogodek)",
@@ -837,6 +851,7 @@
     "processingProgress": "Končano {{complete}} od {{total}}",
     "processingFailed_one": "{{count}} fotografije ni bilo mogoče obdelati",
     "processingFailed_other": "{{count}} fotografij ni bilo mogoče obdelati",
+    "heldForReview": "Hvala! Vaše fotografije bodo v galeriji vidne, ko jih fotograf odobri.",
     "processingStillRunning": "Vaše nalaganje se še obdeluje — kmalu bo prikazano v galeriji.",
     "retryFailed": "Ponovni poskus ni uspel",
     "uploadComplete": "Nalaganje končano!",
@@ -861,6 +876,7 @@
     "uploadMedia": "Naloži fotografije in videe",
     "maxFilesReached": "Dovoljenih je največ {{limit}} datotek",
     "someFilesSkipped": "Dodati je mogoče samo še {{allowed}} datotek (omejitev {{limit}})",
+    "filesOverLimit": "Dodanih {{allowed}} od {{found}} datotek. En prenos sprejme največ {{limit}} datotek; preostale naložite posebej.",
     "tooManyFiles": "Naenkrat je mogoče naložiti največ {{limit}} datotek",
     "limitInfo": "Izbranih {{selected}} od {{limit}} datotek (preostane {{remaining}})",
     "limitReached": "Dosežena omejitev nalaganja ({{limit}} datotek na paket)",
@@ -1244,6 +1260,10 @@
     "cancelSelection": "Prekliči izbiro",
     "selectAll": "Izberi vse",
     "deselectAll": "Počisti izbiro",
+    "selectionTray": {
+      "title": "Izbrano ({{count}})",
+      "remove": "Odstrani {{name}} iz izbire"
+    },
     "copyFilenames": {
       "button": "Kopiraj imena datotek",
       "title": "Kopiraj imena datotek",
@@ -1384,6 +1404,10 @@
     "backToGallery": "Vse fotografije",
     "downloadFolder": "Prenesi mapo ({{count}})",
     "downloadFolderCapped": "Prenesi prvih {{limit}} od {{total}}",
+    "newPhotos_one": "{{count}} nova fotografija",
+    "newPhotos_two": "{{count}} novi fotografiji",
+    "newPhotos_few": "{{count}} nove fotografije",
+    "newPhotos_other": "{{count}} novih fotografij",
     "downloadEverything": "Prenesi vse fotografije",
     "downloadFolder_one": "Prenesi mapo ({{count}})",
     "downloadFolder_other": "Prenesi mapo ({{count}})",
@@ -1411,6 +1435,11 @@
       "uploadedBy": "Naložil(a) {{name}}",
       "photoBy": "Fotografija: {{name}}"
     },
+    "filmStrip": {
+      "label": "Fotografije",
+      "photo": "Fotografija {{position}} od {{total}}",
+      "photoNamed": "Fotografija {{position}} od {{total}}: {{name}}"
+    },
     "firstLook": "Prvi izbor",
     "viewAllPhotos": "Vse fotografije",
     "viewSwitch": "Prikaži fotografije po",
@@ -1436,7 +1465,12 @@
       "withDate": "Preostale slike se še urejajo — celotna galerija bo na voljo najpozneje {{date}}.",
       "noDetails": "Preostale slike se še urejajo.",
       "progressLabel": "Do zdaj dostavljene fotografije"
-    }
+    },
+    "preparedDownload": "Vaš pripravljeni prenos",
+    "downloadNotify": "Obvestite me po e-pošti, ko bo pripravljen",
+    "downloadNotifyRequested": "Ko bo prenos pripravljen, vam bomo poslali e-pošto. To okno lahko zaprete.",
+    "downloadNotifyFailed": "E-poštnega obvestila ni bilo mogoče nastaviti. To okno pustite odprto.",
+    "downloadGone": "Ta prenos ni več na voljo. Zahtevajte ga znova."
   },
   "categories": {
     "title": "Kategorije fotografij",
@@ -1482,6 +1516,8 @@
   "events": {
     "revealMode": "Način razkritja (skrij galerijo do razkritja)",
     "revealModeHelp": "Gostje lahko nalagajo fotografije, vendar jih ne vidijo, dokler galerije ne razkrijete — ročno ali ob načrtovanem času. Diaprojekcija in dostop za stranke delujeta naprej.",
+    "liveRefresh": "Sprotno osveževanje (goste opozori na nove fotografije)",
+    "liveRefreshHelp": "Odprta galerija vsakih 20 sekund preveri, ali so prispele nove fotografije, in gostom ponudi gumb »Nove fotografije«. Nič se ne naloži samodejno.",
     "revealAt": "Načrtovano razkritje (neobvezno)",
     "revealAtHelp": "Pustite prazno za ročno razkritje z gumbom »Razkrij zdaj«.",
     "revealModeStatus": "Način razkritja",
@@ -1662,6 +1698,8 @@
     "userUploads": "Nastavitve nalaganja gostov",
     "allowUserUploads": "Dovoli gostom nalaganje fotografij",
     "allowUserUploadsHelp": "Omogoči gostom nalaganje lastnih fotografij v to galerijo",
+    "moderateGuestUploads": "Odobri nalaganja gostov pred objavo",
+    "moderateGuestUploadsHelp": "Nalaganja gostov ostanejo skrita gostom in strankam, dokler jih vi ali pregledovalec ne odobrite na zavihku Fotografije. Zavrnjena nalaganja ostanejo skrita. Čakajoča nalaganja štejejo v omejitev števila fotografij.",
     "allowUserUploadsDescription": "Omogoči gostom nalaganje lastnih fotografij v to galerijo",
     "uploadCategory": "Kategorija za nalaganje",
     "selectCategory": "Izberite kategorijo za nalaganja gostov",
@@ -1975,7 +2013,8 @@
         "teamMembers_two": "{{count}} člana ekipe",
         "teamMembers_few": "{{count}} člani ekipe",
         "teamMembers_other": "{{count}} članov ekipe",
-        "teamReview": "nalaganja ekipe se pregledujejo"
+        "teamReview": "nalaganja ekipe se pregledujejo",
+        "uploadsApproved": "potrebna odobritev"
       },
       "passwordOwnerOnly": "Samo lastnik galerije lahko spremeni geslo ali ga izklopi."
     },
@@ -2070,6 +2109,11 @@
       "reviewUploadsHelp": "Zadrži nalaganja članov ekipe, katerih vloga nima dovoljenja »Review Team Uploads«: ostanejo skrita gostom in strankam, dokler jih vi ali pregledovalec ne odobrite na zavihku Fotografije. Vloge Admin, Editor in Solo Photographer imajo to dovoljenje privzeto, zato njihova nalaganja nikoli niso zadržana.",
       "reviewUploadsHelpMember": "Vaša nalaganja v to galerijo ostanejo skrita gostom in strankam, dokler jih lastnik ali pregledovalec ne odobri.",
       "reviewUploadsHelpReviewer": "Nalaganja članov ekipe brez dovoljenja »Review Team Uploads« čakajo na odobritev na zavihku Fotografije. Vaša so objavljena takoj."
+    },
+    "expiryPresets": {
+      "label": "Hitra izbira poteka",
+      "days": "{{days}} dni",
+      "fromToday": "Od danes:"
     },
     "nextSteps": {
       "title": "Pred deljenjem",
@@ -3033,7 +3077,10 @@
       "eventIntro": "Samo za to galerijo preglasi globalne nastavitve prenosa. »Podeduj« sledi Nastavitve → Ločljivosti za prenos.",
       "inheritWith": "Podeduj ({{value}})",
       "effective": "Trenutno se daje: {{standard}}",
-      "pickerOn": "gostje lahko izberejo drugo velikost"
+      "pickerOn": "gostje lahko izberejo drugo velikost",
+      "retention": "Pripravljene prenose hrani (ur)",
+      "retentionHint": "Kako dolgo prenos, pripravljen v velikosti po meri, ostane na voljo, preden se izbriše. Daljši čas gostom omogoča, da se ponj vrnejo pozneje, vendar vsak pripravljeni prenos zasede približno toliko prostora na disku kot fotografije v njem. Velja za prenose, pripravljene od zdaj naprej.",
+      "retentionInvalid": "Vnesite celo število ur med {{min}} in {{max}}."
     },
     "captureDates": {
       "title": "Datumi zajema",
@@ -3797,14 +3844,18 @@
       "apiPhotosDownloaded_other": "Žeton API »{{token_name}}« je prenesel {{count}} izvirnikov iz {{eventName}}",
       "apiPhotosZipDownloaded": "Žeton API »{{token_name}}« je prenesel ZIP z {{photo_count}} izvirniki iz {{eventName}}",
       "eventTeamChanged": "Ekipa spremenjena za {{eventName}}",
-      "photosReviewApproved_one": "{{count}} nalaganje ekipe odobreno v {{eventName}}",
-      "photosReviewApproved_two": "{{count}} nalaganji ekipe odobreni v {{eventName}}",
-      "photosReviewApproved_few": "{{count}} nalaganja ekipe odobrena v {{eventName}}",
-      "photosReviewApproved_other": "{{count}} nalaganj ekipe odobrenih v {{eventName}}",
-      "photosReviewRejected_one": "{{count}} nalaganje ekipe zavrnjeno v {{eventName}}",
-      "photosReviewRejected_two": "{{count}} nalaganji ekipe zavrnjeni v {{eventName}}",
-      "photosReviewRejected_few": "{{count}} nalaganja ekipe zavrnjena v {{eventName}}",
-      "photosReviewRejected_other": "{{count}} nalaganj ekipe zavrnjenih v {{eventName}}",
+      "photosReviewApproved_one": "{{count}} nalaganje odobreno v {{eventName}}",
+      "photosReviewApproved_two": "{{count}} nalaganji odobreni v {{eventName}}",
+      "photosReviewApproved_few": "{{count}} nalaganja odobrena v {{eventName}}",
+      "photosReviewApproved_other": "{{count}} nalaganj odobrenih v {{eventName}}",
+      "photosReviewRejected_one": "{{count}} nalaganje zavrnjeno v {{eventName}}",
+      "photosReviewRejected_two": "{{count}} nalaganji zavrnjeni v {{eventName}}",
+      "photosReviewRejected_few": "{{count}} nalaganja zavrnjena v {{eventName}}",
+      "photosReviewRejected_other": "{{count}} nalaganj zavrnjenih v {{eventName}}",
+      "guestUploadsPendingReview_one": "{{count}} nalaganje gosta čaka na pregled v {{eventName}}",
+      "guestUploadsPendingReview_two": "{{count}} nalaganji gostov čakata na pregled v {{eventName}}",
+      "guestUploadsPendingReview_few": "{{count}} nalaganja gostov čakajo na pregled v {{eventName}}",
+      "guestUploadsPendingReview_other": "{{count}} nalaganj gostov čaka na pregled v {{eventName}}",
       "photoDecision": "Fotografija odobrena ali zavrnjena v {{eventName}}",
       "guestFeedbackDecision": "Gost je odobril ali zavrnil fotografijo v {{eventName}}"
     },
@@ -4182,14 +4233,18 @@
       "photo_decision": "Fotografija odobrena ali zavrnjena v {{eventName}}",
       "guest_feedback_decision": "Gost je odobril ali zavrnil fotografijo v {{eventName}}",
       "event_team_changed": "Ekipa spremenjena za {{eventName}}",
-      "photos_review_approved_one": "{{count}} nalaganje ekipe odobreno v {{eventName}}",
-      "photos_review_approved_two": "{{count}} nalaganji ekipe odobreni v {{eventName}}",
-      "photos_review_approved_few": "{{count}} nalaganja ekipe odobrena v {{eventName}}",
-      "photos_review_approved_other": "{{count}} nalaganj ekipe odobrenih v {{eventName}}",
-      "photos_review_rejected_one": "{{count}} nalaganje ekipe zavrnjeno v {{eventName}}",
-      "photos_review_rejected_two": "{{count}} nalaganji ekipe zavrnjeni v {{eventName}}",
-      "photos_review_rejected_few": "{{count}} nalaganja ekipe zavrnjena v {{eventName}}",
-      "photos_review_rejected_other": "{{count}} nalaganj ekipe zavrnjenih v {{eventName}}"
+      "photos_review_approved_one": "{{count}} nalaganje odobreno v {{eventName}}",
+      "photos_review_approved_two": "{{count}} nalaganji odobreni v {{eventName}}",
+      "photos_review_approved_few": "{{count}} nalaganja odobrena v {{eventName}}",
+      "photos_review_approved_other": "{{count}} nalaganj odobrenih v {{eventName}}",
+      "photos_review_rejected_one": "{{count}} nalaganje zavrnjeno v {{eventName}}",
+      "photos_review_rejected_two": "{{count}} nalaganji zavrnjeni v {{eventName}}",
+      "photos_review_rejected_few": "{{count}} nalaganja zavrnjena v {{eventName}}",
+      "photos_review_rejected_other": "{{count}} nalaganj zavrnjenih v {{eventName}}",
+      "guest_uploads_pending_review_one": "{{count}} nalaganje gosta čaka na pregled v {{eventName}}",
+      "guest_uploads_pending_review_two": "{{count}} nalaganji gostov čakata na pregled v {{eventName}}",
+      "guest_uploads_pending_review_few": "{{count}} nalaganja gostov čakajo na pregled v {{eventName}}",
+      "guest_uploads_pending_review_other": "{{count}} nalaganj gostov čaka na pregled v {{eventName}}"
     },
     "people": {
       "title": "Osebe v tej galeriji",
@@ -5933,14 +5988,14 @@
       "waitingForAdmin_other": "Zahteve za mape, ki čakajo na skrbnika: {{count}}. Do takrat so njihove fotografije ({{photos}}) v najbližji obstoječi mapi."
     },
     "review": {
-      "pendingOwner_one": "{{count}} nalaganje vaše ekipe čaka na vaš pregled",
-      "pendingOwner_two": "{{count}} nalaganji vaše ekipe čakata na vaš pregled",
-      "pendingOwner_few": "{{count}} nalaganja vaše ekipe čakajo na vaš pregled",
-      "pendingOwner_other": "{{count}} nalaganj vaše ekipe čaka na vaš pregled",
-      "pendingMember_one": "{{count}} nalaganje ekipe čaka na pregled lastnika",
-      "pendingMember_two": "{{count}} nalaganji ekipe čakata na pregled lastnika",
-      "pendingMember_few": "{{count}} nalaganja ekipe čakajo na pregled lastnika",
-      "pendingMember_other": "{{count}} nalaganj ekipe čaka na pregled lastnika",
+      "pendingOwner_one": "{{count}} nalaganje čaka na vaš pregled",
+      "pendingOwner_two": "{{count}} nalaganji čakata na vaš pregled",
+      "pendingOwner_few": "{{count}} nalaganja čakajo na vaš pregled",
+      "pendingOwner_other": "{{count}} nalaganj čaka na vaš pregled",
+      "pendingMember_one": "{{count}} nalaganje čaka na pregled lastnika",
+      "pendingMember_two": "{{count}} nalaganji čakata na pregled lastnika",
+      "pendingMember_few": "{{count}} nalaganja čakajo na pregled lastnika",
+      "pendingMember_other": "{{count}} nalaganj čaka na pregled lastnika",
       "nonePending": "Nobeno nalaganje ne čaka na pregled.",
       "filterPending": "Čaka na pregled ({{count}})",
       "filterRejected": "Zavrnjene ({{count}})",
@@ -5959,6 +6014,8 @@
       "pendingBadge": "Čaka na pregled",
       "rejectedBadge": "Zavrnjena",
       "uploadedBy": "Naložil(a) {{name}}",
+      "sourceGuest": "Gost",
+      "sourceTeam": "Ekipa",
       "hiddenUntilApproved": "Skrita gostom in strankam do odobritve",
       "skippedOnShow_one": "{{count}} fotografija čaka na pregled in ostane skrita do odobritve",
       "skippedOnShow_two": "{{count}} fotografiji čakata na pregled in ostaneta skriti do odobritve",

@@ -31,9 +31,13 @@ interface DownloadSettings {
   picker_enabled: boolean;
   allow_original: boolean;
   resolutions: Preset[];
+  job_retention_hours: number;
 }
 
 const ORIGINAL = 'original';
+// Mirrors JOB_RETENTION_HOURS in backend/src/utils/downloadResolutions.js.
+const MIN_RETENTION_HOURS = 1;
+const MAX_RETENTION_HOURS = 168;
 
 export const DownloadsTab: React.FC = () => {
   const { t } = useTranslation();
@@ -41,7 +45,14 @@ export const DownloadsTab: React.FC = () => {
   const [form, setForm] = useState<DownloadSettings | null>(null);
   // What the server last sent, in draft shape — dirty is a comparison against it.
   const [loaded, setLoaded] = useState<DownloadSettings | null>(null);
-  const isDirty = JSON.stringify(form) !== JSON.stringify(loaded);
+  // Held as text and read as a whole: a number input reports '' while "1e2"
+  // is half typed, and parseInt would save "2.5" as 2.
+  const [retention, setRetention] = useState('');
+  const retentionHours = retention.trim() === '' ? NaN : Number(retention);
+  const retentionValid = Number.isInteger(retentionHours)
+    && retentionHours >= MIN_RETENTION_HOURS && retentionHours <= MAX_RETENTION_HOURS;
+  const isDirty = JSON.stringify(form) !== JSON.stringify(loaded)
+    || retention.trim() !== String(loaded?.job_retention_hours ?? '');
 
   const { data, isLoading } = useQuery<DownloadSettings>({
     queryKey: ['admin-download-settings'],
@@ -52,6 +63,7 @@ export const DownloadsTab: React.FC = () => {
     if (data) {
       setForm(data);
       setLoaded(data);
+      setRetention(String(data.job_retention_hours));
     }
   }, [data]);
 
@@ -64,12 +76,15 @@ export const DownloadsTab: React.FC = () => {
         download_resolutions: payload.resolutions.map((r) => ({
           label: r.label, width: r.width, height: r.height,
         })),
+        download_job_retention_hours: payload.job_retention_hours,
       });
     },
     onSuccess: (_data, payload) => {
       toast.success(t('settings.saved', 'Settings saved'));
       queryClient.invalidateQueries({ queryKey: ['admin-download-settings'] });
       setLoaded(payload);
+      setForm(payload);
+      setRetention(String(payload.job_retention_hours));
     },
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -230,11 +245,40 @@ export const DownloadsTab: React.FC = () => {
         </div>
       </Card>
 
+      <Card>
+        <label htmlFor="download-job-retention" className="block text-sm font-medium mb-1 text-body">
+          {t('settings.downloads.retention', 'Keep prepared downloads for (hours)')}
+        </label>
+        <Input
+          id="download-job-retention"
+          type="number"
+          min={MIN_RETENTION_HOURS}
+          max={MAX_RETENTION_HOURS}
+          step={1}
+          value={retention}
+          onChange={(e) => setRetention(e.target.value)}
+          className="w-28"
+          error={retentionValid ? undefined : t('settings.downloads.retentionInvalid',
+            'Enter a whole number of hours between {{min}} and {{max}}.',
+            { min: MIN_RETENTION_HOURS, max: MAX_RETENTION_HOURS })}
+        />
+        <p className="text-xs text-muted mt-1">
+          {t('settings.downloads.retentionHint',
+            'How long a download prepared in a custom size stays available before it is deleted. Longer lets guests come back for it later, but each prepared download takes up about as much disk space as the photos in it. Applies to downloads prepared from now on.')}
+        </p>
+      </Card>
+
       <SettingsSaveBar
         isDirty={isDirty}
         isSaving={save.isPending}
-        onSave={() => save.mutate(form)}
-        onDiscard={() => { if (loaded) setForm(loaded); }}
+        canSave={retentionValid}
+        onSave={() => save.mutate({ ...form, job_retention_hours: retentionHours })}
+        onDiscard={() => {
+          if (loaded) {
+            setForm(loaded);
+            setRetention(String(loaded.job_retention_hours));
+          }
+        }}
       />
     </div>
   );

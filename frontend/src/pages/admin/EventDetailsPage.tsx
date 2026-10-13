@@ -45,7 +45,7 @@ export const EventDetailsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { t } = useTranslation();
-  const { confirmLeave } = useLeaveGuard();
+  const { confirmLeave, unguarded } = useLeaveGuard();
 
   React.useEffect(() => {
     if (!id || isNaN(parseInt(id))) {
@@ -246,7 +246,8 @@ export const EventDetailsPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-events'] });
       toast.success(t('events.settingsTab.deleted', 'Gallery deleted'));
-      navigate('/admin/events');
+      // Nothing left to stay on: an unsaved draft does not hold this up.
+      unguarded(() => navigate('/admin/events'));
     },
     onError: () => toast.error(t('errors.somethingWentWrong')),
   });
@@ -360,6 +361,10 @@ export const EventDetailsPage: React.FC = () => {
 
   return (
     <EventDetailsLoaded
+      // Keyed by the gallery: going from one gallery to another keeps this
+      // page mounted (same route), and without the key the draft would be
+      // rebased onto the next gallery and carry the unsaved edits over.
+      key={event.id}
       event={event}
       eventFeedbackSettings={eventFeedbackSettings}
       branding={(publicSettings?.theme_config as ThemeConfig | undefined) ?? null}

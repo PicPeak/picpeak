@@ -62,6 +62,12 @@ describe('event settings draft', () => {
     expect(payload).toEqual({ assigned_admin_ids: [7, 9], review_contributor_uploads: true });
   });
 
+  it('sends the guest upload approval switch when it changed (issue 1733)', () => {
+    const base = eventFieldsFromEvent({ ...EVENT, allow_user_uploads: true, moderate_guest_uploads: 0 } as unknown as Event, branding);
+    expect(base.moderate_guest_uploads).toBe(false);
+    expect(eventUpdatePayload({ ...base, moderate_guest_uploads: true }, base, t)).toEqual({ moderate_guest_uploads: true });
+  });
+
   it('switching custom styling off keeps the stored theme untouched', () => {
     const on = eventFieldsFromEvent({ ...EVENT, custom_theme_enabled: true } as Event, branding);
     const payload = eventUpdatePayload({ ...on, custom_theme_enabled: false }, on, t);

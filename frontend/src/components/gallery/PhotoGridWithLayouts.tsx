@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { GalleryEmptyMessage } from './GalleryEmptyMessage';
 import { ClipboardList, Package } from 'lucide-react';
 import { toast as toastify } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
@@ -98,6 +99,8 @@ interface PhotoGridWithLayoutsProps {
    * the whole gallery shell.
    */
   suppressEmptyState?: boolean;
+  /** The scope has photos, but the search or filters leave none on screen. */
+  emptyIsFiltered?: boolean;
   /** #1160: event-wide count + whole-gallery download for layout chrome. */
   eventPhotoCount?: number;
   onDownloadEverything?: () => void;
@@ -115,6 +118,7 @@ interface PhotoGridWithLayoutsProps {
 export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   photos,
   suppressEmptyState = false,
+  emptyIsFiltered = false,
   eventPhotoCount,
   onDownloadEverything,
   onCopyFilenames,
@@ -351,7 +355,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     if (!suppressEmptyState) {
       return (
         <div className="text-center py-12">
-          <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
+          <GalleryEmptyMessage filtered={emptyIsFiltered} />
           {/* The filename list is event-wide (issue 1733, A3d): a search or
               feedback filter that leaves no photo on screen must not take the
               favourites' list with it. */}
@@ -383,6 +387,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     // noPhotosFound return, don't contradict the folder tiles above them on a
     // folder-only root (#1160).
     suppressEmptyState,
+    emptyIsFiltered,
     eventPhotoCount,
     onDownloadEverything,
     onCopyFilenames,

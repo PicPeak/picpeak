@@ -10,7 +10,7 @@ import { toast } from 'react-toastify';
 import { FolderOpen, FolderTree, RefreshCw } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, useConfirm, Badge } from '../../../components/common';
-import { invalidateFolderViews } from '../../../components/admin/folders/folderQueries';
+import { folderErrorMessage, invalidateFolderViews } from '../../../components/admin/folders/folderQueries';
 import { foldersService } from '../../../services/folders.service';
 import { usePermission } from '../../../hooks/usePermission';
 import { useExternalImport } from './useExternalImport';
@@ -35,11 +35,13 @@ export const ExternalSourceBar: React.FC<{ event: Event; onChangeFolder: () => v
       toast.success(result.moved > 0
         ? t('events.externalSource.structureApplied', '{{count}} photos moved into folders', { count: result.moved })
         : t('events.externalSource.structureNothing', 'Every photo from a subfolder is in a folder already'));
+      if (result.limited) {
+        toast.warning(t('events.externalSource.structureLimited', 'The gallery reached its folder limit: some photos went into the closest existing folder.'));
+      }
       invalidateFolderViews(queryClient, event.id);
     },
     onError: (error: unknown) => {
-      const e = error as { response?: { data?: { error?: string } } };
-      toast.error(e.response?.data?.error || t('events.externalSource.structureFailed', 'The folder structure could not be applied'));
+      toast.error(folderErrorMessage(error, t) || t('events.externalSource.structureFailed', 'The folder structure could not be applied'));
     },
   });
 

@@ -557,7 +557,9 @@ async function importExternalFolder({
         if (where.segments.length) {
           const key = folderTree.pathKey(where.segments);
           if (!folderIdByPath.has(key)) {
-            folderIdByPath.set(key, (await folderTree.ensurePath(eventId, where.segments, { canCreate: true })).folderId);
+            // foldAtLimit: past the per-event folder cap the file still imports,
+            // into the deepest existing folder (logged), instead of being skipped.
+            folderIdByPath.set(key, (await folderTree.ensurePath(eventId, where.segments, { canCreate: true, foldAtLimit: true })).folderId);
           }
           folderId = folderIdByPath.get(key);
         }

@@ -620,6 +620,10 @@ async function handleV1PhotoUpload(req, res) {
       logger.warn('v1 thumbnail generation failed', { err: err.message });
     }
 
+    // Content hash (issue 1733, C2), stored for the admin uploader's
+    // duplicate check; this route itself refuses nothing.
+    const contentSha256 = await require('../../services/photoDuplicates').sha256File(tempPath);
+
     // Upload the original via the storage backend (local fs OR S3),
     // then drop the multer temp file.
     storage = getStorage();
@@ -646,6 +650,7 @@ async function handleV1PhotoUpload(req, res) {
       category_id: folderId ? null : categoryId,
       folder_id: folderId,
       size_bytes: stat.size,
+      content_sha256: contentSha256,
       width,
       height,
       media_type: 'image',

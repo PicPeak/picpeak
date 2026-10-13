@@ -843,9 +843,23 @@
     "hidePassword": "Passwort verbergen",
     "showPassword": "Passwort anzeigen",
     "loadFailed": "Konnte nicht geladen werden",
-    "moreActions": "Weitere Aktionen"
+    "moreActions": "Weitere Aktionen",
+    "previousMonth": "Vorheriger Monat",
+    "nextMonth": "Nächster Monat",
+    "today": "Heute",
+    "chooseDate": "Datum wählen"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} Datei ist bereits in dieser Galerie",
+      "title_other": "{{count}} Dateien sind bereits in dieser Galerie",
+      "toast_one": "{{count}} Datei ist bereits in dieser Galerie und wurde übersprungen – Details in der Upload-Leiste oben.",
+      "toast_other": "{{count}} Dateien sind bereits in dieser Galerie und wurden übersprungen – Details in der Upload-Leiste oben.",
+      "badge": "Duplikat",
+      "sameAs": "gleicher Inhalt wie {{name}}",
+      "uploadAnyway": "Trotzdem hochladen",
+      "uploadAllAnyway": "Alle trotzdem hochladen"
+    },
     "capacity": {
       "decoded": "Dieses Bild überschreitet die Bildverarbeitungsgrenzen des Servers.",
       "imagePixels": "Dieses Bild ist größer als die {{max}} Megapixel, die dieser Server verarbeitet.",
@@ -886,6 +900,7 @@
     "processingProgress": "{{complete}} von {{total}} fertig",
     "processingFailed_one": "{{count}} Foto konnte nicht verarbeitet werden",
     "processingFailed_other": "{{count}} Fotos konnten nicht verarbeitet werden",
+    "heldForReview": "Vielen Dank! Ihre Fotos erscheinen in der Galerie, sobald der Fotograf sie freigegeben hat.",
     "processingStillRunning": "Ihr Upload wird noch verarbeitet — er erscheint in Kürze in der Galerie.",
     "retryFailed": "Fehlgeschlagene erneut versuchen",
     "uploadComplete": "Upload abgeschlossen!",
@@ -910,6 +925,7 @@
     "uploadMedia": "Fotos & Videos hochladen",
     "maxFilesReached": "Maximal {{limit}} Dateien erlaubt",
     "someFilesSkipped": "Nur {{allowed}} weitere Dateien erlaubt (Limit {{limit}})",
+    "filesOverLimit": "{{allowed}} von {{found}} Dateien hinzugefügt. Ein Upload fasst höchstens {{limit}} Dateien; lade den Rest separat hoch.",
     "folderTooLarge": "Der Ordner ist zu groß, um ihn vollständig zu durchsuchen. Es wurde nur ein Teil hinzugefügt; ziehe Unterordner einzeln hinein.",
     "tooManyFiles": "Maximal {{limit}} Dateien können gleichzeitig hochgeladen werden",
     "limitInfo": "{{selected}} von {{limit}} Dateien ausgewählt ({{remaining}} verbleibend)",
@@ -973,7 +989,11 @@
       "firstLookCallout_other": "First-look-Ordner gefunden: „{{name}}“. Seine {{count}} Fotos werden als „First look“ markiert, und die Galerie wechselt zur zweistufigen Auslieferung: Gäste sehen, dass weitere Fotos unterwegs sind, bis Sie die vollständige Galerie als fertig markieren.",
       "firstLookSettings": "Fälligkeit und Badge: Einstellungen dieser Galerie → Ordner & Auslieferung. Stichwörter: Einstellungen → Events.",
       "nothingToUpload": "Keine der ausgewählten Dateien kann hochgeladen werden: Alle liegen in versteckten oder übersprungenen Ordnern.",
-      "keptForNext": "Dateien, die während der Vorbereitung der Ordner hinzukamen, sind noch ausgewählt: {{count}}."
+      "keptForNext": "Dateien, die während der Vorbereitung der Ordner hinzukamen, sind noch ausgewählt: {{count}}.",
+      "overFolderLimit_one": "Dieser Upload würde {{adding}} Ordner anlegen, die Galerie hat aber schon {{current}} von höchstens {{limit}}. Schalten Sie „Ordnerstruktur übernehmen“ aus oder entfernen Sie zuerst Ordner.",
+      "overFolderLimit_other": "Dieser Upload würde {{adding}} Ordner anlegen, die Galerie hat aber schon {{current}} von höchstens {{limit}}. Schalten Sie „Ordnerstruktur übernehmen“ aus oder entfernen Sie zuerst Ordner.",
+      "overRequestLimit_one": "Dieser Upload würde {{adding}} Ordneranfrage stellen, die Galerie hat aber schon {{current}} von höchstens {{limit}} offenen. Bitten Sie eine Administratorin oder einen Administrator, zuerst einige zu genehmigen oder abzulehnen, oder schalten Sie „Ordnerstruktur übernehmen“ aus.",
+      "overRequestLimit_other": "Dieser Upload würde {{adding}} Ordneranfragen stellen, die Galerie hat aber schon {{current}} von höchstens {{limit}} offenen. Bitten Sie eine Administratorin oder einen Administrator, zuerst einige zu genehmigen oder abzulehnen, oder schalten Sie „Ordnerstruktur übernehmen“ aus."
     },
     "largeFileReplaceSkipped": "Ersetzen nach Dateiname ist für Dateien über der Stapelgröße nicht möglich; laden Sie die Datei ohne Ersetzen hoch.",
     "removeFile": "{{name}} entfernen"
@@ -1949,6 +1969,8 @@
     "commented": "Kommentiert",
     "needHelp": "Hilfe benötigt? Kontaktieren Sie uns unter",
     "noPhotosFound": "Keine Fotos gefunden",
+    "noPhotosMatch": "Keine Fotos passen zu Ihrer Suche oder Ihren Filtern.",
+    "noPhotosYet": "Hier gibt es noch keine Fotos.",
     "failedToLoad": "Fotos konnten nicht geladen werden",
     "tryAgain": "Erneut versuchen",
     "passwordChangeRequired": "Ändern Sie Ihr Passwort im Admin-Bereich, bevor Sie diese Galerie in der Vorschau ansehen.",
@@ -1966,6 +1988,10 @@
     "cancelSelection": "Auswahl abbrechen",
     "selectAll": "Alle auswählen",
     "deselectAll": "Auswahl aufheben",
+    "selectionTray": {
+      "title": "Ausgewählt ({{count}})",
+      "remove": "{{name}} aus der Auswahl entfernen"
+    },
     "copyFilenames": {
       "button": "Dateinamen kopieren",
       "title": "Dateinamen kopieren",
@@ -2116,6 +2142,8 @@
     "backToGallery": "Alle Fotos",
     "downloadFolder": "Ordner herunterladen ({{count}})",
     "downloadFolderCapped": "Erste {{limit}} von {{total}} herunterladen",
+    "newPhotos_one": "{{count}} neues Foto",
+    "newPhotos_other": "{{count}} neue Fotos",
     "downloadEverything": "Alle Fotos herunterladen",
     "downloadFolder_one": "Ordner herunterladen ({{count}})",
     "downloadFolder_other": "Ordner herunterladen ({{count}})",
@@ -2143,6 +2171,11 @@
       "uploadedBy": "Hochgeladen von {{name}}",
       "photoBy": "Foto von {{name}}"
     },
+    "filmStrip": {
+      "label": "Fotos",
+      "photo": "Foto {{position}} von {{total}}",
+      "photoNamed": "Foto {{position}} von {{total}}: {{name}}"
+    },
     "firstLook": "Erste Auswahl",
     "viewAllPhotos": "Alle Fotos",
     "viewSwitch": "Fotos anzeigen nach",
@@ -2168,7 +2201,12 @@
     "preview": {
       "title": "Theme-Vorschau",
       "description": "So sehen Ihre Galerien mit den aktuellen Theme-Einstellungen aus."
-    }
+    },
+    "preparedDownload": "Ihr vorbereiteter Download",
+    "downloadNotify": "Per E-Mail benachrichtigen, wenn er bereit ist",
+    "downloadNotifyRequested": "Wir senden Ihnen eine E-Mail, sobald der Download bereit ist. Sie können dieses Fenster schließen.",
+    "downloadNotifyFailed": "Die E-Mail-Benachrichtigung konnte nicht eingerichtet werden. Bitte lassen Sie dieses Fenster geöffnet.",
+    "downloadGone": "Dieser Download ist nicht mehr verfügbar. Bitte fordern Sie ihn erneut an."
   },
   "categories": {
     "title": "Fotokategorien",
@@ -2214,7 +2252,10 @@
   "events": {
     "revealMode": "Reveal-Modus (Galerie bis zur Freigabe verbergen)",
     "revealModeHelp": "Gäste können hochladen, sehen aber keine Fotos, bis Sie die Galerie freigeben — manuell oder zum geplanten Zeitpunkt. Diashow und Kundenzugang funktionieren weiter.",
+    "liveRefresh": "Live-Aktualisierung (Gäste auf neue Fotos hinweisen)",
+    "liveRefreshHelp": "Eine geöffnete Galerie prüft alle 20 Sekunden, ob neue Fotos da sind, und bietet Gästen eine Schaltfläche „Neue Fotos“ an. Nichts wird von selbst neu geladen.",
     "revealAt": "Geplante Freigabe (optional)",
+    "revealAtTime": "Uhrzeit der Freigabe",
     "revealAtHelp": "Leer lassen, um manuell mit „Jetzt freigeben\" freizugeben.",
     "revealModeStatus": "Reveal-Modus",
     "revealed": "Freigegeben",
@@ -2393,6 +2434,8 @@
     "userUploads": "Benutzer-Upload-Einstellungen",
     "allowUserUploads": "Gästen erlauben, Fotos hochzuladen",
     "allowUserUploadsHelp": "Ermöglichen Sie Gästen, ihre eigenen Fotos in diese Galerie hochzuladen",
+    "moderateGuestUploads": "Gast-Uploads vor der Veröffentlichung freigeben",
+    "moderateGuestUploadsHelp": "Uploads von Gästen bleiben für Gäste und Kunden verborgen, bis Sie oder ein Prüfer sie im Tab „Fotos“ freigeben. Abgelehnte Uploads bleiben verborgen. Wartende Uploads zählen zum Foto-Limit.",
     "allowUserUploadsDescription": "Ermöglichen Sie Gästen, ihre eigenen Fotos in diese Galerie hochzuladen",
     "uploadCategory": "Upload-Kategorie",
     "selectCategory": "Wählen Sie eine Kategorie für Benutzer-Uploads",
@@ -2720,7 +2763,8 @@
       "structureApplied_one": "{{count}} Foto in Ordner verschoben",
       "structureApplied_other": "{{count}} Fotos in Ordner verschoben",
       "structureNothing": "Alle Fotos aus Unterordnern liegen bereits in einem Ordner",
-      "structureFailed": "Die Ordnerstruktur konnte nicht übernommen werden"
+      "structureFailed": "Die Ordnerstruktur konnte nicht übernommen werden",
+      "structureLimited": "Die Galerie hat ihre Höchstzahl an Ordnern erreicht: Einige Fotos liegen im nächstgelegenen vorhandenen Ordner."
     },
     "header": {
       "moreActions": "Weitere Aktionen"
@@ -2824,6 +2868,7 @@
         "reminderOn": "Versand am {{date}}",
         "uploaded": "In PicPeak hochgeladen",
         "uploadsOff": "Uploads aus",
+        "uploadsApproved": "Freigabe erforderlich",
         "uploadsOn": "Uploads an",
         "watching": "wird überwacht",
         "watermarked": "mit Wasserzeichen",
@@ -2928,6 +2973,11 @@
     "noEventsYetHint": "Erstellen Sie eine Galerie, um Fotos mit einem Kunden zu teilen.",
     "downloadLimitResetAction": "Downloads zurücksetzen",
     "notFoundHint": "Sie wurde vielleicht gelöscht, oder der Link ist falsch.",
+    "expiryPresets": {
+      "label": "Schnellauswahl für den Ablauf",
+      "days": "{{days}} Tage",
+      "fromToday": "Ab heute:"
+    },
     "nextSteps": {
       "title": "Vor dem Teilen",
       "progress": "{{done}} von {{total}} erledigt",
@@ -3912,7 +3962,10 @@
       "eventIntro": "Überschreibt die globalen Download-Einstellungen nur für diese Galerie. „Erben“ folgt Einstellungen → Download-Auflösungen.",
       "inheritWith": "Erben ({{value}})",
       "effective": "Gibt derzeit heraus: {{standard}}",
-      "pickerOn": "Gäste dürfen eine andere Größe wählen"
+      "pickerOn": "Gäste dürfen eine andere Größe wählen",
+      "retention": "Vorbereitete Downloads aufbewahren für (Stunden)",
+      "retentionHint": "Wie lange ein in einer eigenen Größe vorbereiteter Download verfügbar bleibt, bevor er gelöscht wird. Mit einer längeren Dauer können Gäste ihn später abholen, jeder vorbereitete Download belegt aber etwa so viel Speicherplatz wie die enthaltenen Fotos. Gilt für Downloads, die ab jetzt vorbereitet werden.",
+      "retentionInvalid": "Geben Sie eine ganze Zahl von Stunden zwischen {{min}} und {{max}} ein."
     },
     "captureDates": {
       "title": "Aufnahmedaten",
@@ -4995,10 +5048,12 @@
       "apiPhotosDownloaded_other": "API-Token „{{token_name}}“ hat {{count}} Originale aus {{eventName}} heruntergeladen",
       "apiPhotosZipDownloaded": "API-Token „{{token_name}}“ hat ein ZIP mit {{photo_count}} Originalen aus {{eventName}} heruntergeladen",
       "eventTeamChanged": "Team geändert für {{eventName}}",
-      "photosReviewApproved_one": "{{count}} Team-Upload in {{eventName}} freigegeben",
-      "photosReviewApproved_other": "{{count}} Team-Uploads in {{eventName}} freigegeben",
-      "photosReviewRejected_one": "{{count}} Team-Upload in {{eventName}} abgelehnt",
-      "photosReviewRejected_other": "{{count}} Team-Uploads in {{eventName}} abgelehnt",
+      "photosReviewApproved_one": "{{count}} Upload in {{eventName}} freigegeben",
+      "photosReviewApproved_other": "{{count}} Uploads in {{eventName}} freigegeben",
+      "photosReviewRejected_one": "{{count}} Upload in {{eventName}} abgelehnt",
+      "photosReviewRejected_other": "{{count}} Uploads in {{eventName}} abgelehnt",
+      "guestUploadsPendingReview_one": "{{count}} Gast-Upload in {{eventName}} wartet auf Prüfung",
+      "guestUploadsPendingReview_other": "{{count}} Gast-Uploads in {{eventName}} warten auf Prüfung",
       "photoDecision": "Foto freigegeben oder abgelehnt in {{eventName}}",
       "guestFeedbackDecision": "Gast hat ein Foto freigegeben oder abgelehnt in {{eventName}}"
     },
@@ -5395,10 +5450,12 @@
       "photo_decision": "Foto freigegeben oder abgelehnt in {{eventName}}",
       "guest_feedback_decision": "Gast hat ein Foto freigegeben oder abgelehnt in {{eventName}}",
       "event_team_changed": "Team geändert für {{eventName}}",
-      "photos_review_approved_one": "{{count}} Team-Upload in {{eventName}} freigegeben",
-      "photos_review_approved_other": "{{count}} Team-Uploads in {{eventName}} freigegeben",
-      "photos_review_rejected_one": "{{count}} Team-Upload in {{eventName}} abgelehnt",
-      "photos_review_rejected_other": "{{count}} Team-Uploads in {{eventName}} abgelehnt"
+      "photos_review_approved_one": "{{count}} Upload in {{eventName}} freigegeben",
+      "photos_review_approved_other": "{{count}} Uploads in {{eventName}} freigegeben",
+      "photos_review_rejected_one": "{{count}} Upload in {{eventName}} abgelehnt",
+      "photos_review_rejected_other": "{{count}} Uploads in {{eventName}} abgelehnt",
+      "guest_uploads_pending_review_one": "{{count}} Gast-Upload in {{eventName}} wartet auf Prüfung",
+      "guest_uploads_pending_review_other": "{{count}} Gast-Uploads in {{eventName}} warten auf Prüfung"
     },
     "people": {
       "title": "Personen in dieser Galerie",
@@ -6649,7 +6706,17 @@
       "moveToFolderTitle_other": "{{count}} Fotos in einen Ordner verschieben",
       "photosMoved_one": "{{count}} Foto nach {{folder}} verschoben",
       "photosMoved_other": "{{count}} Fotos nach {{folder}} verschoben",
-      "moveFailed": "Die Fotos konnten nicht verschoben werden"
+      "moveFailed": "Die Fotos konnten nicht verschoben werden",
+      "errors": {
+        "exists": "Hier gibt es bereits einen Ordner mit diesem Namen.",
+        "deleteNameClash": "Der Unterordner «{{name}}» kann nicht eine Ebene höher: Dort gibt es bereits einen Ordner mit diesem Namen. Benennen Sie ihn zuerst um oder verschieben Sie ihn.",
+        "tooDeep": "Ordner lassen sich höchstens {{limit}} Ebenen tief verschachteln.",
+        "notFound": "Dieser Ordner existiert nicht mehr. Laden Sie die Seite neu.",
+        "cycle": "Ein Ordner kann nicht in sich selbst oder einen seiner Unterordner verschoben werden.",
+        "limitReached": "Diese Galerie hat die Höchstzahl von {{limit}} Ordnern erreicht.",
+        "requestLimitReached": "Diese Galerie hat die Höchstzahl von {{limit}} offenen Ordneranfragen erreicht. Bitten Sie eine Administratorin oder einen Administrator, zuerst einige zu genehmigen oder abzulehnen.",
+        "requestNotFound": "Über diese Ordneranfrage wurde bereits entschieden, oder sie existiert nicht mehr."
+      }
     },
     "folderRequests": {
       "title_one": "{{count}} Ordneranfrage",
@@ -6676,10 +6743,10 @@
       "waitingForAdmin_other": "{{count}} Ordneranfragen warten auf einen Admin. Bis dahin liegen die {{photos}} Fotos im nächstgelegenen vorhandenen Ordner."
     },
     "review": {
-      "pendingOwner_one": "{{count}} Upload aus Ihrem Team wartet auf Ihre Prüfung",
-      "pendingOwner_other": "{{count}} Uploads aus Ihrem Team warten auf Ihre Prüfung",
-      "pendingMember_one": "{{count}} Team-Upload wartet auf die Prüfung durch den Inhaber",
-      "pendingMember_other": "{{count}} Team-Uploads warten auf die Prüfung durch den Inhaber",
+      "pendingOwner_one": "{{count}} Upload wartet auf Ihre Prüfung",
+      "pendingOwner_other": "{{count}} Uploads warten auf Ihre Prüfung",
+      "pendingMember_one": "{{count}} Upload wartet auf die Prüfung durch den Inhaber",
+      "pendingMember_other": "{{count}} Uploads warten auf die Prüfung durch den Inhaber",
       "nonePending": "Keine Uploads warten auf Prüfung.",
       "filterPending": "Zu prüfen ({{count}})",
       "filterRejected": "Abgelehnt ({{count}})",
@@ -6694,6 +6761,8 @@
       "pendingBadge": "Zu prüfen",
       "rejectedBadge": "Abgelehnt",
       "uploadedBy": "Hochgeladen von {{name}}",
+      "sourceGuest": "Gast",
+      "sourceTeam": "Team",
       "hiddenUntilApproved": "Für Gäste und Kunden verborgen, bis es freigegeben ist",
       "skippedOnShow_one": "{{count}} Foto wartet auf Prüfung und bleibt verborgen, bis es freigegeben ist",
       "skippedOnShow_other": "{{count}} Fotos warten auf Prüfung und bleiben verborgen, bis sie freigegeben sind"
