@@ -36,6 +36,7 @@ import { deliveryDue } from './event-details/deliveryStatus';
 import { adminService, ActivityType, type Activity } from '../../services/admin.service';
 import { mediaSplitLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { workflowsService } from '../../services/workflows.service';
+import { approvalEntityHref, approvalPrompt } from '../../utils/workflowApprovals';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 
 interface StatCard {
@@ -134,13 +135,15 @@ export const AdminDashboard: React.FC = () => {
   // Two-stage delivery (issue 1562): galleries whose first look is out and
   // whose full delivery is still owed, soonest promise first. The card only
   // renders when there are any.
+  // The server orders by due date (no date last) before LIMIT, so these five
+  // are the soonest of all of them, not of whichever 20 came back first.
   const { data: awaitingData } = useQuery({
     queryKey: ['admin-events-summary', 'awaiting_delivery'],
-    queryFn: () => eventsService.getEvents({ limit: 20, status: 'awaiting_delivery' }),
+    queryFn: () => eventsService.getEvents({
+      limit: 5, status: 'awaiting_delivery', sortBy: 'delivery_due_at', sortOrder: 'asc',
+    }),
   });
-  const awaitingEvents = [...(awaitingData?.events || [])]
-    .sort((a, b) => (Date.parse(a.delivery_due_at || '') || Infinity) - (Date.parse(b.delivery_due_at || '') || Infinity))
-    .slice(0, 5);
+  const awaitingEvents = awaitingData?.events ?? [];
 
   // Keep the "expiring soon" card honest when a row crosses its expiry while
   // the dashboard sits open (#909 review). Filtering client-side desynced the
@@ -173,17 +176,6 @@ export const AdminDashboard: React.FC = () => {
     successMessage: t('workflows.approvals.acted', 'Done') as string,
     errorMessage: t('common.error', 'Something went wrong') as string,
   });
-
-  // Admin detail route for an approval's run entity, so clicking opens the
-  // document under review. Mirrors WorkflowApprovalsPage (`invoice` → /bills).
-  const approvalEntityHref = (a: { entity_type?: string | null; entity_id?: number | null }): string | null => {
-    if (!a.entity_type || a.entity_id == null) return null;
-    const base: Record<string, string> = {
-      quote: 'quotes', invoice: 'bills', event: 'events', contract: 'contracts', customer: 'customers',
-    };
-    const seg = base[a.entity_type];
-    return seg ? `/admin/${seg}/${a.entity_id}` : null;
-  };
 
   const isLoading = statsLoading || eventsLoading;
 
@@ -424,7 +416,7 @@ export const AdminDashboard: React.FC = () => {
                   );
                 })}
               </div>
-              {(awaitingData?.events?.length || 0) > 5 && (
+              {(awaitingData?.pagination?.total ?? awaitingEvents.length) > awaitingEvents.length && (
                 <button
                   onClick={() => navigate('/admin/events?filter=awaiting_delivery')}
                   className="w-full mt-4 text-sm text-accent hover:opacity-80 font-medium"
@@ -445,13 +437,13 @@ export const AdminDashboard: React.FC = () => {
               </div>
               <div className="space-y-3">
                 {pendingApprovals.slice(0, 5).map((a) => {
-                  const prompt = (a.payload as any)?.prompt as string | undefined;
+                  const prompt = approvalPrompt(a);
                   const href = approvalEntityHref(a);
                   const info = (
                     <>
                       <h3 className="font-medium text-heading truncate">{a.workflow_name}</h3>
                       <p className="text-sm text-soft truncate">
-                        {prompt || a.type}{a.entity_type ? ` · ${a.entity_type} #${a.entity_id}` : ''}
+                        {prompt || t('workflows.approvals.defaultPrompt', 'A workflow needs your confirmation.')}{a.entity_type ? ` · ${a.entity_type} #${a.entity_id}` : ''}
                       </p>
                     </>
                   );

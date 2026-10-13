@@ -1,5 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { parseISO } from 'date-fns';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
 import { AuthenticatedImage } from '../../../common';
 import type { Photo } from '../../../../types';
@@ -21,8 +23,12 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
   photo,
   slug,
 }) => {
+  // Long form on purpose (the hero's look), in the gallery's language rather
+  // than always US English. parseISO: a bare yyyy-MM-dd read by `new Date`
+  // is UTC midnight, the day before west of UTC.
+  const { i18n } = useTranslation();
   const formattedDate = date
-    ? new Date(date).toLocaleDateString('en-US', {
+    ? parseISO(date).toLocaleDateString(i18n.language, {
         year: 'numeric',
         month: 'long',
         day: 'numeric'

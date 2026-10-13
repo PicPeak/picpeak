@@ -214,13 +214,13 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                 {eventDate && (
                   <span className="flex items-center text-lg sm:text-xl">
                     <Calendar className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
-                    {format(parseISO(eventDate), 'PP')}
+                    {format(parseISO(eventDate))}
                   </span>
                 )}
                 {expiresAt && (
                   <span className="flex items-center text-lg sm:text-xl">
                     <Clock className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
-                    {t('gallery.expires')} {format(parseISO(expiresAt), 'PP')}
+                    {t('gallery.expires')} {format(parseISO(expiresAt))}
                   </span>
                 )}
               </div>

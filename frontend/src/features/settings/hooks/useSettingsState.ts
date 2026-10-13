@@ -516,6 +516,8 @@ export function useSettingsState() {
     onSuccess: () => {
       toast.success(t('toast.settingsSaved'));
       queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
+      // Passkeys are bound to the site URL saved here.
+      queryClient.invalidateQueries({ queryKey: ['admin-passkeys'] });
     },
     onError: () => {
       toast.error(t('toast.saveError'));

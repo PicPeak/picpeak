@@ -305,7 +305,12 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
     try {
       photos = await db('photos')
         .join('events', 'photos.event_id', 'events.id')
-        .whereNull('photos.captured_at')
+        // Also every photo whose camera details were never read (issue 1733,
+        // D1). exif_json is written even when a file carries none ('{}'), so
+        // a photo is read for them once and never again.
+        .where(function () {
+          this.whereNull('photos.captured_at').orWhereNull('photos.exif_json');
+        })
         // Three markers, because no single one is reliable. fileWatcher's
         // auto-import sets type='video' and a video/* mime but never
         // media_type (fileWatcher.js:128-130), so those rows keep the 'image'
@@ -331,6 +336,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
         .select(
           'photos.id', 'photos.path', 'photos.filename',
           'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
+          'photos.captured_at', 'photos.exif_json',
           'events.source_mode', 'events.external_path', 'events.slug'
         );
     } catch (err) {
@@ -353,7 +359,9 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
 
     applicationWork.defer('dimension repair', async () => {
       const { extractCaptureDate, withLocalCopy } = require('../services/imageProcessor');
+      const { extractPhotoExif } = require('../services/photoExif');
       const { resolvePhotoStorageKey } = require('../services/photoResolver');
+      let exifCount = 0;
       let successCount = 0;
       let missingCount = 0;
       let errorCount = 0;
@@ -377,7 +385,15 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             // backend, which on an S3 install is not a filesystem at all — going
             // through resolvePhotoFilePath there would build a STORAGE_PATH that
             // holds nothing and fail every managed photo.
+            // One open of the original serves both reads; each is skipped
+            // when the row already has its value.
+            const needsDate = !photo.captured_at;
+            const readFile = async (localPath) => ({
+              captured: needsDate ? await extractCaptureDate(localPath) : null,
+              exif: photo.exif_json ? null : await extractPhotoExif(localPath),
+            });
             let captured;
+            let exif;
             if (isExternal) {
               let fullPath;
               try {
@@ -396,7 +412,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
                 continue;
               }
 
-              captured = await extractCaptureDate(fullPath);
+              ({ captured, exif } = await readFile(fullPath));
             } else {
               let sourceKey;
               try {
@@ -412,11 +428,25 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
               // mode a missing object throws out of getToFile and lands in the
               // outer catch — both end up counted as failures, which is what a
               // missing original is.
-              captured = await withLocalCopy(sourceKey, async (localPath) => {
+              ({ captured, exif } = await withLocalCopy(sourceKey, async (localPath) => {
                 await fs.access(localPath);
-                return extractCaptureDate(localPath);
-              });
+                return readFile(localPath);
+              }));
             }
+
+            // Same fence as the date below, and whereNull for the same
+            // reason. A null read (the file could not be read) writes nothing
+            // and stays for the next run.
+            if (exif) {
+              exifCount += await db('photos')
+                .where({ id: photo.id, path: photo.path, filename: photo.filename })
+                .whereNull('exif_json')
+                .update({ exif_json: JSON.stringify(exif) });
+            }
+
+            // The counters below are about capture dates; a photo that was
+            // only missing its camera details is done here.
+            if (!needsDate) continue;
 
             if (!captured) {
             // No date recovered. Usually genuine — plenty of sources carry no
@@ -469,15 +499,16 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
           logger.warn(`Capture date backfill stopped: claim taken over after ${successCount} updated, ${errorCount} errors`);
           return;
         }
-        await maintenanceJobs.release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount });
+        await maintenanceJobs.release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, exif: exifCount });
         logger.info(
           `Capture date backfill complete: ${successCount} updated, ${missingCount} without EXIF, `
-          + `${errorCount} errors, ${skippedCount} skipped (dated or replaced mid-run)`
+          + `${errorCount} errors, ${skippedCount} skipped (dated or replaced mid-run), `
+          + `${exifCount} with camera details read`
         );
       } catch (err) {
         logger.error('Capture date backfill aborted:', err);
         await maintenanceJobs
-          .release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, error: err.message })
+          .release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, exif: exifCount, error: err.message })
           .catch(() => {});
       } finally {
         lease.stop();
@@ -522,6 +553,7 @@ router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.
     const counts = await scoped()
       .count('photos.id as total')
       .count({ dated: db.raw('CASE WHEN photos.captured_at IS NOT NULL THEN 1 END') })
+      .count({ pending: db.raw('CASE WHEN photos.captured_at IS NULL OR photos.exif_json IS NULL THEN 1 END') })
       .first();
 
     const total = Number(counts.total);
@@ -533,6 +565,9 @@ router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.
       total,
       withCaptureDate,
       withoutCaptureDate: total - withCaptureDate,
+      // What a run would read: no capture date, or camera details never read
+      // (issue 1733, D1).
+      pending: Number(counts.pending),
       isRunning: state.isRunning,
       lastResult: state.lastResult
     });

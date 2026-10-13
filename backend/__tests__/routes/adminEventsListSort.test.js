@@ -193,6 +193,30 @@ describe('admin events list — ordering and type filter', () => {
     });
   });
 
+  describe('awaiting delivery (PR 1826 follow-up)', () => {
+    it('orders partial galleries by due date server-side, so the soonest five are right past the first page', async () => {
+      // 23 partial galleries inserted latest-due first: the old dashboard
+      // fetched 20 by created_at and sorted those, missing the three soonest.
+      for (let i = 0; i < 23; i += 1) {
+        await mkEvent({
+          slug: `due-${i}`, event_name: `Due ${String(i).padStart(2, '0')}`,
+          delivery_status: 'partial', delivery_due_at: inDays(40 - i),
+        });
+      }
+      await mkEvent({ slug: 'due-none', event_name: 'Due None', delivery_status: 'partial', delivery_due_at: null });
+      const res = await request(app)
+        .get('/api/admin/events')
+        .query({ limit: 5, status: 'awaiting_delivery', sortBy: 'delivery_due_at', sortOrder: 'asc' })
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body.events.map((e) => e.event_name)).toEqual(['Due 22', 'Due 21', 'Due 20', 'Due 19', 'Due 18']);
+      expect(res.body.pagination.total).toBe(24);
+
+      const all = await listNames({ status: 'awaiting_delivery', sortBy: 'delivery_due_at', sortOrder: 'asc' });
+      expect(all[all.length - 1]).toBe('Due None');
+    });
+  });
+
   describe('type filter', () => {
     it('narrows the rows and the pagination total together', async () => {
       const res = await request(app)

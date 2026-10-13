@@ -212,6 +212,11 @@ test('credential rotation rolls back if the protected queue replacement fails', 
     created_by: atomicAdminId,
   }).returning('id');
   const apiTokenId = tokenInsert[0]?.id ?? tokenInsert[0];
+  const passkeys = () => db('admin_webauthn_credentials').where({ admin_user_id: atomicAdminId });
+  await db('admin_webauthn_credentials').insert({
+    admin_user_id: atomicAdminId, credential_id: 'atomic-passkey', public_key: 'AQ', counter: 0,
+    name: 'Laptop', created_at: new Date().toISOString(),
+  });
 
   await removeAccountRecoveryWriteGuards(db);
   const queueInsert = await db('email_queue').insert({
@@ -229,6 +234,7 @@ test('credential rotation rolls back if the protected queue replacement fails', 
   let admin = await db('admin_users').where({ id: atomicAdminId }).first();
   await expect(bcrypt.compare(leaked, admin.password_hash)).resolves.toBe(true);
   expect((await db('api_tokens').where({ id: apiTokenId }).first()).revoked_at).toBeNull();
+  expect(await passkeys()).toHaveLength(1);
 
   await db.raw('DROP TRIGGER test_recovery_rotation_abort');
   await hardenAccountRecoveryStorage(db);
@@ -236,6 +242,7 @@ test('credential rotation rolls back if the protected queue replacement fails', 
   admin = await db('admin_users').where({ id: atomicAdminId }).first();
   await expect(bcrypt.compare(leaked, admin.password_hash)).resolves.toBe(false);
   expect((await db('api_tokens').where({ id: apiTokenId }).first()).revoked_at).not.toBeNull();
+  expect(await passkeys()).toHaveLength(0);
   expect((await db('email_queue').where({ id: queueId }).first()).status)
     .toBe(PROTECTED_PENDING_STATUS);
 });

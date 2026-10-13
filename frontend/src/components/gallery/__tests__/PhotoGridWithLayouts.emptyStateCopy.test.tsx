@@ -46,9 +46,9 @@ const renderGrid = (props: Partial<React.ComponentProps<typeof PhotoGridWithLayo
 describe('PhotoGridWithLayouts empty state — filename list', () => {
   it('keeps the Copy filenames action next to the empty message', () => {
     const onCopyFilenames = vi.fn();
-    renderGrid({ onCopyFilenames, copyFilenamesCount: 4 });
+    renderGrid({ onCopyFilenames, copyFilenamesCount: 4, emptyIsFiltered: true });
 
-    expect(screen.getByText('gallery.noPhotosFound')).toBeInTheDocument();
+    expect(screen.getByText('No photos match your search or filters.')).toBeInTheDocument();
     const button = screen.getByRole('button', { name: /Copy filenames \(4\)/ });
     fireEvent.click(button);
     expect(onCopyFilenames).toHaveBeenCalledTimes(1);
@@ -56,7 +56,16 @@ describe('PhotoGridWithLayouts empty state — filename list', () => {
 
   it('shows no action when there is nothing to copy', () => {
     renderGrid({ onCopyFilenames: vi.fn(), copyFilenamesCount: 0 });
-    expect(screen.getByText('gallery.noPhotosFound')).toBeInTheDocument();
+    expect(screen.getByText('There are no photos here yet.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Copy filenames/ })).not.toBeInTheDocument();
+  });
+
+  it('says the gallery is empty only when no search or filter is hiding photos', () => {
+    const { unmount } = renderGrid({ emptyIsFiltered: false });
+    expect(screen.getByText('There are no photos here yet.')).toBeInTheDocument();
+    expect(screen.queryByText('No photos match your search or filters.')).not.toBeInTheDocument();
+    unmount();
+    renderGrid({ emptyIsFiltered: true });
+    expect(screen.getByText('No photos match your search or filters.')).toBeInTheDocument();
   });
 });
