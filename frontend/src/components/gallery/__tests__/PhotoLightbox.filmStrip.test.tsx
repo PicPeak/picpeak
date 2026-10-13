@@ -41,9 +41,19 @@ const fetchOrder: string[] = [];
 vi.mock('../../common', async () => {
   const { useEffect } = await import('react');
   return {
-    AuthenticatedImage: ({ src, alt, queuePriority }: { src: string; alt: string; queuePriority?: string }) => {
+    AuthenticatedImage: ({ src, alt, queuePriority, onLoad, onError }: {
+      src: string; alt: string; queuePriority?: string; onLoad?: () => void; onError?: () => void;
+    }) => {
       useEffect(() => { fetchOrder.push(src); }, [src]);
-      return <img alt={alt} data-src={src} data-priority={queuePriority ?? 'normal'} />;
+      return (
+        <img
+          alt={alt}
+          data-src={src}
+          data-priority={queuePriority ?? 'normal'}
+          onLoad={() => onLoad?.()}
+          onError={() => onError?.()}
+        />
+      );
     },
   };
 });
@@ -337,9 +347,51 @@ describe('lightbox hold-to-scrub', () => {
     expect(track().style.transform).toBe('translate3d(-66.6666%, 0, 0)');
   });
 
-  it('does not count a photo twice when a scrub ends where it began', () => {
+  it('lets the stand-in go when the landed preview loads, or turns out not to decode', () => {
+    open();
+    const standIn = () => screen.queryByTestId('lightbox-scrub-stand-in');
+    const preview = () => document.querySelector('[data-src^="/preview/"][data-priority="high"]') as HTMLElement;
+
+    holdKey('ArrowRight', 10);
+    fireEvent.keyUp(document, { key: 'ArrowRight' });
+    expect(standIn()).not.toBeNull();
+    fireEvent.load(preview());
+    expect(standIn()).toBeNull();
+
+    // The image component then shows its fallback, which reports no load:
+    // the stand-in would stay underneath it for good.
+    holdKey('ArrowRight', 10);
+    fireEvent.keyUp(document, { key: 'ArrowRight' });
+    expect(standIn()).not.toBeNull();
+    fireEvent.error(preview());
+    expect(standIn()).toBeNull();
+  });
+
+  it('leaves a held arrow key to the field it is typed into', () => {
+    open();
+    const field = document.createElement('textarea');
+    document.body.appendChild(field);
+    try {
+      fireEvent.keyDown(field, { key: 'ArrowLeft', repeat: true });
+      expect(screen.queryByTestId('lightbox-scrub-stand-in')).toBeNull();
+    } finally {
+      field.remove();
+    }
+  });
+
+  it('does not scrub a gallery of one: there is nowhere to go, and a video would lose its place', () => {
     render(<PhotoLightbox photos={makePhotos(1)} initialIndex={0} onClose={vi.fn()} slug="g" />);
+    const slide = document.querySelector('[data-src^="/preview/1?"]');
     holdKey('ArrowRight', 5);
+    expect(screen.queryByTestId('lightbox-scrub-stand-in')).toBeNull();
+    expect(document.querySelector('[data-src^="/preview/1?"]')).toBe(slide);
+  });
+
+  it('does not count a photo twice when a scrub ends where it began', () => {
+    render(<PhotoLightbox photos={makePhotos(2)} initialIndex={0} onClose={vi.fn()} slug="g" />);
+    // Two steps, 110 ms apart: on to the other photo and back again.
+    holdKey('ArrowRight', 5);
+    expect(counter('1 / 2')).toBeInTheDocument();
     fireEvent.keyUp(document, { key: 'ArrowRight' });
     expect(trackPhotoView.mock.calls).toEqual([['g', 1]]);
   });

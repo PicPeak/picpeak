@@ -11,7 +11,7 @@ import { lightboxImageUrl } from './imageTiers';
 import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
 import { PhotoColorLabels } from './PhotoColorLabels';
 import { PhotoDecision } from './PhotoDecision';
-import { resolveFeedbackKey, colorShortcutHints } from '../../utils/feedbackKeybinds';
+import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
 import { galleryService } from '../../services/gallery.service';
 import { analyticsService } from '../../services/analytics.service';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
@@ -331,8 +331,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   });
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // A held arrow key: the scrub steps at its own rate.
-      if (scrub.handleKeyDown(e)) return;
+      // A held arrow key: the scrub steps at its own rate. Not from a field,
+      // where the key moves the caret and the scrub would take the field's
+      // panel away from under it; and not in a gallery of one, where it
+      // could only unmount the slide (a playing video with it) for nothing.
+      if (photos.length > 1 && !isTypingTarget(e.target) && scrub.handleKeyDown(e)) return;
       switch (e.key) {
         case 'Escape':
           onClose();
@@ -1394,6 +1397,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 slug={slug}
                 // Stable callback: the scrub's stand-in leaves once this is in.
                 onLoad={scrub.handlePreviewLoaded}
+                // A preview that does not decode is replaced by the fallback,
+                // which reports no load: the stand-in leaves here instead.
+                onError={scrub.handlePreviewLoaded}
                 useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
                 onProtectionViolation={(violationType) => {
                   console.warn(`Protection violation in lightbox for photo ${photo.id}: ${violationType}`);
