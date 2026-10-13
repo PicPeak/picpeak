@@ -242,6 +242,10 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
       expect(handedIn.submission.item_count).toBe(picks.length);
       // Either the write went in first, or it met the lock.
       expect(picks.length).toBe(written.locked ? 2 : (change === 'add' ? 3 : 1));
+      // The tiles' counters followed the write, or the refusal (every
+      // guest's likes: device-A has one from the setup above).
+      const counted = await db('photos').whereIn('id', photoIds).sum('like_count as likes').first();
+      expect(Number(counted.likes)).toBe((await rows('like')).length);
     });
 
     it('leaves ratings, colour labels and comments writable', async () => {

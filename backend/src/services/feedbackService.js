@@ -510,7 +510,7 @@ class FeedbackService {
     // the hand-over takes: a like that overlaps "Finish selection" lands
     // before the count is taken or is refused, never after it.
     const viewer = { guestId: guest_id, guestIdentifier };
-    return selectionSubmissions.withViewerLock(eventId, viewer, async (trx) => {
+    const result = await selectionSubmissions.withViewerLock(eventId, viewer, async (trx) => {
       // Before the lock check: a guest merge can hand this guest another
       // guest's finished selection, and must not do so between the check and
       // the write.
@@ -521,6 +521,14 @@ class FeedbackService {
       }
       return this.writeGuestFeedback(photoId, eventId, feedbackData, guestIdentifier, trx, cap);
     });
+    // The photo's counters are rebuilt after the commit, as they were before
+    // the write had a transaction. Inside it the aggregate would not see
+    // another guest's like on the same photo that is still uncommitted (the
+    // lock is per guest), and the two would each store a count of one.
+    if (!result.locked && !result.guest_missing && !result.limit_reached) {
+      await this.updatePhotoFeedbackStats(photoId);
+    }
+    return result;
   }
 
   /**
@@ -528,10 +536,14 @@ class FeedbackService {
    * and, for a type a submission locks, holds the viewer's lock: `executor`
    * is then that transaction and every statement here must go through it.
    * `cap` is the guest's limit for a like or favourite, read by the caller.
+   * Inside that transaction the photo's counters are left to the caller, who
+   * rebuilds them once it has committed.
    */
   async writeGuestFeedback(photoId, eventId, feedbackData, guestIdentifier, executor, cap = null) {
     try {
       const { feedback_type, rating, comment_text, reaction, color_label, decision, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
+
+      const recount = () => (executor.isTransaction ? undefined : this.updatePhotoFeedbackStats(photoId));
 
       // The reason on a decision row. `undefined` means the caller did not
       // send one, which is what lets the same decision again toggle off; an
@@ -592,7 +604,7 @@ class FeedbackService {
             else clearScope.where('guest_identifier', guestIdentifier);
             await clearScope.delete();
 
-            await this.updatePhotoFeedbackStats(photoId, executor);
+            await recount();
             return { removed: true };
           }
 
@@ -634,12 +646,12 @@ class FeedbackService {
                   updated_at: new Date().toISOString()
                 });
 
-              await this.updatePhotoFeedbackStats(photoId, executor);
+              await recount();
               return { id: survivor.id, updated: true };
             }
             // Same value: nothing to write, but a removed duplicate was in
             // the average.
-            if (collapsed) await this.updatePhotoFeedbackStats(photoId, executor);
+            if (collapsed) await recount();
             return { id: survivor.id, exists: true };
           }
 
@@ -678,7 +690,7 @@ class FeedbackService {
               && decisionReason !== undefined;
             if (existing[singleValueColumn] === submittedValue && !editsReason) {
               await singleValueScope().delete();
-              await this.updatePhotoFeedbackStats(photoId, executor);
+              await recount();
               return { removed: true };
             }
             // Converge to exactly one row: drop any racy duplicates, then
@@ -693,7 +705,7 @@ class FeedbackService {
                 ...(feedback_type === 'decision' ? { comment_text: decisionReason ?? null } : {}),
                 updated_at: new Date()
               });
-            await this.updatePhotoFeedbackStats(photoId, executor);
+            await recount();
             return { id: existing.id, updated: true };
           }
 
@@ -711,7 +723,7 @@ class FeedbackService {
             else selection.where('guest_identifier', guestIdentifier);
             await selection.delete();
 
-            await this.updatePhotoFeedbackStats(photoId, executor);
+            await recount();
             return { removed: true };
           }
 
@@ -798,7 +810,7 @@ class FeedbackService {
       const id = result[0]?.id || result[0];
       
       // Update photo stats
-      await this.updatePhotoFeedbackStats(photoId, executor);
+      await recount();
       
       // Log activity
       await logActivity(`photo_${feedback_type}`, { photo_id: photoId }, eventId, null, executor.isTransaction ? executor : null);
