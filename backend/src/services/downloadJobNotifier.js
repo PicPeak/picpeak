@@ -75,16 +75,25 @@ async function recipientFor(req) {
   return null;
 }
 
-/** Does the owner of this request still hold the address it was made with? */
-async function stillHolds(recipient) {
+/**
+ * Does the owner of this request still hold the address it was made with?
+ *
+ * With `trx` the owner row is share-locked on PostgreSQL until the caller
+ * commits, which is what orders a new request against an erasure: the
+ * erasure's write to the owner row waits for the insert and then deletes it
+ * (forgetCustomer, forgetGuest), or the insert waits and finds the owner gone.
+ */
+async function stillHolds(recipient, trx) {
+  const conn = trx || db;
+  const read = (query) => (trx && trx.client.config.client === 'pg' ? query.forShare() : query).first('email');
   let owner;
   if (recipient.customer_account_id) {
-    owner = await db('customer_accounts')
-      .where({ id: recipient.customer_account_id, is_active: formatBoolean(true) }).first('email');
+    owner = await read(conn('customer_accounts')
+      .where({ id: recipient.customer_account_id, is_active: formatBoolean(true) }));
   } else if (recipient.guest_id) {
-    owner = await db('gallery_guests')
+    owner = await read(conn('gallery_guests')
       .where({ id: recipient.guest_id, is_deleted: formatBoolean(false) })
-      .whereNotNull('email_verified_at').first('email');
+      .whereNotNull('email_verified_at'));
   }
   return !!owner && normalise(owner.email) === recipient.email;
 }
@@ -96,7 +105,8 @@ async function isRequested(jobId, email) {
 
 /**
  * Record that `recipient` (from recipientFor) wants the mail for `job`.
- * Returns 'requested', or 'limit' when the address has used up its hour.
+ * Returns 'requested', 'limit' when the address has used up its hour, or
+ * 'gone' when the owner was erased or removed since the caller read it.
  *
  * The count and the insert are one step per address. Checked apart, parallel
  * requests for different jobs all read a count below the cap before any of
@@ -106,10 +116,19 @@ async function isRequested(jobId, email) {
  */
 async function request(job, recipient) {
   const { email } = recipient;
+  const row = {
+    job_id: job.id,
+    email,
+    guest_id: recipient.guestId ?? null,
+    customer_account_id: recipient.customerId ?? null,
+  };
   const outcome = await db.transaction(async (trx) => {
     if (trx.client.config.client === 'pg') {
       await trx.raw('SELECT pg_advisory_xact_lock(?, hashtext(?))', [ADDRESS_LOCK, email]);
     }
+    // The caller's read of the owner may predate an erasure that has already
+    // deleted this owner's rows; inserting now would bring the address back.
+    if (!(await stillHolds(row, trx))) return 'gone';
     if (await trx('download_job_recipients').where({ job_id: job.id, email }).first('id')) return 'requested';
 
     const since = new Date(Date.now() - HOUR_MS).toISOString();
@@ -117,16 +136,10 @@ async function request(job, recipient) {
       .where({ email }).where('created_at', '>', since).count({ n: '*' }).first();
     if (Number(recent?.n || 0) >= MAX_REQUESTS_PER_HOUR) return 'limit';
 
-    await trx('download_job_recipients').insert({
-      job_id: job.id,
-      email,
-      guest_id: recipient.guestId ?? null,
-      customer_account_id: recipient.customerId ?? null,
-      created_at: new Date().toISOString(),
-    });
+    await trx('download_job_recipients').insert({ ...row, created_at: new Date().toISOString() });
     return 'requested';
   });
-  if (outcome === 'limit') return outcome;
+  if (outcome !== 'requested') return outcome;
 
   // The build may have finished between the caller's read and this insert,
   // in which case its own notify pass ran before the row existed.
@@ -222,12 +235,18 @@ async function retryUnsent() {
 /**
  * Customer erasure (customerAccountsService.eraseCustomer): drop the
  * account's requests, and any other request for its address. Runs inside the
- * erasure transaction and BEFORE it cancels the queued mail: a notify pass
+ * erasure transaction, before the account row is anonymised (the address is
+ * still the real one) and BEFORE it cancels the queued mail: a notify pass
  * that claimed a row first holds it until its mail is committed, so this
  * delete waits for it and the cancellation that follows sees that mail; one
  * that comes later finds no row to claim.
  */
-function forgetCustomer(trx, customerId, email) {
+async function forgetCustomer(trx, customerId, email) {
+  // Take the account row first, so a request being recorded right now
+  // (stillHolds) is either finished and deleted here, or waits and is refused.
+  if (trx.client.config.client === 'pg') {
+    await trx('customer_accounts').where({ id: customerId }).forUpdate().first('id');
+  }
   return trx('download_job_recipients')
     .where({ customer_account_id: customerId }).orWhere({ email: normalise(email) }).del();
 }

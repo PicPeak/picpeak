@@ -70,6 +70,21 @@ describe('DownloadResolutionModal: email me when it is ready', () => {
     expect(screen.queryByRole('button', { name: 'Email me when it is ready' })).not.toBeInTheDocument();
   });
 
+  it('offers the mail again for a new attempt after a failed mail request', async () => {
+    vi.mocked(galleryService.requestDownloadJobMail).mockRejectedValueOnce(new Error('500'));
+    vi.mocked(galleryService.getDownloadJob)
+      .mockResolvedValueOnce(job({ notify: 'available' }) as never)
+      .mockResolvedValueOnce(job({ status: 'failed', error: 'boom' }) as never)
+      .mockResolvedValue(job({ notify: 'available' }) as never);
+    const user = await prepare();
+    await user.click(await screen.findByRole('button', { name: 'Email me when it is ready' }, { timeout: 4000 }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be set up');
+
+    await user.click(await screen.findByRole('button', { name: 'Try again' }, { timeout: 4000 }));
+    await user.click(screen.getByRole('button', { name: 'Prepare download' }));
+    expect(await screen.findByRole('button', { name: 'Email me when it is ready' }, { timeout: 4000 })).toBeInTheDocument();
+  }, 15000);
+
   it('opens a job from the mail link ready to download', async () => {
     vi.mocked(galleryService.getDownloadJob).mockResolvedValue(job({ status: 'ready', resolution: '800x600' }) as never);
     const onClose = vi.fn();

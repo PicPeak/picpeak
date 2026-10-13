@@ -127,6 +127,8 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
 
     setPhase('preparing');
     setError(null);
+    // A new job: a mail request that failed for the last one says nothing about it.
+    setNotify(undefined);
     try {
       const job = await galleryService.startDownloadJob(slug, selected, photoIds);
       tokenRef.current = job.token;

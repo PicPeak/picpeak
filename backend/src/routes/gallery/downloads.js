@@ -1287,8 +1287,12 @@ router.post('/:slug/download-jobs/:token/notify', verifyGalleryAccess, denySlide
     if (job.status !== 'pending' && job.status !== 'building') {
       return res.status(409).json({ error: 'This download is no longer being prepared', status: job.status });
     }
-    if ((await downloadJobNotifier.request(job, recipient)) === 'limit') {
+    const outcome = await downloadJobNotifier.request(job, recipient);
+    if (outcome === 'limit') {
       return res.status(429).json({ error: 'Too many email notifications requested. Please try again later' });
+    }
+    if (outcome === 'gone') {
+      return res.status(403).json({ error: 'Email notification is not available for this visit' });
     }
     res.json({ notify: 'requested' });
   } catch (error) {

@@ -605,6 +605,22 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
       expect(await db('email_queue').where({ event_id: event.id, email_type: 'download_ready' })).toHaveLength(1);
     });
 
+    it('does not record a request whose owner was removed while it was on its way', async () => {
+      const { event, photoIds } = await makeEvent();
+      const job = await makeJob(event, photoIds, { status: 'building' });
+      const guestToken = await verifiedGuest(event, 'inflight@example.com');
+      // What the route read from the session just before the guest was removed.
+      const recipient = await guestRecipient('inflight@example.com');
+      await request(app)
+        .delete(`/api/gallery/${event.slug}/guest/me`)
+        .set('Authorization', `Bearer ${galleryToken(event)}`)
+        .set('x-guest-token', guestToken)
+        .expect(200);
+
+      expect(await notifier.request(job, recipient)).toBe('gone');
+      expect(await db('download_job_recipients').where({ job_id: job.id })).toHaveLength(0);
+    });
+
     it('does not mail an owner who no longer holds the address', async () => {
       const { event, photoIds } = await makeEvent();
       const job = await makeJob(event, photoIds, { status: 'building' });
