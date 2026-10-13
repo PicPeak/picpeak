@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.169.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.169.0-beta.0...v3.169.1-beta.0) (2026-10-13)
+
+
+### Bug Fixes
+
+* **ui:** admin tabs leave Alt / Cmd / Ctrl + arrow keys to the browser ([b8899aa](https://github.com/PicPeak/picpeak/commit/b8899aaabd376936a3b0f8261814993a1bdd195c))
+* **ui:** admin tabs leave Alt / Cmd / Ctrl + arrow keys to the browser ([a6c5867](https://github.com/PicPeak/picpeak/commit/a6c5867da5508ab66f52ddceb9a45484618cd3a3))
+
 ## [3.169.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.168.3-beta.0...v3.169.0-beta.0) (2026-10-12)
 
 
