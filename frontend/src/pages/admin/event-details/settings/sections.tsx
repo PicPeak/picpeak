@@ -219,12 +219,17 @@ export const AccessSection: React.FC<FieldsProps & { ownsEvent?: boolean }> = ({
   // A quick pick counts from today; an empty date is stored as "never
   // expires" (the update route keeps NULL, whatever the create default is).
   const presetDate = (days: number) => format(addDays(new Date(), days), 'yyyy-MM-dd');
+  // The date field keeps the text being typed and only re-reads `value` when
+  // it changes. A pick equal to the stored date changes nothing, so a
+  // half-typed date would stay: every pick remounts the field instead.
+  const [pickCount, setPickCount] = useState(0);
   return (
     <SectionCard>
       <div>
         <div className="md:w-64">
           <label className={labelClass}>{t('events.expirationDate')}</label>
           <LocalizedDateInput
+            key={pickCount}
             value={f.expires_at}
             onChange={(iso) => set({ expires_at: iso })}
             min={format(new Date(), 'yyyy-MM-dd')}
@@ -235,7 +240,10 @@ export const AccessSection: React.FC<FieldsProps & { ownsEvent?: boolean }> = ({
             lead={t('events.expiryPresets.fromToday', 'From today:')}
             allowNever
             selected={f.expires_at ? (EXPIRY_PRESET_DAYS.find((days) => presetDate(days) === f.expires_at) ?? null) : 'never'}
-            onSelect={(preset) => set({ expires_at: preset === 'never' ? '' : presetDate(preset) })}
+            onSelect={(preset) => {
+              set({ expires_at: preset === 'never' ? '' : presetDate(preset) });
+              setPickCount((n) => n + 1);
+            }}
           />
         </div>
       </div>

@@ -64,4 +64,34 @@ describe('AccessSection — expiry quick picks', () => {
     render(<Harness expiresAt={null} />);
     expect(pressed()).toEqual(['Never']);
   });
+
+  // The date field keeps its own text while it is being typed in. A pick that
+  // equals the stored value changes nothing upstream, and still has to replace
+  // what was left half typed.
+  it('replaces a half-typed date when the pick already chosen is clicked again', () => {
+    render(<Harness expiresAt={`${inDays(60)}T12:00:00.000Z`} />);
+    const field = () => screen.getByPlaceholderText('yyyy-mm-dd') as HTMLInputElement;
+    expect(pressed()).toEqual(['60 days']);
+
+    fireEvent.change(field(), { target: { value: '2026-1' } });
+    fireEvent.blur(field());
+    expect(field().value).toBe('2026-1');
+
+    fireEvent.click(pick('60 days'));
+    expect(field().value).toBe(inDays(60));
+    expect(latest.expires_at).toBe(inDays(60));
+  });
+
+  it('clears a half-typed date when "Never" is already chosen and clicked again', () => {
+    render(<Harness expiresAt={null} />);
+    const field = () => screen.getByPlaceholderText('yyyy-mm-dd') as HTMLInputElement;
+
+    fireEvent.change(field(), { target: { value: '2026-1' } });
+    fireEvent.blur(field());
+    expect(pressed()).toEqual(['Never']);
+
+    fireEvent.click(pick('Never'));
+    expect(field().value).toBe('');
+    expect(latest.expires_at).toBe('');
+  });
 });
