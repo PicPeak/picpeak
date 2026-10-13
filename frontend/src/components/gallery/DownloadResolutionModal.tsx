@@ -149,14 +149,14 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
 
   // Pick a job up again from the mail link. It may have been swept since
   // (retention passed, or the gallery changed), which reads as not found;
-  // past its retention but not swept yet, it says `expired`.
+  // not swept yet, it says `unavailable`.
   useEffect(() => {
     if (!resumeToken) return;
     (async () => {
       try {
         const state = await galleryService.getDownloadJob(slug, resumeToken);
         if (!activeRef.current) return;
-        if (state.status === 'failed' || state.expired) throw new Error('gone');
+        if (state.status === 'failed' || state.unavailable) throw new Error('gone');
         setSelected(state.resolution);
         if (state.status === 'ready') {
           setPhase('ready');

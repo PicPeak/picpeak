@@ -530,6 +530,17 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
       expect(await readyMails('retry@example.com')).toHaveLength(1);
     });
 
+    it('does not announce an archive that can no longer be delivered', async () => {
+      const { event, photoIds } = await makeEvent();
+      const job = await makeJob(event, photoIds, { status: 'building' });
+      await askForMail(event, job, await verifiedGuest(event, 'stale@example.com'));
+      // A packaged photo was hidden while the build ran.
+      await db('photos').where({ id: photoIds[0] }).update({ visibility: 'hidden' });
+      await db('download_jobs').where({ id: job.id }).update({ status: 'ready' });
+      expect(await notifier.notifyReady(job.id)).toBe(0);
+      expect(await readyMails('stale@example.com')).toHaveLength(0);
+    });
+
     it('does not mail a job that is past its retention', async () => {
       const { event, photoIds } = await makeEvent();
       const job = await makeJob(event, photoIds, { status: 'building' });
@@ -642,9 +653,23 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
         .set('Authorization', `Bearer ${galleryToken(event)}`);
       const live = await status(await makeJob(event, photoIds));
       expect(live.body).toMatchObject({ status: 'ready' });
-      expect(live.body.expired).toBeUndefined();
+      expect(live.body.unavailable).toBeUndefined();
       const gone = await status(await makeJob(event, photoIds, { expiresIn: -1000 }));
-      expect(gone.body).toMatchObject({ status: 'ready', expired: true });
+      expect(gone.body).toMatchObject({ status: 'ready', unavailable: true });
+    });
+
+    it('says so when the gallery changed under a ready job, or the job is another scope\'s', async () => {
+      const { event, photoIds } = await makeEvent();
+      const status = (job) => request(app)
+        .get(`/api/gallery/${event.slug}/download-jobs/${job.token}`)
+        .set('Authorization', `Bearer ${galleryToken(event)}`);
+      const clientJob = await makeJob(event, photoIds, { scope: 'hidden' });
+      expect((await status(clientJob)).body).toMatchObject({ status: 'ready', unavailable: true });
+
+      const job = await makeJob(event, photoIds);
+      expect((await status(job)).body.unavailable).toBeUndefined();
+      await db('photos').where({ id: photoIds[0] }).update({ visibility: 'hidden' });
+      expect((await status(job)).body).toMatchObject({ status: 'ready', unavailable: true });
     });
   });
 });

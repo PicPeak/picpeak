@@ -186,6 +186,11 @@ async function notifyReady(jobId) {
   if (msLeft <= 0) return 0;
   const event = await db('events').where({ id: job.event_id }).first();
   if (!event) return 0;
+  // Ready is not deliverable: the gallery may have expired, downloads been
+  // switched off or a packaged photo hidden while the build ran. The file
+  // route refuses such an archive, so nobody is told it is ready; the sweep
+  // removes the job and its recipients.
+  if (!(await require('./downloadJobService').isDeliverableToAnyone(job, event))) return 0;
 
   const { queueEmail } = require('./emailProcessor');
   const hoursLeft = Math.max(1, Math.round(msLeft / HOUR_MS));

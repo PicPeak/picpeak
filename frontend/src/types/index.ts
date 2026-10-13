@@ -328,8 +328,11 @@ export interface DownloadJobState {
    * being prepared and the server holds an address for this visitor.
    */
   notify?: 'available' | 'requested';
-  /** A ready job past its retention that the sweep has not removed yet. */
-  expired?: boolean;
+  /**
+   * A ready job the server would no longer hand over (past its retention, or
+   * the gallery changed since) that the sweep has not removed yet.
+   */
+  unavailable?: boolean;
 }
 
 export interface PhotoCategory {

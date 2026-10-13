@@ -1251,9 +1251,14 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
         notify = (await downloadJobNotifier.isRequested(job.id, recipient.email)) ? 'requested' : 'available';
       }
     }
-    // Past its retention but not swept yet: the file route answers 410, so
-    // the dialog opened from a ready-mail must not offer it (issue 1733).
-    const expired = job.status === 'ready' && new Date(job.expires_at).getTime() <= Date.now();
+    // A ready job the file route would refuse, not swept yet: past its
+    // retention (410), or no longer matching the gallery or this visitor's
+    // scope (409 / 404). The dialog opened from a ready-mail must not offer
+    // it (issue 1733).
+    const unavailable = job.status === 'ready' && (
+      new Date(job.expires_at).getTime() <= Date.now()
+      || !(await downloadJobService.isStillDeliverable(job, req.event, req.accessLevel))
+    );
     res.json({
       status: job.status,
       resolution: job.resolution,
@@ -1262,7 +1267,7 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
       error: job.status === 'failed' ? (job.error || 'Preparation failed') : undefined,
       download_limit_reached: limitReached,
       notify,
-      expired: expired || undefined,
+      unavailable: unavailable || undefined,
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to read download job');
