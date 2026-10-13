@@ -250,9 +250,11 @@ export const ProjectCockpitPage: React.FC = () => {
     }
     // Ordered by the reading the row prints: the date hook's parser takes
     // SQLite's zone-less created_at of a queued mail as UTC (issue 1815).
+    // The outer `new Date` is for the other shape SQLite sends, epoch
+    // milliseconds, which that parser hands back as the number it got.
     return items.sort((a, b) => {
-      const da = a.date ? toDisplayDate(a.date).getTime() : 0;
-      const db = b.date ? toDisplayDate(b.date).getTime() : 0;
+      const da = a.date ? new Date(toDisplayDate(a.date)).getTime() : 0;
+      const db = b.date ? new Date(toDisplayDate(b.date)).getTime() : 0;
       return db - da;
     });
   }, [data, t, flags]);
