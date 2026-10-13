@@ -46,8 +46,10 @@ function normalizeExif(raw) {
   put('lens', cleanText(src.LensModel ?? src.lens));
   put('focal_length', cleanNumber(src.FocalLength ?? src.focal_length, 10000, 1));
   put('aperture', cleanNumber(src.FNumber ?? src.aperture, 1000, 2));
-  // Seconds. Six decimals keep 1/32000 s apart from 1/16000 s.
-  put('exposure_time', cleanNumber(src.ExposureTime ?? src.exposure_time, 86400, 6));
+  // Seconds. The lightbox prints the reciprocal (1/3200 s), so the value
+  // keeps enough decimals for that to round back to the camera's setting:
+  // at six, 1/3200 s was stored as 0.000313 and shown as 1/3195 s.
+  put('exposure_time', cleanNumber(src.ExposureTime ?? src.exposure_time, 86400, 12));
   put('iso', cleanNumber(src.ISO ?? src.iso, 100000000, 0));
   return out;
 }

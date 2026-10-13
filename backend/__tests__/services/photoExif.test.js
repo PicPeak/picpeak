@@ -78,6 +78,15 @@ describe('photoExif', () => {
     expect(normalizeExif({ ExposureTime: 1 / 8000, FNumber: 0.95 })).toEqual({ exposure_time: 0.000125, aperture: 0.95 });
   });
 
+  it('keeps a shutter speed precise enough for its reciprocal to read as the camera set it', () => {
+    for (const speed of [3, 60, 250, 1250, 3200, 6400, 8000, 16000, 32000, 180000]) {
+      const { exposure_time: stored } = normalizeExif({ ExposureTime: 1 / speed });
+      expect(Math.round(1 / stored)).toBe(speed);
+      // A stored value survives the read-side rebuild unchanged.
+      expect(parseStoredExif(JSON.stringify({ exposure_time: stored })).exposure_time).toBe(stored);
+    }
+  });
+
   it('parses a stored value back through the allow-list', () => {
     expect(parseStoredExif(null)).toBeNull();
     expect(parseStoredExif('{}')).toBeNull();
