@@ -21,7 +21,8 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   onDownload,
   allowDownloads = true,
   feedbackEnabled = false,
-  feedbackOptions
+  feedbackOptions,
+  onFeedbackChange
 }) => {
   const { theme } = useTheme();
   const { currentPhoto, currentIndex, setCurrentIndex } = usePhotoSelection(photos);
@@ -221,6 +222,9 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       await feedbackService.submitFeedback(slug!, String(currentPhoto.id), {
                         feedback_type: 'like',
                       });
+                      // The "x selected" counter and the Liked filter read
+                      // /my-feedback, which this refreshes (issue 1733).
+                      onFeedbackChange?.(currentPhoto.id);
                     } catch (err) {
                       // Same rule as PhotoCard: a pick refused by a finished
                       // selection goes back; otherwise keep the optimistic
@@ -248,6 +252,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       guest_name: savedIdentity?.name,
                       guest_email: savedIdentity?.email,
                     });
+                    onFeedbackChange?.(currentPhoto.id);
                   } catch (err) {
                     if (feedbackLockKind(err)) toggleLiked(currentPhoto.id);
                     else console.warn('Like submit failed, keeping optimistic UI', err);
@@ -339,6 +344,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               guest_name: name,
               guest_email: email,
             });
+            onFeedbackChange?.(pendingAction.photoId);
             setPendingAction(null);
           }
         }}
