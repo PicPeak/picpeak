@@ -58,4 +58,39 @@ describe('PhotoCard like', () => {
     await waitFor(() => expect(onFeedbackChange).toHaveBeenCalledWith(7));
     expect(submitFeedback).toHaveBeenCalledWith('summer', '7', expect.objectContaining({ feedback_type: 'like' }));
   });
+
+  // Issue 1733: a like refused by a finished selection wrote nothing, so the
+  // optimistic toggle is taken back; any other failure keeps it, as before.
+  it.each([
+    ['a lock refusal', { response: { status: 409, data: { code: 'SELECTION_LOCKED' } } }, 2],
+    ['another failure', new Error('offline'), 1],
+  ])('toggles the heart back after %s only', async (_name, error, toggles) => {
+    submitFeedback.mockReset().mockRejectedValue(error);
+    const onLikeSuccess = vi.fn();
+    const onFeedbackChange = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <PhotoCard
+          photo={photo}
+          isSelected={false}
+          isSelectionMode={false}
+          onClick={() => {}}
+          onDownload={() => {}}
+          onToggleSelect={() => {}}
+          imageProps={{ src: '/t/7', alt: 'IMG_0001.jpg' }}
+          overlayBaseClassName="absolute inset-0"
+          slug="summer"
+          feedbackEnabled
+          feedbackOptions={{ allowLikes: true }}
+          onLikeSuccess={onLikeSuccess}
+          onFeedbackChange={onFeedbackChange}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Like photo' }));
+
+    await waitFor(() => expect(onFeedbackChange).toHaveBeenCalledWith(7));
+    expect(onLikeSuccess).toHaveBeenCalledTimes(toggles);
+  });
 });

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { radioGroupKeyDown } from '../../utils/ariaKeyboard';
 import { Check, ClipboardCheck, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, FolderInput, Cog, AlertTriangle, RefreshCw, LayoutGrid, List, UserRound, X, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
@@ -21,6 +22,7 @@ import { FolderPickerModal } from './folders/FolderPickerModal';
 import { invalidateFolderViews } from './folders/folderQueries';
 import type { GalleryFolder } from '../../services/folders.service';
 import { folderPathLabel } from '../../utils/folderTree';
+import { folderErrorMessage } from './folders/folderQueries';
 
 interface CategoryOption {
   id: number;
@@ -357,8 +359,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       invalidateFolderViews(queryClient, eventId);
       onPhotosDeleted(); // Refresh the photo list
     } catch (error: unknown) {
-      const e = error as { response?: { data?: { error?: string } } };
-      toast.error(e.response?.data?.error || t('photos.folders.moveFailed', 'The photos could not be moved'));
+      toast.error(folderErrorMessage(error, t) || t('photos.folders.moveFailed', 'The photos could not be moved'));
     } finally {
       setIsMovingToFolder(false);
     }
@@ -403,7 +404,13 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       : (pending
         ? 'bg-warning-soft text-warning-text'
         : 'bg-danger-soft text-danger-text');
-    const uploader = photo.uploaded_by_admin?.username;
+    // Whose upload it is: a guest's (issue 1733), named when the gallery
+    // asks guests for a name, or a team member's.
+    const fromGuest = photo.uploaded_by === 'guest';
+    const uploader = fromGuest ? photo.credit_name : photo.uploaded_by_admin?.username;
+    const source = fromGuest
+      ? t('photos.review.sourceGuest', 'Guest')
+      : (uploader ? t('photos.review.sourceTeam', 'Team') : null);
     return (
       <span
         className={`inline-flex max-w-full items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${colors}`}
@@ -414,7 +421,9 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       >
         <ClipboardCheck className="w-3 h-3 shrink-0" />
         <span className="shrink-0">{pending ? t('photos.review.pendingBadge', 'Pending review') : t('photos.review.rejectedBadge', 'Rejected')}</span>
-        {uploader && <span className="min-w-0 truncate font-normal opacity-90">· {uploader}</span>}
+        {/* The source always shows; on a narrow tile only the name gives way. */}
+        {source && <span className="shrink-0 font-normal opacity-90" data-testid={`admin-photo-review-source-${photo.id}`}>· {source}</span>}
+        {source && uploader && <span className="min-w-0 truncate font-normal opacity-90">· {uploader}</span>}
       </span>
     );
   };
@@ -581,12 +590,13 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
           </div>
           {/* Layout toggle: Grid / List — radiogroup so a screen reader
               announces the two options as one mutually-exclusive set. */}
-          <div className="inline-flex rounded-lg border border-line-strong overflow-hidden" role="radiogroup" aria-label={t('admin.photos.viewMode', 'View mode')}>
+          <div className="inline-flex rounded-lg border border-line-strong overflow-hidden" role="radiogroup" aria-label={t('admin.photos.viewMode', 'View mode')} onKeyDown={radioGroupKeyDown}>
             <button
               type="button"
               role="radio"
               onClick={() => selectView('grid')}
               aria-checked={viewMode === 'grid'}
+              tabIndex={viewMode === 'grid' ? 0 : -1}
               title={t('admin.photos.gridView', 'Grid view')}
               className={`p-1.5 transition-colors ${
                 viewMode === 'grid'
@@ -601,6 +611,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
               role="radio"
               onClick={() => selectView('list')}
               aria-checked={viewMode === 'list'}
+              tabIndex={viewMode === 'list' ? 0 : -1}
               title={t('admin.photos.listView', 'List view')}
               className={`p-1.5 transition-colors border-l border-line-strong ${
                 viewMode === 'list'

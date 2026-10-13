@@ -29,7 +29,7 @@ async function deleteEventCascade(eventId, adminContext) {
   const tieredPhotos = await db('photos')
     .where('event_id', eventId)
     .select('id', 'path', 'filename', 'source_origin', 'external_relpath',
-      'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path');
+      'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path', 'hls_path', 'hls_status');
 
   // A Set because a photo can carry the same key in two columns (an unresized
   // gallery's hero and preview can resolve to one object) and deleting it
@@ -196,10 +196,20 @@ async function deleteEventCascade(eventId, adminContext) {
     if (await trx.schema.hasTable('event_admin_assignments')) {
       await trx('event_admin_assignments').where('event_id', eventId).del();
     }
+    // "Mail me when the download is ready" requests (migration 293) hold
+    // addresses and hang off download_jobs: the same inert-cascade reason.
+    if (await trx.schema.hasTable('download_job_recipients')) {
+      await trx('download_job_recipients')
+        .whereIn('job_id', trx('download_jobs').where('event_id', eventId).select('id')).del();
+    }
     // feedback_rate_limits.event_id is also ON DELETE CASCADE (#1585), same
     // SQLite caveat as photo_faces above — delete explicitly so an event's
     // rate-limit tracking rows don't outlive it on the SQLite path.
     await trx('feedback_rate_limits').where('event_id', eventId).del();
+    // Finished selections and approvals (migration 291): the same reason.
+    if (await trx.schema.hasTable('selection_submissions')) {
+      await trx('selection_submissions').where('event_id', eventId).del();
+    }
 
     await trx('photos').where('event_id', eventId).del();
     // 5. Finally delete the event row
@@ -249,9 +259,12 @@ async function deleteEventCascade(eventId, adminContext) {
   // delete is not.
   try {
     const { deleteThumbnailTiers, deletePreviewTiers } = require('../../services/imageProcessor');
+    const { deleteLadder } = require('../../services/videoHlsService');
     for (const photo of tieredPhotos) {
       await deleteThumbnailTiers(photo);
       await deletePreviewTiers(photo);
+      // Adaptive streaming ladder (issue 1733): its keys derive from the id.
+      await deleteLadder(photo);
     }
   } catch (tierErr) {
     logger.warn('Failed to delete responsive tiers during cascade delete', { eventId, error: tierErr.message });

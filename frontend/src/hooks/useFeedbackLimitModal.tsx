@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import {
   FeedbackLimitReachedModal,
 } from '../components/gallery/FeedbackLimitReachedModal';
+import { feedbackLockKind } from '../utils/feedbackLock';
 
 /**
  * Per-guest favorite/like cap (#655). Components that submit feedback wrap
@@ -58,6 +59,9 @@ export function useFeedbackLimitModal() {
   const [state, setState] = useState<LimitState | null>(null);
 
   const handleError = useCallback((error: unknown): boolean => {
+    // A finished selection (issue 1733): the feedback service has already
+    // told the guest why, so the caller's generic error toast is skipped too.
+    if (feedbackLockKind(error)) return true;
     const parsed = parseFeedbackLimitError(error);
     if (!parsed) return false;
     setState({ open: true, ...parsed });

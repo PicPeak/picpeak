@@ -6,13 +6,13 @@ import { firstLookAboveChips } from '../GalleryTileBadges';
 import {
   calculateJustifiedLayout,
   createJustifiedPhotos,
-  type JustifiedLayoutItem,
 } from '../../../utils/justifiedLayoutCalculator';
 // Flickr's justified-layout library
 import justifiedLayout from 'justified-layout';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { useLazyBands } from './lazyBands';
+import { useWindowedItems, WINDOW_MIN_PHOTOS } from './rowWindow';
 
 // Count-style feedback indicators shared by all masonry modes (top-left).
 // `withTitles` matches the columns-mode markup, which carries title attributes.
@@ -44,6 +44,9 @@ const FeedbackCountIndicators: React.FC<{ photo: Photo; withTitles?: boolean }> 
   );
 };
 
+/** Four 36px action buttons (view, download, comment, like) and their three 8px gaps. */
+const MIN_TILE_WIDTH_FOR_ACTION_ROW = 168;
+
 interface MasonryPhotoProps {
   photo: Photo;
   isSelected: boolean;
@@ -65,6 +68,7 @@ interface MasonryPhotoProps {
   savedIdentity?: { name: string; email: string } | null;
   onIdentitySaved?: (identity: { name: string; email: string }) => void;
   onQuickComment?: () => void;
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
   // Column width for calculating proper aspect-ratio-based height
   columnWidth?: number;
   // Optimistic "I liked this" state + callback (lifted to parent)
@@ -85,6 +89,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
   slug,
   feedbackOptions,
   onQuickComment,
+  onFeedbackChange,
   columnWidth = 300,
   liked = false,
   onLikeSuccess,
@@ -132,10 +137,11 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
        * explicit px height above holds the box with or without the image, so
        * a far-off tile can be released without reflowing the column.
        *
-       * No `content-visibility` here, unlike the other masonry modes: this
-       * card owns its FeedbackIdentityModal (`identityMode="self"`), and the
-       * layout containment that comes with it would make the tile the
-       * containing block of that `position: fixed` modal.
+       * No `content-visibility` here, unlike the other masonry modes. It was
+       * left out when this card rendered its FeedbackIdentityModal
+       * (`identityMode="self"`) inline: layout containment would have made
+       * the tile the containing block of that `position: fixed` modal. The
+       * modal is portalled now, so that reason is gone; not revisited here.
        */
       lazy
       inViewRootMargin={bands.load}
@@ -158,6 +164,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
       feedbackOptions={feedbackOptions}
       slug={slug}
       onQuickComment={onQuickComment}
+      onFeedbackChange={onFeedbackChange}
       liked={liked}
       onLikeSuccess={onLikeSuccess}
       identityMode="self"
@@ -189,7 +196,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   onPhotoSelect,
   allowDownloads = true,
   feedbackEnabled = false,
-  feedbackOptions
+  feedbackOptions,
+  onFeedbackChange
 }) => {
   const bands = useLazyBands();
   const { theme } = useTheme();
@@ -211,9 +219,46 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     setLikedPhotoIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
     likedSeededRef.current = true;
   }, [photos]);
+  // Toggle, not add — the /feedback like endpoint toggles server-side, so
+  // click 2 on a liked photo unlikes it; the optimistic UI must follow suit
+  // (#590).
+  const toggleLiked = (photoId: number) => {
+    setLikedPhotoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(photoId)) next.delete(photoId);
+      else next.add(photoId);
+      return next;
+    });
+  };
+  // The tile feedback wiring of columns mode (MasonryPhoto), for the PhotoCards
+  // the rows, flickr and quilted modes render directly (issue 1733).
+  // `tileWidth` is the layout's px width where it computes one: these modes
+  // put a portrait next to a landscape at one row height, so a tile can be
+  // narrower than the four action buttons. Such a tile wraps them onto a
+  // second line, which is where the rating row would sit, so it leaves the
+  // stars to the lightbox, as PhotoCard itself does on a short tile.
+  const tileFeedbackProps = (photo: Photo, index: number, tileWidth?: number) => {
+    const narrow = tileWidth !== undefined && tileWidth < MIN_TILE_WIDTH_FOR_ACTION_ROW;
+    return {
+      overlayBaseClassName: `absolute inset-0 bg-black/40 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2${narrow ? ' flex-wrap content-center' : ''}`,
+      feedbackEnabled,
+      feedbackOptions: narrow && feedbackOptions ? { ...feedbackOptions, allowRatings: false } : feedbackOptions,
+      slug,
+      onQuickComment: () => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(index),
+      onFeedbackChange,
+      liked: likedPhotoIds.has(photo.id),
+      onLikeSuccess: () => toggleLiked(photo.id),
+      identityMode: 'self' as const,
+      savedIdentity,
+      onIdentitySaved: setSavedIdentity,
+      likeToggleLabels: true,
+    };
+  };
   const gallerySettings = theme.gallerySettings || {};
   const gutter = gallerySettings.masonryGutter || 16;
-  const mode = gallerySettings.masonryMode || 'columns';
+  // 'justified' is the picker's "Google Photos" option: the same justified rows.
+  const storedMode = gallerySettings.masonryMode || 'columns';
+  const mode = storedMode === 'justified' ? 'rows' : storedMode;
   const targetRowHeight = gallerySettings.masonryRowHeight || 250;
   const lastRowBehavior = gallerySettings.masonryLastRowBehavior || 'left';
   const scale = gallerySettings.thumbnailScale || 'md';
@@ -283,14 +328,14 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     });
   }, [mode, photos, containerWidth, targetRowHeight, gutter, lastRowBehavior]);
 
-  // Create a map for quick lookup of layout items by photo ID (rows mode)
-  const layoutItemMap = useMemo(() => {
-    const map = new Map<number, JustifiedLayoutItem>();
-    for (const item of rowsLayout.items) {
-      map.set(item.photoId, item);
-    }
-    return map;
-  }, [rowsLayout.items]);
+  // Rows mode mounts only the rows near the viewport in a large gallery
+  // (issue 1733); the other modes never have items here.
+  const { visible: visibleRowItems } = useWindowedItems(
+    containerRef,
+    rowsLayout.items,
+    containerWidth,
+    mode === 'rows' && photos.length >= WINDOW_MIN_PHOTOS,
+  );
 
   // Calculate Flickr justified layout
   const flickrLayout = useMemo(() => {
@@ -395,9 +440,10 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               <div key={photo.id} className="aspect-square bg-border-token rounded-lg animate-pulse" />
             ))}
           </div>
-        ) : photos.map((photo, index) => {
-          const layoutItem = layoutItemMap.get(photo.id);
-          if (!layoutItem) return null;
+        ) : visibleRowItems.map((layoutItem) => {
+          const index = photoIndexById.get(layoutItem.photoId);
+          if (index === undefined) return null;
+          const photo = photos[index];
 
           return (
             <PhotoCard
@@ -432,9 +478,9 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 loading: 'lazy',
                 isGallery: true,
               }}
-              overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
               actionVariant="dark"
               allowDownloads={allowDownloads}
+              {...tileFeedbackProps(photo, index, layoutItem.width)}
               beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
             />
           );
@@ -496,9 +542,9 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 loading: 'lazy',
                 isGallery: true,
               }}
-              overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
               actionVariant="dark"
               allowDownloads={allowDownloads}
+              {...tileFeedbackProps(photo, index, box.width)}
               beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
             >
               {photo.type === 'collage' && (
@@ -570,9 +616,11 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 loading: 'lazy',
                 isGallery: true,
               }}
-              overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 flex items-center justify-center gap-2"
               actionVariant="dark"
               allowDownloads={allowDownloads}
+              {...tileFeedbackProps(photo, index)}
+              // After the spread: the quilted cell clips with its own rounding.
+              overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 flex items-center justify-center gap-2"
               beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
             >
               {photo.type === 'collage' && (
@@ -630,21 +678,12 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 slug={slug}
                 feedbackOptions={feedbackOptions}
                 onQuickComment={() => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(originalIndex)}
+                onFeedbackChange={onFeedbackChange}
                 columnWidth={columnWidth}
                 savedIdentity={savedIdentity}
                 onIdentitySaved={setSavedIdentity}
                 liked={likedPhotoIds.has(photo.id)}
-                onLikeSuccess={() => {
-                  // Toggle, not add — the /feedback like endpoint toggles
-                  // server-side, so click 2 on a liked photo unlikes it;
-                  // the optimistic UI must follow suit (#590).
-                  setLikedPhotoIds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(photo.id)) next.delete(photo.id);
-                    else next.add(photo.id);
-                    return next;
-                  });
-                }}
+                onLikeSuccess={() => toggleLiked(photo.id)}
               />
             );
           })}

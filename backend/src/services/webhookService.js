@@ -17,6 +17,9 @@ const EVENT_TYPES = Object.freeze([
   'event.expired',
   'photo.uploaded',
   'photo.deleted',
+  // A guest finished their selection or approved the edited photos
+  // (issue 1733, A1); data.submission.kind says which.
+  'selection.submitted',
 ]);
 
 function generateSecret() {

@@ -639,11 +639,23 @@ async function deleteAdminUser(id, deletedById) {
       await trx('event_admin_assignments').where('admin_user_id', id).del();
       await trx('event_admin_assignments').where('assigned_by', id).update({ assigned_by: null });
     }
+    // The submissions this admin reopened (migration 291): SET NULL.
+    if (await trx.schema.hasTable('selection_submissions')) {
+      await trx('selection_submissions').where('reopened_by', id).update({ reopened_by: null });
+    }
     if (await trx.schema.hasColumn('photos', 'uploaded_by_admin_id')) {
       await trx('photos').where('uploaded_by_admin_id', id).update({ uploaded_by_admin_id: null });
     }
     await deleteWithAccountingHistory(trx, 'admin_users', { id },
       { actor: deletedById, source: 'admin_user.delete' });
+    // Their passkeys (migration 295), for the same reason as the dismissals.
+    // After the account row, not before it: PostgreSQL has cascaded them by
+    // now, so this only does work on SQLite, and the account row was locked
+    // first, the order passkey registration, removal and the password reset
+    // take. Deleting them up front could deadlock against one of those.
+    if (await trx.schema.hasTable('admin_webauthn_credentials')) {
+      await trx('admin_webauthn_credentials').where('admin_user_id', id).del();
+    }
   });
 
   await logActivity('admin_user_deleted',
@@ -682,7 +694,8 @@ async function resetAdminPassword(id, resetById) {
 
   // Recovery invalidates every existing API credential permanently, even
   // after the owner completes the required interactive password change.
-  await require('./adminPasswordReset').setAdminPasswordForReset(id, passwordHash);
+  // The account's passkeys are removed in the same transaction.
+  const passkeysRemoved = await require('./adminPasswordReset').setAdminPasswordForReset(id, passwordHash);
 
   // Queue password reset email
   await queueEmail(null, user.email, 'admin_password_reset', {
@@ -691,12 +704,12 @@ async function resetAdminPassword(id, resetById) {
   });
 
   await logActivity('admin_password_reset',
-    { userId: id, username: user.username },
+    { userId: id, username: user.username, passkeysRemoved },
     null,
     { type: 'admin', id: resetById, name: 'system' }
   );
 
-  logger.info('Admin password reset', { userId: id, resetById });
+  logger.info('Admin password reset', { userId: id, resetById, passkeysRemoved });
 
   return { email: user.email, passwordSent: true };
 }

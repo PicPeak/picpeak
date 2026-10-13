@@ -13,6 +13,7 @@ const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormaliza
 const { formatBoolean } = require('../utils/dbCompat');
 const { hasColumnCached } = require('../utils/schemaCache');
 const mfaService = require('../services/mfaService');
+const passkeyService = require('../services/passkeyService');
 const { accountCreditName } = require('../services/photoCredit');
 const router = express.Router();
 
@@ -422,6 +423,207 @@ router.post('/mfa/recovery-codes', [
     message: 'Recovery codes regenerated',
     recoveryCodes: plain
   });
+}));
+
+// ---------------------------------------------------------------------------
+// Passkeys (WebAuthn), issue 1733.
+//
+// Like the MFA routes above, everything here acts on the AUTHENTICATED
+// admin's own account. Verification is @simplewebauthn/server's; the
+// surrounding rules live in services/passkeyService.js.
+//
+// A passkey is a full login method (it signs in without the password and
+// counts as the second factor), so adding or removing one asks for the
+// current password again: a hijacked session must not be able to plant a
+// credential of its own or strip the owner's.
+// ---------------------------------------------------------------------------
+
+const passkeyFailure = (res, error) => res.status(error.status).json({ error: error.message, code: error.code });
+
+// Why this account cannot use passkeys right now, or null when it can.
+async function passkeyBlockReason(req, admin) {
+  // SSO-only mode refuses every local login, passkeys included, and an
+  // account owned by the identity provider never signs in locally at all.
+  if (await require('../services/oidcService').isLocalLoginDisabled()) return 'sso_only';
+  if (admin.auth_provider === 'oidc') return 'sso_account';
+  const rp = await passkeyService.getRelyingParty(req);
+  return rp.available ? null : rp.reason;
+}
+
+async function assertCurrentPassword(admin, currentPassword) {
+  const ok = typeof currentPassword === 'string' && currentPassword.length > 0
+    && admin.auth_provider !== 'oidc'
+    && await bcrypt.compare(currentPassword, admin.password_hash || '');
+  if (!ok) {
+    const error = new ValidationError('Current password is incorrect');
+    error.code = 'PASSWORD_INCORRECT';
+    throw error;
+  }
+}
+
+// The fresh second factor an account with two-factor authentication owes
+// before a passkey is added: what /mfa/disable accepts, a current
+// authenticator code or a recovery code. A passkey signs in without the code,
+// so without this a stolen session plus the password would be enough to mint
+// a way around the second factor. Both are spent here: the TOTP step is
+// persisted (persistTotpStep) and a recovery code is removed by
+// compare-and-set, as at login, so neither authorizes two requests.
+async function assertFreshSecondFactor(admin, code) {
+  const fail = (message, errorCode) => {
+    const error = new ValidationError(message);
+    error.code = errorCode;
+    return error;
+  };
+  if (typeof code !== 'string' || !code.trim()) {
+    throw fail('A current authenticator code is required to add a passkey', 'MFA_CODE_REQUIRED');
+  }
+  const totpStep = mfaService.verifyTotpEncryptedStep(
+    code, admin.two_factor_secret, admin.two_factor_last_used_step
+  );
+  if (totpStep !== null
+    && await mfaService.persistTotpStep(db, admin.id, totpStep, { updated_at: new Date() })) {
+    return;
+  }
+  const stored = mfaService.parseRecoveryCodes(admin.two_factor_recovery_codes);
+  const result = await mfaService.consumeRecoveryCode(code, stored);
+  const consumed = result.matched ? await db('admin_users')
+    .where('id', admin.id)
+    .where('two_factor_recovery_codes', admin.two_factor_recovery_codes)
+    .update({ two_factor_recovery_codes: JSON.stringify(result.remainingHashes), updated_at: new Date() }) : 0;
+  if (consumed !== 1) throw fail('Invalid verification code', 'MFA_INVALID');
+  await logActivity('admin_mfa_recovery_used',
+    { admin_id: admin.id, remaining: result.remainingHashes.length },
+    null,
+    { type: 'admin', id: admin.id, name: admin.username }
+  );
+}
+
+router.get('/passkeys', adminAuth, handleAsync(async (req, res) => {
+  const admin = await db('admin_users').where('id', req.admin.id).first();
+  if (!admin) throw new NotFoundError('Admin user');
+  const rp = await passkeyService.getRelyingParty(req);
+  const reason = await passkeyBlockReason(req, admin);
+  const rows = await passkeyService.listForAdmin(admin.id);
+  res.json({
+    available: reason === null,
+    reason,
+    // The address passkeys are bound to, so the card can name it.
+    rpId: rp.rpID || null,
+    origin: rp.origin || null,
+    max: passkeyService.MAX_PASSKEYS_PER_ADMIN,
+    // Adding a passkey then asks for an authenticator code as well.
+    mfaEnabled: isMfaEnabled(admin),
+    passkeys: rows.map(passkeyService.publicView)
+  });
+}));
+
+router.post('/passkeys/register/options', [
+  adminAuth,
+  body('currentPassword').isString().notEmpty().withMessage('Current password is required'),
+  body('code').optional().isString().isLength({ max: 64 })
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const admin = await db('admin_users').where('id', req.admin.id).first();
+  if (!admin) throw new NotFoundError('Admin user');
+  const reason = await passkeyBlockReason(req, admin);
+  if (reason) {
+    return res.status(400).json({ error: 'Passkeys are not available', code: 'PASSKEY_UNAVAILABLE', reason });
+  }
+  await assertCurrentPassword(admin, req.body.currentPassword);
+  // The second factor is checked after the password, so a wrong password
+  // never spends a code, and as the last step before the challenge is issued,
+  // so a request refused for another reason (the cap, no relying party) does
+  // not spend one either. No challenge exists without it, and register/verify
+  // only accepts a challenge from here.
+  const authorize = isMfaEnabled(admin)
+    ? () => assertFreshSecondFactor(admin, req.body.code)
+    : undefined;
+  try {
+    res.json({ options: await passkeyService.beginRegistration(req, res, admin, { authorize }) });
+  } catch (error) {
+    if (error instanceof passkeyService.PasskeyError) return passkeyFailure(res, error);
+    throw error;
+  }
+}));
+
+router.post('/passkeys/register/verify', [
+  adminAuth,
+  body('response').isObject().withMessage('A passkey response is required'),
+  body('name').optional().isString().isLength({ max: passkeyService.MAX_NAME_LENGTH })
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const admin = await db('admin_users').where('id', req.admin.id).first();
+  if (!admin) throw new NotFoundError('Admin user');
+  const reason = await passkeyBlockReason(req, admin);
+  if (reason) {
+    return res.status(400).json({ error: 'Passkeys are not available', code: 'PASSKEY_UNAVAILABLE', reason });
+  }
+  try {
+    const passkey = await passkeyService.finishRegistration(req, res, admin, req.body.response, req.body.name);
+    await logActivity('admin_passkey_added',
+      { admin_id: admin.id, passkey_id: passkey.id, name: passkey.name },
+      null,
+      { type: 'admin', id: admin.id, name: admin.username }
+    );
+    successResponse(res, { message: 'Passkey added', passkey });
+  } catch (error) {
+    if (error instanceof passkeyService.PasskeyError) return passkeyFailure(res, error);
+    throw error;
+  }
+}));
+
+router.patch('/passkeys/:id', [
+  adminAuth,
+  body('name').isString().trim().isLength({ min: 1, max: passkeyService.MAX_NAME_LENGTH })
+    .withMessage(`Name must be 1-${passkeyService.MAX_NAME_LENGTH} characters`)
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const id = Number(req.params.id);
+  const updated = Number.isInteger(id) ? await db('admin_webauthn_credentials')
+    .where({ id, admin_user_id: req.admin.id })
+    .update({ name: passkeyService.cleanName(req.body.name) }) : 0;
+  if (!updated) throw new NotFoundError('Passkey');
+  successResponse(res, { message: 'Passkey renamed' });
+}));
+
+// POST rather than DELETE because it carries the current password, and a
+// DELETE body does not survive every proxy.
+router.post('/passkeys/:id/delete', [
+  adminAuth,
+  body('currentPassword').optional().isString()
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const admin = await db('admin_users').where('id', req.admin.id).first();
+  if (!admin) throw new NotFoundError('Admin user');
+  const id = Number(req.params.id);
+  const passkey = Number.isInteger(id)
+    ? await db('admin_webauthn_credentials').where({ id, admin_user_id: admin.id }).first()
+    : null;
+  if (!passkey) throw new NotFoundError('Passkey');
+
+  // An account the identity provider owns has no local password to ask for,
+  // and cannot sign in with a passkey either, so removing one costs nothing.
+  const ssoAccount = admin.auth_provider === 'oidc';
+  const hasPassword = !ssoAccount && Boolean(admin.password_hash);
+  if (hasPassword) await assertCurrentPassword(admin, req.body.currentPassword);
+
+  await db.transaction(async (trx) => {
+    // Never remove the last way in: without a password (and without SSO) the
+    // last passkey is the only login this account has. The account row is
+    // locked first: on PostgreSQL two removals would otherwise both count two.
+    await trx('admin_users').where('id', admin.id).forUpdate().first();
+    if (!hasPassword && !ssoAccount && await passkeyService.countForAdmin(admin.id, trx) <= 1) {
+      throw new ConflictError('This passkey is the only way to sign in to this account. Set a password first.');
+    }
+    await trx('admin_webauthn_credentials').where({ id: passkey.id, admin_user_id: admin.id }).del();
+  });
+
+  await logActivity('admin_passkey_removed',
+    { admin_id: admin.id, passkey_id: passkey.id, name: passkey.name },
+    null,
+    { type: 'admin', id: admin.id, name: admin.username }
+  );
+  successResponse(res, { message: 'Passkey removed' });
 }));
 
 module.exports = router;

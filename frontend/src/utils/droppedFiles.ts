@@ -73,7 +73,37 @@ export const pickedFromInput = (files: File[]): PickedFile[] =>
     // files on every exFAT card, `.DS_Store`, anything under `.thumbnails/`);
     // skip them as the drop walk does. A plain pick is taken as chosen.
     .filter(({ rel }) => !rel || !rel.split('/').some((part) => part.startsWith('.')))
+    // A folder pick arrives in the file system's order, which is none in
+    // particular; sort it as the drop walk does (by name, level by level), so
+    // the per-upload cap cuts the same tail either way. Plain picks have no
+    // path and stay as chosen.
+    .sort((a, b) => (a.rel && b.rel ? comparePaths(a.rel, b.rel) : 0))
     .map(({ file, rel }) => ({ file, dir: directoryOf(rel) }));
+
+// One collator for every name comparison: `localeCompare` with options sets
+// up collation anew on each call, which for a pick of tens of thousands of
+// files is seconds of blocked main thread before the cap cuts it to hundreds.
+const byName = new Intl.Collator(undefined, { numeric: true });
+
+// Names the collator calls equal can still be different entries (`1` and
+// `01`, or one name in two Unicode normal forms); code-unit order settles
+// those, so two such folders are never interleaved and a pick and a drop of
+// the same tree agree on the order.
+const compareNames = (a: string, b: string): number => {
+  const order = byName.compare(a, b);
+  if (order !== 0 || a === b) return order;
+  return a < b ? -1 : 1;
+};
+
+const comparePaths = (a: string, b: string): number => {
+  const as = a.split('/');
+  const bs = b.split('/');
+  for (let i = 0; i < Math.min(as.length, bs.length); i += 1) {
+    const order = compareNames(as[i], bs[i]);
+    if (order !== 0) return order;
+  }
+  return as.length - bs.length;
+};
 
 export interface CollectOptions {
   limit?: number;
@@ -150,7 +180,7 @@ async function walkEntry(entry: FileSystemEntry, dir: string, walk: Walk, depth:
   if (!entry.isDirectory) return;
   const children = (await readAllEntries((entry as FileSystemDirectoryEntry).createReader()))
     .filter((child) => !child.name.startsWith('.'))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    .sort((a, b) => compareNames(a.name, b.name));
   const childDir = dir ? `${dir}/${entry.name}` : entry.name;
   for (const child of children) {
     if (spent(walk)) return;

@@ -101,6 +101,18 @@ describe('localStorageUsage (#1164)', () => {
     expect((await measureLocalStorageUsage()).total).toBe(777);
   });
 
+  it('counts the adaptive streaming ladders of videos (issue 1733)', async () => {
+    // hls/<photoId>/<attempt>/... is written through the storage backend and
+    // roughly doubles a video's footprint; it has to show in "storage used".
+    await write(path.join('events', 'active', 'wed', 'individual', 'clip.mp4'), 5000);
+    await write(path.join('hls', '7', '0b6f6d0e-5f0b-4c55-9f0e-2a4d3c1b7e9a', 'master.m3u8'), 200);
+    await write(path.join('hls', '7', '0b6f6d0e-5f0b-4c55-9f0e-2a4d3c1b7e9a', '720p', 'seg_00000.m4s'), 4000);
+
+    const usage = await measureLocalStorageUsage();
+    expect(usage.total).toBe(9200);
+    expect(usage.breakdown.other).toBe(4200);
+  });
+
   it('reports zero on a fresh install rather than failing', async () => {
     const usage = await measureLocalStorageUsage();
 

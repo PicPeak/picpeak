@@ -37,6 +37,23 @@ describe('a gallery viewer fetching its own images', () => {
     expect(await shouldSkipRateLimit(r, config)).toBe(true);
   });
 
+  // Adaptive streaming (issue 1733): one playback is a playlist and a
+  // segment every six seconds, where the photo route is one request.
+  it.each(['hls/42/master.m3u8', 'hls/42/720p/index.m3u8', 'hls/42/720p/init.mp4', 'hls/42/720p/seg_00017.m4s'])(
+    'skips the budget on /%s', async (route) => {
+      const r = req(`/api/gallery/wedding-2026/${route}`, galleryToken('wedding-2026'));
+      expect(isOwnGalleryImageRequest(r)).toBe(true);
+      expect(await shouldSkipRateLimit(r, config)).toBe(true);
+      expect(isOwnGalleryImageRequest(req(`/api/gallery/wedding-2026/${route}`, galleryToken('other-gallery')))).toBe(false);
+    });
+
+  it('but on nothing deeper or looser under /hls', () => {
+    const token = galleryToken('wedding-2026');
+    for (const route of ['hls/42', 'hls/42/720p', 'hls/x/master.m3u8', 'hls/42/720p/a/b', 'hls/42/other.m3u8']) {
+      expect(isOwnGalleryImageRequest(req(`/api/gallery/wedding-2026/${route}`, token))).toBe(false);
+    }
+  });
+
   it('also reads the per-slug gallery cookie, as the browser sends it', () => {
     const r = { path: '/api/gallery/wedding-2026/thumbnail/42', method: 'GET', headers: {},
       cookies: { 'gallery_token_wedding-2026': galleryToken('wedding-2026') } };

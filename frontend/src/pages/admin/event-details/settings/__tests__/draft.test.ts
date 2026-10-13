@@ -62,6 +62,12 @@ describe('event settings draft', () => {
     expect(payload).toEqual({ assigned_admin_ids: [7, 9], review_contributor_uploads: true });
   });
 
+  it('sends the guest upload approval switch when it changed (issue 1733)', () => {
+    const base = eventFieldsFromEvent({ ...EVENT, allow_user_uploads: true, moderate_guest_uploads: 0 } as unknown as Event, branding);
+    expect(base.moderate_guest_uploads).toBe(false);
+    expect(eventUpdatePayload({ ...base, moderate_guest_uploads: true }, base, t)).toEqual({ moderate_guest_uploads: true });
+  });
+
   it('switching custom styling off keeps the stored theme untouched', () => {
     const on = eventFieldsFromEvent({ ...EVENT, custom_theme_enabled: true } as Event, branding);
     const payload = eventUpdatePayload({ ...on, custom_theme_enabled: false }, on, t);
@@ -90,6 +96,27 @@ describe('event settings draft', () => {
   it('refuses to turn the password on without a new one', () => {
     const base = eventFieldsFromEvent({ ...EVENT, require_password: false } as Event, branding);
     expect(() => eventUpdatePayload({ ...base, require_password: true }, base, t)).toThrow(DraftValidationError);
+  });
+
+  it('sends the guest upload edge as a number, and null when emptied (issue 1733)', () => {
+    const base = eventFieldsFromEvent(EVENT, branding);
+    expect(base.guest_upload_max_edge).toBe('');
+    expect(eventUpdatePayload({ ...base, guest_upload_max_edge: '2048' }, base, t)).toEqual({ guest_upload_max_edge: 2048 });
+
+    const set = eventFieldsFromEvent({ ...EVENT, guest_upload_max_edge: 2048 } as Event, branding);
+    expect(set.guest_upload_max_edge).toBe('2048');
+    expect(eventUpdatePayload({ ...set, guest_upload_max_edge: '' }, set, t)).toEqual({ guest_upload_max_edge: null });
+  });
+
+  it.each(['1023', '16385', '2048.5', 'abc', '-2048'])('refuses the guest upload edge %s, naming the guests section', (value) => {
+    const base = eventFieldsFromEvent(EVENT, branding);
+    try {
+      eventUpdatePayload({ ...base, guest_upload_max_edge: value }, base, t);
+      throw new Error('expected a validation error');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DraftValidationError);
+      expect((error as DraftValidationError).section).toBe('guests');
+    }
   });
 
   it('refuses an external source without a folder, naming the section', () => {

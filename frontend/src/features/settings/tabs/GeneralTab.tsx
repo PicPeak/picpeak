@@ -7,6 +7,7 @@ import type { GeneralSettings } from '../hooks/useSettingsState';
 import { MAX_FILES_PER_UPLOAD_LIMIT } from '../hooks/useSettingsState';
 import { SUPPORTED_LANGUAGES } from "../../../components/common/LanguageSelector.tsx";
 import { MfaSettingsCard } from '../components/MfaSettingsCard';
+import { PasskeysCard } from '../components/PasskeysCard';
 import { isAbsoluteHttpUrl } from '../../../utils/url';
 
 interface GeneralTabProps {
@@ -138,6 +139,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
       {/* Per-user two-factor authentication (issue #738) — lives beside the
           admin's own account details rather than the admin-wide Security tab. */}
       <MfaSettingsCard />
+      <PasskeysCard />
 
       <Card padding="md">
         <h2 className="text-lg font-semibold text-heading mb-4">{t('settings.general.siteConfiguration')}</h2>
@@ -219,6 +221,23 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               </label>
               <p className="text-xs text-muted ml-6 mt-1">
                 {t('settings.general.videoWebRenditionHelp', 'Re-encodes videos a browser cannot play (HEVC, QuickTime, MP4s that are not streamable) into an H.264 MP4 for playback. The original stays the download. Costs CPU per video and a second file; switching it on queues the videos already uploaded.')}
+              </p>
+            </div>
+            <div>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={generalSettings.video_adaptive_streaming}
+                  onChange={(e) => setGeneralSettings(prev => ({ ...prev, video_adaptive_streaming: e.target.checked }))}
+                  className="w-4 h-4 text-accent rounded focus:ring-accent"
+                  data-testid="general-video-adaptive-streaming"
+                />
+                <span className="ml-2 text-sm text-body">
+                  {t('settings.general.videoAdaptiveStreaming', 'Adaptive video streaming')}
+                </span>
+              </label>
+              <p className="text-xs text-muted ml-6 mt-1">
+                {t('settings.general.videoAdaptiveStreamingHelp', 'Converts each video into a stream in up to three qualities (480p, 720p, 1080p), so playback starts quickly and adapts to the viewer’s connection. The original stays the download. Costs CPU per video and roughly as much storage again; videos longer than 30 minutes keep playing as before.')}
               </p>
             </div>
             <div>

@@ -11,6 +11,7 @@ import {
 import { Button } from '../common';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
+import { feedbackLockKind } from '../../utils/feedbackLock';
 
 interface PhotoDecisionProps {
   photoId: string;
@@ -97,6 +98,8 @@ export const PhotoDecision: React.FC<PhotoDecisionProps> = ({
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
     },
     onError: (error: unknown) => {
+      // Approved for good (issue 1733): the feedback service explained it.
+      if (feedbackLockKind(error)) return;
       const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
       toast.error(code === 'COMMENT_BLOCKED'
         ? t('feedback.decisionReasonBlocked', 'Your reason contains words that are not allowed here.')

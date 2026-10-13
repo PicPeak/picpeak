@@ -1523,7 +1523,11 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         // this row. Cancelled here, the same way a newsletter opt-out is
         // below — not an error, so it neither counts against retries nor
         // logs at error level.
-        const staleDocumentReason = await staleDocumentNotificationReason(email.email_type, emailData);
+        // The "your download is ready" mail (issue 1733) gets the same
+        // re-check: the archive can be gone by the time the queue is here.
+        const staleDocumentReason = await staleDocumentNotificationReason(email.email_type, emailData)
+          || (email.email_type === 'download_ready'
+            ? await require('./downloadJobNotifier').staleMailReason(emailData, email.recipient_email) : null);
         if (staleDocumentReason) {
           await db('email_queue').where('id', email.id).update({
             status: 'cancelled',
@@ -1810,7 +1814,9 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
       // time forward (inside hours → stays null → processor sends at once).
       if (options.scheduledAt || snappedFrom) row.scheduled_at = snapped;
     }
-    await db('email_queue').insert(row);
+    // options.trx: the caller's transaction, when the row must commit or roll
+    // back together with its own write (downloadJobNotifier's claim).
+    await (options.trx || db)('email_queue').insert(row);
 
     logger.info(`Email queued: ${emailType} to ${recipientEmail}${
       row.scheduled_at ? ` (scheduled ${row.scheduled_at.toISOString()}${

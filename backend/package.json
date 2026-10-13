@@ -1,6 +1,6 @@
 {
   "name": "picpeak-backend",
-  "version": "3.169.0-beta.0",
+  "version": "3.170.0-beta.0",
   "description": "Backend for PicPeak event photo sharing platform",
   "main": "server.js",
   "engines": {
@@ -22,6 +22,7 @@
     "@aws-sdk/client-s3": "^3.850.0",
     "@aws-sdk/lib-storage": "^3.850.0",
     "@aws-sdk/s3-request-presigner": "^3.850.0",
+    "@simplewebauthn/server": "^14.0.3",
     "ajv": "^8.20.0",
     "archiver": "^5.3.1",
     "axios": "1.20.0",

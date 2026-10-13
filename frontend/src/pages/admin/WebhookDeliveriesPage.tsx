@@ -17,6 +17,7 @@ const WEBHOOK_EVENT_TYPES = [
   'event.expired',
   'photo.uploaded',
   'photo.deleted',
+  'selection.submitted',
 ] as const;
 
 interface DeliveryRow {

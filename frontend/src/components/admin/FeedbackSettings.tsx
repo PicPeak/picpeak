@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Star, Heart, Bookmark, Shield, Eye, User, Users, Smile, Palette, Keyboard, Tag, ThumbsUp, Pencil } from 'lucide-react';
+import { MessageSquare, Star, Heart, Bookmark, Shield, Eye, User, Users, Smile, Palette, Keyboard, Tag, ThumbsUp, CheckCircle, Pencil } from 'lucide-react';
 import { Card } from '../common';
 import { useTranslation } from 'react-i18next';
 import { COLOR_LABELS, COLOR_LABEL_SWATCHES, KEYBIND_SCHEMES, type KeybindMode } from '../../services/feedback.service';
@@ -21,6 +21,7 @@ interface FeedbackSettings {
   // Approve / reject per photo (issue 744). Optional: rows and callers that
   // predate it read as off.
   allow_decisions?: boolean;
+  allow_selection_submit?: boolean;
   // Drawing on a photo with a comment (issue 1733).
   allow_annotations?: boolean;
   keybind_mode?: KeybindMode;
@@ -323,6 +324,25 @@ export const FeedbackSettings: React.FC<FeedbackSettingsProps> = ({
                     </div>
                     <div className="text-xs text-muted">
                       {t('feedback.settings.decisionsDesc', 'Guests approve or reject each photo, optionally saying why. You filter and export by their decision')}
+                    </div>
+                  </div>
+                </label>
+
+                {/* Finish selection (issue 1733) */}
+                <label className="flex items-center gap-3 p-3 bg-subtle rounded-lg cursor-pointer hover:bg-hover">
+                  <input
+                    type="checkbox"
+                    checked={!!settings.allow_selection_submit}
+                    onChange={() => handleToggle('allow_selection_submit')}
+                    className="w-4 h-4 text-accent bg-inset border-line-strong rounded focus:ring-accent"
+                  />
+                  <CheckCircle className="w-5 h-5 text-soft" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-heading">
+                      {t('feedback.settings.selectionSubmit', 'Finish selection')}
+                    </div>
+                    <div className="text-xs text-muted">
+                      {t('feedback.settings.selectionSubmitDesc', 'Guests hand in their likes or favorites when they are done. Their picks are then locked until you reopen them, and you are notified')}
                     </div>
                   </div>
                 </label>

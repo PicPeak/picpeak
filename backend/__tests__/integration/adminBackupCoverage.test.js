@@ -166,6 +166,17 @@ describe('GET /api/admin/system-health/backup-coverage', () => {
     rmdir('shiny-new-feature');
   });
 
+  it('never flags the adaptive streaming ladders as drift (issue 1733)', async () => {
+    // hls/<photoId>/... is rebuilt from the originals and deliberately not
+    // backed up; the coverage card must not call that a missed directory.
+    mkdir('hls/7');
+
+    const res = await request(app).get('/api/admin/system-health/backup-coverage');
+    expect(res.body.report.drift.unconfiguredOnDisk).not.toContain('hls');
+
+    rmdir('hls');
+  });
+
   it('never flags backups/ or tmp/ as drift (allow-list)', async () => {
     mkdir('backups');
     mkdir('tmp');

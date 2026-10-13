@@ -398,6 +398,12 @@ export const galleryService = {
     return response.data;
   },
 
+  // "Email me when it is ready" (issue 1733). No address is sent: the server
+  // uses the one it already holds for this visitor, or refuses.
+  async requestDownloadJobMail(slug: string, token: string): Promise<void> {
+    await api.post(`/gallery/${slug}/download-jobs/${token}/notify`);
+  },
+
   // Native browser download so the archive streams with Content-Length
   // (real progress bar, no in-memory blob for a multi-GB gallery).
   downloadJobFile(slug: string, token: string, filename: string): void {
@@ -467,6 +473,12 @@ export const galleryService = {
   // Bulk toggle photo visibility (client-only)
   async bulkToggleVisibility(slug: string, photoIds: number[], visibility: 'visible' | 'hidden'): Promise<void> {
     await api.patch(`/gallery/${slug}/photos/visibility/bulk`, { photoIds, visibility });
+  },
+
+  // Live refresh (issue 1733, C5): what the photo list would hold right now.
+  async getPhotoState(slug: string, signal?: AbortSignal): Promise<{ count: number; max_id: number | null }> {
+    const response = await api.get<{ count: number; max_id: number | null }>(`/gallery/${slug}/photos/state`, { signal });
+    return response.data;
   },
 
   // Get gallery statistics
