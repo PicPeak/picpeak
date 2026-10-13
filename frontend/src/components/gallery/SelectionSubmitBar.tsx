@@ -101,7 +101,9 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
   // The dialog names the counts and warns about rejected photos. Opening it
   // asks the server again, and until that answer is in, the numbers on show
   // may predate the guest's last decisions: nothing is confirmed on them.
-  const refreshing = useIsFetching({ queryKey: selectionStateKey(slug) }) > 0;
+  // The pick count comes from /my-feedback, so that is asked again as well.
+  const refreshing = useIsFetching({ queryKey: selectionStateKey(slug) })
+    + useIsFetching({ queryKey: ['my-feedback', slug] }) > 0;
 
   const closeDialog = () => {
     if (!mutation.isPending) setConfirming(null);
@@ -128,6 +130,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
     setConfirming(kind);
     // The dialog names the counts; make sure they are the server's.
     queryClient.invalidateQueries({ queryKey: selectionStateKey(slug) });
+    queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
   };
 
   const isApproval = confirming === 'approval';
