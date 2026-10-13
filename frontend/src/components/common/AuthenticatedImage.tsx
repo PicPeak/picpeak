@@ -20,6 +20,11 @@ interface AuthenticatedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImage
   /** Dimensions of the loaded rendition, which can differ from the original. */
   onLoad?: (dimensions: { width: number; height: number }) => void;
   /**
+   * Told whether `fallbackSrc` is what is on screen instead of `src`, when it
+   * changes and when the callback is first handed over.
+   */
+  onFallbackChange?: (showsFallback: boolean) => void;
+  /**
    * Priority in the shared fetch queue (#1287). NOT the native `fetchPriority`
    * DOM attribute, which stays available on this component and takes
    * "low"|"high"|"auto" — hence the distinct name.
@@ -104,6 +109,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   useCanvasRendering,
   onProtectionViolation,
   onLoad,
+  onFallbackChange,
   queuePriority = 'normal',
   ...props
 }) => {
@@ -115,6 +121,14 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // data-fallback: a fallback thumbnail can be a centre crop, so anything
   // positioned relative to the whole picture must not trust it.
   const [showsFallback, setShowsFallback] = useState(false);
+  // Either way the fallback gets on screen: fetched, or as a plain <img>.
+  const fallbackShown = showsFallback || (error && !!fallbackSrc);
+  const onFallbackChangeRef = useRef(onFallbackChange);
+  onFallbackChangeRef.current = onFallbackChange;
+  const reportsFallback = !!onFallbackChange;
+  useEffect(() => {
+    if (reportsFallback) onFallbackChangeRef.current?.(fallbackShown);
+  }, [fallbackShown, reportsFallback]);
   const [canvasReady, setCanvasReady] = useState(false);
   const [canvasFailed, setCanvasFailed] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);

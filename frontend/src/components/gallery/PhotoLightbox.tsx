@@ -127,11 +127,16 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     show_feedback_to_guests?: boolean;
     require_name_email?: boolean;
   } | null>(null);
+  // The photo whose slide shows its fallback thumbnail instead of itself.
+  const [fallbackPhotoId, setFallbackPhotoId] = useState<Photo['id'] | null>(null);
   // Annotate mode (issue 1733): drawing on the photo for a comment. While it
   // is on, every navigation and zoom gesture below stands down.
   const annotation = useLightboxAnnotation({
     photoId: photos[currentIndex]?.id,
-    canDraw: photos[currentIndex]?.media_type !== 'video',
+    // Not on a video, and not while the thumbnail stands in for a picture
+    // that did not load: the overlay stays off it, so there is nothing to
+    // draw on.
+    canDraw: photos[currentIndex]?.media_type !== 'video' && fallbackPhotoId !== photos[currentIndex]?.id,
     panelOpen: showFeedback,
     onStart: () => resetZoom(),
     // On a phone the panel covers the photo: step aside to show the drawing.
@@ -1384,6 +1389,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 isGallery={true}
                 slug={slug}
                 useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
+                onFallbackChange={(shown) => setFallbackPhotoId((prev) => (shown ? photo.id : prev === photo.id ? null : prev))}
                 onProtectionViolation={(violationType) => {
                   console.warn(`Protection violation in lightbox for photo ${photo.id}: ${violationType}`);
 

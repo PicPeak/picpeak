@@ -200,11 +200,13 @@ describe('AuthenticatedImage retry', () => {
   // placing something relative to the whole picture can tell (issue 1733).
   it('marks the element while it shows the fallback, and not the picture itself', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementationOnce(status(503)).mockImplementation(ok));
+    const onFallbackChange = vi.fn();
     const fetched = render(
-      <AuthenticatedImage src="/api/gallery/demo/photo/1" fallbackSrc="/api/gallery/demo/thumbnail/1" alt="t" />,
+      <AuthenticatedImage src="/api/gallery/demo/photo/1" fallbackSrc="/api/gallery/demo/thumbnail/1" alt="t" onFallbackChange={onFallbackChange} />,
     );
     await flush();
     expect(fetched.container.querySelector('img')?.getAttribute('data-fallback')).toBe('true');
+    expect(onFallbackChange.mock.calls.map(([shown]) => shown)).toEqual([false, true]);
     fetched.unmount();
 
     vi.stubGlobal('fetch', vi.fn().mockImplementation(loadFailed));

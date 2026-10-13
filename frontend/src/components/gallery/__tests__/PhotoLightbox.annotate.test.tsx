@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Photo } from '../../../types';
 
+const fallbackAlts = vi.hoisted(() => new Set<string>());
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string, d?: unknown) => (typeof d === 'string' ? d : k) }) }));
 vi.mock('../../../hooks/useDevToolsProtection', () => ({ useDevToolsProtection: () => undefined }));
 vi.mock('../../../hooks/useGallery', () => ({ useSavePhotoToDevice: () => ({ mutate: vi.fn(), isPending: false }) }));
@@ -29,7 +30,12 @@ import { feedbackService } from '../../../services/feedback.service';
 vi.mock('../../../services/gallery.service', () => ({ galleryService: { trackPhotoView: vi.fn() } }));
 // The real barrel pulls in the i18n runtime; the panel only needs these.
 vi.mock('../../common', () => ({
-  AuthenticatedImage: ({ alt }: { alt: string }) => <img alt={alt} />,
+  // Reports the fallback like the real one, for the pictures named below.
+  AuthenticatedImage: ({ alt, onFallbackChange }: { alt: string; onFallbackChange?: (shown: boolean) => void }) => {
+    const reports = !!onFallbackChange;
+    React.useEffect(() => { if (reports) onFallbackChange?.(fallbackAlts.has(alt)); }, [reports]); // eslint-disable-line react-hooks/exhaustive-deps
+    return <img alt={alt} data-fallback={fallbackAlts.has(alt) ? 'true' : undefined} />;
+  },
   Skeleton: () => null,
   Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input placeholder={props.placeholder} />,
   Button: ({ children, onClick, type = 'button', disabled }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
@@ -103,6 +109,7 @@ function drag(svg: Element, from: [number, number], to: [number, number]) {
 describe('PhotoLightbox — annotate mode (issue 1733)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fallbackAlts.clear();
     vi.mocked(feedbackService.getPhotoFeedback).mockResolvedValue({
       feedback: [], my_feedback: {}, summary: {},
     } as never);
@@ -112,6 +119,22 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     open({ ...SETTINGS, allow_annotations: false });
     fireEvent.click(await screen.findByRole('button', { name: 'Add Comment' }));
     expect(screen.queryByRole('button', { name: 'Draw on photo' })).toBeNull();
+  });
+
+  // The thumbnail standing in for a picture that did not load can be a
+  // crop, so the overlay stays off it: nothing to draw on, no button.
+  it('offers no drawing on a photo that shows its fallback thumbnail', async () => {
+    fallbackAlts.add('1.jpg');
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Comment' }));
+    expect(screen.queryByRole('button', { name: 'Draw on photo' })).toBeNull();
+
+    // The next photo loaded, and it was already mounted as a neighbour.
+    key('ArrowRight');
+    expect(counter(2)).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Draw on photo' })).toBeTruthy();
+    key('ArrowLeft');
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Draw on photo' })).toBeNull());
   });
 
   it('suspends the navigation and zoom keys, and Escape leaves the mode, not the lightbox', async () => {
