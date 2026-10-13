@@ -200,12 +200,24 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     expect(invalidate).toHaveBeenCalledTimes(2);
     expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['my-feedback', 'g'] });
 
-    // Not a pick, another gallery, or no counter to feed.
+    // Not a pick, another gallery, or no bar to feed.
     send({ slug: 'g', feedback_type: 'rating' });
     send({ slug: 'other', feedback_type: 'like' });
+    send({ slug: 'g', feedback_type: 'decision' });
     rerender({ on: false });
     send({ slug: 'g', feedback_type: 'like' });
     expect(invalidate).toHaveBeenCalledTimes(2);
+
+    // Stored although the bar shows it handed in: the photographer reopened
+    // it, so the state is asked again, per kind.
+    rerender({ on: true });
+    const handedIn = { id: 1, kind: 'approval' as const, submitted_at: '2026-10-12T10:00:00.000Z', item_count: 0, note: null };
+    client.setQueryData(['gallery-selection', 'g'], state({ approval: { can_submit: true, submission: handedIn } }));
+    send({ slug: 'g', feedback_type: 'like' });
+    expect(invalidate).toHaveBeenCalledTimes(3);
+    send({ slug: 'g', feedback_type: 'decision' });
+    expect(invalidate).toHaveBeenCalledTimes(4);
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ['gallery-selection', 'g'] });
   });
 
   it('shows a finished selection with its date instead of the button', () => {

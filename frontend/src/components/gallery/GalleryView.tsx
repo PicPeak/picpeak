@@ -527,7 +527,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     staleTime: 30 * 1000,
   });
   const selectionCounterOn = !!selectionState?.selection.counter;
-  useSelectionPickRefresh(slug, selectionCounterOn);
+  useSelectionPickRefresh(slug, !!selectionState);
 
   const { data: myFeedbackRows } = useQuery<Array<{
     photo_id: number;

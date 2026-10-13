@@ -32,6 +32,10 @@ export const selectionStateKey = (slug: string) => ['gallery-selection', slug];
  * Keep the counter's source, /my-feedback, in step with every stored like and
  * favourite, whichever layout, lightbox or name dialog sent it: several of
  * them do not call the gallery's feedback-change callback.
+ *
+ * A pick or a decision that was stored although the bar shows it as handed
+ * in means the photographer reopened the submission meanwhile: the state is
+ * asked again, so the guest gets the button back without a reload.
  */
 export function useSelectionPickRefresh(slug: string, enabled: boolean) {
   const queryClient = useQueryClient();
@@ -40,8 +44,13 @@ export function useSelectionPickRefresh(slug: string, enabled: boolean) {
     const onSubmitted = (event: Event) => {
       const detail = (event as CustomEvent<FeedbackSubmittedDetail>).detail;
       if (detail?.slug !== slug) return;
-      if (detail.feedback_type !== 'like' && detail.feedback_type !== 'favorite') return;
-      queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+      const isPick = detail.feedback_type === 'like' || detail.feedback_type === 'favorite';
+      if (!isPick && detail.feedback_type !== 'decision') return;
+      if (isPick) queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+      const state = queryClient.getQueryData<SelectionState>(selectionStateKey(slug));
+      if (state?.[isPick ? 'selection' : 'approval'].submission) {
+        queryClient.invalidateQueries({ queryKey: selectionStateKey(slug) });
+      }
     };
     window.addEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
     return () => window.removeEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
