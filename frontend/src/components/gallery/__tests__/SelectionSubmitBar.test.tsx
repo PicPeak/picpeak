@@ -19,6 +19,12 @@ import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { parseFeedbackLimitError } from '../../../hooks/useFeedbackLimitModal';
 
 const submitSelection = vi.fn();
+// null outside a GuestIdentityProvider, as in a gallery without the provider.
+const guestIdentity: { current: null | { identityMode: 'guest' | 'simple'; ensureIdentity: () => Promise<unknown> } } = { current: null };
+
+vi.mock('../../../contexts/GuestIdentityContext', () => ({
+  useGuestIdentityOptional: () => guestIdentity.current,
+}));
 
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
@@ -64,7 +70,10 @@ const renderBar = (value: SelectionState | undefined, used = 0) =>
   render(<SelectionSubmitBar slug="g" state={value} used={used} />, { wrapper });
 
 describe('SelectionSubmitBar (issue 1733)', () => {
-  beforeEach(() => submitSelection.mockReset());
+  beforeEach(() => {
+    submitSelection.mockReset();
+    guestIdentity.current = null;
+  });
 
   it('renders nothing until the state is known, or when the gallery has neither', () => {
     const { container, rerender } = renderBar(undefined);
@@ -112,6 +121,29 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Finish selection' }));
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(submitSelection).not.toHaveBeenCalled();
+  });
+
+  it('in guest identity mode asks for the name before the confirmation, not behind it', async () => {
+    let answer!: { resolve: (value: unknown) => void; reject: (reason: Error) => void };
+    const ensureIdentity = vi.fn(() => new Promise((resolve, reject) => { answer = { resolve, reject }; }));
+    guestIdentity.current = { identityMode: 'guest', ensureIdentity };
+    renderBar(state({ approval: { can_submit: true } }), 0);
+
+    // The name prompt is open: no confirmation on top of it yet.
+    await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+    expect(ensureIdentity).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Dismissed: nothing opens.
+    answer.reject(new Error('user_cancelled'));
+    await waitFor(() => expect(ensureIdentity).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Answered: now the confirmation.
+    await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+    answer.resolve({ id: 7, name: 'Anna' });
+    expect(await screen.findByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
     expect(submitSelection).not.toHaveBeenCalled();
   });
 

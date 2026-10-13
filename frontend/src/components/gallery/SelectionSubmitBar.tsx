@@ -85,7 +85,18 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
   const { selection, approval } = state;
   if (!selection.counter && !approval.can_submit) return null;
 
-  const openDialog = (kind: SubmissionKind) => {
+  const openDialog = async (kind: SubmissionKind) => {
+    // Guest identity mode: the submission belongs to the registered guest, so
+    // the name is asked for before this dialog opens. The name prompt sits
+    // below it (z-[60] against z-[9999]): opened from the confirm button it
+    // was covered, and the dialog waited on an answer nobody could give.
+    if (guestIdentity?.identityMode === 'guest') {
+      try {
+        await guestIdentity.ensureIdentity();
+      } catch {
+        return;
+      }
+    }
     setNote('');
     setConfirming(kind);
     // The dialog names the counts; make sure they are the server's.
