@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { X, Download, Filter, FolderTree, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera, ClipboardList } from 'lucide-react';
 import { Button } from '../common';
 import { useEscapeClose } from '../common/useEscapeClose';
@@ -169,6 +169,14 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   const downloadQuota = useDownloadQuota();
   const downloadAllOverQuota = !!downloadAllPhotos && !downloadQuota.allows(downloadAllPhotos);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  // Where focus goes when the last photo is removed from the selection tray
+  // by keyboard: the selection toggle, or the close button in a gallery
+  // without the download section.
+  const selectionToggleRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const focusAfterTrayEmptied = useCallback(() => {
+    (selectionToggleRef.current ?? closeButtonRef.current)?.focus();
+  }, []);
 
   // Close sidebar when clicking outside on mobile
   useEffect(() => {
@@ -222,6 +230,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
         <div className="gallery-sidebar-header flex items-center justify-between p-4 border-b border-border-token">
           <h2 className="gallery-sidebar-title text-lg font-semibold text-theme">{t('gallery.filters')}</h2>
           <button
+            ref={closeButtonRef}
             onClick={onClose}
             className="gallery-sidebar-close p-2 hover-surface rounded-lg transition-colors"
             aria-label={t('common.close')}
@@ -291,6 +300,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                 </Button>
 
                 <Button
+                  ref={selectionToggleRef}
                   variant={isSelectionMode ? 'secondary' : 'outline'}
                   size="sm"
                   onClick={onToggleSelectionMode}
@@ -346,7 +356,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
 
           {/* Selection tray (issue 1733, A3e) */}
           {isSelectionMode && selectedPhotoList && onDeselectPhoto && (
-            <GallerySidebarSelectionTray photos={selectedPhotoList} onRemove={onDeselectPhoto} slug={slug} />
+            <GallerySidebarSelectionTray photos={selectedPhotoList} onRemove={onDeselectPhoto} onEmptied={focusAfterTrayEmptied} slug={slug} />
           )}
 
           {/* Filename list (issue 1733, A3d). Its own section rather than part
