@@ -195,8 +195,9 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
     toast.error(t('upload.invalidFileType', { names: rejected.join(', ') }));
   };
 
-  // `moreUnread`: the folder walk stopped at its ceiling, so `incoming` is
-  // only the first part of what was dropped and its length a lower bound.
+  // `moreUnread`: the folder walk stopped at its ceiling or ran out of its
+  // scan budget, so `incoming` is only the first part of what was dropped
+  // and its length a lower bound.
   const addFiles = (incoming: PickedFile[], moreUnread = false) => {
     // Only loose files (chosen or dropped by hand, dir '') are named when
     // rejected: a picked folder of RAW plus XMP sidecars would otherwise put
@@ -309,12 +310,16 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
       || admitFileRef.current(file, depth === 0 ? rejected : undefined);
     // The walk also stops after examining a multiple of the ceiling (a tree
     // of mostly unsupported files); say so rather than omit the rest silently.
-    const onTruncated = () => toast.warning(t('upload.folderTooLarge'));
+    let truncated = false;
+    const onTruncated = () => {
+      truncated = true;
+      toast.warning(t('upload.folderTooLarge'));
+    };
     void collectDroppedEntries(e.dataTransfer, { limit: FOLDER_WALK_CEILING, accept, onTruncated })
       .then(async (files) => {
         await whenSettingsSettled();
         reportRejectedTypes(rejected);
-        addFilesRef.current(files, files.length >= FOLDER_WALK_CEILING);
+        addFilesRef.current(files, truncated || files.length >= FOLDER_WALK_CEILING);
       })
       .finally(() => setPendingWalks((n) => n - 1));
   };
