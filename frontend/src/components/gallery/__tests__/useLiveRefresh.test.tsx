@@ -115,6 +115,22 @@ describe('useLiveRefresh', () => {
     expect(result.current).toBe(2);
   });
 
+  it('keeps the notice when a list request from before the answer comes back', async () => {
+    // A refetch is out and has read 10 photos; two arrive; the poll sees 12.
+    const oldList = deferred<{ photos: never[] }>();
+    let listRequest!: Promise<unknown>;
+    getPhotoState.mockResolvedValue({ count: 12, max_id: 102 });
+    const { result } = renderHook(() => useLiveRefresh(base), { wrapper });
+    act(() => { listRequest = queryClient.fetchQuery({ queryKey: LIST_KEY, queryFn: () => oldList.promise }); });
+    await advance(LIVE_REFRESH_INTERVAL_MS);
+    expect(result.current).toBe(2);
+    await act(async () => { oldList.resolve({ photos: [] }); await listRequest; });
+    expect(result.current).toBe(2);
+    // A list asked for after the answer still clears it.
+    await reloadList();
+    expect(result.current).toBe(0);
+  });
+
   it('keeps one poll loop when the tab is hidden and shown during a request', async () => {
     const slow = deferred<{ count: number; max_id: number | null }>();
     getPhotoState.mockReturnValueOnce(slow.promise);

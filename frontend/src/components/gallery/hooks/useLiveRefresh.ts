@@ -26,10 +26,14 @@ interface Options {
  */
 export function useLiveRefresh({ slug, enabled, loadedCount, loadedMaxId }: Options): number {
   const queryClient = useQueryClient();
-  const [state, setState] = useState<{ count: number; max_id: number | null } | null>(null);
-  // How many times the list was fetched. An answer asked for before the
-  // latest fetch describes an older gallery than the list on screen.
-  const listFetches = useRef(0);
+  const [state, setState] = useState<{ count: number; max_id: number | null; asked: number } | null>(null);
+  // One clock for when a list request and when a poll was sent: whichever
+  // was asked for later describes the newer gallery, in whatever order the
+  // two come back.
+  const clock = useRef(0);
+  const listFetchStarted = useRef(new Map<string, number>());
+  // When the newest list that has arrived was asked for.
+  const listAsked = useRef(0);
 
   useEffect(() => { setState(null); }, [slug]);
   // A reloaded list makes the last answer stale: it may count photos that
@@ -37,12 +41,25 @@ export function useLiveRefresh({ slug, enabled, loadedCount, loadedMaxId }: Opti
   // Read from the cache's own events, as useFeedbackChange does: the list's
   // dataUpdatedAt also moves when a like or a rating patches its rows, and
   // that brings no new photos in.
+  // Only an answer asked for after that list survives it. (A request that
+  // is restarted while out keeps its first start time, the cache reports no
+  // second one; a notice from in between then lasts until the next poll.)
   useEffect(() => queryClient.getQueryCache().subscribe((event) => {
-    if (event.type !== 'updated' || event.action.type !== 'success' || event.action.manual) return;
+    if (event.type !== 'updated') return;
     const [scope, eventSlug] = event.query.queryKey as unknown[];
     if (scope !== 'gallery-photos' || eventSlug !== slug) return;
-    listFetches.current += 1;
-    setState(null);
+    const hash = event.query.queryHash;
+    if (event.action.type === 'fetch') {
+      clock.current += 1;
+      listFetchStarted.current.set(hash, clock.current);
+      return;
+    }
+    if (event.action.type !== 'success' || event.action.manual) return;
+    // A request this hook did not see start counts as asked for just now.
+    const asked = listFetchStarted.current.get(hash) ?? (clock.current += 1);
+    listFetchStarted.current.delete(hash);
+    listAsked.current = Math.max(listAsked.current, asked);
+    setState((current) => (current && current.asked > asked ? current : null));
   }), [queryClient, slug]);
 
   useEffect(() => {
@@ -61,11 +78,12 @@ export function useLiveRefresh({ slug, enabled, loadedCount, loadedMaxId }: Opti
     const poll = async () => {
       timer = null;
       inFlight = true;
-      const fetchesAtRequest = listFetches.current;
+      clock.current += 1;
+      const asked = clock.current;
       try {
         const next = await galleryService.getPhotoState(slug, controller.signal);
         if (stopped) return;
-        if (fetchesAtRequest === listFetches.current) setState(next);
+        if (asked > listAsked.current) setState({ ...next, asked });
         delay = LIVE_REFRESH_INTERVAL_MS;
       } catch {
         delay = Math.min(delay * 2, LIVE_REFRESH_MAX_INTERVAL_MS);
