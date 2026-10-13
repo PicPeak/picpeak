@@ -86,6 +86,24 @@ async function activeSubmission(eventId, viewer, kind, executor = db) {
 }
 
 /**
+ * Whether the registered guest of this request is gone by now. resolveGuest
+ * ran before a merge or a deletion that may have finished since. Inside the
+ * viewer's transaction, and before anything is read for them: FOR SHARE
+ * waits for a merge in flight (it holds the guest rows FOR UPDATE) and keeps
+ * the next one out until this transaction commits, so a merge can neither
+ * move a submission onto this guest behind a write that has passed the lock
+ * check, nor leave a new submission behind under a guest it has deleted.
+ * SQLite serialises the transactions outright.
+ */
+async function guestGone(trx, guestId) {
+  if (!guestId) return false;
+  const guest = trx('gallery_guests').where({ id: guestId }).first('is_deleted');
+  if (trx.client.config.client === 'pg') guest.forShare();
+  const row = await guest;
+  return !row || Boolean(row.is_deleted);
+}
+
+/**
  * The active submission that freezes this feedback type for this viewer, or
  * null. Called from feedbackService.submitFeedback before any write.
  */
@@ -197,16 +215,7 @@ async function submit(eventId, settings, viewer, { kind, note, guestName }) {
     // Count and insert under the viewer's lock: a like still in flight has
     // either landed and is counted, or finds the submission and is refused.
     return await withViewerLock(eventId, viewer, async (trx) => {
-      // resolveGuest ran before a merge or a deletion that may have finished
-      // since. As for a feedback insert (feedbackService): FOR SHARE waits
-      // for the merge, which has moved this guest's submissions already, so a
-      // row stored now would stay behind under a guest nobody is any more.
-      if (viewer.guestId) {
-        const guest = trx('gallery_guests').where({ id: viewer.guestId }).first('is_deleted');
-        if (trx.client.config.client === 'pg') guest.forShare();
-        const row = await guest;
-        if (!row || row.is_deleted) return { guest_missing: true };
-      }
+      if (await guestGone(trx, viewer.guestId)) return { guest_missing: true };
       const state = await getState(eventId, settings, viewer, trx);
       if (!state[kind].can_submit) return { disabled: true };
       if (state[kind].submission) return { already: state[kind].submission };
@@ -290,7 +299,11 @@ async function mergeGuests(trx, survivor, sourceGuestIds) {
   await scope().update({ guest_id: survivor.id, guest_identifier: survivor.identifier });
 }
 
-/** "Forget me" and guest deletion: the submission stays, the person goes. */
+/**
+ * "Forget me" and guest deletion: the submission stays, the person goes.
+ * The routes call it once more after the soft delete: a hand-over that got
+ * in between the first pass and the delete is stored with the guest's name.
+ */
 async function anonymizeGuest(guestId) {
   await db('selection_submissions').where({ guest_id: guestId })
     .update({ guest_id: null, guest_name: null });
@@ -367,6 +380,7 @@ module.exports = {
   LOCKED_TYPES,
   kindLocking,
   withViewerLock,
+  guestGone,
   lockFor,
   getState,
   submit,

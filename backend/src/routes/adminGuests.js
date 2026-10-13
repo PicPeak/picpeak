@@ -7,6 +7,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
 const feedbackService = require('../services/feedbackService');
+const selectionSubmissions = require('../services/selectionSubmissions');
 const { clearGuestCredits, reassignGuestCredits } = require('../services/photoCredit');
 const logger = require('../utils/logger');
 const { errorResponse } = require('../utils/routeHelpers');
@@ -603,6 +604,9 @@ router.delete(
       // After the soft delete: an upload still in flight checks for it once
       // its row is in (photoCredit.settleGuestCredit).
       const creditsCleared = await clearGuestCredits(guestId);
+      // Again after the soft delete, for the same reason: a hand-over that got
+      // in before it was stored with the guest's name (issue 1733).
+      await selectionSubmissions.anonymizeGuest(guestId);
 
       await logActivity(
         'guest_deleted',

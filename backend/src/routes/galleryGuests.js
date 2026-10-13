@@ -7,6 +7,7 @@ const { rateLimitKey } = require('../utils/rateLimitKey');
 const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
 const { resolveGuest, requireGuest, signGuestToken } = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
+const selectionSubmissions = require('../services/selectionSubmissions');
 const guestRecovery = require('../services/guestRecoveryService');
 const { sanitizeName } = require('../utils/personName');
 const { parseBooleanInput } = require('../utils/parsers');
@@ -212,6 +213,9 @@ router.delete('/:slug/guest/me', verifyGalleryAccess, resolveGuest, requireGuest
     // Their name on the photos they uploaded goes with them (#1561). After
     // the soft delete, so an upload still in flight sees it.
     await clearGuestCredits(req.guest.id);
+    // Again after the soft delete, for the same reason: a hand-over that got
+    // in before it was stored with the guest's name (issue 1733).
+    await selectionSubmissions.anonymizeGuest(req.guest.id);
 
     logger.info('Guest self-forgot', {
       eventId: req.event.id,

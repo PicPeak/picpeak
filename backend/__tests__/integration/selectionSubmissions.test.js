@@ -94,6 +94,7 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
     app.use(express.json());
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/galleryFeedback'));
+    app.use('/api/gallery', require('../../src/routes/galleryGuests'));
     app.use('/api/admin/feedback', require('../../src/routes/adminFeedback'));
   }, 180000);
 
@@ -446,6 +447,41 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
       const left = await db('selection_submissions').where({ event_id: eventId });
       expect(left.map((row) => row.id)).toEqual([later]);
       expect(left[0]).toMatchObject({ guest_id: anna.id, guest_identifier: anna.identifier });
+    });
+
+    it('"forget me" leaves no name on a hand-over that slipped in before the delete', async () => {
+      const selectionSubmissions = require('../../src/services/selectionSubmissions');
+      await setSettings({ allow_decisions: true });
+      const settings = await feedbackService.getEventFeedbackSettings(eventId);
+      const [anna] = guests;
+      // The approval queued behind the anonymisation, ahead of the delete.
+      const anonymize = feedbackService.anonymizeGuestFeedback.bind(feedbackService);
+      const spy = jest.spyOn(feedbackService, 'anonymizeGuestFeedback').mockImplementation(async (id) => {
+        const result = await anonymize(id);
+        const late = await selectionSubmissions.submit(
+          eventId, settings, { guestId: anna.id, guestIdentifier: anna.identifier }, { kind: 'approval', guestName: 'anna' },
+        );
+        expect(late.submission).toBeTruthy();
+        return result;
+      });
+      try {
+        expect((await as(anna, 'delete', '/guest/me')).status).toBe(200);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await db('selection_submissions').where({ event_id: eventId }).first())
+        .toMatchObject({ kind: 'approval', guest_id: null, guest_name: null });
+    });
+
+    it('a deleted guest cannot take a pick back either', async () => {
+      const [anna] = guests;
+      await feedback(anna, photoIds[0], { feedback_type: 'like' });
+      await db('gallery_guests').where({ id: anna.id }).update({ is_deleted: true });
+      const result = await feedbackService.submitFeedback(
+        photoIds[0], eventId, { feedback_type: 'like', guest_id: anna.id }, anna.identifier,
+      );
+      expect(result).toEqual({ guest_missing: true });
+      expect(await rows('like')).toHaveLength(1);
     });
 
     it('forgetting a guest keeps the submission without the person', async () => {

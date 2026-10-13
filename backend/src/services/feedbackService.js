@@ -511,6 +511,10 @@ class FeedbackService {
     // before the count is taken or is refused, never after it.
     const viewer = { guestId: guest_id, guestIdentifier };
     return selectionSubmissions.withViewerLock(eventId, viewer, async (trx) => {
+      // Before the lock check: a guest merge can hand this guest another
+      // guest's finished selection, and must not do so between the check and
+      // the write.
+      if (await selectionSubmissions.guestGone(trx, guest_id)) return { guest_missing: true };
       const lock = await selectionSubmissions.lockFor(eventId, feedback_type, viewer, trx);
       if (lock) {
         return { locked: true, kind: lock.kind, submitted_at: lock.submitted_at };
