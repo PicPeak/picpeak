@@ -1251,12 +1251,15 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
         notify = (await downloadJobNotifier.isRequested(job.id, recipient.email)) ? 'requested' : 'available';
       }
     }
-    // A ready job the file route would refuse, not swept yet: past its
-    // retention (410), or no longer matching the gallery or this visitor's
-    // scope (409 / 404). The dialog opened from a ready-mail must not offer
-    // it (issue 1733).
+    // A ready job the file route would refuse, not swept yet. The same
+    // checks it runs, in its order: downloads switched off or originals
+    // withheld from this visitor (403), past its retention (410), no longer
+    // matching the gallery or this visitor's scope (409 / 404). The dialog
+    // opened from a ready-mail must not offer it (issue 1733).
     const unavailable = job.status === 'ready' && (
-      new Date(job.expires_at).getTime() <= Date.now()
+      !!(await originalAssetDenial(req))
+      || await isPreviewOnly(req)
+      || new Date(job.expires_at).getTime() <= Date.now()
       || !(await downloadJobService.isStillDeliverable(job, req.event, req.accessLevel))
     );
     res.json({

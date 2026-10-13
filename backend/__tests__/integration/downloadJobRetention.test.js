@@ -671,5 +671,19 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
       await db('photos').where({ id: photoIds[0] }).update({ visibility: 'hidden' });
       expect((await status(job)).body).toMatchObject({ status: 'ready', unavailable: true });
     });
+
+    it('says so when downloads were switched off since', async () => {
+      const { event, photoIds } = await makeEvent();
+      const job = await makeJob(event, photoIds);
+      const auth = `Bearer ${galleryToken(event)}`;
+      await db('events').where({ id: event.id }).update({ allow_downloads: 0 });
+      const status = await request(app)
+        .get(`/api/gallery/${event.slug}/download-jobs/${job.token}`).set('Authorization', auth);
+      expect(status.body).toMatchObject({ status: 'ready', unavailable: true });
+      // What the flag stands for: the file route refuses.
+      const file = await request(app)
+        .get(`/api/gallery/${event.slug}/download-jobs/${job.token}/file`).set('Authorization', auth);
+      expect(file.status).toBe(403);
+    });
   });
 });
