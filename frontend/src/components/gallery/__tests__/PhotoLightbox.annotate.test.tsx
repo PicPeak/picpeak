@@ -232,6 +232,28 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     expect(screen.queryByTestId('annotation-overlay')).toBeNull();
   });
 
+  // The comment form is one component reused from photo to photo, so a slow
+  // submission can come back while the guest is already drawing on the next.
+  it('leaves the next photo\'s drawing alone when an earlier comment finishes sending', async () => {
+    let finish!: (value: unknown) => void;
+    vi.mocked(feedbackService.submitFeedback).mockReturnValue(new Promise((resolve) => { finish = resolve; }) as never);
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Comment' }));
+    fireEvent.change(screen.getByPlaceholderText('Write a comment...'), { target: { value: 'First' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalledTimes(1));
+
+    key('ArrowRight');
+    expect(counter(2)).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Draw on photo' }));
+    await screen.findByRole('toolbar', { name: 'Drawing tools' });
+    drag(screen.getByTestId('annotation-overlay'), [40, 20], [200, 100]);
+
+    await act(async () => { finish({ success: true }); });
+    expect(screen.getByRole('toolbar', { name: 'Drawing tools' })).toBeTruthy();
+    expect(screen.getByTestId('annotation-overlay').querySelectorAll('path')).toHaveLength(1);
+  });
+
   // The drawing on the photo is a copy taken when its marker was clicked. A
   // comment the photographer hides meanwhile leaves the list on the next
   // fetch, and its marker with it: the drawing must not stay behind.

@@ -62,7 +62,14 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
     }
   }, [commentText]);
 
+  // This form is reused from photo to photo, and the lightbox holds one
+  // drawing for whichever photo is up (issue 1733). A submission that comes
+  // back after the guest moved on must not discard what they draw there.
+  const photoIdRef = useRef(photoId);
+  photoIdRef.current = photoId;
+
   const submitCommentMutation = useMutation({
+    onMutate: () => ({ submittedPhotoId: photoId }),
     mutationFn: (data: any) => 
       feedbackService.submitFeedback(gallerySlug, photoId, {
         feedback_type: 'comment',
@@ -71,10 +78,10 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
         guest_name: data.guest_name,
         guest_email: data.guest_email
       }),
-    onSuccess: (response) => {
+    onSuccess: (response, _data, context) => {
       setCommentText('');
       setShowCommentForm(false);
-      annotation?.discard();
+      if (context?.submittedPhotoId === photoIdRef.current) annotation?.discard();
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
       
       if (response.message) {
