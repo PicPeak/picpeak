@@ -911,6 +911,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     swipeStartRef.current = null;
     pinchRef.current = null;
     setIsPinching(false);
+    // A cancelled pan is over too; left set, it would hold off the zoom
+    // clamp (issue 1733) until the next drag ended.
+    setIsDragging(false);
   };
 
   // Track transform. Percentages on translateX are self-referential (a

@@ -107,6 +107,9 @@ export function useFullResolutionZoom({
   const [paintedSrc, setPaintedSrc] = useState<string | null>(null);
   const [fit, setFit] = useState<Size | null>(null);
   const [pixelRatio, setPixelRatio] = useState(currentPixelRatio);
+  // The object URL the effect below revokes; one handed to setLoaded only
+  // gets there if that update is committed.
+  const committedSrc = useRef<string | null>(null);
   const slideRef = useRef<HTMLDivElement | null>(null);
   // Also as state: the carousel can remount the slide under the same photo
   // (its keys change when the gallery goes to or from two photos), and the
@@ -115,6 +118,8 @@ export function useFullResolutionZoom({
   const attachSlide = useCallback((el: HTMLDivElement | null) => {
     slideRef.current = el;
     setSlide(el);
+    // A new slide brings a new overlay element, which has painted nothing yet.
+    setPaintedSrc(null);
   }, []);
   // For handlers the lightbox registers once (wheel) or that fire between
   // renders, and for the load that ends after the render that started it.
@@ -133,6 +138,8 @@ export function useFullResolutionZoom({
       ? { width: el.offsetWidth, height: el.offsetHeight }
       : null;
     setFit((prev) => (prev?.width === next?.width && prev?.height === next?.height ? prev : next));
+    // Also here: a browser whose media query cannot notify still resizes.
+    setPixelRatio(currentPixelRatio());
   }, []);
 
   useEffect(() => {
@@ -176,6 +183,7 @@ export function useFullResolutionZoom({
   }, [photoId, url]);
 
   useEffect(() => {
+    committedSrc.current = loaded?.src ?? null;
     if (!loaded) return;
     return () => URL.revokeObjectURL(loaded.src);
   }, [loaded]);
@@ -193,6 +201,7 @@ export function useFullResolutionZoom({
     let objectUrl: string | null = null;
     let decoder: HTMLImageElement | null = null;
     let handedOver = false;
+    let handedSrc: string | null = null;
 
     (async () => {
       try {
@@ -218,6 +227,7 @@ export function useFullResolutionZoom({
         await image.decode();
         if (cancelled) return;
         handedOver = true;
+        handedSrc = objectUrl;
         setLoaded({ photoId, url, src: objectUrl, width: image.naturalWidth, height: image.naturalHeight });
       } catch {
         // Refused, aborted, or not decodable: the preview stays, silently.
@@ -240,6 +250,9 @@ export function useFullResolutionZoom({
         decoder?.removeAttribute('src');
         if (objectUrl) URL.revokeObjectURL(objectUrl);
         objectUrl = null;
+      } else if (handedSrc && committedSrc.current !== handedSrc) {
+        // Unmounted between the hand-over and its commit: nobody else has it.
+        URL.revokeObjectURL(handedSrc);
       }
     };
   }, [url, requested, photoId, slug]);

@@ -201,6 +201,15 @@ describe('PhotoLightbox with a full resolution', () => {
     expect(readout()).toBe('100%');
   });
 
+  it('picks a new pixel density up on a resize where the media query cannot notify', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: coarse && query.includes('coarse') }));
+    const { image, surface } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.doubleClick(surface, { clientX: 0, clientY: 0 });
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 });
+    resizePreview(FIT);
+    expect(image().style.transform).toContain('scale(5)');
+  });
+
   it('keeps 3x of fit for a small original', () => {
     const small = { width: 900, height: 600 };
     const { image, readout, pinch } = setup([zoomable(1, small), zoomable(2, small), zoomable(3, small)]);
@@ -357,6 +366,31 @@ describe('PhotoLightbox with a full resolution', () => {
     expect(image().style.transform).toBe('scale(10) translate(10px, 0px)');
     fireEvent.mouseUp(surface);
     expect(image().style.transform).toBe('scale(6) translate(10px, 0px)');
+  });
+
+  it('brings the zoom down after a pan the system cancelled', () => {
+    const { image, surface } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.doubleClick(surface, { clientX: 0, clientY: 0 });
+    fireEvent.touchStart(surface, { touches: [finger(100)] });
+    fireEvent.touchMove(surface, { touches: [finger(120)] });
+    resizePreview({ width: 1000, height: 667 });
+    expect(image().style.transform).toContain('scale(10)');
+    fireEvent.touchCancel(surface, { touches: [] });
+    expect(image().style.transform).toContain('scale(6)');
+  });
+
+  it('shows the preview again until the original is painted on a remounted slide', async () => {
+    const { image, overlay, update } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.click(screen.getByLabelText('Zoom in'));
+    await finishDecode();
+    fireEvent.load(overlay()!);
+    expect(image().style.opacity).toBe('0');
+
+    update([zoomable(1), zoomable(2)]);
+    expect(overlay()).not.toBeNull();
+    expect(image().style.opacity).toBe('');
+    fireEvent.load(overlay()!);
+    expect(image().style.opacity).toBe('0');
   });
 
   it('holds the zoom while the ceiling is unknown instead of dropping it to 3x', () => {
