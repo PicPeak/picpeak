@@ -25,6 +25,7 @@ const { assertPathInside, assertStoredPathInside } = require('../utils/safePath'
 const { toStoredPath } = require('../utils/storedPath');
 const { db } = require('../database/db');
 const expenseService = require('../services/expenseService');
+const { ownedBy } = require('../services/expenseAccess');
 const accountingHistory = require('../services/accountingHistory');
 const expenseCategoriesService = require('../services/expenseCategoriesService');
 const rasterizeService = require('../services/rasterizeService');
@@ -134,7 +135,7 @@ router.get('/inbound/:id/file', requireIncoming, requirePermission('accounting.v
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const row = await db('inbound_documents').where({ id: toInt(req.params.id) }).first('file_path', 'mime_type');
+    const row = await db('inbound_documents').where({ id: toInt(req.params.id) }).modify(ownedBy('inbound_documents')).first('file_path', 'mime_type');
     if (!row || !row.file_path) return res.status(404).json({ error: 'File not found', code: 'NO_FILE' });
     const safe = assertStoredPathInside(row.file_path, [path.join(getStoragePath(), 'business-docs')]);
     const isPdf = (row.mime_type || '').includes('pdf');
@@ -150,7 +151,7 @@ router.get('/inbound/:id/page/:n', requireIncoming, requirePermission('accountin
   handleAsync(async (req, res) => {
     validateRequest(req);
     const id = toInt(req.params.id);
-    const row = await db('inbound_documents').where({ id }).first('file_path', 'mime_type', 'page_count');
+    const row = await db('inbound_documents').where({ id }).modify(ownedBy('inbound_documents')).first('file_path', 'mime_type', 'page_count');
     if (!row || !row.file_path) return res.status(404).json({ error: 'File not found', code: 'NO_FILE' });
     if (!(row.mime_type || '').includes('pdf')) return res.status(415).json({ error: 'Not a PDF', code: 'NOT_PDF' });
     const page = Math.min(Math.max(1, toInt(req.params.n)), row.page_count || 1);
@@ -167,7 +168,11 @@ router.get('/inbound/:id/page/:n', requireIncoming, requirePermission('accountin
 // Change history (migration 219), oldest first.
 router.get('/inbound/:id/history', requireIncoming, requirePermission('accounting.view'),
   [param('id').isInt({ min: 1 })],
-  handleAsync(async (req, res) => { validateRequest(req); return successResponse(res, { entries: await accountingHistory.listHistory('inbound_document', toInt(req.params.id)) }); }));
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    await expenseService.getInbound(toInt(req.params.id)); // 404 unless it is the caller's to see
+    return successResponse(res, { entries: await accountingHistory.listHistory('inbound_document', toInt(req.params.id)) });
+  }));
 
 router.get('/inbound/:id', requireIncoming, requirePermission('accounting.view'),
   [param('id').isInt({ min: 1 })],
@@ -226,7 +231,7 @@ router.get('/:id/proof', requireExpenses, requirePermission('accounting.view'),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const row = await db('expenses').where({ id: toInt(req.params.id) }).first('receipt_path');
+    const row = await db('expenses').where({ id: toInt(req.params.id) }).modify(ownedBy('expenses')).first('receipt_path');
     if (!row || !row.receipt_path) return res.status(404).json({ error: 'No proof', code: 'NO_PROOF' });
     const safe = assertStoredPathInside(row.receipt_path, [path.join(getStoragePath(), 'business-docs')]);
     const isPdf = safe.toLowerCase().endsWith('.pdf');
@@ -239,7 +244,11 @@ router.get('/:id/proof', requireExpenses, requirePermission('accounting.view'),
 
 router.get('/:id/history', requireExpenses, requirePermission('accounting.view'),
   [param('id').isInt({ min: 1 })],
-  handleAsync(async (req, res) => { validateRequest(req); return successResponse(res, { entries: await accountingHistory.listHistory('expense', toInt(req.params.id)) }); }));
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    await expenseService.getExpense(toInt(req.params.id)); // 404 unless it is the caller's to see
+    return successResponse(res, { entries: await accountingHistory.listHistory('expense', toInt(req.params.id)) });
+  }));
 
 router.get('/:id', requireExpenses, requirePermission('accounting.view'),
   [param('id').isInt({ min: 1 })],
