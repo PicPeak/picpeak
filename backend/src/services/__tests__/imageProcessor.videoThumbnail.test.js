@@ -85,7 +85,7 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
       expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/)
     );
     expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
-    expect(db.photosUpdate).toHaveBeenCalledWith({ thumbnail_path: expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/) });
+    expect(db.photosUpdate).toHaveBeenCalledWith({ thumbnail_path: expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/), thumb_hash: null });
   });
 
   it('recognises a video by mime type alone, for rows predating media_type', async () => {

@@ -11,6 +11,7 @@ const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { verifyRecaptcha } = require('../services/recaptcha');
 const mfaService = require('../services/mfaService');
+const passkeyService = require('../services/passkeyService');
 const { 
   trackFailedAttempt,
   trackSuccessfulLogin,
@@ -228,7 +229,11 @@ router.post('/admin/login', [
         expiresIn: '5m',
         issuer: 'picpeak-auth'
       });
-      return res.json({ mfaRequired: true, mfaToken });
+      // Whether the second step may offer a passkey instead of a code. Only
+      // told to a caller who has just proven the password.
+      const passkeyAvailable = (await passkeyService.getRelyingParty(req)).available
+        && (await passkeyService.countForAdmin(admin.id)) > 0;
+      return res.json({ mfaRequired: true, mfaToken, passkeyAvailable });
     }
 
     return await completeAdminLogin(req, res, admin, ipAddress, userAgent, username, { rememberMe });
@@ -383,6 +388,181 @@ router.post('/admin/login/mfa', [
   } catch (error) {
     logger.error('MFA verification error:', error);
     res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// Passkey login (WebAuthn), issue 1733.
+//
+// Two uses of the same pair of routes:
+//   - primary: no body. The browser offers the passkeys it holds for this
+//     address (discoverable credentials), so no username is ever sent and the
+//     options cannot depend on whether an account exists. User verification
+//     is required, which makes one gesture both factors.
+//   - second factor: with the mfa_pending token from /admin/login, as an
+//     alternative to the TOTP code.
+// Both end in completeAdminLogin, like every other admin login.
+//
+// A failed verify always answers with the same 401, whatever went wrong
+// (unknown credential, inactive account, bad signature, counter).
+// ──────────────────────────────────────────────────────────────────────────
+
+const PASSKEY_LOGIN_FAILED = { error: 'Passkey sign-in failed', code: 'PASSKEY_INVALID' };
+
+function readMfaPendingToken(mfaToken) {
+  try {
+    const decoded = jwt.verify(mfaToken, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'picpeak-auth' });
+    return decoded.type === 'mfa_pending' ? decoded : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+const MFA_SESSION_EXPIRED = {
+  error: 'Your verification session expired. Please sign in again.',
+  code: 'MFA_SESSION_EXPIRED'
+};
+
+router.post('/admin/passkey/options', [
+  body('mfaToken').optional().isString().isLength({ max: 2048 }),
+  body('remember_me').optional().isBoolean().toBoolean()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
+    }
+    // SSO-only mode disables every local login, this one included.
+    if (await require('../services/oidcService').isLocalLoginDisabled()) {
+      return res.status(403).json({ error: 'Local login is disabled — sign in through SSO', code: 'LOCAL_LOGIN_DISABLED' });
+    }
+
+    let admin = null;
+    let rememberMe = req.body.remember_me === true;
+    if (req.body.mfaToken) {
+      const decoded = readMfaPendingToken(req.body.mfaToken);
+      if (!decoded) return res.status(401).json(MFA_SESSION_EXPIRED);
+      admin = await db('admin_users').where('id', decoded.id).first();
+      if (!admin || !admin.is_active || (await passkeyService.countForAdmin(admin.id)) === 0) {
+        return res.status(401).json({ error: getGenericAuthError() });
+      }
+      // The session length was chosen at the password step.
+      rememberMe = decoded.rememberMe === true;
+    }
+
+    const options = await passkeyService.beginAuthentication(req, res, { admin, rememberMe });
+    return res.json({ options });
+  } catch (error) {
+    if (error instanceof passkeyService.PasskeyError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    logger.error('Passkey login options error:', error);
+    return res.status(500).json({ error: 'Passkey sign-in failed' });
+  }
+});
+
+router.post('/admin/passkey/verify', [
+  body('response').isObject(),
+  body('mfaToken').optional().isString().isLength({ max: 2048 })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
+    }
+    const { response, mfaToken } = req.body;
+    const ipAddress = getClientIp(req);
+    const userAgent = req.headers['user-agent'] || '';
+
+    if (await require('../services/oidcService').isLocalLoginDisabled()) {
+      logger.warn('Passkey login refused — disabled by SSO policy', { ipAddress });
+      return res.status(403).json({ error: 'Local login is disabled — sign in through SSO', code: 'LOCAL_LOGIN_DISABLED' });
+    }
+
+    let pending = null;
+    if (mfaToken) {
+      pending = readMfaPendingToken(mfaToken);
+      if (!pending) return res.status(401).json(MFA_SESSION_EXPIRED);
+    }
+
+    // Consumed before anything else is looked at: a challenge is spent by the
+    // first verify that presents it, successful or not.
+    let challenge;
+    try {
+      challenge = await passkeyService.takeChallenge(req, res, pending ? 'mfa' : 'login');
+    } catch (error) {
+      if (!(error instanceof passkeyService.PasskeyError)) throw error;
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    if (pending && challenge.adminId !== pending.id) {
+      return res.status(401).json(PASSKEY_LOGIN_FAILED);
+    }
+
+    const credential = await passkeyService.findCredential(response.id);
+    const admin = credential ? await db('admin_users')
+      .leftJoin('roles', 'roles.id', 'admin_users.role_id')
+      .where('admin_users.id', credential.admin_user_id)
+      .select('admin_users.*', 'roles.name as role_name', 'roles.display_name as role_display_name')
+      .first() : null;
+
+    // Same buckets as the steps this replaces: the password step's
+    // identifier + address bucket for a primary login, the account-wide
+    // second-factor bucket at the MFA step.
+    const failureKey = pending ? `mfa:${pending.id}` : (admin ? admin.username : 'passkey:unknown');
+    const fail = async (reason, detail) => {
+      await trackFailedAttempt(failureKey, ipAddress, userAgent);
+      logger.warn('Passkey login rejected', { reason, detail, adminId: admin?.id, ipAddress });
+      return res.status(401).json(PASSKEY_LOGIN_FAILED);
+    };
+
+    if (pending || admin) {
+      const lockoutStatus = pending
+        ? await checkAccountLockout(failureKey)
+        : await checkAccountLockout(failureKey, ipAddress);
+      if (lockoutStatus.isLocked) {
+        return res.status(423).json({
+          error: 'Account temporarily locked due to too many failed attempts',
+          retryAfter: lockoutStatus.remainingTime
+        });
+      }
+    }
+
+    if (!credential || !admin) return await fail('unknown_credential');
+    // An account the identity provider owns never signs in locally (#798).
+    if (!admin.is_active || admin.auth_provider === 'oidc') return await fail('account_not_eligible');
+    if (pending && (admin.id !== pending.id || !mfaService.isEnrolled(admin))) {
+      return await fail('wrong_account');
+    }
+
+    const result = await passkeyService.verifyAssertion(req, credential, response, challenge.challenge);
+    if (!result.ok) {
+      if (result.reason === 'counter_regression') {
+        // A counter that went backwards means a cloned authenticator or a
+        // replayed assertion: worth more than a log line.
+        logger.error('Passkey signature counter did not advance', {
+          adminId: admin.id, passkeyId: credential.id, detail: result.detail, ipAddress
+        });
+        await logActivity('admin_passkey_counter_regression',
+          { admin_id: admin.id, passkey_id: credential.id },
+          null,
+          { type: 'admin', id: admin.id, name: admin.username }
+        );
+      }
+      return await fail(result.reason, result.detail);
+    }
+
+    await logActivity(pending ? 'admin_mfa_login' : 'admin_passkey_login',
+      { admin_id: admin.id, method: 'passkey' },
+      null,
+      { type: 'admin', id: admin.id, name: admin.username }
+    );
+
+    return await completeAdminLogin(req, res, admin, ipAddress, userAgent,
+      pending ? (pending.loginId || pending.username) : admin.username,
+      { rememberMe: challenge.rememberMe });
+  } catch (error) {
+    logger.error('Passkey login error:', error);
+    res.status(500).json({ error: 'Passkey sign-in failed' });
   }
 });
 

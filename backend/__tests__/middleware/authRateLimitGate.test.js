@@ -57,6 +57,10 @@ function mountRoutes(app) {
   app.post('/api/auth/admin/login', (req, res) =>
     (loginSucceeds ? res.json({ user: {} }) : fail(res)));
   app.post('/api/auth/admin/login/mfa', (req, res) => fail(res));
+  app.post('/api/auth/admin/passkey/options', (req, res) => fail(res));
+  app.post('/api/auth/admin/passkey/verify', (req, res) => fail(res));
+  app.post('/api/admin/auth/passkeys/register/options', (req, res) => fail(res));
+  app.post('/api/admin/auth/passkeys/:id/delete', (req, res) => fail(res));
   app.post('/api/auth/gallery/verify', (req, res) => fail(res));
   app.post('/api/auth/gallery/share-login', (req, res) => fail(res));
   app.post('/api/auth/gallery/:slug/client-login', (req, res) => fail(res));
@@ -126,6 +130,10 @@ describe('authRateLimitGate — credential endpoints are limited', () => {
 
   it.each([
     ['/api/auth/admin/login/mfa'],
+    ['/api/auth/admin/passkey/options'],
+    ['/api/auth/admin/passkey/verify'],
+    ['/api/admin/auth/passkeys/register/options'],
+    ['/api/admin/auth/passkeys/7/delete'],
     ['/api/auth/gallery/verify'],
     ['/api/auth/gallery/share-login'],
     ['/api/auth/gallery/some-slug/client-login'],

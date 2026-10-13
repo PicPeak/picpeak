@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { GalleryEmptyMessage } from '../GalleryEmptyMessage';
 import { createPortal } from 'react-dom';
 import { MasonryPhotoAlbum } from 'react-photo-album';
 import 'react-photo-album/masonry.css';
@@ -16,12 +17,14 @@ import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { parseISO } from 'date-fns';
 import { useInView } from 'react-intersection-observer';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
-import { AuthenticatedImage, PoweredBy } from '../../common';
+import { PoweredBy } from '../../common';
 import { thumbnailUrlForTile } from '../imageTiers';
+import { TileImage } from '../TileImage';
 import { feedbackService } from '../../../services/feedback.service';
 import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
@@ -37,6 +40,7 @@ import { toast } from 'react-toastify';
 
 import './GalleryPremiumLayout.css';
 import { lightboxImageUrl } from '../imageTiers';
+import { exifLine } from '../../../utils/photoExif';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
 
 const isVideoPhoto = (photo: Photo) => photo.media_type === 'video' || photo.type === 'video';
@@ -113,7 +117,11 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
       onClick={onClick}
       data-testid={`photo-card-${photo.id}`}
     >
-      <AuthenticatedImage
+      <TileImage
+        // Blurred placeholder (issue 1733). Every card mounts its image at
+        // page load here, so the hash is only handed over (and decoded) once
+        // the card is in view.
+        thumbHash={inView ? photo.thumb_hash : null}
         src={tieredSrc}
         alt={photo.filename}
         // No inline height: the card now has a definite one, so the
@@ -207,6 +215,7 @@ interface GalleryPremiumLayoutProps extends BaseGalleryLayoutProps {
 export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   // #1160: folder-only root — render the shell, skip the empty message.
   suppressEmptyState = false,
+  emptyIsFiltered = false,
   afterGrid,
   photos,
   slug,
@@ -239,7 +248,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   void _onPhotoClick;
   void _onOpenPhotoWithFeedback;
   void _onDownload;
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const downloadPhotoMutation = useDownloadPhoto();
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   // The delivered preview can be smaller than the original. Keep Zoom's
@@ -414,11 +423,16 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         : undefined,
       // Photo credit (#1561), same wording as PhotoLightbox. Only present
       // when the gallery shows names to this viewer.
-      description: photo.credit_name
-        ? (photo.uploaded_by_guest
-          ? t('gallery.credits.uploadedBy', { name: photo.credit_name })
-          : t('gallery.credits.photoBy', { name: photo.credit_name }))
-        : undefined,
+      // Camera details (issue 1733, D1) on a second line; the caption
+      // plugin breaks a string at "\n".
+      description: [
+        photo.credit_name
+          ? (photo.uploaded_by_guest
+            ? t('gallery.credits.uploadedBy', { name: photo.credit_name })
+            : t('gallery.credits.photoBy', { name: photo.credit_name }))
+          : null,
+        exifLine(photo.exif),
+      ].filter(Boolean).join('\n') || undefined,
     }));
   }, [filteredPhotos, allowDownloads, showOriginalFilename, imageDimensions, t]);
   const showCaptions = showOriginalFilename || slides.some((slide) => !!slide.description);
@@ -567,7 +581,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }
   }, [allowDownloads, filteredPhotos, slug, downloadPhotoMutation, downloadQuota]);
 
-  const formattedDate = eventDate ? new Date(eventDate).toLocaleDateString('en-US', {
+  // Long form on purpose (the hero's look), in the gallery's language rather
+  // than always US English. parseISO: a bare yyyy-MM-dd read by `new Date`
+  // is UTC midnight, the day before west of UTC.
+  const formattedDate = eventDate ? parseISO(eventDate).toLocaleDateString(i18n.language, {
     year: 'numeric',
     month: 'long',
     day: '2-digit'
@@ -579,7 +596,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
+        <GalleryEmptyMessage filtered={emptyIsFiltered} />
       </div>
     );
   }

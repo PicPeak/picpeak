@@ -47,6 +47,7 @@ const JOB_DIMENSION_REPAIR = 'photo_dimension_repair';
 const JOB_CAPTURE_DATE_BACKFILL = 'photo_capture_date_backfill';
 const JOB_ORIENTATION_BACKFILL = 'photo_orientation_backfill';
 const JOB_CREDIT_BACKFILL = 'photo_credit_backfill';
+const JOB_THUMB_HASH_BACKFILL = 'photo_thumb_hash_backfill';
 
 // How long a run may go without renewing its lease before another replica is
 // allowed to take it over. Generous on purpose: these jobs walk the whole
@@ -204,6 +205,7 @@ module.exports = {
   JOB_CAPTURE_DATE_BACKFILL,
   JOB_ORIENTATION_BACKFILL,
   JOB_CREDIT_BACKFILL,
+  JOB_THUMB_HASH_BACKFILL,
   DEFAULT_STALE_MS,
   HEARTBEAT_INTERVAL_MS,
 };

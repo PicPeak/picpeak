@@ -35,6 +35,10 @@ describe('migration 265', () => {
   let db, cleanup, eventId;
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
+    // The template is migrated to the latest; roll back what sits on top of
+    // 265's columns first, as a real rollback would (SQLite rebuilds the
+    // table on dropColumn and cannot re-create 285's index on parent_id).
+    await require('../../migrations/core/285_folder_sibling_name_unique').down(db);
     eventId = idOf(await db('events').insert({
       slug: 'm265', event_type: 'wedding', event_name: 'M265', event_date: '2026-08-01',
       host_email: 'h@example.com', admin_email: 'a@example.com', password_hash: 'x',

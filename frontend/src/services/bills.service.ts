@@ -281,7 +281,7 @@ export const billsService = {
    * re-bill proof selection from the Send dialog; omit to let the resolved
    * per-customer/global default decide all-or-none.
    */
-  async send(id: number, proofInboundIds?: number[]): Promise<{ sent: true }> {
+  async send(id: number, proofInboundIds?: number[]): Promise<{ sent: boolean; alreadySent: boolean }> {
     const { data } = await api.post(`/admin/invoices/${id}/send`,
       proofInboundIds !== undefined ? { proofInboundIds } : undefined);
     return data.data || data;

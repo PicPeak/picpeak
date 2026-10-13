@@ -843,9 +843,23 @@
     "hidePassword": "Hide password",
     "showPassword": "Show password",
     "loadFailed": "Could not load this",
-    "moreActions": "More actions"
+    "moreActions": "More actions",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "today": "Today",
+    "chooseDate": "Choose date"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} file is already in this gallery",
+      "title_other": "{{count}} files are already in this gallery",
+      "toast_one": "{{count}} file is already in this gallery and was skipped — details in the upload bar at the top.",
+      "toast_other": "{{count}} files are already in this gallery and were skipped — details in the upload bar at the top.",
+      "badge": "Duplicate",
+      "sameAs": "same content as {{name}}",
+      "uploadAnyway": "Upload anyway",
+      "uploadAllAnyway": "Upload all anyway"
+    },
     "capacity": {
       "decoded": "This image exceeds the server's image-processing limits.",
       "imagePixels": "This image is larger than the {{max}} megapixels this server processes.",
@@ -886,6 +900,7 @@
     "processingProgress": "{{complete}} of {{total}} done",
     "processingFailed_one": "{{count}} photo failed to process",
     "processingFailed_other": "{{count}} photos failed to process",
+    "heldForReview": "Thank you! Your photos will appear in the gallery once the photographer has approved them.",
     "processingStillRunning": "Your upload is still being processed — it will appear in the gallery shortly.",
     "retryFailed": "Retry failed",
     "uploadComplete": "Upload complete!",
@@ -910,6 +925,7 @@
     "uploadMedia": "Upload Photos & Videos",
     "maxFilesReached": "Maximum {{limit}} files allowed",
     "someFilesSkipped": "Only {{allowed}} more files can be added (limit {{limit}})",
+    "filesOverLimit": "Added {{allowed}} of {{found}} files. One upload takes at most {{limit}} files; upload the rest separately.",
     "folderTooLarge": "The folder is too large to scan completely. Only part of it was added; drop sub-folders separately.",
     "tooManyFiles": "Maximum {{limit}} files can be uploaded at once",
     "limitInfo": "{{selected}} of {{limit}} files selected ({{remaining}} remaining)",
@@ -973,7 +989,11 @@
       "firstLookCallout_other": "First-look folder found: \"{{name}}\". Its {{count}} photos are badged \"First look\", and this gallery switches to two-stage delivery: guests see that more photos are on their way until you mark the full gallery as ready.",
       "firstLookSettings": "Due date and badge: this gallery’s Settings → Folders & delivery. Keywords: Settings → Events.",
       "nothingToUpload": "None of the selected files can be uploaded: they are all in hidden or skipped folders.",
-      "keptForNext": "Files added while the folders were prepared are still selected: {{count}}."
+      "keptForNext": "Files added while the folders were prepared are still selected: {{count}}.",
+      "overFolderLimit_one": "This upload would add {{adding}} folder, but the gallery already has {{current}} of at most {{limit}}. Turn off “Keep folder structure” or remove folders first.",
+      "overFolderLimit_other": "This upload would add {{adding}} folders, but the gallery already has {{current}} of at most {{limit}}. Turn off “Keep folder structure” or remove folders first.",
+      "overRequestLimit_one": "This upload would open {{adding}} folder request, but the gallery already has {{current}} of at most {{limit}} open. Ask an administrator to approve or reject some first, or turn off “Keep folder structure”.",
+      "overRequestLimit_other": "This upload would open {{adding}} folder requests, but the gallery already has {{current}} of at most {{limit}} open. Ask an administrator to approve or reject some first, or turn off “Keep folder structure”."
     },
     "largeFileReplaceSkipped": "Replace-by-name is not supported for files above the batch size; upload it without replace.",
     "removeFile": "Remove {{name}}"
@@ -1355,6 +1375,8 @@
     "favorites": "Favorites",
     "needHelp": "Need help? Contact us at",
     "noPhotosFound": "No photos found",
+    "noPhotosMatch": "No photos match your search or filters.",
+    "noPhotosYet": "There are no photos here yet.",
     "failedToLoad": "Failed to load photos",
     "tryAgain": "Try Again",
     "passwordChangeRequired": "Change your password in the admin area before previewing this gallery.",
@@ -1372,6 +1394,10 @@
     "cancelSelection": "Cancel Selection",
     "selectAll": "Select All",
     "deselectAll": "Deselect All",
+    "selectionTray": {
+      "title": "Selected ({{count}})",
+      "remove": "Remove {{name}} from the selection"
+    },
     "copyFilenames": {
       "button": "Copy filenames",
       "title": "Copy filenames",
@@ -1527,6 +1553,8 @@
     "backToGallery": "All photos",
     "downloadFolder": "Download folder ({{count}})",
     "downloadFolderCapped": "Download first {{limit}} of {{total}}",
+    "newPhotos_one": "{{count}} new photo",
+    "newPhotos_other": "{{count}} new photos",
     "downloadEverything": "Download all photos",
     "downloadFolder_one": "Download folder ({{count}})",
     "downloadFolder_other": "Download folder ({{count}})",
@@ -1554,6 +1582,11 @@
       "uploadedBy": "Uploaded by {{name}}",
       "photoBy": "Photo by {{name}}"
     },
+    "filmStrip": {
+      "label": "Photos",
+      "photo": "Photo {{position}} of {{total}}",
+      "photoNamed": "Photo {{position}} of {{total}}: {{name}}"
+    },
     "firstLook": "First look",
     "viewAllPhotos": "All photos",
     "viewSwitch": "Show photos by",
@@ -1579,7 +1612,12 @@
     "preview": {
       "title": "Theme preview",
       "description": "This is how your galleries will look with the current theme settings."
-    }
+    },
+    "preparedDownload": "Your prepared download",
+    "downloadNotify": "Email me when it is ready",
+    "downloadNotifyRequested": "We will email you when the download is ready. You can close this window.",
+    "downloadNotifyFailed": "The email notification could not be set up. Please keep this window open.",
+    "downloadGone": "This download is no longer available. Please request it again."
   },
   "categories": {
     "title": "Photo Categories",
@@ -1625,7 +1663,10 @@
   "events": {
     "revealMode": "Reveal mode (hide gallery until reveal)",
     "revealModeHelp": "Guests can upload but see no photos until you reveal the gallery — manually or at the scheduled time. Slideshow and client access keep working.",
+    "liveRefresh": "Live refresh (tell guests about new photos)",
+    "liveRefreshHelp": "An open gallery checks for new photos every 20 seconds and offers guests a \"new photos\" button. Nothing reloads on its own.",
     "revealAt": "Scheduled reveal (optional)",
+    "revealAtTime": "Reveal time",
     "revealAtHelp": "Leave empty to reveal manually with the \"Reveal now\" button.",
     "revealModeStatus": "Reveal mode",
     "revealed": "Revealed",
@@ -1802,10 +1843,15 @@
     "userUploads": "User Upload Settings",
     "allowUserUploads": "Allow guests to upload photos",
     "allowUserUploadsHelp": "Enable guests to upload their own photos to this gallery",
+    "moderateGuestUploads": "Approve guest uploads before they are published",
+    "moderateGuestUploadsHelp": "Guest uploads stay hidden from guests and clients until you or a reviewer approve them on the Photos tab. Rejected uploads stay hidden. Uploads that are waiting count towards the photo limit.",
     "allowUserUploadsDescription": "Enable guests to upload their own photos to this gallery",
     "uploadCategory": "Upload Category",
     "selectCategory": "Select a category for user uploads",
     "uploadCategoryHelp": "All user-uploaded photos will be added to this category",
+    "guestUploadMaxEdge": "Longest edge of guest photos (px)",
+    "guestUploadMaxEdgeHelp": "Larger JPEG, PNG and WebP photos are scaled down on the guest's device before upload, which saves data and storage. Leave empty to keep originals. Other formats and videos are always sent as they are.",
+    "guestUploadMaxEdgeInvalid": "The longest edge must be a whole number from 1024 to 16384, or empty.",
     "allowDownloads": "Allow photo downloads",
     "downloadsDisabled": "Downloads Disabled",
     "downloadProtection": "Download Protection",
@@ -2131,7 +2177,8 @@
       "structureApplied_one": "{{count}} photo moved into folders",
       "structureApplied_other": "{{count}} photos moved into folders",
       "structureNothing": "Every photo from a subfolder is in a folder already",
-      "structureFailed": "The folder structure could not be applied"
+      "structureFailed": "The folder structure could not be applied",
+      "structureLimited": "The gallery reached its folder limit: some photos went into the closest existing folder."
     },
     "header": {
       "moreActions": "More actions"
@@ -2235,6 +2282,7 @@
         "reminderOn": "goes out {{date}}",
         "uploaded": "Uploaded to PicPeak",
         "uploadsOff": "Uploads off",
+        "uploadsApproved": "approval required",
         "uploadsOn": "Uploads on",
         "watching": "watching",
         "watermarked": "watermarked",
@@ -2338,7 +2386,26 @@
     "noEventsYet": "No galleries yet",
     "noEventsYetHint": "Create a gallery to share photos with a client.",
     "downloadLimitResetAction": "Reset downloads",
-    "notFoundHint": "It may have been deleted, or the link is wrong."
+    "notFoundHint": "It may have been deleted, or the link is wrong.",
+    "expiryPresets": {
+      "label": "Expiry quick picks",
+      "days": "{{days}} days",
+      "fromToday": "From today:"
+    },
+    "nextSteps": {
+      "title": "Before you share",
+      "progress": "{{done}} of {{total}} done",
+      "done": "Done",
+      "todo": "To do",
+      "photos": "Add photos",
+      "photosLink": "Open Photos",
+      "customer": "Add a customer email or account",
+      "customerLink": "Open Settings",
+      "publish": "Publish the gallery",
+      "publishLink": "Publish"
+    },
+    "showExifToGuests": "Show camera details to guests",
+    "showExifToGuestsHelp": "Camera, lens, focal length, aperture, shutter speed and ISO appear below the photo in the full-screen view. Location and serial numbers are never stored or shown."
   },
   "settings": {
     "title": "System Settings",
@@ -3243,6 +3310,53 @@
       "regenerateFailed": "Could not regenerate recovery codes. Check the code and try again.",
       "recoveryCodesRemaining_one": "{{count}} recovery code remaining."
     },
+    "passkeys": {
+      "title": "Passkeys",
+      "description": "Sign in with your fingerprint, face, device PIN or a security key instead of your password. A passkey also replaces the authenticator code.",
+      "domainNote": "Passkeys are tied to {{domain}}. If this site moves to another address they stop working, and you sign in with your password again.",
+      "empty": "No passkeys yet.",
+      "add": "Add a passkey",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. MacBook, YubiKey",
+      "nameRequired": "Give the passkey a name.",
+      "passwordLabel": "Current password",
+      "passwordHelp": "Confirms that it is you adding a new way to sign in.",
+      "passwordRequired": "Enter your current password.",
+      "codeLabel": "Authenticator code",
+      "codeHelp": "Your account uses two-factor authentication. Enter a code from your authenticator app, or a recovery code.",
+      "codeRequired": "Enter a code from your authenticator app.",
+      "continue": "Continue",
+      "added": "Passkey added.",
+      "addedOn": "Added {{date}}",
+      "lastUsed": "Last used {{date}}",
+      "neverUsed": "Never used",
+      "rename": "Rename",
+      "remove": "Remove",
+      "removeHelp": "Remove \"{{name}}\"? You will no longer be able to sign in with it.",
+      "removeConfirm": "Remove passkey",
+      "removed": "Passkey removed.",
+      "loadFailed": "Passkeys could not be loaded.",
+      "errors": {
+        "cancelled": "The passkey prompt was cancelled or timed out. Try again.",
+        "exists": "This passkey is already registered.",
+        "unsupported": "This browser or device cannot create a passkey.",
+        "security": "The browser refused to create a passkey for this address.",
+        "limit": "You have reached the maximum number of passkeys. Remove one to add another.",
+        "expired": "The request expired. Try again.",
+        "wrongPassword": "The current password is incorrect.",
+        "wrongCode": "The code is incorrect or has already been used.",
+        "failed": "Something went wrong. Try again."
+      },
+      "unavailable": {
+        "not_configured": "Passkeys need a public address for this site. Set the site URL below first.",
+        "ip_address": "Passkeys need a domain name. This site is set up with an IP address, so they cannot be used.",
+        "insecure_origin": "Passkeys need HTTPS. This site is set up without it, so they cannot be used.",
+        "origin_mismatch": "Passkeys only work on {{origin}}. Open the admin there to add or use one.",
+        "sso_only": "Password sign-in is switched off in favour of single sign-on, so passkeys are switched off too.",
+        "sso_account": "Your account signs in through single sign-on, so it cannot use passkeys.",
+        "unsupported": "This browser does not support passkeys."
+      }
+    },
     "sso": {
       "title": "Single Sign-On (OIDC)",
       "intro": "Let admins sign in through your identity provider (Keycloak, Authentik, Pocket ID, or any OIDC-compliant IdP). Local email/password login stays available as a fallback.",
@@ -3311,7 +3425,10 @@
       "eventIntro": "Override the site-wide download settings for this gallery only. \"Inherit\" follows Settings → Download resolutions.",
       "inheritWith": "Inherit ({{value}})",
       "effective": "Currently hands out: {{standard}}",
-      "pickerOn": "guests may choose another size"
+      "pickerOn": "guests may choose another size",
+      "retention": "Keep prepared downloads for (hours)",
+      "retentionHint": "How long a download prepared in a custom size stays available before it is deleted. Longer lets guests come back for it later, but each prepared download takes up about as much disk space as the photos in it. Applies to downloads prepared from now on.",
+      "retentionInvalid": "Enter a whole number of hours between {{min}} and {{max}}."
     },
     "captureDates": {
       "title": "Capture Dates",
@@ -3325,7 +3442,8 @@
       "skipped": "{{count}} photo(s) were changed by something else while the run was reading them and were not updated.",
       "description": "Backfill \"Date Taken\" from EXIF for photos imported before capture dates were read. External/reference imports never recorded one, so their galleries sort by import order instead of when the photos were taken.",
       "skipped_one": "{{count}} photo(s) were changed by something else while the run was reading them and were not updated.",
-      "skipped_other": "{{count}} photo(s) were changed by something else while the run was reading them and were not updated."
+      "skipped_other": "{{count}} photo(s) were changed by something else while the run was reading them and were not updated.",
+      "pendingDetails": "Photos waiting for this run: {{photos}}. It also reads the camera details (camera, lens, exposure) of photos that have none on record."
     },
     "orientationBackfill": {
       "title": "Photo Orientation",
@@ -3348,6 +3466,17 @@
       "running": "Reading credits...",
       "noneToRead": "No photos left to read",
       "button": "Read Credits from EXIF"
+    },
+    "placeholderBackfill": {
+      "title": "Tile Placeholders",
+      "description": "Compute the blurred placeholder a gallery tile shows while its thumbnail loads, for photos added before placeholders existed. Only the stored thumbnails are read, never the originals. New uploads get theirs automatically.",
+      "total": "Photos with a Thumbnail",
+      "withPlaceholder": "With a Placeholder",
+      "withoutPlaceholder": "Without a Placeholder",
+      "result": "Last run: {{success}} computed, {{failed}} thumbnails unreadable",
+      "running": "Computing placeholders...",
+      "noneToFill": "All photos already have a placeholder",
+      "button": "Compute Placeholders"
     },
     "saveBar": {
       "unsaved": "You have unsaved changes",
@@ -4465,10 +4594,12 @@
       "apiPhotosDownloaded_other": "API token “{{token_name}}” downloaded {{count}} originals from {{eventName}}",
       "apiPhotosZipDownloaded": "API token “{{token_name}}” downloaded a ZIP of {{photo_count}} originals from {{eventName}}",
       "eventTeamChanged": "Team changed for {{eventName}}",
-      "photosReviewApproved_one": "{{count}} team upload approved in {{eventName}}",
-      "photosReviewApproved_other": "{{count}} team uploads approved in {{eventName}}",
-      "photosReviewRejected_one": "{{count}} team upload rejected in {{eventName}}",
-      "photosReviewRejected_other": "{{count}} team uploads rejected in {{eventName}}",
+      "photosReviewApproved_one": "{{count}} upload approved in {{eventName}}",
+      "photosReviewApproved_other": "{{count}} uploads approved in {{eventName}}",
+      "photosReviewRejected_one": "{{count}} upload rejected in {{eventName}}",
+      "photosReviewRejected_other": "{{count}} uploads rejected in {{eventName}}",
+      "guestUploadsPendingReview_one": "{{count}} guest upload is waiting for review in {{eventName}}",
+      "guestUploadsPendingReview_other": "{{count}} guest uploads are waiting for review in {{eventName}}",
       "photoDecision": "Photo approved or rejected in {{eventName}}",
       "guestFeedbackDecision": "Guest approved or rejected a photo in {{eventName}}"
     },
@@ -4564,7 +4695,8 @@
       "deleteManyConfirm_one": "Delete {{count}} photo? It is removed from the gallery. This cannot be undone.",
       "deleteManyConfirm_other": "Delete {{count}} photos? They are removed from the gallery. This cannot be undone.",
       "deleteManyAction_one": "Delete {{count}} photo",
-      "deleteManyAction_other": "Delete {{count}} photos"
+      "deleteManyAction_other": "Delete {{count}} photos",
+      "cameraDetails": "Camera details"
     },
     "events": {
       "tabs": {
@@ -4867,10 +4999,12 @@
       "photo_decision": "Photo approved or rejected in {{eventName}}",
       "guest_feedback_decision": "Guest approved or rejected a photo in {{eventName}}",
       "event_team_changed": "Team changed for {{eventName}}",
-      "photos_review_approved_one": "{{count}} team upload approved in {{eventName}}",
-      "photos_review_approved_other": "{{count}} team uploads approved in {{eventName}}",
-      "photos_review_rejected_one": "{{count}} team upload rejected in {{eventName}}",
-      "photos_review_rejected_other": "{{count}} team uploads rejected in {{eventName}}"
+      "photos_review_approved_one": "{{count}} upload approved in {{eventName}}",
+      "photos_review_approved_other": "{{count}} uploads approved in {{eventName}}",
+      "photos_review_rejected_one": "{{count}} upload rejected in {{eventName}}",
+      "photos_review_rejected_other": "{{count}} uploads rejected in {{eventName}}",
+      "guest_uploads_pending_review_one": "{{count}} guest upload is waiting for review in {{eventName}}",
+      "guest_uploads_pending_review_other": "{{count}} guest uploads are waiting for review in {{eventName}}"
     },
     "people": {
       "title": "People in this gallery",
@@ -6197,6 +6331,9 @@
     "rateStar_one": "Rate {{count}} star",
     "rateStar_other": "Rate {{count}} stars",
     "removeRating": "Remove rating",
+    "rateSelected": "Rate selected",
+    "bulkRatingPartial": "{{rated}} of {{total}} photos were rated",
+    "ratingLimitReached": "Rating limit reached. Try again later.",
     "ratingsCount_one": "{{count}} ratings",
     "ratingsCount_other": "{{count}} ratings",
     "likeError": "Failed to update like",
@@ -6456,6 +6593,13 @@
       "locked": "Account temporarily locked due to too many attempts. Try again later.",
       "lockedRetry": "Account temporarily locked. Try again in {{seconds}} seconds."
     },
+    "passkey": {
+      "signIn": "Sign in with a passkey",
+      "useInstead": "Use a passkey instead",
+      "cancelled": "The passkey prompt was cancelled or timed out. Try again.",
+      "unsupported": "This browser or device cannot use a passkey here.",
+      "failed": "Passkey sign-in failed. Try again or sign in with your password."
+    },
     "ssoDivider": "or",
     "ssoSignIn": "Sign in with SSO",
     "ssoOnlyHint": "Password login is disabled on this instance — sign in through your identity provider.",
@@ -6676,7 +6820,17 @@
       "moveToFolderTitle_other": "Move {{count}} photos to a folder",
       "photosMoved_one": "{{count}} photo moved to {{folder}}",
       "photosMoved_other": "{{count}} photos moved to {{folder}}",
-      "moveFailed": "The photos could not be moved"
+      "moveFailed": "The photos could not be moved",
+      "errors": {
+        "exists": "A folder with this name already exists here.",
+        "deleteNameClash": "The subfolder \"{{name}}\" cannot move up: a folder with this name already exists there. Rename or move it first.",
+        "tooDeep": "Folders can be nested at most {{limit}} levels deep.",
+        "notFound": "This folder no longer exists. Reload the page.",
+        "cycle": "A folder cannot be moved into itself or one of its subfolders.",
+        "limitReached": "This gallery has reached its limit of {{limit}} folders.",
+        "requestLimitReached": "This gallery has reached its limit of {{limit}} open folder requests. Ask an administrator to approve or reject some first.",
+        "requestNotFound": "This folder request was already decided or no longer exists."
+      }
     },
     "folderRequests": {
       "title_one": "{{count}} folder request",
@@ -6703,10 +6857,10 @@
       "waitingForAdmin_other": "{{count}} folder requests are waiting for an admin. Until then their {{photos}} photos sit in the closest existing folder."
     },
     "review": {
-      "pendingOwner_one": "{{count}} upload from your team is waiting for your review",
-      "pendingOwner_other": "{{count}} uploads from your team are waiting for your review",
-      "pendingMember_one": "{{count}} team upload is waiting for the owner's review",
-      "pendingMember_other": "{{count}} team uploads are waiting for the owner's review",
+      "pendingOwner_one": "{{count}} upload is waiting for your review",
+      "pendingOwner_other": "{{count}} uploads are waiting for your review",
+      "pendingMember_one": "{{count}} upload is waiting for the owner's review",
+      "pendingMember_other": "{{count}} uploads are waiting for the owner's review",
       "nonePending": "No uploads are waiting for review.",
       "filterPending": "Pending review ({{count}})",
       "filterRejected": "Rejected ({{count}})",
@@ -6721,6 +6875,8 @@
       "pendingBadge": "Pending review",
       "rejectedBadge": "Rejected",
       "uploadedBy": "Uploaded by {{name}}",
+      "sourceGuest": "Guest",
+      "sourceTeam": "Team",
       "hiddenUntilApproved": "Hidden from guests and clients until approved",
       "skippedOnShow_one": "{{count}} photo waits for review and stays hidden until it is approved",
       "skippedOnShow_other": "{{count}} photos wait for review and stay hidden until they are approved"

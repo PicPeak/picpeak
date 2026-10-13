@@ -209,6 +209,9 @@ router.delete('/:slug/guest/me', verifyGalleryAccess, resolveGuest, requireGuest
         email: null,
         last_seen_at: db.fn.now(),
       });
+    // Their "mail me when the download is ready" requests (issue 1733).
+    await require('../services/downloadJobNotifier')
+      .forgetGuest({ id: req.guest.id, event_id: req.event.id, email: req.guest.email });
     // Their name on the photos they uploaded goes with them (#1561). After
     // the soft delete, so an upload still in flight sees it.
     await clearGuestCredits(req.guest.id);

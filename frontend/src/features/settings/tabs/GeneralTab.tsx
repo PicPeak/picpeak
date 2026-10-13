@@ -7,6 +7,7 @@ import type { GeneralSettings } from '../hooks/useSettingsState';
 import { MAX_FILES_PER_UPLOAD_LIMIT } from '../hooks/useSettingsState';
 import { SUPPORTED_LANGUAGES } from "../../../components/common/LanguageSelector.tsx";
 import { MfaSettingsCard } from '../components/MfaSettingsCard';
+import { PasskeysCard } from '../components/PasskeysCard';
 import { isAbsoluteHttpUrl } from '../../../utils/url';
 
 interface GeneralTabProps {
@@ -138,6 +139,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
       {/* Per-user two-factor authentication (issue #738) — lives beside the
           admin's own account details rather than the admin-wide Security tab. */}
       <MfaSettingsCard />
+      <PasskeysCard />
 
       <Card padding="md">
         <h2 className="text-lg font-semibold text-heading mb-4">{t('settings.general.siteConfiguration')}</h2>

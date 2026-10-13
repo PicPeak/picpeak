@@ -22,6 +22,18 @@ let cache = null; // { at, val }
 
 const ORIGINAL = 'original';
 
+// How long a finished job archive stays downloadable (issue 1733). One hour is
+// what the constant was before it became a setting; a week is the ceiling
+// because every hour kept is disk held by archives nobody may come back for.
+const JOB_RETENTION_HOURS = { min: 1, max: 168, fallback: 1 };
+
+/** A whole number of hours within bounds, or null for anything else. */
+function parseJobRetentionHours(raw) {
+  const hours = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
+  return Number.isInteger(hours) && hours >= JOB_RETENTION_HOURS.min && hours <= JOB_RETENTION_HOURS.max
+    ? hours : null;
+}
+
 // Mirrors migration 173's seed. Used when the setting row is missing entirely
 // (fresh install mid-migration, or an admin who deleted the row).
 const FALLBACK_PRESETS = [
@@ -73,11 +85,12 @@ async function getDownloadGlobals() {
   const now = Date.now();
   if (cache && now - cache.at < TTL_MS) return cache.val;
 
-  const [standard, pickerEnabled, allowOriginal, presets] = await Promise.all([
+  const [standard, pickerEnabled, allowOriginal, presets, retention] = await Promise.all([
     getAppSetting('download_standard_resolution', ORIGINAL),
     getAppSetting('download_resolution_picker_enabled', false),
     getAppSetting('download_allow_original', false),
     getAppSetting('download_resolutions', FALLBACK_PRESETS),
+    getAppSetting('download_job_retention_hours', JOB_RETENTION_HOURS.fallback),
   ]);
 
   const val = {
@@ -85,6 +98,7 @@ async function getDownloadGlobals() {
     picker_enabled: pickerEnabled === true,
     allow_original: allowOriginal === true,
     resolutions: normalisePresets(presets),
+    job_retention_hours: parseJobRetentionHours(retention) ?? JOB_RETENTION_HOURS.fallback,
   };
   cache = { at: now, val };
   return val;
@@ -167,6 +181,8 @@ function pickRequestedResolution(policy, requested) {
 
 module.exports = {
   ORIGINAL,
+  JOB_RETENTION_HOURS,
+  parseJobRetentionHours,
   getDownloadGlobals,
   invalidateDownloadGlobals,
   resolveEventDownloadPolicy,

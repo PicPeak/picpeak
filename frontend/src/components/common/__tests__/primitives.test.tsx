@@ -119,6 +119,23 @@ describe('Tabs', () => {
     expect(onChange).toHaveBeenCalledWith('settings');
     expect(screen.getByRole('img', { name: 'Unsaved' })).toBeInTheDocument();
   });
+
+  it('leaves Alt / Cmd / Ctrl + arrow keys to the browser', () => {
+    const onChange = vi.fn();
+    render(
+      <Tabs
+        items={[{ id: 'overview', label: 'Overview' }, { id: 'settings', label: 'Settings' }]}
+        value="settings"
+        onChange={onChange}
+      />,
+    );
+    const tab = screen.getByRole('tab', { name: 'Settings' });
+    for (const modifier of ['altKey', 'metaKey', 'ctrlKey']) {
+      const notPrevented = fireEvent.keyDown(tab, { key: 'ArrowLeft', [modifier]: true });
+      expect(notPrevented).toBe(true);
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
 
 describe('Switch', () => {

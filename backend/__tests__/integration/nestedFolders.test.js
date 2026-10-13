@@ -20,6 +20,7 @@ const request = require('supertest');
 describe('nested folders', () => {
   let tmpDir; let db; let cleanup; let app; let eventId; let tree;
   let canManage = true;
+  let canAccess = true;
 
   const idOf = (r) => Number(r[0]?.id ?? r[0]);
 
@@ -44,7 +45,7 @@ describe('nested folders', () => {
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
       requireEventOwnership: (_req, _res, next) => next(),
-      canAccessEvent: () => true,
+      canAccessEvent: () => canAccess,
     }));
 
     ({ db, cleanup } = await require('./helpers/crmDb').bootCrmDb());
@@ -171,6 +172,31 @@ describe('nested folders', () => {
       await tree.deleteFolder(eventId, mid.id);
       expect((await db('photos').where('id', inMid).first()).folder_id).toBe(Number(top.id));
       expect((await db('photo_categories').where('id', leaf).first()).parent_id).toBe(Number(top.id));
+    });
+
+    it('a delete whose subfolder would clash with a folder one level up answers 409 and changes nothing', async () => {
+      await tree.ensurePath(eventId, ['ProbeTop', 'Portraits']);
+      await tree.ensurePath(eventId, ['portraits']);
+      const top = (await tree.eventFolders(eventId)).find((f) => f.name === 'ProbeTop');
+      const inTop = await addPhoto('top.jpg', { folder_id: top.id });
+      const res = await request(app).delete(`/api/admin/events/${eventId}/folders/${top.id}`);
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'FOLDER_DELETE_NAME_CLASH', name: 'Portraits' });
+      expect(await db('photo_categories').where('id', top.id).first()).toBeTruthy();
+      expect((await db('photos').where('id', inTop).first()).folder_id).toBe(Number(top.id));
+      // Once the clash is renamed away, the delete goes through.
+      const sub = (await tree.eventFolders(eventId)).find((f) => f.name === 'Portraits');
+      await tree.renameFolder(eventId, sub.id, 'Portraits 2');
+      expect((await request(app).delete(`/api/admin/events/${eventId}/folders/${top.id}`)).status).toBe(200);
+    });
+
+    it('deletes a folder whose subfolder has its own name (Name/Name): the subfolder takes its place', async () => {
+      const { folderId: inner } = await tree.ensurePath(eventId, ['Twin', 'twin']);
+      const outer = (await tree.eventFolders(eventId)).find((f) => f.name === 'Twin');
+      const res = await request(app).delete(`/api/admin/events/${eventId}/folders/${outer.id}`);
+      expect(res.status).toBe(200);
+      expect(await db('photo_categories').where('id', outer.id).first()).toBeUndefined();
+      expect((await db('photo_categories').where('id', inner).first()).parent_id).toBeNull();
     });
 
     it('inherits a download restriction to everything below', async () => {
@@ -304,6 +330,185 @@ describe('nested folders', () => {
       const again = await tree.ensurePath(eventId, ['Selects']);
       expect(again.folderId).not.toBe(folderId);
       expect(Boolean((await db('photo_categories').where('id', again.folderId).first()).is_folder)).toBe(true);
+    });
+  });
+
+  describe('sibling names and caps (PR 1826 follow-up)', () => {
+    const resolve = (body) => request(app).post(`/api/admin/events/${eventId}/folders/resolve`).send(body);
+    const folderCount = async () => Number((await db('photo_categories').where({ event_id: eventId }).count('id as c').first()).c);
+
+    async function fillFolders(n) {
+      const rows = Array.from({ length: n }, (_, i) => ({
+        name: `Bulk ${i}`, slug: `bulk-${i}`, is_global: false, event_id: eventId, is_folder: true, display_order: i,
+      }));
+      await db.batchInsert('photo_categories', rows, 100);
+    }
+
+    it('the database refuses a second folder of the same name under the same parent, any case (migration 285)', async () => {
+      await tree.ensurePath(eventId, ['Friday']);
+      await expect(db('photo_categories').insert({
+        name: 'FRIDAY', slug: 'friday-dup', is_global: false, event_id: eventId, is_folder: true, display_order: 9,
+      })).rejects.toThrow();
+      // Same name under another parent, and a filter category of that name, are fine.
+      await tree.ensurePath(eventId, ['Saturday', 'Friday']);
+      await db('photo_categories').insert({ name: 'Friday', slug: 'friday-filter', is_global: false, event_id: eventId, is_folder: false });
+      const fridays = (await tree.folderTree(eventId)).filter((f) => f.name === 'Friday');
+      expect(fridays).toHaveLength(2);
+      expect(new Set(fridays.map((f) => f.parent_id)).size).toBe(2);
+    });
+
+    it('concurrent creates of one name make one folder; the others get the same 409 as a sequential duplicate', async () => {
+      const results = await Promise.allSettled(['Friday', 'friday', 'FRIDAY', 'Friday', 'friday']
+        .map((name) => tree.createFolder(eventId, { name })));
+      const ok = results.filter((r) => r.status === 'fulfilled');
+      const refused = results.filter((r) => r.status === 'rejected');
+      expect(ok).toHaveLength(1);
+      refused.forEach((r) => expect(r.reason).toMatchObject({ status: 409, code: 'FOLDER_EXISTS' }));
+      expect(await folderCount()).toBe(1);
+    });
+
+    it('an upload racing a manual create of the same name ends up in one folder', async () => {
+      const [manual, ...paths] = await Promise.allSettled([
+        tree.createFolder(eventId, { name: 'Ceremony' }),
+        tree.ensurePath(eventId, ['ceremony']),
+        tree.ensurePath(eventId, ['CEREMONY', 'Rings']),
+      ]);
+      // The uploads always resolve (re-reading whichever row won); the manual
+      // create either won or gets the 409 a sequential duplicate gets.
+      paths.forEach((p) => expect(p).toMatchObject({ status: 'fulfilled', value: { missingFrom: -1 } }));
+      if (manual.status === 'rejected') expect(manual.reason).toMatchObject({ status: 409, code: 'FOLDER_EXISTS' });
+      const rows = await tree.eventFolders(eventId);
+      const roots = rows.filter((f) => f.parent_id == null);
+      expect(roots).toHaveLength(1);
+      const rootId = Number(roots[0].id);
+      if (manual.status === 'fulfilled') expect(manual.value).toBe(rootId);
+      expect(paths[0].value.folderId).toBe(rootId);
+      expect(Number(rows.find((f) => f.name === 'Rings').parent_id)).toBe(rootId);
+    });
+
+    it('the categories API refuses a folder that clashes with a sibling by name instead of a 500', async () => {
+      await tree.ensurePath(eventId, ['Selects']);
+      const categoriesApp = express();
+      categoriesApp.use(express.json());
+      categoriesApp.use('/api/admin/categories', require('../../src/routes/adminCategories'));
+      const created = await request(categoriesApp).post('/api/admin/categories')
+        .send({ name: 'SELECTS', is_global: false, event_id: eventId, is_folder: true });
+      expect(created.status).toBe(409);
+      expect(created.body.code).toBe('FOLDER_EXISTS');
+
+      const filter = idOf(await db('photo_categories').insert({ name: 'selects', slug: 'selects-filter', is_global: false, event_id: eventId, is_folder: false }).returning('id'));
+      const flipped = await request(categoriesApp).put(`/api/admin/categories/${filter}`).send({ name: 'selects', is_folder: true });
+      expect(flipped.status).toBe(409);
+      expect(flipped.body.code).toBe('FOLDER_EXISTS');
+      expect(Boolean((await db('photo_categories').where('id', filter).first()).is_folder)).toBe(false);
+    });
+
+    it('the categories API spells a folder name by the tree\'s rules', async () => {
+      const categoriesApp = express();
+      categoriesApp.use(express.json());
+      categoriesApp.use('/api/admin/categories', require('../../src/routes/adminCategories'));
+      await tree.ensurePath(eventId, ['Getting ready']);
+      // A trailing space or a decomposed umlaut is the same folder.
+      const spaced = await request(categoriesApp).post('/api/admin/categories')
+        .send({ name: 'Getting ready ', is_global: false, event_id: eventId, is_folder: true });
+      expect(spaced.status).toBe(409);
+      const nfd = 'A\u0308rger';
+      const first = await request(categoriesApp).post('/api/admin/categories')
+        .send({ name: nfd, is_global: false, event_id: eventId, is_folder: true });
+      expect(first.status).toBeLessThan(300);
+      expect((await db('photo_categories').where({ event_id: eventId, is_folder: true }).whereRaw('lower(name) = lower(?)', ['\u00c4rger']).first())).toBeTruthy();
+      // A path character is refused, as on the folder route.
+      const slashed = await request(categoriesApp).post('/api/admin/categories')
+        .send({ name: 'a/b', is_global: false, event_id: eventId, is_folder: true });
+      expect(slashed.status).toBe(400);
+    });
+
+    it('reads is_global "false" as false', async () => {
+      const categoriesApp = express();
+      categoriesApp.use(express.json());
+      categoriesApp.use('/api/admin/categories', require('../../src/routes/adminCategories'));
+      canAccess = false;
+      try {
+        const res = await request(categoriesApp).post('/api/admin/categories')
+          .send({ name: 'Elsewhere', is_global: 'false', event_id: eventId, is_folder: 'true' });
+        expect(res.status).toBe(403);
+        expect(await db('photo_categories').where({ name: 'Elsewhere' }).first()).toBeUndefined();
+      } finally {
+        canAccess = true;
+      }
+    });
+
+    it('caps the folders of one event with a stable 409', async () => {
+      await fillFolders(tree.FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT);
+      const res = await request(app).post(`/api/admin/events/${eventId}/folders`).send({ name: 'One too many' });
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'FOLDER_LIMIT_REACHED', limit: tree.FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT });
+
+      const upload = await resolve({ paths: ['Brand new'] });
+      expect(upload.status).toBe(409);
+      expect(upload.body.code).toBe('FOLDER_LIMIT_REACHED');
+
+      // Existing folders still resolve, and unattended ingest folds instead of dropping photos.
+      expect((await resolve({ paths: ['Bulk 3'] })).body.results['Bulk 3'].status).toBe('exists');
+      const folded = await tree.ensurePath(eventId, ['Bulk 3', 'Deeper'], { foldAtLimit: true });
+      const bulk3 = (await tree.eventFolders(eventId)).find((f) => f.name === 'Bulk 3');
+      expect(folded).toMatchObject({ folderId: Number(bulk3.id), limited: true, missingFrom: -1 });
+      expect(await folderCount()).toBe(tree.FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT);
+
+      // The preview says so before anything is sent; a path that exists does not count.
+      const preview = await resolve({ paths: ['Brand new/Deeper', 'Bulk 3'], dry_run: true });
+      expect(preview.status).toBe(200);
+      expect(preview.body.limit).toEqual({
+        code: 'FOLDER_LIMIT_REACHED', limit: tree.FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT,
+        current: tree.FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT, adding: 2,
+      });
+      expect((await resolve({ paths: ['Bulk 3'], dry_run: true })).body.limit).toBeNull();
+      // Case variants of one new folder count once, as ensurePath creates one.
+      expect((await resolve({ paths: ['New/A', 'new/B'], dry_run: true })).body.limit.adding).toBe(3);
+    }, 60000);
+
+    it('apply-external-structure folds into the closest folder at the cap', async () => {
+      await db('events').where('id', eventId).update({ source_mode: 'reference', external_path: 'shoot' });
+      try {
+        await fillFolders(tree.FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT);
+        const photo = await addPhoto('x.jpg', { source_origin: 'external', external_relpath: 'shoot/Bulk 3/Deeper/x.jpg' });
+        const res = await request(app).post(`/api/admin/events/${eventId}/folders/apply-external-structure`).send({});
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({ moved: 1, limited: true });
+        const bulk3 = (await tree.eventFolders(eventId)).find((f) => f.name === 'Bulk 3');
+        expect(Number((await db('photos').where('id', photo).first()).folder_id)).toBe(Number(bulk3.id));
+        expect(await folderCount()).toBe(tree.FOLDER_LIMITS.MAX_FOLDERS_PER_EVENT);
+      } finally {
+        await db('events').where('id', eventId).update({ source_mode: 'managed', external_path: null });
+      }
+    }, 60000);
+
+    it('caps the open folder requests of one event; joining an open request still works', async () => {
+      const limit = tree.FOLDER_LIMITS.MAX_OPEN_REQUESTS_PER_EVENT;
+      const rows = Array.from({ length: limit }, (_, i) => ({ event_id: eventId, path: `Req ${i}`, status: 'pending' }));
+      await db.batchInsert('folder_requests', rows, 100);
+      // Decided requests do not count.
+      await db('folder_requests').insert({ event_id: eventId, path: 'Old', status: 'rejected' });
+      canManage = false;
+      const res = await resolve({ paths: ['Yet another'] });
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'FOLDER_REQUEST_LIMIT_REACHED', limit });
+      // Preview: a new path is over the cap, joining an open one is not.
+      expect((await resolve({ paths: ['Yet another', 'Req 7'], dry_run: true })).body.limit)
+        .toEqual({ code: 'FOLDER_REQUEST_LIMIT_REACHED', limit, current: limit, adding: 1 });
+      expect((await resolve({ paths: ['Req 7'], dry_run: true })).body.limit).toBeNull();
+      const join = await resolve({ paths: ['Req 7'] });
+      expect(join.status).toBe(200);
+      expect(join.body.results['Req 7'].status).toBe('requested');
+    });
+
+    it('returns folder request created_at as UTC ISO, also for a row stamped by the DB clock (issue 1815)', async () => {
+      await db('folder_requests').insert({ event_id: eventId, path: 'Clock', status: 'pending' });
+      const res = await request(app).get(`/api/admin/events/${eventId}/folder-requests`);
+      expect(res.status).toBe(200);
+      const createdAt = res.body.requests.find((r) => r.path === 'Clock').created_at;
+      expect(createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(Math.abs(Date.parse(createdAt) - Date.now())).toBeLessThan(5 * 60 * 1000);
     });
   });
 

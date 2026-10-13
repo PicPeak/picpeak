@@ -30,6 +30,9 @@ export function Tabs<T extends string>({ items, value, onChange, className, ...r
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const onKeyDown = (e: React.KeyboardEvent, index: number) => {
+    // Alt+Left is the browser's Back, Cmd/Ctrl+arrows belong to the OS and the
+    // browser: the tabs only take the bare keys.
+    if (e.altKey || e.metaKey || e.ctrlKey) return;
     const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     const jump = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : null;
     if (!step && jump === null) return;

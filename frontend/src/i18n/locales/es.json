@@ -124,6 +124,16 @@
     "poweredBy": "Desarrollado por"
   },
   "upload": {
+    "duplicates": {
+      "title_one": "{{count}} archivo ya está en esta galería",
+      "title_other": "{{count}} archivos ya están en esta galería",
+      "toast_one": "{{count}} archivo ya está en esta galería y se omitió: detalles en la barra de subida de arriba.",
+      "toast_other": "{{count}} archivos ya están en esta galería y se omitieron: detalles en la barra de subida de arriba.",
+      "badge": "Duplicado",
+      "sameAs": "mismo contenido que {{name}}",
+      "uploadAnyway": "Subir de todos modos",
+      "uploadAllAnyway": "Subir todos de todos modos"
+    },
     "photoCategory": "Categoría de foto",
     "noCategory": "Sin categoría",
     "eventSpecific": "(Específico del evento)",
@@ -140,6 +150,7 @@
     "processingHint": "Los archivos están subidos. PicPeak está generando miniaturas y leyendo metadatos. Puedes salir de esta página — el trabajo sigue en segundo plano.",
     "processingProgress": "{{complete}} de {{total}} completado",
     "processingFailed": "{{count}} foto(s) fallaron al procesar",
+    "heldForReview": "¡Gracias! Sus fotos aparecerán en la galería cuando el fotógrafo las haya aprobado.",
     "retryFailed": "Reintentar fallo",
     "uploadComplete": "¡Subida completada!",
     "uploadFailed": "Error en la subida",
@@ -154,6 +165,7 @@
     "importFromSelectedFolder": "Importar desde la carpeta seleccionada",
     "maxFilesReached": "Máximo {{limit}} archivos permitidos",
     "someFilesSkipped": "Solo se pueden agregar {{allowed}} archivos más (límite {{limit}})",
+    "filesOverLimit": "Se añadieron {{allowed}} de {{found}} archivos. Una subida admite como máximo {{limit}} archivos; sube el resto por separado.",
     "tooManyFiles": "Máximo {{limit}} archivos pueden subirse a la vez",
     "limitInfo": "{{selected}} de {{limit}} archivos seleccionados ({{remaining}} restantes)",
     "limitReached": "Límite de subida alcanzado ({{limit}} archivos por lote)",
@@ -329,6 +341,10 @@
     "photosSelected": "{{count}} seleccionadas",
     "selectAll": "Seleccionar todo",
     "deselectAll": "Deseleccionar todo",
+    "selectionTray": {
+      "title": "Seleccionadas ({{count}})",
+      "remove": "Quitar {{name}} de la selección"
+    },
     "copyFilenames": {
       "button": "Copiar nombres de archivo",
       "title": "Copiar nombres de archivo",
@@ -385,6 +401,9 @@
     "backToGallery": "Todas las fotos",
     "downloadFolder": "Descargar carpeta ({{count}})",
     "downloadFolderCapped": "Descargar las primeras {{limit}} de {{total}}",
+    "newPhotos_one": "{{count}} foto nueva",
+    "newPhotos_many": "{{count}} fotos nuevas",
+    "newPhotos_other": "{{count}} fotos nuevas",
     "downloadEverything": "Descargar todas las fotos",
     "videoFormatUnsupported": "Este formato de vídeo no se puede reproducir en este navegador. Descárgalo para verlo.",
     "videoLoadFailed": "No se ha podido cargar este vídeo.",
@@ -410,6 +429,11 @@
       "uploadedBy": "Subida por {{name}}",
       "photoBy": "Foto de {{name}}"
     },
+    "filmStrip": {
+      "label": "Fotos",
+      "photo": "Foto {{position}} de {{total}}",
+      "photoNamed": "Foto {{position}} de {{total}}: {{name}}"
+    },
     "footer": {
       "forgetMeConfirmUploads": "Tu nombre se eliminará de las fotos que subiste a esta galería."
     },
@@ -434,7 +458,12 @@
       "withDate": "Las imágenes restantes aún se están editando: la galería completa estará disponible a más tardar el {{date}}.",
       "noDetails": "Las imágenes restantes aún se están editando.",
       "progressLabel": "Fotos entregadas hasta ahora"
-    }
+    },
+    "preparedDownload": "Tu descarga preparada",
+    "downloadNotify": "Avisarme por correo cuando esté lista",
+    "downloadNotifyRequested": "Te enviaremos un correo cuando la descarga esté lista. Puedes cerrar esta ventana.",
+    "downloadNotifyFailed": "No se pudo configurar el aviso por correo. Mantén esta ventana abierta.",
+    "downloadGone": "Esta descarga ya no está disponible. Solicítala de nuevo."
   },
   "categories": {
     "title": "Categorías de fotos",
@@ -466,6 +495,8 @@
   "events": {
     "revealMode": "Modo revelación (ocultar la galería hasta revelarla)",
     "revealModeHelp": "Los invitados pueden subir fotos pero no verlas hasta que reveles la galería — manualmente o a la hora programada. La presentación y el acceso de clientes siguen funcionando.",
+    "liveRefresh": "Actualización en vivo (avisar a los invitados de fotos nuevas)",
+    "liveRefreshHelp": "Una galería abierta comprueba cada 20 segundos si hay fotos nuevas y ofrece a los invitados un botón «Fotos nuevas». Nada se recarga por sí solo.",
     "revealAt": "Revelación programada (opcional)",
     "revealAtHelp": "Déjalo vacío para revelar manualmente con el botón \"Revelar ahora\".",
     "revealModeStatus": "Modo revelación",
@@ -644,10 +675,15 @@
     "userUploads": "Ajustes de subidas de usuarios",
     "allowUserUploads": "Permitir que los invitados suban fotos",
     "allowUserUploadsHelp": "Permite a los invitados subir sus propias fotos a esta galería",
+    "moderateGuestUploads": "Aprobar las subidas de invitados antes de publicarlas",
+    "moderateGuestUploadsHelp": "Las subidas de los invitados permanecen ocultas para invitados y clientes hasta que usted o un revisor las apruebe en la pestaña Fotos. Las subidas rechazadas permanecen ocultas. Las subidas en espera cuentan para el límite de fotos.",
     "allowUserUploadsDescription": "Permite a los invitados subir sus propias fotos a esta galería",
     "uploadCategory": "Categoría de subida",
     "selectCategory": "Selecciona una categoría para las subidas de usuarios",
     "uploadCategoryHelp": "Todas las fotos subidas por usuarios se añadirán a esta categoría",
+    "guestUploadMaxEdge": "Lado más largo de las fotos de invitados (px)",
+    "guestUploadMaxEdgeHelp": "Las fotos JPEG, PNG y WebP más grandes se reducen en el dispositivo del invitado antes de subirlas, lo que ahorra datos y almacenamiento. Déjalo vacío para conservar los originales. Los demás formatos y los vídeos siempre se envían tal cual.",
+    "guestUploadMaxEdgeInvalid": "El lado más largo debe ser un número entero entre 1024 y 16384, o quedar vacío.",
     "userUploadWarning": "Las subidas de usuarios serán moderadas y pueden ser eliminadas por los administradores en cualquier momento.",
     "allowDownloads": "Permitir descargas de fotos",
     "allowDownloadsHelp": "Permitir a los invitados descargar fotos de esta galería",
@@ -869,7 +905,8 @@
         "firstLook": "primera selección, más después",
         "teamMembers_one": "{{count}} miembro del equipo",
         "teamMembers_other": "{{count}} miembros del equipo",
-        "teamReview": "subidas del equipo revisadas"
+        "teamReview": "subidas del equipo revisadas",
+        "uploadsApproved": "aprobación requerida"
       },
       "passwordOwnerOnly": "Solo el propietario de la galería puede cambiar la contraseña o desactivarla."
     },
@@ -944,7 +981,27 @@
       "reviewUploadsHelp": "Retiene las subidas de los miembros del equipo cuyo rol no tiene el permiso «Review Team Uploads»: permanecen ocultas para invitados y clientes hasta que usted o un revisor las aprueben en la pestaña Fotos. Los roles Admin, Editor y Solo Photographer tienen ese permiso por defecto, así que sus subidas nunca se retienen.",
       "reviewUploadsHelpMember": "Sus subidas a esta galería permanecen ocultas para invitados y clientes hasta que el propietario o un revisor las apruebe.",
       "reviewUploadsHelpReviewer": "Las subidas de los miembros del equipo sin el permiso «Review Team Uploads» esperan aprobación en la pestaña Fotos. Las suyas se publican de inmediato."
-    }
+    },
+    "expiryPresets": {
+      "label": "Selección rápida de caducidad",
+      "days": "{{days}} días",
+      "fromToday": "Desde hoy:"
+    },
+    "neverExpires": "Nunca",
+    "nextSteps": {
+      "title": "Antes de compartir",
+      "progress": "{{done}} de {{total}} completados",
+      "done": "Hecho",
+      "todo": "Pendiente",
+      "photos": "Añadir fotos",
+      "photosLink": "Abrir Fotos",
+      "customer": "Añadir un correo o una cuenta de cliente",
+      "customerLink": "Abrir Ajustes",
+      "publish": "Publicar la galería",
+      "publishLink": "Publicar"
+    },
+    "showExifToGuests": "Mostrar los datos de cámara a los invitados",
+    "showExifToGuestsHelp": "La cámara, el objetivo, la distancia focal, la apertura, la velocidad de obturación y el ISO aparecen bajo la foto en la vista a pantalla completa. La ubicación y los números de serie nunca se guardan ni se muestran."
   },
   "settings": {
     "title": "Ajustes del sistema",
@@ -1356,6 +1413,17 @@
       "noneToRead": "No quedan fotos por leer",
       "button": "Leer autores del EXIF"
     },
+    "placeholderBackfill": {
+      "title": "Marcadores de las miniaturas",
+      "description": "Calcula el marcador difuminado que muestra una foto de la galería mientras se carga su miniatura, para las fotos añadidas antes de que existieran los marcadores. Solo se leen las miniaturas guardadas, nunca los originales. Las nuevas subidas lo reciben automáticamente.",
+      "total": "Fotos con miniatura",
+      "withPlaceholder": "Con marcador",
+      "withoutPlaceholder": "Sin marcador",
+      "result": "Última ejecución: {{success}} calculados, {{failed}} miniaturas ilegibles",
+      "running": "Calculando marcadores...",
+      "noneToFill": "Todas las fotos ya tienen marcador",
+      "button": "Calcular marcadores"
+    },
     "groups": {
       "people": "Personas y acceso"
     },
@@ -1371,6 +1439,61 @@
     "features": {
       "configure": "Configurar",
       "sidebarInSettings": "Sin entrada en la barra lateral — está en los ajustes"
+    },
+    "downloads": {
+      "retention": "Conservar las descargas preparadas durante (horas)",
+      "retentionHint": "Cuánto tiempo sigue disponible una descarga preparada en un tamaño personalizado antes de eliminarse. Un plazo más largo permite a los invitados volver a por ella más tarde, pero cada descarga preparada ocupa aproximadamente tanto espacio en disco como las fotos que contiene. Se aplica a las descargas que se preparen a partir de ahora.",
+      "retentionInvalid": "Introduce un número entero de horas entre {{min}} y {{max}}."
+    },
+    "captureDates": {
+      "pendingDetails": "Fotos pendientes de esta ejecución: {{photos}}. También lee los datos de cámara (cámara, objetivo, exposición) de las fotos que aún no los tienen registrados."
+    },
+    "passkeys": {
+      "title": "Llaves de acceso",
+      "description": "Inicia sesión con tu huella, tu rostro, el PIN del dispositivo o una llave de seguridad en lugar de la contraseña. Una llave de acceso también sustituye al código de la aplicación de autenticación.",
+      "domainNote": "Las llaves de acceso están vinculadas a {{domain}}. Si este sitio cambia de dirección dejarán de funcionar y volverás a iniciar sesión con tu contraseña.",
+      "empty": "Aún no hay llaves de acceso.",
+      "add": "Añadir una llave de acceso",
+      "nameLabel": "Nombre",
+      "namePlaceholder": "p. ej. MacBook, YubiKey",
+      "nameRequired": "Ponle un nombre a la llave de acceso.",
+      "passwordLabel": "Contraseña actual",
+      "passwordHelp": "Confirma que eres tú quien añade una nueva forma de iniciar sesión.",
+      "passwordRequired": "Introduce tu contraseña actual.",
+      "codeLabel": "Código de autenticación",
+      "codeHelp": "Tu cuenta usa la autenticación en dos pasos. Introduce un código de tu aplicación de autenticación o un código de recuperación.",
+      "codeRequired": "Introduce un código de tu aplicación de autenticación.",
+      "continue": "Continuar",
+      "added": "Llave de acceso añadida.",
+      "addedOn": "Añadida el {{date}}",
+      "lastUsed": "Último uso el {{date}}",
+      "neverUsed": "Nunca usada",
+      "rename": "Cambiar nombre",
+      "remove": "Quitar",
+      "removeHelp": "¿Quitar «{{name}}»? Ya no podrás iniciar sesión con ella.",
+      "removeConfirm": "Quitar llave de acceso",
+      "removed": "Llave de acceso quitada.",
+      "loadFailed": "No se pudieron cargar las llaves de acceso.",
+      "errors": {
+        "cancelled": "La solicitud de la llave de acceso se canceló o caducó. Inténtalo de nuevo.",
+        "exists": "Esta llave de acceso ya está registrada.",
+        "unsupported": "Este navegador o dispositivo no puede crear una llave de acceso.",
+        "security": "El navegador se negó a crear una llave de acceso para esta dirección.",
+        "limit": "Has alcanzado el número máximo de llaves de acceso. Quita una para añadir otra.",
+        "expired": "La solicitud ha caducado. Inténtalo de nuevo.",
+        "wrongPassword": "La contraseña actual no es correcta.",
+        "wrongCode": "El código no es correcto o ya se ha utilizado.",
+        "failed": "Algo salió mal. Inténtalo de nuevo."
+      },
+      "unavailable": {
+        "not_configured": "Las llaves de acceso necesitan una dirección pública para este sitio. Configura primero la URL del sitio más abajo.",
+        "ip_address": "Las llaves de acceso necesitan un nombre de dominio. Este sitio está configurado con una dirección IP, así que no se pueden usar.",
+        "insecure_origin": "Las llaves de acceso necesitan HTTPS. Este sitio está configurado sin él, así que no se pueden usar.",
+        "origin_mismatch": "Las llaves de acceso solo funcionan en {{origin}}. Abre la administración allí para añadir o usar una.",
+        "sso_only": "El inicio de sesión con contraseña está desactivado en favor del inicio de sesión único, así que las llaves de acceso también lo están.",
+        "sso_account": "Tu cuenta inicia sesión mediante el inicio de sesión único, así que no puede usar llaves de acceso.",
+        "unsupported": "Este navegador no admite llaves de acceso."
+      }
     }
   },
   "analytics": {
@@ -1759,10 +1882,12 @@
       "systemActivity": "Actividad del sistema: {{type}}",
       "adminProfileUpdated": "Perfil de admin actualizado por {{actorName}}",
       "eventTeamChanged": "Equipo modificado en {{eventName}}",
-      "photosReviewApproved_one": "{{count}} subida del equipo aprobada en {{eventName}}",
-      "photosReviewApproved_other": "{{count}} subidas del equipo aprobadas en {{eventName}}",
-      "photosReviewRejected_one": "{{count}} subida del equipo rechazada en {{eventName}}",
-      "photosReviewRejected_other": "{{count}} subidas del equipo rechazadas en {{eventName}}",
+      "photosReviewApproved_one": "{{count}} subida aprobada en {{eventName}}",
+      "photosReviewApproved_other": "{{count}} subidas aprobadas en {{eventName}}",
+      "photosReviewRejected_one": "{{count}} subida rechazada en {{eventName}}",
+      "photosReviewRejected_other": "{{count}} subidas rechazadas en {{eventName}}",
+      "guestUploadsPendingReview_one": "{{count}} subida de invitado espera revisión en {{eventName}}",
+      "guestUploadsPendingReview_other": "{{count}} subidas de invitados esperan revisión en {{eventName}}",
       "photoDecision": "Foto aprobada o rechazada en {{eventName}}",
       "guestFeedbackDecision": "Un invitado aprobó o rechazó una foto en {{eventName}}"
     },
@@ -1875,10 +2000,12 @@
       "photo_decision": "Foto aprobada o rechazada en {{eventName}}",
       "guest_feedback_decision": "Un invitado aprobó o rechazó una foto en {{eventName}}",
       "event_team_changed": "Equipo modificado en {{eventName}}",
-      "photos_review_approved_one": "{{count}} subida del equipo aprobada en {{eventName}}",
-      "photos_review_approved_other": "{{count}} subidas del equipo aprobadas en {{eventName}}",
-      "photos_review_rejected_one": "{{count}} subida del equipo rechazada en {{eventName}}",
-      "photos_review_rejected_other": "{{count}} subidas del equipo rechazadas en {{eventName}}"
+      "photos_review_approved_one": "{{count}} subida aprobada en {{eventName}}",
+      "photos_review_approved_other": "{{count}} subidas aprobadas en {{eventName}}",
+      "photos_review_rejected_one": "{{count}} subida rechazada en {{eventName}}",
+      "photos_review_rejected_other": "{{count}} subidas rechazadas en {{eventName}}",
+      "guest_uploads_pending_review_one": "{{count}} subida de invitado espera revisión en {{eventName}}",
+      "guest_uploads_pending_review_other": "{{count}} subidas de invitados esperan revisión en {{eventName}}"
     },
     "userManagement": "Gestión de usuarios",
     "inviteUser": "Invitar usuario",
@@ -1944,7 +2071,8 @@
       "noPosterFrame": "Sin fotograma de portada",
       "noPosterFrameRetry": "Volver a tomar el fotograma de portada",
       "approvedBy": "Aprobada: {{value}}",
-      "rejectedBy": "Rechazada: {{value}}"
+      "rejectedBy": "Rechazada: {{value}}",
+      "cameraDetails": "Datos de cámara"
     },
     "guests": {
       "columns": {
@@ -2773,6 +2901,9 @@
     "rateStar_one": "Valorar con {{count}} estrella",
     "rateStar_other": "Valorar con {{count}} estrellas",
     "removeRating": "Quitar la valoración",
+    "rateSelected": "Valorar la selección",
+    "bulkRatingPartial": "Se valoraron {{rated}} de {{total}} fotos",
+    "ratingLimitReached": "Límite de valoraciones alcanzado. Inténtalo de nuevo más tarde.",
     "ratePhoto": "Valorar esta foto",
     "yourRating": "Tu valoración",
     "averageRating": "Valoración media",
@@ -2900,7 +3031,14 @@
     "invalidCredentials": "Correo o contraseña inválidos",
     "generalError": "Ocurrió un error. Por favor, inténtalo de nuevo.",
     "needHelp": "¿Necesitas ayuda? Contacta",
-    "devModeHint": "Modo desarrollo: usa admin@example.com, contraseña: admin123"
+    "devModeHint": "Modo desarrollo: usa admin@example.com, contraseña: admin123",
+    "passkey": {
+      "signIn": "Iniciar sesión con una llave de acceso",
+      "useInstead": "Usar una llave de acceso en su lugar",
+      "cancelled": "La solicitud de la llave de acceso se canceló o caducó. Inténtalo de nuevo.",
+      "unsupported": "Este navegador o dispositivo no puede usar una llave de acceso aquí.",
+      "failed": "No se pudo iniciar sesión con la llave de acceso. Inténtalo de nuevo o usa tu contraseña."
+    }
   },
   "clientAccess": {
     "title": "Acceso cliente",
@@ -3040,10 +3178,10 @@
       "waitingForAdmin_other": "{{count}} solicitudes de carpeta esperan a un administrador. Hasta entonces, sus {{photos}} fotos están en la carpeta existente más cercana."
     },
     "review": {
-      "pendingOwner_one": "{{count}} subida de su equipo espera su revisión",
-      "pendingOwner_other": "{{count}} subidas de su equipo esperan su revisión",
-      "pendingMember_one": "{{count}} subida del equipo espera la revisión del propietario",
-      "pendingMember_other": "{{count}} subidas del equipo esperan la revisión del propietario",
+      "pendingOwner_one": "{{count}} subida espera su revisión",
+      "pendingOwner_other": "{{count}} subidas esperan su revisión",
+      "pendingMember_one": "{{count}} subida espera la revisión del propietario",
+      "pendingMember_other": "{{count}} subidas esperan la revisión del propietario",
       "nonePending": "No hay subidas pendientes de revisión.",
       "filterPending": "Pendientes de revisión ({{count}})",
       "filterRejected": "Rechazadas ({{count}})",
@@ -3058,6 +3196,8 @@
       "pendingBadge": "Pendiente de revisión",
       "rejectedBadge": "Rechazada",
       "uploadedBy": "Subida por {{name}}",
+      "sourceGuest": "Invitado",
+      "sourceTeam": "Equipo",
       "hiddenUntilApproved": "Oculta para invitados y clientes hasta que se apruebe",
       "skippedOnShow_one": "{{count}} foto espera revisión y sigue oculta hasta que se apruebe",
       "skippedOnShow_other": "{{count}} fotos esperan revisión y siguen ocultas hasta que se aprueben"

@@ -13,7 +13,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { Inbox, Send, XCircle } from 'lucide-react';
 
-import { Badge, Button, EmptyState, ErrorState } from '../common';
+import { Badge, Button, EmptyState, ErrorState, LocalizedDateInput } from '../common';
 import type { BadgeTone } from '../common';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import {
@@ -115,10 +115,16 @@ export const CustomerDocumentRequests: React.FC<{ customerId: number; canManage:
           <span className="block mb-1">{t('customers.documents.requests.noteLabel', 'Note for the customer (optional)')}</span>
           <input className={inputClass} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} disabled={busy} />
         </label>
-        <label className="text-xs text-soft">
-          <span className="block mb-1">{t('customers.documents.requests.dueLabel', 'Needed by (optional)')}</span>
-          <input type="date" className={inputClass} value={due} onChange={(e) => setDue(e.target.value)} disabled={busy} />
-        </label>
+        {/* Not a <label>: it would also take in the calendar button's name. */}
+        <div className="text-xs text-soft">
+          <span className="block mb-1" aria-hidden="true">{t('customers.documents.requests.dueLabel', 'Needed by (optional)')}</span>
+          <LocalizedDateInput
+            ariaLabel={t('customers.documents.requests.dueLabel', 'Needed by (optional)')}
+            value={due}
+            onChange={setDue}
+            disabled={busy}
+          />
+        </div>
         <Button
           type="button" variant="primary" size="sm" onClick={create} disabled={busy || !title.trim()}
           leftIcon={<Send className="w-4 h-4" />}
