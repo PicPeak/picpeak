@@ -8,6 +8,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { GallerySidebar } from '../GallerySidebar';
+import { GallerySidebarSelectionTray } from '../GallerySidebarSelectionTray';
 import { useGallerySelection } from '../hooks/useGallerySelection';
 import type { Photo } from '../../../types';
 
@@ -189,5 +190,26 @@ describe('GallerySidebar selection tray (issue 1733)', () => {
     toggle.focus();
     fireEvent.click(screen.getByRole('button', { name: 'Remove IMG_2.jpg from the selection' }));
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Selected (2)' }));
+  });
+
+  it('picks the focus target from the list as it is after the removal', () => {
+    const onEmptied = vi.fn();
+    const tray = (list: Photo[]) => (
+      <GallerySidebarSelectionTray photos={list} onRemove={() => {}} onEmptied={onEmptied} />
+    );
+    const removeButton = (id: number) => screen.getByRole('button', { name: `Remove IMG_${id}.jpg from the selection` });
+    const { rerender } = render(tray(photos));
+
+    // A removal that did not happen moves nothing, even on a fresh array.
+    removeButton(2).focus();
+    fireEvent.click(removeButton(2));
+    rerender(tray([...photos]));
+    expect(document.activeElement).toBe(removeButton(2));
+
+    // The neighbour went in the same update: the surviving row takes focus.
+    fireEvent.click(removeButton(2));
+    rerender(tray([photos[0]]));
+    expect(document.activeElement).toBe(removeButton(1));
+    expect(onEmptied).not.toHaveBeenCalled();
   });
 });

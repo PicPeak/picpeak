@@ -68,30 +68,34 @@ export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayPr
   const listId = useId();
   const listRef = useRef<HTMLUListElement>(null);
   // Removing a row unmounts the button that had focus, which would drop focus
-  // to <body> and send a keyboard user back to the top of the page. Where to
-  // go instead is noted here and applied once the row is gone: the row that
+  // to <body> and send a keyboard user back to the top of the page. The removal
+  // is noted here and focus handed on once the row is gone: to the row that
   // moved up into its place, else the one before it, else out of the tray.
-  const focusAfterRemove = useRef<{ photoId: number | null } | null>(null);
+  const focusAfterRemove = useRef<{ photoId: number; index: number } | null>(null);
   const handleRemove = (photoId: number, button: HTMLButtonElement) => {
-    // Only when the button really held focus: Safari does not focus a button
-    // on click, and a mouse user's focus is not ours to move.
-    if (document.activeElement === button) {
-      const index = photos.findIndex((photo) => photo.id === photoId);
-      const neighbour = photos[index + 1] ?? photos[index - 1];
-      focusAfterRemove.current = { photoId: neighbour ? neighbour.id : null };
-    }
+    // Only when the button held focus (Safari does not focus a button on
+    // click): otherwise there is no focus to lose.
+    focusAfterRemove.current = document.activeElement === button
+      ? { photoId, index: photos.findIndex((photo) => photo.id === photoId) }
+      : null;
     onRemove(photoId);
   };
   useEffect(() => {
-    const target = focusAfterRemove.current;
-    if (!target) return;
+    const removed = focusAfterRemove.current;
+    if (!removed) return;
     focusAfterRemove.current = null;
-    if (target.photoId === null) {
+    // The target is picked from the list as it is now, not as it was at the
+    // click: the same update may have dropped more rows than the one removed.
+    // Nothing to do if the photo is still listed or focus has gone elsewhere.
+    if (photos.some((photo) => photo.id === removed.photoId)) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    if (photos.length === 0) {
       onEmptied?.();
       return;
     }
+    const target = photos[Math.min(removed.index, photos.length - 1)];
     listRef.current
-      ?.querySelector<HTMLButtonElement>(`[data-tray-remove="${target.photoId}"]`)
+      ?.querySelector<HTMLButtonElement>(`[data-tray-remove="${target.id}"]`)
       ?.focus();
   }, [photos, onEmptied]);
   if (photos.length === 0) return null;
