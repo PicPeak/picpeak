@@ -46,7 +46,12 @@ vi.mock('../../../services/analytics.service', () => ({ analyticsService: { trac
 vi.mock('../../common', () => ({ Button: ({ children, leftIcon: _icon, variant: _v, size: _s, ...rest }: any) => <button {...rest}>{children}</button> }));
 vi.mock('../DownloadQuotaNotice', () => ({ DownloadQuotaNotice: () => null }));
 vi.mock('../DownloadResolutionModal', () => ({
-  DownloadResolutionModal: ({ onClose }: { onClose: () => void }) => <button data-testid="picker-close" onClick={onClose} />,
+  DownloadResolutionModal: ({ onClose, onDownloaded }: { onClose: () => void; onDownloaded?: () => void }) => (
+    <>
+      <button data-testid="picker-close" onClick={onClose} />
+      <button data-testid="picker-downloaded" onClick={() => { onDownloaded?.(); onClose(); }} />
+    </>
+  ),
 }));
 vi.mock('../BulkRating', () => ({ BulkRating: () => null }));
 vi.mock('../HeroHeader', () => ({ HeroHeader: () => null }));
@@ -120,6 +125,54 @@ describe('PhotoGridWithLayouts — selection download at the download limit', ()
     fireEvent.click(downloadButton());
     await waitFor(() => expect(onToggleSelectionMode).toHaveBeenCalledTimes(1));
     expect(onSelectionChange).toHaveBeenLastCalledWith(new Set());
+  });
+
+  it('keeps the selection when the size picker closes without a download', async () => {
+    quota.remaining = 2;
+    const onSelectionChange = vi.fn();
+    const onToggleSelectionMode = vi.fn();
+    render(
+      <PhotoGridWithLayouts
+        photos={visible}
+        slug="g"
+        isSelectionMode
+        selectedPhotos={new Set([10, 11])}
+        onSelectionChange={onSelectionChange}
+        onToggleSelectionMode={onToggleSelectionMode}
+        photosForIds={photosForIds}
+        downloadChoices={[{ id: 'original' }, { id: '1920x1080' }] as never}
+      />
+    );
+    onSelectionChange.mockClear();
+    fireEvent.click(downloadButton());
+    // Cancelled, or closed on a download-limit refusal / failed build.
+    fireEvent.click(await screen.findByTestId('picker-close'));
+    expect(screen.queryByTestId('picker-close')).toBeNull();
+    expect(onSelectionChange).not.toHaveBeenCalled();
+    expect(onToggleSelectionMode).not.toHaveBeenCalled();
+  });
+
+  it('clears the selection and leaves selection mode once the size picker delivered', async () => {
+    quota.remaining = 2;
+    const onSelectionChange = vi.fn();
+    const onToggleSelectionMode = vi.fn();
+    render(
+      <PhotoGridWithLayouts
+        photos={visible}
+        slug="g"
+        isSelectionMode
+        selectedPhotos={new Set([10, 11])}
+        onSelectionChange={onSelectionChange}
+        onToggleSelectionMode={onToggleSelectionMode}
+        photosForIds={photosForIds}
+        downloadChoices={[{ id: 'original' }, { id: '1920x1080' }] as never}
+      />
+    );
+    onSelectionChange.mockClear();
+    fireEvent.click(downloadButton());
+    fireEvent.click(await screen.findByTestId('picker-downloaded'));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(new Set());
+    expect(onToggleSelectionMode).toHaveBeenCalledTimes(1);
   });
 
   it('closing a Download All picker opened outside selection mode leaves the mode off', () => {

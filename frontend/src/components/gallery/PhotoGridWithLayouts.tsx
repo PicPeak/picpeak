@@ -656,8 +656,11 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           standardResolution={downloadStandard}
           photoIds={resolutionPickerIds}
           quotaPhotos={quotaPhotosFor(resolutionPickerIds)}
-          onClose={() => {
-            setResolutionPickerIds(null);
+          onClose={() => setResolutionPickerIds(null)}
+          // Only a download handed over ends the selection. Cancelling, a
+          // failed build or a download-limit refusal keeps it to retry or
+          // trim, as the direct download path does.
+          onDownloaded={() => {
             setSelectedPhotos(new Set());
             // A layout's Download All opens the picker outside selection
             // mode too; the parent's toggle would switch it on.
