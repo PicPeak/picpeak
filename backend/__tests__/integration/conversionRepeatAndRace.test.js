@@ -84,6 +84,35 @@ describe('repeated and concurrent conversions', () => {
     await expect(convertQuote(quoteId)).rejects.toMatchObject({ statusCode: 409 });
   });
 
+  it('an invoice-only conversion that read the quote before an event conversion committed backs off', async () => {
+    const quoteId = await acceptedQuote();
+    // The event conversion commits between the invoice-only conversion's
+    // reads and its transaction. `db` is a proxy without a set trap, so the
+    // one-shot hook sits on the knex client every transaction opens through.
+    // It runs before a connection is taken: SQLite has only one.
+    const { client } = require('../../src/database/db').db;
+    const realTransaction = client.transaction;
+    let eventResult;
+    client.transaction = function oneShot(...args) {
+      client.transaction = realTransaction;
+      return (async () => {
+        eventResult = await quoteService.convertToEvent(quoteId, adminId);
+        return realTransaction.apply(this, args);
+      })();
+    };
+    try {
+      await expect(quoteService.convertToInvoiceOnly(quoteId, adminId))
+        .rejects.toMatchObject({ statusCode: 409, code: 'ALREADY_CONVERTED_TO_EVENT' });
+    } finally {
+      client.transaction = realTransaction;
+    }
+    const quote = await db('quotes').where({ id: quoteId }).first();
+    expect(quote.status).toBe('converted');
+    expect(quote.converted_event_id).toBe(eventResult.eventId);
+    const invoices = await db('invoices').where({ source_quote_id: quoteId });
+    expect(invoices.map((i) => i.id).sort()).toEqual([...eventResult.invoiceIds].sort());
+  });
+
   it('a contract whose quote already converted adopts that gallery', async () => {
     // The quote conversion committed, the contract's back-pointer write did not.
     const quoteId = await acceptedQuote();

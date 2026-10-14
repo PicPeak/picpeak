@@ -2243,6 +2243,20 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
   const invoiceService = require('./invoiceService');
 
   const result = await db.transaction(async (trx) => {
+    // The same claim as convertToEvent, so this conversion and an event
+    // conversion (or a second one of these) racing on one quote cannot
+    // both schedule its invoices.
+    const claimed = await auditedUpdate(trx, 'quotes',
+      (q) => q.where({ id: quote.id, status: 'accepted' }).whereNull('converted_event_id'),
+      { updated_at: new Date() }, { actor: adminId, source: 'quote.convert.invoices' });
+    if (claimed !== 1) {
+      const current = await trx('quotes').where({ id: quote.id }).first();
+      if (current?.converted_event_id) {
+        throw new AppError('This quote was already converted to an event; create the invoice from the event instead.', 409, 'ALREADY_CONVERTED_TO_EVENT');
+      }
+      throw new AppError(`Cannot convert a quote with status '${current?.status}'`, 409);
+    }
+
     const installments = Array.isArray(paymentTermSnapshot?.installments)
       ? paymentTermSnapshot.installments
       : [{ percent: 100, trigger: 'after_delivery', offset_days: 0, label: 'Total' }];
