@@ -734,6 +734,45 @@ describe('customer erasure clears email_queue', () => {
     await expectUntouched(earlierMail, address, 'Spelled Earlier', 'sent');
   });
 
+  it('leaves admin mail on the current address to the admin account', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const queueTyped = async (recipient, type, createdAt, name) => {
+      const [row] = await db('email_queue').insert({
+        recipient_email: recipient, email_type: type, status: 'sent',
+        email_data: JSON.stringify({ customer_name: name }), rendered_html: `<p>${name}</p>`,
+        created_at: createdAt, scheduled_at: createdAt, retry_count: 0,
+      }).returning('id');
+      return row?.id ?? row;
+    };
+
+    // Unbounded match (no history) and bounded match (a recorded change to it).
+    const legacy = await insertCustomer(db, { email: 'current-admin-legacy@example.com' });
+    const mover = await insertCustomer(db, { email: 'current-admin-start@example.com' });
+    await updateCustomer(mover.id, { email: 'current-admin-moved@example.com' }, null);
+    await stampHistory(mover.id, [at(20)]);
+
+    const rows = [];
+    for (const customer of [{ ...legacy }, { ...mover, email: 'current-admin-moved@example.com' }]) {
+      rows.push({
+        email: customer.email,
+        adminInvitation: await queueTyped(customer.email, 'admin_invitation', at(30), 'Admin Invitation'),
+        adminReset: await queueTyped(customer.email, 'admin_password_reset', at(30), 'Admin Reset'),
+        // Sent to the holder (the passive-account promote path): theirs.
+        customerInvitation: await queueTyped(customer.email, 'customer_invitation', at(30), 'Customer Invitation'),
+      });
+    }
+
+    await eraseCustomer(legacy.id, null);
+    await eraseCustomer(mover.id, null);
+
+    for (const row of rows) {
+      await expectUntouched(row.adminInvitation, row.email, 'Admin Invitation', 'sent');
+      await expectUntouched(row.adminReset, row.email, 'Admin Reset', 'sent');
+      await expectRedacted(row.customerInvitation, 'sent');
+    }
+  });
+
   it('keeps matching the current address of an account without history unbounded when nobody else recorded it', async () => {
     await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
     const { eraseCustomer } = require('../../src/services/customerAccountsService');

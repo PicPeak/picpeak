@@ -982,7 +982,8 @@ async function contractSignerQueueTargets(contractPlan) {
  * matched. An earlier tenure on the current address gets a window too:
  * currentAddressSince covers only the latest one.
  */
-const NOT_FORMER_ADDRESS_MAIL = ['customer_invitation', 'admin_invitation', 'admin_password_reset'];
+const ADMIN_ACCOUNT_MAIL = ['admin_invitation', 'admin_password_reset'];
+const NOT_FORMER_ADDRESS_MAIL = ['customer_invitation', ...ADMIN_ACCOUNT_MAIL];
 
 async function formerAddressWindows(trx, customer) {
   const rows = await trx('accounting_change_history')
@@ -1150,11 +1151,17 @@ async function eraseCustomer(id, erasedByAdminId) {
     const currentSince = await currentAddressSince(trx, customer);
     const formerWindows = await formerAddressWindows(trx, customer);
     const forCustomer = (q) => q.where((w) => {
+      // Admin mail on the current address belongs to the admin account with
+      // that address, not to the customer (ADMIN_ACCOUNT_MAIL).
       if (currentSince === undefined) {
-        w.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email]);
+        w.where((c) => {
+          c.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email])
+            .whereNotIn('email_type', ADMIN_ACCOUNT_MAIL);
+        });
       } else if (currentSince) {
         w.where((c) => {
           c.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email])
+            .whereNotIn('email_type', ADMIN_ACCOUNT_MAIL)
             .modify(whereTimestamp, 'created_at', '>', currentSince);
         });
       } else {
