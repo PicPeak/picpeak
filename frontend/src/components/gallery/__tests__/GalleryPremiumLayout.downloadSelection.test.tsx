@@ -117,6 +117,14 @@ describe('Gallery Premium — Download All', () => {
     expect(screen.queryByTitle('common.downloadAll')).toBeNull();
   });
 
+  it('is offered on a folder-only root when the whole gallery can be downloaded', () => {
+    const onDownloadEverything = vi.fn();
+    render(<GalleryPremiumLayout photos={[]} suppressEmptyState slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()}
+      onDownloadEverything={onDownloadEverything} />);
+    fireEvent.click(downloadAll());
+    expect(onDownloadEverything).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses at the download limit before asking the server', () => {
     quota.remaining = 3;
     render(<GalleryPremiumLayout photos={photos} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} />);

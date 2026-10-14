@@ -750,7 +750,9 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                 <Heart className="w-4 h-4" />
               </button>
             )}
-            {allowDownloads && photos.length > 0 && (onDownloadEverything || downloadablePhotos.length > 0) && (
+            {/* As Gallery Story's: the whole-gallery path alone is enough, so a
+                folder-only root (no photos in scope) still offers it. */}
+            {allowDownloads && (onDownloadEverything || downloadablePhotos.length > 0) && (
               <button
                 className="gallery-premium-nav-btn"
                 title={t('common.downloadAll', 'Download All')}
