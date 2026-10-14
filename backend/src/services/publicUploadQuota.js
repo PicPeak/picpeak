@@ -408,8 +408,13 @@ async function failedObject(object, { storage, settled }) {
   const current = await db('public_upload_objects').where({ id: object.id }).first('state', 'upload_kind');
   if (!current || current.state !== 'promoting') return;
   if (current.upload_kind === 'admin') {
-    // No allowance to protect: the hold ends with the attempt either way.
-    await storage.delete(object.object_key).catch(() => {});
+    // No allowance to protect: the hold ends with the attempt either way. But
+    // while the object may remain, its record keeps importers off it; finish()
+    // retries the delete.
+    try { await storage.delete(object.object_key); } catch (err) {
+      logger.warn('Upload object cleanup failed; its ledger record is kept', { objectId: object.id, error: err.message });
+      return;
+    }
     await db('public_upload_objects').where({ id: object.id, state: 'promoting' }).del();
     return;
   }
@@ -442,13 +447,28 @@ async function finish(session) {
     logger.warn('Public upload staging cleanup failed; reservation retained', { requestId: session.id, error: err.message });
     return false;
   }
-  await locked(async trx => {
+  const unsettled = await locked(async trx => {
     const admin = session.upload_kind === 'admin';
     await trx('public_upload_requests').where({ id: session.id, active: 1 }).update({ active: 0, bytes: 0, files: 0, rate_bytes: admin ? 0 : session.receivedBytes });
-    // A promotion that never settled (its process died) holds nothing either.
-    if (admin) await trx('public_upload_objects').where({ request_id: session.id, upload_kind: 'admin' }).del();
+    // A promotion that never committed (its process died, or its cleanup
+    // failed) holds nothing either, but its stored object must go before its
+    // record: an importer takes an object without one for a file placed by
+    // hand. 'uncertain' turns away a commit from a stalled process meanwhile.
+    let objects = [];
+    if (admin) {
+      await trx('public_upload_objects').where({ request_id: session.id, upload_kind: 'admin', state: 'promoting' }).update({ state: 'uncertain' });
+      objects = await trx('public_upload_objects').where({ request_id: session.id, upload_kind: 'admin' }).select('id', 'object_key');
+    }
     await trx('public_upload_requests').where({ active: 0 }).where('created_at', '<', new Date(Date.now() - 86400000).toISOString()).del();
+    return objects;
   });
+  for (const object of unsettled) {
+    try { await getStorage().delete(object.object_key); } catch (err) {
+      logger.warn('Upload object cleanup failed; its ledger record is kept', { objectId: object.id, error: err.message });
+      continue;
+    }
+    await db('public_upload_objects').where({ id: object.id }).del();
+  }
   return true;
 }
 

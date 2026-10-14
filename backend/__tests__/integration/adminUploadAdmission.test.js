@@ -214,6 +214,29 @@ test('a restart reclaims authenticated requests and resumable sessions by their 
   expect(Number((await db('public_upload_requests').where({ active: 1 }).first()).heartbeat_at)).toBeGreaterThan(Date.now() - 5000);
   expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
 });
+test('the reaper deletes a crashed upload\'s stored file before its record, and keeps a record whose file stays', async () => {
+  const orphan = async name => {
+    const id = crypto.randomUUID(); const key = `events/active/admin-admission/${name}`;
+    await db('public_upload_requests').insert({ id, event_id: eventId, account_id: 1, bytes: 4096, files: 1, rate_bytes: 0, active: 1,
+      host: 'gone', pid: process.pid, upload_kind: 'admin', heartbeat_at: Date.now() - quota.STALE_MS - 1000, created_at: new Date().toISOString() });
+    await db('public_upload_objects').insert({ id: crypto.randomUUID(), request_id: id, object_key: key, bytes: jpeg.length, files: 1,
+      event_id: eventId, upload_kind: 'admin', created_at: new Date().toISOString() });
+    const file = path.join(process.env.STORAGE_PATH, key);
+    fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, jpeg);
+    return { key, file };
+  };
+  const crashed = await orphan('crashed.jpg');
+  await quota.cleanupAbandoned();
+  expect(fs.existsSync(crashed.file)).toBe(false); expect(await db('public_upload_objects')).toHaveLength(0);
+  // A file that cannot be removed stays marked unfinished, so no watcher scan imports it.
+  const stuck = await orphan('stuck.jpg');
+  jest.spyOn(storage, 'delete').mockRejectedValueOnce(Object.assign(new Error('owned EACCES'), { code: 'EACCES' }));
+  await quota.cleanupAbandoned();
+  expect(fs.existsSync(stuck.file)).toBe(true);
+  expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
+  expect(await quota.unfinishedKeys([stuck.key])).toEqual(new Set([stuck.key]));
+  fs.rmSync(stuck.file);
+});
 test('an abandoned resumable session releases its slot after fifteen idle minutes, not twenty-four hours', async () => {
   process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';
   await setting('general_max_file_size_mb', 20); settings.clearMaxFileSizeCache();
