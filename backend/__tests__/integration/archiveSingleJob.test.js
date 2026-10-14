@@ -744,6 +744,19 @@ describe('one archive job per gallery', () => {
     expect(deletedKeys()).not.toContain('events/archived/legacy-reused.zip');
   });
 
+  it('records the shared-key zip of the old slug on rename, and removes it with the next archive', async () => {
+    const event = await makeEvent('legacy-before-rename');
+    const eventRenameService = require('../../src/services/eventRenameService');
+    const result = await eventRenameService.renameEvent(event.id, 'Legacy after rename');
+    expect(result.success).toBe(true);
+    const { supersededArchives } = require('../../src/services/archiveService');
+    expect(await supersededArchives(event.id)).toEqual(['events/archived/legacy-before-rename.zip']);
+
+    await archiveEvent(await db('events').where({ id: event.id }).first());
+    expect(deletedKeys()).toContain('events/archived/legacy-before-rename.zip');
+    expect(await supersededArchives(event.id)).toEqual([]);
+  });
+
   it('removes the shared-key zip with the gallery', async () => {
     const event = await makeEvent('legacy-delete');
     const res = await request(app).delete(`/admin/events/${event.id}`);

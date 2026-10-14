@@ -483,6 +483,16 @@ class EventRenameService {
         shareToken: event.share_token
       });
 
+      // A restore before per-run archive keys left its zip at the shared key
+      // of the old slug (issue 2012); after the rename nothing would find it
+      // there. Read before the transaction, which takes SQLite's only
+      // connection, and recorded inside it.
+      const archiveService = require('./archiveService');
+      const legacyZips = [];
+      for (const key of await archiveService.legacyArchiveKeys(event).catch(() => [])) {
+        if (await getStorage().exists(key).catch(() => false)) legacyZips.push(key);
+      }
+
       // 3. Start transaction
       const trx = await db.transaction();
 
@@ -524,6 +534,8 @@ class EventRenameService {
           }),
           event_id: eventId
         });
+
+        for (const key of legacyZips) await archiveService.recordSupersededArchive(lease, key, trx);
 
         // 9. Commit transaction
         await trx.commit();

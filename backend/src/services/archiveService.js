@@ -137,10 +137,21 @@ async function recordSupersededArchive(lease, key, conn = db) {
   }
 }
 
-/** Zips restores brought back for this gallery, not yet removed. */
+// An archive zip as this service names them: a direct child of
+// events/archived. Records from a portable archive are checked against it,
+// as anyone holding the file can edit them.
+const isZipKey = (key) => typeof key === 'string' && /^events\/archived\/[^/\\]+\.zip$/.test(key);
+
+/**
+ * Zips restores brought back for this gallery, not yet removed. Never one
+ * another gallery's archive_path names: that zip is its archive.
+ */
 async function supersededArchives(eventId) {
   const { superseded } = await readArchiveState(archiveJobName(eventId));
-  return Array.isArray(superseded) ? superseded.filter(isArchiveKey) : [];
+  const keys = Array.isArray(superseded) ? superseded.filter(isZipKey) : [];
+  if (!keys.length) return [];
+  const named = new Set(await db('events').whereIn('archive_path', keys).whereNot('id', eventId).pluck('archive_path'));
+  return keys.filter((key) => !named.has(key));
 }
 
 /**
@@ -148,23 +159,23 @@ async function supersededArchives(eventId) {
  * `events/archived/<slug>.zip`. Nothing recorded it: the next archive of the
  * slug used to overwrite it, and no longer does. Returned while no other
  * gallery's archive_path names it (an archive made before per-run keys is
- * still at such a key); the gallery's own archive_path is removed with it
- * anyway. Read at the current slug, so a gallery renamed since that restore
- * is not covered.
+ * still at such a key) and no other gallery's claim row records it; the
+ * gallery's own archive_path is removed with it anyway. A rename records it
+ * before the slug changes.
  */
 async function legacyArchiveKeys(event) {
   if (!event || typeof event.slug !== 'string' || !event.slug) return [];
-  const key = path.posix.join('events/archived', `${event.slug}.zip`);
-  if (!isArchiveKey(key) || path.posix.dirname(key) !== 'events/archived') return [];
+  const key = `events/archived/${event.slug}.zip`;
+  if (!isZipKey(key)) return [];
   const named = await db('events').where('archive_path', key).whereNot('id', event.id).first('id');
   if (named) return [];
-  // Nor while another gallery's claim row records it: a gallery restored
-  // from it since per-run keys keeps it as its fallback, and can have been
-  // renamed and its slug reused since.
+  // A gallery restored from it since per-run keys keeps it as its fallback,
+  // and can have been renamed and its slug reused since. Matched as the
+  // key's JSON text, the way last_result holds it.
   const recorded = await db('maintenance_jobs')
     .where('job_name', 'like', `${archiveJobName('')}%`)
     .whereNot('job_name', archiveJobName(event.id))
-    .whereRaw('last_result LIKE ? ESCAPE \'!\'', [`%${key.replace(/[!%_]/g, (c) => `!${c}`)}%`])
+    .whereRaw('last_result LIKE ? ESCAPE \'!\'', [`%${JSON.stringify(key).slice(1, -1).replace(/[!%_]/g, (c) => `!${c}`)}%`])
     .select('last_result');
   const claimedElsewhere = recorded.some((row) => {
     const state = parseArchiveState(row);
@@ -173,17 +184,21 @@ async function legacyArchiveKeys(event) {
   return claimedElsewhere ? [] : [key];
 }
 
-// A key from a portable archive, which anyone holding the file can edit.
-const isPortableArchiveKey = (key) => isArchiveKey(key)
-  && !key.includes('\\') && !key.split('/').some((part) => part === '..' || part === '.' || part === '');
+const isExpiryAttempt = (attempt) => Boolean(attempt) && typeof attempt === 'object'
+  && Number.isSafeInteger(attempt.attempts) && attempt.attempts > 0
+  && typeof attempt.at === 'string' && attempt.at.length <= 64
+  // The expiry it was made for, epoch ms (null when unreadable, as NaN
+  // serialises).
+  && (attempt.expiresAt === null || Number.isFinite(attempt.expiresAt));
 
 /**
- * Zips nothing names, per gallery, for a portable export:
- * { "<eventId>": [keys] }. maintenance_jobs is not exported (live lease
- * state), but these records are what removes the zips, which the export
- * carries under events/archived; without them every one is left behind on
- * the importing instance. An upload a run has not published (or died before
- * publishing) is carried the same way: on the target nothing runs it.
+ * The claim rows' records, per gallery, for a portable export:
+ * { "<eventId>": { superseded: [keys], expiry } }. maintenance_jobs is not
+ * exported (live lease state), but its superseded zips are, under
+ * events/archived, and these records are what removes them; an expiry
+ * attempt is what retries a failed expiry archive. An upload a run has not
+ * published (or died before publishing) goes with the superseded zips: on
+ * the target nothing runs it.
  */
 async function exportArchiveRecords(conn = db) {
   const rows = await conn('maintenance_jobs')
@@ -195,9 +210,11 @@ async function exportArchiveRecords(conn = db) {
     const eventId = Number(row.job_name.slice(archiveJobName('').length));
     if (!Number.isInteger(eventId) || eventId <= 0) continue;
     const state = parseArchiveState(row);
-    const keys = [...(Array.isArray(state.superseded) ? state.superseded : []), state.upload]
-      .filter(isArchiveKey);
-    if (keys.length) records[eventId] = [...new Set(keys)];
+    const keys = [...(Array.isArray(state.superseded) ? state.superseded : []), state.upload].filter(isZipKey);
+    const record = {};
+    if (keys.length) record.superseded = [...new Set(keys)];
+    if (isExpiryAttempt(state.expiry)) record.expiry = state.expiry;
+    if (Object.keys(record).length) records[eventId] = record;
   }
   return records;
 }
@@ -217,14 +234,20 @@ async function importArchiveRecords(trx, records) {
     .update({ last_result: null });
   if (!records || typeof records !== 'object' || Array.isArray(records)) return 0;
   let written = 0;
-  for (const [id, keys] of Object.entries(records)) {
+  for (const [id, record] of Object.entries(records)) {
     const eventId = Number(id);
-    if (!/^[1-9][0-9]*$/.test(id) || !Number.isSafeInteger(eventId) || !Array.isArray(keys)) continue;
-    const superseded = [...new Set(keys.filter(isPortableArchiveKey))];
-    if (!superseded.length) continue;
+    if (!/^[1-9][0-9]*$/.test(id) || !Number.isSafeInteger(eventId)) continue;
+    if (!record || typeof record !== 'object' || Array.isArray(record)) continue;
+    const state = {};
+    const superseded = Array.isArray(record.superseded) ? [...new Set(record.superseded.filter(isZipKey))] : [];
+    if (superseded.length) state.superseded = superseded;
+    if (isExpiryAttempt(record.expiry)) {
+      state.expiry = { attempts: record.expiry.attempts, at: record.expiry.at, expiresAt: record.expiry.expiresAt };
+    }
+    if (!Object.keys(state).length) continue;
     if (!(await trx('events').where('id', eventId).first('id'))) continue;
     const jobName = archiveJobName(eventId);
-    const lastResult = JSON.stringify({ superseded });
+    const lastResult = JSON.stringify(state);
     const updated = await trx('maintenance_jobs').where({ job_name: jobName }).update({ last_result: lastResult });
     if (!updated) await trx('maintenance_jobs').insert({ job_name: jobName, is_running: false, last_result: lastResult });
     written += 1;
