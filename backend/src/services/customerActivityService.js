@@ -63,15 +63,24 @@ const parseMeta = (v) => {
 async function listForCustomer(customerId, { limit = 50, beforeId = null, includeDocuments = true } = {}) {
   const size = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const q = db('activity_logs')
-    .andWhere((w) => {
-      w.whereIn('activity_type', CUSTOMER_TYPES);
-      if (includeDocuments) w.orWhere('activity_type', 'like', 'customer_document_%');
+    // Admin rows logged with only the admin's id read the current username.
+    .leftJoin('admin_users as actor_admin', function joinActorAdmin() {
+      this.on('activity_logs.actor_id', '=', 'actor_admin.id')
+        .andOnVal('activity_logs.actor_type', '=', 'admin');
     })
-    .orderBy('id', 'desc')
+    .andWhere((w) => {
+      w.whereIn('activity_logs.activity_type', CUSTOMER_TYPES);
+      if (includeDocuments) w.orWhere('activity_logs.activity_type', 'like', 'customer_document_%');
+    })
+    .orderBy('activity_logs.id', 'desc')
     .limit(size + 1)
-    .select('id', 'activity_type', 'actor_type', 'actor_name', 'metadata', 'event_id', 'created_at');
+    .select(
+      'activity_logs.id', 'activity_logs.activity_type', 'activity_logs.actor_type',
+      'activity_logs.actor_name', 'activity_logs.metadata', 'activity_logs.event_id',
+      'activity_logs.created_at', 'actor_admin.username as actor_admin_username',
+    );
   whereCustomerId(q, customerId);
-  if (beforeId) q.where('id', '<', beforeId);
+  if (beforeId) q.where('activity_logs.id', '<', beforeId);
   const rows = await q;
 
   const page = rows.slice(0, size);
@@ -89,7 +98,7 @@ async function listForCustomer(customerId, { limit = 50, beforeId = null, includ
       // A customer's own name in their own timeline is fine; for admins it
       // is the username the log already carries.
       actorType: r.actor_type,
-      actorName: r.actor_type === 'admin' ? (r.actor_name || null) : null,
+      actorName: r.actor_type === 'admin' ? (r.actor_name || r.actor_admin_username || null) : null,
       eventId: r.event_id || null,
       metadata: safe,
     };

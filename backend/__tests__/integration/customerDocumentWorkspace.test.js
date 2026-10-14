@@ -661,6 +661,17 @@ describe('customer activity (admin)', () => {
     }
   });
 
+  it('names the admin who edited the customer, not "system"', async () => {
+    const edited = await asAdmin(request(adminApp).put(`/api/admin/customers/${me}`).send({ display_name: 'Renamed' }));
+    expect(edited.status).toBe(200);
+    const { username } = await db('admin_users').where({ id: adminId }).first('username');
+
+    const res = await activity(me);
+    const entry = res.body.entries.find((e) => e.type === 'customer_updated');
+    expect(entry.actorType).toBe('admin');
+    expect(entry.actorName).toBe(username);
+  });
+
   it('pages by id', async () => {
     const first = await activity(me, '?limit=1');
     expect(first.body.entries).toHaveLength(1);

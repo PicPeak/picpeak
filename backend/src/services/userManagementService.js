@@ -101,7 +101,7 @@ async function createInvitation({ email, roleId, invitedById, inviterRoleName })
   await logActivity('admin_invitation_created',
     { email, roleId, roleName: role.display_name },
     null,
-    { type: 'admin', id: invitedById, name: 'system' }
+    { type: 'admin', id: invitedById }
   );
 
   logger.info('Admin invitation created', { email, roleId, invitedById });
@@ -411,7 +411,7 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
   await logActivity('admin_user_updated',
     { userId: id, changes: Object.keys(allowedUpdates) },
     null,
-    { type: 'admin', id: updatedById, name: 'system' }
+    { type: 'admin', id: updatedById }
   );
 
   return getAdminUserById(id);
@@ -506,7 +506,7 @@ async function deactivateAdminUser(id, deactivatedById) {
   await logActivity('admin_user_deactivated',
     { userId: id, username: user.username },
     null,
-    { type: 'admin', id: deactivatedById, name: 'system' }
+    { type: 'admin', id: deactivatedById }
   );
 
   logger.info('Admin user deactivated', { userId: id, deactivatedById });
@@ -550,7 +550,7 @@ async function activateAdminUser(id, activatedById) {
   await logActivity('admin_user_activated',
     { userId: id, username: user.username },
     null,
-    { type: 'admin', id: activatedById, name: 'system' }
+    { type: 'admin', id: activatedById }
   );
 
   logger.info('Admin user activated', { userId: id, activatedById });
@@ -665,7 +665,7 @@ async function deleteAdminUser(id, deletedById) {
   await logActivity('admin_user_deleted',
     { userId: id, username: user.username, email: user.email },
     null,
-    { type: 'admin', id: deletedById, name: 'system' }
+    { type: 'admin', id: deletedById }
   );
 
   logger.info('Admin user deleted', { userId: id, deletedById });
@@ -710,7 +710,7 @@ async function resetAdminPassword(id, resetById) {
   await logActivity('admin_password_reset',
     { userId: id, username: user.username, passkeysRemoved },
     null,
-    { type: 'admin', id: resetById, name: 'system' }
+    { type: 'admin', id: resetById }
   );
 
   logger.info('Admin password reset', { userId: id, resetById, passkeysRemoved });
@@ -781,7 +781,7 @@ async function cancelInvitation(id, cancelledById) {
   await logActivity('admin_invitation_cancelled',
     { invitationId: id, email: invitation.email },
     null,
-    { type: 'admin', id: cancelledById, name: 'system' }
+    { type: 'admin', id: cancelledById }
   );
 
   logger.info('Admin invitation cancelled', { invitationId: id, cancelledById });
@@ -954,7 +954,7 @@ async function createRole({ name, displayName, description, priority, permission
   await logActivity('admin_role_created',
     { roleId, name: normalized, permissionCount: permIds.length },
     null,
-    { type: 'admin', id: createdById, name: 'system' });
+    { type: 'admin', id: createdById });
   logger.info('Role created', { roleId, name: normalized, createdById });
   return getRoleWithPermissionsById(roleId);
 }
@@ -1013,7 +1013,7 @@ async function updateRole(id, { displayName, description, priority, permissions 
   await logActivity('admin_role_updated',
     { roleId: id, name: role.name, permissionsChanged: permIds !== null },
     null,
-    { type: 'admin', id: updatedById, name: 'system' });
+    { type: 'admin', id: updatedById });
   logger.info('Role updated', { roleId: id, name: role.name, updatedById });
   return getRoleWithPermissionsById(id);
 }
@@ -1041,7 +1041,7 @@ async function deleteRole(id, deletedById) {
   await logActivity('admin_role_deleted',
     { roleId: id, name: role.name },
     null,
-    { type: 'admin', id: deletedById, name: 'system' });
+    { type: 'admin', id: deletedById });
   logger.info('Role deleted', { roleId: id, name: role.name, deletedById });
 }
 

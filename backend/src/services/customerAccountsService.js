@@ -193,7 +193,7 @@ async function createInvitation({ email, invitedById, prefill }) {
   await logActivity('customer_invitation_created',
     { email: normalisedEmail },
     null,
-    { type: 'admin', id: invitedById, name: 'system' }
+    { type: 'admin', id: invitedById }
   );
 
   logger.info('Customer invitation created', { email: normalisedEmail, invitedById });
@@ -288,7 +288,7 @@ async function createDirect({ email, prefill, createdByAdminId, withinTransactio
   await logActivity('customer_created_passive',
     { customerId: id, email: normalisedEmail },
     null,
-    { type: 'admin', id: createdByAdminId || null, name: 'system' }
+    { type: 'admin', id: createdByAdminId || null }
   );
 
   logger.info('Passive customer created', { id, email: normalisedEmail, createdByAdminId });
@@ -792,7 +792,7 @@ async function updateCustomer(id, updates, updatedByAdminId) {
   await logActivity('customer_updated',
     { customerId: id, fields: Object.keys(allowed) },
     null,
-    { type: 'admin', id: updatedByAdminId, name: 'system' }
+    { type: 'admin', id: updatedByAdminId }
   );
 
   // The dedicated consent event, alongside the generic one. It is what the
@@ -802,7 +802,7 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     await logActivity('customer_marketing_opt_out',
       { customerId: id, optOut: marketingConsentTransition, source: 'admin' },
       null,
-      { type: 'admin', id: updatedByAdminId, name: 'system' }
+      { type: 'admin', id: updatedByAdminId }
     );
   }
 
@@ -831,7 +831,7 @@ async function deactivateCustomer(id, deactivatedByAdminId) {
   await logActivity('customer_deactivated',
     { customerId: id, email: customer.email },
     null,
-    { type: 'admin', id: deactivatedByAdminId, name: 'system' }
+    { type: 'admin', id: deactivatedByAdminId }
   );
 
   logger.info('Customer deactivated', { customerId: id, deactivatedByAdminId });
@@ -862,7 +862,7 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
   await logActivity('customer_reactivated',
     { customerId: id, email: customer.email },
     null,
-    { type: 'admin', id: reactivatedByAdminId, name: 'system' }
+    { type: 'admin', id: reactivatedByAdminId }
   );
 
   logger.info('Customer reactivated', { customerId: id, reactivatedByAdminId });
@@ -1150,7 +1150,7 @@ async function eraseCustomer(id, erasedByAdminId) {
       retainedContracts: erasedContracts.retained,
     },
     null,
-    { type: 'admin', id: erasedByAdminId, name: 'system' }
+    { type: 'admin', id: erasedByAdminId }
   );
 
   logger.info('Customer erased (anonymized in place)', {
@@ -1552,7 +1552,7 @@ async function cancelInvitation(id, cancelledByAdminId) {
   await logActivity('customer_invitation_cancelled',
     { invitationId: id, email: invitation.email },
     null,
-    { type: 'admin', id: cancelledByAdminId, name: 'system' }
+    { type: 'admin', id: cancelledByAdminId }
   );
   logger.info('Customer invitation cancelled', { invitationId: id, cancelledByAdminId });
 }
@@ -1736,7 +1736,7 @@ async function createPasswordReset({ customerId, requestedByAdminId }) {
   await logActivity('customer_password_reset_requested',
     { customerId, email: customer.email },
     null,
-    { type: 'admin', id: requestedByAdminId, name: 'system' }
+    { type: 'admin', id: requestedByAdminId }
   );
 
   logger.info('Customer password reset requested', { customerId, requestedByAdminId });
