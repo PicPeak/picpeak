@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { GalleryEmptyMessage } from './GalleryEmptyMessage';
 import { ClipboardList, Package } from 'lucide-react';
 import { toast as toastify } from 'react-toastify';
@@ -14,7 +14,7 @@ import { analyticsService } from '../../services/analytics.service';
 import { hasVideoItems, selectLabel } from '../../utils/mediaCounts';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
-import { isDownloadLimitError, showDownloadLimitReached } from '../../utils/downloadLimit';
+import { isDownloadLimitError, showDownloadLimitReached, type QuotaPhoto } from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import { BulkRating } from './BulkRating';
 import type { LightboxPhotoChangeHandler } from './photoLink';
@@ -114,6 +114,12 @@ interface PhotoGridWithLayoutsProps {
   /** After the photos, before a full-page layout's footer (issue 1562). */
   afterGrid?: React.ReactNode;
   onLightboxPhotoChange?: LightboxPhotoChangeHandler;
+  /**
+   * The container's event-wide id lookup, so the download limit prices the
+   * whole selection: a search or filter applied after selecting hides
+   * photos, it does not unselect them, and they are still downloaded.
+   */
+  photosForIds?: (ids: number[]) => QuotaPhoto[];
 }
 
 export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
@@ -126,6 +132,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   copyFilenamesCount = 0,
   openPhotoId,
   onLightboxPhotoChange,
+  photosForIds,
   afterGrid,
   slug,
   categoryId,
@@ -273,9 +280,17 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
 
   // Download limit (issue 1560).
   const downloadQuota = useDownloadQuota();
+  // Priced by id, not by what is on screen: the selection can hold photos a
+  // search hides, and the download sends them all. Without the container's
+  // lookup, an id this list lacks counts as a new download.
+  const quotaPhotosFor = useCallback((ids: number[]): QuotaPhoto[] => {
+    if (photosForIds) return photosForIds(ids);
+    const byId = new Map(photos.map((photo) => [photo.id, photo]));
+    return ids.map((id) => byId.get(id) ?? { id });
+  }, [photos, photosForIds]);
   const selectedPhotoList = useMemo(
-    () => photos.filter((photo) => selectedPhotos.has(photo.id)),
-    [photos, selectedPhotos]
+    () => quotaPhotosFor(Array.from(selectedPhotos)),
+    [quotaPhotosFor, selectedPhotos]
   );
 
   const handleDownload = (photo: Photo, e: React.MouseEvent) => {
@@ -339,14 +354,16 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
       await galleryService.downloadSelectedPhotos(slug, ids);
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
-      if (!isDownloadLimitError(error)) toastify.error(t('gallery.downloadError'));
-    } finally {
-      setSelectedPhotos(new Set());
-      if (parentToggleSelectionMode) {
-        parentToggleSelectionMode();
-      } else {
-        setLocalSelectionMode(false);
-      }
+      // A download-limit refusal keeps the selection, as the pre-check
+      // above does, so the guest can trim it to what is left.
+      if (isDownloadLimitError(error)) return;
+      toastify.error(t('gallery.downloadError'));
+    }
+    setSelectedPhotos(new Set());
+    if (parentToggleSelectionMode) {
+      parentToggleSelectionMode();
+    } else {
+      setLocalSelectionMode(false);
     }
   };
 
@@ -432,6 +449,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     onToggleSelectionMode: toggleSelectionMode,
     onSelectMany: selectMany,
     onDownloadSelected: handleDownloadSelected,
+    selectionQuotaPhotos: selectedPhotoList,
     eventName,
     eventLogo,
     eventDate,
@@ -637,7 +655,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           choices={downloadChoices}
           standardResolution={downloadStandard}
           photoIds={resolutionPickerIds}
-          quotaPhotos={photos.filter((photo) => resolutionPickerIds.includes(photo.id))}
+          quotaPhotos={quotaPhotosFor(resolutionPickerIds)}
           onClose={() => {
             setResolutionPickerIds(null);
             setSelectedPhotos(new Set());

@@ -68,6 +68,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   onDeselectAll,
   onToggleSelectionMode,
   onDownloadSelected,
+  selectionQuotaPhotos,
   eventName,
   eventDate,
   allowDownloads = true,
@@ -557,7 +558,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   type="button"
                   className="story-selection-btn story-selection-btn--primary"
                   onClick={() => { void onDownloadSelected(); }}
-                  disabled={!downloadQuota.allows(selectedPhotoList)}
+                  disabled={!downloadQuota.allows(selectionQuotaPhotos ?? selectedPhotoList)}
                   data-testid="story-download-selected"
                 >
                   <Package size={14} />

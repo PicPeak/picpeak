@@ -229,6 +229,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   onPhotoSelect,
   onSelectAll,
   onDeselectAll,
+  selectionQuotaPhotos,
   eventName,
   eventDate,
   allowDownloads = true,
@@ -542,9 +543,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
 
   // Download limit (issue 1560).
   const downloadQuota = useDownloadQuota();
+  // The whole selection, photos a search hides included: they are sent too.
   const selectedPhotoList = useMemo(
-    () => photos.filter((photo) => selectedPhotos.has(photo.id)),
-    [photos, selectedPhotos]
+    () => selectionQuotaPhotos ?? photos.filter((photo) => selectedPhotos.has(photo.id)),
+    [selectionQuotaPhotos, photos, selectedPhotos]
   );
   const selectionOverQuota = !downloadQuota.allows(selectedPhotoList);
 

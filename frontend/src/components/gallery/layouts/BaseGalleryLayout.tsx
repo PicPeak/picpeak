@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Photo, DownloadResolutionChoice, GalleryPerson } from '../../../types';
 import type { LightboxPhotoChangeHandler } from '../photoLink';
+import type { QuotaPhoto } from '../../../utils/downloadLimit';
 
 export interface BaseGalleryLayoutProps {
   photos: Photo[];
@@ -43,6 +44,11 @@ export interface BaseGalleryLayoutProps {
   onToggleSelectionMode?: () => void;
   onSelectMany?: (photoIds: number[]) => void;
   onDownloadSelected?: () => void | Promise<void>;
+  /**
+   * The whole selection as the download limit prices it, including photos a
+   * search hides from `photos` (they stay selected and are downloaded).
+   */
+  selectionQuotaPhotos?: QuotaPhoto[];
   eventName?: string;
   eventLogo?: string | null;
   eventDate?: string | null;
