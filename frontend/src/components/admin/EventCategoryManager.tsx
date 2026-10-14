@@ -8,6 +8,7 @@ import { Button, Card, AuthenticatedImage, useConfirm } from '../common';
 import { useTranslation } from 'react-i18next';
 import { useMutationWithToast, useModal } from '../../hooks';
 import { useEscapeClose } from '../common/useEscapeClose';
+import { isImeComposing } from '../../utils/imeComposition';
 
 interface EventCategoryManagerProps {
   eventId: number;
@@ -229,7 +230,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
             type="text"
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleCreate()}
+            onKeyPress={(e) => e.key === 'Enter' && !isImeComposing(e) && handleCreate()}
             placeholder={t('categories.categoryName')}
             maxLength={100}
             className="flex-1 px-3 py-1.5 text-sm border border-line-strong rounded-md bg-panel text-heading focus:ring-2 focus:ring-accent"

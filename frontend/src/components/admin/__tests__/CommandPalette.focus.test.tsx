@@ -72,6 +72,24 @@ describe('command palette focus handling', () => {
     }
   });
 
+  it('leaves Escape, the arrows and Enter of an IME composition to the search field', () => {
+    const onClose = vi.fn();
+    render(<MemoryRouter><CommandPalette isOpen onClose={onClose} /></MemoryRouter>);
+    const input = screen.getByRole('combobox');
+    input.focus();
+    const active = () => input.getAttribute('aria-activedescendant');
+    const before = active();
+    for (const flags of [{ isComposing: true }, { keyCode: 229 }]) {
+      fireEvent.keyDown(input, { key: 'ArrowDown', ...flags });
+      fireEvent.keyDown(input, { key: 'Enter', ...flags });
+      fireEvent.keyDown(input, { key: 'Escape', ...flags });
+    }
+    expect(onClose).not.toHaveBeenCalled();
+    expect(active()).toBe(before);
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('puts the option role on the clickable element, not a wrapper', () => {
     open();
     for (const option of screen.getAllByRole('option')) {

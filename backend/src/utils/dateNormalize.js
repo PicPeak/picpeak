@@ -33,12 +33,22 @@ function toIso(value) {
   return value;
 }
 
+// 'YYYY-MM-DD HH:MM[:SS[.sss]]' (or with a 'T') and no zone: SQLite's
+// CURRENT_TIMESTAMP shape, which is UTC.
+const ZONELESS_DATETIME = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
+
 // Shared comparison boundary for SQLite epoch values and PostgreSQL Dates.
 // Invalid input stays NaN so access-control callers can fail closed.
+// A zone-less date-time is read as UTC, as SQLite's julianday() and the
+// frontend read it; new Date() alone would read it in the server's zone.
 function toTimestamp(value) {
   if (value === null || value === undefined || value === '') return NaN;
   try {
-    return new Date(toIso(value)).getTime();
+    const iso = toIso(value);
+    if (typeof iso === 'string' && ZONELESS_DATETIME.test(iso.trim())) {
+      return new Date(`${iso.trim().replace(' ', 'T')}Z`).getTime();
+    }
+    return new Date(iso).getTime();
   } catch (_) {
     return NaN;
   }
