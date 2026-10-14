@@ -965,13 +965,13 @@ async function contractSignerQueueTargets(contractPlan) {
  * current accounts, so a former address may belong to another customer now
  * (or did before this one took it), and their mail must not be touched. An
  * address gets a window only when the history shows when the customer took
- * it: a recorded change to it, or the account's own `created` entry. The
- * first address's window opens when the customer's portal invitation to it
- * was issued, or when the account was created if that is earlier:
- * createInvitation refuses an address another active account holds, so mail
- * from then on is this customer's. An account created before migration 219
- * has no `created` entry, so its first recorded address (which it may have
- * taken in an unrecorded change) is not matched.
+ * it: a recorded change to it, or the account's own `created` entry. Mail
+ * queued before the account existed (the portal invitation) is not matched
+ * on a former address: an invitation does not reserve the address, so a
+ * passive account holding it then may have moved off only before the
+ * acceptance created this one. An account created before migration 219 has
+ * no `created` entry, so its first recorded address (which it may have
+ * taken in an unrecorded change) is not matched either.
  */
 async function formerAddressWindows(trx, customer) {
   const rows = await trx('accounting_change_history')
@@ -986,20 +986,13 @@ async function formerAddressWindows(trx, customer) {
     const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
     const from = String(changes?.email?.from || '').toLowerCase();
     const to = String(changes?.email?.to || '').toLowerCase();
-    if (row.action === 'created' && to) {
-      const invitation = await trx('customer_invitations')
-        .where('accepted_customer_id', customer.id)
-        .whereRaw('LOWER(email) = ?', [to])
-        .orderBy('created_at', 'asc')
-        .first('created_at');
-      const starts = [storedTimestamp(customer.created_at), storedTimestamp(invitation?.created_at),
-        storedTimestamp(row.created_at)].filter(Boolean);
-      held = to;
-      since = starts.length ? new Date(Math.min(...starts.map((d) => d.getTime()))) : null;
-      continue;
-    }
     if (from === to) continue;
     const at = storedTimestamp(row.created_at);
+    if (row.action === 'created') {
+      held = to || null;
+      since = at;
+      continue;
+    }
     if (from && held === from && since && at && from !== current) windows.push({ email: from, since, until: at });
     held = to || null;
     since = at;

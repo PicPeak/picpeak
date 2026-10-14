@@ -463,7 +463,7 @@ describe('customer erasure clears email_queue', () => {
     expect(JSON.parse(earlier.email_data).customer_name).toBe('Earlier Owner');
   });
 
-  it('leaves an earlier owner\'s mail to the customer\'s first address alone, but covers the invitation (issue 1971)', async () => {
+  it('matches the customer\'s first address only from the account\'s creation (issue 1971)', async () => {
     await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
     const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
     const queue = async (recipient, status, createdAt, name) => {
@@ -485,10 +485,12 @@ describe('customer erasure clears email_queue', () => {
     await updateCustomer(earlierOwner.id, { email: 'earlier-moved-1971@example.com' }, null);
     await tick();
 
-    // The customer is invited to the freed address, then the account is created.
+    // An invitation does not reserve the address: a passive account holding it
+    // can move off between issue and acceptance, so mail queued before the
+    // account exists stays untouched on a former address.
     const adminId = (await db('admin_users').first('id')).id;
     const inviteAt = new Date().toISOString();
-    const inviteMail = await queue(firstAddress, 'sent', inviteAt, 'Invitation');
+    const beforeCreation = await queue(firstAddress, 'sent', inviteAt, 'Before Creation');
     await tick();
     // Created through the audited path, as every account since migration 219
     // is: its `created` history entry is what establishes the first address.
@@ -509,11 +511,12 @@ describe('customer erasure clears email_queue', () => {
 
     await eraseCustomer(customer.id, null);
 
-    for (const id of [inviteMail, ownMail]) {
-      const row = await db('email_queue').where({ id }).first();
-      expect(row.recipient_email).toMatch(/@deleted\.invalid$/);
-      expect(row.rendered_html).toBeFalsy();
-    }
+    const own = await db('email_queue').where({ id: ownMail }).first();
+    expect(own.recipient_email).toMatch(/@deleted\.invalid$/);
+    expect(own.rendered_html).toBeFalsy();
+    const early = await db('email_queue').where({ id: beforeCreation }).first();
+    expect(early.recipient_email).toBe(firstAddress);
+    expect(early.rendered_html).toBe('<p>Before Creation</p>');
     const pending = await db('email_queue').where({ id: earlierPending }).first();
     expect(pending.status).toBe('pending');
     expect(pending.recipient_email).toBe(firstAddress);
