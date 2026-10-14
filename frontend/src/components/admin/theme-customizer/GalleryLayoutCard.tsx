@@ -388,7 +388,9 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                   value={localTheme.gallerySettings?.storyFooterText || ''}
                   onChange={(e) => updateGallerySettings('storyFooterText', e.target.value)}
                   maxLength={STORY_FOOTER_TEXT_MAX}
-                  className="input w-full"
+                  // h-auto: `.input` fixes the height at h-10, which would
+                  // cut the three rows down to one.
+                  className="input w-full h-auto"
                   aria-describedby="story-footer-text-hint"
                 />
                 <p id="story-footer-text-hint" className="text-xs text-muted mt-1">

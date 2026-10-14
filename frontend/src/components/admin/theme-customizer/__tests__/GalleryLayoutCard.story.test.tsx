@@ -62,6 +62,8 @@ describe('GalleryLayoutCard — Story settings', () => {
     });
     const title = screen.getByLabelText('Footer title') as HTMLInputElement;
     const text = screen.getByLabelText('Footer text') as HTMLTextAreaElement;
+    // Three rows, not the one-row height `.input` would fix it at.
+    expect(text).toHaveClass('h-auto');
     expect(title.value).toBe('Thanks');
     expect(text.value).toBe('See you');
     expect(title.maxLength).toBe(STORY_FOOTER_TITLE_MAX);
