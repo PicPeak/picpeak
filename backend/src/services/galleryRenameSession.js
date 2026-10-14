@@ -37,6 +37,10 @@ function verifyGalleryJwt(token) {
  * check also hands it back in its answer, so the page replaces a stale token
  * it may still keep for this slug (a Bearer header wins over the cookie).
  *
+ * The same search also looks past a dead token that already names the slug
+ * (revoked, cut off, another gallery's): the first candidate that authorizes
+ * for this gallery wins, and is handed back like a carried one.
+ *
  * Returns the token to use for this request, or null to keep `current`.
  */
 async function carryRenamedGallerySession(req, res, slug, current) {
@@ -50,8 +54,11 @@ async function carryRenamedGallerySession(req, res, slug, current) {
   ].filter((token) => typeof token === 'string' && token))];
   const sessions = candidates.map((token) => ({ token, decoded: verifyGalleryJwt(token) }))
     .filter(({ decoded }) => decoded);
-  // Nothing naming another slug: nothing to carry over.
-  if (!sessions.some(({ decoded }) => decoded.eventSlug !== slug)) return null;
+  // Nothing to carry over (every token names this slug) and nothing to look
+  // past (no token besides the one in use). Tokens that all name this slug
+  // still go through the search below, so a revoked one the page keeps
+  // sending as a Bearer does not hide a live cookie.
+  if (!sessions.some(({ token, decoded }) => decoded.eventSlug !== slug || token !== current)) return null;
 
   const event = await db('events').where({ slug }).select('*').first();
   if (!event) return null;
