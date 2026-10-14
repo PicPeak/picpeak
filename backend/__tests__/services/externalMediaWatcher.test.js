@@ -187,7 +187,14 @@ describe('externalMediaWatcher (issue 1187)', () => {
 
     await writeOld(path.join(mediaRoot, 'nas', 'individual', 'b.jpg'), 'also-not-a-jpeg');
     await fs.promises.unlink(path.join(mediaRoot, 'nas', 'individual', 'a.jpg'));
-    await watcher.sweep();
+    // The watcher sees b.jpg arrive too. On a loaded runner its debounced
+    // pass can take the claim before this sweep does, and the sweep then
+    // stands down; either way the file comes in through the same pass.
+    const imported = await waitFor(async () => {
+      await watcher.sweep();
+      return (await relpaths(eventId)).includes(path.join('nas', 'individual', 'b.jpg'));
+    });
+    expect(imported).toBe(true);
 
     // ... b.jpg is in, a.jpg's row is kept although the file is gone.
     expect(await relpaths(eventId)).toEqual([
@@ -195,6 +202,8 @@ describe('externalMediaWatcher (issue 1187)', () => {
       path.join('nas', 'individual', 'b.jpg'),
     ]);
 
+    // The pass that brought b.jpg in writes its entry after the rows.
+    expect(await waitFor(async () => (await db('activity_logs').where({ activity_type: 'external_import_completed' })).length >= 2)).toBe(true);
     const logs = await db('activity_logs').where({ activity_type: 'external_import_completed' });
     expect(logs).toHaveLength(2);
     expect(logs.every((l) => l.actor_type === 'system')).toBe(true);

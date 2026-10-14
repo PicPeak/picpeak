@@ -482,17 +482,24 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       const server = create();
       await server.coordinator.activate();
       // The settle window is what lets a running server notice the marker.
-      const offline = create({ offline: true, settleMs: 1500 });
+      // The offline tool's clock stands still until the server has joined:
+      // on wall time a loaded runner could spend the whole window before the
+      // server's watch got through, and the offline tool would then rightly
+      // see nobody else and restore.
+      let clock = Date.now();
+      const offline = create({ offline: true, settleMs: 1500, now: () => clock });
       const attempt = offline.coordinator.restoreOffline({ archivePath: await upload() });
       attempt.catch(() => {});
-      for (let i = 0; i < 100 && !marker?.fenced; i++) await new Promise(resolve => setTimeout(resolve, 5));
+      const deadline = Date.now() + 15000;
+      while (!marker?.fenced && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
       // The first watch can find the reservation still holding the ingress
       // slot; the next one joins, as the interval does in a running server.
-      for (let i = 0; i < 100 && !server.coordinator.isRegistered(); i++) {
+      while (!server.coordinator.isRegistered() && Date.now() < deadline) {
         await server.coordinator.watch();
         await new Promise(resolve => setTimeout(resolve, 10));
       }
       expect(server.coordinator.isRegistered()).toBe(true);
+      clock += 1500;
       await server.coordinator.tick();
       await expect(attempt).rejects.toMatchObject({ code: 'RESTORE_DRAIN_TIMEOUT' });
       expect(starts).toHaveLength(0);
