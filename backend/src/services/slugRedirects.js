@@ -7,8 +7,12 @@
  * gallery broke those links, because the gallery lookup finds the new holder
  * first and the old gallery's token does not match it ("Invalid gallery
  * link"). So a slug is taken while a gallery holds it, or while it redirects
- * to a gallery that still exists. On SQLite the rows of a deleted gallery
- * stay behind (no foreign-key enforcement), and those free the slug again.
+ * to a slug a gallery holds. On SQLite the rows of a deleted gallery stay
+ * behind (no foreign-key enforcement); they free the slug again unless
+ * another gallery has since taken the slug they lead to. That costs such a
+ * name a suffix; matching event_id as well would instead free the redirects
+ * whose event_id a rename left on the wrong gallery before it was kept up to
+ * date, and break their links.
  */
 const { db } = require('../database/db');
 
@@ -16,13 +20,13 @@ const { db } = require('../database/db');
  * The gallery holding `slug`, directly or through a redirect, other than
  * `exceptEventId`. Resolves to `{ id, event_name }` or null.
  */
-async function findSlugHolder(slug, { exceptEventId = null, conn = db } = {}) {
-  const direct = conn('events').where({ slug });
+async function findSlugHolder(slug, { exceptEventId = null } = {}) {
+  const direct = db('events').where({ slug });
   if (exceptEventId !== null) direct.whereNot({ id: exceptEventId });
   const holder = await direct.first('id', 'event_name');
   if (holder) return holder;
 
-  const viaRedirect = conn('slug_redirects as r')
+  const viaRedirect = db('slug_redirects as r')
     .join('events as e', 'e.slug', 'r.new_slug')
     .where('r.old_slug', slug);
   if (exceptEventId !== null) viaRedirect.whereNot('e.id', exceptEventId);
