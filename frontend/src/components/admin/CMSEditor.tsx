@@ -42,6 +42,7 @@ import {
 import { Button, Modal } from '../common';
 import DOMPurify from 'dompurify';
 import '../../styles/prose-overrides.css';
+import { isImeComposing } from '../../utils/imeComposition';
 
 interface CMSEditorProps {
   content: string;
@@ -484,7 +485,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
                 type="url"
                 value={linkUrl}
                 onChange={(e) => setLinkUrl(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && addLink()}
+                onKeyPress={(e) => e.key === 'Enter' && !isImeComposing(e) && addLink()}
                 placeholder={t('cms.editor.linkUrlPlaceholder', 'Enter URL...')}
                 className="flex-1 px-3 py-1 border border-accent-dark/30 bg-shell text-heading rounded-md focus:ring-2 focus:ring-accent"
                 autoFocus
