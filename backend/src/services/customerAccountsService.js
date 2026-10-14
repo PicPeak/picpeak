@@ -1126,9 +1126,12 @@ async function currentAddressSince(trx, customer) {
   }
   if (ownLatest) return { at: new Date(second(ownLatest)), op: '>=' };
   // An account from before migration 219 that no history entry bounds: it
-  // has held the address at most since the account was created, so mail
-  // queued to it earlier was someone else's. Inclusive from that second,
-  // like the own-history case. No readable creation time: unbounded.
+  // has held the address at most since the account was created, the bound
+  // a recorded `created` entry gives every later account. Mail queued to the
+  // address earlier cannot be told apart from an earlier holder's (it may
+  // also be this person's, sent before they had an account), so it is left
+  // alone. Inclusive from that second, like the own-history case. No
+  // readable creation time: unbounded.
   const createdAt = storedTimestamp(customer.created_at);
   return createdAt ? { at: new Date(second(createdAt)), op: '>=' } : undefined;
 }
