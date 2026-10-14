@@ -249,6 +249,14 @@ async function handleExpiredEvent(event, { sendLegacyEmails = true, retry = fals
       // have made an attempt since this one's query.
       const recorded = await readExpiryAttempt(lease);
       if (!recorded || recorded.expiresAt !== expiresAt || !expiryRetryDue(recorded, Date.now())) return;
+      // An admin who toggled the gallery since made its deactivation theirs.
+      // The log keeps whole seconds on SQLite, so the bound is rounded down.
+      const toggled = await db('activity_logs')
+        .where('event_id', event.id)
+        .whereIn('activity_type', ['event_activated', 'event_deactivated'])
+        .modify(whereTimestamp, 'created_at', '>=', new Date(Math.floor(Date.parse(recorded.at) / 1000) * 1000))
+        .first('id');
+      if (toggled) return;
       attempts = recorded.attempts + 1;
     }
     // Recorded before deactivating, so the gallery is never left inactive

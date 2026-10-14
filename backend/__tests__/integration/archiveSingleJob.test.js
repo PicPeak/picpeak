@@ -461,6 +461,27 @@ describe('one archive job per gallery', () => {
     expect(await expiryAttempt(event.id)).toMatchObject({ attempts: 1 });
   });
 
+  it('does not retry once an admin toggled the gallery after the failed attempt', async () => {
+    const { checkExpirations } = require('../../src/services/expirationChecker');
+    const event = await makeEvent('expired-toggled', { expired: true });
+    failList = true;
+    await checkExpirations();
+    failList = false;
+    // Toggled on and off again through POST /:id/toggle-status, meant to stay off.
+    await request(app).post(`/admin/events/${event.id}/toggle-status`).expect(200);
+    await request(app).post(`/admin/events/${event.id}/toggle-status`).expect(200);
+    await ageExpiryAttempt(event.id, 2);
+    // The toggles happened after the attempt.
+    await db('activity_logs').where({ event_id: event.id })
+      .update({ created_at: new Date(Date.now() - 3600000).toISOString() });
+
+    await checkExpirations();
+
+    const row = await db('events').where({ id: event.id }).first();
+    expect(Boolean(row.is_active)).toBe(false);
+    expect(Boolean(row.is_archived)).toBe(false);
+  });
+
   it('does not archive an expired gallery an admin deactivated', async () => {
     const event = await makeEvent('expired-admin-off', { expired: true });
     await db('events').where({ id: event.id }).update({ is_active: 0 });
