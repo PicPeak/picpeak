@@ -3,7 +3,7 @@
  * and it inserts at the caret of its text field.
  */
 import React, { useRef, useState } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -88,4 +88,19 @@ it('works from the keyboard: arrows, Enter inserts, Esc closes and returns focus
   await user.keyboard('{Escape}');
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(text).toHaveFocus();
+});
+
+it('leaves Escape and Enter of an IME composition in the search to the field', async () => {
+  const user = userEvent.setup();
+  renderField();
+  const text = screen.getByRole('textbox', { name: 'Text' }) as HTMLTextAreaElement;
+  await user.click(screen.getByRole('button', { name: 'Insert placeholder' }));
+  const search = await screen.findByRole('combobox', { name: 'Search placeholders' });
+  await screen.findByText('Event date');
+  for (const flags of [{ isComposing: true }, { keyCode: 229 }]) {
+    fireEvent.keyDown(search, { key: 'Enter', ...flags });
+    fireEvent.keyDown(search, { key: 'Escape', ...flags });
+  }
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(text.value).toBe('Hello , see you');
 });
