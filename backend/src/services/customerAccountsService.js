@@ -1043,13 +1043,13 @@ async function formerAddressWindows(trx, customer) {
 async function currentAddressSince(trx, customer) {
   const current = String(customer.email || '').toLowerCase();
   if (!current) return null;
-  // The address as it appears inside the stored JSON, with LIKE's own
-  // wildcards escaped; the candidates are checked exactly below.
-  const needle = JSON.stringify(current).slice(1, -1).replace(/[\\%_]/g, '\\$&');
+  // Every customer entry that records an email change; the address is
+  // compared on the parsed values below, not in SQL, so no way of writing it
+  // in the stored JSON (case, escapes) can hide an entry.
   const rows = await trx('accounting_change_history')
     .where({ document_type: 'customer', entity_type: 'customer' })
     .where((q) => q.where('document_id', customer.id)
-      .orWhereRaw('LOWER(CAST(changes AS TEXT)) LIKE ? ESCAPE \'\\\'', [`%${needle}%`]))
+      .orWhereRaw('CAST(changes AS TEXT) LIKE ?', ['%"email"%']))
     .select('document_id', 'changes', 'created_at');
   let latest;
   for (const row of rows) {

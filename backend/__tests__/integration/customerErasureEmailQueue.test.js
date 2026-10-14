@@ -713,6 +713,27 @@ describe('customer erasure clears email_queue', () => {
     await expectUntouched(earlierMail, address, 'Earlier Holder', 'sent');
   });
 
+  it('finds another customer\'s change of the address however its JSON spells it', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer } = require('../../src/services/customerAccountsService');
+    const address = 'current-spelled@example.com';
+    const earlier = await insertCustomer(db, { email: 'current-spelled-earlier@example.com' });
+    // Upper case and an escaped "@": the same address once parsed.
+    await db('accounting_change_history').insert({
+      document_type: 'customer', document_id: earlier.id, entity_type: 'customer', entity_id: earlier.id,
+      action: 'updated', actor_type: 'system', created_at: at(10),
+      changes: '{"email":{"from":"CURRENT-SPELLED\\u0040EXAMPLE.COM","to":"current-spelled-earlier@example.com"}}',
+    });
+    const legacy = await insertCustomer(db, { email: address });
+    const earlierMail = await queueAt(address, 'sent', at(5), 'Spelled Earlier');
+    const ownMail = await queueAt(address, 'sent', at(30), 'Spelled Own');
+
+    await eraseCustomer(legacy.id, null);
+
+    await expectRedacted(ownMail, 'sent');
+    await expectUntouched(earlierMail, address, 'Spelled Earlier', 'sent');
+  });
+
   it('keeps matching the current address of an account without history unbounded when nobody else recorded it', async () => {
     await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
     const { eraseCustomer } = require('../../src/services/customerAccountsService');
