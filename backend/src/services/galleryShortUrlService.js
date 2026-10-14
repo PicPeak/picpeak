@@ -75,7 +75,7 @@ function validateSlug(slug) {
  */
 async function targetPathForEvent(event) {
   if (!event) throw new Error('event required');
-  const useShortGallery = (await getAppSetting('general_use_short_gallery_urls', false)) === true;
+  const useShortGallery = (await getAppSetting('general_short_gallery_urls', false)) === true;
   if (useShortGallery && event.share_token) {
     return `/gallery/${event.share_token}`;
   }

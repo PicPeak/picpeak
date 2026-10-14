@@ -173,7 +173,7 @@ describe('createShortUrl — target_path snapshotting (#699 backward-compat)', (
   it('uses /gallery/<share_token> when the global setting is ON at create time', async () => {
     // Persist the setting.
     const { upsertAppSetting } = require('../../src/utils/appSettings');
-    await upsertAppSetting('general_use_short_gallery_urls', JSON.stringify(true), 'system');
+    await upsertAppSetting('general_short_gallery_urls', JSON.stringify(true), 'system');
     try {
       const event = await seedEvent({ slug: 'snapshot-on', share_token: 'tokenAbc123' });
       const row = await service.createShortUrl({
@@ -185,11 +185,11 @@ describe('createShortUrl — target_path snapshotting (#699 backward-compat)', (
       // Existing short URLs must still resolve to the same target_path
       // they were created with — operator's existing share links don't
       // silently change behaviour.
-      await upsertAppSetting('general_use_short_gallery_urls', JSON.stringify(false), 'system');
+      await upsertAppSetting('general_short_gallery_urls', JSON.stringify(false), 'system');
       const refetched = await service.findByShortSlug('snap-on');
       expect(refetched.target_path).toBe(`/gallery/${event.share_token}`);
     } finally {
-      await upsertAppSetting('general_use_short_gallery_urls', JSON.stringify(false), 'system');
+      await upsertAppSetting('general_short_gallery_urls', JSON.stringify(false), 'system');
     }
   });
 });

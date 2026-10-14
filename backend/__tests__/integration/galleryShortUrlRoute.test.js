@@ -255,7 +255,7 @@ describe('GET /s/:shortSlug — follows the gallery after it changes', () => {
   // Required lazily: loading it at collection time would open db.js before
   // bootCrmDb points it at the suite's own file.
   const setShortGalleryUrls = (on) => require('../../src/utils/appSettings')
-    .upsertAppSetting('general_use_short_gallery_urls', JSON.stringify(on), 'system');
+    .upsertAppSetting('general_short_gallery_urls', JSON.stringify(on), 'system');
 
   it('redirects to the new slug after the gallery is renamed', async () => {
     const { eventId } = await seedEventAndShortUrl({
