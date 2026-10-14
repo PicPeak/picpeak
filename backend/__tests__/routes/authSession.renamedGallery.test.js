@@ -55,6 +55,19 @@ it('re-issues the old-slug session for the new slug with the same claims', async
   expect(res.body.token).toBe(renewed);
 });
 
+it.each([
+  ['revoked', async () => {
+    const token = gallery({ eventSlug: newSlug });
+    await require('../../src/utils/tokenRevocation').revokeToken(token, 'test');
+    return token;
+  }],
+  ['for another gallery', async () => gallery({ eventId: otherEventId, eventSlug: newSlug })],
+])('carries over past a new-slug token that is %s', async (_label, make) => {
+  const res = await session({ [`gallery_token_${newSlug}`]: await make(), [`gallery_token_${oldSlug}`]: gallery() });
+  expect(res.body).toMatchObject({ valid: true, eventSlug: newSlug });
+  expect(jwt.decode(res.body.token)).toMatchObject({ eventId, eventSlug: newSlug });
+});
+
 it('leaves the old slug cookie alone when it holds another gallery', async () => {
   const otherSession = gallery({ eventId: otherEventId });
   const res = await session({ gallery_token: gallery(), [`gallery_token_${oldSlug}`]: otherSession });

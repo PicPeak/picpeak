@@ -41,7 +41,6 @@ function verifyGalleryJwt(token) {
  */
 async function carryRenamedGallerySession(req, res, slug, current) {
   if (typeof slug !== 'string' || !slug) return null;
-  if (current && verifyGalleryJwt(current)?.eventSlug === slug) return null;
 
   const cookies = req.cookies || {};
   const candidates = [...new Set([
@@ -51,11 +50,15 @@ async function carryRenamedGallerySession(req, res, slug, current) {
   ].filter((token) => typeof token === 'string' && token))];
   const sessions = candidates.map((token) => ({ token, decoded: verifyGalleryJwt(token) }))
     .filter(({ decoded }) => decoded);
-  if (sessions.length === 0) return null;
+  // Nothing naming another slug: nothing to carry over.
+  if (!sessions.some(({ decoded }) => decoded.eventSlug !== slug)) return null;
 
   const event = await db('events').where({ slug }).select('*').first();
   if (!event) return null;
 
+  // The first live session of this gallery wins; one already naming this slug
+  // is used as it is. A revoked token, or one of another gallery that held
+  // this slug before, does not stop the search.
   for (const { token, decoded } of sessions) {
     if (Number(decoded.eventId) !== Number(event.id)) continue;
     try {
@@ -63,7 +66,7 @@ async function carryRenamedGallerySession(req, res, slug, current) {
     } catch {
       continue;
     }
-    if (decoded.eventSlug === slug) return token;
+    if (decoded.eventSlug === slug) return token === current ? null : token;
 
     const renewed = jwt.sign({ ...decoded, eventSlug: event.slug }, process.env.JWT_SECRET, { algorithm: 'HS256' });
     // Only the cookie holding this very token: another gallery may own the
