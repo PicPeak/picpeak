@@ -979,7 +979,8 @@ async function contractSignerQueueTargets(contractPlan) {
  * admin mail belongs to the admin account with that address.
  * Windows are built only from email changes whose times follow the history
  * order; any such entry out of order or unreadable leaves no former address
- * matched.
+ * matched. An earlier tenure on the current address gets a window too:
+ * currentAddressSince covers only the latest one.
  */
 const NOT_FORMER_ADDRESS_MAIL = ['customer_invitation', 'admin_invitation', 'admin_password_reset'];
 
@@ -988,7 +989,6 @@ async function formerAddressWindows(trx, customer) {
     .where({ document_type: 'customer', entity_type: 'customer', document_id: customer.id })
     .orderBy('id', 'asc')
     .select('action', 'changes', 'created_at');
-  const current = String(customer.email || '').toLowerCase();
   const windows = [];
   let held = null;
   let since = null;
@@ -1006,7 +1006,7 @@ async function formerAddressWindows(trx, customer) {
       since = at;
       continue;
     }
-    if (from && held === from && since && from !== current) {
+    if (from && held === from && since) {
       // From the first whole second after taking the address up to (not
       // including) the second it was handed over in. A queued row stamped in
       // the hand-over instant could be the next owner's, and a restore

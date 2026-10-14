@@ -666,6 +666,32 @@ describe('customer erasure clears email_queue', () => {
     await expectUntouched(takingSecond, address, 'Taking Second', 'sent');
   });
 
+  it('still matches an earlier tenure on the current address after the customer returned to it', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const { auditedInsert } = require('../../src/services/accountingHistory');
+    const address = 'current-return@example.com';
+
+    // Held the address from 20s to 40s, then from 60s on.
+    const [customer] = await auditedInsert(db, 'customer_accounts', {
+      email: address, display_name: 'Return 1971', preferred_language: 'de',
+      is_active: 1, created_at: at(20),
+    }, { actor: 'admin:1', source: 'test' });
+    await updateCustomer(customer.id, { email: 'current-return-away@example.com' }, null);
+    await updateCustomer(customer.id, { email: address }, null);
+    await stampHistory(customer.id, [at(20), at(40), at(60)]);
+
+    const firstTenure = await queueAt(address, 'sent', at(30), 'First Tenure');
+    const away = await queueAt(address, 'sent', at(50), 'While Away');
+    const secondTenure = await queueAt(address, 'sent', at(70), 'Second Tenure');
+
+    await eraseCustomer(customer.id, null);
+
+    await expectRedacted(firstTenure, 'sent');
+    await expectRedacted(secondTenure, 'sent');
+    await expectUntouched(away, address, 'While Away', 'sent');
+  });
+
   it('bounds the current address of an account without history by another customer\'s change of it', async () => {
     await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
     const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
