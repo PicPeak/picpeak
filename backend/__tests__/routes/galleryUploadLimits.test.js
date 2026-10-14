@@ -20,7 +20,8 @@ const mockStorage = {
   putFromFile: jest.fn(async (key, localPath) => { mockSizes.set(key, fs.statSync(localPath).size); }),
   stat: jest.fn(async (key) => (mockStatOverride.size !== null
     ? { size: mockStatOverride.size }
-    : { size: mockSizes.get(key) })),
+    // Like the real adapters: a missing object stats as null.
+    : (mockSizes.has(key) ? { size: mockSizes.get(key) } : null))),
   delete: jest.fn(async (key) => { mockSizes.delete(key); }),
   exists: jest.fn(async () => true),
 };

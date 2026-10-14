@@ -4,6 +4,7 @@ import { Button, Card, Input } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import type { SeoSettings } from '../hooks/useSettingsState';
+import { isImeComposing } from '../../../utils/imeComposition';
 
 interface SEOTabProps {
   seoSettings: SeoSettings;
@@ -205,7 +206,7 @@ export const SEOTab: React.FC<SEOTabProps> = ({
                   value={newAgent}
                   onChange={(e) => setNewAgent(e.target.value)}
                   placeholder={t('settings.seo.addAgentPlaceholder', 'Enter agent name...')}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddAgent())}
+                  onKeyDown={(e) => e.key === 'Enter' && !isImeComposing(e) && (e.preventDefault(), handleAddAgent())}
                 />
                 <Button variant="outline" size="sm" onClick={handleAddAgent}>
                   <Plus className="w-4 h-4" />

@@ -120,6 +120,9 @@ function transformContract(c, inclusions, textSections, attachmentRows) {
       lastName: c.customer_last_name,
       companyName: c.customer_company_name,
       preferredLanguage: c.customer_preferred_language,
+      // No administrative emails (migration 300): the send action becomes
+      // Issue — the document is issued (in the portal when the customer has access), no mail goes out.
+      noAdminEmails: c.customer_no_admin_emails === true || c.customer_no_admin_emails === 1,
     },
     status: c.status,
     // Migration 140 — cross-document lineage UUID. See adminQuotes
