@@ -144,6 +144,13 @@ async function acceptInvitation({ token, username, password }) {
 
   // Create user in transaction
   const result = await db.transaction(async (trx) => {
+    // The inviter's account row before the invitation: the insert below takes
+    // this key-share lock anyway (created_by), and deleting the inviter locks
+    // their account and then cascades onto their invitations. Claiming the
+    // invitation first could deadlock with that on PostgreSQL. If the inviter
+    // was deleted meanwhile, the invitation went with them and the claim
+    // below finds nothing. No-op on SQLite.
+    await trx('admin_users').where('id', invitation.invited_by).forKeyShare().first('id');
     // Claim before creating the account. Concurrent submissions may both read
     // the pending row above, but only one conditional update can consume it.
     const claimed = await trx('admin_invitations')
@@ -634,6 +641,14 @@ async function deleteAdminUser(id, deletedById) {
   // Their gallery assignments (migration 269) the same way: CASCADE, SET NULL
   // on assigned_by and on the photos they uploaded.
   await db.transaction(async (trx) => {
+    // The galleries this admin created, before any other row: deleting the
+    // account clears their created_by (ON DELETE SET NULL), and a gallery
+    // delete locks the event row first and then its assignments, photos and
+    // the bell dismissals of its activity, rows this transaction writes
+    // below. Taking the event rows last could deadlock with it on PostgreSQL.
+    // NO KEY UPDATE, the lock the SET NULL takes anyway: it does not hold back
+    // a team save's key-share lock on the event. No-op on SQLite.
+    await trx('events').where('created_by', id).orderBy('id').forNoKeyUpdate().pluck('id');
     await trx('notification_dismissals').where('admin_id', id).del();
     if (await trx.schema.hasTable('event_admin_assignments')) {
       // Every row the two statements below touch, locked in id order first:
