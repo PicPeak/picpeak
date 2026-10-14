@@ -206,7 +206,10 @@ test('a restart reclaims authenticated requests and resumable sessions by their 
   await expect(quota.begin({ eventId, mode: 'admin', maxFiles: 1, declaredBytes: 10 })).rejects.toMatchObject({ code: 'UPLOAD_CONCURRENCY_LIMIT' });
   await quota.cleanupAbandoned();
   expect(await db('public_upload_requests').where({ id }).first()).toMatchObject({ active: 0, bytes: 0 });
-  expect(await db('public_upload_objects')).toHaveLength(0); expect(fs.existsSync(dir)).toBe(false);
+  expect(fs.existsSync(dir)).toBe(false);
+  // Its half promotion goes once maintenance has deleted the stored object.
+  expect(await db('public_upload_objects').first()).toMatchObject({ state: 'uncertain' });
+  await quota.retryRetainedObjects(); expect(await db('public_upload_objects')).toHaveLength(0);
   // A live session is kept by this process's heartbeat however old its row.
   const init = await initChunk(jpeg.length);
   await db('public_upload_requests').where({ active: 1 }).update({ heartbeat_at: Date.now() - quota.STALE_MS - 1000 });
@@ -214,7 +217,7 @@ test('a restart reclaims authenticated requests and resumable sessions by their 
   expect(Number((await db('public_upload_requests').where({ active: 1 }).first()).heartbeat_at)).toBeGreaterThan(Date.now() - 5000);
   expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
 });
-test('the reaper deletes a crashed upload\'s stored file before its record, and keeps a record whose file stays', async () => {
+test('a crashed upload\'s stored file is deleted before its record, and a record whose file stays is kept', async () => {
   const orphan = async name => {
     const id = crypto.randomUUID(); const key = `events/active/admin-admission/${name}`;
     await db('public_upload_requests').insert({ id, event_id: eventId, account_id: 1, bytes: 4096, files: 1, rate_bytes: 0, active: 1,
@@ -226,18 +229,26 @@ test('the reaper deletes a crashed upload\'s stored file before its record, and 
     return { key, file };
   };
   const crashed = await orphan('crashed.jpg');
+  // The reaper runs on the upload path: it releases the lease and keeps the record.
   await quota.cleanupAbandoned();
+  expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
+  expect(fs.existsSync(crashed.file)).toBe(true); expect(await quota.unfinishedKeys([crashed.key])).toEqual(new Set([crashed.key]));
+  await quota.retryRetainedObjects();
   expect(fs.existsSync(crashed.file)).toBe(false); expect(await db('public_upload_objects')).toHaveLength(0);
   // A file that cannot be removed stays marked unfinished, so no watcher scan imports it.
   const stuck = await orphan('stuck.jpg');
-  jest.spyOn(storage, 'delete').mockRejectedValueOnce(Object.assign(new Error('owned EACCES'), { code: 'EACCES' }));
   await quota.cleanupAbandoned();
+  jest.spyOn(storage, 'delete').mockRejectedValueOnce(Object.assign(new Error('owned EACCES'), { code: 'EACCES' }));
+  await quota.retryRetainedObjects();
   expect(fs.existsSync(stuck.file)).toBe(true);
-  expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
   expect(await quota.unfinishedKeys([stuck.key])).toEqual(new Set([stuck.key]));
   // Its bytes are on disk already: free space shows them, headroom must not count them again.
   disk(2 * GiB); await db('public_upload_objects').update({ bytes: GiB });
   await quota.finish(await quota.begin({ eventId, mode: 'admin', maxFiles: 1, declaredBytes: 1024 * 1024 }));
+  // A promotion in flight still needs its room.
+  await db('public_upload_objects').update({ state: 'promoting' });
+  await expect(quota.begin({ eventId, mode: 'admin', maxFiles: 1, declaredBytes: 1024 * 1024 })).rejects.toMatchObject({ code: 'UPLOAD_STORAGE_LOW' });
+  await db('public_upload_objects').update({ state: 'uncertain' });
   await quota.retryRetainedObjects();
   expect(fs.existsSync(stuck.file)).toBe(false); expect(await db('public_upload_objects')).toHaveLength(0);
 });

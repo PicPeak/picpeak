@@ -204,9 +204,9 @@ async function headroom(trx, stat, bytes, limits, files = 0) {
   const total = Number(stat.blocks) * Number(stat.bsize);
   const other = await sum(trx('public_upload_requests').where({ active: 1 }));
   const promoting = getStorage().kind() === 'local'
-    // An authenticated 'uncertain' object is no promotion: finish() kept it
-    // after a failed delete, and free space already shows it.
-    ? await sum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain']).whereNot({ state: 'uncertain', upload_kind: 'admin' }))
+    // An authenticated 'uncertain' object is no promotion: its upload has
+    // settled, and free space already shows it.
+    ? await sum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain']).whereNot(q => q.where({ state: 'uncertain', upload_kind: 'admin' })))
     : { bytes: 0, files: 0 };
   const freeFiles = Number(stat.ffree);
   // Local promotion temporarily needs both copies. S3 needs staging space.
@@ -439,7 +439,7 @@ async function failedObject(object, { storage, settled }) {
   await db('public_upload_objects').where({ id: object.id, state: 'promoting' }).update({ state: 'uncertain' });
 }
 
-async function finish(session) {
+async function finish(session, { reaped = false } = {}) {
   // Call ONLY after all temp writers and durable promotions have settled.
   // A failed deletion keeps both capacity and admission slots reserved; the
   // reaper retries it once the lease lapses.
@@ -457,6 +457,7 @@ async function finish(session) {
     // failed) holds nothing either, but its stored object must go before its
     // record: an importer takes an object without one for a file placed by
     // hand. 'uncertain' turns away a commit from a stalled process meanwhile.
+    // The reaper runs on the upload path and leaves the deletes to maintenance.
     let objects = [];
     if (admin) {
       await trx('public_upload_objects').where({ request_id: session.id, upload_kind: 'admin', state: 'promoting' }).update({ state: 'uncertain' });
@@ -465,11 +466,11 @@ async function finish(session) {
     await trx('public_upload_requests').where({ active: 0 }).where('created_at', '<', new Date(Date.now() - 86400000).toISOString()).del();
     return objects;
   });
-  await dropObjects(unsettled);
+  if (!reaped) await dropObjects(unsettled);
   return true;
 }
 
-// A record goes only once its object is gone; cleanupAbandoned() retries the rest.
+// A record goes only once its object is gone; retryRetainedObjects() retries the rest.
 async function dropObjects(objects) {
   for (const object of objects) {
     try { await getStorage().delete(object.object_key); } catch (err) {
@@ -522,16 +523,21 @@ async function cleanupAbandoned() {
     if (live.has(row.id)) continue;
     // Removes the staging directory when it is under this process's staging
     // root. An uncertain remote PUT remains in the object ledger regardless.
-    await finish({ ...row, dir: stagingPath(row.id), receivedBytes: Number(row.rate_bytes) });
+    await finish({ ...row, dir: stagingPath(row.id), receivedBytes: Number(row.rate_bytes) }, { reaped: true });
   }
 }
 
-/** Authenticated objects finish() could not delete; their request is
- * settled. Maintenance only: an upload request must not wait on storage. */
+/** Authenticated objects the reaper retained or finish() could not delete;
+ * their request is settled. Maintenance only: an upload request must not
+ * wait on storage. The cursor keeps objects that never delete from taking
+ * every batch. */
+let retryCursor = '';
 async function retryRetainedObjects() {
-  await dropObjects(await db('public_upload_objects').where({ upload_kind: 'admin', state: 'uncertain' })
+  const objects = await db('public_upload_objects').where({ upload_kind: 'admin', state: 'uncertain' }).where('id', '>', retryCursor)
     .whereNotExists(db('public_upload_requests as r').select('r.id').whereColumn('r.id', 'public_upload_objects.request_id').where('r.active', 1))
-    .select('id', 'object_key').limit(100));
+    .orderBy('id').select('id', 'object_key').limit(100);
+  retryCursor = objects.length === 100 ? objects[99].id : '';
+  await dropObjects(objects);
 }
 
 let maintenance = null;

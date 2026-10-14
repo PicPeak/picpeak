@@ -339,27 +339,30 @@ async function orphanAdminPromotion(key) {
   mockObjects.set(key, 12);
   return orphan;
 }
-test('the reaper deletes an abandoned authenticated S3 object before its ledger record', async () => {
+test('an abandoned authenticated S3 object is deleted by maintenance before its ledger record', async () => {
   jest.spyOn(mockStorage, 'kind').mockReturnValue('s3');
-  const orphan = await orphanAdminPromotion('events/active/owned-quota-gallery/owned-crashed.jpg');
+  const key = 'events/active/owned-quota-gallery/owned-crashed.jpg';
+  const orphan = await orphanAdminPromotion(key);
+  // The admission-path reaper releases the lease without waiting on storage.
   await quota.cleanupAbandoned();
-  expect(mockStorage.delete).toHaveBeenCalledWith('events/active/owned-quota-gallery/owned-crashed.jpg');
-  expect(mockObjects.size).toBe(0); expect(await db('public_upload_objects')).toHaveLength(0);
   expect(await db('public_upload_requests').where({ id: orphan.id }).first()).toMatchObject({ active: 0 });
+  expect(mockStorage.delete).not.toHaveBeenCalled();
+  expect(await db('public_upload_objects').first()).toMatchObject({ object_key: key, state: 'uncertain' });
+  await quota.retryRetainedObjects();
+  expect(mockStorage.delete).toHaveBeenCalledWith(key);
+  expect(mockObjects.size).toBe(0); expect(await db('public_upload_objects')).toHaveLength(0);
 });
-test('an authenticated S3 object the reaper cannot delete keeps its record, so no importer takes it', async () => {
+test('an authenticated S3 object that cannot be deleted keeps its record, so no importer takes it', async () => {
   jest.spyOn(mockStorage, 'kind').mockReturnValue('s3');
   const key = 'events/active/owned-quota-gallery/owned-undeletable.jpg';
-  const orphan = await orphanAdminPromotion(key);
-  mockStorage.delete.mockRejectedValueOnce(new Error('owned S3 outage'));
+  await orphanAdminPromotion(key);
   await quota.cleanupAbandoned();
-  // The lease is released either way; only the record of the surviving object stays.
-  expect(await db('public_upload_requests').where({ id: orphan.id }).first()).toMatchObject({ active: 0 });
+  mockStorage.delete.mockRejectedValueOnce(new Error('owned S3 outage'));
+  await quota.retryRetainedObjects();
   expect(mockObjects.has(key)).toBe(true);
   expect(await db('public_upload_objects').first()).toMatchObject({ object_key: key, state: 'uncertain' });
   expect(await quota.unfinishedKeys([key])).toEqual(new Set([key]));
-  // The admission-path reaper does not wait on storage; the maintenance pass retries.
-  mockStorage.delete.mockClear(); await quota.cleanupAbandoned(); expect(mockStorage.delete).not.toHaveBeenCalled();
+  // The next maintenance pass retries it.
   await quota.retryRetainedObjects();
   expect(mockObjects.has(key)).toBe(false); expect(await db('public_upload_objects')).toHaveLength(0);
 });
