@@ -235,7 +235,8 @@ test('the reaper deletes a crashed upload\'s stored file before its record, and 
   expect(fs.existsSync(stuck.file)).toBe(true);
   expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
   expect(await quota.unfinishedKeys([stuck.key])).toEqual(new Set([stuck.key]));
-  fs.rmSync(stuck.file);
+  await quota.cleanupAbandoned();
+  expect(fs.existsSync(stuck.file)).toBe(false); expect(await db('public_upload_objects')).toHaveLength(0);
 });
 test('an abandoned resumable session releases its slot after fifteen idle minutes, not twenty-four hours', async () => {
   process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';

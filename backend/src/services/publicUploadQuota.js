@@ -462,14 +462,19 @@ async function finish(session) {
     await trx('public_upload_requests').where({ active: 0 }).where('created_at', '<', new Date(Date.now() - 86400000).toISOString()).del();
     return objects;
   });
-  for (const object of unsettled) {
+  await dropObjects(unsettled);
+  return true;
+}
+
+// A record goes only once its object is gone; cleanupAbandoned() retries the rest.
+async function dropObjects(objects) {
+  for (const object of objects) {
     try { await getStorage().delete(object.object_key); } catch (err) {
       logger.warn('Upload object cleanup failed; its ledger record is kept', { objectId: object.id, error: err.message });
       continue;
     }
     await db('public_upload_objects').where({ id: object.id }).del();
   }
-  return true;
 }
 
 /** A resumable lease may sit idle while unrelated writers fill the disk, or
@@ -509,6 +514,11 @@ async function heartbeat() {
  * and pid prove nothing (a recreated container has a new hostname, a
  * restarted one reuses its pid), so only the heartbeat decides. */
 async function cleanupAbandoned() {
+  // Authenticated objects an earlier finish() could not delete, retried one
+  // pass later; their request is already settled.
+  await dropObjects(await db('public_upload_objects').where({ upload_kind: 'admin', state: 'uncertain' })
+    .whereNotExists(db('public_upload_requests as r').select('r.id').whereColumn('r.id', 'public_upload_objects.request_id').where('r.active', 1))
+    .select('id', 'object_key').limit(100));
   const rows = await db('public_upload_requests').where({ active: 1 }).where('heartbeat_at', '<', Date.now() - STALE_MS).limit(100);
   for (const row of rows) {
     if (live.has(row.id)) continue;

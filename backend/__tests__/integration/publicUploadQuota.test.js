@@ -358,6 +358,9 @@ test('an authenticated S3 object the reaper cannot delete keeps its record, so n
   expect(mockObjects.has(key)).toBe(true);
   expect(await db('public_upload_objects').first()).toMatchObject({ object_key: key, state: 'uncertain' });
   expect(await quota.unfinishedKeys([key])).toEqual(new Set([key]));
+  // The next maintenance pass retries the delete without the released lease.
+  await quota.cleanupAbandoned();
+  expect(mockObjects.has(key)).toBe(false); expect(await db('public_upload_objects')).toHaveLength(0);
 });
 test('a failed authenticated promotion whose S3 delete fails keeps its record until finish() deletes the object', async () => {
   jest.spyOn(mockStorage, 'kind').mockReturnValue('s3');
