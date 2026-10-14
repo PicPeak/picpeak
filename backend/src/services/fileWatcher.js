@@ -8,7 +8,7 @@ const { exifColumn } = require('./photoExif');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
-const { generateThumbnail, generateVideoPlaceholder, withProcessableImage } = require('./imageProcessor');
+const { generateThumbnail, generateVideoPlaceholder, withProcessableImage, extractCaptureDate } = require('./imageProcessor');
 const logger = require('../utils/logger');
 const { isVideoMimeType } = require('./videoProcessor');
 const mime = require('mime-types');
@@ -16,6 +16,8 @@ const { isRawFilename } = require('../utils/rawFormats');
 const { normalizeUploadMimeType } = require('../utils/fileSecurityUtils');
 const { getAllowedExtensions } = require('./uploadSettings');
 const downloadZipService = require('./downloadZipService');
+const { promotionSettled } = require('./watchFolderClaims');
+const { unfinishedKeys } = require('./publicUploadQuota');
 
 const { getStoragePath } = require('../config/storage');
 const WATCH_PATH = () => path.join(getStoragePath(), 'events/active');
@@ -176,6 +178,16 @@ async function processNewPhoto(filePath) {
   const event = await db('events').where({ slug: eventSlug, is_active: formatBoolean(true) }).first();
   if (!event) return;
 
+  // An upload storing this file has not written its row yet (issue 1970).
+  // Wait for it, so the check below sees that row, or a hand-dropped file
+  // is still imported; a failed upload may have removed the file meanwhile.
+  const storageKey = path.posix.join('events/active', ...pathParts);
+  const promotion = promotionSettled(storageKey);
+  if (promotion) {
+    await promotion;
+    if (!(await fs.access(filePath).then(() => true, () => false))) return;
+  }
+
   // Check if photo already exists.
   //
   // `source_filename` is in here, not just filename/path, because a REPLACEMENT
@@ -200,7 +212,23 @@ async function processNewPhoto(filePath) {
     logger.debug(`Photo already exists: ${relativePath}`);
     return;
   }
-  
+
+  // An upload that died between storing this file and writing its row left
+  // its promotion record behind (issue 1970). The in-process claim above did
+  // not survive the restart; the record did, and every process sees it. The
+  // file never became a photo, so it is not imported as one.
+  if ((await unfinishedKeys([storageKey])).has(storageKey)) {
+    logger.warn(`[fileWatcher] Skipping ${relativePath}: an upload stored it but never finished`);
+    return;
+  }
+  // commitObject writes the row and settles the record in one transaction,
+  // so an upload in another process may have finished between the photo
+  // check above and the ledger read: look for its row once more.
+  if (await findExistingPhoto(event.id, path.basename(filePath), relativePath)) {
+    logger.debug(`Photo already exists: ${relativePath}`);
+    return;
+  }
+
   // Get file stats
   const stats = await fs.stat(filePath);
   
@@ -249,6 +277,9 @@ async function processNewPhoto(filePath) {
   const credit = await resolveCredit({ localPath: filePath, isVideo });
   // Camera details (issue 1733, D1), under the same condition.
   const exif = isVideo ? {} : await exifColumn(filePath);
+  // Capture date, likewise: the row is complete, so the worker that reads it
+  // for an upload never runs, and the timeline sorted it by import time.
+  const capturedAt = isVideo ? null : await extractCaptureDate(filePath);
   // Browser-playable copy (issue 1430): a video the watcher picks up is
   // queued like an uploaded one while the setting is on; otherwise it would
   // wait for the next switch-on backfill. No transaction is open here.
@@ -273,6 +304,7 @@ async function processNewPhoto(filePath) {
     processing_status: 'complete',
     size_bytes: stats.size,
     mime_type: mimeType,
+    captured_at: capturedAt ? capturedAt.toISOString() : null,
     ...(dimensions && { width: dimensions.width, height: dimensions.height }),
     ...(webCopyEnabled ? { web_status: 'pending' } : {}),
     ...credit,

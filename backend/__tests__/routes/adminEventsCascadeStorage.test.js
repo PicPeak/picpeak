@@ -129,6 +129,12 @@ jest.mock('../../src/database/db', () => ({
 
 // This suite checks storage cleanup; reference history is exercised against
 // real databases in accountingHistoryReferences.test.js.
+// The archive claim (issue 2012) is exercised in archiveSingleJob.test.js.
+jest.mock('../../src/services/archiveService', () => ({
+  claimArchive: async () => ({ release: async () => {} }),
+  supersededArchives: async () => [],
+  legacyArchiveKeys: async () => [],
+}));
 jest.mock('../../src/services/accountingHistory', () => ({
   deleteWithAccountingHistory: (conn, table, where) => conn(table).where(where).del(),
 }));

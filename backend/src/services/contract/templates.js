@@ -19,6 +19,7 @@
  */
 
 const { db, logActivity } = require('../../database/db');
+const { adminActivityActor } = require('../../utils/activityActor');
 const { AppError } = require('../../utils/errors');
 const { auditedInsert, deleteWithAccountingHistory } = require('../accountingHistory');
 const { ensureInt } = require('../../utils/numericHelpers');
@@ -53,7 +54,7 @@ function conflict() {
 
 async function audit(type, meta, adminId) {
   try {
-    await logActivity(type, meta, null, `admin:${adminId}`);
+    await logActivity(type, meta, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 }
 

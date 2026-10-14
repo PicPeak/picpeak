@@ -10,9 +10,37 @@ import {
   isGalleryLimited, markGalleryLimited, notifyDownloadQuotaChanged,
   readDownloadLimitError, withDownloadLimit,
 } from '../utils/downloadLimit';
+import { SELECTED_DOWNLOAD_LIMIT } from '../components/gallery/folders';
 
 // Gallery pages beyond the first are fetched this many at a time (#1357).
 const PAGE_FETCH_CONCURRENCY = 4;
+
+// One archive request takes at most this many ids (download-selected and
+// download-jobs on the server); a larger set goes as several archives.
+export function splitIntoArchives(photoIds: number[]): number[][] {
+  const parts: number[][] = [];
+  for (let i = 0; i < photoIds.length; i += SELECTED_DOWNLOAD_LIMIT) {
+    parts.push(photoIds.slice(i, i + SELECTED_DOWNLOAD_LIMIT));
+  }
+  return parts;
+}
+
+// How long a downloaded blob's object URL stays valid. Revoking it in the
+// same task as the click can cancel the download before the browser has
+// started reading it (Safari and Firefox), so it is released a little later,
+// but soon: a download in parts would otherwise hold several zips at once.
+const BLOB_URL_RELEASE_MS = 1_000;
+
+function saveBlob(data: BlobPart, filename: string): void {
+  const url = window.URL.createObjectURL(new Blob([data]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(url), BLOB_URL_RELEASE_MS);
+}
 
 // Admin preview (#868): the preview tab carries `?admin_preview=1`. Browser-native
 // download navigations (a real `<a href>` / `api.getUri`) bypass the axios request
@@ -265,14 +293,7 @@ export const galleryService = {
   // anchor. Extracted from downloadPhoto so the share-fallback path
   // can reuse it without re-fetching the blob.
   triggerBrowserDownload(blob: Blob, filename: string): void {
-    const url = window.URL.createObjectURL(new Blob([blob]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    saveBlob(blob, filename);
   },
 
   // Trigger a browser-native download by navigating a hidden anchor at
@@ -330,14 +351,7 @@ export const galleryService = {
       responseType: 'blob',
     }));
 
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${slug}.zip`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    saveBlob(response.data, `${slug}.zip`);
   },
 
   // Download selected photos. On iOS with a small selection, route
@@ -345,11 +359,17 @@ export const galleryService = {
   // share sheet's "Save N Images" action (#557, extending #531 to the
   // multi-photo case). Above the cap, or anywhere else, fall through
   // to the existing server-side zip flow.
-  async downloadSelectedPhotos(slug: string, photoIds: number[]): Promise<void> {
+  async downloadSelectedPhotos(
+    slug: string,
+    photoIds: number[],
+    part?: { index: number; total: number },
+  ): Promise<void> {
     // Not on a limited gallery (issue 1560): the share path fetches photo by
     // photo, so a refusal halfway through would already have used up the
-    // photos before it, where the zip below is all or nothing.
+    // photos before it, where the zip below is all or nothing. Not for one
+    // part of a larger download either: those all arrive as zips.
     if (
+      !part &&
       isIOS() &&
       !isGalleryLimited(slug) &&
       photoIds.length > 0 &&
@@ -366,14 +386,20 @@ export const galleryService = {
       responseType: 'blob',
     }));
 
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${slug}-selected.zip`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    saveBlob(response.data, part
+      ? `${slug}-selected-${part.index}-of-${part.total}.zip`
+      : `${slug}-selected.zip`);
+  },
+
+  // Download photos as zips of at most SELECTED_DOWNLOAD_LIMIT each, one after
+  // the other, so a set past the server's per-request cap is never cut short.
+  // The first failure stops the rest and is thrown.
+  async downloadPhotosInParts(slug: string, photoIds: number[]): Promise<void> {
+    const parts = splitIntoArchives(photoIds);
+    if (parts.length <= 1) return this.downloadSelectedPhotos(slug, photoIds);
+    for (let i = 0; i < parts.length; i += 1) {
+      await this.downloadSelectedPhotos(slug, parts[i], { index: i + 1, total: parts.length });
+    }
   },
 
   // ── Custom-resolution downloads (#858) ──────────────────────────────────

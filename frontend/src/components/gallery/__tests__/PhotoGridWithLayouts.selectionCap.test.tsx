@@ -57,10 +57,10 @@ describe('PhotoGridWithLayouts — selection over the download cap', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it('still clears the selection after a download limit refusal', async () => {
+  it('keeps the selection after a download limit refusal too, to trim it', async () => {
     service.downloadSelectedPhotos.mockRejectedValue(new DownloadLimitError({ remaining: 0 }));
     await selectAllAndDownload();
-    await waitFor(() => expect(screen.queryByText('gallery.downloadSelected')).toBeNull());
-    expect(screen.queryByText('gallery.cancelSelection')).toBeNull();
+    await waitFor(() => expect(service.downloadSelectedPhotos).toHaveBeenCalled());
+    expect(screen.getByText('gallery.cancelSelection')).toBeTruthy();
   });
 });

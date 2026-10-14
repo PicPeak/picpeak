@@ -11,6 +11,7 @@ const { buildShareLinkVariants } = require('./shareLinkService');
 const { galleryLinkFor } = require('./galleryNotificationService');
 const { queueEmail } = require('./emailProcessor');
 const { getStorage } = require('./storage');
+const { findSlugHolder } = require('./slugRedirects');
 
 /**
  * Run `fn` over `items` with at most `limit` in flight. On the first failure
@@ -97,6 +98,10 @@ class EventRenameService {
       if (event.is_archived) {
         return { valid: false, error: 'Cannot rename archived events' };
       }
+      // The archive job reads the photos under the current slug (issue 2012).
+      if (await require('./archiveService').isArchiveRunning(eventId)) {
+        return { valid: false, error: 'Cannot rename a gallery while it is being archived' };
+      }
 
       // Validate new name
       if (!newEventName || newEventName.trim().length < 3) {
@@ -110,11 +115,9 @@ class EventRenameService {
       // Generate new slug
       const newSlug = this.generateSlug(event.event_type, newEventName.trim(), event.event_date);
 
-      // Check if slug already exists (for different event)
-      const existingEvent = await db('events')
-        .where({ slug: newSlug })
-        .whereNot({ id: eventId })
-        .first();
+      // Check if slug already exists (for different event). Another
+      // gallery's old slug counts: its links still lead to that gallery.
+      const existingEvent = await findSlugHolder(newSlug, { exceptEventId: eventId });
 
       if (existingEvent) {
         return { valid: false, error: 'An event with this name already exists for the same date', conflicts: [existingEvent.event_name] };
@@ -360,10 +363,12 @@ class EventRenameService {
       .first();
 
     if (existingRedirect) {
-      // Update existing redirect
+      // Update existing redirect. The row may have been written for a gallery
+      // that held this slug before; it belongs to this one now, so a delete of
+      // that other gallery must not cascade it away.
       await trx('slug_redirects')
         .where({ old_slug: oldSlug })
-        .update({ new_slug: newSlug });
+        .update({ new_slug: newSlug, event_id: eventId });
     } else {
       // Create new redirect
       await trx('slug_redirects').insert({
@@ -373,10 +378,19 @@ class EventRenameService {
       });
     }
 
-    // Also update any existing redirects pointing to the old slug
+    // Also update any existing redirects pointing to the old slug. Their
+    // event_id stays: these rows are this gallery's own, or (SQLite, no
+    // foreign keys) a deleted gallery's that must not become this one's.
     await trx('slug_redirects')
       .where({ new_slug: oldSlug })
       .update({ new_slug: newSlug });
+
+    // Renamed back to an earlier name: the chain update above turned that
+    // name's redirect into one pointing at itself. Only that row goes; a
+    // redirect from this slug to another gallery is that gallery's to keep.
+    await trx('slug_redirects')
+      .where({ old_slug: newSlug, new_slug: newSlug })
+      .del();
   }
 
   /**
@@ -442,6 +456,7 @@ class EventRenameService {
    */
   async renameEvent(eventId, newEventName, resendEmail = false, adminUser = null) {
     const backupData = {};
+    let lease = null;
 
     try {
       // 1. Validate
@@ -450,8 +465,20 @@ class EventRenameService {
         return { success: false, error: validation.error };
       }
 
-      // 2. Get current event data
+      // The archive job reads the photos under the current slug (issue 2012).
+      // Holding the gallery's archive claim through the move keeps one from
+      // starting halfway and zipping an emptied prefix.
+      lease = await require('./archiveService').claimArchive(eventId);
+      if (!lease) {
+        return { success: false, error: 'Cannot rename a gallery while it is being archived' };
+      }
+
+      // 2. Get current event data, under the claim: an archive that finished
+      // after the validation above has moved the photos on.
       const event = await db('events').where({ id: eventId }).first();
+      if (!event || event.is_archived) {
+        return { success: false, error: 'Cannot rename archived events' };
+      }
       backupData.event = event;
       backupData.newSlug = validation.newSlug;
 
@@ -465,6 +492,16 @@ class EventRenameService {
         slug: newSlug,
         shareToken: event.share_token
       });
+
+      // A restore before per-run archive keys left its zip at the shared key
+      // of the old slug (issue 2012); after the rename nothing would find it
+      // there. Read before the transaction, which takes SQLite's only
+      // connection, and recorded inside it.
+      const archiveService = require('./archiveService');
+      const legacyZips = [];
+      for (const key of await archiveService.legacyArchiveKeys(event).catch(() => [])) {
+        if (await getStorage().exists(key).catch(() => false)) legacyZips.push(key);
+      }
 
       // 3. Start transaction
       const trx = await db.transaction();
@@ -507,6 +544,8 @@ class EventRenameService {
           }),
           event_id: eventId
         });
+
+        for (const key of legacyZips) await archiveService.recordSupersededArchive(lease, key, trx);
 
         // 9. Commit transaction
         await trx.commit();
@@ -553,6 +592,8 @@ class EventRenameService {
       logger.error('Event rename failed', { eventId, error: error.message });
       await this.rollbackRename(backupData);
       return { success: false, error: error.message || 'Failed to rename event' };
+    } finally {
+      if (lease) await lease.release();
     }
   }
 }

@@ -1,6 +1,6 @@
 import { api } from '../config/api';
 import { explainFeedbackLock } from '../utils/feedbackLock';
-import { FEEDBACK_SUBMITTED_EVENT } from '../utils/feedbackEvents';
+import { FEEDBACK_SUBMITTED_EVENT, namedIdentity } from '../utils/feedbackEvents';
 import type { FeedbackSubmittedDetail } from '../utils/feedbackEvents';
 import type { PhotoAnnotation } from '../utils/photoAnnotation';
 
@@ -374,7 +374,7 @@ class FeedbackService {
     try {
       const response = await api.post(`/gallery/${slug}/photos/${photoId}/feedback`, feedback);
       window.dispatchEvent(new CustomEvent<FeedbackSubmittedDetail>(FEEDBACK_SUBMITTED_EVENT, {
-        detail: { slug, feedback_type: feedback.feedback_type },
+        detail: { slug, feedback_type: feedback.feedback_type, ...namedIdentity(feedback) },
       }));
       return response.data;
     } catch (error) {
@@ -400,11 +400,21 @@ class FeedbackService {
     guest_email?: string;
   }): Promise<BulkRatingResponse> {
     const response = await api.post(`/gallery/${slug}/feedback/bulk`, { photo_ids: photoIds, rating, ...identity });
+    // A 200 can rate nothing (every photo hidden or gone since it was picked):
+    // only a rating that landed names the visitor.
+    if ((response.data as BulkRatingResponse)?.results?.some((r) => r.success)) {
+      window.dispatchEvent(new CustomEvent<FeedbackSubmittedDetail>(FEEDBACK_SUBMITTED_EVENT, {
+        detail: { slug, feedback_type: 'rating', ...namedIdentity(identity) },
+      }));
+    }
     return response.data;
   }
 
-  async submitSelection(slug: string, kind: SubmissionKind, note?: string): Promise<SelectionSubmission> {
-    const response = await api.post(`/gallery/${slug}/selection/submit`, { kind, note: note || undefined });
+  async submitSelection(slug: string, kind: SubmissionKind, note?: string, identity?: {
+    guest_name: string;
+    guest_email: string;
+  }): Promise<SelectionSubmission> {
+    const response = await api.post(`/gallery/${slug}/selection/submit`, { kind, note: note || undefined, ...identity });
     return response.data.submission;
   }
 

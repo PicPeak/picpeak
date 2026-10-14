@@ -15,11 +15,20 @@ const mediaProcesses = require('./mediaProcessService');
 const rawWork = new AsyncLocalStorage();
 const attemptContext = require('./mediaAttemptContext');
 const derivativeContext = new AsyncLocalStorage();
-async function publishDerivative(callback) {
+async function publishDerivative(callback, key) {
   const attempt = attemptContext.current() || derivativeContext.getStore();
   await attempt?.assertCurrent();
   const result = await callback();
-  await attempt?.assertCurrent();
+  try {
+    await attempt?.assertCurrent();
+  } catch (error) {
+    // A key named after this lazy scope is its alone and nothing records it
+    // yet, so a superseded source must not leave it behind. A tier is named
+    // after the source instead, which another worker may have just served.
+    const scope = attemptContext.current() ? null : derivativeContext.getStore();
+    if (key && scope && error.code === 'MEDIA_SUPERSEDED' && key.includes(scope.id)) await getStorage().delete(key).catch(() => {});
+    throw error;
+  }
   return result;
 }
 
@@ -33,15 +42,46 @@ sharp.concurrency(2); // Limit concurrent operations
 const { RAW_EXTENSIONS, isRawFilename, originalNeedsPreview } = require('../utils/rawFormats');
 
 const derivativeSourceFields = ['event_id', 'path', 'filename', 'external_relpath', 'source_origin', 'processing_attempt_id'];
+// A file on a reference share can be rewritten in place: same path, other
+// bytes, and none of the fields above change. Its size is what an import
+// pass records and compares, so it is the external source's version. A
+// rendition built from the old bytes must neither publish over the new
+// row nor share a storage key with the renditions of the new bytes.
+// Managed sources are never rewritten in place (a replacement moves the
+// path), so their keys and guards stay as they were.
+const isExternalSource = photo => photo.source_origin === 'external' || photo.source_origin === 'reference';
+const sourceVersion = photo => (isExternalSource(photo) && photo.size_bytes != null ? String(photo.size_bytes) : null);
+const versionTag = photo => (sourceVersion(photo) ? `v${sourceVersion(photo)}_` : '');
 const boundedDerivative = photo => isVideoPhoto(photo) || isRawFilename(photo.filename || photo.external_relpath || photo.path || '');
 const derivativeCacheId = photo => crypto.createHash('sha256')
-  .update(JSON.stringify(derivativeSourceFields.map(field => photo[field] ?? null))).digest('hex').slice(0, 24);
+  .update(JSON.stringify([
+    ...derivativeSourceFields.map(field => photo[field] ?? null),
+    // Only when known: an external row without a size keeps the id it had
+    // before the version existed, so its tiers stay found and cleaned up.
+    ...(sourceVersion(photo) ? [sourceVersion(photo)] : []),
+  ])).digest('hex').slice(0, 24);
+// Callers hand in rows from many selects. An external row without its size
+// would derive unversioned keys and skip the size in its guard, so it is
+// read here once rather than trusting every select to carry it.
+async function withSourceVersion(photo) {
+  if (!photo || !isExternalSource(photo) || photo.size_bytes !== undefined || photo.id == null) return photo;
+  const row = await db('photos').where({ id: photo.id }).first('size_bytes');
+  return row ? { ...photo, size_bytes: row.size_bytes } : photo;
+}
 function cacheBasename(photo, name) {
   return boundedDerivative(photo) ? require('./mediaAttemptService').outputName(name, { id: derivativeCacheId(photo) }) : name;
+}
+// The scoped name a RAW/video tier of an external row had before the source
+// version was part of the cache id. Cleanup only: lookup never trusts it.
+function unversionedCacheBasename(photo, name) {
+  const id = crypto.createHash('sha256')
+    .update(JSON.stringify(derivativeSourceFields.map(field => photo[field] ?? null))).digest('hex').slice(0, 24);
+  return require('./mediaAttemptService').outputName(name, { id });
 }
 function sourceGuard(photo) {
   const match = { id: photo.id };
   for (const field of derivativeSourceFields) if (photo[field] !== undefined) match[field] = photo[field];
+  if (isExternalSource(photo) && photo.size_bytes !== undefined) match.size_bytes = photo.size_bytes;
   return db('photos').where(match);
 }
 function withLazyDerivative(photo, callback) {
@@ -57,14 +97,32 @@ function derivativeBasename(name, { cache = false } = {}) {
   const scope = derivativeContext.getStore();
   return scope ? require('./mediaAttemptService').outputName(name, { id: cache ? scope.cacheId : scope.id }) : name;
 }
+// True when the row took the derivative. Unscoped (an ordinary image), a
+// source replaced since `photo` was read makes it false: the rendition
+// describes the old file, so the caller treats it as nothing generated.
 async function publishPhotoDerivative(photo, key, values) {
   const scope = derivativeContext.getStore();
-  if (!scope) return db('photos').where({ id: photo.id }).update(values);
-  await scope.assertCurrent();
+  if (!scope) {
+    if (await sourceGuard(photo).update(values) === 1) return true;
+    // Unscoped keys derive from the source name, not from an attempt id, so
+    // the key can still be a row's own: an event rename moves the original
+    // and keeps the rendition. When in doubt, keep the file.
+    try {
+      const inUse = await db('photos').where('thumbnail_path', key)
+        .orWhere('preview_path', key).orWhere('hero_path', key).first();
+      if (!inUse) await getStorage().delete(key).catch(() => {});
+    } catch (e) {
+      logger.warn(`Could not check whether ${key} is in use; keeping it: ${e.message}`);
+    }
+    logger.info(`Source of photo ${photo.id} changed while its rendition was built; not recording ${key}`);
+    return false;
+  }
+  // The guarded update is the source check; its refusal drops the file.
   if (await sourceGuard(photo).update(values) !== 1) {
     await getStorage().delete(key).catch(() => {});
     throw Object.assign(new Error('Media source was superseded'), { code: 'MEDIA_SUPERSEDED', status: 422 });
   }
+  return true;
 }
 
 /**
@@ -589,7 +647,7 @@ async function generateThumbnail(imagePath, options = {}) {
       throw new Error('Generated thumbnail is empty');
     }
 
-    await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: contentTypeFor(settings.format) }));
+    await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: contentTypeFor(settings.format) }), thumbnailRelKey);
     // Tile placeholder (issue 1733): for a caller that writes the photo row.
     if (options.meta) options.meta.thumbHash = await require('./thumbHash').computeThumbHash(buffer);
 
@@ -766,7 +824,9 @@ const inFlightRenditions = new Map();
 function flightKey(rendition, photo, width) {
   const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
   const source = (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || '';
-  return `${rendition}:${photo.id}:${source}${width ? `:w${width}` : ''}`;
+  // The version too: a request for the edited file must not join a flight
+  // still rendering the old bytes and be handed that rendition.
+  return `${rendition}:${photo.id}:${source}:${sourceVersion(photo) ?? ''}${width ? `:w${width}` : ''}`;
 }
 
 function singleFlight(key, fn, { force = false } = {}) {
@@ -814,6 +874,7 @@ async function ensureThumbnail(photo, { force = false, boundVideoSource = true }
     logger.warn(`Invalid thumbnail detected for photo ${photo.id}, regenerating...`);
   }
 
+  photo = await withSourceVersion(photo);
   return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource })), { force });
 }
 
@@ -865,7 +926,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
       return null;
     }
     const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
-    const outputBasename = derivativeBasename(`ext${photo.id}_${sourceBasename}`);
+    const outputBasename = derivativeBasename(`ext${photo.id}_${versionTag(photo)}${sourceBasename}`);
     logger.info(`Ensuring thumbnail for external photo ${photo.id} from ${localPath}`);
     // Through the RAW extraction, like the managed branch below. Without it a
     // RAW on a NAS mount can never have a thumbnail: sharp throws on the
@@ -897,11 +958,11 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
   }
 
   if (newThumbnailPath) {
-    await publishPhotoDerivative(photo, newThumbnailPath, {
+    if (!await publishPhotoDerivative(photo, newThumbnailPath, {
       thumbnail_path: newThumbnailPath,
       thumb_hash: meta.thumbHash || null,
       ...(posterNote !== undefined ? { processing_error: posterNote } : {}),
-    });
+    })) return null;
 
     logger.info(`Regenerated thumbnail for photo ${photo.id}`);
     return newThumbnailPath;
@@ -945,13 +1006,13 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.filename) || `video-${photo.id}`
   );
-  const outputBasename = derivativeBasename(isExternal ? `ext${photo.id}_${sourceBasename}` : sourceBasename);
+  const outputBasename = derivativeBasename(isExternal ? `ext${photo.id}_${versionTag(photo)}${sourceBasename}` : sourceBasename);
   const thumbnailKey = path.posix.join('thumbnails', `thumb_${outputBasename.replace(/\.[^.]+$/, '.jpg')}`);
 
   // Resolves to { thumbnailKey, placeholder, thumbnailError } or null, so the
   // caller can write the processing note the way the upload paths do.
   const generate = async (localPath) => {
-    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey));
+    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey), thumbnailKey);
     if (!result?.thumbnailKey) return null;
     return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null, thumbHash: result.thumbHash || null };
   };
@@ -1038,7 +1099,7 @@ async function generateVideoPlaceholder(originalFilename, options = {}) {
       .jpeg({ quality: settings.quality || DEFAULT_THUMBNAIL_QUALITY })
       .toBuffer();
 
-    await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: 'image/jpeg' }));
+    await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: 'image/jpeg' }), thumbnailRelKey);
 
     return thumbnailRelKey;
   } catch (error) {
@@ -1130,7 +1191,7 @@ async function generateHeroImage(imagePath, options = {}) {
       throw new Error('Generated hero image is empty');
     }
 
-    await publishDerivative(() => storage.put(heroRelKey, buffer, { contentType: 'image/jpeg' }));
+    await publishDerivative(() => storage.put(heroRelKey, buffer, { contentType: 'image/jpeg' }), heroRelKey);
 
     logger.info(`Generated hero image for ${filename} → ${heroRelKey}`);
     return heroRelKey;
@@ -1184,6 +1245,7 @@ async function ensureHeroImage(photo, { anchor } = {}) {
 
   // Per anchor: a request for the new focal point must not join a flight that
   // is still cutting the old one and be handed that rendition.
+  photo = await withSourceVersion(photo);
   const flight = `${flightKey('hero', photo)}:${anchor === undefined ? 'stored' : normalizeHeroAnchor(anchor)}`;
   return singleFlight(flight, () => withLazyDerivative(photo, () => regenerateHeroImage(photo, anchor)));
 }
@@ -1250,11 +1312,11 @@ async function regenerateHeroImage(photo, anchor) {
     const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
     newHeroPath = await generateHeroImage(localPath, {
       regenerate: true,
-      outputBasename: derivativeBasename(`ext${photo.id}_${sourceBasename}`),
+      outputBasename: derivativeBasename(`ext${photo.id}_${versionTag(photo)}${sourceBasename}`),
       anchor: heroAnchor,
     });
     if (newHeroPath) {
-      await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor });
+      if (!await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor })) return null;
       await dropSupersededHero(photo, newHeroPath);
     }
     return newHeroPath;
@@ -1287,7 +1349,7 @@ async function regenerateHeroImage(photo, anchor) {
   });
 
   if (newHeroPath) {
-    await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor });
+    if (!await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor })) return null;
     await dropSupersededHero(photo, newHeroPath);
 
     logger.info(`Regenerated hero image for photo ${photo.id}`);
@@ -1413,7 +1475,7 @@ async function generatePreviewImage(imagePath, options = {}) {
 
     await publishDerivative(() => storage.put(previewRelKey, buffer, {
       contentType: needsWebp ? 'image/webp' : 'image/jpeg',
-    }));
+    }), previewRelKey);
 
     logger.info(`Generated preview image for ${filename} → ${previewRelKey}`);
     return previewRelKey;
@@ -1502,12 +1564,15 @@ function previewTierKeys(photo) {
  * collision hands one gallery's photo to another. Scoping by id is what makes
  * the cache safe to trust; it is not a tidiness choice.
  */
-function previewTierBasename(photo) {
+function previewTierBasename(photo, { legacy = false } = {}) {
   const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
-  return `p${photo.id}_${sourceBasename}`;
+  // An external tier carries its source's version (see sourceVersion), so a
+  // tier of the old bytes is never found for the new ones. `legacy` is the
+  // name tiers had before the version, still read and cleaned up.
+  return `p${photo.id}_${legacy ? '' : versionTag(photo)}${sourceBasename}`;
 }
 
 /**
@@ -1534,6 +1599,16 @@ function previewTierKeyCandidates(photo, width) {
   const keys = [`${stem}${base}.jpg`, `${stem}${base}.webp`];
   const legacy = `${stem}${outputBasename}`;
   if (!keys.includes(legacy)) keys.push(legacy);
+  if (versionTag(photo)) {
+    const unversioned = previewTierBasename(photo, { legacy: true });
+    const unversionedBase = unversioned.replace(/\.[^./\\]+$/, '');
+    const legacyKeys = [`${stem}${unversionedBase}.jpg`, `${stem}${unversionedBase}.webp`, `${stem}${unversioned}`];
+    if (boundedDerivative(photo)) {
+      const scoped = unversionedCacheBasename(photo, unversioned).replace(/\.[^./\\]+$/, '');
+      legacyKeys.push(`${stem}${scoped}.jpg`, `${stem}${scoped}.webp`);
+    }
+    for (const k of legacyKeys) if (!keys.includes(k)) keys.push(k);
+  }
   if (boundedDerivative(photo)) {
     const scoped = cacheBasename(photo, outputBasename).replace(/\.[^./\\]+$/, '');
     keys.unshift(`${stem}${scoped}.jpg`, `${stem}${scoped}.webp`);
@@ -1543,6 +1618,7 @@ function previewTierKeyCandidates(photo, width) {
 
 /** Best-effort removal of every responsive tier for a photo. */
 async function deletePreviewTiers(photo) {
+  photo = await withSourceVersion(photo);
   const storage = getStorage();
   await Promise.all(previewTierKeys(photo).map((k) => storage.delete(k).catch(() => {})));
 }
@@ -1565,12 +1641,38 @@ function thumbnailTierKeys(photo) {
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
-  const outputBasename = `p${photo.id}_${sourceBasename}`;
+  const outputBasename = `p${photo.id}_${versionTag(photo)}${sourceBasename}`;
   const basenames = boundedDerivative(photo) ? [cacheBasename(photo, outputBasename), outputBasename] : [outputBasename];
+  // Tiers written before the source version was part of the name.
+  if (versionTag(photo)) {
+    const unversioned = `p${photo.id}_${sourceBasename}`;
+    basenames.push(unversioned);
+    if (boundedDerivative(photo)) basenames.push(unversionedCacheBasename(photo, unversioned));
+  }
   return THUMBNAIL_WIDTHS.flatMap(w => basenames.map(name => path.posix.join('thumbnails', `thumb_w${w}_${name}`)));
 }
 
+/**
+ * A tier is a cache named after the source basename and recorded nowhere, so
+ * one cut from a file the row stopped naming meanwhile (a replacement, whose
+ * sweep already ran) would stay in storage under the old name for good. Only
+ * freshly generated tiers come through here; a cache hit costs no query.
+ */
+async function keepTierIfCurrent(photo, key, keysOf) {
+  if (!key) return key;
+  try {
+    const current = await db('photos').where({ id: photo.id }).first();
+    if (current && keysOf(current).includes(key)) return key;
+  } catch (e) {
+    logger.warn(`Could not check whether tier ${key} is current; keeping it: ${e.message}`);
+    return key;
+  }
+  await getStorage().delete(key).catch(() => {});
+  return null;
+}
+
 async function deleteThumbnailTiers(photo) {
+  photo = await withSourceVersion(photo);
   const storage = getStorage();
   await Promise.all(thumbnailTierKeys(photo).map((k) => storage.delete(k).catch(() => {})));
 }
@@ -1586,6 +1688,7 @@ async function deleteThumbnailTiers(photo) {
  */
 async function ensureThumbnailAtWidth(photo, width) {
   if (!width) return ensureThumbnail(photo);
+  photo = await withSourceVersion(photo);
 
   // Against the CONFIGURED canonical width, not the 300 default. An install
   // that set thumbnail_width to 600 already has a 600px thumbnail; generating
@@ -1637,15 +1740,22 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
-  const outputBasename = derivativeBasename(`p${photo.id}_${sourceBasename}`, { cache: true });
+  const outputBasename = derivativeBasename(`p${photo.id}_${versionTag(photo)}${sourceBasename}`, { cache: true });
   const key = path.posix.join('thumbnails', `thumb_w${width}_${outputBasename}`);
+  // A tier written before the source version was part of the name is still
+  // this source's (an in-place edit deletes it along with the versioned
+  // ones). A scoped (RAW/video) tier never trusts an unversioned key.
+  const legacyKey = versionTag(photo) && !derivativeContext.getStore()
+    ? path.posix.join('thumbnails', `thumb_w${width}_p${photo.id}_${sourceBasename}`) : null;
 
-  try {
-    if (await storage.stat(key)) return key;
-  } catch (e) {
-    // Unreachable storage is not a cache miss (issue 1785).
-    if (isStorageUnavailableError(e)) throw e;
-    // regenerate below
+  for (const candidate of [key, legacyKey].filter(Boolean)) {
+    try {
+      if (await storage.stat(candidate)) return candidate;
+    } catch (e) {
+      // Unreachable storage is not a cache miss (issue 1785).
+      if (isStorageUnavailableError(e)) throw e;
+      // next candidate, then regenerate below
+    }
   }
 
   // Scale the height from the configured aspect ratio rather than forcing a
@@ -1675,21 +1785,21 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
       // than being repaired on the next view.
       const proc = await withProcessableImage(localPath, photo.external_relpath || photo.filename);
       try {
-        return await generateThumbnail(proc.path, { outputBasename, width, height, interactive: true });
+        return await keepTierIfCurrent(photo, await generateThumbnail(proc.path, { outputBasename, width, height, interactive: true }), thumbnailTierKeys);
       } finally {
         await proc.cleanup();
       }
     }
     const sourceKey = resolvePhotoStorageKey(event, photo);
     if (!sourceKey) return null;
-    return await withLocalCopy(sourceKey, async (localPath) => {
+    return await keepTierIfCurrent(photo, await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
         return await generateThumbnail(proc.path, { outputBasename, width, height, interactive: true });
       } finally {
         await proc.cleanup();
       }
-    });
+    }), thumbnailTierKeys);
   } catch (e) {
     logger.warn(`Thumbnail tier w${width} failed for photo ${photo.id}: ${e.message}`);
     // \"Not now\" goes to the caller (503); an image over the limits falls back
@@ -1701,6 +1811,7 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
 
 async function ensurePreviewImageAtWidth(photo, width) {
   if (!width || width === DEFAULT_PREVIEW_LONG_EDGE) return ensurePreviewImage(photo);
+  photo = await withSourceVersion(photo);
   return singleFlight(
     flightKey('preview', photo, width),
     () => withLazyDerivative(photo, () => ensurePreviewImageAtWidthUnguarded(photo, width))
@@ -1741,13 +1852,13 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
   try {
     if (isExternal) {
       const localPath = resolvePhotoFilePath(event, photo);
-      return await generatePreviewImage(localPath, {
+      return await keepTierIfCurrent(photo, await generatePreviewImage(localPath, {
         regenerate: true, outputBasename, longEdge: width, interactive: true,
-      });
+      }), previewTierKeys);
     }
     const sourceKey = resolvePhotoStorageKey(event, photo);
     if (!sourceKey) return null;
-    return await withLocalCopy(sourceKey, async (localPath) => {
+    return await keepTierIfCurrent(photo, await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
         // outputBasename, not proc.outputBasename: the RAW path returns the
@@ -1762,7 +1873,7 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
       } finally {
         await proc.cleanup();
       }
-    });
+    }), previewTierKeys);
   } catch (e) {
     logger.warn(`Preview tier w${width} failed for photo ${photo.id}: ${e.message}`);
     // \"Not now\" goes to the caller (503); an image over the limits falls back
@@ -1779,6 +1890,7 @@ async function ensurePreviewImage(photo, { force = false } = {}) {
     logger.warn(`Invalid preview detected for photo ${photo.id}, regenerating…`);
   }
 
+  photo = await withSourceVersion(photo);
   return singleFlight(flightKey('preview', photo), () => withLazyDerivative(photo, () => regeneratePreviewImage(photo)), { force });
 }
 
@@ -1814,7 +1926,7 @@ async function regeneratePreviewImage(photo) {
       return null;
     }
     const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
-    const outputBasename = derivativeBasename(`ext${photo.id}_${sourceBasename}`);
+    const outputBasename = derivativeBasename(`ext${photo.id}_${versionTag(photo)}${sourceBasename}`);
     logger.info(`Ensuring preview for external photo ${photo.id} from ${localPath}`);
     newPreviewPath = await generatePreviewImage(localPath, { regenerate: true, outputBasename });
   } else {
@@ -1845,7 +1957,7 @@ async function regeneratePreviewImage(photo) {
   }
 
   if (newPreviewPath) {
-    await publishPhotoDerivative(photo, newPreviewPath, { preview_path: newPreviewPath });
+    if (!await publishPhotoDerivative(photo, newPreviewPath, { preview_path: newPreviewPath })) return null;
     return newPreviewPath;
   }
 
