@@ -471,6 +471,23 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
         expect(res.body.code).toBe('GUEST_INFO_REQUIRED');
       });
 
+      it('finds a usable earlier name behind more than a page of blank ones', async () => {
+        const selectionSubmissions = require('../../src/services/selectionSubmissions');
+        const [anna] = guests;
+        const row = (guest_email) => ({
+          event_id: eventId, photo_id: photoIds[0], feedback_type: 'comment', comment_text: 'x',
+          guest_id: anna.id, guest_identifier: anna.identifier, guest_name: 'Anna', guest_email,
+        });
+        await db('photo_feedback').insert(row('anna@example.com'));
+        for (let i = 0; i < selectionSubmissions.FEEDBACK_NAME_PAGE + 5; i += 1) {
+          await db('photo_feedback').insert(row(' '));
+        }
+        const viewer = { guestId: anna.id, guestIdentifier: anna.identifier };
+        expect(await selectionSubmissions.feedbackName(eventId, viewer, { requireEmail: true })).toBe('Anna');
+        await db('photo_feedback').where({ guest_email: 'anna@example.com' }).delete();
+        expect(await selectionSubmissions.feedbackName(eventId, viewer, { requireEmail: true })).toBeNull();
+      });
+
       it('outside guest mode, takes a kept guest token only when it carries an email', async () => {
         const [anna, ben] = guests;
         await db('gallery_guests').where({ id: anna.id }).update({ email: null });

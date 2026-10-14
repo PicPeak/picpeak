@@ -309,6 +309,8 @@ async function anonymizeGuest(guestId) {
     .update({ guest_id: null, guest_name: null });
 }
 
+const FEEDBACK_NAME_PAGE = 50;
+
 /**
  * The name to show the photographer for an anonymous viewer: the one they
  * last typed with their feedback, if any. Registered guests carry their own.
@@ -324,11 +326,17 @@ async function feedbackName(eventId, viewer, { requireEmail = false } = {}) {
     return row?.guest_name || null;
   }
   // Blank judged in JS, as the validators judge it: SQL TRIM strips spaces
-  // only, and a tab-only email is as blank as a space-only one.
-  const rows = await scopeToViewer(query.whereNotNull('guest_email'), viewer)
-    .orderBy('id', 'desc').select('guest_name', 'guest_email');
-  const row = rows.find((r) => String(r.guest_name).trim() && String(r.guest_email).trim());
-  return row?.guest_name || null;
+  // only, and a tab-only email is as blank as a space-only one. A page at a
+  // time, newest first: the newest row usually answers, and a long history
+  // is never loaded whole.
+  const scoped = scopeToViewer(query.whereNotNull('guest_email'), viewer).orderBy('id', 'desc');
+  for (let offset = 0; ; offset += FEEDBACK_NAME_PAGE) {
+    const rows = await scoped.clone().offset(offset).limit(FEEDBACK_NAME_PAGE)
+      .select('guest_name', 'guest_email');
+    const row = rows.find((r) => String(r.guest_name).trim() && String(r.guest_email).trim());
+    if (row) return row.guest_name;
+    if (rows.length < FEEDBACK_NAME_PAGE) return null;
+  }
 }
 
 /**
@@ -384,6 +392,7 @@ async function notifySubmitted(event, submission, { guestName, guestIdentifier, 
 
 module.exports = {
   feedbackName,
+  FEEDBACK_NAME_PAGE,
   notifySubmitted,
   KINDS,
   NOTE_MAX_LENGTH,

@@ -17,9 +17,13 @@ export interface FeedbackSubmittedDetail {
   guest_email?: string;
 }
 
-/** The name and email for the event detail, only when a request carried both. */
+/**
+ * The name and email for the event detail, only when a request carried both.
+ * Blank does not count: while optional, the server takes a whitespace-only
+ * email with feedback but refuses it with a hand-over.
+ */
 export function namedIdentity(body?: { guest_name?: string; guest_email?: string }) {
-  return body?.guest_name && body.guest_email
+  return body?.guest_name?.trim() && body.guest_email?.trim()
     ? { guest_name: body.guest_name, guest_email: body.guest_email }
     : {};
 }

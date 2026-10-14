@@ -265,6 +265,18 @@ describe('SelectionSubmitBar (issue 1733)', () => {
       expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
     });
 
+    it('does not take a like with a blank email as a name, where the email is optional', async () => {
+      apiPost.mockResolvedValue({ data: {} });
+      submitSelection.mockResolvedValue({ id: 8, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });
+      render(<SelectionSubmitBar slug="g" state={state({ approval: { can_submit: true } })} used={0} />, { wrapper });
+      await act(() => feedbackService.submitFeedback('g', '7', {
+        feedback_type: 'like', guest_name: 'Alice', guest_email: '   ',
+      }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenCalledWith('g', 'approval', '', undefined));
+    });
+
     it('asks again when the server refuses the name it was given', async () => {
       vi.mocked(toast.error).mockClear();
       submitSelection
