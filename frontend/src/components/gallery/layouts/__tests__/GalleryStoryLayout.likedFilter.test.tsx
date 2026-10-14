@@ -6,7 +6,7 @@
  */
 import React, { useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 import { GalleryStoryLayout } from '../GalleryStoryLayout';
 import { useGalleryFiltering } from '../../hooks/useGalleryFiltering';
@@ -41,8 +41,9 @@ vi.mock('../../../common', () => ({
   ),
 }));
 vi.mock('../../PhotoLightbox', () => ({ PhotoLightbox: () => <div data-testid="lightbox" /> }));
+const submitFeedback = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 vi.mock('../../../../services/feedback.service', () => ({
-  feedbackService: { submitFeedback: vi.fn().mockResolvedValue({}) },
+  feedbackService: { submitFeedback },
 }));
 vi.mock('../../../../services/gallery.service', () => ({
   galleryService: { downloadSelectedPhotos: vi.fn() },
@@ -125,5 +126,48 @@ describe('GalleryStoryLayout nav heart filters to the viewer\'s likes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show all photos' }));
     expect(shownIds(container)).toEqual([1, 2, 3, 4]);
     expect(screen.getByTestId('story-nav-liked')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  const navLabel = () => screen.getByTestId('story-nav-liked').getAttribute('aria-label');
+  const likeCard = (container: HTMLElement, id: number) => fireEvent.click(
+    container.querySelector(`a[data-photo-id="${id}"]`)!.closest('.story-photo-card')!
+      .querySelector('.story-photo-card-btn') as HTMLElement,
+  );
+
+  it('keeps a saved like until a payload confirms it', async () => {
+    submitFeedback.mockClear();
+    const { container, rerender } = render(<Harness source={makePhotos([1, 3])} />);
+    likeCard(container, 4);
+    await waitFor(() => expect(submitFeedback).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(navLabel()).toBe('Show only photos I liked (3)');
+    // Saved, but the refetch it asked for has not landed: a payload from
+    // before the like still says not liked and must not undo the heart.
+    rerender(<Harness source={makePhotos([1, 3]).map((p) => ({ ...p }))} />);
+    expect(navLabel()).toBe('Show only photos I liked (3)');
+    rerender(<Harness source={makePhotos([1, 3, 4])} />);
+    expect(navLabel()).toBe('Show only photos I liked (3)');
+    // Confirmed; from here the payload alone decides again.
+    rerender(<Harness source={makePhotos([1, 3])} />);
+    expect(navLabel()).toBe('Show only photos I liked (2)');
+  });
+
+  it('lets an unconfirmed saved like lapse, so a change made elsewhere shows', async () => {
+    submitFeedback.mockClear();
+    const now = vi.spyOn(Date, 'now');
+    try {
+      now.mockReturnValue(1_000_000);
+      const { container, rerender } = render(<Harness source={makePhotos([1, 3])} />);
+      likeCard(container, 4);
+      await waitFor(() => expect(submitFeedback).toHaveBeenCalledTimes(1));
+      await new Promise((r) => setTimeout(r, 0));
+      rerender(<Harness source={makePhotos([1, 3]).map((p) => ({ ...p }))} />);
+      expect(navLabel()).toBe('Show only photos I liked (3)');
+      now.mockReturnValue(1_000_000 + 6000);
+      rerender(<Harness source={makePhotos([1, 3]).map((p) => ({ ...p }))} />);
+      expect(navLabel()).toBe('Show only photos I liked (2)');
+    } finally {
+      now.mockRestore();
+    }
   });
 });

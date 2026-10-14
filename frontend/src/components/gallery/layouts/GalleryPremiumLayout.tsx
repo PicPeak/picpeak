@@ -31,6 +31,7 @@ import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
 import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { useInputMode } from '../../../hooks/useInputMode';
+import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
 import { FeedbackIdentityModal } from '../FeedbackIdentityModal';
 import { galleryService } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
@@ -44,10 +45,6 @@ import './GalleryPremiumLayout.css';
 import { lightboxImageUrl } from '../imageTiers';
 import { exifLine } from '../../../utils/photoExif';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
-
-// How long a saved like holds its optimistic state while no payload has
-// confirmed it; the photo's own row refresh normally lands well inside this.
-const LIKE_CONFIRM_WINDOW_MS = 5000;
 
 const isVideoPhoto = (photo: Photo) => photo.media_type === 'video' || photo.type === 'video';
 
@@ -303,28 +300,11 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
   // Per-viewer is_liked is the server's truth (#590 follow-up). Seeding it
   // once on mount left the nav count behind every later refetch, so the set
-  // follows each payload. A like the viewer just toggled keeps its optimistic
-  // state until a payload agrees with it: the saved like reaches `photos`
-  // only through the parent's row refresh, and any payload before that one
-  // (another photo's refresh, a filter change) still carries the old value.
-  // Once saved, the hold lapses after a few seconds even unconfirmed, so a
-  // change made elsewhere (another tab) is not overridden for good.
-  const pendingLikesRef = useRef<Map<number, { liked: boolean; savedAt?: number }>>(new Map());
+  // follows each payload, and a like the viewer just toggled holds its state
+  // until a payload confirms it (optimisticLikes.ts).
+  const pendingLikesRef = useRef<LikeHolds>(new Map());
   useEffect(() => {
-    const pending = pendingLikesRef.current;
-    const now = Date.now();
-    pending.forEach((entry, id) => {
-      if (entry.savedAt !== undefined && now - entry.savedAt > LIKE_CONFIRM_WINDOW_MS) pending.delete(id);
-    });
-    photos.forEach((p) => {
-      if (pending.get(p.id)?.liked === !!p.is_liked) pending.delete(p.id);
-    });
-    const next = new Set(photos.filter(p => p.is_liked).map(p => p.id));
-    pending.forEach(({ liked }, id) => {
-      if (liked) next.add(id);
-      else next.delete(id);
-    });
-    setLikedPhotoIds(next);
+    setLikedPhotoIds(likedFromPayload(photos, pendingLikesRef.current));
   }, [photos]);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   // Emoji reactions (#839) inside the premium lightbox. This layout uses
@@ -498,14 +478,11 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     const liked = !next.has(photoId);
     if (liked) next.add(photoId);
     else next.delete(photoId);
-    pendingLikesRef.current.set(photoId, { liked });
+    holdLike(pendingLikesRef.current, photoId, liked);
     return next;
   });
   // Saved: start the window in which the row refresh should confirm it.
-  const markLikeSaved = useCallback((photoId: number) => {
-    const entry = pendingLikesRef.current.get(photoId);
-    if (entry) entry.savedAt = Date.now();
-  }, []);
+  const likeSaved = useCallback((photoId: number) => markLikeSaved(pendingLikesRef.current, photoId), []);
   // Refused: the heart goes back and nothing is awaited.
   const rollBackLike = useCallback((photoId: number) => {
     pendingLikesRef.current.delete(photoId);
@@ -532,7 +509,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         await feedbackService.submitFeedback(slug, String(photo.id), {
           feedback_type: 'like',
         });
-        markLikeSaved(photo.id);
+        likeSaved(photo.id);
         onFeedbackChange?.(photo.id);
       } catch (err) {
         // Refused (a finished selection, issue 1733, or the like limit): the
@@ -559,13 +536,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         guest_name: savedIdentity?.name,
         guest_email: savedIdentity?.email,
       });
-      markLikeSaved(photo.id);
+      likeSaved(photo.id);
       onFeedbackChange?.(photo.id);
     } catch (err) {
       rollBackLike(photo.id);
       if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
     }
-  }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity, rollBackLike, markLikeSaved]);
+  }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity, rollBackLike, likeSaved]);
 
   const handleIdentitySubmit = useCallback(async (name: string, email: string) => {
     setSavedIdentity({ name, email });
@@ -584,7 +561,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           guest_name: name,
           guest_email: email,
         });
-        markLikeSaved(pendingLikePhotoId);
+        likeSaved(pendingLikePhotoId);
         onFeedbackChange?.(pendingLikePhotoId);
       } catch (err) {
         rollBackLike(pendingLikePhotoId);
@@ -592,7 +569,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       }
       setPendingLikePhotoId(null);
     }
-  }, [slug, pendingLikePhotoId, onFeedbackChange, rollBackLike, markLikeSaved]);
+  }, [slug, pendingLikePhotoId, onFeedbackChange, rollBackLike, likeSaved]);
 
   const handleSelectAll = useCallback(() => {
     if (selectedPhotos.size === filteredPhotos.length) {

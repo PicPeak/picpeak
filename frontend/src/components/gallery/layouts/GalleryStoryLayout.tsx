@@ -30,6 +30,7 @@ import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/downloadLimit';
 import { photoMatchesFilenameSearch } from '../../../utils/photoFilename';
 import { useInputMode } from '../../../hooks/useInputMode';
+import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
 
 import './GalleryStoryLayout.css';
 
@@ -140,9 +141,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // on mount so a refetch could not clobber an in-session toggle, but that
   // left a like made in the lightbox invisible here, and Favourite selected
   // (issue 1716) decides what to toggle from this set. So the set follows
-  // every payload, and only the ids whose submit is still in flight keep
-  // their optimistic state.
-  const inFlightLikesRef = useRef<Set<number>>(new Set());
+  // every payload, and a like the viewer just toggled holds its state until
+  // a payload confirms it (optimisticLikes.ts).
+  const likeHoldsRef = useRef<LikeHolds>(new Map());
   // A like made in the lightbox reaches this set only through the parent's
   // refetch. Until that payload lands, Favourite selected would decide from
   // a set that is known to be behind, so it waits; a short timeout covers a
@@ -172,14 +173,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       clearTimeout(awaitingRefreshTimer.current);
       awaitingRefreshTimer.current = null;
     }
-    setFavorites((previous) => {
-      const next = new Set(photos.filter((p) => p.is_liked).map((p) => p.id));
-      inFlightLikesRef.current.forEach((id) => {
-        if (previous.has(id)) next.add(id);
-        else next.delete(id);
-      });
-      return next;
-    });
+    setFavorites(likedFromPayload(photos, likeHoldsRef.current));
   }, [photos]);
 
   // Get hero photo
@@ -256,7 +250,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       return next;
     });
     if (!bulk) apply(ids, unlike);
-    ids.forEach((id) => inFlightLikesRef.current.add(id));
+    // A single card shows its new state at once; a bulk batch keeps the old
+    // one until it knows what succeeded.
+    ids.forEach((id) => holdLike(likeHoldsRef.current, id, bulk ? unlike : !unlike));
     const done: number[] = [];
     // A finished selection (issue 1733): the feedback service has said so.
     let locked = false;
@@ -271,9 +267,13 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       });
     }
     const failed = ids.filter((id) => !done.includes(id));
+    done.forEach((id) => {
+      holdLike(likeHoldsRef.current, id, !unlike);
+      markLikeSaved(likeHoldsRef.current, id);
+    });
+    failed.forEach((id) => likeHoldsRef.current.delete(id));
     if (bulk) apply(done, unlike);
     else if (failed.length > 0) apply(failed, !unlike);
-    ids.forEach((id) => inFlightLikesRef.current.delete(id));
     if (done.length > 0) {
       if (bulk) toast.success(t(unlike ? 'gallery.favoritesRemoved' : 'gallery.favoritesAdded', { count: done.length }));
       onFeedbackChange?.();
