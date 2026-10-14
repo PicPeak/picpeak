@@ -93,6 +93,12 @@ async function setAssignedAdmins(eventId, adminIds, assignedBy, trx = db) {
   const removed = existing.filter((id) => !wanted.has(id));
   const added = adminIds.filter((id) => !existing.includes(id));
   if (removed.length > 0) {
+    // Locked in id order before the delete, the order the admin hard delete
+    // (userManagementService.deleteAdminUser) takes them in; the DELETE alone
+    // locks in scan order and can deadlock with it on PostgreSQL (issue 1979).
+    // No-op on SQLite.
+    await trx('event_admin_assignments').where('event_id', eventId).whereIn('admin_user_id', removed)
+      .orderBy('id').forUpdate().pluck('id');
     await trx('event_admin_assignments').where('event_id', eventId).whereIn('admin_user_id', removed).del();
   }
   if (added.length > 0) {

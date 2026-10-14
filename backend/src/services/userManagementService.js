@@ -636,6 +636,13 @@ async function deleteAdminUser(id, deletedById) {
   await db.transaction(async (trx) => {
     await trx('notification_dismissals').where('admin_id', id).del();
     if (await trx.schema.hasTable('event_admin_assignments')) {
+      // Every row the two statements below touch, locked in id order first:
+      // the order a gallery team save takes them in (setAssignedAdmins). Two
+      // statements lock their rows in two scan orders, which can deadlock
+      // with a team save on PostgreSQL (issue 1979). No-op on SQLite.
+      await trx('event_admin_assignments')
+        .where('admin_user_id', id).orWhere('assigned_by', id)
+        .orderBy('id').forUpdate().pluck('id');
       await trx('event_admin_assignments').where('admin_user_id', id).del();
       await trx('event_admin_assignments').where('assigned_by', id).update({ assigned_by: null });
     }
