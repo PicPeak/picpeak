@@ -24,7 +24,7 @@ const HEARTBEAT_MS = 30000;
 const STALE_MS = 5 * 60000;
 // A rejected S3 PUT may still complete remotely, and a stalled process may
 // still send one. An object deleted while that was possible is deleted again
-// once this has passed since its promotion began.
+// once this has passed since that delete.
 const LATE_WRITE_MS = 24 * 3600000;
 const LEGACY_TTL_MS = 60000;
 // Multipart boundaries and part headers ride on top of the file bytes.
@@ -375,7 +375,7 @@ async function prepareObject(session, key, size) {
     await headroom(trx, stat, 0, session.limits);
     const object = { id: crypto.randomUUID(), request_id: session.id, object_key: key, bytes: size, files: 1,
       event_id: request.event_id, guest_scope: request.guest_scope, transfer_id: request.transfer_id, account_id: request.account_id,
-      upload_kind: request.upload_kind, created_at: new Date().toISOString() };
+      upload_kind: request.upload_kind };
     await trx('public_upload_objects').insert(object);
     await trx('public_upload_requests').where({ id: session.id }).update({ bytes: Number(request.bytes) - size, files: request.files - 1 });
     return { ...object, isCancelled: session.isCancelled };
@@ -397,13 +397,18 @@ async function commitObject(object, type, writeRow) {
 }
 
 // Ledger states of an object that never got its row: 'uncertain' may still
-// exist; 'discarded' was deleted while a write could still land and waits for
-// its final delete (retryRetainedObjects).
-const UNSETTLED = ['promoting', 'uncertain', 'discarded'];
+// exist; 'discarded' was deleted while a write could still land, and is
+// deleted once more after LATE_WRITE_MS (created_at is then the time of that
+// first delete); 'deleted' is the tombstone left after that. A tombstone stays,
+// so a stalled writer that returns later still finds and removes its object,
+// and an importer never takes a write that landed later still.
+const UNSETTLED = ['promoting', 'uncertain', 'discarded', 'deleted'];
+// Deleted while a write could still land: the key waits for its second delete.
+const discarded = () => ({ state: 'discarded', pending: 0, created_at: new Date().toISOString() });
 
 // The keys among `keys` an upload stored but never wrote a row for (issue
-// 1970): 'promoting' until commitObject, 'uncertain' or 'discarded' after
-// failedObject. An importer must not take them for files placed by hand.
+// 1970): 'promoting' until commitObject, then any other unsettled state. An
+// importer must not take them for files placed by hand.
 async function unfinishedKeys(keys) {
   if (keys.length === 0) return new Set();
   const rows = await db('public_upload_objects')
@@ -431,7 +436,7 @@ async function failedObject(object, { storage, settled }) {
     // A rejected S3 PUT that lands after this delete must still find its
     // record. A local write has ended once the call returned.
     if (settled || storage.kind() === 'local') await own().del();
-    else await own().update({ state: 'discarded' });
+    else await own().update(discarded());
     return;
   }
   // A rejected PUT may complete remotely later. A momentary HEAD 404 cannot
@@ -449,7 +454,7 @@ async function failedObject(object, { storage, settled }) {
   } else {
     try {
       await storage.delete(object.object_key);
-      await own().update({ state: 'discarded' });
+      await own().update(discarded());
       return;
     } catch (_) { /* retried by maintenance */ }
   }
@@ -475,11 +480,10 @@ async function finish(session, { reaped = false } = {}) {
     // record: an importer takes an object without one for a file placed by
     // hand. 'uncertain' turns away a commit from a stalled process meanwhile.
     // The reaper runs on the upload path and leaves the deletes to maintenance.
-    let objects = [];
-    if (admin) {
-      await trx('public_upload_objects').where({ request_id: session.id, upload_kind: 'admin', state: 'promoting' }).update({ state: 'uncertain' });
-      objects = await trx('public_upload_objects').where({ request_id: session.id, upload_kind: 'admin', state: 'uncertain' }).select('id', 'object_key');
-    }
+    // A public object keeps its lifetime charge whatever its state.
+    await trx('public_upload_objects').where({ request_id: session.id, state: 'promoting' }).update({ state: 'uncertain' });
+    const objects = await trx('public_upload_objects').where({ request_id: session.id, state: 'uncertain' })
+      .select('id', 'object_key', 'state', 'upload_kind');
     await trx('public_upload_requests').where({ active: 0 }).where('created_at', '<', new Date(Date.now() - 86400000).toISOString()).del();
     return objects;
   });
@@ -489,27 +493,20 @@ async function finish(session, { reaped = false } = {}) {
   return true;
 }
 
-// A record goes only once its object is gone, and no late write can bring it
-// back; retryRetainedObjects() retries the rest. A public record stays as its
-// charge.
+// A record changes only once its object is gone; retryRetainedObjects()
+// retries the rest. `settled`: no write to these keys can still land, so an
+// authenticated record goes at once.
 async function dropObjects(objects, { settled = false } = {}) {
-  const cutoff = new Date(Date.now() - LATE_WRITE_MS).toISOString();
   for (const object of objects) {
     try { await getStorage().delete(object.object_key); } catch (err) {
       logger.warn('Upload object cleanup failed; its ledger record is kept', { objectId: object.id, error: err.message });
       continue;
     }
-    const row = db('public_upload_objects').where({ id: object.id });
-    // Not settled yet: a PUT still in flight could land after this delete.
-    if (!settled && (!object.created_at || toIso(object.created_at) >= cutoff)) await row.update({ state: 'discarded' });
-    else if (object.upload_kind === 'public') await row.update({ state: 'deleted' });
-    else await row.del();
+    const row = db('public_upload_objects').where({ id: object.id, state: object.state });
+    if (settled && object.upload_kind === 'admin') await row.del();
+    else if (object.state === 'uncertain' && !settled) await row.update(discarded());
+    else await row.update({ state: 'deleted', pending: 0 });
   }
-}
-
-function toIso(value) {
-  const date = value instanceof Date ? value : new Date(String(value).includes('T') ? value : `${String(value).replace(' ', 'T')}Z`);
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
 }
 
 /** A resumable lease may sit idle while unrelated writers fill the disk, or
@@ -568,7 +565,7 @@ async function retryRetainedObjects() {
   const objects = await db('public_upload_objects').where('id', '>', retryCursor)
     .where(q => q.where({ state: 'uncertain' }).orWhere(old => old.where({ state: 'discarded' }).where('created_at', '<', cutoff)))
     .whereNotExists(db('public_upload_requests as r').select('r.id').whereColumn('r.id', 'public_upload_objects.request_id').where('r.active', 1))
-    .orderBy('id').select('id', 'object_key', 'upload_kind', 'created_at').limit(100);
+    .orderBy('id').select('id', 'object_key', 'state', 'upload_kind').limit(100);
   retryCursor = objects.length === 100 ? objects[99].id : '';
   await dropObjects(objects);
 }

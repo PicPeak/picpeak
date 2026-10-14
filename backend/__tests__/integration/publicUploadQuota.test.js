@@ -225,7 +225,7 @@ const ageObjects = () => db('public_upload_objects').update({ created_at: new Da
 test('a rejected PUT that wrote bytes remains charged even after best-effort deletion', async () => {
   mockStorage.putFromFile.mockImplementationOnce(async (key, file) => { mockObjects.set(key, fs.statSync(file).size); throw new Error('uncertain remote result'); });
   const res = await attach(transferRequest(), 'files'); expect(res.status).toBe(500);
-  expect(await db('public_upload_objects').first()).toMatchObject({ bytes: 12, state: 'discarded', pending: 1 });
+  expect(await db('public_upload_objects').first()).toMatchObject({ bytes: 12, state: 'discarded', pending: 0 });
 });
 test('a rejected public PUT that completes after its delete is deleted again by maintenance, and stays charged', async () => {
   let key;
@@ -242,12 +242,12 @@ test('a rejected public PUT that completes after its delete is deleted again by 
   mockStorage.delete.mockClear(); await quota.retryRetainedObjects();
   expect(mockStorage.delete).not.toHaveBeenCalled();
 });
-test('failed object cleanup retains a charged tombstone', async () => {
+test('a failed object delete is retried when the request finishes and leaves a charged tombstone', async () => {
   jest.spyOn(transferService, 'addUpload').mockRejectedValueOnce(new Error('owned insert failure'));
   mockStorage.delete.mockRejectedValueOnce(new Error('owned delete failure'));
   expect((await attach(transferRequest(), 'files')).status).toBe(500);
-  expect(mockObjects.size).toBe(1);
-  expect(await db('public_upload_objects').first()).toMatchObject({ bytes: 12, state: 'uncertain' });
+  expect(mockObjects.size).toBe(0);
+  expect(await db('public_upload_objects').first()).toMatchObject({ bytes: 12, state: 'deleted', pending: 0 });
 });
 test('byte-aware rate budget includes failed/skipped bodies without permanently reserving tiny successful requests', async () => {
   limits({ requestBytes: 4096, transfer: { hourBytes: 600 } });
@@ -343,7 +343,8 @@ test('a request from another host whose heartbeat lapsed is reclaimed; its objec
   await quota.cleanupAbandoned();
   expect(await db('public_upload_requests').where({ id: orphan.id }).first()).toMatchObject({ active: 0, files: 0 });
   expect(fs.existsSync(orphan.dir)).toBe(false);
-  expect(await db('public_upload_objects').first()).toMatchObject({ bytes: 12, state: 'promoting' });
+  // Maintenance deletes what it may have stored; the charge stays.
+  expect(await db('public_upload_objects').first()).toMatchObject({ bytes: 12, state: 'uncertain' });
   // The slot it held is free again, including through the upload route.
   expect((await attach(transferRequest(), 'files')).status).toBe(201);
 });
@@ -373,7 +374,8 @@ test('an abandoned authenticated S3 object is deleted by maintenance before its 
   mockObjects.set(key, 12);
   expect(await quota.unfinishedKeys([key])).toEqual(new Set([key]));
   await ageObjects(); await quota.retryRetainedObjects();
-  expect(mockObjects.size).toBe(0); expect(await db('public_upload_objects')).toHaveLength(0);
+  // A tombstone stays: an importer never takes the key.
+  expect(mockObjects.size).toBe(0); expect(await db('public_upload_objects').first()).toMatchObject({ state: 'deleted' });
 });
 test('an authenticated S3 PUT rejected but completed after its delete keeps its record until maintenance deletes it again', async () => {
   jest.spyOn(mockStorage, 'kind').mockReturnValue('s3');
@@ -385,15 +387,17 @@ test('an authenticated S3 PUT rejected but completed after its delete keeps its 
   expect(await db('public_upload_objects').first()).toMatchObject({ id: object.id, state: 'discarded' });
   expect(await quota.unfinishedKeys([object.object_key])).toEqual(new Set([object.object_key]));
   await ageObjects(); await quota.retryRetainedObjects();
-  expect(mockObjects.size).toBe(0); expect(await db('public_upload_objects')).toHaveLength(0);
+  // A tombstone stays: an importer never takes the key.
+  expect(mockObjects.size).toBe(0); expect(await db('public_upload_objects').first()).toMatchObject({ state: 'deleted' });
 });
 test('a stalled process whose object was reaped deletes the object its PUT wrote afterwards', async () => {
   jest.spyOn(mockStorage, 'kind').mockReturnValue('s3');
   const session = await quota.begin({ transferId: transfer, maxFiles: 1, mode: 'admin', accountId: adminId, declaredBytes: 12 });
   const object = await quota.prepareObject(session, 'transfers/owned-admin-stalled', 12);
-  // Its lease lapses and maintenance deletes the key before the PUT is sent.
+  // Its lease lapses and maintenance deletes the key twice before the PUT is sent.
   await quota.finish(session, { reaped: true });
-  await quota.retryRetainedObjects();
+  await quota.retryRetainedObjects(); await ageObjects(); await quota.retryRetainedObjects();
+  expect(await db('public_upload_objects').first()).toMatchObject({ id: object.id, state: 'deleted' });
   mockObjects.set(object.object_key, 12);
   await expect(quota.commitObject(object, 'transfer', jest.fn())).rejects.toMatchObject({ code: 'UPLOAD_RESERVATION_LOST' });
   await quota.failedObject(object, { storage: mockStorage, settled: true });
