@@ -3,6 +3,7 @@ import { motion, useInView } from 'framer-motion';
 import { Heart, Check } from 'lucide-react';
 import { ColorLabelBadge } from '../../ColorLabelBadge';
 import { FirstLookBadge } from '../../GalleryTileBadges';
+import { ClientVisibilityToggle, isHiddenFromGuests } from '../../ClientVisibilityToggle';
 import type { Photo } from '../../../../types';
 import { lightboxImageUrl } from '../../imageTiers';
 import { TileImage } from '../../TileImage';
@@ -30,7 +31,17 @@ interface StoryPhotoCardProps {
   onSelect?: (id: number) => void;
   /** Likes are a per-event sub-toggle (#506); the heart is not offered when they are off. */
   likesAllowed?: boolean;
+  /** The client's hide/show handler (issue 1992); set only for the client. */
+  onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
+  /**
+   * The filename caption on hover: 'none' (the default), the stored
+   * `filename`, or the uploaded `original_filename` when the gallery shows
+   * original filenames (#508), as the lightbox does.
+   */
+  caption?: StoryCaptionMode;
 }
+
+export type StoryCaptionMode = 'none' | 'filename' | 'original';
 
 export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   photo,
@@ -45,6 +56,8 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   isSelected = false,
   onSelect,
   likesAllowed = true,
+  onToggleVisibility,
+  caption = 'none',
   galleryId: _galleryId
 }) => {
   // galleryId is kept for potential PhotoSwipe integration but not currently used
@@ -65,6 +78,12 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   // flight by the time the card animates in.
   const cardRef = useRef<HTMLDivElement>(null);
   const isNearViewport = useInView(cardRef, { once: true, margin: '200px' });
+
+  const captionText = caption === 'none'
+    ? null
+    : caption === 'original'
+      ? (photo.original_filename || photo.filename)
+      : photo.filename;
 
   return (
     <motion.div
@@ -101,7 +120,8 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           }
         }}
         aria-pressed={isSelectionMode ? isSelected : undefined}
-        className="block w-full h-full"
+        // Dimmed when the client hid it from guests, as in Grid (issue 1992).
+        className={`block w-full h-full${onToggleVisibility && isHiddenFromGuests(photo) ? ' opacity-40' : ''}`}
       >
         {/* The placeholder keeps the card's box while the image is still
             out of range, so nothing reflows when it arrives. */}
@@ -153,7 +173,10 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
 
       {/* First look (issue 1562). Bottom-left is free until hover, when the
           filename caption slides over it — so the pill steps aside then. */}
-      <FirstLookBadge photo={photo} className="bottom-3 left-3 transition-opacity group-hover:opacity-0" />
+      <FirstLookBadge
+        photo={photo}
+        className={`bottom-3 left-3${captionText ? ' transition-opacity group-hover:opacity-0' : ''}`}
+      />
 
       {/* Selection checkbox (issue 1716). Visible while selecting or when
           selected; outside selection mode it appears on hover and starts the
@@ -175,6 +198,16 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
         </button>
       )}
 
+      {/* The client's hide/show button (issue 1992). The checkbox owns this
+          card's top-left corner, so the button sits just below it. */}
+      {onToggleVisibility && (
+        <ClientVisibilityToggle
+          photo={photo}
+          onToggle={onToggleVisibility}
+          className="absolute top-12 left-3 z-10"
+        />
+      )}
+
       {/* Actions */}
       {likesAllowed && (
         <div className="story-photo-card-actions">
@@ -192,9 +225,11 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
       )}
 
       {/* Caption */}
-      <div className="story-photo-card-caption">
-        <p>{photo.filename}</p>
-      </div>
+      {captionText && (
+        <div className="story-photo-card-caption">
+          <p>{captionText}</p>
+        </div>
+      )}
     </motion.div>
   );
 };

@@ -769,10 +769,11 @@ app.get('/og/transfer-upload/:token', handleTransferOgRequest('request'));
 //     in the rendered HTML points back at /s/<slug>, not the underlying
 //     gallery URL — so a re-share of the same short URL keeps the cache
 //     warm even if the underlying gallery slug rotates.
-//   - Browser → 302 to the stored target_path. The target_path was
-//     captured at create time from the event's slug + share_token + the
-//     global "Use short gallery URLs" setting, so it doesn't silently
-//     change later.
+//   - Browser → 302 to the gallery. The target_path's shape (slug or
+//     token form) was captured at create time from the global "Use short
+//     gallery URLs" setting, so a toggle flip doesn't move it; the slug or
+//     token itself is read off the current event, so a rename doesn't
+//     break the link (resolveTargetPath).
 //   - Soft-deleted → 410 Gone so the admin can tell their delete worked
 //     vs. a typo'd unknown slug (which returns 404).
 const galleryShortUrlService = require('./src/services/galleryShortUrlService');
@@ -820,7 +821,8 @@ app.get('/s/:shortSlug', async (req, res) => {
     // Browser path: redirect, carrying the query along (issue 1733: a
     // `?photo=` link through the shortener). Hit accounting is fire-and-forget.
     galleryShortUrlService.recordHit(row.id).catch(() => {});
-    return res.redirect(302, galleryShortUrlService.redirectTarget(row.target_path, req.originalUrl));
+    const targetPath = await galleryShortUrlService.resolveTargetPath(row);
+    return res.redirect(302, galleryShortUrlService.redirectTarget(targetPath, req.originalUrl));
   } catch (err) {
     logger.error('Short URL resolver failed', { slug: req.params.shortSlug, error: err.message });
     return res.status(500).type('text/plain').send('Internal server error');

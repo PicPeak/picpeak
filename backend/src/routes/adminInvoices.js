@@ -119,6 +119,9 @@ function transformInvoice(i) {
       // identified by a null password_hash. We expose just the
       // boolean — the hash itself is dropped here.
       isPassive: i.customer_password_hash == null,
+      // No administrative emails (migration 300): the send action becomes
+      // Issue — the document is issued (in the portal when the customer has access), no mail goes out.
+      noAdminEmails: i.customer_no_admin_emails === true || i.customer_no_admin_emails === 1,
     },
     // Migration 140 — cross-document lineage UUID. See adminQuotes
     // transform for the rationale; lets the lineage card pull the
