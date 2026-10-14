@@ -45,7 +45,7 @@ const ALL_ROWS = {
   'services/fileWatcher.js': [5, 'which file already belongs to a photo; insert; unlink removes the row whatever its state'],
   'services/folderRequestService.js': [4, 'settling a folder request moves trashed photos with the rest'],
   'services/folderTreeService.js': [1, 'deleting a folder moves every photo in it to the parent'],
-  'services/imageProcessor.js': [3, 'derivative of a photo in flight; whether another row shares a hero file'],
+  'services/imageProcessor.js': [4, 'derivative of a photo in flight; whether another row shares a hero file; the size of a row handed in without it'],
   'services/mediaAttemptService.js': [11, 'attempts in flight and their recovery, restore-time reset of every row; the claim itself is live only'],
   'services/photoCap.js': [3, 'inserts of new photos'],
   'services/photoCredit.js': [7, 'guest erasure and merge treat trashed photos like any other'],

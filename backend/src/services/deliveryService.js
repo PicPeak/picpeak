@@ -18,6 +18,9 @@ const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
 const { parseBooleanInput } = require('../utils/parsers');
 const { whereTimestamp, formatBoolean } = require('../utils/dbCompat');
+const { toTimestamp } = require('../utils/dateNormalize');
+const { toDateOnly } = require('../utils/dateOnly');
+const { getInstanceTimeZone, endOfDayInZone } = require('../utils/galleryExpiry');
 
 const DEFAULT_DELIVERY_DAYS = 7;
 const REMINDER_LEAD_HOURS = 24;
@@ -28,13 +31,39 @@ const isPartial = (event) => event && event.delivery_status === 'partial';
 /** Event date + N days (Settings → Event defaults), at noon UTC so the date never shifts by timezone. */
 async function defaultDueAt(event, conn = db) {
   const days = Number(await getAppSetting('event_default_delivery_days', DEFAULT_DELIVERY_DAYS, conn)) || DEFAULT_DELIVERY_DAYS;
-  // Postgres hands a DATE column back as a Date, SQLite as a string.
-  const raw = event.event_date instanceof Date && !Number.isNaN(event.event_date.getTime())
-    ? event.event_date.toISOString()
-    : String(event.event_date || '');
-  const base = raw.slice(0, 10);
+  // Postgres hands a DATE column back as a Date at the server's local
+  // midnight (the day before in UTC east of Greenwich), SQLite as a string.
+  const base = toDateOnly(event.event_date) || '';
   const start = /^\d{4}-\d{2}-\d{2}$/.test(base) ? new Date(`${base}T12:00:00Z`) : new Date();
   return new Date(start.getTime() + days * 864e5);
+}
+
+/**
+ * The end of the promised day, in epoch ms (NaN when unreadable). The stored
+ * value is a calendar day at noon UTC (its UTC date is the promised day):
+ * "by the 20th" lasts until the 20th is over in the instance time zone, the
+ * zone a date-only gallery expiry ends its day in, and the rule the admin
+ * screens (deliveryStatus.ts) use too. Without a zone, the UTC day.
+ */
+function endOfDueDay(value, timeZone = 'UTC') {
+  const ms = toTimestamp(value);
+  if (!Number.isFinite(ms)) return NaN;
+  const end = endOfDayInZone(new Date(ms).toISOString().slice(0, 10), timeZone);
+  return end ? end.getTime() : NaN;
+}
+
+/**
+ * A `delivery_due_at` from the API as the stored ISO string. A bare date, or a
+ * date-time without a zone, names a calendar day: stored at noon UTC like the
+ * settings form and the default, instead of being read in the server's zone
+ * (the day before in UTC east of Greenwich). A full instant is kept as given.
+ */
+function parseDueAtInput(value) {
+  if (!value) return null;
+  const text = String(value).trim();
+  const zoneless = /^(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?$/.exec(text);
+  if (zoneless) return new Date(`${zoneless[1]}T12:00:00.000Z`).toISOString();
+  return new Date(text).toISOString();
 }
 
 /**
@@ -60,8 +89,9 @@ async function enterPartialColumns(event, { dueAtGiven = false } = {}) {
     delivery_overdue_notified_at: null,
   };
   if (dueAtGiven) return columns;
-  const stored = event.delivery_due_at ? Date.parse(event.delivery_due_at) : NaN;
-  if (!Number.isFinite(stored) || stored <= Date.now()) {
+  // A promise for today still stands: past only once its day is over.
+  const end = endOfDueDay(event.delivery_due_at, await getInstanceTimeZone());
+  if (!Number.isFinite(end) || end < Date.now()) {
     columns.delivery_due_at = (await defaultDueAt(event)).toISOString();
     columns.delivery_due_source = 'default';
   }
@@ -182,13 +212,17 @@ async function completeDelivery(eventId, { transferBadges = true } = {}) {
 }
 
 /**
- * Hourly pass: one reminder per event when the promise is within
- * REMINDER_LEAD_HOURS, one more once it is overdue. Internal mail to the
- * studio (business profile email, else the event's admin_email).
+ * Hourly pass: one reminder per event when the end of the promised day is
+ * within REMINDER_LEAD_HOURS, one more once it is overdue. Internal mail to
+ * the studio (business profile email, else the event's admin_email).
  */
 async function runDeliveryReminderPass({ now = new Date() } = {}) {
   const { queueEmail } = require('./emailProcessor');
-  const soon = new Date(now.getTime() + REMINDER_LEAD_HOURS * 3600e3);
+  const leadMs = REMINDER_LEAD_HOURS * 3600e3;
+  // The promised day ends at most 14 h before the stored instant (a day of
+  // a UTC+14 zone, an instant late in its UTC day), so this window holds
+  // every promise whose day ends within the lead; the loop decides.
+  const soon = new Date(now.getTime() + leadMs + 14 * 3600e3);
   const events = await db('events')
     .where('delivery_status', 'partial')
     .whereNotNull('delivery_due_at')
@@ -198,15 +232,18 @@ async function runDeliveryReminderPass({ now = new Date() } = {}) {
     .where((q) => q.whereNull('is_archived').orWhere('is_archived', formatBoolean(false)))
     .select('*');
   let sent = 0;
+  const timeZone = await getInstanceTimeZone();
   const profile = await db.schema.hasTable('business_profile')
     ? await db('business_profile').first('email')
     : null;
   for (const event of events) {
     // Promised "by the 20th" means the whole 20th: overdue only once that
-    // calendar day is over, not at the stored noon.
-    const dueDay = String(event.delivery_due_at instanceof Date ? event.delivery_due_at.toISOString() : event.delivery_due_at).slice(0, 10);
-    const endOfDueDay = Date.parse(`${dueDay}T23:59:59.999Z`);
-    const overdue = Number.isFinite(endOfDueDay) ? endOfDueDay < now.getTime() : new Date(event.delivery_due_at) <= now;
+    // calendar day is over in the instance zone, not at the stored noon.
+    const end = endOfDueDay(event.delivery_due_at, timeZone);
+    const overdue = Number.isFinite(end) ? end < now.getTime() : new Date(event.delivery_due_at) <= now;
+    // Due soon: the promised day ends within the lead, wherever the zone puts
+    // that end relative to the stored noon.
+    if (!overdue && Number.isFinite(end) && end - now.getTime() > leadMs) continue;
     const column = overdue ? 'delivery_overdue_notified_at' : 'delivery_reminder_sent_at';
     if (event[column]) continue;
     // Nobody to tell: no mail, no "reminded" log line, and no claim either,
@@ -224,7 +261,10 @@ async function runDeliveryReminderPass({ now = new Date() } = {}) {
       const base = await getAbsoluteFrontendUrl(null, { override: process.env.ADMIN_URL });
       await queueEmail(event.id, to, 'delivery_due_reminder', {
         event_name: event.event_name,
-        due_date: event.delivery_due_at,
+        // The promised calendar day (stored at noon UTC) as a bare date: the
+        // email formatter reads an instant in the server's zone, which puts
+        // noon UTC on the next day east of UTC+12.
+        due_date: new Date(toTimestamp(event.delivery_due_at)).toISOString().slice(0, 10),
         delivered_count: delivered,
         expected_count: event.delivery_expected_count || '?',
         admin_link: `${base}/admin/events/${event.id}`,
@@ -248,6 +288,7 @@ module.exports = {
   MAX_PLACEHOLDER_TILES,
   isPartial,
   defaultDueAt,
+  parseDueAtInput,
   enterPartialColumns,
   markFirstLookArrived,
   guestDeliveryPayload,
