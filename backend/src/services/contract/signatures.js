@@ -534,7 +534,7 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
           customer_name: customerName,
           title: refreshed.contract.title || '',
           attachments: attachmentsArg,
-        });
+        }, { customerAccountId: customer.id });
       }
       // 2. Admin copy. Prefer business_profile.email (the inbox the
       // contract was sent FROM); fall back to the counter-signing
@@ -729,7 +729,7 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
         customer_name: customerName,
         title: refreshedContract.title || '',
         attachments,
-      });
+      }, { customerAccountId: customer.id });
     }
     if (profile.email && profile.email !== customer?.email) {
       await emailProcessor.queueEmail(null, profile.email, 'contract_fully_signed', {
@@ -929,7 +929,7 @@ async function rerenderAndResend(contractId, adminId) {
       customer_name: customerName,
       title: refetched.title || '',
       attachments,
-    });
+    }, { customerAccountId: customer.id });
   }
   const adminEmail = profile.email || adminRow?.email;
   if (adminEmail && adminEmail !== customer?.email) {

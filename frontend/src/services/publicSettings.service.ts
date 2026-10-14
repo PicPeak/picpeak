@@ -59,6 +59,9 @@ export interface PublicSettings {
   /** '12h' or '24h' — controls how times are rendered in admin +
    *  customer views. Storage is always 24h; only display toggles. */
   general_time_format?: '12h' | '24h';
+  /** The instance time zone a date-only gallery expiry ends its day in;
+   *  expiry dates are shown as their day there (useLocalizedDate.formatExpiry). */
+  expiry_time_zone?: string | null;
   /** Dashboard CRM-overview tile visibility. All default true; only
    *  explicit false hides the matching tile. */
   crm_overview_show_revenue?: boolean;
