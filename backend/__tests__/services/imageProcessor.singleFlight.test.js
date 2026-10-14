@@ -33,6 +33,8 @@ jest.mock('../../src/database/db', () => {
       return {
         where: (criteria) => ({
           update: async (values) => { state.updates.push({ criteria, values }); return 1; },
+          // withSourceVersion: these rows carry no recorded size.
+          first: async () => undefined,
         }),
       };
     }
