@@ -859,6 +859,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     return () => window.removeEventListener('popstate', onPop);
   }, [resetScopeState, openFolderSlug, galleryView]);
 
+  // Premium and Story have no `favorite` control: their hearts write `like`
+  // feedback and seed from `is_liked`, so there a like is the favourite. Their
+  // nav heart drives the "Liked" filter, which then keeps the viewer's own
+  // likes rather than every photo anyone liked.
+  const favouritesAreLikes = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
   const filteredPhotos = useGalleryFiltering({
     sourcePhotos: data?.photos, categories: data?.categories, folderId: openFolderId, viewAll,
     selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug,
@@ -874,6 +879,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     minRating: feedbackSettings?.feedback_enabled && feedbackSettings?.allow_ratings ? minRating : null,
     // Only while tagging is on for the gallery: the chips hide with it.
     selectedTagKeys: tagsEnabled ? selectedTagKeys : undefined,
+    likedIsOwn: favouritesAreLikes,
   });
   // `scopedPhotos` is the same scope with every search and filter off: tells
   // "nothing matches" from "nothing here yet" when the grid comes out empty.
@@ -1064,8 +1070,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   //
   // Premium and Story have no `favorite` control: their Favourites toggle
   // writes `like` feedback and seeds from `is_liked`, so there a like is the
-  // favourite (see isFilenameListFavourite).
-  const favouritesAreLikes = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
+  // favourite (see isFilenameListFavourite, and `favouritesAreLikes` above).
   const copyFilenames = useMemo(() => photosForFilenameList(
     data?.photos || [],
     selectedPhotos,
@@ -1650,6 +1655,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           }
           onCopyFilenames={() => setShowCopyFilenames(true)}
           copyFilenamesCount={copyFilenames.photos.length}
+          // The nav heart: the gallery's own "Liked" filter, so the lightbox,
+          // select-all and download-selected all see the same list.
+          likedOnly={activeFilters.includes('liked')}
+          onToggleLikedOnly={() => handleFilterChange('liked')}
           slug={slug}
           people={peopleEnabled ? people : undefined}
           onSelectPerson={togglePerson}

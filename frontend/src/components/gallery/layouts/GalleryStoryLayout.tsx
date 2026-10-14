@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { GalleryEmptyMessage } from '../GalleryEmptyMessage';
+import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../common';
@@ -79,6 +79,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   onDownloadEverything,
   onCopyFilenames,
   copyFilenamesCount = 0,
+  likedOnly = false,
+  onToggleLikedOnly,
   downloadChoices,
   onPickResolution,
   protectionLevel = 'standard',
@@ -438,7 +440,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
-        <GalleryEmptyMessage filtered={emptyIsFiltered} />
+        {likedOnly
+          ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
+          : <GalleryEmptyMessage filtered={emptyIsFiltered} />}
         {/* No nav in this branch, and an upload-only gallery starts empty:
             the guest still needs a way to add the first photos. */}
         {onUploadClick && (
@@ -550,8 +554,18 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
             </button>
           )}
           {bulkLikesAllowed && (
-            <button className="story-nav-btn" title={t('gallery.favorites', 'Favorites')}>
-              <Heart size={20} />
+            // The gallery's "Liked" filter when the container offers it:
+            // only the photos this viewer liked, until clicked again.
+            <button
+              type="button"
+              className={`story-nav-btn${likedOnly ? ' active' : ''}`}
+              onClick={onToggleLikedOnly}
+              aria-pressed={onToggleLikedOnly ? likedOnly : undefined}
+              aria-label={`${t('gallery.showLikedOnly', 'Show only photos I liked')}${favorites.size > 0 ? ` (${favorites.size})` : ''}`}
+              title={t('gallery.favorites', 'Favorites')}
+              data-testid="story-nav-liked"
+            >
+              <Heart size={20} fill={likedOnly ? 'currentColor' : 'none'} />
               {favorites.size > 0 && (
                 <span className="story-nav-favorites-count">
                   {favorites.size > 9 ? '9+' : favorites.size}

@@ -111,6 +111,9 @@ interface PhotoGridWithLayoutsProps {
   // favourites when nothing is selected. Hidden at zero.
   onCopyFilenames?: () => void;
   copyFilenamesCount?: number;
+  /** Premium / Story nav heart — see BaseGalleryLayoutProps. */
+  likedOnly?: boolean;
+  onToggleLikedOnly?: () => void;
   /** Link to a single photo (issue 1733) — see BaseGalleryLayoutProps. */
   openPhotoId?: number | null;
   /** After the photos, before a full-page layout's footer (issue 1562). */
@@ -126,6 +129,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   onDownloadEverything,
   onCopyFilenames,
   copyFilenamesCount = 0,
+  likedOnly = false,
+  onToggleLikedOnly,
   openPhotoId,
   onLightboxPhotoChange,
   afterGrid,
@@ -421,6 +426,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     onDownloadEverything,
     onCopyFilenames,
     copyFilenamesCount,
+    likedOnly,
+    onToggleLikedOnly,
     afterGrid,
     slug,
     // Face data (#1074) must reach the full-page layouts too — they render

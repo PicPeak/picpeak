@@ -76,6 +76,13 @@ export interface BaseGalleryLayoutProps {
   // chrome: the selection, or the viewer's favourites. Hidden at zero.
   onCopyFilenames?: () => void;
   copyFilenamesCount?: number;
+  /**
+   * The nav heart of the full-page layouts: the gallery's "Liked" filter
+   * (the viewer's own likes), owned by the container so `photos` already
+   * arrives filtered. Absent, the heart is not a filter control.
+   */
+  likedOnly?: boolean;
+  onToggleLikedOnly?: () => void;
   // Resolution picker choices (#858). More than one entry means the gallery
   // offers a real choice, so bulk downloads must route through the modal
   // instead of calling downloadSelectedPhotos directly.

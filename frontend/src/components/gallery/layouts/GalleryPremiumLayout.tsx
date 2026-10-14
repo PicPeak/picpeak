@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { GalleryEmptyMessage } from '../GalleryEmptyMessage';
+import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { createPortal } from 'react-dom';
 import { MasonryPhotoAlbum } from 'react-photo-album';
 import 'react-photo-album/masonry.css';
@@ -274,6 +274,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   onLightboxPhotoChange,
   isClient = false,
   onToggleVisibility,
+  likedOnly = false,
+  onToggleLikedOnly,
 }) => {
   // These props are passed by parent but we use our own lightbox, so mark as intentionally unused
   void _onPhotoClick;
@@ -639,7 +641,9 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
-        <GalleryEmptyMessage filtered={emptyIsFiltered} />
+        {likedOnly
+          ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
+          : <GalleryEmptyMessage filtered={emptyIsFiltered} />}
         {/* No nav in this branch, and an upload-only gallery starts empty:
             the guest still needs a way to add the first photos. */}
         {onUploadClick && (
@@ -781,8 +785,22 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
               </button>
             )}
             {feedbackEnabled && feedbackOptions?.allowLikes && (
-              <button className="gallery-premium-nav-btn" title={t('gallery.favorites', 'Favorites')}>
-                <Heart className="w-4 h-4" />
+              // The gallery's "Liked" filter, with the count Story shows.
+              <button
+                type="button"
+                className={`gallery-premium-nav-btn${likedOnly ? ' active' : ''}`}
+                onClick={onToggleLikedOnly}
+                aria-pressed={onToggleLikedOnly ? likedOnly : undefined}
+                aria-label={`${t('gallery.showLikedOnly', 'Show only photos I liked')}${likedPhotoIds.size > 0 ? ` (${likedPhotoIds.size})` : ''}`}
+                title={t('gallery.favorites', 'Favorites')}
+                data-testid="premium-nav-liked"
+              >
+                <Heart className="w-4 h-4" fill={likedOnly ? 'currentColor' : 'none'} />
+                {likedPhotoIds.size > 0 && (
+                  <span className="gallery-premium-nav-count">
+                    {likedPhotoIds.size > 9 ? '9+' : likedPhotoIds.size}
+                  </span>
+                )}
               </button>
             )}
             {allowDownloads && photos.length > 0 && (

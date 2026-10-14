@@ -168,6 +168,7 @@
 }
 
 .gallery-premium-nav-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -181,6 +182,35 @@
 
 .gallery-premium-nav-btn:hover {
   background-color: var(--color-elevated);
+}
+
+.gallery-premium-nav-btn:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+/* The nav heart while it filters to the viewer's likes. */
+.gallery-premium-nav-btn.active {
+  color: var(--status-danger);
+}
+
+/* Liked count on the nav heart, as Story's .story-nav-favorites-count. */
+.gallery-premium-nav-count {
+  position: absolute;
+  top: -0.125rem;
+  right: -0.125rem;
+  display: flex;
+  height: 0.875rem;
+  min-width: 0.875rem;
+  padding: 0 0.125rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background-color: var(--status-danger);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 1;
+  color: white;
 }
 
 /* Selection Mode Controls */
