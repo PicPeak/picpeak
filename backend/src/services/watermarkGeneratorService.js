@@ -412,33 +412,6 @@ class WatermarkGeneratorService {
   }
 
   /**
-   * Delete watermark for a specific photo
-   */
-  async deleteForPhoto(photoId) {
-    try {
-      const photo = await db('photos')
-        .where({ id: photoId })
-        .select('watermark_path')
-        .first();
-
-      if (photo && photo.watermark_path) {
-        await watermarkService.deleteWatermarkFile(photo.watermark_path);
-        await db('photos')
-          .where({ id: photoId })
-          .update({
-            watermark_path: null,
-            watermark_generated_at: null
-          });
-      }
-
-      return { success: true };
-    } catch (error) {
-      logger.error(`Error deleting watermark for photo ${photoId}:`, error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
    * Get status of an active regeneration job
    */
   getJobStatus(jobId) {
