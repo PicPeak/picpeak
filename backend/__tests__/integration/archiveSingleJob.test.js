@@ -523,10 +523,8 @@ describe('one archive job per gallery', () => {
     // Toggled on and off again through POST /:id/toggle-status, meant to stay off.
     await request(app).post(`/admin/events/${event.id}/toggle-status`).expect(200);
     await request(app).post(`/admin/events/${event.id}/toggle-status`).expect(200);
-    await ageExpiryAttempt(event.id, 2);
-    // The toggles happened after the attempt.
-    await db('activity_logs').where({ event_id: event.id })
-      .update({ created_at: new Date(Date.now() - 3600000).toISOString() });
+    // Reactivating cleared the retry record under the claim.
+    expect(await expiryAttempt(event.id)).toBeUndefined();
 
     await checkExpirations();
 

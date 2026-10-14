@@ -244,19 +244,11 @@ async function handleExpiredEvent(event, { sendLegacyEmails = true, retry = fals
     let attempts = 1;
     if (retry) {
       // Only a gallery this checker deactivated, for the expiry it deactivated
-      // it for: an admin's deactivation records nothing, and a restore or an
-      // extension sets a new expiry. Still due: another replica's pass may
+      // it for: an admin's deactivation records nothing (reactivating clears
+      // the record), and a restore or an extension sets a new expiry. Still due: another replica's pass may
       // have made an attempt since this one's query.
       const recorded = await readExpiryAttempt(lease);
       if (!recorded || recorded.expiresAt !== expiresAt || !expiryRetryDue(recorded, Date.now())) return;
-      // An admin who toggled the gallery since made its deactivation theirs.
-      // The log keeps whole seconds on SQLite, so the bound is rounded down.
-      const toggled = await db('activity_logs')
-        .where('event_id', event.id)
-        .whereIn('activity_type', ['event_activated', 'event_deactivated'])
-        .modify(whereTimestamp, 'created_at', '>=', new Date(Math.floor(Date.parse(recorded.at) / 1000) * 1000))
-        .first('id');
-      if (toggled) return;
       attempts = recorded.attempts + 1;
     }
     // Recorded before deactivating, so the gallery is never left inactive

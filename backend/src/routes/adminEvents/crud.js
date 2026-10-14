@@ -2206,6 +2206,9 @@ module.exports = (router) => {
             is_active: formatBoolean(newStatus),
             updated_at: new Date().toISOString()
           });
+        // The gallery is the admin's to switch off again now: the expiry
+        // checker no longer retries an archive it failed on it.
+        if (archiveLease) await require('../../services/archiveService').writeExpiryAttempt(archiveLease, null);
       } finally {
         if (archiveLease) await archiveLease.release();
       }
