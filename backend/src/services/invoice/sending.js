@@ -3,6 +3,7 @@
 
 const crypto = require('crypto');
 const { db, logActivity } = require('../../database/db');
+const { adminActivityActor } = require('../../utils/activityActor');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
 const { formatShortDate } = require('../../utils/dateFormatter');
@@ -215,7 +216,7 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     attachments: invoiceAttachments,
   });
 
-  try { await logActivity('invoice_sent', { invoiceId: id }, invoice.event_id || null, `admin:${adminId}`); } catch (_) { /* non-fatal */ }
+  try { await logActivity('invoice_sent', { invoiceId: id }, invoice.event_id || null, adminActivityActor(adminId)); } catch (_) { /* non-fatal */ }
 
   // Fire the workflow engine's invoice.sent trigger (after the row is updated +
   // the email queued). Idempotent per invoice id; no-op when the workflows flag
@@ -433,7 +434,7 @@ async function createStorno(originalId, adminId, trx = db) {
     // the global db here deadlocks the single-connection SQLite pool.
     await logActivity('invoice_cancelled_via_storno',
       { invoiceId: originalId, stornoId, stornoNumber },
-      original.event_id || null, `admin:${adminId}`, trx);
+      original.event_id || null, adminActivityActor(adminId), trx);
   } catch (_) { /* non-fatal */ }
 
   return stornoId;
@@ -529,7 +530,7 @@ async function sendStornoOnce(stornoId, adminId) {
   try {
     await logActivity('storno_sent',
       { stornoId, stornoNumber: storno.invoice_number, originalInvoiceId: storno.cancels_invoice_id || null },
-      storno.event_id || null, `admin:${adminId || 'system'}`);
+      storno.event_id || null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   return { status: 'sent', stornoId };
@@ -671,7 +672,7 @@ async function reissueInvoice(id, adminId) {
       // Pass `trx` so the audit insert rides the transaction's connection.
       await logActivity('invoice_reissued',
         { originalInvoiceId: id, newInvoiceId: newId, stornoId },
-        original.event_id || null, `admin:${adminId}`, trx);
+        original.event_id || null, adminActivityActor(adminId), trx);
     } catch (_) { /* non-fatal */ }
 
     return { id: newId, replaces: id, stornoId };
@@ -705,7 +706,7 @@ async function releaseForDelivery(id, adminId) {
     updated_at: now,
   }, { actor: adminId, source: 'invoice.releaseForDelivery' });
   try {
-    await logActivity('invoice_released_for_delivery', { invoiceId: id }, invoice.event_id || null, `admin:${adminId}`);
+    await logActivity('invoice_released_for_delivery', { invoiceId: id }, invoice.event_id || null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
   // Fire immediately rather than waiting for the next scheduler
   // tick — admin clicked the button because they want it out now.
@@ -759,7 +760,7 @@ async function cancelInvoice(id, adminId) {
     try {
       await logActivity('invoice_cancelled',
         { invoiceId: id, viaStorno: false },
-        invoice.event_id || null, `admin:${adminId}`);
+        invoice.event_id || null, adminActivityActor(adminId));
     } catch (_) { /* non-fatal */ }
     // Still unsent until now: a booking run's review gate for it is answered.
     await require('../workflows').answerGatesForInvoice(id);
@@ -805,7 +806,7 @@ async function triggerMonthlyBillNow(customerId, adminId) {
   try {
     await logActivity('monthly_bill_triggered_manually',
       { invoiceId: draft.id, customerId, periodEnd: draft.monthly_period_end },
-      null, `admin:${adminId}`);
+      null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   // Inline send so admin gets immediate feedback (PDF stored, status

@@ -13,7 +13,7 @@ const { hasColumnCached } = require('../../utils/schemaCache');
 const { formatMajor } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 const { buildInvoiceRenderContext } = require('./render');
-const { auditedUpdate } = require('../accountingHistory');
+const { auditedUpdate, normalizeActor } = require('../accountingHistory');
 const { invoicePdfFile } = require('../../utils/storedDocumentPdf');
 
 
@@ -196,7 +196,7 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
 
   try {
     await logActivity('invoice_reminder_sent', { invoiceId: invoice.id, level, lateFeeMinor: lateFeeGross },
-      invoice.event_id || null, `admin:${adminId || 'system'}`);
+      invoice.event_id || null, normalizeActor(actor));
   } catch (_) { /* non-fatal */ }
 
   return { level, lateFeeMinor: lateFeeGross };

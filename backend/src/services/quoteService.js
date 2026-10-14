@@ -29,6 +29,7 @@
 const crypto = require('crypto');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { db, withRetry, logActivity } = require('../database/db');
+const { adminActivityActor } = require('../utils/activityActor');
 const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
 const { cleanNetMinor } = require('../utils/invoiceRounding');
@@ -659,7 +660,7 @@ async function createQuote(payload, adminId) {
     try {
       // Pass `trx` so the audit insert rides the transaction's connection —
       // the global db here deadlocks the single-connection SQLite pool.
-      await logActivity('quote_created', { quoteId, quoteNumber, customerAccountId: payload.customerAccountId }, null, `admin:${adminId}`, trx);
+      await logActivity('quote_created', { quoteId, quoteNumber, customerAccountId: payload.customerAccountId }, null, adminActivityActor(adminId), trx);
     } catch (_) { /* non-fatal */ }
 
     logger.info('Quote created', { adminId, quoteId, quoteNumber });
@@ -835,7 +836,7 @@ async function updateQuote(id, payload, adminId) {
       // Pass trx: through the global db this insert waits on the single-
       // connection SQLite pool for the connection this transaction holds,
       // stalling every save for the 60s acquire timeout and losing the row.
-      await logActivity('quote_updated', { quoteId: id }, null, `admin:${adminId}`, trx);
+      await logActivity('quote_updated', { quoteId: id }, null, adminActivityActor(adminId), trx);
     } catch (_) { /* non-fatal */ }
   });
 }
@@ -1210,7 +1211,7 @@ async function sendQuote(id, adminId) {
   try {
     // Do NOT log the raw bearer token — it grants quote actions and the
     // activity log is readable later (GHSA-prch). The quoteId is the audit key.
-    await logActivity('quote_sent', { quoteId: id }, null, `admin:${adminId}`);
+    await logActivity('quote_sent', { quoteId: id }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   // Fire the quote.sent workflow trigger (best-effort; emit is fail-closed when
@@ -1862,7 +1863,7 @@ async function recordResponse({
 
   try {
     // Raw bearer token must not reach the activity log (GHSA-prch).
-    await logActivity(`quote_${newStatus}`, { quoteId: quote.id }, null, 'customer:public');
+    await logActivity(`quote_${newStatus}`, { quoteId: quote.id }, null, actor);
   } catch (_) { /* non-fatal */ }
 
   // Defer the workflow emit until the 15-min toggle window locks — so accepting
@@ -1930,7 +1931,7 @@ async function adminAcceptQuote(id, adminId) {
   }
 
   try {
-    await logActivity('quote_accepted_by_admin', { quoteId: id }, null, `admin:${adminId}`);
+    await logActivity('quote_accepted_by_admin', { quoteId: id }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   // ---- customer confirmation email -------------------------------
@@ -2042,7 +2043,7 @@ async function adminChangeAddOns(id, { selectedOptional }, adminId) {
   await storeAcceptedQuotePdf(id);
   const change = selectionChange(lineItems, current, selection.chosen, quote.total_amount_minor, selection.totals, 'admin', adminId, now);
   try {
-    await logActivity('quote_add_ons_changed', { quoteId: id, booked: change.booked, removed: change.removed }, null, `admin:${adminId}`);
+    await logActivity('quote_add_ons_changed', { quoteId: id, booked: change.booked, removed: change.removed }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
   await emailAddOnChange(id, change);
   return { changed: true, totalAmountMinor: selection.totals.totalAmountMinor };
@@ -2111,7 +2112,7 @@ async function adminDeclineQuote(id, adminId, reason = null) {
   });
 
   try {
-    await logActivity('quote_declined_by_admin', { quoteId: id, reason: cleanReason }, null, `admin:${adminId}`);
+    await logActivity('quote_declined_by_admin', { quoteId: id, reason: cleanReason }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   // Admin decline locks the window immediately (response_locked_at = now), so
@@ -2172,7 +2173,7 @@ async function reissueQuote(id, adminId, reason = null) {
   const newId = await duplicateQuote(id, adminId, { replacesQuoteId: id, dealUuid: quote.deal_uuid });
 
   try {
-    await logActivity('quote_reissued', { quoteId: id, newQuoteId: newId, reason: cleanReason }, null, `admin:${adminId}`);
+    await logActivity('quote_reissued', { quoteId: id, newQuoteId: newId, reason: cleanReason }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   return { quoteId: newId };
@@ -2322,7 +2323,7 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
   // hang here would wedge the workflow executor, not just a request).
   try {
     await logActivity('quote_converted_invoices_only', { quoteId: quote.id, installments: result.installmentsCreated },
-      null, `admin:${adminId}`);
+      null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   logger.info('Quote converted to invoices only (no event)', { adminId, quoteId: quote.id, installments: result.installmentsCreated });
@@ -2521,7 +2522,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   // deadlocks the single-connection SQLite pool if issued inside the trx
   // (prepare_event runs this unattended from the booking flow).
   try {
-    await logActivity('quote_converted', { quoteId: quote.id, eventId: result.eventId }, result.eventId, `admin:${adminId}`);
+    await logActivity('quote_converted', { quoteId: quote.id, eventId: result.eventId }, result.eventId, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   logger.info('Quote converted to event', { adminId, quoteId: quote.id, eventId: result.eventId });

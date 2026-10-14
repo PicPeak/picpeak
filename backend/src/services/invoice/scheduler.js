@@ -76,7 +76,7 @@ async function runScheduledTasks() {
         try {
           await logActivity('monthly_bill_skipped_empty',
             { invoiceId: draft.id, customerId: draft.customer_account_id },
-            null, 'scheduler');
+            null, { type: 'system', name: 'scheduler' });
         } catch (_) { /* non-fatal */ }
         continue;
       }
@@ -95,7 +95,7 @@ async function runScheduledTasks() {
         await logActivity('monthly_bill_issued',
           { invoiceId: draft.id, customerId: draft.customer_account_id,
             periodEnd: draft.monthly_period_end },
-          null, 'scheduler');
+          null, { type: 'system', name: 'scheduler' });
       } catch (_) { /* non-fatal */ }
     } catch (err) {
       logger.error('Monthly bill issuance failed', { invoiceId: draft.id, err: err.message });
