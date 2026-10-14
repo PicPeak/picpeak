@@ -22,6 +22,10 @@ const HEARTBEAT_MS = 30000;
 // Ten missed heartbeats. Independent of requestTimeoutMs: a live request is
 // kept by its process's timer however long its body is allowed to take.
 const STALE_MS = 5 * 60000;
+// A rejected S3 PUT may still complete remotely, and a stalled process may
+// still send one. An object deleted while that was possible is deleted again
+// once this has passed since that delete.
+const LATE_WRITE_MS = 24 * 3600000;
 const LEGACY_TTL_MS = 60000;
 // Multipart boundaries and part headers ride on top of the file bytes.
 const FRAMING_BYTES = MiB;
@@ -204,7 +208,10 @@ async function headroom(trx, stat, bytes, limits, files = 0) {
   const total = Number(stat.blocks) * Number(stat.bsize);
   const other = await sum(trx('public_upload_requests').where({ active: 1 }));
   const promoting = getStorage().kind() === 'local'
-    ? await sum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain'])) : { bytes: 0, files: 0 };
+    // An authenticated 'uncertain' object is no promotion: its upload has
+    // settled, and free space already shows it.
+    ? await sum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain']).whereNot(q => q.where({ state: 'uncertain', upload_kind: 'admin' })))
+    : { bytes: 0, files: 0 };
   const freeFiles = Number(stat.ffree);
   // Local promotion temporarily needs both copies. S3 needs staging space.
   const copies = getStorage().kind() === 'local' ? 2 : 1;
@@ -389,15 +396,47 @@ async function commitObject(object, type, writeRow) {
   });
 }
 
+// Ledger states of an object that never got its row: 'uncertain' may still
+// exist; 'discarded' was deleted while a write could still land, and is
+// deleted once more after LATE_WRITE_MS (created_at is then the time of that
+// first delete); 'deleted' is the tombstone left after that. A tombstone stays,
+// so a stalled writer that returns later still finds and removes its object,
+// and an importer never takes a write that landed later still.
+const UNSETTLED = ['promoting', 'uncertain', 'discarded', 'deleted'];
+// Deleted while a write could still land: the key waits for its second delete.
+const discarded = () => ({ state: 'discarded', pending: 0, created_at: new Date().toISOString() });
+
+// The keys among `keys` an upload stored but never wrote a row for (issue
+// 1970): 'promoting' until commitObject, then any other unsettled state. An
+// importer must not take them for files placed by hand.
+async function unfinishedKeys(keys) {
+  if (keys.length === 0) return new Set();
+  const rows = await db('public_upload_objects')
+    .whereIn('object_key', keys)
+    .whereIn('state', UNSETTLED)
+    .select('object_key');
+  return new Set(rows.map((row) => row.object_key));
+}
+
 async function failedObject(object, { storage, settled }) {
   // A commit whose acknowledgement was lost may already have associated the
   // row and charge. Never compensate a successfully committed reference.
+  // The reaper may have marked it meanwhile; this attempt still owns it.
   const current = await db('public_upload_objects').where({ id: object.id }).first('state', 'upload_kind');
-  if (!current || current.state !== 'promoting') return;
+  if (!current || !UNSETTLED.includes(current.state)) return;
+  const own = () => db('public_upload_objects').where({ id: object.id }).whereIn('state', UNSETTLED);
   if (current.upload_kind === 'admin') {
-    // No allowance to protect: the hold ends with the attempt either way.
-    await storage.delete(object.object_key).catch(() => {});
-    await db('public_upload_objects').where({ id: object.id, state: 'promoting' }).del();
+    // No allowance to protect: the hold ends with the attempt either way. But
+    // while the object may remain, its record keeps importers off it; finish()
+    // retries the delete.
+    try { await storage.delete(object.object_key); } catch (err) {
+      logger.warn('Upload object cleanup failed; its ledger record is kept', { objectId: object.id, error: err.message });
+      return;
+    }
+    // A rejected S3 PUT that lands after this delete must still find its
+    // record. A local write has ended once the call returned.
+    if (settled || storage.kind() === 'local') await own().del();
+    else await own().update(discarded());
     return;
   }
   // A rejected PUT may complete remotely later. A momentary HEAD 404 cannot
@@ -406,19 +445,23 @@ async function failedObject(object, { storage, settled }) {
     try {
       await storage.delete(object.object_key);
       if (!(await storage.stat(object.object_key))) {
-        await locked(trx => trx('public_upload_objects').where({ id: object.id, state: 'promoting' }).del());
+        await locked(trx => trx('public_upload_objects').where({ id: object.id }).whereIn('state', UNSETTLED).del());
         return;
       }
     } catch (err) {
       logger.warn('Public upload object cleanup failed; quota remains charged', { objectId: object.id, error: err.message });
     }
   } else {
-    await storage.delete(object.object_key).catch(() => {});
+    try {
+      await storage.delete(object.object_key);
+      await own().update(discarded());
+      return;
+    } catch (_) { /* retried by maintenance */ }
   }
-  await db('public_upload_objects').where({ id: object.id, state: 'promoting' }).update({ state: 'uncertain' });
+  await own().update({ state: 'uncertain' });
 }
 
-async function finish(session) {
+async function finish(session, { reaped = false } = {}) {
   // Call ONLY after all temp writers and durable promotions have settled.
   // A failed deletion keeps both capacity and admission slots reserved; the
   // reaper retries it once the lease lapses.
@@ -429,14 +472,41 @@ async function finish(session) {
     logger.warn('Public upload staging cleanup failed; reservation retained', { requestId: session.id, error: err.message });
     return false;
   }
-  await locked(async trx => {
+  const unsettled = await locked(async trx => {
     const admin = session.upload_kind === 'admin';
     await trx('public_upload_requests').where({ id: session.id, active: 1 }).update({ active: 0, bytes: 0, files: 0, rate_bytes: admin ? 0 : session.receivedBytes });
-    // A promotion that never settled (its process died) holds nothing either.
-    if (admin) await trx('public_upload_objects').where({ request_id: session.id, upload_kind: 'admin' }).del();
+    // A promotion that never committed (its process died, or its cleanup
+    // failed) holds nothing either, but its stored object must go before its
+    // record: an importer takes an object without one for a file placed by
+    // hand. 'uncertain' turns away a commit from a stalled process meanwhile.
+    // The reaper runs on the upload path and leaves the deletes to maintenance.
+    // A public object keeps its lifetime charge whatever its state.
+    await trx('public_upload_objects').where({ request_id: session.id, state: 'promoting' }).update({ state: 'uncertain' });
+    const objects = await trx('public_upload_objects').where({ request_id: session.id, state: 'uncertain' })
+      .select('id', 'object_key', 'state', 'upload_kind');
     await trx('public_upload_requests').where({ active: 0 }).where('created_at', '<', new Date(Date.now() - 86400000).toISOString()).del();
+    return objects;
   });
+  // This process's own writes have ended; on local storage nothing else can
+  // still land. A rejected S3 PUT can.
+  if (!reaped) await dropObjects(unsettled, { settled: getStorage().kind() === 'local' });
   return true;
+}
+
+// A record changes only once its object is gone; retryRetainedObjects()
+// retries the rest. `settled`: no write to these keys can still land, so an
+// authenticated record goes at once.
+async function dropObjects(objects, { settled = false } = {}) {
+  for (const object of objects) {
+    try { await getStorage().delete(object.object_key); } catch (err) {
+      logger.warn('Upload object cleanup failed; its ledger record is kept', { objectId: object.id, error: err.message });
+      continue;
+    }
+    const row = db('public_upload_objects').where({ id: object.id, state: object.state });
+    if (settled && object.upload_kind === 'admin') await row.del();
+    else if (object.state === 'uncertain' && !settled) await row.update(discarded());
+    else await row.update({ state: 'deleted', pending: 0 });
+  }
 }
 
 /** A resumable lease may sit idle while unrelated writers fill the disk, or
@@ -481,8 +551,23 @@ async function cleanupAbandoned() {
     if (live.has(row.id)) continue;
     // Removes the staging directory when it is under this process's staging
     // root. An uncertain remote PUT remains in the object ledger regardless.
-    await finish({ ...row, dir: stagingPath(row.id), receivedBytes: Number(row.rate_bytes) });
+    await finish({ ...row, dir: stagingPath(row.id), receivedBytes: Number(row.rate_bytes) }, { reaped: true });
   }
+}
+
+/** Objects the reaper retained, finish() or failedObject() could not delete,
+ * and deleted ones a late write may have brought back; their request is
+ * settled. Maintenance only: an upload request must not wait on storage. The
+ * cursor keeps objects that never delete from taking every batch. */
+let retryCursor = '';
+async function retryRetainedObjects() {
+  const cutoff = new Date(Date.now() - LATE_WRITE_MS).toISOString();
+  const objects = await db('public_upload_objects').where('id', '>', retryCursor)
+    .where(q => q.where({ state: 'uncertain' }).orWhere(old => old.where({ state: 'discarded' }).where('created_at', '<', cutoff)))
+    .whereNotExists(db('public_upload_requests as r').select('r.id').whereColumn('r.id', 'public_upload_objects.request_id').where('r.active', 1))
+    .orderBy('id').select('id', 'object_key', 'state', 'upload_kind').limit(100);
+  retryCursor = objects.length === 100 ? objects[99].id : '';
+  await dropObjects(objects);
 }
 
 let maintenance = null;
@@ -490,7 +575,7 @@ let maintenance = null;
 function startMaintenance() {
   if (maintenance) return;
   maintenance = setInterval(() => {
-    heartbeat().then(cleanupAbandoned).then(reconcilePending)
+    heartbeat().then(cleanupAbandoned).then(retryRetainedObjects).then(reconcilePending)
       .catch(err => logger.warn('Public upload maintenance failed', { error: err.message }));
   }, HEARTBEAT_MS);
   maintenance.unref();
@@ -501,7 +586,7 @@ function stopMaintenance() {
 }
 
 module.exports = {
-  begin, reserveFile, recheckStaging, prepareObject, commitObject, failedObject, finish, releasePending, processingComplete: releasePending,
-  reconcilePending, heartbeat, cleanupAbandoned, startMaintenance, stopMaintenance, requestBudget, configuration, refusal, forAdmin,
-  STALE_MS, _legacyCache: legacyCache,
+  begin, reserveFile, recheckStaging, prepareObject, commitObject, failedObject, unfinishedKeys, finish, releasePending, processingComplete: releasePending,
+  reconcilePending, heartbeat, cleanupAbandoned, retryRetainedObjects, startMaintenance, stopMaintenance, requestBudget, configuration, refusal, forAdmin,
+  STALE_MS, LATE_WRITE_MS, _legacyCache: legacyCache,
 };
