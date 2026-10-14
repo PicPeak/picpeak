@@ -226,6 +226,7 @@ async function importInMaintenanceWorker() {
         { executor: trx, crossEngine, allTables });
       await require('./externalRelpathFold').foldExternalRelpaths(trx, message => logger.info('Portable restore external path conversion', { message }));
       await resetDerivedQueues(trx);
+      await require('./archiveService').importArchiveRecords(trx, manifest.archive_superseded);
       await setSessionsValidAfter(cutoff, { executor: trx, refreshCache: false });
       if (generation) await generation.publish(trx);
       if (migrationRows) {

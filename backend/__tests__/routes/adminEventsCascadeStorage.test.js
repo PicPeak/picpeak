@@ -133,6 +133,7 @@ jest.mock('../../src/database/db', () => ({
 jest.mock('../../src/services/archiveService', () => ({
   claimArchive: async () => ({ release: async () => {} }),
   supersededArchives: async () => [],
+  legacyArchiveKeys: async () => [],
 }));
 jest.mock('../../src/services/accountingHistory', () => ({
   deleteWithAccountingHistory: (conn, table, where) => conn(table).where(where).del(),

@@ -300,6 +300,10 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
       },
       options: { includePhotos: !!includePhotos, includeFiles: !!includeFiles },
       tables: tableMeta,
+      // Zips under events/archived no gallery names, per gallery id (issue
+      // 2012). maintenance_jobs holds them and is not exported; the importer
+      // writes them back so the gallery's next archive or delete removes them.
+      archive_superseded: await require('./archiveService').exportArchiveRecords(),
       file_count: files.length,
       files: files.map(file => ({ path: file.relativePath, size: file.size,
         checksum: file.checksum, object_metadata: file.objectMetadata })),

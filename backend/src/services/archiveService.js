@@ -143,6 +143,82 @@ async function supersededArchives(eventId) {
   return Array.isArray(superseded) ? superseded.filter(isArchiveKey) : [];
 }
 
+/**
+ * The zip a restore made before per-run keys left at the shared key
+ * `events/archived/<slug>.zip`. Nothing recorded it: the next archive of the
+ * slug used to overwrite it, and no longer does. Returned while no other
+ * gallery's archive_path names it (an archive made before per-run keys is
+ * still at such a key); the gallery's own archive_path is removed with it
+ * anyway. Read at the current slug, so a gallery renamed since that restore
+ * is not covered.
+ */
+async function legacyArchiveKeys(event) {
+  if (!event || typeof event.slug !== 'string' || !event.slug) return [];
+  const key = path.posix.join('events/archived', `${event.slug}.zip`);
+  if (!isArchiveKey(key) || path.posix.dirname(key) !== 'events/archived') return [];
+  const named = await db('events').where('archive_path', key).whereNot('id', event.id).first('id');
+  return named ? [] : [key];
+}
+
+// A key from a portable archive, which anyone holding the file can edit.
+const isPortableArchiveKey = (key) => isArchiveKey(key)
+  && !key.includes('\\') && !key.split('/').some((part) => part === '..' || part === '.' || part === '');
+
+/**
+ * Zips nothing names, per gallery, for a portable export:
+ * { "<eventId>": [keys] }. maintenance_jobs is not exported (live lease
+ * state), but these records are what removes the zips, which the export
+ * carries under events/archived; without them every one is left behind on
+ * the importing instance. An upload a run has not published (or died before
+ * publishing) is carried the same way: on the target nothing runs it.
+ */
+async function exportArchiveRecords(conn = db) {
+  const rows = await conn('maintenance_jobs')
+    .where('job_name', 'like', `${archiveJobName('')}%`)
+    .whereNotNull('last_result')
+    .select('job_name', 'last_result');
+  const records = {};
+  for (const row of rows) {
+    const eventId = Number(row.job_name.slice(archiveJobName('').length));
+    if (!Number.isInteger(eventId) || eventId <= 0) continue;
+    const state = parseArchiveState(row);
+    const keys = [...(Array.isArray(state.superseded) ? state.superseded : []), state.upload]
+      .filter(isArchiveKey);
+    if (keys.length) records[eventId] = [...new Set(keys)];
+  }
+  return records;
+}
+
+/**
+ * Write the records of a portable import (exportArchiveRecords), inside the
+ * import's transaction. The target's own records go first: the import
+ * replaces every gallery, so they name zips of galleries that are gone, under
+ * ids the imported galleries now hold, and an expiry retry recorded for one of
+ * them would be run against the imported gallery. Records for a gallery the
+ * import does not carry are dropped.
+ */
+async function importArchiveRecords(trx, records) {
+  await trx('maintenance_jobs')
+    .where('job_name', 'like', `${archiveJobName('')}%`)
+    .whereNotNull('last_result')
+    .update({ last_result: null });
+  if (!records || typeof records !== 'object' || Array.isArray(records)) return 0;
+  let written = 0;
+  for (const [id, keys] of Object.entries(records)) {
+    const eventId = Number(id);
+    if (!/^[1-9][0-9]*$/.test(id) || !Number.isSafeInteger(eventId) || !Array.isArray(keys)) continue;
+    const superseded = [...new Set(keys.filter(isPortableArchiveKey))];
+    if (!superseded.length) continue;
+    if (!(await trx('events').where('id', eventId).first('id'))) continue;
+    const jobName = archiveJobName(eventId);
+    const lastResult = JSON.stringify({ superseded });
+    const updated = await trx('maintenance_jobs').where({ job_name: jobName }).update({ last_result: lastResult });
+    if (!updated) await trx('maintenance_jobs').insert({ job_name: jobName, is_running: false, last_result: lastResult });
+    written += 1;
+  }
+  return written;
+}
+
 // The expiry checker's attempt to archive a gallery it deactivated, kept on
 // the same claim row (state key `expiry`: { attempts, at, expiresAt }) so a
 // failed attempt is retried in a later pass. The checker only selects active
@@ -202,12 +278,14 @@ async function removeAbandonedUpload(lease) {
 }
 
 /** After a publish: the gallery has a newer archive, the restored-from zips can go. */
-async function removeSupersededArchives(lease, publishedKey) {
+async function removeSupersededArchives(lease, publishedKey, event) {
   try {
     const state = await readOwnState(lease);
     if (!state) return;
     const kept = [];
-    for (const key of Array.isArray(state.superseded) ? state.superseded : []) {
+    const candidates = [...(Array.isArray(state.superseded) ? state.superseded : [])];
+    for (const key of await legacyArchiveKeys(event)) if (!candidates.includes(key)) candidates.push(key);
+    for (const key of candidates) {
       if (!isArchiveKey(key) || key === publishedKey) continue;
       if (await isReferenced(key)) continue;
       try {
@@ -525,7 +603,7 @@ async function buildArchive(event, lease) {
         .catch((err) => logger.warn(`Failed to remove the unpublished archive ${archiveRelKey}: ${err.message}`));
       throw new AppError('The archive claim was taken over', 409, 'ARCHIVE_IN_PROGRESS');
     }
-    await removeSupersededArchives(lease, archiveRelKey);
+    await removeSupersededArchives(lease, archiveRelKey, event);
 
     // The cleanup below deletes by key. A run that stalls past its lease
     // after publishing (a suspended process) can find the gallery restored
@@ -698,5 +776,6 @@ function convertToCSV(data) {
 
 module.exports = {
   archiveEvent, claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives,
+  legacyArchiveKeys, exportArchiveRecords, importArchiveRecords,
   expiryAttempts, readExpiryAttempt, writeExpiryAttempt,
 };

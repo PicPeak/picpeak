@@ -43,8 +43,10 @@ async function deleteEventCascade(eventId, adminContext) {
   try {
     const event = await db('events').where('id', found.id).first();
     if (!event) throw eventNotFound();
-    // Zips earlier restores brought back go with the gallery.
-    const superseded = await archiveService.supersededArchives(event.id);
+    // Zips earlier restores brought back go with the gallery, the one a
+    // restore before per-run keys left at the shared key too.
+    const superseded = [...await archiveService.supersededArchives(event.id),
+      ...await archiveService.legacyArchiveKeys(event)];
     return await deleteClaimedEvent(eventId, event, adminContext, superseded);
   } finally {
     await lease.release();

@@ -562,6 +562,15 @@ describe('one archive job per gallery', () => {
 
   it('stops deleting once a job that stalled after publishing has lost its claim', async () => {
     const event = await makeEvent('stalled-cleanup');
+    // Another gallery's archive names the slug's shared key, so no
+    // shared-key zip is removed ahead of the originals.
+    await db('events').insert({
+      slug: 'stalled-cleanup-other', event_type: 'wedding', event_name: 'Other', event_date: '2026-08-01',
+      host_email: 'host@example.com', password_hash: 'x', share_link: '/gallery/stalled-cleanup-other/share',
+      share_token: 'stalled-cleanup-other-share', expires_at: new Date(Date.now() + 864e5).toISOString(),
+      is_active: 0, is_archived: 1, is_draft: 0, archive_path: 'events/archived/stalled-cleanup.zip',
+      created_at: new Date().toISOString(),
+    });
     let open;
     deleteGate = new Promise((resolve) => { open = resolve; });
     const job = archiveEvent(event);
@@ -704,6 +713,39 @@ describe('one archive job per gallery', () => {
 
     expect(res.status).toBe(200);
     expect(deletedKeys()).toContain(oldKey);
+  });
+
+  // A restore before per-run keys left the zip at events/archived/<slug>.zip
+  // and recorded nothing; the next archive of the slug used to overwrite it.
+  it('removes the zip a restore before per-run keys left at the shared key, once a newer archive is published', async () => {
+    const event = await makeEvent('legacy-restored');
+    await archiveEvent(event);
+    expect(deletedKeys()).toContain('events/archived/legacy-restored.zip');
+  });
+
+  it('leaves a shared-key zip alone while another gallery\'s archive names it', async () => {
+    const event = await makeEvent('legacy-named');
+    const other = await makeEvent('legacy-named-other', { photoCount: 0 });
+    await db('events').where({ id: other.id })
+      .update({ is_archived: 1, is_active: 0, archive_path: 'events/archived/legacy-named.zip' });
+    await archiveEvent(event);
+    expect(deletedKeys()).not.toContain('events/archived/legacy-named.zip');
+  });
+
+  it('removes the shared-key zip with the gallery', async () => {
+    const event = await makeEvent('legacy-delete');
+    const res = await request(app).delete(`/admin/events/${event.id}`);
+    expect(res.status).toBe(200);
+    expect(deletedKeys()).toContain('events/archived/legacy-delete.zip');
+  });
+
+  it('removes the shared-key zip when the archive is deleted', async () => {
+    const event = await makeEvent('legacy-archive-delete', { photoCount: 0 });
+    const ownArchive = 'events/archived/legacy-archive-delete-0123456789ab.zip';
+    await db('events').where({ id: event.id }).update({ is_archived: 1, is_active: 0, archive_path: ownArchive });
+    const res = await request(app).delete(`/admin/archives/${event.id}`);
+    expect(res.status).toBe(200);
+    expect(deletedKeys()).toEqual(expect.arrayContaining([ownArchive, 'events/archived/legacy-archive-delete.zip']));
   });
 
   it('checks the claim before its first cleanup delete', async () => {

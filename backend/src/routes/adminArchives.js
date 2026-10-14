@@ -23,7 +23,7 @@ const folderTree = require('../services/folderTreeService');
 const { parseBooleanInput } = require('../utils/parsers');
 const { getStorage } = require('../services/storage');
 const {
-  claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives,
+  claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives, legacyArchiveKeys,
 } = require('../services/archiveService');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
 const router = express.Router();
@@ -919,8 +919,11 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
     if (archive.archive_path) {
       await getStorage().delete(archive.archive_path);
     }
-    // Zips earlier restores brought back (issue 2012), best effort.
-    for (const key of await supersededArchives(archive.id).catch(() => [])) {
+    // Zips earlier restores brought back (issue 2012), best effort, the one
+    // a restore before per-run keys left at the shared key too.
+    const restoredFrom = [...await supersededArchives(archive.id).catch(() => []),
+      ...await legacyArchiveKeys(archive).catch(() => [])];
+    for (const key of restoredFrom) {
       if (key !== archive.archive_path) await getStorage().delete(key).catch(() => {});
     }
 
