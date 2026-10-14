@@ -24,7 +24,7 @@ const { exifColumn } = require('./photoExif');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getStorage } = require('./storage');
-const { withLocalCopy } = require('./imageProcessor');
+const { withLocalCopy, extractCaptureDate } = require('./imageProcessor');
 const logger = require('../utils/logger');
 
 const POLL_INTERVAL_MS = parseInt(process.env.STORAGE_AUTO_IMPORT_INTERVAL_MS || `${5 * 60 * 1000}`, 10);
@@ -114,11 +114,14 @@ async function processEvent(event, storage) {
       let dimensions = null;
       let credit = {};
       let exif = {};
+      let capturedAt = null;
       if (isImage) {
         try {
           dimensions = await withLocalCopy(entry.key, async (localPath) => {
             credit = await resolveCredit({ localPath });
             exif = await exifColumn(localPath);
+            // The row is inserted complete, so the worker never reads it.
+            capturedAt = await extractCaptureDate(localPath);
             const metadata = await retryTransient(() => sharp(localPath).metadata());
             // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
             const dims = require('./imageProcessor').orientedDimensions(metadata);
@@ -144,6 +147,7 @@ async function processEvent(event, storage) {
           mime_type: mimeType,
           source_origin: 'managed',
           uploaded_at: new Date().toISOString(),
+          captured_at: capturedAt ? capturedAt.toISOString() : null,
           ...(dimensions && { width: dimensions.width, height: dimensions.height }),
           ...credit,
           ...exif,

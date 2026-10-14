@@ -37,6 +37,7 @@ const { requirePermission } = require('../../middleware/permissions');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const {
   generateThumbnail,
+  extractCaptureDate,
   ensurePreviewImage,
   ensurePreviewImageAtWidth,
   normalizeTierWidth,
@@ -614,6 +615,8 @@ async function handleV1PhotoUpload(req, res) {
     const credit = await require('../../services/photoCredit').resolveCredit({ localPath: tempPath });
     // Camera details (issue 1733, D1), from the same temp file.
     const exif = await require('../../services/photoExif').exifColumn(tempPath);
+    // Capture date, for the same reason: the worker never runs for this row.
+    const capturedAt = await extractCaptureDate(tempPath);
 
     let thumbRel = null;
     const thumbMeta = {};
@@ -656,6 +659,7 @@ async function handleV1PhotoUpload(req, res) {
       folder_id: folderId,
       size_bytes: stat.size,
       content_sha256: contentSha256,
+      captured_at: capturedAt ? capturedAt.toISOString() : null,
       width,
       height,
       media_type: 'image',

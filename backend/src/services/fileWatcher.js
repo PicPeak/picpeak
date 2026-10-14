@@ -8,7 +8,7 @@ const { exifColumn } = require('./photoExif');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
-const { generateThumbnail, generateVideoPlaceholder, withProcessableImage } = require('./imageProcessor');
+const { generateThumbnail, generateVideoPlaceholder, withProcessableImage, extractCaptureDate } = require('./imageProcessor');
 const logger = require('../utils/logger');
 const { isVideoMimeType } = require('./videoProcessor');
 const mime = require('mime-types');
@@ -249,6 +249,9 @@ async function processNewPhoto(filePath) {
   const credit = await resolveCredit({ localPath: filePath, isVideo });
   // Camera details (issue 1733, D1), under the same condition.
   const exif = isVideo ? {} : await exifColumn(filePath);
+  // Capture date, likewise: the row is complete, so the worker that reads it
+  // for an upload never runs, and the timeline sorted it by import time.
+  const capturedAt = isVideo ? null : await extractCaptureDate(filePath);
   // Browser-playable copy (issue 1430): a video the watcher picks up is
   // queued like an uploaded one while the setting is on; otherwise it would
   // wait for the next switch-on backfill. No transaction is open here.
@@ -273,6 +276,7 @@ async function processNewPhoto(filePath) {
     processing_status: 'complete',
     size_bytes: stats.size,
     mime_type: mimeType,
+    captured_at: capturedAt ? capturedAt.toISOString() : null,
     ...(dimensions && { width: dimensions.width, height: dimensions.height }),
     ...(webCopyEnabled ? { web_status: 'pending' } : {}),
     ...credit,
