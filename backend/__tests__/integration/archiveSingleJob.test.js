@@ -503,4 +503,41 @@ describe('one archive job per gallery', () => {
     expect(res.status).toBe(200);
     expect(deletedKeys()).toContain(oldKey);
   });
+
+  it('checks the claim before its first cleanup delete', async () => {
+    const event = await makeEvent('stall-before-cleanup');
+    const oldKey = 'events/archived/stall-before-cleanup-0123456789ab.zip';
+    await recordRestoredZip(event.id, oldKey);
+    let open;
+    deleteGate = new Promise((resolve) => { open = resolve; });
+    const job = archiveEvent(event);
+    // Published, parked removing the superseded zip, before any original.
+    await new Promise((resolve) => {
+      const tick = () => (mockStorage.delete.mock.calls.length > 0 ? resolve() : setTimeout(tick, 5));
+      tick();
+    });
+    expect(deletedKeys()).toEqual([oldKey]);
+
+    // It stays suspended past its lease and a restore takes the gallery.
+    await db('maintenance_jobs').where({ job_name: jobName(event.id) })
+      .update({ heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString() });
+    await holdClaim(event.id);
+    open();
+
+    await expect(job).rejects.toMatchObject({ code: 'ARCHIVE_IN_PROGRESS' });
+    expect(deletedKeys().filter((key) => key.startsWith('events/active/'))).toEqual([]);
+  });
+
+  it('refuses to record a restored-from zip once the claim has moved on', async () => {
+    const event = await makeEvent('record-lost');
+    const { claimArchive, recordSupersededArchive } = require('../../src/services/archiveService');
+    const lease = await claimArchive(event.id);
+    await db('maintenance_jobs').where({ job_name: jobName(event.id) })
+      .update({ heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString() });
+    await holdClaim(event.id);
+
+    await expect(recordSupersededArchive(lease, 'events/archived/record-lost-0123456789ab.zip'))
+      .rejects.toMatchObject({ code: 'ARCHIVE_IN_PROGRESS' });
+    await lease.release();
+  });
 });

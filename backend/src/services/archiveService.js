@@ -101,13 +101,20 @@ async function recordUpload(lease, key) {
   await writeArchiveState(lease, key ? { ...state, upload: key } : state);
 }
 
-/** Record the zip a restore brought back, to remove once it is superseded. */
-async function recordSupersededArchive(lease, key) {
+/**
+ * Record the zip a restore brought back, to remove once it is superseded.
+ * Pass the restore's transaction: the record has to land with the update
+ * that clears archive_path, or nothing would name the zip any more. Throws
+ * when the claim has moved on, so that update rolls back.
+ */
+async function recordSupersededArchive(lease, key, conn = db) {
   if (!isArchiveKey(key)) return;
-  const state = await readArchiveState(lease.jobName);
+  const state = await readArchiveState(lease.jobName, conn);
   const superseded = Array.isArray(state.superseded) ? state.superseded : [];
   if (!superseded.includes(key)) superseded.push(key);
-  await writeArchiveState(lease, { ...state, superseded });
+  if (!(await writeArchiveState(lease, { ...state, superseded }, conn))) {
+    throw new AppError('The archive claim was taken over', 409, 'ARCHIVE_IN_PROGRESS');
+  }
 }
 
 /** Zips restores brought back for this gallery, not yet removed. */
@@ -457,13 +464,15 @@ async function buildArchive(event, lease) {
 
     // The cleanup below deletes by key. A run that stalls past its lease
     // after publishing (a suspended process) can find the gallery restored
-    // by then, its originals back under the same keys: checked again before
-    // each delete once a few seconds have passed, and on a lost or unreadable
-    // claim the cleanup stops. Leftover originals are recoverable; deleting
+    // by then, its originals back under the same keys: checked before the
+    // first delete and again once a few seconds have passed, and on a lost or
+    // unreadable claim the cleanup stops. Leftover originals are recoverable; deleting
     // restored photos is not.
-    let checkedAt = Date.now();
+    // Checked before the first delete too: the run can have stalled anywhere
+    // between the publish and here.
+    let checkedAt = 0;
     const assertStillHeld = async () => {
-      if (Date.now() - checkedAt < CLEANUP_CLAIM_CHECK_MS) return;
+      if (!lease.lost && Date.now() - checkedAt < CLEANUP_CLAIM_CHECK_MS) return;
       const renewed = await db('maintenance_jobs')
         .where({ job_name: lease.jobName, claim_token: lease.token, is_running: true })
         .update({ heartbeat_at: new Date().toISOString() });

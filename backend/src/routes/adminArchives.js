@@ -793,26 +793,26 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
     
-    await db('events')
-      .where('id', req.params.id)
-      .update({
-        is_archived: formatBoolean(false),
-        is_active: formatBoolean(true),
-        archive_path: null,
-        // Cleared with the path it measures — a restored event has no zip, and
-        // a stale size would be re-shown verbatim if it is archived again
-        // before the new archive finishes writing.
-        archive_size: null,
-        archived_at: null,
-        expires_at: thirtyDaysFromNow.toISOString() // Reset expiration - works on both DBs
-      });
-
     // The zip stays (issue 2012): the gallery's fallback until it has a newer
     // archive. Each archive run writes a key of its own, so archiving again no
-    // longer overwrites it; recorded here, it goes once the next archive is
-    // published, or with the gallery.
-    await recordSupersededArchive(lease, archive.archive_path).catch((err) =>
-      logger.warn(`Could not record the restored archive ${archive.archive_path}: ${err.message}`));
+    // longer overwrites it; recorded with the update that drops its path, it
+    // goes once the next archive is published, or with the gallery.
+    await db.transaction(async (trx) => {
+      await trx('events')
+        .where('id', req.params.id)
+        .update({
+          is_archived: formatBoolean(false),
+          is_active: formatBoolean(true),
+          archive_path: null,
+          // Cleared with the path it measures — a restored event has no zip, and
+          // a stale size would be re-shown verbatim if it is archived again
+          // before the new archive finishes writing.
+          archive_size: null,
+          archived_at: null,
+          expires_at: thirtyDaysFromNow.toISOString() // Reset expiration - works on both DBs
+        });
+      await recordSupersededArchive(lease, archive.archive_path, trx);
+    });
 
     // Browser-playable copies (issue 1430): archiving dropped them and reset
     // the rows (archiveService). With the setting on, the restored videos are
