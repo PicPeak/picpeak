@@ -386,6 +386,14 @@
   pointer-events: auto;
 }
 
+/* Both are still in the tab order while hidden; a keyboard user tabbing onto
+   one has to see what has focus. */
+.gallery-premium-checkbox:focus-visible,
+.gallery-premium-like-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 [data-input-mode='touch'] .gallery-premium-checkbox {
   height: 2.25rem;
   width: 2.25rem;

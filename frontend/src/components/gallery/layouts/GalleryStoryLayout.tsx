@@ -29,6 +29,7 @@ import { DownloadQuotaNotice } from '../DownloadQuotaNotice';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/downloadLimit';
 import { photoMatchesFilenameSearch } from '../../../utils/photoFilename';
+import { useInputMode } from '../../../hooks/useInputMode';
 
 import './GalleryStoryLayout.css';
 
@@ -238,6 +239,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // for the session, the way the Premium layout does. Shared by the card
   // heart and Favourite selected.
   const guestIdentity = useGuestIdentityOptional();
+  // Card controls hidden until hover are shown outright for a finger (CSS).
+  const inputMode = useInputMode();
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
   const [pendingLikes, setPendingLikes] = useState<PendingLikes | null>(null);
@@ -496,7 +499,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }
 
   return (
-    <div className="gallery-story-layout">
+    <div className="gallery-story-layout" data-input-mode={inputMode}>
       <StoryScrollToTop />
 
       {/* Navigation Overlay */}
