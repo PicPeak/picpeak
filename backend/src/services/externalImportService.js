@@ -251,9 +251,6 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     await db('photos').whereNot('id', row.id).where(column, key).update(others);
     await storage.delete(key).catch(() => {});
   }
-  // The watermark service keeps results in memory by source path, and the
-  // path did not change.
-  require('./watermarkService').forgetSource(f.full);
   await deletePreviewTiers(row).catch(() => {});
   await deleteThumbnailTiers(row).catch(() => {});
   const survivors = await Promise.all(
@@ -313,6 +310,22 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   } catch (thumbErr) {
     // ensureThumbnail makes it on first view instead.
     logger.warn(`Thumbnail regeneration failed for changed external photo ${row.id} (${f.rel}): ${thumbErr.message}`);
+  }
+
+  // The watermark service keeps results in memory by the path it read: the
+  // source for the full image, the local derivative file for thumbnails,
+  // previews and heroes. None of those paths changed. Last, so nothing read
+  // before the swap is left in it. (This process only; see the Limits.)
+  const watermarkService = require('./watermarkService');
+  watermarkService.forgetSource(f.full);
+  if (typeof storage.resolveLocalPath === 'function') {
+    const derivativeKeys = [
+      ...DERIVATIVE_COLUMNS.map((column) => row[column]).filter(Boolean),
+      ...previewTierKeys(row), ...thumbnailTierKeys(row),
+    ];
+    for (const key of derivativeKeys) {
+      try { watermarkService.forgetSource(storage.resolveLocalPath(key)); } catch (_) { /* not a local key */ }
+    }
   }
   return 'refreshed';
 }
@@ -599,7 +612,6 @@ async function importExternalFolder({
     // as every other ingest, so a concurrent upload cannot overshoot with it.
     const photoCap = photoCapOf(event);
     let capReached = false;
-    let considered = 0;
 
     // Insert photos
     for (const f of dedupeMap.values()) {
@@ -609,7 +621,6 @@ async function importExternalFolder({
         authorizedAt = Date.now();
         filesSinceAuthorized = 0;
       }
-      considered += 1;
       if (lost) {
         // Either another process took the claim over — it is walking this
         // same folder now, and the unique index makes anything we insert from
@@ -639,6 +650,7 @@ async function importExternalFolder({
         const exists = await db('photos')
           .where({ event_id: eventId, external_relpath: relFromRoot })
           .first();
+        if (!exists && capReached) { skipped++; continue; }
         if (exists) {
           // The same path with other bytes: the file was edited on the share
           // (a re-export from Lightroom over the proof). Without this the row
@@ -773,12 +785,14 @@ async function importExternalFolder({
 
         if (inserted === null) {
           // The cap is reached. Nothing after this file can be inserted
-          // either, so stop here rather than stat and decode the rest; the
-          // files left over are reported as skipped.
+          // either, so the new files left are skipped without a stat or a
+          // decode. The loop goes on for the files already in the gallery:
+          // an edited one further down must still be refreshed, or a gallery
+          // at its cap would never pick up an edit behind a new file.
           capReached = true;
-          skipped += dedupeMap.size - considered + 1;
+          skipped++;
           logger.info(`External import for event ${eventId}: photo cap of ${photoCap} reached after ${imported} imported`);
-          break;
+          continue;
         }
 
         const photoId = Array.isArray(inserted) && inserted.length

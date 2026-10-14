@@ -212,6 +212,38 @@ describe('external re-scan of a file changed in place', () => {
     expect(watermarkService.cache.has(`${source}-other_{"enabled":true}_stripped`)).toBe(true);
   });
 
+  it('forgets in-memory watermarks of its thumbnail, preview and hero too', async () => {
+    // The gallery watermarks those from the derivative's local file, under
+    // a path that does not change with a rebuild.
+    const eventId = await seedEvent();
+    const { photo, keys } = await importWithRenditions(eventId);
+    const watermarkService = require('../../src/services/watermarkService');
+    const tier = require('../../src/services/imageProcessor').previewTierKeys(photo)[0];
+    const cached = [keys.thumbnail_path, keys.preview_path, keys.hero_path, tier]
+      .map((key) => `${path.join(storageRoot, key)}_{"enabled":true}_stripped`);
+    for (const key of cached) watermarkService.cache.set(key, { buffer: Buffer.from('old'), timestamp: Date.now() });
+
+    await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+    for (const key of cached) expect(watermarkService.cache.has(key)).toBe(false);
+  });
+
+  it('still refreshes an edited file behind a new one in a gallery at its photo cap', async () => {
+    const eventId = await seedEvent();
+    const { photo } = await importWithRenditions(eventId);
+    await db('events').where({ id: eventId }).update({ photo_cap: 1 });
+    // Named to come before a.jpg, so the walk (directory order, not sorted;
+    // name order on APFS and most ext4 directories this small) meets the new
+    // file first. With the fix the order does not matter.
+    await writeJpeg('shoot/0-new.jpg', { width: 50, height: 50, color: { r: 1, g: 2, b: 3 } });
+    await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
+
+    const res = await runImport(eventId, 'shoot');
+    expect(res.body).toMatchObject({ imported: 0, refreshed: 1, capReached: true });
+    expect((await db('photos').where({ id: photo.id }).first()).width).toBe(300);
+    expect(await db('photos').where({ event_id: eventId }).count({ n: '*' }).first()).toMatchObject({ n: 1 });
+  });
+
   it('keeps the row eligible when a cached rendition cannot be removed', async () => {
     const eventId = await seedEvent();
     const { photo, keys } = await importWithRenditions(eventId);
