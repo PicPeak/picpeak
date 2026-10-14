@@ -126,8 +126,33 @@ export function usesCustomTheme(event: Event): boolean {
   return truthy(event.custom_theme_enabled);
 }
 
+/**
+ * The date field's value for a stored expiry (issue 1975). The field sends a
+ * bare 'yyyy-MM-dd', which the server stores as midnight UTC; read in the
+ * browser's zone, that instant is the previous day west of UTC, and a save
+ * would move the expiry back a day. A midnight-UTC instant is read as its UTC
+ * date. Anything else (event creation and the duplicate dialog store the
+ * server's local midnight) keeps the browser-zone reading.
+ */
+export function expiryDateField(value: unknown): string {
+  const date = safeParseDate(value);
+  if (!date || Number.isNaN(date.getTime())) return '';
+  const iso = date.toISOString();
+  return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : format(date, 'yyyy-MM-dd');
+}
+
+/**
+ * The date field's value for a stored delivery due date: its UTC date, the
+ * day deliveryDue() and the backend's due/overdue checks read. The field
+ * stores noon UTC, which the browser zone would push to the next day east of
+ * UTC+12.
+ */
+export function deliveryDueDateField(value: unknown): string {
+  const date = safeParseDate(value);
+  return date && !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : '';
+}
+
 export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null | undefined): EventFields {
-  const expiresAt = safeParseDate(event.expires_at);
   const extra = event as Event & {
     promo_mode?: 'inherit' | 'custom' | 'off';
     info_mode?: 'inherit' | 'custom' | 'off';
@@ -139,7 +164,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     welcome_message: event.welcome_message || '',
     color_theme: event.color_theme || '',
     css_template_id: event.css_template_id ?? null,
-    expires_at: expiresAt ? format(expiresAt, 'yyyy-MM-dd') : '',
+    expires_at: expiryDateField(event.expires_at),
     allow_user_uploads: truthy(event.allow_user_uploads),
     reveal_mode: truthy(event.reveal_mode),
     // datetime-local wants local "YYYY-MM-DDTHH:mm"
@@ -195,10 +220,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     folder_structure: truthy(event.folder_structure),
     delivery_status: event.delivery_status === 'partial' ? 'partial' : 'complete',
     delivery_expected_count: event.delivery_expected_count ? String(event.delivery_expected_count) : '',
-    delivery_due_at: (() => {
-      const due = safeParseDate(event.delivery_due_at ?? null);
-      return due ? format(due, 'yyyy-MM-dd') : '';
-    })(),
+    delivery_due_at: deliveryDueDateField(event.delivery_due_at),
     delivery_badge_label: event.delivery_badge_label || '',
     assigned_admins: event.assigned_admins || [],
     review_contributor_uploads: truthy(event.review_contributor_uploads),
