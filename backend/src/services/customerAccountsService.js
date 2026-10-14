@@ -994,14 +994,16 @@ async function formerAddressWindows(trx, customer) {
       continue;
     }
     if (from && held === from && since && at && from !== current) {
-      // Whole seconds strictly inside the tenure only. A queued row stamped
-      // in the same instant as the hand-over could be the next owner's, and
-      // a restore stores SQLite queue times (and possibly these history
-      // times) floored to the second (normaliseSqliteEmailQueue), which
-      // could otherwise slide the next owner's mail back inside the window.
+      // From the first whole second after taking the address up to (not
+      // including) the second it was handed over in. A queued row stamped in
+      // the hand-over instant could be the next owner's, and a restore
+      // stores SQLite queue times (and possibly these history times) floored
+      // to the second (normaliseSqliteEmailQueue), which could otherwise
+      // slide the next owner's mail back inside the window. Both bounds hold
+      // whether a time is stored to the millisecond or floored.
       const first = new Date(Math.floor(since.getTime() / 1000) * 1000 + 1000);
-      const last = new Date(Math.floor(at.getTime() / 1000) * 1000 - 1000);
-      if (first <= last) windows.push({ email: from, since: first, until: last });
+      const before = new Date(Math.floor(at.getTime() / 1000) * 1000);
+      if (first < before) windows.push({ email: from, since: first, before });
     }
     held = to || null;
     since = at;
@@ -1084,7 +1086,7 @@ async function eraseCustomer(id, erasedByAdminId) {
         w.orWhere((f) => {
           f.whereRaw('LOWER(recipient_email) = ?', [win.email])
             .modify(whereTimestamp, 'created_at', '>=', win.since)
-            .modify(whereTimestamp, 'created_at', '<=', win.until);
+            .modify(whereTimestamp, 'created_at', '<', win.before);
         });
       }
     });

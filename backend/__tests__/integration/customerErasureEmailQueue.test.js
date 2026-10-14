@@ -464,6 +464,8 @@ describe('customer erasure clears email_queue', () => {
     const earlierOwnerMail = await queueAt(formerAddress, 'sent', at(5), 'Earlier Owner');
     const pendingOld = await queueAt(formerAddress, 'pending', at(30), 'Mover Pending');
     const sentOld = await queueAt(formerAddress, 'sent', at(30), 'Mover Sent');
+    // The last whole second before the hand-over second is still the customer's.
+    const lastSecond = await queueAt(formerAddress, 'sent', at(39.5), 'Mover Last Second');
     const laterOwnerMail = await queueAt(formerAddress, 'pending', at(50), 'Later Owner');
     // Same second as the hand-over, and the same instant floored to the
     // second the way a restore stores SQLite queue times: the next owner's.
@@ -481,6 +483,7 @@ describe('customer erasure clears email_queue', () => {
     expect(JSON.parse(pending.email_data)).toEqual({ redacted: true, reason: 'customer_erased' });
     const sent = await expectRedacted(sentOld, 'sent');
     expect(JSON.stringify(sent)).not.toContain('Mover Sent');
+    await expectRedacted(lastSecond, 'sent');
     await expectUntouched(earlierOwnerMail, formerAddress, 'Earlier Owner', 'sent');
     await expectUntouched(laterOwnerMail, formerAddress, 'Later Owner', 'pending');
     await expectUntouched(handOver, formerAddress, 'Hand-over', 'pending');
