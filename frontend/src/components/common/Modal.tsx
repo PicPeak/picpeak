@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { lockBodyScroll } from '../../utils/scrollLock';
+import { isImeComposing } from '../../utils/imeComposition';
 
 interface ModalProps {
   open: boolean;
@@ -100,6 +101,8 @@ export const Modal: React.FC<ModalProps> = ({
     const onKeyDown = (e: KeyboardEvent) => {
       if (!layer.isTop()) return;
       if (e.key === 'Escape') {
+        // An Escape that cancels an IME composition belongs to the field.
+        if (isImeComposing(e)) return;
         e.stopPropagation();
         onCloseRef.current();
         return;

@@ -23,6 +23,7 @@ import { Button, Loading, Modal, Notice } from '../common';
 import { api } from '../../config/api';
 import { faceCropStyle } from '../gallery/faceCrop';
 import { adminFacePreviewUrl, adminPhotoPreviewUrl } from '../gallery/imageTiers';
+import { isImeComposing } from '../../utils/imeComposition';
 
 
 /** Mirrors PERSON_FACES_LIMIT in adminEvents/faces.js. The endpoint caps a
@@ -700,6 +701,9 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                     onChange={(e) => setDraftLabel(e.target.value)}
                     onBlur={() => saveLabel(person)}
                     onKeyDown={(e) => {
+                      // Escape and Enter of an IME composition are the field's
+                      // (stopped here so the window does not close either).
+                      if (isImeComposing(e)) { e.stopPropagation(); return; }
                       if (e.key === 'Enter') saveLabel(person);
                       if (e.key === 'Escape') {
                         // Cancels the rename only; the window stays open.
