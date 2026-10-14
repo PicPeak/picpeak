@@ -1693,6 +1693,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // render the button on the callback being present rather than on a
           // showLogout flag, so withholding it is how the gate reaches them.
           onLogout={showLogoutControl ? logout : undefined}
+          // Client access (issue 1992): the full-page layouts render the eye
+          // toggle too, so they need the same props as the standard branch.
+          isClient={isClient}
+          onToggleVisibility={isClient ? handleToggleVisibility : undefined}
           showOriginalFilename={showOriginalFilename}
         />
 
