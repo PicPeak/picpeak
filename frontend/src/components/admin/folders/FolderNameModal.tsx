@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Modal } from '../../common';
+import { isImeComposing } from '../../../utils/imeComposition';
 
 interface FolderNameModalProps {
   isOpen: boolean;
@@ -66,7 +67,8 @@ const FolderNameDialog: React.FC<FolderNameModalProps> = ({
         maxLength={MAX_NAME_LENGTH}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') submit();
+          // Not the Enter that commits an IME composition.
+          if (e.key === 'Enter' && !isImeComposing(e)) submit();
         }}
         className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent"
       />

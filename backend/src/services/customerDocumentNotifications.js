@@ -32,6 +32,7 @@ const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { formatBoolean } = require('../utils/dbCompat');
+const { toTimestamp } = require('../utils/dateNormalize');
 const emailProcessor = require('./emailProcessor');
 const businessProfileService = require('./businessProfileService');
 const customerAccountsService = require('./customerAccountsService');
@@ -71,8 +72,10 @@ async function reachableCustomer(customerId) {
 
 async function queue(type, recipient, data, ids, options = {}) {
   try {
-    await emailProcessor.queueEmail(null, recipient, type, data, options);
-    return 'queued';
+    const result = await emailProcessor.queueEmail(null, recipient, type, data, options);
+    // Held back for a customer who takes no administrative emails (migration
+    // 300): nothing goes out, so the card and the toast must not say it does.
+    return result === 'suppressed' ? 'skipped' : 'queued';
   } catch (err) {
     logger.warn('Could not queue a customer document mail', { type, ...ids, error: err.message });
     return 'failed';
@@ -106,7 +109,7 @@ async function notifyShared(doc, { notify } = {}) {
       // Looked back up at send time (#1591): the share can be undone before
       // the queue reaches this row.
       __documentId: doc.id,
-    }, ids, { respectBusinessHours: true });
+    }, ids, { customerAccountId: customer.id, respectBusinessHours: true });
   } catch (err) {
     logger.warn('Could not prepare the document-shared mail', { ...ids, error: err.message });
     return 'failed';
@@ -155,7 +158,7 @@ async function notifyRejected(doc) {
       // Looked back up at send time (#1591): a later acceptance can reverse
       // the rejection before the queue reaches this row.
       __documentId: doc.id,
-    }, ids, { respectBusinessHours: true });
+    }, ids, { customerAccountId: customer.id, respectBusinessHours: true });
   } catch (err) {
     logger.warn('Could not prepare the document-rejected mail', { ...ids, error: err.message });
     return 'failed';
@@ -179,19 +182,19 @@ async function notifyRequest(request, { reminder = false, notify } = {}) {
       business_name: await businessName(),
       request_title: request.title,
       request_note: request.note || '',
-      // Formatted here: the queue only formats its own date variables. A
-      // calendar day, named by its UTC date as the portal shows it — the
-      // server's timezone would move it a day either side.
+      // A calendar day, named by its UTC date as the portal shows it — the
+      // server's timezone would move it a day either side. Queued as a bare
+      // date: the queue formats due_date itself, and an already formatted
+      // '22/09/2026' reached the mail as "Invalid Date".
       due_date: request.due_at
-        ? await require('../utils/dateFormatter').formatDate(
-          new Date(request.due_at).toISOString().slice(0, 10), customer.preferred_language || 'en')
+        ? new Date(toTimestamp(request.due_at)).toISOString().slice(0, 10)
         : '',
       upload_link: `${base}/customer/documents?request=${request.id}`,
       __language: customer.preferred_language || undefined,
       // Looked back up at send time (#1591): the request can be fulfilled
       // or cancelled before the queue reaches this row.
       __requestId: request.id,
-    }, ids, { respectBusinessHours: true });
+    }, ids, { customerAccountId: customer.id, respectBusinessHours: true });
   } catch (err) {
     logger.warn('Could not prepare the document-request mail', { ...ids, error: err.message });
     return 'failed';
