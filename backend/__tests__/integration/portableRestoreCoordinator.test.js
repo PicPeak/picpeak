@@ -91,11 +91,16 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       }, files,
     };
     const run = async args => {
+      // Each run reports through the gate that was current when it was
+      // launched. Reading `terminal` after onStart let a run whose pre-exec
+      // check was still in flight pick up a gate the test had since swapped in
+      // for a later run (on PG the test's own queries do not queue behind it).
+      const own = terminal;
       await args.onStart();
-      await terminal.promise;
-      if (terminal.error) throw terminal.error;
+      await own.promise;
+      if (own.error) throw own.error;
       const result = { attemptId: args.attemptId, proof: 'kernel_lease_released',
-        ...(terminal.result || { outcome: 'committed', summary: { tables: 3, filesRestored: 2, sessionInvalidated: true } }) };
+        ...(own.result || { outcome: 'committed', summary: { tables: 3, filesRestored: 2, sessionInvalidated: true } }) };
       if (result.outcome === 'committed') await db('portable_restore_commits').insert({ attempt_id: args.attemptId,
         local_plan_checksum: hash('local plan'), options_digest: hash(JSON.stringify(args.options || {})) });
       return result;
