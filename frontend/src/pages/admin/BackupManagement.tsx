@@ -17,7 +17,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card, Loading, Badge } from '../../components/common';
+import { Button, Card, Loading, Badge, Notice } from '../../components/common';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
@@ -125,6 +125,14 @@ export const BackupManagement: React.FC = () => {
         title={t('backup.title')}
         description={t('backup.subtitle')}
       />
+
+      {/* An unusable signing key fails every backup: say so, with the
+          server's reason (file, mode, fix), before one is started. */}
+      {backupStatus?.signingKey?.source === 'invalid' && (
+        <Notice tone="danger" title={t('backup.status.signingKeyInvalid')} className="mb-6">
+          <span className="break-words">{backupStatus.signingKey.reason}</span>
+        </Notice>
+      )}
 
       {/* Status Bar */}
       <Card className="mb-6 p-4">

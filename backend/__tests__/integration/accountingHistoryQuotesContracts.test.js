@@ -340,6 +340,13 @@ describe('contracts', () => {
     const update = lastUpdate(await historyOf('contract', id), 'contract');
     expect(update.source).toBe('contract.upload.signed_pdf');
     expect(update.actor).toEqual({ type: 'admin', id: adminId, name: null });
+
+    // The activity log names the same admin, not an anonymous one.
+    const logged = (await db('activity_logs').where({ activity_type: 'contract_signed_pdf_uploaded' })
+      .orderBy('id', 'desc')).find((r) => JSON.parse(r.metadata).contractId === id);
+    const { username } = await db('admin_users').where({ id: adminId }).first('username');
+    expect(logged).toMatchObject({ actor_type: 'admin', actor_name: username });
+    expect(Number(logged.actor_id)).toBe(adminId);
   });
 
   it('countersignature records the admin', async () => {

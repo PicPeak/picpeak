@@ -309,6 +309,38 @@ describe('gallery original-asset authority', () => {
       await db('events').where({ id: eventId }).update({ download_limit: null });
     }
   });
+  test('a video storage fails to return takes no download slot, whole or by range', async () => {
+    await db('events').where({ id: eventId }).update({ download_limit: 5 });
+    const client = { Authorization: `Bearer ${token({ accessLevel: 'client' })}` };
+    const grants = () => db('event_download_grants').where({ event_id: eventId, photo_id: videoId });
+    const videoKey = `events/active/${SLUG}/individual/source.mp4`;
+    const fail = (method) => {
+      const real = storage[method].bind(storage);
+      return jest.spyOn(storage, method).mockImplementation((key, ...rest) => (key === videoKey
+        ? Promise.reject(new Error('storage unreachable'))
+        : real(key, ...rest)));
+    };
+    try {
+      for (const [method, headers] of [['get', client], ['getRange', { ...client, Range: 'bytes=0-5' }]]) {
+        const spy = fail(method);
+        try {
+          const res = await get('photo', videoId, headers);
+          expect(res.status).toBeGreaterThanOrEqual(500);
+        } finally {
+          spy.mockRestore();
+        }
+        // The reservation settles on close: give it a moment, then nothing may remain.
+        await new Promise((resolve) => { setTimeout(resolve, 50); });
+        expect(await grants().where('pending_holders', 0)).toHaveLength(0);
+      }
+      const counted = await get('photo', videoId, client);
+      expect(counted.status).toBe(200);
+      expect(counted.body).toEqual(VIDEO);
+    } finally {
+      await grants().del();
+      await db('events').where({ id: eventId }).update({ download_limit: null });
+    }
+  });
   test('a legacy-shaped rendition pointer is rebuilt instead of answering 404', async () => {
     expect((await get('thumbnail')).status).toBe(200);
     expect((await get('preview')).status).toBe(200);

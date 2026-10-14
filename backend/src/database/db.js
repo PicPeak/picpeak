@@ -685,14 +685,25 @@ async function logActivityInternal(activityType, metadata = {}, eventId = null, 
     const actorName = actor?.name
       || (actorIdInt === null && rawId !== undefined && rawId !== null ? String(rawId) : null);
 
-    const insert = (executor) => executor('activity_logs').insert({
-      activity_type: activityType,
-      actor_type: actor?.type || 'system',
-      actor_id: actorIdInt,
-      actor_name: actorName,
-      metadata: JSON.stringify(metadata),
-      event_id: eventId
-    });
+    // An admin actor given only by id gets its current username stored, so
+    // the entry still names the admin after the account is deleted. Read
+    // through the same executor as the insert: inside a caller's trx (and its
+    // savepoint) a global-db read would wait on the single SQLite connection.
+    const insert = async (executor) => {
+      let name = actorName;
+      if (!name && actor?.type === 'admin' && actorIdInt !== null) {
+        const row = await executor('admin_users').where('id', actorIdInt).first('username');
+        name = row?.username || null;
+      }
+      return executor('activity_logs').insert({
+        activity_type: activityType,
+        actor_type: actor?.type || 'system',
+        actor_id: actorIdInt,
+        actor_name: name,
+        metadata: JSON.stringify(metadata),
+        event_id: eventId
+      });
+    };
     // Inside a caller's transaction, insert under a savepoint. A failed
     // statement aborts a whole PostgreSQL transaction, so the catch below
     // would otherwise hide an error that still rolls back the caller's work

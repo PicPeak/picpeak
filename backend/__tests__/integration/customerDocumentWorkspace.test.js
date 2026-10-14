@@ -661,6 +661,17 @@ describe('customer activity (admin)', () => {
     }
   });
 
+  it('names the admin who edited the customer, not "system"', async () => {
+    const edited = await asAdmin(request(adminApp).put(`/api/admin/customers/${me}`).send({ display_name: 'Renamed' }));
+    expect(edited.status).toBe(200);
+    const { username } = await db('admin_users').where({ id: adminId }).first('username');
+
+    const res = await activity(me);
+    const entry = res.body.entries.find((e) => e.type === 'customer_updated');
+    expect(entry.actorType).toBe('admin');
+    expect(entry.actorName).toBe(username);
+  });
+
   it('pages by id', async () => {
     const first = await activity(me, '?limit=1');
     expect(first.body.entries).toHaveLength(1);
@@ -965,6 +976,18 @@ describe('malware scanner (fake clamd)', () => {
       .toBeUndefined();
   });
 
+  it('logs a rejected upload against the gallery it named', async () => {
+    useClamd();
+    const infected = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .field('eventId', String(eventA))
+      .attach('file', INFECTED, { filename: 'gallery-scan.pdf', contentType: 'application/pdf' });
+    expect(infected.status).toBe(422);
+    const rows = (await db('activity_logs').where({ activity_type: 'customer_document_scan_rejected' }))
+      .filter((r) => meta(r.metadata).customerId === customerA);
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0].event_id)).toBe(eventA);
+  });
+
   it('re-scans rows left pending and promotes each exactly once under two concurrent runs', async () => {
     // Uploaded while no scanner was registered: pending.
     const a = (await uploadAs(me, 'later-clean.pdf')).body.document.id;
@@ -1130,17 +1153,20 @@ describe('document requests', () => {
   });
 
   it('names the deadline in the mail by its calendar day, not the server\'s clock', async () => {
-    // Formatted from the UTC date, as a date-only string the formatter reads
+    // Queued as the UTC date, a date-only string the queue's formatter reads
     // as that day in any timezone (a jest sandbox can't switch TZ itself).
-    const dateFormatter = require('../../src/utils/dateFormatter');
-    const spy = jest.spyOn(dateFormatter, 'formatDate');
-    try {
-      const res = await createRequest(me, { title: 'Deadline', dueAt: '2026-09-22T12:00:00.000Z' });
-      expect(spy).toHaveBeenCalledWith('2026-09-22', 'en');
-      await db('customer_document_requests').where({ id: res.body.request.id }).update({ status: 'cancelled' });
-    } finally {
-      spy.mockRestore();
-    }
+    const res = await createRequest(me, { title: 'Deadline', dueAt: '2026-09-22T12:00:00.000Z' });
+    const mail = (await mails('customer_document_requested', 'requests-me@example.com')).pop();
+    const data = meta(mail.email_data);
+    expect(data.due_date).toBe('2026-09-22');
+    // The queue formats due_date once, in the default DD/MM/YYYY; a value
+    // formatted before queueing was parsed again and printed "Invalid Date".
+    await require('../../src/services/crmEmailTemplates').ensureCrmEmailTemplatesSeeded(db, null);
+    const rendered = await require('../../src/services/emailProcessor')
+      .renderQueuedEmail('customer_document_requested', data, 'requests-me@example.com');
+    expect(rendered.html).toContain('Please send it by 22/09/2026.');
+    expect(rendered.html).not.toContain('Invalid Date');
+    await db('customer_document_requests').where({ id: res.body.request.id }).update({ status: 'cancelled' });
   });
 
   it('is fulfilled by an upload that names it, in the same write', async () => {

@@ -195,7 +195,9 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
         // ensureThumbnail keeps a complete video's poster note in step with
         // the frame it rebuilt (issue 1430); it needs the status to know.
         'processing_status',
-        'source_origin', 'external_relpath', 'filename', 'source_filename'
+        // An external row's tier keys carry its size; selected here so the
+        // helpers need not read it per photo.
+        'source_origin', 'external_relpath', 'filename', 'size_bytes', 'source_filename'
       );
     if (eventId) {
       query = query.where('event_id', eventId);
@@ -346,7 +348,7 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
     // external photo looks managed here and generation is skipped.
     let query = db('photos').select(
       'id', 'event_id', 'path', 'media_type', 'mime_type', 'preview_path',
-      'source_origin', 'external_relpath', 'filename'
+      'source_origin', 'external_relpath', 'filename', 'size_bytes'
     );
     if (eventId) query = query.where('event_id', eventId);
     // Skip videos — preview tier is image-only.

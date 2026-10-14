@@ -3,6 +3,7 @@
 
 const crypto = require('crypto');
 const { db, logActivity } = require('../../database/db');
+const { adminActivityActor } = require('../../utils/activityActor');
 const { AppError } = require('../../utils/errors');
 const businessProfileService = require('../businessProfileService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
@@ -231,7 +232,7 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
   try {
     await logActivity('monthly_billing_items_queued',
       { invoiceId: draft.id, customerId: customer.id, itemsAdded: newItems.length },
-      null, `admin:${adminId}`, trx);
+      null, adminActivityActor(adminId), trx);
   } catch (_) { /* non-fatal */ }
 
   return draft.id;

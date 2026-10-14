@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { isImeComposing } from '../utils/imeComposition';
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -22,7 +23,8 @@ export function useModalFocus<T extends HTMLElement>(isOpen: boolean, onClose: (
     // An autoFocus field inside keeps its focus.
     if (!panel?.contains(document.activeElement)) focusables()[0]?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busyRef.current) {
+      // An Escape that cancels an IME composition belongs to the field.
+      if (e.key === 'Escape' && !busyRef.current && !isImeComposing(e)) {
         e.stopPropagation();
         onCloseRef.current();
         return;

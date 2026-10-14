@@ -7,6 +7,7 @@
  */
 
 const { db, logActivity } = require('../database/db');
+const { adminActivityActor } = require('../utils/activityActor');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { isUniqueViolation } = require('../utils/dbErrors');
@@ -128,7 +129,7 @@ async function saveTheme(scope, settings, adminId) {
     }
   }
   try {
-    await logActivity('pdf_theme_updated', { scope }, null, `admin:${adminId}`);
+    await logActivity('pdf_theme_updated', { scope }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
   return listThemes();
 }

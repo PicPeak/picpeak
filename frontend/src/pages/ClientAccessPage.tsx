@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, CardContent, Input, Button, Loading, PoweredBy } from '../components/common';
 import { useGalleryAuth } from '../contexts';
 import { useGalleryInfo } from '../hooks/useGallery';
+import { useFollowGalleryRename } from '../hooks/useFollowGalleryRename';
 import { usePublicSettings } from '../hooks/usePublicSettings';
 import { usePublicDarkMode } from '../hooks/usePublicDarkMode';
 import { buildResourceUrl } from '../utils/url';
@@ -20,7 +21,9 @@ export const ClientAccessPage: React.FC = () => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
-  const { data: galleryInfo, isLoading: isLoadingInfo, error: infoError } = useGalleryInfo(slug);
+  const { data: galleryInfo, isLoading: isLoadingInfoQuery, error: infoError } = useGalleryInfo(slug);
+  // A renamed gallery's old slug: move to the new one, ?token= included.
+  const isLoadingInfo = useFollowGalleryRename(infoError, slug) || isLoadingInfoQuery;
 
   const { data: settingsData } = usePublicSettings();
   // Theme-aware logo: the page background follows the themed

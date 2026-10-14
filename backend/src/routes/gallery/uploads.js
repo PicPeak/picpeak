@@ -13,8 +13,31 @@ const { guestNameModeOf, guestCreditFields } = require('../../services/photoCred
 const { withPublicUpload } = require('../../middleware/publicUploadStream');
 const { holdsGuestUploads, notifyGuestUploadsPending } = require('../../services/uploadReviewService');
 const { parseClientCaptureDate } = require('../../services/guestUploadDownscale');
+const { GALLERY_COOKIE_PREFIX, sanitizeSlugForCookie } = require('../../utils/tokenUtils');
 
-router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolveGuest, async (req, res) => {
+/**
+ * This URL names the event by id, so verifyGalleryAccess has no slug to pick
+ * the gallery's own cookie by and falls back to the generic one: the gallery
+ * logged into last, possibly in another tab, which the event check below then
+ * refuses with 403. When the browser holds this event's own gallery cookie,
+ * name the slug so that cookie is the one read. It only steers which cookie
+ * is used; without one nothing changes, and a header token still wins.
+ */
+async function selectEventGalleryCookie(req, res, next) {
+  try {
+    const eventId = parseInt(req.params.eventId, 10);
+    if (!req.cookies || !Number.isSafeInteger(eventId)) return next();
+    const event = await db('events').where({ id: eventId }).first('slug');
+    if (event?.slug && req.cookies[`${GALLERY_COOKIE_PREFIX}${sanitizeSlugForCookie(event.slug)}`]) {
+      req.requestedSlug = event.slug;
+    }
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+router.post('/:eventId/upload', selectEventGalleryCookie, verifyGalleryAccess, denySlideshowToken, resolveGuest, async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId);
 

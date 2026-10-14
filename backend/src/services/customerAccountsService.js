@@ -193,7 +193,7 @@ async function createInvitation({ email, invitedById, prefill }) {
   await logActivity('customer_invitation_created',
     { email: normalisedEmail },
     null,
-    { type: 'admin', id: invitedById, name: 'system' }
+    { type: 'admin', id: invitedById }
   );
 
   logger.info('Customer invitation created', { email: normalisedEmail, invitedById });
@@ -288,7 +288,7 @@ async function createDirect({ email, prefill, createdByAdminId, withinTransactio
   await logActivity('customer_created_passive',
     { customerId: id, email: normalisedEmail },
     null,
-    { type: 'admin', id: createdByAdminId || null, name: 'system' }
+    { type: 'admin', id: createdByAdminId || null }
   );
 
   logger.info('Passive customer created', { id, email: normalisedEmail, createdByAdminId });
@@ -673,6 +673,9 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     // Per-customer Skonto opt-out (migration 112). Boolean, coerced
     // via formatBoolean below for SQLite compatibility.
     'skonto_disabled',
+    // Per-customer "no administrative emails" (migration 300). Boolean,
+    // coerced via formatBoolean below for SQLite compatibility.
+    'no_admin_emails',
     // Per-customer re-bill proof-attachment override (migration 169, #866).
     // Tri-state: null = inherit global default, true/false = force. Handled
     // in its own branch below so null survives (formatBoolean would coerce
@@ -697,6 +700,7 @@ async function updateCustomer(id, updates, updatedByAdminId) {
         || f === 'feature_contracts'
         || f === 'feature_documents'
         || f === 'skonto_disabled'
+        || f === 'no_admin_emails'
       ) {
         allowed[f] = formatBoolean(updates[f]);
       } else if (f === 'marketing_opt_out') {
@@ -792,7 +796,7 @@ async function updateCustomer(id, updates, updatedByAdminId) {
   await logActivity('customer_updated',
     { customerId: id, fields: Object.keys(allowed) },
     null,
-    { type: 'admin', id: updatedByAdminId, name: 'system' }
+    { type: 'admin', id: updatedByAdminId }
   );
 
   // The dedicated consent event, alongside the generic one. It is what the
@@ -802,7 +806,7 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     await logActivity('customer_marketing_opt_out',
       { customerId: id, optOut: marketingConsentTransition, source: 'admin' },
       null,
-      { type: 'admin', id: updatedByAdminId, name: 'system' }
+      { type: 'admin', id: updatedByAdminId }
     );
   }
 
@@ -831,7 +835,7 @@ async function deactivateCustomer(id, deactivatedByAdminId) {
   await logActivity('customer_deactivated',
     { customerId: id, email: customer.email },
     null,
-    { type: 'admin', id: deactivatedByAdminId, name: 'system' }
+    { type: 'admin', id: deactivatedByAdminId }
   );
 
   logger.info('Customer deactivated', { customerId: id, deactivatedByAdminId });
@@ -862,7 +866,7 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
   await logActivity('customer_reactivated',
     { customerId: id, email: customer.email },
     null,
-    { type: 'admin', id: reactivatedByAdminId, name: 'system' }
+    { type: 'admin', id: reactivatedByAdminId }
   );
 
   logger.info('Customer reactivated', { customerId: id, reactivatedByAdminId });
@@ -900,7 +904,10 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
  *     and any backup stop carrying their data (#1593). Matched on the
  *     address as stored *before* this function rewrites it to the sentinel
  *     below, case-insensitively (an address stored with different casing
- *     than the account is still the same mailbox). Contract mail queued to
+ *     than the account is still the same mailbox) since the customer took
+ *     it (currentAddressSince), and on each former
+ *     address for the time the customer held it (formerAddressWindows,
+ *     issue 1971). Contract mail queued to
  *     a signer's own address (not the account email) is covered only for
  *     the unsigned contracts this erasure redacts, and only rows whose
  *     email_data names one of those contracts — see
@@ -951,8 +958,225 @@ async function contractSignerQueueTargets(contractPlan) {
   return byContract.size ? byContract : null;
 }
 
+/**
+ * The queued portal invitations this customer accepted. createInvitation
+ * queues one before the account exists, so neither the current-address
+ * bound nor a former-address window covers it, yet it carries the address
+ * and the invite link of this customer. Its variables cannot attribute it:
+ * they are encrypted while pending and the link token is masked once sent.
+ * Its time can: createInvitation queues the mail right after inserting the
+ * invitation, and it refuses a second invitation to the address while one
+ * is pending, so every customer_invitation mail to the invited address from
+ * the instant the invitation was created until it was accepted is that
+ * invitation's. An invitation to the same address that someone else
+ * accepted, or nobody did, falls outside those windows, also one cancelled
+ * and replaced within the same second (not rounded to the second for that
+ * reason, so a queue time a restore floored to the second can miss it). Must run before the
+ * erasure clears accepted_customer_id. An invitation whose times cannot be
+ * read is left alone rather than guessed at.
+ */
+async function acceptedInvitationQueueIds(trx, customerId) {
+  const invitations = await trx('customer_invitations')
+    .where('accepted_customer_id', customerId)
+    .select('email', 'created_at', 'accepted_at');
+  const windows = [];
+  for (const invitation of invitations) {
+    const email = String(invitation.email || '').toLowerCase();
+    const createdAt = storedTimestamp(invitation.created_at);
+    const acceptedAt = storedTimestamp(invitation.accepted_at);
+    if (!email || !createdAt || !acceptedAt) continue;
+    windows.push({ email, since: createdAt, until: acceptedAt });
+  }
+  if (!windows.length) return [];
+  const rows = await trx('email_queue')
+    .where('email_type', 'customer_invitation')
+    .whereIn('status', ['pending', PROTECTED_PENDING_STATUS, 'sent', 'failed', 'cancelled'])
+    .where((w) => {
+      for (const win of windows) {
+        w.orWhere((q) => {
+          q.whereRaw('LOWER(recipient_email) = ?', [win.email])
+            .modify(whereQueuedWithin, [['>=', win.since], ['<=', win.until]]);
+        });
+      }
+    })
+    .select('id');
+  return rows.map((row) => row.id);
+}
+
+/**
+ * The addresses this customer held before their current one, each with the
+ * window they held it in (issue 1971). updateCustomer changes the address
+ * without touching email_queue, so mail queued or sent to a former address
+ * would otherwise survive the erasure. Read from the customer's own change
+ * history (migration 219), which records every email change with its time;
+ * an address changed before that migration is not recorded and not found.
+ *
+ * The window, not the address alone, decides: emails are unique only among
+ * current accounts, so a former address may belong to another customer now
+ * (or did before this one took it), and their mail must not be touched. An
+ * address gets a window only when the history shows when the customer took
+ * it: a recorded change to it, or the account's own `created` entry. Mail
+ * queued before the account existed (the portal invitation) is not matched
+ * by address (the invitation this customer accepted is matched by its own
+ * time window, acceptedInvitationQueueIds): an invitation does not reserve the address, so a
+ * passive account holding it then may have moved off only before the
+ * acceptance created this one. An account created before migration 219 has
+ * no `created` entry, so its first recorded address (which it may have
+ * taken in an unrecorded change) is not matched either. Nor is mail that
+ * belongs to another account than the address holder's
+ * (NOT_FORMER_ADDRESS_MAIL): an invitation is addressed to whoever accepts
+ * it, which can be a new account once a passive holder has moved off, and
+ * admin mail belongs to the admin account with that address.
+ * Windows are built only from email changes whose times follow the history
+ * order; any such entry out of order or unreadable leaves no former address
+ * matched. An earlier tenure on the current address gets a window too:
+ * currentAddressSince covers only the latest one.
+ */
+const ADMIN_ACCOUNT_MAIL = ['admin_invitation', 'admin_password_reset'];
+const NOT_FORMER_ADDRESS_MAIL = ['customer_invitation', ...ADMIN_ACCOUNT_MAIL];
+
+async function formerAddressWindows(trx, customer) {
+  const rows = await trx('accounting_change_history')
+    .where({ document_type: 'customer', entity_type: 'customer', document_id: customer.id })
+    .orderBy('id', 'asc')
+    .select('action', 'changes', 'created_at');
+  const windows = [];
+  let held = null;
+  let since = null;
+  let previous = null;
+  for (const row of rows) {
+    const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
+    const from = String(changes?.email?.from || '').toLowerCase();
+    const to = String(changes?.email?.to || '').toLowerCase();
+    if (from === to) continue;
+    const at = storedTimestamp(row.created_at);
+    if (!at || (previous && at < previous)) return [];
+    previous = at;
+    if (row.action === 'created') {
+      held = to || null;
+      since = at;
+      continue;
+    }
+    if (from && held === from && since) {
+      // From the first whole second after taking the address up to (not
+      // including) the second it was handed over in. A queued row stamped in
+      // the hand-over instant could be the next owner's, and a restore
+      // stores SQLite queue times (and possibly these history times) floored
+      // to the second (normaliseSqliteEmailQueue), which could otherwise
+      // slide the next owner's mail back inside the window. Both bounds hold
+      // whether a time is stored to the millisecond or floored. The lower
+      // bound is exclusive: SQLite reads a time with more than three
+      // fractional digits rounded to the millisecond (julianday), which can
+      // lift a row from just before the taking onto the whole second.
+      const first = new Date(Math.floor(since.getTime() / 1000) * 1000 + 1000);
+      const before = new Date(Math.floor(at.getTime() / 1000) * 1000);
+      if (first < before) windows.push({ email: from, since: first, before });
+    }
+    held = to || null;
+    since = at;
+  }
+  return windows;
+}
+
+/**
+ * Where the match on the customer's CURRENT address starts. Emails are
+ * unique only among current accounts, so the address may have belonged to
+ * another customer before this one took it, and that mail must stay. The
+ * customer has held it at most since the latest recorded email event that
+ * bounds their tenure: their own latest email change (or `created` entry),
+ * and any change by another customer to or from the address. Returns
+ * `{ at, op }` for `created_at <op> at`: when another customer's history
+ * names the address, the whole-second rule of formerAddressWindows (from the
+ * first whole second after the latest such event, exclusive), since mail in
+ * the hand-over second could be the other holder's; when only the
+ * customer's own history does, from the start of the second they took it,
+ * inclusive, so mail queued right after the creation or change (an
+ * invitation sent straight after a direct creation) is erased too.
+ * When no such event is recorded (an account from before migration 219
+ * nobody else's history names), from the start of the second the account
+ * was created, inclusive; `undefined` (matched unbounded) only when that
+ * time cannot be read either. null when one of the history times cannot be
+ * read, which matches nothing on the address.
+ */
+async function currentAddressSince(trx, customer) {
+  const current = String(customer.email || '').toLowerCase();
+  if (!current) return null;
+  // Every customer entry that records an email change; the address is
+  // compared on the parsed values below, not in SQL, so no way of writing it
+  // in the stored JSON (case, escapes) can hide an entry.
+  const rows = await trx('accounting_change_history')
+    .where({ document_type: 'customer', entity_type: 'customer' })
+    .where((q) => q.where('document_id', customer.id)
+      .orWhereRaw('CAST(changes AS TEXT) LIKE ?', ['%"email"%']))
+    .select('document_id', 'changes', 'created_at');
+  let ownLatest;
+  let otherLatest;
+  for (const row of rows) {
+    const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
+    const from = String(changes?.email?.from || '').toLowerCase();
+    const to = String(changes?.email?.to || '').toLowerCase();
+    if (from === to) continue;
+    const own = Number(row.document_id) === Number(customer.id);
+    if (!own && from !== current && to !== current) continue;
+    const at = storedTimestamp(row.created_at);
+    if (!at) return null;
+    if (own && (!ownLatest || at > ownLatest)) ownLatest = at;
+    if (!own && (!otherLatest || at > otherLatest)) otherLatest = at;
+  }
+  const second = (date) => Math.floor(date.getTime() / 1000) * 1000;
+  if (otherLatest) {
+    const latest = ownLatest && ownLatest > otherLatest ? ownLatest : otherLatest;
+    return { at: new Date(second(latest) + 1000), op: '>' };
+  }
+  if (ownLatest) return { at: new Date(second(ownLatest)), op: '>=' };
+  // An account from before migration 219 that no history entry bounds: it
+  // has held the address at most since the account was created, the bound
+  // a recorded `created` entry gives every later account. Mail queued to the
+  // address earlier cannot be told apart from an earlier holder's (it may
+  // also be this person's, sent before they had an account), so it is left
+  // alone. Inclusive from that second, like the own-history case. No
+  // readable creation time: unbounded.
+  const createdAt = storedTimestamp(customer.created_at);
+  return createdAt ? { at: new Date(second(createdAt)), op: '>=' } : undefined;
+}
+
+/**
+ * Limit a queue query to mail queued within `bounds` (`[op, date]` pairs,
+ * all applied). A resent copy counts at the time of the mail it repeats
+ * (original_created_at, migration 307), not at the resend: the address may
+ * have changed hands in between, and the copy carries the original's data.
+ */
+function whereQueuedWithin(query, bounds) {
+  return query.where((w) => {
+    w.where((original) => {
+      original.whereNull('original_created_at');
+      for (const [op, at] of bounds) original.modify(whereTimestamp, 'created_at', op, at);
+    }).orWhere((copy) => {
+      copy.whereNotNull('original_created_at');
+      for (const [op, at] of bounds) copy.modify(whereTimestamp, 'original_created_at', op, at);
+    });
+  });
+}
+
+/**
+ * A timestamp column value as a Date, whatever shape it was stored in: a
+ * Date (PostgreSQL), epoch ms as a number or digit string, an ISO string, or
+ * SQLite's CURRENT_TIMESTAMP text ('YYYY-MM-DD HH:MM:SS', UTC). Null when
+ * absent or unreadable.
+ */
+function storedTimestamp(value) {
+  if (value == null || value === '') return null;
+  let date;
+  if (value instanceof Date) date = value;
+  else if (typeof value === 'number' || /^\d+$/.test(String(value))) date = new Date(Number(value));
+  else if (/^\d{4}-\d\d-\d\d[ T]\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(String(value))) {
+    date = new Date(`${String(value).replace(' ', 'T')}Z`);
+  } else date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 async function eraseCustomer(id, erasedByAdminId) {
-  const customer = await db('customer_accounts').where('id', id).first();
+  let customer = await db('customer_accounts').where('id', id).first();
   if (!customer) {
     throw new NotFoundError('Customer', id);
   }
@@ -989,6 +1213,18 @@ async function eraseCustomer(id, erasedByAdminId) {
   const touchedCampaignIds = new Set();
 
   await db.transaction(async (trx) => {
+    // Re-read (and on PostgreSQL lock) the row here: every address match
+    // below must use the address the account has as the erasure commits. An
+    // email change committing during the planning above would otherwise
+    // leave the old address matched as current, unbounded, after another
+    // customer may have taken it.
+    const locked = trx('customer_accounts').where('id', id);
+    if (trx.client.config.client === 'pg') locked.forUpdate();
+    customer = await locked.first();
+    if (!customer) {
+      throw new NotFoundError('Customer', id);
+    }
+
     erasedDocuments = await customerDocumentsService.markErasedForCustomer(id, trx);
     erasedContracts = await contractErasure.apply(trx, contractPlan, eraseActor);
 
@@ -1000,8 +1236,37 @@ async function eraseCustomer(id, erasedByAdminId) {
     // variables + recipient on every row for this address that isn't
     // already gone (sent, failed, or the row just cancelled above) — done
     // ahead of the customer_accounts update below so the match is still
-    // against the real address, not the sentinel.
-    const forCustomer = (q) => q.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email]);
+    // against the real address, not the sentinel. The current address counts
+    // only for mail queued since the customer took it (currentAddressSince),
+    // former ones only for mail queued while the customer held them
+    // (formerAddressWindows).
+    const currentSince = await currentAddressSince(trx, customer);
+    const formerWindows = await formerAddressWindows(trx, customer);
+    const forCustomer = (q) => q.where((w) => {
+      // Admin mail on the current address belongs to the admin account with
+      // that address, not to the customer (ADMIN_ACCOUNT_MAIL).
+      if (currentSince === undefined) {
+        w.where((c) => {
+          c.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email])
+            .whereNotIn('email_type', ADMIN_ACCOUNT_MAIL);
+        });
+      } else if (currentSince) {
+        w.where((c) => {
+          c.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email])
+            .whereNotIn('email_type', ADMIN_ACCOUNT_MAIL)
+            .modify(whereQueuedWithin, [[currentSince.op, currentSince.at]]);
+        });
+      } else {
+        w.whereRaw('1 = 0');
+      }
+      for (const win of formerWindows) {
+        w.orWhere((f) => {
+          f.whereRaw('LOWER(recipient_email) = ?', [win.email])
+            .whereNotIn('email_type', NOT_FORMER_ADDRESS_MAIL)
+            .modify(whereQueuedWithin, [['>', win.since], ['<', win.before]]);
+        });
+      }
+    });
 
     // Contract mail queued to a signer's own address, attributed to one of
     // the contracts this erasure just redacted (contractSignerQueueTargets).
@@ -1015,7 +1280,7 @@ async function eraseCustomer(id, erasedByAdminId) {
       if (emails.length > 0) {
         const candidates = await trx('email_queue')
           .whereRaw(`LOWER(recipient_email) IN (${emails.map(() => 'LOWER(?)').join(', ')})`, emails)
-          .whereIn('status', ['pending', PROTECTED_PENDING_STATUS, 'sent', 'failed', 'cancelled'])
+          .whereIn('status', ['pending', PROTECTED_PENDING_STATUS, 'sent', 'failed', 'cancelled', 'suppressed'])
           .select('id', 'recipient_email', 'email_data');
         signerQueueIds = candidates.filter((row) => {
           let data;
@@ -1031,8 +1296,9 @@ async function eraseCustomer(id, erasedByAdminId) {
         }).map((row) => row.id);
       }
     }
-    const matchQueue = (q) => (signerQueueIds.length > 0
-      ? q.where((w) => forCustomer(w).orWhereIn('id', signerQueueIds))
+    const extraQueueIds = [...signerQueueIds, ...await acceptedInvitationQueueIds(trx, id)];
+    const matchQueue = (q) => (extraQueueIds.length > 0
+      ? q.where((w) => forCustomer(w).orWhereIn('id', extraQueueIds))
       : forCustomer(q));
 
     const cancelledQueueRows = await matchQueue(trx('email_queue'))
@@ -1044,7 +1310,7 @@ async function eraseCustomer(id, erasedByAdminId) {
         .update({ status: 'cancelled' });
     }
     await matchQueue(trx('email_queue'))
-      .whereIn('status', ['sent', 'failed', 'cancelled'])
+      .whereIn('status', ['sent', 'failed', 'cancelled', 'suppressed'])
       .update({
         recipient_email: sentinelEmail,
         email_data: JSON.stringify({ redacted: true, reason: 'customer_erased' }),
@@ -1150,7 +1416,7 @@ async function eraseCustomer(id, erasedByAdminId) {
       retainedContracts: erasedContracts.retained,
     },
     null,
-    { type: 'admin', id: erasedByAdminId, name: 'system' }
+    { type: 'admin', id: erasedByAdminId }
   );
 
   logger.info('Customer erased (anonymized in place)', {
@@ -1552,7 +1818,7 @@ async function cancelInvitation(id, cancelledByAdminId) {
   await logActivity('customer_invitation_cancelled',
     { invitationId: id, email: invitation.email },
     null,
-    { type: 'admin', id: cancelledByAdminId, name: 'system' }
+    { type: 'admin', id: cancelledByAdminId }
   );
   logger.info('Customer invitation cancelled', { invitationId: id, cancelledByAdminId });
 }
@@ -1736,7 +2002,7 @@ async function createPasswordReset({ customerId, requestedByAdminId }) {
   await logActivity('customer_password_reset_requested',
     { customerId, email: customer.email },
     null,
-    { type: 'admin', id: requestedByAdminId, name: 'system' }
+    { type: 'admin', id: requestedByAdminId }
   );
 
   logger.info('Customer password reset requested', { customerId, requestedByAdminId });

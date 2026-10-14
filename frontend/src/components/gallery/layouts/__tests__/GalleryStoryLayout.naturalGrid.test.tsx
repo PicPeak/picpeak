@@ -213,7 +213,7 @@ describe('GalleryStoryLayout natural grid (issue 1709)', () => {
   });
 
   it('keeps favourites, lightbox links and lazy placeholders on every card', () => {
-    const { container } = render(<GalleryStoryLayout {...props} storyGridMode="natural" />);
+    const { container } = render(<GalleryStoryLayout {...props} storyGridMode="natural" feedbackEnabled />);
     expect(container.querySelectorAll('.story-gallery-justified-box .story-photo-card')).toHaveLength(6);
     expect(container.querySelectorAll('.story-gallery-justified-box a[data-pswp-src]')).toHaveLength(6);
     expect(container.querySelectorAll('.story-gallery-justified-box .story-photo-card-btn')).toHaveLength(6);

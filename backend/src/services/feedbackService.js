@@ -1221,7 +1221,7 @@ class FeedbackService {
         feedback_id: feedbackId,
         action,
         admin_id: adminId
-      }, feedback.event_id);
+      }, feedback.event_id, { type: 'admin', id: adminId });
       
       return true;
     } catch (error) {
@@ -1255,7 +1255,7 @@ class FeedbackService {
         feedback_id: feedbackId,
         feedback_type: feedback.feedback_type,
         admin_id: adminId
-      }, feedback.event_id);
+      }, feedback.event_id, { type: 'admin', id: adminId });
       
       return true;
     } catch (error) {

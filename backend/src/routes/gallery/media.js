@@ -13,7 +13,7 @@ const { pipeStreamToResponse } = require('../../utils/streamResponse');
 
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
-const { isPhotoHiddenFromViewer, livePhotos } = require('../../utils/photoVisibility');
+const { isPhotoHiddenFromViewer, isPhotoProcessed, livePhotos } = require('../../utils/photoVisibility');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../../services/imageProcessor');
 const { isStorageUnavailableError } = require('../../services/storage/storageErrors');
 const { heroQueryRedirect } = require('../../utils/heroAnchor');
@@ -76,6 +76,10 @@ async function admitVideoStream(req, res, photo) {
  */
 function isPhotoOutsideGrant(req, photo) {
   if (isPhotoHiddenFromViewer(photo, req.accessLevel)) return true;
+  // A photo the worker has not finished, or failed on, is not in the gallery
+  // list (wherePhotoProcessed); by id it must not be either. The admin
+  // preview keeps reaching it, as the admin views do.
+  if (!req.isAdminPreview && !isPhotoProcessed(photo)) return true;
   return req.accessLevel === 'slideshow' && req.event?.show_category_id != null
     && Number(photo.category_id) !== Number(req.event.show_category_id);
 }
@@ -88,7 +92,7 @@ router.post('/:slug/photo/:photoId/view',
     try {
       const photo = await livePhotos(db)
         .where({ id: req.params.photoId, event_id: req.event.id })
-        .first('id', 'visibility', 'moderation_status', 'category_id');
+        .first('id', 'visibility', 'moderation_status', 'category_id', 'processing_status');
       if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
       }
@@ -316,7 +320,13 @@ router.get('/:slug/photo/:photoId',
           const boundedEnd = Math.min(end, videoSize - 1);
           const chunksize = (boundedEnd - start) + 1;
 
-          res.writeHead(206, {
+          // Opened before any header, and the headers only staged: a storage
+          // that fails before the first byte still answers an error, so the
+          // slot admitVideoStream reserved goes back (responseDelivered).
+          const file = videoViaStorage
+            ? await storage.getRange(videoKey, start, boundedEnd)
+            : fs.createReadStream(videoPath, { start, end: boundedEnd });
+          res.status(206).set({
             'Content-Range': `bytes ${start}-${boundedEnd}/${videoSize}`,
             'Accept-Ranges': 'bytes',
             'Content-Length': chunksize,
@@ -325,13 +335,12 @@ router.get('/:slug/photo/:photoId',
             'X-Protection-Level': 'basic',
             ...disposition
           });
-
-          const file = videoViaStorage
-            ? await storage.getRange(videoKey, start, boundedEnd)
-            : fs.createReadStream(videoPath, { start, end: boundedEnd });
           pipeStreamToResponse(file, res, { context: `video range for photo ${photo.id}` });
         } else {
-          res.writeHead(200, {
+          const file = videoViaStorage
+            ? await storage.get(videoKey)
+            : fs.createReadStream(videoPath);
+          res.status(200).set({
             'Content-Length': videoSize,
             'Content-Type': videoContentType,
             'Accept-Ranges': 'bytes',
@@ -339,9 +348,6 @@ router.get('/:slug/photo/:photoId',
             'X-Protection-Level': 'basic',
             ...disposition
           });
-          const file = videoViaStorage
-            ? await storage.get(videoKey)
-            : fs.createReadStream(videoPath);
           pipeStreamToResponse(file, res, { context: `video for photo ${photo.id}` });
         }
         return;
@@ -539,12 +545,19 @@ function streamQuery(req) {
   return parts.join('&');
 }
 
-async function sendPlaylist(req, res, key, kind) {
+async function readPlaylist(req, key, kind) {
   const chunks = [];
   for await (const chunk of await getStorage().get(key)) chunks.push(chunk);
-  const body = videoHls.rewritePlaylist(Buffer.concat(chunks).toString('utf8'), kind, streamQuery(req));
+  return videoHls.rewritePlaylist(Buffer.concat(chunks).toString('utf8'), kind, streamQuery(req));
+}
+
+function answerPlaylist(res, body) {
   res.set({ 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'private, no-cache' });
   res.send(body);
+}
+
+async function sendPlaylist(req, res, key, kind) {
+  answerPlaylist(res, await readPlaylist(req, key, kind));
 }
 
 const hlsAccess = [requireAdaptiveStreaming, verifyGalleryAccess, denySlideshowToken, blockHiddenGallery];
@@ -564,9 +577,13 @@ router.get('/:slug/hls/:photoId/master.m3u8', ...hlsAccess, async (req, res) => 
         .catch((e) => logger.warn(`Could not re-queue the missing ladder of video ${photo.id}: ${e.message}`));
       return res.status(404).json({ error: 'No stream for this video' });
     }
+    // Read before the slot is taken: the grant is delivered as soon as it is
+    // made, so a playlist storage then fails to return would cost the guest
+    // a download for a video that never played.
+    const body = await readPlaylist(req, key, 'master');
     if (!(await admitStream(req, res, photo, { playback: true }))) return;
     refundRateLimit(req);
-    await sendPlaylist(req, res, key, 'master');
+    answerPlaylist(res, body);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to serve video stream');
   }

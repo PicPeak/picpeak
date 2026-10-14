@@ -174,6 +174,9 @@ describe('external media source ownership', () => {
     const ownerless = await event(null, { source_mode: 'reference', external_path: 'tenants/unassigned/batch', external_watch: 1 });
     await expect(importer.importExternalFolder({ eventId: owned, externalPath: 'tenants/unassigned/batch', automatic: true }))
       .resolves.toMatchObject({ imported: 1 });
+    // No actor was given, so the entry must not claim an (anonymous) admin.
+    const logged = await db('activity_logs').where({ activity_type: 'external_import_completed', event_id: owned }).first();
+    expect(logged).toMatchObject({ actor_type: 'system', actor_id: null });
     await watcher.reconcile();
     expect(watcher.watchedEventIds()).toEqual(expect.arrayContaining([owned, ownerless]));
     expect(await db('photos').where({ event_id: ownerless })).toHaveLength(1);

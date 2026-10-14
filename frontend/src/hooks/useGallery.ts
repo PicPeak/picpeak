@@ -2,6 +2,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { galleryService } from '../services';
 import { toast } from 'react-toastify';
 import { isDownloadLimitError } from '../utils/downloadLimit';
+import { renamedGallerySlug } from './useFollowGalleryRename';
 
 export const useGalleryInfo = (slug?: string, token?: string, enabled: boolean = true) => {
   return useQuery({
@@ -12,7 +13,9 @@ export const useGalleryInfo = (slug?: string, token?: string, enabled: boolean =
       }
       return galleryService.getGalleryInfo(slug, token);
     },
-    retry: 1,
+    // A rename answer (301 naming the new slug) is final; retrying it only
+    // delays the move to the new slug.
+    retry: (failureCount, error) => !renamedGallerySlug(error) && failureCount < 1,
     staleTime: 5 * 60 * 1000, // 5 minutes
     enabled: Boolean(slug) && enabled,
   });
