@@ -123,6 +123,9 @@ export interface CustomerAccountSummary {
   marketingOptOut?: boolean;
   /** When the customer opted out. null while they are still subscribed. */
   marketingOptOutAt?: string | null;
+  /** No administrative emails (migration 300): quote / contract / invoice
+   *  mail to this customer is logged as suppressed instead of sent. */
+  noAdminEmails?: boolean;
 }
 
 export interface CustomerAccountDetail extends CustomerAccountSummary {
@@ -358,6 +361,8 @@ export const customerAdminService = {
       // Newsletter consent (migration 199, #1264). Admin-settable so a
       // customer who unsubscribes by phone can be honoured immediately.
       marketingOptOut: 'marketing_opt_out',
+      // No administrative emails (migration 300).
+      noAdminEmails: 'no_admin_emails',
     };
     for (const [k, v] of Object.entries(payload)) {
       if (k in map) snake[map[k]] = v;
