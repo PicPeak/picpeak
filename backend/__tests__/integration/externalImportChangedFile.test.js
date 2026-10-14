@@ -135,9 +135,13 @@ describe('external re-scan of a file changed in place', () => {
     const newSize = (await fs.promises.stat(path.join(mediaRoot, 'shoot/a.jpg'))).size;
     expect(newSize).not.toBe(Number(photo.size_bytes));
 
+    const zips = jest.spyOn(require('../../src/services/downloadZipService'), 'invalidate');
     const res = await runImport(eventId, 'shoot');
     expect(res.body.imported).toBe(0);
     expect(res.body.refreshed).toBe(1);
+    // The prebuilt Download All zip still held the old picture.
+    expect(zips).toHaveBeenCalledWith(eventId);
+    zips.mockRestore();
 
     const after = await db('photos').where({ id: photo.id }).first();
     expect(Number(after.size_bytes)).toBe(newSize);
@@ -162,9 +166,12 @@ describe('external re-scan of a file changed in place', () => {
     const { photo, keys } = await importWithRenditions(eventId);
     generateThumbnail.mockClear();
 
+    const zips = jest.spyOn(require('../../src/services/downloadZipService'), 'invalidate');
     const res = await runImport(eventId, 'shoot');
     expect(res.body.refreshed).toBe(0);
     expect(res.body.skipped).toBe(1);
+    expect(zips).not.toHaveBeenCalled();
+    zips.mockRestore();
 
     const after = await db('photos').where({ id: photo.id }).first();
     expect(after.preview_path).toBe(keys.preview_path);

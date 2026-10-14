@@ -949,6 +949,18 @@ async function importExternalFolder({
       truncated: walkBudget.truncated, capReached,
     };
 
+    // A prebuilt "Download All" zip is only checked for existence, so it
+    // kept serving the gallery as it was before this pass: without the new
+    // photos, and with the old picture of an edited one. Once per pass, as
+    // the upload and replacement routes do.
+    if (imported > 0 || refreshed > 0) {
+      try {
+        require('./downloadZipService').invalidate(eventId);
+      } catch (err) {
+        logger.warn(`Download zip invalidation failed for event ${eventId}: ${err.message}`);
+      }
+    }
+
     if (firstLookImported > 0) {
       await require('./deliveryService').markFirstLookArrived(eventId, { actor, source: 'import' })
         .catch((err) => logger.warn(`First look switch failed for event ${eventId}: ${err.message}`));
