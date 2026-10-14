@@ -8,6 +8,11 @@ describe('sanitizeName — one Unicode form per name', () => {
     expect(sanitizeName(composed)).toBe(composed);
   });
 
+  it('normalises after removing invisible characters that split a letter from its mark', () => {
+    expect(sanitizeName('e\u200B\u0301')).toBe('\u00E9');
+    expect(sanitizeName('J\u202Eo\u0308rg')).toBe('J\u00F6rg');
+  });
+
   it('counts the length limit on the normalised name', () => {
     // 100 decomposed "é" are 200 code points; normalised they are 100.
     const name = 'e\u0301'.repeat(100);

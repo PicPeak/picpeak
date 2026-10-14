@@ -15,8 +15,10 @@
 // importers trim leading spaces (Unicode ones such as U+3000 included), so
 // "\u3000=cmd" opens as a formula. \s covers the ASCII and Unicode spaces
 // and the BOM; the zero-width characters are added by hand. Tab and CR are
-// themselves triggers, so they are tested before the whitespace skip.
-const FORMULA_START = /^(?:[\t\r]|[\s\u200B-\u200D\u2060]*[=+\-@])/;
+// themselves triggers, so they are tested before the whitespace skip. The
+// full-width forms (U+FF1D = U+FF0B + U+FF0D - U+FF20 @) are triggers in
+// spreadsheets that fold them to ASCII, as East Asian locales do.
+const FORMULA_START = /^(?:[\t\r]|[\s\u200B-\u200D\u2060]*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20])/;
 
 function neutralizeSpreadsheetFormula(value) {
   const s = value === null || value === undefined ? '' : String(value);

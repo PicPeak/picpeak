@@ -73,6 +73,11 @@ describe('neutralizeSpreadsheetFormula — trigger after leading whitespace', ()
     ['a zero-width space', '\u200B=cmd|"/C calc"!A1'],
     ['a BOM', '\uFEFF=cmd'],
     ['several spaces', '  \u3000 =1+1'],
+    ['nothing, full-width =', '\uFF1D1+1'],
+    ['nothing, full-width +', '\uFF0B1+1'],
+    ['nothing, full-width -', '\uFF0D1+1'],
+    ['nothing, full-width @', '\uFF20SUM(1)'],
+    ['an ideographic space, full-width =', '\u3000\uFF1Dcmd'],
   ])('prefixes a formula behind %s', (_label, payload) => {
     expect(neutralizeSpreadsheetFormula(payload)).toBe(`'${payload}`);
   });

@@ -44,6 +44,7 @@ function serializeGuest(row) {
 }
 
 const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
+const { sanitizeName } = require('../utils/personName');
 
 function escapeCsvCell(value) {
   // Neutralize spreadsheet formulas FIRST (a `=cmd()` guest name executes on
@@ -274,7 +275,9 @@ router.post(
   async (req, res) => {
     try {
       const { eventId } = req.params;
-      const name = String(req.body?.name || '').trim().slice(0, 100);
+      // The same sanitiser as the guest's own registration and the photo
+      // credit made from this name, so all three store the same string.
+      const name = sanitizeName(req.body?.name);
       const email = String(req.body?.email || '').trim().slice(0, 255).toLowerCase();
       if (!name) {
         return res.status(400).json({ error: 'Name is required' });

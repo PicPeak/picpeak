@@ -27,15 +27,16 @@ const INVISIBLE_CHARS = /[\u00AD\u061C\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2
 function sanitizeName(value, maxLength = MAX_NAME_LEN) {
   if (typeof value !== 'string') return '';
   const cleaned = value
-    // One form per name: "Jörg" typed with a combining diaeresis (macOS
-    // input, copy from a PDF) and with the precomposed ö must store the same.
-    .normalize('NFC')
     // Apostrophes stay ("O'Brien", "D’Angelo"): a name is rendered as React
     // text, escaped by escapeXml in the XMP sidecar, and formula-neutralised
     // and quoted in the CSV exports, so none of them needs it removed.
     .replace(/[<>&"]/g, '')
     .replace(CONTROL_CHARS, ' ')
     .replace(INVISIBLE_CHARS, '')
+    // One form per name: "Jörg" typed with a combining diaeresis (macOS
+    // input, copy from a PDF) and with the precomposed ö must store the same.
+    // After the removals, which can join a letter to a combining mark.
+    .normalize('NFC')
     .replace(/\s+/g, ' ')
     .trim();
   // Array.from so the cap never splits a surrogate pair in half.
