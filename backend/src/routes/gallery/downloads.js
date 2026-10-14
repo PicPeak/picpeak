@@ -665,7 +665,16 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // A download limit (issue 1560) grants exactly the photos that ship. The
     // stream below knows that set; the prebuilt archive does not have to match
     // it, so a limited gallery always streams.
-    const streamOnly = isClient || eventHasHidden || eventHasDownloadRestrictedPhotos
+    // A photo still processing, or failed, is in no archive, but one built
+    // before that rule (or before a complete photo was sent back to the
+    // worker) may still hold it. Guests stream while the event has any.
+    const eventHasUnprocessed = !isClient && await livePhotos(db)
+      .where('event_id', req.event.id)
+      .whereNotNull('processing_status')
+      .whereNot('processing_status', 'complete')
+      .first('id')
+      .then(Boolean);
+    const streamOnly = isClient || eventHasHidden || eventHasDownloadRestrictedPhotos || eventHasUnprocessed
       || !!(await currentDownloadLimit(req.event));
     let zipInfo = streamOnly
       ? null

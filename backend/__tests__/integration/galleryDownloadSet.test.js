@@ -4,8 +4,8 @@
  *  - only the photos the gallery list shows: a photo the worker has not
  *    finished, or failed on, is in no archive (Download All streamed or
  *    prebuilt, selected ZIP, resolution job), though its original is stored
- *  - a photo finishing processing drops the prebuilt archive, which was
- *    built without it
+ *  - a prebuilt archive is not served while the event has such a photo, and
+ *    a photo finishing processing drops it, as it was built without it
  *  - a selection over the cap is refused with a code, never cut down to the
  *    first 500
  */
@@ -109,16 +109,30 @@ describe('gallery bulk download set', () => {
       for (const photo of unfinished()) expect(has(zip.body, photo)).toBe(false);
     });
 
-    it('the prebuilt Download All archive leaves them out too', async () => {
+    it('the prebuilt Download All archive is built without them', async () => {
       const built = await zipService.generateZip(event.id);
       expect(built.success).toBe(true);
-      expect(await zipService.getZipInfo(event.id)).not.toBeNull();
+      const info = await zipService.getZipInfo(event.id);
+      const chunks = [];
+      for await (const chunk of await storage.get(info.key)) chunks.push(chunk);
+      const zip = Buffer.concat(chunks);
+      expect(has(zip, done)).toBe(true);
+      for (const photo of unfinished()) expect(has(zip, photo)).toBe(false);
+    });
 
-      const zip = await asBuffer(guest(event, 'get', '/download-all'));
+    it('an archive built while one was complete is not served once it is not', async () => {
+      // As after an upgrade (archives were built from every photo) or an
+      // admin retry that sends a complete photo back to the worker.
+      const other = await mkEvent();
+      const kept = await mkPhoto(other);
+      const redone = await mkPhoto(other);
+      expect((await zipService.generateZip(other.id)).success).toBe(true);
+      await db('photos').where({ id: redone.id }).update({ processing_status: 'failed' });
+
+      const zip = await asBuffer(guest(other, 'get', '/download-all'));
       expect(zip.status).toBe(200);
-      expect(zip.headers['content-length']).toBe(String(built.size));
-      expect(has(zip.body, done)).toBe(true);
-      for (const photo of unfinished()) expect(has(zip.body, photo)).toBe(false);
+      expect(has(zip.body, kept)).toBe(true);
+      expect(has(zip.body, redone)).toBe(false);
     });
 
     it('a selected ZIP leaves them out', async () => {
