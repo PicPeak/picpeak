@@ -458,10 +458,14 @@ describe('customer erasure clears email_queue', () => {
     const mover = await insertCustomer(db, { email: 'mover-start-1971@example.com' });
     await updateCustomer(mover.id, { email: formerAddress }, null);
     await updateCustomer(mover.id, { email: 'mover-now-1971@example.com' }, null);
-    await stampHistory(mover.id, [at(20), at(40.1)]);
+    // Taken at 20.9999s: more fractional digits than the app writes, which
+    // SQLite reads rounded to the millisecond.
+    await stampHistory(mover.id, [at(20.999).replace('Z', '9Z'), at(40.1)]);
     await insertCustomer(db, { email: formerAddress });
 
     const earlierOwnerMail = await queueAt(formerAddress, 'sent', at(5), 'Earlier Owner');
+    // Just before the taking; SQLite rounds it onto the 21s boundary.
+    const beforeTaking = await queueAt(formerAddress, 'sent', at(20.999).replace('Z', '6Z'), 'Before Taking');
     const pendingOld = await queueAt(formerAddress, 'pending', at(30), 'Mover Pending');
     const sentOld = await queueAt(formerAddress, 'sent', at(30), 'Mover Sent');
     // The last whole second before the hand-over second is still the customer's.
@@ -485,6 +489,7 @@ describe('customer erasure clears email_queue', () => {
     expect(JSON.stringify(sent)).not.toContain('Mover Sent');
     await expectRedacted(lastSecond, 'sent');
     await expectUntouched(earlierOwnerMail, formerAddress, 'Earlier Owner', 'sent');
+    await expectUntouched(beforeTaking, formerAddress, 'Before Taking', 'sent');
     await expectUntouched(laterOwnerMail, formerAddress, 'Later Owner', 'pending');
     await expectUntouched(handOver, formerAddress, 'Hand-over', 'pending');
     await expectUntouched(restoredId, formerAddress, 'Restored', 'sent');
@@ -548,6 +553,59 @@ describe('customer erasure clears email_queue', () => {
     await eraseCustomer(legacy.id, null);
 
     await expectUntouched(otherOwnerMail, unrecorded, 'Other Owner', 'sent');
+  });
+
+  it('leaves an invitation queued on a former address to whoever accepted it (issue 1971)', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const { auditedInsert } = require('../../src/services/accountingHistory');
+    const shared = 'passive-1971@example.com';
+
+    // A passive account holds the address from 0s to 10s. An invitation to
+    // the address goes out at 5s; the account moves off, and the invitation
+    // is accepted into a new account that holds the address since.
+    const [passive] = await auditedInsert(db, 'customer_accounts', {
+      email: shared, display_name: 'Passive 1971', preferred_language: 'de',
+      is_active: 1, created_at: at(0),
+    }, { actor: 'admin:1', source: 'test' });
+    await updateCustomer(passive.id, { email: 'passive-moved-1971@example.com' }, null);
+    await stampHistory(passive.id, [at(0), at(10)]);
+    await insertCustomer(db, { email: shared });
+
+    const ownMail = await queueAt(shared, 'sent', at(3), 'Passive Own');
+    const [inv] = await db('email_queue').insert({
+      recipient_email: shared, email_type: 'customer_invitation', status: 'sent',
+      email_data: JSON.stringify({ customer_name: 'Invitation' }), rendered_html: '<p>Invitation</p>',
+      created_at: at(5), scheduled_at: at(5), retry_count: 0,
+    }).returning('id');
+    const invitation = inv?.id ?? inv;
+
+    await eraseCustomer(passive.id, null);
+
+    await expectRedacted(ownMail, 'sent');
+    await expectUntouched(invitation, shared, 'Invitation', 'sent');
+  });
+
+  it('matches no former address when the history times do not follow its order (issue 1971)', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const shuffled = 'shuffled-1971@example.com';
+
+    const { auditedInsert } = require('../../src/services/accountingHistory');
+    const [mover] = await auditedInsert(db, 'customer_accounts', {
+      email: 'shuffled-start-1971@example.com', display_name: 'Shuffled 1971', preferred_language: 'de',
+      is_active: 1, created_at: at(20),
+    }, { actor: 'admin:1', source: 'test' });
+    await updateCustomer(mover.id, { email: shuffled }, null);
+    await updateCustomer(mover.id, { email: 'shuffled-now-1971@example.com' }, null);
+    // The taking carries a time before the creation: read in order, it would
+    // open the window at 10s and claim another holder's mail at 15s.
+    await stampHistory(mover.id, [at(20), at(10), at(40)]);
+    const mail = await queueAt(shuffled, 'sent', at(15), 'Shuffled');
+
+    await eraseCustomer(mover.id, null);
+
+    await expectUntouched(mail, shuffled, 'Shuffled', 'sent');
   });
 
   it('covers contract mail to a signer address only when it names a contract this erasure redacts', async () => {

@@ -971,7 +971,11 @@ async function contractSignerQueueTargets(contractPlan) {
  * passive account holding it then may have moved off only before the
  * acceptance created this one. An account created before migration 219 has
  * no `created` entry, so its first recorded address (which it may have
- * taken in an unrecorded change) is not matched either.
+ * taken in an unrecorded change) is not matched either. Nor is an
+ * invitation mail queued inside a window: it is addressed to whoever accepts
+ * it, which can be a new account once a passive holder has moved off.
+ * Windows are built only from history whose times follow its order; any
+ * entry out of order or unreadable leaves no former address matched.
  */
 async function formerAddressWindows(trx, customer) {
   const rows = await trx('accounting_change_history')
@@ -982,25 +986,31 @@ async function formerAddressWindows(trx, customer) {
   const windows = [];
   let held = null;
   let since = null;
+  let previous = null;
   for (const row of rows) {
+    const at = storedTimestamp(row.created_at);
+    if (!at || (previous && at < previous)) return [];
+    previous = at;
     const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
     const from = String(changes?.email?.from || '').toLowerCase();
     const to = String(changes?.email?.to || '').toLowerCase();
     if (from === to) continue;
-    const at = storedTimestamp(row.created_at);
     if (row.action === 'created') {
       held = to || null;
       since = at;
       continue;
     }
-    if (from && held === from && since && at && from !== current) {
+    if (from && held === from && since && from !== current) {
       // From the first whole second after taking the address up to (not
       // including) the second it was handed over in. A queued row stamped in
       // the hand-over instant could be the next owner's, and a restore
       // stores SQLite queue times (and possibly these history times) floored
       // to the second (normaliseSqliteEmailQueue), which could otherwise
       // slide the next owner's mail back inside the window. Both bounds hold
-      // whether a time is stored to the millisecond or floored.
+      // whether a time is stored to the millisecond or floored. The lower
+      // bound is exclusive: SQLite reads a time with more than three
+      // fractional digits rounded to the millisecond (julianday), which can
+      // lift a row from just before the taking onto the whole second.
       const first = new Date(Math.floor(since.getTime() / 1000) * 1000 + 1000);
       const before = new Date(Math.floor(at.getTime() / 1000) * 1000);
       if (first < before) windows.push({ email: from, since: first, before });
@@ -1085,7 +1095,8 @@ async function eraseCustomer(id, erasedByAdminId) {
       for (const win of formerWindows) {
         w.orWhere((f) => {
           f.whereRaw('LOWER(recipient_email) = ?', [win.email])
-            .modify(whereTimestamp, 'created_at', '>=', win.since)
+            .whereNot('email_type', 'customer_invitation')
+            .modify(whereTimestamp, 'created_at', '>', win.since)
             .modify(whereTimestamp, 'created_at', '<', win.before);
         });
       }
