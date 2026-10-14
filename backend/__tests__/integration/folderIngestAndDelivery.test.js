@@ -70,6 +70,13 @@ describe('folder ingest and two-stage delivery', () => {
     app.use('/api/admin', require('../../src/routes/adminDelivery'));
   }, 180000);
 
+  // The promised day ends in the instance zone (business_profile.timezone,
+  // else the process zone). Pinned to UTC so the day boundaries below do
+  // not depend on the host's zone; the zone cases set their own.
+  beforeEach(async () => {
+    await db('business_profile').update({ timezone: 'UTC' });
+  });
+
   afterAll(async () => {
     if (cleanup) await cleanup();
     await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
@@ -344,6 +351,44 @@ describe('folder ingest and two-stage delivery', () => {
       await delivery().runDeliveryReminderPass({ now: new Date(dayAfter) });
       await delivery().runDeliveryReminderPass({ now: new Date(dayAfter + 3600e3) });
       expect(await count()).toBe(2);
+    });
+
+    // One rule with the admin screens (deliveryStatus.ts): "by the 24th"
+    // (stored at noon UTC) lasts until the 24th is over in the instance zone.
+    it.each([
+      // 01:00 on the 25th in Auckland: overdue there, though not in UTC yet.
+      ['Pacific/Auckland', '2026-12-24T12:00:00Z', true],
+      // 02:00 on the 25th on Kiritimati (UTC+14).
+      ['Pacific/Kiritimati', '2026-12-24T12:00:00Z', true],
+      // 15:00 on the 24th in Honolulu, already the 25th in UTC: still due.
+      ['Pacific/Honolulu', '2026-12-25T01:00:00Z', false],
+      // The last minute of the 24th in Honolulu, then the first of the 25th.
+      ['Pacific/Honolulu', '2026-12-25T09:59:00Z', false],
+      ['Pacific/Honolulu', '2026-12-25T10:00:00Z', true],
+    ])('in instance zone %s at %s the promise is overdue: %s', async (timeZone, now, overdue) => {
+      await db('business_profile').update({ timezone: timeZone });
+      const eventId = await seedEvent({ delivery_status: 'partial', delivery_due_at: '2026-12-24T12:00:00.000Z' });
+      await delivery().runDeliveryReminderPass({ now: new Date(now) });
+      const ev = await db('events').where('id', eventId).first();
+      expect(Boolean(ev.delivery_overdue_notified_at)).toBe(overdue);
+      expect(Boolean(ev.delivery_reminder_sent_at)).toBe(!overdue);
+      await db('events').where('id', eventId).del();
+    });
+
+    it('keeps a promise for today until its day is over in the instance zone', async () => {
+      await db('business_profile').update({ timezone: 'Pacific/Honolulu' });
+      const realNow = Date.now;
+      const stored = '2026-12-24T12:00:00.000Z';
+      try {
+        // 15:00 on the 24th in Honolulu, the 25th in UTC: the promise stands.
+        Date.now = () => Date.parse('2026-12-25T01:00:00Z');
+        expect((await delivery().enterPartialColumns({ event_date: '2026-12-01', delivery_due_at: stored })).delivery_due_at).toBeUndefined();
+        // 00:00 on the 25th in Honolulu: over, a default date replaces it.
+        Date.now = () => Date.parse('2026-12-25T10:00:00Z');
+        expect((await delivery().enterPartialColumns({ event_date: '2026-12-01', delivery_due_at: stored })).delivery_due_source).toBe('default');
+      } finally {
+        Date.now = realNow;
+      }
     });
 
     it('does not claim a reminder it cannot send, so an address added later still gets it', async () => {

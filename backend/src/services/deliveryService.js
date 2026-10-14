@@ -20,6 +20,7 @@ const { parseBooleanInput } = require('../utils/parsers');
 const { whereTimestamp, formatBoolean } = require('../utils/dbCompat');
 const { toTimestamp } = require('../utils/dateNormalize');
 const { toDateOnly } = require('../utils/dateOnly');
+const { getInstanceTimeZone, endOfDayInZone } = require('../utils/galleryExpiry');
 
 const DEFAULT_DELIVERY_DAYS = 7;
 const REMINDER_LEAD_HOURS = 24;
@@ -39,13 +40,16 @@ async function defaultDueAt(event, conn = db) {
 
 /**
  * The end of the promised day, in epoch ms (NaN when unreadable). The stored
- * value is a calendar day at noon UTC: "by the 20th" lasts until the 20th is
- * over in UTC, the rule the admin screens (deliveryStatus.ts) use too.
+ * value is a calendar day at noon UTC (its UTC date is the promised day):
+ * "by the 20th" lasts until the 20th is over in the instance time zone, the
+ * zone a date-only gallery expiry ends its day in, and the rule the admin
+ * screens (deliveryStatus.ts) use too. Without a zone, the UTC day.
  */
-function endOfDueDay(value) {
+function endOfDueDay(value, timeZone = 'UTC') {
   const ms = toTimestamp(value);
   if (!Number.isFinite(ms)) return NaN;
-  return Date.parse(`${new Date(ms).toISOString().slice(0, 10)}T23:59:59.999Z`);
+  const end = endOfDayInZone(new Date(ms).toISOString().slice(0, 10), timeZone);
+  return end ? end.getTime() : NaN;
 }
 
 /**
@@ -86,7 +90,7 @@ async function enterPartialColumns(event, { dueAtGiven = false } = {}) {
   };
   if (dueAtGiven) return columns;
   // A promise for today still stands: past only once its day is over.
-  const end = endOfDueDay(event.delivery_due_at);
+  const end = endOfDueDay(event.delivery_due_at, await getInstanceTimeZone());
   if (!Number.isFinite(end) || end < Date.now()) {
     columns.delivery_due_at = (await defaultDueAt(event)).toISOString();
     columns.delivery_due_source = 'default';
@@ -224,13 +228,14 @@ async function runDeliveryReminderPass({ now = new Date() } = {}) {
     .where((q) => q.whereNull('is_archived').orWhere('is_archived', formatBoolean(false)))
     .select('*');
   let sent = 0;
+  const timeZone = await getInstanceTimeZone();
   const profile = await db.schema.hasTable('business_profile')
     ? await db('business_profile').first('email')
     : null;
   for (const event of events) {
     // Promised "by the 20th" means the whole 20th: overdue only once that
-    // calendar day is over, not at the stored noon.
-    const end = endOfDueDay(event.delivery_due_at);
+    // calendar day is over in the instance zone, not at the stored noon.
+    const end = endOfDueDay(event.delivery_due_at, timeZone);
     const overdue = Number.isFinite(end) ? end < now.getTime() : new Date(event.delivery_due_at) <= now;
     const column = overdue ? 'delivery_overdue_notified_at' : 'delivery_reminder_sent_at';
     if (event[column]) continue;

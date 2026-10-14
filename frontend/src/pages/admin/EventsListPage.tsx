@@ -38,7 +38,7 @@ import { isGalleryPublic } from '../../utils/accessControl';
 import { mediaSplitLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { buildShareLinkUrl } from '../../utils/url';
 import type { Event } from '../../types';
-import { deliveryDue, isAwaitingFullGallery } from './event-details/deliveryStatus';
+import { useDeliveryDue, isAwaitingFullGallery } from './event-details/deliveryStatus';
 import { useTranslation } from 'react-i18next';
 
 const PAGE_SIZE = 20;
@@ -55,6 +55,7 @@ const MENU_SORT_KEYS: readonly EventSortBy[] = [
 export const EventsListPage: React.FC = () => {
   const { t } = useTranslation();
   const { format, formatExpiry } = useLocalizedDate();
+  const deliveryDue = useDeliveryDue();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
