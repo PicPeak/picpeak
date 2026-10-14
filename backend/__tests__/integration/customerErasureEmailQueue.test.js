@@ -584,20 +584,23 @@ describe('customer erasure clears email_queue', () => {
       invitationRow(otherToken, { expires_at: at(12), created_at: at(10) }),
       invitationRow(ownToken, {
         expires_at: new Date(Date.now() + 86400000).toISOString(),
-        accepted_at: at(20), accepted_customer_id: created.id, created_at: at(15),
+        accepted_at: at(20), accepted_customer_id: created.id, created_at: at(15.05),
       }),
     ]);
     await updateCustomer(created.id, { email: 'invited-moved@example.com' }, null);
     await stampHistory(created.id, [at(20), at(40)]);
     // Someone else invited to the address after the customer moved off it.
     const laterToken = crypto.randomBytes(32).toString('hex');
+    // An invitation cancelled 30 ms before the accepted one replaced it, in
+    // the same second (cancelInvitation deletes the invitation, not its mail).
+    const cancelledInvitation = await queueInvitation(crypto.randomBytes(32).toString('hex'), 'sent', at(15.02), 'Cancelled Invitation');
     const laterInvitation = await queueInvitation(laterToken, 'sent', at(50), 'Later Invitation');
 
     await eraseCustomer(created.id, null);
 
     await expectRedacted(ownSent, 'sent');
     await expectRedacted(ownPending, 'cancelled');
-    for (const [id, name] of [[otherInvitation, 'Other Invitation'], [laterInvitation, 'Later Invitation']]) {
+    for (const [id, name] of [[otherInvitation, 'Other Invitation'], [laterInvitation, 'Later Invitation'], [cancelledInvitation, 'Cancelled Invitation']]) {
       const row = await db('email_queue').where({ id }).first();
       expect(row.status).toBe('sent');
       expect(row.recipient_email).toBe(address);

@@ -963,9 +963,11 @@ async function contractSignerQueueTargets(contractPlan) {
  * Its time can: createInvitation queues the mail right after inserting the
  * invitation, and it refuses a second invitation to the address while one
  * is pending, so every customer_invitation mail to the invited address from
- * the second the invitation was created until it was accepted is that
+ * the instant the invitation was created until it was accepted is that
  * invitation's. An invitation to the same address that someone else
- * accepted, or nobody did, falls outside those windows. Must run before the
+ * accepted, or nobody did, falls outside those windows, also one cancelled
+ * and replaced within the same second (not rounded to the second for that
+ * reason, so a queue time a restore floored to the second can miss it). Must run before the
  * erasure clears accepted_customer_id. An invitation whose times cannot be
  * read is left alone rather than guessed at.
  */
@@ -979,7 +981,7 @@ async function acceptedInvitationQueueIds(trx, customerId) {
     const createdAt = storedTimestamp(invitation.created_at);
     const acceptedAt = storedTimestamp(invitation.accepted_at);
     if (!email || !createdAt || !acceptedAt) continue;
-    windows.push({ email, since: new Date(Math.floor(createdAt.getTime() / 1000) * 1000), until: acceptedAt });
+    windows.push({ email, since: createdAt, until: acceptedAt });
   }
   if (!windows.length) return [];
   const rows = await trx('email_queue')
