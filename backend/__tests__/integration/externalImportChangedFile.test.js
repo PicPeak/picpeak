@@ -149,10 +149,8 @@ describe('external re-scan of a file changed in place', () => {
     // Made again at once, from the new file.
     expect(generateThumbnail).toHaveBeenCalledTimes(1);
     expect(generateThumbnail.mock.calls[0][0]).toBe(path.join(mediaRoot, 'shoot/a.jpg'));
-    // Under a new key, and the old file is gone.
-    expect(after.thumbnail_path).toMatch(new RegExp(`^thumbnails/thumb_ext${photo.id}_[0-9a-f]{8}_a\\.jpg$`));
+    expect(after.thumbnail_path).toBe(keys.thumbnail_path);
     expect(after.thumb_hash).toBeNull();
-    expect(exists(keys.thumbnail_path)).toBe(false);
 
     expect(exists(keys.preview_path)).toBe(false);
     expect(exists(keys.hero_path)).toBe(false);
@@ -175,62 +173,43 @@ describe('external re-scan of a file changed in place', () => {
     for (const key of Object.values(keys)) expect(exists(key)).toBe(true);
   });
 
-  it('keeps a derivative another photo still points at', async () => {
+  it('makes another row pointing at its files let go of them', async () => {
+    // Keys are named after this photo, so a rebuild writes the edited
+    // picture under them: a row sharing one would show it.
     const eventId = await seedEvent();
     const { photo, keys } = await importWithRenditions(eventId);
-    const [other] = await db('photos').insert({
-      event_id: eventId, filename: 'other.jpg', path: 'x/other.jpg', type: 'individual',
-      source_origin: 'managed', hero_path: keys.hero_path,
+    const [twin] = await db('photos').insert({
+      event_id: eventId, filename: 'twin.jpg', path: 'x/twin.jpg', type: 'individual',
+      source_origin: 'managed', thumbnail_path: keys.thumbnail_path, thumb_hash: 'twin-hash',
+      hero_path: keys.hero_path, preview_path: 'previews/twin-own.jpg',
     }).returning('id');
-    expect(other).toBeTruthy();
+    const twinId = typeof twin === 'object' ? twin.id : twin;
 
     await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
-    const res = await runImport(eventId, 'shoot');
-    expect(res.body.refreshed).toBe(1);
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
 
+    const after = await db('photos').where({ id: twinId }).first();
+    expect(after.thumbnail_path).toBeNull();
+    expect(after.thumb_hash).toBeNull();
+    expect(after.hero_path).toBeNull();
+    // Its own rendition is not touched.
+    expect(after.preview_path).toBe('previews/twin-own.jpg');
+    expect(exists(keys.hero_path)).toBe(false);
     expect((await db('photos').where({ id: photo.id }).first()).hero_path).toBeNull();
-    expect(exists(keys.hero_path)).toBe(true);
-    expect(exists(keys.preview_path)).toBe(false);
   });
 
-  it('writes the new thumbnail under its own key when another photo shows the old one', async () => {
+  it('forgets in-memory watermarks made from the old bytes', async () => {
     const eventId = await seedEvent();
-    const { photo, keys } = await importWithRenditions(eventId);
-    await db('photos').insert({
-      event_id: eventId, filename: 'twin.jpg', path: 'x/twin.jpg', type: 'individual',
-      source_origin: 'managed', thumbnail_path: keys.thumbnail_path,
-    });
-    await writeStored(keys.thumbnail_path);
-    generateThumbnail.mockClear();
+    await importWithRenditions(eventId);
+    const watermarkService = require('../../src/services/watermarkService');
+    const source = path.join(mediaRoot, 'shoot/a.jpg');
+    watermarkService.cache.set(`${source}_{"enabled":true}_stripped`, { buffer: Buffer.from('old'), timestamp: Date.now() });
+    watermarkService.cache.set(`${source}-other_{"enabled":true}_stripped`, { buffer: Buffer.from('x'), timestamp: Date.now() });
 
     await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
     expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
-
-    const after = await db('photos').where({ id: photo.id }).first();
-    expect(after.thumbnail_path).not.toBe(keys.thumbnail_path);
-    expect(after.thumbnail_path).toMatch(new RegExp(`^thumbnails/thumb_ext${photo.id}_[0-9a-f]{8}_a\\.jpg$`));
-    expect(exists(keys.thumbnail_path)).toBe(true);
-  });
-
-  it('takes a new thumbnail key on every edit, never one another photo shows', async () => {
-    const eventId = await seedEvent();
-    const { photo, keys } = await importWithRenditions(eventId);
-    await db('photos').insert({
-      event_id: eventId, filename: 'twin.jpg', path: 'x/twin.jpg', type: 'individual',
-      source_origin: 'managed', thumbnail_path: keys.thumbnail_path,
-    });
-    generateThumbnail.mockClear();
-
-    await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
-    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
-    const firstEdit = (await db('photos').where({ id: photo.id }).first()).thumbnail_path;
-    await writeJpeg('shoot/a.jpg', { width: 320, height: 520, color: { r: 5, g: 200, b: 90 } });
-    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
-
-    const outputs = generateThumbnail.mock.calls.map(([, opts]) => `thumbnails/thumb_${opts.outputBasename}`);
-    expect(outputs).toHaveLength(2);
-    expect(outputs).not.toContain(keys.thumbnail_path);
-    expect(new Set([keys.thumbnail_path, firstEdit, outputs[1]]).size).toBe(3);
+    expect(watermarkService.cache.has(`${source}_{"enabled":true}_stripped`)).toBe(false);
+    expect(watermarkService.cache.has(`${source}-other_{"enabled":true}_stripped`)).toBe(true);
   });
 
   it('keeps the row eligible when a cached rendition cannot be removed', async () => {

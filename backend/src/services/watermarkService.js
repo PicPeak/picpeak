@@ -298,6 +298,17 @@ class WatermarkService {
   }
 
   /**
+   * Forget every cached result made from one source file, for a file whose
+   * bytes changed under the same path (a reference photo edited in place).
+   */
+  forgetSource(imagePath) {
+    const prefix = `${imagePath}_`;
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) this.cache.delete(key);
+    }
+  }
+
+  /**
    * Clear entire cache
    */
   clearCache() {

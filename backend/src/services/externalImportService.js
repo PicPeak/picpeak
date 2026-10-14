@@ -17,7 +17,6 @@
  */
 
 const path = require('path');
-const crypto = require('crypto');
 const fs = require('fs').promises;
 const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
@@ -245,10 +244,16 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   for (const column of DERIVATIVE_COLUMNS) {
     const key = row[column];
     if (!key) continue;
-    // Another row may point at the same file; that one is not stale.
-    const shared = await db('photos').whereNot('id', row.id).where(column, key).first('id').catch(() => ({ id: null }));
-    if (!shared) await storage.delete(key).catch(() => {});
+    // Another row pointing at this photo's file would show the edited
+    // picture once it is rebuilt (the keys are named after this photo), so
+    // that row lets go of it too and builds its own from its own source.
+    const others = { [column]: null, ...(column === 'thumbnail_path' ? { thumb_hash: null } : {}) };
+    await db('photos').whereNot('id', row.id).where(column, key).update(others);
+    await storage.delete(key).catch(() => {});
   }
+  // The watermark service keeps results in memory by source path, and the
+  // path did not change.
+  require('./watermarkService').forgetSource(f.full);
   await deletePreviewTiers(row).catch(() => {});
   await deleteThumbnailTiers(row).catch(() => {});
   const survivors = await Promise.all(
@@ -299,10 +304,7 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
 
   try {
     const meta = {};
-    // Always a new key: the old one may still be shown by another row (it
-    // was kept above), and a fixed name would be overwritten on the next
-    // edit even after this one moved off it.
-    const outputBasename = `ext${row.id}_${crypto.randomBytes(4).toString('hex')}_${path.basename(f.rel)}`;
+    const outputBasename = `ext${row.id}_${path.basename(f.rel)}`;
     const thumbnailPath = await generateThumbnail(f.full, { outputBasename, meta });
     if (thumbnailPath) {
       await db('photos').where({ id: row.id, size_bytes: stats.size }).whereNull('thumbnail_path')
