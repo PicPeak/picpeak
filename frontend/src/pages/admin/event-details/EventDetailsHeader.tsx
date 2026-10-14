@@ -17,7 +17,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { eventsService } from '../../../services/events.service';
 import { CompleteDeliveryDialog } from './CompleteDeliveryDialog';
-import { deliveryDue, isAwaitingFullGallery } from './deliveryStatus';
+import { useDeliveryDue, isAwaitingFullGallery } from './deliveryStatus';
 import type { Event } from '../../../types';
 import { ActionMenu, Badge, Button, Notice, type ActionMenuItem } from '../../../components/common';
 import { useConfirm } from '../../../components/common/ConfirmDialog';
@@ -108,6 +108,7 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
+  const deliveryDue = useDeliveryDue();
   const { flags } = useFeatureFlags();
   const reach = useAccountReach();
   const { hasPermission, hasAnyPermission } = usePermissions();
