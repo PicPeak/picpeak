@@ -9,7 +9,7 @@ const { exifColumn } = require('./photoExif');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
-const { generateThumbnail, generateVideoPlaceholder, withProcessableImage } = require('./imageProcessor');
+const { generateThumbnail, generateVideoPlaceholder, withProcessableImage, prefixedBasename } = require('./imageProcessor');
 const logger = require('../utils/logger');
 const { isVideoMimeType } = require('./videoProcessor');
 const mime = require('mime-types');
@@ -270,8 +270,8 @@ async function processNewPhoto(filePath) {
   // IMG_0001.JPG, so the camera's name alone made two galleries share one
   // thumbnail: the later import overwrote it, and deleting either photo
   // removed the other's. A random prefix, as the upload paths get from their
-  // generated file names.
-  const thumbBasename = `w${crypto.randomBytes(6).toString('hex')}_${filename}`;
+  // generated file names; the name is shortened to leave room for it.
+  const thumbBasename = prefixedBasename(`w${crypto.randomBytes(6).toString('hex')}_`, filename);
   // Capture image dimensions so aspect-aware layouts (masonry / mosaic /
   // justified) can size each card to the photo's real proportions
   // instead of the 800×600 fallback in MasonryGalleryLayout (#447).

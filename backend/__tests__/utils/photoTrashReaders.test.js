@@ -42,7 +42,7 @@ const ALL_ROWS = {
   'services/faceProcessor.js': [8, 'scan in flight, queueing (the queue skips trashed rows), purge of face data'],
   'services/faceQueue.js': [5, 'state of a claimed scan and the stuck-scan janitor; the claim itself is live only'],
   'services/feedbackService.js': [5, 'row lock and per-photo counters by id, after the route checked the photo; recounts keep trashed rows consistent'],
-  'services/fileWatcher.js': [8, 'which file already belongs to a photo; insert; unlink removes the row whatever its state; start-up repair gives every row on a shared thumbnail, preview or hero its own, trashed rows included'],
+  'services/fileWatcher.js': [9, 'which file already belongs to a photo; insert; unlink removes the row whatever its state; start-up repair gives every row on a shared thumbnail, preview or hero its own, trashed rows included'],
   'services/folderRequestService.js': [4, 'settling a folder request moves trashed photos with the rest'],
   'services/folderTreeService.js': [1, 'deleting a folder moves every photo in it to the parent'],
   'services/imageProcessor.js': [4, 'derivative of a photo in flight; whether another row shares a hero file; whether a photo is stored under its camera name'],

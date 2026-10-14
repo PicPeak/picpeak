@@ -819,13 +819,29 @@ function isVideoPhoto(photo) {
  * per-attempt id, so the name is left alone there. Callers pass rows selected
  * with different columns, so one without source_filename is read by id.
  */
+/**
+ * `<prefix><name>`, the stem cut to keep it a valid file name: a key adds
+ * `thumb_`/`preview_w1280_`-style prefixes and maybe an attempt id, and a
+ * component may not exceed 255 bytes. A camera name close to that limit
+ * would otherwise stop getting any thumbnail once a prefix is put in front.
+ */
+function prefixedBasename(prefix, name) {
+  const extension = path.extname(name);
+  let stem = '';
+  for (const character of name.slice(0, name.length - extension.length)) {
+    if (Buffer.byteLength(prefix + stem + character) > 160) break;
+    stem += character;
+  }
+  return `${prefix}${stem}${extension}`;
+}
+
 async function ownDerivativeName(photo, name) {
   if (!name || derivativeContext.getStore()) return name;
   const row = 'source_filename' in photo
     ? photo
     : await db('photos').where('id', photo.id).first('filename', 'source_filename');
   const cameraNamed = Boolean(row?.filename) && row.filename === row.source_filename;
-  return cameraNamed ? `p${photo.id}_${name}` : name;
+  return cameraNamed ? prefixedBasename(`p${photo.id}_`, name) : name;
 }
 
 async function ensureThumbnail(photo, { force = false, boundVideoSource = true } = {}) {
@@ -2061,6 +2077,7 @@ module.exports = {
   originalNeedsPreview,
   extractRawPreview,
   withProcessableImage,
+  prefixedBasename,
   RAW_EXTENSIONS,
   DEFAULT_THUMBNAIL_WIDTH,
   DEFAULT_THUMBNAIL_HEIGHT,

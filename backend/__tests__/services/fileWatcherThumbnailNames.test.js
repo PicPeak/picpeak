@@ -96,6 +96,17 @@ describe('watch-folder thumbnail names', () => {
     expect(await redOf(photoB.thumbnail_path)).toBeLessThan(80);
   });
 
+  it('still writes a thumbnail for a file name near the length limit', async () => {
+    const a = await makeEvent('thumbs-long-name');
+    const name = `${'x'.repeat(240)}.JPG`;
+    await processNewPhoto(await dropJpeg(a, name, RED));
+
+    const photo = await db('photos').where({ event_id: a.id }).first();
+    expect(photo.filename).toBe(name);
+    expect(path.basename(photo.thumbnail_path).length).toBeLessThan(255);
+    expect(await redOf(photo.thumbnail_path)).toBeGreaterThan(150);
+  });
+
   it('gives same-named videos their own placeholder', async () => {
     const a = await makeEvent('thumbs-video-a');
     const b = await makeEvent('thumbs-video-b');
