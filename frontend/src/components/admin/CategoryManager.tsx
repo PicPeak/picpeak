@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { categoriesService, type PhotoCategory } from '../../services/categories.service';
 import { Button, EmptyState, ErrorState, useConfirm } from '../common';
 import { useMutationWithToast, useModal } from '../../hooks';
+import { isImeComposing } from '../../utils/imeComposition';
 
 export const CategoryManager: React.FC = () => {
   const { t } = useTranslation();
@@ -141,7 +142,7 @@ export const CategoryManager: React.FC = () => {
             type="text"
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleCreate()}
+            onKeyPress={(e) => e.key === 'Enter' && !isImeComposing(e) && handleCreate()}
             placeholder={t('categories.categoryName')}
             maxLength={100}
             className="flex-1 px-3 py-2 border border-line-strong rounded-md bg-panel text-heading focus:ring-2 focus:ring-accent"
@@ -190,7 +191,10 @@ export const CategoryManager: React.FC = () => {
                     type="text"
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
-                    onKeyPress={(e) => {
+                    // keydown: browsers fire no keypress for Escape. Escape and
+                    // Enter of an IME composition are the field's.
+                    onKeyDown={(e) => {
+                      if (isImeComposing(e)) return;
                       if (e.key === 'Enter') handleUpdate(category.id);
                       if (e.key === 'Escape') cancelEdit();
                     }}

@@ -38,6 +38,29 @@ const waitFor = async (predicate, { timeoutMs = 8000, stepMs = 50 } = {}) => {
   return false;
 };
 
+// Runs `action` inside a pass's settle wait: the first timer armed for exactly
+// settleMs starts the action, and the wait does not end before the action
+// has finished. The action therefore lands after the pass's first look and
+// before its second, however long the claim, the row reads and the walk took
+// to get there. A change on a fixed timer measured from the start of the
+// pass lands before the first look as often as inside the window on a loaded
+// runner. restore() puts setTimeout back; done() fails the test when the wait
+// never came or the action threw.
+const duringSettleWait = (settleMs, action) => {
+  const realSetTimeout = global.setTimeout;
+  let ran = null;
+  const spy = jest.spyOn(global, 'setTimeout').mockImplementation((fn, ms, ...args) => {
+    if (ms !== settleMs || ran) return realSetTimeout(fn, ms, ...args);
+    ran = Promise.resolve().then(action);
+    const fire = () => fn(...args);
+    return realSetTimeout(() => { ran.then(fire, fire); }, ms);
+  });
+  return {
+    restore: () => spy.mockRestore(),
+    done: async () => { expect(ran).not.toBeNull(); await ran; },
+  };
+};
+
 describe('externalMediaWatcher (issue 1187)', () => {
   let tmpDir; let mediaRoot; let db; let watcher; let jobState;
 
@@ -164,7 +187,14 @@ describe('externalMediaWatcher (issue 1187)', () => {
 
     await writeOld(path.join(mediaRoot, 'nas', 'individual', 'b.jpg'), 'also-not-a-jpeg');
     await fs.promises.unlink(path.join(mediaRoot, 'nas', 'individual', 'a.jpg'));
-    await watcher.sweep();
+    // The watcher sees b.jpg arrive too. On a loaded runner its debounced
+    // pass can take the claim before this sweep does, and the sweep then
+    // stands down; either way the file comes in through the same pass.
+    const imported = await waitFor(async () => {
+      await watcher.sweep();
+      return (await relpaths(eventId)).includes(path.join('nas', 'individual', 'b.jpg'));
+    });
+    expect(imported).toBe(true);
 
     // ... b.jpg is in, a.jpg's row is kept although the file is gone.
     expect(await relpaths(eventId)).toEqual([
@@ -172,6 +202,8 @@ describe('externalMediaWatcher (issue 1187)', () => {
       path.join('nas', 'individual', 'b.jpg'),
     ]);
 
+    // The pass that brought b.jpg in writes its entry after the rows.
+    expect(await waitFor(async () => (await db('activity_logs').where({ activity_type: 'external_import_completed' })).length >= 2)).toBe(true);
     const logs = await db('activity_logs').where({ activity_type: 'external_import_completed' });
     expect(logs).toHaveLength(2);
     expect(logs.every((l) => l.actor_type === 'system')).toBe(true);
@@ -244,18 +276,29 @@ describe('externalMediaWatcher (issue 1187)', () => {
     const { importExternalFolder } = require('../../src/services/externalImportService');
     const growing = path.join(mediaRoot, 'nas', 'individual', 'growing.jpg');
     await fs.promises.writeFile(growing, 'part-one');
-
-    // mtime is "now", inside the settle window: deferred, not inserted.
+    // mtime inside the settle window: deferred, not inserted. Stamped ahead of
+    // the clock so it is still inside the window however long the pass takes
+    // to reach the check; "now" was only inside it for the first 300ms.
+    const soon = new Date(Date.now() + 60000);
+    await fs.promises.utimes(growing, soon, soon);
     const first = await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'system' }, automatic: true, settleMs: 300 });
     expect(first).toMatchObject({ imported: 1, deferred: 1 });
     expect(await relpaths(eventId)).toEqual([path.join('nas', 'individual', 'a.jpg')]);
 
-    // Old mtime but the size moves during the wait: still deferred.
+    // Old mtime but the size moves during the wait: still deferred. The old
+    // mtime is put back before the wait ends, so both looks see it and only
+    // the size check can defer the file.
     const old = new Date(Date.now() - 60000);
     await fs.promises.utimes(growing, old, old);
-    const grow = setTimeout(() => fs.promises.appendFile(growing, '-part-two').then(() => fs.promises.utimes(growing, old, old)), 100);
-    const second = await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'system' }, automatic: true, settleMs: 300 });
-    clearTimeout(grow);
+    const grow = duringSettleWait(300, async () => {
+      await fs.promises.appendFile(growing, '-part-two');
+      await fs.promises.utimes(growing, old, old);
+    });
+    let second;
+    try {
+      second = await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'system' }, automatic: true, settleMs: 300 });
+    } finally { grow.restore(); }
+    await grow.done();
     expect(second).toMatchObject({ imported: 0, deferred: 1 });
 
     // Quiet now: imported.
@@ -276,11 +319,15 @@ describe('externalMediaWatcher (issue 1187)', () => {
     // window the admin deletes a.jpg. The snapshot taken before the wait
     // saw a.jpg as present, so only a per-file check can keep it out.
     await writeOld(path.join(mediaRoot, 'nas', 'individual', 'd.jpg'), 'new-file');
-    setTimeout(async () => {
+    const remove = duringSettleWait(400, async () => {
       await recordExclusions(eventId, [row]);
       await db('photos').where({ id: row.id }).del();
-    }, 100);
-    const result = await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'system' }, automatic: true, settleMs: 400 });
+    });
+    let result;
+    try {
+      result = await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'system' }, automatic: true, settleMs: 400 });
+    } finally { remove.restore(); }
+    await remove.done();
 
     expect(result).toMatchObject({ imported: 1, excluded: 1 });
     expect(await relpaths(eventId)).toEqual([path.join('nas', 'individual', 'd.jpg')]);
@@ -331,10 +378,19 @@ describe('externalMediaWatcher (issue 1187)', () => {
 
   it('re-arms itself for a file that was deferred, so a disabled sweep is not needed', async () => {
     const eventId = await seedEvent();
-    // Written just now: the pass that starts with the watcher defers it.
-    await fs.promises.writeFile(path.join(mediaRoot, 'nas', 'individual', 'e.jpg'), 'fresh');
+    // Still being written: the pass that starts with the watcher defers it.
+    // The mtime is stamped ahead of the clock so it is inside the settle
+    // window however long that pass takes to look. Putting the old mtime
+    // back fires 'change', which schedules nothing, so only the re-arm can
+    // bring the file in.
+    const late = path.join(mediaRoot, 'nas', 'individual', 'e.jpg');
+    await fs.promises.writeFile(late, 'fresh');
+    const soon = new Date(Date.now() + 60000);
+    await fs.promises.utimes(late, soon, soon);
     await watcher.reconcile();
     expect(await relpaths(eventId)).toEqual([path.join('nas', 'individual', 'a.jpg')]);
+    const old = new Date(Date.now() - 60000);
+    await fs.promises.utimes(late, old, old);
 
     const arrived = await waitFor(async () => (await relpaths(eventId)).includes(path.join('nas', 'individual', 'e.jpg')));
     expect(arrived).toBe(true);

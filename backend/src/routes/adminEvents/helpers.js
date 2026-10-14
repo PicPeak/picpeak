@@ -53,7 +53,9 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
   // count unchanged, 679 rows gone.
   const tieredPhotos = await db('photos')
     .where('event_id', eventId)
-    .select('id', 'path', 'filename', 'source_origin', 'external_relpath',
+    // size_bytes: an external row's tier keys carry it, and the tiers are
+    // swept after the rows are gone, when it can no longer be read.
+    .select('id', 'path', 'filename', 'source_origin', 'external_relpath', 'size_bytes',
       'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path', 'hls_path', 'hls_status');
 
   // A Set because a photo can carry the same key in two columns (an unresized

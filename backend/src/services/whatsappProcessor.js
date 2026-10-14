@@ -21,6 +21,7 @@
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { sendWhatsAppMessage } = require('./whatsappService');
+const { getInstanceTimeZone, expiryCalendarDate } = require('../utils/galleryExpiry');
 
 // IETF language tag (with hyphen or underscore) → Meta template language code.
 // Meta template languages: https://developers.facebook.com/docs/whatsapp/business-management-api/message-templates/supported-languages
@@ -117,10 +118,14 @@ async function getSystemDefaultLanguageCode() {
 function formatDate(raw, metaLangCode) {
   if (!raw) return '';
   try {
-    const d = new Date(raw);
+    // A bare date is that day wherever the server runs.
+    const dateOnly = typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw);
+    const d = new Date(dateOnly ? `${raw}T00:00:00.000Z` : raw);
     if (Number.isNaN(d.getTime())) return '';
     const intlLocale = INTL_LOCALE_MAP[metaLangCode] || 'en-US';
-    return d.toLocaleDateString(intlLocale, { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return d.toLocaleDateString(intlLocale, {
+      day: '2-digit', month: '2-digit', year: 'numeric', ...(dateOnly ? { timeZone: 'UTC' } : {}),
+    });
   } catch {
     return '';
   }
@@ -273,6 +278,12 @@ async function processWhatsAppQueue() {
       const data = typeof item.message_data === 'string'
         ? JSON.parse(item.message_data || '{}')
         : item.message_data || {};
+
+      // The gallery expiry as its day in the instance time zone (see
+      // utils/galleryExpiry), not the server's.
+      if (data.expiry_date) {
+        data.expiry_date = expiryCalendarDate(data.expiry_date, await getInstanceTimeZone()) || data.expiry_date;
+      }
 
       const requestedLang = resolveLanguageCode(data.language);
       const metaLang = requestedLang || defaultLanguage;

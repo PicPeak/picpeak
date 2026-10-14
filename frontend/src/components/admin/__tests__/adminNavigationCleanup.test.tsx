@@ -270,6 +270,24 @@ describe('settings search', () => {
     expect(confirmLeave).toHaveBeenCalled();
   });
 
+  it('leaves Escape and Enter of an IME composition to the search field', () => {
+    // The Enter that commits a Japanese/Chinese/Korean composition must not
+    // jump to the first match, and its Escape must not clear the query.
+    granted = new Set(ALL_PERMISSIONS);
+    isAnyDirty = true;
+    renderSidebar('/admin/settings?tab=features');
+
+    const box = screen.getByLabelText('settings.search.label') as HTMLInputElement;
+    fireEvent.change(box, { target: { value: 'smtp' } });
+    for (const flags of [{ isComposing: true }, { keyCode: 229 }]) {
+      fireEvent.keyDown(box, { key: 'Enter', ...flags });
+      fireEvent.keyDown(box, { key: 'Escape', ...flags });
+    }
+
+    expect(confirmLeave).not.toHaveBeenCalled();
+    expect(box.value).toBe('smtp');
+  });
+
   it('does not interrupt when nothing is dirty', () => {
     granted = new Set(ALL_PERMISSIONS);
     isAnyDirty = false;

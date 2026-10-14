@@ -3,6 +3,7 @@ import { MessageSquare, Star, Heart } from 'lucide-react';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { PhotoCard } from '../PhotoCard';
 import { firstLookAboveChips } from '../GalleryTileBadges';
+import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import {
   calculateJustifiedLayout,
   createJustifiedPhotos,
@@ -16,12 +17,14 @@ import { useWindowedItems, WINDOW_MIN_PHOTOS } from './rowWindow';
 
 // Count-style feedback indicators shared by all masonry modes (top-left).
 // `withTitles` matches the columns-mode markup, which carries title attributes.
-const FeedbackCountIndicators: React.FC<{ photo: Photo; withTitles?: boolean }> = ({ photo, withTitles = false }) => {
+// `inline` drops the corner positioning: beside the client's visibility
+// toggle they join PhotoCard's top-left row instead (issue 1992).
+const FeedbackCountIndicators: React.FC<{ photo: Photo; withTitles?: boolean; inline?: boolean }> = ({ photo, withTitles = false, inline = false }) => {
   if (!((photo.comment_count ?? 0) > 0 || (photo.average_rating ?? 0) > 0 || (photo.like_count ?? 0) > 0)) {
     return null;
   }
   return (
-    <div className="absolute top-2 left-2 flex gap-1 z-10">
+    <div className={inline ? 'flex gap-1' : 'absolute top-2 left-2 flex gap-1 z-10'}>
       {(photo.comment_count ?? 0) > 0 && (
         <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={withTitles ? `${photo.comment_count ?? 0} comments` : undefined}>
           <MessageSquare className="w-3.5 h-3.5 text-accent" fill="currentColor" />
@@ -46,6 +49,13 @@ const FeedbackCountIndicators: React.FC<{ photo: Photo; withTitles?: boolean }> 
 
 /** Four 36px action buttons (view, download, comment, like) and their three 8px gaps. */
 const MIN_TILE_WIDTH_FOR_ACTION_ROW = 168;
+
+// Who owns the tile's top-left corner. With the client's visibility toggle
+// the count chips join its row, right of it and the colour-label dots
+// (issue 1992); without it they keep the corner as before.
+const cornerProps = (toggle: React.ReactNode, counts: React.ReactNode) => (toggle
+  ? { topLeftControl: toggle, topLeftExtras: counts }
+  : { beforeOverlay: counts });
 
 interface MasonryPhotoProps {
   photo: Photo;
@@ -74,6 +84,10 @@ interface MasonryPhotoProps {
   // Optimistic "I liked this" state + callback (lifted to parent)
   liked?: boolean;
   onLikeSuccess?: () => void;
+  /** The client's hide/show button (issue 1992), when the viewer is the client. */
+  visibilityToggle?: React.ReactNode;
+  /** Dim the photo: the client hid it from guests. */
+  dimmed?: boolean;
 }
 
 const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
@@ -95,6 +109,8 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
   onLikeSuccess,
   savedIdentity,
   onIdentitySaved,
+  visibilityToggle,
+  dimmed = false,
 }) => {
   const bands = useLazyBands();
   // Calculate height based on actual photo aspect ratio
@@ -154,7 +170,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
       imageProps={{
         src: photo.thumbnail_url || photo.url,
         alt: photo.filename,
-        className: 'w-full h-full object-cover rounded-lg',
+        className: `w-full h-full object-cover rounded-lg${dimmed ? ' opacity-40' : ''}`,
         loading: 'lazy',
         isGallery: true,
       }}
@@ -172,7 +188,10 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
       onIdentitySaved={onIdentitySaved}
       likeToggleLabels
       checkboxTestId
-      beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} withTitles /> : undefined}
+      {...cornerProps(
+        visibilityToggle,
+        feedbackEnabled ? <FeedbackCountIndicators photo={photo} withTitles inline={Boolean(visibilityToggle)} /> : undefined,
+      )}
     >
       {photo.type === 'collage' && (
         <div className="absolute bottom-2 left-2">
@@ -197,7 +216,9 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   allowDownloads = true,
   feedbackEnabled = false,
   feedbackOptions,
-  onFeedbackChange
+  onFeedbackChange,
+  isClient = false,
+  onToggleVisibility,
 }) => {
   const bands = useLazyBands();
   const { theme } = useTheme();
@@ -254,6 +275,14 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       likeToggleLabels: true,
     };
   };
+  // The client's per-photo hide/show button and dimmed hidden photos, as in
+  // Grid (issue 1992). Every mode puts the button in the tile's top-left.
+  const showVisibilityToggle = isClient && Boolean(onToggleVisibility);
+  const visibilityToggle = (photo: Photo) => (isClient && onToggleVisibility
+    ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
+    : null);
+  const dimmed = (photo: Photo) => showVisibilityToggle && isHiddenFromGuests(photo);
+  const dimClass = (photo: Photo) => (dimmed(photo) ? ' opacity-40' : '');
   const gallerySettings = theme.gallerySettings || {};
   const gutter = gallerySettings.masonryGutter || 16;
   // 'justified' is the picker's "Google Photos" option: the same justified rows.
@@ -474,14 +503,17 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               imageProps={{
                 src: photo.thumbnail_url || photo.url,
                 alt: photo.filename,
-                className: 'w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]',
+                className: `w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]${dimClass(photo)}`,
                 loading: 'lazy',
                 isGallery: true,
               }}
               actionVariant="dark"
               allowDownloads={allowDownloads}
               {...tileFeedbackProps(photo, index, layoutItem.width)}
-              beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
+              {...cornerProps(
+                visibilityToggle(photo),
+                feedbackEnabled ? <FeedbackCountIndicators photo={photo} inline={showVisibilityToggle} /> : undefined,
+              )}
             />
           );
         })}
@@ -538,14 +570,17 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               imageProps={{
                 src: photo.thumbnail_url || photo.url,
                 alt: photo.filename,
-                className: 'w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]',
+                className: `w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]${dimClass(photo)}`,
                 loading: 'lazy',
                 isGallery: true,
               }}
               actionVariant="dark"
               allowDownloads={allowDownloads}
               {...tileFeedbackProps(photo, index, box.width)}
-              beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
+              {...cornerProps(
+                visibilityToggle(photo),
+                feedbackEnabled ? <FeedbackCountIndicators photo={photo} inline={showVisibilityToggle} /> : undefined,
+              )}
             >
               {photo.type === 'collage' && (
                 <div className="absolute bottom-2 left-2">
@@ -612,7 +647,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               imageProps={{
                 src: photo.thumbnail_url || photo.url,
                 alt: photo.filename,
-                className: 'w-full h-full object-cover transition-transform duration-300 group-hover:scale-105',
+                className: `w-full h-full object-cover transition-transform duration-300 group-hover:scale-105${dimClass(photo)}`,
                 loading: 'lazy',
                 isGallery: true,
               }}
@@ -621,7 +656,10 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               {...tileFeedbackProps(photo, index)}
               // After the spread: the quilted cell clips with its own rounding.
               overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 flex items-center justify-center gap-2"
-              beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
+              {...cornerProps(
+                visibilityToggle(photo),
+                feedbackEnabled ? <FeedbackCountIndicators photo={photo} inline={showVisibilityToggle} /> : undefined,
+              )}
             >
               {photo.type === 'collage' && (
                 <div className="absolute bottom-2 left-2">
@@ -684,6 +722,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 onIdentitySaved={setSavedIdentity}
                 liked={likedPhotoIds.has(photo.id)}
                 onLikeSuccess={() => toggleLiked(photo.id)}
+                visibilityToggle={visibilityToggle(photo)}
+                dimmed={dimmed(photo)}
               />
             );
           })}

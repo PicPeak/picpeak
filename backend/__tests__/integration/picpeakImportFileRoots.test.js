@@ -62,6 +62,10 @@ async function withExtraEntries(sourcePath, extras) {
   return outPath;
 }
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxIt = process.platform === 'linux' ? it : it.skip;
+
 beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
   ({ adminId } = await seedMinimal(db));
@@ -81,7 +85,7 @@ afterAll(async () => {
 });
 
 describe('.picpeak import — files/ roots and content types', () => {
-  it('refuses an archive that plants HTML and JavaScript under fonts/, before touching live state', async () => {
+  linuxIt('refuses an archive that plants HTML and JavaScript under fonts/, before touching live state', async () => {
     await setMarker('in_backup');
     const { filePath } = await createPicpeak({ includePhotos: false });
     await setMarker('current');
@@ -105,7 +109,7 @@ describe('.picpeak import — files/ roots and content types', () => {
     expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'fonts', 'payload.js'))).toBe(false);
   });
 
-  it('refuses active content even inside an exported folder', async () => {
+  linuxIt('refuses active content even inside an exported folder', async () => {
     await setMarker('in_backup');
     const { filePath } = await createPicpeak({ includePhotos: false });
     await setMarker('current');
@@ -122,7 +126,7 @@ describe('.picpeak import — files/ roots and content types', () => {
     expect(await getMarker()).toBe('current');
   });
 
-  it('imports a genuine export whose transfer attachments are named like web content', async () => {
+  linuxIt('imports a genuine export whose transfer attachments are named like web content', async () => {
     // The exporter takes all of uploads/, and a transfer keeps the client's
     // filename; those objects are attachments, never served as pages.
     await setMarker('in_backup');
@@ -143,7 +147,7 @@ describe('.picpeak import — files/ roots and content types', () => {
     expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'uploads', 'transfers', '7', 'page.html'))).toBe(true);
   });
 
-  it('still imports a genuine export with business documents and an SVG logo', async () => {
+  linuxIt('still imports a genuine export with business documents and an SVG logo', async () => {
     await setMarker('in_backup');
     const { filePath } = await createPicpeak({ includePhotos: false });
     await setMarker('current');
