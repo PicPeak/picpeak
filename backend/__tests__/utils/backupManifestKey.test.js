@@ -198,4 +198,60 @@ describe('backup manifest trust anchor', () => {
       expect(() => loadKey({ create: true })).toThrow(/does not keep file modes/);
     } finally { spies.forEach(spy => spy.mockRestore()); }
   });
+
+  it('publishes a new key only once its bytes are on disk, and leaves no temporary file', () => {
+    const file = keyFile();
+    const realLink = fs.linkSync;
+    const link = jest.spyOn(fs, 'linkSync').mockImplementation((from, to) => {
+      expect(to).toBe(file);
+      expect(fs.existsSync(file)).toBe(false);
+      expect(fs.readFileSync(from, 'utf8')).toMatch(/^[a-f0-9]{64}$/);
+      return realLink(from, to);
+    });
+    try {
+      const { key } = loadKey({ create: true });
+      expect(link).toHaveBeenCalledTimes(1);
+      expect(fs.readFileSync(file, 'utf8')).toBe(key.toString('hex'));
+    } finally { link.mockRestore(); }
+    expect(fs.readdirSync(path.dirname(file))).toEqual([path.basename(file)]);
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  it('keeps the key another process published first, and creates directly where hard links are unsupported', () => {
+    const file = keyFile();
+    const realLink = fs.linkSync;
+    let link = jest.spyOn(fs, 'linkSync').mockImplementation((from, to) => {
+      fs.writeFileSync(to, 'c7'.repeat(32), { mode: 0o600 });
+      return realLink(from, to);
+    });
+    try {
+      expect(loadKey({ create: true }).key).toEqual(Buffer.from('c7'.repeat(32), 'hex'));
+    } finally { link.mockRestore(); }
+    expect(fs.readdirSync(path.dirname(file))).toEqual([path.basename(file)]);
+    fs.unlinkSync(file);
+    link = jest.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+    });
+    try {
+      const { key } = loadKey({ create: true });
+      expect(fs.readFileSync(file, 'utf8')).toBe(key.toString('hex'));
+    } finally { link.mockRestore(); }
+    expect(fs.readdirSync(path.dirname(file))).toEqual([path.basename(file)]);
+  });
+
+  it('waits briefly for the bytes of a key file another process has just created', () => {
+    const file = keyFile();
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, '', { mode: 0o600 });
+    // Another process created the file exclusively; its bytes land while we read.
+    const realRead = fs.readFileSync;
+    let reads = 0;
+    const read = jest.spyOn(fs, 'readFileSync').mockImplementation((...args) => {
+      if (typeof args[0] === 'number' && ++reads === 2) fs.writeFileSync(file, 'd6'.repeat(32));
+      return realRead(...args);
+    });
+    try {
+      expect(loadKey({ create: true }).key).toEqual(Buffer.from('d6'.repeat(32), 'hex'));
+    } finally { read.mockRestore(); }
+  });
 });

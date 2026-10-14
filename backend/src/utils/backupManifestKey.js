@@ -63,7 +63,21 @@ function writableKeyError(file, mode, tightened) {
     + 'or set BACKUP_MANIFEST_KEY to its 64 hex digits.');
 }
 
+// A key another process has created but not yet written reads empty; give
+// its bytes a moment instead of failing that process's backup.
+const SHORT_READ_RETRIES = 10;
+const SHORT_READ_WAIT_MS = 25;
+const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
 function readFileKey(file) {
+  for (let attempt = 0; ; attempt++) {
+    const text = readKeyText(file);
+    if (text.trim().length < 64 && attempt < SHORT_READ_RETRIES) { pause(SHORT_READ_WAIT_MS); continue; }
+    return parseKey(text, 'BACKUP_MANIFEST_KEY_FILE');
+  }
+}
+
+function readKeyText(file) {
   assertExternal(file);
   if (!fs.lstatSync(file).isFile()) throw new Error('The backup manifest key must be a regular file, not a symlink');
   const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
@@ -85,8 +99,27 @@ function readFileKey(file) {
       logger.warn(`The backup manifest key file ${file} was group- or world-writable `
         + `(mode ${(before & 0o777).toString(8).padStart(4, '0')}); restricted it to 0600.`);
     }
-    return parseKey(fs.readFileSync(fd, 'utf8'), 'BACKUP_MANIFEST_KEY_FILE');
+    return fs.readFileSync(fd, 'utf8');
   } finally { fs.closeSync(fd); }
+}
+
+// Write the key beside its final name, then hard-link it into place: link()
+// never replaces an existing key and a reader never sees a partial file.
+// Filesystems without hard links fall back to an exclusive create.
+function publishKey(file, hex) {
+  const temp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
+  const fd = fs.openSync(temp, 'wx', 0o600);
+  try {
+    fs.writeFileSync(fd, hex);
+    // Durability only; a share that cannot fsync still links a complete file.
+    try { fs.fsyncSync(fd); } catch { /* see above */ }
+  } finally { fs.closeSync(fd); }
+  try {
+    fs.linkSync(temp, file);
+  } catch (error) {
+    if (error.code === 'EEXIST') throw error;
+    fs.writeFileSync(file, hex, { flag: 'wx', mode: 0o600 });
+  } finally { fs.rmSync(temp, { force: true }); }
 }
 
 function loadKey({ create = false } = {}) {
@@ -103,7 +136,7 @@ function loadKey({ create = false } = {}) {
     assertExternal(file);
     const fresh = crypto.randomBytes(32);
     try {
-      fs.writeFileSync(file, fresh.toString('hex'), { flag: 'wx', mode: 0o600 });
+      publishKey(file, fresh.toString('hex'));
       // Said once, at creation: the only copy is on the host it protects.
       logger.warn(`Created the backup manifest signing key at ${file}. Copy it OFF this host and keep it with `
         + 'whoever keeps the backups: a backup cannot be verified or restored on a replacement host without it.');
