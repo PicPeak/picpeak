@@ -81,7 +81,7 @@ const event = {
   expires_at: '2027-09-19T00:00:00Z',
 };
 
-function show(allowUploads: boolean) {
+function show(allowUploads: boolean, initialAllowUploads?: boolean) {
   photos = {
     data: {
       event: { ...event, allow_user_uploads: allowUploads },
@@ -95,7 +95,7 @@ function show(allowUploads: boolean) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <GalleryView slug="wedding" event={event} />
+      <GalleryView slug="wedding" event={{ ...event, allow_user_uploads: initialAllowUploads }} />
     </QueryClientProvider>,
   );
 }
@@ -116,6 +116,14 @@ describe.each(['gallery-premium', 'gallery-story'])('GalleryView upload on %s', 
 
   it('passes no callback when uploads are off', () => {
     show(false);
+    expect(screen.getByTestId('photo-grid')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'layout-upload' })).toBeNull();
+  });
+
+  // The `event` prop is the /info snapshot taken when the page loaded; the
+  // /photos payload is refetched. An admin turning uploads off must win.
+  it('follows the fresh /photos value over a stale initial event', () => {
+    show(false, true);
     expect(screen.getByTestId('photo-grid')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'layout-upload' })).toBeNull();
   });

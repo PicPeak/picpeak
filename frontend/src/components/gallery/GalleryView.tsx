@@ -1027,6 +1027,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Check if downloads are allowed (both event setting and not expired)
   const allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
 
+  // Guest uploads: the refetched /photos payload decides once it is here. The
+  // `event` prop is the snapshot the page loaded with, so OR-ing it in kept the
+  // upload button after an admin turned uploads off.
+  const allowUploads = data?.event
+    ? data.event.allow_user_uploads === true
+    : event?.allow_user_uploads === true;
+
   // Resolution picker choices (#858). More than one option means there is an
   // actual choice to make; a single option is just the standard size, so skip
   // the modal and download straight away.
@@ -1356,7 +1363,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // render the upload-only view for EVERY layout. Enforcement is server-side
   // (the photo endpoints refuse plain guests); this is the friendly face.
   if (hiddenUntilReveal) {
-    const uploadsOn = Boolean(data?.event?.allow_user_uploads || event?.allow_user_uploads);
     return (
       <GalleryLayout
         event={{
@@ -1390,7 +1396,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               })}
             </p>
           )}
-          {uploadsOn && (
+          {allowUploads && (
             <div className="mt-6">
               <p className="text-sm text-muted-theme mb-3">
                 {t('gallery.revealUploadHint', 'You can already add your own photos to the collection:')}
@@ -1406,7 +1412,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             </div>
           )}
         </div>
-        {showUploadModal && uploadsOn && (
+        {showUploadModal && allowUploads && (
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
@@ -1710,7 +1716,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // standard layouts offer the upload button, so they render their
           // own from this callback; same gate as that header button.
           onUploadClick={
-            data?.event?.allow_user_uploads || event?.allow_user_uploads
+            allowUploads
               ? () => setShowUploadModal(true)
               : undefined
           }
@@ -1718,7 +1724,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         />
 
         {/* Upload Modal for full-page layouts */}
-        {showUploadModal && (data?.event?.allow_user_uploads || event?.allow_user_uploads) && (
+        {showUploadModal && allowUploads && (
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
@@ -1803,7 +1809,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           selectedPhotosForQuota={downloadQuota.limited ? photosForIds(Array.from(selectedPhotos)) : undefined}
           isMobile={isMobile}
           galleryLayout={theme.galleryLayout}
-          allowUploads={data?.event?.allow_user_uploads || event?.allow_user_uploads || false}
+          allowUploads={allowUploads}
           onUploadClick={() => setShowUploadModal(true)}
           feedbackEnabled={feedbackEnabled}
           activeFilters={activeFilters}
@@ -1907,7 +1913,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           }
           
           // Upload button - always show when uploads are allowed (regardless of layout/theme loading state)
-          const allowUploads = data?.event?.allow_user_uploads || event?.allow_user_uploads;
           if (allowUploads) {
             items.push(
               <Button
@@ -2215,7 +2220,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
 
         {/* Upload Modal */}
-        {showUploadModal && (data?.event?.allow_user_uploads || event?.allow_user_uploads) && (
+        {showUploadModal && allowUploads && (
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
