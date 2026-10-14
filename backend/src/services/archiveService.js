@@ -143,6 +143,39 @@ async function supersededArchives(eventId) {
   return Array.isArray(superseded) ? superseded.filter(isArchiveKey) : [];
 }
 
+// The expiry checker's attempt to archive a gallery it deactivated, kept on
+// the same claim row (state key `expiry`: { attempts, at, expiresAt }) so a
+// failed attempt is retried in a later pass. The checker only selects active
+// galleries otherwise, and this is what tells its own deactivation apart from
+// an admin's.
+async function expiryAttempts() {
+  const rows = await db('maintenance_jobs')
+    .where('job_name', 'like', `${archiveJobName('')}%`)
+    .whereNotNull('last_result')
+    .select('job_name', 'last_result');
+  return rows
+    .map((row) => ({
+      eventId: Number(row.job_name.slice(archiveJobName('').length)),
+      attempt: parseArchiveState(row).expiry,
+    }))
+    .filter(({ eventId, attempt }) => Number.isInteger(eventId)
+      && attempt && typeof attempt === 'object' && Number.isInteger(attempt.attempts));
+}
+
+/** The recorded expiry attempt as this lease sees it, or null. */
+async function readExpiryAttempt(lease) {
+  const state = await readOwnState(lease);
+  return state?.expiry || null;
+}
+
+/** Record an expiry attempt under the lease, or clear it with null. False once the claim moved on. */
+async function writeExpiryAttempt(lease, attempt) {
+  const own = await readOwnState(lease);
+  if (!own) return false;
+  const { expiry: _previous, ...state } = own;
+  return Boolean(await writeArchiveState(lease, attempt ? { ...state, expiry: attempt } : state));
+}
+
 // Never a key an event row names: that zip is somebody's archive.
 const isReferenced = async (key) => Boolean(await db('events').where('archive_path', key).first('id'));
 
@@ -665,4 +698,5 @@ function convertToCSV(data) {
 
 module.exports = {
   archiveEvent, claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives,
+  expiryAttempts, readExpiryAttempt, writeExpiryAttempt,
 };

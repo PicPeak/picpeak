@@ -384,6 +384,86 @@ describe('one archive job per gallery', () => {
     expect(putCalls('expired-restored')).toBe(0);
   });
 
+  // Moves the recorded expiry attempt back in time, as passes going by would.
+  async function ageExpiryAttempt(eventId, hours) {
+    const row = await db('maintenance_jobs').where({ job_name: jobName(eventId) }).first();
+    const state = JSON.parse(row.last_result);
+    state.expiry.at = new Date(Date.parse(state.expiry.at) - hours * 3600000).toISOString();
+    await db('maintenance_jobs').where({ job_name: jobName(eventId) })
+      .update({ last_result: JSON.stringify(state) });
+  }
+  const expiryAttempt = async (eventId) => {
+    const row = await db('maintenance_jobs').where({ job_name: jobName(eventId) }).first();
+    return JSON.parse(row?.last_result || '{}').expiry;
+  };
+
+  it('retries the archive of a gallery the expiry pass deactivated, with a backoff', async () => {
+    const { checkExpirations } = require('../../src/services/expirationChecker');
+    const { queueEmail } = require('../../src/services/emailProcessor');
+    const event = await makeEvent('expired-retry', { expired: true });
+
+    failList = true;
+    await checkExpirations();
+    let row = await db('events').where({ id: event.id }).first();
+    expect(Boolean(row.is_active)).toBe(false);
+    expect(Boolean(row.is_archived)).toBe(false);
+    expect(await expiryAttempt(event.id)).toMatchObject({ attempts: 1 });
+    const expiredMails = () => queueEmail.mock.calls.filter(([id, , type]) => id === event.id && type === 'gallery_expired');
+    const announced = expiredMails().length;
+    expect(announced).toBeGreaterThan(0);
+
+    // Inside the backoff: left alone.
+    failList = false;
+    await checkExpirations();
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(false);
+
+    // Failing again doubles the wait.
+    await ageExpiryAttempt(event.id, 1);
+    failList = true;
+    await checkExpirations();
+    expect(await expiryAttempt(event.id)).toMatchObject({ attempts: 2 });
+    await ageExpiryAttempt(event.id, 1);
+    failList = false;
+    await checkExpirations();
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(false);
+
+    await ageExpiryAttempt(event.id, 1);
+    await checkExpirations();
+    row = await db('events').where({ id: event.id }).first();
+    expect(Boolean(row.is_archived)).toBe(true);
+    expect(Boolean(row.is_active)).toBe(false);
+    expect(await expiryAttempt(event.id)).toBeUndefined();
+    // Announced once, on the first attempt.
+    expect(expiredMails()).toHaveLength(announced);
+  });
+
+  it('does not archive an expired gallery an admin deactivated', async () => {
+    const event = await makeEvent('expired-admin-off', { expired: true });
+    await db('events').where({ id: event.id }).update({ is_active: 0 });
+
+    await require('../../src/services/expirationChecker').checkExpirations();
+
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(false);
+    expect(putCalls('expired-admin-off')).toBe(0);
+  });
+
+  it('does not retry a failed expiry archive once the gallery has a new expiry', async () => {
+    const { checkExpirations } = require('../../src/services/expirationChecker');
+    const event = await makeEvent('expired-reexpired', { expired: true });
+    failList = true;
+    await checkExpirations();
+    failList = false;
+    // Extended, deactivated by the admin, and expired again since: the
+    // recorded attempt was for the old expiry.
+    await db('events').where({ id: event.id })
+      .update({ expires_at: new Date(Date.now() - 3600000).toISOString() });
+    await ageExpiryAttempt(event.id, 2);
+
+    await checkExpirations();
+
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(false);
+  });
+
   it('stops deleting once a job that stalled after publishing has lost its claim', async () => {
     const event = await makeEvent('stalled-cleanup');
     let open;
