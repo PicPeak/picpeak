@@ -149,8 +149,10 @@ describe('external re-scan of a file changed in place', () => {
     // Made again at once, from the new file.
     expect(generateThumbnail).toHaveBeenCalledTimes(1);
     expect(generateThumbnail.mock.calls[0][0]).toBe(path.join(mediaRoot, 'shoot/a.jpg'));
-    expect(after.thumbnail_path).toBe(keys.thumbnail_path);
+    // Under a new key, and the old file is gone.
+    expect(after.thumbnail_path).toMatch(new RegExp(`^thumbnails/thumb_ext${photo.id}_[0-9a-f]{8}_a\\.jpg$`));
     expect(after.thumb_hash).toBeNull();
+    expect(exists(keys.thumbnail_path)).toBe(false);
 
     expect(exists(keys.preview_path)).toBe(false);
     expect(exists(keys.hero_path)).toBe(false);
@@ -208,6 +210,68 @@ describe('external re-scan of a file changed in place', () => {
     expect(after.thumbnail_path).not.toBe(keys.thumbnail_path);
     expect(after.thumbnail_path).toMatch(new RegExp(`^thumbnails/thumb_ext${photo.id}_[0-9a-f]{8}_a\\.jpg$`));
     expect(exists(keys.thumbnail_path)).toBe(true);
+  });
+
+  it('takes a new thumbnail key on every edit, never one another photo shows', async () => {
+    const eventId = await seedEvent();
+    const { photo, keys } = await importWithRenditions(eventId);
+    await db('photos').insert({
+      event_id: eventId, filename: 'twin.jpg', path: 'x/twin.jpg', type: 'individual',
+      source_origin: 'managed', thumbnail_path: keys.thumbnail_path,
+    });
+    generateThumbnail.mockClear();
+
+    await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+    const firstEdit = (await db('photos').where({ id: photo.id }).first()).thumbnail_path;
+    await writeJpeg('shoot/a.jpg', { width: 320, height: 520, color: { r: 5, g: 200, b: 90 } });
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+
+    const outputs = generateThumbnail.mock.calls.map(([, opts]) => `thumbnails/thumb_${opts.outputBasename}`);
+    expect(outputs).toHaveLength(2);
+    expect(outputs).not.toContain(keys.thumbnail_path);
+    expect(new Set([keys.thumbnail_path, firstEdit, outputs[1]]).size).toBe(3);
+  });
+
+  it('keeps the row eligible when a cached rendition cannot be removed', async () => {
+    const eventId = await seedEvent();
+    const { photo, keys } = await importWithRenditions(eventId);
+    const imageProcessor = require('../../src/services/imageProcessor');
+    const storage = require('../../src/services/storage').getStorage();
+    const tierKey = imageProcessor.previewTierKeys(photo)[0];
+    await writeStored(tierKey);
+    const realDelete = storage.delete.bind(storage);
+    const spy = jest.spyOn(storage, 'delete').mockImplementation(async (key) => {
+      if (key === tierKey) throw new Error('storage unavailable');
+      return realDelete(key);
+    });
+    try {
+      await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
+      expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(0);
+      const kept = await db('photos').where({ id: photo.id }).first();
+      expect(Number(kept.size_bytes)).toBe(Number(photo.size_bytes));
+    } finally {
+      spy.mockRestore();
+    }
+    // Storage back: the next pass completes it.
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+    expect(exists(tierKey)).toBe(false);
+    expect((await db('photos').where({ id: photo.id }).first()).preview_path).toBeNull();
+    expect(keys.preview_path).toBeTruthy();
+  });
+
+  it('purges faces and scene tags with the new metadata', async () => {
+    const eventId = await seedEvent();
+    const { photo } = await importWithRenditions(eventId);
+    await db('photos').where({ id: photo.id }).update({ face_status: 'done', face_count: 2, tag_status: 'done' });
+
+    await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+    const after = await db('photos').where({ id: photo.id }).first();
+    // Neither feature is on for this gallery: cleared, not queued.
+    expect(after.face_status).toBeNull();
+    expect(after.face_count).toBeNull();
+    expect(after.tag_status).toBeNull();
   });
 
   it('leaves a changed file that is still being written for the next automatic pass', async () => {

@@ -230,6 +230,44 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   const stats = await fs.stat(f.full);
   if (stats.size !== before.size || stats.mtimeMs !== before.mtimeMs) return 'deferred';
 
+  const { getStorage } = require('./storage');
+  const {
+    deletePreviewTiers, deleteThumbnailTiers, previewTierKeys, thumbnailTierKeys,
+  } = require('./imageProcessor');
+  const storage = getStorage();
+
+  // The caches go first, while the row still records the old size, so a
+  // pass that cannot clear them leaves the row eligible and tries again.
+  // Responsive tiers are served from a cache hit without looking at the
+  // source, so one that survives would show the old picture for good; they
+  // are checked, as the orientation repair does. A tier rebuilt meanwhile
+  // by a viewer came from the new bytes and only costs a later retry.
+  for (const column of DERIVATIVE_COLUMNS) {
+    const key = row[column];
+    if (!key) continue;
+    // Another row may point at the same file; that one is not stale.
+    const shared = await db('photos').whereNot('id', row.id).where(column, key).first('id').catch(() => ({ id: null }));
+    if (!shared) await storage.delete(key).catch(() => {});
+  }
+  await deletePreviewTiers(row).catch(() => {});
+  await deleteThumbnailTiers(row).catch(() => {});
+  const survivors = await Promise.all(
+    [...previewTierKeys(row), ...thumbnailTierKeys(row)]
+      .map((k) => storage.stat(k).then((st) => (st ? k : null)).catch(() => k))
+  );
+  if (survivors.some(Boolean)) {
+    logger.warn(`Changed external photo ${row.id} (${f.rel}): cached renditions could not be removed, retrying on the next pass`);
+    return 'skipped';
+  }
+
+  // Faces and scene tags describe the old picture: purged in the same
+  // transaction as the new metadata, so neither lands without the other.
+  const event = await db('events').where({ id: row.event_id }).first();
+  const faceOn = await require('./faceSettings').isEnabledForEvent(event);
+  const tagOn = await require('./tagSettings').isEnabledForEvent(event);
+  const { purgePhotoFaces } = require('./faceProcessor');
+  const { purgePhotoTags } = require('./tagProcessor');
+
   // Fenced on what was read: a concurrent pass that already refreshed the
   // row, or a replacement that repointed it, wins and this one does nothing.
   const fence = {
@@ -247,30 +285,24 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     thumb_hash: null,
   };
   for (const column of DERIVATIVE_COLUMNS) updates[column] = null;
-  if (await db('photos').where(fence).update(updates) !== 1) return 'skipped';
-
-  const { getStorage } = require('./storage');
-  const { deletePreviewTiers, deleteThumbnailTiers } = require('./imageProcessor');
-  const storage = getStorage();
-  let thumbnailShared = false;
-  for (const column of DERIVATIVE_COLUMNS) {
-    const key = row[column];
-    if (!key) continue;
-    // Another row may point at the same file; that one is not stale.
-    const shared = await db('photos').whereNot('id', row.id).where(column, key).first('id').catch(() => ({ id: null }));
-    if (!shared) await storage.delete(key).catch(() => {});
-    else if (column === 'thumbnail_path') thumbnailShared = true;
-  }
-  await deletePreviewTiers(row).catch(() => {});
-  await deleteThumbnailTiers(row).catch(() => {});
+  const committed = await db.transaction(async (trx) => {
+    if (await trx('photos').where(fence).update(updates) !== 1) return false;
+    await purgePhotoFaces(row.id, trx);
+    await purgePhotoTags(row.id, trx);
+    await trx('photos').where({ id: row.id }).update({
+      face_status: faceOn ? 'pending' : null,
+      tag_status: tagOn ? 'pending' : null,
+    });
+    return true;
+  });
+  if (!committed) return 'skipped';
 
   try {
     const meta = {};
-    // A thumbnail another row still shows is kept, so the new one takes
-    // its own key instead of overwriting it.
-    const outputBasename = thumbnailShared
-      ? `ext${row.id}_${crypto.randomBytes(4).toString('hex')}_${path.basename(f.rel)}`
-      : `ext${row.id}_${path.basename(f.rel)}`;
+    // Always a new key: the old one may still be shown by another row (it
+    // was kept above), and a fixed name would be overwritten on the next
+    // edit even after this one moved off it.
+    const outputBasename = `ext${row.id}_${crypto.randomBytes(4).toString('hex')}_${path.basename(f.rel)}`;
     const thumbnailPath = await generateThumbnail(f.full, { outputBasename, meta });
     if (thumbnailPath) {
       await db('photos').where({ id: row.id, size_bytes: stats.size }).whereNull('thumbnail_path')
@@ -279,23 +311,6 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   } catch (thumbErr) {
     // ensureThumbnail makes it on first view instead.
     logger.warn(`Thumbnail regeneration failed for changed external photo ${row.id} (${f.rel}): ${thumbErr.message}`);
-  }
-
-  // Faces and scene tags describe the old picture.
-  try {
-    const event = await db('events').where({ id: row.event_id }).first();
-    const { purgePhotoFaces } = require('./faceProcessor');
-    await purgePhotoFaces(row.id);
-    const faceOn = await require('./faceSettings').isEnabledForEvent(event);
-    const { purgePhotoTags } = require('./tagProcessor');
-    await purgePhotoTags(row.id);
-    const tagOn = await require('./tagSettings').isEnabledForEvent(event);
-    await db('photos').where({ id: row.id }).update({
-      face_status: faceOn ? 'pending' : null, face_count: null, face_started_at: null, face_error: null,
-      tag_status: tagOn ? 'pending' : null, tag_started_at: null, tag_attempt_id: null, tag_error: null,
-    });
-  } catch (err) {
-    logger.warn(`Face/tag reset failed for changed external photo ${row.id}: ${err.message}`);
   }
   return 'refreshed';
 }
