@@ -92,6 +92,9 @@ export interface ContractSigner {
   /** Reminders sent so far (#1446). */
   reminderCount?: number;
   remindedAt?: string | null;
+  /** The customer takes no administrative emails (migration 300) and this
+   *  signer is them: their link is never mailed (no resend / reminder). */
+  noMail?: boolean;
 }
 
 /**
@@ -289,6 +292,8 @@ export interface ContractSummary {
     lastName: string | null;
     companyName: string | null;
     preferredLanguage?: string | null;
+    /** No administrative emails (migration 300): send becomes Issue. */
+    noAdminEmails?: boolean;
   };
   status: ContractStatus;
   language: string;

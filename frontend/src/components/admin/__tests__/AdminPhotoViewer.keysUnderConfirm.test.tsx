@@ -67,4 +67,21 @@ describe('AdminPhotoViewer keys under the delete confirm', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('leaves an Escape that cancels an IME composition to the field', () => {
+    const onClose = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <ConfirmDialogProvider>
+          <AdminPhotoViewer photos={[photo(1, 'a.jpg')]} initialIndex={0} eventId={1}
+            onClose={onClose} onPhotoDeleted={vi.fn()} categories={[]} />
+        </ConfirmDialogProvider>
+      </QueryClientProvider>,
+    );
+    fireEvent.keyDown(window, { key: 'Escape', isComposing: true });
+    fireEvent.keyDown(window, { key: 'Escape', keyCode: 229 });
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
