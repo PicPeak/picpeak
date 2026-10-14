@@ -209,6 +209,10 @@ test('a restart reclaims authenticated requests and resumable sessions by their 
   expect(fs.existsSync(dir)).toBe(false);
   // Its half promotion goes once maintenance has deleted the stored object.
   expect(await db('public_upload_objects').first()).toMatchObject({ state: 'uncertain' });
+  await quota.retryRetainedObjects();
+  // Kept while a stalled process could still write it, then dropped.
+  expect(await db('public_upload_objects').first()).toMatchObject({ state: 'discarded' });
+  await db('public_upload_objects').update({ created_at: new Date(Date.now() - quota.LATE_WRITE_MS - 60000).toISOString() });
   await quota.retryRetainedObjects(); expect(await db('public_upload_objects')).toHaveLength(0);
   // A live session is kept by this process's heartbeat however old its row.
   const init = await initChunk(jpeg.length);
@@ -234,7 +238,9 @@ test('a crashed upload\'s stored file is deleted before its record, and a record
   expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
   expect(fs.existsSync(crashed.file)).toBe(true); expect(await quota.unfinishedKeys([crashed.key])).toEqual(new Set([crashed.key]));
   await quota.retryRetainedObjects();
-  expect(fs.existsSync(crashed.file)).toBe(false); expect(await db('public_upload_objects')).toHaveLength(0);
+  expect(fs.existsSync(crashed.file)).toBe(false);
+  expect(await db('public_upload_objects').where({ object_key: crashed.key }).first()).toMatchObject({ state: 'discarded' });
+  await db('public_upload_objects').del();
   // A file that cannot be removed stays marked unfinished, so no watcher scan imports it.
   const stuck = await orphan('stuck.jpg');
   await quota.cleanupAbandoned();
@@ -250,7 +256,9 @@ test('a crashed upload\'s stored file is deleted before its record, and a record
   await expect(quota.begin({ eventId, mode: 'admin', maxFiles: 1, declaredBytes: 1024 * 1024 })).rejects.toMatchObject({ code: 'UPLOAD_STORAGE_LOW' });
   await db('public_upload_objects').update({ state: 'uncertain' });
   await quota.retryRetainedObjects();
-  expect(fs.existsSync(stuck.file)).toBe(false); expect(await db('public_upload_objects')).toHaveLength(0);
+  expect(fs.existsSync(stuck.file)).toBe(false);
+  await db('public_upload_objects').update({ created_at: new Date(Date.now() - quota.LATE_WRITE_MS - 60000).toISOString() });
+  await quota.retryRetainedObjects(); expect(await db('public_upload_objects')).toHaveLength(0);
 });
 test('an abandoned resumable session releases its slot after fifteen idle minutes, not twenty-four hours', async () => {
   process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';
