@@ -28,6 +28,8 @@ jest.mock('../../src/database/db', () => {
     if (table === 'photos') {
       return {
         where: (criteria) => ({
+          // ownDerivativeName's lookup: an uploaded (not camera-named) photo.
+          first: async () => null,
           update: async (values) => {
             state.updates.push({ criteria, values });
             return 1;

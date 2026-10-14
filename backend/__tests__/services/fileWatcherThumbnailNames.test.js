@@ -26,7 +26,7 @@ process.env.STORAGE_BACKEND = 'local';
 const sharp = require('sharp');
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
 const { processNewPhoto, repairSharedThumbnails } = require('../../src/services/fileWatcher');
-const { ensureThumbnail } = require('../../src/services/imageProcessor');
+const { ensureThumbnail, ensurePreviewImage } = require('../../src/services/imageProcessor');
 
 const RED = { r: 220, g: 20, b: 20 };
 const BLUE = { r: 20, g: 20, b: 220 };
@@ -128,12 +128,28 @@ describe('watch-folder thumbnail names', () => {
     expect(await redOf(keyB)).toBeLessThan(80);
   });
 
+  it('regenerates each photo\'s lightbox preview under its own name', async () => {
+    const a = await makeEvent('thumbs-preview-a');
+    const b = await makeEvent('thumbs-preview-b');
+    await processNewPhoto(await dropJpeg(a, 'IMG_0004.JPG', RED));
+    await processNewPhoto(await dropJpeg(b, 'IMG_0004.JPG', BLUE));
+    const photoA = await db('photos').where({ event_id: a.id }).first();
+    const photoB = await db('photos').where({ event_id: b.id }).first();
+
+    const keyA = await ensurePreviewImage(photoA);
+    const keyB = await ensurePreviewImage(photoB);
+
+    expect(keyA).not.toBe(keyB);
+    expect(await redOf(keyA)).toBeGreaterThan(150);
+    expect(await redOf(keyB)).toBeLessThan(80);
+  });
+
   it('keeps an uploaded photo\'s thumbnail key when it is the only one on it', async () => {
     const a = await makeEvent('thumbs-own-key');
     await dropJpeg(a, 'own_individual_0001_abcdef.jpg', RED);
     const key = 'thumbnails/thumb_own_individual_0001_abcdef.jpg';
     const [row] = await db('photos').insert({
-      event_id: a.id, filename: 'own_individual_0001_abcdef.jpg',
+      event_id: a.id, filename: 'own_individual_0001_abcdef.jpg', source_filename: 'IMG_0001.JPG',
       path: `${a.slug}/individual/own_individual_0001_abcdef.jpg`, thumbnail_path: key,
       type: 'individual', media_type: 'image', source_origin: 'managed', processing_status: 'complete',
       size_bytes: 1, mime_type: 'image/jpeg',
@@ -152,9 +168,12 @@ describe('watch-folder thumbnail names', () => {
     // What the watcher wrote before: one key for both, holding the later import.
     const shared = 'thumbnails/thumb_IMG_0003.JPG';
     await sharp({ create: { width: 300, height: 225, channels: 3, background: BLUE } }).jpeg().toFile(abs(shared));
+    const sharedPreview = 'previews/preview_IMG_0003.jpg';
+    fs.mkdirSync(path.dirname(abs(sharedPreview)), { recursive: true });
+    await sharp({ create: { width: 800, height: 600, channels: 3, background: BLUE } }).jpeg().toFile(abs(sharedPreview));
     const legacyRow = (event) => ({
-      event_id: event.id, filename: 'IMG_0003.JPG', path: `${event.slug}/individual/IMG_0003.JPG`,
-      thumbnail_path: shared, type: 'individual', media_type: 'image', source_origin: 'managed',
+      event_id: event.id, filename: 'IMG_0003.JPG', source_filename: 'IMG_0003.JPG',
+      path: `${event.slug}/individual/IMG_0003.JPG`, thumbnail_path: shared, preview_path: sharedPreview, type: 'individual', media_type: 'image', source_origin: 'managed',
       processing_status: 'complete', size_bytes: 1, mime_type: 'image/jpeg',
     });
     await db('photos').insert([legacyRow(a), legacyRow(b)]);
@@ -167,6 +186,8 @@ describe('watch-folder thumbnail names', () => {
     expect(photoA.thumbnail_path).not.toBe(photoB.thumbnail_path);
     expect(await redOf(photoA.thumbnail_path)).toBeGreaterThan(150);
     expect(await redOf(photoB.thumbnail_path)).toBeLessThan(80);
+    expect(photoA.preview_path).not.toBe(photoB.preview_path);
+    expect(await redOf(photoA.preview_path)).toBeGreaterThan(150);
     // The archived rows are not touched, so the key they hold stays on disk.
     const archivedRows = await db('photos').where({ event_id: archived.id });
     expect(archivedRows.every((r) => r.thumbnail_path === shared)).toBe(true);

@@ -42,10 +42,10 @@ const ALL_ROWS = {
   'services/faceProcessor.js': [8, 'scan in flight, queueing (the queue skips trashed rows), purge of face data'],
   'services/faceQueue.js': [5, 'state of a claimed scan and the stuck-scan janitor; the claim itself is live only'],
   'services/feedbackService.js': [5, 'row lock and per-photo counters by id, after the route checked the photo; recounts keep trashed rows consistent'],
-  'services/fileWatcher.js': [8, 'which file already belongs to a photo; insert; unlink removes the row whatever its state; start-up repair gives every row on a shared thumbnail its own, trashed rows included'],
+  'services/fileWatcher.js': [8, 'which file already belongs to a photo; insert; unlink removes the row whatever its state; start-up repair gives every row on a shared thumbnail, preview or hero its own, trashed rows included'],
   'services/folderRequestService.js': [4, 'settling a folder request moves trashed photos with the rest'],
   'services/folderTreeService.js': [1, 'deleting a folder moves every photo in it to the parent'],
-  'services/imageProcessor.js': [4, 'derivative of a photo in flight; whether another row shares a hero or thumbnail file'],
+  'services/imageProcessor.js': [4, 'derivative of a photo in flight; whether another row shares a hero file; whether a photo is stored under its camera name'],
   'services/mediaAttemptService.js': [11, 'attempts in flight and their recovery, restore-time reset of every row; the claim itself is live only'],
   'services/photoCap.js': [3, 'inserts of new photos'],
   'services/photoCredit.js': [7, 'guest erasure and merge treat trashed photos like any other'],
@@ -67,7 +67,7 @@ const ALL_ROWS = {
   'services/videoRenditionQueue.js': [1, 'state of a rendition in flight'],
   'services/videoRenditionService.js': [2, 'queues every video (the queue skips trashed rows); rendition in flight'],
   'services/watermarkGeneratorService.js': [10, 'watermarks are made, renewed and cleared for trashed photos too: a restore must not serve one from old settings'],
-  'routes/adminThumbnails.js': [4, 'thumbnail and preview regeneration covers trashed photos too: a restore must not bring back stale renditions'],
+  'routes/adminThumbnails.js': [5, 'thumbnail and preview regeneration covers trashed photos too: a restore must not bring back stale renditions; a superseded thumbnail another row still uses (trashed or not) is kept'],
 };
 
 // Tables that name a photo by id keep their rows while the photo is in the

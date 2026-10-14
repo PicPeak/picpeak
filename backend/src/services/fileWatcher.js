@@ -113,37 +113,45 @@ function startFileWatcher() {
 }
 
 /**
- * Give every photo that shares its thumbnail with another photo its own.
+ * Give every photo that shares a derived file with another photo its own.
  *
- * Watch-folder imports named the thumbnail after the camera's file name, so
+ * Watch-folder imports named the thumbnail after the camera's file name, and
+ * regenerating a thumbnail, lightbox preview or hero did the same, so
  * same-named files in two galleries point at one file showing whichever was
- * written last. ensureThumbnail regenerates each row from its own original
- * and, because the key is shared, under a per-photo name; the last row left
- * on the key keeps it, rebuilt from its own original. The old file is removed
- * only once no row points at it. Archived galleries are left out: their
+ * written last. Each such row is regenerated from its own original, under a
+ * per-photo name (imageProcessor's ownDerivativeName), and the old file is
+ * removed once no row points at it. Archived galleries are left out: their
  * originals are in the zip, not in storage. A row whose original cannot be
  * read keeps the shared key and is tried again next start. Idempotent: with
- * no shared keys left, this is one grouped query.
+ * no shared keys left, this is three grouped queries.
  */
 async function repairSharedThumbnails() {
-  const { ensureThumbnail } = require('./imageProcessor');
+  const { ensureThumbnail, ensurePreviewImage, ensureHeroImage } = require('./imageProcessor');
   const { getStorage } = require('./storage');
   const archived = () => db('events').where('is_archived', formatBoolean(true)).select('id');
-  const keys = await db('photos').whereNotNull('thumbnail_path').whereNotIn('event_id', archived())
-    .groupBy('thumbnail_path').havingRaw('count(*) > 1').pluck('thumbnail_path');
-  if (keys.length === 0) return;
-  logger.info(`[fileWatcher] ${keys.length} thumbnail(s) shared by several photos; regenerating them per photo`);
-  for (const key of keys) {
-    const photos = await db('photos').where('thumbnail_path', key).whereNotIn('event_id', archived()).orderBy('id');
-    for (const photo of photos) {
-      try {
-        await ensureThumbnail(photo, { force: true });
-      } catch (error) {
-        logger.warn(`[fileWatcher] Could not regenerate the thumbnail of photo ${photo.id}: ${error.message}`);
+  const kinds = {
+    thumbnail_path: (photo) => ensureThumbnail({ ...photo, thumbnail_path: null }, { force: true }),
+    preview_path: (photo) => ensurePreviewImage({ ...photo, preview_path: null }, { force: true }),
+    // The event's own focal point, as the gallery hero route asks for it.
+    hero_path: (photo) => ensureHeroImage({ ...photo, hero_path: null }),
+  };
+  for (const [column, regenerate] of Object.entries(kinds)) {
+    const keys = await db('photos').whereNotNull(column).whereNotIn('event_id', archived())
+      .groupBy(column).havingRaw('count(*) > 1').pluck(column);
+    if (keys.length === 0) continue;
+    logger.info(`[fileWatcher] ${keys.length} ${column} file(s) shared by several photos; regenerating them per photo`);
+    for (const key of keys) {
+      const photos = await db('photos').where(column, key).whereNotIn('event_id', archived()).orderBy('id');
+      for (const photo of photos) {
+        try {
+          await regenerate(photo);
+        } catch (error) {
+          logger.warn(`[fileWatcher] Could not regenerate ${column} of photo ${photo.id}: ${error.message}`);
+        }
       }
-    }
-    if (!(await db('photos').where('thumbnail_path', key).first('id'))) {
-      await getStorage().delete(key).catch(() => {});
+      if (!(await db('photos').where(column, key).first('id'))) {
+        await getStorage().delete(key).catch(() => {});
+      }
     }
   }
 }

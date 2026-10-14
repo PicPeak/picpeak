@@ -805,26 +805,27 @@ function isVideoPhoto(photo) {
  * load time for a 100-photo NAS-mounted gallery.
  */
 /**
- * The basename a managed photo's canonical thumbnail is written under.
+ * The basename a managed photo's derived files (thumbnail, preview, hero) are
+ * written under.
  *
- * The key `thumbnails/thumb_<name>` has no gallery or photo in it. Uploads are
- * safe because their stored file names carry a random suffix, but a
- * watch-folder file keeps the camera's name, so regenerating from its source
- * name wrote one file for every gallery holding an IMG_0001.JPG: the latest
- * regeneration overwrote the others' tile, and removing any of them removed
- * it for all. The name is kept only while this photo alone already points at
- * that key (no churn for uploads); otherwise the photo id makes it its own.
+ * Their keys (`thumbnails/thumb_<name>`, ...) have no gallery or photo in them.
+ * Uploads are safe because their stored file name is generated with a random
+ * suffix. A watch-folder import keeps the camera's name as its file name
+ * (filename === source_filename), and cameras restart at IMG_0001.JPG, so two
+ * galleries regenerating from that name wrote one file: the later one
+ * overwrote the other's tile or lightbox preview, and removing either photo's
+ * derivative removed both. Such a photo gets its id in front of the name.
  * Inside a derivative scope (videos, RAW) derivativeBasename already adds a
- * per-attempt id, so the name is left alone there.
+ * per-attempt id, so the name is left alone there. Callers pass rows selected
+ * with different columns, so one without source_filename is read by id.
  */
-async function ownThumbnailBasename(photo, name, keyFor = (n) => `thumb_${n}`) {
-  if (derivativeContext.getStore()) return name;
-  const key = path.posix.join('thumbnails', keyFor(name));
-  if (photo.thumbnail_path === key) {
-    const other = await db('photos').where('thumbnail_path', key).whereNot('id', photo.id).first('id');
-    if (!other) return name;
-  }
-  return `p${photo.id}_${name}`;
+async function ownDerivativeName(photo, name) {
+  if (!name || derivativeContext.getStore()) return name;
+  const row = 'source_filename' in photo
+    ? photo
+    : await db('photos').where('id', photo.id).first('filename', 'source_filename');
+  const cameraNamed = Boolean(row?.filename) && row.filename === row.source_filename;
+  return cameraNamed ? `p${photo.id}_${name}` : name;
 }
 
 async function ensureThumbnail(photo, { force = false, boundVideoSource = true } = {}) {
@@ -912,7 +913,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
     newThumbnailPath = await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        const name = await ownThumbnailBasename(photo, proc.outputBasename || path.basename(localPath));
+        const name = await ownDerivativeName(photo, proc.outputBasename || path.basename(localPath));
         return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(name), meta });
       } finally {
         await proc.cleanup();
@@ -969,11 +970,10 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.filename) || `video-${photo.id}`
   );
-  const videoKeyFor = (name) => `thumb_${name.replace(/\.[^.]+$/, '.jpg')}`;
   const outputBasename = derivativeBasename(isExternal
     ? `ext${photo.id}_${sourceBasename}`
-    : await ownThumbnailBasename(photo, sourceBasename, videoKeyFor));
-  const thumbnailKey = path.posix.join('thumbnails', videoKeyFor(outputBasename));
+    : await ownDerivativeName(photo, sourceBasename));
+  const thumbnailKey = path.posix.join('thumbnails', `thumb_${outputBasename.replace(/\.[^.]+$/, '.jpg')}`);
 
   // Resolves to { thumbnailKey, placeholder, thumbnailError } or null, so the
   // caller can write the processing note the way the upload paths do.
@@ -1307,7 +1307,8 @@ async function regenerateHeroImage(photo, anchor) {
   newHeroPath = await withLocalCopy(sourceKey, async (localPath) => {
     const proc = await withProcessableImage(localPath, sourceKey);
     try {
-      return await generateHeroImage(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename), anchor: heroAnchor });
+      const name = await ownDerivativeName(photo, proc.outputBasename || path.basename(localPath));
+      return await generateHeroImage(proc.path, { regenerate: true, outputBasename: derivativeBasename(name), anchor: heroAnchor });
     } finally {
       await proc.cleanup();
     }
@@ -1864,7 +1865,8 @@ async function regeneratePreviewImage(photo) {
     newPreviewPath = await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        return await generatePreviewImage(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename) });
+        const name = await ownDerivativeName(photo, proc.outputBasename || path.basename(localPath));
+        return await generatePreviewImage(proc.path, { regenerate: true, outputBasename: derivativeBasename(name) });
       } finally {
         await proc.cleanup();
       }
