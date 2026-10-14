@@ -2159,6 +2159,9 @@ module.exports = (router) => {
       if (error.code === 'EVENT_NOT_FOUND') {
         return res.status(404).json({ error: 'Event not found' });
       }
+      if (error.code === 'ARCHIVE_IN_PROGRESS') {
+        return res.status(409).json({ error: error.message, code: error.code });
+      }
       logger.error('Error deleting event', { eventId: req.params.id, error: error.message });
       if (error.message && error.message.includes('foreign key constraint')) {
         return res.status(500).json({

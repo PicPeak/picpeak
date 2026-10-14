@@ -97,6 +97,10 @@ class EventRenameService {
       if (event.is_archived) {
         return { valid: false, error: 'Cannot rename archived events' };
       }
+      // The archive job reads the photos under the current slug (issue 2012).
+      if (await require('./archiveService').isArchiveRunning(eventId)) {
+        return { valid: false, error: 'Cannot rename a gallery while it is being archived' };
+      }
 
       // Validate new name
       if (!newEventName || newEventName.trim().length < 3) {

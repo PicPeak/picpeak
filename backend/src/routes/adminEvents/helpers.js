@@ -12,6 +12,13 @@ async function deleteEventCascade(eventId, adminContext) {
     err.code = 'EVENT_NOT_FOUND';
     throw err;
   }
+  // An archive job still reading the photos would upload a zip for a gallery
+  // that no longer exists (issue 2012).
+  if (await require('../../services/archiveService').isArchiveRunning(event.id)) {
+    const err = new Error('This gallery is being archived right now');
+    err.code = 'ARCHIVE_IN_PROGRESS';
+    throw err;
+  }
 
   // Responsive tiers (#1095 / #492) live in the top-level thumbnails/ and
   // previews/ directories, not under the event folder the filesystem sweep

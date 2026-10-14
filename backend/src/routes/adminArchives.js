@@ -22,6 +22,7 @@ const { clearGuestCredits } = require('../services/photoCredit');
 const folderTree = require('../services/folderTreeService');
 const { parseBooleanInput } = require('../utils/parsers');
 const { getStorage } = require('../services/storage');
+const { isArchiveRunning } = require('../services/archiveService');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
 const router = express.Router();
 
@@ -240,6 +241,14 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
 
     if (!archive) {
       return res.status(404).json({ error: 'Archive not found' });
+    }
+
+    // The archive job sets is_archived before it deletes the originals and
+    // derived files (issue 2012): restoring in that window would bring photos
+    // back for the job to delete. A job started after this check finds
+    // is_archived set and stops, so the check cannot race one.
+    if (await isArchiveRunning(archive.id)) {
+      return res.status(409).json({ error: 'This gallery is being archived right now', code: 'ARCHIVE_IN_PROGRESS' });
     }
 
     // Check if archive file exists
@@ -875,6 +884,9 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
 
     if (!archive) {
       return res.status(404).json({ error: 'Archive not found' });
+    }
+    if (await isArchiveRunning(archive.id)) {
+      return res.status(409).json({ error: 'This gallery is being archived right now', code: 'ARCHIVE_IN_PROGRESS' });
     }
 
     // Delete archive file if exists. Through the storage backend: on an S3

@@ -2387,6 +2387,7 @@
     "uploadPhotos": "Fotos hochladen",
     "archiveEvent": "Galerie archivieren",
     "archiveConfirm": "Sind Sie sicher, dass Sie diese Galerie archivieren möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "archiveInProgress": "Diese Galerie wird gerade archiviert. Versuchen Sie es erneut, sobald die Archivierung abgeschlossen ist.",
     "extendExpiration": "Um {{days}} Tage verlängern",
     "backToEvents": "Alle Galerien",
     "loadingEventDetails": "Veranstaltungsdetails werden geladen...",

@@ -241,6 +241,12 @@ async function handleExpiredEvent(event, { sendLegacyEmails = true } = {}) {
 
     logger.info(`Handled expiration for event ${event.slug}`);
   } catch (error) {
+    // A manual or bulk archive already holds the gallery (issue 2012): that
+    // job archives it, nothing to do here.
+    if (error.code === 'ARCHIVE_IN_PROGRESS' || error.code === 'EVENT_ALREADY_ARCHIVED') {
+      logger.info(`Expired event ${event.slug} is already being archived, skipped`);
+      return;
+    }
     logger.error(`Error handling expired event ${event.slug}:`, error);
   }
 }

@@ -628,6 +628,7 @@
     "uploadPhotos": "Foto's uploaden",
     "archiveEvent": "Evenement archiveren",
     "archiveConfirm": "Weet u zeker dat u dit evenement wilt archiveren? Deze actie kan niet ongedaan worden gemaakt.",
+    "archiveInProgress": "Deze galerij wordt op dit moment gearchiveerd. Probeer het opnieuw zodra het archiveren klaar is.",
     "extendExpiration": "{{days}} dagen verlengen",
     "backToEvents": "Terug naar evenementen",
     "loadingEventDetails": "Evenementdetails laden...",

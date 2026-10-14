@@ -1645,6 +1645,7 @@
     "uploadPhotos": "Naloži fotografije",
     "archiveEvent": "Arhiviraj dogodek",
     "archiveConfirm": "Ali res želite arhivirati ta dogodek? Tega dejanja ni mogoče razveljaviti.",
+    "archiveInProgress": "Ta galerija se trenutno arhivira. Poskusite znova, ko se arhiviranje konča.",
     "extendExpiration": "Podaljšaj za {{days}} dni",
     "backToEvents": "Nazaj na dogodke",
     "loadingEventDetails": "Nalaganje podrobnosti dogodka...",

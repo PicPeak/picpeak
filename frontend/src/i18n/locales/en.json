@@ -1789,6 +1789,7 @@
     "uploadPhotos": "Upload Photos",
     "archiveEvent": "Archive Gallery",
     "archiveConfirm": "Are you sure you want to archive this gallery? This action cannot be undone.",
+    "archiveInProgress": "This gallery is being archived right now. Try again once the archive has finished.",
     "extendExpiration": "Extend {{days}} Days",
     "backToEvents": "All galleries",
     "loadingEventDetails": "Loading event details...",

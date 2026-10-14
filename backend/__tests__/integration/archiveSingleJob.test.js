@@ -1,0 +1,281 @@
+/**
+ * One archive job per gallery (issue 2012).
+ *
+ * POST /:id/archive checked is_archived and then awaited the whole job, and
+ * is_archived is only set once the zip is uploaded. Every request (or bulk
+ * archive, or expiry pass) arriving in that window started another job on the
+ * same gallery, and the first one to finish deleted the originals the others
+ * were still reading: NoSuchKey / ECONNRESET on S3. archiveEvent now takes a
+ * per-gallery claim before it starts, and restore / delete / rename refuse
+ * while one is live.
+ */
+
+const crypto = require('crypto');
+const { Readable } = require('stream');
+const express = require('express');
+const request = require('supertest');
+
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'archive-single-job-secret';
+
+const bodies = new Map();
+// Each storage read waits for this gate, so a test can hold a job mid-build.
+let gate = Promise.resolve();
+let failList = false;
+
+const mockStorage = {
+  kind: () => 's3',
+  list: jest.fn(async (prefix) => {
+    if (failList) throw Object.assign(new Error('socket reset by peer'), { code: 'ECONNRESET' });
+    return [...bodies.keys()]
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => ({ key, size: bodies.get(key).length, mtime: new Date() }));
+  }),
+  get: jest.fn(async (key) => {
+    await gate;
+    return Readable.from([bodies.get(key)]);
+  }),
+  stat: jest.fn(async () => null),
+  exists: jest.fn(async () => true),
+  putFromFile: jest.fn(async () => undefined),
+  put: jest.fn(async () => undefined),
+  delete: jest.fn(async () => undefined),
+  resolveLocalPath: () => { throw new Error('not local'); },
+};
+jest.mock('../../src/services/storage', () => ({
+  getStorage: () => mockStorage,
+  initStorage: async () => mockStorage,
+}));
+jest.mock('../../src/services/emailProcessor', () => ({
+  queueEmail: jest.fn(async () => undefined),
+  getSupportEmail: jest.fn(async () => 'support@example.com'),
+}));
+jest.mock('../../src/services/workflows', () => ({
+  isBuiltinFlowActive: async () => false,
+  emitWorkflowEvent: async () => {},
+}));
+jest.mock('../../src/services/webhookService', () => ({
+  fire: async () => {},
+  buildEventSubject: (e) => e,
+}));
+jest.mock('../../src/middleware/auth', () => ({
+  adminAuth: (req, _res, next) => {
+    req.admin = { id: 1, username: 'tester' };
+    require('../../src/database/crmAccess').withTrustedCrmAccess('archive single job fixture authentication', next);
+  },
+}));
+jest.mock('../../src/middleware/permissions', () => ({
+  requirePermission: () => (_req, _res, next) => next(),
+}));
+jest.mock('../../src/middleware/ownership', () => ({
+  ...jest.requireActual('../../src/middleware/ownership'),
+  requireEventOwnership: (_req, _res, next) => next(),
+  requireEventOwner: (_req, _res, next) => next(),
+  filterOwnedEventIds: async (_admin, ids) => ({ allowed: ids, denied: [] }),
+}));
+
+const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
+
+describe('one archive job per gallery', () => {
+  let db; let cleanup; let app; let archiveEvent; let jobState; let logger;
+
+  const unwrap = (rows) => (typeof rows[0] === 'object' && rows[0] !== null ? rows[0].id : rows[0]);
+  const jobName = (id) => `event_archive:${id}`;
+  const putCalls = (slug) => mockStorage.putFromFile.mock.calls
+    .filter(([key]) => key === `events/archived/${slug}.zip`).length;
+
+  async function makeEvent(slug, { photoCount = 3, expired = false } = {}) {
+    const id = unwrap(await db('events').insert({
+      slug,
+      event_type: 'wedding',
+      event_name: `Archive ${slug}`,
+      event_date: '2026-08-01',
+      host_email: 'host@example.com',
+      admin_email: null,
+      password_hash: 'x',
+      share_link: `/gallery/${slug}/share`,
+      share_token: `${slug}-share`,
+      expires_at: new Date(Date.now() + (expired ? -1 : 30) * 864e5).toISOString(),
+      is_active: 1,
+      is_archived: 0,
+      is_draft: 0,
+      created_at: new Date().toISOString(),
+    }).returning('id'));
+    for (let i = 0; i < photoCount; i += 1) {
+      const filename = `photo-${i}.jpg`;
+      bodies.set(`events/active/${slug}/${filename}`, crypto.randomBytes(1024));
+      await db('photos').insert({
+        event_id: id, filename, path: `events/active/${slug}/${filename}`, type: 'individual',
+        source_origin: 'managed', mime_type: 'image/jpeg', uploaded_at: new Date().toISOString(),
+      });
+    }
+    return db('events').where({ id }).first();
+  }
+
+  /** A live claim, as a job running on another replica holds it. */
+  async function holdClaim(eventId) {
+    await jobState.ensure(jobName(eventId));
+    const token = await jobState.claim(jobName(eventId));
+    expect(token).toBeTruthy();
+    return token;
+  }
+
+  beforeAll(async () => {
+    ({ db, cleanup } = await bootCrmDb());
+    await seedMinimal(db);
+    ({ archiveEvent } = require('../../src/services/archiveService'));
+    jobState = require('../../src/services/maintenanceJobState');
+    logger = require('../../src/utils/logger');
+    app = express();
+    app.use(express.json());
+    app.use('/admin/events', require('../../src/routes/adminEvents'));
+    app.use('/admin/archives', require('../../src/routes/adminArchives'));
+  }, 180000);
+
+  afterAll(async () => { if (cleanup) await cleanup(); });
+
+  beforeEach(() => {
+    require('../../src/database/crmAccess').enterTrustedCrmFixtureContext();
+    gate = Promise.resolve();
+    failList = false;
+    jest.clearAllMocks();
+  });
+
+  it('runs exactly one of two concurrent archives of the same gallery', async () => {
+    const event = await makeEvent('concurrent');
+    let open;
+    gate = new Promise((resolve) => { open = resolve; });
+
+    const first = archiveEvent(event);
+    // The first job is parked on its first storage read, mid-build.
+    await new Promise((resolve) => {
+      const tick = () => (mockStorage.get.mock.calls.length > 0 ? resolve() : setTimeout(tick, 5));
+      tick();
+    });
+    // Without the claim the second job parks on the same gate; fail fast.
+    const notRefused = new Promise((_, reject) => setTimeout(() => reject(new Error('second archive was not refused')), 2000));
+    await expect(Promise.race([archiveEvent(event), notRefused]))
+      .rejects.toMatchObject({ code: 'ARCHIVE_IN_PROGRESS', statusCode: 409 });
+    open();
+    await first;
+
+    expect(mockStorage.list).toHaveBeenCalledTimes(1);
+    expect(putCalls('concurrent')).toBe(1);
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(true);
+    // Released on success.
+    expect((await jobState.read(jobName(event.id))).isRunning).toBe(false);
+  });
+
+  it('refuses a stale caller row once another job has archived the gallery', async () => {
+    const event = await makeEvent('stale-row');
+    await archiveEvent(event);
+    mockStorage.putFromFile.mockClear();
+
+    // `event` still says is_archived = 0: a second click that read the row
+    // before the first job finished. Re-archiving would zip the emptied prefix
+    // over the real archive.
+    await expect(archiveEvent(event)).rejects.toMatchObject({ code: 'EVENT_ALREADY_ARCHIVED' });
+    expect(putCalls('stale-row')).toBe(0);
+  });
+
+  it('takes over a claim whose holder stopped renewing', async () => {
+    const event = await makeEvent('stale-claim');
+    await holdClaim(event.id);
+    // The holder died: its heartbeat is older than the lease.
+    await db('maintenance_jobs').where({ job_name: jobName(event.id) })
+      .update({ heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString() });
+
+    await archiveEvent(event);
+
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(true);
+  });
+
+  it('releases the claim when the archive fails', async () => {
+    const event = await makeEvent('fails');
+    failList = true;
+    await expect(archiveEvent(event)).rejects.toThrow('socket reset by peer');
+    expect((await jobState.read(jobName(event.id))).isRunning).toBe(false);
+
+    failList = false;
+    await archiveEvent(event);
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(true);
+  });
+
+  it('answers 409 ARCHIVE_IN_PROGRESS to a second archive request', async () => {
+    const event = await makeEvent('route-single');
+    await holdClaim(event.id);
+
+    const res = await request(app).post(`/admin/events/${event.id}/archive`);
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ARCHIVE_IN_PROGRESS');
+    expect(mockStorage.list).not.toHaveBeenCalled();
+  });
+
+  it('reports a claimed gallery as failed in a bulk archive and archives the rest', async () => {
+    const held = await makeEvent('bulk-held');
+    const free = await makeEvent('bulk-free');
+    await holdClaim(held.id);
+
+    const res = await request(app).post('/admin/events/bulk-archive').send({ eventIds: [held.id, free.id] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.results.successful.map((r) => r.id)).toEqual([free.id]);
+    expect(res.body.results.failed).toEqual([
+      expect.objectContaining({ id: held.id, code: 'ARCHIVE_IN_PROGRESS' }),
+    ]);
+  });
+
+  it('refuses restore, archive delete and gallery delete while the job runs', async () => {
+    const event = await makeEvent('restore-held');
+    // The job sets is_archived before it deletes the originals; this is that
+    // window.
+    await db('events').where({ id: event.id })
+      .update({ is_archived: 1, archive_path: 'events/archived/restore-held.zip' });
+    const token = await holdClaim(event.id);
+
+    const restore = await request(app).post(`/admin/archives/${event.id}/restore`);
+    expect(restore.status).toBe(409);
+    expect(restore.body.code).toBe('ARCHIVE_IN_PROGRESS');
+
+    const dropArchive = await request(app).delete(`/admin/archives/${event.id}`);
+    expect(dropArchive.status).toBe(409);
+
+    const dropEvent = await request(app).delete(`/admin/events/${event.id}`);
+    expect(dropEvent.status).toBe(409);
+    expect(dropEvent.body.code).toBe('ARCHIVE_IN_PROGRESS');
+
+    expect(await db('events').where({ id: event.id }).first()).toBeTruthy();
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(true);
+
+    // Once the job is done, restore goes ahead (and fails later only because
+    // this fixture has no real zip).
+    await jobState.release(jobName(event.id), token);
+    const after = await request(app).post(`/admin/archives/${event.id}/restore`);
+    expect(after.status).not.toBe(409);
+  });
+
+  it('refuses to rename a gallery while it is being archived', async () => {
+    const event = await makeEvent('rename-held');
+    await holdClaim(event.id);
+    const eventRenameService = require('../../src/services/eventRenameService');
+
+    const result = await eventRenameService.validateRename(event.id, 'A brand new name');
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/being archived/);
+  });
+
+  it('lets the expiry checker skip a claimed gallery quietly', async () => {
+    const event = await makeEvent('expired-held', { expired: true });
+    await holdClaim(event.id);
+    const errorSpy = jest.spyOn(logger, 'error');
+    const { checkExpirations } = require('../../src/services/expirationChecker');
+
+    await checkExpirations();
+
+    expect(mockStorage.list).not.toHaveBeenCalledWith(`events/active/${event.slug}`);
+    expect(errorSpy.mock.calls.filter(([msg]) => String(msg).includes(event.slug))).toEqual([]);
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(false);
+    errorSpy.mockRestore();
+  });
+});

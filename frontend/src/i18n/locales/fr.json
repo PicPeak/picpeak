@@ -638,6 +638,7 @@
     "uploadPhotos": "Téléverser des photos",
     "archiveEvent": "Archiver l'événement",
     "archiveConfirm": "Êtes-vous sûr de vouloir archiver cet événement ? Cette action ne peut pas être annulée.",
+    "archiveInProgress": "Cette galerie est en cours d'archivage. Réessayez une fois l'archivage terminé.",
     "extendExpiration": "Prolonger de {{days}} jours",
     "backToEvents": "Retour aux événements",
     "loadingEventDetails": "Chargement des détails de l'événement...",

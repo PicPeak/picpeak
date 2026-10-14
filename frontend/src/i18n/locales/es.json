@@ -637,6 +637,7 @@
     "uploadPhotos": "Subir fotos",
     "archiveEvent": "Archivar evento",
     "archiveConfirm": "¿Seguro que quieres archivar este evento? Esta acción no se puede deshacer.",
+    "archiveInProgress": "Esta galería se está archivando en este momento. Inténtalo de nuevo cuando termine el archivado.",
     "extendExpiration": "Extender {{days}} días",
     "backToEvents": "Volver a eventos",
     "loadingEventDetails": "Cargando detalles del evento...",

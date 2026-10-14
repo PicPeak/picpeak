@@ -13,12 +13,62 @@ const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey } = require('./photoResolver');
 const { getUseOriginalFilenames } = require('./downloadFilenameService');
 const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
+const { AppError } = require('../utils/errors');
+const { parseBooleanInput } = require('../utils/parsers');
+const jobState = require('./maintenanceJobState');
 const {
   sanitizeForZipEntry,
   uniquifyZipNames,
 } = require('../utils/filenameSanitizer');
 
+// One archive job per gallery (issue 2012). The route checked is_archived and
+// then ran the whole job, and is_archived is only set once the zip is up, so a
+// second click, a bulk archive or the expiry checker could start another job
+// on the same gallery, and the first to finish deleted the photos the others
+// were still reading. The claim is a maintenance_jobs row per gallery, so it
+// holds across replicas and on both engines, and it is taken here rather than
+// in the callers so all three are covered. No transaction is held open: the
+// claim is one conditional UPDATE, renewed by a heartbeat while the job runs.
+// A process that dies stops renewing, and the gallery is free again once the
+// lease goes stale (maintenanceJobState.DEFAULT_STALE_MS); a fixed timeout
+// would have to outlast the slowest archive on the slowest storage instead.
+const archiveJobName = (eventId) => `event_archive:${eventId}`;
+
+/** Whether an archive job holds a live claim on the gallery. */
+async function isArchiveRunning(eventId) {
+  return (await jobState.read(archiveJobName(eventId))).isRunning;
+}
+
 async function archiveEvent(event) {
+  const jobName = archiveJobName(event.id);
+  await jobState.ensure(jobName);
+  const token = await jobState.claim(jobName);
+  if (!token) {
+    throw new AppError('This gallery is already being archived', 409, 'ARCHIVE_IN_PROGRESS');
+  }
+  let lost = false;
+  const heartbeatTimer = setInterval(() => {
+    jobState.heartbeat(jobName, token).then((ok) => { if (!ok) lost = true; });
+  }, jobState.HEARTBEAT_INTERVAL_MS);
+  heartbeatTimer.unref?.();
+  try {
+    // Read again under the claim: the caller's row can predate a job that
+    // finished in the meantime, and archiving an archived gallery again would
+    // zip its now empty prefix over the real archive.
+    const current = await db('events').where('id', event.id).first();
+    if (!current) throw new AppError('Event not found', 404, 'EVENT_NOT_FOUND');
+    if (parseBooleanInput(current.is_archived, false)) {
+      throw new AppError('Event is already archived', 400, 'EVENT_ALREADY_ARCHIVED');
+    }
+    await buildArchive(current, async () => !lost && jobState.heartbeat(jobName, token));
+  } finally {
+    clearInterval(heartbeatTimer);
+    await jobState.release(jobName, token).catch((err) =>
+      logger.warn(`Failed to release the archive claim for event ${event.id}: ${err.message}`));
+  }
+}
+
+async function buildArchive(event, claimStillHeld) {
   const storage = getStorage();
   const archiveName = `${event.slug}.zip`;
   const archiveRelKey = path.posix.join('events/archived', archiveName);
@@ -242,6 +292,12 @@ async function archiveEvent(event) {
 
     logger.info(`Archive created: ${archiveName} (${totalBytes} bytes)`);
 
+    // A lease declared stale and taken over (a stall long enough for that)
+    // must not go on to delete the originals the new owner is reading.
+    if (!(await claimStillHeld())) {
+      throw new AppError('The archive claim was taken over', 409, 'ARCHIVE_IN_PROGRESS');
+    }
+
     // Update DB BEFORE deleting originals so a crash mid-cleanup leaves the
     // archive accessible rather than orphaning the photos.
     await db('events').where('id', event.id).update({
@@ -400,4 +456,4 @@ function convertToCSV(data) {
   return objectsToCsv(data);
 }
 
-module.exports = { archiveEvent };
+module.exports = { archiveEvent, isArchiveRunning };
