@@ -454,6 +454,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     // gallerySettings, defaulting to the original fixed tiles.
     storyGridMode: theme.gallerySettings?.storyGridMode,
     storyShowFilenames: theme.gallerySettings?.storyShowFilenames === true,
+    storyFooterTitle: theme.gallerySettings?.storyFooterTitle,
+    storyFooterText: theme.gallerySettings?.storyFooterText,
     selectedPhotos,
     allowDownloads,
     protectionLevel,

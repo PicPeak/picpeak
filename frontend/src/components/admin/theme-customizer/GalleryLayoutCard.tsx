@@ -2,7 +2,7 @@ import React from 'react';
 import { Layout, Check, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Card, Input, Switch } from '../../common';
-import { ThemeConfig, GalleryLayoutType } from '../../../types/theme.types';
+import { ThemeConfig, GalleryLayoutType, STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { layoutIcons } from './icons';
 
 interface GalleryLayoutCardProps {
@@ -370,6 +370,31 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                 label={t('branding.storyShowFilenames', 'Show filenames on hover')}
                 description={t('branding.storyShowFilenamesHint', 'Shows the photo\'s filename when a guest hovers over it. A gallery set to show original filenames shows the uploaded name.')}
               />
+              <Input
+                label={t('branding.storyFooterTitle', 'Footer title')}
+                value={localTheme.gallerySettings?.storyFooterTitle || ''}
+                onChange={(e) => updateGallerySettings('storyFooterTitle', e.target.value)}
+                maxLength={STORY_FOOTER_TITLE_MAX}
+                placeholder={t('gallery.thankYou', 'Thank You')}
+                helperText={t('branding.storyFooterTitleHint', 'Leave empty for "Thank You".')}
+              />
+              <div>
+                <label htmlFor="story-footer-text" className="block text-sm font-medium text-body mb-1.5">
+                  {t('branding.storyFooterText', 'Footer text')}
+                </label>
+                <textarea
+                  id="story-footer-text"
+                  rows={3}
+                  value={localTheme.gallerySettings?.storyFooterText || ''}
+                  onChange={(e) => updateGallerySettings('storyFooterText', e.target.value)}
+                  maxLength={STORY_FOOTER_TEXT_MAX}
+                  className="input w-full"
+                  aria-describedby="story-footer-text-hint"
+                />
+                <p id="story-footer-text-hint" className="text-xs text-muted mt-1">
+                  {t('branding.storyFooterTextHint', 'Plain text, up to {{max}} characters. Leave empty to show the welcome message, or the default thank-you line when there is none.', { max: STORY_FOOTER_TEXT_MAX })}
+                </p>
+              </div>
             </>
           )}
 

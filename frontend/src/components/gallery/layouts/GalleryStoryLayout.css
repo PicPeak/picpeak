@@ -693,6 +693,8 @@
   color: var(--story-muted-foreground);
   max-width: 28rem;
   margin: 0 auto 3rem auto;
+  /* Line breaks typed into the footer text or welcome message. */
+  white-space: pre-line;
 }
 
 .story-footer-btn {

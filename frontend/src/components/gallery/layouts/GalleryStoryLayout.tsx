@@ -6,6 +6,7 @@ import { Button } from '../../common';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+import { STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { feedbackService } from '../../../services/feedback.service';
 import { galleryService } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
@@ -55,7 +56,14 @@ interface GalleryStoryLayoutProps extends BaseGalleryLayoutProps {
   storyGridMode?: 'fixed' | 'natural';
   /** Filename caption on a card's hover; off unless the theme turns it on. */
   storyShowFilenames?: boolean;
+  /** Footer title and text from the theme; empty keeps the defaults. */
+  storyFooterTitle?: string;
+  storyFooterText?: string;
 }
+
+/** A theme string as plain text: trimmed and clamped, '' when unusable. */
+const footerString = (value: unknown, max: number): string =>
+  typeof value === 'string' ? value.trim().slice(0, max) : '';
 
 export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   photos,
@@ -94,6 +102,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   welcomeMessage,
   storyGridMode = 'fixed',
   storyShowFilenames = false,
+  storyFooterTitle,
+  storyFooterText,
   onLogout,
   onUploadClick,
   showOriginalFilename = false,
@@ -744,9 +754,15 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
       {/* Footer */}
       <footer className="story-footer">
-        <h2 className="story-footer-title">{t('gallery.thankYou', 'Thank You')}</h2>
+        {/* Rendered as text, never HTML. The footer's own text wins; without
+            it the welcome message closes the story, as it always has. */}
+        <h2 className="story-footer-title">
+          {footerString(storyFooterTitle, STORY_FOOTER_TITLE_MAX) || t('gallery.thankYou', 'Thank You')}
+        </h2>
         <p className="story-footer-text">
-          {welcomeMessage || t('gallery.thankYouMessage', 'For being part of our story and making our special day unforgettable.')}
+          {footerString(storyFooterText, STORY_FOOTER_TEXT_MAX)
+            || welcomeMessage
+            || t('gallery.thankYouMessage', 'For being part of our story and making our special day unforgettable.')}
         </p>
         {canDownloadAll && (
           <button type="button" className="story-footer-btn" onClick={handleDownloadAll}>
