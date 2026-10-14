@@ -70,6 +70,15 @@ describe('delivery_due_at on the settings PUT', () => {
     expect(new Date(await put('2026-10-20T00:00')).toISOString()).toBe('2026-10-20T12:00:00.000Z');
   });
 
+  it('rejects a day the calendar does not have', async () => {
+    const id = await insertEvent();
+    for (const value of ['2026-02-31', '2026-02-30T00:00']) {
+      const res = await auth(request(app).put(`/api/admin/events/${id}`)).send({ delivery_due_at: value });
+      expect(res.status).toBe(400);
+    }
+    expect((await db('events').where({ id }).first('delivery_due_at')).delivery_due_at).toBeNull();
+  });
+
   it('keeps a full instant as given', async () => {
     expect(new Date(await put('2026-10-20T12:00:00.000Z')).toISOString()).toBe('2026-10-20T12:00:00.000Z');
     expect(new Date(await put('2026-10-20T08:30:00+02:00')).toISOString()).toBe('2026-10-20T06:30:00.000Z');

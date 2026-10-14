@@ -1175,7 +1175,7 @@ module.exports = (router) => {
     body('folder_structure').optional().isBoolean(),
     body('delivery_status').optional().isIn(['complete', 'partial']),
     body('delivery_expected_count').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1, max: 100000 }),
-    body('delivery_due_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
+    body('delivery_due_at').optional({ nullable: true, checkFalsy: true }).isISO8601({ strict: true }),
     body('delivery_badge_label').optional({ nullable: true }).isString().isLength({ max: 60 }),
     // Migration 143 — per-event reminder overrides. All three are
     // optional; nullable values are accepted so admins can clear an
