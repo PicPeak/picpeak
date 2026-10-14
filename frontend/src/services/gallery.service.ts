@@ -25,6 +25,22 @@ export function splitIntoArchives(photoIds: number[]): number[][] {
   return parts;
 }
 
+// How long a downloaded blob's object URL stays valid. Revoking it in the
+// same task as the click can cancel the download before the browser has
+// started reading it (Safari and Firefox), so it is released a little later.
+const BLOB_URL_RELEASE_MS = 30_000;
+
+function saveBlob(data: BlobPart, filename: string): void {
+  const url = window.URL.createObjectURL(new Blob([data]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(url), BLOB_URL_RELEASE_MS);
+}
+
 // Admin preview (#868): the preview tab carries `?admin_preview=1`. Browser-native
 // download navigations (a real `<a href>` / `api.getUri`) bypass the axios request
 // interceptor that forwards the flag on API calls, so append it to those URLs
@@ -276,14 +292,7 @@ export const galleryService = {
   // anchor. Extracted from downloadPhoto so the share-fallback path
   // can reuse it without re-fetching the blob.
   triggerBrowserDownload(blob: Blob, filename: string): void {
-    const url = window.URL.createObjectURL(new Blob([blob]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    saveBlob(blob, filename);
   },
 
   // Trigger a browser-native download by navigating a hidden anchor at
@@ -341,14 +350,7 @@ export const galleryService = {
       responseType: 'blob',
     }));
 
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${slug}.zip`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    saveBlob(response.data, `${slug}.zip`);
   },
 
   // Download selected photos. On iOS with a small selection, route
@@ -383,16 +385,9 @@ export const galleryService = {
       responseType: 'blob',
     }));
 
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', part
+    saveBlob(response.data, part
       ? `${slug}-selected-${part.index}-of-${part.total}.zip`
       : `${slug}-selected.zip`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
   },
 
   // Download photos as zips of at most SELECTED_DOWNLOAD_LIMIT each, one after

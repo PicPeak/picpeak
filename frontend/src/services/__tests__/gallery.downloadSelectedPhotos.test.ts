@@ -260,3 +260,35 @@ describe('galleryService.downloadPhotosInParts — the 500-id cap per archive', 
     );
   });
 });
+
+describe('galleryService.downloadSelectedPhotos — object URL lifetime', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    galleryService = (await import('../gallery.service')).galleryService;
+    apiMock = (await import('../../config/api')).api as any;
+    apiMock.post.mockReset();
+    apiMock.post.mockResolvedValue({ data: new Blob(['zip-bytes'], { type: 'application/zip' }) });
+    (window.URL.createObjectURL as any) = vi.fn(() => 'blob:fake');
+    (window.URL.revokeObjectURL as any) = vi.fn();
+    installNavigator({ userAgent: ANDROID_UA });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps the zip URL valid past the click, then releases it', async () => {
+    vi.useFakeTimers();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
+
+    expect(click).toHaveBeenCalledTimes(1);
+    // Revoked in the same task as the click, Safari and Firefox can cancel
+    // the download before it starts.
+    expect(window.URL.revokeObjectURL).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(30_000);
+    expect(window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+  });
+});
