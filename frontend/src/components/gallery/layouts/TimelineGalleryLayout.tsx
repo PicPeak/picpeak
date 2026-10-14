@@ -4,6 +4,7 @@ import { format, startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { PhotoCard } from '../PhotoCard';
 import { firstLookAboveChips } from '../GalleryTileBadges';
+import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { useLazyBands } from './lazyBands';
@@ -22,7 +23,9 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   onPhotoSelect,
   allowDownloads = true,
   feedbackEnabled = false,
-  feedbackOptions
+  feedbackOptions,
+  isClient = false,
+  onToggleVisibility,
 }) => {
   const bands = useLazyBands();
   const { theme } = useTheme();
@@ -154,7 +157,8 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     imageProps={{
                       src: photo.thumbnail_url || photo.url,
                       alt: photo.filename,
-                      className: 'w-full h-full object-cover rounded-lg',
+                      // Dimmed when the client hid it from guests, as in Grid (issue 1992).
+                      className: `w-full h-full object-cover rounded-lg${isClient && onToggleVisibility && isHiddenFromGuests(photo) ? ' opacity-40' : ''}`,
                       loading: 'lazy',
                       isGallery: true,
                     }}
@@ -182,6 +186,9 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     }}
                     likeBeforeComment
                     checkboxTestId
+                    topLeftControl={isClient && onToggleVisibility
+                      ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
+                      : undefined}
                     beforeOverlay={
                       <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded">
                         {fmtTime(photo.uploaded_at)}

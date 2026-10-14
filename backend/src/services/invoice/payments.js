@@ -12,7 +12,7 @@ const emailProcessor = require('../emailProcessor');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { toMillis } = require('../../utils/queueTimestamps');
 const { formatMajor } = require('./helpers');
-const { auditedInsert, auditedUpdate } = require('../accountingHistory');
+const { auditedInsert, auditedUpdate, normalizeActor } = require('../accountingHistory');
 const { applyReminder, resolveAdminEmailForInvoice, resolvePerReminderFeeMinor, resolveSkontoPercentForInvoice } = require('./reminders');
 
 // Payment-check token lifetime (GHSA-wg94-f86h-vq68 hardening). This
@@ -153,9 +153,11 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
 
     // Pass trx: through the global db this insert waits on the single-
     // connection SQLite pool for the connection this transaction holds.
+    // The actor is the change-history one (an admin id, or the public
+    // payment-check link, which pays as the invoice's creator: `adminId`).
     try { await logActivity(isFull ? 'invoice_paid' : 'invoice_partial_payment',
       { invoiceId: id, amountMinor: amount, totalPaidMinor: total },
-      invoice.event_id || null, `admin:${adminId}`, trx); } catch (_) { /* non-fatal */ }
+      invoice.event_id || null, normalizeActor(actor), trx); } catch (_) { /* non-fatal */ }
 
     return { paidTotalMinor: total, status: isFull ? 'paid' : invoice.status };
   });
@@ -279,7 +281,7 @@ async function queueInvoicePaidAdminNotification({
 
   try {
     await logActivity('invoice_paid_admin_notified', { invoiceId: invoice.id },
-      invoice.event_id || null, 'system');
+      invoice.event_id || null, { type: 'system' });
   } catch (_) { /* non-fatal */ }
 }
 
@@ -387,7 +389,10 @@ async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
   // email so the admin sees the consequence before clicking.
   const reminderFeeMinor = await resolvePerReminderFeeMinor(invoice);
   const nextLevel = (invoice.reminder_level || 0) + 1;
-  const willChargeFee = reminderFeeMinor > 0 && nextLevel >= 2;
+  // No fee for a customer who takes no administrative emails (migration
+  // 300): applyReminder adds none, so the admin mail must not announce one.
+  const willChargeFee = reminderFeeMinor > 0 && nextLevel >= 2
+    && !(await require('../_adminEmailOptOut').customerTakesNoAdminEmails(customer));
 
   // FRONTEND_URL -> general_site_url (the setup wizard's answer) -> the
   // legacy app_frontend_url key -> localhost. Was defaulting to
@@ -468,7 +473,7 @@ async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
 
   try {
     await logActivity('invoice_payment_check_sent', { invoiceId, token: token.slice(0, 8) },
-      invoice.event_id || null, 'scheduler');
+      invoice.event_id || null, normalizeActor(actor));
   } catch (_) { /* non-fatal */ }
 
   return { token, sent: true };
@@ -682,7 +687,7 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
     await logActivity('invoice_payment_check_recorded',
       { invoiceId: invoice.id, action, amountMinor: amountMinor || null },
       invoice.event_id || null,
-      adminId ? `admin:${adminId}` : 'public:payment-check');
+      normalizeActor(adminId || 'public:payment-check'));
   } catch (_) { /* non-fatal */ }
 
   // Notify the admin this write happened. Best-effort / non-blocking

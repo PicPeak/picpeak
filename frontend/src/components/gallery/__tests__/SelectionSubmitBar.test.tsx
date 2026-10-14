@@ -7,7 +7,7 @@
  * it locks that part of the guest's feedback, and afterwards the bar says when
  * it was handed in instead of offering the button again.
  */
-import { render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +16,7 @@ import type { ReactNode } from 'react';
 import { SelectionSubmitBar, useSelectionPickRefresh } from '../SelectionSubmitBar';
 import { FEEDBACK_SUBMITTED_EVENT } from '../../../utils/feedbackEvents';
 import { toast } from 'react-toastify';
+import { feedbackService } from '../../../services/feedback.service';
 import type { SelectionState } from '../../../services/feedback.service';
 import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { parseFeedbackLimitError } from '../../../hooks/useFeedbackLimitModal';
@@ -41,11 +42,19 @@ vi.mock('react-i18next', async () => {
   };
 });
 
+// The real feedback writes, so a like sends the event the bar listens to.
+const apiPost = vi.fn();
+vi.mock('../../../config/api', () => ({ api: { post: (...args: unknown[]) => apiPost(...args) } }));
+
 vi.mock('../../../services/feedback.service', async () => {
   const actual = await vi.importActual<any>('../../../services/feedback.service');
   return {
     ...actual,
-    feedbackService: { submitSelection: (...args: unknown[]) => submitSelection(...args) },
+    feedbackService: {
+      submitSelection: (...args: unknown[]) => submitSelection(...args),
+      submitFeedback: actual.feedbackService.submitFeedback.bind(actual.feedbackService),
+      submitBulkRating: actual.feedbackService.submitBulkRating.bind(actual.feedbackService),
+    },
   };
 });
 
@@ -114,7 +123,7 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     await userEvent.type(screen.getByLabelText('Note for the photographer (optional)'), 'Album');
     await userEvent.click(Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Finish selection')!);
 
-    await waitFor(() => expect(submitSelection).toHaveBeenCalledWith('g', 'selection', 'Album'));
+    await waitFor(() => expect(submitSelection).toHaveBeenCalledWith('g', 'selection', 'Album', undefined));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
@@ -147,6 +156,227 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     answer.resolve({ id: 7, name: 'Anna' });
     expect(await screen.findByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
     expect(submitSelection).not.toHaveBeenCalled();
+  });
+
+  // Issue 1984: an approval needs no feedback, so no feedback action asked
+  // for the name a gallery that requires it should have.
+  describe('a gallery that requires name and email, outside guest identity mode', () => {
+    const renderRequired = (value: SelectionState, used = 0) =>
+      render(<SelectionSubmitBar slug="g" state={value} used={used} requireNameEmail />, { wrapper });
+    const fillIdentity = async () => {
+      await userEvent.type(screen.getByPlaceholderText('Enter your name'), 'Clara');
+      await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'clara@example.com');
+      await userEvent.click(screen.getByRole('button', { name: 'Submit Feedback' }));
+    };
+
+    beforeEach(() => {
+      guestIdentity.current = { identityMode: 'simple', ensureIdentity: vi.fn() };
+    });
+
+    it('asks for the name first, then confirms and sends it with the approval', async () => {
+      submitSelection.mockResolvedValue({ id: 3, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });
+      renderRequired(state({ approval: { can_submit: true } }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' }))
+        .toHaveTextContent('Please provide your name and email to submit your approval.');
+      expect(screen.queryByRole('dialog', { name: 'Approve the edited photos?' })).not.toBeInTheDocument();
+      // Above the full-bleed band (z-[60]), at the confirmation's level.
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' }).closest('.z-\\[9999\\]'))
+        .not.toBeNull();
+
+      await fillIdentity();
+      expect(screen.queryByRole('dialog', { name: 'Your Information Required' })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenCalledWith(
+        'g', 'approval', '', { guest_name: 'Clara', guest_email: 'clara@example.com' },
+      ));
+      expect(guestIdentity.current?.ensureIdentity).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing when the name prompt is dismissed', async () => {
+      renderRequired(state({ approval: { can_submit: true } }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(submitSelection).not.toHaveBeenCalled();
+    });
+
+    it('asks once: a second hand-over reuses the name', async () => {
+      submitSelection.mockResolvedValue({ id: 4, kind: 'selection', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 2, note: null });
+      renderRequired(state({ approval: { can_submit: true } }), 2);
+      await userEvent.click(screen.getByRole('button', { name: 'Finish selection' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toHaveTextContent('your selection');
+      await fillIdentity();
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
+    });
+
+    it('does not carry the name into another gallery when the bar stays mounted', async () => {
+      const value = state({ approval: { can_submit: true } });
+      const { rerender } = renderRequired(value, 2);
+      await userEvent.click(screen.getByRole('button', { name: 'Finish selection' }));
+      await fillIdentity();
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      rerender(<SelectionSubmitBar slug="other" state={value} used={2} requireNameEmail />);
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
+    });
+
+    it('closes a name prompt left open when the gallery changes under it', async () => {
+      const value = state({ approval: { can_submit: true } });
+      const { rerender } = renderRequired(value);
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await userEvent.type(screen.getByPlaceholderText('Enter your name'), 'Clara');
+
+      rerender(<SelectionSubmitBar slug="other" state={value} used={0} requireNameEmail />);
+      expect(screen.queryByRole('dialog', { name: 'Your Information Required' })).not.toBeInTheDocument();
+      expect(submitSelection).not.toHaveBeenCalled();
+    });
+
+    it('takes the name given on a like: no prompt, and the name goes with the hand-over', async () => {
+      apiPost.mockResolvedValue({ data: {} });
+      submitSelection.mockResolvedValue({ id: 6, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });
+      renderRequired(state({ approval: { can_submit: true } }));
+      await act(() => feedbackService.submitFeedback('g', '7', {
+        feedback_type: 'like', guest_name: 'Clara', guest_email: 'clara@example.com',
+      }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.queryByRole('dialog', { name: 'Your Information Required' })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenCalledWith(
+        'g', 'approval', '', { guest_name: 'Clara', guest_email: 'clara@example.com' },
+      ));
+    });
+
+    it('takes the name given on a bulk rating', async () => {
+      apiPost.mockResolvedValue({ data: { success: true, rating: 4, results: [
+        { photo_id: 1, success: false, error: 'Photo not found' }, { photo_id: 2, success: true },
+      ] } });
+      renderRequired(state({ approval: { can_submit: true } }));
+      await act(() => feedbackService.submitBulkRating('g', [1, 2], 4, {
+        guest_name: 'Clara', guest_email: 'clara@example.com',
+      }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
+    });
+
+    it('keeps the name typed into its own prompt over one a photo control sends later', async () => {
+      apiPost.mockResolvedValue({ data: {} });
+      submitSelection.mockResolvedValue({ id: 9, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });
+      renderRequired(state({ approval: { can_submit: true } }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await fillIdentity();
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      // A like still carrying an earlier person's name, on a shared device.
+      await act(() => feedbackService.submitFeedback('g', '7', {
+        feedback_type: 'like', guest_name: 'Alice', guest_email: 'alice@example.com',
+      }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenCalledWith(
+        'g', 'approval', '', { guest_name: 'Clara', guest_email: 'clara@example.com' },
+      ));
+    });
+
+    it('in shared mode, takes no name from a colour tag', async () => {
+      apiPost.mockResolvedValue({ data: {} });
+      render(
+        <SelectionSubmitBar slug="g" state={state({ approval: { can_submit: true } })} used={0} requireNameEmail sharedIdentity />,
+        { wrapper },
+      );
+      await act(() => feedbackService.submitFeedback('g', '7', {
+        feedback_type: 'color_label', color_label: 'red', guest_name: 'Alice', guest_email: 'alice@example.com',
+      }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
+    });
+
+    it('does not take the name from a bulk rating that rated nothing', async () => {
+      apiPost.mockResolvedValue({ data: { success: true, rating: 4, results: [
+        { photo_id: 1, success: false, error: 'Photo not found' },
+      ] } });
+      renderRequired(state({ approval: { can_submit: true } }));
+      await act(() => feedbackService.submitBulkRating('g', [1], 4, {
+        guest_name: 'Bob', guest_email: 'bob@example.com',
+      }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
+    });
+
+    it('still asks after feedback that named nobody, or named someone in another gallery', async () => {
+      apiPost.mockResolvedValue({ data: {} });
+      renderRequired(state({ approval: { can_submit: true } }));
+      await act(async () => {
+        await feedbackService.submitFeedback('g', '7', { feedback_type: 'like' });
+        await feedbackService.submitFeedback('other', '7', {
+          feedback_type: 'like', guest_name: 'Clara', guest_email: 'clara@example.com',
+        });
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
+    });
+
+    it('does not take a like with a blank email as a name, where the email is optional', async () => {
+      apiPost.mockResolvedValue({ data: {} });
+      submitSelection.mockResolvedValue({ id: 8, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });
+      render(<SelectionSubmitBar slug="g" state={state({ approval: { can_submit: true } })} used={0} />, { wrapper });
+      await act(() => feedbackService.submitFeedback('g', '7', {
+        feedback_type: 'like', guest_name: 'Alice', guest_email: '   ',
+      }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenCalledWith('g', 'approval', '', undefined));
+    });
+
+    it('asks again when the server refuses the name it was given', async () => {
+      vi.mocked(toast.error).mockClear();
+      submitSelection
+        .mockRejectedValueOnce({ response: { status: 400, data: { error: 'Validation failed', errors: [{ path: 'guest_name' }] } } })
+        .mockResolvedValueOnce({ id: 7, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });
+      renderRequired(state({ approval: { can_submit: true } }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await fillIdentity();
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
+      expect(toast.error).toHaveBeenCalledTimes(1);
+      await userEvent.type(screen.getByPlaceholderText('Enter your name'), 'Dora');
+      await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'dora@example.com');
+      await userEvent.click(screen.getByRole('button', { name: 'Submit Feedback' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenLastCalledWith(
+        'g', 'approval', '', { guest_name: 'Dora', guest_email: 'dora@example.com' },
+      ));
+    });
+
+    it('asks again when the server wants the name, keeping the note', async () => {
+      vi.mocked(toast.error).mockClear();
+      submitSelection
+        .mockRejectedValueOnce({ response: { status: 400, data: { code: 'GUEST_INFO_REQUIRED' } } })
+        .mockResolvedValueOnce({ id: 5, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: 'Fine' });
+      // The settings said optional when the bar rendered.
+      render(<SelectionSubmitBar slug="g" state={state({ approval: { can_submit: true } })} used={0} />, { wrapper });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await userEvent.type(screen.getByLabelText('Note for the photographer (optional)'), 'Fine');
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
+      expect(toast.error).not.toHaveBeenCalled();
+      await fillIdentity();
+      expect(screen.getByLabelText('Note for the photographer (optional)')).toHaveValue('Fine');
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenLastCalledWith(
+        'g', 'approval', 'Fine', { guest_name: 'Clara', guest_email: 'clara@example.com' },
+      ));
+    });
   });
 
   it('holds the confirmation until the counts it shows are fresh', async () => {
@@ -237,7 +467,7 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
     expect(screen.getByRole('dialog', { name: 'Approve the edited photos?' })).toHaveTextContent('Photos still marked as rejected: 1');
     await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
-    await waitFor(() => expect(submitSelection).toHaveBeenCalledWith('g', 'approval', ''));
+    await waitFor(() => expect(submitSelection).toHaveBeenCalledWith('g', 'approval', '', undefined));
   });
 
   it('shows an approval with its date once given', () => {
