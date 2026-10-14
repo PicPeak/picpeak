@@ -252,6 +252,38 @@ describe('backup manifest trust anchor', () => {
     expect(fs.readdirSync(path.dirname(file))).toEqual([]);
   });
 
+  it('removes its own half-written key where hard links are unsupported and the write fails', () => {
+    const file = keyFile();
+    const realWrite = fs.writeFileSync;
+    let writes = 0;
+    const link = jest.spyOn(fs, 'linkSync').mockImplementation(() => {
+      throw Object.assign(new Error('operation not supported'), { code: 'EOPNOTSUPP' });
+    });
+    const write = jest.spyOn(fs, 'writeFileSync').mockImplementation((target, ...rest) => {
+      if (typeof target === 'number' && ++writes === 2) throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+      return realWrite(target, ...rest);
+    });
+    try {
+      expect(() => loadKey({ create: true })).toThrow(/no space left/);
+    } finally { link.mockRestore(); write.mockRestore(); }
+    expect(fs.readdirSync(path.dirname(file))).toEqual([]);
+    expect(loadKey({ create: true }).key.length).toBe(32);
+  });
+
+  it('does not wait on a key file that has stayed short', () => {
+    const file = keyFile();
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, '', { mode: 0o600 });
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(file, old, old);
+    const read = jest.spyOn(fs, 'readFileSync');
+    try {
+      expect(() => keyRing()).not.toThrow();
+      expect(() => loadKey()).toThrow(/64 hex digits/);
+      expect(read.mock.calls.filter(([target]) => typeof target === 'number')).toHaveLength(2);
+    } finally { read.mockRestore(); }
+  });
+
   it('warns, without failing, when another account could replace the key through its directory', () => {
     const file = keyFile();
     fs.mkdirSync(path.dirname(file));

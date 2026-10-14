@@ -87,15 +87,20 @@ function warnIfDirectoryReplaceable(file) {
 }
 
 // A key another process has created but not yet written reads empty; give
-// its bytes a moment instead of failing that process's backup.
+// its bytes a moment instead of failing that process's backup. Only a file
+// that is seconds old: a key that stays short must not stall every caller.
 const SHORT_READ_RETRIES = 10;
 const SHORT_READ_WAIT_MS = 25;
+const FRESH_KEY_MS = 5000;
 const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 function readFileKey(file) {
   for (let attempt = 0; ; attempt++) {
-    const text = readKeyText(file);
-    if (text.trim().length < 64 && attempt < SHORT_READ_RETRIES) { pause(SHORT_READ_WAIT_MS); continue; }
+    const { text, mtimeMs } = readKeyText(file);
+    if (text.trim().length < 64 && attempt < SHORT_READ_RETRIES && Date.now() - mtimeMs < FRESH_KEY_MS) {
+      pause(SHORT_READ_WAIT_MS);
+      continue;
+    }
     warnIfDirectoryReplaceable(file);
     return parseKey(text, 'BACKUP_MANIFEST_KEY_FILE');
   }
@@ -123,13 +128,14 @@ function readKeyText(file) {
       logger.warn(`The backup manifest key file ${file} was group- or world-writable `
         + `(mode ${(before & 0o777).toString(8).padStart(4, '0')}); restricted it to 0600.`);
     }
-    return fs.readFileSync(fd, 'utf8');
+    return { text: fs.readFileSync(fd, 'utf8'), mtimeMs: stat.mtimeMs };
   } finally { fs.closeSync(fd); }
 }
 
 // Write the key beside its final name, then hard-link it into place: link()
 // never replaces an existing key and a reader never sees a partial file.
-// Filesystems without hard links fall back to an exclusive create.
+// Filesystems without hard links fall back to an exclusive create, removed
+// again if its write fails so no empty key is left in place.
 function publishKey(file, hex) {
   const temp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
   const fd = fs.openSync(temp, 'wx', 0o600);
@@ -141,7 +147,10 @@ function publishKey(file, hex) {
     } finally { fs.closeSync(fd); }
     try { fs.linkSync(temp, file); } catch (error) {
       if (error.code === 'EEXIST') throw error;
-      fs.writeFileSync(file, hex, { flag: 'wx', mode: 0o600 });
+      const out = fs.openSync(file, 'wx', 0o600);
+      try {
+        try { fs.writeFileSync(out, hex); } finally { fs.closeSync(out); }
+      } catch (writeError) { fs.rmSync(file, { force: true }); throw writeError; }
     }
   } finally { fs.rmSync(temp, { force: true }); }
 }
