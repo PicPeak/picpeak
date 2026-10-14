@@ -204,7 +204,10 @@ async function headroom(trx, stat, bytes, limits, files = 0) {
   const total = Number(stat.blocks) * Number(stat.bsize);
   const other = await sum(trx('public_upload_requests').where({ active: 1 }));
   const promoting = getStorage().kind() === 'local'
-    ? await sum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain'])) : { bytes: 0, files: 0 };
+    // An authenticated 'uncertain' object is no promotion: finish() kept it
+    // after a failed delete, and free space already shows it.
+    ? await sum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain']).whereNot({ state: 'uncertain', upload_kind: 'admin' }))
+    : { bytes: 0, files: 0 };
   const freeFiles = Number(stat.ffree);
   // Local promotion temporarily needs both copies. S3 needs staging space.
   const copies = getStorage().kind() === 'local' ? 2 : 1;
@@ -514,11 +517,6 @@ async function heartbeat() {
  * and pid prove nothing (a recreated container has a new hostname, a
  * restarted one reuses its pid), so only the heartbeat decides. */
 async function cleanupAbandoned() {
-  // Authenticated objects an earlier finish() could not delete, retried one
-  // pass later; their request is already settled.
-  await dropObjects(await db('public_upload_objects').where({ upload_kind: 'admin', state: 'uncertain' })
-    .whereNotExists(db('public_upload_requests as r').select('r.id').whereColumn('r.id', 'public_upload_objects.request_id').where('r.active', 1))
-    .select('id', 'object_key').limit(100));
   const rows = await db('public_upload_requests').where({ active: 1 }).where('heartbeat_at', '<', Date.now() - STALE_MS).limit(100);
   for (const row of rows) {
     if (live.has(row.id)) continue;
@@ -528,12 +526,20 @@ async function cleanupAbandoned() {
   }
 }
 
+/** Authenticated objects finish() could not delete; their request is
+ * settled. Maintenance only: an upload request must not wait on storage. */
+async function retryRetainedObjects() {
+  await dropObjects(await db('public_upload_objects').where({ upload_kind: 'admin', state: 'uncertain' })
+    .whereNotExists(db('public_upload_requests as r').select('r.id').whereColumn('r.id', 'public_upload_objects.request_id').where('r.active', 1))
+    .select('id', 'object_key').limit(100));
+}
+
 let maintenance = null;
 /** Started once at boot: keeps this process's leases and runs the reapers. */
 function startMaintenance() {
   if (maintenance) return;
   maintenance = setInterval(() => {
-    heartbeat().then(cleanupAbandoned).then(reconcilePending)
+    heartbeat().then(cleanupAbandoned).then(retryRetainedObjects).then(reconcilePending)
       .catch(err => logger.warn('Public upload maintenance failed', { error: err.message }));
   }, HEARTBEAT_MS);
   maintenance.unref();
@@ -545,6 +551,6 @@ function stopMaintenance() {
 
 module.exports = {
   begin, reserveFile, recheckStaging, prepareObject, commitObject, failedObject, unfinishedKeys, finish, releasePending, processingComplete: releasePending,
-  reconcilePending, heartbeat, cleanupAbandoned, startMaintenance, stopMaintenance, requestBudget, configuration, refusal, forAdmin,
+  reconcilePending, heartbeat, cleanupAbandoned, retryRetainedObjects, startMaintenance, stopMaintenance, requestBudget, configuration, refusal, forAdmin,
   STALE_MS, _legacyCache: legacyCache,
 };

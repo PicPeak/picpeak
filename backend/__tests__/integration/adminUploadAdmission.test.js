@@ -235,7 +235,10 @@ test('the reaper deletes a crashed upload\'s stored file before its record, and 
   expect(fs.existsSync(stuck.file)).toBe(true);
   expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
   expect(await quota.unfinishedKeys([stuck.key])).toEqual(new Set([stuck.key]));
-  await quota.cleanupAbandoned();
+  // Its bytes are on disk already: free space shows them, headroom must not count them again.
+  disk(2 * GiB); await db('public_upload_objects').update({ bytes: GiB });
+  await quota.finish(await quota.begin({ eventId, mode: 'admin', maxFiles: 1, declaredBytes: 1024 * 1024 }));
+  await quota.retryRetainedObjects();
   expect(fs.existsSync(stuck.file)).toBe(false); expect(await db('public_upload_objects')).toHaveLength(0);
 });
 test('an abandoned resumable session releases its slot after fifteen idle minutes, not twenty-four hours', async () => {
