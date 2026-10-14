@@ -94,6 +94,24 @@ describe('applyPasswordReset', () => {
     expect(reset.used_at).not.toBeNull();
   });
 
+  it('refuses a link mailed to the old address once an admin changed the address', async () => {
+    const { customerId, token } = await seedReset('reset-old-address@example.com');
+    await service.updateCustomer(customerId, { email: 'Reset-New-Address@example.com ' }, adminId);
+    await expect(service.applyPasswordReset({ token, password: 'Takeover-Password-1' }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    const row = await db('customer_accounts').where({ id: customerId }).first();
+    expect(row.email).toBe('reset-new-address@example.com');
+    expect(await bcrypt.compare('old-pass', row.password_hash)).toBe(true);
+  });
+
+  it('keeps a reset link when an admin edit leaves the address as it was', async () => {
+    const { customerId, token } = await seedReset('reset-same-address@example.com');
+    await service.updateCustomer(customerId, { email: 'reset-same-address@example.com', phone: '123' }, adminId);
+    await service.applyPasswordReset({ token, password: 'Second-Password-2' });
+    const row = await db('customer_accounts').where({ id: customerId }).first();
+    expect(await bcrypt.compare('Second-Password-2', row.password_hash)).toBe(true);
+  });
+
   it('still refuses a sequential replay of a used link', async () => {
     const { token } = await seedReset('replay-reset@example.com');
     await service.applyPasswordReset({ token, password: 'First-Password-1' });
