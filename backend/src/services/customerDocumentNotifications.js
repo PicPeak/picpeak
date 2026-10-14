@@ -71,8 +71,10 @@ async function reachableCustomer(customerId) {
 
 async function queue(type, recipient, data, ids, options = {}) {
   try {
-    await emailProcessor.queueEmail(null, recipient, type, data, options);
-    return 'queued';
+    const result = await emailProcessor.queueEmail(null, recipient, type, data, options);
+    // Held back for a customer who takes no administrative emails (migration
+    // 300): nothing goes out, so the card and the toast must not say it does.
+    return result === 'suppressed' ? 'skipped' : 'queued';
   } catch (err) {
     logger.warn('Could not queue a customer document mail', { type, ...ids, error: err.message });
     return 'failed';
@@ -106,7 +108,7 @@ async function notifyShared(doc, { notify } = {}) {
       // Looked back up at send time (#1591): the share can be undone before
       // the queue reaches this row.
       __documentId: doc.id,
-    }, ids, { respectBusinessHours: true });
+    }, ids, { customerAccountId: customer.id, respectBusinessHours: true });
   } catch (err) {
     logger.warn('Could not prepare the document-shared mail', { ...ids, error: err.message });
     return 'failed';
@@ -155,7 +157,7 @@ async function notifyRejected(doc) {
       // Looked back up at send time (#1591): a later acceptance can reverse
       // the rejection before the queue reaches this row.
       __documentId: doc.id,
-    }, ids, { respectBusinessHours: true });
+    }, ids, { customerAccountId: customer.id, respectBusinessHours: true });
   } catch (err) {
     logger.warn('Could not prepare the document-rejected mail', { ...ids, error: err.message });
     return 'failed';
@@ -191,7 +193,7 @@ async function notifyRequest(request, { reminder = false, notify } = {}) {
       // Looked back up at send time (#1591): the request can be fulfilled
       // or cancelled before the queue reaches this row.
       __requestId: request.id,
-    }, ids, { respectBusinessHours: true });
+    }, ids, { customerAccountId: customer.id, respectBusinessHours: true });
   } catch (err) {
     logger.warn('Could not prepare the document-request mail', { ...ids, error: err.message });
     return 'failed';

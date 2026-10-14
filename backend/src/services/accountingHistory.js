@@ -60,6 +60,8 @@ const AUDITED_TABLES = {
       'billing_email', 'vat_id', 'address_line1', 'address_line2', 'postal_code', 'city',
       'state', 'country_code', 'country_name', 'preferred_language', 'billing_cadence',
       'billing_cycle_day', 'hourly_rate_minor', 'day_rate_minor', 'skonto_disabled', 'rebill_attach_proof',
+      // Decides whether reminders carry a late fee (migration 300).
+      'no_admin_emails',
     ],
   },
   customer_hour_entries: { entity: 'hour_entry', document: (row) => ['customer', row.customer_account_id] },
