@@ -746,8 +746,10 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
   }
 
   try {
+    const uploaderAdminId = uploaderRole === 'admin' ? adminIdOf(actor) : null;
     await logActivity('contract_signed_pdf_uploaded', { contractId, uploaderRole }, null,
-      uploaderRole === 'admin' ? { type: 'admin', name: 'Admin (PDF upload)' } : customerPublicActor());
+      uploaderRole !== 'admin' ? customerPublicActor()
+        : uploaderAdminId ? await adminActor(uploaderAdminId) : { type: 'admin', name: 'Admin (PDF upload)' });
   } catch (_) { /* logging is best-effort */ }
 
   await emitContractEvent(contract, 'signed');
