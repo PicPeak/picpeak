@@ -817,6 +817,13 @@ router.post('/:slug/selection/submit',
 
       const viewer = await selectionViewer(req);
       let guestName = req.guest?.name ?? null;
+      // Outside guest mode a guest token kept from guest mode names the
+      // visitor only when it carries what the gallery requires: the feedback
+      // routes check the body there, token or not.
+      if (settings.identity_mode !== 'guest' && settings.require_name_email
+        && !(guestName?.trim() && req.guest?.email?.trim())) {
+        guestName = null;
+      }
       if (!guestName) {
         // Simple and shared mode name the guest from the body, as the feedback
         // routes do; else from the name given with their earlier feedback.

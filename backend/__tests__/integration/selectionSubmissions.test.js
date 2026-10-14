@@ -460,6 +460,28 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
         expect(await db('selection_submissions').where({ event_id: eventId })).toHaveLength(0);
       });
 
+      it('does not take a tab-only earlier name or email either', async () => {
+        await setSettings({ require_name_email: false });
+        await feedback('device-A', photoIds[0], { feedback_type: 'like', guest_name: 'Dora', guest_email: '\t' });
+        await feedback('device-A', photoIds[1], { feedback_type: 'like', guest_name: '\n', guest_email: 'dora@example.com' });
+        expect(await rows('like')).toHaveLength(2);
+        await setSettings({ require_name_email: true });
+        const res = await submit('device-A', { kind: 'approval' });
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('GUEST_INFO_REQUIRED');
+      });
+
+      it('outside guest mode, takes a kept guest token only when it carries an email', async () => {
+        const [anna, ben] = guests;
+        await db('gallery_guests').where({ id: anna.id }).update({ email: null });
+        const refused = await submit(anna, { kind: 'approval' });
+        expect(refused.status).toBe(400);
+        expect(refused.body.code).toBe('GUEST_INFO_REQUIRED');
+        const typed = await submit(anna, { kind: 'approval', guest_name: 'Anna', guest_email: 'anna@example.com' });
+        expect(typed.status).toBe(201);
+        expect((await submit(ben, { kind: 'approval' })).status).toBe(201);
+      });
+
       it('leaves registered guests to their token', async () => {
         await setSettings({ identity_mode: 'guest' });
         const res = await submit(guests[0], { kind: 'approval' });

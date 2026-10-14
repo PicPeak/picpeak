@@ -318,12 +318,16 @@ async function anonymizeGuest(guestId) {
  * store a blank name or email as sent, so blank does not count either.
  */
 async function feedbackName(eventId, viewer, { requireEmail = false } = {}) {
-  let query = db('photo_feedback').where({ event_id: eventId }).whereNotNull('guest_name');
-  if (requireEmail) {
-    query = query.whereRaw('TRIM(guest_name) <> ?', [''])
-      .whereNotNull('guest_email').whereRaw('TRIM(guest_email) <> ?', ['']);
+  const query = db('photo_feedback').where({ event_id: eventId }).whereNotNull('guest_name');
+  if (!requireEmail) {
+    const row = await scopeToViewer(query, viewer).orderBy('id', 'desc').first('guest_name');
+    return row?.guest_name || null;
   }
-  const row = await scopeToViewer(query, viewer).orderBy('id', 'desc').first('guest_name');
+  // Blank judged in JS, as the validators judge it: SQL TRIM strips spaces
+  // only, and a tab-only email is as blank as a space-only one.
+  const rows = await scopeToViewer(query.whereNotNull('guest_email'), viewer)
+    .orderBy('id', 'desc').select('guest_name', 'guest_email');
+  const row = rows.find((r) => String(r.guest_name).trim() && String(r.guest_email).trim());
   return row?.guest_name || null;
 }
 
