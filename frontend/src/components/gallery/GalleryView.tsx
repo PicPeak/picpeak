@@ -9,6 +9,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'react-toastify';
 
 import { Button } from '../common';
 import { GallerySkeleton } from './GallerySkeleton';
@@ -77,7 +78,7 @@ import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle } from 'lucide-react';
-import { galleryService } from '../../services/gallery.service';
+import { galleryService, splitIntoArchives } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
 import { useGalleryCustomCss } from '../../hooks/useGalleryCustomCss';
@@ -1176,8 +1177,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     if (!allowDownloads || peopleDownloadableIds.length === 0) return;
     if (refuseOverQuota(photosForIds(peopleDownloadableIds))) return;
 
-    // Same resolution-picker behaviour as every other multi-photo download.
-    if (downloadChoices.length > 1) {
+    // Same resolution-picker behaviour as every other multi-photo download,
+    // up to what one archive holds: the picker builds one archive, so a
+    // larger set comes as several at the standard size instead of cut short.
+    const inParts = peopleDownloadableIds.length > SELECTED_DOWNLOAD_LIMIT;
+    if (downloadChoices.length > 1 && !inParts) {
       setResolutionPickerIds(peopleDownloadableIds);
       return;
     }
@@ -1186,8 +1190,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       gallery: slug,
       photo_count: peopleDownloadableIds.length,
     });
+    if (inParts) {
+      toast.info(t('gallery.downloadingInParts', {
+        count: peopleDownloadableIds.length,
+        parts: splitIntoArchives(peopleDownloadableIds).length,
+      }));
+    }
 
-    await galleryService.downloadSelectedPhotos(slug, peopleDownloadableIds).catch((error) => {
+    await galleryService.downloadPhotosInParts(slug, peopleDownloadableIds).catch((error) => {
       // The limit refusal already told the guest why (issue 1560).
       if (!isDownloadLimitError(error)) throw error;
     });
