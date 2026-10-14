@@ -168,6 +168,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Filename list dialog (issue 1733, A3d).
   const [showCopyFilenames, setShowCopyFilenames] = useState(false);
   const [resolutionPickerIds, setResolutionPickerIds] = useState<number[] | null>(null);
+  // The picker was opened for the guest's selection (not a people filter or
+  // a folder), so a download it hands over ends the selection, as the
+  // sidebar's direct download does.
+  const [pickerForSelection, setPickerForSelection] = useState(false);
   // The job a "your download is ready" mail links to (issue 1733). This view
   // only mounts behind the gallery's own access check. The token leaves the
   // address bar when its dialog is closed.
@@ -1122,6 +1126,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // gallery standard.
     if (downloadChoices.length > 1) {
       setResolutionPickerIds(Array.from(selectedPhotos));
+      setPickerForSelection(true);
       return;
     }
 
@@ -1152,6 +1157,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
     
     // Clear selection after download
+    setSelectedPhotos(new Set());
+    setIsSelectionMode(false);
+  };
+
+  const handlePickerDownloaded = () => {
+    if (!pickerForSelection) return;
     setSelectedPhotos(new Set());
     setIsSelectionMode(false);
   };
@@ -1430,9 +1441,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
+            onDownloaded={handlePickerDownloaded}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
+              setPickerForSelection(false);
               setResumeJobToken(null);
               clearDownloadJobParam();
             }}
@@ -1729,9 +1742,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
+            onDownloaded={handlePickerDownloaded}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
+              setPickerForSelection(false);
               setResumeJobToken(null);
               clearDownloadJobParam();
             }}
@@ -2227,9 +2242,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
+            onDownloaded={handlePickerDownloaded}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
+              setPickerForSelection(false);
               setResumeJobToken(null);
               clearDownloadJobParam();
             }}
