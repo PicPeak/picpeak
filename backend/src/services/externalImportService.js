@@ -224,6 +224,9 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
   }
   const exif = await exifColumn(f.full);
+  // The credit read from the file follows the file; a manual one stays.
+  const creditFromFile = !row.credit_source || row.credit_source === 'exif';
+  const credit = creditFromFile ? await resolveCredit({ localPath: f.full, isVideo: false }) : null;
   // Everything above must describe one version of the file: if it moved
   // while being read, try again on the next pass.
   const stats = await fs.stat(f.full);
@@ -289,6 +292,16 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   for (const column of DERIVATIVE_COLUMNS) updates[column] = null;
   const committed = await db.transaction(async (trx) => {
     if (await trx('photos').where(fence).update(updates) !== 1) return false;
+    if (credit) {
+      await trx('photos').where({ id: row.id })
+        .where((q) => q.whereNull('credit_source').orWhere('credit_source', 'exif'))
+        .update({ credit_name: credit.credit_name || null, credit_source: credit.credit_source || null });
+    }
+    // A category the face scan chose for the old picture: the next scan
+    // only categorises photos without one, so it has to go with the faces.
+    // A category an admin chose stays.
+    await trx('photos').where({ id: row.id, auto_categorized: formatBoolean(true) })
+      .update({ category_id: null, auto_categorized: formatBoolean(false) });
     await purgePhotoFaces(row.id, trx);
     await purgePhotoTags(row.id, trx);
     await trx('photos').where({ id: row.id }).update({

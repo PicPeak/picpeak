@@ -285,6 +285,40 @@ describe('external re-scan of a file changed in place', () => {
     expect(after.tag_status).toBeNull();
   });
 
+  it('takes the credit of the new file, and keeps a manual one', async () => {
+    const eventId = await seedEvent();
+    const { photo } = await importWithRenditions(eventId);
+    await db('photos').where({ id: photo.id }).update({ credit_name: 'Old Artist', credit_source: 'exif' });
+    const writeCredited = (artist) => sharp({ create: { width: 300, height: 500, channels: 3, background: { r: 9, g: 9, b: 9 } } })
+      .withExif({ IFD0: { Artist: artist } }).jpeg().toFile(path.join(mediaRoot, 'shoot/a.jpg'));
+
+    await writeCredited('New Artist');
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+    expect((await db('photos').where({ id: photo.id }).first()).credit_name).toBe('New Artist');
+
+    await db('photos').where({ id: photo.id }).update({ credit_name: 'Set By Admin', credit_source: 'manual' });
+    await writeJpeg('shoot/a.jpg', { width: 320, height: 520, color: { r: 5, g: 200, b: 90 } });
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+    expect((await db('photos').where({ id: photo.id }).first())).toMatchObject({ credit_name: 'Set By Admin', credit_source: 'manual' });
+  });
+
+  it('drops a category the face scan chose, keeps one an admin chose', async () => {
+    const eventId = await seedEvent();
+    const { photo } = await importWithRenditions(eventId);
+    const [cat] = await db('photo_categories').insert({ name: 'Portraits', slug: `portraits-${eventId}`, event_id: eventId }).returning('id');
+    const categoryId = typeof cat === 'object' ? cat.id : cat;
+    await db('photos').where({ id: photo.id }).update({ category_id: categoryId, auto_categorized: true });
+
+    await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+    expect((await db('photos').where({ id: photo.id }).first()).category_id).toBeNull();
+
+    await db('photos').where({ id: photo.id }).update({ category_id: categoryId, auto_categorized: false });
+    await writeJpeg('shoot/a.jpg', { width: 320, height: 520, color: { r: 5, g: 200, b: 90 } });
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+    expect((await db('photos').where({ id: photo.id }).first()).category_id).toBe(categoryId);
+  });
+
   it('leaves a changed file that is still being written for the next automatic pass', async () => {
     const eventId = await seedEvent();
     await db('events').where({ id: eventId }).update({
