@@ -64,8 +64,9 @@ export function buildActivityParams(activity: Activity): Record<string, unknown>
   return {
     ...activity.metadata,
     // Team and review lines (issue 743) also record the name, which outlives
-    // a deleted gallery.
-    eventName: activity.eventName || activity.metadata?.eventName || t('common.unknown'),
+    // a deleted gallery; event_deleted records it as event_name.
+    eventName: activity.eventName || activity.metadata?.eventName || activity.metadata?.event_name
+      || t('common.unknown'),
     email: activity.metadata?.email || activity.actorName || '',
     count: activity.metadata?.count || 0,
     template: activity.metadata?.template_key || '',
