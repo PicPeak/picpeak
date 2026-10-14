@@ -232,6 +232,9 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       // Camera details (issue 1733, D1), from the same temp file: this path
       // completes the row itself, so the worker never reads them.
       const exif = isVideo ? {} : await exifColumn(tempPath);
+      // Capture date (issue 1976), for the same reason; images only, as in
+      // the worker.
+      const capturedAt = isVideo ? null : await extractCaptureDate(tempPath);
 
       // Now upload the original through the storage backend and remove the
       // local temp copy.
@@ -278,6 +281,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         type: photoType,
         size_bytes: actualSize,
         content_sha256: contentSha256,
+        captured_at: capturedAt ? capturedAt.toISOString() : null,
         uploaded_by: uploadedBy,
         source_origin: 'managed',
         media_type: mediaType,

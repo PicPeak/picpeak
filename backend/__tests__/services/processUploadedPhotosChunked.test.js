@@ -4,6 +4,8 @@
  *  - issue 1980: no database transaction is open while the media work runs.
  *    On SQLite the pool is one connection, so a transaction held through the
  *    thumbnail blocked every other query until the 60 s acquire timeout.
+ *  - issue 1976: the row gets its EXIF capture date. This path completes the
+ *    row itself, so the worker that reads it for a batch upload never runs.
  */
 const mockProbe = { run: null };
 jest.mock('../../src/services/imageProcessor', () => {
@@ -74,5 +76,17 @@ describe('processUploadedPhotos (chunked admin upload)', () => {
     expect(uploaded).toHaveLength(1);
     const row = await db('photos').where({ id: uploaded[0].id }).first();
     expect(row).toMatchObject({ event_id: event.id, original_filename: 'probe.jpg' });
+  }, 30000);
+
+  it('stores the EXIF capture date, and none for a file without one (issue 1976)', async () => {
+    const event = await makeEvent();
+    const dated = await jpeg().withExif({ IFD2: { DateTimeOriginal: '2021:06:15 14:30:00' } }).toBuffer();
+    const [withDate] = await upload(event, 'dated.jpg', dated);
+    const [withoutDate] = await upload(event, 'undated.jpg', await jpeg().toBuffer());
+
+    const row = await db('photos').where({ id: withDate.id }).first();
+    // exifr reads the EXIF wall-clock time as local time, like the worker does.
+    expect(new Date(row.captured_at).getTime()).toBe(new Date(2021, 5, 15, 14, 30, 0).getTime());
+    expect((await db('photos').where({ id: withoutDate.id }).first()).captured_at).toBeNull();
   }, 30000);
 });
