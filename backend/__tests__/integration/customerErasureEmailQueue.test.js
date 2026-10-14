@@ -490,7 +490,14 @@ describe('customer erasure clears email_queue', () => {
     const inviteAt = new Date().toISOString();
     const inviteMail = await queue(firstAddress, 'sent', inviteAt, 'Invitation');
     await tick();
-    const customer = await insertCustomer(db, { email: firstAddress });
+    // Created through the audited path, as every account since migration 219
+    // is: its `created` history entry is what establishes the first address.
+    const { auditedInsert } = require('../../src/services/accountingHistory');
+    const [created] = await auditedInsert(db, 'customer_accounts', {
+      email: firstAddress, display_name: 'First Address 1971', preferred_language: 'de',
+      is_active: 1, created_at: new Date().toISOString(),
+    }, { actor: 'customer-invitation', source: 'test' });
+    const customer = { id: created.id };
     await db('customer_invitations').insert({
       email: firstAddress, token: 'digest-1971-first', token_digest: 'digest-1971-first',
       invited_by: adminId, expires_at: new Date(Date.now() + 86400000).toISOString(),
@@ -514,6 +521,39 @@ describe('customer erasure clears email_queue', () => {
     const sent = await db('email_queue').where({ id: earlierSent }).first();
     expect(sent.recipient_email).toBe(firstAddress);
     expect(sent.rendered_html).toBe('<p>Earlier Sent</p>');
+  });
+
+  it('does not match the first recorded address of an account created before the change history (issue 1971)', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const queue = async (recipient, status, name) => {
+      const now = new Date().toISOString();
+      const [row] = await db('email_queue').insert({
+        recipient_email: recipient, email_type: 'gallery_created', status,
+        email_data: JSON.stringify({ customer_name: name }), rendered_html: `<p>${name}</p>`,
+        created_at: now, scheduled_at: now, retry_count: 0,
+      }).returning('id');
+      return row?.id ?? row;
+    };
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+    const unrecorded = 'unrecorded-1971@example.com';
+
+    // No `created` entry, and a move to the address the history never saw
+    // (both happened before migration 219): the account's start on it is unknown.
+    const legacy = await insertCustomer(db, { email: 'legacy-start-1971@example.com' });
+    await tick();
+    const otherOwnerMail = await queue(unrecorded, 'sent', 'Other Owner');
+    await tick();
+    await db('customer_accounts').where({ id: legacy.id }).update({ email: unrecorded });
+    await tick();
+    await updateCustomer(legacy.id, { email: 'legacy-now-1971@example.com' }, null);
+
+    await eraseCustomer(legacy.id, null);
+
+    const row = await db('email_queue').where({ id: otherOwnerMail }).first();
+    expect(row.status).toBe('sent');
+    expect(row.recipient_email).toBe(unrecorded);
+    expect(row.rendered_html).toBe('<p>Other Owner</p>');
   });
 
   it('covers contract mail to a signer address only when it names a contract this erasure redacts', async () => {
