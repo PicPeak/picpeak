@@ -31,7 +31,8 @@ export interface EmailProcessorStatus {
 export interface SystemHealthFailures {
   /** Backup-store authenticity, not merely a completed run or unkeyed digest. */
   backupAuthentication?: {
-    signingKey: { ready: boolean; source: 'env' | 'file' | 'missing' | 'invalid'; keyId: string | null };
+    /** `reason`, on `invalid` only: names the key file and the fix, never the key. */
+    signingKey: { ready: boolean; source: 'env' | 'file' | 'missing' | 'invalid'; keyId: string | null; reason?: string };
     /** `legacy`: intact, but written before manifests were authenticated. */
     latestManifest: { authenticated: boolean; keyId?: string; state?: string };
   };

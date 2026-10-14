@@ -173,10 +173,12 @@ describe('PhotoGridWithLayouts — link to a single photo (issue 1733)', () => {
       );
       expect(onChange).not.toHaveBeenCalledWith(null, 'close');
 
-      // Empty list: the layout and its lightbox unmount, so the close is reported.
+      // Empty list: the layout remounts into its own empty state and its
+      // lightbox unmounts, so the close is reported.
+      const before = screen.getByTestId('premium');
       rerender(<PhotoGridWithLayouts photos={[]} slug="g" openPhotoId={11} onLightboxPhotoChange={onChange} />);
       expect(onChange).toHaveBeenLastCalledWith(null, 'close');
-      expect(screen.queryByTestId('premium')).toBeNull();
+      expect(screen.getByTestId('premium')).not.toBe(before);
     } finally {
       layoutSwitch.galleryLayout = 'grid';
     }

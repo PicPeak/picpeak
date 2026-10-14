@@ -68,4 +68,16 @@ describe('BackupManagement header', () => {
     const label = screen.getByText(/backup.status.lastBackup:/);
     expect(label.previousElementSibling).toHaveClass('text-success');
   });
+
+  it('warns before a backup is started that an unusable signing key will fail it, with the reason', async () => {
+    const reason = 'The backup manifest key file /data/backup-manifest.key is group- or world-writable (mode 0666)';
+    await renderWithStatus({ lastBackup: completed, signingKey: { ready: false, source: 'invalid', keyId: null, reason } });
+    expect(screen.getByText('backup.status.signingKeyInvalid')).toBeInTheDocument();
+    expect(screen.getByText(reason)).toBeInTheDocument();
+  });
+
+  it('shows no key warning while the signing key is usable or not yet created', async () => {
+    await renderWithStatus({ lastBackup: completed, signingKey: { ready: false, source: 'missing', keyId: null } });
+    expect(screen.queryByText('backup.status.signingKeyInvalid')).not.toBeInTheDocument();
+  });
 });

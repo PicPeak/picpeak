@@ -223,6 +223,11 @@ describe('archive routes read and write through the storage backend', () => {
     const event = await db('events').where('id', eventId).first();
     expect(Boolean(event.is_archived)).toBe(false);
     expect(event.archive_path).toBeNull();
+    // The zip stays until the gallery has a newer archive (issue 2012):
+    // recorded for the next archive, or the gallery delete, to remove.
+    expect(await storage.exists(key)).toBe(true);
+    const { supersededArchives } = require('../../src/services/archiveService');
+    expect(await supersededArchives(eventId)).toEqual([key]);
   });
 
   it('restores a pre-manifest archive from the backend too', async () => {

@@ -207,10 +207,73 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
           </div>
         );
       
+      // The full-page layouts open on a full-bleed hero photo with the event
+      // title over it and bring their own grid below.
+      case 'gallery-premium':
+        return (
+          <div className="space-y-3">
+            {renderFullPageHero()}
+            <div className={`columns-3 ${gapClass}`}>
+              {mockPhotos.slice(1, 7).map((photo, idx) => (
+                <div key={photo.id} className={`break-inside-avoid mb-${spacing === 'tight' ? '1' : spacing === 'relaxed' ? '4' : '2'}`}>
+                  <PreviewPhoto
+                    photo={photo}
+                    aspectRatio={idx % 3 === 0 ? 'aspect-[4/5]' : idx % 3 === 1 ? 'aspect-[4/3]' : 'aspect-square'}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+
+      // Story: the hero, then one scene per category, alternating a grid with
+      // a featured first photo and a sideways carousel.
+      case 'gallery-story':
+        return (
+          <div className="space-y-4">
+            {renderFullPageHero()}
+            <div>
+              <h4 className="text-center text-sm font-medium mb-2" style={{ fontFamily: headingFont }}>
+                {mockPhotos[0].category_name}
+              </h4>
+              <div className={`grid grid-cols-3 ${gapClass}`}>
+                <PreviewPhoto photo={mockPhotos[0]} className="col-span-2 row-span-2" aspectRatio="aspect-auto h-full" />
+                <PreviewPhoto photo={mockPhotos[4]} />
+                <PreviewPhoto photo={mockPhotos[8]} />
+              </div>
+            </div>
+            <div>
+              <h4 className="text-center text-sm font-medium mb-2" style={{ fontFamily: headingFont }}>
+                {mockPhotos[1].category_name}
+              </h4>
+              <div className={`flex overflow-hidden ${gapClass}`}>
+                {[1, 5, 9].map((idx) => (
+                  <PreviewPhoto key={idx} photo={mockPhotos[idx]} className="w-2/5 shrink-0" aspectRatio="aspect-[3/4]" />
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+
       default:
         return null;
     }
   };
+
+  const headingFont = theme.headingFontFamily || theme.fontFamily || 'Inter, sans-serif';
+  const renderFullPageHero = () => (
+    <div className="relative">
+      <PreviewPhoto photo={mockPhotos[0]} aspectRatio="aspect-[16/7]" />
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <p
+          className="text-white text-lg font-semibold"
+          style={{ fontFamily: headingFont, textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)' }}
+        >
+          Sample Event
+        </p>
+      </div>
+    </div>
+  );
   
   return (
     <div
@@ -340,7 +403,7 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
       </div>
 
       {/* Preview Content */}
-      <div className="p-4" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+      <div className="p-4" style={{ maxHeight: '400px', overflowY: 'auto' }} data-testid="gallery-preview-content">
         {renderLayout()}
       </div>
     </div>

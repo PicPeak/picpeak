@@ -194,8 +194,13 @@ key on a fresh recovery host, not a key supplied by the backup being verified.
 System Health reports key readiness and latest manifest authenticity separately
 from completion. A missing/invalid key or unverified manifest is not healthy.
 An invalid key (wrong encoding, group/world-writable or symlinked key file) does
-not stop the server: it is logged at boot, shown in System Health, and backups
-fail until it is corrected. A latest manifest that only predates authentication
+not stop the server: it is logged at boot, shown in System Health and on the
+Backup page with the reason, and backups fail before copying anything until it
+is corrected. A writable key file owned by the PicPeak process is restricted to
+`0600` automatically. One on a filesystem that does not keep file modes (some
+NAS, VM shared folders or bind mounts report every file as `0777`/`0666`) is
+refused: move it to a filesystem that does and point `BACKUP_MANIFEST_KEY_FILE`
+at it, or set `BACKUP_MANIFEST_KEY` instead. A latest manifest that only predates authentication
 is reported as legacy rather than unhealthy; the next backup signs a new one.
 
 Retain previous v3 keys with `BACKUP_MANIFEST_KEYS_OLD` (comma-separated 64-hex

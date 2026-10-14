@@ -310,6 +310,9 @@
     "liked": "Aimés",
     "favorited": "Favoris",
     "favorites": "Favoris",
+    "showLikedOnly": "Afficher uniquement les photos que j'aime",
+    "likedOnlyEmpty": "Vous n'avez encore aimé aucune photo ici. Touchez le cœur d'une photo pour la retrouver ici.",
+    "showAllPhotos": "Afficher toutes les photos",
     "needHelp": "Besoin d'aide ? Contactez-nous à",
     "noPhotosFound": "Aucune photo trouvée",
     "failedToLoad": "Échec du chargement des photos",
@@ -506,6 +509,9 @@
       "approveBody": "Vous confirmez que les photos retouchées conviennent telles quelles et que le photographe peut poursuivre. Vous ne pourrez ensuite plus modifier vos approbations et refus ; le photographe peut les rouvrir pour vous.",
       "approveRejected": "Photos encore marquées comme refusées : {{count}}",
       "approveConfirm": "Approuver",
+      "identityApproval": "votre approbation",
+      "identitySelection": "votre sélection",
+      "identityInvalid": "Veuillez vérifier votre nom et votre e-mail. Un nom peut contenir des lettres, des chiffres, des espaces, des traits d'union, des apostrophes et des points.",
       "approveSuccess": "Votre approbation a été envoyée au photographe",
       "approvedOn": "Photos retouchées approuvées le {{date}}",
       "noteLabel": "Note pour le photographe (facultatif)",
@@ -638,6 +644,7 @@
     "uploadPhotos": "Téléverser des photos",
     "archiveEvent": "Archiver l'événement",
     "archiveConfirm": "Êtes-vous sûr de vouloir archiver cet événement ? Cette action ne peut pas être annulée.",
+    "archiveInProgress": "Cette galerie est en cours d'archivage. Réessayez une fois l'archivage terminé.",
     "extendExpiration": "Prolonger de {{days}} jours",
     "backToEvents": "Retour aux événements",
     "loadingEventDetails": "Chargement des détails de l'événement...",
@@ -2836,7 +2843,8 @@
       "nextBackup": "Prochaine sauvegarde",
       "notScheduled": "Non planifiée",
       "enabled": "Activé",
-      "disabled": "Désactivé"
+      "disabled": "Désactivé",
+      "signingKeyInvalid": "La clé de signature des sauvegardes est inutilisable. Les sauvegardes échoueront tant qu'elle n'est pas corrigée."
     },
     "actions": {
       "runBackupNow": "Exécuter la sauvegarde maintenant",

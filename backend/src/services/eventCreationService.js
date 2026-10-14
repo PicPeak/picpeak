@@ -7,7 +7,7 @@ const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
-const { parseExpiresAtText } = require('../utils/expiresAtText');
+const { getInstanceTimeZone, endOfDayInZone, addDaysToDate, dateInZone, parseExpiryInput } = require('../utils/galleryExpiry');
 const { slugify } = require('../utils/slug');
 const { findSlugHolder } = require('./slugRedirects');
 const { validatePasswordInContext, getBcryptRounds } = require('../utils/passwordValidation');
@@ -333,25 +333,27 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   // zone-less date-time is UTC there (what SQLite's julianday() reads the
   // stored row as), where `new Date()` would read it in the server's zone
   // and POST and PUT would store different instants for the same input.
+  // A bare date, and the day count below, end at the end of that day in
+  // the instance time zone.
   let expires_at = null;
+  const expiryTimeZone = (input.expires_at || fieldRequirements.require_expiration)
+    ? await getInstanceTimeZone() : null;
   if (input.expires_at) {
     expires_at = typeof input.expires_at === 'string'
-      ? parseExpiresAtText(input.expires_at)
+      ? parseExpiryInput(input.expires_at, expiryTimeZone)
       : new Date(input.expires_at);
     if (!expires_at || Number.isNaN(expires_at.getTime())) {
       throw new AppError('expires_at must be an ISO 8601 date-time such as 2026-10-06T12:00:00Z', 400);
     }
   }
   if (!expires_at && fieldRequirements.require_expiration) {
-    const baseDate = event_date || new Date().toISOString().split('T')[0];
-    // Parse YYYY-MM-DD format as local date to avoid timezone issues
+    const baseDate = event_date || dateInZone(new Date(), expiryTimeZone);
     if (baseDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const [year, month, day] = baseDate.split('-').map(num => parseInt(num, 10));
-      expires_at = new Date(year, month - 1, day);
+      expires_at = endOfDayInZone(addDaysToDate(baseDate, parseInt(expiration_days, 10)), expiryTimeZone);
     } else {
       expires_at = new Date(baseDate);
+      expires_at.setDate(expires_at.getDate() + parseInt(expiration_days, 10));
     }
-    expires_at.setDate(expires_at.getDate() + parseInt(expiration_days, 10));
   }
     
   // Create folder structure

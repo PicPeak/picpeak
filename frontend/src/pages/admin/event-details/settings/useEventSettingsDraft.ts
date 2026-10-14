@@ -7,6 +7,7 @@ import type { ThemeConfig } from '../../../../types/theme.types';
 import { api } from '../../../../config/api';
 import { eventsService } from '../../../../services/events.service';
 import { feedbackService, type FeedbackSettings } from '../../../../services/feedback.service';
+import { archiveInProgressError } from '../../../../utils/archiveErrors';
 import {
   INHERIT,
   DraftValidationError,
@@ -147,7 +148,8 @@ export function useEventSettingsDraft({
         const e = error as { response?: { data?: { error?: string; errors?: Array<{ msg: string }> } } };
         failed.push({
           slice,
-          message: e.response?.data?.errors?.[0]?.msg || e.response?.data?.error || t('toast.saveError', 'Failed to save changes'),
+          message: archiveInProgressError(error, t)
+            ?? (e.response?.data?.errors?.[0]?.msg || e.response?.data?.error || t('toast.saveError', 'Failed to save changes')),
         });
       }
     };
