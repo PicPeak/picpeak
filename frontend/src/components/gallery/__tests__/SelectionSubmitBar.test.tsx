@@ -7,7 +7,7 @@
  * it locks that part of the guest's feedback, and afterwards the bar says when
  * it was handed in instead of offering the button again.
  */
-import { render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +16,7 @@ import type { ReactNode } from 'react';
 import { SelectionSubmitBar, useSelectionPickRefresh } from '../SelectionSubmitBar';
 import { FEEDBACK_SUBMITTED_EVENT } from '../../../utils/feedbackEvents';
 import { toast } from 'react-toastify';
+import { feedbackService } from '../../../services/feedback.service';
 import type { SelectionState } from '../../../services/feedback.service';
 import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { parseFeedbackLimitError } from '../../../hooks/useFeedbackLimitModal';
@@ -41,11 +42,19 @@ vi.mock('react-i18next', async () => {
   };
 });
 
+// The real feedback writes, so a like sends the event the bar listens to.
+const apiPost = vi.fn();
+vi.mock('../../../config/api', () => ({ api: { post: (...args: unknown[]) => apiPost(...args) } }));
+
 vi.mock('../../../services/feedback.service', async () => {
   const actual = await vi.importActual<any>('../../../services/feedback.service');
   return {
     ...actual,
-    feedbackService: { submitSelection: (...args: unknown[]) => submitSelection(...args) },
+    feedbackService: {
+      submitSelection: (...args: unknown[]) => submitSelection(...args),
+      submitFeedback: actual.feedbackService.submitFeedback.bind(actual.feedbackService),
+      submitBulkRating: actual.feedbackService.submitBulkRating.bind(actual.feedbackService),
+    },
   };
 });
 
@@ -200,6 +209,45 @@ describe('SelectionSubmitBar (issue 1733)', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
       expect(screen.getByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
+    });
+
+    it('takes the name given on a like: no prompt, and the name goes with the hand-over', async () => {
+      apiPost.mockResolvedValue({ data: {} });
+      submitSelection.mockResolvedValue({ id: 6, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });
+      renderRequired(state({ approval: { can_submit: true } }));
+      await act(() => feedbackService.submitFeedback('g', '7', {
+        feedback_type: 'like', guest_name: 'Clara', guest_email: 'clara@example.com',
+      }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.queryByRole('dialog', { name: 'Your Information Required' })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenCalledWith(
+        'g', 'approval', '', { guest_name: 'Clara', guest_email: 'clara@example.com' },
+      ));
+    });
+
+    it('takes the name given on a bulk rating', async () => {
+      apiPost.mockResolvedValue({ data: { success: true, rating: 4, results: [] } });
+      renderRequired(state({ approval: { can_submit: true } }));
+      await act(() => feedbackService.submitBulkRating('g', [1, 2], 4, {
+        guest_name: 'Clara', guest_email: 'clara@example.com',
+      }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
+    });
+
+    it('still asks after feedback that named nobody, or named someone in another gallery', async () => {
+      apiPost.mockResolvedValue({ data: {} });
+      renderRequired(state({ approval: { can_submit: true } }));
+      await act(async () => {
+        await feedbackService.submitFeedback('g', '7', { feedback_type: 'like' });
+        await feedbackService.submitFeedback('other', '7', {
+          feedback_type: 'like', guest_name: 'Clara', guest_email: 'clara@example.com',
+        });
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
     });
 
     it('asks again when the server wants the name, keeping the note', async () => {

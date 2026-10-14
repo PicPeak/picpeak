@@ -1,6 +1,6 @@
 import { api } from '../config/api';
 import { explainFeedbackLock } from '../utils/feedbackLock';
-import { FEEDBACK_SUBMITTED_EVENT } from '../utils/feedbackEvents';
+import { FEEDBACK_SUBMITTED_EVENT, namedIdentity } from '../utils/feedbackEvents';
 import type { FeedbackSubmittedDetail } from '../utils/feedbackEvents';
 import type { PhotoAnnotation } from '../utils/photoAnnotation';
 
@@ -374,7 +374,7 @@ class FeedbackService {
     try {
       const response = await api.post(`/gallery/${slug}/photos/${photoId}/feedback`, feedback);
       window.dispatchEvent(new CustomEvent<FeedbackSubmittedDetail>(FEEDBACK_SUBMITTED_EVENT, {
-        detail: { slug, feedback_type: feedback.feedback_type },
+        detail: { slug, feedback_type: feedback.feedback_type, ...namedIdentity(feedback) },
       }));
       return response.data;
     } catch (error) {
@@ -400,6 +400,9 @@ class FeedbackService {
     guest_email?: string;
   }): Promise<BulkRatingResponse> {
     const response = await api.post(`/gallery/${slug}/feedback/bulk`, { photo_ids: photoIds, rating, ...identity });
+    window.dispatchEvent(new CustomEvent<FeedbackSubmittedDetail>(FEEDBACK_SUBMITTED_EVENT, {
+      detail: { slug, feedback_type: 'rating', ...namedIdentity(identity) },
+    }));
     return response.data;
   }
 

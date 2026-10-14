@@ -84,6 +84,18 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
   const panelRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
+  // A name and email the visitor already gave on a like, comment or rating
+  // serve the hand-over too: the prompt is only for a visitor not yet named.
+  useEffect(() => {
+    const onSubmitted = (event: Event) => {
+      const detail = (event as CustomEvent<FeedbackSubmittedDetail>).detail;
+      if (detail?.slug !== slug || !detail.guest_name || !detail.guest_email) return;
+      setSavedIdentity({ name: detail.guest_name, email: detail.guest_email });
+    };
+    window.addEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
+    return () => window.removeEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
+  }, [slug]);
+
   const mutation = useMutation({
     mutationFn: async (kind: SubmissionKind) => {
       // Guest identity mode: the submission belongs to the registered guest.
