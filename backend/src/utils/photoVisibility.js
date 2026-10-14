@@ -88,6 +88,13 @@ function wherePhotoProcessed(query) {
 }
 
 /**
+ * Single-photo form of wherePhotoProcessed, for a row already read.
+ */
+function isPhotoProcessed(photo) {
+  return photo.processing_status == null || photo.processing_status === 'complete';
+}
+
+/**
  * Single-photo predicate: true when this photo must be blocked for a viewer
  * at the given access level. Mirrors the inline guards in gallery.js.
  */
@@ -105,5 +112,6 @@ module.exports = {
   canSeeHiddenPhotos,
   applyPhotoVisibilityFilter,
   wherePhotoProcessed,
+  isPhotoProcessed,
   isPhotoHiddenFromViewer,
 };

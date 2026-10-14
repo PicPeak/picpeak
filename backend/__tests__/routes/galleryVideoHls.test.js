@@ -303,6 +303,24 @@ describe('adaptive streaming routes (issue 1733)', () => {
       }
     });
 
+    test('a video the worker has not finished, or failed on, is refused by id on every media route', async () => {
+      for (const status of ['pending', 'processing', 'failed']) {
+        const id = await insertVideo(`unprocessed-${status}.mp4`, { processing_status: status });
+        const media = [...routes(id).map(route => `hls/${route}`), `photo/${id}`, `thumbnail/${id}`, `preview/${id}`, `hero/${id}`];
+        for (const route of media) {
+          const answer = await request(app).get(`/api/gallery/${SLUG}/${route}`).set(asClient).buffer().parse(binary);
+          expect([route, answer.status]).toEqual([route, 403]);
+          expect((await request(app).get(`/api/gallery/${SLUG}/${route}`).buffer().parse(binary)).status).toBe(403);
+        }
+        expect((await request(app).post(`/api/gallery/${SLUG}/photo/${id}/view`).set(asClient)).status).toBe(403);
+        // Once the worker finishes it, it plays like any other.
+        await db('photos').where({ id }).update({ processing_status: 'complete' });
+        expect((await get(`${id}/master.m3u8`)).status).toBe(200);
+        expect((await request(app).get(`/api/gallery/${SLUG}/photo/${id}`).buffer().parse(binary)).status).toBe(200);
+        await db('photos').where({ id }).delete();
+      }
+    });
+
     test('a slideshow token is display-only here as on the video route', async () => {
       const slideshow = { Authorization: `Bearer ${token({ accessLevel: 'slideshow' })}` };
       for (const route of routes(streamed)) expect((await get(route, { headers: slideshow })).status).toBe(403);
@@ -353,6 +371,20 @@ describe('adaptive streaming routes (issue 1733)', () => {
       expect((await get(`${streamed}/480p/seg_00000.m4s`, { headers: asClient })).status).toBe(200);
       // The abandoned ZIP gives nothing back that the playback took.
       await settleReservation(eventId, zip, []);
+      expect(await grants()).toHaveLength(1);
+    });
+
+    test('a master playlist storage fails to return takes no slot', async () => {
+      const spy = jest.spyOn(storage, 'get').mockImplementationOnce(async () => { throw new Error('storage unreachable'); });
+      try {
+        expect((await get(`${streamed}/master.m3u8`, { headers: asClient })).status).toBe(500);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await grants()).toHaveLength(0);
+      // The next try plays, and takes the one slot.
+      expect((await get(`${streamed}/master.m3u8`, { headers: asClient })).status).toBe(200);
+      await settled();
       expect(await grants()).toHaveLength(1);
     });
 
