@@ -18,6 +18,7 @@ import { BulkRating } from './BulkRating';
 import { GallerySidebarFolderTree, type SidebarFolderTreeProps } from './GallerySidebarFolderTree';
 import { GallerySidebarSelectionTray } from './GallerySidebarSelectionTray';
 import { lockBodyScroll } from '../../utils/scrollLock';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface GallerySidebarProps {
   isOpen: boolean;
@@ -186,7 +187,11 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   useEscapeClose(isMobile && isOpen, onClose);
   const downloadQuota = useDownloadQuota();
   const downloadAllOverQuota = !!downloadAllPhotos && !downloadQuota.allows(downloadAllPhotos);
-  const sidebarRef = useRef<HTMLDivElement>(null);
+  // On a phone the open drawer covers the page behind a backdrop, so it holds
+  // the keyboard like a dialog: focus moves in (to its close button, the
+  // first control) and Tab wraps inside it. Escape and the focus hand-back
+  // below take it out again. The desktop panel leaves focus where it is.
+  const sidebarRef = useFocusTrap(isMobile && isOpen);
   // Where focus goes when the last photo is removed from the selection tray
   // by keyboard: the selection toggle, or the close button in a gallery
   // without the download section.
@@ -203,7 +208,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
     if (sidebarRef.current?.contains(document.activeElement)) {
       returnFocusRef?.current?.focus();
     }
-  }, [isOpen, returnFocusRef]);
+  }, [isOpen, returnFocusRef, sidebarRef]);
 
   // Close sidebar when clicking outside on mobile
   useEffect(() => {
@@ -222,7 +227,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isMobile, isOpen, onClose]);
+  }, [isMobile, isOpen, onClose, sidebarRef]);
 
   // Prevent body scroll when sidebar is open on mobile
   useEffect(() => {
