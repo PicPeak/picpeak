@@ -362,6 +362,10 @@ it('actual portable export captures published logical bytes/metadata, never inte
   const { setStorageForTesting, resetStorage } = require('../../src/services/storage');
   const { db: exportDb } = require('../../src/database/db');
   await migration.up(exportDb);
+  // The export reads archive records from it (every real install has it).
+  if (!(await exportDb.schema.hasTable('maintenance_jobs'))) {
+    await exportDb.schema.createTable('maintenance_jobs', table => { table.string('job_name').primary(); table.text('last_result'); });
+  }
   await exportDb(index.TABLE).del(); await exportDb(index.TABLE).insert(await db(index.TABLE));
   const { createPicpeak } = require('../../src/services/picpeakExportService');
   const StreamZip = require('node-stream-zip');

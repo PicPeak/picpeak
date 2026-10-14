@@ -28,6 +28,7 @@
  */
 
 const { db, logActivity } = require('../database/db');
+const { adminActivityActor } = require('../utils/activityActor');
 const { AppError } = require('../utils/errors');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { ensureInt, ensureNumber } = require('../utils/numericHelpers');
@@ -218,7 +219,7 @@ async function createTemplate(payload, adminId) {
     updated_at: new Date(),
   }).returning('id'));
   try {
-    await logActivity('quote_template_created', { templateId: id }, null, `admin:${adminId}`);
+    await logActivity('quote_template_created', { templateId: id }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
   return id;
 }
@@ -441,7 +442,7 @@ async function publishTemplate(id, adminId) {
     throw err;
   }
   try {
-    await logActivity('quote_template_published', { templateId: id, version }, null, `admin:${adminId}`);
+    await logActivity('quote_template_published', { templateId: id, version }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
   return version;
 }
@@ -617,7 +618,7 @@ async function createQuoteFromTemplate(templateId, payload, adminId) {
 
   try {
     await logActivity('quote_created_from_template',
-      { quoteId, templateId: template.id, version: Number(versionRow.version) }, null, `admin:${adminId}`);
+      { quoteId, templateId: template.id, version: Number(versionRow.version) }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
   return { quoteId, version: Number(versionRow.version), skippedPromotions };
 }

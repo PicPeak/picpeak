@@ -29,6 +29,7 @@
 const crypto = require('crypto');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { db, withRetry, logActivity } = require('../database/db');
+const { adminActivityActor } = require('../utils/activityActor');
 const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
 const { cleanNetMinor } = require('../utils/invoiceRounding');
@@ -38,6 +39,8 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { nextDocumentNumber } = require('../utils/documentSequences');
 const { resolveDefaultEventType } = require('./eventTypeService');
 const { formatShortDate } = require('../utils/dateFormatter');
+const { toDateOnly } = require('../utils/dateOnly');
+const { getInstanceTimeZone, endOfDayInZone } = require('../utils/galleryExpiry');
 const businessProfileService = require('./businessProfileService');
 const pdfThemeService = require('./pdfThemeService');
 const documentArtifactService = require('./documentArtifactService');
@@ -466,6 +469,8 @@ async function getQuoteById(id) {
         'customer_accounts.company_name as customer_company_name',
         // For transformQuote.customer.isPassive — never leaves the API.
         'customer_accounts.password_hash as customer_password_hash',
+        // Drives the Issue (no email) button (migration 300).
+        'customer_accounts.no_admin_emails as customer_no_admin_emails',
         'conv_contract.contract_number as converted_contract_number',
         'replaced.quote_number as replaces_quote_number',
         'replaced.issue_date as replaces_issue_date',
@@ -659,7 +664,7 @@ async function createQuote(payload, adminId) {
     try {
       // Pass `trx` so the audit insert rides the transaction's connection —
       // the global db here deadlocks the single-connection SQLite pool.
-      await logActivity('quote_created', { quoteId, quoteNumber, customerAccountId: payload.customerAccountId }, null, `admin:${adminId}`, trx);
+      await logActivity('quote_created', { quoteId, quoteNumber, customerAccountId: payload.customerAccountId }, null, adminActivityActor(adminId), trx);
     } catch (_) { /* non-fatal */ }
 
     logger.info('Quote created', { adminId, quoteId, quoteNumber });
@@ -835,7 +840,7 @@ async function updateQuote(id, payload, adminId) {
       // Pass trx: through the global db this insert waits on the single-
       // connection SQLite pool for the connection this transaction holds,
       // stalling every save for the 60s acquire timeout and losing the row.
-      await logActivity('quote_updated', { quoteId: id }, null, `admin:${adminId}`, trx);
+      await logActivity('quote_updated', { quoteId: id }, null, adminActivityActor(adminId), trx);
     } catch (_) { /* non-fatal */ }
   });
 }
@@ -1205,12 +1210,12 @@ async function sendQuote(id, adminId) {
       contentPath: pdfPath,
       contentType: 'application/pdf',
     }] : undefined,
-  });
+  }, { customerAccountId: quote.customer_account_id });
 
   try {
     // Do NOT log the raw bearer token — it grants quote actions and the
     // activity log is readable later (GHSA-prch). The quoteId is the audit key.
-    await logActivity('quote_sent', { quoteId: id }, null, `admin:${adminId}`);
+    await logActivity('quote_sent', { quoteId: id }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   // Fire the quote.sent workflow trigger (best-effort; emit is fail-closed when
@@ -1574,7 +1579,7 @@ async function emailAddOnChange(quoteId, change) {
         contentPath: resolveStoredPath(quote.pdf_path) || quote.pdf_path,
         contentType: 'application/pdf',
       }] : undefined,
-    });
+    }, { customerAccountId: quote.customer_account_id });
   } catch (err) {
     logger.warn('Could not email the add-on change', { quoteId, error: err.message });
   }
@@ -1862,7 +1867,7 @@ async function recordResponse({
 
   try {
     // Raw bearer token must not reach the activity log (GHSA-prch).
-    await logActivity(`quote_${newStatus}`, { quoteId: quote.id }, null, 'customer:public');
+    await logActivity(`quote_${newStatus}`, { quoteId: quote.id }, null, actor);
   } catch (_) { /* non-fatal */ }
 
   // Defer the workflow emit until the 15-min toggle window locks — so accepting
@@ -1930,7 +1935,7 @@ async function adminAcceptQuote(id, adminId) {
   }
 
   try {
-    await logActivity('quote_accepted_by_admin', { quoteId: id }, null, `admin:${adminId}`);
+    await logActivity('quote_accepted_by_admin', { quoteId: id }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   // ---- customer confirmation email -------------------------------
@@ -1975,7 +1980,7 @@ async function adminAcceptQuote(id, adminId) {
           contentPath: pdfPath,
           contentType: 'application/pdf',
         }],
-      });
+      }, { customerAccountId: customer.id });
     }
   } catch (err) {
     // Email failure is not fatal — log + move on. The acceptance
@@ -2042,7 +2047,7 @@ async function adminChangeAddOns(id, { selectedOptional }, adminId) {
   await storeAcceptedQuotePdf(id);
   const change = selectionChange(lineItems, current, selection.chosen, quote.total_amount_minor, selection.totals, 'admin', adminId, now);
   try {
-    await logActivity('quote_add_ons_changed', { quoteId: id, booked: change.booked, removed: change.removed }, null, `admin:${adminId}`);
+    await logActivity('quote_add_ons_changed', { quoteId: id, booked: change.booked, removed: change.removed }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
   await emailAddOnChange(id, change);
   return { changed: true, totalAmountMinor: selection.totals.totalAmountMinor };
@@ -2111,7 +2116,7 @@ async function adminDeclineQuote(id, adminId, reason = null) {
   });
 
   try {
-    await logActivity('quote_declined_by_admin', { quoteId: id, reason: cleanReason }, null, `admin:${adminId}`);
+    await logActivity('quote_declined_by_admin', { quoteId: id, reason: cleanReason }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   // Admin decline locks the window immediately (response_locked_at = now), so
@@ -2172,7 +2177,7 @@ async function reissueQuote(id, adminId, reason = null) {
   const newId = await duplicateQuote(id, adminId, { replacesQuoteId: id, dealUuid: quote.deal_uuid });
 
   try {
-    await logActivity('quote_reissued', { quoteId: id, newQuoteId: newId, reason: cleanReason }, null, `admin:${adminId}`);
+    await logActivity('quote_reissued', { quoteId: id, newQuoteId: newId, reason: cleanReason }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   return { quoteId: newId };
@@ -2336,7 +2341,7 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
   // hang here would wedge the workflow executor, not just a request).
   try {
     await logActivity('quote_converted_invoices_only', { quoteId: quote.id, installments: result.installmentsCreated },
-      null, `admin:${adminId}`);
+      null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   logger.info('Quote converted to invoices only (no event)', { adminId, quoteId: quote.id, installments: result.installmentsCreated });
@@ -2415,8 +2420,18 @@ async function convertToEvent(quoteId, adminId, options = {}) {
     // other, introspect the columns at runtime and only insert
     // fields the table actually has.
     const adminRow = await trx('admin_users').where({ id: adminId }).first();
-    const oneYearAfterEvent = new Date(quote.event_date || quote.issue_date);
-    oneYearAfterEvent.setFullYear(oneYearAfterEvent.getFullYear() + 1);
+    // A year after the event, open through the end of that day in the
+    // instance time zone (a date-only expiry, as the settings field sets).
+    const eventDay = toDateOnly(quote.event_date || quote.issue_date);
+    let oneYearAfterEvent;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(eventDay || '')) {
+      const dayAYearOn = new Date(`${eventDay}T00:00:00.000Z`);
+      dayAYearOn.setUTCFullYear(dayAYearOn.getUTCFullYear() + 1);
+      oneYearAfterEvent = endOfDayInZone(dayAYearOn.toISOString().slice(0, 10), await getInstanceTimeZone(trx));
+    } else {
+      oneYearAfterEvent = new Date(quote.event_date || quote.issue_date);
+      oneYearAfterEvent.setFullYear(oneYearAfterEvent.getFullYear() + 1);
+    }
     const placeholder = crypto.randomBytes(32).toString('hex');
     const fullName = [customer.first_name, customer.last_name].filter(Boolean).join(' ')
       || customer.display_name || customer.company_name || quote.quote_number;
@@ -2557,7 +2572,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   // deadlocks the single-connection SQLite pool if issued inside the trx
   // (prepare_event runs this unattended from the booking flow).
   try {
-    await logActivity('quote_converted', { quoteId: quote.id, eventId: result.eventId }, result.eventId, `admin:${adminId}`);
+    await logActivity('quote_converted', { quoteId: quote.id, eventId: result.eventId }, result.eventId, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 
   logger.info('Quote converted to event', { adminId, quoteId: quote.id, eventId: result.eventId });
