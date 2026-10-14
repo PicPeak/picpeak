@@ -44,4 +44,19 @@ async function followSlugRedirect(slug) {
   return db('events').where({ id: row.event_id, slug: row.new_slug }).first();
 }
 
-module.exports = { findSlugHolder, followSlugRedirect };
+/**
+ * The first slug `makeSlug()` produces that no gallery holds, directly or
+ * through a redirect. For slugs with a random part (quote and contract
+ * conversion), where a clash is unlikely but must not hand another gallery's
+ * old links to the new one or fail the insert.
+ */
+async function unusedSlug(makeSlug, { attempts = 10 } = {}) {
+  for (let i = 0; i < attempts; i += 1) {
+    const slug = makeSlug();
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await findSlugHolder(slug))) return slug;
+  }
+  throw new Error(`No free gallery slug after ${attempts} attempts`);
+}
+
+module.exports = { findSlugHolder, followSlugRedirect, unusedSlug };

@@ -2375,7 +2375,10 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   // short-URL setting is read through the global db handle. This used to be
   // a bare 64-hex token, which the gallery page does not take for a token,
   // so "View gallery" and a short guest link opened "Gallery not found".
-  const slug = `quote-${quote.quote_number.toLowerCase()}-${crypto.randomBytes(3).toString('hex')}`;
+  // Not one another gallery holds or a renamed gallery's old slug leads from.
+  const slug = await require('./slugRedirects').unusedSlug(
+    () => `quote-${quote.quote_number.toLowerCase()}-${crypto.randomBytes(3).toString('hex')}`,
+  );
   const shareToken = crypto.randomBytes(16).toString('hex');
   const { shareLinkToStore } = await buildShareLinkVariants({ slug, shareToken });
 

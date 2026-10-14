@@ -237,7 +237,10 @@ async function convertToEvent(contractId, adminId) {
   const eventCols = await db('events').columnInfo();
   const { getImageSecurityDefaults, resolveImageSecurityColumns } = require('../../routes/adminEvents/helpers');
   const imageSecurityColumns = resolveImageSecurityColumns({}, await getImageSecurityDefaults());
-  const slug = `contract-${contract.contract_number.toLowerCase()}-${crypto.randomBytes(3).toString('hex')}`;
+  // Not one another gallery holds or a renamed gallery's old slug leads from.
+  const slug = await require('../slugRedirects').unusedSlug(
+    () => `contract-${contract.contract_number.toLowerCase()}-${crypto.randomBytes(3).toString('hex')}`,
+  );
   const { shareLinkToStore } = await buildShareLinkVariants({ slug, shareToken });
   const candidate = {
     slug,
