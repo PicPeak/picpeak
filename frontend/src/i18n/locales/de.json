@@ -5666,6 +5666,11 @@
       "photos_restored": "{{count}} Fotos aus dem Papierkorb von {{eventName}} wiederhergestellt",
       "photos_trash_purged": "{{count}} Fotos endgültig aus dem Papierkorb von {{eventName}} gelöscht"
     },
+    "customerActivity": {
+      "customer_invitation_created": "Einladung gesendet",
+      "customer_password_reset_requested": "Passwort-Reset angefordert",
+      "customer_event_access": "Hat eine Galerie geöffnet"
+    },
     "people": {
       "title": "Personen in dieser Galerie",
       "subtitle": "Umbenennen, getrennte Personen zusammenführen oder jemanden vor Gästen verbergen.",
