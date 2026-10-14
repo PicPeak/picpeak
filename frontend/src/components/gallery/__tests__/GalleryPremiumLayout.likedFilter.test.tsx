@@ -6,7 +6,7 @@
  */
 import React, { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Photo } from '../../../types';
 import type { FeedbackFilterType } from '../GalleryFilter';
 import { useGalleryFiltering } from '../hooks/useGalleryFiltering';
@@ -23,6 +23,11 @@ vi.mock('../../../contexts/GuestIdentityContext', () => ({ useGuestIdentityOptio
 vi.mock('../../../hooks/useInputMode', () => ({ useInputMode: () => 'mouse' }));
 vi.mock('react-intersection-observer', () => ({ useInView: () => ({ ref: vi.fn(), inView: true }) }));
 vi.mock('../../../services/gallery.service', () => ({ galleryService: { trackPhotoView: vi.fn() } }));
+const submitFeedback = vi.hoisted(() => vi.fn());
+vi.mock('../../../services/feedback.service', async () => ({
+  ...await vi.importActual('../../../services/feedback.service'),
+  feedbackService: { submitFeedback },
+}));
 vi.mock('../../common', async () => ({ ...await vi.importActual('../../common'), PoweredBy: () => null }));
 vi.mock('react-photo-album', () => ({
   MasonryPhotoAlbum: ({ photos, render: renderer }: any) => <>{photos.map((photo: any, index: number) =>
@@ -105,5 +110,21 @@ describe('Gallery Premium — nav heart filters to the viewer\'s likes', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Show all photos' }));
     expect(shownIds()).toEqual([1, 2, 3, 4]);
+  });
+
+  it('takes a refused like back out of the count', async () => {
+    // The like limit: the server keeps is_liked false, so the Liked filter
+    // will not show the photo and the count must not claim it either.
+    submitFeedback.mockRejectedValueOnce({ response: { status: 403, data: { code: 'LIKE_LIMIT_REACHED' } } });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<Harness source={makePhotos([1, 3])} />);
+    const likeButton = screen.getByTestId('photo-card-4').querySelector('.gallery-premium-like-btn') as HTMLElement;
+    fireEvent.click(likeButton);
+    await waitFor(() => expect(submitFeedback).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(
+      screen.getByTestId('premium-nav-liked').querySelector('.gallery-premium-nav-count')?.textContent,
+    ).toBe('2'));
+    expect(likeButton.className).not.toContain('liked');
+    warn.mockRestore();
   });
 });

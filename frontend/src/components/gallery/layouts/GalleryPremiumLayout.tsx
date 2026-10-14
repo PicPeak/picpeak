@@ -499,9 +499,11 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         });
         onFeedbackChange?.(photo.id);
       } catch (err) {
-        // Refused by a finished selection (issue 1733): the heart goes back.
-        if (feedbackLockKind(err)) toggleLiked(photo.id);
-        else console.warn('Like submit failed', err);
+        // Refused (a finished selection, issue 1733, or the like limit): the
+        // heart goes back, so the nav count matches what the Liked filter,
+        // which reads the server's is_liked, will show.
+        toggleLiked(photo.id);
+        if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
       }
       return;
     }
@@ -528,8 +530,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       });
       onFeedbackChange?.(photo.id);
     } catch (err) {
-      if (feedbackLockKind(err)) toggleLiked(photo.id);
-      else console.warn('Like submit failed', err);
+      toggleLiked(photo.id);
+      if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
     }
   }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity]);
 
@@ -557,8 +559,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         });
         onFeedbackChange?.(pendingLikePhotoId);
       } catch (err) {
-        if (feedbackLockKind(err)) toggleLiked(pendingLikePhotoId);
-        else console.warn('Like submit failed', err);
+        toggleLiked(pendingLikePhotoId);
+        if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
       }
       setPendingLikePhotoId(null);
     }
