@@ -390,6 +390,13 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     }
   }, [selectionUnlikes, selectedPhotoList, selectionToLike, favoritingSelection, likeWithIdentity]);
 
+  // The id fallback only runs when a category opts out of downloads (#640),
+  // so it leaves those photos out, as the server would: a part made only of
+  // them would come back empty and stop the parts after it.
+  const downloadablePhotos = useMemo(
+    () => photos.filter((photo) => photo.category_allow_downloads !== false),
+    [photos]
+  );
   const handleDownloadAll = useCallback(async () => {
     // Whole-gallery path when available: posting ids would hit the server's
     // 500-id cap and silently truncate a large gallery (#1160).
@@ -397,9 +404,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       onDownloadEverything();
       return;
     }
-    const ids = photos.map(p => p.id);
+    const ids = downloadablePhotos.map(p => p.id);
+    if (ids.length === 0) return;
     // Download limit (issue 1560): all or nothing, so refuse before asking.
-    if (!downloadQuota.allows(photos)) {
+    if (!downloadQuota.allows(downloadablePhotos)) {
       showDownloadLimitReached({ remaining: downloadQuota.remaining ?? 0 });
       return;
     }
@@ -422,14 +430,14 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
     }
-  }, [photos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
+  }, [downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
 
   // Needs something to download: either the whole-gallery callback, or
-  // photos in the current scope. On a folder-only root of a gallery with
+  // downloadable photos in the current scope. On a folder-only root of a gallery with
   // a category download opt-out it has neither, and posting an empty id
   // list is a 400 (#1160). Shared by the nav button (issue 1710) and the
   // footer button so both appear and disappear together.
-  const canDownloadAll = allowDownloads && Boolean(onDownloadEverything || photos.length > 0);
+  const canDownloadAll = allowDownloads && Boolean(onDownloadEverything || downloadablePhotos.length > 0);
   const downloadAllLabel = t('common.downloadAll', 'Download All');
   const naturalGrid = storyGridMode === 'natural';
 

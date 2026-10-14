@@ -173,6 +173,31 @@ describe('GalleryStoryLayout Download All in the nav (issue 1710)', () => {
     expect(onPickResolution).not.toHaveBeenCalled();
   });
 
+  it('leaves out photos in a category that opts out of downloads', async () => {
+    const list = photos.map((photo) => ({ ...photo, category_allow_downloads: photo.id !== 2 }));
+    const { container } = render(<GalleryStoryLayout {...baseProps} photos={list} />);
+    fireEvent.click(navButton(container) as HTMLElement);
+    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledWith('x', [1, 3]));
+  });
+
+  it('keeps going past a part that would hold only restricted photos', async () => {
+    // 500 restricted photos first: split before filtering, the first part
+    // came back empty (404) and stopped the downloadable ones after it.
+    const list = manyPhotos(1001).map((photo) => ({ ...photo, category_allow_downloads: photo.id > 500 }));
+    const { container } = render(<GalleryStoryLayout {...baseProps} photos={list} />);
+    fireEvent.click(navButton(container) as HTMLElement);
+    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledTimes(2));
+    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(1, 'x', idsFrom(501, 1000), { index: 1, total: 2 });
+    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(2, 'x', [1001], { index: 2, total: 2 });
+  });
+
+  it('is absent when nothing in scope can be downloaded and there is no whole-gallery path', () => {
+    const list = photos.map((photo) => ({ ...photo, category_allow_downloads: false }));
+    const { container } = render(<GalleryStoryLayout {...baseProps} photos={list} />);
+    expect(navButton(container)).toBeNull();
+    expect(container.querySelector('footer .story-footer-btn')).toBeNull();
+  });
+
   it('refuses at the download limit before asking the server', () => {
     quota.allows = false;
     quota.remaining = 0;
