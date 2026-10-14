@@ -1124,8 +1124,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       return;
     }
 
-    const selectedPhotosList = filteredPhotos.filter(p => selectedPhotos.has(p.id));
-    
     // Track bulk download
     analyticsService.trackGalleryEvent('bulk_download', {
       gallery: slug,
@@ -1137,15 +1135,19 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // charged the ones before it. A refusal keeps the selection to trim. A
     // preview-only guest gets one zip too, which leaves out the videos they
     // cannot take rather than failing on them one by one.
+    //
+    // The whole selection (issue 1972), as the picker branch above hands over:
+    // a search or filter applied after selecting hides photos, it does not
+    // unselect them.
     if (downloadQuota.limited || downloadQuota.previewOnly) {
       try {
-        await galleryService.downloadSelectedPhotos(slug, selectedPhotosList.map((p) => p.id));
+        await galleryService.downloadSelectedPhotos(slug, selectedPhotoList.map((p) => p.id));
       } catch (error) {
         if (!isDownloadLimitError(error)) throw error;
         return;
       }
     } else {
-      for (const photo of selectedPhotosList) {
+      for (const photo of selectedPhotoList) {
         await galleryService.downloadPhoto(slug, photo.id, photo.filename);
       }
     }
