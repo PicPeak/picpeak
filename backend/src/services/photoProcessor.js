@@ -88,8 +88,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
   for (const file of fileList) {
     // Admission commits use the ledger's short transaction. Never hold a
     // SQLite connection through media IO then try to nest a ledger transaction.
-    const trx = uploadReservation ? null : await db.transaction();
-    const conn = trx || db;
+    // Without a reservation there is no transaction at all (issue 1980): the
+    // row is one insert, and a transaction opened here stayed open through
+    // the thumbnail, sharp and storage work below, blocking every other query
+    // on SQLite's single connection.
     let promotion = null;
     let promotionSettled = false;
     let rowCommitted = false;
@@ -106,7 +108,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       
       // Count existing photos of the same type for numbering
       if (uploadReservation?.isCancelled?.()) throw uploadQuota.refusal('UPLOAD_CANCELLED', 400);
-      const existingCount = await conn('photos')
+      const existingCount = await db('photos')
         .where({ event_id: eventId, type: photoType })
         .count('id as count')
         .first();
@@ -263,7 +265,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       // Add to database with uploaded_by field and media metadata
       let insertResult;
-      const clientName = trx?.client?.config?.client;
+      const clientName = db.client?.config?.client;
       const supportsReturning = ['pg', 'postgres', 'postgresql'].includes(clientName);
 
       const photoData = {
@@ -312,11 +314,11 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         });
         insertResult = [id];
       } else if (supportsReturning) {
-        insertResult = await trx('photos')
+        insertResult = await db('photos')
           .insert(photoData)
           .returning('id');
       } else {
-        insertResult = await trx('photos').insert(photoData);
+        insertResult = await db('photos').insert(photoData);
       }
 
       const insertedId = Array.isArray(insertResult)
@@ -329,8 +331,6 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         throw new Error('Failed to determine inserted photo ID');
       }
 
-      // Commit transaction
-      if (trx) await trx.commit();
       rowCommitted = true;
 
       // Webhook (#327) — fires for every entry path that lands in this
@@ -404,14 +404,6 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         size: file.size,
         tempPath: file?.path || file?.filepath || file?.tempFilePath
       });
-
-      if (trx) {
-        try {
-          await trx.rollback();
-        } catch (rollbackErr) {
-          logger.error('Failed to rollback transaction:', rollbackErr);
-        }
-      }
 
       // Continue with other files
       // Note: Individual file failures don't stop the entire upload batch
