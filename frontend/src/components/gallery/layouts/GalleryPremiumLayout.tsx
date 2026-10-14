@@ -229,6 +229,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   onPhotoSelect,
   onSelectAll,
   onDeselectAll,
+  onSelectMany,
   selectionQuotaPhotos,
   onDownloadEverything,
   eventName,
@@ -537,13 +538,17 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   // Every photo on screen is selected — by id: equal sizes can be a
   // different set (a selection made under another category chip).
   const allSelected = filteredPhotos.length > 0 && filteredPhotos.every((photo) => selectedPhotos.has(photo.id));
+  // Select all covers the photos on screen, not those under other category
+  // chips (as Gallery Story's does, issue 1716).
   const handleSelectAll = useCallback(() => {
     if (allSelected) {
       onDeselectAll?.();
+    } else if (onSelectMany) {
+      onSelectMany(filteredPhotos.map((photo) => photo.id));
     } else {
       onSelectAll?.();
     }
-  }, [allSelected, onSelectAll, onDeselectAll]);
+  }, [allSelected, filteredPhotos, onSelectMany, onSelectAll, onDeselectAll]);
 
   // Download limit (issue 1560).
   const downloadQuota = useDownloadQuota();
