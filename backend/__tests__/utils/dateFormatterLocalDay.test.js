@@ -36,3 +36,33 @@ describe('formatDate with a Postgres DATE east of UTC', () => {
     expect(seen.bare).toBe('2026-10-20');
   });
 });
+
+// The gallery OG preview turned SQLite's bare event_date into a Date first,
+// midnight UTC, which every local format names as the day before west of UTC.
+describe('the OG preview date west of UTC', () => {
+  it('prints the stored calendar day for SQLite text and a pg Date', () => {
+    const src = path.resolve(__dirname, '../../src');
+    const out = execFileSync(process.execPath, ['-e', `
+      const dbPath = require.resolve(${JSON.stringify(path.join(src, 'database/db'))});
+      let format = 'YYYY-MM-DD';
+      const db = () => ({ where: () => ({ first: async () => ({ setting_value: JSON.stringify({ format, locale: 'en-GB' }) }) }) });
+      require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { db } };
+      const { formatEventDate } = require(${JSON.stringify(path.join(src, 'services/galleryOgService'))});
+      (async () => {
+        const seen = { offset: new Date(2026, 9, 20).getTimezoneOffset() };
+        for (const f of ['YYYY-MM-DD', 'DD/MM/YYYY']) {
+          format = f;
+          seen[f] = [await formatEventDate('2026-10-20'), await formatEventDate(new Date(2026, 9, 20))];
+        }
+        seen.invalid = await formatEventDate('not a date');
+        process.stdout.write(JSON.stringify(seen));
+        process.exit(0);
+      })();
+    `], { env: { ...process.env, TZ: 'America/New_York' }, encoding: 'utf8' });
+    const seen = JSON.parse(out);
+    expect(seen.offset).toBe(240);
+    expect(seen['YYYY-MM-DD']).toEqual(['2026-10-20', '2026-10-20']);
+    expect(seen['DD/MM/YYYY']).toEqual(['20/10/2026', '20/10/2026']);
+    expect(seen.invalid).toBeNull();
+  });
+});
