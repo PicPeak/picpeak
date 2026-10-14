@@ -80,8 +80,16 @@ describe('one archive job per gallery', () => {
 
   const unwrap = (rows) => (typeof rows[0] === 'object' && rows[0] !== null ? rows[0].id : rows[0]);
   const jobName = (id) => `event_archive:${id}`;
-  const putCalls = (slug) => mockStorage.putFromFile.mock.calls
-    .filter(([key]) => key === `events/archived/${slug}.zip`).length;
+  // Each run uploads to a key of its own: events/archived/<slug>-<12 hex>.zip.
+  const ownKey = (slug) => new RegExp(`^events/archived/${slug}-[0-9a-f]{12}\\.zip$`);
+  const putKeys = (slug) => mockStorage.putFromFile.mock.calls
+    .map(([key]) => key).filter((key) => ownKey(slug).test(key));
+  const putCalls = (slug) => putKeys(slug).length;
+  const waitForRead = () => new Promise((resolve) => {
+    const tick = () => (mockStorage.get.mock.calls.length > 0 ? resolve() : setTimeout(tick, 5));
+    tick();
+  });
+  const deletedKeys = () => mockStorage.delete.mock.calls.map(([key]) => key);
 
   async function makeEvent(slug, { photoCount = 3, expired = false } = {}) {
     const id = unwrap(await db('events').insert({
@@ -160,7 +168,9 @@ describe('one archive job per gallery', () => {
 
     expect(mockStorage.list).toHaveBeenCalledTimes(1);
     expect(putCalls('concurrent')).toBe(1);
-    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(true);
+    const row = await db('events').where({ id: event.id }).first();
+    expect(Boolean(row.is_archived)).toBe(true);
+    expect(row.archive_path).toBe(putKeys('concurrent')[0]);
     // Released on success.
     expect((await jobState.read(jobName(event.id))).isRunning).toBe(false);
   });
@@ -265,9 +275,60 @@ describe('one archive job per gallery', () => {
     expect(result.error).toMatch(/being archived/);
   });
 
-  it('lets the expiry checker skip a claimed gallery quietly', async () => {
-    const event = await makeEvent('expired-held', { expired: true });
+  it('does not publish over the winner once its lease was taken over', async () => {
+    const event = await makeEvent('lost-lease');
+    let open;
+    gate = new Promise((resolve) => { open = resolve; });
+    const loser = archiveEvent(event);
+    await waitForRead();
+
+    // The loser stalled past the lease: another replica took the claim over,
+    // archived the gallery and deleted the originals.
+    await db('maintenance_jobs').where({ job_name: jobName(event.id) })
+      .update({ heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString() });
     await holdClaim(event.id);
+    await db('events').where({ id: event.id })
+      .update({ is_archived: 1, archive_path: 'events/archived/lost-lease-000000000000.zip' });
+
+    open();
+    await expect(loser).rejects.toMatchObject({ code: 'ARCHIVE_IN_PROGRESS' });
+
+    // It uploaded to a key of its own, never over the winner's zip.
+    expect(mockStorage.putFromFile.mock.calls.map(([key]) => key)).toEqual([expect.stringMatching(ownKey('lost-lease'))]);
+    const [loserKey] = putKeys('lost-lease');
+    expect(loserKey).not.toBe('events/archived/lost-lease-000000000000.zip');
+    // Its own zip goes, nothing of the winner's or the gallery's does.
+    expect(deletedKeys()).toStrictEqual([loserKey]);
+    expect((await db('events').where({ id: event.id }).first()).archive_path)
+      .toBe('events/archived/lost-lease-000000000000.zip');
+  });
+
+  it('does not publish once its lease was taken over, even before the new owner finishes', async () => {
+    const event = await makeEvent('lost-lease-early');
+    let open;
+    gate = new Promise((resolve) => { open = resolve; });
+    const loser = archiveEvent(event);
+    await waitForRead();
+
+    await db('maintenance_jobs').where({ job_name: jobName(event.id) })
+      .update({ heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString() });
+    await holdClaim(event.id);
+
+    open();
+    await expect(loser).rejects.toMatchObject({ code: 'ARCHIVE_IN_PROGRESS' });
+
+    const row = await db('events').where({ id: event.id }).first();
+    expect(Boolean(row.is_archived)).toBe(false);
+    expect(row.archive_path).toBeNull();
+    expect(putKeys('lost-lease-early')).toHaveLength(1);
+    expect(deletedKeys()).toStrictEqual(putKeys('lost-lease-early'));
+    // The new owner's claim survives the loser's exit.
+    expect((await jobState.read(jobName(event.id))).isRunning).toBe(true);
+  });
+
+  it('keeps an expired gallery a running archive holds in the next expiry pass', async () => {
+    const event = await makeEvent('expired-held', { expired: true });
+    const token = await holdClaim(event.id);
     const errorSpy = jest.spyOn(logger, 'error');
     const { checkExpirations } = require('../../src/services/expirationChecker');
 
@@ -275,7 +336,20 @@ describe('one archive job per gallery', () => {
 
     expect(mockStorage.list).not.toHaveBeenCalledWith(`events/active/${event.slug}`);
     expect(errorSpy.mock.calls.filter(([msg]) => String(msg).includes(event.slug))).toEqual([]);
-    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(false);
     errorSpy.mockRestore();
+    let row = await db('events').where({ id: event.id }).first();
+    expect(Boolean(row.is_archived)).toBe(false);
+    // Still active, so the next pass selects it again.
+    expect(Boolean(row.is_active)).toBe(true);
+    // The claim belongs to the other job still.
+    expect((await jobState.read(jobName(event.id))).isRunning).toBe(true);
+
+    // That archive fails and lets go: the next pass archives the gallery.
+    await jobState.release(jobName(event.id), token);
+    await checkExpirations();
+    row = await db('events').where({ id: event.id }).first();
+    expect(Boolean(row.is_archived)).toBe(true);
+    expect(Boolean(row.is_active)).toBe(false);
+    expect((await jobState.read(jobName(event.id))).isRunning).toBe(false);
   });
 });

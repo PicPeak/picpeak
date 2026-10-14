@@ -1,11 +1,12 @@
 const { scheduledTask } = require('./scheduledTask');
 const { db } = require('../database/db');
-const { archiveEvent } = require('./archiveService');
+const { archiveEvent, claimArchive } = require('./archiveService');
 const { queueEmail, getSupportEmail } = require('./emailProcessor');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { galleryLinkFor } = require('./galleryNotificationService');
 const logger = require('../utils/logger');
 const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
+const { parseBooleanInput } = require('../utils/parsers');
 
 const task = scheduledTask(checkExpirations, { schedule: '0 * * * *' });
 function startExpirationChecker() { task.start(); }
@@ -182,7 +183,22 @@ async function sendGalleryExpiredEmails(event) {
 }
 
 async function handleExpiredEvent(event, { sendLegacyEmails = true } = {}) {
+  let lease = null;
   try {
+    // Claim the archive before deactivating (issue 2012). A gallery a manual
+    // or bulk archive already holds stays active and so stays in the next
+    // pass: deactivated here, a failure of that archive would never be
+    // retried, as this pass only selects active galleries. Guests are kept
+    // out by the expiry date either way.
+    lease = await claimArchive(event.id);
+    if (!lease) {
+      logger.info(`Expired event ${event.slug} is being archived by another job, skipped until the next pass`);
+      return;
+    }
+    // That job may have finished between this pass's query and the claim.
+    const current = await db('events').where('id', event.id).first();
+    if (!current || parseBooleanInput(current.is_archived, false)) return;
+
     // Mark as inactive
     await db('events').where('id', event.id).update({ is_active: formatBoolean(false) });
 
@@ -237,17 +253,13 @@ async function handleExpiredEvent(event, { sendLegacyEmails = true } = {}) {
     }
 
     // Start archiving process (always — the expiry mechanic, not the email).
-    await archiveEvent(event);
+    await archiveEvent(event, { lease });
 
     logger.info(`Handled expiration for event ${event.slug}`);
   } catch (error) {
-    // A manual or bulk archive already holds the gallery (issue 2012): that
-    // job archives it, nothing to do here.
-    if (error.code === 'ARCHIVE_IN_PROGRESS' || error.code === 'EVENT_ALREADY_ARCHIVED') {
-      logger.info(`Expired event ${event.slug} is already being archived, skipped`);
-      return;
-    }
     logger.error(`Error handling expired event ${event.slug}:`, error);
+  } finally {
+    if (lease) await lease.release();
   }
 }
 

@@ -16,6 +16,7 @@ const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 const { AppError } = require('../utils/errors');
 const { parseBooleanInput } = require('../utils/parsers');
 const jobState = require('./maintenanceJobState');
+const { formatBoolean } = require('../utils/dbCompat');
 const {
   sanitizeForZipEntry,
   uniquifyZipNames,
@@ -39,39 +40,64 @@ async function isArchiveRunning(eventId) {
   return (await jobState.read(archiveJobName(eventId))).isRunning;
 }
 
-async function archiveEvent(event) {
-  const jobName = archiveJobName(event.id);
+/**
+ * Take the archive claim on a gallery and keep it renewed while held.
+ *
+ * Returns null when a live job holds it. A caller that has to act before the
+ * archive starts (the expiry checker deactivates the gallery first) claims
+ * here and hands the lease to archiveEvent, so nothing can start in between.
+ * Whoever claimed releases; release() runs once.
+ */
+async function claimArchive(eventId) {
+  const jobName = archiveJobName(eventId);
   await jobState.ensure(jobName);
   const token = await jobState.claim(jobName);
-  if (!token) {
-    throw new AppError('This gallery is already being archived', 409, 'ARCHIVE_IN_PROGRESS');
-  }
-  let lost = false;
+  if (!token) return null;
+  const lease = { jobName, token, lost: false };
   const heartbeatTimer = setInterval(() => {
-    jobState.heartbeat(jobName, token).then((ok) => { if (!ok) lost = true; });
+    jobState.heartbeat(jobName, token).then((ok) => { if (!ok) lease.lost = true; });
   }, jobState.HEARTBEAT_INTERVAL_MS);
   heartbeatTimer.unref?.();
+  let released = false;
+  lease.release = async () => {
+    if (released) return;
+    released = true;
+    clearInterval(heartbeatTimer);
+    await jobState.release(jobName, token).catch((err) =>
+      logger.warn(`Failed to release the archive claim for event ${eventId}: ${err.message}`));
+  };
+  return lease;
+}
+
+async function archiveEvent(event, { lease: heldLease = null } = {}) {
+  const lease = heldLease || await claimArchive(event.id);
+  if (!lease) {
+    throw new AppError('This gallery is already being archived', 409, 'ARCHIVE_IN_PROGRESS');
+  }
   try {
     // Read again under the claim: the caller's row can predate a job that
     // finished in the meantime, and archiving an archived gallery again would
-    // zip its now empty prefix over the real archive.
+    // zip its now empty prefix and publish that as the archive.
     const current = await db('events').where('id', event.id).first();
     if (!current) throw new AppError('Event not found', 404, 'EVENT_NOT_FOUND');
     if (parseBooleanInput(current.is_archived, false)) {
       throw new AppError('Event is already archived', 400, 'EVENT_ALREADY_ARCHIVED');
     }
-    await buildArchive(current, async () => !lost && jobState.heartbeat(jobName, token));
+    await buildArchive(current, lease);
   } finally {
-    clearInterval(heartbeatTimer);
-    await jobState.release(jobName, token).catch((err) =>
-      logger.warn(`Failed to release the archive claim for event ${event.id}: ${err.message}`));
+    if (!heldLease) await lease.release();
   }
 }
 
-async function buildArchive(event, claimStillHeld) {
+async function buildArchive(event, lease) {
   const storage = getStorage();
   const archiveName = `${event.slug}.zip`;
-  const archiveRelKey = path.posix.join('events/archived', archiveName);
+  // A key of this run's own (issue 2012): a runner whose lease was taken over
+  // can still be uploading, and at a shared key it would overwrite the zip
+  // the winner published after deleting the originals. The download names
+  // the file after the slug, so the suffix is never seen.
+  const archiveRelKey = path.posix.join('events/archived',
+    `${event.slug}-${crypto.randomBytes(6).toString('hex')}.zip`);
   const eventPrefix = path.posix.join('events/active', event.slug);
 
   const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-archive-'));
@@ -292,23 +318,33 @@ async function buildArchive(event, claimStillHeld) {
 
     logger.info(`Archive created: ${archiveName} (${totalBytes} bytes)`);
 
-    // A lease declared stale and taken over (a stall long enough for that)
-    // must not go on to delete the originals the new owner is reading.
-    if (!(await claimStillHeld())) {
+    // Publish only while this run still holds the claim and nobody archived
+    // the gallery first, in one conditional UPDATE (issue 2012): a lease
+    // declared stale and taken over (a stall long enough for that) must not
+    // mark the gallery archived or go on to delete the originals the new
+    // owner is reading. A run that loses here removes its own zip; the
+    // winner's sits at its own key. The DB goes BEFORE deleting originals so
+    // a crash mid-cleanup leaves the archive accessible rather than orphaning
+    // the photos.
+    const published = !lease.lost && await db('events')
+      .where('id', event.id)
+      .where('is_archived', formatBoolean(false))
+      .whereExists(db('maintenance_jobs').select(db.raw('1'))
+        .where({ job_name: lease.jobName, claim_token: lease.token, is_running: true }))
+      .update({
+        is_archived: true,
+        archive_path: archiveRelKey,
+        // The zip's own byte size — the same number the completion email
+        // reports below. Persisted so the archives list can sort and display it
+        // without statting every archive on every request.
+        archive_size: totalBytes,
+        archived_at: new Date(),
+      });
+    if (!published) {
+      await storage.delete(archiveRelKey).catch((err) =>
+        logger.warn(`Failed to remove the unpublished archive ${archiveRelKey}: ${err.message}`));
       throw new AppError('The archive claim was taken over', 409, 'ARCHIVE_IN_PROGRESS');
     }
-
-    // Update DB BEFORE deleting originals so a crash mid-cleanup leaves the
-    // archive accessible rather than orphaning the photos.
-    await db('events').where('id', event.id).update({
-      is_archived: true,
-      archive_path: archiveRelKey,
-      // The zip's own byte size — the same number the completion email
-      // reports below. Persisted so the archives list can sort and display it
-      // without statting every archive on every request.
-      archive_size: totalBytes,
-      archived_at: new Date(),
-    });
 
     // Fire event.archived webhook (#327). Receivers infer per-photo loss
     // from this event — we deliberately do NOT fire photo.deleted for each
@@ -456,4 +492,4 @@ function convertToCSV(data) {
   return objectsToCsv(data);
 }
 
-module.exports = { archiveEvent, isArchiveRunning };
+module.exports = { archiveEvent, claimArchive, isArchiveRunning };
