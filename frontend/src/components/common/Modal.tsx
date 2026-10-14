@@ -47,10 +47,15 @@ const within = (scope: string) => FOCUSABLE.split(', ').map((sel) => `${scope} $
 // Modal (the confirm dialog) join with pushDialogLayer.
 const openStack: object[] = [];
 
-/** Registers an open overlay; returns whether it is the top one, and a release. */
-export function pushDialogLayer(): { isTop: () => boolean; release: () => void } {
+/**
+ * Registers an open overlay; returns whether it is the top one, and a release.
+ * `belowTop` slots it under the overlay currently on top instead, for one
+ * that mounts while a dialog already painted above it stays open.
+ */
+export function pushDialogLayer({ belowTop = false }: { belowTop?: boolean } = {}): { isTop: () => boolean; release: () => void } {
   const token = {};
-  openStack.push(token);
+  if (belowTop && openStack.length > 0) openStack.splice(openStack.length - 1, 0, token);
+  else openStack.push(token);
   return {
     isTop: () => openStack[openStack.length - 1] === token,
     release: () => { const i = openStack.indexOf(token); if (i >= 0) openStack.splice(i, 1); },
