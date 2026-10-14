@@ -212,13 +212,17 @@ async function completeDelivery(eventId, { transferBadges = true } = {}) {
 }
 
 /**
- * Hourly pass: one reminder per event when the promise is within
- * REMINDER_LEAD_HOURS, one more once it is overdue. Internal mail to the
- * studio (business profile email, else the event's admin_email).
+ * Hourly pass: one reminder per event when the end of the promised day is
+ * within REMINDER_LEAD_HOURS, one more once it is overdue. Internal mail to
+ * the studio (business profile email, else the event's admin_email).
  */
 async function runDeliveryReminderPass({ now = new Date() } = {}) {
   const { queueEmail } = require('./emailProcessor');
-  const soon = new Date(now.getTime() + REMINDER_LEAD_HOURS * 3600e3);
+  const leadMs = REMINDER_LEAD_HOURS * 3600e3;
+  // The promised day ends at most 14 h before the stored instant (a day of
+  // a UTC+14 zone, an instant late in its UTC day), so this window holds
+  // every promise whose day ends within the lead; the loop decides.
+  const soon = new Date(now.getTime() + leadMs + 14 * 3600e3);
   const events = await db('events')
     .where('delivery_status', 'partial')
     .whereNotNull('delivery_due_at')
@@ -237,6 +241,9 @@ async function runDeliveryReminderPass({ now = new Date() } = {}) {
     // calendar day is over in the instance zone, not at the stored noon.
     const end = endOfDueDay(event.delivery_due_at, timeZone);
     const overdue = Number.isFinite(end) ? end < now.getTime() : new Date(event.delivery_due_at) <= now;
+    // Due soon: the promised day ends within the lead, wherever the zone puts
+    // that end relative to the stored noon.
+    if (!overdue && Number.isFinite(end) && end - now.getTime() > leadMs) continue;
     const column = overdue ? 'delivery_overdue_notified_at' : 'delivery_reminder_sent_at';
     if (event[column]) continue;
     // Nobody to tell: no mail, no "reminded" log line, and no claim either,

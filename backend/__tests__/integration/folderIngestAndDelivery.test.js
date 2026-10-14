@@ -333,11 +333,14 @@ describe('folder ingest and two-stage delivery', () => {
     });
 
     it('the reminder pass mails once when due soon and once more when overdue', async () => {
-      const due = new Date(Date.now() + 6 * 3600e3);
+      // Fixed instants: "due soon" is measured to the end of the promised
+      // day, so a due date relative to the wall clock would make it flaky.
+      const due = new Date('2026-10-20T12:00:00.000Z');
+      const morning = new Date('2026-10-20T06:00:00.000Z');
       const eventId = await seedEvent({ delivery_status: 'partial', delivery_due_at: due.toISOString() });
       const count = async () => Number((await db('email_queue').where({ event_id: eventId, email_type: 'delivery_due_reminder' }).count('id as c').first()).c);
-      await delivery().runDeliveryReminderPass();
-      await delivery().runDeliveryReminderPass();
+      await delivery().runDeliveryReminderPass({ now: morning });
+      await delivery().runDeliveryReminderPass({ now: morning });
       expect(await count()).toBe(1);
       // The mail names the promised calendar day, not an instant the email
       // formatter would read in the server's zone.
@@ -375,6 +378,25 @@ describe('folder ingest and two-stage delivery', () => {
       await db('events').where('id', eventId).del();
     });
 
+    it.each([
+      // Honolulu: the 24th ends 25th 09:59Z. A day and a half before that is
+      // too early for "due soon"; within the last 24 h it is sent.
+      ['Pacific/Honolulu', '2026-12-23T13:00:00Z', false],
+      ['Pacific/Honolulu', '2026-12-24T10:30:00Z', true],
+      // Kiritimati: the 24th ends 24th 09:59Z, two hours before the stored
+      // noon. 23.5 h before the end the stored instant is 25.5 h away.
+      ['Pacific/Kiritimati', '2026-12-23T10:30:00Z', true],
+      ['Pacific/Kiritimati', '2026-12-23T09:30:00Z', false],
+    ])('in instance zone %s at %s the due-soon reminder goes out: %s', async (timeZone, now, sent) => {
+      await db('business_profile').update({ timezone: timeZone });
+      const eventId = await seedEvent({ delivery_status: 'partial', delivery_due_at: '2026-12-24T12:00:00.000Z' });
+      await delivery().runDeliveryReminderPass({ now: new Date(now) });
+      const ev = await db('events').where('id', eventId).first();
+      expect(Boolean(ev.delivery_reminder_sent_at)).toBe(sent);
+      expect(ev.delivery_overdue_notified_at).toBeNull();
+      await db('events').where('id', eventId).del();
+    });
+
     it('keeps a promise for today until its day is over in the instance zone', async () => {
       await db('business_profile').update({ timezone: 'Pacific/Honolulu' });
       const realNow = Date.now;
@@ -393,12 +415,12 @@ describe('folder ingest and two-stage delivery', () => {
 
     it('does not claim a reminder it cannot send, so an address added later still gets it', async () => {
       await db('business_profile').update({ email: null });
-      const due = new Date(Date.now() + 6 * 3600e3);
-      const eventId = await seedEvent({ delivery_status: 'partial', delivery_due_at: due.toISOString(), admin_email: '' });
-      await delivery().runDeliveryReminderPass();
+      const morning = new Date('2026-10-20T06:00:00.000Z');
+      const eventId = await seedEvent({ delivery_status: 'partial', delivery_due_at: '2026-10-20T12:00:00.000Z', admin_email: '' });
+      await delivery().runDeliveryReminderPass({ now: morning });
       expect((await db('events').where('id', eventId).first()).delivery_reminder_sent_at).toBeNull();
       await db('events').where('id', eventId).update({ admin_email: 'studio@example.com' });
-      await delivery().runDeliveryReminderPass();
+      await delivery().runDeliveryReminderPass({ now: morning });
       expect(Number((await db('email_queue').where({ event_id: eventId, email_type: 'delivery_due_reminder' }).count('id as c').first()).c)).toBe(1);
     });
   });

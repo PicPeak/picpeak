@@ -56,13 +56,17 @@ export function deliveryDue(
   return { date, days, tone };
 }
 
-/** deliveryDue() bound to the instance time zone from the public settings. */
+/**
+ * deliveryDue() bound to the instance time zone from the public settings.
+ * Null until the settings have answered, so a badge never shows the UTC
+ * day's tone first and then flips; if they fail, the UTC day.
+ */
 export function useDeliveryDue() {
-  const { data: settings } = usePublicSettings();
+  const { data: settings, isPending } = usePublicSettings();
   const timeZone = settings?.expiry_time_zone;
   return useCallback(
-    (dueAt: string | null | undefined) => deliveryDue(dueAt, new Date(), timeZone),
-    [timeZone],
+    (dueAt: string | null | undefined) => (isPending ? null : deliveryDue(dueAt, new Date(), timeZone)),
+    [isPending, timeZone],
   );
 }
 
