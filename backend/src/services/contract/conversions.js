@@ -286,10 +286,9 @@ async function convertToEvent(contractId, adminId) {
     // row lock until the first commits and then matches nothing; SQLite
     // serialises the transactions on its one connection.
     if (hasContractConvertedEvent) {
-      const claimed = await trx('contracts')
-        .where({ id: contractId, status: 'fully_signed' })
-        .whereNull('converted_event_id')
-        .update({ updated_at: new Date() });
+      const claimed = await auditedUpdate(trx, 'contracts',
+        (q) => q.where({ id: contractId, status: 'fully_signed' }).whereNull('converted_event_id'),
+        { updated_at: new Date() }, { actor: adminId, source: 'contract.convert.event' });
       if (claimed !== 1) return null;
     }
 

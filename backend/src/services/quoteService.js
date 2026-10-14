@@ -2389,10 +2389,9 @@ async function convertToEvent(quoteId, adminId, options = {}) {
     // row lock until the first commits, then matches nothing, and SQLite
     // serialises the transactions on its one connection. Only the winner
     // creates a gallery; the loser hands back the winner's.
-    const claimed = await trx('quotes')
-      .where({ id: quote.id, status: 'accepted' })
-      .whereNull('converted_event_id')
-      .update({ updated_at: new Date() });
+    const claimed = await auditedUpdate(trx, 'quotes',
+      (q) => q.where({ id: quote.id, status: 'accepted' }).whereNull('converted_event_id'),
+      { updated_at: new Date() }, { actor: adminId, source: 'quote.convert.event' });
     if (claimed !== 1) return null;
 
     // The events table schema has drifted across migrations:
