@@ -15,11 +15,18 @@ const mediaProcesses = require('./mediaProcessService');
 const rawWork = new AsyncLocalStorage();
 const attemptContext = require('./mediaAttemptContext');
 const derivativeContext = new AsyncLocalStorage();
-async function publishDerivative(callback) {
+async function publishDerivative(callback, key) {
   const attempt = attemptContext.current() || derivativeContext.getStore();
   await attempt?.assertCurrent();
   const result = await callback();
-  await attempt?.assertCurrent();
+  try {
+    await attempt?.assertCurrent();
+  } catch (error) {
+    // A lazy rendition's key is its own (scope- or source-named) and nothing
+    // records it yet, so a superseded source must not leave it behind.
+    if (key && error.code === 'MEDIA_SUPERSEDED' && !attemptContext.current()) await getStorage().delete(key).catch(() => {});
+    throw error;
+  }
   return result;
 }
 
@@ -77,7 +84,7 @@ async function publishPhotoDerivative(photo, key, values) {
     logger.info(`Source of photo ${photo.id} changed while its rendition was built; not recording ${key}`);
     return false;
   }
-  await scope.assertCurrent();
+  // The guarded update is the source check; its refusal drops the file.
   if (await sourceGuard(photo).update(values) !== 1) {
     await getStorage().delete(key).catch(() => {});
     throw Object.assign(new Error('Media source was superseded'), { code: 'MEDIA_SUPERSEDED', status: 422 });
@@ -607,7 +614,7 @@ async function generateThumbnail(imagePath, options = {}) {
       throw new Error('Generated thumbnail is empty');
     }
 
-    await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: contentTypeFor(settings.format) }));
+    await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: contentTypeFor(settings.format) }), thumbnailRelKey);
     // Tile placeholder (issue 1733): for a caller that writes the photo row.
     if (options.meta) options.meta.thumbHash = await require('./thumbHash').computeThumbHash(buffer);
 
@@ -969,7 +976,7 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   // Resolves to { thumbnailKey, placeholder, thumbnailError } or null, so the
   // caller can write the processing note the way the upload paths do.
   const generate = async (localPath) => {
-    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey));
+    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey), thumbnailKey);
     if (!result?.thumbnailKey) return null;
     return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null, thumbHash: result.thumbHash || null };
   };
@@ -1056,7 +1063,7 @@ async function generateVideoPlaceholder(originalFilename, options = {}) {
       .jpeg({ quality: settings.quality || DEFAULT_THUMBNAIL_QUALITY })
       .toBuffer();
 
-    await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: 'image/jpeg' }));
+    await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: 'image/jpeg' }), thumbnailRelKey);
 
     return thumbnailRelKey;
   } catch (error) {
@@ -1148,7 +1155,7 @@ async function generateHeroImage(imagePath, options = {}) {
       throw new Error('Generated hero image is empty');
     }
 
-    await publishDerivative(() => storage.put(heroRelKey, buffer, { contentType: 'image/jpeg' }));
+    await publishDerivative(() => storage.put(heroRelKey, buffer, { contentType: 'image/jpeg' }), heroRelKey);
 
     logger.info(`Generated hero image for ${filename} → ${heroRelKey}`);
     return heroRelKey;
@@ -1431,7 +1438,7 @@ async function generatePreviewImage(imagePath, options = {}) {
 
     await publishDerivative(() => storage.put(previewRelKey, buffer, {
       contentType: needsWebp ? 'image/webp' : 'image/jpeg',
-    }));
+    }), previewRelKey);
 
     logger.info(`Generated preview image for ${filename} → ${previewRelKey}`);
     return previewRelKey;

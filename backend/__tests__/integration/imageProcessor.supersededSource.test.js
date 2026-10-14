@@ -83,6 +83,28 @@ describe('lazy renditions of an ordinary image whose source changes meanwhile', 
     expect((await storage.stat(written)).size).toBeGreaterThan(0);
   });
 
+  // A video renders inside a derivative scope. Its refusal used to throw
+  // before anything deleted the poster frame it had just published.
+  test('a scoped rendition of a replaced source does not stay behind', async () => {
+    const row = await photo('replaced.mp4');
+    await db('photos').where({ id: row.id }).update({ mime_type: 'video/mp4', media_type: 'video' });
+    const video = await db('photos').where({ id: row.id }).first();
+    const jpeg = await sharp({ create: { width: 8, height: 8, channels: 3, background: 'blue' } }).jpeg().toBuffer();
+    jest.spyOn(require('../../src/services/videoProcessor'), 'processUploadedVideo')
+      .mockImplementation(async (_source, thumbnailKey) => {
+        await storage.put(thumbnailKey, jpeg, { contentType: 'image/jpeg' });
+        return { thumbnailKey };
+      });
+    const spy = onRenditionWrite('thumbnails/', () => db('photos').where({ id: row.id })
+      .update({ filename: 'replacement.mp4', path: 'superseded-source/individual/replacement.mp4' }));
+
+    await expect(imageProcessor.ensureThumbnail(video, { force: true })).rejects.toMatchObject({ code: 'MEDIA_SUPERSEDED' });
+
+    const written = spy.mock.calls.find(([key]) => key.startsWith('thumbnails/'))[0];
+    expect(await storage.stat(written)).toBeFalsy();
+    expect((await db('photos').where({ id: row.id }).first()).thumbnail_path).toBeNull();
+  });
+
   test('an unchanged source still gets its thumbnail', async () => {
     const row = await photo('unchanged.jpg');
     const key = await imageProcessor.ensureThumbnail(row, { force: true });
