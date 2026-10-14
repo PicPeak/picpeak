@@ -1973,7 +1973,7 @@ module.exports = (router) => {
         }
       }
       if (Object.prototype.hasOwnProperty.call(updates, 'delivery_due_at')) {
-        updates.delivery_due_at = updates.delivery_due_at ? new Date(updates.delivery_due_at).toISOString() : null;
+        updates.delivery_due_at = require('../../services/deliveryService').parseDueAtInput(updates.delivery_due_at);
         if (!Object.prototype.hasOwnProperty.call(updates, 'delivery_due_source')) updates.delivery_due_source = 'manual';
         // A new promise gets its own reminders.
         updates.delivery_reminder_sent_at = null;

@@ -38,6 +38,20 @@ async function defaultDueAt(event, conn = db) {
 }
 
 /**
+ * A `delivery_due_at` from the API as the stored ISO string. A bare date, or a
+ * date-time without a zone, names a calendar day: stored at noon UTC like the
+ * settings form and the default, instead of being read in the server's zone
+ * (the day before in UTC east of Greenwich). A full instant is kept as given.
+ */
+function parseDueAtInput(value) {
+  if (!value) return null;
+  const text = String(value).trim();
+  const zoneless = /^(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?$/.exec(text);
+  if (zoneless) return `${zoneless[1]}T12:00:00.000Z`;
+  return new Date(text).toISOString();
+}
+
+/**
  * A first-look batch arrived (keyword folder). Switches the event to partial
  * unless it was already completed once — a late "FirstLook" upload must never
  * re-open a delivered gallery. Returns true when the state changed.
@@ -251,6 +265,7 @@ module.exports = {
   MAX_PLACEHOLDER_TILES,
   isPartial,
   defaultDueAt,
+  parseDueAtInput,
   enterPartialColumns,
   markFirstLookArrived,
   guestDeliveryPayload,
