@@ -101,7 +101,7 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       if (own.error) throw own.error;
       const result = { attemptId: args.attemptId, proof: 'kernel_lease_released',
         ...(own.result || { outcome: 'committed', summary: { tables: 3, filesRestored: 2, sessionInvalidated: true } }) };
-      if (result.outcome === 'committed') await db('portable_restore_commits').insert({ attempt_id: args.attemptId,
+      if (result.outcome === 'committed' && !own.noMarker) await db('portable_restore_commits').insert({ attempt_id: args.attemptId,
         local_plan_checksum: hash('local plan'), options_digest: hash(JSON.stringify(args.options || {})) });
       return result;
     };
@@ -213,11 +213,13 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       await a.coordinator.activate();
       await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
       await drive('restoring', a);
-      worker.startWorker.mockImplementationOnce(async () => { throw new Error('unused'); });
-      terminal.result = { outcome: 'recovery_required' };
+      // The worker reports a commit but never wrote the marker.
+      terminal.noMarker = true;
       terminal.resolve();
       const current = await drive('recovery_required', a);
+      expect(await db('portable_restore_commits')).toHaveLength(0);
       expect(current.generation).toBe(0);
+      expect(JSON.parse(current.result_json)).toMatchObject({ outcome: 'recovery_required' });
       expect(a.coordinator.isFenced()).toBe(true);
     });
   });
