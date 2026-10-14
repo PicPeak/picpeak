@@ -40,6 +40,11 @@ describe('formatExpiry, browser in Berlin, instance in New York', () => {
     expect(result.current.formatExpiry(END_OF_DAY_NEW_YORK, 'd MMM yyyy')).toBe('24 Dec 2026');
   });
 
+  it('reads epoch milliseconds (a SQLite row) like the ISO spelling', () => {
+    const { result } = renderHook(() => useLocalizedDate());
+    expect(result.current.formatExpiry(Date.parse(END_OF_DAY_NEW_YORK))).toBe('2026-12-24');
+  });
+
   it('reads an old midnight-UTC row as its UTC date', () => {
     const { result } = renderHook(() => useLocalizedDate());
     expect(result.current.formatExpiry('2026-12-24T00:00:00.000Z')).toBe('2026-12-24');

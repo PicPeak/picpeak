@@ -81,8 +81,9 @@ export const useLocalizedDate = () => {
    * utils/expiryDay), so every view names the day the settings field shows,
    * wherever the viewer is. Formatted like `format()`.
    */
-  const formatExpiry = (date: Date | string, formatStr?: string) => {
-    const dateObj = toDisplayDate(date);
+  const formatExpiry = (date: Date | string | number, formatStr?: string) => {
+    // A SQLite row can hold the expiry as epoch milliseconds.
+    const dateObj = typeof date === 'number' ? new Date(date) : toDisplayDate(date);
     if (!isValid(dateObj)) return '';
     const [y, m, d] = expiryDay(dateObj, settings?.expiry_time_zone).split('-').map(Number);
     return format(new Date(y, m - 1, d), formatStr);
