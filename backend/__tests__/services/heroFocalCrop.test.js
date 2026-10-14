@@ -28,6 +28,8 @@ jest.mock('../../src/database/db', () => {
         where: (criteria) => ({
           update: async (values) => { state.updates.push({ criteria, values }); return 1; },
           whereNot: () => ({ first: async () => (state.sharedHeroPaths.includes(criteria.hero_path) ? { id: -1 } : undefined) }),
+          // withSourceVersion: these rows carry no recorded size.
+          first: async () => undefined,
         }),
       };
     }
@@ -156,7 +158,7 @@ describe('hero focal crop (issue 1737)', () => {
     // First request: the event says top.
     const key = await imageProcessor.ensureHeroImage(photo, { anchor: 'top' });
     expect(key).toBeTruthy();
-    expect(db.__state.updates).toEqual([{ criteria: { id: 401 }, values: { hero_path: key, hero_anchor: '50% 0%' } }]);
+    expect(db.__state.updates).toEqual([{ criteria: expect.objectContaining({ id: 401, external_relpath: photo.external_relpath }), values: { hero_path: key, hero_anchor: '50% 0%' } }]);
     expect(closeTo(await centrePixel(storage, key), RED)).toBe(true);
 
     // Same anchor again: the stored file is reused, nothing is written.
@@ -175,7 +177,7 @@ describe('hero focal crop (issue 1737)', () => {
     const again = await imageProcessor.ensureHeroImage(stored, { anchor: 'bottom' });
     expect(again).not.toBe(key);
     expect(again).toContain('hero_fp50-100_');
-    expect(db.__state.updates).toEqual([{ criteria: { id: 401 }, values: { hero_path: again, hero_anchor: '50% 100%' } }]);
+    expect(db.__state.updates).toEqual([{ criteria: expect.objectContaining({ id: 401, external_relpath: photo.external_relpath }), values: { hero_path: again, hero_anchor: '50% 100%' } }]);
     expect(closeTo(await centrePixel(storage, again), BLUE)).toBe(true);
     expect(await storage.exists(key)).toBe(false);
   });

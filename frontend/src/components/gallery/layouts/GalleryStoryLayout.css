@@ -79,10 +79,19 @@
   letter-spacing: 0.25em;
 }
 
+/* Tighter on phones: at 375px a 1.5rem gap pushed five or more buttons
+   (upload, select, download, copy filenames, favourites, logout) onto a
+   second row of the fixed nav; 0.5rem keeps all six beside the logo. */
 .story-nav-actions {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .story-nav-actions {
+    gap: 1.5rem;
+  }
 }
 
 .story-nav-search {
@@ -547,11 +556,21 @@
   opacity: 0;
   transform: translateY(0.5rem);
   transition: all 0.3s ease;
+  /* Opacity 0 still hit-tests: on a touchscreen, with no hover to reveal it,
+     the top-right corner of every card liked the photo instead of opening
+     it. Hit-testing follows visibility, as on Premium (#1263). */
+  pointer-events: none;
 }
 
-.story-photo-card:hover .story-photo-card-actions {
+/* Revealed by hover, by keyboard focus on the heart (an invisible focused
+   control is a focus ring on nothing), and outright for a finger, which never
+   hovers. The attribute is set by the layout from useInputMode (#1275). */
+.story-photo-card:hover .story-photo-card-actions,
+.story-photo-card-actions:focus-within,
+[data-input-mode='touch'] .story-photo-card-actions {
   opacity: 1;
   transform: translateY(0);
+  pointer-events: auto;
 }
 
 .story-photo-card-btn {
@@ -684,6 +703,8 @@
   color: var(--story-muted-foreground);
   max-width: 28rem;
   margin: 0 auto 3rem auto;
+  /* Line breaks typed into the footer text or welcome message. */
+  white-space: pre-line;
 }
 
 .story-footer-btn {

@@ -139,6 +139,8 @@ async function getInvoiceById(id) {
         // itself never leaves the API — transformInvoice drops it
         // and only exposes the boolean.
         'customer_accounts.password_hash as customer_password_hash',
+        // Drives the Issue (no email) button (migration 300).
+        'customer_accounts.no_admin_emails as customer_no_admin_emails',
         'src_quote.quote_number as source_quote_number',
         'src_contract.contract_number as source_contract_number',
         'cancels_inv.invoice_number as cancels_invoice_number',

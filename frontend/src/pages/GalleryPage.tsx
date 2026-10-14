@@ -29,7 +29,7 @@ export const GalleryPage: React.FC = () => {
   // cookie while isAuthenticated is still false (fork survey A3 / #1563).
   const { isAuthenticated, isLoading: isRestoringSession, login, event } = useGalleryAuth();
   const { t, i18n } = useTranslation();
-  const { format } = useLocalizedDate();
+  const { formatExpiry } = useLocalizedDate();
   const { setTheme } = useTheme();
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -385,7 +385,7 @@ export const GalleryPage: React.FC = () => {
                 <h2 className="text-xl font-semibold mb-2">{t('gallery.expired')}</h2>
                 {galleryInfo.expires_at && (
                   <p className="text-muted-theme mb-4">
-                    {t('gallery.expiredOn', { date: format(parseISO(galleryInfo.expires_at)) })}
+                    {t('gallery.expiredOn', { date: formatExpiry(galleryInfo.expires_at) })}
                   </p>
                 )}
                 <p className="text-sm text-muted-theme">
