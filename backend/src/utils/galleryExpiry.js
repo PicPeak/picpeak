@@ -113,9 +113,9 @@ function extendExpiry(instant, days, tz) {
   if (isMidnightUtc(instant)) return new Date(ms + days * 86400000);
   const p = getZonedParts(instant, tz);
   const next = addDays(p.y, p.mo, p.d, days);
-  // An end-of-day expiry stays the end of the new day, the later 23:59 where
-  // that hour repeats.
-  if (p.hh === 23 && p.mi === 59 && p.ss === 59 && ((ms % 1000) + 1000) % 1000 === 999) {
+  // An end-of-day expiry stays the end of the new day: the later 23:59 where
+  // that hour repeats, 22:59 where it is skipped (Nuuk in March).
+  if (ms === endOfDayInZone(`${p.y}-${pad(p.mo)}-${pad(p.d)}`, tz).getTime()) {
     return endOfDayInZone(`${next.y}-${pad(next.mo)}-${pad(next.d)}`, tz);
   }
   const subMinute = p.ss * 1000 + (((ms % 1000) + 1000) % 1000);

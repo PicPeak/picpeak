@@ -51,8 +51,8 @@ describe('endOfDayInZone', () => {
   });
 
   test('is the last millisecond of that day in the zone', () => {
-    for (const tz of ['America/New_York', 'Europe/Berlin', 'Pacific/Kiritimati', 'America/Santiago']) {
-      for (const day of ['2026-03-08', '2026-03-29', '2026-04-04', '2026-09-05', '2026-11-01', '2026-12-24']) {
+    for (const tz of ['America/New_York', 'Europe/Berlin', 'Pacific/Kiritimati', 'America/Santiago', 'America/Nuuk']) {
+      for (const day of ['2026-03-08', '2026-03-28', '2026-03-29', '2026-04-04', '2026-09-05', '2026-10-24', '2026-11-01', '2026-12-24']) {
         const end = endOfDayInZone(day, tz);
         expect(dateInZone(end, tz)).toBe(day);
         expect(dateInZone(new Date(end.getTime() + 1), tz)).toBe(addDaysToDate(day, 1));
@@ -125,6 +125,13 @@ describe('extendExpiry', () => {
   test('extending onto a day whose last hour repeats ends at its later 23:59', () => {
     const from = endOfDayInZone('2026-04-03', 'America/Santiago');
     expect(iso(extendExpiry(from, 1, 'America/Santiago'))).toBe('2026-04-05T03:59:59.999Z');
+  });
+
+  test('extending from a day whose last hour is skipped stays end-of-day', () => {
+    // Nuuk jumps from 23:00 to 24:00 on 28 Mar 2026: that day ends at 22:59:59.999 local.
+    const from = endOfDayInZone('2026-03-28', 'America/Nuuk');
+    expect(iso(extendExpiry(from, 1, 'America/Nuuk'))).toBe(iso(endOfDayInZone('2026-03-29', 'America/Nuuk')));
+    expect(iso(extendExpiry(from, 1, 'America/Nuuk'))).toBe('2026-03-30T00:59:59.999Z');
   });
 
   test('a plain 24 h step would have landed on the wrong day', () => {
