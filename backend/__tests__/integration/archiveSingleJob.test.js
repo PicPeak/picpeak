@@ -732,6 +732,18 @@ describe('one archive job per gallery', () => {
     expect(deletedKeys()).not.toContain('events/archived/legacy-named.zip');
   });
 
+  it('leaves a shared-key zip alone while another gallery keeps it as its restored-from zip', async () => {
+    // Restored from its old shared-key archive since per-run keys, then
+    // renamed: the slug is free again and taken by a new gallery.
+    const restored = await makeEvent('legacy-renamed-away', { photoCount: 0 });
+    await recordRestoredZip(restored.id, 'events/archived/legacy-reused.zip');
+    const event = await makeEvent('legacy-reused');
+    await archiveEvent(event);
+    const res = await request(app).delete(`/admin/events/${event.id}`);
+    expect(res.status).toBe(200);
+    expect(deletedKeys()).not.toContain('events/archived/legacy-reused.zip');
+  });
+
   it('removes the shared-key zip with the gallery', async () => {
     const event = await makeEvent('legacy-delete');
     const res = await request(app).delete(`/admin/events/${event.id}`);

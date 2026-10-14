@@ -157,7 +157,20 @@ async function legacyArchiveKeys(event) {
   const key = path.posix.join('events/archived', `${event.slug}.zip`);
   if (!isArchiveKey(key) || path.posix.dirname(key) !== 'events/archived') return [];
   const named = await db('events').where('archive_path', key).whereNot('id', event.id).first('id');
-  return named ? [] : [key];
+  if (named) return [];
+  // Nor while another gallery's claim row records it: a gallery restored
+  // from it since per-run keys keeps it as its fallback, and can have been
+  // renamed and its slug reused since.
+  const recorded = await db('maintenance_jobs')
+    .where('job_name', 'like', `${archiveJobName('')}%`)
+    .whereNot('job_name', archiveJobName(event.id))
+    .whereRaw('last_result LIKE ? ESCAPE \'!\'', [`%${key.replace(/[!%_]/g, (c) => `!${c}`)}%`])
+    .select('last_result');
+  const claimedElsewhere = recorded.some((row) => {
+    const state = parseArchiveState(row);
+    return state.upload === key || (Array.isArray(state.superseded) && state.superseded.includes(key));
+  });
+  return claimedElsewhere ? [] : [key];
 }
 
 // A key from a portable archive, which anyone holding the file can edit.
