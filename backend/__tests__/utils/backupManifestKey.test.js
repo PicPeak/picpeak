@@ -239,6 +239,19 @@ describe('backup manifest trust anchor', () => {
     expect(fs.readdirSync(path.dirname(file))).toEqual([path.basename(file)]);
   });
 
+  it('leaves neither a key nor a temporary file behind when writing the new key fails', () => {
+    const file = keyFile();
+    const realWrite = fs.writeFileSync;
+    const write = jest.spyOn(fs, 'writeFileSync').mockImplementation((target, ...rest) => {
+      if (typeof target === 'number') throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+      return realWrite(target, ...rest);
+    });
+    try {
+      expect(() => loadKey({ create: true })).toThrow(/no space left/);
+    } finally { write.mockRestore(); }
+    expect(fs.readdirSync(path.dirname(file))).toEqual([]);
+  });
+
   it('warns, without failing, when another account could replace the key through its directory', () => {
     const file = keyFile();
     fs.mkdirSync(path.dirname(file));

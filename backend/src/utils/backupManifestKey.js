@@ -134,15 +134,15 @@ function publishKey(file, hex) {
   const temp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
   const fd = fs.openSync(temp, 'wx', 0o600);
   try {
-    fs.writeFileSync(fd, hex);
-    // Durability only; a share that cannot fsync still links a complete file.
-    try { fs.fsyncSync(fd); } catch { /* see above */ }
-  } finally { fs.closeSync(fd); }
-  try {
-    fs.linkSync(temp, file);
-  } catch (error) {
-    if (error.code === 'EEXIST') throw error;
-    fs.writeFileSync(file, hex, { flag: 'wx', mode: 0o600 });
+    try {
+      fs.writeFileSync(fd, hex);
+      // Durability only; a share that cannot fsync still links a complete file.
+      try { fs.fsyncSync(fd); } catch { /* see above */ }
+    } finally { fs.closeSync(fd); }
+    try { fs.linkSync(temp, file); } catch (error) {
+      if (error.code === 'EEXIST') throw error;
+      fs.writeFileSync(file, hex, { flag: 'wx', mode: 0o600 });
+    }
   } finally { fs.rmSync(temp, { force: true }); }
 }
 
