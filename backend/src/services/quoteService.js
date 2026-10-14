@@ -466,6 +466,8 @@ async function getQuoteById(id) {
         'customer_accounts.company_name as customer_company_name',
         // For transformQuote.customer.isPassive — never leaves the API.
         'customer_accounts.password_hash as customer_password_hash',
+        // Drives the Issue (no email) button (migration 300).
+        'customer_accounts.no_admin_emails as customer_no_admin_emails',
         'conv_contract.contract_number as converted_contract_number',
         'replaced.quote_number as replaces_quote_number',
         'replaced.issue_date as replaces_issue_date',
@@ -1205,7 +1207,7 @@ async function sendQuote(id, adminId) {
       contentPath: pdfPath,
       contentType: 'application/pdf',
     }] : undefined,
-  });
+  }, { customerAccountId: quote.customer_account_id });
 
   try {
     // Do NOT log the raw bearer token — it grants quote actions and the
@@ -1574,7 +1576,7 @@ async function emailAddOnChange(quoteId, change) {
         contentPath: resolveStoredPath(quote.pdf_path) || quote.pdf_path,
         contentType: 'application/pdf',
       }] : undefined,
-    });
+    }, { customerAccountId: quote.customer_account_id });
   } catch (err) {
     logger.warn('Could not email the add-on change', { quoteId, error: err.message });
   }
@@ -1975,7 +1977,7 @@ async function adminAcceptQuote(id, adminId) {
           contentPath: pdfPath,
           contentType: 'application/pdf',
         }],
-      });
+      }, { customerAccountId: customer.id });
     }
   } catch (err) {
     // Email failure is not fatal — log + move on. The acceptance
