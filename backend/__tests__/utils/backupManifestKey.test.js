@@ -239,6 +239,30 @@ describe('backup manifest trust anchor', () => {
     expect(fs.readdirSync(path.dirname(file))).toEqual([path.basename(file)]);
   });
 
+  it('warns, without failing, when another account could replace the key through its directory', () => {
+    const file = keyFile();
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, 'a9'.repeat(32), { mode: 0o600 });
+    const warn = jest.spyOn(require('../../src/utils/logger'), 'warn').mockImplementation(() => {});
+    const dirWarnings = () => warn.mock.calls.map(([message]) => String(message)).filter(message => /directory/.test(message));
+    try {
+      loadKey();
+      expect(dirWarnings()).toHaveLength(0);
+      fs.chmodSync(path.dirname(file), 0o1777);
+      loadKey();
+      expect(dirWarnings()).toHaveLength(0);
+      fs.chmodSync(path.dirname(file), 0o777);
+      expect(loadKey().key).toEqual(Buffer.from('a9'.repeat(32), 'hex'));
+      expect(keyStatus()).toMatchObject({ ready: true, source: 'file' });
+      const messages = dirWarnings();
+      // Said once per directory state, not on every backup and health check.
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain(path.dirname(file));
+      expect(messages[0]).toContain('0777');
+      expect(messages[0]).not.toContain('a9'.repeat(32));
+    } finally { warn.mockRestore(); fs.chmodSync(path.dirname(file), 0o700); }
+  });
+
   it('waits briefly for the bytes of a key file another process has just created', () => {
     const file = keyFile();
     fs.mkdirSync(path.dirname(file));

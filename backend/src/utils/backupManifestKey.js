@@ -63,6 +63,29 @@ function writableKeyError(file, mode, tightened) {
     + 'or set BACKUP_MANIFEST_KEY to its 64 hex digits.');
 }
 
+// The key's directory decides who can swap the key, whatever the file's own
+// mode says. Only a warning: the same 0777 / foreign owner is what bind mounts
+// and NAS volumes report for modes they do not keep, and failing those would
+// stop backups that work. Said once per directory state, not on every call.
+const directoryWarnings = new Set();
+function warnIfDirectoryReplaceable(file) {
+  const dir = path.dirname(realLocation(file));
+  let stat;
+  try { stat = fs.statSync(dir); } catch { return; }
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+  const writable = (stat.mode & 0o022) && !(stat.mode & 0o1000);
+  const foreign = uid !== null && stat.uid !== uid && stat.uid !== 0;
+  if (!writable && !foreign) return;
+  const octal = (stat.mode & 0o7777).toString(8).padStart(4, '0');
+  const state = `${dir}:${octal}:${stat.uid}`;
+  if (directoryWarnings.has(state)) return;
+  directoryWarnings.add(state);
+  logger.warn(`The directory ${dir} holding the backup manifest key (mode ${octal}, owner uid ${stat.uid}) `
+    + (writable ? 'is group- or world-writable without the sticky bit' : 'belongs to another account')
+    + ', so another account could replace the key that signs backups. Restrict it to this account '
+    + '(chmod 700) if its filesystem keeps modes, or set BACKUP_MANIFEST_KEY to the key\'s 64 hex digits.');
+}
+
 // A key another process has created but not yet written reads empty; give
 // its bytes a moment instead of failing that process's backup.
 const SHORT_READ_RETRIES = 10;
@@ -73,6 +96,7 @@ function readFileKey(file) {
   for (let attempt = 0; ; attempt++) {
     const text = readKeyText(file);
     if (text.trim().length < 64 && attempt < SHORT_READ_RETRIES) { pause(SHORT_READ_WAIT_MS); continue; }
+    warnIfDirectoryReplaceable(file);
     return parseKey(text, 'BACKUP_MANIFEST_KEY_FILE');
   }
 }
