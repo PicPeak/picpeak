@@ -804,6 +804,29 @@ function isVideoPhoto(photo) {
  * to fall back to streaming the full original on every tile — minutes of
  * load time for a 100-photo NAS-mounted gallery.
  */
+/**
+ * The basename a managed photo's canonical thumbnail is written under.
+ *
+ * The key `thumbnails/thumb_<name>` has no gallery or photo in it. Uploads are
+ * safe because their stored file names carry a random suffix, but a
+ * watch-folder file keeps the camera's name, so regenerating from its source
+ * name wrote one file for every gallery holding an IMG_0001.JPG: the latest
+ * regeneration overwrote the others' tile, and removing any of them removed
+ * it for all. The name is kept only while this photo alone already points at
+ * that key (no churn for uploads); otherwise the photo id makes it its own.
+ * Inside a derivative scope (videos, RAW) derivativeBasename already adds a
+ * per-attempt id, so the name is left alone there.
+ */
+async function ownThumbnailBasename(photo, name, keyFor = (n) => `thumb_${n}`) {
+  if (derivativeContext.getStore()) return name;
+  const key = path.posix.join('thumbnails', keyFor(name));
+  if (photo.thumbnail_path === key) {
+    const other = await db('photos').where('thumbnail_path', key).whereNot('id', photo.id).first('id');
+    if (!other) return name;
+  }
+  return `p${photo.id}_${name}`;
+}
+
 async function ensureThumbnail(photo, { force = false, boundVideoSource = true } = {}) {
   // Check if thumbnail exists and is valid (works for any source).
   if (!force && photo.thumbnail_path) {
@@ -889,7 +912,8 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
     newThumbnailPath = await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename), meta });
+        const name = await ownThumbnailBasename(photo, proc.outputBasename || path.basename(localPath));
+        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(name), meta });
       } finally {
         await proc.cleanup();
       }
@@ -945,8 +969,11 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.filename) || `video-${photo.id}`
   );
-  const outputBasename = derivativeBasename(isExternal ? `ext${photo.id}_${sourceBasename}` : sourceBasename);
-  const thumbnailKey = path.posix.join('thumbnails', `thumb_${outputBasename.replace(/\.[^.]+$/, '.jpg')}`);
+  const videoKeyFor = (name) => `thumb_${name.replace(/\.[^.]+$/, '.jpg')}`;
+  const outputBasename = derivativeBasename(isExternal
+    ? `ext${photo.id}_${sourceBasename}`
+    : await ownThumbnailBasename(photo, sourceBasename, videoKeyFor));
+  const thumbnailKey = path.posix.join('thumbnails', videoKeyFor(outputBasename));
 
   // Resolves to { thumbnailKey, placeholder, thumbnailError } or null, so the
   // caller can write the processing note the way the upload paths do.

@@ -1,5 +1,6 @@
 const chokidar = require('chokidar');
 const path = require('path');
+const crypto = require('crypto');
 const fs = require('fs').promises;
 const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
@@ -100,8 +101,51 @@ function startFileWatcher() {
       });
     });
 
+  // Rows imported before thumbnails got a per-photo name may still share one.
+  // Through the watcher's queue: same concurrency bound, and stopFileWatcher
+  // waits for it.
+  enqueue(() => repairSharedThumbnails()).catch((error) => {
+    logger.warn('[fileWatcher] Shared thumbnail repair failed', { error: error.message });
+  });
+
   logger.info('File watcher started');
   return watcher;
+}
+
+/**
+ * Give every photo that shares its thumbnail with another photo its own.
+ *
+ * Watch-folder imports named the thumbnail after the camera's file name, so
+ * same-named files in two galleries point at one file showing whichever was
+ * written last. ensureThumbnail regenerates each row from its own original
+ * and, because the key is shared, under a per-photo name; the last row left
+ * on the key keeps it, rebuilt from its own original. The old file is removed
+ * only once no row points at it. Archived galleries are left out: their
+ * originals are in the zip, not in storage. A row whose original cannot be
+ * read keeps the shared key and is tried again next start. Idempotent: with
+ * no shared keys left, this is one grouped query.
+ */
+async function repairSharedThumbnails() {
+  const { ensureThumbnail } = require('./imageProcessor');
+  const { getStorage } = require('./storage');
+  const archived = () => db('events').where('is_archived', formatBoolean(true)).select('id');
+  const keys = await db('photos').whereNotNull('thumbnail_path').whereNotIn('event_id', archived())
+    .groupBy('thumbnail_path').havingRaw('count(*) > 1').pluck('thumbnail_path');
+  if (keys.length === 0) return;
+  logger.info(`[fileWatcher] ${keys.length} thumbnail(s) shared by several photos; regenerating them per photo`);
+  for (const key of keys) {
+    const photos = await db('photos').where('thumbnail_path', key).whereNotIn('event_id', archived()).orderBy('id');
+    for (const photo of photos) {
+      try {
+        await ensureThumbnail(photo, { force: true });
+      } catch (error) {
+        logger.warn(`[fileWatcher] Could not regenerate the thumbnail of photo ${photo.id}: ${error.message}`);
+      }
+    }
+    if (!(await db('photos').where('thumbnail_path', key).first('id'))) {
+      await getStorage().delete(key).catch(() => {});
+    }
+  }
 }
 
 /**
@@ -207,19 +251,25 @@ async function processNewPhoto(filePath) {
   // Generate thumbnail or placeholder
   let thumbnailPath = null;
   const thumbMeta = {};
+  // The thumbnail key has no gallery in it, and cameras restart at
+  // IMG_0001.JPG, so the camera's name alone made two galleries share one
+  // thumbnail: the later import overwrote it, and deleting either photo
+  // removed the other's. A random prefix, as the upload paths get from their
+  // generated file names.
+  const thumbBasename = `w${crypto.randomBytes(6).toString('hex')}_${filename}`;
   // Capture image dimensions so aspect-aware layouts (masonry / mosaic /
   // justified) can size each card to the photo's real proportions
   // instead of the 800×600 fallback in MasonryGalleryLayout (#447).
   // Skip videos — those would need ffprobe.
   let dimensions = null;
   if (isVideo) {
-    thumbnailPath = await generateVideoPlaceholder(filename);
+    thumbnailPath = await generateVideoPlaceholder(thumbBasename);
   } else {
     // sharp cannot decode a RAW, so thumbnail and measure its embedded
     // preview instead. Pass-through for ordinary images.
     const proc = await withProcessableImage(filePath, filename);
     try {
-      thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename, meta: thumbMeta });
+      thumbnailPath = await generateThumbnail(proc.path, { outputBasename: thumbBasename, meta: thumbMeta });
       try {
         const metadata = await sharp(proc.path).metadata();
         // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
@@ -348,4 +398,4 @@ async function removePhoto(filePath) {
   logger.info(`Removed photo: ${relativePath}`);
 }
 
-module.exports = { stopFileWatcher, startFileWatcher, findExistingPhoto, processNewPhoto, removePhoto };
+module.exports = { stopFileWatcher, startFileWatcher, findExistingPhoto, processNewPhoto, removePhoto, repairSharedThumbnails };
