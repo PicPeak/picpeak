@@ -138,7 +138,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
   children,
 }) => {
   const { t } = useTranslation();
-  const { format } = useLocalizedDate();
+  const { format, formatExpiry } = useLocalizedDate();
   const { theme } = useTheme();
   // Dark-mode logo variant. Symmetric fallback: a single uploaded logo
   // serves both modes (dark → dark||light, light → light||dark).
@@ -403,7 +403,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                     {event.expires_at && (
                       <span className="flex items-center">
                         <Clock className="w-3 h-3 sm:w-4 sm:h-4 mr-1 flex-shrink-0" />
-                        <span>{t('gallery.expires')} {format(parseISO(event.expires_at))}</span>
+                        <span>{t('gallery.expires')} {formatExpiry(event.expires_at)}</span>
                       </span>
                     )}
                   </div>
@@ -471,7 +471,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                 {event.expires_at && (
                   <span className="flex items-center">
                     <Clock className="w-3 h-3 mr-1 flex-shrink-0" />
-                    <span>{t('gallery.expires')} {format(parseISO(event.expires_at))}</span>
+                    <span>{t('gallery.expires')} {formatExpiry(event.expires_at)}</span>
                   </span>
                 )}
               </div>
@@ -705,7 +705,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                   {event.expires_at && (
                     <span className="flex items-center text-lg">
                       <Clock className="w-5 h-5 mr-2" />
-                      {t('gallery.expires')} {format(parseISO(event.expires_at))}
+                      {t('gallery.expires')} {formatExpiry(event.expires_at)}
                     </span>
                   )}
                 </div>
