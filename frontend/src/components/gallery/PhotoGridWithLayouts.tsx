@@ -659,6 +659,9 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           onClose={() => {
             setResolutionPickerIds(null);
             setSelectedPhotos(new Set());
+            // A layout's Download All opens the picker outside selection
+            // mode too; the parent's toggle would switch it on.
+            if (!isSelectionMode) return;
             if (parentToggleSelectionMode) {
               parentToggleSelectionMode();
             } else {

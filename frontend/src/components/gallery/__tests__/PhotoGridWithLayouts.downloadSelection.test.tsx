@@ -45,11 +45,18 @@ vi.mock('../../../services/gallery.service', () => ({
 vi.mock('../../../services/analytics.service', () => ({ analyticsService: { trackGalleryEvent: vi.fn() } }));
 vi.mock('../../common', () => ({ Button: ({ children, leftIcon: _icon, variant: _v, size: _s, ...rest }: any) => <button {...rest}>{children}</button> }));
 vi.mock('../DownloadQuotaNotice', () => ({ DownloadQuotaNotice: () => null }));
-vi.mock('../DownloadResolutionModal', () => ({ DownloadResolutionModal: () => null }));
+vi.mock('../DownloadResolutionModal', () => ({
+  DownloadResolutionModal: ({ onClose }: { onClose: () => void }) => <button data-testid="picker-close" onClick={onClose} />,
+}));
 vi.mock('../BulkRating', () => ({ BulkRating: () => null }));
 vi.mock('../HeroHeader', () => ({ HeroHeader: () => null }));
 vi.mock('../PhotoLightbox', () => ({ PhotoLightbox: () => null }));
-vi.mock('../layouts', () => ({ GridGalleryLayout: () => null }));
+// Stands in for a layout's own Download All, which opens the picker by ids.
+vi.mock('../layouts', () => ({
+  GridGalleryLayout: ({ onPickResolution }: { onPickResolution: (ids: number[]) => void }) => (
+    <button data-testid="layout-download-all" onClick={() => onPickResolution([10, 12])} />
+  ),
+}));
 
 import { PhotoGridWithLayouts } from '../PhotoGridWithLayouts';
 
@@ -113,5 +120,23 @@ describe('PhotoGridWithLayouts — selection download at the download limit', ()
     fireEvent.click(downloadButton());
     await waitFor(() => expect(onToggleSelectionMode).toHaveBeenCalledTimes(1));
     expect(onSelectionChange).toHaveBeenLastCalledWith(new Set());
+  });
+
+  it('closing a Download All picker opened outside selection mode leaves the mode off', () => {
+    const onToggleSelectionMode = vi.fn();
+    render(
+      <PhotoGridWithLayouts
+        photos={visible}
+        slug="g"
+        isSelectionMode={false}
+        selectedPhotos={new Set()}
+        onSelectionChange={vi.fn()}
+        onToggleSelectionMode={onToggleSelectionMode}
+        downloadChoices={[{ id: 'original' }, { id: '1920x1080' }] as never}
+      />
+    );
+    fireEvent.click(screen.getByTestId('layout-download-all'));
+    fireEvent.click(screen.getByTestId('picker-close'));
+    expect(onToggleSelectionMode).not.toHaveBeenCalled();
   });
 });
