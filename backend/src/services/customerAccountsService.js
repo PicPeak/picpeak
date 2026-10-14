@@ -673,6 +673,9 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     // Per-customer Skonto opt-out (migration 112). Boolean, coerced
     // via formatBoolean below for SQLite compatibility.
     'skonto_disabled',
+    // Per-customer "no administrative emails" (migration 300). Boolean,
+    // coerced via formatBoolean below for SQLite compatibility.
+    'no_admin_emails',
     // Per-customer re-bill proof-attachment override (migration 169, #866).
     // Tri-state: null = inherit global default, true/false = force. Handled
     // in its own branch below so null survives (formatBoolean would coerce
@@ -697,6 +700,7 @@ async function updateCustomer(id, updates, updatedByAdminId) {
         || f === 'feature_contracts'
         || f === 'feature_documents'
         || f === 'skonto_disabled'
+        || f === 'no_admin_emails'
       ) {
         allowed[f] = formatBoolean(updates[f]);
       } else if (f === 'marketing_opt_out') {
@@ -1250,7 +1254,7 @@ async function eraseCustomer(id, erasedByAdminId) {
       if (emails.length > 0) {
         const candidates = await trx('email_queue')
           .whereRaw(`LOWER(recipient_email) IN (${emails.map(() => 'LOWER(?)').join(', ')})`, emails)
-          .whereIn('status', ['pending', PROTECTED_PENDING_STATUS, 'sent', 'failed', 'cancelled'])
+          .whereIn('status', ['pending', PROTECTED_PENDING_STATUS, 'sent', 'failed', 'cancelled', 'suppressed'])
           .select('id', 'recipient_email', 'email_data');
         signerQueueIds = candidates.filter((row) => {
           let data;
@@ -1280,7 +1284,7 @@ async function eraseCustomer(id, erasedByAdminId) {
         .update({ status: 'cancelled' });
     }
     await matchQueue(trx('email_queue'))
-      .whereIn('status', ['sent', 'failed', 'cancelled'])
+      .whereIn('status', ['sent', 'failed', 'cancelled', 'suppressed'])
       .update({
         recipient_email: sentinelEmail,
         email_data: JSON.stringify({ redacted: true, reason: 'customer_erased' }),

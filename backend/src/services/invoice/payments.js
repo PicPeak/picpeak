@@ -387,7 +387,10 @@ async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
   // email so the admin sees the consequence before clicking.
   const reminderFeeMinor = await resolvePerReminderFeeMinor(invoice);
   const nextLevel = (invoice.reminder_level || 0) + 1;
-  const willChargeFee = reminderFeeMinor > 0 && nextLevel >= 2;
+  // No fee for a customer who takes no administrative emails (migration
+  // 300): applyReminder adds none, so the admin mail must not announce one.
+  const willChargeFee = reminderFeeMinor > 0 && nextLevel >= 2
+    && !(await require('../_adminEmailOptOut').customerTakesNoAdminEmails(customer));
 
   // FRONTEND_URL -> general_site_url (the setup wizard's answer) -> the
   // legacy app_frontend_url key -> localhost. Was defaulting to
