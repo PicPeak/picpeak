@@ -991,8 +991,7 @@ async function acceptedInvitationQueueIds(trx, customerId) {
       for (const win of windows) {
         w.orWhere((q) => {
           q.whereRaw('LOWER(recipient_email) = ?', [win.email])
-            .modify(whereTimestamp, 'created_at', '>=', win.since)
-            .modify(whereTimestamp, 'created_at', '<=', win.until);
+            .modify(whereQueuedWithin, [['>=', win.since], ['<=', win.until]]);
         });
       }
     })
@@ -1089,10 +1088,11 @@ async function formerAddressWindows(trx, customer) {
  * customer's own history does, from the start of the second they took it,
  * inclusive, so mail queued right after the creation or change (an
  * invitation sent straight after a direct creation) is erased too.
- * `undefined` when no such event is recorded (an account from before
- * migration 219 nobody else's history names: matched unbounded, as before),
- * or null when one of those times cannot be read, which matches nothing on
- * the address.
+ * When no such event is recorded (an account from before migration 219
+ * nobody else's history names), from the start of the second the account
+ * was created, inclusive; `undefined` (matched unbounded) only when that
+ * time cannot be read either. null when one of the history times cannot be
+ * read, which matches nothing on the address.
  */
 async function currentAddressSince(trx, customer) {
   const current = String(customer.email || '').toLowerCase();
@@ -1124,7 +1124,31 @@ async function currentAddressSince(trx, customer) {
     const latest = ownLatest && ownLatest > otherLatest ? ownLatest : otherLatest;
     return { at: new Date(second(latest) + 1000), op: '>' };
   }
-  return ownLatest ? { at: new Date(second(ownLatest)), op: '>=' } : undefined;
+  if (ownLatest) return { at: new Date(second(ownLatest)), op: '>=' };
+  // An account from before migration 219 that no history entry bounds: it
+  // has held the address at most since the account was created, so mail
+  // queued to it earlier was someone else's. Inclusive from that second,
+  // like the own-history case. No readable creation time: unbounded.
+  const createdAt = storedTimestamp(customer.created_at);
+  return createdAt ? { at: new Date(second(createdAt)), op: '>=' } : undefined;
+}
+
+/**
+ * Limit a queue query to mail queued within `bounds` (`[op, date]` pairs,
+ * all applied). A resent copy counts at the time of the mail it repeats
+ * (original_created_at, migration 307), not at the resend: the address may
+ * have changed hands in between, and the copy carries the original's data.
+ */
+function whereQueuedWithin(query, bounds) {
+  return query.where((w) => {
+    w.where((original) => {
+      original.whereNull('original_created_at');
+      for (const [op, at] of bounds) original.modify(whereTimestamp, 'created_at', op, at);
+    }).orWhere((copy) => {
+      copy.whereNotNull('original_created_at');
+      for (const [op, at] of bounds) copy.modify(whereTimestamp, 'original_created_at', op, at);
+    });
+  });
 }
 
 /**
@@ -1223,7 +1247,7 @@ async function eraseCustomer(id, erasedByAdminId) {
         w.where((c) => {
           c.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email])
             .whereNotIn('email_type', ADMIN_ACCOUNT_MAIL)
-            .modify(whereTimestamp, 'created_at', currentSince.op, currentSince.at);
+            .modify(whereQueuedWithin, [[currentSince.op, currentSince.at]]);
         });
       } else {
         w.whereRaw('1 = 0');
@@ -1232,8 +1256,7 @@ async function eraseCustomer(id, erasedByAdminId) {
         w.orWhere((f) => {
           f.whereRaw('LOWER(recipient_email) = ?', [win.email])
             .whereNotIn('email_type', NOT_FORMER_ADDRESS_MAIL)
-            .modify(whereTimestamp, 'created_at', '>', win.since)
-            .modify(whereTimestamp, 'created_at', '<', win.before);
+            .modify(whereQueuedWithin, [['>', win.since], ['<', win.before]]);
         });
       }
     });

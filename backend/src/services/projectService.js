@@ -785,6 +785,10 @@ async function resendEmail(emailId, adminId = null) {
     status: pendingStatusFor(row),
     retry_count: 0,
     created_at: new Date(),
+    // The queue time of the mail this copy repeats (migration 307): erasure
+    // attributes mail to an address holder by it, and the address may have
+    // changed hands since. A copy of a copy keeps the first mail's time.
+    original_created_at: row.original_created_at ?? row.created_at,
     // Explicit NULL: the column default is text on SQLite and never comes
     // due (issue 1670) — see queueEmail.
     scheduled_at: null,

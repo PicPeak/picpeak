@@ -595,11 +595,15 @@ describe('customer erasure clears email_queue', () => {
     // the same second (cancelInvitation deletes the invitation, not its mail).
     const cancelledInvitation = await queueInvitation(crypto.randomBytes(32).toString('hex'), 'sent', at(15.02), 'Cancelled Invitation');
     const laterInvitation = await queueInvitation(laterToken, 'sent', at(50), 'Later Invitation');
+    // The still-encrypted copy resent by an admin after the acceptance.
+    const { resendEmail } = require('../../src/services/projectService');
+    const ownResent = (await resendEmail(ownPending)).id;
 
     await eraseCustomer(created.id, null);
 
     await expectRedacted(ownSent, 'sent');
     await expectRedacted(ownPending, 'cancelled');
+    await expectRedacted(ownResent, 'cancelled');
     for (const [id, name] of [[otherInvitation, 'Other Invitation'], [laterInvitation, 'Later Invitation'], [cancelledInvitation, 'Cancelled Invitation']]) {
       const row = await db('email_queue').where({ id }).first();
       expect(row.status).toBe('sent');
@@ -846,8 +850,8 @@ describe('customer erasure clears email_queue', () => {
       return row?.id ?? row;
     };
 
-    // Unbounded match (no history) and bounded match (a recorded change to it).
-    const legacy = await insertCustomer(db, { email: 'current-admin-legacy@example.com' });
+    // Bounded by the account's creation (no history) and by a recorded change to it.
+    const legacy = await insertCustomer(db, { email: 'current-admin-legacy@example.com', created_at: at(0) });
     const mover = await insertCustomer(db, { email: 'current-admin-start@example.com' });
     await updateCustomer(mover.id, { email: 'current-admin-moved@example.com' }, null);
     await stampHistory(mover.id, [at(20)]);
@@ -873,15 +877,72 @@ describe('customer erasure clears email_queue', () => {
     }
   });
 
-  it('keeps matching the current address of an account without history unbounded when nobody else recorded it', async () => {
+  it('matches the current address of an account without history from the account\'s creation', async () => {
     await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
     const { eraseCustomer } = require('../../src/services/customerAccountsService');
-    const legacy = await insertCustomer(db, { email: 'current-legacy-only@example.com' });
+    // Created at 20.4s, before migration 219 (no history entry), and nobody
+    // else's history names the address: an earlier holder left no trace.
+    const legacy = await insertCustomer(db, { email: 'current-legacy-only@example.com', created_at: at(20.4) });
+    const earlierHolderMail = await queueAt(legacy.email, 'sent', at(5), 'Earlier Holder');
+    const earlierPending = await queueAt(legacy.email, 'pending', at(19.9), 'Earlier Pending');
+    // From the start of the creation second, like a recorded creation.
+    const creationSecond = await queueAt(legacy.email, 'sent', at(20.1), 'Creation Second');
+    const ownMail = await queueAt(legacy.email, 'pending', at(30), 'Legacy Own');
+
+    await eraseCustomer(legacy.id, null);
+
+    await expectRedacted(creationSecond, 'sent');
+    await expectRedacted(ownMail, 'cancelled');
+    await expectUntouched(earlierHolderMail, legacy.email, 'Earlier Holder', 'sent');
+    await expectUntouched(earlierPending, legacy.email, 'Earlier Pending', 'pending');
+  });
+
+  it('keeps matching the current address unbounded when the account\'s creation time cannot be read', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer } = require('../../src/services/customerAccountsService');
+    const legacy = await insertCustomer(db, { email: 'current-legacy-undated@example.com', created_at: null });
     const oldMail = await queueAt(legacy.email, 'sent', at(-3600), 'Legacy Old');
 
     await eraseCustomer(legacy.id, null);
 
     await expectRedacted(oldMail, 'sent');
+  });
+
+  it('attributes a resent copy by the time of the mail it repeats, not the resend', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const { resendEmail } = require('../../src/services/projectService');
+    const address = 'resent-1971@example.com';
+
+    // The mover held the address from 20s to 40.1s; a later holder has it since.
+    const mover = await insertCustomer(db, { email: 'resent-mover-start@example.com' });
+    await updateCustomer(mover.id, { email: address }, null);
+    await updateCustomer(mover.id, { email: 'resent-mover-now@example.com' }, null);
+    await stampHistory(mover.id, [at(20), at(40.1)]);
+    const later = await insertCustomer(db, { email: address, created_at: at(41) });
+
+    // The mover's mail, resent (and the copy resent again) after the hand-over.
+    const original = await queueAt(address, 'sent', at(30), 'Mover Original');
+    const copy = (await resendEmail(original)).id;
+    await db('email_queue').where({ id: copy }).update({ status: 'sent' });
+    const copyOfCopy = (await resendEmail(copy)).id;
+    const laterOwn = await queueAt(address, 'pending', at(50), 'Later Own');
+
+    // The later holder's erasure leaves the copies alone, although they were
+    // queued while that holder had the address.
+    await eraseCustomer(later.id, null);
+    await expectRedacted(laterOwn, 'cancelled');
+    for (const id of [copy, copyOfCopy]) {
+      const row = await db('email_queue').where({ id }).first();
+      expect(row.recipient_email).toBe(address);
+      expect(JSON.parse(row.email_data).customer_name).toBe('Mover Original');
+    }
+
+    // The mover's erasure takes the original and both copies.
+    await eraseCustomer(mover.id, null);
+    await expectRedacted(original, 'sent');
+    await expectRedacted(copy, 'sent');
+    await expectRedacted(copyOfCopy, 'cancelled');
   });
 
   it('matches the address the account has when the erasure runs, not the one read before planning', async () => {
