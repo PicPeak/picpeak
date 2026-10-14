@@ -9,6 +9,7 @@ const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { parseExpiresAtText } = require('../utils/expiresAtText');
 const { slugify } = require('../utils/slug');
+const { findSlugHolder } = require('./slugRedirects');
 const { validatePasswordInContext, getBcryptRounds } = require('../utils/passwordValidation');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { parseBooleanInput } = require('../utils/parsers');
@@ -310,7 +311,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   let slug = baseSlug;
   let counter = 1;
 
-  while (await db('events').where({ slug }).first()) {
+  // A renamed gallery's old slug counts as taken: its links still lead to it.
+  while (await findSlugHolder(slug)) {
     slug = `${baseSlug}-${counter}`;
     counter++;
   }

@@ -26,6 +26,7 @@ const { parseBooleanInput } = require('../../utils/parsers');
 const externalAccess = require('../../services/externalMediaAccess');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
+const { findSlugHolder } = require('../../services/slugRedirects');
 const { hasColumnCached } = require('../../utils/schemaCache');
 const { requireEventOwnership, requireEventOwner, scopeEventsListQuery, withoutForeignEventSecrets, scopeEventsQuery, ownsEvent, canLinkCrmToEvent } = require('../../middleware/ownership');
 const eventAdminAssignments = require('../../services/eventAdminAssignmentsService');
@@ -904,7 +905,7 @@ module.exports = (router) => {
       let slug = baseSlug;
       let counter = 1;
       // eslint-disable-next-line no-await-in-loop
-      while (await db('events').where({ slug }).first()) {
+      while (await findSlugHolder(slug)) {
         slug = `${baseSlug}-${counter}`;
         counter += 1;
       }
