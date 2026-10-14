@@ -653,8 +653,11 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
               </div>
 
               {/* Sort direction (#889) */}
+              {/* Wraps onto two rows when the labels do not fit side by
+                  side (German, French; English on the 320px panel), rather
+                  than pushing "Sort descending" past the panel edge. */}
               {onSortDescChange && (
-                <div className="flex items-center gap-2 mt-3">
+                <div className="flex flex-wrap items-center gap-2 mt-3">
                   <Button
                     variant={!sortDesc ? 'primary' : 'outline'}
                     size="sm"
