@@ -20,7 +20,7 @@ const os = require('os');
 const crypto = require('crypto');
 const archiver = require('archiver');
 const { db } = require('../database/db');
-const { livePhotos } = require('../utils/photoVisibility');
+const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const watermarkService = require('./watermarkService');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getStorage } = require('./storage');
@@ -240,7 +240,8 @@ class DownloadZipService {
       // download-all fast path), so it must exclude hidden/client-only
       // photos — NULL visibility counts as visible (pre-migration rows).
       // PIN-clients bypass this cache and stream a full archive instead.
-      const photos = await livePhotos(db)
+      // Photos still processing (or failed) are not in the gallery list either.
+      const photos = await wherePhotoProcessed(livePhotos(db))
         .where({ event_id: eventId })
         .where(function () {
           this.where('visibility', 'visible').orWhereNull('visibility');
@@ -469,6 +470,19 @@ class DownloadZipService {
       );
     }, DEBOUNCE_MS);
     this.debounceTimers.set(eventId, newTimer);
+  }
+
+  /**
+   * invalidate(), only when this event has an archive to drop: one published,
+   * or one being built from a photo set read before the caller's change. A
+   * build that starts after the change reads it, so nothing else is stale.
+   * For per-photo callers (processing finished), so a large upload does not
+   * run a cleanup and re-arm the rebuild for every photo.
+   */
+  async invalidateIfBuilt(eventId) {
+    if (this.activeBuilds.has(eventId)) return this.invalidate(eventId);
+    const row = await db('events').where({ id: eventId }).first('download_zip_path');
+    if (row && row.download_zip_path) this.invalidate(eventId);
   }
 
   /**

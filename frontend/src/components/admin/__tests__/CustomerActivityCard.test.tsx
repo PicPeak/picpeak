@@ -19,11 +19,12 @@ vi.mock('react-i18next', async () => {
   return {
     ...actual,
     useTranslation: () => ({
-      t: (k: string, fb?: unknown, opts?: Record<string, unknown>) => {
+      t: (k: string | string[], fb?: unknown, opts?: Record<string, unknown>) => {
         const vars = (typeof fb === 'object' && fb ? fb : opts) as Record<string, unknown> | undefined;
-        const found = lookup(k);
+        const keys = Array.isArray(k) ? k : [k];
+        const found = keys.map(lookup).find((v) => typeof v === 'string');
         const base = typeof found === 'string' ? found
-          : (typeof fb === 'string' ? fb : String((vars as { defaultValue?: string })?.defaultValue ?? k));
+          : (typeof fb === 'string' ? fb : String((vars as { defaultValue?: string })?.defaultValue ?? keys[0]));
         return vars ? base.replace(/\{\{(\w+)\}\}/g, (_m, key) => String(vars[key] ?? '')) : base;
       },
       i18n: { language: 'en' },
@@ -51,6 +52,7 @@ describe('CustomerActivityCard', () => {
           entry(9, 'customer_document_shared', { metadata: { documentId: 4 } }),
           entry(8, 'customer_document_uploaded', { actorType: 'customer', actorName: null, metadata: { documentId: 4 } }),
           entry(7, 'customer_login', { actorType: 'customer', actorName: null }),
+          entry(6, 'customer_password_reset_requested', { actorName: 'other-admin' }),
         ],
         nextBeforeId: 7,
       })
@@ -63,6 +65,8 @@ describe('CustomerActivityCard', () => {
     expect(screen.getByText('Customer document uploaded (#4)')).toBeInTheDocument();
     // The shared label names the customer; on their own record the tail goes.
     expect(screen.getByText('Customer logged in')).toBeInTheDocument();
+    // Where the address follows a preposition the card has its own label.
+    expect(screen.getByText('Password reset requested')).toBeInTheDocument();
     expect(screen.getByText('By tester')).toBeInTheDocument();
     expect(screen.getAllByText('By the customer')).toHaveLength(2);
 

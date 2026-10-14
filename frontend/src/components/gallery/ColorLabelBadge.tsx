@@ -32,6 +32,12 @@ interface ColorLabelBadgeProps {
    * default would land underneath them (#1189).
    */
   position?: string;
+  /**
+   * Render one half only (issue 1992). 'ring' is the tile's inset ring alone;
+   * 'dots' is the dot row alone, in normal flow, for a tile that lines it up
+   * in a row of its own beside the client's visibility toggle.
+   */
+  part?: 'ring' | 'dots';
 }
 
 /**
@@ -49,6 +55,7 @@ export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
   className = '',
   size = 'md',
   position = 'top-2 left-2',
+  part,
 }) => {
   const { t } = useTranslation();
 
@@ -75,7 +82,7 @@ export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
 
   return (
     <>
-      {mine && swatch && (
+      {mine && swatch && part !== 'dots' && (
         <span
           className={`absolute inset-0 pointer-events-none rounded-[inherit] ${className}`}
           // Inset rather than an outline: the tile is often flush against its
@@ -91,7 +98,8 @@ export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
           Masonry a media-type badge — and anything placed there gets painted
           over. Sharing this position also reads better: your mark and everyone
           else's are the same kind of information. */}
-      <span className={`absolute ${position} pointer-events-none flex items-center gap-1`}>
+      {part !== 'ring' && (
+      <span className={`${part === 'dots' ? '' : `absolute ${position} `}pointer-events-none flex items-center gap-1`}>
         {mine && swatch && (
           <span
             className={`flex items-center justify-center ${mineDotClass} rounded-full border-white/90 shadow`}
@@ -137,6 +145,7 @@ export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
           </span>
         )}
       </span>
+      )}
     </>
   );
 };

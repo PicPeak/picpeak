@@ -15,6 +15,7 @@ import {
   DOWNLOAD_QUOTA_CHANGED_EVENT,
   DOWNLOAD_LIMIT_SHOWN_EVENT,
   DownloadLimitError,
+  SelectionTooLargeError,
   downloadCost,
   markGalleryLimited,
   quotaAllows,
@@ -111,6 +112,28 @@ describe('withDownloadLimit', () => {
     expect(vi.mocked(toast.error).mock.calls[0][0]).toMatch(/Download limit reached/);
     expect(onChanged).toHaveBeenCalledTimes(1);
     window.removeEventListener(DOWNLOAD_QUOTA_CHANGED_EVENT, onChanged);
+  });
+
+  it('tells a selection over the server cap why, on any gallery', async () => {
+    const onChanged = vi.fn();
+    window.addEventListener(DOWNLOAD_QUOTA_CHANGED_EVENT, onChanged);
+    const error = await withDownloadLimit('g', () => Promise.reject(refusal({
+      code: 'TOO_MANY_PHOTO_IDS', limit: 500,
+    }, 400))).catch((e) => e);
+    window.removeEventListener(DOWNLOAD_QUOTA_CHANGED_EVENT, onChanged);
+    // A DownloadLimitError too, so callers skip their generic "download failed".
+    expect(error).toBeInstanceOf(SelectionTooLargeError);
+    expect(error).toBeInstanceOf(DownloadLimitError);
+    expect(error.info.limit).toBe(500);
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(toast.error).mock.calls[0][0]).toMatch(/up to/);
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it('passes any other 400 through untouched', async () => {
+    const other = refusal({ error: 'No valid photo IDs provided' }, 400);
+    await expect(withDownloadLimit('g', () => Promise.reject(other))).rejects.toBe(other);
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it('passes any other failure through untouched', async () => {

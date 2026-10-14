@@ -9,6 +9,7 @@ import { usePublicSettings } from '../hooks/usePublicSettings';
 import { Input, Button, ReCaptcha, CMSContentBlock, PoweredBy } from '../components/common';
 import { useGalleryAuth, useTheme } from '../contexts';
 import { useGalleryInfo } from '../hooks/useGallery';
+import { useFollowGalleryRename } from '../hooks/useFollowGalleryRename';
 import { GalleryView } from '../components/gallery';
 import { GallerySkeleton } from '../components/gallery/GallerySkeleton';
 import { PasswordChangeRequiredNotice } from '../components/gallery/PasswordChangeRequiredNotice';
@@ -28,7 +29,7 @@ export const GalleryPage: React.FC = () => {
   // cookie while isAuthenticated is still false (fork survey A3 / #1563).
   const { isAuthenticated, isLoading: isRestoringSession, login, event } = useGalleryAuth();
   const { t, i18n } = useTranslation();
-  const { format } = useLocalizedDate();
+  const { formatExpiry } = useLocalizedDate();
   const { setTheme } = useTheme();
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -128,7 +129,9 @@ export const GalleryPage: React.FC = () => {
     isLoading: isLoadingInfoQuery,
     error: infoError
   } = useGalleryInfo(canFetchGalleryInfo ? resolvedSlug ?? undefined : undefined, resolvedToken, canFetchGalleryInfo);
-  const isLoadingInfo = isLoadingInfoQuery || isResolvingIdentifier;
+  // An old slug of a renamed gallery answers 301 naming the new one.
+  const followingRename = useFollowGalleryRename(infoError, resolvedSlug);
+  const isLoadingInfo = isLoadingInfoQuery || isResolvingIdentifier || followingRename;
   const requiresPassword = normalizeRequirePassword(galleryInfo?.requires_password, true);
 
   React.useEffect(() => {
@@ -382,7 +385,7 @@ export const GalleryPage: React.FC = () => {
                 <h2 className="text-xl font-semibold mb-2">{t('gallery.expired')}</h2>
                 {galleryInfo.expires_at && (
                   <p className="text-muted-theme mb-4">
-                    {t('gallery.expiredOn', { date: format(parseISO(galleryInfo.expires_at)) })}
+                    {t('gallery.expiredOn', { date: formatExpiry(galleryInfo.expires_at) })}
                   </p>
                 )}
                 <p className="text-sm text-muted-theme">

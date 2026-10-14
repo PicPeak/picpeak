@@ -63,6 +63,11 @@ router.get('/:token/download', downloadLimiter, tokenValidator, handleAsync(asyn
   if (!gate.ok) {
     return res.status(gate.status).json({ error: 'This link is no longer available', code: gate.code });
   }
+  // Nothing the recipient can have yet (every photo still processing): an
+  // empty archive must not use up a download.
+  if ((await transferService.countRecipientFiles(transfer.id)) === 0) {
+    return res.status(404).json({ error: 'File not found', code: 'FILE_NOT_FOUND' });
+  }
   // Claim the download BEFORE streaming: the claim is the cap check, so
   // concurrent requests cannot all pass a cap read from the same snapshot, and
   // a mid-stream disconnect still counts ("disable after N downloads").

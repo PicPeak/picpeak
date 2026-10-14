@@ -30,7 +30,8 @@ function validateEnvironment() {
   if (backupKey.source === 'invalid') {
     warnings.push('BACKUP SIGNING IS DISABLED: the backup manifest signing key configuration is invalid, so new backups cannot be authenticated. '
       + 'BACKUP_MANIFEST_KEY must be 64 hex digits (openssl rand -hex 32); a key file must be a private regular file outside backed-up storage. '
-      + 'An earlier passphrase-style BACKUP_MANIFEST_KEY still verifies the backups it signed.');
+      + 'An earlier passphrase-style BACKUP_MANIFEST_KEY still verifies the backups it signed.'
+      + (backupKey.reason ? ` Reason: ${backupKey.reason}` : ''));
   } else if (!backupKey.ready) warnings.push('Backup manifest key not provisioned yet. A new key is created only when signing a backup; retain that external key separately for recovery.');
   if (process.env.BACKUP_MANIFEST_RECOVERY_SHA256 || process.env.BACKUP_MANIFEST_RECOVERY_REASON) {
     warnings.push('UNAUTHENTICATED backup recovery approval is configured. Use only on an isolated recovery host and remove it immediately after that one-artifact recovery.');

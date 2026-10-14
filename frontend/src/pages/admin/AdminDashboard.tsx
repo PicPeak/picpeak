@@ -32,7 +32,7 @@ import { WhatsNewBanner } from '../../components/admin/WhatsNewBanner';
 import { CrmOverviewSection } from '../../components/admin/CrmOverviewSection';
 import { useQuery } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
-import { deliveryDue } from './event-details/deliveryStatus';
+import { useDeliveryDue } from './event-details/deliveryStatus';
 import { adminService, ActivityType, type Activity } from '../../services/admin.service';
 import { mediaSplitLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { workflowsService } from '../../services/workflows.service';
@@ -64,8 +64,9 @@ export function buildActivityParams(activity: Activity): Record<string, unknown>
   return {
     ...activity.metadata,
     // Team and review lines (issue 743) also record the name, which outlives
-    // a deleted gallery.
-    eventName: activity.eventName || activity.metadata?.eventName || t('common.unknown'),
+    // a deleted gallery; event_deleted records it as event_name.
+    eventName: activity.eventName || activity.metadata?.eventName || activity.metadata?.event_name
+      || t('common.unknown'),
     email: activity.metadata?.email || activity.actorName || '',
     count: activity.metadata?.count || 0,
     template: activity.metadata?.template_key || '',
@@ -91,7 +92,8 @@ export function activityMessageKey(activity: Activity): string {
 export const AdminDashboard: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { format, formatDistanceToNow } = useLocalizedDate();
+  const { format, formatExpiry, formatDistanceToNow } = useLocalizedDate();
+  const deliveryDue = useDeliveryDue();
 
   // Fetch dashboard statistics
   const { data: dashboardStats, isLoading: statsLoading } = useQuery({
@@ -360,7 +362,7 @@ export const AdminDashboard: React.FC = () => {
                           {t('admin.daysLeft', { count: daysLeft })}
                         </p>
                         <p className="text-xs text-muted">
-                          {t('gallery.expires')} {format(parseISO(event.expires_at!), 'PP')}
+                          {t('gallery.expires')} {formatExpiry(event.expires_at!, 'PP')}
                         </p>
                       </div>
                     </div>

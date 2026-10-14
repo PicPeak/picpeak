@@ -195,7 +195,9 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
         // ensureThumbnail keeps a complete video's poster note in step with
         // the frame it rebuilt (issue 1430); it needs the status to know.
         'processing_status',
-        'source_origin', 'external_relpath', 'filename'
+        // An external row's tier keys carry its size; selected here so the
+        // helpers need not read it per photo.
+        'source_origin', 'external_relpath', 'filename', 'size_bytes', 'source_filename'
       );
     if (eventId) {
       query = query.where('event_id', eventId);
@@ -286,7 +288,17 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
             // Guarded on the key actually changing: on local storage it is
             // stable, and deleting the equal key would delete the file that
             // was just written.
-            if (photo.thumbnail_path && !sameStorageKey(photo.thumbnail_path, newThumbnailPath)) {
+            //
+            // And on no other row still pointing at it: watch-folder photos
+            // (stored under the camera's name, filename === source_filename)
+            // imported before their thumbnails got a per-photo name can share
+            // one key across galleries until the start-up repair separates
+            // them, and this photo moving off it must not blank the others.
+            // Uploads have generated names, so only those rows pay the lookup.
+            const moved = photo.thumbnail_path && !sameStorageKey(photo.thumbnail_path, newThumbnailPath);
+            const stillShared = moved && photo.filename === photo.source_filename
+              && await db('photos').where('thumbnail_path', photo.thumbnail_path).whereNot('id', photo.id).first('id');
+            if (moved && !stillShared) {
               await getStorage().delete(photo.thumbnail_path).catch((err) => {
                 // Losing the old object is untidy, not a failed regeneration.
                 logger.warn(
@@ -336,7 +348,7 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
     // external photo looks managed here and generation is skipped.
     let query = db('photos').select(
       'id', 'event_id', 'path', 'media_type', 'mime_type', 'preview_path',
-      'source_origin', 'external_relpath', 'filename'
+      'source_origin', 'external_relpath', 'filename', 'size_bytes'
     );
     if (eventId) query = query.where('event_id', eventId);
     // Skip videos — preview tier is image-only.

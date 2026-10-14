@@ -309,16 +309,34 @@ async function anonymizeGuest(guestId) {
     .update({ guest_id: null, guest_name: null });
 }
 
+const FEEDBACK_NAME_PAGE = 50;
+
 /**
  * The name to show the photographer for an anonymous viewer: the one they
  * last typed with their feedback, if any. Registered guests carry their own.
+ * `requireEmail`: only feedback that also carried a name and an email
+ * counts, for a gallery that requires both (a name given while they were
+ * optional is not enough, issue 1984). While optional, the feedback routes
+ * store a blank name or email as sent, so blank does not count either.
  */
-async function feedbackName(eventId, viewer) {
-  const row = await scopeToViewer(
-    db('photo_feedback').where({ event_id: eventId }).whereNotNull('guest_name'),
-    viewer,
-  ).orderBy('id', 'desc').first('guest_name');
-  return row?.guest_name || null;
+async function feedbackName(eventId, viewer, { requireEmail = false } = {}) {
+  const query = db('photo_feedback').where({ event_id: eventId }).whereNotNull('guest_name');
+  if (!requireEmail) {
+    const row = await scopeToViewer(query, viewer).orderBy('id', 'desc').first('guest_name');
+    return row?.guest_name || null;
+  }
+  // Blank judged in JS, as the validators judge it: SQL TRIM strips spaces
+  // only, and a tab-only email is as blank as a space-only one. A page at a
+  // time, newest first: the newest row usually answers, and a long history
+  // is never loaded whole.
+  const scoped = scopeToViewer(query.whereNotNull('guest_email'), viewer).orderBy('id', 'desc');
+  for (let offset = 0; ; offset += FEEDBACK_NAME_PAGE) {
+    const rows = await scoped.clone().offset(offset).limit(FEEDBACK_NAME_PAGE)
+      .select('guest_name', 'guest_email');
+    const row = rows.find((r) => String(r.guest_name).trim() && String(r.guest_email).trim());
+    if (row) return row.guest_name;
+    if (rows.length < FEEDBACK_NAME_PAGE) return null;
+  }
 }
 
 /**
@@ -374,6 +392,7 @@ async function notifySubmitted(event, submission, { guestName, guestIdentifier, 
 
 module.exports = {
   feedbackName,
+  FEEDBACK_NAME_PAGE,
   notifySubmitted,
   KINDS,
   NOTE_MAX_LENGTH,

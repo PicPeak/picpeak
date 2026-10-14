@@ -280,4 +280,23 @@ describe('a guest\'s own hidden feedback (#1150)', () => {
     });
   });
 
+  // The acting admin is known to both calls; without the actor the rows
+  // were stored as actor_type 'system'.
+  it('logs moderation and deletion as the acting admin', async () => {
+    await like();
+    const row = await db('photo_feedback').where({ photo_id: photoId }).first();
+    await feedbackService.moderateFeedback(row.id, 'hide', 7);
+    await feedbackService.deleteFeedback(row.id, 7);
+
+    const logs = await db('activity_logs')
+      .whereIn('activity_type', ['feedback_moderated', 'feedback_deleted'])
+      .where('event_id', eventId)
+      .whereRaw('metadata like ?', [`%"feedback_id":${row.id},%`])
+      .select('activity_type', 'actor_type', 'actor_id');
+    expect(logs.map((l) => l.activity_type).sort()).toEqual(['feedback_deleted', 'feedback_moderated']);
+    for (const l of logs) {
+      expect(l.actor_type).toBe('admin');
+      expect(Number(l.actor_id)).toBe(7);
+    }
+  });
 });

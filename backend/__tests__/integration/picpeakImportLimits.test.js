@@ -21,6 +21,17 @@ let readManifestFromZip;
 let assertArchiveWithinLimits;
 let backupFile;
 
+// The real measurement of the volume with only the free bytes (and, where
+// given, the free inodes) replaced, so the filesystem type still passes.
+function statfsWithFreeBytes(bavail, bsize, ffree) {
+  const real = fs.promises.statfs;
+  return jest.spyOn(fs.promises, 'statfs').mockImplementation(async (...args) => {
+    const stats = await real(...args);
+    const as = typeof stats.bavail === 'bigint' ? BigInt : Number;
+    return { ...stats, bavail: as(bavail), bsize: as(bsize ?? stats.bsize), ffree: as(ffree ?? stats.ffree) };
+  });
+}
+
 const LIMIT_ENV = [
   'PICPEAK_IMPORT_MAX_ENTRIES',
   'PICPEAK_IMPORT_MAX_EXPANDED_BYTES',
@@ -35,6 +46,18 @@ async function setMarker(value) {
   await db('app_settings')
     .insert({ setting_key: 'limits_marker', setting_value: JSON.stringify(value), setting_type: 'string' })
     .onConflict('setting_key').merge();
+}
+
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxIt = process.platform === 'linux' ? it : it.skip;
+// The archive boundary itself runs anywhere, but refuses a workspace behind a
+// symlink (the macOS tmpdir sits under /var -> /private/var) or on a filesystem
+// outside the Linux local-filesystem contract; stub it as portableImportArchive.test.js does.
+const LOCAL_FS = { type: 0xef53n, bsize: 4096n, bavail: 1024n * 1024n, ffree: 1024n * 1024n };
+function workspace(dir) {
+  if (process.platform !== 'linux') jest.spyOn(fs.promises, 'statfs').mockResolvedValue(LOCAL_FS);
+  return fs.realpathSync(dir);
 }
 
 beforeAll(async () => {
@@ -58,7 +81,7 @@ afterAll(async () => {
 });
 
 describe('.picpeak import limits', () => {
-  it('refuses an archive with more entries than allowed and restores nothing', async () => {
+  linuxIt('refuses an archive with more entries than allowed and restores nothing', async () => {
     process.env.PICPEAK_IMPORT_MAX_ENTRIES = '1';
 
     await expect(importFromPicpeak({ picpeakPath: backupFile, currentAdminId: null }))
@@ -66,7 +89,7 @@ describe('.picpeak import limits', () => {
     expect(await getMarker()).toBe('current');
   });
 
-  it('refuses an archive that expands beyond the byte limit', async () => {
+  linuxIt('refuses an archive that expands beyond the byte limit', async () => {
     process.env.PICPEAK_IMPORT_MAX_EXPANDED_BYTES = '10';
 
     await expect(importFromPicpeak({ picpeakPath: backupFile, currentAdminId: null }))
@@ -74,33 +97,62 @@ describe('.picpeak import limits', () => {
     expect(await getMarker()).toBe('current');
   });
 
-  it('refuses an archive that does not fit into the free space of the extraction directory', async () => {
-    jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1, bsize: 4 });
+  // The extraction itself runs in the restore worker's own process, out of
+  // reach of a mock; in this process the archive is refused when it is staged.
+  linuxIt('refuses an archive when the restore workspace volume has no free space', async () => {
+    statfsWithFreeBytes(1);
 
     await expect(importFromPicpeak({ picpeakPath: backupFile, currentAdminId: null }))
-      .rejects.toMatchObject({ statusCode: 507 });
+      .rejects.toMatchObject({ statusCode: 507, code: 'RESTORE_CAPACITY_LIMIT' });
     expect(await getMarker()).toBe('current');
+  });
+
+  // Measures the real volume with only the free counts replaced, so it needs
+  // a filesystem inside the Linux local-filesystem contract.
+  linuxIt('refuses an archive that does not fit into the free space of the extraction directory', async () => {
+    const { HARD_LIMITS } = require('../../src/services/portableImportArchive');
+    const entries = [
+      { name: 'data/', isDirectory: true, size: 0 },
+      { name: 'data/a.ndjson', isDirectory: false, size: 120 },
+      { name: 'manifest.json', isDirectory: false, size: 30 },
+    ];
+    // One byte short of the reserve plus the 150 bytes the entries expand to:
+    // the empty workspace itself still fits, the archive does not. Inodes are
+    // plentiful, so only the byte comparison can refuse.
+    const inodes = HARD_LIMITS.reserveInodes + 1000;
+    const short = statfsWithFreeBytes(HARD_LIMITS.reserveBytes + 149, 1, inodes);
+    await expect(assertArchiveWithinLimits(entries, tmpDir)).rejects.toMatchObject({
+      statusCode: 507, code: 'PORTABLE_ARCHIVE_REFUSED', message: expect.stringMatching(/^Insufficient measured bytes/),
+    });
+
+    short.mockRestore();
+    statfsWithFreeBytes(HARD_LIMITS.reserveBytes + 150, 1, inodes);
+    await expect(assertArchiveWithinLimits(entries, tmpDir)).resolves.toEqual({ entries: 3, expandedBytes: 150 });
   });
 
   it('refuses a manifest too large to be a PicPeak manifest', async () => {
     process.env.PICPEAK_IMPORT_MAX_MANIFEST_BYTES = '10';
 
-    await expect(readManifestFromZip(backupFile)).rejects.toMatchObject({ statusCode: 400 });
+    // Read through the real path: the macOS tmpdir sits behind a symlink,
+    // which the archive source check refuses before it looks at the size.
+    await expect(readManifestFromZip(fs.realpathSync(backupFile)))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/manifest is too large/) });
   });
 
   it('counts directories as entries, since each one is created on disk', async () => {
+    const root = workspace(tmpDir);
     const result = await assertArchiveWithinLimits([
       { name: 'data/', isDirectory: true, size: 0 },
       { name: 'data/a.ndjson', isDirectory: false, size: 120 },
       { name: 'manifest.json', isDirectory: false, size: 30 },
-    ], tmpDir);
+    ], root);
     expect(result).toEqual({ entries: 3, expandedBytes: 150 });
 
     process.env.PICPEAK_IMPORT_MAX_ENTRIES = '1';
     await expect(assertArchiveWithinLimits([
       { name: 'manifest.json', isDirectory: false, size: 30 },
       ...Array.from({ length: 20 }, (_, i) => ({ name: `d${i}/`, isDirectory: true, size: 0 })),
-    ], tmpDir)).rejects.toMatchObject({ statusCode: 413 });
+    ], root)).rejects.toMatchObject({ statusCode: 413, message: expect.stringMatching(/PICPEAK_IMPORT_MAX_ENTRIES/) });
   });
 });
 
@@ -168,7 +220,8 @@ describe('.picpeak import limits on real bytes', () => {
     craftArchive(file, [['manifest.json', Buffer.from(`{"kind":"picpeak-backup","pad":"${'x'.repeat(1024 * 1024)}"}`)]]);
     process.env.PICPEAK_IMPORT_MAX_MANIFEST_BYTES = '100';
 
-    await expect(readManifestFromZip(file)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(readManifestFromZip(fs.realpathSync(file)))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/manifest is too large/) });
   });
 
   it('stops extracting at the byte cap though every entry declares 1 byte', async () => {
@@ -178,13 +231,14 @@ describe('.picpeak import limits on real bytes', () => {
       ['data/big.ndjson', Buffer.alloc(2 * 1024 * 1024, 0x61)],
     ]);
     process.env.PICPEAK_IMPORT_MAX_EXPANDED_BYTES = '100';
-    const staging = fs.mkdtempSync(path.join(tmpDir, 'extract-'));
+    const staging = workspace(fs.mkdtempSync(path.join(tmpDir, 'extract-')));
     const zip = new StreamZip.async({ file });
 
     try {
       const entries = Object.values(await zip.entries());
       await expect(assertArchiveWithinLimits(entries, staging)).resolves.toBeTruthy();
-      await expect(extractWithinLimits(zip, entries, staging)).rejects.toMatchObject({ statusCode: 413 });
+      await expect(extractWithinLimits(zip, entries, staging))
+        .rejects.toMatchObject({ statusCode: 413, message: expect.stringMatching(/PICPEAK_IMPORT_MAX_EXPANDED_BYTES/) });
     } finally {
       await zip.close();
     }

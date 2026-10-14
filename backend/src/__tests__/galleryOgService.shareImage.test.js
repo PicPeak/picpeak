@@ -47,7 +47,7 @@ const {
 } = require('../services/galleryOgService');
 
 // The service hits two tables in sequence:
-//   1. events (slug lookup → may then hit event_slug_redirects)
+//   1. events (slug lookup → may then hit slug_redirects)
 //   2. app_settings (branding lookup)
 // then optionally a third query when og_image_share_enabled is true:
 //   3. photos (validate hero exists + has thumbnail)
@@ -71,7 +71,7 @@ function mockResolveSlug(event) {
   const row = event ? { is_active: true, ...event } : null;
   db.mockImplementationOnce(() => chain({ first: row }));
   if (!event) {
-    // event_slug_redirects fallback — unused here, return null.
+    // slug_redirects fallback — unused here, return null.
     db.schema = db.schema || {};
     db.schema.hasTable = jest.fn().mockResolvedValue(false);
   }

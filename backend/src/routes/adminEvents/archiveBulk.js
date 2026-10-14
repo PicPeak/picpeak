@@ -58,6 +58,10 @@ module.exports = (router) => {
 
       res.json({ message: 'Event archived successfully' });
     } catch (error) {
+      // Another job holds the gallery (issue 2012), or finished it first.
+      if (error.code === 'ARCHIVE_IN_PROGRESS' || error.code === 'EVENT_ALREADY_ARCHIVED') {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
       errorResponse(res, error, 500, 'Failed to archive event');
     }
   });
@@ -125,6 +129,10 @@ module.exports = (router) => {
             name: event.event_name
           });
         } catch (error) {
+          if (error.code === 'ARCHIVE_IN_PROGRESS' || error.code === 'EVENT_ALREADY_ARCHIVED') {
+            results.failed.push({ id: event.id, name: event.event_name, error: error.message, code: error.code });
+            continue;
+          }
           logger.error(`Failed to archive event ${event.id}:`, error);
           results.failed.push({
             id: event.id,
@@ -187,7 +195,8 @@ module.exports = (router) => {
           results.failed.push({
             id: eventId,
             name: null,
-            error: err.code === 'EVENT_NOT_FOUND' ? 'Event not found' : 'Failed to delete event'
+            error: err.code === 'EVENT_NOT_FOUND' ? 'Event not found'
+              : err.code === 'ARCHIVE_IN_PROGRESS' ? err.message : 'Failed to delete event'
           });
           logger.warn('Bulk-delete: per-event failure', { eventId, error: err.message });
         }

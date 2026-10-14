@@ -17,6 +17,7 @@ import { projectsService, type ProjectSummary } from '../../../services/projects
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { formatMoneyMinor } from '../../../utils/money';
 import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
+import { isImeComposing } from '../../../utils/imeComposition';
 
 /** Render a project's rolled-up value (newest stage per deal, cumulative),
  *  one entry per currency. Convention (deliberately differs from the Events
@@ -74,7 +75,7 @@ export const ProjectsListPage: React.FC = () => {
             <Input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && newName.trim()) createMutation.mutate(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e) && newName.trim()) createMutation.mutate(); }}
               placeholder={t('projects.create.placeholder', 'e.g. Müller wedding 2026') as string}
             />
           </div>

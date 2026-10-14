@@ -101,7 +101,7 @@ async function createInvitation({ email, roleId, invitedById, inviterRoleName })
   await logActivity('admin_invitation_created',
     { email, roleId, roleName: role.display_name },
     null,
-    { type: 'admin', id: invitedById, name: 'system' }
+    { type: 'admin', id: invitedById }
   );
 
   logger.info('Admin invitation created', { email, roleId, invitedById });
@@ -144,6 +144,13 @@ async function acceptInvitation({ token, username, password }) {
 
   // Create user in transaction
   const result = await db.transaction(async (trx) => {
+    // The inviter's account row before the invitation: the insert below takes
+    // this key-share lock anyway (created_by), and deleting the inviter locks
+    // their account and then cascades onto their invitations. Claiming the
+    // invitation first could deadlock with that on PostgreSQL. If the inviter
+    // was deleted meanwhile, the invitation went with them and the claim
+    // below finds nothing. No-op on SQLite.
+    await trx('admin_users').where('id', invitation.invited_by).forKeyShare().first('id');
     // Claim before creating the account. Concurrent submissions may both read
     // the pending row above, but only one conditional update can consume it.
     const claimed = await trx('admin_invitations')
@@ -411,7 +418,7 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
   await logActivity('admin_user_updated',
     { userId: id, changes: Object.keys(allowedUpdates) },
     null,
-    { type: 'admin', id: updatedById, name: 'system' }
+    { type: 'admin', id: updatedById }
   );
 
   return getAdminUserById(id);
@@ -506,7 +513,7 @@ async function deactivateAdminUser(id, deactivatedById) {
   await logActivity('admin_user_deactivated',
     { userId: id, username: user.username },
     null,
-    { type: 'admin', id: deactivatedById, name: 'system' }
+    { type: 'admin', id: deactivatedById }
   );
 
   logger.info('Admin user deactivated', { userId: id, deactivatedById });
@@ -550,7 +557,7 @@ async function activateAdminUser(id, activatedById) {
   await logActivity('admin_user_activated',
     { userId: id, username: user.username },
     null,
-    { type: 'admin', id: activatedById, name: 'system' }
+    { type: 'admin', id: activatedById }
   );
 
   logger.info('Admin user activated', { userId: id, activatedById });
@@ -634,8 +641,23 @@ async function deleteAdminUser(id, deletedById) {
   // Their gallery assignments (migration 269) the same way: CASCADE, SET NULL
   // on assigned_by and on the photos they uploaded.
   await db.transaction(async (trx) => {
+    // The galleries this admin created, before any other row: deleting the
+    // account clears their created_by (ON DELETE SET NULL), and a gallery
+    // delete locks the event row first and then its assignments, photos and
+    // the bell dismissals of its activity, rows this transaction writes
+    // below. Taking the event rows last could deadlock with it on PostgreSQL.
+    // NO KEY UPDATE, the lock the SET NULL takes anyway: it does not hold back
+    // a team save's key-share lock on the event. No-op on SQLite.
+    await trx('events').where('created_by', id).orderBy('id').forNoKeyUpdate().pluck('id');
     await trx('notification_dismissals').where('admin_id', id).del();
     if (await trx.schema.hasTable('event_admin_assignments')) {
+      // Every row the two statements below touch, locked in id order first:
+      // the order a gallery team save takes them in (setAssignedAdmins). Two
+      // statements lock their rows in two scan orders, which can deadlock
+      // with a team save on PostgreSQL (issue 1979). No-op on SQLite.
+      await trx('event_admin_assignments')
+        .where('admin_user_id', id).orWhere('assigned_by', id)
+        .orderBy('id').forUpdate().pluck('id');
       await trx('event_admin_assignments').where('admin_user_id', id).del();
       await trx('event_admin_assignments').where('assigned_by', id).update({ assigned_by: null });
     }
@@ -665,7 +687,7 @@ async function deleteAdminUser(id, deletedById) {
   await logActivity('admin_user_deleted',
     { userId: id, username: user.username, email: user.email },
     null,
-    { type: 'admin', id: deletedById, name: 'system' }
+    { type: 'admin', id: deletedById }
   );
 
   logger.info('Admin user deleted', { userId: id, deletedById });
@@ -710,7 +732,7 @@ async function resetAdminPassword(id, resetById) {
   await logActivity('admin_password_reset',
     { userId: id, username: user.username, passkeysRemoved },
     null,
-    { type: 'admin', id: resetById, name: 'system' }
+    { type: 'admin', id: resetById }
   );
 
   logger.info('Admin password reset', { userId: id, resetById, passkeysRemoved });
@@ -781,7 +803,7 @@ async function cancelInvitation(id, cancelledById) {
   await logActivity('admin_invitation_cancelled',
     { invitationId: id, email: invitation.email },
     null,
-    { type: 'admin', id: cancelledById, name: 'system' }
+    { type: 'admin', id: cancelledById }
   );
 
   logger.info('Admin invitation cancelled', { invitationId: id, cancelledById });
@@ -954,7 +976,7 @@ async function createRole({ name, displayName, description, priority, permission
   await logActivity('admin_role_created',
     { roleId, name: normalized, permissionCount: permIds.length },
     null,
-    { type: 'admin', id: createdById, name: 'system' });
+    { type: 'admin', id: createdById });
   logger.info('Role created', { roleId, name: normalized, createdById });
   return getRoleWithPermissionsById(roleId);
 }
@@ -1013,7 +1035,7 @@ async function updateRole(id, { displayName, description, priority, permissions 
   await logActivity('admin_role_updated',
     { roleId: id, name: role.name, permissionsChanged: permIds !== null },
     null,
-    { type: 'admin', id: updatedById, name: 'system' });
+    { type: 'admin', id: updatedById });
   logger.info('Role updated', { roleId: id, name: role.name, updatedById });
   return getRoleWithPermissionsById(id);
 }
@@ -1041,7 +1063,7 @@ async function deleteRole(id, deletedById) {
   await logActivity('admin_role_deleted',
     { roleId: id, name: role.name },
     null,
-    { type: 'admin', id: deletedById, name: 'system' });
+    { type: 'admin', id: deletedById });
   logger.info('Role deleted', { roleId: id, name: role.name, deletedById });
 }
 

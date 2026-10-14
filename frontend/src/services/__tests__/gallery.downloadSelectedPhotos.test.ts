@@ -202,3 +202,93 @@ describe('galleryService.downloadSelectedPhotos — iOS Web Share path (#557)', 
     expect(apiMock.post).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('galleryService.downloadPhotosInParts — the 500-id cap per archive', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    galleryService = (await import('../gallery.service')).galleryService;
+    apiMock = (await import('../../config/api')).api as any;
+    apiMock.post.mockReset();
+    apiMock.post.mockResolvedValue({ data: new Blob(['zip-bytes'], { type: 'application/zip' }) });
+    (window.URL.createObjectURL as any) = vi.fn(() => 'blob:fake');
+    (window.URL.revokeObjectURL as any) = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (navigator as any).share;
+    delete (navigator as any).canShare;
+  });
+
+  it('posts one archive per 500 ids, named by part', async () => {
+    installNavigator({ userAgent: ANDROID_UA });
+    const names: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.getAttribute('download') || '');
+    });
+
+    const ids = Array.from({ length: 1001 }, (_, i) => i + 1);
+    await galleryService.downloadPhotosInParts('wedding-2026', ids);
+
+    expect(apiMock.post.mock.calls.map((call) => call[1].photo_ids.length)).toEqual([500, 500, 1]);
+    expect(apiMock.post.mock.calls.flatMap((call) => call[1].photo_ids)).toEqual(ids);
+    expect(names).toEqual([
+      'wedding-2026-selected-1-of-3.zip',
+      'wedding-2026-selected-2-of-3.zip',
+      'wedding-2026-selected-3-of-3.zip',
+    ]);
+  });
+
+  it('sends the last small part as a zip on iOS too, not through the share sheet', async () => {
+    const share = vi.fn();
+    installNavigator({ userAgent: IOS_UA, share, canShare: vi.fn().mockReturnValue(true) });
+
+    await galleryService.downloadPhotosInParts('wedding-2026', Array.from({ length: 503 }, (_, i) => i + 1));
+
+    expect(share).not.toHaveBeenCalled();
+    expect(apiMock.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a set within the cap as one plain selection download', async () => {
+    installNavigator({ userAgent: ANDROID_UA });
+    await galleryService.downloadPhotosInParts('wedding-2026', [1, 2, 3]);
+    expect(apiMock.post).toHaveBeenCalledTimes(1);
+    expect(apiMock.post).toHaveBeenCalledWith(
+      '/gallery/wedding-2026/download-selected',
+      { photo_ids: [1, 2, 3] },
+      { responseType: 'blob' },
+    );
+  });
+});
+
+describe('galleryService.downloadSelectedPhotos — object URL lifetime', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    galleryService = (await import('../gallery.service')).galleryService;
+    apiMock = (await import('../../config/api')).api as any;
+    apiMock.post.mockReset();
+    apiMock.post.mockResolvedValue({ data: new Blob(['zip-bytes'], { type: 'application/zip' }) });
+    (window.URL.createObjectURL as any) = vi.fn(() => 'blob:fake');
+    (window.URL.revokeObjectURL as any) = vi.fn();
+    installNavigator({ userAgent: ANDROID_UA });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps the zip URL valid past the click, then releases it', async () => {
+    vi.useFakeTimers();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
+
+    expect(click).toHaveBeenCalledTimes(1);
+    // Revoked in the same task as the click, Safari and Firefox can cancel
+    // the download before it starts.
+    expect(window.URL.revokeObjectURL).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1_000);
+    expect(window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
+  });
+});
