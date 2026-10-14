@@ -301,6 +301,11 @@ describe('folder ingest and two-stage delivery', () => {
       await delivery().runDeliveryReminderPass();
       await delivery().runDeliveryReminderPass();
       expect(await count()).toBe(1);
+      // The mail names the promised calendar day, not an instant the email
+      // formatter would read in the server's zone.
+      const mail = await db('email_queue').where({ event_id: eventId, email_type: 'delivery_due_reminder' }).first();
+      const data = typeof mail.email_data === 'string' ? JSON.parse(mail.email_data) : mail.email_data;
+      expect(data.due_date).toBe(due.toISOString().slice(0, 10));
       // Still the promised day: not overdue yet (review of PR 1826, concern 13).
       await delivery().runDeliveryReminderPass({ now: new Date(due.getTime() + 3600e3) });
       expect(await count()).toBe(1);

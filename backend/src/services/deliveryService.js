@@ -18,6 +18,7 @@ const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
 const { parseBooleanInput } = require('../utils/parsers');
 const { whereTimestamp, formatBoolean } = require('../utils/dbCompat');
+const { toTimestamp } = require('../utils/dateNormalize');
 
 const DEFAULT_DELIVERY_DAYS = 7;
 const REMINDER_LEAD_HOURS = 24;
@@ -224,7 +225,10 @@ async function runDeliveryReminderPass({ now = new Date() } = {}) {
       const base = await getAbsoluteFrontendUrl(null, { override: process.env.ADMIN_URL });
       await queueEmail(event.id, to, 'delivery_due_reminder', {
         event_name: event.event_name,
-        due_date: event.delivery_due_at,
+        // The promised calendar day (stored at noon UTC) as a bare date: the
+        // email formatter reads an instant in the server's zone, which puts
+        // noon UTC on the next day east of UTC+12.
+        due_date: new Date(toTimestamp(event.delivery_due_at)).toISOString().slice(0, 10),
         delivered_count: delivered,
         expected_count: event.delivery_expected_count || '?',
         admin_link: `${base}/admin/events/${event.id}`,
