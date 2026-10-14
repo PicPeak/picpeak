@@ -144,6 +144,21 @@ describe('a reused redirect row moves to the renaming gallery', () => {
   });
 });
 
+describe('a deleted gallery\'s leftover redirect', () => {
+  it('does not pass to the gallery that took the slug it leads to', async () => {
+    const gone = await insertEvent('Old Name', OLD);
+    await renamed(gone, 'New Name');
+    // SQLite enforces no foreign keys, so the redirect outlives the gallery.
+    await db('events').where({ id: gone }).del();
+    const other = await insertEvent('New Name', NEW);
+    await db('event_customer_assignments').insert({ event_id: other, customer_account_id: customerId });
+
+    await renamed(other, 'Third Name');
+    expect(await db('slug_redirects').where({ old_slug: OLD }).first()).toMatchObject({ event_id: gone });
+    expect(await getEventOverview(customerId, OLD)).toBeNull();
+  });
+});
+
 describe('customer portal event page', () => {
   it('follows an old slug to the renamed gallery the customer is assigned to', async () => {
     const id = await insertEvent('Old Name', OLD);

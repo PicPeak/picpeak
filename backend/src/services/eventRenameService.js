@@ -374,10 +374,12 @@ class EventRenameService {
       });
     }
 
-    // Also update any existing redirects pointing to the old slug
+    // Also update any existing redirects pointing to the old slug. Their
+    // event_id stays: these rows are this gallery's own, or (SQLite, no
+    // foreign keys) a deleted gallery's that must not become this one's.
     await trx('slug_redirects')
       .where({ new_slug: oldSlug })
-      .update({ new_slug: newSlug, event_id: eventId });
+      .update({ new_slug: newSlug });
 
     // Renamed back to an earlier name: the chain update above turned that
     // name's redirect into one pointing at itself. Only that row goes; a
