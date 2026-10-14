@@ -155,6 +155,7 @@ describe('gallery bulk download set', () => {
     });
 
     it('finishing one drops the prebuilt archive that was built without it', async () => {
+      expect(await zipService.getZipInfo(event.id)).not.toBeNull();
       const invalidate = jest.spyOn(zipService, 'invalidate');
       try {
         await require('../../src/services/photoProcessor').processPhoto(pending.id);
@@ -164,6 +165,22 @@ describe('gallery bulk download set', () => {
         invalidate.mockRestore();
       }
     });
+  });
+
+  it('finishing a photo of an event without an archive leaves the cache alone', async () => {
+    // A large upload finishes photo after photo: no cleanup and no rebuild
+    // armed for each one when there is nothing to drop.
+    const event = await mkEvent();
+    const photo = await mkPhoto(event, { processing_status: 'pending' });
+    expect(await zipService.getZipInfo(event.id)).toBeNull();
+    const invalidate = jest.spyOn(zipService, 'invalidate');
+    try {
+      await require('../../src/services/photoProcessor').processPhoto(photo.id);
+      expect((await db('photos').where({ id: photo.id }).first()).processing_status).toBe('complete');
+      expect(invalidate).not.toHaveBeenCalled();
+    } finally {
+      invalidate.mockRestore();
+    }
   });
 
   describe('selection size', () => {

@@ -834,7 +834,7 @@ async function processPhoto(photoId) {
   // The prebuilt Download All archive holds only processed photos, and the
   // upload's own invalidate usually rebuilds it before this one finished.
   try {
-    require('./downloadZipService').invalidate(photo.event_id);
+    await require('./downloadZipService').invalidateIfBuilt(photo.event_id);
   } catch (err) {
     logger.warn(`processPhoto: zip invalidate failed for ${photoId}`, { error: err.message });
   }

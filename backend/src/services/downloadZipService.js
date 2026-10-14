@@ -473,6 +473,19 @@ class DownloadZipService {
   }
 
   /**
+   * invalidate(), only when this event has an archive to drop: one published,
+   * or one being built from a photo set read before the caller's change. A
+   * build that starts after the change reads it, so nothing else is stale.
+   * For per-photo callers (processing finished), so a large upload does not
+   * run a cleanup and re-arm the rebuild for every photo.
+   */
+  async invalidateIfBuilt(eventId) {
+    if (this.activeBuilds.has(eventId)) return this.invalidate(eventId);
+    const row = await db('events').where({ id: eventId }).first('download_zip_path');
+    if (row && row.download_zip_path) this.invalidate(eventId);
+  }
+
+  /**
    * Invalidate all events (e.g., global watermark settings changed).
    */
   async invalidateAll() {
