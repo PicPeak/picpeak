@@ -1,6 +1,6 @@
 import { api } from '../config/api';
 
-export type EmailQueueStatus = 'pending' | 'sent' | 'failed';
+export type EmailQueueStatus = 'pending' | 'sent' | 'failed' | 'suppressed';
 
 export interface EmailQueueItem {
   id: number;
