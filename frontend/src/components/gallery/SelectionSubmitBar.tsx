@@ -81,7 +81,9 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
   const [note, setNote] = useState('');
   // Simple and shared mode with name and email required: asked before the
   // confirmation, as the feedback actions ask before they send (issue 1984).
-  const [identityFor, setIdentityFor] = useState<SubmissionKind | null>(null);
+  // With its gallery too: a prompt left open across a slug change closes.
+  const [askedIn, setAskedIn] = useState<{ slug: string; kind: SubmissionKind } | null>(null);
+  const identityFor = askedIn?.slug === slug ? askedIn.kind : null;
   // Kept with its gallery: a bar that stays mounted across a slug change must
   // not hand one gallery's name to the next. `typed`: given in this bar's own
   // prompt, which a name picked up from other feedback does not replace.
@@ -147,7 +149,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
       if (code === 'GUEST_INFO_REQUIRED' || identityRefused) {
         setNamedIn(null);
         setConfirming(null);
-        setIdentityFor(kind);
+        setAskedIn({ slug, kind });
         return;
       }
       toast.error(code === 'NOTHING_SELECTED'
@@ -197,7 +199,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
     } else if (requireNameEmail && !savedIdentity) {
       // Same order as above: the name first, then the confirmation.
       setNote('');
-      setIdentityFor(kind);
+      setAskedIn({ slug, kind });
       return;
     }
     setNote('');
@@ -207,7 +209,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
   const handleIdentitySubmit = (name: string, email: string) => {
     const kind = identityFor;
     setNamedIn({ slug, name, email, typed: true });
-    setIdentityFor(null);
+    setAskedIn(null);
     if (kind) showConfirmation(kind);
   };
 
@@ -267,7 +269,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
         <div className="relative z-[9999]">
           <FeedbackIdentityModal
             isOpen
-            onClose={() => setIdentityFor(null)}
+            onClose={() => setAskedIn(null)}
             onSubmit={handleIdentitySubmit}
             feedbackType={identityFor === 'approval'
               ? t('gallery.selection.identityApproval', 'your approval')
