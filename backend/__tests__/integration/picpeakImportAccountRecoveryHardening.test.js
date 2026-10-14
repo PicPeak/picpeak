@@ -27,6 +27,10 @@ const digest = (value) => crypto.createHash('sha256').update(value).digest('hex'
 
 let db; let cleanup; let backupFile; let adminId; let roleId;
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxTest = process.platform === 'linux' ? test : test.skip;
+
 beforeAll(async () => {
   const booted = await bootCrmDb();
   ({ db, cleanup } = booted);
@@ -94,7 +98,7 @@ beforeAll(async () => {
   await installAccountRecoveryWriteGuards(db);
 
   const { importFromPicpeak } = require('../../src/services/picpeakImportService');
-  await importFromPicpeak({ picpeakPath: backupFile, currentAdminId: adminId });
+  if (process.platform === 'linux') await importFromPicpeak({ picpeakPath: backupFile, currentAdminId: adminId });
 });
 
 afterAll(async () => {
@@ -102,7 +106,7 @@ afterAll(async () => {
   if (cleanup) await cleanup();
 });
 
-test('legacy recovery capabilities are expired and plaintext is absent after import', async () => {
+linuxTest('legacy recovery capabilities are expired and plaintext is absent after import', async () => {
   for (const [table, raw] of [
     ['admin_invitations', RAW_INVITE],
     ['customer_invitations', RAW_CUSTOMER_INVITE],
@@ -138,7 +142,7 @@ test('legacy recovery capabilities are expired and plaintext is absent after imp
   expect(JSON.stringify(forged)).not.toContain(FORGED_ARCHIVE_SECRET);
 });
 
-test('the imported database keeps the mixed-version write boundary', async () => {
+linuxTest('the imported database keeps the mixed-version write boundary', async () => {
   await expect(db('admin_invitations').insert({
     email: 'old-writer@example.com', token: 'd'.repeat(64), token_digest: null,
     role_id: roleId, invited_by: adminId, expires_at: new Date(Date.now() + 86400000),

@@ -46,10 +46,21 @@ export interface GalleryLayoutSettings {
   // fixed-height tiles that crop to fill. 'natural' lays scenes out as
   // justified rows from the stored photo dimensions so nothing is cropped.
   storyGridMode?: 'fixed' | 'natural';
+  // Filename caption on a Story card's hover. Unset = hidden: guests rarely
+  // want a camera filename over the photo, so it is opt-in.
+  storyShowFilenames?: boolean;
+  // Story footer. Plain text; empty falls back to "Thank You" and to the
+  // welcome message / default thank-you line (GalleryStoryLayout).
+  storyFooterTitle?: string;
+  storyFooterText?: string;
 
   // Thumbnail scale (applies to Grid, Masonry columns, Mosaic)
   thumbnailScale?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 }
+
+// The theme JSON is stored as sent, so the gallery clamps to these as well.
+export const STORY_FOOTER_TITLE_MAX = 80;
+export const STORY_FOOTER_TEXT_MAX = 300;
 
 export interface ThemeConfig {
   // Colors — 8-token CI palette.

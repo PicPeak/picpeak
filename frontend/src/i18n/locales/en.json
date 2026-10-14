@@ -1373,6 +1373,9 @@
     "liked": "Liked",
     "favorited": "Favorited",
     "favorites": "Favorites",
+    "showLikedOnly": "Show only photos I liked",
+    "likedOnlyEmpty": "You have not liked any photos here yet. Tap the heart on a photo to find it here.",
+    "showAllPhotos": "Show all photos",
     "needHelp": "Need help? Contact us at",
     "noPhotosFound": "No photos found",
     "noPhotosMatch": "No photos match your search or filters.",
@@ -1632,6 +1635,9 @@
       "approveBody": "You confirm that the edited photos are fine as they are and the photographer can go ahead. After that you can no longer change your approvals and rejections; the photographer can reopen them for you.",
       "approveRejected": "Photos still marked as rejected: {{count}}",
       "approveConfirm": "Approve",
+      "identityApproval": "your approval",
+      "identitySelection": "your selection",
+      "identityInvalid": "Please check your name and email. A name may use letters, digits, spaces, hyphens, apostrophes and dots.",
       "approveSuccess": "Your approval was sent to the photographer",
       "approvedOn": "Edited photos approved on {{date}}",
       "noteLabel": "Note for the photographer (optional)",
@@ -1789,6 +1795,7 @@
     "uploadPhotos": "Upload Photos",
     "archiveEvent": "Archive Gallery",
     "archiveConfirm": "Are you sure you want to archive this gallery? This action cannot be undone.",
+    "archiveInProgress": "This gallery is being archived right now. Try again once the archive has finished.",
     "extendExpiration": "Extend {{days}} Days",
     "backToEvents": "All galleries",
     "loadingEventDetails": "Loading event details...",
@@ -3990,6 +3997,12 @@
       "natural": "Natural (keep every aspect ratio)"
     },
     "storyGridModeHint": "Natural lays scenes out in rows from each photo's dimensions, so portrait photos are shown whole instead of cropped.",
+    "storyShowFilenames": "Show filenames on hover",
+    "storyShowFilenamesHint": "Shows the photo's filename when a guest hovers over it. A gallery set to show original filenames shows the uploaded name.",
+    "storyFooterTitle": "Footer title",
+    "storyFooterTitleHint": "Leave empty for \"Thank You\".",
+    "storyFooterText": "Footer text",
+    "storyFooterTextHint": "Plain text, up to {{max}} characters. Leave empty to show the welcome message, or the default thank-you line when there is none.",
     "typographyAndStyle": "Typography & Style",
     "bodyFont": "Body Font",
     "headingFont": "Heading Font",
@@ -5462,7 +5475,8 @@
       "status": {
         "pending": "Pending",
         "sent": "Sent",
-        "failed": "Failed"
+        "failed": "Failed",
+        "suppressed": "Suppressed"
       },
       "col": {
         "recipient": "Recipient",
@@ -5902,7 +5916,8 @@
       "latestAttempt": "Latest attempt",
       "latestAttemptRunning": "Latest attempt running since",
       "latestAttemptFailed": "Latest attempt failed",
-      "lastSuccessfulBackup": "Last successful backup"
+      "lastSuccessfulBackup": "Last successful backup",
+      "signingKeyInvalid": "The backup signing key is unusable, so backups fail until it is fixed."
     },
     "actions": {
       "runBackupNow": "Run Backup Now",
@@ -7453,7 +7468,9 @@
       "marketingOptOutHelp": "When on, this customer is skipped by every newsletter campaign. Emails about their galleries, quotes and invoices are not affected.",
       "marketingOptOutSince": "Since {{date}}",
       "dayRate": "Default day rate",
-      "dayRateHint": "Used by per-day quote lines. Major units ({{currency}}). Leave blank to use the default day rate from Settings → Accounting."
+      "dayRateHint": "Used by per-day quote lines. Major units ({{currency}}). Leave blank to use the default day rate from Settings → Accounting.",
+      "noAdminEmails": "No administrative emails",
+      "noAdminEmailsHint": "Quotes, contracts, invoices and reminders are created as usual, but no email about them is sent to this customer. With portal access they see them there; otherwise you hand them over yourself. Held-back emails appear as “Suppressed” in the email log. Gallery emails are not affected. Copies to other recipients of the same document (e.g. an accountant in CC) are held back too. Emails already queued when you turn this on still go out."
     },
     "hours": {
       "section": "Hours",
@@ -8864,7 +8881,14 @@
     "createdToast": "Draft created.",
     "createDraft": "Create draft",
     "unsavedSavedFirst": "Your unsaved changes are saved first.",
-    "savedToastSent": "Quote saved."
+    "savedToastSent": "Quote saved.",
+    "issue": "Issue",
+    "reissueNoMail": "Issue again",
+    "issuedToast": "Quote issued. No email was sent.",
+    "saveAndIssueTitle": "Issue with your unsaved changes?",
+    "saveAndIssueMessage": "Your changes are saved first, then the quote is issued. This customer gets no email.",
+    "saveAndIssue": "Save & issue",
+    "confirmIssue": "Issue this quote now? This customer gets no email."
   },
   "crm": {
     "lineItems": {
@@ -9110,7 +9134,22 @@
     "forCustomer": "for {{name}}",
     "issuedLockedTitle": "Issued invoices can't be changed.",
     "issuedLocked": "To correct it, cancel it with a Storno invoice and issue a new one.",
-    "createDraft": "Create invoice"
+    "createDraft": "Create invoice",
+    "issue": "Issue",
+    "issuedToast": "Invoice issued. No email was sent.",
+    "saveAndIssueTitle": "Issue with your unsaved changes?",
+    "saveAndIssueMessage": "Your changes are saved first, then the invoice is issued. This customer gets no email.",
+    "saveAndIssue": "Save & issue",
+    "confirmIssue": "Issue this invoice now? This customer gets no email.",
+    "confirmReleaseIssue": "Mark the photos as delivered and issue this invoice now? This customer gets no email.",
+    "releaseForDeliveryIssue": "Mark delivered & issue",
+    "releasedIssuedToast": "Delivery invoice issued. No email was sent.",
+    "recordReminder": "Record reminder",
+    "confirmRecordReminder": "Record a reminder now? This customer gets no email, and no late fee is added.",
+    "reminderRecordedToast": "Reminder recorded; no email was sent.",
+    "confirmCancelIssuedNoMail": "A Stornorechnung will be generated; this customer gets no email. This cannot be undone. Continue?",
+    "cancelledWithStornoNoMailToast": "Invoice cancelled — Stornorechnung issued; no email was sent.",
+    "confirmReissueNoMail": "A Stornorechnung will be issued for this invoice (this customer gets no email), and a new scheduled draft will be created with the same line items. The new invoice will reference this one as \"Replaces R-XXXX\". Continue?"
   },
   "businessProfile": {
     "savedToast": "Business profile saved.",
@@ -9772,12 +9811,21 @@
         },
         "collectHint": "Only the first signer gets a link now, to complete their details. The contract, its PDF and the price are prepared once they have, and then go to the other signers.",
         "requestDetails": "Ask for the details",
-        "afterDetails": "Set once the customer has completed their details."
+        "afterDetails": "Set once the customer has completed their details.",
+        "issue": "Issue",
+        "noMailNotice": "This customer gets no administrative emails. With portal access they can sign it there; otherwise upload the paper-signed copy. Other signers are invited by email as usual.",
+        "readyToIssue": "Everything is ready to issue.",
+        "noMailAddressHint": "This customer gets no administrative emails, so they can't be asked for their details by email. Enter the missing address on the customer first."
       },
       "saveAndSendTitle": "Send with your unsaved changes?",
       "saveAndSendMessage": "Your changes are saved first, then you review the contract before it goes out.",
       "saveAndReview": "Save & review",
-      "cancelContract": "Cancel contract"
+      "cancelContract": "Cancel contract",
+      "issue": "Issue",
+      "finishIssuing": "Finish issuing with the customer's details",
+      "issuedToast": "Contract issued. No email was sent to the customer; with portal access they can sign it there.",
+      "confirmResendSignedNoMail": "Re-send the signed contract PDF? It goes to you; this customer gets no email.",
+      "resentSignedNoMailToast": "Signed contract re-sent to you; this customer gets no email."
     },
     "editor": {
       "create": "Create draft",
@@ -10208,7 +10256,8 @@
           "expired": "Time to sign ran out",
           "reminded": "Reminder sent",
           "data_requested": "Customer details requested",
-          "data_collected": "Customer details received"
+          "data_collected": "Customer details received",
+          "invited_portal": "Opened in the portal (no email)"
         },
         "actor": {
           "admin": "Admin",
@@ -10256,7 +10305,9 @@
       "remindError": "The reminder couldn't be sent. Try again.",
       "remindedAt": "Reminded {{count}}×, last {{date}}",
       "remindConfirm": "Send {{name}} a reminder? It carries a new link; the previous one stops working.",
-      "remind": "Send reminder"
+      "remind": "Send reminder",
+      "portalOpenAt": "Open in the portal since {{date}} (no email)",
+      "noAdminEmails": "This customer takes no administrative emails, so no link can be sent to them. They sign in the customer portal or on paper."
     },
     "paperUpload": {
       "title": "Upload a signed contract",

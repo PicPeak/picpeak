@@ -3,6 +3,7 @@ import { Heart } from 'lucide-react';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { PhotoCard } from '../PhotoCard';
 import { firstLookAboveChips } from '../GalleryTileBadges';
+import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
@@ -41,6 +42,10 @@ interface MosaicPhotoProps {
   savedIdentity: { name: string; email: string } | null;
   onIdentitySaved: (identity: { name: string; email: string }) => void;
   onQuickComment?: () => void;
+  /** The client's hide/show button (issue 1992), when the viewer is the client. */
+  visibilityToggle?: React.ReactNode;
+  /** Dim the photo: the client hid it from guests. */
+  dimmed?: boolean;
 }
 
 const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
@@ -57,6 +62,8 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
   onQuickComment,
   savedIdentity,
   onIdentitySaved,
+  visibilityToggle,
+  dimmed = false,
 }) => {
   const bands = useLazyBands();
   const [showIdentityModal, setShowIdentityModal] = React.useState(false);
@@ -106,7 +113,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
         imageProps={{
           src: photo.thumbnail_url || photo.url,
           alt: photo.filename,
-          className: 'w-full h-full object-cover transition-transform duration-300 group-hover:scale-105',
+          className: `w-full h-full object-cover transition-transform duration-300 group-hover:scale-105${dimmed ? ' opacity-40' : ''}`,
           loading: 'lazy',
           isGallery: true,
         }}
@@ -129,6 +136,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
         }}
         likeBeforeComment
         checkboxTestId
+        topLeftControl={visibilityToggle}
         afterOverlay={((photo.like_count ?? 0) > 0 || likedLocal) ? (
           <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 z-10`}>
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
@@ -177,7 +185,9 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   onPhotoSelect,
   allowDownloads = true,
   feedbackEnabled = false,
-  feedbackOptions
+  feedbackOptions,
+  isClient = false,
+  onToggleVisibility,
 }) => {
   // Shared by every tile (issue 1733): the identity typed into one tile's
   // modal — for a like or a rating — is reused by all the others.
@@ -232,6 +242,11 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           feedbackOptions={feedbackOptions}
           savedIdentity={savedIdentity}
           onIdentitySaved={setSavedIdentity}
+          // The client's hide/show button and dimmed hidden photos, as in Grid (issue 1992).
+          visibilityToggle={isClient && onToggleVisibility
+            ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
+            : undefined}
+          dimmed={isClient && Boolean(onToggleVisibility) && isHiddenFromGuests(photo)}
           onQuickComment={() => {
             if (typeof onOpenPhotoWithFeedback !== 'undefined' && onOpenPhotoWithFeedback) {
               onOpenPhotoWithFeedback(index);

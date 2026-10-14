@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { DateCalendar } from './DateCalendar';
 import { useEscapeClose } from './useEscapeClose';
+import { isImeComposing } from '../../utils/imeComposition';
 
 /**
  * Date input that displays + accepts values in the admin-configured
@@ -231,7 +232,8 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
           onKeyDown={(e) => {
             // Enter submits the surrounding form without a blur: commit a
             // short date ("1.8.2026") first, or the form saves the old value.
-            if (e.key === 'Enter') commitText();
+            // The Enter that commits an IME composition is the field's.
+            if (e.key === 'Enter' && !isImeComposing(e)) commitText();
           }}
           onBlur={commitText}
           aria-label={label ? undefined : ariaLabel}
