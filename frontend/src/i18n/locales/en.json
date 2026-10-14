@@ -5902,7 +5902,8 @@
       "latestAttempt": "Latest attempt",
       "latestAttemptRunning": "Latest attempt running since",
       "latestAttemptFailed": "Latest attempt failed",
-      "lastSuccessfulBackup": "Last successful backup"
+      "lastSuccessfulBackup": "Last successful backup",
+      "signingKeyInvalid": "The backup signing key is unusable, so backups fail until it is fixed."
     },
     "actions": {
       "runBackupNow": "Run Backup Now",

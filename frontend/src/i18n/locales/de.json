@@ -1504,7 +1504,8 @@
       "latestAttempt": "Letzter Versuch",
       "latestAttemptRunning": "Letzter Versuch läuft seit",
       "latestAttemptFailed": "Letzter Versuch fehlgeschlagen",
-      "lastSuccessfulBackup": "Letztes erfolgreiches Backup"
+      "lastSuccessfulBackup": "Letztes erfolgreiches Backup",
+      "signingKeyInvalid": "Der Backup-Signaturschlüssel ist nicht nutzbar. Backups schlagen fehl, bis er korrigiert ist."
     },
     "actions": {
       "runBackupNow": "Backup jetzt starten",

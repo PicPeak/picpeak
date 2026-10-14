@@ -5172,7 +5172,8 @@
       "nextBackup": "Naslednja varnostna kopija",
       "notScheduled": "Ni načrtovano",
       "enabled": "Omogočeno",
-      "disabled": "Onemogočeno"
+      "disabled": "Onemogočeno",
+      "signingKeyInvalid": "Ključ za podpisovanje varnostnih kopij ni uporaben. Varnostne kopije ne bodo uspele, dokler ga ne popravite."
     },
     "actions": {
       "runBackupNow": "Zaženi varnostno kopijo zdaj",

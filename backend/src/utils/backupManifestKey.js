@@ -50,14 +50,40 @@ function assertExternal(file) {
   }
 }
 
+// Names the file, its mode and the ways out: the admin sees this in System
+// Health and in the failed backup run, not only in the server log.
+function writableKeyError(file, mode, tightened) {
+  const octal = (mode & 0o777).toString(8).padStart(4, '0');
+  return new Error(`The backup manifest key file ${file} is group- or world-writable (mode ${octal}), `
+    + 'so another account could replace the key that signs backups. '
+    + (tightened
+      ? 'chmod 600 did not take effect: its filesystem does not keep file modes (some NAS, VM shared folders or bind mounts). '
+        + 'Move the key to a filesystem that does and point BACKUP_MANIFEST_KEY_FILE at it, '
+      : `Fix it with "chmod 600 ${file}" as the account that owns it, point BACKUP_MANIFEST_KEY_FILE at a private copy, `)
+    + 'or set BACKUP_MANIFEST_KEY to its 64 hex digits.');
+}
+
 function readFileKey(file) {
   assertExternal(file);
   if (!fs.lstatSync(file).isFile()) throw new Error('The backup manifest key must be a regular file, not a symlink');
   const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
   try {
-    const stat = fs.fstatSync(fd);
-    if (!stat.isFile() || stat.size > 128 || (stat.mode & 0o022)) {
+    let stat = fs.fstatSync(fd);
+    if (!stat.isFile() || stat.size > 128) {
       throw new Error('The backup manifest key must be a regular, non-group/world-writable private file');
+    }
+    if (stat.mode & 0o022) {
+      // Our own key file (made by hand, copied in, a permissive tool): tighten
+      // it in place. A file another account owns stays that owner's call.
+      const ours = typeof process.getuid === 'function' && stat.uid === process.getuid();
+      if (!ours) throw writableKeyError(file, stat.mode, false);
+      try { fs.fchmodSync(fd, 0o600); } catch { /* re-checked below */ }
+      const before = stat.mode;
+      stat = fs.fstatSync(fd);
+      // A filesystem that cannot hold modes cannot keep the key private either.
+      if (stat.mode & 0o022) throw writableKeyError(file, stat.mode, true);
+      logger.warn(`The backup manifest key file ${file} was group- or world-writable `
+        + `(mode ${(before & 0o777).toString(8).padStart(4, '0')}); restricted it to 0600.`);
     }
     return parseKey(fs.readFileSync(fd, 'utf8'), 'BACKUP_MANIFEST_KEY_FILE');
   } finally { fs.closeSync(fd); }
@@ -78,10 +104,12 @@ function loadKey({ create = false } = {}) {
     const fresh = crypto.randomBytes(32);
     try {
       fs.writeFileSync(file, fresh.toString('hex'), { flag: 'wx', mode: 0o600 });
-      key = fresh;
       // Said once, at creation: the only copy is on the host it protects.
       logger.warn(`Created the backup manifest signing key at ${file}. Copy it OFF this host and keep it with `
         + 'whoever keeps the backups: a backup cannot be verified or restored on a replacement host without it.');
+      // Read it back the way signing will: on a filesystem that ignores the
+      // 0600 the backup must stop here, not after the copy when it signs.
+      key = readFileKey(file);
     } catch (writeError) {
       if (writeError.code !== 'EEXIST') throw writeError;
       key = readFileKey(file);
@@ -109,7 +137,9 @@ function keyStatus() {
     const { keyId, source } = loadKey();
     return { ready: true, keyId, source };
   } catch (error) {
-    return { ready: false, keyId: null, source: error.code === 'ENOENT' ? 'missing' : 'invalid' };
+    if (error.code === 'ENOENT') return { ready: false, keyId: null, source: 'missing' };
+    // The message names the key file and the fix; it never carries key material.
+    return { ready: false, keyId: null, source: 'invalid', reason: error.message };
   }
 }
 

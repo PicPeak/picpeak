@@ -93,13 +93,84 @@ describe('backup manifest trust anchor', () => {
     expect(fs.readFileSync(file, 'utf8')).toBe('invalid');
     fs.writeFileSync(file, 'a9'.repeat(32));
     fs.chmodSync(file, 0o666);
-    expect(() => loadKey({ create: true })).toThrow(/non-group\/world-writable/);
+    const fchmod = jest.spyOn(fs, 'fchmodSync').mockImplementation(() => {});
+    try { expect(() => loadKey({ create: true })).toThrow(/group- or world-writable/); } finally { fchmod.mockRestore(); }
+    expect(fs.readFileSync(file, 'utf8')).toBe('a9'.repeat(32));
     fs.unlinkSync(file);
     const target = path.join(dir, 'target');
     fs.writeFileSync(target, 'a9'.repeat(32), { mode: 0o600 });
     fs.symlinkSync(target, file);
     expect(() => loadKey({ create: true })).toThrow();
     expect(fs.lstatSync(file).isSymbolicLink()).toBe(true);
+  });
+
+  it('restricts a group/world-writable key file it owns to 0600 and uses it', () => {
+    const file = keyFile();
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, 'a9'.repeat(32));
+    fs.chmodSync(file, 0o666);
+    const warn = jest.spyOn(require('../../src/utils/logger'), 'warn').mockImplementation(() => {});
+    try {
+      expect(loadKey({ create: true }).key).toEqual(Buffer.from('a9'.repeat(32), 'hex'));
+      expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+      expect(warn.mock.calls.some(([message]) => String(message).includes(file) && /0666.*0600/.test(message))).toBe(true);
+    } finally { warn.mockRestore(); }
+    expect(keyStatus()).toMatchObject({ ready: true, source: 'file' });
+  });
+
+  // A NAS / VM shared folder / bind mount that reports 0777 whatever chmod says.
+  const ignoreModes = () => {
+    const realFstat = fs.fstatSync;
+    return [
+      jest.spyOn(fs, 'fchmodSync').mockImplementation(() => {}),
+      jest.spyOn(fs, 'fstatSync').mockImplementation((...args) => {
+        const stat = realFstat(...args);
+        return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, { mode: (stat.mode & ~0o777) | 0o777 });
+      }),
+    ];
+  };
+
+  it('refuses a key whose mode does not stick, naming the file, its mode and the fixes', () => {
+    const file = keyFile();
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, 'a9'.repeat(32), { mode: 0o600 });
+    const spies = ignoreModes();
+    try {
+      let message;
+      try { loadKey({ create: true }); } catch (error) { message = error.message; }
+      expect(message).toContain(file);
+      expect(message).toContain('mode 0777');
+      expect(message).toMatch(/does not keep file modes/);
+      expect(message).toMatch(/BACKUP_MANIFEST_KEY_FILE/);
+      expect(message).toMatch(/BACKUP_MANIFEST_KEY to its 64 hex digits/);
+      expect(message).not.toContain('a9'.repeat(32));
+      expect(keyStatus()).toEqual({ ready: false, source: 'invalid', keyId: null, reason: message });
+    } finally { spies.forEach(spy => spy.mockRestore()); }
+  });
+
+  it('tells the owner to chmod a writable key file it does not own, and leaves it alone', () => {
+    if (typeof process.getuid !== 'function') return;
+    const file = keyFile();
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, 'a9'.repeat(32));
+    fs.chmodSync(file, 0o666);
+    const realFstat = fs.fstatSync;
+    const fchmod = jest.spyOn(fs, 'fchmodSync');
+    const fstat = jest.spyOn(fs, 'fstatSync').mockImplementation((...args) => {
+      const stat = realFstat(...args);
+      return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, { uid: process.getuid() + 1 });
+    });
+    try {
+      expect(() => loadKey()).toThrow(`chmod 600 ${file}`);
+      expect(fchmod).not.toHaveBeenCalled();
+    } finally { fchmod.mockRestore(); fstat.mockRestore(); }
+  });
+
+  it('stops at creation when the new key file does not keep 0600, not later at signing', () => {
+    const spies = ignoreModes();
+    try {
+      expect(() => loadKey({ create: true })).toThrow(/does not keep file modes/);
+    } finally { spies.forEach(spy => spy.mockRestore()); }
   });
 
   it('selects retained keys by nonsecret identifier and rejects malformed ring entries', () => {

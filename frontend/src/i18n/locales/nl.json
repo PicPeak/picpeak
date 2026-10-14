@@ -2781,7 +2781,8 @@
       "nextBackup": "Volgende back-up",
       "notScheduled": "Niet gepland",
       "enabled": "Ingeschakeld",
-      "disabled": "Uitgeschakeld"
+      "disabled": "Uitgeschakeld",
+      "signingKeyInvalid": "De ondertekeningssleutel voor back-ups is onbruikbaar. Back-ups mislukken totdat deze is hersteld."
     },
     "actions": {
       "runBackupNow": "Nu back-up maken",

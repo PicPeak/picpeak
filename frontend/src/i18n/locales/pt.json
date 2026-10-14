@@ -2931,7 +2931,8 @@
       "nextBackup": "Próximo backup",
       "notScheduled": "Não agendado",
       "enabled": "Ativado",
-      "disabled": "Desativado"
+      "disabled": "Desativado",
+      "signingKeyInvalid": "A chave de assinatura dos backups está inutilizável. Os backups falharão até que seja corrigida."
     },
     "actions": {
       "runBackupNow": "Executar Backup Agora",

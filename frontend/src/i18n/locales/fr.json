@@ -2836,7 +2836,8 @@
       "nextBackup": "Prochaine sauvegarde",
       "notScheduled": "Non planifiée",
       "enabled": "Activé",
-      "disabled": "Désactivé"
+      "disabled": "Désactivé",
+      "signingKeyInvalid": "La clé de signature des sauvegardes est inutilisable. Les sauvegardes échoueront tant qu'elle n'est pas corrigée."
     },
     "actions": {
       "runBackupNow": "Exécuter la sauvegarde maintenant",
