@@ -796,6 +796,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                 aria-label={`${t('gallery.showLikedOnly', 'Show only photos I liked')}${likedPhotoIds.size > 0 ? ` (${likedPhotoIds.size})` : ''}`}
                 title={t('gallery.favorites', 'Favorites')}
                 data-testid="premium-nav-liked"
+                // Focus moves to "Show all photos" when the filter empties the view.
+                data-gallery-focus="liked"
               >
                 <Heart className="w-4 h-4" fill={likedOnly ? 'currentColor' : 'none'} />
                 {likedPhotoIds.size > 0 && (

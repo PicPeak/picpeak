@@ -31,7 +31,9 @@ export const LikedOnlyEmptyMessage: React.FC<{ onShowAll?: () => void }> = ({ on
         {t('gallery.likedOnlyEmpty', 'You have not liked any photos here yet. Tap the heart on a photo to find it here.')}
       </p>
       {onShowAll && (
-        <Button variant="outline" size="sm" onClick={onShowAll}>
+        // Premium and Story remount between this view and their photos; the
+        // nav heart (same role) takes focus back on the way out.
+        <Button variant="outline" size="sm" onClick={onShowAll} data-gallery-focus="liked">
           {t('gallery.showAllPhotos', 'Show all photos')}
         </Button>
       )}

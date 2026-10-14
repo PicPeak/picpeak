@@ -564,6 +564,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               aria-label={`${t('gallery.showLikedOnly', 'Show only photos I liked')}${favorites.size > 0 ? ` (${favorites.size})` : ''}`}
               title={t('gallery.favorites', 'Favorites')}
               data-testid="story-nav-liked"
+              // Focus moves to "Show all photos" when the filter empties the view.
+              data-gallery-focus="liked"
             >
               <Heart size={20} fill={likedOnly ? 'currentColor' : 'none'} />
               {favorites.size > 0 && (
