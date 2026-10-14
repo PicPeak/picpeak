@@ -130,7 +130,7 @@ export const GalleryPage: React.FC = () => {
     error: infoError
   } = useGalleryInfo(canFetchGalleryInfo ? resolvedSlug ?? undefined : undefined, resolvedToken, canFetchGalleryInfo);
   // An old slug of a renamed gallery answers 301 naming the new one.
-  const followingRename = useFollowGalleryRename(infoError);
+  const followingRename = useFollowGalleryRename(infoError, resolvedSlug);
   const isLoadingInfo = isLoadingInfoQuery || isResolvingIdentifier || followingRename;
   const requiresPassword = normalizeRequirePassword(galleryInfo?.requires_password, true);
 

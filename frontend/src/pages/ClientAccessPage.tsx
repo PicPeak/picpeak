@@ -23,7 +23,7 @@ export const ClientAccessPage: React.FC = () => {
 
   const { data: galleryInfo, isLoading: isLoadingInfoQuery, error: infoError } = useGalleryInfo(slug);
   // A renamed gallery's old slug: move to the new one, ?token= included.
-  const isLoadingInfo = useFollowGalleryRename(infoError) || isLoadingInfoQuery;
+  const isLoadingInfo = useFollowGalleryRename(infoError, slug) || isLoadingInfoQuery;
 
   const { data: settingsData } = usePublicSettings();
   // Theme-aware logo: the page background follows the themed

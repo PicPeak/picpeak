@@ -52,7 +52,7 @@ function Probe({ answers }: { answers: Record<string, string> }) {
   const { slug = '' } = useParams();
   const location = useLocation();
   const error = answers[slug] ? renamed(answers[slug]) : null;
-  const following = useFollowGalleryRename(error);
+  const following = useFollowGalleryRename(error, slug);
   return (
     <div>
       <span data-testid="location">{`${location.pathname}${location.search}${location.hash}`}</span>
@@ -92,6 +92,18 @@ describe('useFollowGalleryRename', () => {
 
   it(`stops a redirect cycle after ${MAX_GALLERY_RENAME_HOPS} hops and shows not found`, async () => {
     renderAt('/gallery/a', { a: 'b', b: 'a' });
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('not-found'));
+  });
+
+  it('shows not found for a redirect to the slug that was asked for', async () => {
+    renderAt('/gallery/a', { a: 'a' });
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('not-found'));
+    expect(screen.getByTestId('location').textContent).toBe('/gallery/a');
+  });
+
+  it('shows not found when a chain ends in a self-redirect', async () => {
+    renderAt('/gallery/b', { b: 'a', a: 'a' });
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/gallery/a'));
     await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('not-found'));
   });
 });

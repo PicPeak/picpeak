@@ -39,16 +39,21 @@ export function renamedGalleryPath(pathname: string, newSlug: string): string | 
 
 /**
  * Navigates (replacing the history entry) when `error` is a rename answer.
- * Returns true while that navigation is pending, so the caller can keep
- * showing its loading state instead of flashing "not found".
+ * `errorSlug` is the slug whose /info request produced `error`. Returns true
+ * while that navigation is pending, so the caller can keep showing its
+ * loading state instead of flashing "not found".
  */
-export function useFollowGalleryRename(error: unknown): boolean {
+export function useFollowGalleryRename(error: unknown, errorSlug: string | null | undefined): boolean {
   const location = useLocation();
   const navigate = useNavigate();
   const state = location.state as { galleryRenameHops?: unknown } | null;
   const hops = typeof state?.galleryRenameHops === 'number' ? state.galleryRenameHops : 0;
 
-  const newSlug = renamedGallerySlug(error);
+  const named = renamedGallerySlug(error);
+  // A redirect to the slug that was asked for (A→B→A leaves A→A behind once
+  // the gallery is gone) leads nowhere: treat it as not found, not as a
+  // pending move.
+  const newSlug = named && named !== errorSlug ? named : null;
   const newPath = newSlug ? renamedGalleryPath(location.pathname, newSlug) : null;
   // Already on the new path: the page still holds the old slug's answer for
   // the render before its own query moves on, which is not a "not found".
