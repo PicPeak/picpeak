@@ -13,6 +13,8 @@ const { AppError } = require('../utils/errors');
 
 // More than any studio has team members; keeps the IN lists bounded.
 const MAX_ASSIGNED_ADMINS = 100;
+// pg_advisory_xact_lock class for one gallery's team save. 1074-1077 are taken.
+const TEAM_SAVE_LOCK = 1078;
 
 const adminColumns = ['admin_users.id', 'admin_users.username', 'roles.display_name as role_name'];
 
@@ -87,11 +89,21 @@ async function resolveAssignableIds(ids, ownerId, alreadyAssigned = []) {
  * @returns {Promise<{added: number[], removed: number[]}>}
  */
 async function setAssignedAdmins(eventId, adminIds, assignedBy, trx = db) {
+  // One team save per gallery at a time (issue 1979). Two saves that read the
+  // team either side of a third one's commit can each delete or insert a row
+  // the other then inserts: a unique-index wait in both directions on
+  // PostgreSQL. An advisory lock, not a stronger lock on the event row: the
+  // admin hard delete holds assignment rows while its SET NULL onto
+  // events.created_by updates the row, which a stronger lock would hold back.
+  // SQLite runs one transaction at a time.
+  if (trx.client.config.client === 'pg') {
+    await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [TEAM_SAVE_LOCK, Number(eventId)]);
+  }
   // The event row before any assignment row (issue 1979): the key-share lock
   // the insert below takes on it anyway, taken up front. Deleting a gallery
   // locks the event row and then its assignments, so taking it last could
-  // deadlock with that on PostgreSQL. A key-share lock holds back neither an
-  // edit of the event nor another team save. No-op on SQLite.
+  // deadlock with that on PostgreSQL. A key-share lock does not hold back an
+  // edit of the event. No-op on SQLite.
   await trx('events').where('id', eventId).forKeyShare().first('id');
   const existing = (await trx('event_admin_assignments').where('event_id', eventId).pluck('admin_user_id'))
     .map(Number);
@@ -109,10 +121,8 @@ async function setAssignedAdmins(eventId, adminIds, assignedBy, trx = db) {
   }
   if (added.length > 0) {
     // A concurrent save of the same set already inserted the row: same result.
-    // That save waits on the uncommitted row, so both insert in id order:
-    // in submitted order, [a, b] against [b, a] deadlocks on PostgreSQL.
     await trx('event_admin_assignments')
-      .insert([...added].sort((a, b) => a - b).map((id) => ({ event_id: eventId, admin_user_id: id, assigned_by: assignedBy })))
+      .insert(added.map((id) => ({ event_id: eventId, admin_user_id: id, assigned_by: assignedBy })))
       .onConflict(['event_id', 'admin_user_id']).ignore();
   }
   return { added, removed };

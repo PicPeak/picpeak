@@ -105,16 +105,23 @@ describe('admin delete and team save lock assignment rows in id order (issue 197
     expect(eventRead).toBeLessThan(firstOnTable);
   });
 
-  it('a team save inserts new members in id order, whatever order they were submitted in', async () => {
-    const [a, b, c] = [await admin(), await admin(), await admin()];
+  it('on PostgreSQL a team save takes its gallery advisory lock before anything else', async () => {
+    const a = await admin();
     const gallery = await event();
 
-    const change = await db.transaction((trx) => eventAdminAssignments.setAssignedAdmins(gallery, [c, a, b], ownerId, trx));
+    await db.transaction(async (trx) => {
+      // The real transaction, reporting itself as PostgreSQL to the service.
+      const raw = jest.fn(async () => {
+        queries.push('advisory lock');
+      });
+      const pgTrx = Object.assign((table) => trx(table), { raw, client: { config: { client: 'pg' } } });
+      queries = [];
+      await eventAdminAssignments.setAssignedAdmins(gallery, [a], ownerId, pgTrx);
+      expect(raw).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(?, ?)', [1078, gallery]);
+    });
 
-    // The activity log keeps the submitted order.
-    expect(change).toEqual({ added: [c, a, b], removed: [] });
-    const byRowId = (await db('event_admin_assignments').where({ event_id: gallery }).orderBy('id').pluck('admin_user_id'))
-      .map(Number);
-    expect(byRowId).toEqual([a, b, c]);
+    expect(queries.indexOf('advisory lock')).toBe(0);
+    const ids = (await db('event_admin_assignments').where({ event_id: gallery }).pluck('admin_user_id')).map(Number);
+    expect(ids).toEqual([a]);
   });
 });
