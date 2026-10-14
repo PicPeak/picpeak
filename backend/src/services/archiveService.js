@@ -36,6 +36,9 @@ const {
 const archiveJobName = (eventId) => `event_archive:${eventId}`;
 // How often the post-publish cleanup re-checks the claim (see buildArchive).
 const CLEANUP_CLAIM_CHECK_MS = 5000;
+// events.archive_path is 255 characters; `events/archived/<slug>-<12 hex>.zip`
+// spends 33 of them around the slug.
+const ARCHIVE_SLUG_MAX = 255 - 33;
 
 /** Whether an archive job holds a live claim on the gallery. */
 async function isArchiveRunning(eventId) {
@@ -81,7 +84,8 @@ async function claimArchive(eventId) {
 //   - superseded: zips a restore brought back. Kept until the gallery has a
 //     newer archive, or is deleted: until then the zip is the copy to fall
 //     back on, should anything (a job that stalled past its lease with a
-//     delete under way) take a restored file.
+//     delete under way) take a restored file. An abandoned upload whose
+//     removal failed joins them, to be retried at the same points.
 // Written only under the writer's own claim token.
 const isArchiveKey = (key) => typeof key === 'string' && key.startsWith('events/archived/');
 
@@ -131,11 +135,22 @@ async function removeAbandonedUpload(lease) {
     const { upload: key } = await readArchiveState(lease.jobName);
     if (!isArchiveKey(key)) return;
     // Published after all (the answer to its commit was lost): keep it.
+    const { upload: _abandoned, ...state } = await readArchiveState(lease.jobName);
     if (!(await isReferenced(key))) {
-      await getStorage().delete(key);
-      logger.info(`Removed the archive upload an interrupted run left behind: ${key}`);
+      try {
+        await getStorage().delete(key);
+        logger.info(`Removed the archive upload an interrupted run left behind: ${key}`);
+      } catch (err) {
+        // Kept with the superseded zips, or the next upload record would
+        // replace the only reference to it: the next publish or the gallery
+        // delete retries it.
+        logger.warn(`Failed to remove the abandoned archive upload ${key}: ${err.message}`);
+        const superseded = Array.isArray(state.superseded) ? state.superseded : [];
+        if (!superseded.includes(key)) superseded.push(key);
+        state.superseded = superseded;
+      }
     }
-    await recordUpload(lease, null);
+    await writeArchiveState(lease, state);
   } catch (err) {
     logger.warn(`Could not check ${lease.jobName} for an abandoned archive upload: ${err.message}`);
   }
@@ -190,8 +205,10 @@ async function buildArchive(event, lease) {
   // can still be uploading, and at a shared key it would overwrite the zip
   // the winner published after deleting the originals. The download names
   // the file after the slug, so the suffix is never seen.
+  // Bounded to events.archive_path (varchar 255 on PostgreSQL): the suffix
+  // keeps it unique, the slug is only there for a human reading storage.
   const archiveRelKey = path.posix.join('events/archived',
-    `${event.slug}-${crypto.randomBytes(6).toString('hex')}.zip`);
+    `${String(event.slug).slice(0, ARCHIVE_SLUG_MAX)}-${crypto.randomBytes(6).toString('hex')}.zip`);
   const eventPrefix = path.posix.join('events/active', event.slug);
 
   const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-archive-'));

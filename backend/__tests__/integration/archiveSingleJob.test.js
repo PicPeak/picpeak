@@ -540,4 +540,36 @@ describe('one archive job per gallery', () => {
       .rejects.toMatchObject({ code: 'ARCHIVE_IN_PROGRESS' });
     await lease.release();
   });
+
+  it('keeps an abandoned upload it failed to remove for the next publish', async () => {
+    const event = await makeEvent('abandoned-stuck');
+    const deadKey = 'events/archived/abandoned-stuck-0123456789ab.zip';
+    await holdClaim(event.id);
+    await db('maintenance_jobs').where({ job_name: jobName(event.id) }).update({
+      last_result: JSON.stringify({ upload: deadKey }),
+      heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString(),
+    });
+    mockStorage.delete.mockImplementationOnce(async () => { throw new Error('AccessDenied'); });
+
+    const { claimArchive, supersededArchives } = require('../../src/services/archiveService');
+    const lease = await claimArchive(event.id);
+    await lease.release();
+    expect(await supersededArchives(event.id)).toEqual([deadKey]);
+
+    await archiveEvent(event);
+    expect(deletedKeys().filter((key) => key === deadKey)).toHaveLength(2);
+    expect(await supersededArchives(event.id)).toEqual([]);
+  });
+
+  it('keeps the archive key within archive_path for the longest slugs', async () => {
+    // 235 characters: the longest slug whose `<slug>.zip` key fit before.
+    const slug = `long-${'x'.repeat(230)}`;
+    const event = await makeEvent(slug, { photoCount: 1 });
+
+    await archiveEvent(event);
+
+    const row = await db('events').where({ id: event.id }).first();
+    expect(row.archive_path.length).toBeLessThanOrEqual(255);
+    expect(row.archive_path).toMatch(/^events\/archived\/long-x+-[0-9a-f]{12}\.zip$/);
+  });
 });
