@@ -854,6 +854,16 @@ async function processTemplate(template, variables, language = 'en') {
   // Import date formatter and text formatters
   const { formatDate } = require('../utils/dateFormatter');
   const { formatWelcomeMessage } = require('../utils/formatters');
+  const { getInstanceTimeZone, expiryCalendarDate } = require('../utils/galleryExpiry');
+  // An expiry instant prints as its day in the instance time zone, not the
+  // server's: a gallery open through the end of 24 Dec in New York is 05:00
+  // UTC on the 25th. A bare date, or text that is no timestamp, passes as is.
+  let expiryTimeZone = null;
+  const expiryDay = async (value) => {
+    if (!(value instanceof Date || typeof value === 'number' || /^\d{4}-\d{2}-\d{2}T|^\d{10,}$/.test(String(value)))) return value;
+    expiryTimeZone = expiryTimeZone || await getInstanceTimeZone();
+    return expiryCalendarDate(value, expiryTimeZone) || value;
+  };
 
   // Get translation from email_template_translations table with fallback chain
   let subject = '';
@@ -952,13 +962,13 @@ async function processTemplate(template, variables, language = 'en') {
     processedVariables.event_date = await formatDate(processedVariables.event_date, language);
   }
   if (processedVariables.expiry_date) {
-    processedVariables.expiry_date = await formatDate(processedVariables.expiry_date, language);
+    processedVariables.expiry_date = await formatDate(await expiryDay(processedVariables.expiry_date), language);
   }
   if (processedVariables.archive_date) {
     processedVariables.archive_date = await formatDate(processedVariables.archive_date, language);
   }
   if (processedVariables.expires_at) {
-    processedVariables.expires_at = await formatDate(processedVariables.expires_at, language);
+    processedVariables.expires_at = await formatDate(await expiryDay(processedVariables.expires_at), language);
   }
   // Promised completion date of a two-stage delivery (delivery_due_reminder).
   if (processedVariables.due_date) {

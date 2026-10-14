@@ -38,6 +38,8 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { nextDocumentNumber } = require('../utils/documentSequences');
 const { resolveDefaultEventType } = require('./eventTypeService');
 const { formatShortDate } = require('../utils/dateFormatter');
+const { toDateOnly } = require('../utils/dateOnly');
+const { getInstanceTimeZone, endOfDayInZone } = require('../utils/galleryExpiry');
 const businessProfileService = require('./businessProfileService');
 const pdfThemeService = require('./pdfThemeService');
 const documentArtifactService = require('./documentArtifactService');
@@ -2387,8 +2389,18 @@ async function convertToEvent(quoteId, adminId, options = {}) {
     // other, introspect the columns at runtime and only insert
     // fields the table actually has.
     const adminRow = await trx('admin_users').where({ id: adminId }).first();
-    const oneYearAfterEvent = new Date(quote.event_date || quote.issue_date);
-    oneYearAfterEvent.setFullYear(oneYearAfterEvent.getFullYear() + 1);
+    // A year after the event, open through the end of that day in the
+    // instance time zone (a date-only expiry, as the settings field sets).
+    const eventDay = toDateOnly(quote.event_date || quote.issue_date);
+    let oneYearAfterEvent;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(eventDay || '')) {
+      const dayAYearOn = new Date(`${eventDay}T00:00:00.000Z`);
+      dayAYearOn.setUTCFullYear(dayAYearOn.getUTCFullYear() + 1);
+      oneYearAfterEvent = endOfDayInZone(dayAYearOn.toISOString().slice(0, 10), await getInstanceTimeZone(trx));
+    } else {
+      oneYearAfterEvent = new Date(quote.event_date || quote.issue_date);
+      oneYearAfterEvent.setFullYear(oneYearAfterEvent.getFullYear() + 1);
+    }
     const placeholder = crypto.randomBytes(32).toString('hex');
     const fullName = [customer.first_name, customer.last_name].filter(Boolean).join(' ')
       || customer.display_name || customer.company_name || quote.quote_number;

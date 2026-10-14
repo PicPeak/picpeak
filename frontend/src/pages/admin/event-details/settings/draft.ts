@@ -127,18 +127,32 @@ export function usesCustomTheme(event: Event): boolean {
 }
 
 /**
- * The date field's value for a stored expiry (issue 1975). The field sends a
- * bare 'yyyy-MM-dd', which the server stores as midnight UTC; read in the
- * browser's zone, that instant is the previous day west of UTC, and a save
- * would move the expiry back a day. A midnight-UTC instant is read as its UTC
- * date. Anything else (event creation and the duplicate dialog store the
- * server's local midnight) keeps the browser-zone reading.
+ * The date field's value for a stored expiry. A picked date is stored as the
+ * end of that day in the instance time zone (`timeZone`, from the event
+ * detail payload), so the stored instant is read back in that zone. Older
+ * rows keep their shapes: the settings field used to store midnight UTC,
+ * read as its UTC date (issue 1975); event creation and duplication stored
+ * the server's local midnight, which is its day in the instance zone when
+ * that is the server zone. Without a usable zone, the browser's.
  */
-export function expiryDateField(value: unknown): string {
+export function expiryDateField(value: unknown, timeZone?: string | null): string {
   const date = safeParseDate(value);
   if (!date || Number.isNaN(date.getTime())) return '';
   const iso = date.toISOString();
-  return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : format(date, 'yyyy-MM-dd');
+  if (iso.endsWith('T00:00:00.000Z')) return iso.slice(0, 10);
+  if (timeZone) {
+    try {
+      const parts = Object.fromEntries(
+        new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
+          .formatToParts(date)
+          .map((p) => [p.type, p.value]),
+      );
+      return `${parts.year}-${parts.month}-${parts.day}`;
+    } catch {
+      // An unknown zone: fall through to the browser's.
+    }
+  }
+  return format(date, 'yyyy-MM-dd');
 }
 
 /**
@@ -164,7 +178,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     welcome_message: event.welcome_message || '',
     color_theme: event.color_theme || '',
     css_template_id: event.css_template_id ?? null,
-    expires_at: expiryDateField(event.expires_at),
+    expires_at: expiryDateField(event.expires_at, event.expiry_time_zone),
     allow_user_uploads: truthy(event.allow_user_uploads),
     reveal_mode: truthy(event.reveal_mode),
     // datetime-local wants local "YYYY-MM-DDTHH:mm"
