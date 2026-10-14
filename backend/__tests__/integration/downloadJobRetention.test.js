@@ -656,6 +656,11 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
       await db('download_jobs').where({ id: earlier.id }).update({ status: 'ready' });
       await notifier.notifyReady(earlier.id);
       expect(await readyMails('erase-me@example.com')).toHaveLength(1);
+      // Under Jest the queue's Date lands in SQLite as "[object Object]"
+      // (CLAUDE.md), which no time window can read; erasure bounds this
+      // account's mail by its creation time, so give the row a real one.
+      await db('email_queue').where({ recipient_email: 'erase-me@example.com' })
+        .update({ created_at: new Date().toISOString() });
 
       await require('../../src/services/customerAccountsService').eraseCustomer(customerId, null);
       expect(await db('download_job_recipients').where({ email: 'erase-me@example.com' })).toHaveLength(0);

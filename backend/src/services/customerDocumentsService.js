@@ -492,7 +492,7 @@ async function createDocument({
   const sha256 = await sha256OfFile(file.path);
   const verdict = await documentScanService.scanFile(file.path);
   if (verdict === 'rejected') {
-    await logActivity('customer_document_scan_rejected', { customerId, uploaderType }, null, actor);
+    await logActivity('customer_document_scan_rejected', { customerId, uploaderType }, resolved.eventId, actor);
     throw new AppError('The file did not pass the security check', 422, 'DOCUMENT_REJECTED_BY_SCAN');
   }
   // With NO scanner registered an admin upload is vouched for by the admin

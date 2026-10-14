@@ -21,6 +21,7 @@ import { defaultCategoryLabel } from '../../utils/mediaCounts';
 import { exifLine } from '../../utils/photoExif';
 import { useMutationWithToast, useModal } from '../../hooks';
 import { deleteOneConfirm, deletedMessage } from './photoDeleteCopy';
+import { isImeComposing } from '../../utils/imeComposition';
 
 type AdminFeedbackResponse = {
   feedback: PhotoFeedback[];
@@ -264,7 +265,8 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
       if (layerRef.current && !layerRef.current.isTop()) return;
       switch (e.key) {
         case 'Escape':
-          onClose();
+          // An Escape that cancels an IME composition belongs to the field.
+          if (!isImeComposing(e)) onClose();
           break;
         // Not while typing: the arrows move the caret in the credit field,
         // and switching photos would drop the unsaved edit.

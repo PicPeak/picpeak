@@ -1,4 +1,4 @@
-const { neutralizeSpreadsheetFormula } = require('../../src/utils/spreadsheetSafe');
+const { neutralizeSpreadsheetFormula, csvCell } = require('../../src/utils/spreadsheetSafe');
 const { _internal } = require('../../src/services/ledgerService');
 
 describe('neutralizeSpreadsheetFormula — CSV/Banana formula-injection defence (PR #622 blocker 1)', () => {
@@ -59,5 +59,40 @@ describe('neutralizeSpreadsheetFormula — negative amounts stay numbers (securi
     ['+1+1', 'plus is never exempt'],
   ])('still neutralises %s (%s)', (value) => {
     expect(neutralizeSpreadsheetFormula(value)).toBe(`'${value}`);
+  });
+});
+
+describe('neutralizeSpreadsheetFormula — trigger after leading whitespace', () => {
+  // Spreadsheet importers trim leading spaces, Unicode ones included, so the
+  // cell still opens as a formula. Only the first raw character was checked.
+  it.each([
+    ['an ideographic space', '\u3000-CMD'],
+    ['an ASCII space', ' =1+1'],
+    ['a no-break space', '\u00A0@SUM(1+1)'],
+    ['an em space', '\u2003+1+1'],
+    ['a zero-width space', '\u200B=cmd|"/C calc"!A1'],
+    ['a BOM', '\uFEFF=cmd'],
+    ['several spaces', '  \u3000 =1+1'],
+    ['nothing, full-width =', '\uFF1D1+1'],
+    ['nothing, full-width +', '\uFF0B1+1'],
+    ['nothing, full-width -', '\uFF0D1+1'],
+    ['nothing, full-width @', '\uFF20SUM(1)'],
+    ['an ideographic space, full-width =', '\u3000\uFF1Dcmd'],
+  ])('prefixes a formula behind %s', (_label, payload) => {
+    expect(neutralizeSpreadsheetFormula(payload)).toBe(`'${payload}`);
+  });
+
+  it('leaves leading whitespace before ordinary text alone', () => {
+    expect(neutralizeSpreadsheetFormula('  Acme GmbH')).toBe('  Acme GmbH');
+    expect(neutralizeSpreadsheetFormula('\u3000Tanaka')).toBe('\u3000Tanaka');
+  });
+
+  it('csvCell prefixes and quotes such a cell', () => {
+    expect(csvCell('\u3000=1,2')).toBe('"\'\u3000=1,2"');
+    expect(csvCell(' @SUM(1)')).toBe('\' @SUM(1)');
+  });
+
+  it('ledger csvEscape prefixes such a cell', () => {
+    expect(_internal.csvEscape('\u3000-2+3')).toBe('"\'\u3000-2+3"');
   });
 });

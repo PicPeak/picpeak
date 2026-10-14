@@ -39,6 +39,20 @@ describe('System Health backup authenticity', () => {
     render(<SystemHealthPage />);
   };
 
+  it('shows why an invalid signing key is unusable', () => {
+    const reason = 'The backup manifest key file /data/backup-manifest.key is group- or world-writable (mode 0666)';
+    query.mockReturnValue({ isLoading: false, data: {
+      stuckEmails: [], waitingEmails: [], counts: { stuckEmails: 0, waitingEmails: 0 },
+      backupAuthentication: {
+        signingKey: { ready: false, source: 'invalid', keyId: null, reason },
+        latestManifest: { authenticated: false },
+      },
+    } });
+    render(<SystemHealthPage />);
+    expect(screen.getByText(en.systemHealth.backupAuthentication.keyMissing)).toBeInTheDocument();
+    expect(screen.getByText(reason)).toBeInTheDocument();
+  });
+
   it('shows retained key readiness and separately authenticated latest manifest', () => {
     show(true, true);
     expect(screen.getByText(en.systemHealth.backupAuthentication.title)).toBeInTheDocument();

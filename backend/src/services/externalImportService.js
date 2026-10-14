@@ -975,7 +975,7 @@ async function importExternalFolder({
         'external_import_completed',
         { event_id: eventId, ...result, external_path },
         eventId,
-        actor || { type: 'admin' }
+        actor || { type: 'system' }
       );
     }
 

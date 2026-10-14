@@ -94,6 +94,24 @@ describe('applyPasswordReset', () => {
     expect(reset.used_at).not.toBeNull();
   });
 
+  it('refuses a link mailed to the old address once an admin changed the address', async () => {
+    const { customerId, token } = await seedReset('reset-old-address@example.com');
+    await service.updateCustomer(customerId, { email: 'Reset-New-Address@example.com ' }, adminId);
+    await expect(service.applyPasswordReset({ token, password: 'Takeover-Password-1' }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    const row = await db('customer_accounts').where({ id: customerId }).first();
+    expect(row.email).toBe('reset-new-address@example.com');
+    expect(await bcrypt.compare('old-pass', row.password_hash)).toBe(true);
+  });
+
+  it('keeps a reset link when an admin edit leaves the address as it was', async () => {
+    const { customerId, token } = await seedReset('reset-same-address@example.com');
+    await service.updateCustomer(customerId, { email: 'reset-same-address@example.com', phone: '123' }, adminId);
+    await service.applyPasswordReset({ token, password: 'Second-Password-2' });
+    const row = await db('customer_accounts').where({ id: customerId }).first();
+    expect(await bcrypt.compare('Second-Password-2', row.password_hash)).toBe(true);
+  });
+
   it('still refuses a sequential replay of a used link', async () => {
     const { token } = await seedReset('replay-reset@example.com');
     await service.applyPasswordReset({ token, password: 'First-Password-1' });
@@ -143,6 +161,33 @@ describe('acceptInvitation', () => {
       .rejects.toMatchObject({ statusCode: 400 });
     const row = await db('customer_accounts').where({ id: customerId }).first();
     expect(await bcrypt.compare('First-Password-1', row.password_hash)).toBe(true);
+  });
+
+  it('does not set the invitee password on a passive account moved to another address meanwhile', async () => {
+    const { customerId, token, invitationId } = await seedPassiveInvite('moved-meanwhile@example.com');
+    // The admin changes the passive account's address while the acceptance
+    // hashes the password, i.e. after it read the account by address.
+    const realHash = bcrypt.hash.bind(bcrypt);
+    const spy = jest.spyOn(bcrypt, 'hash').mockImplementationOnce(async (...args) => {
+      await db('customer_accounts').where({ id: customerId }).update({ email: 'moved-elsewhere@example.com' });
+      return realHash(...args);
+    });
+    try {
+      const result = await service.acceptInvitation({ token, name: 'Invitee', password: 'Invitee-Password-1' });
+      expect(result.customerId).not.toBe(customerId);
+
+      const moved = await db('customer_accounts').where({ id: customerId }).first();
+      expect(moved.email).toBe('moved-elsewhere@example.com');
+      expect(moved.password_hash).toBeNull();
+
+      const created = await db('customer_accounts').where({ id: result.customerId }).first();
+      expect(created.email).toBe('moved-meanwhile@example.com');
+      expect(await bcrypt.compare('Invitee-Password-1', created.password_hash)).toBe(true);
+      const invitation = await db('customer_invitations').where({ id: invitationId }).first();
+      expect(invitation.accepted_customer_id).toBe(result.customerId);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('cancellation refuses an invitation that was accepted in the meantime', async () => {

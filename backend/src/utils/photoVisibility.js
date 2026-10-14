@@ -76,6 +76,25 @@ function applyPhotoVisibilityFilter(query, accessLevel) {
 }
 
 /**
+ * Leave out photos the background worker has not finished (or failed on):
+ * the original is stored, but the gallery does not show the photo yet. NULL
+ * is a pre-async-migration row and counts as complete. The gallery list and
+ * every bulk download share it, so an archive holds what the list shows.
+ */
+function wherePhotoProcessed(query) {
+  return query.where(function () {
+    this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
+  });
+}
+
+/**
+ * Single-photo form of wherePhotoProcessed, for a row already read.
+ */
+function isPhotoProcessed(photo) {
+  return photo.processing_status == null || photo.processing_status === 'complete';
+}
+
+/**
  * Single-photo predicate: true when this photo must be blocked for a viewer
  * at the given access level. Mirrors the inline guards in gallery.js.
  */
@@ -92,5 +111,7 @@ module.exports = {
   wherePhotoLive,
   canSeeHiddenPhotos,
   applyPhotoVisibilityFilter,
+  wherePhotoProcessed,
+  isPhotoProcessed,
   isPhotoHiddenFromViewer,
 };

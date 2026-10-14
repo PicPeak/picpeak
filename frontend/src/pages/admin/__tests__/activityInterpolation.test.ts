@@ -111,6 +111,12 @@ describe('dashboard activity feed interpolation', () => {
     expect(params.categoryName).toBe('Ceremony');
   });
 
+  it('names the deleted gallery, which event_deleted records as event_name', () => {
+    // The row has no live event to join, so only metadata carries the name.
+    expect(render(activity('event_deleted', { event_name: 'Smith Wedding' })))
+      .toBe('Event deleted: Smith Wedding');
+  });
+
   it('leaves no raw placeholder on any German activity string either', async () => {
     await i18n.changeLanguage('de');
     const msg = render(activity('webhook_created', { name: 'ZZTEST-hook' }));

@@ -363,6 +363,9 @@
     "liked": "Curtidas",
     "favorited": "Favoritadas",
     "favorites": "Favoritas",
+    "showLikedOnly": "Mostrar só as fotos que curti",
+    "likedOnlyEmpty": "Você ainda não curtiu nenhuma foto aqui. Toque no coração de uma foto para encontrá-la aqui.",
+    "showAllPhotos": "Mostrar todas as fotos",
     "needHelp": "Precisa de ajuda? Contate-nos em",
     "noPhotosFound": "Nenhuma foto encontrada",
     "failedToLoad": "Falha ao carregar fotos",
@@ -434,6 +437,7 @@
     "downloading_many": "Baixando {{count}} fotos…",
     "downloading_one": "Baixando 1 foto…",
     "downloading_other": "Baixando {{count}} fotos…",
+    "downloadingInParts": "Baixando {{count}} fotos em {{parts}} arquivos ZIP…",
     "photosSelected_many": "{{count}} fotos selecionadas",
     "photosSelected_one": "{{count}} foto selecionada",
     "photosSelected_other": "{{count}} fotos selecionadas",
@@ -531,6 +535,7 @@
     "backToGallery": "Todas as fotos",
     "downloadFolder": "Baixar pasta ({{count}})",
     "downloadFolderCapped": "Baixar as primeiras {{limit}} de {{total}}",
+    "downloadSelectionTooLarge": "Você pode baixar no máximo {{limit}} fotos de uma vez. Selecione menos fotos.",
     "newPhotos_one": "{{count}} nova foto",
     "newPhotos_many": "{{count}} novas fotos",
     "newPhotos_other": "{{count}} novas fotos",
@@ -613,6 +618,9 @@
       "approveBody": "Você confirma que as fotos editadas estão boas como estão e que o fotógrafo pode prosseguir. Depois disso você não poderá mais alterar suas aprovações e rejeições; o fotógrafo pode reabri-las para você.",
       "approveRejected": "Fotos ainda marcadas como rejeitadas: {{count}}",
       "approveConfirm": "Aprovar",
+      "identityApproval": "sua aprovação",
+      "identitySelection": "sua seleção",
+      "identityInvalid": "Verifique seu nome e e-mail. Um nome pode conter letras, dígitos, espaços, hífens, apóstrofos e pontos.",
       "approveSuccess": "Sua aprovação foi enviada ao fotógrafo",
       "approvedOn": "Fotos editadas aprovadas em {{date}}",
       "noteLabel": "Observação para o fotógrafo (opcional)",
@@ -745,6 +753,7 @@
     "uploadPhotos": "Enviar Fotos",
     "archiveEvent": "Arquivar Evento",
     "archiveConfirm": "Tem certeza que deseja arquivar este evento? Esta ação não pode ser desfeita.",
+    "archiveInProgress": "Esta galeria está sendo arquivada neste momento. Tente novamente quando o arquivamento terminar.",
     "extendExpiration": "Estender {{days}} Dias",
     "backToEvents": "Voltar para Eventos",
     "loadingEventDetails": "Carregando detalhes do evento...",
@@ -2618,6 +2627,11 @@
       "photos_restored": "{{count}} fotos restauradas da lixeira de {{eventName}}",
       "photos_trash_purged": "{{count}} fotos excluídas definitivamente da lixeira de {{eventName}}"
     },
+    "customerActivity": {
+      "customer_invitation_created": "Convite enviado",
+      "customer_password_reset_requested": "Redefinição de senha solicitada",
+      "customer_event_access": "Abriu uma galeria"
+    },
     "catalogedMedia": "{{size}} catalogados",
     "storageUnavailable": "indisponível",
     "catalogedMediaOnly": "catalogado — os objetos estão no S3",
@@ -2931,7 +2945,8 @@
       "nextBackup": "Próximo backup",
       "notScheduled": "Não agendado",
       "enabled": "Ativado",
-      "disabled": "Desativado"
+      "disabled": "Desativado",
+      "signingKeyInvalid": "A chave de assinatura dos backups está inutilizável. Os backups falharão até que seja corrigida."
     },
     "actions": {
       "runBackupNow": "Executar Backup Agora",

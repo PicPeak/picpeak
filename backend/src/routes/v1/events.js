@@ -25,6 +25,7 @@ const { parseBooleanInput } = require('../../utils/parsers');
 const { apiTokenAuth, requireApiScope } = require('../../middleware/apiTokenAuth');
 const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
 const { holdsForReview, adminUploadColumns } = require('../../services/uploadReviewService');
+const { claimPromotion } = require('../../services/watchFolderClaims');
 // GHSA-9697: migration 081 defines a token's effective permissions as the
 // INTERSECTION of the owner's role permissions and the token's scope flags.
 // requireApiScope only ever checked the scope half — so a token minted while
@@ -37,6 +38,7 @@ const { requirePermission } = require('../../middleware/permissions');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const {
   generateThumbnail,
+  extractCaptureDate,
   ensurePreviewImage,
   ensurePreviewImageAtWidth,
   normalizeTierWidth,
@@ -453,6 +455,7 @@ async function handleV1PhotoUpload(req, res) {
   let object;
   let promotionSettled = false;
   let storage;
+  let releaseClaim = null;
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded under field "photo"' });
     tempPath = req.file.path;
@@ -614,6 +617,8 @@ async function handleV1PhotoUpload(req, res) {
     const credit = await require('../../services/photoCredit').resolveCredit({ localPath: tempPath });
     // Camera details (issue 1733, D1), from the same temp file.
     const exif = await require('../../services/photoExif').exifColumn(tempPath);
+    // Capture date, for the same reason: the worker never runs for this row.
+    const capturedAt = await extractCaptureDate(tempPath);
 
     let thumbRel = null;
     const thumbMeta = {};
@@ -632,6 +637,9 @@ async function handleV1PhotoUpload(req, res) {
     // then drop the multer temp file.
     storage = getStorage();
     object = await uploadQuota.prepareObject(req.publicUploadReservation, finalKey, stat.size);
+    // Held until the row exists, so the file watcher does not import the
+    // file first (issue 1970).
+    releaseClaim = claimPromotion(finalKey);
     await storage.putFromFile(finalKey, tempPath, { contentType: req.file.mimetype });
     promotionSettled = true;
     const promoted = await storage.stat(finalKey);
@@ -656,6 +664,7 @@ async function handleV1PhotoUpload(req, res) {
       folder_id: folderId,
       size_bytes: stat.size,
       content_sha256: contentSha256,
+      captured_at: capturedAt ? capturedAt.toISOString() : null,
       width,
       height,
       media_type: 'image',
@@ -671,6 +680,7 @@ async function handleV1PhotoUpload(req, res) {
       const insertResult = await conn('photos').insert(photoData).returning('id');
       return insertResult[0]?.id || insertResult[0];
     });
+    releaseClaim();
 
     // Scene tagging (issue 1733): this route writes a finished row itself.
     try {
@@ -714,6 +724,8 @@ async function handleV1PhotoUpload(req, res) {
     logger.error('v1 POST /events/:id/photos failed', { error: error.message });
     if (tempPath) await fs.unlink(tempPath).catch(() => {});
     res.status(500).json({ error: 'Failed to upload photo' });
+  } finally {
+    releaseClaim?.();
   }
 }
 

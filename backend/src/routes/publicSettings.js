@@ -157,6 +157,9 @@ router.get('/', async (req, res) => {
       // storage is always HH:mm (24h); only the displayed form toggles.
       // Default '24h' to match the operator's CH/DE locale.
       general_time_format: settingsObject.general_time_format === '12h' ? '12h' : '24h',
+      // The instance time zone a date-only gallery expiry ends its day in
+      // (utils/galleryExpiry): every view shows an expiry as its day there.
+      expiry_time_zone: await require('../utils/galleryExpiry').getInstanceTimeZone(),
       // CRM overview tile visibility (admin-only — these are surfaced
       // via the public-settings endpoint because the dashboard reads
       // them on mount and the value never depends on auth state. All

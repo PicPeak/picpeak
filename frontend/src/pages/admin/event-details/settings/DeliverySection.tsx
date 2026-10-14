@@ -22,11 +22,12 @@ import { usePermission } from '../../../../hooks/usePermission';
 import { eventsService } from '../../../../services/events.service';
 import { CompleteDeliveryDialog } from '../CompleteDeliveryDialog';
 import { SectionCard, checkboxClass, labelClass, type FieldsProps } from './sections';
-import { deliveryDue } from '../deliveryStatus';
+import { useDeliveryDue } from '../deliveryStatus';
 
 export const DeliverySection: React.FC<FieldsProps & { event: Event; onChanged: () => void }> = ({ f, set, event, onChanged }) => {
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
+  const deliveryDue = useDeliveryDue();
   const canComplete = usePermission('events.edit');
   const [completeOpen, setCompleteOpen] = useState(false);
 

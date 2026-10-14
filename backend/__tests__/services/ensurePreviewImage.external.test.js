@@ -32,6 +32,9 @@ jest.mock('../../src/database/db', () => {
             state.updates.push({ criteria, values });
             return 1;
           },
+          // withSourceVersion: these rows carry no recorded size; and
+          // ownDerivativeName's lookup finds no camera-named photo.
+          first: async () => undefined,
         }),
       };
     }
@@ -119,7 +122,7 @@ describe('ensurePreviewImage — external/reference sources (#1078)', () => {
 
       // The generated key is persisted so the next open short-circuits.
       expect(db.__state.updates).toEqual([
-        { criteria: { id: photo.id }, values: { preview_path: key } },
+        { criteria: expect.objectContaining({ id: photo.id, external_relpath: photo.external_relpath }), values: { preview_path: key } },
       ]);
     }
   );

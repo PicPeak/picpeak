@@ -105,6 +105,26 @@ describe('OG metadata and cover follow the gallery lifecycle', () => {
     expect(res.headers['content-type']).toMatch(/image\/jpeg/);
   });
 
+  it('offers and serves no cover while the hero photo is unfinished', async () => {
+    const event = await db('events').where({ slug: 'og-live' }).first();
+    const { ensureThumbnail } = require('../../src/services/imageProcessor');
+    try {
+      for (const status of ['pending', 'processing', 'failed']) {
+        await db('photos').where({ id: event.hero_photo_id }).update({ processing_status: status, thumbnail_path: 'thumbnails/thumb_og-cover.jpg' });
+        ensureThumbnail.mockClear();
+        const meta = await og.buildOgMetadata('og-live', '/gallery/og-live');
+        expect(JSON.stringify(meta)).not.toContain('/og/gallery/og-live/cover');
+        expect((await request(app).get('/og/gallery/og-live/cover')).status).toBe(404);
+        expect(ensureThumbnail).not.toHaveBeenCalled();
+      }
+      await db('photos').where({ id: event.hero_photo_id }).update({ processing_status: 'complete' });
+      const meta = await og.buildOgMetadata('og-live', '/gallery/og-live');
+      expect(JSON.stringify(meta)).toContain('/og/gallery/og-live/cover');
+    } finally {
+      await db('photos').where({ id: event.hero_photo_id }).update({ processing_status: 'complete', thumbnail_path: null });
+    }
+  });
+
   it.each(['og-expired', 'og-draft', 'og-archived', 'og-inactive'])(
     'answers 404 to the cover of %s before touching the photo',
     async (slug) => {

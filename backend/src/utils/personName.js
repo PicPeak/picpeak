@@ -33,6 +33,10 @@ function sanitizeName(value, maxLength = MAX_NAME_LEN) {
     .replace(/[<>&"]/g, '')
     .replace(CONTROL_CHARS, ' ')
     .replace(INVISIBLE_CHARS, '')
+    // One form per name: "Jörg" typed with a combining diaeresis (macOS
+    // input, copy from a PDF) and with the precomposed ö must store the same.
+    // After the removals, which can join a letter to a combining mark.
+    .normalize('NFC')
     .replace(/\s+/g, ' ')
     .trim();
   // Array.from so the cap never splits a surrogate pair in half.

@@ -16,6 +16,7 @@ import { toast } from 'react-toastify';
 import { Card, Button, Input, Loading, useConfirm, Badge, EmptyState, ErrorState, type BadgeTone } from '../common';
 import { feedbackService } from '../../services/feedback.service';
 import { useMutationWithToast } from '../../hooks';
+import { isImeComposing } from '../../utils/imeComposition';
 
 interface WordFilter {
   id: number;
@@ -203,7 +204,7 @@ export const WordFilterManager: React.FC = () => {
                 onChange={(e) => setNewWord(e.target.value)}
                 placeholder={t('settings.moderation.enterWord', 'Enter word to filter')}
                 className="flex-1"
-                onKeyPress={(e) => e.key === 'Enter' && handleAdd()}
+                onKeyPress={(e) => e.key === 'Enter' && !isImeComposing(e) && handleAdd()}
               />
               <select
                 value={newSeverity}

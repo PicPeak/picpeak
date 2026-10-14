@@ -32,7 +32,7 @@ const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
 
 describe('dashboard scoping (GHSA-c2jj / gqx7 / jhcf)', () => {
   let db; let cleanup; let app;
-  let editorToken; let superToken;
+  let editorToken; let superToken; let superId;
   let ownEventId; let foreignEventId;
 
   const mkAdmin = async (username, roleName) => {
@@ -82,6 +82,7 @@ describe('dashboard scoping (GHSA-c2jj / gqx7 / jhcf)', () => {
     const sup = await mkAdmin('root-admin', 'super_admin');
     editorToken = editor.token;
     superToken = sup.token;
+    superId = sup.id;
 
     ownEventId = await mkEvent('own-gallery', editor.id);
     foreignEventId = await mkEvent('foreign-gallery', sup.id);
@@ -220,6 +221,24 @@ describe('dashboard scoping (GHSA-c2jj / gqx7 / jhcf)', () => {
     expect(entry.createdAt).toBe('2026-10-05T14:00:00.000Z');
     // Every entry carries an explicit zone, whatever shape was stored.
     for (const a of res.body) expect(a.createdAt).toMatch(/Z$/);
+  });
+
+  it('/activity names an admin actor stored with an id and no name', async () => {
+    // Services that only know the acting admin's id log { type: 'admin', id }.
+    // The id must not resolve to a username for another actor type.
+    await db('activity_logs').insert([
+      { activity_type: 'quote_created', actor_type: 'admin', actor_id: superId, actor_name: null,
+        event_id: ownEventId, metadata: '{"marker":"admin-id-only"}', created_at: new Date().toISOString() },
+      { activity_type: 'customer_login', actor_type: 'customer', actor_id: superId, actor_name: null,
+        event_id: ownEventId, metadata: '{"marker":"customer-id-only"}', created_at: new Date().toISOString() },
+    ]);
+    const res = await request(app)
+      .get('/api/admin/dashboard/activity?limit=50')
+      .set('Authorization', `Bearer ${superToken}`);
+    expect(res.status).toBe(200);
+    const byMarker = (m) => res.body.find((a) => a.metadata.marker === m);
+    expect(byMarker('admin-id-only').actorName).toBe('root-admin');
+    expect(byMarker('customer-id-only').actorName).toBeNull();
   });
 
   it('leaves super_admin unscoped across all three', async () => {

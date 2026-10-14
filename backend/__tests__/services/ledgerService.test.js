@@ -221,6 +221,15 @@ describe('exportPostings', () => {
     expect(contentType).toMatch(/text\/plain/);
   });
 
+  it('banana neutralises a formula hidden behind a leading tab', async () => {
+    // The tab layout turns the tab into a space before the formula check, so
+    // the cell reached it as " =cmd" and went out unprefixed.
+    invoiceRows = [{ ...invoiceRows[0], invoice_number: '\t=cmd|"/C calc"!A1' }];
+    const { content } = await ledgerService.exportPostings({ ...period, format: 'banana' });
+    const docCell = content.split('\r\n')[1].split('\t')[1];
+    expect(docCell).toBe('\' =cmd|"/C calc"!A1');
+  });
+
   it('formats a Postgres Date object as yyyy-mm-dd (not "Thu Jan ...")', async () => {
     // PG returns DATE columns as JS Date objects (SQLite returns strings); the
     // export must still emit an ISO date, or Banana rejects it and the Date
