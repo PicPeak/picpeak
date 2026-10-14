@@ -24,7 +24,7 @@ const archiver = require('archiver');
 const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 
 const { db } = require('../database/db');
-const { joinLivePhotos, livePhotos, wherePhotoLive } = require('../utils/photoVisibility');
+const { joinLivePhotos, livePhotos, wherePhotoLive, wherePhotoProcessed } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
@@ -645,8 +645,8 @@ async function getTransferByUploadToken(uploadToken) {
  * NO thumbnails by design, so we deliberately don't expose any image URLs.
  */
 async function getPublicView(transfer) {
-  const files = await db('transfer_files')
-    .modify(joinLivePhotos, 'photos.id', 'transfer_files.photo_id')
+  const files = await wherePhotoProcessed(db('transfer_files')
+    .modify(joinLivePhotos, 'photos.id', 'transfer_files.photo_id'))
     .where('transfer_files.transfer_id', transfer.id)
     .orderBy('transfer_files.sort_order', 'asc')
     .orderBy('transfer_files.id', 'asc')
@@ -765,10 +765,15 @@ async function claimDownload(transfer, { kind = 'all', photoId = null, ip = null
 // ZIP building — cross-event, originals only
 // ---------------------------------------------------------------------------
 
-/** Load the ordered photos for a transfer, each joined to its event. */
+/**
+ * Load the ordered photos for a transfer, each joined to its event. Like every
+ * recipient-facing read here, only photos the background worker has finished:
+ * one still processing (or failed) is left out until it completes, as the
+ * gallery leaves it out of its list and its downloads.
+ */
 async function loadTransferPhotos(transferId) {
-  const rows = await db('transfer_files')
-    .modify(joinLivePhotos, 'photos.id', 'transfer_files.photo_id')
+  const rows = await wherePhotoProcessed(db('transfer_files')
+    .modify(joinLivePhotos, 'photos.id', 'transfer_files.photo_id'))
     .join('events', 'events.id', 'photos.event_id')
     .where('transfer_files.transfer_id', transferId)
     .orderBy('transfer_files.sort_order', 'asc')
@@ -1064,8 +1069,8 @@ async function streamTransferFile(transfer, rawFileId, res, { beforeStream = nul
     return streamTransferExtraFile(transfer, numId, res, { beforeStream });
   }
 
-  const row = await db('transfer_files')
-    .modify(joinLivePhotos, 'photos.id', 'transfer_files.photo_id')
+  const row = await wherePhotoProcessed(db('transfer_files')
+    .modify(joinLivePhotos, 'photos.id', 'transfer_files.photo_id'))
     .join('events', 'events.id', 'photos.event_id')
     .where('transfer_files.transfer_id', transfer.id)
     .where('transfer_files.id', numId)
