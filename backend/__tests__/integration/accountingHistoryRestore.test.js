@@ -1,5 +1,9 @@
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxIt = process.platform === 'linux' ? it : it.skip;
+
 let db; let cleanup; let adminId; let customerId; let history; let createPicpeak; let importFromPicpeak; let tmpDir;
 let sequence = 0;
 
@@ -12,7 +16,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { if (cleanup) await cleanup(); });
 
-it.each([false, true])('replaces local history when the archive contains history: %s', async (withHistory) => {
+linuxIt.each([false, true])('replaces local history when the archive contains history: %s', async (withHistory) => {
   const invoiceNumber = `RESTORE-${++sequence}`;
   const [{ id }] = await history.auditedInsert(db, 'invoices', {
     invoice_number: invoiceNumber, customer_account_id: customerId,

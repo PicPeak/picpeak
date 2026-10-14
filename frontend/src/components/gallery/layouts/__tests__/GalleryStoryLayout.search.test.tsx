@@ -36,7 +36,11 @@ vi.mock('../../../common', () => ({
   PoweredBy: () => null,
 }));
 
-vi.mock('../../PhotoLightbox', () => ({ PhotoLightbox: () => <div data-testid="lightbox" /> }));
+vi.mock('../../PhotoLightbox', () => ({
+  PhotoLightbox: ({ photos: shown, initialIndex }: { photos: Photo[]; initialIndex: number }) => (
+    <div data-testid="lightbox" data-ids={shown.map((p) => p.id).join(',')} data-index={initialIndex} />
+  ),
+}));
 
 vi.mock('../../../../services/feedback.service', () => ({
   feedbackService: { submitFeedback: vi.fn().mockResolvedValue({}) },
@@ -99,5 +103,25 @@ describe('GalleryStoryLayout search', () => {
   it('returns nothing for a term present in neither name', () => {
     const { container } = render(<GalleryStoryLayout {...props} />);
     expect(search(container, 'nomatch')).toEqual([]);
+  });
+  it('opens the lightbox on the searched photos only', () => {
+    // The lightbox used to get every photo, so its arrows stepped into photos
+    // the search had hidden from the grid.
+    const { container } = render(<GalleryStoryLayout {...props} />);
+    expect(search(container, 'photo-2')).toEqual(['2']);
+    fireEvent.click(container.querySelector('a[data-photo-id="2"]') as HTMLElement);
+    const lightbox = screen.getByTestId('lightbox');
+    expect(lightbox.dataset.ids).toBe('2');
+    expect(lightbox.dataset.index).toBe('0');
+  });
+
+  it('clears the search when a photo link names a photo it hides', () => {
+    const { container, rerender } = render(<GalleryStoryLayout {...props} />);
+    expect(search(container, 'photo-2')).toEqual(['2']);
+    rerender(<GalleryStoryLayout {...(props as object)} openPhotoId={3} />);
+    expect((screen.getByPlaceholderText('Search memories...') as HTMLInputElement).value).toBe('');
+    const lightbox = screen.getByTestId('lightbox');
+    expect(lightbox.dataset.ids).toBe('1,2,3');
+    expect(lightbox.dataset.index).toBe('2');
   });
 });

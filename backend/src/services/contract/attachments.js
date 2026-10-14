@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { db, logActivity } = require('../../database/db');
+const { adminActivityActor } = require('../../utils/activityActor');
 const { AppError } = require('../../utils/errors');
 const { isUniqueViolation } = require('../../utils/dbErrors');
 const { ensureInt } = require('../../utils/numericHelpers');
@@ -41,7 +42,7 @@ const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('he
 
 async function audit(type, meta, adminId) {
   try {
-    await logActivity(type, meta, null, `admin:${adminId}`);
+    await logActivity(type, meta, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
 }
 
