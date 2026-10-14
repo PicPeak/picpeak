@@ -9,6 +9,8 @@
  *  - Renaming a gallery away from a slug that already had a redirect row
  *    repointed the row but kept the first gallery's event_id, so on PG
  *    deleting that first gallery cascaded the second one's redirect away.
+ *  - The customer portal's /customer/events/<slug> (mailed links) did not
+ *    follow the redirect at all.
  */
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'slug-redirect-test-secret';
 
@@ -16,14 +18,15 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 jest.setTimeout(120000);
 
-let db; let cleanup; let adminId;
-let renameService; let createEvent;
+let db; let cleanup; let adminId; let customerId;
+let renameService; let createEvent; let getEventOverview;
 
 beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
-  ({ adminId } = await seedMinimal(db));
+  ({ adminId, customerId } = await seedMinimal(db));
   renameService = require('../../src/services/eventRenameService');
   ({ createEvent } = require('../../src/services/eventCreationService'));
+  ({ getEventOverview } = require('../../src/services/customerPortalService'));
 }, 120000);
 
 afterAll(async () => { if (cleanup) await cleanup(); });
@@ -127,5 +130,23 @@ describe('a reused redirect row moves to the renaming gallery', () => {
     const target = await renamed(second, 'Third Name');
     expect(await db('slug_redirects').where({ old_slug: OLD }).first())
       .toMatchObject({ new_slug: target, event_id: second });
+  });
+});
+
+describe('customer portal event page', () => {
+  it('follows an old slug to the renamed gallery the customer is assigned to', async () => {
+    const id = await insertEvent('Old Name', OLD);
+    await db('event_customer_assignments').insert({ event_id: id, customer_account_id: customerId });
+    await renamed(id, 'New Name');
+
+    const overview = await getEventOverview(customerId, OLD);
+    expect(overview.event).toMatchObject({ id, slug: NEW });
+  });
+
+  it('still answers null for a gallery the customer is not assigned to', async () => {
+    const id = await insertEvent('Old Name', OLD);
+    await renamed(id, 'New Name');
+
+    expect(await getEventOverview(customerId, OLD)).toBeNull();
   });
 });

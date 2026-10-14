@@ -29,4 +29,10 @@ async function findSlugHolder(slug, { exceptEventId = null, conn = db } = {}) {
   return (await viaRedirect.first('e.id', 'e.event_name')) || null;
 }
 
-module.exports = { findSlugHolder };
+/** The slug a renamed gallery's old slug now leads to, or null. */
+async function followSlugRedirect(slug) {
+  const row = await db('slug_redirects').where({ old_slug: slug }).first('new_slug');
+  return row ? row.new_slug : null;
+}
+
+module.exports = { findSlugHolder, followSlugRedirect };
