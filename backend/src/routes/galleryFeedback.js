@@ -16,7 +16,8 @@ const {
   validateFeedbackSubmission,
   checkValidation,
   validateGuestRequirements,
-  checkGuestName
+  checkGuestName,
+  normalizeGuestName
 } = require('../utils/feedbackValidation');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 const { normalizeAnnotation } = require('../utils/photoAnnotation');
@@ -788,7 +789,7 @@ router.post('/:slug/selection/submit',
     .isLength({ max: selectionSubmissions.NOTE_MAX_LENGTH }),
   // Simple and shared mode: the name and email the hand-over dialog asked
   // for, validated as the feedback routes validate them.
-  body('guest_name').optional().custom(checkGuestName).trim(),
+  body('guest_name').optional().customSanitizer(normalizeGuestName).custom(checkGuestName),
   body('guest_email').optional().trim().isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
   checkValidation,
   feedbackRateLimit('selection_submit'),

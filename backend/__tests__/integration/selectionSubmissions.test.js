@@ -424,6 +424,13 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
         expect(row.guest_name).toBe('Clara');
       });
 
+      it('stores an accented name in its NFC form, as the feedback routes do', async () => {
+        const res = await submit('device-A', { kind: 'approval', guest_name: ' Jo\u0308rg ', guest_email: 'clara@example.com' });
+        expect(res.status).toBe(201);
+        const row = await db('selection_submissions').where({ event_id: eventId }).first();
+        expect(row.guest_name).toBe('J\u00F6rg');
+      });
+
       it('refuses a name the feedback routes refuse', async () => {
         for (const guest_name of ['<Alice>', 'A'.repeat(101)]) {
           const res = await submit('device-A', { kind: 'approval', guest_name, guest_email: 'clara@example.com' });
