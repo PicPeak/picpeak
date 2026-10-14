@@ -100,6 +100,19 @@ describe('PhotoLightbox keys (issue 1973)', () => {
     expect(onCurrentPhotoChange).toHaveBeenLastCalledWith(12);
   });
 
+  it('leaves Escape to the feedback limit notice open on top', () => {
+    const { onClose, onCurrentPhotoChange } = renderLightbox();
+    const closeNotice = vi.fn();
+    render(<FeedbackLimitReachedModal open feedbackType="like" limit={3} currentCount={3} onClose={closeNotice} />);
+    const dialog = screen.getByRole('dialog');
+
+    fireEvent.keyDown(dialog, { key: 'ArrowRight' });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(closeNotice).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onCurrentPhotoChange).toHaveBeenCalledTimes(1);
+  });
+
   it('stays under a dialog that was already open when it mounted', () => {
     // Browser Forward reopens a photo while a page dialog painted above the
     // lightbox (the guest name prompt, a notice) is still up.
