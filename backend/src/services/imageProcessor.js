@@ -1570,6 +1570,25 @@ function thumbnailTierKeys(photo) {
   return THUMBNAIL_WIDTHS.flatMap(w => basenames.map(name => path.posix.join('thumbnails', `thumb_w${w}_${name}`)));
 }
 
+/**
+ * A tier is a cache named after the source basename and recorded nowhere, so
+ * one cut from a file the row stopped naming meanwhile (a replacement, whose
+ * sweep already ran) would stay in storage under the old name for good. Only
+ * freshly generated tiers come through here; a cache hit costs no query.
+ */
+async function keepTierIfCurrent(photo, key, keysOf) {
+  if (!key) return key;
+  try {
+    const current = await db('photos').where({ id: photo.id }).first();
+    if (current && keysOf(current).includes(key)) return key;
+  } catch (e) {
+    logger.warn(`Could not check whether tier ${key} is current; keeping it: ${e.message}`);
+    return key;
+  }
+  await getStorage().delete(key).catch(() => {});
+  return null;
+}
+
 async function deleteThumbnailTiers(photo) {
   const storage = getStorage();
   await Promise.all(thumbnailTierKeys(photo).map((k) => storage.delete(k).catch(() => {})));
@@ -1675,21 +1694,21 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
       // than being repaired on the next view.
       const proc = await withProcessableImage(localPath, photo.external_relpath || photo.filename);
       try {
-        return await generateThumbnail(proc.path, { outputBasename, width, height, interactive: true });
+        return await keepTierIfCurrent(photo, await generateThumbnail(proc.path, { outputBasename, width, height, interactive: true }), thumbnailTierKeys);
       } finally {
         await proc.cleanup();
       }
     }
     const sourceKey = resolvePhotoStorageKey(event, photo);
     if (!sourceKey) return null;
-    return await withLocalCopy(sourceKey, async (localPath) => {
+    return await keepTierIfCurrent(photo, await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
         return await generateThumbnail(proc.path, { outputBasename, width, height, interactive: true });
       } finally {
         await proc.cleanup();
       }
-    });
+    }), thumbnailTierKeys);
   } catch (e) {
     logger.warn(`Thumbnail tier w${width} failed for photo ${photo.id}: ${e.message}`);
     // \"Not now\" goes to the caller (503); an image over the limits falls back
@@ -1741,13 +1760,13 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
   try {
     if (isExternal) {
       const localPath = resolvePhotoFilePath(event, photo);
-      return await generatePreviewImage(localPath, {
+      return await keepTierIfCurrent(photo, await generatePreviewImage(localPath, {
         regenerate: true, outputBasename, longEdge: width, interactive: true,
-      });
+      }), previewTierKeys);
     }
     const sourceKey = resolvePhotoStorageKey(event, photo);
     if (!sourceKey) return null;
-    return await withLocalCopy(sourceKey, async (localPath) => {
+    return await keepTierIfCurrent(photo, await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
         // outputBasename, not proc.outputBasename: the RAW path returns the
@@ -1762,7 +1781,7 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
       } finally {
         await proc.cleanup();
       }
-    });
+    }), previewTierKeys);
   } catch (e) {
     logger.warn(`Preview tier w${width} failed for photo ${photo.id}: ${e.message}`);
     // \"Not now\" goes to the caller (503); an image over the limits falls back

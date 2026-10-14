@@ -137,15 +137,16 @@ class WatermarkGeneratorService {
         watermark_path: result.watermarkPath,
         watermark_generated_at: db.fn.now()
       });
+    const unreferenced = async (key) => !(await db('photos').where({ watermark_path: key }).first('id'));
     if (!written) {
-      if (!(await db('photos').where({ watermark_path: result.watermarkPath }).first('id'))) {
-        await watermarkService.deleteWatermarkFile(result.watermarkPath);
-      }
+      if (await unreferenced(result.watermarkPath)) await watermarkService.deleteWatermarkFile(result.watermarkPath);
       return { success: false, watermarkPath: null, error: 'Photo was replaced while its watermark was generated' };
     }
     // Keys are per source file now; the previous name (the pre-source-key
-    // `<id>_watermarked.jpg`, or an attempt's) is no longer referenced.
-    if (photo.watermark_path && photo.watermark_path !== result.watermarkPath) {
+    // `<id>_watermarked.jpg`, or an attempt's) is dropped once nothing names
+    // it: a media attempt may have recorded it again since `photo` was read.
+    if (photo.watermark_path && photo.watermark_path !== result.watermarkPath
+        && await unreferenced(photo.watermark_path)) {
       await watermarkService.deleteWatermarkFile(photo.watermark_path);
     }
     return result;

@@ -161,6 +161,67 @@ describe('Photo replacement and derived files', () => {
     expect(exists('previews/kept-preview.jpg')).toBe(true);
   }, 30000);
 
+  it('a commit whose acknowledgement was lost keeps the new thumbnail', async () => {
+    const uploadQuota = require('../../src/services/publicUploadQuota');
+    const event = await makeEvent();
+    const id = await addPhoto(event);
+    jest.spyOn(uploadQuota, 'prepareObject').mockResolvedValue({ id: 'held' });
+    jest.spyOn(uploadQuota, 'failedObject').mockResolvedValue();
+    jest.spyOn(uploadQuota, 'commitObject').mockImplementation(async (object, kind, writeRow) => {
+      await writeRow(db);
+      throw new Error('acknowledgement lost');
+    });
+
+    const { replacePhoto } = require('../../src/services/photoReplacementService');
+    const result = await replacePhoto(await db('photos').where({ id }).first(), await newTempFile('ack'), {
+      originalFilename: 'new.jpg', mimeType: 'image/jpeg', event, uploadReservation: {},
+    });
+    expect(result.success).toBe(false);
+
+    const row = await db('photos').where({ id }).first();
+    expect(row.thumbnail_path).toBeTruthy();
+    expect(exists(row.thumbnail_path)).toBe(true);
+  }, 30000);
+
+  it('a responsive tier cut from the replaced file is not left behind', async () => {
+    const { ensureThumbnailAtWidth, ensurePreviewImageAtWidth, thumbnailTierKeys, previewTierKeys } = require('../../src/services/imageProcessor');
+    const event = await makeEvent();
+    const id = await addPhoto(event);
+    const stale = await db('photos').where({ id }).first();
+    expect((await replace(stale, event)).success).toBe(true);
+    // A request that read the old row before the switch, still able to read
+    // the old original, finishes after the replacement swept the old tiers.
+    await writeKey(path.posix.join('events/active', stale.path), orangeJpeg);
+
+    expect(await ensureThumbnailAtWidth(stale, 600)).toBeNull();
+    expect(await ensurePreviewImageAtWidth(stale, 960)).toBeNull();
+    for (const key of [...thumbnailTierKeys(stale), ...previewTierKeys(stale)]) expect(exists(key)).toBe(false);
+
+    // The current row's tiers are generated and kept.
+    const current = await db('photos').where({ id }).first();
+    const tier = await ensureThumbnailAtWidth(current, 600);
+    expect(tier).toBeTruthy();
+    expect(exists(tier)).toBe(true);
+  }, 30000);
+
+  it('a recorded watermark keeps a previous key something still names', async () => {
+    const watermarkService = require('../../src/services/watermarkService');
+    const generator = require('../../src/services/watermarkGeneratorService');
+    const event = await makeEvent();
+    const previous = 'watermarks/previous_attempt.jpg';
+    await writeKey(previous, orangeJpeg);
+    const id = await addPhoto(event, { watermark_path: previous });
+    // Recorded again since the job read the row (here: by another row).
+    await addPhoto(event, { watermark_path: previous });
+    const photo = await db('photos').where({ id }).first();
+
+    const key = watermarkService.watermarkKey(photo);
+    await writeKey(key, orangeJpeg);
+    expect((await generator.recordWatermark(photo, { success: true, watermarkPath: key })).success).toBe(true);
+    expect(exists(previous)).toBe(true);
+    expect((await db('photos').where({ id }).first()).watermark_path).toBe(key);
+  }, 30000);
+
   it('a watermark job that read the old file neither records nor overwrites', async () => {
     const watermarkService = require('../../src/services/watermarkService');
     const generator = require('../../src/services/watermarkGeneratorService');

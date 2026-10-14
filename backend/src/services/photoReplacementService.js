@@ -185,12 +185,13 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
   let promotionSettled = false;
   let switched = false;
   let finalKey;
+  let newFilename;
   let thumbnailPath = null;
 
   try {
     // Generate new filename + storage key
     const ext = path.extname(originalFilename);
-    const newFilename = generatePhotoFilename(event.event_name, categorySlug, Date.now(), ext);
+    newFilename = generatePhotoFilename(event.event_name, categorySlug, Date.now(), ext);
     const relativePath = path.posix.join(event.slug, categorySlug, newFilename);
     finalKey = path.posix.join('events/active', relativePath);
     storage = getStorage();
@@ -436,12 +437,16 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     }
     // The row still names the old files, so what was written for the new one
     // is nobody's. (failedObject above owns the original when quota-tracked.)
+    // A commit whose acknowledgement was lost did switch it: asked, not assumed.
     if (!switched && storage) {
       try {
-        if (!object && promotionSettled && finalKey !== resolvePhotoStorageKey(event, existingPhoto)) {
-          await storage.delete(finalKey).catch(() => {});
+        const committed = newFilename && await db('photos').where({ id: existingPhoto.id, filename: newFilename }).first('id');
+        if (!committed) {
+          if (!object && promotionSettled && finalKey !== resolvePhotoStorageKey(event, existingPhoto)) {
+            await storage.delete(finalKey).catch(() => {});
+          }
+          if (thumbnailPath && thumbnailPath !== existingPhoto.thumbnail_path) await storage.delete(thumbnailPath).catch(() => {});
         }
-        if (thumbnailPath && thumbnailPath !== existingPhoto.thumbnail_path) await storage.delete(thumbnailPath).catch(() => {});
       } catch (cleanupError) {
         logger.warn('Replacement upload cleanup failed', { photoId: existingPhoto.id, error: cleanupError.message });
       }
