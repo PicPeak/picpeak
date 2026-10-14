@@ -78,7 +78,8 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       return businessProfileService.update(rest);
     },
     successMessage: t('businessProfile.savedToast', 'Business profile saved.'),
-    invalidateKeys: [['business-profile']],
+    // Public settings carry the time zone gallery expiries are shown in.
+    invalidateKeys: [['business-profile'], ['public-settings']],
     errorMessage: 'Save failed',
     // The draft is now the server state, so the refetch above re-seeds it.
     onSuccess: () => setLoaded(profile),

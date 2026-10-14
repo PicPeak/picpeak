@@ -399,6 +399,124 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
       expect(res.status).toBe(201);
       expect(res.body.submission.item_count).toBe(0);
     });
+
+    // Issue 1984: an approval needs no feedback, so no name prompt ran first.
+    describe('in a gallery that requires name and email', () => {
+      beforeEach(() => setSettings({ require_name_email: true }));
+
+      it('refuses an anonymous approval, in simple and in shared mode', async () => {
+        for (const mode of ['simple', 'shared']) {
+          await setSettings({ identity_mode: mode });
+          const res = await submit('device-A', { kind: 'approval' });
+          expect(res.status).toBe(400);
+          expect(res.body.code).toBe('GUEST_INFO_REQUIRED');
+          const partial = await submit('device-A', { kind: 'approval', guest_name: 'Clara' });
+          expect(partial.status).toBe(400);
+          expect(partial.body.code).toBe('GUEST_INFO_REQUIRED');
+        }
+        expect(await db('selection_submissions').where({ event_id: eventId })).toHaveLength(0);
+      });
+
+      it('stores an approval with the name and email the dialog asked for', async () => {
+        const res = await submit('device-A', { kind: 'approval', guest_name: ' Clara ', guest_email: 'clara@example.com' });
+        expect(res.status).toBe(201);
+        const row = await db('selection_submissions').where({ event_id: eventId }).first();
+        expect(row.guest_name).toBe('Clara');
+      });
+
+      it('stores an accented name in its NFC form, as the feedback routes do', async () => {
+        const res = await submit('device-A', { kind: 'approval', guest_name: ' Jo\u0308rg ', guest_email: 'clara@example.com' });
+        expect(res.status).toBe(201);
+        const row = await db('selection_submissions').where({ event_id: eventId }).first();
+        expect(row.guest_name).toBe('J\u00F6rg');
+      });
+
+      it('refuses a name the feedback routes refuse', async () => {
+        for (const guest_name of ['<Alice>', 'A'.repeat(101)]) {
+          const res = await submit('device-A', { kind: 'approval', guest_name, guest_email: 'clara@example.com' });
+          expect(res.status).toBe(400);
+          expect(res.body.errors[0].path).toBe('guest_name');
+        }
+        expect(await db('selection_submissions').where({ event_id: eventId })).toHaveLength(0);
+      });
+
+      it('names a guest by their earlier feedback, so a selection still goes through', async () => {
+        await feedback('device-A', photoIds[0], {
+          feedback_type: 'like', guest_name: 'Dora', guest_email: 'dora@example.com',
+        });
+        expect((await submit('device-A', { kind: 'selection' })).status).toBe(201);
+        expect((await submit('device-A', { kind: 'approval' })).status).toBe(201);
+        const names = await db('selection_submissions').where({ event_id: eventId }).pluck('guest_name');
+        expect(Array.from(names)).toEqual(['Dora', 'Dora']);
+      });
+
+      it('does not take a name given without an email, or blank, while both were optional', async () => {
+        await setSettings({ require_name_email: false });
+        expect((await feedback('device-A', photoIds[0], { feedback_type: 'like', guest_name: 'Dora' })).status)
+          .toBeLessThan(300);
+        expect((await feedback('device-A', photoIds[1], {
+          feedback_type: 'like', guest_name: 'Dora', guest_email: '   ',
+        })).status).toBeLessThan(300);
+        expect((await feedback('device-A', photoIds[2], {
+          feedback_type: 'like', guest_name: '   ', guest_email: 'dora@example.com',
+        })).status).toBeLessThan(300);
+        await setSettings({ require_name_email: true });
+        const res = await submit('device-A', { kind: 'approval' });
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('GUEST_INFO_REQUIRED');
+        expect(await db('selection_submissions').where({ event_id: eventId })).toHaveLength(0);
+      });
+
+      it('does not take a tab-only earlier name or email either', async () => {
+        await setSettings({ require_name_email: false });
+        await feedback('device-A', photoIds[0], { feedback_type: 'like', guest_name: 'Dora', guest_email: '\t' });
+        await feedback('device-A', photoIds[1], { feedback_type: 'like', guest_name: '\n', guest_email: 'dora@example.com' });
+        expect(await rows('like')).toHaveLength(2);
+        await setSettings({ require_name_email: true });
+        const res = await submit('device-A', { kind: 'approval' });
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('GUEST_INFO_REQUIRED');
+      });
+
+      it('finds a usable earlier name behind more than a page of blank ones', async () => {
+        const selectionSubmissions = require('../../src/services/selectionSubmissions');
+        const [anna] = guests;
+        const row = (guest_email) => ({
+          event_id: eventId, photo_id: photoIds[0], feedback_type: 'comment', comment_text: 'x',
+          guest_id: anna.id, guest_identifier: anna.identifier, guest_name: 'Anna', guest_email,
+        });
+        await db('photo_feedback').insert(row('anna@example.com'));
+        for (let i = 0; i < selectionSubmissions.FEEDBACK_NAME_PAGE + 5; i += 1) {
+          await db('photo_feedback').insert(row(' '));
+        }
+        const viewer = { guestId: anna.id, guestIdentifier: anna.identifier };
+        expect(await selectionSubmissions.feedbackName(eventId, viewer, { requireEmail: true })).toBe('Anna');
+        await db('photo_feedback').where({ guest_email: 'anna@example.com' }).delete();
+        expect(await selectionSubmissions.feedbackName(eventId, viewer, { requireEmail: true })).toBeNull();
+      });
+
+      it('outside guest mode, takes a kept guest token only when it carries an email', async () => {
+        const [anna, ben] = guests;
+        await db('gallery_guests').where({ id: anna.id }).update({ email: null });
+        const refused = await submit(anna, { kind: 'approval' });
+        expect(refused.status).toBe(400);
+        expect(refused.body.code).toBe('GUEST_INFO_REQUIRED');
+        const typed = await submit(anna, { kind: 'approval', guest_name: 'Anna', guest_email: 'anna@example.com' });
+        expect(typed.status).toBe(201);
+        expect((await submit(ben, { kind: 'approval' })).status).toBe(201);
+      });
+
+      it('leaves registered guests to their token', async () => {
+        await setSettings({ identity_mode: 'guest' });
+        const res = await submit(guests[0], { kind: 'approval' });
+        expect(res.status).toBe(201);
+      });
+    });
+
+    it('still takes an anonymous approval where name and email are optional', async () => {
+      await setSettings({ require_name_email: false });
+      expect((await submit('device-A', { kind: 'approval' })).status).toBe(201);
+    });
   });
 
   describe('registered guests', () => {
