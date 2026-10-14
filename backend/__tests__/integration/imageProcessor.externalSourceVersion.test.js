@@ -148,6 +148,28 @@ describe('renditions of an external file rewritten in place', () => {
     expect(put).not.toHaveBeenCalled();
   });
 
+  test('a RAW tier written before the version was part of its cache id is cleaned up', async () => {
+    const row = await externalPhoto('legacy-raw.jpg');
+    await db('photos').where({ id: row.id }).update({ filename: 'legacy-raw.dng', external_relpath: 'shoot/legacy-raw.dng' });
+    const raw = await db('photos').where({ id: row.id }).first();
+    // The cache id as it was: the source fields without the size.
+    const fields = ['event_id', 'path', 'filename', 'external_relpath', 'source_origin', 'processing_attempt_id'];
+    const oldId = require('crypto').createHash('sha256')
+      .update(JSON.stringify(fields.map(field => raw[field] ?? null))).digest('hex').slice(0, 24);
+    const { outputName } = require('../../src/services/mediaAttemptService');
+    const scoped = outputName(`p${raw.id}_legacy-raw.dng`, { id: oldId });
+    const legacyKeys = [
+      `previews/preview_w640_${scoped.replace(/\.[^.]+$/, '')}.jpg`,
+      `thumbnails/thumb_w600_${scoped}`,
+    ];
+    const jpeg = await sharp({ create: { width: 8, height: 8, channels: 3, background: 'red' } }).jpeg().toBuffer();
+    for (const key of legacyKeys) await storage.put(key, jpeg, { contentType: 'image/jpeg' });
+
+    await imageProcessor.deletePreviewTiers(raw);
+    await imageProcessor.deleteThumbnailTiers(raw);
+    for (const key of legacyKeys) expect(await storage.stat(key)).toBeFalsy();
+  });
+
   test('a tier written before the version was part of the name is still served and cleaned up', async () => {
     const row = await externalPhoto('legacy-tier.jpg');
     const legacyKey = `previews/preview_w640_p${row.id}_legacy-tier.jpg`;

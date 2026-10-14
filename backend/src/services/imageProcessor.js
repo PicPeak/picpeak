@@ -69,6 +69,13 @@ async function withSourceVersion(photo) {
 function cacheBasename(photo, name) {
   return boundedDerivative(photo) ? require('./mediaAttemptService').outputName(name, { id: derivativeCacheId(photo) }) : name;
 }
+// The scoped name a RAW/video tier of an external row had before the source
+// version was part of the cache id. Cleanup only: lookup never trusts it.
+function unversionedCacheBasename(photo, name) {
+  const id = crypto.createHash('sha256')
+    .update(JSON.stringify(derivativeSourceFields.map(field => photo[field] ?? null))).digest('hex').slice(0, 24);
+  return require('./mediaAttemptService').outputName(name, { id });
+}
 function sourceGuard(photo) {
   const match = { id: photo.id };
   for (const field of derivativeSourceFields) if (photo[field] !== undefined) match[field] = photo[field];
@@ -1593,9 +1600,12 @@ function previewTierKeyCandidates(photo, width) {
   if (versionTag(photo)) {
     const unversioned = previewTierBasename(photo, { legacy: true });
     const unversionedBase = unversioned.replace(/\.[^./\\]+$/, '');
-    for (const k of [`${stem}${unversionedBase}.jpg`, `${stem}${unversionedBase}.webp`, `${stem}${unversioned}`]) {
-      if (!keys.includes(k)) keys.push(k);
+    const legacyKeys = [`${stem}${unversionedBase}.jpg`, `${stem}${unversionedBase}.webp`, `${stem}${unversioned}`];
+    if (boundedDerivative(photo)) {
+      const scoped = unversionedCacheBasename(photo, unversioned).replace(/\.[^./\\]+$/, '');
+      legacyKeys.push(`${stem}${scoped}.jpg`, `${stem}${scoped}.webp`);
     }
+    for (const k of legacyKeys) if (!keys.includes(k)) keys.push(k);
   }
   if (boundedDerivative(photo)) {
     const scoped = cacheBasename(photo, outputBasename).replace(/\.[^./\\]+$/, '');
@@ -1632,7 +1642,11 @@ function thumbnailTierKeys(photo) {
   const outputBasename = `p${photo.id}_${versionTag(photo)}${sourceBasename}`;
   const basenames = boundedDerivative(photo) ? [cacheBasename(photo, outputBasename), outputBasename] : [outputBasename];
   // Tiers written before the source version was part of the name.
-  if (versionTag(photo)) basenames.push(`p${photo.id}_${sourceBasename}`);
+  if (versionTag(photo)) {
+    const unversioned = `p${photo.id}_${sourceBasename}`;
+    basenames.push(unversioned);
+    if (boundedDerivative(photo)) basenames.push(unversionedCacheBasename(photo, unversioned));
+  }
   return THUMBNAIL_WIDTHS.flatMap(w => basenames.map(name => path.posix.join('thumbnails', `thumb_w${w}_${name}`)));
 }
 
