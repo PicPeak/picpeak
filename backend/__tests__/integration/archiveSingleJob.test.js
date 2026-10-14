@@ -358,6 +358,32 @@ describe('one archive job per gallery', () => {
     expect((await jobState.read(jobName(event.id))).isRunning).toBe(false);
   });
 
+  it('leaves a gallery restored between the expiry query and the claim alone', async () => {
+    const event = await makeEvent('expired-restored', { expired: true });
+    const realClaim = jobState.claim;
+    const claimSpy = jest.spyOn(jobState, 'claim').mockImplementation(async (name) => {
+      // A manual archive and a restore both finished after this pass's query:
+      // the restore made the gallery active again with a fresh expiry.
+      if (name === jobName(event.id)) {
+        await db('events').where({ id: event.id }).update({
+          is_active: 1,
+          expires_at: new Date(Date.now() + 30 * 864e5).toISOString(),
+        });
+      }
+      return realClaim(name);
+    });
+    try {
+      await require('../../src/services/expirationChecker').checkExpirations();
+    } finally {
+      claimSpy.mockRestore();
+    }
+
+    const row = await db('events').where({ id: event.id }).first();
+    expect(Boolean(row.is_active)).toBe(true);
+    expect(Boolean(row.is_archived)).toBe(false);
+    expect(putCalls('expired-restored')).toBe(0);
+  });
+
   it('stops deleting once a job that stalled after publishing has lost its claim', async () => {
     const event = await makeEvent('stalled-cleanup');
     let open;

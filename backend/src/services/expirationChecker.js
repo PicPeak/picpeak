@@ -6,11 +6,18 @@ const { buildShareLinkVariants } = require('./shareLinkService');
 const { galleryLinkFor } = require('./galleryNotificationService');
 const logger = require('../utils/logger');
 const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
-const { parseBooleanInput } = require('../utils/parsers');
 
 const task = scheduledTask(checkExpirations, { schedule: '0 * * * *' });
 function startExpirationChecker() { task.start(); }
 const stopExpirationChecker = () => task.stop();
+
+// Galleries past their expiry and not archived yet.
+// whereTimestamp: on SQLite expires_at is ISO text from creation but epoch
+// ms from the extend path, and a plain `<= Date` matched neither (issue 1733).
+const expiredUnarchived = (query, now) => query
+  .where('is_archived', formatBoolean(false))
+  .whereNotNull('expires_at')
+  .modify(whereTimestamp, 'expires_at', '<=', now);
 
 async function checkExpirations() {
   try {
@@ -54,9 +61,7 @@ async function checkExpirations() {
     // Skip events with null expires_at (they never expire)
     const expiredEvents = await db('events')
       .where('is_active', formatBoolean(true))
-      .where('is_archived', formatBoolean(false))
-      .whereNotNull('expires_at')
-      .modify(whereTimestamp, 'expires_at', '<=', now);
+      .modify(expiredUnarchived, now);
 
     for (const event of expiredEvents) {
       await handleExpiredEvent(event, { sendLegacyEmails: !expiredFlowOwns });
@@ -195,9 +200,15 @@ async function handleExpiredEvent(event, { sendLegacyEmails = true } = {}) {
       logger.info(`Expired event ${event.slug} is being archived by another job, skipped until the next pass`);
       return;
     }
-    // That job may have finished between this pass's query and the claim.
-    const current = await db('events').where('id', event.id).first();
-    if (!current || parseBooleanInput(current.is_archived, false)) return;
+    // That job may have finished between this pass's query and the claim,
+    // and a restore or an extension after it: act only on a gallery still
+    // active, expired and unarchived.
+    const current = await db('events')
+      .where('id', event.id)
+      .where('is_active', formatBoolean(true))
+      .modify(expiredUnarchived, new Date())
+      .first();
+    if (!current) return;
 
     // Mark as inactive
     await db('events').where('id', event.id).update({ is_active: formatBoolean(false) });
