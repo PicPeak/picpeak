@@ -26,6 +26,9 @@ export interface Event {
   share_link: string;
   created_at: string;
   expires_at: string | null;
+  // The instance time zone a date-only expiry ends its day in (event detail
+  // only); the settings date field reads expires_at back in it.
+  expiry_time_zone?: string | null;
   is_active: boolean;
   is_archived: boolean;
   archive_path?: string;
