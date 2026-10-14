@@ -93,7 +93,13 @@ async function carryRenamedGallerySession(req, res, slug, current) {
   for (const { token, decoded } of sessions) {
     if (!carryOver && token === current) continue;
     if (!await authorizes(event, decoded)) continue;
-    if (decoded.eventSlug === slug) return token === current ? null : token;
+    if (decoded.eventSlug === slug) {
+      if (token === current) return null;
+      // Downloads the browser starts itself send only cookies, so the
+      // gallery's own cookie must hold the live session too, not the dead one.
+      if (cookies[slugCookie] !== token) setGalleryAuthCookies(res, token, slug);
+      return token;
+    }
 
     const renewed = jwt.sign({ ...decoded, eventSlug: event.slug }, process.env.JWT_SECRET, { algorithm: 'HS256' });
     // Only the cookie holding this very token: another gallery may own the

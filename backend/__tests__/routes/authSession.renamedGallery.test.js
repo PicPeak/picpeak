@@ -131,11 +131,21 @@ describe('every token already names this slug', () => {
     expect(res.body.token).toBe(live);
   });
 
-  it('uses a live generic cookie over a revoked slug cookie', async () => {
+  it('uses a live generic cookie over a revoked slug cookie, and repairs the slug cookie', async () => {
     const live = gallery({ eventSlug: newSlug });
     const res = await session({ [`gallery_token_${newSlug}`]: await revoked(), gallery_token: live });
     expect(res.body).toMatchObject({ valid: true, eventSlug: newSlug });
     expect(res.body.token).toBe(live);
+    // Native downloads send only cookies.
+    expect(cookieValue(res, `gallery_token_${newSlug}`)).toBe(live);
+  });
+
+  it('leaves the cookies alone when the slug cookie already holds the live session', async () => {
+    const live = gallery({ eventSlug: newSlug });
+    const res = await session({ [`gallery_token_${newSlug}`]: live })
+      .set('Authorization', `Bearer ${await revoked()}`);
+    expect(res.body.token).toBe(live);
+    expect(setCookies(res)).toEqual([]);
   });
 
   it('prefers the gallery\'s own cookie over the generic one after a dead token', async () => {
