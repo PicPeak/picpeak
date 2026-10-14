@@ -40,6 +40,28 @@ export class DownloadLimitError extends Error {
 export const isDownloadLimitError = (error: unknown): error is DownloadLimitError =>
   error instanceof DownloadLimitError;
 
+// A selected download or resolution job over the server's per-request cap
+// (the server answers 400 TOO_MANY_PHOTO_IDS rather than zipping the first
+// ones). A DownloadLimitError too, so callers that skip their generic
+// "download failed" for the limit skip it here: the message was shown.
+export const TOO_MANY_PHOTOS_CODE = 'TOO_MANY_PHOTO_IDS';
+
+export class SelectionTooLargeError extends DownloadLimitError {
+  constructor(limit?: number) {
+    super({ limit });
+    this.name = 'SelectionTooLargeError';
+  }
+}
+
+export const isSelectionTooLargeError = (error: unknown): error is SelectionTooLargeError =>
+  error instanceof SelectionTooLargeError;
+
+export function selectionTooLargeMessage(limit?: number): string {
+  const fallback = 'You can download up to {{limit}} photos at once. Please select fewer.';
+  return i18n.t('gallery.downloadSelectionTooLarge', { limit: limit ?? 500, defaultValue: fallback })
+    || fallback.replace('{{limit}}', String(limit ?? 500));
+}
+
 // Galleries whose last photos payload carried a limit. The service layer uses
 // it to pick download transports whose refusal it can see: a hidden-anchor
 // navigation lands a 403 as a broken download the page never hears about.
@@ -91,6 +113,15 @@ export async function readDownloadLimitError(error: unknown): Promise<DownloadLi
   };
 }
 
+/** The cap when `error` is the server's TOO_MANY_PHOTO_IDS refusal. */
+async function readTooManyPhotosError(error: unknown): Promise<{ limit?: number } | null> {
+  const response = (error as { response?: { status?: number; data?: unknown } })?.response;
+  if (!response || response.status !== 400) return null;
+  const body = await readErrorBody(response.data);
+  if (!body || body.code !== TOO_MANY_PHOTOS_CODE) return null;
+  return { limit: typeof body.limit === 'number' ? body.limit : undefined };
+}
+
 /** The refusal in the viewer's language, for tooltips on disabled buttons. */
 const REACHED_FALLBACK = 'Download limit reached. Please contact your photographer for more downloads.';
 export const downloadLimitReachedMessage = (): string =>
@@ -133,6 +164,7 @@ export function notifyDownloadQuotaChanged(slug: string): void {
  * Run a download on a gallery. On a limited gallery a success refreshes the
  * quota, and a refusal shows the limit message and rethrows as a
  * DownloadLimitError, so callers can skip their generic "download failed".
+ * A selection over the server's cap is told the same way, on any gallery.
  */
 export async function withDownloadLimit<T>(slug: string, run: () => Promise<T>): Promise<T> {
   try {
@@ -141,6 +173,11 @@ export async function withDownloadLimit<T>(slug: string, run: () => Promise<T>):
     return result;
   } catch (error) {
     if (isDownloadLimitError(error)) throw error;
+    const tooMany = await readTooManyPhotosError(error);
+    if (tooMany) {
+      toastify.error(selectionTooLargeMessage(tooMany.limit), { toastId: 'download-selection-too-large' });
+      throw new SelectionTooLargeError(tooMany.limit);
+    }
     const info = await readDownloadLimitError(error);
     if (!info) throw error;
     showDownloadLimitReached(info);

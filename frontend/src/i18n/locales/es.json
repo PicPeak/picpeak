@@ -401,6 +401,7 @@
     "backToGallery": "Todas las fotos",
     "downloadFolder": "Descargar carpeta ({{count}})",
     "downloadFolderCapped": "Descargar las primeras {{limit}} de {{total}}",
+    "downloadSelectionTooLarge": "Puedes descargar como máximo {{limit}} fotos a la vez. Selecciona menos fotos.",
     "newPhotos_one": "{{count}} foto nueva",
     "newPhotos_many": "{{count}} fotos nuevas",
     "newPhotos_other": "{{count}} fotos nuevas",

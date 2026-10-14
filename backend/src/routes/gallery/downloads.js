@@ -48,6 +48,26 @@ const {
   settleWhenDone, responseDelivered, refuseDownload, isPreviewOnly, clientOnlyError,
 } = require('../../services/downloadQuota');
 const fs = require('fs');
+
+// The most photos one selected download or resolution job takes. A bigger
+// selection is refused, not cut down: a guest handed the first 500 of 600
+// cannot tell anything is missing. frontend/src/components/gallery/folders.ts
+// mirrors it as SELECTED_DOWNLOAD_LIMIT.
+const MAX_SELECTED_PHOTOS = 500;
+
+/** The distinct integer ids in a request's photo_ids. */
+function cleanPhotoIds(raw) {
+  return [...new Set(raw.map((v) => parseInt(v, 10)).filter((v) => Number.isInteger(v)))];
+}
+
+function refuseTooManyPhotos(res) {
+  return res.status(400).json({
+    error: `At most ${MAX_SELECTED_PHOTOS} photos per download`,
+    code: 'TOO_MANY_PHOTO_IDS',
+    limit: MAX_SELECTED_PHOTOS,
+  });
+}
+
 /**
  * Download limit (issue 1560). A zip grants its whole set before the first
  * byte; when the response ends, what archiver wrote is settled as delivered
@@ -942,15 +962,12 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       return res.status(400).json({ error: 'photo_ids is required (non-empty array)' });
     }
 
-    // Clean IDs
-    const photoIds = ids
-      .map((v) => parseInt(v, 10))
-      .filter((v) => Number.isInteger(v))
-      .slice(0, 500);
+    const photoIds = cleanPhotoIds(ids);
 
     if (photoIds.length === 0) {
       return res.status(400).json({ error: 'No valid photo IDs provided' });
     }
+    if (photoIds.length > MAX_SELECTED_PHOTOS) return refuseTooManyPhotos(res);
 
     // Fetch photos — exclude photos in categories that disabled downloads (#640).
     // Same LEFT JOIN pattern as the download-all endpoint.
@@ -1172,13 +1189,11 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
     // Optional subset. Absent = the whole visible gallery.
     let photoIds = null;
     if (Array.isArray(req.body?.photo_ids) && req.body.photo_ids.length) {
-      photoIds = req.body.photo_ids
-        .map((v) => parseInt(v, 10))
-        .filter((v) => Number.isInteger(v))
-        .slice(0, 500);
+      photoIds = cleanPhotoIds(req.body.photo_ids);
       if (photoIds.length === 0) {
         return res.status(400).json({ error: 'No valid photo IDs provided' });
       }
+      if (photoIds.length > MAX_SELECTED_PHOTOS) return refuseTooManyPhotos(res);
     }
 
     // Download limit (issue 1560). Checked here so no archive gets built for a

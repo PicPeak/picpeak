@@ -531,6 +531,7 @@
     "backToGallery": "Todas as fotos",
     "downloadFolder": "Baixar pasta ({{count}})",
     "downloadFolderCapped": "Baixar as primeiras {{limit}} de {{total}}",
+    "downloadSelectionTooLarge": "Você pode baixar no máximo {{limit}} fotos de uma vez. Selecione menos fotos.",
     "newPhotos_one": "{{count}} nova foto",
     "newPhotos_many": "{{count}} novas fotos",
     "newPhotos_other": "{{count}} novas fotos",

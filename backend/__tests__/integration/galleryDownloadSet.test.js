@@ -6,6 +6,8 @@
  *    prebuilt, selected ZIP, resolution job), though its original is stored
  *  - a photo finishing processing drops the prebuilt archive, which was
  *    built without it
+ *  - a selection over the cap is refused with a code, never cut down to the
+ *    first 500
  */
 
 const crypto = require('crypto');
@@ -150,4 +152,37 @@ describe('gallery bulk download set', () => {
     });
   });
 
+  describe('selection size', () => {
+    let event; let photo;
+    const ids = (n) => [photo.id, ...Array.from({ length: n - 1 }, (_, i) => 900000 + i)];
+
+    beforeAll(async () => {
+      event = await mkEvent({ download_resolution_picker_enabled: 1 });
+      photo = await mkPhoto(event);
+    });
+
+    it('a selected ZIP over 500 photos is refused, not cut down', async () => {
+      const res = await guest(event, 'post', '/download-selected').send({ photo_ids: ids(501) });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'TOO_MANY_PHOTO_IDS', limit: 500 });
+    });
+
+    it('a selected ZIP of 500 photos goes through', async () => {
+      const zip = await asBuffer(guest(event, 'post', '/download-selected').send({ photo_ids: ids(500) }));
+      expect(zip.status).toBe(200);
+      expect(has(zip.body, photo)).toBe(true);
+    });
+
+    it('repeated ids count once', async () => {
+      const zip = await asBuffer(guest(event, 'post', '/download-selected')
+        .send({ photo_ids: [...ids(500), ...ids(500)] }));
+      expect(zip.status).toBe(200);
+    });
+
+    it('a resolution job over 500 photos is refused, not cut down', async () => {
+      const res = await guest(event, 'post', '/download-jobs').send({ resolution: 'original', photo_ids: ids(501) });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'TOO_MANY_PHOTO_IDS', limit: 500 });
+    });
+  });
 });

@@ -2146,6 +2146,7 @@
     "backToGallery": "Alle Fotos",
     "downloadFolder": "Ordner herunterladen ({{count}})",
     "downloadFolderCapped": "Erste {{limit}} von {{total}} herunterladen",
+    "downloadSelectionTooLarge": "Du kannst höchstens {{limit}} Fotos auf einmal herunterladen. Bitte wähle weniger Fotos aus.",
     "newPhotos_one": "{{count}} neues Foto",
     "newPhotos_other": "{{count}} neue Fotos",
     "downloadEverything": "Alle Fotos herunterladen",

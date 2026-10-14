@@ -7,8 +7,8 @@ import { galleryService } from '../../services/gallery.service';
 import type { DownloadResolutionChoice, DownloadJobState, DownloadJobStatus } from '../../types';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import {
-  isDownloadLimitError, isGalleryLimited, notifyDownloadQuotaChanged, showDownloadLimitReached,
-  type QuotaPhoto,
+  isDownloadLimitError, isGalleryLimited, isSelectionTooLargeError, notifyDownloadQuotaChanged,
+  selectionTooLargeMessage, showDownloadLimitReached, type QuotaPhoto,
 } from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
@@ -140,7 +140,9 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
       }
       await poll(job.token);
     } catch (err) {
-      setError(isDownloadLimitError(err)
+      setError(isSelectionTooLargeError(err)
+        ? selectionTooLargeMessage(err.info.limit)
+        : isDownloadLimitError(err)
         ? t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.')
         : t('gallery.downloadPrepFailed', 'Preparation failed'));
       setPhase('error');

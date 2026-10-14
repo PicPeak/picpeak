@@ -423,6 +423,7 @@
     "backToGallery": "Alle foto's",
     "downloadFolder": "Map downloaden ({{count}})",
     "downloadFolderCapped": "Eerste {{limit}} van {{total}} downloaden",
+    "downloadSelectionTooLarge": "Je kunt maximaal {{limit}} foto’s tegelijk downloaden. Selecteer minder foto’s.",
     "newPhotos_one": "{{count}} nieuwe foto",
     "newPhotos_other": "{{count}} nieuwe foto's",
     "downloadEverything": "Alle foto's downloaden",

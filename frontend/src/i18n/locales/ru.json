@@ -457,6 +457,7 @@
     "backToGallery": "Все фото",
     "downloadFolder": "Скачать папку ({{count}})",
     "downloadFolderCapped": "Скачать первые {{limit}} из {{total}}",
+    "downloadSelectionTooLarge": "За один раз можно скачать не более {{limit}} фотографий. Выберите меньше фотографий.",
     "newPhotos_one": "{{count}} новое фото",
     "newPhotos_few": "{{count}} новых фото",
     "newPhotos_many": "{{count}} новых фото",

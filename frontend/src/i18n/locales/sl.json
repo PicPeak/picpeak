@@ -1404,6 +1404,7 @@
     "backToGallery": "Vse fotografije",
     "downloadFolder": "Prenesi mapo ({{count}})",
     "downloadFolderCapped": "Prenesi prvih {{limit}} od {{total}}",
+    "downloadSelectionTooLarge": "Naenkrat lahko prenesete največ {{limit}} fotografij. Izberite manj fotografij.",
     "newPhotos_one": "{{count}} nova fotografija",
     "newPhotos_two": "{{count}} novi fotografiji",
     "newPhotos_few": "{{count}} nove fotografije",

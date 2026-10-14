@@ -430,6 +430,7 @@
     "backToGallery": "Toutes les photos",
     "downloadFolder": "Télécharger le dossier ({{count}})",
     "downloadFolderCapped": "Télécharger les {{limit}} premières sur {{total}}",
+    "downloadSelectionTooLarge": "Vous pouvez télécharger au maximum {{limit}} photos à la fois. Sélectionnez moins de photos.",
     "newPhotos_one": "{{count}} nouvelle photo",
     "newPhotos_many": "{{count}} nouvelles photos",
     "newPhotos_other": "{{count}} nouvelles photos",
