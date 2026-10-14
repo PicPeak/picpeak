@@ -970,9 +970,14 @@ router.get('/session', async (req, res) => {
     // through to the per-event password prompt — even though the
     // gallery_token_<slug> cookie was correctly set on the prior
     // /api/customer/events/:slug/access-token response.
-    const token = slug
+    let token = slug
       ? (getGalleryTokenFromRequest(req, slug) || getAdminTokenFromRequest(req))
       : (getAdminTokenFromRequest(req) || getGalleryTokenFromRequest(req, slug));
+    // A session opened before the gallery was renamed names the old slug.
+    if (slug) {
+      const { carryRenamedGallerySession } = require('../services/galleryRenameSession');
+      token = (await carryRenamedGallerySession(req, res, slug, token)) || token;
+    }
 
     if (!token) {
       return res.status(401).json({ error: 'No token provided' });
