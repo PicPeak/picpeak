@@ -13,6 +13,7 @@
 // services.
 
 const { db, logActivity } = require('../database/db');
+const { adminActivityActor } = require('../utils/activityActor');
 const { AppError } = require('../utils/errors');
 const invoiceService = require('./invoiceService');
 const customerHoursService = require('./customerHoursService');
@@ -89,7 +90,7 @@ async function billCombinedForCustomer(customerId, { includeHours, includeRebill
   // Audit log after commit (global-db write deadlocks inside the SQLite trx).
   if (logInfo) {
     try {
-      await logActivity('combined_hours_rebills_billed', logInfo.meta, null, `admin:${adminId}`);
+      await logActivity('combined_hours_rebills_billed', logInfo.meta, null, adminActivityActor(adminId));
     } catch (_) { /* audit log is best-effort */ }
   }
   return result;

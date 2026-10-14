@@ -49,6 +49,13 @@ afterAll(async () => { if (cleanup) await cleanup(); });
 describe('transfer download cap under concurrent requests', () => {
   it('serves the ZIP no more often than the cap allows', async () => {
     const transfer = await makeTransfer(3);
+    // A transfer with nothing to download answers 404 without claiming.
+    const storage = require('../../src/services/storage').getStorage();
+    const key = `transfers/race-zip-${transfer.id}/note.txt`;
+    await storage.put(key, Buffer.from('hello'));
+    await transferService.addExtraFile(transfer.id, {
+      originalFilename: 'note.txt', storedPath: key, sizeBytes: 5, mimeType: 'text/plain',
+    });
 
     const responses = await Promise.all(Array.from({ length: 8 }, () => (
       request(app).get(`/api/public/transfer/${transfer.token}/download`)

@@ -37,7 +37,7 @@ const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolve
 const { parseResolution, getDownloadGlobals } = require('../utils/downloadResolutions');
 const { isGalleryAvailable, isGalleryExpired } = require('../utils/galleryLifecycle');
 const { parseBooleanInput } = require('../utils/parsers');
-const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, livePhotos } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 
@@ -122,7 +122,8 @@ class DownloadJobService {
   photoQuery(eventId, photoIds, accessLevel, blockedFolders = []) {
     // blockedFolders: folders whose downloads are off, inherited downwards
     // (issue 1786) — from folderTreeService.downloadBlockedFolderIds.
-    let query = livePhotos(db)
+    // Only what the gallery list shows: no photo still processing (or failed).
+    let query = wherePhotoProcessed(livePhotos(db))
       .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
       .where('photos.event_id', eventId)
       .where(function () {

@@ -20,6 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const { db, logActivity } = require('../../database/db');
+const { adminActivityActor } = require('../../utils/activityActor');
 const { AppError } = require('../../utils/errors');
 const { isUniqueViolation } = require('../../utils/dbErrors');
 const { getStoragePath } = require('../../config/storage');
@@ -130,7 +131,7 @@ async function storeFont({ name, licenceNote, licenceAcknowledged, files = {}, a
     throw err;
   }
   try {
-    await logActivity('pdf_font_uploaded', { fontId: id, styles: stored.map((f) => f.style) }, null, `admin:${adminId}`);
+    await logActivity('pdf_font_uploaded', { fontId: id, styles: stored.map((f) => f.style) }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
   return (await listFonts()).find((font) => font.id === id);
 }
@@ -139,7 +140,7 @@ async function archiveFont(id, adminId) {
   const updated = await db('pdf_fonts').where({ id }).update({ is_active: false, updated_at: new Date().toISOString() });
   if (!updated) throw new AppError('Font not found', 404, 'FONT_NOT_FOUND');
   try {
-    await logActivity('pdf_font_archived', { fontId: id }, null, `admin:${adminId}`);
+    await logActivity('pdf_font_archived', { fontId: id }, null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
   return (await listFonts()).find((font) => font.id === Number(id));
 }

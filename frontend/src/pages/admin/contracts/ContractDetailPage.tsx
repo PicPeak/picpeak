@@ -24,7 +24,7 @@ import SignaturePad from 'signature_pad';
 import {
   Send, X, FileDown, Upload, CheckSquare, Eye, ScrollText,
   ArrowRightCircle, Receipt, RotateCcw, MailCheck,
-  ShieldCheck, CheckCircle2, XCircle,
+  ShieldCheck, CheckCircle2, XCircle, FileCheck,
 } from 'lucide-react';
 import { ActionMenu, Badge, Button, Card, Loading, Notice, useConfirm, type ActionMenuItem, type BadgeTone } from '../../../components/common';
 import { DocumentHeader } from '../../../components/admin/DocumentHeader';
@@ -102,6 +102,10 @@ export const ContractDetailPage: React.FC = () => {
   // handles caching so navigating between contract/quote/bill detail
   // pages doesn't refetch.
   const sourceQuoteId = data?.contract?.sourceQuoteId ?? null;
+  // Customer takes no administrative emails (migration 300): Send becomes
+  // Issue — no mail goes to the customer; they sign in the portal when they
+  // have access, otherwise on paper. Above the mutations, which read it.
+  const noMail = !!data?.contract?.customer?.noAdminEmails;
   const { data: sourceQuoteData } = useQuery({
     queryKey: ['quote', sourceQuoteId],
     queryFn: () => quotesService.get(sourceQuoteId as number),
@@ -143,7 +147,9 @@ export const ContractDetailPage: React.FC = () => {
         toast.warn(t('contracts.detail.sentInvitationFailedToast',
           'Sent, but the email to the signer couldn\'t go out. It is retried automatically within the hour, so don\'t send again.'));
       } else {
-        toast.success(t('contracts.detail.sentToast', 'Contract sent.'));
+        toast.success(noMail
+          ? t('contracts.detail.issuedToast', 'Contract issued. No email was sent to the customer; with portal access they can sign it there.')
+          : t('contracts.detail.sentToast', 'Contract sent.'));
       }
     },
     invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
@@ -233,8 +239,9 @@ export const ContractDetailPage: React.FC = () => {
 
   const resendSignedMutation = useMutationWithToast({
     mutationFn: () => contractsService.resendSigned(numericId as number),
-    successMessage: t('contracts.detail.resentSignedToast',
-      'Signed contract re-sent to both parties.') as string,
+    successMessage: (noMail
+      ? t('contracts.detail.resentSignedNoMailToast', 'Signed contract re-sent to you; this customer gets no email.')
+      : t('contracts.detail.resentSignedToast', 'Signed contract re-sent to both parties.')) as string,
     invalidateKeys: [['contract', numericId]],
     errorMessage: t('contracts.detail.resendError', 'Resend failed') as string,
   });
@@ -379,7 +386,9 @@ export const ContractDetailPage: React.FC = () => {
   };
   const resendSigned = async () => {
     if (await confirm({
-      message: t('contracts.detail.confirmResendSigned', 'Re-send the signed contract PDF to both parties?'),
+      message: noMail
+        ? t('contracts.detail.confirmResendSignedNoMail', 'Re-send the signed contract PDF? It goes to you; this customer gets no email.')
+        : t('contracts.detail.confirmResendSigned', 'Re-send the signed contract PDF to both parties?'),
       confirmLabel: t('contracts.detail.resendSigned', 'Re-send signed PDF'),
     })) resendSignedMutation.mutate();
   };
@@ -443,13 +452,15 @@ export const ContractDetailPage: React.FC = () => {
               </Button>
             ) : null}
             {canManage && c.status === 'draft' && (
-              <Button onClick={() => { void sendDraft(); }} disabled={sendMutation.isPending || formState.busy} leftIcon={<Send className="w-4 h-4" />}>
-                {t('contracts.detail.send', 'Send to customer')}
+              <Button onClick={() => { void sendDraft(); }} disabled={sendMutation.isPending || formState.busy} leftIcon={noMail ? <FileCheck className="w-4 h-4" /> : <Send className="w-4 h-4" />}>
+                {noMail ? t('contracts.detail.issue', 'Issue') : t('contracts.detail.send', 'Send to customer')}
               </Button>
             )}
             {canManage && c.status === 'awaiting_data' && c.dataCollectedAt && (
-              <Button onClick={() => sendMutation.mutate({})} disabled={sendMutation.isPending} leftIcon={<Send className="w-4 h-4" />}>
-                {t('contracts.detail.finishSending', 'Finish sending with the customer\'s details')}
+              <Button onClick={() => sendMutation.mutate({})} disabled={sendMutation.isPending} leftIcon={noMail ? <FileCheck className="w-4 h-4" /> : <Send className="w-4 h-4" />}>
+                {noMail
+                  ? t('contracts.detail.finishIssuing', 'Finish issuing with the customer\'s details')
+                  : t('contracts.detail.finishSending', 'Finish sending with the customer\'s details')}
               </Button>
             )}
             {canManage && canConvert && (
@@ -754,6 +765,7 @@ export const ContractDetailPage: React.FC = () => {
           contractId={numericId}
           onClose={() => setReviewing(false)}
           customerAddressMissing={!!c.customerAddressMissing}
+          noMail={noMail}
           onSend={(reviewToken, askForDetails) => sendMutation.mutate({ reviewToken, askForDetails })}
           onPreviewPdf={handlePdfPreview}
           sending={sendMutation.isPending}

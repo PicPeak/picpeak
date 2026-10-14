@@ -1153,17 +1153,20 @@ describe('document requests', () => {
   });
 
   it('names the deadline in the mail by its calendar day, not the server\'s clock', async () => {
-    // Formatted from the UTC date, as a date-only string the formatter reads
+    // Queued as the UTC date, a date-only string the queue's formatter reads
     // as that day in any timezone (a jest sandbox can't switch TZ itself).
-    const dateFormatter = require('../../src/utils/dateFormatter');
-    const spy = jest.spyOn(dateFormatter, 'formatDate');
-    try {
-      const res = await createRequest(me, { title: 'Deadline', dueAt: '2026-09-22T12:00:00.000Z' });
-      expect(spy).toHaveBeenCalledWith('2026-09-22', 'en');
-      await db('customer_document_requests').where({ id: res.body.request.id }).update({ status: 'cancelled' });
-    } finally {
-      spy.mockRestore();
-    }
+    const res = await createRequest(me, { title: 'Deadline', dueAt: '2026-09-22T12:00:00.000Z' });
+    const mail = (await mails('customer_document_requested', 'requests-me@example.com')).pop();
+    const data = meta(mail.email_data);
+    expect(data.due_date).toBe('2026-09-22');
+    // The queue formats due_date once, in the default DD/MM/YYYY; a value
+    // formatted before queueing was parsed again and printed "Invalid Date".
+    await require('../../src/services/crmEmailTemplates').ensureCrmEmailTemplatesSeeded(db, null);
+    const rendered = await require('../../src/services/emailProcessor')
+      .renderQueuedEmail('customer_document_requested', data, 'requests-me@example.com');
+    expect(rendered.html).toContain('Please send it by 22/09/2026.');
+    expect(rendered.html).not.toContain('Invalid Date');
+    await db('customer_document_requests').where({ id: res.body.request.id }).update({ status: 'cancelled' });
   });
 
   it('is fulfilled by an upload that names it, in the same write', async () => {

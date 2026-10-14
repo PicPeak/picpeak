@@ -109,6 +109,10 @@ const pathRows = async (contractId) => ({
   documents: await db('generated_documents').where({ doc_type: 'contract', doc_id: contractId }).select('id', 'kind', 'path', 'sha256'),
 });
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxTest = process.platform === 'linux' ? test : test.skip;
+
 beforeAll(async () => {
   if (pgUrl) {
     owner = knex({ client: 'pg', connection: pgUrl });
@@ -154,7 +158,7 @@ afterAll(async () => {
   }
 });
 
-test('documents open and re-hash after a restore onto another storage path', async () => {
+linuxTest('documents open and re-hash after a restore onto another storage path', async () => {
   const oldRoot = process.env.STORAGE_PATH;
 
   // 1. A contract written by this release: every stored path is relative.
@@ -300,7 +304,8 @@ test('documents open and re-hash after a restore onto another storage path', asy
   for (const a of signedAttached) expect(signedHashes.has(sha256(fs.readFileSync(a.path)))).toBe(true);
 });
 
-test('a stored path that climbs out of the storage root is not served', async () => {
+// Uses the contracts the restore test above created and signed.
+linuxTest('a stored path that climbs out of the storage root is not served', async () => {
   const contract = await db('contracts').whereNotNull('pdf_path').first('id', 'pdf_path');
   await db('contracts').where({ id: contract.id }).update({ pdf_path: '../../../../etc/passwd', signed_pdf_path: '/etc/passwd' });
   try {

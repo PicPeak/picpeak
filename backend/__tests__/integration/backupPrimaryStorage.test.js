@@ -217,6 +217,40 @@ it('standard local backup actually copies captured S3 bytes and records object m
   expect(sha(dump)).toBe(manifest.database.checksum);
 });
 
+it('fails a backup before the dump or any copy when the signing key file cannot be kept private', async () => {
+  await seedEstate();
+  await configure();
+  const keyPath = path.join(tmpDir, 'manifest-key', 'backup-manifest.key');
+  await fs.mkdir(path.dirname(keyPath), { recursive: true });
+  await fs.writeFile(keyPath, 'c4'.repeat(32));
+  await fs.chmod(keyPath, 0o666);
+  const syncFs = require('fs');
+  // A filesystem that ignores chmod: the mode stays 0666.
+  const fchmod = jest.spyOn(syncFs, 'fchmodSync').mockImplementation(() => {});
+  const saved = { key: process.env.BACKUP_MANIFEST_KEY, file: process.env.BACKUP_MANIFEST_KEY_FILE };
+  delete process.env.BACKUP_MANIFEST_KEY;
+  process.env.BACKUP_MANIFEST_KEY_FILE = keyPath;
+  adapter.list.mockClear(); adapter.get.mockClear();
+  const dumps = path.join(tmpDir, 'dumps');
+  const dumpsBefore = await fs.readdir(dumps).catch(() => []);
+  try {
+    await backup.runBackup(true);
+  } finally {
+    fchmod.mockRestore();
+    process.env.BACKUP_MANIFEST_KEY = saved.key;
+    if (saved.file === undefined) delete process.env.BACKUP_MANIFEST_KEY_FILE; else process.env.BACKUP_MANIFEST_KEY_FILE = saved.file;
+  }
+  const run = await db('backup_runs').orderBy('id', 'desc').first();
+  expect(run.status).toBe('failed');
+  expect(run.error_message).toContain(keyPath);
+  expect(run.error_message).toContain('mode 0666');
+  expect(run.error_message).toMatch(/BACKUP_MANIFEST_KEY/);
+  expect(adapter.list).not.toHaveBeenCalled();
+  expect(adapter.get).not.toHaveBeenCalled();
+  await expect(fs.readdir(path.join(tmpDir, 'backups'))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await fs.readdir(dumps).catch(() => [])).toEqual(dumpsBefore);
+});
+
 it('S3 backup destination receives actual primary bytes/metadata and does not skip metadata-only updates', async () => {
   await seedEstate(); await configure('s3');
   await db('app_settings').where('setting_key', 'backup_incremental').update({ setting_value: 'true' });

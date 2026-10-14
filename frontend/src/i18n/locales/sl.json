@@ -1241,6 +1241,9 @@
     "liked": "Všečkano",
     "favorited": "Dodano med priljubljene",
     "favorites": "Priljubljene",
+    "showLikedOnly": "Prikaži samo fotografije, ki so mi všeč",
+    "likedOnlyEmpty": "Tukaj še niste všečkali nobene fotografije. Tapnite srce na fotografiji, da jo najdete tukaj.",
+    "showAllPhotos": "Prikaži vse fotografije",
     "needHelp": "Potrebujete pomoč? Pišite nam na",
     "noPhotosFound": "Ni najdenih fotografij",
     "failedToLoad": "Fotografij ni bilo mogoče naložiti",
@@ -1310,6 +1313,7 @@
     "expiresIn_other": "Galerija poteče čez {{count}} dni",
     "downloading_one": "Prenašanje 1 fotografije...",
     "downloading_other": "Prenašanje {{count}} fotografij...",
+    "downloadingInParts": "Prenašanje {{count}} fotografij v {{parts}} datotekah ZIP...",
     "guestRecovery": {
       "invalidEmail": "Vnesite veljaven e-poštni naslov",
       "codeSent": "Preverite nabiralnik za potrditveno kodo.",
@@ -1404,6 +1408,7 @@
     "backToGallery": "Vse fotografije",
     "downloadFolder": "Prenesi mapo ({{count}})",
     "downloadFolderCapped": "Prenesi prvih {{limit}} od {{total}}",
+    "downloadSelectionTooLarge": "Naenkrat lahko prenesete največ {{limit}} fotografij. Izberite manj fotografij.",
     "newPhotos_one": "{{count}} nova fotografija",
     "newPhotos_two": "{{count}} novi fotografiji",
     "newPhotos_few": "{{count}} nove fotografije",
@@ -1489,6 +1494,9 @@
       "approveBody": "Potrjujete, da so obdelane fotografije v redu takšne, kot so, in da lahko fotograf nadaljuje. Potem svojih odobritev in zavrnitev ne morete več spreminjati; fotograf jih lahko za vas znova odpre.",
       "approveRejected": "Fotografije, ki so še označene kot zavrnjene: {{count}}",
       "approveConfirm": "Odobri",
+      "identityApproval": "vaše odobritve",
+      "identitySelection": "vašega izbora",
+      "identityInvalid": "Preverite ime in e-poštni naslov. Ime lahko vsebuje črke, števke, presledke, vezaje, opuščaje in pike.",
       "approveSuccess": "Vaša odobritev je bila poslana fotografu",
       "approvedOn": "Obdelane fotografije odobrene {{date}}",
       "noteLabel": "Opomba za fotografa (neobvezno)",
@@ -1645,6 +1653,7 @@
     "uploadPhotos": "Naloži fotografije",
     "archiveEvent": "Arhiviraj dogodek",
     "archiveConfirm": "Ali res želite arhivirati ta dogodek? Tega dejanja ni mogoče razveljaviti.",
+    "archiveInProgress": "Ta galerija se trenutno arhivira. Poskusite znova, ko se arhiviranje konča.",
     "extendExpiration": "Podaljšaj za {{days}} dni",
     "backToEvents": "Nazaj na dogodke",
     "loadingEventDetails": "Nalaganje podrobnosti dogodka...",
@@ -4792,7 +4801,8 @@
       "status": {
         "pending": "Čaka",
         "sent": "Poslano",
-        "failed": "Neuspešno"
+        "failed": "Neuspešno",
+        "suppressed": "Zadržano"
       },
       "col": {
         "recipient": "Prejemnik",
@@ -5177,7 +5187,8 @@
       "nextBackup": "Naslednja varnostna kopija",
       "notScheduled": "Ni načrtovano",
       "enabled": "Omogočeno",
-      "disabled": "Onemogočeno"
+      "disabled": "Onemogočeno",
+      "signingKeyInvalid": "Ključ za podpisovanje varnostnih kopij ni uporaben. Varnostne kopije ne bodo uspele, dokler ga ne popravite."
     },
     "actions": {
       "runBackupNow": "Zaženi varnostno kopijo zdaj",
@@ -6704,7 +6715,9 @@
       "marketingOptOutHelp": "Ko je vklopljeno, je ta stranka izpuščena iz vsake kampanje e-novic. E-pošta o galerijah, ponudbah in računih ostane nespremenjena.",
       "marketingOptOutSince": "Od {{date}}",
       "dayRate": "Privzeta dnevna cena",
-      "dayRateHint": "Uporablja se pri postavkah ponudbe na dan. Glavne denarne enote ({{currency}}). Pustite prazno za uporabo privzete dnevne cene iz Nastavitve → Računovodstvo."
+      "dayRateHint": "Uporablja se pri postavkah ponudbe na dan. Glavne denarne enote ({{currency}}). Pustite prazno za uporabo privzete dnevne cene iz Nastavitve → Računovodstvo.",
+      "noAdminEmails": "Brez administrativnih e-poštnih sporočil",
+      "noAdminEmailsHint": "Ponudbe, pogodbe, računi in opomini se ustvarijo kot običajno, vendar ta stranka o njih ne prejme e-pošte. Z dostopom do portala jih vidi tam, sicer ji jih predate sami. Zadržana sporočila so v dnevniku e-pošte označena kot »Zadržano«. E-pošta o galerijah ni prizadeta. Zadržane so tudi kopije drugim prejemnikom istega dokumenta (npr. računovodji v CC). E-pošta, ki je ob vklopu že v čakalni vrsti, se še pošlje."
     },
     "hours": {
       "section": "Ure",
@@ -8087,7 +8100,14 @@
     "contractTemplate": "Predloga pogodbe",
     "convertToContractConfirm": "Ustvari osnutek pogodbe",
     "contractTemplateFromQuote": "Vnaprej izbrano s predlogo ponudbe: {{name}}",
-    "contractTemplateAuto": "Kot določa predloga ponudbe (sicer privzeta)"
+    "contractTemplateAuto": "Kot določa predloga ponudbe (sicer privzeta)",
+    "issue": "Izdaj",
+    "reissueNoMail": "Izdaj znova",
+    "issuedToast": "Ponudba je izdana. E-pošta ni bila poslana.",
+    "saveAndIssueTitle": "Izdati z neshranjenimi spremembami?",
+    "saveAndIssueMessage": "Spremembe se najprej shranijo, nato se ponudba izda. Ta stranka ne prejme e-pošte.",
+    "saveAndIssue": "Shrani in izdaj",
+    "confirmIssue": "Izdati to ponudbo zdaj? Ta stranka ne prejme e-pošte."
   },
   "crm": {
     "lineItems": {
@@ -8324,7 +8344,22 @@
       "sendWithCount": "Pošlji z {{count}} dokazili",
       "sendWithCount_one": "Pošlji z {{count}} dokazilom",
       "sendWithCount_other": "Pošlji z {{count}} dokazili"
-    }
+    },
+    "issue": "Izdaj",
+    "issuedToast": "Račun je izdan. E-pošta ni bila poslana.",
+    "saveAndIssueTitle": "Izdati z neshranjenimi spremembami?",
+    "saveAndIssueMessage": "Spremembe se najprej shranijo, nato se račun izda. Ta stranka ne prejme e-pošte.",
+    "saveAndIssue": "Shrani in izdaj",
+    "confirmIssue": "Izdati ta račun zdaj? Ta stranka ne prejme e-pošte.",
+    "confirmReleaseIssue": "Označiti fotografije kot dostavljene in izdati ta račun zdaj? Ta stranka ne prejme e-pošte.",
+    "releaseForDeliveryIssue": "Označi kot dostavljeno in izdaj",
+    "releasedIssuedToast": "Račun ob dostavi je izdan. E-pošta ni bila poslana.",
+    "recordReminder": "Zabeleži opomin",
+    "confirmRecordReminder": "Zdaj zabeležiti opomin? Ta stranka ne prejme e-pošte in stroški opomina se ne zaračunajo.",
+    "reminderRecordedToast": "Opomin je zabeležen; e-pošta ni bila poslana.",
+    "confirmCancelIssuedNoMail": "Ustvarjen bo storno račun; ta stranka ne prejme e-pošte. Tega ni mogoče razveljaviti. Nadaljujem?",
+    "cancelledWithStornoNoMailToast": "Račun je storniran — storno račun je izdan; e-pošta ni bila poslana.",
+    "confirmReissueNoMail": "Za ta račun bo izdan storno račun (ta stranka ne prejme e-pošte) in ustvarjen bo nov načrtovani osnutek z enakimi postavkami. Novi račun se bo na tega skliceval kot »Nadomešča R-XXXX«. Nadaljujem?"
   },
   "businessProfile": {
     "savedToast": "Poslovni profil shranjen.",
@@ -8980,8 +9015,17 @@
         },
         "collectHint": "Povezavo zdaj prejme samo prvi podpisnik, da dopolni svoje podatke. Ko jih vnese, se pripravijo pogodba, njen PDF in cena, nato pa se pošljejo drugim podpisnikom.",
         "requestDetails": "Zahtevaj podatke",
-        "afterDetails": "Nastavi, ko stranka dopolni svoje podatke."
-      }
+        "afterDetails": "Nastavi, ko stranka dopolni svoje podatke.",
+        "issue": "Izdaj",
+        "noMailNotice": "Ta stranka ne prejema administrativnih e-poštnih sporočil. Z dostopom do portala jo lahko podpiše tam, sicer naložite na papirju podpisano različico. Drugi podpisniki so povabljeni po e-pošti kot običajno.",
+        "readyToIssue": "Vse je pripravljeno za izdajo.",
+        "noMailAddressHint": "Ta stranka ne prejema administrativnih e-poštnih sporočil, zato je ne moremo po e-pošti prositi za podatke. Manjkajoči naslov najprej vnesite pri stranki."
+      },
+      "issue": "Izdaj",
+      "finishIssuing": "Dokončaj izdajo s podatki stranke",
+      "issuedToast": "Pogodba je izdana. Stranki ni bila poslana e-pošta; z dostopom do portala jo lahko podpiše tam.",
+      "confirmResendSignedNoMail": "Ponovno poslati podpisano pogodbo v PDF? Prejmete jo vi; ta stranka ne prejme e-pošte.",
+      "resentSignedNoMailToast": "Podpisana pogodba je ponovno poslana vam; ta stranka ne prejme e-pošte."
     },
     "editor": {
       "create": "Ustvari osnutek",
@@ -9411,7 +9455,8 @@
           "expired": "Čas za podpis je potekel",
           "reminded": "Opomnik poslan",
           "data_requested": "Zahtevani podatki stranke",
-          "data_collected": "Podatki stranke prejeti"
+          "data_collected": "Podatki stranke prejeti",
+          "invited_portal": "Odprto na portalu (brez e-pošte)"
         },
         "actor": {
           "admin": "Skrbnik",
@@ -9459,7 +9504,9 @@
       "remindError": "Opomnika ni bilo mogoče poslati. Poskusite znova.",
       "remindedAt": "Opomnjeno {{count}}×, nazadnje {{date}}",
       "remindConfirm": "Pošljem {{name}} opomnik? Vsebuje novo povezavo; prejšnja bo prenehala delovati.",
-      "remind": "Pošlji opomnik"
+      "remind": "Pošlji opomnik",
+      "portalOpenAt": "Odprto na portalu od {{date}} (brez e-pošte)",
+      "noAdminEmails": "Ta stranka ne prejema administrativnih e-poštnih sporočil, zato ji povezave ni mogoče poslati. Podpiše na portalu za stranke ali na papirju."
     },
     "paperUpload": {
       "title": "Naloži podpisano pogodbo",
