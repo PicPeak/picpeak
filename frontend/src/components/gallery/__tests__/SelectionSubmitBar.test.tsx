@@ -214,6 +214,18 @@ describe('SelectionSubmitBar (issue 1733)', () => {
       expect(screen.getByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
     });
 
+    it('does not carry the name into another gallery when the bar stays mounted', async () => {
+      const value = state({ approval: { can_submit: true } });
+      const { rerender } = renderRequired(value, 2);
+      await userEvent.click(screen.getByRole('button', { name: 'Finish selection' }));
+      await fillIdentity();
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      rerender(<SelectionSubmitBar slug="other" state={value} used={2} requireNameEmail />);
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
+    });
+
     it('takes the name given on a like: no prompt, and the name goes with the hand-over', async () => {
       apiPost.mockResolvedValue({ data: {} });
       submitSelection.mockResolvedValue({ id: 6, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });

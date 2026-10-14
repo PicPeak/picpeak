@@ -80,7 +80,10 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
   // Simple and shared mode with name and email required: asked before the
   // confirmation, as the feedback actions ask before they send (issue 1984).
   const [identityFor, setIdentityFor] = useState<SubmissionKind | null>(null);
-  const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
+  // Kept with its gallery: a bar that stays mounted across a slug change must
+  // not hand one gallery's name to the next.
+  const [namedIn, setNamedIn] = useState<{ slug: string; name: string; email: string } | null>(null);
+  const savedIdentity = namedIn?.slug === slug ? namedIn : null;
   const panelRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -90,7 +93,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
     const onSubmitted = (event: Event) => {
       const detail = (event as CustomEvent<FeedbackSubmittedDetail>).detail;
       if (detail?.slug !== slug || !detail.guest_name || !detail.guest_email) return;
-      setSavedIdentity({ name: detail.guest_name, email: detail.guest_email });
+      setNamedIn({ slug, name: detail.guest_name, email: detail.guest_email });
     };
     window.addEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
     return () => window.removeEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
@@ -123,7 +126,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
       // The gallery wants a name and email this bar did not have: ask, then
       // confirm again with the note kept.
       if (code === 'GUEST_INFO_REQUIRED') {
-        setSavedIdentity(null);
+        setNamedIn(null);
         setConfirming(null);
         setIdentityFor(kind);
         return;
@@ -184,7 +187,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
 
   const handleIdentitySubmit = (name: string, email: string) => {
     const kind = identityFor;
-    setSavedIdentity({ name, email });
+    setNamedIn({ slug, name, email });
     setIdentityFor(null);
     if (kind) showConfirmation(kind);
   };
