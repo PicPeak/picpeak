@@ -964,27 +964,53 @@ async function contractSignerQueueTargets(contractPlan) {
  * The window, not the address alone, decides: emails are unique only among
  * current accounts, so a former address may belong to another customer now
  * (or did before this one took it), and their mail must not be touched.
- * `since` is null for the first address, which covers mail queued before the
- * account existed (the invitation), as the current-address match does.
+ * The first address's window opens when the customer's portal invitation
+ * was issued, or when the account was created if that is earlier (no
+ * invitation, or a passive account promoted later): createInvitation
+ * refuses an address another active account holds, so mail from then on
+ * is this customer's. Without a readable start no first window is built.
  */
 async function formerAddressWindows(trx, customer) {
   const rows = await trx('accounting_change_history')
     .where({ document_type: 'customer', entity_type: 'customer', document_id: customer.id })
     .orderBy('id', 'asc')
     .select('changes', 'created_at');
+  const invitation = await trx('customer_invitations')
+    .where('accepted_customer_id', customer.id)
+    .orderBy('created_at', 'asc')
+    .first('created_at');
+  const starts = [storedTimestamp(customer.created_at), storedTimestamp(invitation?.created_at)]
+    .filter(Boolean);
   const current = String(customer.email || '').toLowerCase();
   const windows = [];
-  let since = null;
+  let since = starts.length ? new Date(Math.min(...starts.map((d) => d.getTime()))) : null;
   for (const row of rows) {
     const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
     const from = String(changes?.email?.from || '').toLowerCase();
     const to = String(changes?.email?.to || '').toLowerCase();
     if (!from || from === to) continue;
-    const at = new Date(row.created_at);
-    if (from !== current) windows.push({ email: from, since, until: at });
+    const at = storedTimestamp(row.created_at);
+    if (since && at && from !== current) windows.push({ email: from, since, until: at });
     since = at;
   }
   return windows;
+}
+
+/**
+ * A timestamp column value as a Date, whatever shape it was stored in: a
+ * Date (PostgreSQL), epoch ms as a number or digit string, an ISO string, or
+ * SQLite's CURRENT_TIMESTAMP text ('YYYY-MM-DD HH:MM:SS', UTC). Null when
+ * absent or unreadable.
+ */
+function storedTimestamp(value) {
+  if (value == null || value === '') return null;
+  let date;
+  if (value instanceof Date) date = value;
+  else if (typeof value === 'number' || /^\d+$/.test(String(value))) date = new Date(Number(value));
+  else if (/^\d{4}-\d\d-\d\d[ T]\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(String(value))) {
+    date = new Date(`${String(value).replace(' ', 'T')}Z`);
+  } else date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 async function eraseCustomer(id, erasedByAdminId) {
@@ -1044,8 +1070,8 @@ async function eraseCustomer(id, erasedByAdminId) {
       for (const win of formerWindows) {
         w.orWhere((f) => {
           f.whereRaw('LOWER(recipient_email) = ?', [win.email])
+            .modify(whereTimestamp, 'created_at', '>=', win.since)
             .modify(whereTimestamp, 'created_at', '<=', win.until);
-          if (win.since) f.modify(whereTimestamp, 'created_at', '>=', win.since);
         });
       }
     });

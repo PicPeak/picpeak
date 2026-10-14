@@ -463,6 +463,59 @@ describe('customer erasure clears email_queue', () => {
     expect(JSON.parse(earlier.email_data).customer_name).toBe('Earlier Owner');
   });
 
+  it('leaves an earlier owner\'s mail to the customer\'s first address alone, but covers the invitation (issue 1971)', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const queue = async (recipient, status, createdAt, name) => {
+      const [row] = await db('email_queue').insert({
+        recipient_email: recipient, email_type: 'gallery_created', status,
+        email_data: JSON.stringify({ customer_name: name }), rendered_html: `<p>${name}</p>`,
+        created_at: createdAt, scheduled_at: createdAt, retry_count: 0,
+      }).returning('id');
+      return row?.id ?? row;
+    };
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+    const firstAddress = 'first-1971@example.com';
+
+    // An earlier owner of the address queues and receives mail, then moves on.
+    const earlierOwner = await insertCustomer(db, { email: firstAddress });
+    const earlierPending = await queue(firstAddress, 'pending', new Date().toISOString(), 'Earlier Pending');
+    const earlierSent = await queue(firstAddress, 'sent', new Date().toISOString(), 'Earlier Sent');
+    await tick();
+    await updateCustomer(earlierOwner.id, { email: 'earlier-moved-1971@example.com' }, null);
+    await tick();
+
+    // The customer is invited to the freed address, then the account is created.
+    const adminId = (await db('admin_users').first('id')).id;
+    const inviteAt = new Date().toISOString();
+    const inviteMail = await queue(firstAddress, 'sent', inviteAt, 'Invitation');
+    await tick();
+    const customer = await insertCustomer(db, { email: firstAddress });
+    await db('customer_invitations').insert({
+      email: firstAddress, token: 'digest-1971-first', token_digest: 'digest-1971-first',
+      invited_by: adminId, expires_at: new Date(Date.now() + 86400000).toISOString(),
+      accepted_at: new Date().toISOString(), accepted_customer_id: customer.id, created_at: inviteAt,
+    });
+    const ownMail = await queue(firstAddress, 'sent', new Date().toISOString(), 'Own Sent');
+    await tick();
+    await updateCustomer(customer.id, { email: 'first-moved-1971@example.com' }, null);
+
+    await eraseCustomer(customer.id, null);
+
+    for (const id of [inviteMail, ownMail]) {
+      const row = await db('email_queue').where({ id }).first();
+      expect(row.recipient_email).toMatch(/@deleted\.invalid$/);
+      expect(row.rendered_html).toBeFalsy();
+    }
+    const pending = await db('email_queue').where({ id: earlierPending }).first();
+    expect(pending.status).toBe('pending');
+    expect(pending.recipient_email).toBe(firstAddress);
+    expect(JSON.parse(pending.email_data).customer_name).toBe('Earlier Pending');
+    const sent = await db('email_queue').where({ id: earlierSent }).first();
+    expect(sent.recipient_email).toBe(firstAddress);
+    expect(sent.rendered_html).toBe('<p>Earlier Sent</p>');
+  });
+
   it('covers contract mail to a signer address only when it names a contract this erasure redacts', async () => {
     const fieldEncryption = require('../../src/utils/fieldEncryption');
     const owner = await insertCustomer(db);
