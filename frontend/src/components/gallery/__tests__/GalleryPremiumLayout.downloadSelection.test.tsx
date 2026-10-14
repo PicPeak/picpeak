@@ -146,6 +146,43 @@ describe('Gallery Premium — selection controls', () => {
     expect(onDeselectAll).not.toHaveBeenCalled();
   });
 
+  it('selects only the photos under the active category chip', () => {
+    const onSelectMany = vi.fn();
+    const onSelectAll = vi.fn();
+    render(<GalleryPremiumLayout photos={photos} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()}
+      isSelectionMode selectedPhotos={new Set([1])} onSelectMany={onSelectMany} onSelectAll={onSelectAll} />);
+    fireEvent.click(screen.getByText('Ceremony'));
+    fireEvent.click(screen.getByText('gallery.selectAll'));
+    expect(onSelectMany).toHaveBeenCalledWith([1, 2]);
+    expect(onSelectAll).not.toHaveBeenCalled();
+  });
+
+  it('clears the selection and leaves selection mode after a selection download', async () => {
+    const onDeselectAll = vi.fn();
+    const onToggleSelectionMode = vi.fn();
+    render(<GalleryPremiumLayout photos={photos} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()}
+      isSelectionMode selectedPhotos={new Set([1, 2])} onDeselectAll={onDeselectAll}
+      onToggleSelectionMode={onToggleSelectionMode} />);
+    fireEvent.click(screen.getByText(/common\.download \(2\)/));
+    await waitFor(() => expect(onToggleSelectionMode).toHaveBeenCalledTimes(1));
+    expect(mocks.downloadSelectedPhotos).toHaveBeenCalledWith('demo', [1, 2]);
+    expect(onDeselectAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the selection when a selection download fails', async () => {
+    mocks.downloadSelectedPhotos.mockRejectedValue(new Error('network'));
+    const onDeselectAll = vi.fn();
+    const onToggleSelectionMode = vi.fn();
+    render(<GalleryPremiumLayout photos={photos} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()}
+      isSelectionMode selectedPhotos={new Set([1, 2])} onDeselectAll={onDeselectAll}
+      onToggleSelectionMode={onToggleSelectionMode} />);
+    fireEvent.click(screen.getByText(/common\.download \(2\)/));
+    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(onDeselectAll).not.toHaveBeenCalled();
+    expect(onToggleSelectionMode).not.toHaveBeenCalled();
+  });
+
   it('offers Deselect all when every photo on screen is selected', () => {
     const onDeselectAll = vi.fn();
     render(<GalleryPremiumLayout photos={photos} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()}

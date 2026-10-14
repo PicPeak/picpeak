@@ -230,6 +230,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   onSelectAll,
   onDeselectAll,
   onSelectMany,
+  onToggleSelectionMode,
   selectionQuotaPhotos,
   onDownloadEverything,
   eventName,
@@ -578,8 +579,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
+      return;
     }
-  }, [selectedPhotos, slug, t, downloadChoices, onPickResolution, selectionOverQuota, downloadQuota.remaining]);
+    // Downloaded: clear the selection and leave selection mode, as the grid
+    // toolbar does. A failure keeps it to retry or trim.
+    onDeselectAll?.();
+    if (isSelectionMode) onToggleSelectionMode?.();
+  }, [selectedPhotos, slug, t, downloadChoices, onPickResolution, selectionOverQuota, downloadQuota.remaining, onDeselectAll, isSelectionMode, onToggleSelectionMode]);
 
   // Same path as Gallery Story's Download All: the whole-gallery download
   // when the container offers it (#1160), else the ids in scope. That
