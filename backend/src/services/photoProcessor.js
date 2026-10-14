@@ -95,7 +95,12 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
     let promotion = null;
     let promotionSettled = false;
     let rowCommitted = false;
-    
+    // What this attempt has written to storage, for the cleanup below.
+    let relativePath;
+    let finalKey;
+    let thumbnailPath;
+    let putStarted = false;
+
     try {
       // Count existing photos to generate sequence number
       let counter = 1;
@@ -150,8 +155,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       }
 
       // Final storage key under events/active/{slug}/{newFilename}.
-      const relativePath = path.posix.join(event.slug, newFilename);
-      const finalKey = path.posix.join('events/active', relativePath);
+      relativePath = path.posix.join(event.slug, newFilename);
+      finalKey = path.posix.join('events/active', relativePath);
 
       // Determine if this is a video or image
       const isVideo = isVideoMimeType(file.mimetype);
@@ -159,7 +164,6 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       // Generate thumbnail and extract metadata FROM the temp file (still on
       // local disk) before uploading the original.
-      let thumbnailPath;
       // Receives the tile placeholder hash of the thumbnail (issue 1733).
       const thumbMeta = {};
       let videoMetadata = null;
@@ -241,6 +245,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       const actualSize = uploadReservation ? (await fs.stat(tempPath)).size : file.size;
       if (uploadReservation) promotion = await uploadQuota.prepareObject(uploadReservation, finalKey, actualSize);
       try {
+        putStarted = true;
         await getStorage().putFromFile(finalKey, tempPath, {
           contentType: file.mimetype,
         });
@@ -399,6 +404,26 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       if (promotion && !rowCommitted) {
         await uploadQuota.failedObject(promotion, { storage: getStorage(), settled: promotionSettled })
           .catch(err => logger.warn('Failed upload charge retained', { objectId: promotion.id, error: err.message }));
+      }
+      // failedObject removes only the original, and only with a reservation.
+      // The thumbnail was stored before the cap check, the insert or a
+      // cancellation could fail, and on S3 no watcher ever finds it again.
+      // Each is removed only when no row names it: a commit whose
+      // acknowledgement was lost has a row that still needs both, and the
+      // thumbnail key of a non-RAW image comes from the uploaded file's own
+      // name, which another photo's row can share.
+      if (!rowCommitted && (thumbnailPath || (!promotion && putStarted))) {
+        try {
+          const storage = getStorage();
+          if (thumbnailPath && !(await db('photos').where({ thumbnail_path: thumbnailPath }).first('id'))) {
+            await storage.delete(thumbnailPath).catch(() => {});
+          }
+          if (!promotion && putStarted && !(await db('photos').where({ event_id: eventId, path: relativePath }).first('id'))) {
+            await storage.delete(finalKey).catch(() => {});
+          }
+        } catch (cleanupErr) {
+          logger.warn('Failed upload files retained', { path: relativePath, error: cleanupErr.message });
+        }
       }
       logger.error(`Error processing file ${file.originalname}:`, {
         error: error.message,

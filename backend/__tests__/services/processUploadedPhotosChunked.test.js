@@ -6,15 +6,19 @@
  *    thumbnail blocked every other query until the 60 s acquire timeout.
  *  - issue 1976: the row gets its EXIF capture date. This path completes the
  *    row itself, so the worker that reads it for a batch upload never runs.
+ *  - a file that fails after its thumbnail was stored (cancelled, refused,
+ *    insert failed) leaves neither the thumbnail nor the original behind.
  */
-const mockProbe = { run: null };
+const mockProbe = { run: null, thumbnails: [] };
 jest.mock('../../src/services/imageProcessor', () => {
   const actual = jest.requireActual('../../src/services/imageProcessor');
   return {
     ...actual,
     generateThumbnail: async (...args) => {
       if (mockProbe.run) await mockProbe.run();
-      return actual.generateThumbnail(...args);
+      const key = await actual.generateThumbnail(...args);
+      mockProbe.thumbnails.push(key);
+      return key;
     },
   };
 });
@@ -47,12 +51,18 @@ describe('processUploadedPhotos (chunked admin upload)', () => {
     return db('events').where({ id: inserted[0]?.id ?? inserted[0] }).first();
   }
 
-  async function upload(event, name, bytes) {
+  async function upload(event, name, bytes, placement = {}, reservation = null) {
     const temp = path.join(process.env.STORAGE_PATH, `upload-${name}`);
     await fs.promises.writeFile(temp, bytes);
     return processUploadedPhotos(
-      [{ path: temp, originalname: name, mimetype: 'image/jpeg', size: bytes.length }], event.id
+      [{ path: temp, originalname: name, mimetype: 'image/jpeg', size: bytes.length }], event.id,
+      'admin', null, placement, reservation
     );
+  }
+
+  async function storedKeys(event) {
+    const dir = path.join(process.env.STORAGE_PATH, 'events/active', event.slug);
+    return fs.promises.readdir(dir).catch(() => []);
   }
 
   const jpeg = () => sharp({ create: { width: 64, height: 48, channels: 3, background: '#808080' } }).jpeg();
@@ -88,5 +98,49 @@ describe('processUploadedPhotos (chunked admin upload)', () => {
     // exifr reads the EXIF wall-clock time as local time, like the worker does.
     expect(new Date(row.captured_at).getTime()).toBe(new Date(2021, 5, 15, 14, 30, 0).getTime());
     expect((await db('photos').where({ id: withoutDate.id }).first()).captured_at).toBeNull();
+  }, 30000);
+
+  it('removes the thumbnail and the original when the insert fails', async () => {
+    const event = await makeEvent();
+    mockProbe.thumbnails = [];
+    // A column the table does not have makes the insert itself fail, after
+    // the thumbnail and the original were both stored.
+    const uploaded = await upload(event, 'broken.jpg', await jpeg().toBuffer(), { no_such_column: 1 });
+
+    expect(uploaded).toHaveLength(0);
+    expect(mockProbe.thumbnails).toHaveLength(1);
+    const { getStorage } = require('../../src/services/storage');
+    expect(await getStorage().stat(mockProbe.thumbnails[0])).toBeNull();
+    expect(await storedKeys(event)).toEqual([]);
+  }, 30000);
+
+  it('removes the thumbnail when the upload is cancelled after it was made', async () => {
+    const event = await makeEvent();
+    mockProbe.thumbnails = [];
+    let cancelled = false;
+    mockProbe.run = async () => { cancelled = true; };
+    let uploaded;
+    try {
+      uploaded = await upload(event, 'cancelled.jpg', await jpeg().toBuffer(), {}, { isCancelled: () => cancelled });
+    } finally {
+      mockProbe.run = null;
+    }
+
+    expect(uploaded).toHaveLength(0);
+    expect(mockProbe.thumbnails).toHaveLength(1);
+    const { getStorage } = require('../../src/services/storage');
+    expect(await getStorage().stat(mockProbe.thumbnails[0])).toBeNull();
+  }, 30000);
+
+  it('keeps a thumbnail that another photo row still names', async () => {
+    const kept = await makeEvent();
+    const [first] = await upload(kept, 'shared.jpg', await jpeg().toBuffer());
+    const { thumbnail_path: thumb } = await db('photos').where({ id: first.id }).first();
+
+    const failed = await upload(await makeEvent(), 'shared.jpg', await jpeg().toBuffer(), { no_such_column: 1 });
+
+    expect(failed).toHaveLength(0);
+    const { getStorage } = require('../../src/services/storage');
+    expect(await getStorage().stat(thumb)).not.toBeNull();
   }, 30000);
 });
