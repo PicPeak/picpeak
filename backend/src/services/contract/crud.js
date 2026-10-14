@@ -103,6 +103,8 @@ async function getContractById(id) {
         'customer_accounts.last_name as customer_last_name',
         'customer_accounts.company_name as customer_company_name',
         'customer_accounts.preferred_language as customer_preferred_language',
+        // Drives the Issue (no email) button (migration 300).
+        'customer_accounts.no_admin_emails as customer_no_admin_emails',
       )
       .first();
     if (!contract) return null;
