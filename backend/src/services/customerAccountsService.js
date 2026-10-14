@@ -900,7 +900,8 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
  *     and any backup stop carrying their data (#1593). Matched on the
  *     address as stored *before* this function rewrites it to the sentinel
  *     below, case-insensitively (an address stored with different casing
- *     than the account is still the same mailbox), and on each former
+ *     than the account is still the same mailbox) since the customer took
+ *     it (currentAddressSince), and on each former
  *     address for the time the customer held it (formerAddressWindows,
  *     issue 1971). Contract mail queued to
  *     a signer's own address (not the account email) is covered only for
@@ -1027,6 +1028,44 @@ async function formerAddressWindows(trx, customer) {
 }
 
 /**
+ * Where the match on the customer's CURRENT address starts. Emails are
+ * unique only among current accounts, so the address may have belonged to
+ * another customer before this one took it, and that mail must stay. The
+ * customer has held it at most since the latest recorded email event that
+ * bounds their tenure: their own latest email change (or `created` entry),
+ * and any change by another customer to or from the address. Returns the
+ * first moment to match after (the whole-second rule of
+ * formerAddressWindows), `undefined` when no such event is recorded (an
+ * account from before migration 219 nobody else's history names: matched
+ * unbounded, as before), or null when one of those times cannot be read,
+ * which matches nothing on the address.
+ */
+async function currentAddressSince(trx, customer) {
+  const current = String(customer.email || '').toLowerCase();
+  if (!current) return null;
+  // The address as it appears inside the stored JSON, with LIKE's own
+  // wildcards escaped; the candidates are checked exactly below.
+  const needle = JSON.stringify(current).slice(1, -1).replace(/[\\%_]/g, '\\$&');
+  const rows = await trx('accounting_change_history')
+    .where({ document_type: 'customer', entity_type: 'customer' })
+    .where((q) => q.where('document_id', customer.id)
+      .orWhereRaw('LOWER(CAST(changes AS TEXT)) LIKE ? ESCAPE \'\\\'', [`%${needle}%`]))
+    .select('document_id', 'changes', 'created_at');
+  let latest;
+  for (const row of rows) {
+    const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
+    const from = String(changes?.email?.from || '').toLowerCase();
+    const to = String(changes?.email?.to || '').toLowerCase();
+    if (from === to) continue;
+    if (Number(row.document_id) !== Number(customer.id) && from !== current && to !== current) continue;
+    const at = storedTimestamp(row.created_at);
+    if (!at) return null;
+    if (!latest || at > latest) latest = at;
+  }
+  return latest ? new Date(Math.floor(latest.getTime() / 1000) * 1000 + 1000) : undefined;
+}
+
+/**
  * A timestamp column value as a Date, whatever shape it was stored in: a
  * Date (PostgreSQL), epoch ms as a number or digit string, an ISO string, or
  * SQLite's CURRENT_TIMESTAMP text ('YYYY-MM-DD HH:MM:SS', UTC). Null when
@@ -1092,11 +1131,23 @@ async function eraseCustomer(id, erasedByAdminId) {
     // variables + recipient on every row for this address that isn't
     // already gone (sent, failed, or the row just cancelled above) — done
     // ahead of the customer_accounts update below so the match is still
-    // against the real address, not the sentinel. Former addresses count
-    // only for mail queued while the customer held them (formerAddressWindows).
+    // against the real address, not the sentinel. The current address counts
+    // only for mail queued since the customer took it (currentAddressSince),
+    // former ones only for mail queued while the customer held them
+    // (formerAddressWindows).
+    const currentSince = await currentAddressSince(trx, customer);
     const formerWindows = await formerAddressWindows(trx, customer);
     const forCustomer = (q) => q.where((w) => {
-      w.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email]);
+      if (currentSince === undefined) {
+        w.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email]);
+      } else if (currentSince) {
+        w.where((c) => {
+          c.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email])
+            .modify(whereTimestamp, 'created_at', '>', currentSince);
+        });
+      } else {
+        w.whereRaw('1 = 0');
+      }
       for (const win of formerWindows) {
         w.orWhere((f) => {
           f.whereRaw('LOWER(recipient_email) = ?', [win.email])

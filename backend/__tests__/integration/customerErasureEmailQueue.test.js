@@ -638,6 +638,66 @@ describe('customer erasure clears email_queue', () => {
     await expectRedacted(mail, 'sent');
   });
 
+  it('matches the current address only from the recorded change to it', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const address = 'current-taken@example.com';
+
+    // Another customer held the address until 10s; the customer took it at 20.5s.
+    const earlier = await insertCustomer(db, { email: address });
+    await updateCustomer(earlier.id, { email: 'current-earlier-moved@example.com' }, null);
+    await stampHistory(earlier.id, [at(10)]);
+    const taker = await insertCustomer(db, { email: 'current-taker-start@example.com' });
+    await updateCustomer(taker.id, { email: address }, null);
+    await stampHistory(taker.id, [at(20.5)]);
+
+    const earlierSent = await queueAt(address, 'sent', at(5), 'Earlier Sent');
+    const earlierPending = await queueAt(address, 'pending', at(8), 'Earlier Pending');
+    const takingSecond = await queueAt(address, 'sent', at(20.2), 'Taking Second');
+    const ownPending = await queueAt(address, 'pending', at(30), 'Own Pending');
+    const ownSent = await queueAt(address, 'sent', at(30), 'Own Sent');
+
+    await eraseCustomer(taker.id, null);
+
+    await expectRedacted(ownPending, 'cancelled');
+    await expectRedacted(ownSent, 'sent');
+    await expectUntouched(earlierSent, address, 'Earlier Sent', 'sent');
+    await expectUntouched(earlierPending, address, 'Earlier Pending', 'pending');
+    await expectUntouched(takingSecond, address, 'Taking Second', 'sent');
+  });
+
+  it('bounds the current address of an account without history by another customer\'s change of it', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const address = 'current_legacy%shared@example.com'; // LIKE wildcards in the address
+
+    // Another customer moved off the address at 10s; this account took it in
+    // a change the history never saw (before migration 219).
+    const earlier = await insertCustomer(db, { email: address });
+    await updateCustomer(earlier.id, { email: 'current-legacy-moved@example.com' }, null);
+    await stampHistory(earlier.id, [at(10)]);
+    const legacy = await insertCustomer(db, { email: address });
+
+    const earlierMail = await queueAt(address, 'sent', at(5), 'Earlier Holder');
+    const ownMail = await queueAt(address, 'sent', at(30), 'Legacy Own');
+
+    await eraseCustomer(legacy.id, null);
+
+    await expectRedacted(ownMail, 'sent');
+    await expectUntouched(earlierMail, address, 'Earlier Holder', 'sent');
+  });
+
+  it('keeps matching the current address of an account without history unbounded when nobody else recorded it', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer } = require('../../src/services/customerAccountsService');
+    const legacy = await insertCustomer(db, { email: 'current-legacy-only@example.com' });
+    const oldMail = await queueAt(legacy.email, 'sent', at(-3600), 'Legacy Old');
+
+    await eraseCustomer(legacy.id, null);
+
+    await expectRedacted(oldMail, 'sent');
+  });
+
   it('covers contract mail to a signer address only when it names a contract this erasure redacts', async () => {
     const fieldEncryption = require('../../src/utils/fieldEncryption');
     const owner = await insertCustomer(db);
