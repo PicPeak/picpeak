@@ -82,6 +82,13 @@ export interface BaseGalleryLayoutProps {
   // chrome: the selection, or the viewer's favourites. Hidden at zero.
   onCopyFilenames?: () => void;
   copyFilenamesCount?: number;
+  /**
+   * The nav heart of the full-page layouts: the gallery's "Liked" filter
+   * (the viewer's own likes), owned by the container so `photos` already
+   * arrives filtered. Absent, the heart is not a filter control.
+   */
+  likedOnly?: boolean;
+  onToggleLikedOnly?: () => void;
   // Resolution picker choices (#858). More than one entry means the gallery
   // offers a real choice, so bulk downloads must route through the modal
   // instead of calling downloadSelectedPhotos directly.
@@ -102,6 +109,9 @@ export interface BaseGalleryLayoutProps {
   };
   // Logout callback for full-page layouts
   onLogout?: () => void;
+  // Guest upload for full-page layouts, which have no gallery header: opens
+  // the container's upload dialog. Undefined when uploads are off.
+  onUploadClick?: () => void;
   // Client visibility controls (#172)
   isClient?: boolean;
   onToggleVisibility?: (photoId: number, currentVisibility: string) => void;

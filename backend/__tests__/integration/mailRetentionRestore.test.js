@@ -30,6 +30,10 @@ function message() {
   const id = `<restore-${uid}@example.com>`;
   return { uid, id, source: Buffer.from(`Message-ID: ${id}\r\nFrom: supplier@example.com\r\nTo: intake@example.com\r\nSubject: supplier invoice\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n--x\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nOrdinary invoice ä\r\n--x\r\nContent-Type: image/png\r\nContent-Disposition: attachment; filename=invoice.png\r\nContent-Transfer-Encoding: base64\r\n\r\n${image.toString('base64')}\r\n--x--\r\n`) };
 }
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxTest = process.platform === 'linux' ? test : test.skip;
+
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
   require('../../src/database/db').logActivity = async () => {};
@@ -55,7 +59,7 @@ beforeEach(async () => {
 });
 afterAll(async () => { if (cleanup) await cleanup(); });
 
-test('pre-ledger archive rebuilds actual mail accounting, discards local state and permits ordinary intake within quota', async () => {
+linuxTest('pre-ledger archive rebuilds actual mail accounting, discards local state and permits ordinary intake within quota', async () => {
   mockMessages = [message(), message()];
   expect(await intake.pollOnce()).toEqual({ processed: 2 });
   const original = (await db('mail_intake_files').first()).file_path;
@@ -99,7 +103,7 @@ test('pre-ledger archive rebuilds actual mail accounting, discards local state a
   expect((await db('inbound_documents').orderBy('id', 'desc').first()).file_path).toBe(legacy);
 });
 
-test('modern archive preserves recorded audit allowances and admission windows rather than resetting capacity', async () => {
+linuxTest('modern archive preserves recorded audit allowances and admission windows rather than resetting capacity', async () => {
   mockMessages = [message()];
   expect(await intake.pollOnce()).toEqual({ processed: 1 });
   await db('mail_intake_state').where({ key: 'audit:accounting' }).update({ retained_audit_bytes: 3 * mail.AUDIT_BYTES });

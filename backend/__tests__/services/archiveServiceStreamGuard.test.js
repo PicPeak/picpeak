@@ -119,7 +119,7 @@ describe('archiveService storage reads', () => {
     expect(open.size).toBe(0);
     const row = await db('events').where({ id: event.id }).first();
     expect(Boolean(row.is_archived)).toBe(true);
-    expect(mockStorage.putFromFile).toHaveBeenCalledWith(`events/archived/${SLUG}.zip`, expect.any(String), expect.anything());
+    expect(mockStorage.putFromFile).toHaveBeenCalledWith(expect.stringMatching(new RegExp(`^events/archived/${SLUG}-[0-9a-f]{12}\\.zip$`)), expect.any(String), expect.anything());
   });
 
   it('destroys every open read when a queued read dies, and archives nothing', async () => {

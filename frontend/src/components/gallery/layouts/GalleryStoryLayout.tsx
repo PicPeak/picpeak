@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { GalleryEmptyMessage } from '../GalleryEmptyMessage';
-import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList } from 'lucide-react';
+import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
+import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '../../common';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+import { STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { feedbackService } from '../../../services/feedback.service';
 import { galleryService, splitIntoArchives } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
@@ -27,6 +29,8 @@ import { DownloadQuotaNotice } from '../DownloadQuotaNotice';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/downloadLimit';
 import { photoMatchesFilenameSearch } from '../../../utils/photoFilename';
+import { useInputMode } from '../../../hooks/useInputMode';
+import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
 
 import './GalleryStoryLayout.css';
 
@@ -52,7 +56,16 @@ interface GalleryStoryLayoutProps extends BaseGalleryLayoutProps {
   welcomeMessage?: string;
   /** Issue 1709: 'natural' keeps every photo's aspect ratio; 'fixed' (default) is the original tile grid. */
   storyGridMode?: 'fixed' | 'natural';
+  /** Filename caption on a card's hover; off unless the theme turns it on. */
+  storyShowFilenames?: boolean;
+  /** Footer title and text from the theme; empty keeps the defaults. */
+  storyFooterTitle?: string;
+  storyFooterText?: string;
 }
+
+/** A theme string as plain text: trimmed and clamped, '' when unusable. */
+const footerString = (value: unknown, max: number): string =>
+  typeof value === 'string' ? value.trim().slice(0, max) : '';
 
 export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   photos,
@@ -79,6 +92,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   onDownloadEverything,
   onCopyFilenames,
   copyFilenamesCount = 0,
+  likedOnly = false,
+  onToggleLikedOnly,
   downloadChoices,
   onPickResolution,
   protectionLevel = 'standard',
@@ -89,13 +104,19 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   heroPhotoOverride,
   welcomeMessage,
   storyGridMode = 'fixed',
+  storyShowFilenames = false,
+  storyFooterTitle,
+  storyFooterText,
   onLogout,
+  onUploadClick,
   showOriginalFilename = false,
 
   people,
   onSelectPerson,
   openPhotoId,
   onLightboxPhotoChange,
+  isClient = false,
+  onToggleVisibility,
 }) => {
   // These props are passed by parent but we use our own feedback system, so mark as intentionally unused
   void _onPhotoClick;
@@ -121,9 +142,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // on mount so a refetch could not clobber an in-session toggle, but that
   // left a like made in the lightbox invisible here, and Favourite selected
   // (issue 1716) decides what to toggle from this set. So the set follows
-  // every payload, and only the ids whose submit is still in flight keep
-  // their optimistic state.
-  const inFlightLikesRef = useRef<Set<number>>(new Set());
+  // every payload, and a like the viewer just toggled holds its state until
+  // a payload confirms it (optimisticLikes.ts).
+  const likeHoldsRef = useRef<LikeHolds>(new Map());
   // A like made in the lightbox reaches this set only through the parent's
   // refetch. Until that payload lands, Favourite selected would decide from
   // a set that is known to be behind, so it waits; a short timeout covers a
@@ -153,14 +174,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       clearTimeout(awaitingRefreshTimer.current);
       awaitingRefreshTimer.current = null;
     }
-    setFavorites((previous) => {
-      const next = new Set(photos.filter((p) => p.is_liked).map((p) => p.id));
-      inFlightLikesRef.current.forEach((id) => {
-        if (previous.has(id)) next.add(id);
-        else next.delete(id);
-      });
-      return next;
-    });
+    setFavorites(likedFromPayload(photos, likeHoldsRef.current));
   }, [photos]);
 
   // Get hero photo
@@ -220,6 +234,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // for the session, the way the Premium layout does. Shared by the card
   // heart and Favourite selected.
   const guestIdentity = useGuestIdentityOptional();
+  // Card controls hidden until hover are shown outright for a finger (CSS).
+  const inputMode = useInputMode();
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
   const [pendingLikes, setPendingLikes] = useState<PendingLikes | null>(null);
@@ -235,7 +251,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       return next;
     });
     if (!bulk) apply(ids, unlike);
-    ids.forEach((id) => inFlightLikesRef.current.add(id));
+    // A single card shows its new state at once; a bulk batch keeps the old
+    // one until it knows what succeeded.
+    ids.forEach((id) => holdLike(likeHoldsRef.current, id, bulk ? unlike : !unlike));
     const done: number[] = [];
     // A finished selection (issue 1733): the feedback service has said so.
     let locked = false;
@@ -250,9 +268,13 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       });
     }
     const failed = ids.filter((id) => !done.includes(id));
+    done.forEach((id) => {
+      holdLike(likeHoldsRef.current, id, !unlike);
+      markLikeSaved(likeHoldsRef.current, id);
+    });
+    failed.forEach((id) => likeHoldsRef.current.delete(id));
     if (bulk) apply(done, unlike);
     else if (failed.length > 0) apply(failed, !unlike);
-    ids.forEach((id) => inFlightLikesRef.current.delete(id));
     if (done.length > 0) {
       if (bulk) toast.success(t(unlike ? 'gallery.favoritesRemoved' : 'gallery.favoritesAdded', { count: done.length }));
       onFeedbackChange?.();
@@ -315,30 +337,37 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     void likeWithIdentity([photoId], favorites.has(photoId), false);
   }, [favorites, likeWithIdentity]);
 
+  // The photos the grid shows, in its order: the search filter and the
+  // category scenes applied. The lightbox steps through these, not `photos`,
+  // or its arrows reach photos the search has hidden.
+  const visiblePhotos = useMemo(() => scenes.flatMap((scene) => scene.photos), [scenes]);
+
   const handleOpenLightbox = useCallback((photo: Photo) => {
-    const index = photos.findIndex(p => p.id === photo.id);
+    const index = visiblePhotos.findIndex(p => p.id === photo.id);
     setLightboxIndex(index >= 0 ? index : 0);
     onLightboxPhotoChange?.(photo.id, 'open');
-  }, [photos, onLightboxPhotoChange]);
+  }, [visiblePhotos, onLightboxPhotoChange]);
 
   // Link to a single photo (issue 1733): open on the photo the URL asks for,
-  // close on null. Only against `photos`; an id not in it opens nothing.
+  // close on null. A photo this layout's own search hides (browser history
+  // back to it) clears the search first, so it opens in a list that holds
+  // it; an id not in `photos` at all opens nothing.
   useEffect(() => {
     if (openPhotoId === undefined) return;
     if (openPhotoId === null) {
       setLightboxIndex(null);
       return;
     }
-    const index = photos.findIndex((photo) => photo.id === openPhotoId);
+    const index = visiblePhotos.findIndex((photo) => photo.id === openPhotoId);
     if (index >= 0) setLightboxIndex(index);
-  }, [openPhotoId, photos]);
+    else if (searchQuery && photos.some((photo) => photo.id === openPhotoId)) setSearchQuery('');
+  }, [openPhotoId, visiblePhotos, photos, searchQuery]);
 
   const downloadQuota = useDownloadQuota();
 
   // Selection mode (issue 1716). The container owns the mode and the set;
   // this layout only renders the controls and asks for changes.
   const selected = selectedPhotos ?? EMPTY_SELECTION;
-  const visiblePhotos = useMemo(() => scenes.flatMap((scene) => scene.photos), [scenes]);
   const selectedPhotoList = useMemo(
     () => photos.filter((photo) => selected.has(photo.id)),
     [photos, selected]
@@ -350,11 +379,12 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const selectionAvailable = Boolean(onToggleSelectionMode && onPhotoSelect);
   const canSelect = selectionAvailable && photos.length > 1;
   const cardSelect = canSelect ? onPhotoSelect : undefined;
-  // Likes are a per-event sub-toggle (#506): with them off the like endpoint
-  // answers 403, so the card hearts are not offered. The bulk control and the
-  // nav heart also need the feedback master switch, as before.
-  const likesAllowed = feedbackOptions?.allowLikes !== false;
-  const bulkLikesAllowed = feedbackEnabled && likesAllowed;
+  // Likes are a per-event sub-toggle (#506) under the feedback master switch:
+  // with either off the like endpoint answers 403, so neither the card hearts
+  // nor the bulk control are offered.
+  const likesAllowed = feedbackEnabled && feedbackOptions?.allowLikes !== false;
+  // The client's per-photo hide/show button (issue 1992); guests get none.
+  const clientToggleVisibility = isClient ? onToggleVisibility : undefined;
   const allVisibleSelected = visiblePhotos.length > 0 && visiblePhotos.every((photo) => selected.has(photo.id));
 
   const handleToggleSelectionMode = useCallback(() => {
@@ -440,6 +470,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const canDownloadAll = allowDownloads && Boolean(onDownloadEverything || downloadablePhotos.length > 0);
   const downloadAllLabel = t('common.downloadAll', 'Download All');
   const naturalGrid = storyGridMode === 'natural';
+  const uploadLabel = t('upload.uploadPhotos', 'Upload Photos');
+  // The caption names the photo the way the lightbox does: the uploaded
+  // filename when the gallery shows original filenames (#508).
+  const caption = !storyShowFilenames ? 'none' : showOriginalFilename ? 'original' : 'filename';
 
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
@@ -447,13 +481,43 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
-        <GalleryEmptyMessage filtered={emptyIsFiltered} />
+        {likedOnly
+          ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
+          : <GalleryEmptyMessage filtered={emptyIsFiltered} />}
+        {/* No nav in this branch, and an upload-only gallery starts empty:
+            the guest still needs a way to add the first photos. */}
+        {onUploadClick && (
+          <Button
+            variant="primary"
+            className="mt-4"
+            leftIcon={<Upload className="w-4 h-4" />}
+            onClick={onUploadClick}
+            data-gallery-focus="upload"
+          >
+            {uploadLabel}
+          </Button>
+        )}
+        {/* Event-wide like the nav button (issue 1733, A3d): a filter that
+            leaves nothing on screen must not take the favourites' list with it. */}
+        {onCopyFilenames && copyFilenamesCount > 0 && (
+          <div className="mt-4 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<ClipboardList className="w-4 h-4" />}
+              onClick={onCopyFilenames}
+              className="text-xs sm:text-sm"
+            >
+              {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="gallery-story-layout">
+    <div className="gallery-story-layout" data-input-mode={inputMode}>
       <StoryScrollToTop />
 
       {/* Navigation Overlay */}
@@ -475,6 +539,21 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           {/* Issue 1710: the footer button was the only Download All in the
               layout, unreachable without scrolling through every scene. Same
               handler, same resolution / quota / whole-gallery flow. */}
+          {/* Guest upload: this layout has no gallery header, which is where
+              every other layout offers it. */}
+          {onUploadClick && (
+            <button
+              type="button"
+              className="story-nav-btn"
+              onClick={onUploadClick}
+              aria-label={uploadLabel}
+              title={uploadLabel}
+              data-testid="story-nav-upload"
+              data-gallery-focus="upload"
+            >
+              <Upload size={20} />
+            </button>
+          )}
           {canSelect && (
             <button
               type="button"
@@ -515,9 +594,21 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               <ClipboardList size={20} />
             </button>
           )}
-          {bulkLikesAllowed && (
-            <button className="story-nav-btn" title={t('gallery.favorites', 'Favorites')}>
-              <Heart size={20} />
+          {likesAllowed && (
+            // The gallery's "Liked" filter when the container offers it:
+            // only the photos this viewer liked, until clicked again.
+            <button
+              type="button"
+              className={`story-nav-btn${likedOnly ? ' active' : ''}`}
+              onClick={onToggleLikedOnly}
+              aria-pressed={onToggleLikedOnly ? likedOnly : undefined}
+              aria-label={`${t('gallery.showLikedOnly', 'Show only photos I liked')}${favorites.size > 0 ? ` (${favorites.size})` : ''}`}
+              title={t('gallery.favorites', 'Favorites')}
+              data-testid="story-nav-liked"
+              // Focus moves to "Show all photos" when the filter empties the view.
+              data-gallery-focus="liked"
+            >
+              <Heart size={20} fill={likedOnly ? 'currentColor' : 'none'} />
               {favorites.size > 0 && (
                 <span className="story-nav-favorites-count">
                   {favorites.size > 9 ? '9+' : favorites.size}
@@ -550,7 +641,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               <button type="button" className="story-selection-btn" onClick={handleSelectAllVisible}>
                 {allVisibleSelected ? t('gallery.deselectAll', 'Deselect All') : t('gallery.selectAll', 'Select All')}
               </button>
-              {bulkLikesAllowed && selected.size > 0 && (
+              {likesAllowed && selected.size > 0 && (
                 <button
                   type="button"
                   className="story-selection-btn"
@@ -633,6 +724,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   selectedPhotos={selected}
                   onPhotoSelect={cardSelect}
                   likesAllowed={likesAllowed}
+                  onToggleVisibility={clientToggleVisibility}
+                  caption={caption}
                 />
               ) : naturalGrid ? (
                 <StoryJustifiedGrid
@@ -648,6 +741,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   selectedPhotos={selected}
                   onPhotoSelect={cardSelect}
                   likesAllowed={likesAllowed}
+                  onToggleVisibility={clientToggleVisibility}
+                  caption={caption}
                 />
               ) : (
                 <div id={`gallery-${scene.id}`} className="story-gallery-grid">
@@ -669,6 +764,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                       isSelected={selected.has(photo.id)}
                       onSelect={cardSelect}
                       likesAllowed={likesAllowed}
+                      onToggleVisibility={clientToggleVisibility}
+                      caption={caption}
                     />
                   ))}
                 </div>
@@ -682,9 +779,15 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
       {/* Footer */}
       <footer className="story-footer">
-        <h2 className="story-footer-title">{t('gallery.thankYou', 'Thank You')}</h2>
+        {/* Rendered as text, never HTML. The footer's own text wins; without
+            it the welcome message closes the story, as it always has. */}
+        <h2 className="story-footer-title">
+          {footerString(storyFooterTitle, STORY_FOOTER_TITLE_MAX) || t('gallery.thankYou', 'Thank You')}
+        </h2>
         <p className="story-footer-text">
-          {welcomeMessage || t('gallery.thankYouMessage', 'For being part of our story and making our special day unforgettable.')}
+          {footerString(storyFooterText, STORY_FOOTER_TEXT_MAX)
+            || welcomeMessage
+            || t('gallery.thankYouMessage', 'For being part of our story and making our special day unforgettable.')}
         </p>
         {canDownloadAll && (
           <button type="button" className="story-footer-btn" onClick={handleDownloadAll}>
@@ -700,7 +803,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           per-card affordance. */}
       {lightboxIndex !== null && (
         <PhotoLightbox
-          photos={photos}
+          photos={visiblePhotos}
           initialIndex={lightboxIndex}
           onClose={() => {
             setLightboxIndex(null);

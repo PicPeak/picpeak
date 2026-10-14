@@ -15,6 +15,10 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 //     its whole chart of accounts / VAT codes with no in-app recovery.
 let db; let cleanup; let adminId; let customerId; let createPicpeak; let importFromPicpeak; let tmpDir;
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxIt = process.platform === 'linux' ? it : it.skip;
+
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
   ({ adminId, customerId } = await seedMinimal(db));
@@ -23,7 +27,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { if (cleanup) await cleanup(); });
 
-it('preserves seed-only tables the archive predates, while still clearing a genuine user-data table', async () => {
+linuxIt('preserves seed-only tables the archive predates, while still clearing a genuine user-data table', async () => {
   // Simulate an archive made before migration 201 (product_usage), 129
   // (ledger_accounts/vat_codes) and 226 (customer_groups): drop all of them
   // so the export below never lists them in its manifest.

@@ -337,7 +337,7 @@ async function sendInvitation(contract, row, token, template = 'contract_sent') 
     event_name: asksForDetails ? '' : (contract.event_name || ''),
     valid_until: formatShortDate(contract.valid_until),
     attachments: asksForDetails ? undefined : await invitationAttachments(contract),
-  });
+  }, { customerAccountId: contract.customer_account_id });
 }
 
 /**
@@ -362,12 +362,18 @@ async function inviteDue(contractId, actor = { type: 'system' }) {
   let invited = 0;
   for (const row of due) {
     let token;
+    // A customer who takes no administrative emails (migration 300) still
+    // gets the invitation: it is what lets them sign in the portal. But the
+    // mail carrying the link is held back, so the chain the audit certificate
+    // prints must not say "Signing link sent".
+    const portalOnly = await require('../_adminEmailOptOut').isHeldBackFor(contract.customer_account_id, signerEmail(row));
     try {
       token = await db.transaction(async (trx) => {
         if (!(await customerMayReceiveLink(trx, contract))) return null;
         const created = await signers.createInvitation(trx, row.id, expiresAt, { fromStatuses: ['pending'] });
         await signingEvents.appendEvent(trx, contractId, {
-          type: 'invited', actorType: actor.type === 'admin' ? 'admin' : 'system', actorLabel: actor.name || null, signerId: row.id,
+          type: portalOnly ? 'invited_portal' : 'invited',
+          actorType: actor.type === 'admin' ? 'admin' : 'system', actorLabel: actor.name || null, signerId: row.id,
         });
         return created;
       });
@@ -530,6 +536,12 @@ async function reissueInvitation(contractId, signerId, { actor, event, payload =
   if (!row || row.role !== 'customer') throw new AppError('Signer not found', 404, 'SIGNER_NOT_FOUND');
   if (!dueSigners(contract, rows).some((r) => r.id === row.id)) {
     throw new AppError('This signer can\'t sign yet, or has already signed', 409, 'SIGNER_NOT_DUE');
+  }
+  // No administrative emails (migration 300): the mail carrying the new link
+  // would be held back, yet the old link would stop working and the chain
+  // would record a resend nobody received. Refuse instead.
+  if (await require('../_adminEmailOptOut').isHeldBackFor(contract.customer_account_id, signerEmail(row))) {
+    throw new AppError('This customer takes no administrative emails, so no link can be sent to them. They sign in the customer portal or on paper.', 409, 'NO_ADMIN_EMAILS');
   }
   const token = await db.transaction(async (trx) => {
     // An erased customer's partly signed contract stays `sent` with every way
@@ -1112,7 +1124,7 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
       title: contract.title || '',
       signed_at: formatSignedAt(signedAt, dateFormat),
       issuer_name: (profile && profile.company_name) || '',
-    });
+    }, { customerAccountId: contract.customer_account_id });
   });
   if (!followUpFailed) {
     await clearFollowUpFailure(contract.id, { steps: ['next_invitation', 'admin_notice', 'signature_receipt'] });
@@ -1457,7 +1469,7 @@ async function sendCompletedEmails(contractId, certificatePath) {
       const email = signerEmail(row);
       if (!email || sent.has(email)) continue;
       sent.add(email);
-      await emailProcessor.queueEmail(null, email, 'contract_fully_signed', { ...data, customer_name: signerName(row) });
+      await emailProcessor.queueEmail(null, email, 'contract_fully_signed', { ...data, customer_name: signerName(row) }, { customerAccountId: contract.customer_account_id });
     }
     const profile = await db('business_profile').where({ id: 1 }).first();
     if (profile && profile.email && !sent.has(profile.email.toLowerCase())) {
@@ -1560,7 +1572,13 @@ async function adminOverview(contractId) {
     // step and a safe code, never the stored text itself — rows written
     // before the marker was reduced to that still carry raw error messages.
     followUp: contract.follow_up_failed_at ? followUpToApi(contract) : null,
-    signers: rows.map(signers.signerToApi),
+    // noMail: the customer takes no administrative emails (migration 300) and
+    // this signer is them — their link is never mailed, so the card offers no
+    // resend or reminder and doesn't say "Link sent".
+    signers: await Promise.all(rows.map(async (row) => ({
+      ...signers.signerToApi(row),
+      noMail: await require('../_adminEmailOptOut').isHeldBackFor(contract.customer_account_id, signerEmail(row)),
+    }))),
     events: events.map((e) => ({
       seq: e.seq, type: e.type, actorType: e.actorType, actorLabel: e.actorLabel, signerId: e.signerId,
       occurredAt: e.occurredAt, eventHash: e.eventHash, artifactSha256: e.artifactSha256,
