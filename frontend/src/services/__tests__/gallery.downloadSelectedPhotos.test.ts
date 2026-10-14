@@ -288,7 +288,7 @@ describe('galleryService.downloadSelectedPhotos — object URL lifetime', () => 
     // Revoked in the same task as the click, Safari and Firefox can cancel
     // the download before it starts.
     expect(window.URL.revokeObjectURL).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(30_000);
+    vi.advanceTimersByTime(1_000);
     expect(window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
   });
 });

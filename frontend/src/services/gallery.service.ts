@@ -27,8 +27,9 @@ export function splitIntoArchives(photoIds: number[]): number[][] {
 
 // How long a downloaded blob's object URL stays valid. Revoking it in the
 // same task as the click can cancel the download before the browser has
-// started reading it (Safari and Firefox), so it is released a little later.
-const BLOB_URL_RELEASE_MS = 30_000;
+// started reading it (Safari and Firefox), so it is released a little later,
+// but soon: a download in parts would otherwise hold several zips at once.
+const BLOB_URL_RELEASE_MS = 1_000;
 
 function saveBlob(data: BlobPart, filename: string): void {
   const url = window.URL.createObjectURL(new Blob([data]));
