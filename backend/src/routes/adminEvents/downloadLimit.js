@@ -49,7 +49,7 @@ module.exports = (router) => {
       const cleared = await resetGrants(event.id);
       await logActivity('event_download_limit_reset', {
         event_id: event.id, cleared,
-      }, null, { type: 'admin', id: req.admin.id, name: req.admin.username });
+      }, event.id, { type: 'admin', id: req.admin.id, name: req.admin.username });
 
       res.json(usageBody(event, await getQuota(event)));
     } catch (error) {

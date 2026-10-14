@@ -119,7 +119,7 @@ module.exports = (router) => {
 
       await logActivity('event_download_resolutions_updated', {
         event_id: event.id, ...updates,
-      }, null, { type: 'admin', id: req.admin.id, name: req.admin.username });
+      }, event.id, { type: 'admin', id: req.admin.id, name: req.admin.username });
 
       res.json({
         message: 'Download resolution settings updated',
