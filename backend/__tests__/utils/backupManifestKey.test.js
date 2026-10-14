@@ -181,4 +181,21 @@ describe('backup manifest trust anchor', () => {
     process.env.BACKUP_MANIFEST_KEYS_OLD = 'broken';
     expect(() => keyRing()).toThrow(/BACKUP_MANIFEST_KEYS_OLD/);
   });
+
+  it('keeps retained keys verifiable when the current key is unusable, while signing still fails', () => {
+    const old = Buffer.from('b8'.repeat(32), 'hex');
+    process.env.BACKUP_MANIFEST_KEYS_OLD = 'b8'.repeat(32);
+    process.env.BACKUP_MANIFEST_KEY = 'broken';
+    expect(keyRing().get(idOf(old))).toEqual(old);
+    expect(() => loadKey({ create: true })).toThrow(/64 hex digits/);
+    delete process.env.BACKUP_MANIFEST_KEY;
+    const file = keyFile();
+    fs.mkdirSync(path.dirname(file));
+    fs.writeFileSync(file, 'a9'.repeat(32), { mode: 0o600 });
+    const spies = ignoreModes();
+    try {
+      expect(Array.from(keyRing().keys())).toEqual([idOf(old)]);
+      expect(() => loadKey({ create: true })).toThrow(/does not keep file modes/);
+    } finally { spies.forEach(spy => spy.mockRestore()); }
+  });
 });

@@ -120,10 +120,13 @@ function loadKey({ create = false } = {}) {
 
 function keyRing() {
   const keys = new Map();
+  // An unusable current key must not hide the retained ones: a backup they
+  // signed stays verifiable. Signing goes through loadKey and still fails,
+  // and keyStatus reports why.
   try {
     const current = loadKey();
     keys.set(current.keyId, current.key);
-  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  } catch { /* verify with the retained keys alone */ }
   for (const [index, value] of (process.env.BACKUP_MANIFEST_KEYS_OLD || '').split(',').entries()) {
     if (!value.trim()) continue;
     const key = parseKey(value, `BACKUP_MANIFEST_KEYS_OLD entry ${index + 1}`);
