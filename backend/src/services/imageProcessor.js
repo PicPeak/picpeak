@@ -22,9 +22,11 @@ async function publishDerivative(callback, key) {
   try {
     await attempt?.assertCurrent();
   } catch (error) {
-    // A lazy rendition's key is its own (scope- or source-named) and nothing
-    // records it yet, so a superseded source must not leave it behind.
-    if (key && error.code === 'MEDIA_SUPERSEDED' && !attemptContext.current()) await getStorage().delete(key).catch(() => {});
+    // A key named after this lazy scope is its alone and nothing records it
+    // yet, so a superseded source must not leave it behind. A tier is named
+    // after the source instead, which another worker may have just served.
+    const scope = attemptContext.current() ? null : derivativeContext.getStore();
+    if (key && scope && error.code === 'MEDIA_SUPERSEDED' && key.includes(scope.id)) await getStorage().delete(key).catch(() => {});
     throw error;
   }
   return result;

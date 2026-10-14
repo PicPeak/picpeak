@@ -3,6 +3,9 @@
  * its write used to match the row by id alone. A file replaced while the
  * rendition was being built then ended up with a thumbnail of the old one.
  */
+const fsp = require('fs').promises;
+const os = require('os');
+const path = require('path');
 const sharp = require('sharp');
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
@@ -103,6 +106,26 @@ describe('lazy renditions of an ordinary image whose source changes meanwhile', 
     const written = spy.mock.calls.find(([key]) => key.startsWith('thumbnails/'))[0];
     expect(await storage.stat(written)).toBeFalsy();
     expect((await db('photos').where({ id: row.id }).first()).thumbnail_path).toBeNull();
+  });
+
+  // A tier is named after the source, not the scope, so another worker may
+  // have written the same key and be serving it: the refusal leaves it alone.
+  test('a source-named tier is not deleted by a refusal', async () => {
+    const row = await photo('tier.dng');
+    const jpeg = await sharp({ create: { width: 640, height: 480, channels: 3, background: 'green' } }).jpeg().toBuffer();
+    jest.spyOn(require('../../src/services/mediaProcessService'), 'withSnapshot').mockImplementation(async () => {
+      const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-raw-test-'));
+      const file = path.join(dir, 'preview.jpg');
+      await fsp.writeFile(file, jpeg);
+      return { path: file, cleanup: () => fsp.rm(dir, { recursive: true, force: true }) };
+    });
+    const spy = onRenditionWrite('thumbnails/thumb_w', () => db('photos').where({ id: row.id })
+      .update({ filename: 'tier-renamed.dng', path: 'superseded-source-new/individual/tier.dng' }));
+
+    await imageProcessor.ensureThumbnailAtWidth(row, 150).catch(() => {});
+
+    const written = spy.mock.calls.find(([key]) => key.startsWith('thumbnails/thumb_w'))[0];
+    expect((await storage.stat(written)).size).toBeGreaterThan(0);
   });
 
   test('an unchanged source still gets its thumbnail', async () => {
