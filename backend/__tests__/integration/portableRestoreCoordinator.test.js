@@ -101,8 +101,10 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       if (own.error) throw own.error;
       const result = { attemptId: args.attemptId, proof: 'kernel_lease_released',
         ...(own.result || { outcome: 'committed', summary: { tables: 3, filesRestored: 2, sessionInvalidated: true } }) };
+      // A recovery run of the same attempt finds its marker already written.
       if (result.outcome === 'committed' && !own.noMarker) await db('portable_restore_commits').insert({ attempt_id: args.attemptId,
-        local_plan_checksum: hash('local plan'), options_digest: hash(JSON.stringify(args.options || {})) });
+        local_plan_checksum: hash('local plan'), options_digest: own.optionsDigest || hash(JSON.stringify(args.options || {})) })
+        .onConflict('attempt_id').ignore();
       return result;
     };
     worker = {
@@ -220,6 +222,23 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       expect(await db('portable_restore_commits')).toHaveLength(0);
       expect(current.generation).toBe(0);
       expect(JSON.parse(current.result_json)).toMatchObject({ outcome: 'recovery_required' });
+      expect(a.coordinator.isFenced()).toBe(true);
+    });
+
+    it('refuses a commit whose marker was written for different restore options', async () => {
+      const a = create();
+      await a.coordinator.activate();
+      await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+      await drive('restoring', a);
+      // A well-formed marker for this attempt, but its digest is not the one
+      // of the options this control row fenced.
+      terminal.optionsDigest = hash(JSON.stringify({ migrationStorageIndexPath: '/elsewhere' }));
+      terminal.resolve();
+      const current = await drive('recovery_required', a);
+      expect(await db('portable_restore_commits')).toHaveLength(1);
+      expect(current.generation).toBe(0);
+      expect(JSON.parse(current.result_json)).toMatchObject({ outcome: 'recovery_required',
+        error: { message: 'Matching restore commit marker is unavailable' } });
       expect(a.coordinator.isFenced()).toBe(true);
     });
   });
