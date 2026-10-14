@@ -207,10 +207,14 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         // embedded JPEG preview first and thumbnail/measure THAT. Pass-through
         // for ordinary images. The stored original stays the RAW (download).
         // Use the unique stored filename (not the client-supplied original) so
-        // the RAW-derived thumbnail's global key can't collide across galleries.
+        // the thumbnail's global key can't collide across galleries. For a
+        // non-RAW image proc.outputBasename is unset, and the key used to come
+        // from the temp file, which carries the client's file name: two
+        // uploads of IMG_0001.jpg overwrote each other's thumbnail, and the
+        // failure cleanup below could delete the other upload's.
         const proc = await withProcessableImage(tempPath, newFilename);
         try {
-          thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename, meta: thumbMeta });
+          thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename || newFilename, meta: thumbMeta });
           try {
             const sharp = require('./isolatedSharp');
             const metadata = await sharp(proc.path).metadata();
@@ -409,9 +413,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       // The thumbnail was stored before the cap check, the insert or a
       // cancellation could fail, and on S3 no watcher ever finds it again.
       // Each is removed only when no row names it: a commit whose
-      // acknowledgement was lost has a row that still needs both, and the
-      // thumbnail key of a non-RAW image comes from the uploaded file's own
-      // name, which another photo's row can share.
+      // acknowledgement was lost has a row that still needs both.
       if (!rowCommitted && (thumbnailPath || (!promotion && putStarted))) {
         try {
           const storage = getStorage();

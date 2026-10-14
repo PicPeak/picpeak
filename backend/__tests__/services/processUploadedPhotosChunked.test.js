@@ -6,8 +6,9 @@
  *    thumbnail blocked every other query until the 60 s acquire timeout.
  *  - issue 1976: the row gets its EXIF capture date. This path completes the
  *    row itself, so the worker that reads it for a batch upload never runs.
- *  - a file that fails after its thumbnail was stored (cancelled, refused,
- *    insert failed) leaves neither the thumbnail nor the original behind.
+ *  - each upload gets its own thumbnail key, and a file that fails after its
+ *    thumbnail was stored (cancelled, refused, insert failed) leaves neither
+ *    the thumbnail nor the original behind.
  */
 const mockProbe = { run: null, thumbnails: [] };
 jest.mock('../../src/services/imageProcessor', () => {
@@ -132,15 +133,20 @@ describe('processUploadedPhotos (chunked admin upload)', () => {
     expect(await getStorage().stat(mockProbe.thumbnails[0])).toBeNull();
   }, 30000);
 
-  it('keeps a thumbnail that another photo row still names', async () => {
-    const kept = await makeEvent();
-    const [first] = await upload(kept, 'shared.jpg', await jpeg().toBuffer());
-    const { thumbnail_path: thumb } = await db('photos').where({ id: first.id }).first();
+  it('gives each upload its own thumbnail, whatever the file is called', async () => {
+    const first = await makeEvent();
+    const [a] = await upload(first, 'same.jpg', await jpeg().toBuffer());
+    const [b] = await upload(await makeEvent(), 'same.jpg', await jpeg().toBuffer());
+    const thumbOf = async (id) => (await db('photos').where({ id }).first()).thumbnail_path;
 
-    const failed = await upload(await makeEvent(), 'shared.jpg', await jpeg().toBuffer(), { no_such_column: 1 });
+    // The key used to be thumb_<temp file name>, the client's own name here.
+    expect(await thumbOf(a.id)).not.toBe(await thumbOf(b.id));
 
+    // So a failed upload of the same name removes only its own thumbnail.
+    const failed = await upload(first, 'same.jpg', await jpeg().toBuffer(), { no_such_column: 1 });
     expect(failed).toHaveLength(0);
     const { getStorage } = require('../../src/services/storage');
-    expect(await getStorage().stat(thumb)).not.toBeNull();
+    expect(await getStorage().stat(await thumbOf(a.id))).not.toBeNull();
+    expect(await getStorage().stat(await thumbOf(b.id))).not.toBeNull();
   }, 30000);
 });
