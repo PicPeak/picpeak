@@ -221,7 +221,8 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       const current = await drive('recovery_required', a);
       expect(await db('portable_restore_commits')).toHaveLength(0);
       expect(current.generation).toBe(0);
-      expect(JSON.parse(current.result_json)).toMatchObject({ outcome: 'recovery_required' });
+      expect(JSON.parse(current.result_json)).toMatchObject({ outcome: 'recovery_required',
+        error: { message: 'Matching restore commit marker is unavailable' } });
       expect(a.coordinator.isFenced()).toBe(true);
     });
 
