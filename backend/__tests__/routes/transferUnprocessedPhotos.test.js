@@ -109,6 +109,30 @@ describe('public transfer', () => {
     expect(names.some((n) => n.endsWith('pending.jpg') || n.endsWith('failed.jpg'))).toBe(false);
   });
 
+  it('refuses a ZIP with nothing finished yet without using up a download', async () => {
+    const { transfer } = await seedTransfer('unprocessed-empty');
+    await db('photos').whereIn('id', db('transfer_files').where({ transfer_id: transfer.id }).select('photo_id'))
+      .update({ processing_status: 'pending' });
+    await db('transfers').where({ id: transfer.id }).update({ max_downloads: 1 });
+    const res = await request(publicApp).get(`/api/public/transfer/${transfer.token}/download`);
+    expect(res.status).toBe(404);
+    const row = await db('transfers').where({ id: transfer.id }).first();
+    expect(Number(row.download_count)).toBe(0);
+  });
+
+  it('announces only the files the recipient can download', async () => {
+    const { transfer } = await seedTransfer('unprocessed-email');
+    const emailProcessor = require('../../src/services/emailProcessor');
+    const spy = jest.spyOn(emailProcessor, 'sendTemplateEmail').mockResolvedValue(undefined);
+    try {
+      await transferService.sendTransferEmails(transfer.id, ['recipient@example.com']);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0][2].file_count).toBe('1');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('refuses a single photo that is still processing or failed, and serves a finished one', async () => {
     const { transfer, fileIds } = await seedTransfer('unprocessed-single');
     for (const name of ['pending', 'failed']) {
