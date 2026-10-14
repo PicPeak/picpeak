@@ -230,6 +230,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   onSelectAll,
   onDeselectAll,
   selectionQuotaPhotos,
+  onDownloadEverything,
   eventName,
   eventDate,
   allowDownloads = true,
@@ -575,6 +576,33 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }
   }, [selectedPhotos, slug, t, downloadChoices, onPickResolution, selectionOverQuota, downloadQuota.remaining]);
 
+  // Same path as Gallery Story's Download All: the whole-gallery download
+  // when the container offers it (#1160), else the ids in scope.
+  const handleDownloadAll = useCallback(async () => {
+    if (onDownloadEverything) {
+      onDownloadEverything();
+      return;
+    }
+    const ids = photos.map(p => p.id);
+    // Download limit (issue 1560): all or nothing, so refuse before asking.
+    if (!downloadQuota.allows(photos)) {
+      showDownloadLimitReached({ remaining: downloadQuota.remaining ?? 0 });
+      return;
+    }
+    // #858: hand off to the resolution picker when the gallery offers a choice.
+    if (downloadChoices && downloadChoices.length > 1 && onPickResolution) {
+      onPickResolution(ids);
+      return;
+    }
+    toast.info(t('gallery.downloading', { count: ids.length }));
+    try {
+      await galleryService.downloadSelectedPhotos(slug, ids);
+      analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
+    } catch (error) {
+      if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
+    }
+  }, [photos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
+
   const handleDownloadFromLightbox = useCallback((slide: { src?: string; photoId?: number }) => {
     if (!allowDownloads || !slide.src) return;
 
@@ -719,13 +747,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
               <button
                 className="gallery-premium-nav-btn"
                 title={t('common.downloadAll', 'Download All')}
-                onClick={() => {
-                  filteredPhotos.forEach(p => {
-                    if (!selectedPhotos.has(p.id)) {
-                      onPhotoSelect?.(p.id);
-                    }
-                  });
-                }}
+                onClick={handleDownloadAll}
               >
                 <DownloadIcon className="w-4 h-4" />
               </button>
