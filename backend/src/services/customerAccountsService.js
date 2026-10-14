@@ -1083,7 +1083,7 @@ function storedTimestamp(value) {
 }
 
 async function eraseCustomer(id, erasedByAdminId) {
-  const customer = await db('customer_accounts').where('id', id).first();
+  let customer = await db('customer_accounts').where('id', id).first();
   if (!customer) {
     throw new NotFoundError('Customer', id);
   }
@@ -1120,6 +1120,18 @@ async function eraseCustomer(id, erasedByAdminId) {
   const touchedCampaignIds = new Set();
 
   await db.transaction(async (trx) => {
+    // Re-read (and on PostgreSQL lock) the row here: every address match
+    // below must use the address the account has as the erasure commits. An
+    // email change committing during the planning above would otherwise
+    // leave the old address matched as current, unbounded, after another
+    // customer may have taken it.
+    const locked = trx('customer_accounts').where('id', id);
+    if (trx.client.config.client === 'pg') locked.forUpdate();
+    customer = await locked.first();
+    if (!customer) {
+      throw new NotFoundError('Customer', id);
+    }
+
     erasedDocuments = await customerDocumentsService.markErasedForCustomer(id, trx);
     erasedContracts = await contractErasure.apply(trx, contractPlan, eraseActor);
 

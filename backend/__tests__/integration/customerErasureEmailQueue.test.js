@@ -698,6 +698,32 @@ describe('customer erasure clears email_queue', () => {
     await expectRedacted(oldMail, 'sent');
   });
 
+  it('matches the address the account has when the erasure runs, not the one read before planning', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const contractErasure = require('../../src/services/contract/erasure');
+    const oldAddress = 'planning-old@example.com';
+    const customer = await insertCustomer(db, { email: oldAddress });
+
+    // While the erasure plans its contracts, the customer's address changes
+    // and another customer takes the old one and gets mail on it.
+    let successorMail;
+    const realPlan = contractErasure.plan;
+    const plan = jest.spyOn(contractErasure, 'plan').mockImplementationOnce(async (...args) => {
+      await updateCustomer(customer.id, { email: 'planning-new@example.com' }, null);
+      await insertCustomer(db, { email: oldAddress });
+      successorMail = await queueAt(oldAddress, 'pending', new Date(Date.now() + 5000).toISOString(), 'Successor');
+      return realPlan(...args);
+    });
+    try {
+      await eraseCustomer(customer.id, null);
+    } finally { plan.mockRestore(); }
+
+    await expectUntouched(successorMail, oldAddress, 'Successor', 'pending');
+    const erased = await db('customer_accounts').where({ id: customer.id }).first();
+    expect(erased.email).toMatch(/@deleted\.invalid$/);
+  });
+
   it('covers contract mail to a signer address only when it names a contract this erasure redacts', async () => {
     const fieldEncryption = require('../../src/utils/fieldEncryption');
     const owner = await insertCustomer(db);
