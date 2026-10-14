@@ -205,6 +205,76 @@ describe('fileWatcher vs. an upload that never finished (issue 1970)', () => {
     const rows = await db('photos').where({ event_id: eventId }).orderBy('filename');
     expect(rows.map((row) => row.filename)).toEqual(['IMG_0002.jpg', 'settled.jpg']);
   });
+
+  // Another process commits the upload (row + settled record, one
+  // transaction) after the watcher's photo check and before its ledger read.
+  it('finds the row of an upload another process committed between its two reads', async () => {
+    const filePath = await leftover('elsewhere.jpg', { state: 'promoting', upload_kind: 'admin' });
+    const key = `events/active/${EVENT_SLUG}/elsewhere.jpg`;
+    let commit = null;
+    const onQuery = (q) => {
+      if (commit || !/from .photos./i.test(q.sql) || !/source_filename/.test(q.sql)) return;
+      commit = db.transaction(async (trx) => {
+        await trx('photos').insert({
+          event_id: eventId, filename: 'elsewhere.jpg', original_filename: 'elsewhere.jpg',
+          path: `${EVENT_SLUG}/elsewhere.jpg`, type: 'individual', size_bytes: jpeg.length,
+          media_type: 'image', mime_type: 'image/jpeg', visibility: 'hidden',
+          uploaded_at: new Date().toISOString(),
+        });
+        await trx('public_upload_objects').where({ object_key: key }).del();
+      });
+    };
+    db.on('query', onQuery);
+    try {
+      await processNewPhoto(filePath);
+    } finally {
+      db.removeListener('query', onQuery);
+    }
+    await commit;
+
+    const rows = await db('photos').where({ event_id: eventId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ visibility: 'hidden' });
+  });
+});
+
+// S3 mode has no watch folder; its auto-importer lists the bucket instead
+// and must leave the same keys alone.
+describe('s3AutoImporter vs. an upload in flight or never finished (issue 1970)', () => {
+  const key = (name) => `events/active/${EVENT_SLUG}/${name}`;
+  const bucket = (names) => ({ list: async () => names.map((name) => ({ key: key(name), size: jpeg.length })) });
+  const twoPolls = async (names) => {
+    const { processEvent, previousSnapshot } = require('../../src/services/s3AutoImporter').__test;
+    previousSnapshot.clear();
+    await processEvent({ id: eventId, slug: EVENT_SLUG }, bucket(names));
+    await processEvent({ id: eventId, slug: EVENT_SLUG }, bucket(names));
+  };
+
+  afterEach(async () => {
+    await db('public_upload_objects').del();
+  });
+
+  it('skips a key with an unfinished upload record or a live claim, imports the rest', async () => {
+    let n = 100;
+    for (const [name, state] of [['s3_promoting.jpg', 'promoting'], ['s3_uncertain.jpg', 'uncertain'], ['s3_stored.jpg', 'stored']]) {
+      n += 1;
+      await db('public_upload_objects').insert({
+        id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+        request_id: `00000000-0000-4000-9000-${String(n).padStart(12, '0')}`,
+        object_key: key(name), bytes: jpeg.length, files: 1, event_id: eventId,
+        created_at: new Date().toISOString(), state, upload_kind: 'public',
+      });
+    }
+    const release = claimPromotion(key('s3_claimed.jpg'));
+    try {
+      await twoPolls(['s3_promoting.jpg', 's3_uncertain.jpg', 's3_stored.jpg', 's3_claimed.jpg', 's3_dropped.jpg']);
+    } finally {
+      release();
+    }
+
+    const rows = await db('photos').where({ event_id: eventId }).orderBy('filename');
+    expect(rows.map((row) => row.filename)).toEqual(['s3_dropped.jpg', 's3_stored.jpg']);
+  });
 });
 
 // The other upload paths share the shape: the claim must be taken before

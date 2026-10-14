@@ -17,6 +17,7 @@ const { normalizeUploadMimeType } = require('../utils/fileSecurityUtils');
 const { getAllowedExtensions } = require('./uploadSettings');
 const downloadZipService = require('./downloadZipService');
 const { promotionSettled } = require('./watchFolderClaims');
+const { unfinishedKeys } = require('./publicUploadQuota');
 
 const { getStoragePath } = require('../config/storage');
 const WATCH_PATH = () => path.join(getStoragePath(), 'events/active');
@@ -126,16 +127,6 @@ async function findExistingPhoto(eventId, basename, relativePath) {
     .first();
 }
 
-// The upload ledger's record for a key whose row was never committed:
-// 'promoting' until commitObject, 'uncertain' when failedObject could not
-// prove the file gone (publicUploadQuota).
-async function unfinishedPromotion(storageKey) {
-  return db('public_upload_objects')
-    .where({ object_key: storageKey })
-    .whereIn('state', ['promoting', 'uncertain'])
-    .first('id');
-}
-
 // A database error is not a code retryTransient repeats, and nothing
 // announces this file again, so the settings read is retried here.
 const SETTINGS_READ_ATTEMPTS = 3;
@@ -226,8 +217,15 @@ async function processNewPhoto(filePath) {
   // its promotion record behind (issue 1970). The in-process claim above did
   // not survive the restart; the record did, and every process sees it. The
   // file never became a photo, so it is not imported as one.
-  if (await unfinishedPromotion(storageKey)) {
+  if ((await unfinishedKeys([storageKey])).has(storageKey)) {
     logger.warn(`[fileWatcher] Skipping ${relativePath}: an upload stored it but never finished`);
+    return;
+  }
+  // commitObject writes the row and settles the record in one transaction,
+  // so an upload in another process may have finished between the photo
+  // check above and the ledger read: look for its row once more.
+  if (await findExistingPhoto(event.id, path.basename(filePath), relativePath)) {
+    logger.debug(`Photo already exists: ${relativePath}`);
     return;
   }
 

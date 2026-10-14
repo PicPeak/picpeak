@@ -389,6 +389,19 @@ async function commitObject(object, type, writeRow) {
   });
 }
 
+// The keys among `keys` an upload stored but never wrote a row for (issue
+// 1970): 'promoting' until commitObject, 'uncertain' when failedObject could
+// not prove the object gone. An importer must not take them for files
+// placed by hand.
+async function unfinishedKeys(keys) {
+  if (keys.length === 0) return new Set();
+  const rows = await db('public_upload_objects')
+    .whereIn('object_key', keys)
+    .whereIn('state', ['promoting', 'uncertain'])
+    .select('object_key');
+  return new Set(rows.map((row) => row.object_key));
+}
+
 async function failedObject(object, { storage, settled }) {
   // A commit whose acknowledgement was lost may already have associated the
   // row and charge. Never compensate a successfully committed reference.
@@ -501,7 +514,7 @@ function stopMaintenance() {
 }
 
 module.exports = {
-  begin, reserveFile, recheckStaging, prepareObject, commitObject, failedObject, finish, releasePending, processingComplete: releasePending,
+  begin, reserveFile, recheckStaging, prepareObject, commitObject, failedObject, unfinishedKeys, finish, releasePending, processingComplete: releasePending,
   reconcilePending, heartbeat, cleanupAbandoned, startMaintenance, stopMaintenance, requestBudget, configuration, refusal, forAdmin,
   STALE_MS, _legacyCache: legacyCache,
 };
