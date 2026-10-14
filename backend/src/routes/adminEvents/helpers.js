@@ -11,6 +11,21 @@ function eventNotFound() {
   return err;
 }
 
+/**
+ * Take the gallery's archive claim for a write that keeps the gallery live:
+ * an extended expiry, a reactivation. An archive running under it would
+ * still publish and delete the originals (issue 2012). Throws a 409
+ * ARCHIVE_IN_PROGRESS while one runs; the caller releases the lease.
+ */
+async function claimEventArchive(eventId) {
+  const lease = await require('../../services/archiveService').claimArchive(eventId);
+  if (!lease) {
+    const { AppError } = require('../../utils/errors');
+    throw new AppError('This gallery is being archived right now', 409, 'ARCHIVE_IN_PROGRESS');
+  }
+  return lease;
+}
+
 async function deleteEventCascade(eventId, adminContext) {
   const found = await db('events').where('id', eventId).first();
   if (!found) throw eventNotFound();
@@ -362,4 +377,4 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
   return { id: event.id, name: event.event_name };
 }
 
-module.exports = { ...settings, deleteEventCascade };
+module.exports = { ...settings, deleteEventCascade, claimEventArchive };

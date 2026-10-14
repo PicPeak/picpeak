@@ -322,7 +322,7 @@ export const EventDetailsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
       toast.success(t('toast.saveSuccess'));
     },
-    onError: () => toast.error(t('toast.saveError')),
+    onError: (error) => toast.error(archiveInProgressError(error, t) ?? t('toast.saveError')),
   });
 
   if (eventLoading) {

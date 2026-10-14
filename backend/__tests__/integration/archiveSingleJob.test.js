@@ -280,6 +280,59 @@ describe('one archive job per gallery', () => {
     expect(result.error).toMatch(/being archived/);
   });
 
+  it('refuses to extend a gallery while it is being archived', async () => {
+    const event = await makeEvent('extend-held', { expired: true });
+    let open;
+    gate = new Promise((resolve) => { open = resolve; });
+    const job = archiveEvent(event);
+    await waitForRead();
+
+    const res = await request(app).post(`/admin/events/${event.id}/extend`).send({ days: 30 });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ARCHIVE_IN_PROGRESS');
+    expect((await db('events').where({ id: event.id }).first()).expires_at).toBe(event.expires_at);
+    open();
+    await job;
+
+    // Free again once the archive is done.
+    const later = await makeEvent('extend-free', { expired: true });
+    await request(app).post(`/admin/events/${later.id}/extend`).send({ days: 30 }).expect(200);
+    expect((await jobState.read(jobName(later.id))).isRunning).toBe(false);
+  });
+
+  it('refuses a new expiry from the settings while the gallery is being archived', async () => {
+    const event = await makeEvent('edit-expiry-held');
+    const token = await holdClaim(event.id);
+    const future = new Date(Date.now() + 90 * 864e5).toISOString();
+
+    const res = await request(app).put(`/admin/events/${event.id}`).send({ expires_at: future });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ARCHIVE_IN_PROGRESS');
+    expect((await db('events').where({ id: event.id }).first()).expires_at).toBe(event.expires_at);
+
+    // Other edits, and an unchanged expiry, still save.
+    await request(app).put(`/admin/events/${event.id}`)
+      .send({ event_name: 'Renamed while archiving', expires_at: event.expires_at }).expect(200);
+    expect((await db('events').where({ id: event.id }).first()).event_name).toBe('Renamed while archiving');
+    await jobState.release(jobName(event.id), token);
+  });
+
+  it('refuses to reactivate a gallery while it is being archived', async () => {
+    const event = await makeEvent('toggle-held');
+    await db('events').where({ id: event.id }).update({ is_active: 0 });
+    const token = await holdClaim(event.id);
+
+    const res = await request(app).post(`/admin/events/${event.id}/toggle-status`);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ARCHIVE_IN_PROGRESS');
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_active)).toBe(false);
+
+    await jobState.release(jobName(event.id), token);
+    await request(app).post(`/admin/events/${event.id}/toggle-status`).expect(200);
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_active)).toBe(true);
+  });
+
   it('does not publish over the winner once its lease was taken over', async () => {
     const event = await makeEvent('lost-lease');
     let open;

@@ -20,6 +20,7 @@ const { validatePasswordInContext, getBcryptRounds } = require('../../utils/pass
 const logger = require('../../utils/logger');
 const { sanitizeForLog, sanitizeValidationErrors } = require('../../utils/sanitizeForLog');
 const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
+const { toTimestamp } = require('../../utils/dateNormalize');
 const { isUniqueViolation } = require('../../utils/dbErrors');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const { parseBooleanInput } = require('../../utils/parsers');
@@ -46,7 +47,7 @@ const downloadZipService = require('../../services/downloadZipService');
 const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
 const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
-const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade } = require('./helpers');
+const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, claimEventArchive } = require('./helpers');
 
 // Client PIN floor. The PIN guards the client review page and used to accept
 // any string, one character included. Six is the least that the login
@@ -2004,24 +2005,35 @@ module.exports = (router) => {
       // (e.g. a body of only protected fields). (codex review.)
       if (Object.keys(recoverable).length > 0) Object.assign(updates, await galleryPasswordColumns(recoverable));
       if (credentialChanges.size > 0) Object.assign(updates, await credentialChangeColumns(...credentialChanges));
-      if (Object.keys(updates).length > 0) {
-        let eventUpdate = db('events').where('id', id);
-        if (keptGalleryHash) eventUpdate = eventUpdate.where('password_hash', event.password_hash);
-        if (keptClientHash) eventUpdate = eventUpdate.where('client_password_hash', event.client_password_hash);
-        const updated = await eventUpdate.update(updates);
-        if (!updated && (keptGalleryHash || keptClientHash)) {
-          // A password changed underneath: write the submitted ones as changes.
-          if (keptGalleryHash) {
-            updates.password_hash = await bcrypt.hash(newPasswordPlain, getBcryptRounds());
-            credentialChanges.add('gallery');
+      // A new expiry holds the archive claim (issue 2012): an archive already
+      // running would publish and delete the originals of the gallery the
+      // admin just extended. 409 while one runs; nothing is written then.
+      const expiryChanged = Object.prototype.hasOwnProperty.call(updates, 'expires_at')
+        && toTimestamp(updates.expires_at) !== toTimestamp(event.expires_at)
+        && !(updates.expires_at == null && event.expires_at == null);
+      const archiveLease = expiryChanged ? await claimEventArchive(event.id) : null;
+      try {
+        if (Object.keys(updates).length > 0) {
+          let eventUpdate = db('events').where('id', id);
+          if (keptGalleryHash) eventUpdate = eventUpdate.where('password_hash', event.password_hash);
+          if (keptClientHash) eventUpdate = eventUpdate.where('client_password_hash', event.client_password_hash);
+          const updated = await eventUpdate.update(updates);
+          if (!updated && (keptGalleryHash || keptClientHash)) {
+            // A password changed underneath: write the submitted ones as changes.
+            if (keptGalleryHash) {
+              updates.password_hash = await bcrypt.hash(newPasswordPlain, getBcryptRounds());
+              credentialChanges.add('gallery');
+            }
+            if (keptClientHash) {
+              updates.client_password_hash = await bcrypt.hash(recoverable.clientPassword, getBcryptRounds());
+              credentialChanges.add('client');
+            }
+            Object.assign(updates, await credentialChangeColumns(...credentialChanges));
+            await db('events').where('id', id).update(updates);
           }
-          if (keptClientHash) {
-            updates.client_password_hash = await bcrypt.hash(recoverable.clientPassword, getBcryptRounds());
-            credentialChanges.add('client');
-          }
-          Object.assign(updates, await credentialChangeColumns(...credentialChanges));
-          await db('events').where('id', id).update(updates);
         }
+      } finally {
+        if (archiveLease) await archiveLease.release();
       }
       if (Object.keys(recoverable).length > 0) await dropCopiesIfStorageOff(id);
 
@@ -2185,12 +2197,18 @@ module.exports = (router) => {
       }
 
       const newStatus = !parseBooleanInput(event.is_active, false);
-      await db('events')
-        .where('id', id)
-        .update({
-          is_active: formatBoolean(newStatus),
-          updated_at: new Date().toISOString()
-        });
+      // Reactivating holds the archive claim (issue 2012), as extending does.
+      const archiveLease = newStatus ? await claimEventArchive(event.id) : null;
+      try {
+        await db('events')
+          .where('id', id)
+          .update({
+            is_active: formatBoolean(newStatus),
+            updated_at: new Date().toISOString()
+          });
+      } finally {
+        if (archiveLease) await archiveLease.release();
+      }
 
       // Log activity
       await logActivity(newStatus ? 'event_activated' : 'event_deactivated',
@@ -2204,6 +2222,7 @@ module.exports = (router) => {
         is_active: newStatus
       });
     } catch (error) {
+      if (error.code === 'ARCHIVE_IN_PROGRESS') return res.status(409).json({ error: error.message, code: error.code });
       errorResponse(res, error, 500, 'Failed to toggle event status');
     }
   });
@@ -2231,13 +2250,24 @@ module.exports = (router) => {
         return res.status(404).json({ error: 'Event not found' });
       }
 
-      const newExpiration = new Date(event.expires_at);
-      newExpiration.setDate(newExpiration.getDate() + days);
+      // Held through the write (issue 2012): an archive running under it
+      // would publish and delete the originals of the gallery just extended.
+      // The expiry is read again under the claim.
+      const archiveLease = await claimEventArchive(event.id);
+      let newExpiration;
+      try {
+        const current = await db('events').where('id', event.id).first();
+        if (!current) return res.status(404).json({ error: 'Event not found' });
+        newExpiration = new Date(current.expires_at);
+        newExpiration.setDate(newExpiration.getDate() + days);
 
-      await db('events').where('id', id).update({
-        expires_at: newExpiration,
-        is_active: formatBoolean(true) // reactivate if it had expired
-      });
+        await db('events').where('id', event.id).update({
+          expires_at: newExpiration,
+          is_active: formatBoolean(true) // reactivate if it had expired
+        });
+      } finally {
+        await archiveLease.release();
+      }
 
       await logActivity('event_expiration_extended',
         { eventName: event.event_name, days },
@@ -2247,6 +2277,7 @@ module.exports = (router) => {
 
       res.json({ expires_at: newExpiration });
     } catch (error) {
+      if (error.code === 'ARCHIVE_IN_PROGRESS') return res.status(409).json({ error: error.message, code: error.code });
       errorResponse(res, error, 500, 'Failed to extend expiration');
     }
   });
