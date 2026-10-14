@@ -29,10 +29,15 @@ async function findSlugHolder(slug, { exceptEventId = null, conn = db } = {}) {
   return (await viaRedirect.first('e.id', 'e.event_name')) || null;
 }
 
-/** The slug a renamed gallery's old slug now leads to, or null. */
+/**
+ * The gallery a renamed gallery's old slug now leads to, or undefined. Only
+ * the gallery the redirect was written for: a row left behind by a deleted
+ * gallery (SQLite) must not lead to whichever gallery took its slug since.
+ */
 async function followSlugRedirect(slug) {
-  const row = await db('slug_redirects').where({ old_slug: slug }).first('new_slug');
-  return row ? row.new_slug : null;
+  const row = await db('slug_redirects').where({ old_slug: slug }).first('new_slug', 'event_id');
+  if (!row || row.event_id === null) return undefined;
+  return db('events').where({ id: row.event_id, slug: row.new_slug }).first();
 }
 
 module.exports = { findSlugHolder, followSlugRedirect };

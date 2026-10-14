@@ -379,10 +379,11 @@ class EventRenameService {
       .where({ new_slug: oldSlug })
       .update({ new_slug: newSlug, event_id: eventId });
 
-    // The new slug is live again (renamed back to an earlier name): a
-    // redirect from it would now point at itself.
+    // Renamed back to an earlier name: the chain update above turned that
+    // name's redirect into one pointing at itself. Only that row goes; a
+    // redirect from this slug to another gallery is that gallery's to keep.
     await trx('slug_redirects')
-      .where({ old_slug: newSlug })
+      .where({ old_slug: newSlug, new_slug: newSlug })
       .del();
   }
 

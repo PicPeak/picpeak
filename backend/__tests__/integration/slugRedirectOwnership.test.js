@@ -105,7 +105,18 @@ describe('an old slug stays with the renamed gallery', () => {
     const second = await insertEvent('Other', 'wedding-other-2026-06-05');
 
     expect(await renamed(second, 'Old Name')).toBe(OLD);
-    expect(await db('slug_redirects').where({ old_slug: OLD }).first()).toBeUndefined();
+  });
+
+  it('renaming onto a slug keeps a redirect from it that leads elsewhere', async () => {
+    // The state two concurrent renames can leave: validation runs outside
+    // the transaction, so gallery 2 can take a slug gallery 1 left meanwhile.
+    const first = await insertEvent('New Name', NEW);
+    await db('slug_redirects').insert({ old_slug: OLD, new_slug: NEW, event_id: first });
+    const second = await insertEvent('Other', 'wedding-other-2026-06-05');
+    await renameService.createSlugRedirect(db, second, 'wedding-other-2026-06-05', OLD);
+
+    expect(await db('slug_redirects').where({ old_slug: OLD }).first())
+      .toMatchObject({ new_slug: NEW, event_id: first });
   });
 
   it('renaming back to an earlier name leaves no redirect from the live slug', async () => {
@@ -148,5 +159,17 @@ describe('customer portal event page', () => {
     await renamed(id, 'New Name');
 
     expect(await getEventOverview(customerId, OLD)).toBeNull();
+  });
+
+  it('does not follow a deleted gallery\'s redirect to the gallery now at its slug', async () => {
+    const gone = await insertEvent('Old Name', OLD);
+    await renamed(gone, 'New Name');
+    // SQLite enforces no foreign keys, so the redirect outlives the gallery.
+    await db('events').where({ id: gone }).del();
+    const other = await insertEvent('New Name', NEW);
+    await db('event_customer_assignments').insert({ event_id: other, customer_account_id: customerId });
+
+    expect(await getEventOverview(customerId, OLD)).toBeNull();
+    expect((await getEventOverview(customerId, NEW)).event.id).toBe(other);
   });
 });

@@ -318,10 +318,7 @@ async function getEventOverview(customerId, slug) {
   let event = await db('events').where({ slug }).first();
   // Links mailed before a rename carry the old slug. The access check below
   // still decides, so this finds nothing a slug lookup would not.
-  if (!event) {
-    const newSlug = await followSlugRedirect(slug);
-    if (newSlug) event = await db('events').where({ slug: newSlug }).first();
-  }
+  if (!event) event = await followSlugRedirect(slug);
   if (!event || isTrue(event.is_archived)) return null;
   if (!(await customerAccountsService.customerHasAccessToEvent(customerId, event.id))) return null;
 
