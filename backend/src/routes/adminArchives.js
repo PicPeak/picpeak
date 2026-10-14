@@ -22,7 +22,9 @@ const { clearGuestCredits } = require('../services/photoCredit');
 const folderTree = require('../services/folderTreeService');
 const { parseBooleanInput } = require('../utils/parsers');
 const { getStorage } = require('../services/storage');
-const { claimArchive, isArchiveRunning } = require('../services/archiveService');
+const {
+  claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives,
+} = require('../services/archiveService');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
 const router = express.Router();
 
@@ -805,11 +807,12 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         expires_at: thirtyDaysFromNow.toISOString() // Reset expiration - works on both DBs
       });
 
-    // The zip goes with its reference (issue 2012): every archive run writes
-    // a key of its own, so archiving the gallery again no longer overwrites
-    // this one, and nothing would ever name it again.
-    await storage.delete(archive.archive_path).catch((err) =>
-      logger.warn(`Failed to remove the restored archive ${archive.archive_path}: ${err.message}`));
+    // The zip stays (issue 2012): the gallery's fallback until it has a newer
+    // archive. Each archive run writes a key of its own, so archiving again no
+    // longer overwrites it; recorded here, it goes once the next archive is
+    // published, or with the gallery.
+    await recordSupersededArchive(lease, archive.archive_path).catch((err) =>
+      logger.warn(`Could not record the restored archive ${archive.archive_path}: ${err.message}`));
 
     // Browser-playable copies (issue 1430): archiving dropped them and reset
     // the rows (archiveService). With the setting on, the restored videos are
@@ -915,6 +918,10 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
     // would leave the zip in the bucket with nothing left to retry from.
     if (archive.archive_path) {
       await getStorage().delete(archive.archive_path);
+    }
+    // Zips earlier restores brought back (issue 2012), best effort.
+    for (const key of await supersededArchives(archive.id).catch(() => [])) {
+      if (key !== archive.archive_path) await getStorage().delete(key).catch(() => {});
     }
 
     // Delete thumbnails for this event

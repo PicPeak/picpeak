@@ -72,28 +72,87 @@ async function claimArchive(eventId) {
   return lease;
 }
 
-// A run records the key it is about to upload on its claim row and clears it
-// when it publishes or removes the zip itself. A key still recorded when the
-// next claim lands is from a run that died in between: each run writes a key
-// of its own, so nothing would ever overwrite or name that zip.
-const recordUpload = (lease, key) => db('maintenance_jobs')
+// Zips nothing names, kept on the gallery's claim row (last_result, which
+// archive claims never use for a result):
+//   - upload: the key a run is about to upload, cleared when it publishes or
+//     removes the zip itself. Still there when the next claim lands, the run
+//     died in between; each run writes a key of its own, so nothing would ever
+//     overwrite or name that zip.
+//   - superseded: zips a restore brought back. Kept until the gallery has a
+//     newer archive, or is deleted: until then the zip is the copy to fall
+//     back on, should anything (a job that stalled past its lease with a
+//     delete under way) take a restored file.
+// Written only under the writer's own claim token.
+const isArchiveKey = (key) => typeof key === 'string' && key.startsWith('events/archived/');
+
+async function readArchiveState(jobName, conn = db) {
+  const row = await conn('maintenance_jobs').where({ job_name: jobName }).first('last_result');
+  let state = null;
+  try { state = JSON.parse(row?.last_result || 'null'); } catch { state = null; }
+  return state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+}
+
+const writeArchiveState = (lease, state, conn = db) => conn('maintenance_jobs')
   .where({ job_name: lease.jobName, claim_token: lease.token })
-  .update({ last_result: key ? JSON.stringify({ upload: key }) : null });
+  .update({ last_result: Object.keys(state).length ? JSON.stringify(state) : null });
+
+async function recordUpload(lease, key) {
+  const { upload: _previous, ...state } = await readArchiveState(lease.jobName);
+  await writeArchiveState(lease, key ? { ...state, upload: key } : state);
+}
+
+/** Record the zip a restore brought back, to remove once it is superseded. */
+async function recordSupersededArchive(lease, key) {
+  if (!isArchiveKey(key)) return;
+  const state = await readArchiveState(lease.jobName);
+  const superseded = Array.isArray(state.superseded) ? state.superseded : [];
+  if (!superseded.includes(key)) superseded.push(key);
+  await writeArchiveState(lease, { ...state, superseded });
+}
+
+/** Zips restores brought back for this gallery, not yet removed. */
+async function supersededArchives(eventId) {
+  const { superseded } = await readArchiveState(archiveJobName(eventId));
+  return Array.isArray(superseded) ? superseded.filter(isArchiveKey) : [];
+}
+
+// Never a key an event row names: that zip is somebody's archive.
+const isReferenced = async (key) => Boolean(await db('events').where('archive_path', key).first('id'));
 
 async function removeAbandonedUpload(lease) {
   try {
-    const row = await db('maintenance_jobs').where({ job_name: lease.jobName }).first('last_result');
-    let key = null;
-    try { key = JSON.parse(row?.last_result || 'null')?.upload || null; } catch { key = null; }
-    if (typeof key !== 'string' || !key.startsWith('events/archived/')) return;
+    const { upload: key } = await readArchiveState(lease.jobName);
+    if (!isArchiveKey(key)) return;
     // Published after all (the answer to its commit was lost): keep it.
-    if (!(await db('events').where('archive_path', key).first('id'))) {
+    if (!(await isReferenced(key))) {
       await getStorage().delete(key);
       logger.info(`Removed the archive upload an interrupted run left behind: ${key}`);
     }
     await recordUpload(lease, null);
   } catch (err) {
     logger.warn(`Could not check ${lease.jobName} for an abandoned archive upload: ${err.message}`);
+  }
+}
+
+/** After a publish: the gallery has a newer archive, the restored-from zips can go. */
+async function removeSupersededArchives(lease, publishedKey) {
+  try {
+    const state = await readArchiveState(lease.jobName);
+    const kept = [];
+    for (const key of Array.isArray(state.superseded) ? state.superseded : []) {
+      if (!isArchiveKey(key) || key === publishedKey) continue;
+      if (await isReferenced(key)) continue;
+      try {
+        await getStorage().delete(key);
+      } catch (err) {
+        logger.warn(`Failed to remove the superseded archive ${key}: ${err.message}`);
+        kept.push(key);
+      }
+    }
+    const { superseded: _done, ...rest } = state;
+    await writeArchiveState(lease, kept.length ? { ...rest, superseded: kept } : rest);
+  } catch (err) {
+    logger.warn(`Could not remove the superseded archives of ${lease.jobName}: ${err.message}`);
   }
 }
 
@@ -366,8 +425,8 @@ async function buildArchive(event, lease) {
           .modify((q) => { if (trx.client.config.client === 'pg') q.forUpdate(); })
           .first('job_name');
         if (!held) return 0;
-        await trx('maintenance_jobs').where({ job_name: lease.jobName, claim_token: lease.token })
-          .update({ last_result: null });
+        const { upload: _published, ...state } = await readArchiveState(lease.jobName, trx);
+        await writeArchiveState(lease, state, trx);
         return trx('events')
           .where('id', event.id)
           .where('is_archived', formatBoolean(false))
@@ -394,6 +453,7 @@ async function buildArchive(event, lease) {
         .catch((err) => logger.warn(`Failed to remove the unpublished archive ${archiveRelKey}: ${err.message}`));
       throw new AppError('The archive claim was taken over', 409, 'ARCHIVE_IN_PROGRESS');
     }
+    await removeSupersededArchives(lease, archiveRelKey);
 
     // The cleanup below deletes by key. A run that stalls past its lease
     // after publishing (a suspended process) can find the gallery restored
@@ -562,4 +622,6 @@ function convertToCSV(data) {
   return objectsToCsv(data);
 }
 
-module.exports = { archiveEvent, claimArchive, isArchiveRunning };
+module.exports = {
+  archiveEvent, claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives,
+};

@@ -467,4 +467,40 @@ describe('one archive job per gallery', () => {
 
     expect(deletedKeys()).toEqual([]);
   });
+
+  /** A restore of this gallery brought `key` back and recorded it. */
+  async function recordRestoredZip(eventId, key) {
+    const { claimArchive, recordSupersededArchive } = require('../../src/services/archiveService');
+    const lease = await claimArchive(eventId);
+    await recordSupersededArchive(lease, key);
+    await lease.release();
+  }
+
+  it('keeps a restored-from zip until the next archive is published, then removes it', async () => {
+    const event = await makeEvent('superseded');
+    const oldKey = 'events/archived/superseded-0123456789ab.zip';
+    await recordRestoredZip(event.id, oldKey);
+
+    // An archive that fails leaves it alone.
+    failList = true;
+    await expect(archiveEvent(event)).rejects.toThrow('socket reset by peer');
+    expect(deletedKeys()).not.toContain(oldKey);
+
+    failList = false;
+    await archiveEvent(event);
+    expect(deletedKeys()).toContain(oldKey);
+    const { supersededArchives } = require('../../src/services/archiveService');
+    expect(await supersededArchives(event.id)).toEqual([]);
+  });
+
+  it('removes restored-from zips with the gallery', async () => {
+    const event = await makeEvent('superseded-delete');
+    const oldKey = 'events/archived/superseded-delete-0123456789ab.zip';
+    await recordRestoredZip(event.id, oldKey);
+
+    const res = await request(app).delete(`/admin/events/${event.id}`);
+
+    expect(res.status).toBe(200);
+    expect(deletedKeys()).toContain(oldKey);
+  });
 });

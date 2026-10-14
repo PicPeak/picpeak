@@ -132,6 +132,7 @@ jest.mock('../../src/database/db', () => ({
 // The archive claim (issue 2012) is exercised in archiveSingleJob.test.js.
 jest.mock('../../src/services/archiveService', () => ({
   claimArchive: async () => ({ release: async () => {} }),
+  supersededArchives: async () => [],
 }));
 jest.mock('../../src/services/accountingHistory', () => ({
   deleteWithAccountingHistory: (conn, table, where) => conn(table).where(where).del(),
