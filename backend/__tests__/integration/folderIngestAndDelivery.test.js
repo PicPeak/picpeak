@@ -274,6 +274,24 @@ describe('folder ingest and two-stage delivery', () => {
       expect(Date.parse(ev.delivery_due_at)).toBeGreaterThan(Date.parse('2020-01-01T12:00:00.000Z'));
     });
 
+    it('keeps a promise for today when the first look starts after its stored noon', async () => {
+      // Stored at noon UTC today; by now (later today) the noon instant is
+      // past, but "by today" still stands until the UTC day is over.
+      const today = new Date().toISOString().slice(0, 10);
+      const stored = `${today}T12:00:00.000Z`;
+      const realNow = Date.now;
+      Date.now = () => Date.parse(`${today}T13:00:00.000Z`);
+      try {
+        const columns = await delivery().enterPartialColumns({ event_date: '2026-07-03', delivery_due_at: stored });
+        expect(columns.delivery_due_at).toBeUndefined();
+        Date.now = () => Date.parse(`${today}T23:59:59.999Z`) + 1;
+        const next = await delivery().enterPartialColumns({ event_date: '2026-07-03', delivery_due_at: stored });
+        expect(next.delivery_due_source).toBe('default');
+      } finally {
+        Date.now = realNow;
+      }
+    });
+
     it('computes the default due date from a DATE column that arrives as a Date (Postgres)', async () => {
       // pg hands a DATE back at the server's local midnight; east of UTC that
       // instant is still the day before in UTC. The suite runs in the host's

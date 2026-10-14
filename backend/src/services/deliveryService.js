@@ -38,6 +38,17 @@ async function defaultDueAt(event, conn = db) {
 }
 
 /**
+ * The end of the promised day, in epoch ms (NaN when unreadable). The stored
+ * value is a calendar day at noon UTC: "by the 20th" lasts until the 20th is
+ * over in UTC, the rule the admin screens (deliveryStatus.ts) use too.
+ */
+function endOfDueDay(value) {
+  const ms = toTimestamp(value);
+  if (!Number.isFinite(ms)) return NaN;
+  return Date.parse(`${new Date(ms).toISOString().slice(0, 10)}T23:59:59.999Z`);
+}
+
+/**
  * A `delivery_due_at` from the API as the stored ISO string. A bare date, or a
  * date-time without a zone, names a calendar day: stored at noon UTC like the
  * settings form and the default, instead of being read in the server's zone
@@ -74,8 +85,9 @@ async function enterPartialColumns(event, { dueAtGiven = false } = {}) {
     delivery_overdue_notified_at: null,
   };
   if (dueAtGiven) return columns;
-  const stored = event.delivery_due_at ? Date.parse(event.delivery_due_at) : NaN;
-  if (!Number.isFinite(stored) || stored <= Date.now()) {
+  // A promise for today still stands: past only once its day is over.
+  const end = endOfDueDay(event.delivery_due_at);
+  if (!Number.isFinite(end) || end < Date.now()) {
     columns.delivery_due_at = (await defaultDueAt(event)).toISOString();
     columns.delivery_due_source = 'default';
   }
@@ -218,9 +230,8 @@ async function runDeliveryReminderPass({ now = new Date() } = {}) {
   for (const event of events) {
     // Promised "by the 20th" means the whole 20th: overdue only once that
     // calendar day is over, not at the stored noon.
-    const dueDay = String(event.delivery_due_at instanceof Date ? event.delivery_due_at.toISOString() : event.delivery_due_at).slice(0, 10);
-    const endOfDueDay = Date.parse(`${dueDay}T23:59:59.999Z`);
-    const overdue = Number.isFinite(endOfDueDay) ? endOfDueDay < now.getTime() : new Date(event.delivery_due_at) <= now;
+    const end = endOfDueDay(event.delivery_due_at);
+    const overdue = Number.isFinite(end) ? end < now.getTime() : new Date(event.delivery_due_at) <= now;
     const column = overdue ? 'delivery_overdue_notified_at' : 'delivery_reminder_sent_at';
     if (event[column]) continue;
     // Nobody to tell: no mail, no "reminded" log line, and no claim either,
