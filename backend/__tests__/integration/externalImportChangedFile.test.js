@@ -191,6 +191,46 @@ describe('external re-scan of a file changed in place', () => {
     expect(exists(keys.preview_path)).toBe(false);
   });
 
+  it('writes the new thumbnail under its own key when another photo shows the old one', async () => {
+    const eventId = await seedEvent();
+    const { photo, keys } = await importWithRenditions(eventId);
+    await db('photos').insert({
+      event_id: eventId, filename: 'twin.jpg', path: 'x/twin.jpg', type: 'individual',
+      source_origin: 'managed', thumbnail_path: keys.thumbnail_path,
+    });
+    await writeStored(keys.thumbnail_path);
+    generateThumbnail.mockClear();
+
+    await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
+    expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+
+    const after = await db('photos').where({ id: photo.id }).first();
+    expect(after.thumbnail_path).not.toBe(keys.thumbnail_path);
+    expect(after.thumbnail_path).toMatch(new RegExp(`^thumbnails/thumb_ext${photo.id}_[0-9a-f]{8}_a\\.jpg$`));
+    expect(exists(keys.thumbnail_path)).toBe(true);
+  });
+
+  it('leaves a changed file that is still being written for the next automatic pass', async () => {
+    const eventId = await seedEvent();
+    await db('events').where({ id: eventId }).update({
+      created_by: 1, external_path: 'shoot', external_watch: 1, is_active: 1, is_archived: 0,
+    });
+    const { photo, keys } = await importWithRenditions(eventId);
+    const { importExternalFolder } = require('../../src/services/externalImportService');
+
+    // Just written: mtime is now, inside the settle window.
+    await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
+    const pass = { eventId, externalPath: 'shoot', actor: { type: 'system' }, automatic: true, settleMs: 5000 };
+    expect(await importExternalFolder(pass)).toMatchObject({ refreshed: 0, deferred: 1 });
+    expect((await db('photos').where({ id: photo.id }).first()).preview_path).toBe(keys.preview_path);
+
+    // Quiet for longer than the window: refreshed.
+    const old = new Date(Date.now() - 60000);
+    await fs.promises.utimes(path.join(mediaRoot, 'shoot/a.jpg'), old, old);
+    expect(await importExternalFolder(pass)).toMatchObject({ refreshed: 1, deferred: 0 });
+    expect((await db('photos').where({ id: photo.id }).first()).preview_path).toBeNull();
+  });
+
   it('does not touch a photo an upload replaced, which no longer reads the share', async () => {
     const eventId = await seedEvent();
     const { photo, keys } = await importWithRenditions(eventId);

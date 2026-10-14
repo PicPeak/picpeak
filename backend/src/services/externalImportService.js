@@ -17,6 +17,7 @@
  */
 
 const path = require('path');
+const crypto = require('crypto');
 const fs = require('fs').promises;
 const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
@@ -200,8 +201,12 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     return 'skipped';
   }
   if (Number(row.size_bytes) === f.size) return 'skipped';
-  // A copy still landing on the mount: the same settle rule new files get.
-  if (automatic && settleMs > 0 && Date.now() - f.mtimeMs < settleMs) return 'deferred';
+  // Stat again: the walk that produced `f` can be minutes old. A copy still
+  // landing on the mount is left for the next pass, the same settle rule new
+  // files get.
+  const before = await fs.stat(f.full);
+  if (Number(row.size_bytes) === before.size) return 'skipped';
+  if (automatic && settleMs > 0 && Date.now() - before.mtimeMs < settleMs) return 'deferred';
 
   let width = null;
   let height = null;
@@ -220,7 +225,10 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
   }
   const exif = await exifColumn(f.full);
+  // Everything above must describe one version of the file: if it moved
+  // while being read, try again on the next pass.
   const stats = await fs.stat(f.full);
+  if (stats.size !== before.size || stats.mtimeMs !== before.mtimeMs) return 'deferred';
 
   // Fenced on what was read: a concurrent pass that already refreshed the
   // row, or a replacement that repointed it, wins and this one does nothing.
@@ -244,19 +252,26 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   const { getStorage } = require('./storage');
   const { deletePreviewTiers, deleteThumbnailTiers } = require('./imageProcessor');
   const storage = getStorage();
+  let thumbnailShared = false;
   for (const column of DERIVATIVE_COLUMNS) {
     const key = row[column];
     if (!key) continue;
     // Another row may point at the same file; that one is not stale.
     const shared = await db('photos').whereNot('id', row.id).where(column, key).first('id').catch(() => ({ id: null }));
     if (!shared) await storage.delete(key).catch(() => {});
+    else if (column === 'thumbnail_path') thumbnailShared = true;
   }
   await deletePreviewTiers(row).catch(() => {});
   await deleteThumbnailTiers(row).catch(() => {});
 
   try {
     const meta = {};
-    const thumbnailPath = await generateThumbnail(f.full, { outputBasename: `ext${row.id}_${path.basename(f.rel)}`, meta });
+    // A thumbnail another row still shows is kept, so the new one takes
+    // its own key instead of overwriting it.
+    const outputBasename = thumbnailShared
+      ? `ext${row.id}_${crypto.randomBytes(4).toString('hex')}_${path.basename(f.rel)}`
+      : `ext${row.id}_${path.basename(f.rel)}`;
+    const thumbnailPath = await generateThumbnail(f.full, { outputBasename, meta });
     if (thumbnailPath) {
       await db('photos').where({ id: row.id, size_bytes: stats.size }).whereNull('thumbnail_path')
         .update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null });
