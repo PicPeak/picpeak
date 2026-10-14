@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import {
   Mail, MapPin, Phone, Building2, Save, Trash2,
-  CheckCircle2, X, FileText, Calendar, KeyRound, ToggleLeft, Settings as SettingsIcon, Megaphone,
+  CheckCircle2, X, FileText, Calendar, KeyRound, ToggleLeft, Settings as SettingsIcon, Megaphone, MailX,
 } from 'lucide-react';
 
 import { Badge, Button, Card, CountrySelect, ErrorState, Input, Loading, Switch, useConfirm } from '../../components/common';
@@ -48,7 +48,7 @@ type EditableFields =
   | 'featureCalendar' | 'featureQuotes' | 'featureBills' | 'featureHoursLogging' | 'featureContracts'
   | 'featureDocuments'
   | 'hourlyRateMinor' | 'dayRateMinor' | 'billingCadence' | 'billingCycleDay' | 'skontoDisabled' | 'rebillAttachProof'
-  | 'marketingOptOut';
+  | 'marketingOptOut' | 'noAdminEmails';
 
 // `fmtDate` (from useLocalizedDate, below) is the single canonical date
 // formatter. It honors the admin's `general_date_format` setting AND
@@ -159,6 +159,7 @@ export const CustomerDetailPage: React.FC = () => {
         rebillAttachProof: customer.rebillAttachProof ?? null,
         // Newsletter consent (#1264). Opt-OUT, so the default is false.
         marketingOptOut: customer.marketingOptOut ?? false,
+        noAdminEmails: customer.noAdminEmails ?? false,
       } as any);
     }
   }, [customer, form]);
@@ -331,6 +332,12 @@ export const CustomerDetailPage: React.FC = () => {
             <span className="text-[11px] text-muted">
               {t('customers.passive.activeLabel', 'Has portal access')}
             </span>
+          )}
+          {/* No administrative emails (migration 300): visible without opening the switch. */}
+          {customer.noAdminEmails && (
+            <Badge tone="warning" icon={<MailX />}>
+              {t('customers.field.noAdminEmails', 'No administrative emails')}
+            </Badge>
           )}
         </div>
       </div>
@@ -632,7 +639,7 @@ export const CustomerDetailPage: React.FC = () => {
       </Card>
       )}
 
-      {(flags.calendar || flags.quotes || flags.bills || flags.hoursLogging || flags.contracts) && (
+      {(flags.calendar || flags.quotes || flags.bills || flags.hoursLogging || flags.contracts || flags.documents) && (
       <Card padding="lg">
         <h2 className="text-lg font-semibold text-heading mb-1 flex items-center gap-2">
           <ToggleLeft className="w-5 h-5" />
@@ -691,6 +698,27 @@ export const CustomerDetailPage: React.FC = () => {
             );
           })}
         </div>
+
+        {/* No administrative emails (migration 300). Documents are still
+            issued as usual; only the mail is held back. Customer-document
+            mail counts too, hence flags.documents. */}
+        {(flags.quotes || flags.bills || flags.contracts || flags.documents) && (
+          <div className="mt-4 pt-4 border-t border-line">
+            <Switch
+              checked={!!form.noAdminEmails}
+              onChange={() => setForm((prev) => ({ ...prev, noAdminEmails: !prev.noAdminEmails } as any))}
+              label={(
+                <span className="text-heading">
+                  {t('customers.field.noAdminEmails', 'No administrative emails')}
+                </span>
+              )}
+            />
+            <p className="text-xs text-muted mt-1">
+              {t('customers.field.noAdminEmailsHint',
+                'Quotes, contracts, invoices and reminders are created as usual, but no email about them is sent to this customer. With portal access they see them there; otherwise you hand them over yourself. Held-back emails appear as “Suppressed” in the email log. Gallery emails are not affected. Copies to other recipients of the same document (e.g. an accountant in CC) are held back too. Emails already queued when you turn this on still go out.')}
+            </p>
+          </div>
+        )}
 
         {/* Default hourly rate (migration 129). Only shown when the
             master `hoursLogging` flag is on AND the per-customer
