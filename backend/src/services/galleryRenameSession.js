@@ -18,6 +18,25 @@ function verifyGalleryJwt(token) {
   }
 }
 
+function verifiesAs(token, type) {
+  if (typeof token !== 'string' || !token) return false;
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'picpeak-auth' })?.type === type;
+  } catch {
+    return false;
+  }
+}
+
+async function authorizes(event, decoded) {
+  if (!decoded || Number(decoded.eventId) !== Number(event.id)) return false;
+  try {
+    await access.authorize(event, access.grant(event, 'gallery', decoded));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Carry a gallery session over a rename.
  *
@@ -47,32 +66,33 @@ async function carryRenamedGallerySession(req, res, slug, current) {
   if (typeof slug !== 'string' || !slug) return null;
 
   const cookies = req.cookies || {};
+  const slugCookie = `${GALLERY_COOKIE_PREFIX}${sanitizeSlugForCookie(slug)}`;
   const candidates = [...new Set([
     current,
+    cookies[slugCookie],
     cookies[GALLERY_COOKIE_NAME],
     ...Object.keys(cookies).filter((name) => name.startsWith(GALLERY_COOKIE_PREFIX)).map((name) => cookies[name]),
   ].filter((token) => typeof token === 'string' && token))];
   const sessions = candidates.map((token) => ({ token, decoded: verifyGalleryJwt(token) }))
     .filter(({ decoded }) => decoded);
-  // Nothing to carry over (every token names this slug) and nothing to look
-  // past (no token besides the one in use). Tokens that all name this slug
-  // still go through the search below, so a revoked one the page keeps
-  // sending as a Bearer does not hide a live cookie.
-  if (!sessions.some(({ token, decoded }) => decoded.eventSlug !== slug || token !== current)) return null;
+  const carryOver = sessions.some(({ decoded }) => decoded.eventSlug !== slug);
+  // Every token names this slug: nothing to carry over. Look past the token
+  // in use only when it is a dead gallery token (revoked, cut off, expired,
+  // another gallery's) and the request holds another one, so a token the
+  // page keeps sending as a Bearer does not hide a live cookie. A live one,
+  // or an admin token, is kept as it is.
+  if (!carryOver && (!sessions.some(({ token }) => token !== current) || verifiesAs(current, 'admin'))) return null;
 
   const event = await db('events').where({ slug }).select('*').first();
   if (!event) return null;
+  if (!carryOver && await authorizes(event, verifyGalleryJwt(current))) return null;
 
   // The first live session of this gallery wins; one already naming this slug
   // is used as it is. A revoked token, or one of another gallery that held
   // this slug before, does not stop the search.
   for (const { token, decoded } of sessions) {
-    if (Number(decoded.eventId) !== Number(event.id)) continue;
-    try {
-      await access.authorize(event, access.grant(event, 'gallery', decoded));
-    } catch {
-      continue;
-    }
+    if (!carryOver && token === current) continue;
+    if (!await authorizes(event, decoded)) continue;
     if (decoded.eventSlug === slug) return token === current ? null : token;
 
     const renewed = jwt.sign({ ...decoded, eventSlug: event.slug }, process.env.JWT_SECRET, { algorithm: 'HS256' });

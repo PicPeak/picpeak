@@ -241,6 +241,11 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
           if (sessionResponse.data.accessLevel === 'client') {
             setAccessLevel('client');
             sessionStorage.setItem(`gallery_access_level_${currentSlug}`, 'client');
+          } else if (sessionResponse.data.accessLevel === 'guest') {
+            // And the other way: a dead client token replaced by a live
+            // guest session must not keep the client controls on screen.
+            setAccessLevel('guest');
+            sessionStorage.removeItem(`gallery_access_level_${currentSlug}`);
           }
           setViaCustomer(Boolean(sessionResponse.data.viaCustomer));
 

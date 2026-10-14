@@ -138,6 +138,31 @@ describe('every token already names this slug', () => {
     expect(res.body.token).toBe(live);
   });
 
+  it('prefers the gallery\'s own cookie over the generic one after a dead token', async () => {
+    const res = await session({
+      gallery_token: gallery({ eventSlug: newSlug }),
+      [`gallery_token_${newSlug}`]: gallery({ eventSlug: newSlug, accessLevel: 'client' }),
+    }).set('Authorization', `Bearer ${await revoked()}`);
+    expect(res.body).toMatchObject({ valid: true, eventSlug: newSlug, accessLevel: 'client' });
+  });
+
+  it('keeps a live token in use over another live cookie', async () => {
+    const live = gallery({ eventSlug: newSlug, accessLevel: 'client' });
+    const res = await session({ gallery_token: gallery({ eventSlug: newSlug }) })
+      .set('Authorization', `Bearer ${live}`);
+    expect(res.body).toMatchObject({ valid: true, eventSlug: newSlug, accessLevel: 'client' });
+    expect(res.body.token).toBeUndefined();
+  });
+
+  it('keeps an admin token in use rather than switching to a gallery cookie', async () => {
+    const admin = jwt.sign({ type: 'admin', id: adminId, username: 'admin' }, process.env.JWT_SECRET,
+      { issuer: 'picpeak-auth', expiresIn: '1h' });
+    const res = await session({ [`gallery_token_${newSlug}`]: gallery({ eventSlug: newSlug }) })
+      .set('Authorization', `Bearer ${admin}`);
+    expect(res.body.type).not.toBe('gallery');
+    expect(res.body.token).toBeUndefined();
+  });
+
   it('still refuses when the only token is revoked', async () => {
     const res = await session({ [`gallery_token_${newSlug}`]: await revoked() });
     expect(res.body.valid).not.toBe(true);
