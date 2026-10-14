@@ -642,6 +642,9 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           // database pointers were cleared while the objects stayed in storage.
           'photos.preview_path', 'photos.thumbnail_path', 'photos.hero_path',
           'photos.watermark_path',
+          // An external row's tier keys carry its size (imageProcessor's
+          // sourceVersion); the survivor check below derives them.
+          'photos.size_bytes',
           'events.source_mode', 'events.external_path', 'events.slug'
         );
     } catch (err) {

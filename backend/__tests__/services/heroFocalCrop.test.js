@@ -28,6 +28,8 @@ jest.mock('../../src/database/db', () => {
         where: (criteria) => ({
           update: async (values) => { state.updates.push({ criteria, values }); return 1; },
           whereNot: () => ({ first: async () => (state.sharedHeroPaths.includes(criteria.hero_path) ? { id: -1 } : undefined) }),
+          // withSourceVersion: these rows carry no recorded size.
+          first: async () => undefined,
         }),
       };
     }

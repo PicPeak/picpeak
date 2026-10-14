@@ -23,7 +23,8 @@ jest.mock('../../src/database/db', () => {
   const api = (table) => {
     if (table === 'events') return { where: () => ({ first: async () => state.event }) };
     if (table === 'photos') {
-      return { where: (criteria) => ({ update: async (values) => { state.updates.push({ criteria, values }); return 1; } }) };
+      // first: withSourceVersion, these rows carry no recorded size.
+      return { where: (criteria) => ({ update: async (values) => { state.updates.push({ criteria, values }); return 1; }, first: async () => undefined }) };
     }
     throw new Error(`unexpected table in test: ${table}`);
   };
