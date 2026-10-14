@@ -254,6 +254,38 @@ describe('SelectionSubmitBar (issue 1733)', () => {
       expect(screen.getByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
     });
 
+    it('keeps the name typed into its own prompt over one a photo control sends later', async () => {
+      apiPost.mockResolvedValue({ data: {} });
+      submitSelection.mockResolvedValue({ id: 9, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });
+      renderRequired(state({ approval: { can_submit: true } }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await fillIdentity();
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      // A like still carrying an earlier person's name, on a shared device.
+      await act(() => feedbackService.submitFeedback('g', '7', {
+        feedback_type: 'like', guest_name: 'Alice', guest_email: 'alice@example.com',
+      }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenCalledWith(
+        'g', 'approval', '', { guest_name: 'Clara', guest_email: 'clara@example.com' },
+      ));
+    });
+
+    it('in shared mode, takes no name from a colour tag', async () => {
+      apiPost.mockResolvedValue({ data: {} });
+      render(
+        <SelectionSubmitBar slug="g" state={state({ approval: { can_submit: true } })} used={0} requireNameEmail sharedIdentity />,
+        { wrapper },
+      );
+      await act(() => feedbackService.submitFeedback('g', '7', {
+        feedback_type: 'color_label', color_label: 'red', guest_name: 'Alice', guest_email: 'alice@example.com',
+      }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
+    });
+
     it('does not take the name from a bulk rating that rated nothing', async () => {
       apiPost.mockResolvedValue({ data: { success: true, rating: 4, results: [
         { photo_id: 1, success: false, error: 'Photo not found' },

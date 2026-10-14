@@ -1614,6 +1614,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               state={selectionState}
               used={selectionUsed}
               requireNameEmail={!!feedbackSettings?.require_name_email}
+              sharedIdentity={feedbackSettings?.identity_mode === 'shared'}
               className="pointer-events-auto"
             />
           </div>
@@ -1919,6 +1920,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           state={selectionState}
           used={selectionUsed}
           requireNameEmail={!!feedbackSettings?.require_name_email}
+          sharedIdentity={feedbackSettings?.identity_mode === 'shared'}
           className="mt-4"
         />
 

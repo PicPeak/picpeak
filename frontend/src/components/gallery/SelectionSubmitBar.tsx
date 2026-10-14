@@ -65,11 +65,13 @@ interface SelectionSubmitBarProps {
   used: number;
   /** Simple and shared mode: the gallery requires a name and email. */
   requireNameEmail?: boolean;
+  /** Shared mode: a colour tag belongs to everyone, so it names nobody. */
+  sharedIdentity?: boolean;
   className?: string;
 }
 
 export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
-  slug, state, used, requireNameEmail = false, className = '',
+  slug, state, used, requireNameEmail = false, sharedIdentity = false, className = '',
 }) => {
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
@@ -81,23 +83,31 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
   // confirmation, as the feedback actions ask before they send (issue 1984).
   const [identityFor, setIdentityFor] = useState<SubmissionKind | null>(null);
   // Kept with its gallery: a bar that stays mounted across a slug change must
-  // not hand one gallery's name to the next.
-  const [namedIn, setNamedIn] = useState<{ slug: string; name: string; email: string } | null>(null);
+  // not hand one gallery's name to the next. `typed`: given in this bar's own
+  // prompt, which a name picked up from other feedback does not replace.
+  const [namedIn, setNamedIn] = useState<
+    { slug: string; name: string; email: string; typed: boolean } | null
+  >(null);
   const savedIdentity = namedIn?.slug === slug ? namedIn : null;
   const panelRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   // A name and email the visitor already gave on a like, comment or rating
   // serve the hand-over too: the prompt is only for a visitor not yet named.
+  // On a shared device a photo control may still send an earlier person's
+  // name, so a name typed into this bar's prompt stays; and a shared colour
+  // tag is stored without a name, so it names nobody.
   useEffect(() => {
     const onSubmitted = (event: Event) => {
       const detail = (event as CustomEvent<FeedbackSubmittedDetail>).detail;
       if (detail?.slug !== slug || !detail.guest_name || !detail.guest_email) return;
-      setNamedIn({ slug, name: detail.guest_name, email: detail.guest_email });
+      if (sharedIdentity && detail.feedback_type === 'color_label') return;
+      const picked = { slug, name: detail.guest_name, email: detail.guest_email, typed: false };
+      setNamedIn((current) => (current?.slug === slug && current.typed ? current : picked));
     };
     window.addEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
     return () => window.removeEventListener(FEEDBACK_SUBMITTED_EVENT, onSubmitted);
-  }, [slug]);
+  }, [slug, sharedIdentity]);
 
   const mutation = useMutation({
     mutationFn: async (kind: SubmissionKind) => {
@@ -196,7 +206,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
 
   const handleIdentitySubmit = (name: string, email: string) => {
     const kind = identityFor;
-    setNamedIn({ slug, name, email });
+    setNamedIn({ slug, name, email, typed: true });
     setIdentityFor(null);
     if (kind) showConfirmation(kind);
   };
