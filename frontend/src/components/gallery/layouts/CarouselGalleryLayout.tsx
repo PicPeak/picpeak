@@ -320,7 +320,10 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 <AuthenticatedImage
                   src={photo.thumbnail_url || photo.url}
                   alt={photo.filename}
-                  className="w-full h-full object-cover"
+                  // Hidden from guests: dimmed here too, not only on the stage
+                  // (issue 1992). On the image, so hover's opacity-100 on the
+                  // button does not undo it.
+                  className={`w-full h-full object-cover${isClient && onToggleVisibility && isHiddenFromGuests(photo) ? ' opacity-40' : ''}`}
                   loading="lazy"
                   isGallery={true}
                 />

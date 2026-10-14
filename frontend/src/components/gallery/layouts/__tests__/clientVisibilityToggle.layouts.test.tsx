@@ -248,16 +248,21 @@ describe('Carousel: client visibility toggle (issue 1992)', () => {
     const toggle = screen.getByTestId('client-visibility-toggle-2');
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
     expect(within(toggle.parentElement!).getByText('1 / 2')).toBeInTheDocument();
-    // The stage image (first, before the thumbnail strip) is dimmed.
-    expect(screen.getAllByAltText('IMG_2.jpg')[0].className).toContain('opacity-40');
+    // The stage image (first) and its thumbnail in the strip are dimmed;
+    // the visible photo's thumbnail is not.
+    const [stage, thumb] = screen.getAllByAltText('IMG_2.jpg');
+    expect(stage.className).toContain('opacity-40');
+    expect(thumb.className).toContain('opacity-40');
+    expect(screen.getByAltText('IMG_1.jpg').className).not.toContain('opacity-40');
 
     fireEvent.click(toggle);
     expect(onToggleVisibility).toHaveBeenCalledWith(2, 'hidden');
     expect(props.onPhotoClick).not.toHaveBeenCalled();
   });
 
-  it('shows no toggle for a guest', () => {
-    mount(<CarouselGalleryLayout {...baseProps({ isClient: false, onToggleVisibility: vi.fn() })} />);
+  it('shows no toggle for a guest, and dims nothing', () => {
+    mount(<CarouselGalleryLayout {...baseProps({ isClient: false, onToggleVisibility: vi.fn(), photos: [photos[1], photos[0]] })} />);
     expect(screen.queryByTestId('client-visibility-toggle-1')).toBeNull();
+    screen.getAllByAltText('IMG_2.jpg').forEach((img) => expect(img.className).not.toContain('opacity-40'));
   });
 });
