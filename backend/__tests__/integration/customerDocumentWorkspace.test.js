@@ -976,6 +976,18 @@ describe('malware scanner (fake clamd)', () => {
       .toBeUndefined();
   });
 
+  it('logs a rejected upload against the gallery it named', async () => {
+    useClamd();
+    const infected = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .field('eventId', String(eventA))
+      .attach('file', INFECTED, { filename: 'gallery-scan.pdf', contentType: 'application/pdf' });
+    expect(infected.status).toBe(422);
+    const rows = (await db('activity_logs').where({ activity_type: 'customer_document_scan_rejected' }))
+      .filter((r) => meta(r.metadata).customerId === customerA);
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0].event_id)).toBe(eventA);
+  });
+
   it('re-scans rows left pending and promotes each exactly once under two concurrent runs', async () => {
     // Uploaded while no scanner was registered: pending.
     const a = (await uploadAs(me, 'later-clean.pdf')).body.document.id;
