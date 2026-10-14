@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Braces } from 'lucide-react';
 import { contractTemplatesService, type ContractPlaceholder } from '../../../services/contractTemplates.service';
+import { isImeComposing } from '../../../utils/imeComposition';
 
 export const PLACEHOLDER_CATEGORIES: ContractPlaceholder['category'][] = ['customer', 'event', 'contract', 'pricing', 'issuer'];
 const CATEGORY_LABELS: Record<ContractPlaceholder['category'], string> = {
@@ -86,6 +87,8 @@ export const PlaceholderPicker: React.FC<{
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // Keys of an IME composition in the editor are the editor's.
+    if (isImeComposing(e)) return;
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
