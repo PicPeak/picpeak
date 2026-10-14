@@ -20,7 +20,7 @@ const os = require('os');
 const crypto = require('crypto');
 const archiver = require('archiver');
 const { db } = require('../database/db');
-const { livePhotos } = require('../utils/photoVisibility');
+const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const watermarkService = require('./watermarkService');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getStorage } = require('./storage');
@@ -240,7 +240,8 @@ class DownloadZipService {
       // download-all fast path), so it must exclude hidden/client-only
       // photos — NULL visibility counts as visible (pre-migration rows).
       // PIN-clients bypass this cache and stream a full archive instead.
-      const photos = await livePhotos(db)
+      // Photos still processing (or failed) are not in the gallery list either.
+      const photos = await wherePhotoProcessed(livePhotos(db))
         .where({ event_id: eventId })
         .where(function () {
           this.where('visibility', 'visible').orWhereNull('visibility');

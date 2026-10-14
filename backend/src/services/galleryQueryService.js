@@ -21,7 +21,7 @@ const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
 const { guestUploadMaxEdgeOf } = require('./guestUploadDownscale');
-const { applyPhotoVisibilityFilter, livePhotos } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const { galleryFullResolutionDenial } = require('./galleryAssetPolicy');
 /**
  * The photos a viewer's list is made of, before sorting and paging: this
@@ -31,17 +31,14 @@ const { galleryFullResolutionDenial } = require('./galleryAssetPolicy');
  */
 async function galleryListQuery({ event, query = {}, identity, accessLevel }) {
   const isClient = accessLevel === 'client';
-  let photosQuery = livePhotos(db)
-    .where('photos.event_id', event.id)
   // Guests/clients never see photos still being processed by the
   // background worker — the original is on disk but the thumbnail
   // / dimensions / EXIF haven't landed yet. Photos with a NULL
   // processing_status are pre-async-migration rows and are treated
   // as complete (the migration's column default is 'complete' so
   // this is just defensive against partial migration states).
-    .where(function() {
-      this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
-    })
+  let photosQuery = wherePhotoProcessed(livePhotos(db)
+    .where('photos.event_id', event.id))
     .select('photos.*');
 
   // Guests only see visible photos; clients see all but those under review

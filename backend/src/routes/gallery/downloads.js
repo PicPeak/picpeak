@@ -32,7 +32,9 @@ const {
   pickRequestedResolution,
   parseResolution,
 } = require('../../utils/downloadResolutions');
-const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, isPhotoHiddenFromViewer, livePhotos } = require('../../utils/photoVisibility');
+const {
+  applyPhotoVisibilityFilter, canSeeHiddenPhotos, isPhotoHiddenFromViewer, livePhotos, wherePhotoProcessed,
+} = require('../../utils/photoVisibility');
 const {
   getUseOriginalFilenames,
   pickRawDownloadName,
@@ -696,8 +698,9 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // Uncategorised photos are always included; categories without the column
     // (pre-migration-135) fall through the LEFT JOIN's null and are included.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
+    // Only what the gallery list shows: no photo still processing (or failed).
     const photos = await applyPhotoVisibilityFilter(
-      livePhotos(db)
+      wherePhotoProcessed(livePhotos(db))
         .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
         .where('photos.event_id', req.event.id)
         .where(function () {
@@ -953,7 +956,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // Same LEFT JOIN pattern as the download-all endpoint.
     const blockedFolders = await folderTree.downloadBlockedFolderIds(req.event.id);
     const photos = await applyPhotoVisibilityFilter(
-      livePhotos(db)
+      wherePhotoProcessed(livePhotos(db))
         .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
         .where('photos.event_id', req.event.id)
         .whereIn('photos.id', photoIds)

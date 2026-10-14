@@ -831,6 +831,14 @@ async function processPhoto(photoId) {
   }
   if (updateData.thumbnail_path) await mediaAttempts.dropSuperseded(storage, photo.thumbnail_path, updateData.thumbnail_path);
 
+  // The prebuilt Download All archive holds only processed photos, and the
+  // upload's own invalidate usually rebuilds it before this one finished.
+  try {
+    require('./downloadZipService').invalidate(photo.event_id);
+  } catch (err) {
+    logger.warn(`processPhoto: zip invalidate failed for ${photoId}`, { error: err.message });
+  }
+
   // Scene tagging (issue 1733): `event` was read before the processing
   // above, so a gallery switched on meanwhile was not queued in the UPDATE,
   // and its backfill skipped this row for not being complete yet. Now that
