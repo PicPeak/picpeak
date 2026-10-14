@@ -165,4 +165,26 @@ describe('Gallery Premium — nav heart filters to the viewer\'s likes', () => {
     rerender(<Harness source={makePhotos([1, 3])} />);
     expect(navCount()).toBe('2');
   });
+
+  it('lets a saved like that no payload confirms lapse, so a change made elsewhere shows', async () => {
+    submitFeedback.mockClear();
+    submitFeedback.mockResolvedValueOnce({});
+    const now = vi.spyOn(Date, 'now');
+    try {
+      now.mockReturnValue(1_000_000);
+      const { rerender } = render(<Harness source={makePhotos([1, 3])} />);
+      fireEvent.click(screen.getByTestId('photo-card-4').querySelector('.gallery-premium-like-btn') as HTMLElement);
+      await waitFor(() => expect(submitFeedback).toHaveBeenCalledTimes(1));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(navCount()).toBe('3');
+      // Unliked again in another tab: every later payload says not liked.
+      rerender(<Harness source={makePhotos([1, 3]).map((p) => ({ ...p }))} />);
+      expect(navCount()).toBe('3');
+      now.mockReturnValue(1_000_000 + 6000);
+      rerender(<Harness source={makePhotos([1, 3]).map((p) => ({ ...p }))} />);
+      expect(navCount()).toBe('2');
+    } finally {
+      now.mockRestore();
+    }
+  });
 });

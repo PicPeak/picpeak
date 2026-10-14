@@ -45,6 +45,10 @@ import { lightboxImageUrl } from '../imageTiers';
 import { exifLine } from '../../../utils/photoExif';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
 
+// How long a saved like holds its optimistic state while no payload has
+// confirmed it; the photo's own row refresh normally lands well inside this.
+const LIKE_CONFIRM_WINDOW_MS = 5000;
+
 const isVideoPhoto = (photo: Photo) => photo.media_type === 'video' || photo.type === 'video';
 
 interface PhotoCardProps {
@@ -303,14 +307,20 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   // state until a payload agrees with it: the saved like reaches `photos`
   // only through the parent's row refresh, and any payload before that one
   // (another photo's refresh, a filter change) still carries the old value.
-  const pendingLikesRef = useRef<Map<number, boolean>>(new Map());
+  // Once saved, the hold lapses after a few seconds even unconfirmed, so a
+  // change made elsewhere (another tab) is not overridden for good.
+  const pendingLikesRef = useRef<Map<number, { liked: boolean; savedAt?: number }>>(new Map());
   useEffect(() => {
     const pending = pendingLikesRef.current;
+    const now = Date.now();
+    pending.forEach((entry, id) => {
+      if (entry.savedAt !== undefined && now - entry.savedAt > LIKE_CONFIRM_WINDOW_MS) pending.delete(id);
+    });
     photos.forEach((p) => {
-      if (pending.get(p.id) === !!p.is_liked) pending.delete(p.id);
+      if (pending.get(p.id)?.liked === !!p.is_liked) pending.delete(p.id);
     });
     const next = new Set(photos.filter(p => p.is_liked).map(p => p.id));
-    pending.forEach((liked, id) => {
+    pending.forEach(({ liked }, id) => {
       if (liked) next.add(id);
       else next.delete(id);
     });
@@ -488,9 +498,14 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     const liked = !next.has(photoId);
     if (liked) next.add(photoId);
     else next.delete(photoId);
-    pendingLikesRef.current.set(photoId, liked);
+    pendingLikesRef.current.set(photoId, { liked });
     return next;
   });
+  // Saved: start the window in which the row refresh should confirm it.
+  const markLikeSaved = useCallback((photoId: number) => {
+    const entry = pendingLikesRef.current.get(photoId);
+    if (entry) entry.savedAt = Date.now();
+  }, []);
   // Refused: the heart goes back and nothing is awaited.
   const rollBackLike = useCallback((photoId: number) => {
     pendingLikesRef.current.delete(photoId);
@@ -517,6 +532,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         await feedbackService.submitFeedback(slug, String(photo.id), {
           feedback_type: 'like',
         });
+        markLikeSaved(photo.id);
         onFeedbackChange?.(photo.id);
       } catch (err) {
         // Refused (a finished selection, issue 1733, or the like limit): the
@@ -543,12 +559,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         guest_name: savedIdentity?.name,
         guest_email: savedIdentity?.email,
       });
+      markLikeSaved(photo.id);
       onFeedbackChange?.(photo.id);
     } catch (err) {
       rollBackLike(photo.id);
       if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
     }
-  }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity, rollBackLike]);
+  }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity, rollBackLike, markLikeSaved]);
 
   const handleIdentitySubmit = useCallback(async (name: string, email: string) => {
     setSavedIdentity({ name, email });
@@ -567,6 +584,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           guest_name: name,
           guest_email: email,
         });
+        markLikeSaved(pendingLikePhotoId);
         onFeedbackChange?.(pendingLikePhotoId);
       } catch (err) {
         rollBackLike(pendingLikePhotoId);
@@ -574,7 +592,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       }
       setPendingLikePhotoId(null);
     }
-  }, [slug, pendingLikePhotoId, onFeedbackChange, rollBackLike]);
+  }, [slug, pendingLikePhotoId, onFeedbackChange, rollBackLike, markLikeSaved]);
 
   const handleSelectAll = useCallback(() => {
     if (selectedPhotos.size === filteredPhotos.length) {
