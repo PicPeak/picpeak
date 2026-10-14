@@ -57,14 +57,32 @@ function derivativeBasename(name, { cache = false } = {}) {
   const scope = derivativeContext.getStore();
   return scope ? require('./mediaAttemptService').outputName(name, { id: cache ? scope.cacheId : scope.id }) : name;
 }
+// True when the row took the derivative. Unscoped (an ordinary image), a
+// source replaced since `photo` was read makes it false: the rendition
+// describes the old file, so the caller treats it as nothing generated.
 async function publishPhotoDerivative(photo, key, values) {
   const scope = derivativeContext.getStore();
-  if (!scope) return db('photos').where({ id: photo.id }).update(values);
+  if (!scope) {
+    if (await sourceGuard(photo).update(values) === 1) return true;
+    // Unscoped keys derive from the source name, not from an attempt id, so
+    // the key can still be a row's own: an event rename moves the original
+    // and keeps the rendition. When in doubt, keep the file.
+    try {
+      const inUse = await db('photos').where('thumbnail_path', key)
+        .orWhere('preview_path', key).orWhere('hero_path', key).first();
+      if (!inUse) await getStorage().delete(key).catch(() => {});
+    } catch (e) {
+      logger.warn(`Could not check whether ${key} is in use; keeping it: ${e.message}`);
+    }
+    logger.info(`Source of photo ${photo.id} changed while its rendition was built; not recording ${key}`);
+    return false;
+  }
   await scope.assertCurrent();
   if (await sourceGuard(photo).update(values) !== 1) {
     await getStorage().delete(key).catch(() => {});
     throw Object.assign(new Error('Media source was superseded'), { code: 'MEDIA_SUPERSEDED', status: 422 });
   }
+  return true;
 }
 
 /**
@@ -897,11 +915,11 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
   }
 
   if (newThumbnailPath) {
-    await publishPhotoDerivative(photo, newThumbnailPath, {
+    if (!await publishPhotoDerivative(photo, newThumbnailPath, {
       thumbnail_path: newThumbnailPath,
       thumb_hash: meta.thumbHash || null,
       ...(posterNote !== undefined ? { processing_error: posterNote } : {}),
-    });
+    })) return null;
 
     logger.info(`Regenerated thumbnail for photo ${photo.id}`);
     return newThumbnailPath;
@@ -1254,7 +1272,7 @@ async function regenerateHeroImage(photo, anchor) {
       anchor: heroAnchor,
     });
     if (newHeroPath) {
-      await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor });
+      if (!await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor })) return null;
       await dropSupersededHero(photo, newHeroPath);
     }
     return newHeroPath;
@@ -1287,7 +1305,7 @@ async function regenerateHeroImage(photo, anchor) {
   });
 
   if (newHeroPath) {
-    await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor });
+    if (!await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor })) return null;
     await dropSupersededHero(photo, newHeroPath);
 
     logger.info(`Regenerated hero image for photo ${photo.id}`);
@@ -1845,7 +1863,7 @@ async function regeneratePreviewImage(photo) {
   }
 
   if (newPreviewPath) {
-    await publishPhotoDerivative(photo, newPreviewPath, { preview_path: newPreviewPath });
+    if (!await publishPhotoDerivative(photo, newPreviewPath, { preview_path: newPreviewPath })) return null;
     return newPreviewPath;
   }
 

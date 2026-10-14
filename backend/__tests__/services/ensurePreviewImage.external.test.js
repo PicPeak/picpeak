@@ -119,7 +119,7 @@ describe('ensurePreviewImage — external/reference sources (#1078)', () => {
 
       // The generated key is persisted so the next open short-circuits.
       expect(db.__state.updates).toEqual([
-        { criteria: { id: photo.id }, values: { preview_path: key } },
+        { criteria: expect.objectContaining({ id: photo.id, external_relpath: photo.external_relpath }), values: { preview_path: key } },
       ]);
     }
   );
