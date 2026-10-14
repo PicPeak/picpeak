@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.172.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.171.0-beta.0...v3.172.0-beta.0) (2026-10-14)
+
+
+### Features
+
+* **gallery:** automatic scene tags with a guest tag filter ([#1961](https://github.com/PicPeak/picpeak/issues/1961)) ([b838ba9](https://github.com/PicPeak/picpeak/commit/b838ba9d32c4e529f257e483d6fcefea75604090))
+* **gallery:** photo trash with restore, as a flag on the photo row ([#1986](https://github.com/PicPeak/picpeak/issues/1986)) ([6b529eb](https://github.com/PicPeak/picpeak/commit/6b529eb00702ae628ecd942beb7d27207ef2b569))
+
 ## [3.171.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.170.0-beta.0...v3.171.0-beta.0) (2026-10-13)
 
 
