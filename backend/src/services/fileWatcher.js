@@ -16,6 +16,7 @@ const { isRawFilename } = require('../utils/rawFormats');
 const { normalizeUploadMimeType } = require('../utils/fileSecurityUtils');
 const { getAllowedExtensions } = require('./uploadSettings');
 const downloadZipService = require('./downloadZipService');
+const { promotionSettled } = require('./watchFolderClaims');
 
 const { getStoragePath } = require('../config/storage');
 const WATCH_PATH = () => path.join(getStoragePath(), 'events/active');
@@ -175,6 +176,15 @@ async function processNewPhoto(filePath) {
   // Find the event
   const event = await db('events').where({ slug: eventSlug, is_active: formatBoolean(true) }).first();
   if (!event) return;
+
+  // An upload storing this file has not written its row yet (issue 1970).
+  // Wait for it, so the check below sees that row, or a hand-dropped file
+  // is still imported; a failed upload may have removed the file meanwhile.
+  const promotion = promotionSettled(path.posix.join('events/active', ...pathParts));
+  if (promotion) {
+    await promotion;
+    if (!(await fs.access(filePath).then(() => true, () => false))) return;
+  }
 
   // Check if photo already exists.
   //
