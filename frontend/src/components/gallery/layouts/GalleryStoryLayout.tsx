@@ -348,8 +348,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }, [visiblePhotos, onLightboxPhotoChange]);
 
   // Link to a single photo (issue 1733): open on the photo the URL asks for,
-  // close on null. Only against the visible photos; an id not in them opens
-  // nothing.
+  // close on null. A photo this layout's own search hides (browser history
+  // back to it) clears the search first, so it opens in a list that holds
+  // it; an id not in `photos` at all opens nothing.
   useEffect(() => {
     if (openPhotoId === undefined) return;
     if (openPhotoId === null) {
@@ -358,7 +359,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     }
     const index = visiblePhotos.findIndex((photo) => photo.id === openPhotoId);
     if (index >= 0) setLightboxIndex(index);
-  }, [openPhotoId, visiblePhotos]);
+    else if (searchQuery && photos.some((photo) => photo.id === openPhotoId)) setSearchQuery('');
+  }, [openPhotoId, visiblePhotos, photos, searchQuery]);
 
   const downloadQuota = useDownloadQuota();
 

@@ -114,4 +114,14 @@ describe('GalleryStoryLayout search', () => {
     expect(lightbox.dataset.ids).toBe('2');
     expect(lightbox.dataset.index).toBe('0');
   });
+
+  it('clears the search when a photo link names a photo it hides', () => {
+    const { container, rerender } = render(<GalleryStoryLayout {...props} />);
+    expect(search(container, 'photo-2')).toEqual(['2']);
+    rerender(<GalleryStoryLayout {...(props as object)} openPhotoId={3} />);
+    expect((screen.getByPlaceholderText('Search memories...') as HTMLInputElement).value).toBe('');
+    const lightbox = screen.getByTestId('lightbox');
+    expect(lightbox.dataset.ids).toBe('1,2,3');
+    expect(lightbox.dataset.index).toBe('2');
+  });
 });
