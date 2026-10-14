@@ -312,13 +312,17 @@ async function anonymizeGuest(guestId) {
 /**
  * The name to show the photographer for an anonymous viewer: the one they
  * last typed with their feedback, if any. Registered guests carry their own.
- * `requireEmail`: only feedback that also carried an email counts, for a
- * gallery that requires both (a name given while they were optional is not
- * enough, issue 1984).
+ * `requireEmail`: only feedback that also carried a name and an email
+ * counts, for a gallery that requires both (a name given while they were
+ * optional is not enough, issue 1984). While optional, the feedback routes
+ * store a blank name or email as sent, so blank does not count either.
  */
 async function feedbackName(eventId, viewer, { requireEmail = false } = {}) {
   let query = db('photo_feedback').where({ event_id: eventId }).whereNotNull('guest_name');
-  if (requireEmail) query = query.whereNotNull('guest_email').whereNot('guest_email', '');
+  if (requireEmail) {
+    query = query.whereRaw('TRIM(guest_name) <> ?', [''])
+      .whereNotNull('guest_email').whereRaw('TRIM(guest_email) <> ?', ['']);
+  }
   const row = await scopeToViewer(query, viewer).orderBy('id', 'desc').first('guest_name');
   return row?.guest_name || null;
 }

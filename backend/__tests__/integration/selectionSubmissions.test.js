@@ -434,10 +434,16 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
         expect(Array.from(names)).toEqual(['Dora', 'Dora']);
       });
 
-      it('does not take a name given without an email while both were optional', async () => {
+      it('does not take a name given without an email, or blank, while both were optional', async () => {
         await setSettings({ require_name_email: false });
         expect((await feedback('device-A', photoIds[0], { feedback_type: 'like', guest_name: 'Dora' })).status)
           .toBeLessThan(300);
+        expect((await feedback('device-A', photoIds[1], {
+          feedback_type: 'like', guest_name: 'Dora', guest_email: '   ',
+        })).status).toBeLessThan(300);
+        expect((await feedback('device-A', photoIds[2], {
+          feedback_type: 'like', guest_name: '   ', guest_email: 'dora@example.com',
+        })).status).toBeLessThan(300);
         await setSettings({ require_name_email: true });
         const res = await submit('device-A', { kind: 'approval' });
         expect(res.status).toBe(400);
