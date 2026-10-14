@@ -221,6 +221,45 @@ describe('guest upload limits', () => {
     });
   });
 
+  describe('cookie session with a second gallery open', () => {
+    const tokenFor = (event) => jwt.sign(
+      { eventId: event.id, eventSlug: event.slug, type: 'gallery' },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h', issuer: 'picpeak-auth' },
+    );
+
+    // A tab restored from the cookie has no token to send as a header. The
+    // URL names the event by id, so the server used to fall back to the
+    // generic cookie: the gallery logged into last, in another tab.
+    it('takes the cookie of the gallery named in the URL', async () => {
+      const own = await createEvent();
+      const other = await createEvent();
+      const res = await request(app)
+        .post(`/api/gallery/${own.id}/upload`)
+        .set('Cookie', [
+          `gallery_token_${own.slug}=${tokenFor(own)}`,
+          `gallery_token_${other.slug}=${tokenFor(other)}`,
+          `gallery_token=${tokenFor(other)}`,
+        ])
+        .attach('photos', JPEG, { filename: 'guest.jpg', contentType: 'image/jpeg' });
+
+      expect(res.status).toBe(202);
+      expect(await photoCount(own.id)).toBe(1);
+    });
+
+    it('still refuses an event the browser holds no cookie for', async () => {
+      const own = await createEvent();
+      const other = await createEvent();
+      const res = await request(app)
+        .post(`/api/gallery/${own.id}/upload`)
+        .set('Cookie', [`gallery_token=${tokenFor(other)}`])
+        .attach('photos', JPEG, { filename: 'guest.jpg', contentType: 'image/jpeg' });
+
+      expect(res.status).toBe(403);
+      expect(await photoCount(own.id)).toBe(0);
+    });
+  });
+
   it('removes the stored object when the upload fails after storing it', async () => {
     const event = await createEvent();
     mockStatOverride.size = 1; // not the uploaded size: the queue refuses the file
