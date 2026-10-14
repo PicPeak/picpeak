@@ -377,6 +377,7 @@
     "expiresIn_other": "La galerie expire dans {{count}} jours",
     "downloading_one": "Téléchargement de 1 photo...",
     "downloading_other": "Téléchargement de {{count}} photos...",
+    "downloadingInParts": "Téléchargement de {{count}} photos en {{parts}} fichiers ZIP...",
     "guestRecovery": {
       "invalidEmail": "Entrez une adresse e-mail valide",
       "codeSent": "Consultez votre boîte de réception pour un code de vérification.",

@@ -52,9 +52,16 @@ vi.mock('../../../../utils/downloadLimit', () => ({
 vi.mock('../../../../services/feedback.service', () => ({
   feedbackService: { submitFeedback: vi.fn().mockResolvedValue({}) },
 }));
-vi.mock('../../../../services/gallery.service', () => ({
-  galleryService: { downloadSelectedPhotos: mocks.downloadSelectedPhotos },
-}));
+vi.mock('../../../../services/gallery.service', async () => {
+  const actual = await vi.importActual<typeof import('../../../../services/gallery.service')>('../../../../services/gallery.service');
+  return {
+    splitIntoArchives: actual.splitIntoArchives,
+    galleryService: {
+      downloadSelectedPhotos: mocks.downloadSelectedPhotos,
+      downloadPhotosInParts: actual.galleryService.downloadPhotosInParts,
+    },
+  };
+});
 vi.mock('../../../../services/analytics.service', () => ({
   analyticsService: { trackGalleryEvent: vi.fn() },
 }));
@@ -135,6 +142,35 @@ describe('GalleryStoryLayout Download All in the nav (issue 1710)', () => {
     const { container } = render(<GalleryStoryLayout {...baseProps} />);
     fireEvent.click(navButton(container) as HTMLElement);
     await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledWith('x', [1, 2, 3]));
+  });
+
+  // The server takes at most 500 ids per archive; past that the fallback used
+  // to post every id and get back an archive cut at the first 500.
+  const manyPhotos = (count: number) => Array.from({ length: count }, (_, i) => ({ ...photos[0], id: i + 1 })) as Photo[];
+  const idsFrom = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+  it('downloads more than 500 photos as several zips, none left out', async () => {
+    const { container } = render(<GalleryStoryLayout {...baseProps} photos={manyPhotos(1001)} />);
+    fireEvent.click(navButton(container) as HTMLElement);
+    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledTimes(3));
+    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(1, 'x', idsFrom(1, 500), { index: 1, total: 3 });
+    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(2, 'x', idsFrom(501, 1000), { index: 2, total: 3 });
+    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(3, 'x', [1001], { index: 3, total: 3 });
+  });
+
+  it('skips the resolution picker past 500 photos, whose single archive would be cut short', async () => {
+    const onPickResolution = vi.fn();
+    const { container } = render(
+      <GalleryStoryLayout
+        {...baseProps}
+        photos={manyPhotos(501)}
+        downloadChoices={[{ id: 'original' }, { id: '1920x1080' }] as never}
+        onPickResolution={onPickResolution}
+      />
+    );
+    fireEvent.click(navButton(container) as HTMLElement);
+    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledTimes(2));
+    expect(onPickResolution).not.toHaveBeenCalled();
   });
 
   it('refuses at the download limit before asking the server', () => {

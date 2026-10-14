@@ -398,6 +398,7 @@
     "downloading_many": "Загрузка {{count}} фото…",
     "downloading_one": "Загрузка 1 фото…",
     "downloading_other": "Загрузка {{count}} фото…",
+    "downloadingInParts": "Загрузка {{count}} фото в {{parts}} ZIP-архивах…",
     "photosSelected_few": "Выбрано {{count}} фото",
     "photosSelected_many": "Выбрано {{count}} фото",
     "photosSelected_one": "Выбрано {{count}} фото",

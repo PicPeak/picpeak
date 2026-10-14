@@ -434,6 +434,7 @@
     "downloading_many": "Baixando {{count}} fotos…",
     "downloading_one": "Baixando 1 foto…",
     "downloading_other": "Baixando {{count}} fotos…",
+    "downloadingInParts": "Baixando {{count}} fotos em {{parts}} arquivos ZIP…",
     "photosSelected_many": "{{count}} fotos selecionadas",
     "photosSelected_one": "{{count}} foto selecionada",
     "photosSelected_other": "{{count}} fotos selecionadas",

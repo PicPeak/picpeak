@@ -31,7 +31,7 @@ import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext
 import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { useInputMode } from '../../../hooks/useInputMode';
 import { FeedbackIdentityModal } from '../FeedbackIdentityModal';
-import { galleryService } from '../../../services/gallery.service';
+import { galleryService, splitIntoArchives } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
 import { useDownloadPhoto } from '../../../hooks/useGallery';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
@@ -607,14 +607,21 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       showDownloadLimitReached({ remaining: downloadQuota.remaining ?? 0 });
       return;
     }
+    // One archive takes at most SELECTED_DOWNLOAD_LIMIT ids, so a larger set
+    // goes as several zips rather than being cut short.
+    const parts = splitIntoArchives(ids).length;
     // #858: hand off to the resolution picker when the gallery offers a choice.
-    if (downloadChoices && downloadChoices.length > 1 && onPickResolution) {
+    // The picker builds one archive, so past the cap it is skipped and the
+    // parts come at the gallery's standard size.
+    if (parts === 1 && downloadChoices && downloadChoices.length > 1 && onPickResolution) {
       onPickResolution(ids);
       return;
     }
-    toast.info(t('gallery.downloading', { count: ids.length }));
+    toast.info(parts > 1
+      ? t('gallery.downloadingInParts', { count: ids.length, parts })
+      : t('gallery.downloading', { count: ids.length }));
     try {
-      await galleryService.downloadSelectedPhotos(slug, ids);
+      await galleryService.downloadPhotosInParts(slug, ids);
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));

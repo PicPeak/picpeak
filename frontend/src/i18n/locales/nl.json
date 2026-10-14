@@ -370,6 +370,7 @@
     "expiresIn_other": "Galerij verloopt over {{count}} dagen",
     "downloading_one": "1 foto downloaden…",
     "downloading_other": "{{count}} foto's downloaden…",
+    "downloadingInParts": "{{count}} foto's downloaden als {{parts}} ZIP-bestanden…",
     "photosSelected_one": "{{count}} foto geselecteerd",
     "photosSelected_other": "{{count}} foto's geselecteerd",
     "downloadSelected_one": "{{count}} foto downloaden",

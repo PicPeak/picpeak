@@ -332,6 +332,7 @@
     "downloadAll": "Descargar todo",
     "downloading": "Descargando {{count}} foto...",
     "downloading_plural": "Descargando {{count}} fotos...",
+    "downloadingInParts": "Descargando {{count}} fotos en {{parts}} archivos ZIP...",
     "downloadedPhotos": "¡{{count}} foto descargada!",
     "downloadedPhotos_plural": "¡{{count}} fotos descargadas!",
     "downloadError": "Algunas fotos fallaron al descargar",

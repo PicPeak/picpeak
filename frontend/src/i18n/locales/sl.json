@@ -1310,6 +1310,7 @@
     "expiresIn_other": "Galerija poteče čez {{count}} dni",
     "downloading_one": "Prenašanje 1 fotografije...",
     "downloading_other": "Prenašanje {{count}} fotografij...",
+    "downloadingInParts": "Prenašanje {{count}} fotografij v {{parts}} datotekah ZIP...",
     "guestRecovery": {
       "invalidEmail": "Vnesite veljaven e-poštni naslov",
       "codeSent": "Preverite nabiralnik za potrditveno kodo.",

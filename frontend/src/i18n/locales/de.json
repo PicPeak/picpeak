@@ -2037,6 +2037,7 @@
     "expiresIn_other": "Galerie läuft in {{count}} Tagen ab",
     "downloading_one": "1 Foto wird heruntergeladen…",
     "downloading_other": "{{count}} Fotos werden heruntergeladen…",
+    "downloadingInParts": "{{count}} Fotos werden als {{parts}} ZIP-Dateien heruntergeladen…",
     "photosSelected_one": "{{count}} Foto ausgewählt",
     "photosSelected_other": "{{count}} Fotos ausgewählt",
     "favoriteSelected_one": "{{count}} Foto favorisieren",

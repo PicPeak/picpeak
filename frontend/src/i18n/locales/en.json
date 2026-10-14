@@ -1444,6 +1444,7 @@
     "expiresIn_other": "Gallery expires in {{count}} days",
     "downloading_one": "Downloading 1 photo...",
     "downloading_other": "Downloading {{count}} photos...",
+    "downloadingInParts": "Downloading {{count}} photos as {{parts}} ZIP files...",
     "guestRecovery": {
       "invalidEmail": "Enter a valid email address",
       "codeSent": "Check your inbox for a verification code.",
