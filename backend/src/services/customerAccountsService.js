@@ -971,12 +971,17 @@ async function contractSignerQueueTargets(contractPlan) {
  * passive account holding it then may have moved off only before the
  * acceptance created this one. An account created before migration 219 has
  * no `created` entry, so its first recorded address (which it may have
- * taken in an unrecorded change) is not matched either. Nor is an
- * invitation mail queued inside a window: it is addressed to whoever accepts
- * it, which can be a new account once a passive holder has moved off.
- * Windows are built only from history whose times follow its order; any
- * entry out of order or unreadable leaves no former address matched.
+ * taken in an unrecorded change) is not matched either. Nor is mail that
+ * belongs to another account than the address holder's
+ * (NOT_FORMER_ADDRESS_MAIL): an invitation is addressed to whoever accepts
+ * it, which can be a new account once a passive holder has moved off, and
+ * admin mail belongs to the admin account with that address.
+ * Windows are built only from email changes whose times follow the history
+ * order; any such entry out of order or unreadable leaves no former address
+ * matched.
  */
+const NOT_FORMER_ADDRESS_MAIL = ['customer_invitation', 'admin_invitation', 'admin_password_reset'];
+
 async function formerAddressWindows(trx, customer) {
   const rows = await trx('accounting_change_history')
     .where({ document_type: 'customer', entity_type: 'customer', document_id: customer.id })
@@ -988,13 +993,13 @@ async function formerAddressWindows(trx, customer) {
   let since = null;
   let previous = null;
   for (const row of rows) {
-    const at = storedTimestamp(row.created_at);
-    if (!at || (previous && at < previous)) return [];
-    previous = at;
     const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
     const from = String(changes?.email?.from || '').toLowerCase();
     const to = String(changes?.email?.to || '').toLowerCase();
     if (from === to) continue;
+    const at = storedTimestamp(row.created_at);
+    if (!at || (previous && at < previous)) return [];
+    previous = at;
     if (row.action === 'created') {
       held = to || null;
       since = at;
@@ -1095,7 +1100,7 @@ async function eraseCustomer(id, erasedByAdminId) {
       for (const win of formerWindows) {
         w.orWhere((f) => {
           f.whereRaw('LOWER(recipient_email) = ?', [win.email])
-            .whereNot('email_type', 'customer_invitation')
+            .whereNotIn('email_type', NOT_FORMER_ADDRESS_MAIL)
             .modify(whereTimestamp, 'created_at', '>', win.since)
             .modify(whereTimestamp, 'created_at', '<', win.before);
         });

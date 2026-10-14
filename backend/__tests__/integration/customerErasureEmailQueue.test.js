@@ -555,7 +555,7 @@ describe('customer erasure clears email_queue', () => {
     await expectUntouched(otherOwnerMail, unrecorded, 'Other Owner', 'sent');
   });
 
-  it('leaves an invitation queued on a former address to whoever accepted it (issue 1971)', async () => {
+  it('leaves invitations on a former address to whoever accepted them (issue 1971)', async () => {
     await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
     const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
     const { auditedInsert } = require('../../src/services/accountingHistory');
@@ -579,11 +579,19 @@ describe('customer erasure clears email_queue', () => {
       created_at: at(5), scheduled_at: at(5), retry_count: 0,
     }).returning('id');
     const invitation = inv?.id ?? inv;
+    // An admin invitation to the address is the admin account's, not the holder's.
+    const [adminInv] = await db('email_queue').insert({
+      recipient_email: shared, email_type: 'admin_invitation', status: 'sent',
+      email_data: JSON.stringify({ customer_name: 'Admin Invitation' }), rendered_html: '<p>Admin Invitation</p>',
+      created_at: at(6), scheduled_at: at(6), retry_count: 0,
+    }).returning('id');
+    const adminInvitation = adminInv?.id ?? adminInv;
 
     await eraseCustomer(passive.id, null);
 
     await expectRedacted(ownMail, 'sent');
     await expectUntouched(invitation, shared, 'Invitation', 'sent');
+    await expectUntouched(adminInvitation, shared, 'Admin Invitation', 'sent');
   });
 
   it('matches no former address when the history times do not follow its order (issue 1971)', async () => {
@@ -606,6 +614,28 @@ describe('customer erasure clears email_queue', () => {
     await eraseCustomer(mover.id, null);
 
     await expectUntouched(mail, shuffled, 'Shuffled', 'sent');
+  });
+
+  it('keeps matching when only an entry without an email change is out of order (issue 1971)', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const { auditedInsert } = require('../../src/services/accountingHistory');
+    const skewed = 'skewed-1971@example.com';
+
+    const [customer] = await auditedInsert(db, 'customer_accounts', {
+      email: skewed, display_name: 'Skewed 1971', preferred_language: 'de',
+      is_active: 1, created_at: at(20),
+    }, { actor: 'admin:1', source: 'test' });
+    await updateCustomer(customer.id, { display_name: 'Skewed 1971 renamed' }, null);
+    await updateCustomer(customer.id, { email: 'skewed-now-1971@example.com' }, null);
+    // The rename carries a time before the creation (a skewed clock); it
+    // sets no window bound, so the tenure from 20s to 40s still counts.
+    await stampHistory(customer.id, [at(20), at(19), at(40)]);
+    const mail = await queueAt(skewed, 'sent', at(30), 'Skewed Own');
+
+    await eraseCustomer(customer.id, null);
+
+    await expectRedacted(mail, 'sent');
   });
 
   it('covers contract mail to a signer address only when it names a contract this erasure redacts', async () => {
