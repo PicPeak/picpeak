@@ -666,6 +666,35 @@ describe('customer erasure clears email_queue', () => {
     await expectUntouched(takingSecond, address, 'Taking Second', 'sent');
   });
 
+  it('matches the current address from the second it was taken when no other holder is recorded', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer } = require('../../src/services/customerAccountsService');
+    const { auditedInsert } = require('../../src/services/accountingHistory');
+    const address = 'current-fresh@example.com';
+
+    // Created directly at 20.3s; mail follows 100 ms later (a portal
+    // invitation, sent by now, and a gallery mail still pending).
+    const [created] = await auditedInsert(db, 'customer_accounts', {
+      email: address, display_name: 'Fresh 1971', preferred_language: 'de',
+      is_active: 1, created_at: at(20.3),
+    }, { actor: 'admin:1', source: 'test' });
+    await stampHistory(created.id, [at(20.3)]);
+    const [inv] = await db('email_queue').insert({
+      recipient_email: address, email_type: 'customer_invitation', status: 'sent',
+      email_data: JSON.stringify({ customer_name: 'Fresh Invitation' }), rendered_html: '<p>Fresh Invitation</p>',
+      created_at: at(20.4), scheduled_at: at(20.4), retry_count: 0,
+    }).returning('id');
+    const invitation = inv?.id ?? inv;
+    const pending = await queueAt(address, 'pending', at(20.4), 'Fresh Pending');
+    const before = await queueAt(address, 'sent', at(19.5), 'Before Creation');
+
+    await eraseCustomer(created.id, null);
+
+    await expectRedacted(invitation, 'sent');
+    await expectRedacted(pending, 'cancelled');
+    await expectUntouched(before, address, 'Before Creation', 'sent');
+  });
+
   it('still matches an earlier tenure on the current address after the customer returned to it', async () => {
     await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
     const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');

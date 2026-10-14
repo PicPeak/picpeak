@@ -1034,12 +1034,18 @@ async function formerAddressWindows(trx, customer) {
  * another customer before this one took it, and that mail must stay. The
  * customer has held it at most since the latest recorded email event that
  * bounds their tenure: their own latest email change (or `created` entry),
- * and any change by another customer to or from the address. Returns the
- * first moment to match after (the whole-second rule of
- * formerAddressWindows), `undefined` when no such event is recorded (an
- * account from before migration 219 nobody else's history names: matched
- * unbounded, as before), or null when one of those times cannot be read,
- * which matches nothing on the address.
+ * and any change by another customer to or from the address. Returns
+ * `{ at, op }` for `created_at <op> at`: when another customer's history
+ * names the address, the whole-second rule of formerAddressWindows (from the
+ * first whole second after the latest such event, exclusive), since mail in
+ * the hand-over second could be the other holder's; when only the
+ * customer's own history does, from the start of the second they took it,
+ * inclusive, so mail queued right after the creation or change (an
+ * invitation sent straight after a direct creation) is erased too.
+ * `undefined` when no such event is recorded (an account from before
+ * migration 219 nobody else's history names: matched unbounded, as before),
+ * or null when one of those times cannot be read, which matches nothing on
+ * the address.
  */
 async function currentAddressSince(trx, customer) {
   const current = String(customer.email || '').toLowerCase();
@@ -1052,18 +1058,26 @@ async function currentAddressSince(trx, customer) {
     .where((q) => q.where('document_id', customer.id)
       .orWhereRaw('CAST(changes AS TEXT) LIKE ?', ['%"email"%']))
     .select('document_id', 'changes', 'created_at');
-  let latest;
+  let ownLatest;
+  let otherLatest;
   for (const row of rows) {
     const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
     const from = String(changes?.email?.from || '').toLowerCase();
     const to = String(changes?.email?.to || '').toLowerCase();
     if (from === to) continue;
-    if (Number(row.document_id) !== Number(customer.id) && from !== current && to !== current) continue;
+    const own = Number(row.document_id) === Number(customer.id);
+    if (!own && from !== current && to !== current) continue;
     const at = storedTimestamp(row.created_at);
     if (!at) return null;
-    if (!latest || at > latest) latest = at;
+    if (own && (!ownLatest || at > ownLatest)) ownLatest = at;
+    if (!own && (!otherLatest || at > otherLatest)) otherLatest = at;
   }
-  return latest ? new Date(Math.floor(latest.getTime() / 1000) * 1000 + 1000) : undefined;
+  const second = (date) => Math.floor(date.getTime() / 1000) * 1000;
+  if (otherLatest) {
+    const latest = ownLatest && ownLatest > otherLatest ? ownLatest : otherLatest;
+    return { at: new Date(second(latest) + 1000), op: '>' };
+  }
+  return ownLatest ? { at: new Date(second(ownLatest)), op: '>=' } : undefined;
 }
 
 /**
@@ -1162,7 +1176,7 @@ async function eraseCustomer(id, erasedByAdminId) {
         w.where((c) => {
           c.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email])
             .whereNotIn('email_type', ADMIN_ACCOUNT_MAIL)
-            .modify(whereTimestamp, 'created_at', '>', currentSince);
+            .modify(whereTimestamp, 'created_at', currentSince.op, currentSince.at);
         });
       } else {
         w.whereRaw('1 = 0');
