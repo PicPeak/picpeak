@@ -22,8 +22,8 @@ vi.mock('react-i18next', async () => {
   };
 });
 
-const Harness: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
-  const [open, setOpen] = useState(false);
+const Harness: React.FC<{ isMobile: boolean; startOpen?: boolean; dialog?: boolean }> = ({ isMobile, startOpen = false, dialog = false }) => {
+  const [open, setOpen] = useState(startOpen);
   const toggleRef = useRef<HTMLButtonElement>(null);
   return (
     <>
@@ -50,6 +50,7 @@ const Harness: React.FC<{ isMobile: boolean }> = ({ isMobile }) => {
         isMobile={isMobile}
       />
       <button>behind</button>
+      {dialog && <div role="dialog"><button>dialog action</button></div>}
     </>
   );
 };
@@ -78,6 +79,28 @@ describe('GallerySidebar drawer focus on a phone', () => {
 
     await user.tab({ shift: true });
     expect(last).toHaveFocus();
+  });
+
+  it('pulls focus back in when it reaches the page from nowhere', async () => {
+    const user = userEvent.setup();
+    render(<Harness isMobile />);
+    screen.getByText('toggle').focus();
+    await user.keyboard('{Enter}');
+
+    // The focused control unmounted: focus sits on the body, and the next
+    // Shift+Tab lands on the page behind the drawer.
+    (document.activeElement as HTMLElement).blur();
+    screen.getByText('behind').focus();
+    expect(screen.getByRole('button', { name: 'common.close' })).toHaveFocus();
+  });
+
+  it('leaves a dialog on top its focus when a resize turns the panel into the drawer', () => {
+    const { rerender } = render(<Harness isMobile={false} startOpen dialog />);
+    const action = screen.getByText('dialog action');
+    action.focus();
+    rerender(<Harness isMobile startOpen dialog />);
+
+    expect(action).toHaveFocus();
   });
 
   it('returns focus to the toggle on Escape', async () => {

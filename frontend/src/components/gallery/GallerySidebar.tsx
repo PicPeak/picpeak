@@ -191,7 +191,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   // the keyboard like a dialog: focus moves in (to its close button, the
   // first control) and Tab wraps inside it. Escape and the focus hand-back
   // below take it out again. The desktop panel leaves focus where it is.
-  const sidebarRef = useFocusTrap(isMobile && isOpen);
+  const sidebarRef = useFocusTrap(isMobile && isOpen, { containFocus: true });
   // Where focus goes when the last photo is removed from the selection tray
   // by keyboard: the selection toggle, or the close button in a gallery
   // without the download section.

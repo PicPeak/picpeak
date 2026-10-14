@@ -86,11 +86,12 @@ export const CustomerLayout: React.FC = () => {
   // The open drawer covers the page behind a backdrop, so it holds the
   // keyboard: focus moves to its close button and Tab wraps inside it.
   const drawerOpen = isDrawer && sidebarOpen;
-  const sidebarRef = useFocusTrap(drawerOpen);
+  const sidebarRef = useFocusTrap(drawerOpen, { containFocus: true });
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (drawerOpen) closeButtonRef.current?.focus();
+    // A dialog open on top (the drawer opened by a resize) keeps its focus.
+    if (drawerOpen && !document.activeElement?.closest('[role="dialog"]')) closeButtonRef.current?.focus();
   }, [drawerOpen]);
   // The closed drawer is inert, so focus left inside it would be dropped to
   // the body. Hand it back to the menu button before the browser does that.
