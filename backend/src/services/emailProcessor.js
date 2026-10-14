@@ -1775,6 +1775,9 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
     // An explicit test message (dev tools' send-test-email) must not count as
     // template delivery when the queue processor sends it later.
     if (options.usageEligible === false) emailData.__usageEligible = false;
+    // The document's customer, for the "no administrative emails" decision
+    // (migration 300). Kept on the row so a resend / retry can ask again.
+    if (options.customerAccountId != null) emailData.__customerAccountId = Number(options.customerAccountId);
     const row = {
       event_id: eventId,
       recipient_email: recipientEmail,
@@ -1790,6 +1793,19 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
       // (issue 1670). NULL is what the processor's whereNull() looks for.
       scheduled_at: null,
     };
+    // Customer opted out of administrative mail (migration 300): keep the row
+    // in the email log as `suppressed` so the admin can see what was held
+    // back, but never hand it to the processor (it only picks up pending).
+    // Decided here, once, for the document's customer: the caller's Issue
+    // button and the late fee read the same customer flag. Returns
+    // 'suppressed' (truthy, so `if (queued)` callers carry on) for callers
+    // that report what happened.
+    if (await require('./_adminEmailOptOut').isSuppressedForRecipient(recipientEmail, emailType, options.customerAccountId)) {
+      row.status = 'suppressed';
+      await db('email_queue').insert(row);
+      logger.info(`Email suppressed: ${emailType} (customer opted out of administrative emails)`);
+      return 'suppressed';
+    }
     let snappedFrom = null;
     // Base time to schedule from:
     //   - explicit options.scheduledAt (CRM split-payment invoices), OR
