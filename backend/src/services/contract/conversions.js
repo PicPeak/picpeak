@@ -278,28 +278,59 @@ async function convertToEvent(contractId, adminId) {
   for (const [k, v] of Object.entries(candidate)) {
     if (Object.prototype.hasOwnProperty.call(eventCols, k)) eventRow[k] = v;
   }
-  const inserted = await db('events').insert(eventRow).returning('id');
-  const eventId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+  const hasAssignments = await db.schema.hasTable('event_customer_assignments');
 
-  // Link the customer so they see the event on their portal once
-  // the admin activates it. Best-effort — older installs without
-  // the junction table still get the event row.
-  try {
-    if (await db.schema.hasTable('event_customer_assignments')) {
-      await db('event_customer_assignments').insert({
-        event_id: eventId,
-        customer_account_id: customer.id,
-        assigned_by_admin_id: adminId,
-        assigned_at: new Date(),
-      });
+  const eventId = await db.transaction(async (trx) => {
+    // Claim the contract before creating anything, so two concurrent
+    // conversions make one gallery: on PostgreSQL the second waits on the
+    // row lock until the first commits and then matches nothing; SQLite
+    // serialises the transactions on its one connection.
+    if (hasContractConvertedEvent) {
+      const claimed = await trx('contracts')
+        .where({ id: contractId, status: 'fully_signed' })
+        .whereNull('converted_event_id')
+        .update({ updated_at: new Date() });
+      if (claimed !== 1) return null;
     }
-  } catch (_) { /* best-effort */ }
 
-  if (hasContractConvertedEvent) {
-    await auditedUpdate(db, 'contracts', { id: contractId }, {
-      converted_event_id: eventId,
-      updated_at: new Date(),
-    }, { actor: adminId, source: 'contract.convert.event' });
+    const inserted = await trx('events').insert(eventRow).returning('id');
+    const newEventId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+
+    // Link the customer so they see the event on their portal once
+    // the admin activates it. Best-effort — older installs without
+    // the junction table still get the event row. In a savepoint, so a
+    // failed insert does not abort the transaction on PostgreSQL.
+    if (hasAssignments) {
+      try {
+        await trx.transaction(async (sp) => {
+          await sp('event_customer_assignments').insert({
+            event_id: newEventId,
+            customer_account_id: customer.id,
+            assigned_by_admin_id: adminId,
+            assigned_at: new Date(),
+          });
+        });
+      } catch (_) { /* best-effort */ }
+    }
+
+    if (hasContractConvertedEvent) {
+      await auditedUpdate(trx, 'contracts', { id: contractId }, {
+        converted_event_id: newEventId,
+        updated_at: new Date(),
+      }, { actor: adminId, source: 'contract.convert.event' });
+    }
+    return newEventId;
+  });
+
+  if (eventId == null) {
+    const current = await db('contracts').where({ id: contractId }).first();
+    if (current?.converted_event_id) {
+      return { eventId: current.converted_event_id, alreadyConverted: true };
+    }
+    throw new AppError(
+      `Cannot convert a contract with status '${current?.status}'. The contract must be fully signed by both parties first.`,
+      409, 'CONTRACT_NOT_FULLY_SIGNED',
+    );
   }
 
   try {
