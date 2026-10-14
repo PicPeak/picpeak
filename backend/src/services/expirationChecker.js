@@ -245,9 +245,10 @@ async function handleExpiredEvent(event, { sendLegacyEmails = true, retry = fals
     if (retry) {
       // Only a gallery this checker deactivated, for the expiry it deactivated
       // it for: an admin's deactivation records nothing, and a restore or an
-      // extension sets a new expiry.
+      // extension sets a new expiry. Still due: another replica's pass may
+      // have made an attempt since this one's query.
       const recorded = await readExpiryAttempt(lease);
-      if (!recorded || recorded.expiresAt !== expiresAt) return;
+      if (!recorded || recorded.expiresAt !== expiresAt || !expiryRetryDue(recorded, Date.now())) return;
       attempts = recorded.attempts + 1;
     }
     // Recorded before deactivating, so the gallery is never left inactive

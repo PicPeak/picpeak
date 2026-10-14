@@ -437,6 +437,30 @@ describe('one archive job per gallery', () => {
     expect(expiredMails()).toHaveLength(announced);
   });
 
+  it('does not retry when another pass made an attempt after this one selected the gallery', async () => {
+    const { checkExpirations } = require('../../src/services/expirationChecker');
+    const event = await makeEvent('expired-overlap', { expired: true });
+    failList = true;
+    await checkExpirations();
+    failList = false;
+    await ageExpiryAttempt(event.id, 2);
+
+    const realClaim = jobState.claim;
+    const claimSpy = jest.spyOn(jobState, 'claim').mockImplementation(async (name) => {
+      // Another replica's pass retried (and failed) between this pass's query and its claim.
+      if (name === jobName(event.id)) await ageExpiryAttempt(event.id, -2);
+      return realClaim(name);
+    });
+    try {
+      await checkExpirations();
+    } finally {
+      claimSpy.mockRestore();
+    }
+
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(false);
+    expect(await expiryAttempt(event.id)).toMatchObject({ attempts: 1 });
+  });
+
   it('does not archive an expired gallery an admin deactivated', async () => {
     const event = await makeEvent('expired-admin-off', { expired: true });
     await db('events').where({ id: event.id }).update({ is_active: 0 });
