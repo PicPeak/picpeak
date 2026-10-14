@@ -126,6 +126,16 @@ async function findExistingPhoto(eventId, basename, relativePath) {
     .first();
 }
 
+// The upload ledger's record for a key whose row was never committed:
+// 'promoting' until commitObject, 'uncertain' when failedObject could not
+// prove the file gone (publicUploadQuota).
+async function unfinishedPromotion(storageKey) {
+  return db('public_upload_objects')
+    .where({ object_key: storageKey })
+    .whereIn('state', ['promoting', 'uncertain'])
+    .first('id');
+}
+
 // A database error is not a code retryTransient repeats, and nothing
 // announces this file again, so the settings read is retried here.
 const SETTINGS_READ_ATTEMPTS = 3;
@@ -180,7 +190,8 @@ async function processNewPhoto(filePath) {
   // An upload storing this file has not written its row yet (issue 1970).
   // Wait for it, so the check below sees that row, or a hand-dropped file
   // is still imported; a failed upload may have removed the file meanwhile.
-  const promotion = promotionSettled(path.posix.join('events/active', ...pathParts));
+  const storageKey = path.posix.join('events/active', ...pathParts);
+  const promotion = promotionSettled(storageKey);
   if (promotion) {
     await promotion;
     if (!(await fs.access(filePath).then(() => true, () => false))) return;
@@ -210,7 +221,16 @@ async function processNewPhoto(filePath) {
     logger.debug(`Photo already exists: ${relativePath}`);
     return;
   }
-  
+
+  // An upload that died between storing this file and writing its row left
+  // its promotion record behind (issue 1970). The in-process claim above did
+  // not survive the restart; the record did, and every process sees it. The
+  // file never became a photo, so it is not imported as one.
+  if (await unfinishedPromotion(storageKey)) {
+    logger.warn(`[fileWatcher] Skipping ${relativePath}: an upload stored it but never finished`);
+    return;
+  }
+
   // Get file stats
   const stats = await fs.stat(filePath);
   

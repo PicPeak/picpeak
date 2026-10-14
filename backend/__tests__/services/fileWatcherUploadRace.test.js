@@ -158,6 +158,55 @@ describe('fileWatcher vs. an upload in flight (issue 1970)', () => {
   });
 });
 
+// A crash between storing the file and inserting the row takes the
+// in-process claim with it, but leaves the upload ledger's record. The next
+// boot's scan (or another process) must read that record instead.
+describe('fileWatcher vs. an upload that never finished (issue 1970)', () => {
+  let n = 0;
+  const leftover = async (name, record) => {
+    const key = `events/active/${EVENT_SLUG}/${name}`;
+    fs.writeFileSync(path.join(process.env.STORAGE_PATH, key), jpeg);
+    n += 1;
+    await db('public_upload_objects').insert({
+      id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+      request_id: `00000000-0000-4000-9000-${String(n).padStart(12, '0')}`,
+      object_key: key, bytes: jpeg.length, files: 1, event_id: eventId,
+      created_at: new Date().toISOString(), ...record,
+    });
+    return path.join(process.env.STORAGE_PATH, key);
+  };
+
+  afterEach(async () => {
+    await db('public_upload_objects').del();
+  });
+
+  it.each([
+    ['an admin upload', { state: 'promoting', upload_kind: 'admin' }],
+    ['a guest upload', { state: 'promoting', upload_kind: 'public' }],
+    ['a guest upload whose cleanup could not confirm the delete', { state: 'uncertain', upload_kind: 'public' }],
+  ])('skips the file %s stored before it crashed', async (_label, record) => {
+    const filePath = await leftover(`crashed_${n + 1}.jpg`, record);
+
+    await processNewPhoto(filePath);
+
+    expect(await db('photos').where({ event_id: eventId })).toHaveLength(0);
+    expect(fs.existsSync(filePath)).toBe(true);
+  });
+
+  it('imports a file whose ledger record is settled or names another key', async () => {
+    const stored = await leftover('settled.jpg', { state: 'stored', upload_kind: 'public' });
+    await leftover('other.jpg', { state: 'promoting', upload_kind: 'public' });
+    const dropped = path.join(eventDir(), 'IMG_0002.jpg');
+    fs.writeFileSync(dropped, jpeg);
+
+    await processNewPhoto(stored);
+    await processNewPhoto(dropped);
+
+    const rows = await db('photos').where({ event_id: eventId }).orderBy('filename');
+    expect(rows.map((row) => row.filename)).toEqual(['IMG_0002.jpg', 'settled.jpg']);
+  });
+});
+
 // The other upload paths share the shape: the claim must be taken before
 // the file is stored, or the watcher can still slip into the gap.
 describe('every promotion into the watched folder claims its key first', () => {
