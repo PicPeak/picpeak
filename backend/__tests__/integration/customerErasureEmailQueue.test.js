@@ -409,6 +409,27 @@ describe('customer erasure clears email_queue', () => {
     expect(sent.rendered_html).toBeFalsy();
   });
 
+  it('redacts mail held back for a customer who takes no administrative emails', async () => {
+    // Migration 300: such mail is stored as `suppressed` instead of sent, with
+    // the same template variables (document numbers, names) as a sent row.
+    const optedOut = await insertCustomer(db);
+    const now = new Date().toISOString();
+    const [ins] = await db('email_queue').insert({
+      recipient_email: optedOut.email, email_type: 'invoice_sent', status: 'suppressed',
+      email_data: JSON.stringify({ customer_name: 'Opted Out', invoice_number: 'R-2026-0001' }), created_at: now,
+    }).returning('id');
+
+    const { eraseCustomer } = require('../../src/services/customerAccountsService');
+    await eraseCustomer(optedOut.id, null);
+
+    const row = await db('email_queue').where({ id: ins?.id ?? ins }).first();
+    expect(row.status).toBe('suppressed');
+    expect(row.recipient_email).toMatch(/@deleted\.invalid$/);
+    // pg returns the json column as an object, SQLite as text.
+    const data = typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data;
+    expect(data).toEqual({ redacted: true, reason: 'customer_erased' });
+  });
+
   it('covers contract mail to a signer address only when it names a contract this erasure redacts', async () => {
     const fieldEncryption = require('../../src/utils/fieldEncryption');
     const owner = await insertCustomer(db);
