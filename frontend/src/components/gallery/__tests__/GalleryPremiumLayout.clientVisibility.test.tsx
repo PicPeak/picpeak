@@ -1,7 +1,8 @@
 /**
  * Issue 1992: Gallery Premium renders its own card, which had no client
  * hide/show button. The card's checkbox owns top-left, so the button sits
- * below it; the click must not open the lightbox.
+ * right of it in the same row (below it, a short panoramic tile clipped it),
+ * with the colour-label dots beside it; the click must not open the lightbox.
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -59,27 +60,37 @@ const mount = (extra: Record<string, unknown>) => render(
 afterEach(() => cleanup());
 
 describe('Gallery Premium — client visibility toggle (issue 1992)', () => {
-  it('renders the toggle per card below the checkbox, with the hidden state', () => {
+  it('renders the toggle per card beside the checkbox, with the hidden state', () => {
     mount({ isClient: true, onToggleVisibility: vi.fn() });
     const visible = screen.getByTestId('client-visibility-toggle-1');
     const hidden = screen.getByTestId('client-visibility-toggle-2');
     expect(visible).toHaveAttribute('aria-label', 'Visible to guests');
     expect(hidden).toHaveAttribute('aria-label', 'Hidden from guests');
     expect(hidden).toHaveAttribute('aria-pressed', 'true');
-    expect(visible.className).toContain('top-11 left-3');
+    // The checkbox's row, not below it: a panoramic tile can be shorter
+    // than the checkbox plus the toggle.
+    expect(visible.parentElement!.className).toContain('absolute top-2 left-14');
 
     const tileImage = (id: number) =>
       screen.getByTestId(`photo-card-${id}`).querySelector('img') as HTMLElement;
-    expect(tileImage(2).className).toContain('opacity-40');
+    expect(tileImage(2).className).toContain('!opacity-40');
     expect(tileImage(1).className).not.toContain('opacity-40');
     // Only the image: the eye stays at full strength.
     for (let node = hidden.parentElement; node; node = node.parentElement) {
       expect(node.className).not.toContain('opacity-40');
     }
-    // The eye sits below the checkbox, clear of the colour-label dot, so the
-    // dot keeps its corner.
+    // The colour-label dot sits beside the eye, in the same row.
     const dot = screen.getByTestId('photo-card-2').querySelector('[aria-label^="Marked as"]') as HTMLElement;
-    expect(dot.parentElement!.className).toContain('absolute top-2 left-2');
+    expect(dot.parentElement!.parentElement).toBe(hidden.parentElement);
+  });
+
+  it('keeps a hidden photo dimmed while it is selected', () => {
+    // `.gallery-premium-photo-card.selected img` sets opacity: 0.9, which
+    // outranks a plain `opacity-40` utility; the important variant wins.
+    mount({ isClient: true, onToggleVisibility: vi.fn(), selectedPhotos: new Set([2]), isSelectionMode: true });
+    const card = screen.getByTestId('photo-card-2');
+    expect(card.className).toContain('selected');
+    expect((card.querySelector('img') as HTMLElement).className).toContain('!opacity-40');
   });
 
   it('toggles without opening the lightbox', () => {
@@ -90,8 +101,10 @@ describe('Gallery Premium — client visibility toggle (issue 1992)', () => {
     expect(screen.queryByTestId('yarl')).toBeNull();
   });
 
-  it('shows no toggle for a guest', () => {
+  it('shows no toggle for a guest, and the dot keeps its corner', () => {
     mount({ isClient: false, onToggleVisibility: vi.fn() });
     expect(screen.queryByTestId('client-visibility-toggle-1')).toBeNull();
+    const dot = screen.getByTestId('photo-card-1').querySelector('[aria-label^="Marked as"]') as HTMLElement;
+    expect(dot.parentElement!.className).toContain('absolute top-2 left-2');
   });
 });

@@ -135,17 +135,21 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         // the correctly-shaped tile, rather than the rendition dictating the
         // tile's shape.
         // Dimmed when the client hid it from guests, as in Grid (issue 1992).
-        className={`w-full h-full object-cover${onToggleVisibility && isHiddenFromGuests(photo) ? ' opacity-40' : ''}`}
+        // Important: `.gallery-premium-photo-card.selected img` sets its own
+        // opacity and would otherwise undim a hidden photo once selected.
+        className={`w-full h-full object-cover${onToggleVisibility && isHiddenFromGuests(photo) ? ' !opacity-40' : ''}`}
         loading="lazy"
         isGallery={true}
         slug={slug}
       />
 
-      {/* Colour label (#1044) — same badge every layout uses. */}
+      {/* Colour label (#1044) — same badge every layout uses. For the client
+          the dots move into the visibility toggle's row below. */}
       <ColorLabelBadge
         colorLabel={photo.my_color_label}
         otherColorLabels={photo.other_color_labels}
         decision={photo.my_decision}
+        part={onToggleVisibility ? 'ring' : undefined}
       />
 
       {/* Overlay Gradient */}
@@ -171,14 +175,20 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         {isSelected && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
       </button>
 
-      {/* The client's hide/show button (issue 1992). The checkbox owns this
-          card's top-left corner, so the button sits just below it. */}
+      {/* The client's hide/show button (issue 1992), with the colour-label
+          dots beside it. The checkbox owns this card's top-left corner, so the
+          row sits right of it at the checkbox's height: a short panoramic tile
+          clipped anything placed below the checkbox. */}
       {onToggleVisibility && (
-        <ClientVisibilityToggle
-          photo={photo}
-          onToggle={onToggleVisibility}
-          className="absolute top-11 left-3 z-10"
-        />
+        <div className="absolute top-2 left-14 z-10 flex items-center gap-1.5">
+          <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
+          <ColorLabelBadge
+            colorLabel={photo.my_color_label}
+            otherColorLabels={photo.other_color_labels}
+            decision={photo.my_decision}
+            part="dots"
+          />
+        </div>
       )}
 
       {/* Like Button — #506: only when feedback master is on AND the
