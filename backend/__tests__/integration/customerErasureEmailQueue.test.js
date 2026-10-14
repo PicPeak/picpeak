@@ -409,6 +409,60 @@ describe('customer erasure clears email_queue', () => {
     expect(sent.rendered_html).toBeFalsy();
   });
 
+  it('cancels and redacts mail to a former address, but only from the time the customer held it (issue 1971)', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const queue = async (recipient, status, createdAt, name) => {
+      const [row] = await db('email_queue').insert({
+        recipient_email: recipient, email_type: 'gallery_created', status,
+        email_data: JSON.stringify({ customer_name: name }), rendered_html: `<p>${name}</p>`,
+        created_at: createdAt, scheduled_at: createdAt, retry_count: 0,
+      }).returning('id');
+      return row?.id ?? row;
+    };
+    const ago = (ms) => new Date(Date.now() - ms).toISOString();
+
+    // Another customer held the address before; their mail predates it.
+    const formerAddress = 'former-1971@example.com';
+    const earlierOwner = await insertCustomer(db, { email: formerAddress });
+    const earlierOwnerMail = await queue(formerAddress, 'sent', ago(60000), 'Earlier Owner');
+    await updateCustomer(earlierOwner.id, { email: 'earlier-owner-1971@example.com' }, null);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const mover = await insertCustomer(db, { email: 'mover-start-1971@example.com' });
+    await updateCustomer(mover.id, { email: formerAddress }, null);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const pendingOld = await queue(formerAddress, 'pending', new Date().toISOString(), 'Mover Pending');
+    const sentOld = await queue(formerAddress, 'sent', new Date().toISOString(), 'Mover Sent');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await updateCustomer(mover.id, { email: 'mover-now-1971@example.com' }, null);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // The address goes to a third customer after the move; their mail stays.
+    await insertCustomer(db, { email: formerAddress });
+    const laterOwnerMail = await queue(formerAddress, 'pending', new Date().toISOString(), 'Later Owner');
+
+    await eraseCustomer(mover.id, null);
+
+    const pending = await db('email_queue').where({ id: pendingOld }).first();
+    expect(pending.status).toBe('cancelled');
+    expect(pending.recipient_email).toMatch(/@deleted\.invalid$/);
+    expect(JSON.parse(pending.email_data)).toEqual({ redacted: true, reason: 'customer_erased' });
+    const sent = await db('email_queue').where({ id: sentOld }).first();
+    expect(sent.status).toBe('sent');
+    expect(sent.recipient_email).toMatch(/@deleted\.invalid$/);
+    expect(sent.rendered_html).toBeFalsy();
+    expect(JSON.stringify(sent)).not.toContain('Mover Sent');
+
+    const later = await db('email_queue').where({ id: laterOwnerMail }).first();
+    expect(later.status).toBe('pending');
+    expect(later.recipient_email).toBe(formerAddress);
+    expect(JSON.parse(later.email_data).customer_name).toBe('Later Owner');
+    const earlier = await db('email_queue').where({ id: earlierOwnerMail }).first();
+    expect(earlier.recipient_email).toBe(formerAddress);
+    expect(JSON.parse(earlier.email_data).customer_name).toBe('Earlier Owner');
+  });
+
   it('covers contract mail to a signer address only when it names a contract this erasure redacts', async () => {
     const fieldEncryption = require('../../src/utils/fieldEncryption');
     const owner = await insertCustomer(db);

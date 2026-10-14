@@ -900,7 +900,9 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
  *     and any backup stop carrying their data (#1593). Matched on the
  *     address as stored *before* this function rewrites it to the sentinel
  *     below, case-insensitively (an address stored with different casing
- *     than the account is still the same mailbox). Contract mail queued to
+ *     than the account is still the same mailbox), and on each former
+ *     address for the time the customer held it (formerAddressWindows,
+ *     issue 1971). Contract mail queued to
  *     a signer's own address (not the account email) is covered only for
  *     the unsigned contracts this erasure redacts, and only rows whose
  *     email_data names one of those contracts — see
@@ -949,6 +951,40 @@ async function contractSignerQueueTargets(contractPlan) {
     if (emails.size) byContract.set(Number(contract.id), { contractNumber: String(contract.contract_number), emails });
   }
   return byContract.size ? byContract : null;
+}
+
+/**
+ * The addresses this customer held before their current one, each with the
+ * window they held it in (issue 1971). updateCustomer changes the address
+ * without touching email_queue, so mail queued or sent to a former address
+ * would otherwise survive the erasure. Read from the customer's own change
+ * history (migration 219), which records every email change with its time;
+ * an address changed before that migration is not recorded and not found.
+ *
+ * The window, not the address alone, decides: emails are unique only among
+ * current accounts, so a former address may belong to another customer now
+ * (or did before this one took it), and their mail must not be touched.
+ * `since` is null for the first address, which covers mail queued before the
+ * account existed (the invitation), as the current-address match does.
+ */
+async function formerAddressWindows(trx, customer) {
+  const rows = await trx('accounting_change_history')
+    .where({ document_type: 'customer', entity_type: 'customer', document_id: customer.id })
+    .orderBy('id', 'asc')
+    .select('changes', 'created_at');
+  const current = String(customer.email || '').toLowerCase();
+  const windows = [];
+  let since = null;
+  for (const row of rows) {
+    const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
+    const from = String(changes?.email?.from || '').toLowerCase();
+    const to = String(changes?.email?.to || '').toLowerCase();
+    if (!from || from === to) continue;
+    const at = new Date(row.created_at);
+    if (from !== current) windows.push({ email: from, since, until: at });
+    since = at;
+  }
+  return windows;
 }
 
 async function eraseCustomer(id, erasedByAdminId) {
@@ -1000,8 +1036,19 @@ async function eraseCustomer(id, erasedByAdminId) {
     // variables + recipient on every row for this address that isn't
     // already gone (sent, failed, or the row just cancelled above) — done
     // ahead of the customer_accounts update below so the match is still
-    // against the real address, not the sentinel.
-    const forCustomer = (q) => q.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email]);
+    // against the real address, not the sentinel. Former addresses count
+    // only for mail queued while the customer held them (formerAddressWindows).
+    const formerWindows = await formerAddressWindows(trx, customer);
+    const forCustomer = (q) => q.where((w) => {
+      w.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email]);
+      for (const win of formerWindows) {
+        w.orWhere((f) => {
+          f.whereRaw('LOWER(recipient_email) = ?', [win.email])
+            .modify(whereTimestamp, 'created_at', '<=', win.until);
+          if (win.since) f.modify(whereTimestamp, 'created_at', '>=', win.since);
+        });
+      }
+    });
 
     // Contract mail queued to a signer's own address, attributed to one of
     // the contracts this erasure just redacted (contractSignerQueueTargets).
