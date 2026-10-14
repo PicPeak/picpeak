@@ -577,15 +577,22 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }, [selectedPhotos, slug, t, downloadChoices, onPickResolution, selectionOverQuota, downloadQuota.remaining]);
 
   // Same path as Gallery Story's Download All: the whole-gallery download
-  // when the container offers it (#1160), else the ids in scope.
+  // when the container offers it (#1160), else the ids in scope. That
+  // fallback only runs when a category opts out of downloads (#640), so it
+  // leaves those photos out, as the server would.
+  const downloadablePhotos = useMemo(
+    () => photos.filter((photo) => photo.category_allow_downloads !== false),
+    [photos]
+  );
   const handleDownloadAll = useCallback(async () => {
     if (onDownloadEverything) {
       onDownloadEverything();
       return;
     }
-    const ids = photos.map(p => p.id);
+    const ids = downloadablePhotos.map(p => p.id);
+    if (ids.length === 0) return;
     // Download limit (issue 1560): all or nothing, so refuse before asking.
-    if (!downloadQuota.allows(photos)) {
+    if (!downloadQuota.allows(downloadablePhotos)) {
       showDownloadLimitReached({ remaining: downloadQuota.remaining ?? 0 });
       return;
     }
@@ -601,7 +608,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
     }
-  }, [photos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
+  }, [downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
 
   const handleDownloadFromLightbox = useCallback((slide: { src?: string; photoId?: number }) => {
     if (!allowDownloads || !slide.src) return;
@@ -743,7 +750,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                 <Heart className="w-4 h-4" />
               </button>
             )}
-            {allowDownloads && photos.length > 0 && (
+            {allowDownloads && photos.length > 0 && (onDownloadEverything || downloadablePhotos.length > 0) && (
               <button
                 className="gallery-premium-nav-btn"
                 title={t('common.downloadAll', 'Download All')}

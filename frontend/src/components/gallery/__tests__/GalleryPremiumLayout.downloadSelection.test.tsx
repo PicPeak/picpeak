@@ -104,6 +104,19 @@ describe('Gallery Premium — Download All', () => {
     expect(mocks.downloadSelectedPhotos).not.toHaveBeenCalled();
   });
 
+  it('leaves out photos in a category that opts out of downloads', async () => {
+    const list = photos.map((photo) => ({ ...photo, category_allow_downloads: photo.category_name !== 'Party' }));
+    render(<GalleryPremiumLayout photos={list} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} />);
+    fireEvent.click(downloadAll());
+    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledWith('demo', [1, 2]));
+  });
+
+  it('is absent when nothing in scope can be downloaded and there is no whole-gallery path', () => {
+    const list = photos.map((photo) => ({ ...photo, category_allow_downloads: false }));
+    render(<GalleryPremiumLayout photos={list} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} />);
+    expect(screen.queryByTitle('common.downloadAll')).toBeNull();
+  });
+
   it('refuses at the download limit before asking the server', () => {
     quota.remaining = 3;
     render(<GalleryPremiumLayout photos={photos} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} />);
