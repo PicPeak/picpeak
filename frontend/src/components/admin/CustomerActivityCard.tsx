@@ -4,11 +4,13 @@
  * The customer's timeline — document uploads, shares, views, reviews and
  * deletions, plus account and group changes — newest first, from the
  * activity log. Labels come from admin.activities.<type>, the same keys the
- * dashboard's recent activity uses; an unknown type still renders, as its
+ * dashboard's recent activity uses, or admin.customerActivity.<type> where the
+ * shared label cannot lose its address; an unknown type still renders, as its
  * key made readable.
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { History } from 'lucide-react';
 
@@ -17,6 +19,22 @@ import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { customerAdminService, type CustomerActivityEntry } from '../../services/customerAdmin.service';
 
 const readable = (type: string) => type.replace(/^customer_/, '').replace(/_/g, ' ');
+
+/**
+ * The shared labels name the customer ("Customer logged in: {{email}}"). On
+ * the customer's own record that is redundant, and the address is not sent:
+ * the empty tail is dropped. A label whose address does not trail a colon
+ * ("Password reset requested for customer {{email}}") would dangle, so those
+ * types have a card label phrased without it, admin.customerActivity.<type>.
+ */
+export function customerActivityLabel(t: TFunction, e: CustomerActivityEntry): string {
+  const text = (t([`admin.customerActivity.${e.type}`, `admin.activities.${e.type}`], {
+    defaultValue: readable(e.type),
+    ...e.metadata,
+    email: '',
+  }) as string).replace(/[\s:]+$/, '');
+  return e.metadata.documentId ? `${text} (#${e.metadata.documentId})` : text;
+}
 
 export const CustomerActivityCard: React.FC<{ customerId: number }> = ({ customerId }) => {
   const { t } = useTranslation();
@@ -31,18 +49,6 @@ export const CustomerActivityCard: React.FC<{ customerId: number }> = ({ custome
   });
 
   const entries: CustomerActivityEntry[] = data?.pages.flatMap((p) => p.entries) ?? [];
-
-  const label = (e: CustomerActivityEntry) => {
-    // The shared labels name the customer ("Customer logged in: {{email}}").
-    // On the customer's own record that is redundant, and the address is not
-    // sent: drop the empty tail.
-    const text = (t(`admin.activities.${e.type}`, {
-      defaultValue: readable(e.type),
-      ...e.metadata,
-      email: '',
-    }) as string).replace(/[\s:]+$/, '');
-    return e.metadata.documentId ? `${text} (#${e.metadata.documentId})` : text;
-  };
 
   return (
     <Card padding="lg">
@@ -68,7 +74,7 @@ export const CustomerActivityCard: React.FC<{ customerId: number }> = ({ custome
             {entries.map((e) => (
               <li key={e.id} className="py-2 flex items-start justify-between gap-3 flex-wrap">
                 <span className="text-sm text-heading min-w-0 break-words">
-                  {label(e)}
+                  {customerActivityLabel(t, e)}
                   <span className="block text-xs text-muted">
                     {e.actorType === 'customer'
                       ? t('customers.activity.byCustomer', 'By the customer')

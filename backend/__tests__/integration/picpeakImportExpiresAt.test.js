@@ -17,6 +17,10 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 let db; let cleanup; let tmpDir; let backupFile;
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxTest = process.platform === 'linux' ? test : test.skip;
+
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
   process.env.STORAGE_PATH = tmpDir;
@@ -36,7 +40,7 @@ beforeAll(async () => {
   ]);
   ({ filePath: backupFile } = await createPicpeak({ includePhotos: false }));
   await db('events').del();
-  await importFromPicpeak({ picpeakPath: backupFile, currentAdminId: adminId });
+  if (process.platform === 'linux') await importFromPicpeak({ picpeakPath: backupFile, currentAdminId: adminId });
 }, 120000);
 
 afterAll(async () => {
@@ -44,7 +48,7 @@ afterAll(async () => {
   await cleanup();
 });
 
-test('the imported rows carry an expires_at julianday() can read', async () => {
+linuxTest('the imported rows carry an expires_at julianday() can read', async () => {
   const rows = await db('events').whereIn('slug', ['offset', 'iso', 'zoneless', 'landmine']).select('slug', 'expires_at');
   const bySlug = Object.fromEntries(rows.map((r) => [r.slug, r.expires_at]));
   expect(bySlug.offset).toBe('2026-10-06T10:00:00.000Z');

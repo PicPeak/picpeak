@@ -1,5 +1,5 @@
 const { db } = require('../database/db');
-const { livePhotos } = require('../utils/photoVisibility');
+const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { ensureThumbnail } = require('./imageProcessor');
 const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
@@ -7,6 +7,7 @@ const { getStorage } = require('./storage');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 const { isGalleryAvailable } = require('../utils/galleryLifecycle');
 const { isPotentialShareToken } = require('../utils/shareLinkUtils');
+const { toDateOnly } = require('../utils/dateOnly');
 
 const SOCIAL_CRAWLER_PATTERNS = [
   /facebookexternalhit/i,
@@ -111,9 +112,9 @@ async function resolveSlug(slug) {
   let event = await db('events').where('slug', slug).first();
   if (event) return event;
   // Honour slug redirects so renamed galleries still get rich previews.
-  const hasRedirects = await db.schema.hasTable('event_slug_redirects');
+  const hasRedirects = await db.schema.hasTable('slug_redirects');
   if (hasRedirects) {
-    const redirect = await db('event_slug_redirects').where('old_slug', slug).first();
+    const redirect = await db('slug_redirects').where('old_slug', slug).first();
     if (redirect) {
       event = await db('events').where('slug', redirect.new_slug).first();
     }
@@ -166,10 +167,13 @@ async function frontendBase() {
 async function formatEventDate(value) {
   if (!value) return null;
   try {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return null;
+    // A calendar day, handed over as 'YYYY-MM-DD': SQLite's text would be
+    // midnight UTC as a Date (the day before west of UTC), and pg's Date is
+    // the server's local midnight, whose local day toDateOnly reads.
+    const day = toDateOnly(typeof value === 'number' ? new Date(value) : value);
+    if (!day || Number.isNaN(new Date(day).getTime())) return null;
     const { formatDate } = require('../utils/dateFormatter');
-    return await formatDate(d);
+    return await formatDate(day);
   } catch {
     return null;
   }
@@ -226,9 +230,10 @@ async function buildOgMetadata(slug, requestPath) {
   // crawlers must not get the hero photo either — fall back to the brand
   // logo like the opt-out case.
   if (event.og_image_share_enabled && event.hero_photo_id && !isGalleryHidden(event)) {
-    const heroPhoto = await livePhotos(db)
+    const heroPhoto = await wherePhotoProcessed(livePhotos(db))
       .where({ id: event.hero_photo_id, event_id: event.id })
-      // Never a team upload still under review (issue 743).
+      // Never a team upload still under review (issue 743), nor a photo the
+      // worker has not finished, which the gallery itself does not show.
       .whereNull('moderation_status')
       .select('id', 'thumbnail_path')
       .first();
@@ -337,7 +342,7 @@ async function handleGalleryOgCover(req, res) {
       return;
     }
 
-    const photo = await livePhotos(db)
+    const photo = await wherePhotoProcessed(livePhotos(db))
       .where({ id: event.hero_photo_id, event_id: event.id })
       .whereNull('moderation_status')
       .first();
@@ -397,5 +402,6 @@ module.exports = {
   buildOgMetadata,
   renderOgHtml,
   handleGalleryOgRequest,
-  handleGalleryOgCover
+  handleGalleryOgCover,
+  formatEventDate
 };

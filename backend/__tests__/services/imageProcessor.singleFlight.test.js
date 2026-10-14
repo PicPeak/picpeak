@@ -24,7 +24,7 @@ const EXTERNAL_ROOT = path.join(os.tmpdir(), `picpeak-sf-ext-${process.pid}`);
 process.env.EXTERNAL_MEDIA_ROOT = EXTERNAL_ROOT;
 
 jest.mock('../../src/database/db', () => {
-  const state = { events: {}, updates: [] };
+  const state = { events: {}, updates: [], photos: {} };
   const api = (table) => {
     if (table === 'events') {
       return { where: (_col, id) => ({ first: async () => state.events[id] || null }) };
@@ -33,6 +33,14 @@ jest.mock('../../src/database/db', () => {
       return {
         where: (criteria) => ({
           update: async (values) => { state.updates.push({ criteria, values }); return 1; },
+          // By id, the row the test made (keepTierIfCurrent compares a fresh
+          // tier with it; ownDerivativeName finds no source_filename on it, as
+          // for an uploaded photo); withSourceVersion's size read finds no
+          // recorded size.
+          first: async (cols) => {
+            if (cols === 'size_bytes') return undefined;
+            return (criteria && criteria.id != null && state.photos[criteria.id]) || null;
+          },
         }),
       };
     }
@@ -105,6 +113,7 @@ describe('single-flight rendition generation (#1020)', () => {
   beforeEach(() => {
     db.__state.events = { [MANAGED_EVENT.id]: MANAGED_EVENT, [EXTERNAL_EVENT.id]: EXTERNAL_EVENT };
     db.__state.updates = [];
+    db.__state.photos = {};
   });
 
   afterAll(async () => {
@@ -140,7 +149,9 @@ describe('single-flight rendition generation (#1020)', () => {
       const name = `managed-${id}.jpg`;
       const rel = `${MANAGED_EVENT.slug}/${name}`;
       await writeJpeg(path.join(storageRoot, 'events/active', rel));
-      return { id, event_id: MANAGED_EVENT.id, source_origin: 'managed', path: rel, filename: name };
+      const row = { id, event_id: MANAGED_EVENT.id, source_origin: 'managed', path: rel, filename: name };
+      db.__state.photos[id] = row;
+      return row;
     }
 
     async function externalPhoto({ write = true } = {}) {
@@ -148,7 +159,9 @@ describe('single-flight rendition generation (#1020)', () => {
       const name = `external-${id}.jpg`;
       const relpath = path.join(EXTERNAL_EVENT.external_path, name);
       if (write) await writeJpeg(path.join(EXTERNAL_ROOT, relpath));
-      return { id, event_id: EXTERNAL_EVENT.id, source_origin: 'external', external_relpath: relpath, filename: name };
+      const row = { id, event_id: EXTERNAL_EVENT.id, source_origin: 'external', external_relpath: relpath, filename: name };
+      db.__state.photos[id] = row;
+      return row;
     }
 
     const putsUnder = (prefix) => puts.filter((k) => k.startsWith(prefix));
@@ -267,6 +280,8 @@ describe('single-flight rendition generation (#1020)', () => {
       const before = await managedPhoto();
       const after = await managedPhoto();
       const replacement = { ...after, id: before.id };
+      // The row now holds the replacement.
+      db.__state.photos[before.id] = replacement;
 
       let release;
       storage.holdNextPut = new Promise((r) => { release = r; });
@@ -275,9 +290,14 @@ describe('single-flight rendition generation (#1020)', () => {
       release();
 
       const [oldKey, newKey] = await Promise.all([stale, fresh]);
-      expect(oldKey).toBe(`thumbnails/thumb_w600_p${before.id}_${before.filename}`);
+      // Two flights, two renditions; the one cut from the replaced source no
+      // longer matches the row, so it is dropped rather than handed out.
+      expect(putsUnder('thumbnails/').sort()).toEqual([
+        `thumbnails/thumb_w600_p${before.id}_${before.filename}`,
+        `thumbnails/thumb_w600_p${before.id}_${after.filename}`,
+      ].sort());
+      expect(oldKey).toBeNull();
       expect(newKey).toBe(`thumbnails/thumb_w600_p${before.id}_${after.filename}`);
-      expect(putsUnder('thumbnails/').sort()).toEqual([oldKey, newKey].sort());
 
       // Same shape for the canonical preview, which had no guard at all on
       // base and must not gain a cross-source one now.
@@ -435,7 +455,9 @@ describe('single-flight rendition generation (#1020)', () => {
       const name = `s3-${id}.jpg`;
       const rel = `${MANAGED_EVENT.slug}/${name}`;
       store.objects.set(`events/active/${rel}`, await jpegBuffer());
-      return { id, event_id: MANAGED_EVENT.id, source_origin: 'managed', path: rel, filename: name };
+      const row = { id, event_id: MANAGED_EVENT.id, source_origin: 'managed', path: rel, filename: name };
+      db.__state.photos[id] = row;
+      return row;
     }
 
     it('ensurePreviewImage: concurrent cold requests download the source once and upload once', async () => {

@@ -34,6 +34,10 @@ jest.mock('../../src/services/workflows', () => ({
 }));
 jest.mock('../../src/services/archiveService', () => ({
   archiveEvent: (...args) => mockArchiveEvent(...args),
+  claimArchive: async () => ({ release: async () => {} }),
+  expiryAttempts: async () => [],
+  readExpiryAttempt: async () => null,
+  writeExpiryAttempt: async () => true,
 }));
 jest.mock('../../src/services/shareLinkService', () => ({
   buildShareLinkVariants: async ({ slug }) => ({ shareUrl: `https://example.test/gallery/${slug}` }),

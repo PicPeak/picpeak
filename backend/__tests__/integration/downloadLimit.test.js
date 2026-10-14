@@ -643,6 +643,29 @@ describe('Download limit (issue 1560)', () => {
       expect(await grantCount(event.id)).toBe(0);
     });
 
+    // An editor's scoped dashboard feed filters on activity_logs.event_id, so
+    // a row that names its gallery only in metadata never reaches them.
+    it('logs the reset and a download-settings change against the gallery', async () => {
+      const { event } = await makeEvent({ limit: 2 });
+      const reset = await request(app)
+        .post(`/api/admin/events/${event.id}/download-limit/reset`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(reset.status).toBe(200);
+      const settings = await request(app)
+        .patch(`/api/admin/events/${event.id}/download-resolutions`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ download_allow_original: true });
+      expect(settings.status).toBe(200);
+
+      const rows = await db('activity_logs')
+        .whereIn('activity_type', ['event_download_limit_reset', 'event_download_resolutions_updated'])
+        .whereRaw('metadata like ?', [`%"event_id":${event.id},%`])
+        .select('activity_type', 'event_id');
+      expect(rows.map((r) => r.activity_type).sort())
+        .toEqual(['event_download_limit_reset', 'event_download_resolutions_updated']);
+      for (const row of rows) expect(Number(row.event_id)).toBe(event.id);
+    });
+
     it('lets a role that sees every event read the usage of one it does not own, not reset it', async () => {
       const { event, photoIds } = await makeEvent({ limit: 2 });
       await quota.grantDownloads(event, photoIds.slice(0, 1));

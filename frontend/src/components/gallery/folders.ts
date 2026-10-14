@@ -25,9 +25,9 @@ export const FOLDER_QUERY_PARAM = 'folder';
 
 /**
  * Server-side cap on `/download-selected` and `/download-jobs`
- * (gallery.js slices the id list to this). Mirrored here so the folder download
- * can say what it will actually deliver instead of promising the whole folder
- * and quietly handing back the first 500.
+ * (gallery/downloads.js refuses a longer id list). Mirrored here so the folder
+ * download sends what the server takes and says so, instead of promising the
+ * whole folder.
  */
 export const SELECTED_DOWNLOAD_LIMIT = 500;
 

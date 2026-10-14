@@ -7,8 +7,8 @@ import { galleryService } from '../../services/gallery.service';
 import type { DownloadResolutionChoice, DownloadJobState, DownloadJobStatus } from '../../types';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import {
-  isDownloadLimitError, isGalleryLimited, notifyDownloadQuotaChanged, showDownloadLimitReached,
-  type QuotaPhoto,
+  isDownloadLimitError, isGalleryLimited, isSelectionTooLargeError, notifyDownloadQuotaChanged,
+  selectionTooLargeMessage, showDownloadLimitReached, type QuotaPhoto,
 } from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
@@ -51,6 +51,8 @@ interface DownloadResolutionModalProps {
   /** A job to pick up again, from the "your download is ready" mail (issue 1733). */
   resumeToken?: string;
   onClose: () => void;
+  /** Called, before onClose, once a download was handed to the browser. */
+  onDownloaded?: () => void;
 }
 
 export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = ({
@@ -61,6 +63,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
   quotaPhotos,
   resumeToken,
   onClose,
+  onDownloaded,
 }) => {
   const { t } = useTranslation();
   const downloadQuota = useDownloadQuota();
@@ -117,6 +120,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
     if (!photoIds && selected === standardResolution) {
       try {
         await galleryService.downloadAllPhotos(slug, true);
+        onDownloaded?.();
       } catch (err) {
         // The limit refusal already told the guest why (issue 1560).
         if (!isDownloadLimitError(err)) throw err;
@@ -140,12 +144,14 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
       }
       await poll(job.token);
     } catch (err) {
-      setError(isDownloadLimitError(err)
+      setError(isSelectionTooLargeError(err)
+        ? selectionTooLargeMessage(err.info.limit)
+        : isDownloadLimitError(err)
         ? t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.')
         : t('gallery.downloadPrepFailed', 'Preparation failed'));
       setPhase('error');
     }
-  }, [slug, selected, photoIds, poll, t, standardResolution, onClose]);
+  }, [slug, selected, photoIds, poll, t, standardResolution, onClose, onDownloaded]);
 
   // Pick a job up again from the mail link. It may have been swept since
   // (retention passed, or the gallery changed), which reads as not found;
@@ -204,8 +210,9 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
       }
     }
     galleryService.downloadJobFile(slug, token, filename);
+    onDownloaded?.();
     onClose();
-  }, [slug, filename, onClose, t]);
+  }, [slug, filename, onClose, onDownloaded, t]);
 
   const title = resumeToken
     ? t('gallery.preparedDownload', 'Your prepared download')

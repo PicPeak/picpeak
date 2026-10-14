@@ -237,8 +237,14 @@ router.get('/activity', adminAuth, requirePermission('analytics.view'), async (r
     // the cross-admin actions this advisory is about.
     const activities = await applyEventScope(
       db('activity_logs')
-        .select('activity_logs.*', 'events.event_name')
-        .leftJoin('events', 'activity_logs.event_id', 'events.id'),
+        .select('activity_logs.*', 'events.event_name', 'actor_admin.username as actor_admin_username')
+        .leftJoin('events', 'activity_logs.event_id', 'events.id')
+        // Some admin rows carry the id but no name (services that only know
+        // the acting admin's id); read the current username for those.
+        .leftJoin('admin_users as actor_admin', function joinActorAdmin() {
+          this.on('activity_logs.actor_id', '=', 'actor_admin.id')
+            .andOnVal('activity_logs.actor_type', '=', 'admin');
+        }),
       req.admin,
       'activity_logs.event_id'
     )
@@ -250,7 +256,7 @@ router.get('/activity', adminAuth, requirePermission('analytics.view'), async (r
       id: activity.id,
       type: activity.activity_type,
       actorType: activity.actor_type,
-      actorName: activity.actor_name,
+      actorName: activity.actor_name || activity.actor_admin_username || null,
       eventName: activity.event_name,
       metadata: (() => {
         try {

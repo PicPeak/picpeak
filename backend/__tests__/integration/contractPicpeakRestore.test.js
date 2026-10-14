@@ -97,6 +97,10 @@ function readStored(file) {
   return fs.readFileSync(path.isAbsolute(file) ? file : path.join(process.env.STORAGE_PATH, file));
 }
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxTest = process.platform === 'linux' ? test : test.skip;
+
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
   process.chdir(tmpDir);
@@ -120,7 +124,7 @@ afterAll(async () => {
   if (cleanup) await cleanup();
 });
 
-test('a sent contract, its attachments and its template version come back byte for byte from a .picpeak', async () => {
+linuxTest('a sent contract, its attachments and its template version come back byte for byte from a .picpeak', async () => {
   const attachmentsApp = buildRouteApp('/api/admin/document-attachments', require('../../src/routes/adminDocumentAttachments'));
   const templatesApp = buildRouteApp('/api/admin/contract-templates', require('../../src/routes/adminContractTemplates'));
   const contractsApp = buildRouteApp('/api/admin/contracts', require('../../src/routes/adminContracts'));
@@ -203,7 +207,7 @@ test('a sent contract, its attachments and its template version come back byte f
   }
 });
 
-test('after a restore the retired PDF font path is moved and the standard template is checked again', async () => {
+linuxTest('after a restore the retired PDF font path is moved and the standard template is checked again', async () => {
   const legacyDir = path.join(process.env.STORAGE_PATH, 'fonts');
   fs.mkdirSync(legacyDir, { recursive: true });
   fs.copyFileSync(path.resolve(__dirname, '../../assets/fonts/Jost/400.ttf'), path.join(legacyDir, 'restored.ttf'));

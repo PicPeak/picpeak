@@ -11,6 +11,7 @@ import { eventsService } from '../../services/events.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useLeaveGuard, useUnsavedChanges } from '../../contexts/UnsavedChangesContext';
 import { isGalleryPublic } from '../../utils/accessControl';
+import { archiveInProgressError } from '../../utils/archiveErrors';
 import { splitMediaCount } from '../../utils/mediaCounts';
 import { photosService, AdminPhoto, type PhotoFilters as PhotoFilterParams, type FeedbackFilters } from '../../services/photos.service';
 import { feedbackService, type FeedbackSettings } from '../../services/feedback.service';
@@ -238,7 +239,7 @@ export const EventDetailsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
       toast.success(t('toast.eventArchived'));
     },
-    onError: () => toast.error(t('errors.somethingWentWrong')),
+    onError: (error) => toast.error(archiveInProgressError(error, t) ?? t('errors.somethingWentWrong')),
   });
 
   const deleteMutation = useMutation({
@@ -249,7 +250,7 @@ export const EventDetailsPage: React.FC = () => {
       // Nothing left to stay on: an unsaved draft does not hold this up.
       unguarded(() => navigate('/admin/events'));
     },
-    onError: () => toast.error(t('errors.somethingWentWrong')),
+    onError: (error) => toast.error(archiveInProgressError(error, t) ?? t('errors.somethingWentWrong')),
   });
 
   // Publish (Draft mode). Takes the admin-typed password so the
@@ -321,7 +322,7 @@ export const EventDetailsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
       toast.success(t('toast.saveSuccess'));
     },
-    onError: () => toast.error(t('toast.saveError')),
+    onError: (error) => toast.error(archiveInProgressError(error, t) ?? t('toast.saveError')),
   });
 
   if (eventLoading) {

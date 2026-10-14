@@ -156,4 +156,40 @@ test('reissueInvoice completes on SQLite and persists the invoice_reissued audit
   expect(metadataOf(row).newInvoiceId).toBe(result.id);
 });
 
+describe('an admin actor given only by id', () => {
+  // Required lazily: loading db.js before bootCrmDb points it at no database.
+  const logActivity = (...args) => require('../../src/database/db').logActivity(...args);
+  const latest = (type) => db('activity_logs').where({ activity_type: type }).orderBy('id', 'desc').first();
+
+  test('stores the admin\'s username, which outlives the account', async () => {
+    const [created] = await db('admin_users').insert({
+      username: 'short-lived-admin', email: 'short-lived@example.com', password_hash: 'x',
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).returning('id');
+    const id = created?.id ?? created;
+    await logActivity('test_admin_id_only', {}, null, { type: 'admin', id });
+    await db('admin_users').where({ id }).del();
+    expect(await latest('test_admin_id_only')).toMatchObject({ actor_type: 'admin', actor_name: 'short-lived-admin' });
+  });
+
+  test('reads the name through the caller\'s transaction, not the global pool', async () => {
+    const { username } = await db('admin_users').where({ id: adminId }).first('username');
+    // The 2s acquire timeout above turns a global-db read here into a
+    // failure instead of a 60s stall.
+    await db.transaction(async (trx) => {
+      await logActivity('test_admin_id_in_trx', {}, null, { type: 'admin', id: adminId }, trx);
+    });
+    expect(await latest('test_admin_id_in_trx')).toMatchObject({ actor_type: 'admin', actor_name: username });
+  });
+
+  test('leaves a given name, a non-admin actor and an unknown id alone', async () => {
+    await logActivity('test_admin_named', {}, null, { type: 'admin', id: adminId, name: 'given' });
+    expect((await latest('test_admin_named')).actor_name).toBe('given');
+    await logActivity('test_customer_id_only', {}, null, { type: 'customer', id: adminId });
+    expect((await latest('test_customer_id_only')).actor_name).toBeNull();
+    await logActivity('test_admin_unknown', {}, null, { type: 'admin', id: 987654 });
+    expect(await latest('test_admin_unknown')).toMatchObject({ actor_type: 'admin', actor_name: null });
+  });
+});
+
 void path; // referenced for parity with sibling suites

@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import justifiedLayout from 'justified-layout';
-import { StoryPhotoCard } from './StoryPhotoCard';
+import { StoryPhotoCard, type StoryCaptionMode } from './StoryPhotoCard';
 import type { Photo } from '../../../../types';
 
 interface StoryJustifiedGridProps {
@@ -16,6 +16,9 @@ interface StoryJustifiedGridProps {
   selectedPhotos?: Set<number>;
   onPhotoSelect?: (id: number) => void;
   likesAllowed?: boolean;
+  /** The client's hide/show handler (issue 1992); set only for the client. */
+  onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
+  caption?: StoryCaptionMode;
 }
 
 /**
@@ -48,6 +51,8 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
   selectedPhotos,
   onPhotoSelect,
   likesAllowed = true,
+  onToggleVisibility,
+  caption = 'none',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -124,6 +129,8 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
               isSelected={selectedPhotos?.has(photo.id) ?? false}
               onSelect={onPhotoSelect}
               likesAllowed={likesAllowed}
+              onToggleVisibility={onToggleVisibility}
+              caption={caption}
             />
           </div>
         );

@@ -19,6 +19,7 @@ import { PermissionGate } from '../../components/admin/PermissionGate';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 import { useQuery } from '@tanstack/react-query';
 import { archiveService, type ArchiveSortBy } from '../../services/archive.service';
+import { archiveInProgressError } from '../../utils/archiveErrors';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
@@ -79,14 +80,14 @@ export const ArchivesPage: React.FC = () => {
   const restoreMutation = useMutationWithToast({
     mutationFn: (id: number) => archiveService.restoreArchive(id),
     successMessage: t('archives.restoreSuccess'),
-    errorMessage: () => t('errors.somethingWentWrong'),
+    errorMessage: (error) => archiveInProgressError(error, t) ?? t('errors.somethingWentWrong'),
     invalidateKeys: [['admin-archives']],
   });
 
   const deleteMutation = useMutationWithToast({
     mutationFn: (id: number) => archiveService.deleteArchive(id),
     successMessage: t('archives.deleteSuccess'),
-    errorMessage: () => t('errors.somethingWentWrong'),
+    errorMessage: (error) => archiveInProgressError(error, t) ?? t('errors.somethingWentWrong'),
     invalidateKeys: [['admin-archives']],
   });
 

@@ -2,6 +2,7 @@ const sharp = require('./isolatedSharp');
 const { isResourceError } = require('./imageResourcePolicy');
 const { orientedDimensions } = require('./imageProcessor');
 const path = require('path');
+const crypto = require('crypto');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
@@ -315,6 +316,16 @@ class WatermarkService {
   }
 
   /**
+   * Storage key of a photo's watermark. Named after the file it is cut from
+   * as well as the photo id: a replacement keeps the id, and a job still
+   * cutting the old file must not overwrite the new file's watermark.
+   */
+  watermarkKey(photo, attempt = null) {
+    const source = crypto.createHash('sha256').update(String(photo.filename || '')).digest('hex').slice(0, 12);
+    return `watermarks/${photo.id}_watermarked_${source}${attempt ? `_${attempt.id}` : ''}${this.getFileExtension(photo.filename || '')}`;
+  }
+
+  /**
    * Generate watermarked version of a photo and persist it through the
    * storage backend. The source must be a local filesystem path because
    * sharp doesn't take streams; callers in S3 mode should materialize a
@@ -326,6 +337,7 @@ class WatermarkService {
    * @returns {Object} { success, watermarkPath, error }
    */
   async generateAndSaveWatermark(photo, originalPath, settings = null) {
+    let uploaded = null;
     try {
       if (!settings) {
         settings = await this.getWatermarkSettings();
@@ -345,13 +357,13 @@ class WatermarkService {
 
       const ext = this.getFileExtension(photo.filename);
       const attempt = require('./mediaAttemptContext').current();
-      const outputFilename = `${photo.id}_watermarked${attempt ? `_${attempt.id}` : ''}${ext}`;
-      const relativePath = `watermarks/${outputFilename}`;
+      const relativePath = this.watermarkKey(photo, attempt);
 
       await attempt?.assertCurrent();
       await getStorage().put(relativePath, watermarkedBuffer, {
         contentType: ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg',
       });
+      uploaded = relativePath;
       await attempt?.assertCurrent();
 
       return {
@@ -360,6 +372,9 @@ class WatermarkService {
         error: null
       };
     } catch (error) {
+      // Refused after the upload (the attempt lost its claim): nothing will
+      // record the file, and its name is this attempt's alone.
+      if (uploaded) await getStorage().delete(uploaded).catch(() => {});
       logger.error(`Error generating watermark for photo ${photo.id}:`, error);
       return {
         success: false,

@@ -5,10 +5,11 @@ import { useGallerySelection } from './hooks/useGallerySelection';
 import { useFeedbackChange } from './hooks/useFeedbackChange';
 import { UploadProcessingNotice } from './UploadProcessingNotice';
 import { NewPhotosPill } from './NewPhotosPill';
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'react-toastify';
 
 import { Button } from '../common';
 import { GallerySkeleton } from './GallerySkeleton';
@@ -77,7 +78,7 @@ import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle } from 'lucide-react';
-import { galleryService } from '../../services/gallery.service';
+import { galleryService, splitIntoArchives } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
 import { useGalleryCustomCss } from '../../hooks/useGalleryCustomCss';
@@ -167,6 +168,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Filename list dialog (issue 1733, A3d).
   const [showCopyFilenames, setShowCopyFilenames] = useState(false);
   const [resolutionPickerIds, setResolutionPickerIds] = useState<number[] | null>(null);
+  // The picker was opened for the guest's selection (not a people filter or
+  // a folder), so a download it hands over ends the selection, as the
+  // sidebar's direct download does.
+  const [pickerForSelection, setPickerForSelection] = useState(false);
   // The job a "your download is ready" mail links to (issue 1733). This view
   // only mounts behind the gallery's own access check. The token leaves the
   // address bar when its dialog is closed.
@@ -178,6 +183,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const [brandingSettings, setBrandingSettings] = useState<any>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
   const [feedbackEnabled, setFeedbackEnabled] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const { watermarkEnabled } = useWatermarkSettings();
@@ -859,6 +865,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     return () => window.removeEventListener('popstate', onPop);
   }, [resetScopeState, openFolderSlug, galleryView]);
 
+  // Premium and Story have no `favorite` control: their hearts write `like`
+  // feedback and seed from `is_liked`, so there a like is the favourite. Their
+  // nav heart drives the "Liked" filter, which then keeps the viewer's own
+  // likes rather than every photo anyone liked.
+  const favouritesAreLikes = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
   const filteredPhotos = useGalleryFiltering({
     sourcePhotos: data?.photos, categories: data?.categories, folderId: openFolderId, viewAll,
     selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug,
@@ -874,6 +885,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     minRating: feedbackSettings?.feedback_enabled && feedbackSettings?.allow_ratings ? minRating : null,
     // Only while tagging is on for the gallery: the chips hide with it.
     selectedTagKeys: tagsEnabled ? selectedTagKeys : undefined,
+    likedIsOwn: favouritesAreLikes,
   });
   // `scopedPhotos` is the same scope with every search and filter off: tells
   // "nothing matches" from "nothing here yet" when the grid comes out empty.
@@ -1021,6 +1033,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Check if downloads are allowed (both event setting and not expired)
   const allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
 
+  // Guest uploads: the refetched /photos payload decides once it is here. The
+  // `event` prop is the snapshot the page loaded with, so OR-ing it in kept the
+  // upload button after an admin turned uploads off.
+  const allowUploads = data?.event
+    ? data.event.allow_user_uploads === true
+    : event?.allow_user_uploads === true;
+
   // Resolution picker choices (#858). More than one option means there is an
   // actual choice to make; a single option is just the standard size, so skip
   // the modal and download straight away.
@@ -1064,8 +1083,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   //
   // Premium and Story have no `favorite` control: their Favourites toggle
   // writes `like` feedback and seeds from `is_liked`, so there a like is the
-  // favourite (see isFilenameListFavourite).
-  const favouritesAreLikes = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
+  // favourite (see isFilenameListFavourite, and `favouritesAreLikes` above).
   const copyFilenames = useMemo(() => photosForFilenameList(
     data?.photos || [],
     selectedPhotos,
@@ -1121,11 +1139,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // gallery standard.
     if (downloadChoices.length > 1) {
       setResolutionPickerIds(Array.from(selectedPhotos));
+      setPickerForSelection(true);
       return;
     }
 
-    const selectedPhotosList = filteredPhotos.filter(p => selectedPhotos.has(p.id));
-    
     // Track bulk download
     analyticsService.trackGalleryEvent('bulk_download', {
       gallery: slug,
@@ -1137,20 +1154,30 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // charged the ones before it. A refusal keeps the selection to trim. A
     // preview-only guest gets one zip too, which leaves out the videos they
     // cannot take rather than failing on them one by one.
+    //
+    // The whole selection (issue 1972), as the picker branch above hands over:
+    // a search or filter applied after selecting hides photos, it does not
+    // unselect them.
     if (downloadQuota.limited || downloadQuota.previewOnly) {
       try {
-        await galleryService.downloadSelectedPhotos(slug, selectedPhotosList.map((p) => p.id));
+        await galleryService.downloadSelectedPhotos(slug, selectedPhotoList.map((p) => p.id));
       } catch (error) {
         if (!isDownloadLimitError(error)) throw error;
         return;
       }
     } else {
-      for (const photo of selectedPhotosList) {
+      for (const photo of selectedPhotoList) {
         await galleryService.downloadPhoto(slug, photo.id, photo.filename);
       }
     }
     
     // Clear selection after download
+    setSelectedPhotos(new Set());
+    setIsSelectionMode(false);
+  };
+
+  const handlePickerDownloaded = () => {
+    if (!pickerForSelection) return;
     setSelectedPhotos(new Set());
     setIsSelectionMode(false);
   };
@@ -1176,8 +1203,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     if (!allowDownloads || peopleDownloadableIds.length === 0) return;
     if (refuseOverQuota(photosForIds(peopleDownloadableIds))) return;
 
-    // Same resolution-picker behaviour as every other multi-photo download.
-    if (downloadChoices.length > 1) {
+    // Same resolution-picker behaviour as every other multi-photo download,
+    // up to what one archive holds: the picker builds one archive, so a
+    // larger set comes as several at the standard size instead of cut short.
+    const inParts = peopleDownloadableIds.length > SELECTED_DOWNLOAD_LIMIT;
+    if (downloadChoices.length > 1 && !inParts) {
       setResolutionPickerIds(peopleDownloadableIds);
       return;
     }
@@ -1186,8 +1216,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       gallery: slug,
       photo_count: peopleDownloadableIds.length,
     });
+    if (inParts) {
+      toast.info(t('gallery.downloadingInParts', {
+        count: peopleDownloadableIds.length,
+        parts: splitIntoArchives(peopleDownloadableIds).length,
+      }));
+    }
 
-    await galleryService.downloadSelectedPhotos(slug, peopleDownloadableIds).catch((error) => {
+    await galleryService.downloadPhotosInParts(slug, peopleDownloadableIds).catch((error) => {
       // The limit refusal already told the guest why (issue 1560).
       if (!isDownloadLimitError(error)) throw error;
     });
@@ -1351,7 +1387,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // render the upload-only view for EVERY layout. Enforcement is server-side
   // (the photo endpoints refuse plain guests); this is the friendly face.
   if (hiddenUntilReveal) {
-    const uploadsOn = Boolean(data?.event?.allow_user_uploads || event?.allow_user_uploads);
     return (
       <GalleryLayout
         event={{
@@ -1385,7 +1420,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               })}
             </p>
           )}
-          {uploadsOn && (
+          {allowUploads && (
             <div className="mt-6">
               <p className="text-sm text-muted-theme mb-3">
                 {t('gallery.revealUploadHint', 'You can already add your own photos to the collection:')}
@@ -1401,7 +1436,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             </div>
           )}
         </div>
-        {showUploadModal && uploadsOn && (
+        {showUploadModal && allowUploads && (
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
@@ -1420,9 +1455,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
+            onDownloaded={handlePickerDownloaded}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
+              setPickerForSelection(false);
               setResumeJobToken(null);
               clearDownloadJobParam();
             }}
@@ -1613,6 +1650,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               slug={slug}
               state={selectionState}
               used={selectionUsed}
+              requireNameEmail={!!feedbackSettings?.require_name_email}
+              sharedIdentity={feedbackSettings?.identity_mode === 'shared'}
               className="pointer-events-auto"
             />
           </div>
@@ -1650,6 +1689,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           }
           onCopyFilenames={() => setShowCopyFilenames(true)}
           copyFilenamesCount={copyFilenames.photos.length}
+          // The nav heart: the gallery's own "Liked" filter, so the lightbox,
+          // select-all and download-selected all see the same list.
+          likedOnly={activeFilters.includes('liked')}
+          onToggleLikedOnly={() => handleFilterChange('liked')}
           slug={slug}
           people={peopleEnabled ? people : undefined}
           onSelectPerson={togglePerson}
@@ -1668,6 +1711,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           isSelectionMode={isSelectionMode}
           selectedPhotos={selectedPhotos}
           onSelectionChange={setSelectedPhotos}
+          photosForIds={photosForIds}
           onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
           showSelectionControls={false}
           eventName={event.event_name}
@@ -1693,11 +1737,23 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // render the button on the callback being present rather than on a
           // showLogout flag, so withholding it is how the gate reaches them.
           onLogout={showLogoutControl ? logout : undefined}
+          // Client access (issue 1992): the full-page layouts render the eye
+          // toggle too, so they need the same props as the standard branch.
+          isClient={isClient}
+          onToggleVisibility={isClient ? handleToggleVisibility : undefined}
+          // These layouts skip the GalleryLayout header, the only place the
+          // standard layouts offer the upload button, so they render their
+          // own from this callback; same gate as that header button.
+          onUploadClick={
+            allowUploads
+              ? () => setShowUploadModal(true)
+              : undefined
+          }
           showOriginalFilename={showOriginalFilename}
         />
 
         {/* Upload Modal for full-page layouts */}
-        {showUploadModal && (data?.event?.allow_user_uploads || event?.allow_user_uploads) && (
+        {showUploadModal && allowUploads && (
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
@@ -1718,9 +1774,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
+            onDownloaded={handlePickerDownloaded}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
+              setPickerForSelection(false);
               setResumeJobToken(null);
               clearDownloadJobParam();
             }}
@@ -1752,6 +1810,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         <GallerySidebar
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(!sidebarOpen)}
+          returnFocusRef={sidebarToggleRef}
           categories={filterCategories(data?.categories).filter(cat => photoCounts[cat.id] > 0)}
           selectedCategoryId={selectedCategoryId}
           onCategoryChange={setSelectedCategoryId}
@@ -1782,7 +1841,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           selectedPhotosForQuota={downloadQuota.limited ? photosForIds(Array.from(selectedPhotos)) : undefined}
           isMobile={isMobile}
           galleryLayout={theme.galleryLayout}
-          allowUploads={data?.event?.allow_user_uploads || event?.allow_user_uploads || false}
+          allowUploads={allowUploads}
           onUploadClick={() => setShowUploadModal(true)}
           feedbackEnabled={feedbackEnabled}
           activeFilters={activeFilters}
@@ -1864,6 +1923,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // with the leftmost gallery image.
           showSidebar ? (
             <Button
+              ref={sidebarToggleRef}
               variant="ghost"
               size="sm"
               className="gallery-btn p-2"
@@ -1886,7 +1946,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           }
           
           // Upload button - always show when uploads are allowed (regardless of layout/theme loading state)
-          const allowUploads = data?.event?.allow_user_uploads || event?.allow_user_uploads;
           if (allowUploads) {
             items.push(
               <Button
@@ -1913,7 +1972,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
         {/* "x of y selected", Finish selection, Approve edited photos
             (issue 1733, A1). */}
-        <SelectionSubmitBar slug={slug} state={selectionState} used={selectionUsed} className="mt-4" />
+        <SelectionSubmitBar
+          slug={slug}
+          state={selectionState}
+          used={selectionUsed}
+          requireNameEmail={!!feedbackSettings?.require_name_email}
+          sharedIdentity={feedbackSettings?.identity_mode === 'shared'}
+          className="mt-4"
+        />
 
         {/* Client Access Banner (#172) */}
         {isClient && (
@@ -2155,6 +2221,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             isSelectionMode={isSelectionMode}
             selectedPhotos={selectedPhotos}
             onSelectionChange={setSelectedPhotos}
+            photosForIds={photosForIds}
             onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
             showSelectionControls={!showSidebar}
             eventName={event.event_name}
@@ -2194,7 +2261,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
 
         {/* Upload Modal */}
-        {showUploadModal && (data?.event?.allow_user_uploads || event?.allow_user_uploads) && (
+        {showUploadModal && allowUploads && (
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
@@ -2215,9 +2282,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
+            onDownloaded={handlePickerDownloaded}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
+              setPickerForSelection(false);
               setResumeJobToken(null);
               clearDownloadJobParam();
             }}

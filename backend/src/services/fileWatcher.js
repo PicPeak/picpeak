@@ -1,5 +1,6 @@
 const chokidar = require('chokidar');
 const path = require('path');
+const crypto = require('crypto');
 const fs = require('fs').promises;
 const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
@@ -8,7 +9,7 @@ const { exifColumn } = require('./photoExif');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
-const { generateThumbnail, generateVideoPlaceholder, withProcessableImage } = require('./imageProcessor');
+const { generateThumbnail, generateVideoPlaceholder, withProcessableImage, extractCaptureDate, prefixedBasename } = require('./imageProcessor');
 const logger = require('../utils/logger');
 const { isVideoMimeType } = require('./videoProcessor');
 const mime = require('mime-types');
@@ -16,6 +17,8 @@ const { isRawFilename } = require('../utils/rawFormats');
 const { normalizeUploadMimeType } = require('../utils/fileSecurityUtils');
 const { getAllowedExtensions } = require('./uploadSettings');
 const downloadZipService = require('./downloadZipService');
+const { promotionSettled } = require('./watchFolderClaims');
+const { unfinishedKeys } = require('./publicUploadQuota');
 
 const { getStoragePath } = require('../config/storage');
 const WATCH_PATH = () => path.join(getStoragePath(), 'events/active');
@@ -100,8 +103,66 @@ function startFileWatcher() {
       });
     });
 
+  // Rows imported before thumbnails got a per-photo name may still share one.
+  // Through the watcher's queue: same concurrency bound, and stopFileWatcher
+  // waits for it.
+  enqueue(() => repairSharedThumbnails()).catch((error) => {
+    logger.warn('[fileWatcher] Shared thumbnail repair failed', { error: error.message });
+  });
+
   logger.info('File watcher started');
   return watcher;
+}
+
+/**
+ * Give every photo that shares a derived file with another photo its own.
+ *
+ * Watch-folder imports named the thumbnail after the camera's file name, and
+ * regenerating a thumbnail, lightbox preview or hero did the same, so
+ * same-named files in two galleries point at one file showing whichever was
+ * written last. Each such row is regenerated from its own original, under a
+ * per-photo name (imageProcessor's ownDerivativeName), and the old file is
+ * removed once no row points at it. Shared keys are found across every row,
+ * but archived galleries are not regenerated: their originals are in the
+ * zip, not in storage, and their rows keep the key (and so the file). A live
+ * row that cannot be regenerated loses the pointer instead, so it is rebuilt
+ * on its next view rather than showing another gallery's picture, and it no
+ * longer holds the key once the others have moved off. Idempotent: with no
+ * shared keys left, this is three grouped queries.
+ */
+async function repairSharedThumbnails() {
+  const { ensureThumbnail, ensurePreviewImage, ensureHeroImage } = require('./imageProcessor');
+  const { getStorage } = require('./storage');
+  const archived = () => db('events').where('is_archived', formatBoolean(true)).select('id');
+  const kinds = {
+    thumbnail_path: (photo) => ensureThumbnail({ ...photo, thumbnail_path: null }, { force: true }),
+    preview_path: (photo) => ensurePreviewImage({ ...photo, preview_path: null }, { force: true }),
+    // The event's own focal point, as the gallery hero route asks for it.
+    hero_path: (photo) => ensureHeroImage({ ...photo, hero_path: null }),
+  };
+  for (const [column, regenerate] of Object.entries(kinds)) {
+    const keys = await db('photos').whereNotNull(column)
+      .groupBy(column).havingRaw('count(*) > 1').pluck(column);
+    if (keys.length === 0) continue;
+    logger.info(`[fileWatcher] ${keys.length} ${column} file(s) shared by several photos; regenerating them per photo`);
+    for (const key of keys) {
+      const photos = await db('photos').where(column, key).whereNotIn('event_id', archived()).orderBy('id');
+      for (const photo of photos) {
+        let rebuilt = null;
+        try {
+          rebuilt = await regenerate(photo);
+        } catch (error) {
+          logger.warn(`[fileWatcher] Could not regenerate ${column} of photo ${photo.id}: ${error.message}`);
+        }
+        if (!rebuilt) {
+          await db('photos').where({ id: photo.id, [column]: key }).update({ [column]: null });
+        }
+      }
+      if (!(await db('photos').where(column, key).first('id'))) {
+        await getStorage().delete(key).catch(() => {});
+      }
+    }
+  }
 }
 
 /**
@@ -176,6 +237,16 @@ async function processNewPhoto(filePath) {
   const event = await db('events').where({ slug: eventSlug, is_active: formatBoolean(true) }).first();
   if (!event) return;
 
+  // An upload storing this file has not written its row yet (issue 1970).
+  // Wait for it, so the check below sees that row, or a hand-dropped file
+  // is still imported; a failed upload may have removed the file meanwhile.
+  const storageKey = path.posix.join('events/active', ...pathParts);
+  const promotion = promotionSettled(storageKey);
+  if (promotion) {
+    await promotion;
+    if (!(await fs.access(filePath).then(() => true, () => false))) return;
+  }
+
   // Check if photo already exists.
   //
   // `source_filename` is in here, not just filename/path, because a REPLACEMENT
@@ -200,26 +271,48 @@ async function processNewPhoto(filePath) {
     logger.debug(`Photo already exists: ${relativePath}`);
     return;
   }
-  
+
+  // An upload that died between storing this file and writing its row left
+  // its promotion record behind (issue 1970). The in-process claim above did
+  // not survive the restart; the record did, and every process sees it. The
+  // file never became a photo, so it is not imported as one.
+  if ((await unfinishedKeys([storageKey])).has(storageKey)) {
+    logger.warn(`[fileWatcher] Skipping ${relativePath}: an upload stored it but never finished`);
+    return;
+  }
+  // commitObject writes the row and settles the record in one transaction,
+  // so an upload in another process may have finished between the photo
+  // check above and the ledger read: look for its row once more.
+  if (await findExistingPhoto(event.id, path.basename(filePath), relativePath)) {
+    logger.debug(`Photo already exists: ${relativePath}`);
+    return;
+  }
+
   // Get file stats
   const stats = await fs.stat(filePath);
   
   // Generate thumbnail or placeholder
   let thumbnailPath = null;
   const thumbMeta = {};
+  // The thumbnail key has no gallery in it, and cameras restart at
+  // IMG_0001.JPG, so the camera's name alone made two galleries share one
+  // thumbnail: the later import overwrote it, and deleting either photo
+  // removed the other's. A random prefix, as the upload paths get from their
+  // generated file names; the name is shortened to leave room for it.
+  const thumbBasename = prefixedBasename(`w${crypto.randomBytes(6).toString('hex')}_`, filename);
   // Capture image dimensions so aspect-aware layouts (masonry / mosaic /
   // justified) can size each card to the photo's real proportions
   // instead of the 800×600 fallback in MasonryGalleryLayout (#447).
   // Skip videos — those would need ffprobe.
   let dimensions = null;
   if (isVideo) {
-    thumbnailPath = await generateVideoPlaceholder(filename);
+    thumbnailPath = await generateVideoPlaceholder(thumbBasename);
   } else {
     // sharp cannot decode a RAW, so thumbnail and measure its embedded
     // preview instead. Pass-through for ordinary images.
     const proc = await withProcessableImage(filePath, filename);
     try {
-      thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename, meta: thumbMeta });
+      thumbnailPath = await generateThumbnail(proc.path, { outputBasename: thumbBasename, meta: thumbMeta });
       try {
         const metadata = await sharp(proc.path).metadata();
         // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
@@ -249,6 +342,9 @@ async function processNewPhoto(filePath) {
   const credit = await resolveCredit({ localPath: filePath, isVideo });
   // Camera details (issue 1733, D1), under the same condition.
   const exif = isVideo ? {} : await exifColumn(filePath);
+  // Capture date, likewise: the row is complete, so the worker that reads it
+  // for an upload never runs, and the timeline sorted it by import time.
+  const capturedAt = isVideo ? null : await extractCaptureDate(filePath);
   // Browser-playable copy (issue 1430): a video the watcher picks up is
   // queued like an uploaded one while the setting is on; otherwise it would
   // wait for the next switch-on backfill. No transaction is open here.
@@ -273,6 +369,7 @@ async function processNewPhoto(filePath) {
     processing_status: 'complete',
     size_bytes: stats.size,
     mime_type: mimeType,
+    captured_at: capturedAt ? capturedAt.toISOString() : null,
     ...(dimensions && { width: dimensions.width, height: dimensions.height }),
     ...(webCopyEnabled ? { web_status: 'pending' } : {}),
     ...credit,
@@ -348,4 +445,4 @@ async function removePhoto(filePath) {
   logger.info(`Removed photo: ${relativePath}`);
 }
 
-module.exports = { stopFileWatcher, startFileWatcher, findExistingPhoto, processNewPhoto, removePhoto };
+module.exports = { stopFileWatcher, startFileWatcher, findExistingPhoto, processNewPhoto, removePhoto, repairSharedThumbnails };
