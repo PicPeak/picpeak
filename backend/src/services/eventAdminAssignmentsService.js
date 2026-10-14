@@ -87,6 +87,12 @@ async function resolveAssignableIds(ids, ownerId, alreadyAssigned = []) {
  * @returns {Promise<{added: number[], removed: number[]}>}
  */
 async function setAssignedAdmins(eventId, adminIds, assignedBy, trx = db) {
+  // The event row before any assignment row (issue 1979): the key-share lock
+  // the insert below takes on it anyway, taken up front. Deleting a gallery
+  // locks the event row and then its assignments, so taking it last could
+  // deadlock with that on PostgreSQL. A key-share lock holds back neither an
+  // edit of the event nor another team save. No-op on SQLite.
+  await trx('events').where('id', eventId).forKeyShare().first('id');
   const existing = (await trx('event_admin_assignments').where('event_id', eventId).pluck('admin_user_id'))
     .map(Number);
   const wanted = new Set(adminIds);
@@ -103,8 +109,10 @@ async function setAssignedAdmins(eventId, adminIds, assignedBy, trx = db) {
   }
   if (added.length > 0) {
     // A concurrent save of the same set already inserted the row: same result.
+    // That save waits on the uncommitted row, so both insert in id order:
+    // in submitted order, [a, b] against [b, a] deadlocks on PostgreSQL.
     await trx('event_admin_assignments')
-      .insert(added.map((id) => ({ event_id: eventId, admin_user_id: id, assigned_by: assignedBy })))
+      .insert([...added].sort((a, b) => a - b).map((id) => ({ event_id: eventId, admin_user_id: id, assigned_by: assignedBy })))
       .onConflict(['event_id', 'admin_user_id']).ignore();
   }
   return { added, removed };

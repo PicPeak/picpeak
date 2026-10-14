@@ -92,4 +92,29 @@ describe('admin delete and team save lock assignment rows in id order (issue 197
       .map(Number);
     expect(ids).toEqual([b, c]);
   });
+
+  it('a team save reads the event row before its assignments', async () => {
+    const a = await admin();
+    const gallery = await event();
+
+    await db.transaction((trx) => eventAdminAssignments.setAssignedAdmins(gallery, [a], ownerId, trx));
+
+    const eventRead = queries.findIndex((sql) => /^select .* from `events` where `id` = \?/i.test(sql));
+    const firstOnTable = queries.findIndex((sql) => sql.includes('`event_admin_assignments`'));
+    expect(eventRead).not.toBe(-1);
+    expect(eventRead).toBeLessThan(firstOnTable);
+  });
+
+  it('a team save inserts new members in id order, whatever order they were submitted in', async () => {
+    const [a, b, c] = [await admin(), await admin(), await admin()];
+    const gallery = await event();
+
+    const change = await db.transaction((trx) => eventAdminAssignments.setAssignedAdmins(gallery, [c, a, b], ownerId, trx));
+
+    // The activity log keeps the submitted order.
+    expect(change).toEqual({ added: [c, a, b], removed: [] });
+    const byRowId = (await db('event_admin_assignments').where({ event_id: gallery }).orderBy('id').pluck('admin_user_id'))
+      .map(Number);
+    expect(byRowId).toEqual([a, b, c]);
+  });
 });
