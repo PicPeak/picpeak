@@ -13,6 +13,7 @@ import { Sparkles } from 'lucide-react';
 
 import type { GalleryDelivery } from '../../types';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { calendarDay } from '../../utils/calendarDay';
 import { useTheme } from '../../contexts/ThemeContext';
 import { gridGeometryClass } from './layouts/GridGalleryLayout';
 
@@ -41,7 +42,9 @@ export const GalleryDeliveryBanner: React.FC<GalleryDeliveryBannerProps> = ({
   const delivered = delivery.delivered_count;
   const expected = delivery.expected_count && delivery.expected_count > 0 ? delivery.expected_count : null;
   // Through the general date format setting, like every other guest-facing date.
-  const date = delivery.due_at ? format(delivery.due_at) : '';
+  // The promise is a calendar day stored at noon UTC: its UTC date, which the
+  // guest's zone would push to the next day east of UTC+12.
+  const date = delivery.due_at ? format(calendarDay(delivery.due_at)) : '';
 
   let text: string;
   if (expected !== null && date) {

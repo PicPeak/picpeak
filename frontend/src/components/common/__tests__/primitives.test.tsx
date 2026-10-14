@@ -230,6 +230,14 @@ describe('useEscapeClose', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('leaves an Escape that cancels an IME composition to the field', () => {
+    const onClose = vi.fn();
+    render(<Overlay onClose={onClose} />);
+    fireEvent.keyDown(document, { key: 'Escape', isComposing: true });
+    fireEvent.keyDown(document, { key: 'Escape', keyCode: 229 });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('leaves the overlay open when a Modal on top takes the Escape', () => {
     const onDrawer = vi.fn();
     const onModal = vi.fn();

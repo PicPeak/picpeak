@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { X, Download, Filter, FolderTree, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera, ClipboardList } from 'lucide-react';
 import { Button } from '../common';
 import { useEscapeClose } from '../common/useEscapeClose';
@@ -18,6 +18,7 @@ import { BulkRating } from './BulkRating';
 import { GallerySidebarFolderTree, type SidebarFolderTreeProps } from './GallerySidebarFolderTree';
 import { GallerySidebarSelectionTray } from './GallerySidebarSelectionTray';
 import { lockBodyScroll } from '../../utils/scrollLock';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface GallerySidebarProps {
   isOpen: boolean;
@@ -110,6 +111,11 @@ interface GallerySidebarProps {
    * without folders, which keeps its sidebar exactly as before.
    */
   folderTree?: SidebarFolderTreeProps;
+  /**
+   * The control that opens the sidebar. Focus returns to it when the sidebar
+   * closes with focus inside, as the closed panel is inert (issue 1977).
+   */
+  returnFocusRef?: React.RefObject<HTMLElement>;
 }
 
 export const GallerySidebar: React.FC<GallerySidebarProps> = ({
@@ -174,13 +180,18 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   onDeselectPhoto,
   slug,
   folderTree,
+  returnFocusRef,
 }) => {
   const { t } = useTranslation();
   // On a phone the sidebar is a drawer; Escape closes it like any overlay.
   useEscapeClose(isMobile && isOpen, onClose);
   const downloadQuota = useDownloadQuota();
   const downloadAllOverQuota = !!downloadAllPhotos && !downloadQuota.allows(downloadAllPhotos);
-  const sidebarRef = useRef<HTMLDivElement>(null);
+  // On a phone the open drawer covers the page behind a backdrop, so it holds
+  // the keyboard like a dialog: focus moves in (to its close button, the
+  // first control) and Tab wraps inside it. Escape and the focus hand-back
+  // below take it out again. The desktop panel leaves focus where it is.
+  const sidebarRef = useFocusTrap(isMobile && isOpen, { containFocus: true });
   // Where focus goes when the last photo is removed from the selection tray
   // by keyboard: the selection toggle, or the close button in a gallery
   // without the download section.
@@ -189,6 +200,15 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   const focusAfterTrayEmptied = useCallback(() => {
     (selectionToggleRef.current ?? closeButtonRef.current)?.focus();
   }, []);
+
+  // The closed panel is inert, so focus left inside it would be dropped to
+  // the body. Hand it back to the toggle before the browser does that.
+  useLayoutEffect(() => {
+    if (isOpen) return;
+    if (sidebarRef.current?.contains(document.activeElement)) {
+      returnFocusRef?.current?.focus();
+    }
+  }, [isOpen, returnFocusRef, sidebarRef]);
 
   // Close sidebar when clicking outside on mobile
   useEffect(() => {
@@ -207,7 +227,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isMobile, isOpen, onClose]);
+  }, [isMobile, isOpen, onClose, sidebarRef]);
 
   // Prevent body scroll when sidebar is open on mobile
   useEffect(() => {
@@ -242,6 +262,10 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
           ${isMobile ? 'w-full max-w-sm' : 'w-80'}
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
+        // Off screen is not out of reach: the closed panel leaves the tab
+        // order and the accessibility tree at once, slide-out included
+        // (issue 1977). Spread, as React 18 does not know `inert` as a prop.
+        {...(isOpen ? {} : { inert: '' })}
       >
         {/* Header */}
         <div className="gallery-sidebar-header flex items-center justify-between p-4 border-b border-border-token">
@@ -629,8 +653,11 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
               </div>
 
               {/* Sort direction (#889) */}
+              {/* Wraps onto two rows when the labels do not fit side by
+                  side (German, French; English on the 320px panel), rather
+                  than pushing "Sort descending" past the panel edge. */}
               {onSortDescChange && (
-                <div className="flex items-center gap-2 mt-3">
+                <div className="flex flex-wrap items-center gap-2 mt-3">
                   <Button
                     variant={!sortDesc ? 'primary' : 'outline'}
                     size="sm"
