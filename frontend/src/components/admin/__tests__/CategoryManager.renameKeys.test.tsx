@@ -15,12 +15,13 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 const updateCategory = vi.fn(async () => ({}));
+const createCategory = vi.fn(async () => ({}));
 vi.mock('../../../services/categories.service', () => ({
   categoriesService: {
     getGlobalCategories: vi.fn(async () => [{ id: 1, name: 'Ceremony', slug: 'ceremony', is_global: true }]),
     updateCategory: (...args: unknown[]) => updateCategory(...args),
     reorderGlobalCategories: vi.fn(),
-    createCategory: vi.fn(),
+    createCategory: (...args: unknown[]) => createCategory(...args),
     deleteCategory: vi.fn(),
   },
 }));
@@ -52,9 +53,28 @@ describe('CategoryManager inline rename', () => {
       fireEvent.keyDown(field, { key: 'Enter', ...flags });
       fireEvent.keyDown(field, { key: 'Escape', ...flags });
     }
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
     expect(screen.getByDisplayValue('Zeremonie')).toBeInTheDocument();
     expect(updateCategory).not.toHaveBeenCalled();
     fireEvent.keyDown(field, { key: 'Enter' });
     await waitFor(() => expect(updateCategory).toHaveBeenCalled());
+  });
+
+  it('does not add a category on the Enter that commits an IME composition', async () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <CategoryManager />
+      </QueryClientProvider>,
+    );
+    await screen.findByText('Ceremony');
+    fireEvent.click(screen.getByRole('button', { name: /add/i }));
+    const field = screen.getByPlaceholderText('categories.categoryName');
+    fireEvent.change(field, { target: { value: 'Empfang' } });
+    fireEvent.keyPress(field, { key: 'Enter', code: 'Enter', charCode: 13, isComposing: true });
+    // The mutation starts on a later tick.
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    expect(createCategory).not.toHaveBeenCalled();
+    fireEvent.keyPress(field, { key: 'Enter', code: 'Enter', charCode: 13 });
+    await waitFor(() => expect(createCategory).toHaveBeenCalled());
   });
 });

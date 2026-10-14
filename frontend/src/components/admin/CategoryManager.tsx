@@ -142,7 +142,7 @@ export const CategoryManager: React.FC = () => {
             type="text"
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleCreate()}
+            onKeyPress={(e) => e.key === 'Enter' && !isImeComposing(e) && handleCreate()}
             placeholder={t('categories.categoryName')}
             maxLength={100}
             className="flex-1 px-3 py-2 border border-line-strong rounded-md bg-panel text-heading focus:ring-2 focus:ring-accent"

@@ -701,9 +701,9 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                     onChange={(e) => setDraftLabel(e.target.value)}
                     onBlur={() => saveLabel(person)}
                     onKeyDown={(e) => {
-                      // Escape and Enter of an IME composition are the field's
-                      // (stopped here so the window does not close either).
-                      if (isImeComposing(e)) { e.stopPropagation(); return; }
+                      // Escape and Enter of an IME composition are the field's;
+                      // the window's own Escape already leaves them alone.
+                      if (isImeComposing(e)) return;
                       if (e.key === 'Enter') saveLabel(person);
                       if (e.key === 'Escape') {
                         // Cancels the rename only; the window stays open.
