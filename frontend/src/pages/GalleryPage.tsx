@@ -9,6 +9,7 @@ import { usePublicSettings } from '../hooks/usePublicSettings';
 import { Input, Button, ReCaptcha, CMSContentBlock, PoweredBy } from '../components/common';
 import { useGalleryAuth, useTheme } from '../contexts';
 import { useGalleryInfo } from '../hooks/useGallery';
+import { useFollowGalleryRename } from '../hooks/useFollowGalleryRename';
 import { GalleryView } from '../components/gallery';
 import { GallerySkeleton } from '../components/gallery/GallerySkeleton';
 import { PasswordChangeRequiredNotice } from '../components/gallery/PasswordChangeRequiredNotice';
@@ -128,7 +129,9 @@ export const GalleryPage: React.FC = () => {
     isLoading: isLoadingInfoQuery,
     error: infoError
   } = useGalleryInfo(canFetchGalleryInfo ? resolvedSlug ?? undefined : undefined, resolvedToken, canFetchGalleryInfo);
-  const isLoadingInfo = isLoadingInfoQuery || isResolvingIdentifier;
+  // An old slug of a renamed gallery answers 301 naming the new one.
+  const followingRename = useFollowGalleryRename(infoError);
+  const isLoadingInfo = isLoadingInfoQuery || isResolvingIdentifier || followingRename;
   const requiresPassword = normalizeRequirePassword(galleryInfo?.requires_password, true);
 
   React.useEffect(() => {
