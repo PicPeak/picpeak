@@ -239,16 +239,19 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
         </Button>
       ))}
 
-      {/* Portalled, as the confirmation below is. */}
+      {/* Portalled, as the confirmation below is, and lifted to its level:
+          the modal's own z-50 sits below the full-bleed band's z-[60]. */}
       {identityFor && createPortal(
-        <FeedbackIdentityModal
-          isOpen
-          onClose={() => setIdentityFor(null)}
-          onSubmit={handleIdentitySubmit}
-          feedbackType={identityFor === 'approval'
-            ? t('gallery.selection.identityApproval', 'your approval')
-            : t('gallery.selection.identitySelection', 'your selection')}
-        />,
+        <div className="relative z-[9999]">
+          <FeedbackIdentityModal
+            isOpen
+            onClose={() => setIdentityFor(null)}
+            onSubmit={handleIdentitySubmit}
+            feedbackType={identityFor === 'approval'
+              ? t('gallery.selection.identityApproval', 'your approval')
+              : t('gallery.selection.identitySelection', 'your selection')}
+          />
+        </div>,
         document.body,
       )}
 

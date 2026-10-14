@@ -181,6 +181,9 @@ describe('SelectionSubmitBar (issue 1733)', () => {
       expect(screen.getByRole('dialog', { name: 'Your Information Required' }))
         .toHaveTextContent('Please provide your name and email to submit your approval.');
       expect(screen.queryByRole('dialog', { name: 'Approve the edited photos?' })).not.toBeInTheDocument();
+      // Above the full-bleed band (z-[60]), at the confirmation's level.
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' }).closest('.z-\\[9999\\]'))
+        .not.toBeNull();
 
       await fillIdentity();
       expect(screen.queryByRole('dialog', { name: 'Your Information Required' })).not.toBeInTheDocument();

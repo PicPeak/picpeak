@@ -434,6 +434,17 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
         expect(Array.from(names)).toEqual(['Dora', 'Dora']);
       });
 
+      it('does not take a name given without an email while both were optional', async () => {
+        await setSettings({ require_name_email: false });
+        expect((await feedback('device-A', photoIds[0], { feedback_type: 'like', guest_name: 'Dora' })).status)
+          .toBeLessThan(300);
+        await setSettings({ require_name_email: true });
+        const res = await submit('device-A', { kind: 'approval' });
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('GUEST_INFO_REQUIRED');
+        expect(await db('selection_submissions').where({ event_id: eventId })).toHaveLength(0);
+      });
+
       it('leaves registered guests to their token', async () => {
         await setSettings({ identity_mode: 'guest' });
         const res = await submit(guests[0], { kind: 'approval' });

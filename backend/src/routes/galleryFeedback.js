@@ -823,7 +823,9 @@ router.post('/:slug/selection/submit',
           && (await validateGuestRequirements(settings, req.body)).valid
           ? req.body.guest_name || null
           : null;
-        guestName = typed || await selectionSubmissions.feedbackName(event.id, viewer);
+        guestName = typed || await selectionSubmissions.feedbackName(event.id, viewer, {
+          requireEmail: !!settings.require_name_email,
+        });
       }
       // A gallery that requires name and email takes no anonymous hand-over:
       // an approval needs no feedback, so nothing else asked for the name.
