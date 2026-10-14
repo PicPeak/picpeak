@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { X, Download, Filter, FolderTree, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera, ClipboardList } from 'lucide-react';
 import { Button } from '../common';
 import { useEscapeClose } from '../common/useEscapeClose';
@@ -110,6 +110,11 @@ interface GallerySidebarProps {
    * without folders, which keeps its sidebar exactly as before.
    */
   folderTree?: SidebarFolderTreeProps;
+  /**
+   * The control that opens the sidebar. Focus returns to it when the sidebar
+   * closes with focus inside, as the closed panel is inert (issue 1977).
+   */
+  returnFocusRef?: React.RefObject<HTMLElement>;
 }
 
 export const GallerySidebar: React.FC<GallerySidebarProps> = ({
@@ -174,6 +179,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   onDeselectPhoto,
   slug,
   folderTree,
+  returnFocusRef,
 }) => {
   const { t } = useTranslation();
   // On a phone the sidebar is a drawer; Escape closes it like any overlay.
@@ -189,6 +195,15 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   const focusAfterTrayEmptied = useCallback(() => {
     (selectionToggleRef.current ?? closeButtonRef.current)?.focus();
   }, []);
+
+  // The closed panel is inert, so focus left inside it would be dropped to
+  // the body. Hand it back to the toggle before the browser does that.
+  useLayoutEffect(() => {
+    if (isOpen) return;
+    if (sidebarRef.current?.contains(document.activeElement)) {
+      returnFocusRef?.current?.focus();
+    }
+  }, [isOpen, returnFocusRef]);
 
   // Close sidebar when clicking outside on mobile
   useEffect(() => {
@@ -242,6 +257,10 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
           ${isMobile ? 'w-full max-w-sm' : 'w-80'}
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
+        // Off screen is not out of reach: the closed panel leaves the tab
+        // order and the accessibility tree at once, slide-out included
+        // (issue 1977). Spread, as React 18 does not know `inert` as a prop.
+        {...(isOpen ? {} : { inert: '' })}
       >
         {/* Header */}
         <div className="gallery-sidebar-header flex items-center justify-between p-4 border-b border-border-token">
