@@ -120,3 +120,25 @@ describe('BillDetailPage — send with supplier proofs', () => {
     expect(send).not.toHaveBeenCalled();
   });
 });
+
+// A customer who takes no administrative emails (migration 300): the action
+// reads Issue, and there is no proof dialog — nothing is mailed to attach to.
+describe('BillDetailPage — customer without administrative emails', () => {
+  beforeEach(() => {
+    save.mockReset(); send.mockReset();
+    (invoice.customer as Record<string, unknown>).noAdminEmails = true;
+  });
+  afterEach(() => { delete (invoice.customer as Record<string, unknown>).noAdminEmails; });
+
+  it('offers Issue instead of Send and issues without the proof dialog', async () => {
+    save.mockResolvedValue(1);
+    send.mockResolvedValue({});
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /^Issue$/ }));
+    expect(screen.queryByRole('button', { name: /Send now/i })).toBeNull();
+    await userEvent.click(await screen.findByRole('button', { name: /Save & issue/i }));
+    await waitFor(() => expect(send).toHaveBeenCalledWith(1, undefined));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /Send with 1 proof/i })).toBeNull();
+  });
+});
