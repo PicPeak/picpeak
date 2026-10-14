@@ -573,6 +573,16 @@ describe('one archive job per gallery', () => {
     expect(row.archive_path).toMatch(/^events\/archived\/long-x+-[0-9a-f]{12}\.zip$/);
   });
 
+  it('builds the archive of a slug too long to name a temp file after', async () => {
+    // 250 characters: `<8 hex>-<slug>.zip` passed the 255-byte file name limit.
+    const slug = `long-${'y'.repeat(245)}`;
+    const event = await makeEvent(slug, { photoCount: 1 });
+
+    await archiveEvent(event);
+
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(true);
+  });
+
   it('keeps a removed abandoned upload on record, as a stalled run can still land it', async () => {
     const event = await makeEvent('abandoned-late');
     const deadKey = 'events/archived/abandoned-late-0123456789ab.zip';

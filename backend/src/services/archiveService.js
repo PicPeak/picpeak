@@ -225,7 +225,9 @@ async function buildArchive(event, lease) {
   const eventPrefix = path.posix.join('events/active', event.slug);
 
   const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-archive-'));
-  const tmpArchive = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}-${archiveName}`);
+  // Not named after the slug: the temp directory is this run's own already,
+  // and a slug past 242 characters made the name too long for the file system.
+  const tmpArchive = path.join(tmpDir, 'archive.zip');
 
   try {
     // The gallery's trash (issue 1733) is deleted for good first: the zip
