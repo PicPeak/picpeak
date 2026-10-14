@@ -506,6 +506,8 @@
       "approveBody": "Vous confirmez que les photos retouchées conviennent telles quelles et que le photographe peut poursuivre. Vous ne pourrez ensuite plus modifier vos approbations et refus ; le photographe peut les rouvrir pour vous.",
       "approveRejected": "Photos encore marquées comme refusées : {{count}}",
       "approveConfirm": "Approuver",
+      "identityApproval": "votre approbation",
+      "identitySelection": "votre sélection",
       "approveSuccess": "Votre approbation a été envoyée au photographe",
       "approvedOn": "Photos retouchées approuvées le {{date}}",
       "noteLabel": "Note pour le photographe (facultatif)",

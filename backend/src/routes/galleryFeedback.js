@@ -17,6 +17,7 @@ const {
   checkValidation,
   validateGuestRequirements
 } = require('../utils/feedbackValidation');
+const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 const { normalizeAnnotation } = require('../utils/photoAnnotation');
 
 // Most photos one bulk rating request may name (issue 1733).
@@ -784,6 +785,10 @@ router.post('/:slug/selection/submit',
   body('kind').isIn(selectionSubmissions.KINDS),
   body('note').optional({ nullable: true }).isString().trim()
     .isLength({ max: selectionSubmissions.NOTE_MAX_LENGTH }),
+  // Simple and shared mode: the name and email the hand-over dialog asked
+  // for, validated as the feedback routes validate them.
+  body('guest_name').optional().trim().isLength({ max: 100 }),
+  body('guest_email').optional().trim().isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
   checkValidation,
   feedbackRateLimit('selection_submit'),
   async (req, res) => {
@@ -810,7 +815,21 @@ router.post('/:slug/selection/submit',
       }
 
       const viewer = await selectionViewer(req);
-      const guestName = req.guest?.name ?? await selectionSubmissions.feedbackName(event.id, viewer);
+      let guestName = req.guest?.name ?? null;
+      if (!guestName) {
+        // Simple and shared mode name the guest from the body, as the feedback
+        // routes do; else from the name given with their earlier feedback.
+        const typed = settings.identity_mode !== 'guest'
+          && (await validateGuestRequirements(settings, req.body)).valid
+          ? req.body.guest_name || null
+          : null;
+        guestName = typed || await selectionSubmissions.feedbackName(event.id, viewer);
+      }
+      // A gallery that requires name and email takes no anonymous hand-over:
+      // an approval needs no feedback, so nothing else asked for the name.
+      if (settings.identity_mode !== 'guest' && settings.require_name_email && !guestName) {
+        return res.status(400).json({ error: 'Guest information required', code: 'GUEST_INFO_REQUIRED' });
+      }
       const result = await selectionSubmissions.submit(event.id, settings, viewer, { kind, note, guestName });
 
       // Merged away or deleted while this request was running: the answer

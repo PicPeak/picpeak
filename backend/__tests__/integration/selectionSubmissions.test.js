@@ -399,6 +399,52 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
       expect(res.status).toBe(201);
       expect(res.body.submission.item_count).toBe(0);
     });
+
+    // Issue 1984: an approval needs no feedback, so no name prompt ran first.
+    describe('in a gallery that requires name and email', () => {
+      beforeEach(() => setSettings({ require_name_email: true }));
+
+      it('refuses an anonymous approval, in simple and in shared mode', async () => {
+        for (const mode of ['simple', 'shared']) {
+          await setSettings({ identity_mode: mode });
+          const res = await submit('device-A', { kind: 'approval' });
+          expect(res.status).toBe(400);
+          expect(res.body.code).toBe('GUEST_INFO_REQUIRED');
+          const partial = await submit('device-A', { kind: 'approval', guest_name: 'Clara' });
+          expect(partial.status).toBe(400);
+          expect(partial.body.code).toBe('GUEST_INFO_REQUIRED');
+        }
+        expect(await db('selection_submissions').where({ event_id: eventId })).toHaveLength(0);
+      });
+
+      it('stores an approval with the name and email the dialog asked for', async () => {
+        const res = await submit('device-A', { kind: 'approval', guest_name: ' Clara ', guest_email: 'clara@example.com' });
+        expect(res.status).toBe(201);
+        const row = await db('selection_submissions').where({ event_id: eventId }).first();
+        expect(row.guest_name).toBe('Clara');
+      });
+
+      it('names a guest by their earlier feedback, so a selection still goes through', async () => {
+        await feedback('device-A', photoIds[0], {
+          feedback_type: 'like', guest_name: 'Dora', guest_email: 'dora@example.com',
+        });
+        expect((await submit('device-A', { kind: 'selection' })).status).toBe(201);
+        expect((await submit('device-A', { kind: 'approval' })).status).toBe(201);
+        const names = await db('selection_submissions').where({ event_id: eventId }).pluck('guest_name');
+        expect(Array.from(names)).toEqual(['Dora', 'Dora']);
+      });
+
+      it('leaves registered guests to their token', async () => {
+        await setSettings({ identity_mode: 'guest' });
+        const res = await submit(guests[0], { kind: 'approval' });
+        expect(res.status).toBe(201);
+      });
+    });
+
+    it('still takes an anonymous approval where name and email are optional', async () => {
+      await setSettings({ require_name_email: false });
+      expect((await submit('device-A', { kind: 'approval' })).status).toBe(201);
+    });
   });
 
   describe('registered guests', () => {

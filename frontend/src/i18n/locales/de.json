@@ -2225,6 +2225,8 @@
       "approveBody": "Sie bestätigen, dass die bearbeiteten Fotos so in Ordnung sind und der Fotograf weitermachen kann. Danach können Sie Ihre Freigaben und Ablehnungen nicht mehr ändern; der Fotograf kann sie für Sie wieder öffnen.",
       "approveRejected": "Noch als abgelehnt markierte Fotos: {{count}}",
       "approveConfirm": "Freigeben",
+      "identityApproval": "Ihre Freigabe",
+      "identitySelection": "Ihre Auswahl",
       "approveSuccess": "Ihre Freigabe wurde an den Fotografen gesendet",
       "approvedOn": "Bearbeitete Fotos freigegeben am {{date}}",
       "noteLabel": "Anmerkung für den Fotografen (optional)",

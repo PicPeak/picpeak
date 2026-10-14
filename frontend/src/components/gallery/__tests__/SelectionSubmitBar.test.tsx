@@ -114,7 +114,7 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     await userEvent.type(screen.getByLabelText('Note for the photographer (optional)'), 'Album');
     await userEvent.click(Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Finish selection')!);
 
-    await waitFor(() => expect(submitSelection).toHaveBeenCalledWith('g', 'selection', 'Album'));
+    await waitFor(() => expect(submitSelection).toHaveBeenCalledWith('g', 'selection', 'Album', undefined));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
@@ -147,6 +147,82 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     answer.resolve({ id: 7, name: 'Anna' });
     expect(await screen.findByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
     expect(submitSelection).not.toHaveBeenCalled();
+  });
+
+  // Issue 1984: an approval needs no feedback, so no feedback action asked
+  // for the name a gallery that requires it should have.
+  describe('a gallery that requires name and email, outside guest identity mode', () => {
+    const renderRequired = (value: SelectionState, used = 0) =>
+      render(<SelectionSubmitBar slug="g" state={value} used={used} requireNameEmail />, { wrapper });
+    const fillIdentity = async () => {
+      await userEvent.type(screen.getByPlaceholderText('Enter your name'), 'Clara');
+      await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'clara@example.com');
+      await userEvent.click(screen.getByRole('button', { name: 'Submit Feedback' }));
+    };
+
+    beforeEach(() => {
+      guestIdentity.current = { identityMode: 'simple', ensureIdentity: vi.fn() };
+    });
+
+    it('asks for the name first, then confirms and sends it with the approval', async () => {
+      submitSelection.mockResolvedValue({ id: 3, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });
+      renderRequired(state({ approval: { can_submit: true } }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' }))
+        .toHaveTextContent('Please provide your name and email to submit your approval.');
+      expect(screen.queryByRole('dialog', { name: 'Approve the edited photos?' })).not.toBeInTheDocument();
+
+      await fillIdentity();
+      expect(screen.queryByRole('dialog', { name: 'Your Information Required' })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenCalledWith(
+        'g', 'approval', '', { guest_name: 'Clara', guest_email: 'clara@example.com' },
+      ));
+      expect(guestIdentity.current?.ensureIdentity).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing when the name prompt is dismissed', async () => {
+      renderRequired(state({ approval: { can_submit: true } }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(submitSelection).not.toHaveBeenCalled();
+    });
+
+    it('asks once: a second hand-over reuses the name', async () => {
+      submitSelection.mockResolvedValue({ id: 4, kind: 'selection', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 2, note: null });
+      renderRequired(state({ approval: { can_submit: true } }), 2);
+      await userEvent.click(screen.getByRole('button', { name: 'Finish selection' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toHaveTextContent('your selection');
+      await fillIdentity();
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
+    });
+
+    it('asks again when the server wants the name, keeping the note', async () => {
+      vi.mocked(toast.error).mockClear();
+      submitSelection
+        .mockRejectedValueOnce({ response: { status: 400, data: { code: 'GUEST_INFO_REQUIRED' } } })
+        .mockResolvedValueOnce({ id: 5, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: 'Fine' });
+      // The settings said optional when the bar rendered.
+      render(<SelectionSubmitBar slug="g" state={state({ approval: { can_submit: true } })} used={0} />, { wrapper });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await userEvent.type(screen.getByLabelText('Note for the photographer (optional)'), 'Fine');
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
+      expect(toast.error).not.toHaveBeenCalled();
+      await fillIdentity();
+      expect(screen.getByLabelText('Note for the photographer (optional)')).toHaveValue('Fine');
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenLastCalledWith(
+        'g', 'approval', 'Fine', { guest_name: 'Clara', guest_email: 'clara@example.com' },
+      ));
+    });
   });
 
   it('holds the confirmation until the counts it shows are fresh', async () => {
@@ -237,7 +313,7 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
     expect(screen.getByRole('dialog', { name: 'Approve the edited photos?' })).toHaveTextContent('Photos still marked as rejected: 1');
     await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
-    await waitFor(() => expect(submitSelection).toHaveBeenCalledWith('g', 'approval', ''));
+    await waitFor(() => expect(submitSelection).toHaveBeenCalledWith('g', 'approval', '', undefined));
   });
 
   it('shows an approval with its date once given', () => {

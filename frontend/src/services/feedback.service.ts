@@ -403,8 +403,11 @@ class FeedbackService {
     return response.data;
   }
 
-  async submitSelection(slug: string, kind: SubmissionKind, note?: string): Promise<SelectionSubmission> {
-    const response = await api.post(`/gallery/${slug}/selection/submit`, { kind, note: note || undefined });
+  async submitSelection(slug: string, kind: SubmissionKind, note?: string, identity?: {
+    guest_name: string;
+    guest_email: string;
+  }): Promise<SelectionSubmission> {
+    const response = await api.post(`/gallery/${slug}/selection/submit`, { kind, note: note || undefined, ...identity });
     return response.data.submission;
   }
 

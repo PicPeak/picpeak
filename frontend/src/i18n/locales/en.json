@@ -1632,6 +1632,8 @@
       "approveBody": "You confirm that the edited photos are fine as they are and the photographer can go ahead. After that you can no longer change your approvals and rejections; the photographer can reopen them for you.",
       "approveRejected": "Photos still marked as rejected: {{count}}",
       "approveConfirm": "Approve",
+      "identityApproval": "your approval",
+      "identitySelection": "your selection",
       "approveSuccess": "Your approval was sent to the photographer",
       "approvedOn": "Edited photos approved on {{date}}",
       "noteLabel": "Note for the photographer (optional)",

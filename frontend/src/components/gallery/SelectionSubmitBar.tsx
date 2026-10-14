@@ -13,6 +13,7 @@ import { FEEDBACK_SUBMITTED_EVENT } from '../../utils/feedbackEvents';
 import type { FeedbackSubmittedDetail } from '../../utils/feedbackEvents';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
+import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 
 /**
  * "x of y selected" and the two hand-overs (issue 1733, backlog item A1):
@@ -62,16 +63,24 @@ interface SelectionSubmitBarProps {
   state: SelectionState | undefined;
   /** How many photos the viewer has picked. */
   used: number;
+  /** Simple and shared mode: the gallery requires a name and email. */
+  requireNameEmail?: boolean;
   className?: string;
 }
 
-export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, state, used, className = '' }) => {
+export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
+  slug, state, used, requireNameEmail = false, className = '',
+}) => {
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
   const queryClient = useQueryClient();
   const guestIdentity = useGuestIdentityOptional();
   const [confirming, setConfirming] = useState<SubmissionKind | null>(null);
   const [note, setNote] = useState('');
+  // Simple and shared mode with name and email required: asked before the
+  // confirmation, as the feedback actions ask before they send (issue 1984).
+  const [identityFor, setIdentityFor] = useState<SubmissionKind | null>(null);
+  const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -79,7 +88,9 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
     mutationFn: async (kind: SubmissionKind) => {
       // Guest identity mode: the submission belongs to the registered guest.
       if (guestIdentity?.identityMode === 'guest') await guestIdentity.ensureIdentity();
-      return feedbackService.submitSelection(slug, kind, note.trim());
+      return feedbackService.submitSelection(slug, kind, note.trim(), savedIdentity
+        ? { guest_name: savedIdentity.name, guest_email: savedIdentity.email }
+        : undefined);
     },
     onSuccess: (_submission, kind) => {
       toast.success(kind === 'approval'
@@ -88,13 +99,21 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
       setConfirming(null);
       setNote('');
     },
-    onError: (error: unknown) => {
+    onError: (error: unknown, kind) => {
       // A cancelled name prompt is not a failure; a request that never got an
       // answer (offline, timed out) is, and is told like any other.
       if ((error as Error)?.message === 'user_cancelled') return;
       const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
       if (code === 'ALREADY_SUBMITTED') {
         setConfirming(null);
+        return;
+      }
+      // The gallery wants a name and email this bar did not have: ask, then
+      // confirm again with the note kept.
+      if (code === 'GUEST_INFO_REQUIRED') {
+        setSavedIdentity(null);
+        setConfirming(null);
+        setIdentityFor(kind);
         return;
       }
       toast.error(code === 'NOTHING_SELECTED'
@@ -123,6 +142,13 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
   const { selection, approval } = state;
   if (!selection.counter && !approval.can_submit) return null;
 
+  const showConfirmation = (kind: SubmissionKind) => {
+    setConfirming(kind);
+    // The dialog names the counts; make sure they are the server's.
+    queryClient.invalidateQueries({ queryKey: selectionStateKey(slug) });
+    queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+  };
+
   const openDialog = async (kind: SubmissionKind) => {
     // Guest identity mode: the submission belongs to the registered guest, so
     // the name is asked for before this dialog opens. The name prompt sits
@@ -134,12 +160,21 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
       } catch {
         return;
       }
+    } else if (requireNameEmail && !savedIdentity) {
+      // Same order as above: the name first, then the confirmation.
+      setNote('');
+      setIdentityFor(kind);
+      return;
     }
     setNote('');
-    setConfirming(kind);
-    // The dialog names the counts; make sure they are the server's.
-    queryClient.invalidateQueries({ queryKey: selectionStateKey(slug) });
-    queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+    showConfirmation(kind);
+  };
+
+  const handleIdentitySubmit = (name: string, email: string) => {
+    const kind = identityFor;
+    setSavedIdentity({ name, email });
+    setIdentityFor(null);
+    if (kind) showConfirmation(kind);
   };
 
   const isApproval = confirming === 'approval';
@@ -191,6 +226,19 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
           {t('gallery.selection.approve', 'Approve edited photos')}
         </Button>
       ))}
+
+      {/* Portalled, as the confirmation below is. */}
+      {identityFor && createPortal(
+        <FeedbackIdentityModal
+          isOpen
+          onClose={() => setIdentityFor(null)}
+          onSubmit={handleIdentitySubmit}
+          feedbackType={identityFor === 'approval'
+            ? t('gallery.selection.identityApproval', 'your approval')
+            : t('gallery.selection.identitySelection', 'your selection')}
+        />,
+        document.body,
+      )}
 
       {/* Portalled: in the full-bleed layouts this bar sits in a band with a
           stacking context of its own. */}

@@ -1489,6 +1489,8 @@
       "approveBody": "Potrjujete, da so obdelane fotografije v redu takšne, kot so, in da lahko fotograf nadaljuje. Potem svojih odobritev in zavrnitev ne morete več spreminjati; fotograf jih lahko za vas znova odpre.",
       "approveRejected": "Fotografije, ki so še označene kot zavrnjene: {{count}}",
       "approveConfirm": "Odobri",
+      "identityApproval": "vaše odobritve",
+      "identitySelection": "vašega izbora",
       "approveSuccess": "Vaša odobritev je bila poslana fotografu",
       "approvedOn": "Obdelane fotografije odobrene {{date}}",
       "noteLabel": "Opomba za fotografa (neobvezno)",
