@@ -162,10 +162,11 @@ describe('watch-folder thumbnail names', () => {
   it('separates rows that already share one thumbnail and keeps archived galleries out', async () => {
     const a = await makeEvent('thumbs-legacy-a');
     const b = await makeEvent('thumbs-legacy-b');
+    const missing = await makeEvent('thumbs-legacy-missing');
     const archived = await makeEvent('thumbs-legacy-archived', { archived: true });
     await dropJpeg(a, 'IMG_0003.JPG', RED);
     await dropJpeg(b, 'IMG_0003.JPG', BLUE);
-    // What the watcher wrote before: one key for both, holding the later import.
+    // What the watcher wrote before: one key for all, holding the latest import.
     const shared = 'thumbnails/thumb_IMG_0003.JPG';
     await sharp({ create: { width: 300, height: 225, channels: 3, background: BLUE } }).jpeg().toFile(abs(shared));
     const sharedPreview = 'previews/preview_IMG_0003.jpg';
@@ -173,11 +174,12 @@ describe('watch-folder thumbnail names', () => {
     await sharp({ create: { width: 800, height: 600, channels: 3, background: BLUE } }).jpeg().toFile(abs(sharedPreview));
     const legacyRow = (event) => ({
       event_id: event.id, filename: 'IMG_0003.JPG', source_filename: 'IMG_0003.JPG',
-      path: `${event.slug}/individual/IMG_0003.JPG`, thumbnail_path: shared, preview_path: sharedPreview, type: 'individual', media_type: 'image', source_origin: 'managed',
+      path: `${event.slug}/individual/IMG_0003.JPG`, thumbnail_path: shared, preview_path: sharedPreview,
+      type: 'individual', media_type: 'image', source_origin: 'managed',
       processing_status: 'complete', size_bytes: 1, mime_type: 'image/jpeg',
     });
-    await db('photos').insert([legacyRow(a), legacyRow(b)]);
-    await db('photos').insert([legacyRow(archived), legacyRow(archived)]);
+    // `missing` has a row but its original is gone, so it cannot be rebuilt.
+    await db('photos').insert([legacyRow(a), legacyRow(b), legacyRow(missing), legacyRow(archived)]);
 
     await repairSharedThumbnails();
 
@@ -188,13 +190,37 @@ describe('watch-folder thumbnail names', () => {
     expect(await redOf(photoB.thumbnail_path)).toBeLessThan(80);
     expect(photoA.preview_path).not.toBe(photoB.preview_path);
     expect(await redOf(photoA.preview_path)).toBeGreaterThan(150);
-    // The archived rows are not touched, so the key they hold stays on disk.
-    const archivedRows = await db('photos').where({ event_id: archived.id });
-    expect(archivedRows.every((r) => r.thumbnail_path === shared)).toBe(true);
+    // Not left showing another gallery's picture: rebuilt on its next view.
+    const photoMissing = await db('photos').where({ event_id: missing.id }).first();
+    expect(photoMissing.thumbnail_path).toBeNull();
+    expect(photoMissing.preview_path).toBeNull();
+    // The archived row is not touched, so the key it holds stays on disk.
+    expect((await db('photos').where({ event_id: archived.id }).first()).thumbnail_path).toBe(shared);
     expect(fs.existsSync(abs(shared))).toBe(true);
 
-    // A second run finds nothing left to do among the live galleries.
+    // A second run finds nothing left to do.
     await repairSharedThumbnails();
     expect((await db('photos').where({ event_id: a.id }).first()).thumbnail_path).toBe(photoA.thumbnail_path);
+  });
+
+  it('separates a live photo that shares its thumbnail only with an archived gallery', async () => {
+    const live = await makeEvent('thumbs-mixed-live');
+    const archived = await makeEvent('thumbs-mixed-archived', { archived: true });
+    await dropJpeg(live, 'IMG_0005.JPG', RED);
+    const shared = 'thumbnails/thumb_IMG_0005.JPG';
+    await sharp({ create: { width: 300, height: 225, channels: 3, background: BLUE } }).jpeg().toFile(abs(shared));
+    const legacyRow = (event) => ({
+      event_id: event.id, filename: 'IMG_0005.JPG', source_filename: 'IMG_0005.JPG',
+      path: `${event.slug}/individual/IMG_0005.JPG`, thumbnail_path: shared,
+      type: 'individual', media_type: 'image', source_origin: 'managed',
+      processing_status: 'complete', size_bytes: 1, mime_type: 'image/jpeg',
+    });
+    await db('photos').insert([legacyRow(live), legacyRow(archived)]);
+
+    await repairSharedThumbnails();
+
+    const photo = await db('photos').where({ event_id: live.id }).first();
+    expect(photo.thumbnail_path).not.toBe(shared);
+    expect(await redOf(photo.thumbnail_path)).toBeGreaterThan(150);
   });
 });

@@ -120,10 +120,13 @@ function startFileWatcher() {
  * same-named files in two galleries point at one file showing whichever was
  * written last. Each such row is regenerated from its own original, under a
  * per-photo name (imageProcessor's ownDerivativeName), and the old file is
- * removed once no row points at it. Archived galleries are left out: their
- * originals are in the zip, not in storage. A row whose original cannot be
- * read keeps the shared key and is tried again next start. Idempotent: with
- * no shared keys left, this is three grouped queries.
+ * removed once no row points at it. Shared keys are found across every row,
+ * but archived galleries are not regenerated: their originals are in the
+ * zip, not in storage, and their rows keep the key (and so the file). A live
+ * row that cannot be regenerated loses the pointer instead, so it is rebuilt
+ * on its next view rather than showing another gallery's picture, and it no
+ * longer holds the key once the others have moved off. Idempotent: with no
+ * shared keys left, this is three grouped queries.
  */
 async function repairSharedThumbnails() {
   const { ensureThumbnail, ensurePreviewImage, ensureHeroImage } = require('./imageProcessor');
@@ -136,17 +139,21 @@ async function repairSharedThumbnails() {
     hero_path: (photo) => ensureHeroImage({ ...photo, hero_path: null }),
   };
   for (const [column, regenerate] of Object.entries(kinds)) {
-    const keys = await db('photos').whereNotNull(column).whereNotIn('event_id', archived())
+    const keys = await db('photos').whereNotNull(column)
       .groupBy(column).havingRaw('count(*) > 1').pluck(column);
     if (keys.length === 0) continue;
     logger.info(`[fileWatcher] ${keys.length} ${column} file(s) shared by several photos; regenerating them per photo`);
     for (const key of keys) {
       const photos = await db('photos').where(column, key).whereNotIn('event_id', archived()).orderBy('id');
       for (const photo of photos) {
+        let rebuilt = null;
         try {
-          await regenerate(photo);
+          rebuilt = await regenerate(photo);
         } catch (error) {
           logger.warn(`[fileWatcher] Could not regenerate ${column} of photo ${photo.id}: ${error.message}`);
+        }
+        if (!rebuilt) {
+          await db('photos').where({ id: photo.id, [column]: key }).update({ [column]: null });
         }
       }
       if (!(await db('photos').where(column, key).first('id'))) {
