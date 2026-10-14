@@ -296,12 +296,36 @@ async function createDirect({ email, prefill, createdByAdminId, withinTransactio
   return { id };
 }
 
+// The passive account an acceptance was promoting moved to another address
+// between the read and the update. The transaction rolled back, so the
+// invitation is still open and a fresh read decides again.
+class AccountMovedError extends Error {}
+
 /**
  * Accept an invitation. Creates the customer_accounts row in a transaction
  * and marks the invitation accepted, so a partial failure can't leave a
  * dangling account or a re-usable token.
  */
-async function acceptInvitation({ token, name, password, profile }) {
+async function acceptInvitation(args) {
+  try {
+    return await acceptInvitationOnce(args);
+  } catch (err) {
+    if (!(err instanceof AccountMovedError)) throw err;
+    // Once: the invited address no longer names that account, so the
+    // retry creates the invitee's own account (or promotes whichever
+    // passive account holds the address now).
+    try {
+      return await acceptInvitationOnce(args);
+    } catch (retryErr) {
+      if (retryErr instanceof AccountMovedError) {
+        throw new ConflictError('Customer account changed, please try again', 'email');
+      }
+      throw retryErr;
+    }
+  }
+}
+
+async function acceptInvitationOnce({ token, name, password, profile }) {
   const invitation = await db('customer_invitations')
     .where('token_digest', digestCapabilityToken(token))
     .whereNull('accepted_at')
@@ -417,11 +441,17 @@ async function acceptInvitation({ token, name, password, profile }) {
       overwriteIfSet('country_code');
       if (merged.preferred_language) updates.preferred_language = merged.preferred_language;
       // Still passive: a concurrent acceptance or an admin-set password
-      // since the read above must not be overwritten.
-      const promoted = await auditedUpdate(trx, 'customer_accounts', { id, password_hash: null }, updates, {
+      // since the read above must not be overwritten. Still at the invited
+      // address: an admin who moved this account to another address since
+      // the read must not have the invitee's password set on it.
+      const promoted = await auditedUpdate(trx, 'customer_accounts', { id, password_hash: null, email: existing.email }, updates, {
         actor: { type: 'customer', id }, source: 'customer.invitation.accept',
       });
       if (promoted !== 1) {
+        const current = await trx('customer_accounts').where({ id }).select('email', 'password_hash').first();
+        if (current && !current.password_hash && current.email !== existing.email) {
+          throw new AccountMovedError();
+        }
         throw new ConflictError('Email already registered', 'email');
       }
     } else {
