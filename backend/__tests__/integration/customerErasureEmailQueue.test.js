@@ -409,154 +409,142 @@ describe('customer erasure clears email_queue', () => {
     expect(sent.rendered_html).toBeFalsy();
   });
 
+  // Former-address tests (issue 1971) pin every time: the history entries are
+  // restamped after the fact so a tenure can span whole seconds.
+  const T0 = Math.floor((Date.now() - 3600000) / 1000) * 1000; // a whole second
+  const at = (seconds) => new Date(T0 + seconds * 1000).toISOString();
+  const queueAt = async (recipient, status, createdAt, name) => {
+    const [row] = await db('email_queue').insert({
+      recipient_email: recipient, email_type: 'gallery_created', status,
+      email_data: JSON.stringify({ customer_name: name }), rendered_html: `<p>${name}</p>`,
+      created_at: createdAt, scheduled_at: createdAt, retry_count: 0,
+    }).returning('id');
+    return row?.id ?? row;
+  };
+  /** Restamp this customer's change-history entries, oldest first. */
+  const stampHistory = async (customerId, times) => {
+    const rows = await db('accounting_change_history')
+      .where({ document_type: 'customer', document_id: customerId }).orderBy('id', 'asc').select('id');
+    expect(rows).toHaveLength(times.length);
+    for (const [i, row] of rows.entries()) {
+      await db('accounting_change_history').where({ id: row.id }).update({ created_at: times[i] });
+    }
+  };
+  const expectUntouched = async (id, recipient, name, status) => {
+    const row = await db('email_queue').where({ id }).first();
+    expect(row.status).toBe(status);
+    expect(row.recipient_email).toBe(recipient);
+    expect(JSON.parse(row.email_data).customer_name).toBe(name);
+    expect(row.rendered_html).toBe(`<p>${name}</p>`);
+  };
+  const expectRedacted = async (id, status) => {
+    const row = await db('email_queue').where({ id }).first();
+    expect(row.status).toBe(status);
+    expect(row.recipient_email).toMatch(/@deleted\.invalid$/);
+    expect(row.rendered_html).toBeFalsy();
+    return row;
+  };
+
   it('cancels and redacts mail to a former address, but only from the time the customer held it (issue 1971)', async () => {
     await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
     const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
-    const queue = async (recipient, status, createdAt, name) => {
-      const [row] = await db('email_queue').insert({
-        recipient_email: recipient, email_type: 'gallery_created', status,
-        email_data: JSON.stringify({ customer_name: name }), rendered_html: `<p>${name}</p>`,
-        created_at: createdAt, scheduled_at: createdAt, retry_count: 0,
-      }).returning('id');
-      return row?.id ?? row;
-    };
-    const ago = (ms) => new Date(Date.now() - ms).toISOString();
-
-    // Another customer held the address before; their mail predates it.
     const formerAddress = 'former-1971@example.com';
-    const earlierOwner = await insertCustomer(db, { email: formerAddress });
-    const earlierOwnerMail = await queue(formerAddress, 'sent', ago(60000), 'Earlier Owner');
-    await updateCustomer(earlierOwner.id, { email: 'earlier-owner-1971@example.com' }, null);
-    await new Promise((resolve) => setTimeout(resolve, 20));
 
+    // Another customer held the address until 10s; the customer took it at 20s
+    // and left it at 40.1s, and a third customer has it since.
+    const earlierOwner = await insertCustomer(db, { email: formerAddress });
+    await updateCustomer(earlierOwner.id, { email: 'earlier-owner-1971@example.com' }, null);
+    await stampHistory(earlierOwner.id, [at(10)]);
     const mover = await insertCustomer(db, { email: 'mover-start-1971@example.com' });
     await updateCustomer(mover.id, { email: formerAddress }, null);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const pendingOld = await queue(formerAddress, 'pending', new Date().toISOString(), 'Mover Pending');
-    const sentOld = await queue(formerAddress, 'sent', new Date().toISOString(), 'Mover Sent');
-    await new Promise((resolve) => setTimeout(resolve, 20));
     await updateCustomer(mover.id, { email: 'mover-now-1971@example.com' }, null);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    // The address goes to a third customer after the move; their mail stays.
+    await stampHistory(mover.id, [at(20), at(40.1)]);
     await insertCustomer(db, { email: formerAddress });
-    const laterOwnerMail = await queue(formerAddress, 'pending', new Date().toISOString(), 'Later Owner');
+
+    const earlierOwnerMail = await queueAt(formerAddress, 'sent', at(5), 'Earlier Owner');
+    const pendingOld = await queueAt(formerAddress, 'pending', at(30), 'Mover Pending');
+    const sentOld = await queueAt(formerAddress, 'sent', at(30), 'Mover Sent');
+    const laterOwnerMail = await queueAt(formerAddress, 'pending', at(50), 'Later Owner');
+    // Same second as the hand-over, and the same instant floored to the
+    // second the way a restore stores SQLite queue times: the next owner's.
+    const handOver = await queueAt(formerAddress, 'pending', at(40.1), 'Hand-over');
+    const restored = await db('email_queue').insert({
+      recipient_email: formerAddress, email_type: 'gallery_created', status: 'sent',
+      email_data: JSON.stringify({ customer_name: 'Restored' }), rendered_html: '<p>Restored</p>',
+      created_at: T0 + 40000, scheduled_at: null, retry_count: 0, // sent at 40.9s
+    }).returning('id');
+    const restoredId = restored[0]?.id ?? restored[0];
 
     await eraseCustomer(mover.id, null);
 
-    const pending = await db('email_queue').where({ id: pendingOld }).first();
-    expect(pending.status).toBe('cancelled');
-    expect(pending.recipient_email).toMatch(/@deleted\.invalid$/);
+    const pending = await expectRedacted(pendingOld, 'cancelled');
     expect(JSON.parse(pending.email_data)).toEqual({ redacted: true, reason: 'customer_erased' });
-    const sent = await db('email_queue').where({ id: sentOld }).first();
-    expect(sent.status).toBe('sent');
-    expect(sent.recipient_email).toMatch(/@deleted\.invalid$/);
-    expect(sent.rendered_html).toBeFalsy();
+    const sent = await expectRedacted(sentOld, 'sent');
     expect(JSON.stringify(sent)).not.toContain('Mover Sent');
-
-    const later = await db('email_queue').where({ id: laterOwnerMail }).first();
-    expect(later.status).toBe('pending');
-    expect(later.recipient_email).toBe(formerAddress);
-    expect(JSON.parse(later.email_data).customer_name).toBe('Later Owner');
-    const earlier = await db('email_queue').where({ id: earlierOwnerMail }).first();
-    expect(earlier.recipient_email).toBe(formerAddress);
-    expect(JSON.parse(earlier.email_data).customer_name).toBe('Earlier Owner');
+    await expectUntouched(earlierOwnerMail, formerAddress, 'Earlier Owner', 'sent');
+    await expectUntouched(laterOwnerMail, formerAddress, 'Later Owner', 'pending');
+    await expectUntouched(handOver, formerAddress, 'Hand-over', 'pending');
+    await expectUntouched(restoredId, formerAddress, 'Restored', 'sent');
   });
 
   it('matches the customer\'s first address only from the account\'s creation (issue 1971)', async () => {
     await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
     const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
-    const queue = async (recipient, status, createdAt, name) => {
-      const [row] = await db('email_queue').insert({
-        recipient_email: recipient, email_type: 'gallery_created', status,
-        email_data: JSON.stringify({ customer_name: name }), rendered_html: `<p>${name}</p>`,
-        created_at: createdAt, scheduled_at: createdAt, retry_count: 0,
-      }).returning('id');
-      return row?.id ?? row;
-    };
-    const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
     const firstAddress = 'first-1971@example.com';
 
-    // An earlier owner of the address queues and receives mail, then moves on.
+    // An earlier owner of the address until 10s.
     const earlierOwner = await insertCustomer(db, { email: firstAddress });
-    const earlierPending = await queue(firstAddress, 'pending', new Date().toISOString(), 'Earlier Pending');
-    const earlierSent = await queue(firstAddress, 'sent', new Date().toISOString(), 'Earlier Sent');
-    await tick();
     await updateCustomer(earlierOwner.id, { email: 'earlier-moved-1971@example.com' }, null);
-    await tick();
+    await stampHistory(earlierOwner.id, [at(10)]);
 
-    // An invitation does not reserve the address: a passive account holding it
-    // can move off between issue and acceptance, so mail queued before the
-    // account exists stays untouched on a former address.
-    const adminId = (await db('admin_users').first('id')).id;
-    const inviteAt = new Date().toISOString();
-    const beforeCreation = await queue(firstAddress, 'sent', inviteAt, 'Before Creation');
-    await tick();
-    // Created through the audited path, as every account since migration 219
-    // is: its `created` history entry is what establishes the first address.
+    // Created through the audited path at 20s, as every account since
+    // migration 219 is: its `created` history entry is what establishes the
+    // first address. Accepting an invitation issued at 15s: an invitation
+    // does not reserve the address (a passive account holding it can move
+    // off before the acceptance), so mail before the creation stays.
     const { auditedInsert } = require('../../src/services/accountingHistory');
     const [created] = await auditedInsert(db, 'customer_accounts', {
       email: firstAddress, display_name: 'First Address 1971', preferred_language: 'de',
-      is_active: 1, created_at: new Date().toISOString(),
+      is_active: 1, created_at: at(20),
     }, { actor: 'customer-invitation', source: 'test' });
-    const customer = { id: created.id };
+    const adminId = (await db('admin_users').first('id')).id;
     await db('customer_invitations').insert({
       email: firstAddress, token: 'digest-1971-first', token_digest: 'digest-1971-first',
       invited_by: adminId, expires_at: new Date(Date.now() + 86400000).toISOString(),
-      accepted_at: new Date().toISOString(), accepted_customer_id: customer.id, created_at: inviteAt,
+      accepted_at: at(20), accepted_customer_id: created.id, created_at: at(15),
     });
-    const ownMail = await queue(firstAddress, 'sent', new Date().toISOString(), 'Own Sent');
-    await tick();
-    await updateCustomer(customer.id, { email: 'first-moved-1971@example.com' }, null);
+    await updateCustomer(created.id, { email: 'first-moved-1971@example.com' }, null);
+    await stampHistory(created.id, [at(20), at(40)]);
 
-    await eraseCustomer(customer.id, null);
+    const earlierPending = await queueAt(firstAddress, 'pending', at(5), 'Earlier Pending');
+    const earlierSent = await queueAt(firstAddress, 'sent', at(5), 'Earlier Sent');
+    const beforeCreation = await queueAt(firstAddress, 'sent', at(15), 'Before Creation');
+    const ownMail = await queueAt(firstAddress, 'sent', at(30), 'Own Sent');
 
-    const own = await db('email_queue').where({ id: ownMail }).first();
-    expect(own.recipient_email).toMatch(/@deleted\.invalid$/);
-    expect(own.rendered_html).toBeFalsy();
-    const early = await db('email_queue').where({ id: beforeCreation }).first();
-    expect(early.recipient_email).toBe(firstAddress);
-    expect(early.rendered_html).toBe('<p>Before Creation</p>');
-    const pending = await db('email_queue').where({ id: earlierPending }).first();
-    expect(pending.status).toBe('pending');
-    expect(pending.recipient_email).toBe(firstAddress);
-    expect(JSON.parse(pending.email_data).customer_name).toBe('Earlier Pending');
-    const sent = await db('email_queue').where({ id: earlierSent }).first();
-    expect(sent.recipient_email).toBe(firstAddress);
-    expect(sent.rendered_html).toBe('<p>Earlier Sent</p>');
+    await eraseCustomer(created.id, null);
+
+    await expectRedacted(ownMail, 'sent');
+    await expectUntouched(beforeCreation, firstAddress, 'Before Creation', 'sent');
+    await expectUntouched(earlierPending, firstAddress, 'Earlier Pending', 'pending');
+    await expectUntouched(earlierSent, firstAddress, 'Earlier Sent', 'sent');
   });
 
   it('does not match the first recorded address of an account created before the change history (issue 1971)', async () => {
     await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
     const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
-    const queue = async (recipient, status, name) => {
-      const now = new Date().toISOString();
-      const [row] = await db('email_queue').insert({
-        recipient_email: recipient, email_type: 'gallery_created', status,
-        email_data: JSON.stringify({ customer_name: name }), rendered_html: `<p>${name}</p>`,
-        created_at: now, scheduled_at: now, retry_count: 0,
-      }).returning('id');
-      return row?.id ?? row;
-    };
-    const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
     const unrecorded = 'unrecorded-1971@example.com';
 
     // No `created` entry, and a move to the address the history never saw
     // (both happened before migration 219): the account's start on it is unknown.
     const legacy = await insertCustomer(db, { email: 'legacy-start-1971@example.com' });
-    await tick();
-    const otherOwnerMail = await queue(unrecorded, 'sent', 'Other Owner');
-    await tick();
     await db('customer_accounts').where({ id: legacy.id }).update({ email: unrecorded });
-    await tick();
     await updateCustomer(legacy.id, { email: 'legacy-now-1971@example.com' }, null);
+    await stampHistory(legacy.id, [at(40)]);
+    const otherOwnerMail = await queueAt(unrecorded, 'sent', at(5), 'Other Owner');
 
     await eraseCustomer(legacy.id, null);
 
-    const row = await db('email_queue').where({ id: otherOwnerMail }).first();
-    expect(row.status).toBe('sent');
-    expect(row.recipient_email).toBe(unrecorded);
-    expect(row.rendered_html).toBe('<p>Other Owner</p>');
+    await expectUntouched(otherOwnerMail, unrecorded, 'Other Owner', 'sent');
   });
 
   it('covers contract mail to a signer address only when it names a contract this erasure redacts', async () => {

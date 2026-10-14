@@ -993,7 +993,16 @@ async function formerAddressWindows(trx, customer) {
       since = at;
       continue;
     }
-    if (from && held === from && since && at && from !== current) windows.push({ email: from, since, until: at });
+    if (from && held === from && since && at && from !== current) {
+      // Whole seconds strictly inside the tenure only. A queued row stamped
+      // in the same instant as the hand-over could be the next owner's, and
+      // a restore stores SQLite queue times (and possibly these history
+      // times) floored to the second (normaliseSqliteEmailQueue), which
+      // could otherwise slide the next owner's mail back inside the window.
+      const first = new Date(Math.floor(since.getTime() / 1000) * 1000 + 1000);
+      const last = new Date(Math.floor(at.getTime() / 1000) * 1000 - 1000);
+      if (first <= last) windows.push({ email: from, since: first, until: last });
+    }
     held = to || null;
     since = at;
   }
