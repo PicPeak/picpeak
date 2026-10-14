@@ -111,9 +111,9 @@ async function resolveSlug(slug) {
   let event = await db('events').where('slug', slug).first();
   if (event) return event;
   // Honour slug redirects so renamed galleries still get rich previews.
-  const hasRedirects = await db.schema.hasTable('event_slug_redirects');
+  const hasRedirects = await db.schema.hasTable('slug_redirects');
   if (hasRedirects) {
-    const redirect = await db('event_slug_redirects').where('old_slug', slug).first();
+    const redirect = await db('slug_redirects').where('old_slug', slug).first();
     if (redirect) {
       event = await db('events').where('slug', redirect.new_slug).first();
     }
