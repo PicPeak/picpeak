@@ -36,6 +36,7 @@ vi.mock('../../common', async () => ({
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 import { PhotoLightbox } from '../PhotoLightbox';
+import { FeedbackLimitReachedModal } from '../FeedbackLimitReachedModal';
 
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
 
@@ -97,5 +98,30 @@ describe('PhotoLightbox keys (issue 1973)', () => {
     // With the prompt gone the lightbox has its keys back.
     fireEvent.keyDown(document.body, { key: 'ArrowRight' });
     expect(onCurrentPhotoChange).toHaveBeenLastCalledWith(12);
+  });
+
+  it('stays under a dialog that was already open when it mounted', () => {
+    // Browser Forward reopens a photo while a page dialog painted above the
+    // lightbox (the guest name prompt, a notice) is still up.
+    const closeNotice = vi.fn();
+    const notice = <FeedbackLimitReachedModal open feedbackType="like" limit={3} currentCount={3} onClose={closeNotice} />;
+    const onClose = vi.fn();
+    const onCurrentPhotoChange = vi.fn();
+    const client = new QueryClient();
+    const view = (withLightbox: boolean) => (
+      <QueryClientProvider client={client}>
+        {notice}
+        {withLightbox && <PhotoLightbox photos={photos} initialIndex={1} onClose={onClose} slug="g" onCurrentPhotoChange={(id) => onCurrentPhotoChange(id)} />}
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view(false));
+    rerender(view(true));
+    const dialog = screen.getByRole('dialog');
+
+    fireEvent.keyDown(dialog, { key: 'ArrowRight' });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(closeNotice).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onCurrentPhotoChange).toHaveBeenCalledTimes(1); // the opening photo only
   });
 });

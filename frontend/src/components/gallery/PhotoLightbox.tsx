@@ -61,11 +61,6 @@ interface PhotoLightboxProps {
   // The photo on screen, on open and after every step — the host mirrors it
   // to `?photo=` (issue 1733, photoLink.ts).
   onCurrentPhotoChange?: (photoId: number) => void;
-  // A dialog of the host is open as the lightbox mounts and is painted above
-  // it (browser Forward reopening a photo under the Story layout's
-  // name-and-e-mail prompt): the lightbox's layer goes under that dialog, so
-  // the dialog keeps its keys. Read on mount only.
-  mountsUnderOpenDialog?: boolean;
 }
 
 // Finger travel before a single-finger touch starts moving the carousel.
@@ -94,7 +89,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   people,
   onSelectPerson,
   onCurrentPhotoChange,
-  mountsUnderOpenDialog = false,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
@@ -389,11 +383,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // viewer: while a dialog is open on top (the name-and-e-mail prompt, the
   // feedback limit notice, ...) its keys belong to that dialog. Escape closes
   // the dialog, not the lightbox, and the arrows must not page the photo the
-  // dialog is about away behind it.
+  // dialog is about away behind it. A dialog already open as the lightbox
+  // mounts (browser Forward reopening a photo under the guest name prompt or
+  // the Story layout's like prompt, which paint above it) stays on top too.
   const layerRef = useRef<ReturnType<typeof pushDialogLayer> | null>(null);
-  const mountsUnderOpenDialogRef = useRef(mountsUnderOpenDialog);
   useEffect(() => {
-    const layer = pushDialogLayer({ belowTop: mountsUnderOpenDialogRef.current });
+    const layer = pushDialogLayer({ beneathOpen: true });
     layerRef.current = layer;
     return () => { layer.release(); layerRef.current = null; };
   }, []);

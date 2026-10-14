@@ -49,12 +49,12 @@ const openStack: object[] = [];
 
 /**
  * Registers an open overlay; returns whether it is the top one, and a release.
- * `belowTop` slots it under the overlay currently on top instead, for one
- * that mounts while a dialog already painted above it stays open.
+ * `beneathOpen` slots it under every overlay already open instead: those keep
+ * their keys until they close.
  */
-export function pushDialogLayer({ belowTop = false }: { belowTop?: boolean } = {}): { isTop: () => boolean; release: () => void } {
+export function pushDialogLayer({ beneathOpen = false }: { beneathOpen?: boolean } = {}): { isTop: () => boolean; release: () => void } {
   const token = {};
-  if (belowTop && openStack.length > 0) openStack.splice(openStack.length - 1, 0, token);
+  if (beneathOpen) openStack.unshift(token);
   else openStack.push(token);
   return {
     isTop: () => openStack[openStack.length - 1] === token,

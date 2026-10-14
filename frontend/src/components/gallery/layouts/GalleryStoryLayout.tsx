@@ -704,9 +704,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           people={people}
           onSelectPerson={onSelectPerson}
           onCurrentPhotoChange={(photoId) => onLightboxPhotoChange?.(photoId, 'step')}
-          // The prompt below is rendered after the lightbox and paints over
-          // it; browser Forward can open a photo while it is up.
-          mountsUnderOpenDialog={showIdentityModal}
         />
       )}
 
