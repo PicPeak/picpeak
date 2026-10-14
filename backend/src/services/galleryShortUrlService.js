@@ -20,11 +20,15 @@
  *     state (slug + share_token + the global "Use short gallery URLs"
  *     toggle). A later flip of that toggle doesn't silently change
  *     where existing short URLs resolve. Same principle as quote PDFs
- *     snapshotting at issuance time.
+ *     snapshotting at issuance time. What the snapshot pins is the
+ *     SHAPE (slug or token form); the value is re-read from the event
+ *     on every resolve (`resolveTargetPath`), so a rename does not
+ *     strand the link on the old slug.
  */
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
+const { isPotentialShareToken } = require('../utils/shareLinkUtils');
 
 // Slug rules:
 //   - Lowercase a-z, digits, hyphens only
@@ -79,12 +83,33 @@ async function targetPathForEvent(event) {
 }
 
 /**
+ * The target a short URL resolves to NOW. The stored target_path names the
+ * gallery by the slug or share token it had at create time, and a rename
+ * rewrites the slug: `/gallery/<old-slug>` no longer resolves (the
+ * slug_redirects row the rename writes is never followed by the SPA), so the
+ * short link died with the rename. The shape stays what was snapshotted —
+ * slug form or token form, so a later flip of the global toggle still does
+ * not move existing links — but the value is read off the current event row.
+ * A path that is not `/gallery/<one segment>`, or whose event is gone, is
+ * returned as stored.
+ */
+async function resolveTargetPath(row) {
+  const match = /^\/gallery\/([^/?#]+)$/.exec(String(row.target_path || ''));
+  if (!match) return row.target_path;
+  const event = await db('events').where({ id: row.event_id }).first('slug', 'share_token');
+  if (!event) return row.target_path;
+  const tokenForm = match[1] === event.share_token || isPotentialShareToken(match[1]);
+  if (tokenForm && event.share_token) return `/gallery/${event.share_token}`;
+  return event.slug ? `/gallery/${event.slug}` : row.target_path;
+}
+
+/**
  * Where the browser redirect goes: target_path plus the query string the
  * short URL was opened with (issue 1733). `/s/wedding?photo=42` has to land
  * on `/gallery/<slug>?photo=42`, or a link to one photo loses the photo on
  * the way through the shortener. Only the query is carried, and it is
  * rebuilt through URLSearchParams so every value is re-encoded; the path
- * itself always comes from the stored row.
+ * itself always comes from the short URL (resolveTargetPath).
  */
 function redirectTarget(targetPath, originalUrl) {
   // Everything after the first `?`: a value may itself contain one
@@ -254,7 +279,12 @@ async function listForEvent(eventId) {
     .where({ event_id: eventId })
     .whereNull('deleted_at')
     .orderBy('created_at', 'desc')
-    .select('id', 'short_slug', 'target_path', 'hit_count', 'last_hit_at', 'created_at', 'created_by');
+    .select('id', 'short_slug', 'event_id', 'target_path', 'hit_count', 'last_hit_at', 'created_at', 'created_by');
+  // Show where each link goes today, not the slug it was created under.
+  for (const row of rows) {
+    row.target_path = await resolveTargetPath(row);
+    delete row.event_id;
+  }
   return rows;
 }
 
@@ -294,6 +324,7 @@ async function recordHit(id) {
 module.exports = {
   validateSlug,
   targetPathForEvent,
+  resolveTargetPath,
   redirectTarget,
   autoGenerateSlug,
   createShortUrl,
