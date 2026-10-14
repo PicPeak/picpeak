@@ -96,6 +96,9 @@ export interface BaseGalleryLayoutProps {
   };
   // Logout callback for full-page layouts
   onLogout?: () => void;
+  // Guest upload for full-page layouts, which have no gallery header: opens
+  // the container's upload dialog. Undefined when uploads are off.
+  onUploadClick?: () => void;
   // Client visibility controls (#172)
   isClient?: boolean;
   onToggleVisibility?: (photoId: number, currentVisibility: string) => void;

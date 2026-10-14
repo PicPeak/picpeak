@@ -1697,6 +1697,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // toggle too, so they need the same props as the standard branch.
           isClient={isClient}
           onToggleVisibility={isClient ? handleToggleVisibility : undefined}
+          // These layouts skip the GalleryLayout header, the only place the
+          // standard layouts offer the upload button, so they render their
+          // own from this callback; same gate as that header button.
+          onUploadClick={
+            data?.event?.allow_user_uploads || event?.allow_user_uploads
+              ? () => setShowUploadModal(true)
+              : undefined
+          }
           showOriginalFilename={showOriginalFilename}
         />
 

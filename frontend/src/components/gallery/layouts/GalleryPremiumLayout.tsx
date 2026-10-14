@@ -16,14 +16,14 @@ import { FirstLookBadge } from '../GalleryTileBadges';
 import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut } from 'lucide-react';
+import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { parseISO } from 'date-fns';
 import { useInView } from 'react-intersection-observer';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
-import { PoweredBy } from '../../common';
+import { Button, PoweredBy } from '../../common';
 import { thumbnailUrlForTile } from '../imageTiers';
 import { TileImage } from '../TileImage';
 import { feedbackService } from '../../../services/feedback.service';
@@ -266,6 +266,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   feedbackOptions,
   heroPhotoOverride,
   onLogout,
+  onUploadClick,
   showOriginalFilename = false,
   openPhotoId,
   onLightboxPhotoChange,
@@ -628,6 +629,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     month: 'long',
     day: '2-digit'
   }) : null;
+  const uploadLabel = t('upload.uploadPhotos', 'Upload Photos');
 
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
@@ -636,6 +638,18 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     return (
       <div className="text-center py-12">
         <GalleryEmptyMessage filtered={emptyIsFiltered} />
+        {/* No nav in this branch, and an upload-only gallery starts empty:
+            the guest still needs a way to add the first photos. */}
+        {onUploadClick && (
+          <Button
+            variant="primary"
+            className="mt-4"
+            leftIcon={<Upload className="w-4 h-4" />}
+            onClick={onUploadClick}
+          >
+            {uploadLabel}
+          </Button>
+        )}
       </div>
     );
   }
@@ -732,6 +746,21 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
               )}
             </AnimatePresence>
 
+            {/* Guest upload: this layout has no gallery header, which is where
+                every other layout offers it. Hidden while the selection
+                controls take the row, which already fill a phone's width. */}
+            {onUploadClick && !(isSelectionMode && selectedPhotos.size > 0) && (
+              <button
+                type="button"
+                className="gallery-premium-nav-btn"
+                onClick={onUploadClick}
+                aria-label={uploadLabel}
+                title={uploadLabel}
+                data-testid="premium-nav-upload"
+              >
+                <Upload className="w-4 h-4" />
+              </button>
+            )}
             {feedbackEnabled && feedbackOptions?.allowLikes && (
               <button className="gallery-premium-nav-btn" title={t('gallery.favorites', 'Favorites')}>
                 <Heart className="w-4 h-4" />

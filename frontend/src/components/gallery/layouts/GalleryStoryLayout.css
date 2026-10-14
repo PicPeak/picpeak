@@ -79,10 +79,19 @@
   letter-spacing: 0.25em;
 }
 
+/* Tighter on phones: at 375px a 1.5rem gap pushed five or more buttons
+   (upload, select, download, copy filenames, favourites, logout) onto a
+   second row of the fixed nav; 0.5rem keeps all six beside the logo. */
 .story-nav-actions {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .story-nav-actions {
+    gap: 1.5rem;
+  }
 }
 
 .story-nav-search {
