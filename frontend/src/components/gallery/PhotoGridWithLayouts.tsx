@@ -212,6 +212,28 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   // Gallery Premium and Gallery Story mount their own lightbox and report
   // its moves through this wrapper, so the id it is on is known here too.
   const layoutOwnsLightbox = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
+  // Premium and Story render their own empty state; the key remounts them
+  // when the list empties or fills, so their own lightbox state goes with it
+  // as it did when this component returned its empty message instead.
+  const layoutKey = layoutOwnsLightbox && photos.length === 0 ? 'empty' : 'photos';
+  // An upload into an empty Premium/Story gallery: the upload dialog hands
+  // focus back to the empty state's button, then the refetch remounts the
+  // layout and that button is gone. Hand focus to the new layout's own upload
+  // button rather than dropping it on <body>. Read during render, while the
+  // old layout (and the focused button) is still in the document.
+  const renderedLayoutKeyRef = useRef(layoutKey);
+  const refocusUploadRef = useRef(false);
+  if (renderedLayoutKeyRef.current !== layoutKey) {
+    renderedLayoutKeyRef.current = layoutKey;
+    refocusUploadRef.current = Boolean(
+      (document.activeElement as HTMLElement | null)?.closest?.('[data-gallery-upload-trigger]')
+    );
+  }
+  useEffect(() => {
+    if (!refocusUploadRef.current) return;
+    refocusUploadRef.current = false;
+    document.querySelector<HTMLElement>('[data-gallery-upload-trigger]')?.focus();
+  }, [layoutKey]);
   const reportLayoutLightbox: LightboxPhotoChangeHandler = (photoId, reason) => {
     lightboxPhotoIdRef.current = reason === 'close' ? null : photoId;
     onLightboxPhotoChange?.(photoId, reason);
@@ -608,11 +630,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
         </div>
       )}
 
-      {/* Render the selected layout. Premium and Story render their own empty
-          state; the key remounts them when the list empties, so their own
-          lightbox state goes with it as it did when this component returned
-          its empty message instead. */}
-      <LayoutComponent key={layoutOwnsLightbox && photos.length === 0 ? 'empty' : 'photos'} {...layoutProps} />
+      {/* Render the selected layout, keyed by `layoutKey` (see above). */}
+      <LayoutComponent key={layoutKey} {...layoutProps} />
       {/* Full-page layouts place it themselves, ahead of their footer. */}
       {!isFullPageLayout && afterGrid}
 

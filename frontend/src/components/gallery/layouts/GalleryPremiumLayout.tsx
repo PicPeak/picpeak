@@ -648,6 +648,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
             className="mt-4"
             leftIcon={<Upload className="w-4 h-4" />}
             onClick={onUploadClick}
+            data-gallery-upload-trigger
           >
             {uploadLabel}
           </Button>
@@ -774,6 +775,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                 aria-label={uploadLabel}
                 title={uploadLabel}
                 data-testid="premium-nav-upload"
+                data-gallery-upload-trigger
               >
                 <Upload className="w-4 h-4" />
               </button>

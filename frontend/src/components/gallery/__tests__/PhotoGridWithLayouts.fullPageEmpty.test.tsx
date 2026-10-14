@@ -34,16 +34,31 @@ vi.mock('../../../hooks/useGallery', () => ({
   useDownloadPhoto: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
 }));
 
+// The filled layouts observe their tiles; jsdom has no IntersectionObserver.
+vi.stubGlobal('IntersectionObserver', class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() { return []; }
+});
+
 const renderGrid = (props: Partial<React.ComponentProps<typeof PhotoGridWithLayouts>>) => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const tree = (p: typeof props) => (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <PhotoGridWithLayouts photos={[]} slug="demo" {...props} />
+        <PhotoGridWithLayouts photos={[]} slug="demo" {...p} />
       </MemoryRouter>
     </QueryClientProvider>
   );
+  const view = render(tree(props));
+  return { ...view, rerenderWith: (next: typeof props) => view.rerender(tree(next)) };
 };
+
+const photo = {
+  id: 1, filename: 'a.jpg', url: '/api/gallery/demo/photo/1', thumbnail_url: '/api/gallery/demo/thumbnail/1',
+  width: 600, height: 400, type: 'individual', size: 1, uploaded_at: '2026-01-01T00:00:00Z',
+} as any;
 
 describe.each(['gallery-premium', 'gallery-story'])('PhotoGridWithLayouts empty %s', (layout) => {
   beforeEach(() => {
@@ -62,5 +77,24 @@ describe.each(['gallery-premium', 'gallery-story'])('PhotoGridWithLayouts empty 
     renderGrid({ onCopyFilenames, copyFilenamesCount: 3, emptyIsFiltered: true });
     fireEvent.click(screen.getByRole('button', { name: /Copy filenames \(3\)/ }));
     expect(onCopyFilenames).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands focus to the new upload button when the first upload fills the gallery', () => {
+    const onUploadClick = vi.fn();
+    const { rerenderWith } = renderGrid({ onUploadClick });
+    // The upload dialog returns focus to the empty state's button on close.
+    screen.getByRole('button', { name: /upload/i }).focus();
+    // The refetch brings the first photo: the layout remounts out of its
+    // empty state and that button is gone.
+    rerenderWith({ onUploadClick, photos: [photo] });
+    const navUpload = screen.getByTestId(layout === 'gallery-premium' ? 'premium-nav-upload' : 'story-nav-upload');
+    expect(document.activeElement).toBe(navUpload);
+  });
+
+  it('leaves focus alone when it was elsewhere', () => {
+    const onUploadClick = vi.fn();
+    const { rerenderWith } = renderGrid({ onUploadClick });
+    rerenderWith({ onUploadClick, photos: [photo] });
+    expect(document.activeElement).toBe(document.body);
   });
 });
