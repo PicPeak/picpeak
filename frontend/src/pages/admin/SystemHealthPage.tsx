@@ -271,6 +271,9 @@ export const SystemHealthPage: React.FC = () => {
                   <span className="font-mono"> · {data.backupAuthentication.signingKey.keyId}</span>
                 )}
               </p>
+              {data.backupAuthentication.signingKey.reason && (
+                <p className="text-sm text-danger-text mt-1 break-words">{data.backupAuthentication.signingKey.reason}</p>
+              )}
               <p className="text-sm text-body mt-1">
                 {t(data.backupAuthentication.latestManifest.authenticated
                   ? 'systemHealth.backupAuthentication.verified'

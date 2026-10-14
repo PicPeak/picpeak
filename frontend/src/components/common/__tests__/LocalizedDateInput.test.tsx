@@ -131,6 +131,17 @@ describe('LocalizedDateInput', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('leaves the Enter that commits an IME composition to the field', () => {
+    const onChange = vi.fn();
+    render(<LocalizedDateInput label="Date" value="2026-07-07" onChange={onChange} />);
+    const input = screen.getByRole('textbox', { name: 'Date' }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '1.8.2026' } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(input.value).toBe('1.8.2026');
+  });
+
   it('commits a short date on Enter, before the form submits', () => {
     let submitted = '';
     const Form = () => {

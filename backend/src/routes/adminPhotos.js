@@ -72,6 +72,7 @@ async function folderIdUpdate(eventId, raw) {
   return { folder_id: id };
 }
 const { photoCapOf, countEventPhotos, insertPhotoWithinCap, photoCapError } = require('../services/photoCap');
+const { claimPromotion } = require('../services/watchFolderClaims');
 const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
 const { sha256File, findDuplicate, duplicateName } = require('../services/photoDuplicates');
 
@@ -420,6 +421,7 @@ async function handleAdminPhotoUpload(req, res) {
     for (const file of filesToUpload) {
       let object;
       let promotionSettled = false;
+      let releaseClaim = null;
       try {
         const tempStats = await fs.stat(file.path);
         if (tempStats.size === 0) {
@@ -456,6 +458,9 @@ async function handleAdminPhotoUpload(req, res) {
         //    later picks up the photo row, the file is guaranteed to
         //    exist at the recorded path.
         object = await uploadQuota.prepareObject(req.publicUploadReservation, finalKey, tempStats.size);
+        // Held until the row exists, so the file watcher does not import
+        // the file first (issue 1970).
+        releaseClaim = claimPromotion(finalKey);
         await storage.putFromFile(finalKey, file.path, {
           contentType: file.mimetype,
         });
@@ -525,6 +530,8 @@ async function handleAdminPhotoUpload(req, res) {
         logger.error(`Error queuing file ${file.originalname}:`, err);
         errors.push({ filename: file.originalname, error: err.message,
           ...require('../services/imageResourcePolicy').describe(err) });
+      } finally {
+        releaseClaim?.();
       }
     }
     

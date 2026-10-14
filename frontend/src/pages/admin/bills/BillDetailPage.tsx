@@ -7,7 +7,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, Send, CheckCircle, BellRing, XCircle, Truck, RefreshCw } from 'lucide-react';
+import { Eye, Send, CheckCircle, BellRing, XCircle, Truck, RefreshCw, FileCheck } from 'lucide-react';
 import { DecimalInput } from '../../../components/common/DecimalInput';
 import { ActionMenu, Badge, Button, Card, Loading, Input, LocalizedDateInput, Modal, Notice, useConfirm, type ActionMenuItem, type BadgeTone } from '../../../components/common';
 import { DocumentHeader } from '../../../components/admin/DocumentHeader';
@@ -135,6 +135,9 @@ export const BillDetailPage: React.FC = () => {
 
   if (isLoading || !data) return <Loading />;
   const inv = data.invoice;
+  // Customer takes no administrative emails (migration 300): Send becomes
+  // Issue — the invoice is issued (in the portal when the customer has access), nothing is mailed.
+  const noMail = !!inv.customer?.noAdminEmails;
   // Not issued yet: the server still takes edits. Issued invoices never
   // change again (§ 14 UStG) — Storno and reissue instead.
   const editable = canManage && inv.kind !== 'storno' && inv.status === 'scheduled';
@@ -165,7 +168,9 @@ export const BillDetailPage: React.FC = () => {
     setSending(true);
     try {
       await billsService.send(inv.id, proofInboundIds);
-      toast.success(t('bills.sentToast', 'Invoice sent.'));
+      toast.success(noMail
+        ? t('bills.issuedToast', 'Invoice issued. No email was sent.')
+        : t('bills.sentToast', 'Invoice sent.'));
       qc.invalidateQueries({ queryKey: ['invoice', id] });
       setSendDialogOpen(false);
     } catch (e: any) {
@@ -177,7 +182,8 @@ export const BillDetailPage: React.FC = () => {
   const handleSend = async () => {
     // If this invoice re-bills captured supplier invoices, open the Send dialog
     // so the admin can pick which proofs ride the email. Otherwise, plain send.
-    if (flags.incomingInvoices) {
+    // No email goes out for this customer, so there are no proofs to pick.
+    if (flags.incomingInvoices && !noMail) {
       try {
         const { proofs, attachDefault } = await accountingService.getInvoiceRebillProofs(inv.id);
         if (proofs.length > 0) {
@@ -188,15 +194,27 @@ export const BillDetailPage: React.FC = () => {
         }
       } catch { /* fall through to the plain confirm+send */ }
     }
-    if (!(await confirm(dirty
-      ? { title: t('bills.saveAndSendTitle', 'Send with your unsaved changes?'), message: t('bills.saveAndSendMessage', 'Your changes are saved first, then the invoice goes to the customer.'), confirmLabel: t('bills.saveAndSend', 'Save & send') }
-      : { message: t('bills.confirmSend', 'Send invoice to customer now?'), confirmLabel: t('bills.sendNow', 'Send now') }))) return;
+    if (!(await confirm(noMail
+      ? (dirty
+        ? { title: t('bills.saveAndIssueTitle', 'Issue with your unsaved changes?'), message: t('bills.saveAndIssueMessage', 'Your changes are saved first, then the invoice is issued. This customer gets no email.'), confirmLabel: t('bills.saveAndIssue', 'Save & issue') }
+        : { message: t('bills.confirmIssue', 'Issue this invoice now? This customer gets no email.'), confirmLabel: t('bills.issue', 'Issue') })
+      : (dirty
+        ? { title: t('bills.saveAndSendTitle', 'Send with your unsaved changes?'), message: t('bills.saveAndSendMessage', 'Your changes are saved first, then the invoice goes to the customer.'), confirmLabel: t('bills.saveAndSend', 'Save & send') }
+        : { message: t('bills.confirmSend', 'Send invoice to customer now?'), confirmLabel: t('bills.sendNow', 'Send now') })))) return;
     if (dirty && !(await formRef.current?.save())) return;
     await doSend(undefined);
   };
   const handleReminder = async () => {
-    if (!(await confirm({ message: t('bills.confirmReminder', 'Send a reminder now?'), confirmLabel: t('bills.sendReminder', 'Send reminder') }))) return;
-    try { await billsService.sendReminder(inv.id); toast.success(t('bills.reminderToast', 'Reminder sent.')); qc.invalidateQueries({ queryKey: ['invoice', id] }); }
+    // No administrative emails: the reminder is recorded (level, overdue), no
+    // Mahnung is mailed and no late fee is added (reminders.js).
+    if (!(await confirm(noMail
+      ? { message: t('bills.confirmRecordReminder', 'Record a reminder now? This customer gets no email, and no late fee is added.'), confirmLabel: t('bills.recordReminder', 'Record reminder') }
+      : { message: t('bills.confirmReminder', 'Send a reminder now?'), confirmLabel: t('bills.sendReminder', 'Send reminder') }))) return;
+    try {
+      await billsService.sendReminder(inv.id);
+      toast.success(noMail ? t('bills.reminderRecordedToast', 'Reminder recorded; no email was sent.') : t('bills.reminderToast', 'Reminder sent.'));
+      qc.invalidateQueries({ queryKey: ['invoice', id] });
+    }
     catch (e: any) { toast.error(e?.response?.data?.error || 'Reminder failed'); }
   };
   const handleCancel = async () => {
@@ -207,13 +225,17 @@ export const BillDetailPage: React.FC = () => {
     // admins know it can't be undone.
     const msg = inv.status === 'scheduled'
       ? t('bills.confirmCancelDraft', 'Cancel this draft invoice? No document goes out.')
-      : t('bills.confirmCancelIssued',
-        'A Stornorechnung will be generated and emailed to the customer immediately. This cannot be undone. Continue?');
+      : noMail
+        ? t('bills.confirmCancelIssuedNoMail', 'A Stornorechnung will be generated; this customer gets no email. This cannot be undone. Continue?')
+        : t('bills.confirmCancelIssued',
+          'A Stornorechnung will be generated and emailed to the customer immediately. This cannot be undone. Continue?');
     if (!(await confirm({ message: msg, variant: 'danger', confirmLabel: inv.status === 'scheduled' ? t('bills.cancelDraft', 'Cancel draft') : t('bills.cancelWithStorno', 'Cancel with Storno') }))) return;
     try {
       const result = await billsService.cancel(inv.id);
       toast.success(result.stornoId
-        ? t('bills.cancelledWithStornoToast', 'Invoice cancelled — Stornorechnung issued to the customer.')
+        ? (noMail
+          ? t('bills.cancelledWithStornoNoMailToast', 'Invoice cancelled — Stornorechnung issued; no email was sent.')
+          : t('bills.cancelledWithStornoToast', 'Invoice cancelled — Stornorechnung issued to the customer.'))
         : t('bills.cancelledToast', 'Invoice cancelled.'));
       qc.invalidateQueries({ queryKey: ['invoice', id] });
       qc.invalidateQueries({ queryKey: ['invoices'] });
@@ -240,8 +262,11 @@ export const BillDetailPage: React.FC = () => {
     const msg = inv.status === 'cancelled'
       ? t('bills.confirmReissueCancelled',
         'Create a new scheduled invoice with the same line items, linked back to this cancelled one?')
-      : t('bills.confirmReissue',
-        'A Stornorechnung will be issued to the customer for this invoice, and a new scheduled draft will be created with the same line items. The new invoice will reference this one as "Replaces R-XXXX". Continue?');
+      : noMail
+        ? t('bills.confirmReissueNoMail',
+          'A Stornorechnung will be issued for this invoice (this customer gets no email), and a new scheduled draft will be created with the same line items. The new invoice will reference this one as "Replaces R-XXXX". Continue?')
+        : t('bills.confirmReissue',
+          'A Stornorechnung will be issued to the customer for this invoice, and a new scheduled draft will be created with the same line items. The new invoice will reference this one as "Replaces R-XXXX". Continue?');
     if (!(await confirm({ message: msg, variant: inv.status === 'cancelled' ? 'primary' : 'danger', confirmLabel: inv.status === 'cancelled' ? t('bills.reissue', 'Reissue') : t('bills.cancelAndReissue', 'Cancel & reissue') }))) return;
     try {
       const result = await billsService.reissue(inv.id);
@@ -264,10 +289,14 @@ export const BillDetailPage: React.FC = () => {
    * customer gets the final invoice.
    */
   const handleRelease = async () => {
-    if (!(await confirm({ message: t('bills.confirmRelease', 'Mark the photos as delivered and send this invoice to the customer now?'), confirmLabel: t('bills.releaseForDelivery', 'Mark delivered & send') }))) return;
+    if (!(await confirm(noMail
+      ? { message: t('bills.confirmReleaseIssue', 'Mark the photos as delivered and issue this invoice now? This customer gets no email.'), confirmLabel: t('bills.releaseForDeliveryIssue', 'Mark delivered & issue') }
+      : { message: t('bills.confirmRelease', 'Mark the photos as delivered and send this invoice to the customer now?'), confirmLabel: t('bills.releaseForDelivery', 'Mark delivered & send') }))) return;
     try {
       await billsService.releaseForDelivery(inv.id);
-      toast.success(t('bills.releasedToast', 'Delivery invoice sent.'));
+      toast.success(noMail
+        ? t('bills.releasedIssuedToast', 'Delivery invoice issued. No email was sent.')
+        : t('bills.releasedToast', 'Delivery invoice sent.'));
       qc.invalidateQueries({ queryKey: ['invoice', id] });
     } catch (e: any) {
       toast.error(e?.response?.data?.error || 'Release failed');
@@ -331,10 +360,11 @@ export const BillDetailPage: React.FC = () => {
       ? 'release'
       : canPay ? 'pay' : null;
   const menu: ActionMenuItem[] = canManage ? [
-    ...(canSend && inv.status !== 'scheduled' ? [{ key: 'resend', icon: <Send />, label: t('bills.resend', 'Resend'), disabled: sending, onSelect: () => { void handleSend(); } }] : []),
+    // Resend only re-mails an issued invoice — nothing to do when the customer takes no mail.
+    ...(canSend && !noMail && inv.status !== 'scheduled' ? [{ key: 'resend', icon: <Send />, label: t('bills.resend', 'Resend'), disabled: sending, onSelect: () => { void handleSend(); } }] : []),
     ...(canPay && primary !== 'pay' ? [{ key: 'pay', icon: <CheckCircle />, label: t('bills.markPaid', 'Mark paid'), onSelect: openPay }] : []),
     ...(inv.kind !== 'storno' && (inv.status === 'sent' || inv.status === 'overdue') && inv.reminderLevel < 2
-      ? [{ key: 'reminder', icon: <BellRing />, label: t('bills.sendReminder', 'Send reminder'), onSelect: () => { void handleReminder(); } }] : []),
+      ? [{ key: 'reminder', icon: <BellRing />, label: noMail ? t('bills.recordReminder', 'Record reminder') : t('bills.sendReminder', 'Send reminder'), onSelect: () => { void handleReminder(); } }] : []),
     // Cancel & reissue: the legally clean alternative to editing an issued
     // invoice (sent, overdue, paid), or a fresh copy of a cancelled one.
     ...(inv.kind !== 'storno' && ['sent', 'overdue', 'paid', 'cancelled'].includes(inv.status)
@@ -369,12 +399,12 @@ export const BillDetailPage: React.FC = () => {
             <ActionMenu items={menu} />
             <Button variant="outline" onClick={() => { void handlePreview(); }} leftIcon={<Eye className="w-4 h-4" />}>{t('common.preview', 'Preview')}</Button>
             {primary === 'send' && (
-              <Button onClick={() => { void handleSend(); }} disabled={formState.busy || (dirty && !formState.valid)} leftIcon={<Send className="w-4 h-4" />}>
-                {t('bills.sendNow', 'Send now')}
+              <Button onClick={() => { void handleSend(); }} disabled={formState.busy || (dirty && !formState.valid)} leftIcon={noMail ? <FileCheck className="w-4 h-4" /> : <Send className="w-4 h-4" />}>
+                {noMail ? t('bills.issue', 'Issue') : t('bills.sendNow', 'Send now')}
               </Button>
             )}
             {primary === 'release' && (
-              <Button onClick={() => { void handleRelease(); }} leftIcon={<Truck className="w-4 h-4" />}>{t('bills.releaseForDelivery', 'Mark delivered & send')}</Button>
+              <Button onClick={() => { void handleRelease(); }} leftIcon={<Truck className="w-4 h-4" />}>{noMail ? t('bills.releaseForDeliveryIssue', 'Mark delivered & issue') : t('bills.releaseForDelivery', 'Mark delivered & send')}</Button>
             )}
             {primary === 'pay' && (
               <Button onClick={openPay} leftIcon={<CheckCircle className="w-4 h-4" />}>{t('bills.markPaid', 'Mark paid')}</Button>
