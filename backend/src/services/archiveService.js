@@ -34,6 +34,8 @@ const {
 // lease goes stale (maintenanceJobState.DEFAULT_STALE_MS); a fixed timeout
 // would have to outlast the slowest archive on the slowest storage instead.
 const archiveJobName = (eventId) => `event_archive:${eventId}`;
+// How often the post-publish cleanup re-checks the claim (see buildArchive).
+const CLEANUP_CLAIM_CHECK_MS = 5000;
 
 /** Whether an archive job holds a live claim on the gallery. */
 async function isArchiveRunning(eventId) {
@@ -319,32 +321,68 @@ async function buildArchive(event, lease) {
     logger.info(`Archive created: ${archiveName} (${totalBytes} bytes)`);
 
     // Publish only while this run still holds the claim and nobody archived
-    // the gallery first, in one conditional UPDATE (issue 2012): a lease
-    // declared stale and taken over (a stall long enough for that) must not
-    // mark the gallery archived or go on to delete the originals the new
-    // owner is reading. A run that loses here removes its own zip; the
-    // winner's sits at its own key. The DB goes BEFORE deleting originals so
-    // a crash mid-cleanup leaves the archive accessible rather than orphaning
-    // the photos.
-    const published = !lease.lost && await db('events')
-      .where('id', event.id)
-      .where('is_archived', formatBoolean(false))
-      .whereExists(db('maintenance_jobs').select(db.raw('1'))
-        .where({ job_name: lease.jobName, claim_token: lease.token, is_running: true }))
-      .update({
-        is_archived: true,
-        archive_path: archiveRelKey,
-        // The zip's own byte size — the same number the completion email
-        // reports below. Persisted so the archives list can sort and display it
-        // without statting every archive on every request.
-        archive_size: totalBytes,
-        archived_at: new Date(),
+    // the gallery first (issue 2012): a lease declared stale and taken over
+    // (a stall long enough for that) must not mark the gallery archived or go
+    // on to delete the originals the new owner is reading. The claim row is
+    // locked first: a plain subquery would read it from the statement's
+    // snapshot on PostgreSQL, so a takeover committed while the UPDATE waited
+    // on the event row would go unseen. A takeover then waits for this commit
+    // and its job re-reads is_archived. A run that loses removes its own zip;
+    // the winner's sits at its own key. The DB goes BEFORE deleting originals
+    // so a crash mid-cleanup leaves the archive accessible rather than
+    // orphaning the photos.
+    let published;
+    try {
+      published = !lease.lost && await db.transaction(async (trx) => {
+        const held = await trx('maintenance_jobs')
+          .where({ job_name: lease.jobName, claim_token: lease.token, is_running: true })
+          .modify((q) => { if (trx.client.config.client === 'pg') q.forUpdate(); })
+          .first('job_name');
+        if (!held) return 0;
+        return trx('events')
+          .where('id', event.id)
+          .where('is_archived', formatBoolean(false))
+          .update({
+            is_archived: true,
+            archive_path: archiveRelKey,
+            // The zip's own byte size — the same number the completion email
+            // reports below. Persisted so the archives list can sort and display it
+            // without statting every archive on every request.
+            archive_size: totalBytes,
+            archived_at: new Date(),
+          });
       });
+    } catch (err) {
+      // The commit can have landed with only its answer lost: the zip stays
+      // when the row names it, or the archive would point at nothing.
+      const row = await db('events').where('id', event.id).first('archive_path').catch(() => null);
+      if (row && row.archive_path !== archiveRelKey) await storage.delete(archiveRelKey).catch(() => {});
+      throw err;
+    }
     if (!published) {
       await storage.delete(archiveRelKey).catch((err) =>
         logger.warn(`Failed to remove the unpublished archive ${archiveRelKey}: ${err.message}`));
       throw new AppError('The archive claim was taken over', 409, 'ARCHIVE_IN_PROGRESS');
     }
+
+    // The cleanup below deletes by key. A run that stalls past its lease
+    // after publishing (a suspended process) can find the gallery restored
+    // by then, its originals back under the same keys: checked again before
+    // each delete once a few seconds have passed, and on a lost or unreadable
+    // claim the cleanup stops. Leftover originals are recoverable; deleting
+    // restored photos is not.
+    let checkedAt = Date.now();
+    const assertStillHeld = async () => {
+      if (Date.now() - checkedAt < CLEANUP_CLAIM_CHECK_MS) return;
+      const renewed = await db('maintenance_jobs')
+        .where({ job_name: lease.jobName, claim_token: lease.token, is_running: true })
+        .update({ heartbeat_at: new Date().toISOString() });
+      if (!renewed) {
+        lease.lost = true;
+        throw new AppError('The archive claim was taken over during cleanup', 409, 'ARCHIVE_IN_PROGRESS');
+      }
+      checkedAt = Date.now();
+    };
 
     // Fire event.archived webhook (#327). Receivers infer per-photo loss
     // from this event — we deliberately do NOT fire photo.deleted for each
@@ -374,6 +412,7 @@ async function buildArchive(event, lease) {
 
     // Delete the originals from storage.
     for (const entry of photoEntries) {
+      await assertStillHeld();
       await storage.delete(entry.key).catch((err) =>
         logger.warn(`Failed to delete archived original ${entry.key}: ${err.message}`)
       );
@@ -385,6 +424,7 @@ async function buildArchive(event, lease) {
     // restore (or not at all for archived events that nobody opens).
     const photos = await db('photos').where('event_id', event.id);
     for (const photo of photos) {
+      await assertStillHeld();
       if (photo.thumbnail_path) {
         await storage.delete(photo.thumbnail_path).catch(() => {});
       }

@@ -20,6 +20,8 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'archive-single-job-secret';
 const bodies = new Map();
 // Each storage read waits for this gate, so a test can hold a job mid-build.
 let gate = Promise.resolve();
+// The same for storage deletes, to hold a job in its cleanup.
+let deleteGate = Promise.resolve();
 let failList = false;
 
 const mockStorage = {
@@ -35,10 +37,12 @@ const mockStorage = {
     return Readable.from([bodies.get(key)]);
   }),
   stat: jest.fn(async () => null),
+  copy: jest.fn(async () => undefined),
+  rename: jest.fn(async () => undefined),
   exists: jest.fn(async () => true),
   putFromFile: jest.fn(async () => undefined),
   put: jest.fn(async () => undefined),
-  delete: jest.fn(async () => undefined),
+  delete: jest.fn(async () => { await deleteGate; }),
   resolveLocalPath: () => { throw new Error('not local'); },
 };
 jest.mock('../../src/services/storage', () => ({
@@ -144,6 +148,7 @@ describe('one archive job per gallery', () => {
   beforeEach(() => {
     require('../../src/database/crmAccess').enterTrustedCrmFixtureContext();
     gate = Promise.resolve();
+    deleteGate = Promise.resolve();
     failList = false;
     jest.clearAllMocks();
   });
@@ -351,5 +356,76 @@ describe('one archive job per gallery', () => {
     expect(Boolean(row.is_archived)).toBe(true);
     expect(Boolean(row.is_active)).toBe(false);
     expect((await jobState.read(jobName(event.id))).isRunning).toBe(false);
+  });
+
+  it('stops deleting once a job that stalled after publishing has lost its claim', async () => {
+    const event = await makeEvent('stalled-cleanup');
+    let open;
+    deleteGate = new Promise((resolve) => { open = resolve; });
+    const job = archiveEvent(event);
+    // Published, parked on the first original's delete.
+    await new Promise((resolve) => {
+      const tick = () => (mockStorage.delete.mock.calls.length > 0 ? resolve() : setTimeout(tick, 5));
+      tick();
+    });
+    expect(Boolean((await db('events').where({ id: event.id }).first()).is_archived)).toBe(true);
+
+    // It stays suspended past its lease; a restore takes the claim and puts
+    // the originals back under the same keys.
+    await db('maintenance_jobs').where({ job_name: jobName(event.id) })
+      .update({ heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString() });
+    await holdClaim(event.id);
+    const realNow = Date.now;
+    const later = realNow() + 60000;
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => later);
+    try {
+      open();
+      await expect(job).rejects.toMatchObject({ code: 'ARCHIVE_IN_PROGRESS' });
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    // Only the delete already under way went out.
+    expect(deletedKeys().filter((key) => key.startsWith('events/active/stalled-cleanup/'))).toHaveLength(1);
+    expect((await jobState.read(jobName(event.id))).isRunning).toBe(true);
+  });
+
+  it('renames nothing when an archive takes the gallery after the validation', async () => {
+    const event = await makeEvent('rename-race');
+    const archiveService = require('../../src/services/archiveService');
+    const realClaim = archiveService.claimArchive;
+    const claimSpy = jest.spyOn(archiveService, 'claimArchive').mockImplementationOnce(async (id) => {
+      await holdClaim(id);
+      return realClaim(id);
+    });
+    const eventRenameService = require('../../src/services/eventRenameService');
+    try {
+      const result = await eventRenameService.renameEvent(event.id, 'A brand new name');
+      expect(result).toEqual({ success: false, error: expect.stringMatching(/being archived/) });
+    } finally {
+      claimSpy.mockRestore();
+    }
+    expect(mockStorage.copy).not.toHaveBeenCalled();
+    expect((await db('events').where({ id: event.id }).first()).slug).toBe('rename-race');
+  });
+
+  it('deletes the zip of an archive that finished between the delete and its claim', async () => {
+    const event = await makeEvent('delete-race');
+    const archiveService = require('../../src/services/archiveService');
+    const realClaim = archiveService.claimArchive;
+    const claimSpy = jest.spyOn(archiveService, 'claimArchive').mockImplementationOnce(async (id) => {
+      // The archive job publishes and lets go just before the delete claims.
+      await db('events').where({ id })
+        .update({ is_archived: 1, archive_path: 'events/archived/delete-race-0123456789ab.zip' });
+      return realClaim(id);
+    });
+    try {
+      const res = await request(app).delete(`/admin/events/${event.id}`);
+      expect(res.status).toBe(200);
+    } finally {
+      claimSpy.mockRestore();
+    }
+    expect(await db('events').where({ id: event.id }).first()).toBeUndefined();
+    expect(deletedKeys()).toContain('events/archived/delete-race-0123456789ab.zip');
   });
 });

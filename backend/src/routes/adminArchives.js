@@ -22,7 +22,7 @@ const { clearGuestCredits } = require('../services/photoCredit');
 const folderTree = require('../services/folderTreeService');
 const { parseBooleanInput } = require('../utils/parsers');
 const { getStorage } = require('../services/storage');
-const { isArchiveRunning } = require('../services/archiveService');
+const { claimArchive, isArchiveRunning } = require('../services/archiveService');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
 const router = express.Router();
 
@@ -233,8 +233,9 @@ router.get('/:id', adminAuth, requirePermission('archives.view'), requireEventOw
 
 // Restore archive
 router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), requireEventOwnership, async (req, res) => {
+  let lease = null;
   try {
-    const archive = await db('events')
+    let archive = await db('events')
       .where('id', req.params.id)
       .where('is_archived', formatBoolean(true))
       .first();
@@ -245,10 +246,20 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
 
     // The archive job sets is_archived before it deletes the originals and
     // derived files (issue 2012): restoring in that window would bring photos
-    // back for the job to delete. A job started after this check finds
-    // is_archived set and stops, so the check cannot race one.
-    if (await isArchiveRunning(archive.id)) {
+    // back for the job to delete. The restore holds the gallery's archive
+    // claim, so it waits for no job and none starts under it, and a job that
+    // stalled past its lease sees the claim gone and stops deleting.
+    lease = await claimArchive(archive.id);
+    if (!lease) {
       return res.status(409).json({ error: 'This gallery is being archived right now', code: 'ARCHIVE_IN_PROGRESS' });
+    }
+    // Again under the claim: a restore that finished in the meantime.
+    archive = await db('events')
+      .where('id', archive.id)
+      .where('is_archived', formatBoolean(true))
+      .first();
+    if (!archive) {
+      return res.status(404).json({ error: 'Archive not found' });
     }
 
     // Check if archive file exists
@@ -816,6 +827,8 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
   } catch (error) {
     logger.error('Archive restore error:', error);
     res.status(500).json({ error: 'Failed to restore archive' });
+  } finally {
+    if (lease) await lease.release();
   }
 });
 
