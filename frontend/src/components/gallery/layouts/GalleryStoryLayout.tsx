@@ -447,7 +447,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
             className="mt-4"
             leftIcon={<Upload className="w-4 h-4" />}
             onClick={onUploadClick}
-            data-gallery-upload-trigger
+            data-gallery-focus="upload"
           >
             {uploadLabel}
           </Button>
@@ -504,7 +504,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               aria-label={uploadLabel}
               title={uploadLabel}
               data-testid="story-nav-upload"
-              data-gallery-upload-trigger
+              data-gallery-focus="upload"
             >
               <Upload size={20} />
             </button>

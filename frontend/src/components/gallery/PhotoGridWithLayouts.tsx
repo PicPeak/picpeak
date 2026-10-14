@@ -216,23 +216,24 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   // when the list empties or fills, so their own lightbox state goes with it
   // as it did when this component returned its empty message instead.
   const layoutKey = layoutOwnsLightbox && photos.length === 0 ? 'empty' : 'photos';
-  // An upload into an empty Premium/Story gallery: the upload dialog hands
-  // focus back to the empty state's button, then the refetch remounts the
-  // layout and that button is gone. Hand focus to the new layout's own upload
-  // button rather than dropping it on <body>. Read during render, while the
-  // old layout (and the focused button) is still in the document.
+  // The remount drops whatever had focus in the old layout: the empty
+  // state's upload button once the first upload's refetch fills the gallery.
+  // A control marked `data-gallery-focus="<role>"` hands focus to the new
+  // layout's control with the same role rather than to <body>. Read during
+  // render, while the old layout (and the focused control) is still in the
+  // document.
   const renderedLayoutKeyRef = useRef(layoutKey);
-  const refocusUploadRef = useRef(false);
+  const refocusRoleRef = useRef<string | null>(null);
   if (renderedLayoutKeyRef.current !== layoutKey) {
     renderedLayoutKeyRef.current = layoutKey;
-    refocusUploadRef.current = Boolean(
-      (document.activeElement as HTMLElement | null)?.closest?.('[data-gallery-upload-trigger]')
-    );
+    refocusRoleRef.current = (document.activeElement as HTMLElement | null)
+      ?.closest?.('[data-gallery-focus]')?.getAttribute('data-gallery-focus') ?? null;
   }
   useEffect(() => {
-    if (!refocusUploadRef.current) return;
-    refocusUploadRef.current = false;
-    document.querySelector<HTMLElement>('[data-gallery-upload-trigger]')?.focus();
+    const role = refocusRoleRef.current;
+    if (!role) return;
+    refocusRoleRef.current = null;
+    document.querySelector<HTMLElement>(`[data-gallery-focus="${role}"]`)?.focus();
   }, [layoutKey]);
   const reportLayoutLightbox: LightboxPhotoChangeHandler = (photoId, reason) => {
     lightboxPhotoIdRef.current = reason === 'close' ? null : photoId;
