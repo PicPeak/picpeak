@@ -22,6 +22,7 @@ import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableMessage } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 import { lockBodyScroll } from '../../utils/scrollLock';
+import { pushDialogLayer } from '../common/Modal';
 import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
 import { useLightboxScrub } from './hooks/useLightboxScrub';
 import { exifLine } from '../../utils/photoExif';
@@ -378,19 +379,36 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     submitColorLabel: (async () => {}) as (color: ColorLabel | null) => Promise<void>,
     submitRating: (async () => {}) as (value: number) => Promise<void>,
   });
+  // The lightbox is a layer of the shared dialog stack, like the admin
+  // viewer: while a dialog is open on top (the name-and-e-mail prompt, the
+  // feedback limit notice, ...) its keys belong to that dialog. Escape closes
+  // the dialog, not the lightbox, and the arrows must not page the photo the
+  // dialog is about away behind it. A dialog already open as the lightbox
+  // mounts (browser Forward reopening a photo under the guest name prompt or
+  // the Story layout's like prompt, which paint above it) stays on top too.
+  const layerRef = useRef<ReturnType<typeof pushDialogLayer> | null>(null);
+  useEffect(() => {
+    const layer = pushDialogLayer({ beneathOpen: true });
+    layerRef.current = layer;
+    return () => { layer.release(); layerRef.current = null; };
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (layerRef.current && !layerRef.current.isTop()) return;
       // Annotate mode (issue 1733): Escape leaves the mode, not the lightbox,
       // and no other key navigates, zooms, downloads or rates.
       if (annotationRef.current.drawing) {
         if (e.key === 'Escape') annotationRef.current.cancel();
         return;
       }
-      // A held arrow key: the scrub steps at its own rate. Not from a field,
-      // where the key moves the caret and the scrub would take the field's
-      // panel away from under it; and not in a gallery of one, where it
-      // could only unmount the slide (a playing video with it) for nothing.
-      if (photos.length > 1 && !isTypingTarget(e.target) && scrub.handleKeyDown(e)) return;
+      // Not from a field: there the arrows move the caret, +, - and d are
+      // text, and switching photos would drop the comment being written.
+      if (isTypingTarget(e.target)) return;
+      // A held arrow key: the scrub steps at its own rate. Not in a gallery
+      // of one, where it could only unmount the slide (a playing video with
+      // it) for nothing.
+      if (photos.length > 1 && scrub.handleKeyDown(e)) return;
       switch (e.key) {
         case 'Escape':
           onClose();

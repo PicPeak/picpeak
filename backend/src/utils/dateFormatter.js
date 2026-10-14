@@ -79,7 +79,9 @@ async function formatDate(date, language = 'en') {
       // A date-only string is already that day; its local midnight in UTC
       // would be the day before east of Greenwich.
       if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
-      return dateObj.toISOString().split('T')[0];
+      // The server's local day, like every other format here: a Postgres
+      // DATE arrives as local midnight, the day before in UTC east of it.
+      return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
     case 'DD.MM.YYYY':
       return dateObj.toLocaleDateString('de-DE', {
         day: '2-digit',

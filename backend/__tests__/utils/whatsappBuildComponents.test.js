@@ -134,3 +134,22 @@ describe('buildComponents', () => {
     expect(out).toEqual(['Wedding 2026']);
   });
 });
+
+describe('expiry_date as a bare day', () => {
+  // The queue turns the stored expiry into its day in the instance zone
+  // (utils/galleryExpiry); that day must print as itself west of UTC too.
+  // TZ does not re-bind inside a running process, so the zone is forced in
+  // a child, with the database module stubbed out.
+  test('prints the day it names in a server zone west of UTC', () => {
+    const { execFileSync } = require('child_process');
+    const processor = require.resolve('../../src/services/whatsappProcessor');
+    const dbModule = require.resolve('../../src/database/db');
+    const out = execFileSync(process.execPath, ['-e', `
+      const dbPath = ${JSON.stringify(dbModule)};
+      require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { db: () => {} } };
+      const { buildComponents } = require(${JSON.stringify(processor)});
+      console.log(buildComponents({ expiry_date: '2026-12-24' }, 'de_DE', ['expiry_date'])[0]);
+    `], { env: { ...process.env, TZ: 'America/New_York' }, encoding: 'utf8' });
+    expect(out.trim()).toBe('24.12.2026');
+  });
+});

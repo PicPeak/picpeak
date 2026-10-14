@@ -18,6 +18,8 @@ export function useEscapeClose(open: boolean, onClose: () => void, { enabled = t
     const layer = pushDialogLayer();
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !layer.isTop()) return;
+      // An Escape that cancels an IME composition belongs to the field.
+      if (e.isComposing || e.keyCode === 229) return;
       e.stopPropagation();
       if (enabledRef.current) onCloseRef.current();
     };
