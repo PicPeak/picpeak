@@ -33,7 +33,9 @@ function verifyGalleryJwt(token) {
  * signed again with only `eventSlug` changed: same jti, iat and exp, so it
  * lives no longer than the original, a revocation of either revokes both, and
  * a later password change still refuses it. The new token is set the way the
- * login routes set one and the old slug's cookie is cleared.
+ * login routes set one and the old slug's cookie is cleared. The session
+ * check also hands it back in its answer, so the page replaces a stale token
+ * it may still keep for this slug (a Bearer header wins over the cookie).
  *
  * Returns the token to use for this request, or null to keep `current`.
  */
@@ -64,9 +66,13 @@ async function carryRenamedGallerySession(req, res, slug, current) {
     if (decoded.eventSlug === slug) return token;
 
     const renewed = jwt.sign({ ...decoded, eventSlug: event.slug }, process.env.JWT_SECRET, { algorithm: 'HS256' });
-    if (typeof decoded.eventSlug === 'string'
-      && sanitizeSlugForCookie(decoded.eventSlug) !== sanitizeSlugForCookie(event.slug)) {
-      res.clearCookie(`${GALLERY_COOKIE_PREFIX}${sanitizeSlugForCookie(decoded.eventSlug)}`, buildClearCookieOptions());
+    // Only the cookie holding this very token: another gallery may own the
+    // old slug's cookie name by now (slug reuse, sanitized-name collision).
+    const oldCookie = typeof decoded.eventSlug === 'string'
+      ? `${GALLERY_COOKIE_PREFIX}${sanitizeSlugForCookie(decoded.eventSlug)}` : null;
+    if (oldCookie && oldCookie !== `${GALLERY_COOKIE_PREFIX}${sanitizeSlugForCookie(event.slug)}`
+      && cookies[oldCookie] === token) {
+      res.clearCookie(oldCookie, buildClearCookieOptions());
     }
     setGalleryAuthCookies(res, renewed, event.slug);
     return renewed;

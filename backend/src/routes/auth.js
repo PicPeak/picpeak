@@ -974,9 +974,11 @@ router.get('/session', async (req, res) => {
       ? (getGalleryTokenFromRequest(req, slug) || getAdminTokenFromRequest(req))
       : (getAdminTokenFromRequest(req) || getGalleryTokenFromRequest(req, slug));
     // A session opened before the gallery was renamed names the old slug.
+    let carried = null;
     if (slug) {
       const { carryRenamedGallerySession } = require('../services/galleryRenameSession');
-      token = (await carryRenamedGallerySession(req, res, slug, token)) || token;
+      carried = await carryRenamedGallerySession(req, res, slug, token);
+      token = carried || token;
     }
 
     if (!token) {
@@ -1041,7 +1043,11 @@ router.get('/session', async (req, res) => {
         // Full admin payload (or null) — lets the SPA hydrate its user
         // state after a redirect-established session (SSO, #798) where no
         // login JSON response ever reached it.
-        adminUser
+        adminUser,
+        // A session found in a cookie other than the one the page would
+        // send (renamed gallery): handed back so the page can replace a
+        // stale token it keeps for this slug, which would win as a Bearer.
+        ...(carried && { token: carried }),
       });
     } catch (err) {
       res.json({

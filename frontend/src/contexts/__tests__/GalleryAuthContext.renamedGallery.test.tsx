@@ -2,8 +2,10 @@
  * A visitor logged in before a gallery rename opens an old-slug link. The old
  * slug's session still verifies, but its gallery no longer answers at that
  * slug; the page then moves to the new slug, where the server carries the
- * session over (same claims, eventSlug = new slug). The context must end up
- * authenticated there without a login call.
+ * session over (same claims, eventSlug = new slug) and hands the token back.
+ * The context must end up authenticated there without a login call, and
+ * replace a stale token kept for the new slug (sent as a Bearer, it would win
+ * over the cookie).
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -18,7 +20,8 @@ vi.mock('../../config/api', () => ({
     get: vi.fn(async (_url: string, options?: { params?: { slug?: string } }) => {
       const slug = options?.params?.slug ?? '';
       sessionCalls.push(slug);
-      return { data: { valid: true, type: 'gallery', eventSlug: slug, accessLevel: 'guest' } };
+      return { data: { valid: true, type: 'gallery', eventSlug: slug, accessLevel: 'guest',
+        ...(slug === NEW_SLUG && { token: 'renewed-session' }) } };
     }),
   },
 }));
@@ -38,6 +41,7 @@ vi.mock('../../services', () => ({
 vi.mock('../../utils/cleanupGalleryAuth', () => ({ cleanupOldGalleryAuth: vi.fn() }));
 
 import { GalleryAuthProvider, useGalleryAuth } from '../GalleryAuthContext';
+import { getGalleryToken, storeGalleryToken } from '../../utils/galleryAuthStorage';
 
 let state: { isAuthenticated: boolean; isLoading: boolean } = { isAuthenticated: false, isLoading: true };
 let navigateTo: (path: string) => void = () => {};
@@ -57,6 +61,8 @@ afterEach(() => {
 
 describe('GalleryAuthProvider — session after a gallery rename', () => {
   it('is authenticated at the new slug without logging in again', async () => {
+    // Left over from an earlier visit; as a Bearer it would win over the cookie.
+    storeGalleryToken(NEW_SLUG, 'stale-session');
     render(
       <MemoryRouter initialEntries={[`/gallery/${OLD_SLUG}`]}>
         <GalleryAuthProvider>
@@ -73,5 +79,6 @@ describe('GalleryAuthProvider — session after a gallery rename', () => {
     expect(sessionCalls).toEqual([OLD_SLUG, NEW_SLUG]);
     expect(login).not.toHaveBeenCalled();
     expect(shareLinkLogin).not.toHaveBeenCalled();
+    expect(getGalleryToken(NEW_SLUG)).toBe('renewed-session');
   });
 });

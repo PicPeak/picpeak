@@ -49,8 +49,17 @@ it('re-issues the old-slug session for the new slug with the same claims', async
   const before = jwt.decode(old);
   const after = jwt.verify(renewed, process.env.JWT_SECRET, { issuer: 'picpeak-auth' });
   expect(after).toEqual({ ...before, eventSlug: newSlug });
-  // The old slug's cookie is cleared.
+  // The old slug's cookie is cleared, and the token handed back so the page
+  // can replace a stale one it keeps for the new slug.
   expect(setCookies(res).some((c) => c.startsWith(`gallery_token_${oldSlug}=;`))).toBe(true);
+  expect(res.body.token).toBe(renewed);
+});
+
+it('leaves the old slug cookie alone when it holds another gallery', async () => {
+  const otherSession = gallery({ eventId: otherEventId });
+  const res = await session({ gallery_token: gallery(), [`gallery_token_${oldSlug}`]: otherSession });
+  expect(res.body).toMatchObject({ valid: true, eventSlug: newSlug });
+  expect(setCookies(res).some((c) => c.startsWith(`gallery_token_${oldSlug}=`))).toBe(false);
 });
 
 it('finds the old session through the generic gallery cookie too', async () => {
@@ -89,5 +98,6 @@ it('leaves a session already on the new slug alone', async () => {
   const current = gallery({ eventSlug: newSlug });
   const res = await session({ [`gallery_token_${newSlug}`]: current });
   expect(res.body).toMatchObject({ valid: true, eventSlug: newSlug });
+  expect(res.body.token).toBeUndefined();
   expect(setCookies(res)).toEqual([]);
 });
