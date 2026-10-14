@@ -16,7 +16,7 @@ import { FirstLookBadge } from '../GalleryTileBadges';
 import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut, Upload } from 'lucide-react';
+import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut, Upload, ClipboardList } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { parseISO } from 'date-fns';
 import { useInView } from 'react-intersection-observer';
@@ -267,6 +267,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   heroPhotoOverride,
   onLogout,
   onUploadClick,
+  onCopyFilenames,
+  copyFilenamesCount = 0,
   showOriginalFilename = false,
   openPhotoId,
   onLightboxPhotoChange,
@@ -649,6 +651,21 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           >
             {uploadLabel}
           </Button>
+        )}
+        {/* Event-wide like the nav button (issue 1733, A3d): a filter that
+            leaves nothing on screen must not take the favourites' list with it. */}
+        {onCopyFilenames && copyFilenamesCount > 0 && (
+          <div className="mt-4 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<ClipboardList className="w-4 h-4" />}
+              onClick={onCopyFilenames}
+              className="text-xs sm:text-sm"
+            >
+              {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
+            </Button>
+          </div>
         )}
       </div>
     );

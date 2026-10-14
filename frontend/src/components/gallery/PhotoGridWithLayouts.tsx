@@ -218,8 +218,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   };
 
   // The list emptied under an open lightbox (unliking the last Liked photo,
-  // a filter change): this component returns its empty state and the
-  // lightbox — its own or the layout's — unmounts without a close, leaving
+  // a filter change): this component returns its empty state, or remounts
+  // a full-page layout into its own, and the lightbox unmounts without a close, leaving
   // `?photo=` and the pushed history entry behind. Report the close here.
   // Only the EMPTY list: while photos remain, the lightbox clamps onto a
   // neighbour in an effect of its own and reports that step a render later;
@@ -353,7 +353,9 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     }
   };
 
-  if (photos.length === 0) {
+  // Premium and Story render their own empty state (with the upload button
+  // and their way back from a filter), so only the other layouts stop here.
+  if (photos.length === 0 && !layoutOwnsLightbox) {
     // Suppressed (#1160): a folder-only root has folder tiles above proving the
     // gallery isn't empty, so the message would contradict them.
     if (!suppressEmptyState) {
@@ -606,8 +608,11 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
         </div>
       )}
 
-      {/* Render the selected layout */}
-      <LayoutComponent {...layoutProps} />
+      {/* Render the selected layout. Premium and Story render their own empty
+          state; the key remounts them when the list empties, so their own
+          lightbox state goes with it as it did when this component returned
+          its empty message instead. */}
+      <LayoutComponent key={layoutOwnsLightbox && photos.length === 0 ? 'empty' : 'photos'} {...layoutProps} />
       {/* Full-page layouts place it themselves, ahead of their footer. */}
       {!isFullPageLayout && afterGrid}
 

@@ -451,6 +451,21 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
             {uploadLabel}
           </Button>
         )}
+        {/* Event-wide like the nav button (issue 1733, A3d): a filter that
+            leaves nothing on screen must not take the favourites' list with it. */}
+        {onCopyFilenames && copyFilenamesCount > 0 && (
+          <div className="mt-4 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<ClipboardList className="w-4 h-4" />}
+              onClick={onCopyFilenames}
+              className="text-xs sm:text-sm"
+            >
+              {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
