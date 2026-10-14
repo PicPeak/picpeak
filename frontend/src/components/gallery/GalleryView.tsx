@@ -5,7 +5,7 @@ import { useGallerySelection } from './hooks/useGallerySelection';
 import { useFeedbackChange } from './hooks/useFeedbackChange';
 import { UploadProcessingNotice } from './UploadProcessingNotice';
 import { NewPhotosPill } from './NewPhotosPill';
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -178,6 +178,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const [brandingSettings, setBrandingSettings] = useState<any>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
   const [feedbackEnabled, setFeedbackEnabled] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const { watermarkEnabled } = useWatermarkSettings();
@@ -1124,8 +1125,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       return;
     }
 
-    const selectedPhotosList = filteredPhotos.filter(p => selectedPhotos.has(p.id));
-    
     // Track bulk download
     analyticsService.trackGalleryEvent('bulk_download', {
       gallery: slug,
@@ -1137,15 +1136,19 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // charged the ones before it. A refusal keeps the selection to trim. A
     // preview-only guest gets one zip too, which leaves out the videos they
     // cannot take rather than failing on them one by one.
+    //
+    // The whole selection (issue 1972), as the picker branch above hands over:
+    // a search or filter applied after selecting hides photos, it does not
+    // unselect them.
     if (downloadQuota.limited || downloadQuota.previewOnly) {
       try {
-        await galleryService.downloadSelectedPhotos(slug, selectedPhotosList.map((p) => p.id));
+        await galleryService.downloadSelectedPhotos(slug, selectedPhotoList.map((p) => p.id));
       } catch (error) {
         if (!isDownloadLimitError(error)) throw error;
         return;
       }
     } else {
-      for (const photo of selectedPhotosList) {
+      for (const photo of selectedPhotoList) {
         await galleryService.downloadPhoto(slug, photo.id, photo.filename);
       }
     }
@@ -1613,6 +1616,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               slug={slug}
               state={selectionState}
               used={selectionUsed}
+              requireNameEmail={!!feedbackSettings?.require_name_email}
+              sharedIdentity={feedbackSettings?.identity_mode === 'shared'}
               className="pointer-events-auto"
             />
           </div>
@@ -1764,6 +1769,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         <GallerySidebar
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(!sidebarOpen)}
+          returnFocusRef={sidebarToggleRef}
           categories={filterCategories(data?.categories).filter(cat => photoCounts[cat.id] > 0)}
           selectedCategoryId={selectedCategoryId}
           onCategoryChange={setSelectedCategoryId}
@@ -1876,6 +1882,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // with the leftmost gallery image.
           showSidebar ? (
             <Button
+              ref={sidebarToggleRef}
               variant="ghost"
               size="sm"
               className="gallery-btn p-2"
@@ -1925,7 +1932,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
         {/* "x of y selected", Finish selection, Approve edited photos
             (issue 1733, A1). */}
-        <SelectionSubmitBar slug={slug} state={selectionState} used={selectionUsed} className="mt-4" />
+        <SelectionSubmitBar
+          slug={slug}
+          state={selectionState}
+          used={selectionUsed}
+          requireNameEmail={!!feedbackSettings?.require_name_email}
+          sharedIdentity={feedbackSettings?.identity_mode === 'shared'}
+          className="mt-4"
+        />
 
         {/* Client Access Banner (#172) */}
         {isClient && (

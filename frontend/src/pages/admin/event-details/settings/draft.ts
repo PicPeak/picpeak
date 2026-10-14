@@ -12,12 +12,12 @@
  * it was loaded from, and the events row only receives the fields whose
  * request value differs. A save the admin never touched writes nothing.
  */
-import { format } from 'date-fns';
 import type { AssignedAdmin, Event } from '../../../../types';
 import type { FeedbackSettings } from '../../../../services/feedback.service';
 import { DEFAULT_SLIDESHOW_STYLE, type SlideshowStyle } from '../../../../services/slideshow.service';
 import { GALLERY_THEME_PRESETS, type ThemeConfig } from '../../../../types/theme.types';
 import { normalizeRequirePassword } from '../../../../utils/accessControl';
+import { expiryDay } from '../../../../utils/expiryDay';
 import type { CustomerGroup } from '../../../../services/customerAdmin.service';
 import type { EditFormState } from '../types';
 import { safeParseDate } from '../utils';
@@ -126,8 +126,28 @@ export function usesCustomTheme(event: Event): boolean {
   return truthy(event.custom_theme_enabled);
 }
 
+/**
+ * The date field's value for a stored expiry: the day it stands for in the
+ * instance time zone (`timeZone`, from the event detail payload). See
+ * utils/expiryDay for the stored shapes.
+ */
+export function expiryDateField(value: unknown, timeZone?: string | null): string {
+  const date = safeParseDate(value);
+  return date ? expiryDay(date, timeZone) : '';
+}
+
+/**
+ * The date field's value for a stored delivery due date: its UTC date, the
+ * day deliveryDue() and the backend's due/overdue checks read. The field
+ * stores noon UTC, which the browser zone would push to the next day east of
+ * UTC+12.
+ */
+export function deliveryDueDateField(value: unknown): string {
+  const date = safeParseDate(value);
+  return date && !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : '';
+}
+
 export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null | undefined): EventFields {
-  const expiresAt = safeParseDate(event.expires_at);
   const extra = event as Event & {
     promo_mode?: 'inherit' | 'custom' | 'off';
     info_mode?: 'inherit' | 'custom' | 'off';
@@ -139,7 +159,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     welcome_message: event.welcome_message || '',
     color_theme: event.color_theme || '',
     css_template_id: event.css_template_id ?? null,
-    expires_at: expiresAt ? format(expiresAt, 'yyyy-MM-dd') : '',
+    expires_at: expiryDateField(event.expires_at, event.expiry_time_zone),
     allow_user_uploads: truthy(event.allow_user_uploads),
     reveal_mode: truthy(event.reveal_mode),
     // datetime-local wants local "YYYY-MM-DDTHH:mm"
@@ -195,10 +215,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     folder_structure: truthy(event.folder_structure),
     delivery_status: event.delivery_status === 'partial' ? 'partial' : 'complete',
     delivery_expected_count: event.delivery_expected_count ? String(event.delivery_expected_count) : '',
-    delivery_due_at: (() => {
-      const due = safeParseDate(event.delivery_due_at ?? null);
-      return due ? format(due, 'yyyy-MM-dd') : '';
-    })(),
+    delivery_due_at: deliveryDueDateField(event.delivery_due_at),
     delivery_badge_label: event.delivery_badge_label || '',
     assigned_admins: event.assigned_admins || [],
     review_contributor_uploads: truthy(event.review_contributor_uploads),

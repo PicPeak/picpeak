@@ -5,7 +5,7 @@
  * lets the backend read the same decision again as "clear it". Saving a reason
  * sends the decision WITH the text, which the backend reads as an edit.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -122,6 +122,17 @@ describe('PhotoDecision (issue 744)', () => {
     } finally {
       document.removeEventListener('keydown', lightboxKeydown);
     }
+  });
+
+  it('keeps the reason form open on an Escape that cancels an IME composition', async () => {
+    renderDecision('rejected');
+    await userEvent.click(screen.getByRole('button', { name: 'Why? (optional)' }));
+    const field = screen.getByRole('textbox');
+
+    fireEvent.keyDown(field, { key: 'Escape', isComposing: true });
+    fireEvent.keyDown(field, { key: 'Escape', keyCode: 229 });
+
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
   });
 
   it('keeps typed keys away from the lightbox shortcuts', async () => {

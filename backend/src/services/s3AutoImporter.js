@@ -26,6 +26,8 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { getStorage } = require('./storage');
 const { withLocalCopy } = require('./imageProcessor');
 const logger = require('../utils/logger');
+const { promotionSettled } = require('./watchFolderClaims');
+const { unfinishedKeys } = require('./publicUploadQuota');
 
 const POLL_INTERVAL_MS = parseInt(process.env.STORAGE_AUTO_IMPORT_INTERVAL_MS || `${5 * 60 * 1000}`, 10);
 const ENABLED = process.env.STORAGE_AUTO_IMPORT === 'true';
@@ -80,6 +82,11 @@ async function processEvent(event, storage) {
       k.startsWith(eventsActivePrefix) ? k.slice(eventsActivePrefix.length) : k
     );
 
+    // Objects an upload stored but has not written a row for yet, or never
+    // will (issue 1970): read BEFORE the photos, because commitObject writes
+    // the row and settles the record in one transaction.
+    const unfinished = await unfinishedKeys(stableKeyList);
+
     const existing = await db('photos')
       .where({ event_id: event.id })
       .whereIn('path', relativePaths)
@@ -91,6 +98,7 @@ async function processEvent(event, storage) {
         ? entry.key.slice(eventsActivePrefix.length)
         : entry.key;
       if (existingPaths.has(relativePath)) continue;
+      if (unfinished.has(entry.key) || promotionSettled(entry.key)) continue;
 
       // Skip generated artifacts (thumbnails get their own keys; we don't
       // want to re-register them as photos).

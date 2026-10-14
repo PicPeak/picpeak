@@ -82,6 +82,8 @@ export interface QuoteSummary {
      *  customer (no portal access). Drives the Passive badge in the
      *  editor pill + the quotes list. */
     isPassive?: boolean;
+    /** No administrative emails (migration 300): send becomes Issue. */
+    noAdminEmails?: boolean;
   };
   status: QuoteStatus;
   language: string;
