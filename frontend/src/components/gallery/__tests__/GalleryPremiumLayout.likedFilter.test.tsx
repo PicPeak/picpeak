@@ -127,4 +127,33 @@ describe('Gallery Premium — nav heart filters to the viewer\'s likes', () => {
     expect(likeButton.className).not.toContain('liked');
     warn.mockRestore();
   });
+
+  const navCount = () => screen.getByTestId('premium-nav-liked').querySelector('.gallery-premium-nav-count')?.textContent;
+
+  it('follows a refetched payload, not only the first one', () => {
+    // A like made in another tab, or the lightbox, reaches the layout only
+    // through the parent's refetch; the count used to stay at the mount value.
+    const { rerender } = render(<Harness source={makePhotos([1, 3])} />);
+    expect(navCount()).toBe('2');
+    rerender(<Harness source={makePhotos([1, 2, 3])} />);
+    expect(navCount()).toBe('3');
+    rerender(<Harness source={makePhotos([3])} />);
+    expect(navCount()).toBe('1');
+  });
+
+  it('keeps a like whose submit is still in flight across a refetch', async () => {
+    submitFeedback.mockClear();
+    let resolve: () => void = () => {};
+    submitFeedback.mockImplementationOnce(() => new Promise<void>((r) => { resolve = r; }));
+    const { rerender } = render(<Harness source={makePhotos([1, 3])} />);
+    fireEvent.click(screen.getByTestId('photo-card-4').querySelector('.gallery-premium-like-btn') as HTMLElement);
+    await waitFor(() => expect(submitFeedback).toHaveBeenCalledTimes(1));
+    expect(navCount()).toBe('3');
+    // An unrelated refetch lands before the like is saved.
+    rerender(<Harness source={makePhotos([1, 3]).map((p) => ({ ...p }))} />);
+    expect(navCount()).toBe('3');
+    resolve();
+    rerender(<Harness source={makePhotos([1, 3, 4])} />);
+    await waitFor(() => expect(navCount()).toBe('3'));
+  });
 });

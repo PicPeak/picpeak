@@ -297,13 +297,20 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }, []);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
-  // Seed from server is_liked on first non-empty payload (#590 follow-up).
-  // Mount-only so refetches don't clobber in-session optimistic toggles.
-  const likedSeededRef = useRef(false);
+  // Per-viewer is_liked is the server's truth (#590 follow-up). Seeding it
+  // once on mount left the nav count behind every later refetch, so the set
+  // follows each payload, as Story's does; only the ids whose submit is still
+  // in flight keep their optimistic state.
+  const inFlightLikesRef = useRef<Set<number>>(new Set());
   useEffect(() => {
-    if (likedSeededRef.current || photos.length === 0) return;
-    setLikedPhotoIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    likedSeededRef.current = true;
+    setLikedPhotoIds((previous) => {
+      const next = new Set(photos.filter(p => p.is_liked).map(p => p.id));
+      inFlightLikesRef.current.forEach((id) => {
+        if (previous.has(id)) next.add(id);
+        else next.delete(id);
+      });
+      return next;
+    });
   }, [photos]);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   // Emoji reactions (#839) inside the premium lightbox. This layout uses
@@ -487,6 +494,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         return;
       }
       // Toggle — server /feedback like is a toggle (#590).
+      inFlightLikesRef.current.add(photo.id);
       setLikedPhotoIds(prev => {
         const next = new Set(prev);
         if (next.has(photo.id)) next.delete(photo.id);
@@ -504,6 +512,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         // which reads the server's is_liked, will show.
         toggleLiked(photo.id);
         if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
+      } finally {
+        inFlightLikesRef.current.delete(photo.id);
       }
       return;
     }
@@ -515,6 +525,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }
 
     // Optimistic update — toggle, not add (#590).
+    inFlightLikesRef.current.add(photo.id);
     setLikedPhotoIds(prev => {
       const next = new Set(prev);
       if (next.has(photo.id)) next.delete(photo.id);
@@ -532,6 +543,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     } catch (err) {
       toggleLiked(photo.id);
       if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
+    } finally {
+      inFlightLikesRef.current.delete(photo.id);
     }
   }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity]);
 
@@ -544,6 +557,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       // modal only fires the first time per session, so the user is
       // intentionally liking a not-yet-liked photo here, but keep the
       // setter shape consistent with the other paths.
+      inFlightLikesRef.current.add(pendingLikePhotoId);
       setLikedPhotoIds(prev => {
         const next = new Set(prev);
         if (next.has(pendingLikePhotoId)) next.delete(pendingLikePhotoId);
@@ -561,6 +575,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       } catch (err) {
         toggleLiked(pendingLikePhotoId);
         if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
+      } finally {
+        inFlightLikesRef.current.delete(pendingLikePhotoId);
       }
       setPendingLikePhotoId(null);
     }
