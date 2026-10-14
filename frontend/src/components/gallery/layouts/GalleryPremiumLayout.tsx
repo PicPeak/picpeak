@@ -533,13 +533,16 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }
   }, [slug, pendingLikePhotoId, onFeedbackChange]);
 
+  // Every photo on screen is selected — by id: equal sizes can be a
+  // different set (a selection made under another category chip).
+  const allSelected = filteredPhotos.length > 0 && filteredPhotos.every((photo) => selectedPhotos.has(photo.id));
   const handleSelectAll = useCallback(() => {
-    if (selectedPhotos.size === filteredPhotos.length) {
+    if (allSelected) {
       onDeselectAll?.();
     } else {
       onSelectAll?.();
     }
-  }, [selectedPhotos, filteredPhotos, onSelectAll, onDeselectAll]);
+  }, [allSelected, onSelectAll, onDeselectAll]);
 
   // Download limit (issue 1560).
   const downloadQuota = useDownloadQuota();
@@ -685,7 +688,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                     className="gallery-premium-selection-btn"
                     onClick={handleSelectAll}
                   >
-                    {selectedPhotos.size === filteredPhotos.length ? t('gallery.deselectAll') : t('gallery.selectAll')}
+                    {allSelected ? t('gallery.deselectAll') : t('gallery.selectAll')}
                   </button>
                   <button
                     className="gallery-premium-download-btn"
