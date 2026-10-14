@@ -32,6 +32,7 @@ const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { formatBoolean } = require('../utils/dbCompat');
+const { toTimestamp } = require('../utils/dateNormalize');
 const emailProcessor = require('./emailProcessor');
 const businessProfileService = require('./businessProfileService');
 const customerAccountsService = require('./customerAccountsService');
@@ -179,12 +180,12 @@ async function notifyRequest(request, { reminder = false, notify } = {}) {
       business_name: await businessName(),
       request_title: request.title,
       request_note: request.note || '',
-      // Formatted here: the queue only formats its own date variables. A
-      // calendar day, named by its UTC date as the portal shows it — the
-      // server's timezone would move it a day either side.
+      // A calendar day, named by its UTC date as the portal shows it — the
+      // server's timezone would move it a day either side. Queued as a bare
+      // date: the queue formats due_date itself, and an already formatted
+      // '22/09/2026' reached the mail as "Invalid Date".
       due_date: request.due_at
-        ? await require('../utils/dateFormatter').formatDate(
-          new Date(request.due_at).toISOString().slice(0, 10), customer.preferred_language || 'en')
+        ? new Date(toTimestamp(request.due_at)).toISOString().slice(0, 10)
         : '',
       upload_link: `${base}/customer/documents?request=${request.id}`,
       __language: customer.preferred_language || undefined,
