@@ -209,6 +209,7 @@ const pgUrl = process.env.PICPEAK_PG_TEST_URL;
     expect(results).toEqual({ first: 'ok', second: 'ok' });
     const ids = (await db('event_admin_assignments').where({ event_id: gallery }).orderBy('admin_user_id').pluck('admin_user_id'))
       .map(Number);
-    expect(ids).toEqual([a, b, c]);
+    // The second save runs after the first commits and replaces its team.
+    expect(ids).toEqual([a, b]);
   }, 60000);
 });
