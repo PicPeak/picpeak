@@ -50,7 +50,7 @@ const ALL_ROWS = {
   'services/photoCap.js': [3, 'inserts of new photos'],
   'services/photoCredit.js': [7, 'guest erasure and merge treat trashed photos like any other'],
   'services/photoProcessor.js': [6, 'filename counters, inserts and the run in flight'],
-  'services/photoReplacementService.js': [4, 'writes to the replacement target found live just before'],
+  'services/photoReplacementService.js': [5, 'writes to the replacement target found live just before; a preview or hero a trashed photo shares is kept too'],
   'services/photoService.js': [1, 'hard delete by id'],
   'services/picpeakImportService.js': [1, 'portable import: the flag travels with the row'],
   'services/portableImportMaintenance.js': [1, 'portable import: re-queues every imported row'],
