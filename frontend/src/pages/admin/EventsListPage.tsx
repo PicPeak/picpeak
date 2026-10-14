@@ -34,11 +34,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventsService, type EventStatusFilter, type EventSortBy } from '../../services/events.service';
 import { eventTypesService } from '../../services/eventTypes.service';
 import { adminService } from '../../services/admin.service';
+import { archiveInProgressError } from '../../utils/archiveErrors';
 import { isGalleryPublic } from '../../utils/accessControl';
 import { mediaSplitLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { buildShareLinkUrl } from '../../utils/url';
 import type { Event } from '../../types';
-import { deliveryDue, isAwaitingFullGallery } from './event-details/deliveryStatus';
+import { useDeliveryDue, isAwaitingFullGallery } from './event-details/deliveryStatus';
 import { useTranslation } from 'react-i18next';
 
 const PAGE_SIZE = 20;
@@ -54,7 +55,8 @@ const MENU_SORT_KEYS: readonly EventSortBy[] = [
 
 export const EventsListPage: React.FC = () => {
   const { t } = useTranslation();
-  const { format } = useLocalizedDate();
+  const { format, formatExpiry } = useLocalizedDate();
+  const deliveryDue = useDeliveryDue();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
@@ -307,7 +309,7 @@ export const EventsListPage: React.FC = () => {
     mutationFn: eventsService.archiveEvent,
     invalidateKeys: [['admin-events'], ['admin-dashboard-stats']],
     successMessage: t('toast.eventArchived'),
-    errorMessage: () => t('toast.saveError'),
+    errorMessage: (error) => archiveInProgressError(error, t) ?? t('toast.saveError'),
   });
 
   // Delete mutation
@@ -315,7 +317,7 @@ export const EventsListPage: React.FC = () => {
     mutationFn: eventsService.deleteEvent,
     invalidateKeys: [['admin-events'], ['admin-dashboard-stats']],
     successMessage: t('toast.deleteSuccess'),
-    errorMessage: () => t('toast.deleteError'),
+    errorMessage: (error) => archiveInProgressError(error, t) ?? t('toast.deleteError'),
   });
 
   // Bulk archive mutation
@@ -781,7 +783,7 @@ export const EventsListPage: React.FC = () => {
                     {deliveryPill(event)}
                   </TableCell>
                   <TableCell>
-                    {event.expires_at ? format(parseISO(event.expires_at)) : 'N/A'}
+                    {event.expires_at ? formatExpiry(event.expires_at) : 'N/A'}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1">

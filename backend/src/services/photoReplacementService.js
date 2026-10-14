@@ -24,6 +24,7 @@ const { resolveCredit } = require('./photoCredit');
 const { exifColumn } = require('./photoExif');
 const logger = require('../utils/logger');
 const uploadQuota = require('./publicUploadQuota');
+const { claimPromotion } = require('./watchFolderClaims');
 
 /**
  * The trailing digit run of a filename stem, e.g. `Smith_Wedding_11234.jpg`
@@ -183,6 +184,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
   let object;
   let storage;
   let promotionSettled = false;
+  let releaseClaim = null;
   let switched = false;
   let finalKey;
   let newFilename;
@@ -262,6 +264,9 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     // stranded up to 100 MB in storage/temp. Cleaning up here closes the v1
     // and the admin path at once: adminPhotos only unlinks in its
     // new-files branch, so replaced files leaked there too.
+    // Claimed until the row points at it, so the file watcher does not
+    // import the new file as a photo of its own (issue 1970).
+    releaseClaim = claimPromotion(finalKey);
     await storage.putFromFile(finalKey, newFileTempPath, { contentType: mimeType });
     promotionSettled = true;
     if (uploadReservation) {
@@ -399,6 +404,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       });
     } else await db('photos').where({ id: existingPhoto.id }).update(updates);
     switched = true;
+    releaseClaim();
     await removeReplacedAssets(existingPhoto, { event, finalKey, thumbnailPath, storage, videoRendition });
     await sweepOldLadder();
     if (autoCredit) {
@@ -453,6 +459,8 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     }
     logger.error('replacePhoto error', { photoId: existingPhoto.id, error: err.message });
     return { success: false, error: err.message };
+  } finally {
+    releaseClaim?.();
   }
 }
 

@@ -19,6 +19,7 @@ const { toIso } = require('../utils/dateNormalize');
 const { toMillis } = require('../utils/queueTimestamps');
 const customerAccountsService = require('./customerAccountsService');
 const customerDocumentsService = require('./customerDocumentsService');
+const { followSlugRedirect } = require('./slugRedirects');
 
 const isTrue = (v) => v === true || v === 1 || v === '1';
 const pad = (n) => String(n).padStart(2, '0');
@@ -314,7 +315,10 @@ async function dealLineageForEvent(customerId, event) {
  * events.
  */
 async function getEventOverview(customerId, slug) {
-  const event = await db('events').where({ slug }).first();
+  let event = await db('events').where({ slug }).first();
+  // Links mailed before a rename carry the old slug. The access check below
+  // still decides, so this finds nothing a slug lookup would not.
+  if (!event) event = await followSlugRedirect(slug);
   if (!event || isTrue(event.is_archived)) return null;
   if (!(await customerAccountsService.customerHasAccessToEvent(customerId, event.id))) return null;
 

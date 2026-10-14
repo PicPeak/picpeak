@@ -3,6 +3,7 @@
 
 const crypto = require('crypto');
 const { db, logActivity } = require('../../database/db');
+const { adminActivityActor } = require('../../utils/activityActor');
 const { getAppSetting } = require('../../utils/appSettings');
 const { cleanNetMinor } = require('../../utils/invoiceRounding');
 const { AppError } = require('../../utils/errors');
@@ -298,7 +299,7 @@ async function createInvoice(payload, adminId, trx = db) {
       { actor: adminId, source: 'invoice.create' });
   }
 
-  try { await logActivity('invoice_created', { invoiceId, invoiceNumber }, payload.eventId || null, `admin:${adminId}`, trx); } catch (_) { /* non-fatal */ }
+  try { await logActivity('invoice_created', { invoiceId, invoiceNumber }, payload.eventId || null, adminActivityActor(adminId), trx); } catch (_) { /* non-fatal */ }
   return { invoiceIds: [invoiceId] };
 }
 
@@ -562,7 +563,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       // logging via the global db here deadlocks the single-connection SQLite
       // pool (this runs unattended from the booking flow's prepare_invoice).
       await logActivity('invoice_scheduled', { invoiceId, invoiceNumber, eventId, quoteId, scheduledSendAt },
-        eventId, `admin:${adminId}`, trx);
+        eventId, adminActivityActor(adminId), trx);
     } catch (_) { /* non-fatal */ }
     invoiceIds.push(invoiceId);
   }

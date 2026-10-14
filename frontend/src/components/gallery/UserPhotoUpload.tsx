@@ -13,6 +13,7 @@ import type { GuestNameMode } from '../../types';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
 import { imageLimitMessage, publicUploadErrorKey } from '../../utils/publicUploadErrors';
 import { prepareGuestUpload } from '../../utils/guestUploadDownscale';
+import { getGalleryToken } from '../../utils/galleryAuthStorage';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -331,6 +332,8 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     // photos are stored, but will not show up until they are approved.
     let heldForReview = false;
 
+    const galleryToken = slug ? getGalleryToken(slug) : null;
+
     for (const [index, file] of files.entries()) {
       // The gallery's photo limit refuses this file and every one after it:
       // one message, and no requests that can only be refused.
@@ -363,6 +366,10 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
             // event id where the interceptor looks for a slug, so it would
             // look the guest token up under the wrong key (#1561).
             ...(uploader.token ? { 'x-guest-token': uploader.token } : {}),
+            // The gallery token too, for the same reason: without it the
+            // server falls back to any gallery cookie, which with a second
+            // gallery open in another tab is that one's, and answers 403.
+            ...(galleryToken ? { Authorization: `Bearer ${galleryToken}` } : {}),
           },
           onUploadProgress: (progressEvent) => {
             if (progressEvent.total) {

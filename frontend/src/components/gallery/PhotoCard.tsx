@@ -96,6 +96,14 @@ export interface PhotoCardProps {
    * layout that keeps its own chips in that corner lifts it above them.
    */
   firstLookClassName?: string;
+  /**
+   * A control that takes the tile's top-left corner: the client's visibility
+   * toggle (issue 1992). The colour-label dots, which own that corner
+   * otherwise, line up to its right in one row, followed by `topLeftExtras`.
+   */
+  topLeftControl?: React.ReactNode;
+  /** Rendered last in the `topLeftControl` row (Masonry's count chips). */
+  topLeftExtras?: React.ReactNode;
 }
 
 export const PhotoCard: React.FC<PhotoCardProps> = ({
@@ -135,6 +143,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   afterOverlay,
   children,
   firstLookClassName = 'bottom-2 left-2',
+  topLeftControl,
+  topLeftExtras,
 }) => {
   const guestIdentity = useGuestIdentityOptional();
   // Download limit (issue 1560): shown as unavailable once nothing is left.
@@ -491,11 +501,34 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* The guest's own colour label (#1044) — visible without hovering
               or opening anything, which is the point: the client watches
               their selection progress across the grid. */}
-          <ColorLabelBadge
-            colorLabel={photo.my_color_label}
-            otherColorLabels={photo.other_color_labels}
-            decision={photo.my_decision}
-          />
+          {topLeftControl ? (
+            <>
+              <ColorLabelBadge
+                colorLabel={photo.my_color_label}
+                otherColorLabels={photo.other_color_labels}
+                decision={photo.my_decision}
+                part="ring"
+              />
+              {/* The toggle takes the corner; the dots sit right of it, so
+                  neither covers the other (issue 1992). */}
+              <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5">
+                {topLeftControl}
+                <ColorLabelBadge
+                  colorLabel={photo.my_color_label}
+                  otherColorLabels={photo.other_color_labels}
+                  decision={photo.my_decision}
+                  part="dots"
+                />
+                {topLeftExtras}
+              </div>
+            </>
+          ) : (
+            <ColorLabelBadge
+              colorLabel={photo.my_color_label}
+              otherColorLabels={photo.other_color_labels}
+              decision={photo.my_decision}
+            />
+          )}
 
           <FirstLookBadge photo={photo} className={firstLookClassName} />
           <FolderHintPill photo={photo} className={`top-2 right-2 ${folderHintVisibilityClass}`} />

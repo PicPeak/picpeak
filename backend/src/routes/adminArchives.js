@@ -22,6 +22,9 @@ const { clearGuestCredits } = require('../services/photoCredit');
 const folderTree = require('../services/folderTreeService');
 const { parseBooleanInput } = require('../utils/parsers');
 const { getStorage } = require('../services/storage');
+const {
+  claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives, legacyArchiveKeys,
+} = require('../services/archiveService');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
 const router = express.Router();
 
@@ -232,12 +235,31 @@ router.get('/:id', adminAuth, requirePermission('archives.view'), requireEventOw
 
 // Restore archive
 router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), requireEventOwnership, async (req, res) => {
+  let lease = null;
   try {
-    const archive = await db('events')
+    let archive = await db('events')
       .where('id', req.params.id)
       .where('is_archived', formatBoolean(true))
       .first();
 
+    if (!archive) {
+      return res.status(404).json({ error: 'Archive not found' });
+    }
+
+    // The archive job sets is_archived before it deletes the originals and
+    // derived files (issue 2012): restoring in that window would bring photos
+    // back for the job to delete. The restore holds the gallery's archive
+    // claim, so it waits for no job and none starts under it, and a job that
+    // stalled past its lease sees the claim gone and stops deleting.
+    lease = await claimArchive(archive.id);
+    if (!lease) {
+      return res.status(409).json({ error: 'This gallery is being archived right now', code: 'ARCHIVE_IN_PROGRESS' });
+    }
+    // Again under the claim: a restore that finished in the meantime.
+    archive = await db('events')
+      .where('id', archive.id)
+      .where('is_archived', formatBoolean(true))
+      .first();
     if (!archive) {
       return res.status(404).json({ error: 'Archive not found' });
     }
@@ -771,19 +793,26 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
     
-    await db('events')
-      .where('id', req.params.id)
-      .update({
-        is_archived: formatBoolean(false),
-        is_active: formatBoolean(true),
-        archive_path: null,
-        // Cleared with the path it measures — a restored event has no zip, and
-        // a stale size would be re-shown verbatim if it is archived again
-        // before the new archive finishes writing.
-        archive_size: null,
-        archived_at: null,
-        expires_at: thirtyDaysFromNow.toISOString() // Reset expiration - works on both DBs
-      });
+    // The zip stays (issue 2012): the gallery's fallback until it has a newer
+    // archive. Each archive run writes a key of its own, so archiving again no
+    // longer overwrites it; recorded with the update that drops its path, it
+    // goes once the next archive is published, or with the gallery.
+    await db.transaction(async (trx) => {
+      await trx('events')
+        .where('id', req.params.id)
+        .update({
+          is_archived: formatBoolean(false),
+          is_active: formatBoolean(true),
+          archive_path: null,
+          // Cleared with the path it measures — a restored event has no zip, and
+          // a stale size would be re-shown verbatim if it is archived again
+          // before the new archive finishes writing.
+          archive_size: null,
+          archived_at: null,
+          expires_at: thirtyDaysFromNow.toISOString() // Reset expiration - works on both DBs
+        });
+      await recordSupersededArchive(lease, archive.archive_path, trx);
+    });
 
     // Browser-playable copies (issue 1430): archiving dropped them and reset
     // the rows (archiveService). With the setting on, the restored videos are
@@ -807,6 +836,8 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
   } catch (error) {
     logger.error('Archive restore error:', error);
     res.status(500).json({ error: 'Failed to restore archive' });
+  } finally {
+    if (lease) await lease.release();
   }
 });
 
@@ -876,6 +907,9 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
     if (!archive) {
       return res.status(404).json({ error: 'Archive not found' });
     }
+    if (await isArchiveRunning(archive.id)) {
+      return res.status(409).json({ error: 'This gallery is being archived right now', code: 'ARCHIVE_IN_PROGRESS' });
+    }
 
     // Delete archive file if exists. Through the storage backend: on an S3
     // deployment the local path never had it, so the zip outlived the event.
@@ -884,6 +918,13 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
     // would leave the zip in the bucket with nothing left to retry from.
     if (archive.archive_path) {
       await getStorage().delete(archive.archive_path);
+    }
+    // Zips earlier restores brought back (issue 2012), best effort, the one
+    // a restore before per-run keys left at the shared key too.
+    const restoredFrom = [...await supersededArchives(archive.id).catch(() => []),
+      ...await legacyArchiveKeys(archive).catch(() => [])];
+    for (const key of restoredFrom) {
+      if (key !== archive.archive_path) await getStorage().delete(key).catch(() => {});
     }
 
     // Delete thumbnails for this event

@@ -202,7 +202,7 @@ export const CustomerDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   // Localized date formatting — respects general_date_format + the active UI
   // language.
-  const { format: fmtLocalized } = useLocalizedDate();
+  const { format: fmtLocalized, formatExpiry: fmtExpiry } = useLocalizedDate();
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['customer-dashboard'],
@@ -283,6 +283,10 @@ export const CustomerDashboardPage: React.FC = () => {
     if (!iso) return null;
     try { return fmtLocalized(iso); } catch { return null; }
   };
+  const formatExpiry = (iso: string | null) => {
+    if (!iso) return null;
+    try { return fmtExpiry(iso); } catch { return null; }
+  };
 
   const detailsLink = (ev: CustomerEvent) => (
     <Link
@@ -358,7 +362,7 @@ export const CustomerDashboardPage: React.FC = () => {
               <ul className="divide-y divide-border-token">
                 {sortedEvents.map((ev) => {
                   const date = formatDate(ev.eventDate);
-                  const expires = formatDate(ev.expiresAt);
+                  const expires = formatExpiry(ev.expiresAt);
                   const unavailable = ev.availability !== 'active';
                   const isOpening = openingSlug === ev.slug;
                   const isDownloading = downloadingSlug === ev.slug;
@@ -452,7 +456,7 @@ export const CustomerDashboardPage: React.FC = () => {
                         <h3 className="text-sm font-medium text-theme truncate">{ev.eventName}</h3>
                         <p className="mt-0.5 text-xs text-muted-theme">
                           {ev.eventDate && <>{formatDate(ev.eventDate)}{' · '}</>}
-                          {t('customer.dashboard.expiredOn', 'Expired {{date}}', { date: formatDate(ev.expiresAt) || '' })}
+                          {t('customer.dashboard.expiredOn', 'Expired {{date}}', { date: formatExpiry(ev.expiresAt) || '' })}
                         </p>
                       </div>
                       {detailsLink(ev)}

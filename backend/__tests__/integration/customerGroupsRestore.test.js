@@ -10,6 +10,10 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 // every table the CURRENT schema has, not just the ones the archive lists.
 let db; let cleanup; let adminId; let customerId; let createPicpeak; let importFromPicpeak; let tmpDir;
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxIt = process.platform === 'linux' ? it : it.skip;
+
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
   ({ adminId, customerId } = await seedMinimal(db));
@@ -18,7 +22,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { if (cleanup) await cleanup(); });
 
-it('clears a table the archive predates, not just the tables its manifest lists', async () => {
+linuxIt('clears a table the archive predates, not just the tables its manifest lists', async () => {
   // Simulate an archive made before migration 226 (customer groups): drop
   // both tables so the export below never lists them in its manifest.
   await db.schema.dropTable('customer_group_members');
