@@ -172,11 +172,15 @@ describe('camera details (issue 1733, D1)', () => {
     const { event } = await makeEvent();
     const dir = path.join(process.env.STORAGE_PATH, 'events', 'active', event.slug);
     const shot = await sharp({ create: { width: 32, height: 24, channels: 3, background: { r: 10, g: 120, b: 200 } } })
-      .jpeg().withExif({ IFD0: { Model: 'X-T5' }, IFD2: { ISOSpeedRatings: '160', ExposureTime: '1/3200' } }).toBuffer();
+      .jpeg().withExif({ IFD0: { Model: 'X-T5' }, IFD2: { ISOSpeedRatings: '160', ExposureTime: '1/3200', DateTimeOriginal: '2021:06:15 14:30:00' } }).toBuffer();
     const expected = { model: 'X-T5', iso: 160, exposure_time: 0.0003125 };
+    // The capture date too, which the worker would otherwise read. exifr
+    // reads the EXIF wall-clock time as local time.
+    const captured = new Date(2021, 5, 15, 14, 30, 0).getTime();
     const stored = async (where) => {
       const row = await db('photos').where({ event_id: event.id, ...where }).first();
       expect(row).toBeTruthy();
+      expect(new Date(row.captured_at).getTime()).toBe(captured);
       return row.exif_json && JSON.parse(row.exif_json);
     };
 

@@ -2,7 +2,7 @@
  * The shared contract dialog keeps the focus while its parent re-renders
  * with a new inline onClose, and gives it back to the opener when it closes.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React, { useState } from 'react';
 import { vi } from 'vitest';
@@ -36,4 +36,15 @@ it('re-renders keep the focus in the dialog; closing returns it to the opener', 
   await user.keyboard('{Escape}');
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(opener).toHaveFocus();
+});
+
+it('leaves an Escape that cancels an IME composition to the field', async () => {
+  const user = userEvent.setup();
+  render(<Host />);
+  await user.click(screen.getByRole('button', { name: 'Open' }));
+  fireEvent.keyDown(document, { key: 'Escape', isComposing: true });
+  fireEvent.keyDown(document, { key: 'Escape', keyCode: 229 });
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).toBeNull();
 });

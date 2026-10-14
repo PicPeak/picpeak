@@ -54,6 +54,10 @@ export function useGalleryDialog({
     const layer = pushDialogLayer();
     const onKeyDown = (e: KeyboardEvent) => {
       if (!layer.isTop()) return;
+      // Escape that cancels an IME composition in a field belongs to the
+      // field. Safari ends the composition before the keydown, so only the
+      // 229 keyCode tells it apart there.
+      if (e.key === 'Escape' && (e.isComposing || e.keyCode === 229)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();

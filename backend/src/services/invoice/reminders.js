@@ -13,7 +13,7 @@ const { hasColumnCached } = require('../../utils/schemaCache');
 const { formatMajor } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 const { buildInvoiceRenderContext } = require('./render');
-const { auditedUpdate } = require('../accountingHistory');
+const { auditedUpdate, normalizeActor } = require('../accountingHistory');
 const { invoicePdfFile } = require('../../utils/storedDocumentPdf');
 
 
@@ -81,7 +81,13 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
   // immutable invoice; it appears on the separate Mahnung document below.
   let lateFeeGross = invoice.late_fee_amount_minor || 0;
   let lateFeeVat = invoice.late_fee_vat_minor || 0;
-  if (level >= 2) {
+  // A customer who takes no administrative emails (migration 300) never gets
+  // the Mahnung that states the fee, and an uncommunicated fee can't be
+  // charged: the reminder still records its level and `overdue`, the fee
+  // stays as it was. Same predicate as the mail: it goes to the customer's
+  // own (billing or login) address, which the queue holds back for them.
+  const feeCommunicated = !(await require('../_adminEmailOptOut').customerTakesNoAdminEmails(customer));
+  if (level >= 2 && feeCommunicated) {
     const net = await resolveLateFeeNetMinor(invoice);
     const rate = await resolveLateFeeVatRate();
     const vatPer = rate > 0 ? Math.round(net * rate / 100) : 0;
@@ -186,7 +192,7 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
       cc: reminderCc,
       attachments,
     // Dunning reminders are relationship mail — hold to business hours.
-    }, { respectBusinessHours: true });
+    }, { customerAccountId: customer.id, respectBusinessHours: true });
   } catch (err) {
     // Don't leave the just-rendered Mahnung PDF orphaned on disk if queueing the
     // email failed — it would only be reachable via the next reminder anyway.
@@ -196,7 +202,7 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
 
   try {
     await logActivity('invoice_reminder_sent', { invoiceId: invoice.id, level, lateFeeMinor: lateFeeGross },
-      invoice.event_id || null, `admin:${adminId || 'system'}`);
+      invoice.event_id || null, normalizeActor(actor));
   } catch (_) { /* non-fatal */ }
 
   return { level, lateFeeMinor: lateFeeGross };
