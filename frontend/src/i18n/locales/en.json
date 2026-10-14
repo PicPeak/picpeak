@@ -1634,6 +1634,7 @@
       "approveConfirm": "Approve",
       "identityApproval": "your approval",
       "identitySelection": "your selection",
+      "identityInvalid": "Please check your name and email. A name may use letters, digits, spaces, hyphens, apostrophes and dots.",
       "approveSuccess": "Your approval was sent to the photographer",
       "approvedOn": "Edited photos approved on {{date}}",
       "noteLabel": "Note for the photographer (optional)",

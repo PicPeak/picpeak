@@ -8,6 +8,20 @@ const { PHOTO_DECISIONS, DECISION_REASON_MAX_LENGTH } = require('../constants/ph
 const { KEYBIND_MODES } = require('../services/feedbackDefaults');
 
 /**
+ * The guest name the feedback routes take, and the hand-over with them
+ * (issue 1984): blank, or up to 100 characters of a plain set.
+ */
+function checkGuestName(value) {
+  // Allow empty or whitespace-only strings
+  if (!value || value.trim() === '') return true;
+  // If not empty, check length and pattern
+  const trimmed = value.trim();
+  if (trimmed.length > 100) throw new Error('Name must be less than 100 characters');
+  if (!/^[a-zA-Z0-9\s\-'.]+$/.test(trimmed)) throw new Error('Name contains invalid characters');
+  return true;
+}
+
+/**
  * Validation rules for feedback submission
  */
 const feedbackValidationRules = {
@@ -193,15 +207,7 @@ const validateFeedbackSubmission = [
   
   body('guest_name')
     .optional()
-    .custom((value) => {
-      // Allow empty or whitespace-only strings
-      if (!value || value.trim() === '') return true;
-      // If not empty, check length and pattern
-      const trimmed = value.trim();
-      if (trimmed.length > 100) throw new Error('Name must be less than 100 characters');
-      if (!/^[a-zA-Z0-9\s\-'.]+$/.test(trimmed)) throw new Error('Name contains invalid characters');
-      return true;
-    }),
+    .custom(checkGuestName),
   
   body('guest_email')
     .optional()
@@ -327,5 +333,6 @@ module.exports = {
   checkValidation,
   getValidationRules,
   sanitizeComment,
-  validateGuestRequirements
+  validateGuestRequirements,
+  checkGuestName
 };

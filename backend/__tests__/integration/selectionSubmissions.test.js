@@ -424,6 +424,15 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
         expect(row.guest_name).toBe('Clara');
       });
 
+      it('refuses a name the feedback routes refuse', async () => {
+        for (const guest_name of ['<Alice>', 'A'.repeat(101)]) {
+          const res = await submit('device-A', { kind: 'approval', guest_name, guest_email: 'clara@example.com' });
+          expect(res.status).toBe(400);
+          expect(res.body.errors[0].path).toBe('guest_name');
+        }
+        expect(await db('selection_submissions').where({ event_id: eventId })).toHaveLength(0);
+      });
+
       it('names a guest by their earlier feedback, so a selection still goes through', async () => {
         await feedback('device-A', photoIds[0], {
           feedback_type: 'like', guest_name: 'Dora', guest_email: 'dora@example.com',

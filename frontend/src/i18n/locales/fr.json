@@ -508,6 +508,7 @@
       "approveConfirm": "Approuver",
       "identityApproval": "votre approbation",
       "identitySelection": "votre sélection",
+      "identityInvalid": "Veuillez vérifier votre nom et votre e-mail. Un nom peut contenir des lettres, des chiffres, des espaces, des traits d'union, des apostrophes et des points.",
       "approveSuccess": "Votre approbation a été envoyée au photographe",
       "approvedOn": "Photos retouchées approuvées le {{date}}",
       "noteLabel": "Note pour le photographe (facultatif)",

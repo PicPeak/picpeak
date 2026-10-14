@@ -118,14 +118,23 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({
       // A cancelled name prompt is not a failure; a request that never got an
       // answer (offline, timed out) is, and is told like any other.
       if ((error as Error)?.message === 'user_cancelled') return;
-      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      const data = (error as { response?: { data?: { code?: string; errors?: { path?: string }[] } } })
+        ?.response?.data;
+      const code = data?.code;
       if (code === 'ALREADY_SUBMITTED') {
         setConfirming(null);
         return;
       }
+      // The name or email given was refused (the prompt checks less than the
+      // server does): ask again, or the bar would keep sending it.
+      const identityRefused = data?.errors?.some((e) => e.path === 'guest_name' || e.path === 'guest_email');
+      if (identityRefused) {
+        toast.error(t('gallery.selection.identityInvalid',
+          'Please check your name and email. A name may use letters, digits, spaces, hyphens, apostrophes and dots.'));
+      }
       // The gallery wants a name and email this bar did not have: ask, then
       // confirm again with the note kept.
-      if (code === 'GUEST_INFO_REQUIRED') {
+      if (code === 'GUEST_INFO_REQUIRED' || identityRefused) {
         setNamedIn(null);
         setConfirming(null);
         setIdentityFor(kind);

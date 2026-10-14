@@ -2227,6 +2227,7 @@
       "approveConfirm": "Freigeben",
       "identityApproval": "Ihre Freigabe",
       "identitySelection": "Ihre Auswahl",
+      "identityInvalid": "Bitte prüfen Sie Name und E-Mail. Ein Name darf Buchstaben, Ziffern, Leerzeichen, Bindestriche, Apostrophe und Punkte enthalten.",
       "approveSuccess": "Ihre Freigabe wurde an den Fotografen gesendet",
       "approvedOn": "Bearbeitete Fotos freigegeben am {{date}}",
       "noteLabel": "Anmerkung für den Fotografen (optional)",

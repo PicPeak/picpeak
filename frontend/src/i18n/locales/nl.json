@@ -498,6 +498,7 @@
       "approveConfirm": "Goedkeuren",
       "identityApproval": "uw goedkeuring",
       "identitySelection": "uw selectie",
+      "identityInvalid": "Controleer uw naam en e-mailadres. Een naam mag letters, cijfers, spaties, koppeltekens, apostroffen en punten bevatten.",
       "approveSuccess": "Je goedkeuring is naar de fotograaf gestuurd",
       "approvedOn": "Bewerkte foto’s goedgekeurd op {{date}}",
       "noteLabel": "Opmerking voor de fotograaf (optioneel)",

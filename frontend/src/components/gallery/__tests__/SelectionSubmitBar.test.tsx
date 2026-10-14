@@ -265,6 +265,28 @@ describe('SelectionSubmitBar (issue 1733)', () => {
       expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
     });
 
+    it('asks again when the server refuses the name it was given', async () => {
+      vi.mocked(toast.error).mockClear();
+      submitSelection
+        .mockRejectedValueOnce({ response: { status: 400, data: { error: 'Validation failed', errors: [{ path: 'guest_name' }] } } })
+        .mockResolvedValueOnce({ id: 7, kind: 'approval', submitted_at: '2026-10-14T10:00:00.000Z', item_count: 0, note: null });
+      renderRequired(state({ approval: { can_submit: true } }));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      await fillIdentity();
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
+      expect(toast.error).toHaveBeenCalledTimes(1);
+      await userEvent.type(screen.getByPlaceholderText('Enter your name'), 'Dora');
+      await userEvent.type(screen.getByPlaceholderText('Enter your email'), 'dora@example.com');
+      await userEvent.click(screen.getByRole('button', { name: 'Submit Feedback' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(submitSelection).toHaveBeenLastCalledWith(
+        'g', 'approval', '', { guest_name: 'Dora', guest_email: 'dora@example.com' },
+      ));
+    });
+
     it('asks again when the server wants the name, keeping the note', async () => {
       vi.mocked(toast.error).mockClear();
       submitSelection

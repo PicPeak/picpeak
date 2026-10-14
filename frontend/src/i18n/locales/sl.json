@@ -1491,6 +1491,7 @@
       "approveConfirm": "Odobri",
       "identityApproval": "vaše odobritve",
       "identitySelection": "vašega izbora",
+      "identityInvalid": "Preverite ime in e-poštni naslov. Ime lahko vsebuje črke, števke, presledke, vezaje, opuščaje in pike.",
       "approveSuccess": "Vaša odobritev je bila poslana fotografu",
       "approvedOn": "Obdelane fotografije odobrene {{date}}",
       "noteLabel": "Opomba za fotografa (neobvezno)",

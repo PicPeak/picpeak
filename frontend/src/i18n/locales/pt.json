@@ -615,6 +615,7 @@
       "approveConfirm": "Aprovar",
       "identityApproval": "sua aprovação",
       "identitySelection": "sua seleção",
+      "identityInvalid": "Verifique seu nome e e-mail. Um nome pode conter letras, dígitos, espaços, hífens, apóstrofos e pontos.",
       "approveSuccess": "Sua aprovação foi enviada ao fotógrafo",
       "approvedOn": "Fotos editadas aprovadas em {{date}}",
       "noteLabel": "Observação para o fotógrafo (opcional)",
