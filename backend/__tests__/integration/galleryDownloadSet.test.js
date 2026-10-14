@@ -154,6 +154,16 @@ describe('gallery bulk download set', () => {
       expect(picked).toHaveLength(0);
     });
 
+    it('a single download of one answers as for an unknown id', async () => {
+      expect((await guest(event, 'get', `/download/${done.id}`)).status).toBe(200);
+      const unknown = await guest(event, 'get', '/download/987654');
+      for (const photo of unfinished()) {
+        const res = await guest(event, 'get', `/download/${photo.id}`);
+        expect(res.status).toBe(unknown.status);
+        expect(res.body).toEqual(unknown.body);
+      }
+    });
+
     it('finishing one drops the prebuilt archive that was built without it', async () => {
       expect(await zipService.getZipInfo(event.id)).not.toBeNull();
       const invalidate = jest.spyOn(zipService, 'invalidate');

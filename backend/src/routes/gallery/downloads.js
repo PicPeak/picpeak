@@ -164,7 +164,8 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     const denial = await originalAssetDenial(req);
     if (denial) return res.status(403).json(denial);
 
-    const photo = await livePhotos(db)
+    // Not one the gallery does not show yet (still processing, or failed).
+    const photo = await wherePhotoProcessed(livePhotos(db))
       .where({ id: photoId, event_id: req.event.id })
       .first();
 
