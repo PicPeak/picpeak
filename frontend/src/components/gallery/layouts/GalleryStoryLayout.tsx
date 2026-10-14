@@ -373,11 +373,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const selectionAvailable = Boolean(onToggleSelectionMode && onPhotoSelect);
   const canSelect = selectionAvailable && photos.length > 1;
   const cardSelect = canSelect ? onPhotoSelect : undefined;
-  // Likes are a per-event sub-toggle (#506): with them off the like endpoint
-  // answers 403, so the card hearts are not offered. The bulk control and the
-  // nav heart also need the feedback master switch, as before.
-  const likesAllowed = feedbackOptions?.allowLikes !== false;
-  const bulkLikesAllowed = feedbackEnabled && likesAllowed;
+  // Likes are a per-event sub-toggle (#506) under the feedback master switch:
+  // with either off the like endpoint answers 403, so neither the card hearts
+  // nor the bulk control are offered.
+  const likesAllowed = feedbackEnabled && feedbackOptions?.allowLikes !== false;
   // The client's per-photo hide/show button (issue 1992); guests get none.
   const clientToggleVisibility = isClient ? onToggleVisibility : undefined;
   const allVisibleSelected = visiblePhotos.length > 0 && visiblePhotos.every((photo) => selected.has(photo.id));
@@ -574,7 +573,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               <ClipboardList size={20} />
             </button>
           )}
-          {bulkLikesAllowed && (
+          {likesAllowed && (
             // The gallery's "Liked" filter when the container offers it:
             // only the photos this viewer liked, until clicked again.
             <button
@@ -621,7 +620,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               <button type="button" className="story-selection-btn" onClick={handleSelectAllVisible}>
                 {allVisibleSelected ? t('gallery.deselectAll', 'Deselect All') : t('gallery.selectAll', 'Select All')}
               </button>
-              {bulkLikesAllowed && selected.size > 0 && (
+              {likesAllowed && selected.size > 0 && (
                 <button
                   type="button"
                   className="story-selection-btn"

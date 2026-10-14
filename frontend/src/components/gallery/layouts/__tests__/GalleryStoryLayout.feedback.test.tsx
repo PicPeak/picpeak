@@ -107,6 +107,14 @@ describe('GalleryStoryLayout — feedback lives in the lightbox only', () => {
     actions.forEach((row) => expect(row.querySelectorAll('button')).toHaveLength(1));
   });
 
+  it('offers no card heart with the feedback master switch off', () => {
+    // The like endpoint refuses every write then (403), so a heart could only
+    // flip on and straight back off.
+    const off = { ...(props as Record<string, unknown>), feedbackEnabled: false } as never;
+    const { container } = render(<GalleryStoryLayout {...off} />);
+    expect(container.querySelectorAll('.story-photo-card-actions')).toHaveLength(0);
+  });
+
   it('opens the lightbox with feedback enabled when a card is clicked', () => {
     const { container } = render(<GalleryStoryLayout {...props} />);
 
