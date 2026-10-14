@@ -60,6 +60,7 @@ async function claimArchive(eventId) {
     jobState.heartbeat(jobName, token).then((ok) => { if (!ok) lease.lost = true; });
   }, jobState.HEARTBEAT_INTERVAL_MS);
   heartbeatTimer.unref?.();
+  await removeAbandonedUpload(lease);
   let released = false;
   lease.release = async () => {
     if (released) return;
@@ -69,6 +70,31 @@ async function claimArchive(eventId) {
       logger.warn(`Failed to release the archive claim for event ${eventId}: ${err.message}`));
   };
   return lease;
+}
+
+// A run records the key it is about to upload on its claim row and clears it
+// when it publishes or removes the zip itself. A key still recorded when the
+// next claim lands is from a run that died in between: each run writes a key
+// of its own, so nothing would ever overwrite or name that zip.
+const recordUpload = (lease, key) => db('maintenance_jobs')
+  .where({ job_name: lease.jobName, claim_token: lease.token })
+  .update({ last_result: key ? JSON.stringify({ upload: key }) : null });
+
+async function removeAbandonedUpload(lease) {
+  try {
+    const row = await db('maintenance_jobs').where({ job_name: lease.jobName }).first('last_result');
+    let key = null;
+    try { key = JSON.parse(row?.last_result || 'null')?.upload || null; } catch { key = null; }
+    if (typeof key !== 'string' || !key.startsWith('events/archived/')) return;
+    // Published after all (the answer to its commit was lost): keep it.
+    if (!(await db('events').where('archive_path', key).first('id'))) {
+      await getStorage().delete(key);
+      logger.info(`Removed the archive upload an interrupted run left behind: ${key}`);
+    }
+    await recordUpload(lease, null);
+  } catch (err) {
+    logger.warn(`Could not check ${lease.jobName} for an abandoned archive upload: ${err.message}`);
+  }
 }
 
 async function archiveEvent(event, { lease: heldLease = null } = {}) {
@@ -316,6 +342,7 @@ async function buildArchive(event, lease) {
     });
 
     // Upload the finalized zip to the storage backend.
+    await recordUpload(lease, archiveRelKey);
     await storage.putFromFile(archiveRelKey, tmpArchive, { contentType: 'application/zip' });
 
     logger.info(`Archive created: ${archiveName} (${totalBytes} bytes)`);
@@ -339,6 +366,8 @@ async function buildArchive(event, lease) {
           .modify((q) => { if (trx.client.config.client === 'pg') q.forUpdate(); })
           .first('job_name');
         if (!held) return 0;
+        await trx('maintenance_jobs').where({ job_name: lease.jobName, claim_token: lease.token })
+          .update({ last_result: null });
         return trx('events')
           .where('id', event.id)
           .where('is_archived', formatBoolean(false))
@@ -360,8 +389,9 @@ async function buildArchive(event, lease) {
       throw err;
     }
     if (!published) {
-      await storage.delete(archiveRelKey).catch((err) =>
-        logger.warn(`Failed to remove the unpublished archive ${archiveRelKey}: ${err.message}`));
+      await storage.delete(archiveRelKey)
+        .then(() => recordUpload(lease, null))
+        .catch((err) => logger.warn(`Failed to remove the unpublished archive ${archiveRelKey}: ${err.message}`));
       throw new AppError('The archive claim was taken over', 409, 'ARCHIVE_IN_PROGRESS');
     }
 

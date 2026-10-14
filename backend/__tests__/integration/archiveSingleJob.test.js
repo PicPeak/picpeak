@@ -428,4 +428,43 @@ describe('one archive job per gallery', () => {
     expect(await db('events').where({ id: event.id }).first()).toBeUndefined();
     expect(deletedKeys()).toContain('events/archived/delete-race-0123456789ab.zip');
   });
+
+  it('removes the upload of a run that died before publishing, on the next claim', async () => {
+    const event = await makeEvent('abandoned');
+    const deadKey = 'events/archived/abandoned-0123456789ab.zip';
+    // A run recorded its upload, put the zip and died before publishing.
+    await holdClaim(event.id);
+    await db('maintenance_jobs').where({ job_name: jobName(event.id) }).update({
+      last_result: JSON.stringify({ upload: deadKey }),
+      heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString(),
+    });
+
+    await archiveEvent(event);
+
+    expect(deletedKeys()).toContain(deadKey);
+    const row = await db('events').where({ id: event.id }).first();
+    expect(row.archive_path).toMatch(ownKey('abandoned'));
+    // Published and cleared: the next claim leaves the real archive alone.
+    mockStorage.delete.mockClear();
+    const lease = await require('../../src/services/archiveService').claimArchive(event.id);
+    await lease.release();
+    expect(deletedKeys()).toEqual([]);
+  });
+
+  it('keeps a recorded upload the event row names', async () => {
+    const event = await makeEvent('published-lost-answer');
+    const key = 'events/archived/published-lost-answer-0123456789ab.zip';
+    // The publish committed but its answer was lost before the record cleared.
+    await holdClaim(event.id);
+    await db('maintenance_jobs').where({ job_name: jobName(event.id) }).update({
+      last_result: JSON.stringify({ upload: key }),
+      heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString(),
+    });
+    await db('events').where({ id: event.id }).update({ is_archived: 1, archive_path: key });
+
+    const lease = await require('../../src/services/archiveService').claimArchive(event.id);
+    await lease.release();
+
+    expect(deletedKeys()).toEqual([]);
+  });
 });
