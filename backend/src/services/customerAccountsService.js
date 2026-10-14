@@ -958,34 +958,44 @@ async function contractSignerQueueTargets(contractPlan) {
  * The queued portal invitations this customer accepted. createInvitation
  * queues one before the account exists, so neither the current-address
  * bound nor a former-address window covers it, yet it carries the address
- * and the invite link of this customer. Matched by the link's token against
- * the digests of the invitations accepted into this account, so an
- * invitation to the same address that someone else accepted (or nobody did)
- * is not touched. Must run before the erasure clears accepted_customer_id.
+ * and the invite link of this customer. Its variables cannot attribute it:
+ * they are encrypted while pending and the link token is masked once sent.
+ * Its time can: createInvitation queues the mail right after inserting the
+ * invitation, and it refuses a second invitation to the address while one
+ * is pending, so every customer_invitation mail to the invited address from
+ * the second the invitation was created until it was accepted is that
+ * invitation's. An invitation to the same address that someone else
+ * accepted, or nobody did, falls outside those windows. Must run before the
+ * erasure clears accepted_customer_id. An invitation whose times cannot be
+ * read is left alone rather than guessed at.
  */
 async function acceptedInvitationQueueIds(trx, customerId) {
   const invitations = await trx('customer_invitations')
     .where('accepted_customer_id', customerId)
-    .whereNotNull('token_digest')
-    .select('email', 'token_digest');
-  if (!invitations.length) return [];
-  const digests = new Set(invitations.map((row) => row.token_digest));
-  const emails = [...new Set(invitations.map((row) => String(row.email || '').toLowerCase()).filter(Boolean))];
-  if (!emails.length) return [];
-  const candidates = await trx('email_queue')
+    .select('email', 'created_at', 'accepted_at');
+  const windows = [];
+  for (const invitation of invitations) {
+    const email = String(invitation.email || '').toLowerCase();
+    const createdAt = storedTimestamp(invitation.created_at);
+    const acceptedAt = storedTimestamp(invitation.accepted_at);
+    if (!email || !createdAt || !acceptedAt) continue;
+    windows.push({ email, since: new Date(Math.floor(createdAt.getTime() / 1000) * 1000), until: acceptedAt });
+  }
+  if (!windows.length) return [];
+  const rows = await trx('email_queue')
     .where('email_type', 'customer_invitation')
-    .whereRaw(`LOWER(recipient_email) IN (${emails.map(() => 'LOWER(?)').join(', ')})`, emails)
     .whereIn('status', ['pending', PROTECTED_PENDING_STATUS, 'sent', 'failed', 'cancelled'])
-    .select('id', 'email_data');
-  return candidates.filter((row) => {
-    try {
-      const data = typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data;
-      const match = /\/customer\/invite\/([^/?#\s]+)/.exec(String(data?.invite_link || ''));
-      return Boolean(match) && digests.has(digestCapabilityToken(decodeURIComponent(match[1])));
-    } catch (_) {
-      return false;
-    }
-  }).map((row) => row.id);
+    .where((w) => {
+      for (const win of windows) {
+        w.orWhere((q) => {
+          q.whereRaw('LOWER(recipient_email) = ?', [win.email])
+            .modify(whereTimestamp, 'created_at', '>=', win.since)
+            .modify(whereTimestamp, 'created_at', '<=', win.until);
+        });
+      }
+    })
+    .select('id');
+  return rows.map((row) => row.id);
 }
 
 /**
@@ -1002,8 +1012,8 @@ async function acceptedInvitationQueueIds(trx, customerId) {
  * address gets a window only when the history shows when the customer took
  * it: a recorded change to it, or the account's own `created` entry. Mail
  * queued before the account existed (the portal invitation) is not matched
- * by address (the invitation this customer accepted is matched by its token,
- * acceptedInvitationQueueIds): an invitation does not reserve the address, so a
+ * by address (the invitation this customer accepted is matched by its own
+ * time window, acceptedInvitationQueueIds): an invitation does not reserve the address, so a
  * passive account holding it then may have moved off only before the
  * acceptance created this one. An account created before migration 219 has
  * no `created` entry, so its first recorded address (which it may have

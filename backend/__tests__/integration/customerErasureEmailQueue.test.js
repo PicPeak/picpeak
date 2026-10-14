@@ -543,46 +543,66 @@ describe('customer erasure clears email_queue', () => {
     const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
     const { auditedInsert } = require('../../src/services/accountingHistory');
     const { digestCapabilityToken } = require('../../src/utils/capabilityToken');
+    const { encryptEmailData, PROTECTED_PENDING_STATUS } = require('../../src/utils/emailQueueEncryption');
+    const { redactRecoveryLinksInData } = require('../../src/utils/emailSecretRedaction');
     const address = 'invited-first@example.com';
     const adminId = (await db('admin_users').first('id')).id;
 
-    // Two invitations to the address: one nobody accepted (12s), and the one
-    // accepted at 20s into a new account, which moves off the address at 40s.
-    const ownToken = crypto.randomBytes(32).toString('hex');
-    const otherToken = crypto.randomBytes(32).toString('hex');
-    const queueInvitation = async (token, createdAt, name) => {
+    // Stored the way production stores them: encrypted while pending, the
+    // link token masked once sent. Nothing in the variables names the
+    // invitation any more.
+    const queueInvitation = async (token, status, createdAt, name) => {
+      const data = { customer_name: name, invite_link: `https://photos.example.com/customer/invite/${token}` };
       const [row] = await db('email_queue').insert({
-        recipient_email: address, email_type: 'customer_invitation', status: 'sent',
-        email_data: JSON.stringify({ customer_name: name, invite_link: `https://photos.example.com/customer/invite/${token}` }),
+        recipient_email: address, email_type: 'customer_invitation', status,
+        email_data: JSON.stringify(status === PROTECTED_PENDING_STATUS
+          ? encryptEmailData('customer_invitation', data, address)
+          : redactRecoveryLinksInData(data)),
         rendered_html: `<p>${name}</p>`, created_at: createdAt, scheduled_at: createdAt, retry_count: 0,
       }).returning('id');
       return row?.id ?? row;
     };
-    const otherInvitation = await queueInvitation(otherToken, at(12), 'Other Invitation');
-    const ownInvitation = await queueInvitation(ownToken, at(15), 'Own Invitation');
+    const invitationRow = (token, overrides) => ({
+      email: address, token: digestCapabilityToken(token), token_digest: digestCapabilityToken(token),
+      invited_by: adminId, ...overrides,
+    });
+
+    // An invitation nobody accepted (created 10s, expired 12s), then the one
+    // accepted at 20s into a new account that moves off the address at 40s.
+    // The accepted one was mailed (15s) and its link also copied before the
+    // mail went out, so a second copy still waits encrypted (15.5s).
+    const otherToken = crypto.randomBytes(32).toString('hex');
+    const ownToken = crypto.randomBytes(32).toString('hex');
+    const otherInvitation = await queueInvitation(otherToken, 'sent', at(10.2), 'Other Invitation');
+    const ownSent = await queueInvitation(ownToken, 'sent', at(15.1), 'Own Invitation');
+    const ownPending = await queueInvitation(ownToken, PROTECTED_PENDING_STATUS, at(15.5), 'Own Pending');
     const [created] = await auditedInsert(db, 'customer_accounts', {
       email: address, display_name: 'Invited 1971', preferred_language: 'de',
       is_active: 1, created_at: at(20),
     }, { actor: 'customer-invitation', source: 'test' });
     await db('customer_invitations').insert([
-      {
-        email: address, token: digestCapabilityToken(otherToken), token_digest: digestCapabilityToken(otherToken),
-        invited_by: adminId, expires_at: at(13), created_at: at(12),
-      },
-      {
-        email: address, token: digestCapabilityToken(ownToken), token_digest: digestCapabilityToken(ownToken),
-        invited_by: adminId, expires_at: new Date(Date.now() + 86400000).toISOString(),
+      invitationRow(otherToken, { expires_at: at(12), created_at: at(10) }),
+      invitationRow(ownToken, {
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
         accepted_at: at(20), accepted_customer_id: created.id, created_at: at(15),
-      },
+      }),
     ]);
     await updateCustomer(created.id, { email: 'invited-moved@example.com' }, null);
     await stampHistory(created.id, [at(20), at(40)]);
+    // Someone else invited to the address after the customer moved off it.
+    const laterToken = crypto.randomBytes(32).toString('hex');
+    const laterInvitation = await queueInvitation(laterToken, 'sent', at(50), 'Later Invitation');
 
     await eraseCustomer(created.id, null);
 
-    const own = await expectRedacted(ownInvitation, 'sent');
-    expect(JSON.stringify(own)).not.toContain(ownToken);
-    await expectUntouched(otherInvitation, address, 'Other Invitation', 'sent');
+    await expectRedacted(ownSent, 'sent');
+    await expectRedacted(ownPending, 'cancelled');
+    for (const [id, name] of [[otherInvitation, 'Other Invitation'], [laterInvitation, 'Later Invitation']]) {
+      const row = await db('email_queue').where({ id }).first();
+      expect(row.status).toBe('sent');
+      expect(row.recipient_email).toBe(address);
+      expect(row.rendered_html).toBe(`<p>${name}</p>`);
+    }
   });
 
   it('does not match the first recorded address of an account created before the change history (issue 1971)', async () => {
