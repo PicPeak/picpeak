@@ -7,6 +7,10 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 let db; let cleanup; let adminId; let tmpDir; let createPicpeak; let importFromPicpeak;
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxIt = process.platform === 'linux' ? it : it.skip;
+
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
   ({ adminId } = await seedMinimal(db));
@@ -15,7 +19,7 @@ beforeAll(async () => {
 }, 120000);
 afterAll(async () => { if (cleanup) await cleanup(); });
 
-it('clears local grants when the archive predates them', async () => {
+linuxIt('clears local grants when the archive predates them', async () => {
   const [event] = await db('events').insert({
     slug: 'restore-grants', event_type: 'wedding', event_name: 'Restore grants', event_date: '2026-08-01',
     host_email: 'h@example.com', admin_email: 'a@example.com', password_hash: 'x',

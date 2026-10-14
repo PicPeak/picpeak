@@ -7,6 +7,7 @@ const { getStorage } = require('./storage');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 const { isGalleryAvailable } = require('../utils/galleryLifecycle');
 const { isPotentialShareToken } = require('../utils/shareLinkUtils');
+const { toDateOnly } = require('../utils/dateOnly');
 
 const SOCIAL_CRAWLER_PATTERNS = [
   /facebookexternalhit/i,
@@ -166,10 +167,13 @@ async function frontendBase() {
 async function formatEventDate(value) {
   if (!value) return null;
   try {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return null;
+    // A calendar day, handed over as 'YYYY-MM-DD': SQLite's text would be
+    // midnight UTC as a Date (the day before west of UTC), and pg's Date is
+    // the server's local midnight, whose local day toDateOnly reads.
+    const day = toDateOnly(typeof value === 'number' ? new Date(value) : value);
+    if (!day || Number.isNaN(new Date(day).getTime())) return null;
     const { formatDate } = require('../utils/dateFormatter');
-    return await formatDate(d);
+    return await formatDate(day);
   } catch {
     return null;
   }
@@ -397,5 +401,6 @@ module.exports = {
   buildOgMetadata,
   renderOgHtml,
   handleGalleryOgRequest,
-  handleGalleryOgCover
+  handleGalleryOgCover,
+  formatEventDate
 };

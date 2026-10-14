@@ -24,6 +24,7 @@ import {
   Variable,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { isImeComposing } from '../../utils/imeComposition';
 
 interface EmailTemplateEditorProps {
   content: string;
@@ -361,7 +362,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
             type="url"
             value={linkUrl}
             onChange={(e) => setLinkUrl(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addLink()}
+            onKeyDown={(e) => e.key === 'Enter' && !isImeComposing(e) && addLink()}
             placeholder={t('email.editor.enterUrl')}
             className="flex-1 px-3 py-1 text-sm border border-accent-dark/30 bg-panel text-heading rounded-md focus:ring-2 focus:ring-accent"
             autoFocus

@@ -205,10 +205,11 @@ export const PhotoDecision: React.FC<PhotoDecisionProps> = ({
             void submit({ decision: 'rejected', reason: reasonDraft });
           }}
           // The lightbox's shortcut keys must not fire while typing a reason.
-          // Escape closes only this form, not the lightbox behind it.
+          // Escape closes only this form, not the lightbox behind it; an
+          // Escape that cancels an IME composition stays with the field.
           onKeyDown={(e) => {
             e.stopPropagation();
-            if (e.key === 'Escape') {
+            if (e.key === 'Escape' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
               e.preventDefault();
               setShowReason(false);
               reasonToggleRef.current?.focus();

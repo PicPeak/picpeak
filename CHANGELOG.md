@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.173.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.172.0-beta.0...v3.173.0-beta.0) (2026-10-14)
+
+
+### Features
+
+* **crm:** per-customer "no administrative emails" switch ([#1989](https://github.com/PicPeak/picpeak/issues/1989)) ([b1d3774](https://github.com/PicPeak/picpeak/commit/b1d37742b79b820726f73e5b2caa0d1497004c66))
+
 ## [3.172.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.171.0-beta.0...v3.172.0-beta.0) (2026-10-14)
 
 
