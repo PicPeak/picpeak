@@ -366,6 +366,32 @@ test('an authenticated S3 object that cannot be deleted keeps its record, so no 
   await quota.retryRetainedObjects();
   expect(mockObjects.has(key)).toBe(false); expect(await db('public_upload_objects')).toHaveLength(0);
 });
+test('a full batch of objects that never delete does not keep later ones from their retry', async () => {
+  const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const key = n => `events/active/owned-quota-gallery/owned-retained-${n}.jpg`;
+  const rows = Array.from({ length: 101 }, (_, i) => ({ id: id(i + 1), request_id: id(0), object_key: key(i + 1), bytes: 12, files: 1,
+    transfer_id: transfer, account_id: adminId, upload_kind: 'admin', state: 'uncertain' }));
+  for (let i = 0; i < rows.length; i += 50) await db('public_upload_objects').insert(rows.slice(i, i + 50));
+  rows.forEach(row => mockObjects.set(row.object_key, 12));
+  // The first hundred by id stay undeletable.
+  mockStorage.delete.mockImplementation(async k => {
+    if (k !== key(101)) throw new Error('owned access denied');
+    mockObjects.delete(k);
+  });
+  try {
+    await quota.retryRetainedObjects();
+    expect(mockStorage.delete).toHaveBeenCalledTimes(100); expect(mockObjects.has(key(101))).toBe(true);
+    await quota.retryRetainedObjects();
+    expect(mockObjects.has(key(101))).toBe(false);
+    expect(Number((await db('public_upload_objects').count('id as n').first()).n)).toBe(100);
+    // Past the end it starts over.
+    mockStorage.delete.mockClear(); await quota.retryRetainedObjects();
+    expect(mockStorage.delete).toHaveBeenCalledWith(key(1));
+    await quota.retryRetainedObjects(); // an empty batch resets the cursor for later tests
+  } finally {
+    mockStorage.delete.mockImplementation(async k => { mockObjects.delete(k); });
+  }
+});
 test('a failed authenticated promotion whose S3 delete fails keeps its record until finish() deletes the object', async () => {
   jest.spyOn(mockStorage, 'kind').mockReturnValue('s3');
   const session = await quota.begin({ transferId: transfer, maxFiles: 1, mode: 'admin', accountId: adminId, declaredBytes: 12 });
