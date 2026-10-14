@@ -41,6 +41,7 @@ import { useClientsNavItems } from './ClientsLayout';
 import { useAccountingNavItems } from './AccountingLayout';
 import { useSharingNavItems, SHARING_PATHS } from './sharingNav';
 import { useAutomationNavItems } from './AutomationLayout';
+import { isImeComposing } from '../../utils/imeComposition';
 
 // A section that takes over the sidebar while the admin is inside it:
 // the main menu is replaced by the section's own navigation, with a
@@ -601,6 +602,8 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => {
+                      // Escape and Enter of an IME composition are the field's.
+                      if (isImeComposing(e)) return;
                       if (e.key === 'Escape') { setQuery(''); return; }
                       // Enter goes to the best match, so a filter that has
                       // narrowed to one result doesn't still need the mouse.

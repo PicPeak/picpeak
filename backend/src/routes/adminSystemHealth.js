@@ -386,8 +386,14 @@ router.post(
   handleAsync(async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
-    const row = await db('email_queue').where({ id }).first('id', 'email_type', 'email_data');
+    const row = await db('email_queue').where({ id }).first('id', 'email_type', 'email_data', 'recipient_email', 'status');
     if (!row) return res.status(404).json({ error: 'Email not found' });
+    // Same rule as the Messages retry: a mail held back for a customer who
+    // takes no administrative emails (migration 300) is not retried while
+    // the switch is on. A row queued before it went on keeps its decision.
+    if (row.status === 'suppressed' && await require('../services/_adminEmailOptOut').isRowHeldBack(row)) {
+      return res.status(409).json({ error: 'This customer takes no administrative emails, so this email isn\'t sent.', code: 'NO_ADMIN_EMAILS' });
+    }
     const encrypted = isEncryptedEmailData(parseEmailData(row.email_data));
     if (isProtectedEmailType(row.email_type) && !encrypted) {
       return res.status(409).json({ error: 'Create a new invitation or password reset; this recovery email cannot be retried.' });

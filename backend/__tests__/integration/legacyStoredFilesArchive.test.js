@@ -63,6 +63,10 @@ async function contents() {
   return out;
 }
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxIt = process.platform === 'linux' ? it : it.skip;
+
 beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
   originalStorage = process.env.STORAGE_PATH;
@@ -94,7 +98,7 @@ afterEach(() => {
 });
 
 describe('legacy-root documents in archives', () => {
-  it('deduplicates identical mirrored legacy documents into an importable portable catalogue', async () => {
+  linuxIt('deduplicates identical mirrored legacy documents into an importable portable catalogue', async () => {
     const { createPicpeak } = require('../../src/services/picpeakExportService');
     const { importFromPicpeak } = require('../../src/services/picpeakImportService');
     const { root, legacy } = useInstall('source');
@@ -113,7 +117,7 @@ describe('legacy-root documents in archives', () => {
     } finally { fs.rmSync(path.dirname(filePath), { recursive: true, force: true }); }
   });
 
-  it('a .picpeak restore on another machine opens every document with its own bytes', async () => {
+  linuxIt('a .picpeak restore on another machine opens every document with its own bytes', async () => {
     const { createPicpeak } = require('../../src/services/picpeakExportService');
     const { importFromPicpeak } = require('../../src/services/picpeakImportService');
     await seedDocuments();

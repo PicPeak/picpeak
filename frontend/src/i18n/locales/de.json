@@ -1504,7 +1504,8 @@
       "latestAttempt": "Letzter Versuch",
       "latestAttemptRunning": "Letzter Versuch läuft seit",
       "latestAttemptFailed": "Letzter Versuch fehlgeschlagen",
-      "lastSuccessfulBackup": "Letztes erfolgreiches Backup"
+      "lastSuccessfulBackup": "Letztes erfolgreiches Backup",
+      "signingKeyInvalid": "Der Backup-Signaturschlüssel ist nicht nutzbar. Backups schlagen fehl, bis er korrigiert ist."
     },
     "actions": {
       "runBackupNow": "Backup jetzt starten",
@@ -2033,10 +2034,14 @@
     "thankYou": "Vielen Dank",
     "thankYouMessage": "Dass Sie Teil unserer Geschichte waren und unseren besonderen Tag unvergesslich gemacht haben.",
     "favorites": "Favoriten",
+    "showLikedOnly": "Nur Fotos anzeigen, die mir gefallen",
+    "likedOnlyEmpty": "Hier haben Sie noch kein Foto mit dem Herz markiert. Tippen Sie bei einem Foto auf das Herz, um es hier wiederzufinden.",
+    "showAllPhotos": "Alle Fotos anzeigen",
     "expiresIn_one": "Galerie läuft in {{count}} Tag ab",
     "expiresIn_other": "Galerie läuft in {{count}} Tagen ab",
     "downloading_one": "1 Foto wird heruntergeladen…",
     "downloading_other": "{{count}} Fotos werden heruntergeladen…",
+    "downloadingInParts": "{{count}} Fotos werden als {{parts}} ZIP-Dateien heruntergeladen…",
     "photosSelected_one": "{{count}} Foto ausgewählt",
     "photosSelected_other": "{{count}} Fotos ausgewählt",
     "favoriteSelected_one": "{{count}} Foto favorisieren",
@@ -2226,6 +2231,9 @@
       "approveBody": "Sie bestätigen, dass die bearbeiteten Fotos so in Ordnung sind und der Fotograf weitermachen kann. Danach können Sie Ihre Freigaben und Ablehnungen nicht mehr ändern; der Fotograf kann sie für Sie wieder öffnen.",
       "approveRejected": "Noch als abgelehnt markierte Fotos: {{count}}",
       "approveConfirm": "Freigeben",
+      "identityApproval": "Ihre Freigabe",
+      "identitySelection": "Ihre Auswahl",
+      "identityInvalid": "Bitte prüfen Sie Name und E-Mail. Ein Name darf Buchstaben, Ziffern, Leerzeichen, Bindestriche, Apostrophe und Punkte enthalten.",
       "approveSuccess": "Ihre Freigabe wurde an den Fotografen gesendet",
       "approvedOn": "Bearbeitete Fotos freigegeben am {{date}}",
       "noteLabel": "Anmerkung für den Fotografen (optional)",
@@ -2388,6 +2396,7 @@
     "uploadPhotos": "Fotos hochladen",
     "archiveEvent": "Galerie archivieren",
     "archiveConfirm": "Sind Sie sicher, dass Sie diese Galerie archivieren möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "archiveInProgress": "Diese Galerie wird gerade archiviert. Versuchen Sie es erneut, sobald die Archivierung abgeschlossen ist.",
     "extendExpiration": "Um {{days}} Tage verlängern",
     "backToEvents": "Alle Galerien",
     "loadingEventDetails": "Veranstaltungsdetails werden geladen...",
@@ -4511,6 +4520,12 @@
       "natural": "Natürlich (Seitenverhältnis beibehalten)"
     },
     "storyGridModeHint": "Natürlich ordnet die Szenen in Reihen nach den Bildmaßen an, sodass Hochformate vollständig statt beschnitten gezeigt werden.",
+    "storyShowFilenames": "Dateinamen beim Überfahren zeigen",
+    "storyShowFilenamesHint": "Zeigt den Dateinamen des Fotos, wenn Gäste mit der Maus darüberfahren. Eine Galerie mit Originaldateinamen zeigt den hochgeladenen Namen.",
+    "storyFooterTitle": "Titel in der Fußzeile",
+    "storyFooterTitleHint": "Leer lassen für „Vielen Dank“.",
+    "storyFooterText": "Text in der Fußzeile",
+    "storyFooterTextHint": "Reiner Text, bis zu {{max}} Zeichen. Leer lassen, um die Willkommensnachricht zu zeigen, oder die Standard-Dankeszeile, wenn es keine gibt.",
     "typographyAndStyle": "Typografie & Stil",
     "bodyFont": "Fließtext-Schriftart",
     "headingFont": "Überschriften-Schriftart",
@@ -6006,7 +6021,8 @@
       "status": {
         "pending": "Ausstehend",
         "sent": "Gesendet",
-        "failed": "Fehlgeschlagen"
+        "failed": "Fehlgeschlagen",
+        "suppressed": "Unterdrückt"
       },
       "col": {
         "recipient": "Empfänger",
@@ -7419,7 +7435,9 @@
       "marketingOptOutHelp": "Wenn aktiv, wird dieser Kunde von jeder Newsletter-Kampagne übersprungen. E-Mails zu Galerien, Offerten und Rechnungen sind nicht betroffen.",
       "marketingOptOutSince": "Seit {{date}}",
       "dayRate": "Standard-Tagessatz",
-      "dayRateHint": "Für Angebotspositionen pro Tag. In {{currency}}. Leer lassen, um den Standard-Tagessatz aus Einstellungen → Buchhaltung zu verwenden."
+      "dayRateHint": "Für Angebotspositionen pro Tag. In {{currency}}. Leer lassen, um den Standard-Tagessatz aus Einstellungen → Buchhaltung zu verwenden.",
+      "noAdminEmails": "Keine administrativen E-Mails",
+      "noAdminEmailsHint": "Angebote, Verträge, Rechnungen und Mahnungen werden wie gewohnt erstellt, aber dieser Kunde erhält dazu keine E-Mail. Mit Portalzugang sieht er sie dort, sonst übergeben Sie sie selbst. Zurückgehaltene E-Mails erscheinen im E-Mail-Protokoll als „Unterdrückt“. Galerie-E-Mails sind nicht betroffen. Kopien an weitere Empfänger desselben Dokuments (z. B. eine Treuhänderin in CC) werden ebenfalls zurückgehalten. E-Mails, die beim Einschalten bereits in der Warteschlange sind, gehen noch raus."
     },
     "hours": {
       "section": "Stunden",
@@ -8830,7 +8848,14 @@
     "createdToast": "Entwurf erstellt.",
     "createDraft": "Entwurf erstellen",
     "unsavedSavedFirst": "Ihre ungespeicherten Änderungen werden zuerst gespeichert.",
-    "savedToastSent": "Angebot gespeichert."
+    "savedToastSent": "Angebot gespeichert.",
+    "issue": "Ausstellen",
+    "reissueNoMail": "Erneut ausstellen",
+    "issuedToast": "Angebot ausgestellt. Es wurde keine E-Mail gesendet.",
+    "saveAndIssueTitle": "Mit ungespeicherten Änderungen ausstellen?",
+    "saveAndIssueMessage": "Ihre Änderungen werden zuerst gespeichert, dann wird das Angebot ausgestellt. Dieser Kunde erhält keine E-Mail.",
+    "saveAndIssue": "Speichern & ausstellen",
+    "confirmIssue": "Dieses Angebot jetzt ausstellen? Dieser Kunde erhält keine E-Mail."
   },
   "crm": {
     "lineItems": {
@@ -9077,7 +9102,22 @@
     "forCustomer": "für {{name}}",
     "issuedLockedTitle": "Ausgestellte Rechnungen können nicht geändert werden.",
     "issuedLocked": "Zur Korrektur stornieren Sie sie mit einer Stornorechnung und stellen eine neue aus.",
-    "createDraft": "Rechnung erstellen"
+    "createDraft": "Rechnung erstellen",
+    "issue": "Ausstellen",
+    "issuedToast": "Rechnung ausgestellt. Es wurde keine E-Mail gesendet.",
+    "saveAndIssueTitle": "Mit ungespeicherten Änderungen ausstellen?",
+    "saveAndIssueMessage": "Ihre Änderungen werden zuerst gespeichert, dann wird die Rechnung ausgestellt. Dieser Kunde erhält keine E-Mail.",
+    "saveAndIssue": "Speichern & ausstellen",
+    "confirmIssue": "Diese Rechnung jetzt ausstellen? Dieser Kunde erhält keine E-Mail.",
+    "confirmReleaseIssue": "Fotos als geliefert markieren und diese Rechnung jetzt ausstellen? Dieser Kunde erhält keine E-Mail.",
+    "releaseForDeliveryIssue": "Geliefert & ausstellen",
+    "releasedIssuedToast": "Lieferrechnung ausgestellt. Es wurde keine E-Mail gesendet.",
+    "recordReminder": "Mahnung erfassen",
+    "confirmRecordReminder": "Jetzt eine Mahnung erfassen? Dieser Kunde erhält keine E-Mail, und es wird keine Mahngebühr berechnet.",
+    "reminderRecordedToast": "Mahnung erfasst; es wurde keine E-Mail gesendet.",
+    "confirmCancelIssuedNoMail": "Eine Stornorechnung wird erstellt; dieser Kunde erhält keine E-Mail. Das kann nicht rückgängig gemacht werden. Fortfahren?",
+    "cancelledWithStornoNoMailToast": "Rechnung storniert — Stornorechnung ausgestellt; es wurde keine E-Mail gesendet.",
+    "confirmReissueNoMail": "Für diese Rechnung wird eine Stornorechnung ausgestellt (dieser Kunde erhält keine E-Mail), und ein neuer geplanter Entwurf mit denselben Positionen wird erstellt. Die neue Rechnung verweist auf diese als „Ersetzt R-XXXX“. Fortfahren?"
   },
   "businessProfile": {
     "savedToast": "Geschäftsprofil gespeichert.",
@@ -9739,12 +9779,21 @@
         },
         "collectHint": "Nur die erste unterzeichnende Person erhält jetzt einen Link, um ihre Angaben zu ergänzen. Vertrag, PDF und Preis werden erst danach erstellt und gehen dann an die übrigen Unterzeichnenden.",
         "requestDetails": "Angaben anfordern",
-        "afterDetails": "Wird festgelegt, sobald die Kundschaft ihre Angaben ergänzt hat."
+        "afterDetails": "Wird festgelegt, sobald die Kundschaft ihre Angaben ergänzt hat.",
+        "issue": "Ausstellen",
+        "noMailNotice": "Dieser Kunde erhält keine administrativen E-Mails. Mit Portalzugang kann er ihn dort unterschreiben, sonst laden Sie die auf Papier unterschriebene Fassung hoch. Weitere Unterzeichner werden wie gewohnt per E-Mail eingeladen.",
+        "readyToIssue": "Alles ist bereit zum Ausstellen.",
+        "noMailAddressHint": "Dieser Kunde erhält keine administrativen E-Mails und kann daher nicht per E-Mail nach seinen Angaben gefragt werden. Tragen Sie die fehlende Adresse zuerst beim Kunden ein."
       },
       "saveAndSendTitle": "Mit ungespeicherten Änderungen senden?",
       "saveAndSendMessage": "Ihre Änderungen werden zuerst gespeichert, dann prüfen Sie den Vertrag, bevor er verschickt wird.",
       "saveAndReview": "Speichern & prüfen",
-      "cancelContract": "Vertrag stornieren"
+      "cancelContract": "Vertrag stornieren",
+      "issue": "Ausstellen",
+      "finishIssuing": "Mit den Kundendaten fertig ausstellen",
+      "issuedToast": "Vertrag ausgestellt. Der Kunde hat keine E-Mail erhalten; mit Portalzugang kann er ihn dort unterschreiben.",
+      "confirmResendSignedNoMail": "Den unterschriebenen Vertrag als PDF erneut senden? Er geht an Sie; dieser Kunde erhält keine E-Mail.",
+      "resentSignedNoMailToast": "Unterschriebener Vertrag erneut an Sie gesendet; dieser Kunde erhält keine E-Mail."
     },
     "editor": {
       "create": "Entwurf erstellen",
@@ -10175,7 +10224,8 @@
           "expired": "Frist zur Unterzeichnung abgelaufen",
           "reminded": "Erinnerung gesendet",
           "data_requested": "Angaben der Kundschaft angefordert",
-          "data_collected": "Angaben der Kundschaft eingegangen"
+          "data_collected": "Angaben der Kundschaft eingegangen",
+          "invited_portal": "Im Portal freigegeben (keine E-Mail)"
         },
         "actor": {
           "admin": "Admin",
@@ -10223,7 +10273,9 @@
       "remindError": "Die Erinnerung konnte nicht gesendet werden. Versuchen Sie es erneut.",
       "remindedAt": "{{count}}× erinnert, zuletzt {{date}}",
       "remindConfirm": "{{name}} eine Erinnerung senden? Sie enthält einen neuen Link; der bisherige funktioniert dann nicht mehr.",
-      "remind": "Erinnerung senden"
+      "remind": "Erinnerung senden",
+      "portalOpenAt": "Seit {{date}} im Portal freigegeben (keine E-Mail)",
+      "noAdminEmails": "Dieser Kunde erhält keine administrativen E-Mails, daher kann ihm kein Link gesendet werden. Er unterschreibt im Kundenportal oder auf Papier."
     },
     "paperUpload": {
       "title": "Unterschriebenen Vertrag hochladen",

@@ -22,8 +22,9 @@ vi.mock('react-i18next', async () => {
 
 // The general date format setting is the hook's business; pin a recognisable
 // output so the test proves the banner goes through it.
+const formatSpy = vi.hoisted(() => vi.fn((_date: Date | string) => '12.07.2026'));
 vi.mock('../../../hooks/useLocalizedDate', () => ({
-  useLocalizedDate: () => ({ format: () => '12.07.2026' }),
+  useLocalizedDate: () => ({ format: formatSpy }),
 }));
 
 vi.mock('../../../contexts/ThemeContext', async () => {
@@ -51,6 +52,15 @@ describe('GalleryDeliveryBanner', () => {
       screen.getByText(/166 of approx\. 240 photos are here\..*by 12\.07\.2026 at the latest\./)
     ).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '166');
+  });
+
+  it('formats the promised day as its UTC date, the day the admin picked', () => {
+    // Stored at noon UTC: 01:00 on the 13th in Auckland (summer) or Kiritimati.
+    formatSpy.mockClear();
+    render(<GalleryDeliveryBanner delivery={partial({ due_at: '2026-07-12T12:00:00.000Z' })} />);
+    const day = formatSpy.mock.calls[0][0] as Date;
+    expect(day).toBeInstanceOf(Date);
+    expect([day.getFullYear(), day.getMonth(), day.getDate()]).toEqual([2026, 6, 12]);
   });
 
   it('draws placeholder_count hidden, non-interactive skeleton tiles', () => {

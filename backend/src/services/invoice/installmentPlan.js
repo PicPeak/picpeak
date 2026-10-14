@@ -2,6 +2,7 @@
 // module-level overview. Do not add behavior here without updating the entry re-exports.
 
 const { logActivity } = require('../../database/db');
+const { adminActivityActor } = require('../../utils/activityActor');
 const { AppError } = require('../../utils/errors');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
@@ -351,7 +352,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
     try {
       await logActivity('invoice_scheduled', {
         invoiceId: newId, invoiceNumber, eventId: sample.event_id, source: 'plan_reshape',
-      }, sample.event_id, `admin:${adminId}`, trx);
+      }, sample.event_id, adminActivityActor(adminId), trx);
     } catch (_) { /* non-fatal */ }
 
     created.push(newId);
@@ -370,7 +371,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
     await logActivity('installment_plan_updated', {
       dealUuid, newCount,
       kept: kept.length, created: created.length, deleted: deleted.length,
-    }, sample.event_id, `admin:${adminId}`, trx);
+    }, sample.event_id, adminActivityActor(adminId), trx);
   } catch (_) { /* non-fatal */ }
 
   return {
