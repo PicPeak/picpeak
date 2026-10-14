@@ -108,6 +108,9 @@ function transformQuote(q) {
       // Passive customers (admin-only, no portal access) flagged
       // by null password_hash. Hash itself is dropped here.
       isPassive: q.customer_password_hash == null,
+      // No administrative emails (migration 300): the send action becomes
+      // Issue — the document is issued (in the portal when the customer has access), no mail goes out.
+      noAdminEmails: q.customer_no_admin_emails === true || q.customer_no_admin_emails === 1,
     },
     status: q.status,
     // Migration 140 — cross-document lineage UUID. Lets the frontend

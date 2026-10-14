@@ -712,7 +712,7 @@ router.post('/flush-queue', adminAuth, requirePermission('email.send'), async (r
 // list only needs the envelope + delivery state. event_id is joined to
 // events so the UI can link back to the source gallery when present.
 router.get('/queue', adminAuth, requirePermission('email.view'), [
-  query('status').optional({ values: 'falsy' }).isIn(['pending', 'sent', 'failed']),
+  query('status').optional({ values: 'falsy' }).isIn(['pending', 'sent', 'failed', 'suppressed']),
   query('emailType').optional({ values: 'falsy' }).isString().isLength({ max: 64 }),
   query('origin').optional({ values: 'falsy' }).isIn(['system', 'manual']),
   query('state').optional({ values: 'falsy' }).isIn(['active', 'archived', 'deleted']),
