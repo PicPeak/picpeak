@@ -805,6 +805,12 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         expires_at: thirtyDaysFromNow.toISOString() // Reset expiration - works on both DBs
       });
 
+    // The zip goes with its reference (issue 2012): every archive run writes
+    // a key of its own, so archiving the gallery again no longer overwrites
+    // this one, and nothing would ever name it again.
+    await storage.delete(archive.archive_path).catch((err) =>
+      logger.warn(`Failed to remove the restored archive ${archive.archive_path}: ${err.message}`));
+
     // Browser-playable copies (issue 1430): archiving dropped them and reset
     // the rows (archiveService). With the setting on, the restored videos are
     // queued again here; off, they wait for the next switch-on backfill.

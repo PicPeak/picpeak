@@ -223,6 +223,9 @@ describe('archive routes read and write through the storage backend', () => {
     const event = await db('events').where('id', eventId).first();
     expect(Boolean(event.is_archived)).toBe(false);
     expect(event.archive_path).toBeNull();
+    // Each archive run writes a key of its own (issue 2012): the zip goes
+    // with its reference, or archive/restore cycles pile them up.
+    expect(await storage.exists(key)).toBe(false);
   });
 
   it('restores a pre-manifest archive from the backend too', async () => {
