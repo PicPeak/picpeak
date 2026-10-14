@@ -15,7 +15,7 @@
  * Renders as a layout route (Outlet pattern) so individual pages don't need
  * to wrap their content in `<CustomerLayout>` — same approach AdminLayout uses.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link, NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -36,6 +36,7 @@ import { useCustomerAuth } from '../../contexts/CustomerAuthContext';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { useEscapeClose } from '../../components/common/useEscapeClose';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface NavItem {
   to: string;
@@ -62,6 +63,18 @@ const NAV: NavItem[] = [
   { to: '/customer/profile', labelKey: 'customer.nav.profile', fallback: 'Profile', icon: UserIcon },
 ];
 
+// Below Tailwind's `lg` the sidebar is an off-screen drawer; from `lg` up it
+// is always on screen. Without matchMedia (some test environments) the
+// layout is treated as desktop, i.e. the sidebar is left as it always was.
+const DRAWER_QUERY = '(max-width: 1023.98px)';
+const subscribeDrawer = (notify: () => void) => {
+  if (typeof window.matchMedia !== 'function') return () => {};
+  const mql = window.matchMedia(DRAWER_QUERY);
+  mql.addEventListener('change', notify);
+  return () => mql.removeEventListener('change', notify);
+};
+const isDrawerLayout = () => typeof window.matchMedia === 'function' && window.matchMedia(DRAWER_QUERY).matches;
+
 export const CustomerLayout: React.FC = () => {
   const { t } = useTranslation();
   const location = useLocation();
@@ -69,6 +82,25 @@ export const CustomerLayout: React.FC = () => {
   const { data: settingsData } = usePublicSettings();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   useEscapeClose(sidebarOpen, () => setSidebarOpen(false));
+  const isDrawer = useSyncExternalStore(subscribeDrawer, isDrawerLayout);
+  // The open drawer covers the page behind a backdrop, so it holds the
+  // keyboard: focus moves to its close button and Tab wraps inside it.
+  const drawerOpen = isDrawer && sidebarOpen;
+  const sidebarRef = useFocusTrap(drawerOpen, { containFocus: true });
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // A dialog open on top (the drawer opened by a resize) keeps its focus.
+    if (drawerOpen && !document.activeElement?.closest('[role="dialog"]')) closeButtonRef.current?.focus();
+  }, [drawerOpen]);
+  // The closed drawer is inert, so focus left inside it would be dropped to
+  // the body. Hand it back to the menu button before the browser does that.
+  useLayoutEffect(() => {
+    if (!isDrawer || sidebarOpen) return;
+    if (sidebarRef.current?.contains(document.activeElement)) {
+      menuButtonRef.current?.focus();
+    }
+  }, [isDrawer, sidebarOpen, sidebarRef]);
 
   const companyName = settingsData?.branding_company_name?.trim() || 'PicPeak';
   // The portal follows the operator's palette (usePublicDarkMode puts the
@@ -126,9 +158,14 @@ export const CustomerLayout: React.FC = () => {
 
       {/* Sidebar */}
       <aside
+        ref={sidebarRef}
         className={`fixed inset-y-0 left-0 z-50 w-64 border-r bg-surface border-border-token transform transition-transform duration-200 ease-in-out lg:relative lg:translate-x-0 lg:h-screen ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
+        // Off screen is not out of reach: below lg the closed drawer leaves
+        // the tab order and the accessibility tree. Spread, as React 18 does
+        // not know `inert` as a prop.
+        {...(isDrawer && !sidebarOpen ? { inert: '' } : {})}
       >
         <div className="flex flex-col h-screen lg:h-full">
           {/* Brand */}
@@ -152,6 +189,7 @@ export const CustomerLayout: React.FC = () => {
               )}
             </Link>
             <button
+              ref={closeButtonRef}
               type="button"
               onClick={() => setSidebarOpen(false)}
               className="lg:hidden text-muted-theme hover:text-theme"
@@ -213,6 +251,7 @@ export const CustomerLayout: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 h-screen">
         <header className="lg:hidden h-14 px-4 flex items-center justify-between border-b bg-surface border-border-token flex-shrink-0">
           <button
+            ref={menuButtonRef}
             type="button"
             onClick={() => setSidebarOpen(true)}
             className="p-2 -ml-2 rounded hover-surface text-theme"

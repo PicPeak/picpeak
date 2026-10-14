@@ -10,6 +10,7 @@ const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolve
 const logger = require('../utils/logger');
 const uploadQuota = require('./publicUploadQuota');
 const { insertPhotoWithinCap, photoCapOf } = require('./photoCap');
+const { claimPromotion } = require('./watchFolderClaims');
 const { resolveCredit, creditOpenForExif, settleGuestCredit } = require('./photoCredit');
 const imageAdmission = require('./imageWorkAdmission');
 const { isResourceError, describe: describeImageError } = require('./imageResourcePolicy');
@@ -95,6 +96,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
     let promotion = null;
     let promotionSettled = false;
     let rowCommitted = false;
+    let releaseClaim = null;
     // What this attempt has written to storage, for the cleanup below.
     let relativePath;
     let finalKey;
@@ -248,6 +250,9 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       // local temp copy.
       const actualSize = uploadReservation ? (await fs.stat(tempPath)).size : file.size;
       if (uploadReservation) promotion = await uploadQuota.prepareObject(uploadReservation, finalKey, actualSize);
+      // Held until the row is committed, so the file watcher does not import
+      // the file first (issue 1970).
+      releaseClaim = claimPromotion(finalKey);
       try {
         putStarted = true;
         await getStorage().putFromFile(finalKey, tempPath, {
@@ -345,6 +350,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       }
 
       rowCommitted = true;
+      releaseClaim();
 
       // Webhook (#327) — fires for every entry path that lands in this
       // service: guest upload + auto-import + admin upload via API. A photo
@@ -438,6 +444,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       // Continue with other files
       // Note: Individual file failures don't stop the entire upload batch
+    } finally {
+      releaseClaim?.();
     }
   }
   
@@ -521,6 +529,7 @@ async function queueFilesForProcessing(files, options = {}) {
     let uploadCharge = null;
     let promotionSettled = false;
     let rowCommitted = false;
+    let releaseClaim = null;
     try {
       if (!tempPath) {
         throw new Error('Uploaded file is missing a temporary path');
@@ -562,7 +571,9 @@ async function queueFilesForProcessing(files, options = {}) {
       }
 
       // Move to storage first so the file is at its recorded path by the
-      // time the worker picks up the row.
+      // time the worker picks up the row. Claimed until the row exists, so
+      // the file watcher does not import it first (issue 1970).
+      releaseClaim = claimPromotion(finalKey);
       await storage.putFromFile(finalKey, tempPath, { contentType: file.mimetype });
       promotionSettled = true;
       storedKey = finalKey;
@@ -635,6 +646,8 @@ async function queueFilesForProcessing(files, options = {}) {
         ...(err.code === 'PHOTO_CAP_REACHED' ? { code: err.code, limit: photoCap } : {}),
         ...describeImageError(err),
       });
+    } finally {
+      releaseClaim?.();
     }
   }
 

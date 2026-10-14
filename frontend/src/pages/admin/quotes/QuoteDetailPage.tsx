@@ -10,7 +10,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, Send, Copy, ArrowRightCircle, Receipt, CheckCircle2, ScrollText, XCircle, FilePlus, LayoutTemplate, RefreshCw } from 'lucide-react';
+import { Eye, Send, Copy, ArrowRightCircle, Receipt, CheckCircle2, ScrollText, XCircle, FilePlus, LayoutTemplate, RefreshCw, FileCheck } from 'lucide-react';
 import { ActionMenu, Badge, Button, Card, Loading, Notice, useConfirm, usePrompt, type ActionMenuItem, type BadgeTone } from '../../../components/common';
 import { DocumentHeader } from '../../../components/admin/DocumentHeader';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
@@ -64,6 +64,9 @@ export const QuoteDetailPage: React.FC = () => {
 
   if (isLoading || !data) return <Loading />;
   const q = data.quote;
+  // Customer takes no administrative emails (migration 300): Send becomes
+  // Issue — the quote is issued (in the portal when the customer has access), nothing is mailed.
+  const noMail = !!q.customer?.noAdminEmails;
   // Accepted, and no contract, event or invoice yet: it can be reissued or declined.
   const canReissue = q.status === 'accepted' && !q.convertedEventId && !q.convertedContractId;
   const editable = canManage && !LOCKED_STATUSES.includes(q.status) && !q.replacedByQuoteId;
@@ -90,16 +93,27 @@ export const QuoteDetailPage: React.FC = () => {
 
   const handleSend = async () => {
     const to = q.customer.email || q.customer.companyName || q.customer.displayName || '';
-    const ok = await confirm(dirty
-      ? {
-        title: t('quotes.saveAndSendTitle', 'Send with your unsaved changes?'),
-        message: t('quotes.saveAndSendMessage', 'Your changes are saved first, then the quote goes to {{to}}.', { to }),
-        confirmLabel: t('quotes.saveAndSend', 'Save & send'),
-      }
-      : {
-        message: t('quotes.confirmSend', 'Send this quote to the customer now?'),
-        confirmLabel: q.status === 'draft' ? t('quotes.send', 'Send') : t('quotes.resend', 'Resend'),
-      });
+    const ok = await confirm(noMail
+      ? (dirty
+        ? {
+          title: t('quotes.saveAndIssueTitle', 'Issue with your unsaved changes?'),
+          message: t('quotes.saveAndIssueMessage', 'Your changes are saved first, then the quote is issued. This customer gets no email.'),
+          confirmLabel: t('quotes.saveAndIssue', 'Save & issue'),
+        }
+        : {
+          message: t('quotes.confirmIssue', 'Issue this quote now? This customer gets no email.'),
+          confirmLabel: q.status === 'draft' ? t('quotes.issue', 'Issue') : t('quotes.reissueNoMail', 'Issue again'),
+        })
+      : (dirty
+        ? {
+          title: t('quotes.saveAndSendTitle', 'Send with your unsaved changes?'),
+          message: t('quotes.saveAndSendMessage', 'Your changes are saved first, then the quote goes to {{to}}.', { to }),
+          confirmLabel: t('quotes.saveAndSend', 'Save & send'),
+        }
+        : {
+          message: t('quotes.confirmSend', 'Send this quote to the customer now?'),
+          confirmLabel: q.status === 'draft' ? t('quotes.send', 'Send') : t('quotes.resend', 'Resend'),
+        }));
     if (!ok) return;
     if (dirty) {
       const saved = await formRef.current?.save();
@@ -107,7 +121,9 @@ export const QuoteDetailPage: React.FC = () => {
     }
     try {
       await quotesService.send(q.id);
-      toast.success(t('quotes.sentToast', 'Quote sent to customer.'));
+      toast.success(noMail
+        ? t('quotes.issuedToast', 'Quote issued. No email was sent.')
+        : t('quotes.sentToast', 'Quote sent to customer.'));
       qc.invalidateQueries({ queryKey: ['quote', id] });
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Send failed');
@@ -342,8 +358,10 @@ export const QuoteDetailPage: React.FC = () => {
               {t('quotes.preview', 'Preview PDF')}
             </Button>
             {canManage && canSend && (
-              <Button onClick={() => { void handleSend(); }} disabled={formState.busy || (dirty && !formState.valid)} leftIcon={<Send className="w-4 h-4" />}>
-                {q.status === 'draft' ? t('quotes.send', 'Send') : t('quotes.resend', 'Resend')}
+              <Button onClick={() => { void handleSend(); }} disabled={formState.busy || (dirty && !formState.valid)} leftIcon={noMail ? <FileCheck className="w-4 h-4" /> : <Send className="w-4 h-4" />}>
+                {noMail
+                  ? (q.status === 'draft' ? t('quotes.issue', 'Issue') : t('quotes.reissueNoMail', 'Issue again'))
+                  : (q.status === 'draft' ? t('quotes.send', 'Send') : t('quotes.resend', 'Resend'))}
               </Button>
             )}
             {canManage && q.status === 'accepted' && (

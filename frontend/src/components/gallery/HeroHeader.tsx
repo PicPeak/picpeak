@@ -45,7 +45,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   heroImageAnchor = 'center'
 }) => {
   const { t } = useTranslation();
-  const { format } = useLocalizedDate();
+  const { format, formatExpiry } = useLocalizedDate();
   const { theme } = useTheme();
   const gallerySettings = theme.gallerySettings || {};
 
@@ -220,7 +220,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                 {expiresAt && (
                   <span className="flex items-center text-lg sm:text-xl">
                     <Clock className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
-                    {t('gallery.expires')} {format(parseISO(expiresAt))}
+                    {t('gallery.expires')} {formatExpiry(expiresAt)}
                   </span>
                 )}
               </div>

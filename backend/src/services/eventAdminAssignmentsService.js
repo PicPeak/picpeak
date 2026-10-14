@@ -13,6 +13,8 @@ const { AppError } = require('../utils/errors');
 
 // More than any studio has team members; keeps the IN lists bounded.
 const MAX_ASSIGNED_ADMINS = 100;
+// pg_advisory_xact_lock class for one gallery's team save. 1074-1077 are taken.
+const TEAM_SAVE_LOCK = 1078;
 
 const adminColumns = ['admin_users.id', 'admin_users.username', 'roles.display_name as role_name'];
 
@@ -87,12 +89,34 @@ async function resolveAssignableIds(ids, ownerId, alreadyAssigned = []) {
  * @returns {Promise<{added: number[], removed: number[]}>}
  */
 async function setAssignedAdmins(eventId, adminIds, assignedBy, trx = db) {
+  // One team save per gallery at a time (issue 1979). Two saves that read the
+  // team either side of a third one's commit can each delete or insert a row
+  // the other then inserts: a unique-index wait in both directions on
+  // PostgreSQL. An advisory lock, not a stronger lock on the event row: the
+  // admin hard delete holds assignment rows while its SET NULL onto
+  // events.created_by updates the row, which a stronger lock would hold back.
+  // SQLite runs one transaction at a time.
+  if (trx.client.config.client === 'pg') {
+    await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [TEAM_SAVE_LOCK, Number(eventId)]);
+  }
+  // The event row before any assignment row (issue 1979): the key-share lock
+  // the insert below takes on it anyway, taken up front. Deleting a gallery
+  // locks the event row and then its assignments, so taking it last could
+  // deadlock with that on PostgreSQL. A key-share lock does not hold back an
+  // edit of the event. No-op on SQLite.
+  await trx('events').where('id', eventId).forKeyShare().first('id');
   const existing = (await trx('event_admin_assignments').where('event_id', eventId).pluck('admin_user_id'))
     .map(Number);
   const wanted = new Set(adminIds);
   const removed = existing.filter((id) => !wanted.has(id));
   const added = adminIds.filter((id) => !existing.includes(id));
   if (removed.length > 0) {
+    // Locked in id order before the delete, the order the admin hard delete
+    // (userManagementService.deleteAdminUser) takes them in; the DELETE alone
+    // locks in scan order and can deadlock with it on PostgreSQL (issue 1979).
+    // No-op on SQLite.
+    await trx('event_admin_assignments').where('event_id', eventId).whereIn('admin_user_id', removed)
+      .orderBy('id').forUpdate().pluck('id');
     await trx('event_admin_assignments').where('event_id', eventId).whereIn('admin_user_id', removed).del();
   }
   if (added.length > 0) {
