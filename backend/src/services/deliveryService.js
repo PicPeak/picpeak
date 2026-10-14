@@ -19,6 +19,7 @@ const { getAppSetting } = require('../utils/appSettings');
 const { parseBooleanInput } = require('../utils/parsers');
 const { whereTimestamp, formatBoolean } = require('../utils/dbCompat');
 const { toTimestamp } = require('../utils/dateNormalize');
+const { toDateOnly } = require('../utils/dateOnly');
 
 const DEFAULT_DELIVERY_DAYS = 7;
 const REMINDER_LEAD_HOURS = 24;
@@ -29,11 +30,9 @@ const isPartial = (event) => event && event.delivery_status === 'partial';
 /** Event date + N days (Settings → Event defaults), at noon UTC so the date never shifts by timezone. */
 async function defaultDueAt(event, conn = db) {
   const days = Number(await getAppSetting('event_default_delivery_days', DEFAULT_DELIVERY_DAYS, conn)) || DEFAULT_DELIVERY_DAYS;
-  // Postgres hands a DATE column back as a Date, SQLite as a string.
-  const raw = event.event_date instanceof Date && !Number.isNaN(event.event_date.getTime())
-    ? event.event_date.toISOString()
-    : String(event.event_date || '');
-  const base = raw.slice(0, 10);
+  // Postgres hands a DATE column back as a Date at the server's local
+  // midnight (the day before in UTC east of Greenwich), SQLite as a string.
+  const base = toDateOnly(event.event_date) || '';
   const start = /^\d{4}-\d{2}-\d{2}$/.test(base) ? new Date(`${base}T12:00:00Z`) : new Date();
   return new Date(start.getTime() + days * 864e5);
 }
