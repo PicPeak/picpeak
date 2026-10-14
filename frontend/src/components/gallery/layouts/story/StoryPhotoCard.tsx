@@ -33,7 +33,15 @@ interface StoryPhotoCardProps {
   likesAllowed?: boolean;
   /** The client's hide/show handler (issue 1992); set only for the client. */
   onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
+  /**
+   * The filename caption on hover: 'none' (the default), the stored
+   * `filename`, or the uploaded `original_filename` when the gallery shows
+   * original filenames (#508), as the lightbox does.
+   */
+  caption?: StoryCaptionMode;
 }
+
+export type StoryCaptionMode = 'none' | 'filename' | 'original';
 
 export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   photo,
@@ -49,6 +57,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   onSelect,
   likesAllowed = true,
   onToggleVisibility,
+  caption = 'none',
   galleryId: _galleryId
 }) => {
   // galleryId is kept for potential PhotoSwipe integration but not currently used
@@ -69,6 +78,12 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   // flight by the time the card animates in.
   const cardRef = useRef<HTMLDivElement>(null);
   const isNearViewport = useInView(cardRef, { once: true, margin: '200px' });
+
+  const captionText = caption === 'none'
+    ? null
+    : caption === 'original'
+      ? (photo.original_filename || photo.filename)
+      : photo.filename;
 
   return (
     <motion.div
@@ -158,7 +173,10 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
 
       {/* First look (issue 1562). Bottom-left is free until hover, when the
           filename caption slides over it — so the pill steps aside then. */}
-      <FirstLookBadge photo={photo} className="bottom-3 left-3 transition-opacity group-hover:opacity-0" />
+      <FirstLookBadge
+        photo={photo}
+        className={`bottom-3 left-3${captionText ? ' transition-opacity group-hover:opacity-0' : ''}`}
+      />
 
       {/* Selection checkbox (issue 1716). Visible while selecting or when
           selected; outside selection mode it appears on hover and starts the
@@ -207,9 +225,11 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
       )}
 
       {/* Caption */}
-      <div className="story-photo-card-caption">
-        <p>{photo.filename}</p>
-      </div>
+      {captionText && (
+        <div className="story-photo-card-caption">
+          <p>{captionText}</p>
+        </div>
+      )}
     </motion.div>
   );
 };

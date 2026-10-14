@@ -4513,6 +4513,8 @@
       "natural": "Natürlich (Seitenverhältnis beibehalten)"
     },
     "storyGridModeHint": "Natürlich ordnet die Szenen in Reihen nach den Bildmaßen an, sodass Hochformate vollständig statt beschnitten gezeigt werden.",
+    "storyShowFilenames": "Dateinamen beim Überfahren zeigen",
+    "storyShowFilenamesHint": "Zeigt den Dateinamen des Fotos, wenn Gäste mit der Maus darüberfahren. Eine Galerie mit Originaldateinamen zeigt den hochgeladenen Namen.",
     "typographyAndStyle": "Typografie & Stil",
     "bodyFont": "Fließtext-Schriftart",
     "headingFont": "Überschriften-Schriftart",

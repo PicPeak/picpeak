@@ -53,6 +53,8 @@ interface GalleryStoryLayoutProps extends BaseGalleryLayoutProps {
   welcomeMessage?: string;
   /** Issue 1709: 'natural' keeps every photo's aspect ratio; 'fixed' (default) is the original tile grid. */
   storyGridMode?: 'fixed' | 'natural';
+  /** Filename caption on a card's hover; off unless the theme turns it on. */
+  storyShowFilenames?: boolean;
 }
 
 export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
@@ -91,6 +93,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   heroPhotoOverride,
   welcomeMessage,
   storyGridMode = 'fixed',
+  storyShowFilenames = false,
   onLogout,
   onUploadClick,
   showOriginalFilename = false,
@@ -433,6 +436,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const downloadAllLabel = t('common.downloadAll', 'Download All');
   const naturalGrid = storyGridMode === 'natural';
   const uploadLabel = t('upload.uploadPhotos', 'Upload Photos');
+  // The caption names the photo the way the lightbox does: the uploaded
+  // filename when the gallery shows original filenames (#508).
+  const caption = !storyShowFilenames ? 'none' : showOriginalFilename ? 'original' : 'filename';
 
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
@@ -684,6 +690,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   onPhotoSelect={cardSelect}
                   likesAllowed={likesAllowed}
                   onToggleVisibility={clientToggleVisibility}
+                  caption={caption}
                 />
               ) : naturalGrid ? (
                 <StoryJustifiedGrid
@@ -700,6 +707,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   onPhotoSelect={cardSelect}
                   likesAllowed={likesAllowed}
                   onToggleVisibility={clientToggleVisibility}
+                  caption={caption}
                 />
               ) : (
                 <div id={`gallery-${scene.id}`} className="story-gallery-grid">
@@ -722,6 +730,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                       onSelect={cardSelect}
                       likesAllowed={likesAllowed}
                       onToggleVisibility={clientToggleVisibility}
+                      caption={caption}
                     />
                   ))}
                 </div>

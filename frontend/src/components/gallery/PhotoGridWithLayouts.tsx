@@ -453,6 +453,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     // Issue 1709: the Story layout reads its grid mode from the theme's
     // gallerySettings, defaulting to the original fixed tiles.
     storyGridMode: theme.gallerySettings?.storyGridMode,
+    storyShowFilenames: theme.gallerySettings?.storyShowFilenames === true,
     selectedPhotos,
     allowDownloads,
     protectionLevel,

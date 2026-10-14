@@ -3,7 +3,7 @@ import { Swiper, SwiperSlide } from 'swiper/react';
 import { FreeMode, Mousewheel } from 'swiper/modules';
 import 'swiper/css';
 import 'swiper/css/free-mode';
-import { StoryPhotoCard } from './StoryPhotoCard';
+import { StoryPhotoCard, type StoryCaptionMode } from './StoryPhotoCard';
 import { storyPhotoAspectRatio } from './StoryJustifiedGrid';
 import type { Photo } from '../../../../types';
 
@@ -24,6 +24,7 @@ interface StoryCarouselProps {
   likesAllowed?: boolean;
   /** The client's hide/show handler (issue 1992); set only for the client. */
   onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
+  caption?: StoryCaptionMode;
 }
 
 export const StoryCarousel: React.FC<StoryCarouselProps> = ({
@@ -41,6 +42,7 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
   onPhotoSelect,
   likesAllowed = true,
   onToggleVisibility,
+  caption = 'none',
 }) => {
   return (
     <div id={id} className="story-carousel">
@@ -75,6 +77,7 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
                 onSelect={onPhotoSelect}
                 likesAllowed={likesAllowed}
                 onToggleVisibility={onToggleVisibility}
+                caption={caption}
               />
             </div>
           </SwiperSlide>

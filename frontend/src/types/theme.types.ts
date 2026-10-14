@@ -46,6 +46,9 @@ export interface GalleryLayoutSettings {
   // fixed-height tiles that crop to fill. 'natural' lays scenes out as
   // justified rows from the stored photo dimensions so nothing is cropped.
   storyGridMode?: 'fixed' | 'natural';
+  // Filename caption on a Story card's hover. Unset = hidden: guests rarely
+  // want a camera filename over the photo, so it is opt-in.
+  storyShowFilenames?: boolean;
 
   // Thumbnail scale (applies to Grid, Masonry columns, Mosaic)
   thumbnailScale?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Layout, Check, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Card, Input } from '../../common';
+import { Card, Input, Switch } from '../../common';
 import { ThemeConfig, GalleryLayoutType } from '../../../types/theme.types';
 import { layoutIcons } from './icons';
 
@@ -347,22 +347,30 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
           {/* Mosaic specific */}
           {/* Gallery Story specific (issue 1709) */}
           {localTheme.galleryLayout === 'gallery-story' && (
-            <div>
-              <label className="block text-sm font-medium text-body mb-2">
-                {t('branding.storyGridMode', 'Photo Framing')}
-              </label>
-              <select
-                value={localTheme.gallerySettings?.storyGridMode || 'fixed'}
-                onChange={(e) => updateGallerySettings('storyGridMode', e.target.value)}
-                className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
-              >
-                <option value="fixed">{t('branding.storyGridModeOptions.fixed', 'Fixed tiles (crop to fill)')}</option>
-                <option value="natural">{t('branding.storyGridModeOptions.natural', 'Natural (keep every aspect ratio)')}</option>
-              </select>
-              <p className="text-xs text-muted mt-1">
-                {t('branding.storyGridModeHint', 'Natural lays scenes out in rows from each photo\'s dimensions, so portrait photos are shown whole instead of cropped.')}
-              </p>
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium text-body mb-2">
+                  {t('branding.storyGridMode', 'Photo Framing')}
+                </label>
+                <select
+                  value={localTheme.gallerySettings?.storyGridMode || 'fixed'}
+                  onChange={(e) => updateGallerySettings('storyGridMode', e.target.value)}
+                  className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
+                >
+                  <option value="fixed">{t('branding.storyGridModeOptions.fixed', 'Fixed tiles (crop to fill)')}</option>
+                  <option value="natural">{t('branding.storyGridModeOptions.natural', 'Natural (keep every aspect ratio)')}</option>
+                </select>
+                <p className="text-xs text-muted mt-1">
+                  {t('branding.storyGridModeHint', 'Natural lays scenes out in rows from each photo\'s dimensions, so portrait photos are shown whole instead of cropped.')}
+                </p>
+              </div>
+              <Switch
+                checked={localTheme.gallerySettings?.storyShowFilenames === true}
+                onChange={(next) => updateGallerySettings('storyShowFilenames', next)}
+                label={t('branding.storyShowFilenames', 'Show filenames on hover')}
+                description={t('branding.storyShowFilenamesHint', 'Shows the photo\'s filename when a guest hovers over it. A gallery set to show original filenames shows the uploaded name.')}
+              />
+            </>
           )}
 
           {localTheme.galleryLayout === 'mosaic' && (
