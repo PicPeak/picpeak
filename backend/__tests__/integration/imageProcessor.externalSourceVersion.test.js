@@ -170,6 +170,18 @@ describe('renditions of an external file rewritten in place', () => {
     for (const key of legacyKeys) expect(await storage.stat(key)).toBeFalsy();
   });
 
+  test('an external RAW row without a recorded size keeps the cache id it had', async () => {
+    const row = await externalPhoto('no-size.jpg');
+    await db('photos').where({ id: row.id })
+      .update({ filename: 'no-size.dng', external_relpath: 'shoot/no-size.dng', size_bytes: null });
+    const raw = await db('photos').where({ id: row.id }).first();
+    const fields = ['event_id', 'path', 'filename', 'external_relpath', 'source_origin', 'processing_attempt_id'];
+    const oldId = require('crypto').createHash('sha256')
+      .update(JSON.stringify(fields.map(field => raw[field] ?? null))).digest('hex').slice(0, 24);
+    const scoped = require('../../src/services/mediaAttemptService').outputName(`p${raw.id}_no-size.dng`, { id: oldId });
+    expect(imageProcessor.thumbnailTierKeys(raw)).toContain(`thumbnails/thumb_w600_${scoped}`);
+  });
+
   test('deleting the gallery sweeps the versioned tiers of its external photos', async () => {
     const adminId = (await db('admin_users').first('id')).id;
     const otherId = resultId(await db('events').insert({ slug: 'source-version-delete', event_type: 'wedding', event_name: 'Delete me',

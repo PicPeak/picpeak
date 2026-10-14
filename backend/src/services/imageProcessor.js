@@ -56,7 +56,9 @@ const boundedDerivative = photo => isVideoPhoto(photo) || isRawFilename(photo.fi
 const derivativeCacheId = photo => crypto.createHash('sha256')
   .update(JSON.stringify([
     ...derivativeSourceFields.map(field => photo[field] ?? null),
-    ...(isExternalSource(photo) ? [sourceVersion(photo)] : []),
+    // Only when known: an external row without a size keeps the id it had
+    // before the version existed, so its tiers stay found and cleaned up.
+    ...(sourceVersion(photo) ? [sourceVersion(photo)] : []),
   ])).digest('hex').slice(0, 24);
 // Callers hand in rows from many selects. An external row without its size
 // would derive unversioned keys and skip the size in its guard, so it is

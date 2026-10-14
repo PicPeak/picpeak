@@ -46,6 +46,8 @@ describe('orientation backfill (#1198)', () => {
     process.env.TEST_DATABASE_PATH = path.join(tmpDir, 'data', 'db.sqlite');
     await fs.promises.mkdir(path.dirname(process.env.TEST_DATABASE_PATH), { recursive: true });
     process.env.JWT_SECRET = process.env.JWT_SECRET || 'orientbf-secret';
+    process.env.EXTERNAL_MEDIA_ROOT = path.join(tmpDir, 'nas');
+    await fs.promises.mkdir(path.join(tmpDir, 'nas', 'shoot'), { recursive: true });
 
     jest.resetModules();
     jest.doMock('../../src/middleware/auth', () => ({
@@ -181,6 +183,31 @@ describe('orientation backfill (#1198)', () => {
     // Simulate the replacement landing before the loop writes.
     await db('photos').where({ id: photoId })
       .update({ path: 'orientbf/replaced.jpg', filename: 'replaced.jpg' });
+    await settle();
+
+    const row = await db('photos').where({ id: photoId }).first();
+    expect(row.width).toBe(400);            // untouched
+    expect(row.face_status).toBe('done');   // not requeued
+    expect(row.thumbnail_path).toBe('thumbnails/thumb_orientbf.jpg');
+  });
+
+  it('does not touch an external row whose file was edited in place while it was reading', async () => {
+    // An in-place edit on the share keeps path and filename; the import pass
+    // records the new size. That is the identity the writes are fenced on
+    // for an external row.
+    const { photoId } = await seed({
+      orientation: 6, storedWidth: 400, storedHeight: 200, faceStatus: 'done',
+    });
+    const nasFile = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'shoot', 'p.jpg');
+    await fs.promises.copyFile(path.join(storageRoot, 'events/active/orientbf/p.jpg'), nasFile);
+    const { size } = await fs.promises.stat(nasFile);
+    await db('photos').where({ id: photoId })
+      .update({ source_origin: 'reference', external_relpath: 'shoot/p.jpg', size_bytes: size });
+
+    const res = await run();
+    expect(res.body.count).toBe(1);
+    // The edit's refresh lands before the loop writes.
+    await db('photos').where({ id: photoId }).update({ size_bytes: size + 1 });
     await settle();
 
     const row = await db('photos').where({ id: photoId }).first();
