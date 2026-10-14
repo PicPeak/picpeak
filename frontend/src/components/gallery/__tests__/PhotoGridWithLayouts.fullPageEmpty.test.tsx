@@ -97,4 +97,11 @@ describe.each(['gallery-premium', 'gallery-story'])('PhotoGridWithLayouts empty 
     rerenderWith({ onUploadClick, photos: [photo] });
     expect(document.activeElement).toBe(document.body);
   });
+
+  it('offers the way back from an empty Liked view', () => {
+    const onToggleLikedOnly = vi.fn();
+    renderGrid({ likedOnly: true, onToggleLikedOnly });
+    fireEvent.click(screen.getByRole('button', { name: 'Show all photos' }));
+    expect(onToggleLikedOnly).toHaveBeenCalledTimes(1);
+  });
 });
