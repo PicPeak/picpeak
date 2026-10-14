@@ -817,17 +817,19 @@ async function updateCustomer(id, updates, updatedByAdminId) {
   allowed.updated_at = new Date();
   const emailChanged = !!allowed.email && allowed.email !== customer.email;
   await db.transaction(async (trx) => {
-    await auditedUpdate(trx, 'customer_accounts', { id }, allowed, {
-      actor: updatedByAdminId || null, source: 'customer.update',
-    });
     // A reset link already mailed to the old address must not set the
-    // password of the account at its new one.
+    // password of the account at its new one. Reset rows before the
+    // account, the order applyPasswordReset locks them in, so the two
+    // cannot deadlock on PostgreSQL.
     if (emailChanged) {
       await trx('customer_password_resets')
         .where('customer_account_id', id)
         .whereNull('used_at')
         .del();
     }
+    await auditedUpdate(trx, 'customer_accounts', { id }, allowed, {
+      actor: updatedByAdminId || null, source: 'customer.update',
+    });
   });
 
   await logActivity('customer_updated',
