@@ -95,6 +95,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   onSelectPerson,
   openPhotoId,
   onLightboxPhotoChange,
+  isClient = false,
+  onToggleVisibility,
 }) => {
   // These props are passed by parent but we use our own feedback system, so mark as intentionally unused
   void _onPhotoClick;
@@ -354,6 +356,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // nav heart also need the feedback master switch, as before.
   const likesAllowed = feedbackOptions?.allowLikes !== false;
   const bulkLikesAllowed = feedbackEnabled && likesAllowed;
+  // The client's per-photo hide/show button (issue 1992); guests get none.
+  const clientToggleVisibility = isClient ? onToggleVisibility : undefined;
   const allVisibleSelected = visiblePhotos.length > 0 && visiblePhotos.every((photo) => selected.has(photo.id));
 
   const handleToggleSelectionMode = useCallback(() => {
@@ -617,6 +621,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   selectedPhotos={selected}
                   onPhotoSelect={cardSelect}
                   likesAllowed={likesAllowed}
+                  onToggleVisibility={clientToggleVisibility}
                 />
               ) : naturalGrid ? (
                 <StoryJustifiedGrid
@@ -632,6 +637,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   selectedPhotos={selected}
                   onPhotoSelect={cardSelect}
                   likesAllowed={likesAllowed}
+                  onToggleVisibility={clientToggleVisibility}
                 />
               ) : (
                 <div id={`gallery-${scene.id}`} className="story-gallery-grid">
@@ -653,6 +659,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                       isSelected={selected.has(photo.id)}
                       onSelect={cardSelect}
                       likesAllowed={likesAllowed}
+                      onToggleVisibility={clientToggleVisibility}
                     />
                   ))}
                 </div>

@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Download, Maximize2, Play, Pause, Heart, Mes
 import { useTheme } from '../../../contexts/ThemeContext';
 import { AuthenticatedImage, Button } from '../../common';
 import { ColorLabelBadge } from '../ColorLabelBadge';
+import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import { useGalleryTileBadges } from '../GalleryTileBadges';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
@@ -22,7 +23,9 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   allowDownloads = true,
   feedbackEnabled = false,
   feedbackOptions,
-  onFeedbackChange
+  onFeedbackChange,
+  isClient = false,
+  onToggleVisibility,
 }) => {
   const { theme } = useTheme();
   const { currentPhoto, currentIndex, setCurrentIndex } = usePhotoSelection(photos);
@@ -109,7 +112,8 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
         <AuthenticatedImage
           src={currentPhoto.media_type === 'video' && currentPhoto.thumbnail_url ? currentPhoto.thumbnail_url : currentPhoto.url}
           alt={currentPhoto.filename}
-          className="w-full h-full object-contain"
+          // Dimmed when the client hid it from guests, as in Grid (issue 1992).
+          className={`w-full h-full object-contain${isClient && onToggleVisibility && isHiddenFromGuests(currentPhoto) ? ' opacity-40' : ''}`}
           isGallery={true}
         />
 
@@ -146,6 +150,11 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
         {/* Top Controls */}
         <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
+            {/* The client's hide/show button (issue 1992): first in the chip
+                row, the top-left of the photo in view, as in Grid. */}
+            {isClient && onToggleVisibility && (
+              <ClientVisibilityToggle photo={currentPhoto} onToggle={onToggleVisibility} className="" />
+            )}
             <span className="px-3 py-1 bg-black/50 text-white rounded-full text-sm">
               {currentIndex + 1} / {photos.length}
             </span>

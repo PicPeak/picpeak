@@ -3,6 +3,7 @@ import { motion, useInView } from 'framer-motion';
 import { Heart, Check } from 'lucide-react';
 import { ColorLabelBadge } from '../../ColorLabelBadge';
 import { FirstLookBadge } from '../../GalleryTileBadges';
+import { ClientVisibilityToggle, isHiddenFromGuests } from '../../ClientVisibilityToggle';
 import type { Photo } from '../../../../types';
 import { lightboxImageUrl } from '../../imageTiers';
 import { TileImage } from '../../TileImage';
@@ -30,6 +31,8 @@ interface StoryPhotoCardProps {
   onSelect?: (id: number) => void;
   /** Likes are a per-event sub-toggle (#506); the heart is not offered when they are off. */
   likesAllowed?: boolean;
+  /** The client's hide/show handler (issue 1992); set only for the client. */
+  onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
 }
 
 export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
@@ -45,6 +48,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   isSelected = false,
   onSelect,
   likesAllowed = true,
+  onToggleVisibility,
   galleryId: _galleryId
 }) => {
   // galleryId is kept for potential PhotoSwipe integration but not currently used
@@ -101,7 +105,8 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           }
         }}
         aria-pressed={isSelectionMode ? isSelected : undefined}
-        className="block w-full h-full"
+        // Dimmed when the client hid it from guests, as in Grid (issue 1992).
+        className={`block w-full h-full${onToggleVisibility && isHiddenFromGuests(photo) ? ' opacity-40' : ''}`}
       >
         {/* The placeholder keeps the card's box while the image is still
             out of range, so nothing reflows when it arrives. */}
@@ -173,6 +178,16 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
         >
           {isSelected && <Check size={14} strokeWidth={3} />}
         </button>
+      )}
+
+      {/* The client's hide/show button (issue 1992). The checkbox owns this
+          card's top-left corner, so the button sits just below it. */}
+      {onToggleVisibility && (
+        <ClientVisibilityToggle
+          photo={photo}
+          onToggle={onToggleVisibility}
+          className="absolute top-12 left-3 z-10"
+        />
       )}
 
       {/* Actions */}

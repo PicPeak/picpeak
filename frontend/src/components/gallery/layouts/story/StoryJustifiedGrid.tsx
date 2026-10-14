@@ -16,6 +16,8 @@ interface StoryJustifiedGridProps {
   selectedPhotos?: Set<number>;
   onPhotoSelect?: (id: number) => void;
   likesAllowed?: boolean;
+  /** The client's hide/show handler (issue 1992); set only for the client. */
+  onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
 }
 
 /**
@@ -48,6 +50,7 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
   selectedPhotos,
   onPhotoSelect,
   likesAllowed = true,
+  onToggleVisibility,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -124,6 +127,7 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
               isSelected={selectedPhotos?.has(photo.id) ?? false}
               onSelect={onPhotoSelect}
               likesAllowed={likesAllowed}
+              onToggleVisibility={onToggleVisibility}
             />
           </div>
         );

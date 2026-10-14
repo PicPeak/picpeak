@@ -1,9 +1,10 @@
 import React from 'react';
-import { MessageSquare, Star, Heart, Video, Eye, EyeOff } from 'lucide-react';
+import { MessageSquare, Star, Heart, Video } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { PhotoCard } from '../PhotoCard';
 import { firstLookAboveChips } from '../GalleryTileBadges';
+import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
@@ -249,7 +250,6 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   isClient = false,
   onToggleVisibility
 }) => {
-  const { t } = useTranslation();
   const { theme } = useTheme();
   const gallerySettings = theme.gallerySettings || {};
   const animation = gallerySettings.photoAnimation || 'fade';
@@ -272,7 +272,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   return (
     <div className={gridClass}>
       {photos.map((photo, index) => {
-        const isHidden = photo.visibility === 'hidden';
+        const isHidden = isHiddenFromGuests(photo);
         return (
           <div key={photo.id} className={`relative ${isClient && isHidden ? 'opacity-40' : ''}`}>
             <GridPhoto
@@ -310,28 +310,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
             />
             {/* Client visibility toggle overlay (#172) */}
             {isClient && onToggleVisibility && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleVisibility(photo.id, photo.visibility || 'visible');
-                }}
-                className={`absolute top-2 left-2 z-10 p-1.5 rounded-full shadow-md transition-colors ${
-                  isHidden
-                    ? 'bg-danger text-white hover:opacity-90'
-                    // On the photo: a fixed white chip, whatever the theme.
-                    : 'bg-white/90 text-neutral-700 hover:bg-white'
-                }`}
-                title={isHidden
-                  ? t('clientAccess.hiddenFromGuests', 'Hidden from guests')
-                  : t('clientAccess.visibleToGuests', 'Visible to guests')}
-                aria-label={isHidden
-                  ? t('clientAccess.hiddenFromGuests', 'Hidden from guests')
-                  : t('clientAccess.visibleToGuests', 'Visible to guests')}
-                aria-pressed={isHidden}
-              >
-                {isHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+              <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
             )}
           </div>
         );

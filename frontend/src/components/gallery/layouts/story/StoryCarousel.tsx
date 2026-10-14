@@ -22,6 +22,8 @@ interface StoryCarouselProps {
   selectedPhotos?: Set<number>;
   onPhotoSelect?: (id: number) => void;
   likesAllowed?: boolean;
+  /** The client's hide/show handler (issue 1992); set only for the client. */
+  onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
 }
 
 export const StoryCarousel: React.FC<StoryCarouselProps> = ({
@@ -38,6 +40,7 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
   selectedPhotos,
   onPhotoSelect,
   likesAllowed = true,
+  onToggleVisibility,
 }) => {
   return (
     <div id={id} className="story-carousel">
@@ -71,6 +74,7 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
                 isSelected={selectedPhotos?.has(photo.id) ?? false}
                 onSelect={onPhotoSelect}
                 likesAllowed={likesAllowed}
+                onToggleVisibility={onToggleVisibility}
               />
             </div>
           </SwiperSlide>
