@@ -333,30 +333,35 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     void likeWithIdentity([photoId], favorites.has(photoId), false);
   }, [favorites, likeWithIdentity]);
 
+  // The photos the grid shows, in its order: the search filter and the
+  // category scenes applied. The lightbox steps through these, not `photos`,
+  // or its arrows reach photos the search has hidden.
+  const visiblePhotos = useMemo(() => scenes.flatMap((scene) => scene.photos), [scenes]);
+
   const handleOpenLightbox = useCallback((photo: Photo) => {
-    const index = photos.findIndex(p => p.id === photo.id);
+    const index = visiblePhotos.findIndex(p => p.id === photo.id);
     setLightboxIndex(index >= 0 ? index : 0);
     onLightboxPhotoChange?.(photo.id, 'open');
-  }, [photos, onLightboxPhotoChange]);
+  }, [visiblePhotos, onLightboxPhotoChange]);
 
   // Link to a single photo (issue 1733): open on the photo the URL asks for,
-  // close on null. Only against `photos`; an id not in it opens nothing.
+  // close on null. Only against the visible photos; an id not in them opens
+  // nothing.
   useEffect(() => {
     if (openPhotoId === undefined) return;
     if (openPhotoId === null) {
       setLightboxIndex(null);
       return;
     }
-    const index = photos.findIndex((photo) => photo.id === openPhotoId);
+    const index = visiblePhotos.findIndex((photo) => photo.id === openPhotoId);
     if (index >= 0) setLightboxIndex(index);
-  }, [openPhotoId, photos]);
+  }, [openPhotoId, visiblePhotos]);
 
   const downloadQuota = useDownloadQuota();
 
   // Selection mode (issue 1716). The container owns the mode and the set;
   // this layout only renders the controls and asks for changes.
   const selected = selectedPhotos ?? EMPTY_SELECTION;
-  const visiblePhotos = useMemo(() => scenes.flatMap((scene) => scene.photos), [scenes]);
   const selectedPhotoList = useMemo(
     () => photos.filter((photo) => selected.has(photo.id)),
     [photos, selected]
@@ -778,7 +783,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           per-card affordance. */}
       {lightboxIndex !== null && (
         <PhotoLightbox
-          photos={photos}
+          photos={visiblePhotos}
           initialIndex={lightboxIndex}
           onClose={() => {
             setLightboxIndex(null);
