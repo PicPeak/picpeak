@@ -2,7 +2,9 @@
  * Issue 1992: in Client Access Mode the per-photo hide/show (eye) button was
  * rendered by Grid only. Every tile layout must offer it, show the hidden
  * state (crossed-out eye, dimmed photo), and keep the click away from the
- * tile underneath, which would open the lightbox.
+ * tile underneath, which would open the lightbox. Only the image is dimmed,
+ * so the eye stays at full strength, and the colour-label dot steps right of
+ * the eye instead of sitting under it.
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -29,7 +31,9 @@ vi.mock('../../../common', () => ({
 }));
 vi.mock('../../../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme }) }));
 vi.mock('../../../../contexts/GuestIdentityContext', () => ({ useGuestIdentityOptional: () => null }));
-vi.mock('../../../../services/feedback.service', () => ({
+vi.mock('../../../../services/feedback.service', async (importOriginal) => ({
+  // The real swatches: the colour-label dot renders from them.
+  ...(await importOriginal<typeof import('../../../../services/feedback.service')>()),
   feedbackService: { submitFeedback: vi.fn(), getPhotoFeedback: vi.fn() },
 }));
 vi.mock('../../../../hooks/useLocalizedDate', async (importOriginal) => ({
@@ -104,22 +108,33 @@ type LayoutCase = {
   name: string;
   Layout: React.FC<never>;
   settings?: Record<string, unknown>;
-  /** How the hidden photo is dimmed: on its own image, or on Grid's tile wrapper. */
-  dims: 'image' | 'tile';
 };
 
 const cases: LayoutCase[] = [
-  { name: 'Grid', Layout: GridGalleryLayout as React.FC<never>, dims: 'tile' },
-  { name: 'Masonry columns', Layout: MasonryGalleryLayout as React.FC<never>, settings: { masonryMode: 'columns' }, dims: 'image' },
-  { name: 'Masonry rows', Layout: MasonryGalleryLayout as React.FC<never>, settings: { masonryMode: 'rows' }, dims: 'image' },
-  { name: 'Masonry justified', Layout: MasonryGalleryLayout as React.FC<never>, settings: { masonryMode: 'justified' }, dims: 'image' },
-  { name: 'Masonry flickr', Layout: MasonryGalleryLayout as React.FC<never>, settings: { masonryMode: 'flickr' }, dims: 'image' },
-  { name: 'Masonry quilted', Layout: MasonryGalleryLayout as React.FC<never>, settings: { masonryMode: 'quilted' }, dims: 'image' },
-  { name: 'Mosaic', Layout: MosaicGalleryLayout as React.FC<never>, dims: 'image' },
-  { name: 'Timeline', Layout: TimelineGalleryLayout as React.FC<never>, dims: 'image' },
+  { name: 'Grid', Layout: GridGalleryLayout as React.FC<never> },
+  { name: 'Masonry columns', Layout: MasonryGalleryLayout as React.FC<never>, settings: { masonryMode: 'columns' } },
+  { name: 'Masonry rows', Layout: MasonryGalleryLayout as React.FC<never>, settings: { masonryMode: 'rows' } },
+  { name: 'Masonry justified', Layout: MasonryGalleryLayout as React.FC<never>, settings: { masonryMode: 'justified' } },
+  { name: 'Masonry flickr', Layout: MasonryGalleryLayout as React.FC<never>, settings: { masonryMode: 'flickr' } },
+  { name: 'Masonry quilted', Layout: MasonryGalleryLayout as React.FC<never>, settings: { masonryMode: 'quilted' } },
+  { name: 'Mosaic', Layout: MosaicGalleryLayout as React.FC<never> },
+  { name: 'Timeline', Layout: TimelineGalleryLayout as React.FC<never> },
 ];
 
-describe.each(cases)('$name: client visibility toggle (issue 1992)', ({ Layout, settings, dims }) => {
+const hasClass = (el: Element, cls: string) => el.className.split(/\s+/).includes(cls);
+const dimmedAncestors = (el: HTMLElement) => {
+  const found: HTMLElement[] = [];
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    if (hasClass(node, 'opacity-40')) found.push(node);
+  }
+  return found;
+};
+const labelled = photos.map((p) => ({ ...p, my_color_label: 'red' }));
+const dotOf = (container: HTMLElement, id: number) =>
+  container.querySelector(`[data-testid="client-visibility-toggle-${id}"]`)
+    ?.closest('div.flex')?.querySelector('[aria-label^="Marked as"]') as HTMLElement | null;
+
+describe.each(cases)('$name: client visibility toggle (issue 1992)', ({ Layout, settings }) => {
   beforeEach(() => {
     theme.gallerySettings = settings ?? {};
   });
@@ -134,19 +149,39 @@ describe.each(cases)('$name: client visibility toggle (issue 1992)', ({ Layout, 
     expect(visible).toHaveAttribute('aria-pressed', 'false');
     expect(hidden).toHaveAttribute('aria-label', 'Hidden from guests');
     expect(hidden).toHaveAttribute('aria-pressed', 'true');
-    // Same top-left corner as Grid; the selection checkbox owns top-right.
-    expect(visible.className).toContain('top-2 left-2');
+    // Top-left corner row, as in Grid; the selection checkbox owns top-right.
+    expect(visible.parentElement!.className).toContain('absolute top-2 left-2');
   });
 
-  it('dims the hidden photo only', () => {
+  it('dims the image of the hidden photo only, never the eye', () => {
     mount(<Layout {...baseProps({ isClient: true, onToggleVisibility: vi.fn() })} />);
-    const dimmed = (id: number) => {
-      const img = screen.getByAltText(`IMG_${id}.jpg`);
-      const el = dims === 'tile' ? screen.getByTestId(`client-visibility-toggle-${id}`).parentElement! : img;
-      return el.className.split(/\s+/).includes('opacity-40');
-    };
-    expect(dimmed(2)).toBe(true);
-    expect(dimmed(1)).toBe(false);
+    expect(hasClass(screen.getByAltText('IMG_2.jpg'), 'opacity-40')).toBe(true);
+    expect(hasClass(screen.getByAltText('IMG_1.jpg'), 'opacity-40')).toBe(false);
+    // Grid used to dim the whole tile, the eye with it.
+    expect(dimmedAncestors(screen.getByTestId('client-visibility-toggle-2'))).toEqual([]);
+  });
+
+  it('puts the colour-label dot right of the eye, in its row', () => {
+    const { container } = mount(<Layout {...baseProps({
+      photos: labelled, isClient: true, onToggleVisibility: vi.fn(),
+    })} />);
+    const toggle = screen.getByTestId('client-visibility-toggle-1');
+    const dot = dotOf(container, 1)!;
+    expect(dot).not.toBeNull();
+    const dotRow = dot.parentElement!;
+    // The dot row is in the toggle's row, after it, and not positioned itself.
+    expect(dotRow.parentElement).toBe(toggle.parentElement);
+    expect(toggle.compareDocumentPosition(dotRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(hasClass(dotRow, 'absolute')).toBe(false);
+    // The tile's colour ring still renders.
+    expect(container.querySelectorAll('span.absolute.inset-0[aria-hidden="true"]').length).toBe(labelled.length);
+  });
+
+  it('leaves the dot in the corner when there is no toggle', () => {
+    const { container } = mount(<Layout {...baseProps({ photos: labelled, isClient: false })} />);
+    const dots = container.querySelectorAll('[aria-label^="Marked as"]');
+    expect(dots.length).toBe(labelled.length);
+    dots.forEach((dot) => expect(dot.parentElement!.className).toContain('absolute top-2 left-2'));
   });
 
   it('toggles without opening the photo', () => {
@@ -169,16 +204,36 @@ describe.each(cases)('$name: client visibility toggle (issue 1992)', ({ Layout, 
   });
 });
 
-describe('Masonry: count chips step aside for the toggle', () => {
-  it('moves the top-left feedback counts right of the eye', () => {
-    theme.gallerySettings = { masonryMode: 'columns' };
-    const withCounts = photos.map((p) => ({ ...p, comment_count: 2 }));
+describe.each(['columns', 'rows', 'flickr', 'quilted'])('Masonry %s: count chips share the eye row', (masonryMode) => {
+  const withCounts = labelled.map((p) => ({ ...p, comment_count: 2 }));
+  const chipsOf = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('svg.lucide-message-square'), (icon) => icon.closest('div.rounded-full')!.parentElement as HTMLElement);
+
+  beforeEach(() => {
+    theme.gallerySettings = { masonryMode };
+  });
+
+  it('lines up eye, dot and counts in one row, in that order', () => {
     const { container } = mount(<MasonryGalleryLayout {...baseProps({
       photos: withCounts, feedbackEnabled: true, isClient: true, onToggleVisibility: vi.fn(),
     })} />);
-    const chips = container.querySelectorAll('div.absolute.top-2.flex.gap-1');
+    const chips = chipsOf(container);
     expect(chips.length).toBe(2);
-    chips.forEach((chip) => expect(chip.className).toContain('left-11'));
+    chips.forEach((chip) => expect(hasClass(chip, 'absolute')).toBe(false));
+    const toggle = screen.getByTestId('client-visibility-toggle-1');
+    const row = toggle.parentElement!;
+    const dotRow = dotOf(container, 1)!.parentElement!;
+    const chipRow = chips.find((chip) => chip.parentElement === row)!;
+    expect(Array.from(row.children)).toEqual([toggle, dotRow, chipRow]);
+  });
+
+  it('keeps the counts in the corner for a guest', () => {
+    const { container } = mount(<MasonryGalleryLayout {...baseProps({
+      photos: withCounts, feedbackEnabled: true, isClient: false,
+    })} />);
+    const chips = chipsOf(container);
+    expect(chips.length).toBe(2);
+    chips.forEach((chip) => expect(chip.className).toContain('absolute top-2 left-2'));
   });
 });
 

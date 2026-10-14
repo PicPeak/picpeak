@@ -153,7 +153,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
             {/* The client's hide/show button (issue 1992): first in the chip
                 row, the top-left of the photo in view, as in Grid. */}
             {isClient && onToggleVisibility && (
-              <ClientVisibilityToggle photo={currentPhoto} onToggle={onToggleVisibility} className="" />
+              <ClientVisibilityToggle photo={currentPhoto} onToggle={onToggleVisibility} />
             )}
             <span className="px-3 py-1 bg-black/50 text-white rounded-full text-sm">
               {currentIndex + 1} / {photos.length}

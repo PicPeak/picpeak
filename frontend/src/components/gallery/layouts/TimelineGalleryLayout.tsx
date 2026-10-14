@@ -186,6 +186,9 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     }}
                     likeBeforeComment
                     checkboxTestId
+                    topLeftControl={isClient && onToggleVisibility
+                      ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
+                      : undefined}
                     beforeOverlay={
                       <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded">
                         {fmtTime(photo.uploaded_at)}
@@ -198,11 +201,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                         </span>
                       </div>
                     ) : undefined}
-                  >
-                    {isClient && onToggleVisibility && (
-                      <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
-                    )}
-                  </PhotoCard>
+                  />
                 );
               })}
             </div>

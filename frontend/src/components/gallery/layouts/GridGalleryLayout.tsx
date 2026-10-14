@@ -38,6 +38,10 @@ interface GridPhotoProps {
   // Immediate UI like state and callback
   liked?: boolean;
   onLikeSuccess?: () => void;
+  /** The client's hide/show button (#172), when the viewer is the client. */
+  visibilityToggle?: React.ReactNode;
+  /** Dim the photo: the client hid it from guests. */
+  dimmed?: boolean;
 }
 
 const GridPhoto: React.FC<GridPhotoProps> = ({
@@ -58,7 +62,9 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
   onQuickComment,
   onFeedbackChange,
   liked = false,
-  onLikeSuccess
+  onLikeSuccess,
+  visibilityToggle,
+  dimmed = false,
 }) => {
   const bands = useLazyBands();
   const { t } = useTranslation();
@@ -149,7 +155,9 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
       imageProps={{
         src: photo.thumbnail_url || photo.url,
         alt: photo.filename,
-        className: 'w-full h-full object-cover rounded-lg',
+        // The image only, not the tile, so the toggle and the chips stay at
+        // full strength (issue 1992).
+        className: `w-full h-full object-cover rounded-lg${dimmed ? ' opacity-40' : ''}`,
         loading: 'lazy',
         isGallery: true,
         slug,
@@ -170,6 +178,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
       onRequireIdentity={onRequireIdentity}
       onIdentitySaved={onIdentitySaved}
       checkboxTestId
+      topLeftControl={visibilityToggle}
     >
       {/* Feedback Indicators (always visible, bottom-left). Show like immediately when user liked */}
       {(commentCount > 0 || averageRating > 0 || likeCount > 0 || liked) && (
@@ -272,9 +281,8 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   return (
     <div className={gridClass}>
       {photos.map((photo, index) => {
-        const isHidden = isHiddenFromGuests(photo);
         return (
-          <div key={photo.id} className={`relative ${isClient && isHidden ? 'opacity-40' : ''}`}>
+          <div key={photo.id} className="relative">
             <GridPhoto
               photo={photo}
               isSelected={selectedPhotos.has(photo.id)}
@@ -307,11 +315,12 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                   return next;
                 });
               }}
+              // Client visibility toggle (#172) and the dimmed hidden photo.
+              visibilityToggle={isClient && onToggleVisibility
+                ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
+                : undefined}
+              dimmed={isClient && Boolean(onToggleVisibility) && isHiddenFromGuests(photo)}
             />
-            {/* Client visibility toggle overlay (#172) */}
-            {isClient && onToggleVisibility && (
-              <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
-            )}
           </div>
         );
       })}

@@ -46,7 +46,7 @@ const photos = [
   { id: 1, visibility: 'visible' },
   { id: 2, visibility: 'hidden' },
 ].map(({ id, visibility }) => ({
-  id, visibility, filename: `photo-${id}.jpg`, original_filename: `original-${id}.jpg`,
+  id, visibility, my_color_label: 'red', filename: `photo-${id}.jpg`, original_filename: `original-${id}.jpg`,
   url: `/api/gallery/demo/photo/${id}`, thumbnail_url: `/api/gallery/demo/thumbnail/${id}`,
   width: 6000, height: 4000, type: 'individual', size: 1, uploaded_at: '2026-01-01T00:00:00Z',
 })) as Photo[];
@@ -72,6 +72,14 @@ describe('Gallery Premium — client visibility toggle (issue 1992)', () => {
       screen.getByTestId(`photo-card-${id}`).querySelector('img') as HTMLElement;
     expect(tileImage(2).className).toContain('opacity-40');
     expect(tileImage(1).className).not.toContain('opacity-40');
+    // Only the image: the eye stays at full strength.
+    for (let node = hidden.parentElement; node; node = node.parentElement) {
+      expect(node.className).not.toContain('opacity-40');
+    }
+    // The eye sits below the checkbox, clear of the colour-label dot, so the
+    // dot keeps its corner.
+    const dot = screen.getByTestId('photo-card-2').querySelector('[aria-label^="Marked as"]') as HTMLElement;
+    expect(dot.parentElement!.className).toContain('absolute top-2 left-2');
   });
 
   it('toggles without opening the lightbox', () => {

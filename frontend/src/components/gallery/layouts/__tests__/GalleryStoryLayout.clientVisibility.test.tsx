@@ -77,7 +77,9 @@ vi.mock('../../../../utils/downloadLimit', () => ({
   isDownloadLimitError: () => false,
   showDownloadLimitReached: vi.fn(),
 }));
-vi.mock('../../../../services/feedback.service', () => ({
+vi.mock('../../../../services/feedback.service', async (importOriginal) => ({
+  // The real swatches: the colour-label dot renders from them.
+  ...(await importOriginal<typeof import('../../../../services/feedback.service')>()),
   feedbackService: { submitFeedback: mocks.submitFeedback },
 }));
 vi.mock('../../../../services/gallery.service', () => ({
@@ -106,7 +108,7 @@ const photo = (id: number, extra: Partial<Photo>): Photo => ({
 
 // Two categories: the first scene is a grid, the second a carousel.
 const photos = [
-  photo(1, { category_name: 'Ceremony', visibility: 'visible' }),
+  photo(1, { category_name: 'Ceremony', visibility: 'visible', my_color_label: 'red' }),
   photo(2, { category_name: 'Ceremony', visibility: 'hidden' }),
   photo(3, { category_name: 'Party', visibility: 'hidden' }),
 ];
@@ -144,6 +146,13 @@ describe.each(['fixed', 'natural'] as const)('GalleryStoryLayout (%s grid): clie
     expect(cardLink(container, 2).className).toContain('opacity-40');
     expect(cardLink(container, 3).className).toContain('opacity-40');
     expect(cardLink(container, 1).className).not.toContain('opacity-40');
+    // The dim is on the card's link, which holds the image only: the eye
+    // sits outside it, at full strength.
+    expect(cardLink(container, 2).contains(screen.getByTestId('client-visibility-toggle-2'))).toBe(false);
+    // The eye sits below the checkbox, clear of the colour-label dot, so the
+    // dot keeps its corner.
+    const dot = container.querySelector('[aria-label^="Marked as"]') as HTMLElement;
+    expect(dot.parentElement!.className).toContain('absolute top-2 left-2');
   });
 
   it('toggles without opening the photo', () => {

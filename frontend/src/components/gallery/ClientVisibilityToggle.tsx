@@ -10,7 +10,10 @@ export const isHiddenFromGuests = (photo: Pick<Photo, 'visibility'>): boolean =>
 interface ClientVisibilityToggleProps {
   photo: Pick<Photo, 'id' | 'visibility'>;
   onToggle: (photoId: number, currentVisibility: string) => void;
-  /** Positioning inside the tile. Defaults to Grid's top-left corner. */
+  /**
+   * Positioning inside the card. None by default: the tile layouts place it
+   * in PhotoCard's top-left row, the Carousel in its chip row.
+   */
   className?: string;
 }
 
@@ -22,7 +25,7 @@ interface ClientVisibilityToggleProps {
 export const ClientVisibilityToggle: React.FC<ClientVisibilityToggleProps> = ({
   photo,
   onToggle,
-  className = 'absolute top-2 left-2 z-10',
+  className = '',
 }) => {
   const { t } = useTranslation();
   const isHidden = isHiddenFromGuests(photo);
@@ -39,7 +42,7 @@ export const ClientVisibilityToggle: React.FC<ClientVisibilityToggleProps> = ({
         e.stopPropagation();
         onToggle(photo.id, photo.visibility || 'visible');
       }}
-      className={`${className} p-1.5 rounded-full shadow-md transition-colors ${
+      className={`${className ? `${className} ` : ''}p-1.5 rounded-full shadow-md transition-colors ${
         isHidden
           ? 'bg-danger text-white hover:opacity-90'
           // On the photo: a fixed white chip, whatever the theme.

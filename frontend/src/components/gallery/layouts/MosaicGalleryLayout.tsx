@@ -136,6 +136,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
         }}
         likeBeforeComment
         checkboxTestId
+        topLeftControl={visibilityToggle}
         afterOverlay={((photo.like_count ?? 0) > 0 || likedLocal) ? (
           <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 z-10`}>
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
@@ -151,7 +152,6 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
             </span>
           </div>
         )}
-        {visibilityToggle}
       </PhotoCard>
       <FeedbackIdentityModal
         isOpen={showIdentityModal}
