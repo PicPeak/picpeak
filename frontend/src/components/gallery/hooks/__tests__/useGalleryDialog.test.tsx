@@ -53,6 +53,19 @@ describe('useGalleryDialog', () => {
     document.removeEventListener('keydown', lightboxKeys);
   });
 
+  it('leaves Escape that cancels an IME composition to the field', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByText('Open'));
+    // Chrome and Firefox: still composing. Safari: composition already
+    // ended, only the 229 keyCode is left.
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape', isComposing: true });
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape', keyCode: 229 });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    // A plain Escape afterwards still closes it.
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('ignores Escape when the dialog must be answered', () => {
     render(<Harness dismissible={false} />);
     fireEvent.click(screen.getByText('Open'));

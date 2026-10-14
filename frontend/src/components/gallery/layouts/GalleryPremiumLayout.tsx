@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { GalleryEmptyMessage } from '../GalleryEmptyMessage';
+import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { createPortal } from 'react-dom';
 import { MasonryPhotoAlbum } from 'react-photo-album';
 import 'react-photo-album/masonry.css';
@@ -13,16 +13,17 @@ import 'yet-another-react-lightbox/styles.css';
 import 'yet-another-react-lightbox/plugins/thumbnails.css';
 import { ColorLabelBadge } from '../ColorLabelBadge';
 import { FirstLookBadge } from '../GalleryTileBadges';
+import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut } from 'lucide-react';
+import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut, Upload, ClipboardList } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { parseISO } from 'date-fns';
 import { useInView } from 'react-intersection-observer';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
-import { PoweredBy } from '../../common';
+import { Button, PoweredBy } from '../../common';
 import { thumbnailUrlForTile } from '../imageTiers';
 import { TileImage } from '../TileImage';
 import { feedbackService } from '../../../services/feedback.service';
@@ -30,8 +31,9 @@ import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
 import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { useInputMode } from '../../../hooks/useInputMode';
+import { holdLike, likedFromPayload, markLikeSaved, type LikeHolds } from './optimisticLikes';
 import { FeedbackIdentityModal } from '../FeedbackIdentityModal';
-import { galleryService } from '../../../services/gallery.service';
+import { galleryService, splitIntoArchives } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
 import { useDownloadPhoto } from '../../../hooks/useGallery';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
@@ -65,6 +67,8 @@ interface PhotoCardProps {
   // an event can have feedback on but likes specifically disabled.
   allowLikes?: boolean;
   index: number;
+  /** The client's hide/show handler (issue 1992); set only for the client. */
+  onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
 }
 
 const PhotoCard: React.FC<PhotoCardProps> = ({
@@ -80,7 +84,8 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   slug,
   feedbackEnabled = false,
   allowLikes = false,
-  index
+  index,
+  onToggleVisibility,
 }) => {
   // The height MasonryPhotoAlbum computed from photos.width/height is used,
   // not discarded (#1130). Letting the tile size itself from the image meant
@@ -130,17 +135,22 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         // finally apply and object-fit: cover crops a square rendition INTO
         // the correctly-shaped tile, rather than the rendition dictating the
         // tile's shape.
-        className="w-full h-full object-cover"
+        // Dimmed when the client hid it from guests, as in Grid (issue 1992).
+        // Important: `.gallery-premium-photo-card.selected img` sets its own
+        // opacity and would otherwise undim a hidden photo once selected.
+        className={`w-full h-full object-cover${onToggleVisibility && isHiddenFromGuests(photo) ? ' !opacity-40' : ''}`}
         loading="lazy"
         isGallery={true}
         slug={slug}
       />
 
-      {/* Colour label (#1044) — same badge every layout uses. */}
+      {/* Colour label (#1044) — same badge every layout uses. For the client
+          the dots move into the visibility toggle's row below. */}
       <ColorLabelBadge
         colorLabel={photo.my_color_label}
         otherColorLabels={photo.other_color_labels}
         decision={photo.my_decision}
+        part={onToggleVisibility ? 'ring' : undefined}
       />
 
       {/* Overlay Gradient */}
@@ -165,6 +175,22 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
       >
         {isSelected && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
       </button>
+
+      {/* The client's hide/show button (issue 1992), with the colour-label
+          dots beside it. The checkbox owns this card's top-left corner, so the
+          row sits right of it at the checkbox's height: a short panoramic tile
+          clipped anything placed below the checkbox. */}
+      {onToggleVisibility && (
+        <div className="absolute top-2 left-14 z-10 flex items-center gap-1.5">
+          <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
+          <ColorLabelBadge
+            colorLabel={photo.my_color_label}
+            otherColorLabels={photo.other_color_labels}
+            decision={photo.my_decision}
+            part="dots"
+          />
+        </div>
+      )}
 
       {/* Like Button — #506: only when feedback master is on AND the
           per-event "allow likes" sub-toggle is on. */}
@@ -229,6 +255,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   onPhotoSelect,
   onSelectAll,
   onDeselectAll,
+  onSelectMany,
+  onToggleSelectionMode,
+  selectionQuotaPhotos,
+  onDownloadEverything,
   eventName,
   eventDate,
   allowDownloads = true,
@@ -241,9 +271,16 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   feedbackOptions,
   heroPhotoOverride,
   onLogout,
+  onUploadClick,
+  onCopyFilenames,
+  copyFilenamesCount = 0,
   showOriginalFilename = false,
   openPhotoId,
   onLightboxPhotoChange,
+  isClient = false,
+  onToggleVisibility,
+  likedOnly = false,
+  onToggleLikedOnly,
 }) => {
   // These props are passed by parent but we use our own lightbox, so mark as intentionally unused
   void _onPhotoClick;
@@ -265,13 +302,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }, []);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
-  // Seed from server is_liked on first non-empty payload (#590 follow-up).
-  // Mount-only so refetches don't clobber in-session optimistic toggles.
-  const likedSeededRef = useRef(false);
+  // Per-viewer is_liked is the server's truth (#590 follow-up). Seeding it
+  // once on mount left the nav count behind every later refetch, so the set
+  // follows each payload, and a like the viewer just toggled holds its state
+  // until a payload confirms it (optimisticLikes.ts).
+  const pendingLikesRef = useRef<LikeHolds>(new Map());
   useEffect(() => {
-    if (likedSeededRef.current || photos.length === 0) return;
-    setLikedPhotoIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    likedSeededRef.current = true;
+    setLikedPhotoIds(likedFromPayload(photos, pendingLikesRef.current));
   }, [photos]);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   // Emoji reactions (#839) inside the premium lightbox. This layout uses
@@ -438,12 +475,28 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }, [filteredPhotos, allowDownloads, showOriginalFilename, imageDimensions, t]);
   const showCaptions = showOriginalFilename || slides.some((slide) => !!slide.description);
 
-  const toggleLiked = (photoId: number) => setLikedPhotoIds(prev => {
+  // Toggle — server /feedback like is a toggle (#590) — and remember the
+  // state asked for until a payload confirms it.
+  const toggleLikedOptimistically = (photoId: number) => setLikedPhotoIds(prev => {
     const next = new Set(prev);
-    if (next.has(photoId)) next.delete(photoId);
-    else next.add(photoId);
+    const liked = !next.has(photoId);
+    if (liked) next.add(photoId);
+    else next.delete(photoId);
+    holdLike(pendingLikesRef.current, photoId, liked);
     return next;
   });
+  // Saved: start the window in which the row refresh should confirm it.
+  const likeSaved = useCallback((photoId: number) => markLikeSaved(pendingLikesRef.current, photoId), []);
+  // Refused: the heart goes back and nothing is awaited.
+  const rollBackLike = useCallback((photoId: number) => {
+    pendingLikesRef.current.delete(photoId);
+    setLikedPhotoIds(prev => {
+      const next = new Set(prev);
+      if (next.has(photoId)) next.delete(photoId);
+      else next.add(photoId);
+      return next;
+    });
+  }, []);
 
   const handleLike = useCallback(async (photo: Photo, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -455,21 +508,19 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         return;
       }
       // Toggle — server /feedback like is a toggle (#590).
-      setLikedPhotoIds(prev => {
-        const next = new Set(prev);
-        if (next.has(photo.id)) next.delete(photo.id);
-        else next.add(photo.id);
-        return next;
-      });
+      toggleLikedOptimistically(photo.id);
       try {
         await feedbackService.submitFeedback(slug, String(photo.id), {
           feedback_type: 'like',
         });
+        likeSaved(photo.id);
         onFeedbackChange?.(photo.id);
       } catch (err) {
-        // Refused by a finished selection (issue 1733): the heart goes back.
-        if (feedbackLockKind(err)) toggleLiked(photo.id);
-        else console.warn('Like submit failed', err);
+        // Refused (a finished selection, issue 1733, or the like limit): the
+        // heart goes back, so the nav count matches what the Liked filter,
+        // which reads the server's is_liked, will show.
+        rollBackLike(photo.id);
+        if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
       }
       return;
     }
@@ -481,12 +532,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }
 
     // Optimistic update — toggle, not add (#590).
-    setLikedPhotoIds(prev => {
-      const next = new Set(prev);
-      if (next.has(photo.id)) next.delete(photo.id);
-      else next.add(photo.id);
-      return next;
-    });
+    toggleLikedOptimistically(photo.id);
 
     try {
       await feedbackService.submitFeedback(slug, String(photo.id), {
@@ -494,12 +540,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         guest_name: savedIdentity?.name,
         guest_email: savedIdentity?.email,
       });
+      likeSaved(photo.id);
       onFeedbackChange?.(photo.id);
     } catch (err) {
-      if (feedbackLockKind(err)) toggleLiked(photo.id);
-      else console.warn('Like submit failed', err);
+      rollBackLike(photo.id);
+      if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
     }
-  }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity]);
+  }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity, rollBackLike, likeSaved]);
 
   const handleIdentitySubmit = useCallback(async (name: string, email: string) => {
     setSavedIdentity({ name, email });
@@ -510,12 +557,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       // modal only fires the first time per session, so the user is
       // intentionally liking a not-yet-liked photo here, but keep the
       // setter shape consistent with the other paths.
-      setLikedPhotoIds(prev => {
-        const next = new Set(prev);
-        if (next.has(pendingLikePhotoId)) next.delete(pendingLikePhotoId);
-        else next.add(pendingLikePhotoId);
-        return next;
-      });
+      toggleLikedOptimistically(pendingLikePhotoId);
 
       try {
         await feedbackService.submitFeedback(slug, String(pendingLikePhotoId), {
@@ -523,28 +565,37 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           guest_name: name,
           guest_email: email,
         });
+        likeSaved(pendingLikePhotoId);
         onFeedbackChange?.(pendingLikePhotoId);
       } catch (err) {
-        if (feedbackLockKind(err)) toggleLiked(pendingLikePhotoId);
-        else console.warn('Like submit failed', err);
+        rollBackLike(pendingLikePhotoId);
+        if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
       }
       setPendingLikePhotoId(null);
     }
-  }, [slug, pendingLikePhotoId, onFeedbackChange]);
+  }, [slug, pendingLikePhotoId, onFeedbackChange, rollBackLike, likeSaved]);
 
+  // Every photo on screen is selected — by id: equal sizes can be a
+  // different set (a selection made under another category chip).
+  const allSelected = filteredPhotos.length > 0 && filteredPhotos.every((photo) => selectedPhotos.has(photo.id));
+  // Select all covers the photos on screen, not those under other category
+  // chips (as Gallery Story's does, issue 1716).
   const handleSelectAll = useCallback(() => {
-    if (selectedPhotos.size === filteredPhotos.length) {
+    if (allSelected) {
       onDeselectAll?.();
+    } else if (onSelectMany) {
+      onSelectMany(filteredPhotos.map((photo) => photo.id));
     } else {
       onSelectAll?.();
     }
-  }, [selectedPhotos, filteredPhotos, onSelectAll, onDeselectAll]);
+  }, [allSelected, filteredPhotos, onSelectMany, onSelectAll, onDeselectAll]);
 
   // Download limit (issue 1560).
   const downloadQuota = useDownloadQuota();
+  // The whole selection, photos a search hides included: they are sent too.
   const selectedPhotoList = useMemo(
-    () => photos.filter((photo) => selectedPhotos.has(photo.id)),
-    [photos, selectedPhotos]
+    () => selectionQuotaPhotos ?? photos.filter((photo) => selectedPhotos.has(photo.id)),
+    [selectionQuotaPhotos, photos, selectedPhotos]
   );
   const selectionOverQuota = !downloadQuota.allows(selectedPhotoList);
 
@@ -567,8 +618,54 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
+      return;
     }
-  }, [selectedPhotos, slug, t, downloadChoices, onPickResolution, selectionOverQuota, downloadQuota.remaining]);
+    // Downloaded: clear the selection and leave selection mode, as the grid
+    // toolbar does. A failure keeps it to retry or trim.
+    onDeselectAll?.();
+    if (isSelectionMode) onToggleSelectionMode?.();
+  }, [selectedPhotos, slug, t, downloadChoices, onPickResolution, selectionOverQuota, downloadQuota.remaining, onDeselectAll, isSelectionMode, onToggleSelectionMode]);
+
+  // Same path as Gallery Story's Download All: the whole-gallery download
+  // when the container offers it (#1160), else the ids in scope. That
+  // fallback only runs when a category opts out of downloads (#640), so it
+  // leaves those photos out, as the server would.
+  const downloadablePhotos = useMemo(
+    () => photos.filter((photo) => photo.category_allow_downloads !== false),
+    [photos]
+  );
+  const handleDownloadAll = useCallback(async () => {
+    if (onDownloadEverything) {
+      onDownloadEverything();
+      return;
+    }
+    const ids = downloadablePhotos.map(p => p.id);
+    if (ids.length === 0) return;
+    // Download limit (issue 1560): all or nothing, so refuse before asking.
+    if (!downloadQuota.allows(downloadablePhotos)) {
+      showDownloadLimitReached({ remaining: downloadQuota.remaining ?? 0 });
+      return;
+    }
+    // One archive takes at most SELECTED_DOWNLOAD_LIMIT ids, so a larger set
+    // goes as several zips rather than being cut short.
+    const parts = splitIntoArchives(ids).length;
+    // #858: hand off to the resolution picker when the gallery offers a choice.
+    // The picker builds one archive, so past the cap it is skipped and the
+    // parts come at the gallery's standard size.
+    if (parts === 1 && downloadChoices && downloadChoices.length > 1 && onPickResolution) {
+      onPickResolution(ids);
+      return;
+    }
+    toast.info(parts > 1
+      ? t('gallery.downloadingInParts', { count: ids.length, parts })
+      : t('gallery.downloading', { count: ids.length }));
+    try {
+      await galleryService.downloadPhotosInParts(slug, ids);
+      analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
+    } catch (error) {
+      if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
+    }
+  }, [downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
 
   const handleDownloadFromLightbox = useCallback((slide: { src?: string; photoId?: number }) => {
     if (!allowDownloads || !slide.src) return;
@@ -601,6 +698,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     month: 'long',
     day: '2-digit'
   }) : null;
+  const uploadLabel = t('upload.uploadPhotos', 'Upload Photos');
 
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
@@ -608,7 +706,37 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
-        <GalleryEmptyMessage filtered={emptyIsFiltered} />
+        {likedOnly
+          ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
+          : <GalleryEmptyMessage filtered={emptyIsFiltered} />}
+        {/* No nav in this branch, and an upload-only gallery starts empty:
+            the guest still needs a way to add the first photos. */}
+        {onUploadClick && (
+          <Button
+            variant="primary"
+            className="mt-4"
+            leftIcon={<Upload className="w-4 h-4" />}
+            onClick={onUploadClick}
+            data-gallery-focus="upload"
+          >
+            {uploadLabel}
+          </Button>
+        )}
+        {/* Event-wide like the nav button (issue 1733, A3d): a filter that
+            leaves nothing on screen must not take the favourites' list with it. */}
+        {onCopyFilenames && copyFilenamesCount > 0 && (
+          <div className="mt-4 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<ClipboardList className="w-4 h-4" />}
+              onClick={onCopyFilenames}
+              className="text-xs sm:text-sm"
+            >
+              {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
@@ -683,7 +811,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                     className="gallery-premium-selection-btn"
                     onClick={handleSelectAll}
                   >
-                    {selectedPhotos.size === filteredPhotos.length ? t('gallery.deselectAll') : t('gallery.selectAll')}
+                    {allSelected ? t('gallery.deselectAll') : t('gallery.selectAll')}
                   </button>
                   <button
                     className="gallery-premium-download-btn"
@@ -705,22 +833,50 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
               )}
             </AnimatePresence>
 
-            {feedbackEnabled && feedbackOptions?.allowLikes && (
-              <button className="gallery-premium-nav-btn" title={t('gallery.favorites', 'Favorites')}>
-                <Heart className="w-4 h-4" />
+            {/* Guest upload: this layout has no gallery header, which is where
+                every other layout offers it. Hidden while the selection
+                controls take the row, which already fill a phone's width. */}
+            {onUploadClick && !(isSelectionMode && selectedPhotos.size > 0) && (
+              <button
+                type="button"
+                className="gallery-premium-nav-btn"
+                onClick={onUploadClick}
+                aria-label={uploadLabel}
+                title={uploadLabel}
+                data-testid="premium-nav-upload"
+                data-gallery-focus="upload"
+              >
+                <Upload className="w-4 h-4" />
               </button>
             )}
-            {allowDownloads && photos.length > 0 && (
+            {feedbackEnabled && feedbackOptions?.allowLikes && (
+              // The gallery's "Liked" filter, with the count Story shows.
+              <button
+                type="button"
+                className={`gallery-premium-nav-btn${likedOnly ? ' active' : ''}`}
+                onClick={onToggleLikedOnly}
+                aria-pressed={onToggleLikedOnly ? likedOnly : undefined}
+                aria-label={`${t('gallery.showLikedOnly', 'Show only photos I liked')}${likedPhotoIds.size > 0 ? ` (${likedPhotoIds.size})` : ''}`}
+                title={t('gallery.favorites', 'Favorites')}
+                data-testid="premium-nav-liked"
+                // Focus moves to "Show all photos" when the filter empties the view.
+                data-gallery-focus="liked"
+              >
+                <Heart className="w-4 h-4" fill={likedOnly ? 'currentColor' : 'none'} />
+                {likedPhotoIds.size > 0 && (
+                  <span className="gallery-premium-nav-count">
+                    {likedPhotoIds.size > 9 ? '9+' : likedPhotoIds.size}
+                  </span>
+                )}
+              </button>
+            )}
+            {/* As Gallery Story's: the whole-gallery path alone is enough, so a
+                folder-only root (no photos in scope) still offers it. */}
+            {allowDownloads && (onDownloadEverything || downloadablePhotos.length > 0) && (
               <button
                 className="gallery-premium-nav-btn"
                 title={t('common.downloadAll', 'Download All')}
-                onClick={() => {
-                  filteredPhotos.forEach(p => {
-                    if (!selectedPhotos.has(p.id)) {
-                      onPhotoSelect?.(p.id);
-                    }
-                  });
-                }}
+                onClick={handleDownloadAll}
               >
                 <DownloadIcon className="w-4 h-4" />
               </button>
@@ -783,6 +939,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                   feedbackEnabled={feedbackEnabled}
                   allowLikes={!!feedbackOptions?.allowLikes}
                   index={photoIndex}
+                  onToggleVisibility={isClient ? onToggleVisibility : undefined}
                 />
               );
             }

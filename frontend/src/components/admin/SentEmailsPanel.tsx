@@ -4,7 +4,7 @@
  * the "Send queued emails now" flush button on the SMTP tab: flush, then
  * watch what sent / failed here.
  *
- * Filters: status (pending/sent/failed), free-text search (recipient or
+ * Filters: status (pending/sent/failed/suppressed), free-text search (recipient or
  * type), and a created-at date range. email_data is never fetched.
  */
 import React, { useState } from 'react';
@@ -17,12 +17,13 @@ import { LocalizedDateInput } from '../common/LocalizedDateInput';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { emailService, type EmailQueueStatus } from '../../services/email.service';
 
-const STATUSES: EmailQueueStatus[] = ['pending', 'sent', 'failed'];
+const STATUSES: EmailQueueStatus[] = ['pending', 'sent', 'failed', 'suppressed'];
 
 const statusTone = (s: EmailQueueStatus): BadgeTone =>
   s === 'sent' ? 'success'
     : s === 'failed' ? 'danger'
-      : 'warning';
+      : s === 'suppressed' ? 'neutral'
+        : 'warning';
 
 export const SentEmailsPanel: React.FC = () => {
   const { t } = useTranslation();

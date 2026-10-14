@@ -10,6 +10,7 @@ const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolve
 const logger = require('../utils/logger');
 const uploadQuota = require('./publicUploadQuota');
 const { insertPhotoWithinCap, photoCapOf } = require('./photoCap');
+const { claimPromotion } = require('./watchFolderClaims');
 const { resolveCredit, creditOpenForExif, settleGuestCredit } = require('./photoCredit');
 const imageAdmission = require('./imageWorkAdmission');
 const { isResourceError, describe: describeImageError } = require('./imageResourcePolicy');
@@ -88,12 +89,20 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
   for (const file of fileList) {
     // Admission commits use the ledger's short transaction. Never hold a
     // SQLite connection through media IO then try to nest a ledger transaction.
-    const trx = uploadReservation ? null : await db.transaction();
-    const conn = trx || db;
+    // Without a reservation there is no transaction at all (issue 1980): the
+    // row is one insert, and a transaction opened here stayed open through
+    // the thumbnail, sharp and storage work below, blocking every other query
+    // on SQLite's single connection.
     let promotion = null;
     let promotionSettled = false;
     let rowCommitted = false;
-    
+    let releaseClaim = null;
+    // What this attempt has written to storage, for the cleanup below.
+    let relativePath;
+    let finalKey;
+    let thumbnailPath;
+    let putStarted = false;
+
     try {
       // Count existing photos to generate sequence number
       let counter = 1;
@@ -106,7 +115,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       
       // Count existing photos of the same type for numbering
       if (uploadReservation?.isCancelled?.()) throw uploadQuota.refusal('UPLOAD_CANCELLED', 400);
-      const existingCount = await conn('photos')
+      const existingCount = await db('photos')
         .where({ event_id: eventId, type: photoType })
         .count('id as count')
         .first();
@@ -148,8 +157,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       }
 
       // Final storage key under events/active/{slug}/{newFilename}.
-      const relativePath = path.posix.join(event.slug, newFilename);
-      const finalKey = path.posix.join('events/active', relativePath);
+      relativePath = path.posix.join(event.slug, newFilename);
+      finalKey = path.posix.join('events/active', relativePath);
 
       // Determine if this is a video or image
       const isVideo = isVideoMimeType(file.mimetype);
@@ -157,7 +166,6 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       // Generate thumbnail and extract metadata FROM the temp file (still on
       // local disk) before uploading the original.
-      let thumbnailPath;
       // Receives the tile placeholder hash of the thumbnail (issue 1733).
       const thumbMeta = {};
       let videoMetadata = null;
@@ -201,10 +209,14 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         // embedded JPEG preview first and thumbnail/measure THAT. Pass-through
         // for ordinary images. The stored original stays the RAW (download).
         // Use the unique stored filename (not the client-supplied original) so
-        // the RAW-derived thumbnail's global key can't collide across galleries.
+        // the thumbnail's global key can't collide across galleries. For a
+        // non-RAW image proc.outputBasename is unset, and the key used to come
+        // from the temp file, which carries the client's file name: two
+        // uploads of IMG_0001.jpg overwrote each other's thumbnail, and the
+        // failure cleanup below could delete the other upload's.
         const proc = await withProcessableImage(tempPath, newFilename);
         try {
-          thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename, meta: thumbMeta });
+          thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename || newFilename, meta: thumbMeta });
           try {
             const sharp = require('./isolatedSharp');
             const metadata = await sharp(proc.path).metadata();
@@ -230,12 +242,19 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       // Camera details (issue 1733, D1), from the same temp file: this path
       // completes the row itself, so the worker never reads them.
       const exif = isVideo ? {} : await exifColumn(tempPath);
+      // Capture date (issue 1976), for the same reason; images only, as in
+      // the worker.
+      const capturedAt = isVideo ? null : await extractCaptureDate(tempPath);
 
       // Now upload the original through the storage backend and remove the
       // local temp copy.
       const actualSize = uploadReservation ? (await fs.stat(tempPath)).size : file.size;
       if (uploadReservation) promotion = await uploadQuota.prepareObject(uploadReservation, finalKey, actualSize);
+      // Held until the row is committed, so the file watcher does not import
+      // the file first (issue 1970).
+      releaseClaim = claimPromotion(finalKey);
       try {
+        putStarted = true;
         await getStorage().putFromFile(finalKey, tempPath, {
           contentType: file.mimetype,
         });
@@ -263,7 +282,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       // Add to database with uploaded_by field and media metadata
       let insertResult;
-      const clientName = trx?.client?.config?.client;
+      const clientName = db.client?.config?.client;
       const supportsReturning = ['pg', 'postgres', 'postgresql'].includes(clientName);
 
       const photoData = {
@@ -276,6 +295,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         type: photoType,
         size_bytes: actualSize,
         content_sha256: contentSha256,
+        captured_at: capturedAt ? capturedAt.toISOString() : null,
         uploaded_by: uploadedBy,
         source_origin: 'managed',
         media_type: mediaType,
@@ -312,11 +332,11 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         });
         insertResult = [id];
       } else if (supportsReturning) {
-        insertResult = await trx('photos')
+        insertResult = await db('photos')
           .insert(photoData)
           .returning('id');
       } else {
-        insertResult = await trx('photos').insert(photoData);
+        insertResult = await db('photos').insert(photoData);
       }
 
       const insertedId = Array.isArray(insertResult)
@@ -329,9 +349,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         throw new Error('Failed to determine inserted photo ID');
       }
 
-      // Commit transaction
-      if (trx) await trx.commit();
       rowCommitted = true;
+      releaseClaim();
 
       // Webhook (#327) — fires for every entry path that lands in this
       // service: guest upload + auto-import + admin upload via API. A photo
@@ -396,6 +415,24 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         await uploadQuota.failedObject(promotion, { storage: getStorage(), settled: promotionSettled })
           .catch(err => logger.warn('Failed upload charge retained', { objectId: promotion.id, error: err.message }));
       }
+      // failedObject removes only the original, and only with a reservation.
+      // The thumbnail was stored before the cap check, the insert or a
+      // cancellation could fail, and on S3 no watcher ever finds it again.
+      // Each is removed only when no row names it: a commit whose
+      // acknowledgement was lost has a row that still needs both.
+      if (!rowCommitted && (thumbnailPath || (!promotion && putStarted))) {
+        try {
+          const storage = getStorage();
+          if (thumbnailPath && !(await db('photos').where({ thumbnail_path: thumbnailPath }).first('id'))) {
+            await storage.delete(thumbnailPath).catch(() => {});
+          }
+          if (!promotion && putStarted && !(await db('photos').where({ event_id: eventId, path: relativePath }).first('id'))) {
+            await storage.delete(finalKey).catch(() => {});
+          }
+        } catch (cleanupErr) {
+          logger.warn('Failed upload files retained', { path: relativePath, error: cleanupErr.message });
+        }
+      }
       logger.error(`Error processing file ${file.originalname}:`, {
         error: error.message,
         stack: error.stack,
@@ -405,16 +442,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         tempPath: file?.path || file?.filepath || file?.tempFilePath
       });
 
-      if (trx) {
-        try {
-          await trx.rollback();
-        } catch (rollbackErr) {
-          logger.error('Failed to rollback transaction:', rollbackErr);
-        }
-      }
-
       // Continue with other files
       // Note: Individual file failures don't stop the entire upload batch
+    } finally {
+      releaseClaim?.();
     }
   }
   
@@ -498,6 +529,7 @@ async function queueFilesForProcessing(files, options = {}) {
     let uploadCharge = null;
     let promotionSettled = false;
     let rowCommitted = false;
+    let releaseClaim = null;
     try {
       if (!tempPath) {
         throw new Error('Uploaded file is missing a temporary path');
@@ -539,7 +571,9 @@ async function queueFilesForProcessing(files, options = {}) {
       }
 
       // Move to storage first so the file is at its recorded path by the
-      // time the worker picks up the row.
+      // time the worker picks up the row. Claimed until the row exists, so
+      // the file watcher does not import it first (issue 1970).
+      releaseClaim = claimPromotion(finalKey);
       await storage.putFromFile(finalKey, tempPath, { contentType: file.mimetype });
       promotionSettled = true;
       storedKey = finalKey;
@@ -612,6 +646,8 @@ async function queueFilesForProcessing(files, options = {}) {
         ...(err.code === 'PHOTO_CAP_REACHED' ? { code: err.code, limit: photoCap } : {}),
         ...describeImageError(err),
       });
+    } finally {
+      releaseClaim?.();
     }
   }
 

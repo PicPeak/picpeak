@@ -171,7 +171,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   onPublish,
 }) => {
   const { t } = useTranslation();
-  const { format } = useLocalizedDate();
+  const { format, formatExpiry } = useLocalizedDate();
   const { flags } = useFeatureFlags();
   const reach = useAccountReach();
   const portalEnabled = reach.portalEnabled;
@@ -283,7 +283,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <SummaryRow label={t('events.expires')}>
             {expiresAt ? (
               <>
-                {format(expiresAt, 'PP')}
+                {formatExpiry(expiresAt, 'PP')}
                 {!archived && daysUntilExpiration !== null && daysUntilExpiration > 0 && (
                   <span className="text-muted ml-1">{t('events.daysLeft', { count: daysUntilExpiration })}</span>
                 )}

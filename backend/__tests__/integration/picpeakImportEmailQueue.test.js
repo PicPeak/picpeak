@@ -18,6 +18,10 @@ let backupFile;
 const HOUR = 3600 * 1000;
 const sqliteText = (ms) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxTest = process.platform === 'linux' ? test : test.skip;
+
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
   process.env.STORAGE_PATH = tmpDir;
@@ -43,7 +47,7 @@ beforeAll(async () => {
   ({ filePath: backupFile } = await createPicpeak({ includePhotos: false }));
   // Wipe the queue and bring it back through the import.
   await db('email_queue').del();
-  await importFromPicpeak({ picpeakPath: backupFile, currentAdminId: adminId });
+  if (process.platform === 'linux') await importFromPicpeak({ picpeakPath: backupFile, currentAdminId: adminId });
 }, 120000);
 
 afterAll(async () => {
@@ -51,7 +55,7 @@ afterAll(async () => {
   await cleanup();
 });
 
-test('the imported rows carry the shape the processor compares against', async () => {
+linuxTest('the imported rows carry the shape the processor compares against', async () => {
   const rows = await db('email_queue')
     .select('email_type', 'status', 'error_message', 'scheduled_at',
       db.raw('typeof(scheduled_at) as scheduled_type'), db.raw('typeof(created_at) as created_type'))
@@ -63,7 +67,7 @@ test('the imported rows carry the shape the processor compares against', async (
   }
 });
 
-test('a fresh stuck row is pending and due; a stale one is parked with the reason', async () => {
+linuxTest('a fresh stuck row is pending and due; a stale one is parked with the reason', async () => {
   const byType = Object.fromEntries((await db('email_queue')).map((r) => [r.email_type, r]));
   expect(byType.fresh_default.status).toBe('pending');
   expect(byType.fresh_default.scheduled_at).toBeLessThan(Date.now());

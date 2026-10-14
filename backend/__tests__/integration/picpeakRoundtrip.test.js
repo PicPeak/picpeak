@@ -22,6 +22,10 @@ let importFromPicpeak;
 let validateManifest;
 let superAdminRoleId;
 
+// importFromPicpeak runs the coordinated portable restore, which needs a Linux
+// host (portableRestoreCapability); elsewhere it refuses before restoring.
+const linuxIt = process.platform === 'linux' ? it : it.skip;
+
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
   process.env.STORAGE_PATH = tmpDir;
@@ -57,7 +61,7 @@ async function getMarker() {
 }
 
 describe('.picpeak roundtrip (export → import)', () => {
-  it('restores backup data and preserves the current account', async () => {
+  linuxIt('restores backup data and preserves the current account', async () => {
     // 1. Seed the "source" instance.
     await db('admin_users').del();
     await db('admin_users').insert(adminRow('backup-admin@old.example', 'HASH_A'));
@@ -95,7 +99,7 @@ describe('.picpeak roundtrip (export → import)', () => {
     }
   });
 
-  it('overwrites a backup admin that collides with the current account email', async () => {
+  linuxIt('overwrites a backup admin that collides with the current account email', async () => {
     // Source has an admin at the SAME email the current operator will use.
     await db('admin_users').del();
     await db('admin_users').insert(adminRow('shared@example.com', 'OLD_HASH'));
@@ -121,7 +125,7 @@ describe('.picpeak roundtrip (export → import)', () => {
 
   // Passkeys (issue 1733) sign in without the password: the operator keeps
   // their own, and an archived key on the same account must not survive.
-  it('keeps the current account\'s passkeys and drops the archive\'s for that account', async () => {
+  linuxIt('keeps the current account\'s passkeys and drops the archive\'s for that account', async () => {
     const passkey = (adminId, credentialId) => ({
       admin_user_id: adminId, credential_id: credentialId, public_key: `PUB_${credentialId}`,
       counter: 0, name: credentialId, created_at: new Date().toISOString(),
@@ -162,7 +166,7 @@ describe('.picpeak roundtrip (export → import)', () => {
     }
   });
 
-  it('restores files/ and reports filesRestored', async () => {
+  linuxIt('restores files/ and reports filesRestored', async () => {
     // A business-doc that lives in storage → travels in the backup.
     const docDir = path.join(tmpDir, 'business-docs');
     const marker = path.join(docDir, 'roundtrip-doc.txt');
