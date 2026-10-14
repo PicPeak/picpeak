@@ -21,14 +21,14 @@ let readManifestFromZip;
 let assertArchiveWithinLimits;
 let backupFile;
 
-// The real measurement of the volume with only the free bytes replaced, so the
-// filesystem type and inode count still pass and the refusal is about space.
-function statfsWithFreeBytes(bavail, bsize) {
+// The real measurement of the volume with only the free bytes (and, where
+// given, the free inodes) replaced, so the filesystem type still passes.
+function statfsWithFreeBytes(bavail, bsize, ffree) {
   const real = fs.promises.statfs;
   return jest.spyOn(fs.promises, 'statfs').mockImplementation(async (...args) => {
     const stats = await real(...args);
     const as = typeof stats.bavail === 'bigint' ? BigInt : Number;
-    return { ...stats, bavail: as(bavail), bsize: as(bsize ?? stats.bsize) };
+    return { ...stats, bavail: as(bavail), bsize: as(bsize ?? stats.bsize), ffree: as(ffree ?? stats.ffree) };
   });
 }
 
@@ -103,14 +103,16 @@ describe('.picpeak import limits', () => {
       { name: 'manifest.json', isDirectory: false, size: 30 },
     ];
     // One byte short of the reserve plus the 150 bytes the entries expand to:
-    // the empty workspace itself still fits, the archive does not.
-    const short = statfsWithFreeBytes(HARD_LIMITS.reserveBytes + 149, 1);
+    // the empty workspace itself still fits, the archive does not. Inodes are
+    // plentiful, so only the byte comparison can refuse.
+    const inodes = HARD_LIMITS.reserveInodes + 1000;
+    const short = statfsWithFreeBytes(HARD_LIMITS.reserveBytes + 149, 1, inodes);
     await expect(assertArchiveWithinLimits(entries, tmpDir)).rejects.toMatchObject({
       statusCode: 507, code: 'PORTABLE_ARCHIVE_REFUSED', message: expect.stringMatching(/^Insufficient measured bytes/),
     });
 
     short.mockRestore();
-    statfsWithFreeBytes(HARD_LIMITS.reserveBytes + 150, 1);
+    statfsWithFreeBytes(HARD_LIMITS.reserveBytes + 150, 1, inodes);
     await expect(assertArchiveWithinLimits(entries, tmpDir)).resolves.toEqual({ entries: 3, expandedBytes: 150 });
   });
 
