@@ -23,7 +23,8 @@ jest.mock('../../src/database/db', () => {
   const api = (table) => {
     if (table === 'events') return { where: () => ({ first: async () => state.event }) };
     if (table === 'photos') {
-      return { where: (criteria) => ({ update: async (values) => { state.updates.push({ criteria, values }); return 1; } }) };
+      // first: withSourceVersion, these rows carry no recorded size.
+      return { where: (criteria) => ({ update: async (values) => { state.updates.push({ criteria, values }); return 1; }, first: async () => undefined }) };
     }
     throw new Error(`unexpected table in test: ${table}`);
   };
@@ -92,7 +93,7 @@ describe('ensureHeroImage — external sources', () => {
     expect(key).toContain(`ext${photo.id}_`);
     // No anchor passed and the event has none: the centre crop, recorded as
     // such so a later anchor change is detected (issue 1737).
-    expect(db.__state.updates).toEqual([{ criteria: { id: photo.id }, values: { hero_path: key, hero_anchor: '50% 50%' } }]);
+    expect(db.__state.updates).toEqual([{ criteria: expect.objectContaining({ id: photo.id, external_relpath: photo.external_relpath }), values: { hero_path: key, hero_anchor: '50% 50%' } }]);
   });
 
   it('returns null rather than throwing when the external source is gone', async () => {

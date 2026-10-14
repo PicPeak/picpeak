@@ -7,6 +7,7 @@ import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { useFocusTrap } from '../../../hooks/useFocusTrap';
+import { isImeComposing } from '../../../utils/imeComposition';
 
 export const ContractModal: React.FC<{
   titleId: string;
@@ -28,7 +29,8 @@ export const ContractModal: React.FC<{
   useEffect(() => {
     const returnTo = opener.current;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close.current();
+      // An Escape that cancels an IME composition belongs to the field.
+      if (e.key === 'Escape' && !isImeComposing(e)) close.current();
     };
     document.addEventListener('keydown', onKey);
     return () => {

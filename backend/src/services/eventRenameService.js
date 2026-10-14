@@ -97,6 +97,10 @@ class EventRenameService {
       if (event.is_archived) {
         return { valid: false, error: 'Cannot rename archived events' };
       }
+      // The archive job reads the photos under the current slug (issue 2012).
+      if (await require('./archiveService').isArchiveRunning(eventId)) {
+        return { valid: false, error: 'Cannot rename a gallery while it is being archived' };
+      }
 
       // Validate new name
       if (!newEventName || newEventName.trim().length < 3) {
@@ -442,6 +446,7 @@ class EventRenameService {
    */
   async renameEvent(eventId, newEventName, resendEmail = false, adminUser = null) {
     const backupData = {};
+    let lease = null;
 
     try {
       // 1. Validate
@@ -450,8 +455,20 @@ class EventRenameService {
         return { success: false, error: validation.error };
       }
 
-      // 2. Get current event data
+      // The archive job reads the photos under the current slug (issue 2012).
+      // Holding the gallery's archive claim through the move keeps one from
+      // starting halfway and zipping an emptied prefix.
+      lease = await require('./archiveService').claimArchive(eventId);
+      if (!lease) {
+        return { success: false, error: 'Cannot rename a gallery while it is being archived' };
+      }
+
+      // 2. Get current event data, under the claim: an archive that finished
+      // after the validation above has moved the photos on.
       const event = await db('events').where({ id: eventId }).first();
+      if (!event || event.is_archived) {
+        return { success: false, error: 'Cannot rename archived events' };
+      }
       backupData.event = event;
       backupData.newSlug = validation.newSlug;
 
@@ -465,6 +482,16 @@ class EventRenameService {
         slug: newSlug,
         shareToken: event.share_token
       });
+
+      // A restore before per-run archive keys left its zip at the shared key
+      // of the old slug (issue 2012); after the rename nothing would find it
+      // there. Read before the transaction, which takes SQLite's only
+      // connection, and recorded inside it.
+      const archiveService = require('./archiveService');
+      const legacyZips = [];
+      for (const key of await archiveService.legacyArchiveKeys(event).catch(() => [])) {
+        if (await getStorage().exists(key).catch(() => false)) legacyZips.push(key);
+      }
 
       // 3. Start transaction
       const trx = await db.transaction();
@@ -507,6 +534,8 @@ class EventRenameService {
           }),
           event_id: eventId
         });
+
+        for (const key of legacyZips) await archiveService.recordSupersededArchive(lease, key, trx);
 
         // 9. Commit transaction
         await trx.commit();
@@ -553,6 +582,8 @@ class EventRenameService {
       logger.error('Event rename failed', { eventId, error: error.message });
       await this.rollbackRename(backupData);
       return { success: false, error: error.message || 'Failed to rename event' };
+    } finally {
+      if (lease) await lease.release();
     }
   }
 }

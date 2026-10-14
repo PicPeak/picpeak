@@ -6,7 +6,9 @@ const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../../database/db');
 const { livePhotos } = require('../../utils/photoVisibility');
 const { formatBoolean, whereTimestamp } = require('../../utils/dbCompat');
-const { parseExpiresAtText } = require('../../utils/expiresAtText');
+const { getInstanceTimeZone, endOfDayInZone, addDaysToDate, expiryCalendarDate, parseExpiryInput, extendExpiry } = require('../../utils/galleryExpiry');
+const { toDateOnly } = require('../../utils/dateOnly');
+const { toTimestamp } = require('../../utils/dateNormalize');
 
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission, userHasAllPermissions, userHasAnyPermission } = require('../../middleware/permissions');
@@ -46,7 +48,7 @@ const downloadZipService = require('../../services/downloadZipService');
 const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
 const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
-const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade } = require('./helpers');
+const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, claimEventArchive } = require('./helpers');
 
 // Client PIN floor. The PIN guards the client review page and used to accept
 // any string, one character included. Six is the least that the login
@@ -519,6 +521,9 @@ module.exports = (router) => {
         // Whether invoices may be linked to this gallery (the CRM owner rule).
         can_link_crm: canLinkCrmToEvent(req.admin, event),
         can_review_uploads: await mayReviewUploads(req.admin, event),
+        // The zone a date-only expiry ends its day in; the settings date
+        // field reads expires_at back in it.
+        expiry_time_zone: await getInstanceTimeZone(),
         gallery_notice: galleryNotice,
         photo_count: parseInt(photoCount) || 0,
         video_count: Number(videoCount) || 0,
@@ -912,21 +917,19 @@ module.exports = (router) => {
       // Recompute expires_at: preserve the source's expiration window (delta
       // between source.expires_at and source.event_date) so the duplicate keeps
       // the same "active for N days" feel. Falls back to 30 days if source had
-      // no expiration set.
+      // no expiration set. The window is counted in calendar days, and the
+      // copy expires at the end of its last day in the instance time zone.
       let newExpiresAt = null;
       if (event_date) {
+        const timeZone = await getInstanceTimeZone();
         let expirationDays = 30;
-        if (source.expires_at && source.event_date) {
-          const days = Math.round(
-            (new Date(source.expires_at).getTime() - new Date(source.event_date).getTime())
-          / (24 * 60 * 60 * 1000),
-          );
+        const sourceExpiryDay = source.expires_at ? expiryCalendarDate(source.expires_at, timeZone) : null;
+        const sourceEventDay = toDateOnly(source.event_date);
+        if (sourceExpiryDay && sourceEventDay && /^\d{4}-\d{2}-\d{2}$/.test(sourceEventDay)) {
+          const days = Math.round((Date.parse(sourceExpiryDay) - Date.parse(sourceEventDay)) / (24 * 60 * 60 * 1000));
           if (days > 0) expirationDays = days;
         }
-        const [year, month, day] = event_date.split('-').map((s) => parseInt(s, 10));
-        const baseDate = new Date(year, month - 1, day);
-        baseDate.setDate(baseDate.getDate() + expirationDays);
-        newExpiresAt = baseDate;
+        newExpiresAt = endOfDayInZone(addDaysToDate(event_date, expirationDays), timeZone);
       }
 
       const shareToken = crypto.randomBytes(16).toString('hex');
@@ -1144,7 +1147,9 @@ module.exports = (router) => {
     // cannot read either, so such a value was accepted and then silently
     // dropped out of every expiry comparison.
     body('expires_at').optional({ nullable: true, checkFalsy: true }).isISO8601()
-      .custom((value) => parseExpiresAtText(value) !== null)
+      // A bare date is the end of that day; any real date passes (the zone
+      // only moves the instant).
+      .custom((value) => parseExpiryInput(value, 'UTC') !== null)
       .withMessage('expires_at must be an ISO 8601 date-time such as 2026-10-06T12:00:00Z'),
     body('welcome_message').optional({ nullable: true, checkFalsy: true }).trim(),
     body('color_theme').optional({ nullable: true }),
@@ -1170,7 +1175,7 @@ module.exports = (router) => {
     body('folder_structure').optional().isBoolean(),
     body('delivery_status').optional().isIn(['complete', 'partial']),
     body('delivery_expected_count').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1, max: 100000 }),
-    body('delivery_due_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
+    body('delivery_due_at').optional({ nullable: true, checkFalsy: true }).isISO8601({ strict: true }),
     body('delivery_badge_label').optional({ nullable: true }).isString().isLength({ max: 60 }),
     // Migration 143 — per-event reminder overrides. All three are
     // optional; nullable values are accepted so admins can clear an
@@ -1804,8 +1809,10 @@ module.exports = (router) => {
         // shapes SQLite's date parser cannot read (`+0200` offsets, the basic
         // format without separators), and whereTimestamp drops such a row
         // from every expiry comparison rather than guess. A zone-less value
-        // is read as UTC, as julianday() reads the stored ones.
-        updates.expires_at = parseExpiresAtText(updates.expires_at).toISOString();
+        // is read as UTC, as julianday() reads the stored ones. A bare date
+        // (the settings date field) is the end of that day in the instance
+        // time zone.
+        updates.expires_at = parseExpiryInput(updates.expires_at, await getInstanceTimeZone()).toISOString();
       }
 
       // Format hero logo settings if provided. null = inherit the global
@@ -1966,7 +1973,7 @@ module.exports = (router) => {
         }
       }
       if (Object.prototype.hasOwnProperty.call(updates, 'delivery_due_at')) {
-        updates.delivery_due_at = updates.delivery_due_at ? new Date(updates.delivery_due_at).toISOString() : null;
+        updates.delivery_due_at = require('../../services/deliveryService').parseDueAtInput(updates.delivery_due_at);
         if (!Object.prototype.hasOwnProperty.call(updates, 'delivery_due_source')) updates.delivery_due_source = 'manual';
         // A new promise gets its own reminders.
         updates.delivery_reminder_sent_at = null;
@@ -2004,24 +2011,35 @@ module.exports = (router) => {
       // (e.g. a body of only protected fields). (codex review.)
       if (Object.keys(recoverable).length > 0) Object.assign(updates, await galleryPasswordColumns(recoverable));
       if (credentialChanges.size > 0) Object.assign(updates, await credentialChangeColumns(...credentialChanges));
-      if (Object.keys(updates).length > 0) {
-        let eventUpdate = db('events').where('id', id);
-        if (keptGalleryHash) eventUpdate = eventUpdate.where('password_hash', event.password_hash);
-        if (keptClientHash) eventUpdate = eventUpdate.where('client_password_hash', event.client_password_hash);
-        const updated = await eventUpdate.update(updates);
-        if (!updated && (keptGalleryHash || keptClientHash)) {
-          // A password changed underneath: write the submitted ones as changes.
-          if (keptGalleryHash) {
-            updates.password_hash = await bcrypt.hash(newPasswordPlain, getBcryptRounds());
-            credentialChanges.add('gallery');
+      // A new expiry holds the archive claim (issue 2012): an archive already
+      // running would publish and delete the originals of the gallery the
+      // admin just extended. 409 while one runs; nothing is written then.
+      const expiryChanged = Object.prototype.hasOwnProperty.call(updates, 'expires_at')
+        && toTimestamp(updates.expires_at) !== toTimestamp(event.expires_at)
+        && !(updates.expires_at == null && event.expires_at == null);
+      const archiveLease = expiryChanged ? await claimEventArchive(event.id) : null;
+      try {
+        if (Object.keys(updates).length > 0) {
+          let eventUpdate = db('events').where('id', id);
+          if (keptGalleryHash) eventUpdate = eventUpdate.where('password_hash', event.password_hash);
+          if (keptClientHash) eventUpdate = eventUpdate.where('client_password_hash', event.client_password_hash);
+          const updated = await eventUpdate.update(updates);
+          if (!updated && (keptGalleryHash || keptClientHash)) {
+            // A password changed underneath: write the submitted ones as changes.
+            if (keptGalleryHash) {
+              updates.password_hash = await bcrypt.hash(newPasswordPlain, getBcryptRounds());
+              credentialChanges.add('gallery');
+            }
+            if (keptClientHash) {
+              updates.client_password_hash = await bcrypt.hash(recoverable.clientPassword, getBcryptRounds());
+              credentialChanges.add('client');
+            }
+            Object.assign(updates, await credentialChangeColumns(...credentialChanges));
+            await db('events').where('id', id).update(updates);
           }
-          if (keptClientHash) {
-            updates.client_password_hash = await bcrypt.hash(recoverable.clientPassword, getBcryptRounds());
-            credentialChanges.add('client');
-          }
-          Object.assign(updates, await credentialChangeColumns(...credentialChanges));
-          await db('events').where('id', id).update(updates);
         }
+      } finally {
+        if (archiveLease) await archiveLease.release();
       }
       if (Object.keys(recoverable).length > 0) await dropCopiesIfStorageOff(id);
 
@@ -2159,6 +2177,9 @@ module.exports = (router) => {
       if (error.code === 'EVENT_NOT_FOUND') {
         return res.status(404).json({ error: 'Event not found' });
       }
+      if (error.code === 'ARCHIVE_IN_PROGRESS') {
+        return res.status(409).json({ error: error.message, code: error.code });
+      }
       logger.error('Error deleting event', { eventId: req.params.id, error: error.message });
       if (error.message && error.message.includes('foreign key constraint')) {
         return res.status(500).json({
@@ -2182,12 +2203,21 @@ module.exports = (router) => {
       }
 
       const newStatus = !parseBooleanInput(event.is_active, false);
-      await db('events')
-        .where('id', id)
-        .update({
-          is_active: formatBoolean(newStatus),
-          updated_at: new Date().toISOString()
-        });
+      // Reactivating holds the archive claim (issue 2012), as extending does.
+      const archiveLease = newStatus ? await claimEventArchive(event.id) : null;
+      try {
+        await db('events')
+          .where('id', id)
+          .update({
+            is_active: formatBoolean(newStatus),
+            updated_at: new Date().toISOString()
+          });
+        // The gallery is the admin's to switch off again now: the expiry
+        // checker no longer retries an archive it failed on it.
+        if (archiveLease) await require('../../services/archiveService').writeExpiryAttempt(archiveLease, null);
+      } finally {
+        if (archiveLease) await archiveLease.release();
+      }
 
       // Log activity
       await logActivity(newStatus ? 'event_activated' : 'event_deactivated',
@@ -2201,6 +2231,7 @@ module.exports = (router) => {
         is_active: newStatus
       });
     } catch (error) {
+      if (error.code === 'ARCHIVE_IN_PROGRESS') return res.status(409).json({ error: error.message, code: error.code });
       errorResponse(res, error, 500, 'Failed to toggle event status');
     }
   });
@@ -2228,13 +2259,29 @@ module.exports = (router) => {
         return res.status(404).json({ error: 'Event not found' });
       }
 
-      const newExpiration = new Date(event.expires_at);
-      newExpiration.setDate(newExpiration.getDate() + days);
+      // Held through the write (issue 2012): an archive running under it
+      // would publish and delete the originals of the gallery just extended.
+      // The expiry is read again under the claim.
+      const archiveLease = await claimEventArchive(event.id);
+      let newExpiration;
+      try {
+        const current = await db('events').where('id', event.id).first();
+        if (!current) return res.status(404).json({ error: 'Event not found' });
+        // Same wall-clock time `days` calendar days later in the instance time
+        // zone, so an end-of-day expiry stays end-of-day across a DST change.
+        const currentExpiry = toTimestamp(current.expires_at);
+        if (!Number.isFinite(currentExpiry)) {
+          return res.status(400).json({ error: 'This gallery has no expiry date to extend' });
+        }
+        newExpiration = extendExpiry(new Date(currentExpiry), days, await getInstanceTimeZone());
 
-      await db('events').where('id', id).update({
-        expires_at: newExpiration,
-        is_active: formatBoolean(true) // reactivate if it had expired
-      });
+        await db('events').where('id', event.id).update({
+          expires_at: newExpiration.toISOString(),
+          is_active: formatBoolean(true) // reactivate if it had expired
+        });
+      } finally {
+        await archiveLease.release();
+      }
 
       await logActivity('event_expiration_extended',
         { eventName: event.event_name, days },
@@ -2244,6 +2291,7 @@ module.exports = (router) => {
 
       res.json({ expires_at: newExpiration });
     } catch (error) {
+      if (error.code === 'ARCHIVE_IN_PROGRESS') return res.status(409).json({ error: error.message, code: error.code });
       errorResponse(res, error, 500, 'Failed to extend expiration');
     }
   });

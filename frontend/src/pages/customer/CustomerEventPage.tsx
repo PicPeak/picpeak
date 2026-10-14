@@ -49,7 +49,7 @@ export const CustomerEventPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { slug = '' } = useParams<{ slug: string }>();
-  const { format: fmtDate } = useLocalizedDate();
+  const { format: fmtDate, formatExpiry: fmtExpiry } = useLocalizedDate();
   const [opening, setOpening] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
@@ -117,8 +117,8 @@ export const CustomerEventPage: React.FC = () => {
           <span className="inline-flex items-center gap-1.5">
             <Clock className="w-4 h-4" />
             {event.availability === 'expired'
-              ? t('customer.dashboard.expiredOn', 'Expired {{date}}', { date: fmtDate(event.expiresAt) })
-              : t('customer.dashboard.expiresOn', 'Expires {{date}}', { date: fmtDate(event.expiresAt) })}
+              ? t('customer.dashboard.expiredOn', 'Expired {{date}}', { date: fmtExpiry(event.expiresAt) })
+              : t('customer.dashboard.expiresOn', 'Expires {{date}}', { date: fmtExpiry(event.expiresAt) })}
           </span>
         )}
       </div>
@@ -139,7 +139,7 @@ export const CustomerEventPage: React.FC = () => {
         ) : event.availability === 'expired' ? (
           <p className="text-sm text-muted-theme">
             {t('customer.event.galleryExpired', 'This gallery expired on {{date}} and can no longer be opened. Contact your photographer if you still need the photos.', {
-              date: event.expiresAt ? fmtDate(event.expiresAt) : '',
+              date: event.expiresAt ? fmtExpiry(event.expiresAt) : '',
             })}
           </p>
         ) : (
