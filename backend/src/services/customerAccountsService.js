@@ -955,6 +955,40 @@ async function contractSignerQueueTargets(contractPlan) {
 }
 
 /**
+ * The queued portal invitations this customer accepted. createInvitation
+ * queues one before the account exists, so neither the current-address
+ * bound nor a former-address window covers it, yet it carries the address
+ * and the invite link of this customer. Matched by the link's token against
+ * the digests of the invitations accepted into this account, so an
+ * invitation to the same address that someone else accepted (or nobody did)
+ * is not touched. Must run before the erasure clears accepted_customer_id.
+ */
+async function acceptedInvitationQueueIds(trx, customerId) {
+  const invitations = await trx('customer_invitations')
+    .where('accepted_customer_id', customerId)
+    .whereNotNull('token_digest')
+    .select('email', 'token_digest');
+  if (!invitations.length) return [];
+  const digests = new Set(invitations.map((row) => row.token_digest));
+  const emails = [...new Set(invitations.map((row) => String(row.email || '').toLowerCase()).filter(Boolean))];
+  if (!emails.length) return [];
+  const candidates = await trx('email_queue')
+    .where('email_type', 'customer_invitation')
+    .whereRaw(`LOWER(recipient_email) IN (${emails.map(() => 'LOWER(?)').join(', ')})`, emails)
+    .whereIn('status', ['pending', PROTECTED_PENDING_STATUS, 'sent', 'failed', 'cancelled'])
+    .select('id', 'email_data');
+  return candidates.filter((row) => {
+    try {
+      const data = typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data;
+      const match = /\/customer\/invite\/([^/?#\s]+)/.exec(String(data?.invite_link || ''));
+      return Boolean(match) && digests.has(digestCapabilityToken(decodeURIComponent(match[1])));
+    } catch (_) {
+      return false;
+    }
+  }).map((row) => row.id);
+}
+
+/**
  * The addresses this customer held before their current one, each with the
  * window they held it in (issue 1971). updateCustomer changes the address
  * without touching email_queue, so mail queued or sent to a former address
@@ -968,7 +1002,8 @@ async function contractSignerQueueTargets(contractPlan) {
  * address gets a window only when the history shows when the customer took
  * it: a recorded change to it, or the account's own `created` entry. Mail
  * queued before the account existed (the portal invitation) is not matched
- * on a former address: an invitation does not reserve the address, so a
+ * by address (the invitation this customer accepted is matched by its token,
+ * acceptedInvitationQueueIds): an invitation does not reserve the address, so a
  * passive account holding it then may have moved off only before the
  * acceptance created this one. An account created before migration 219 has
  * no `created` entry, so its first recorded address (which it may have
@@ -1219,8 +1254,9 @@ async function eraseCustomer(id, erasedByAdminId) {
         }).map((row) => row.id);
       }
     }
-    const matchQueue = (q) => (signerQueueIds.length > 0
-      ? q.where((w) => forCustomer(w).orWhereIn('id', signerQueueIds))
+    const extraQueueIds = [...signerQueueIds, ...await acceptedInvitationQueueIds(trx, id)];
+    const matchQueue = (q) => (extraQueueIds.length > 0
+      ? q.where((w) => forCustomer(w).orWhereIn('id', extraQueueIds))
       : forCustomer(q));
 
     const cancelledQueueRows = await matchQueue(trx('email_queue'))

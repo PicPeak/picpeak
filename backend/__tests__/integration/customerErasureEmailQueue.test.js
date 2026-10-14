@@ -29,6 +29,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 
 process.env.NODE_ENV = 'test';
 process.env.TEST_DATABASE_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-erase-mailq-')), 'db.sqlite');
@@ -535,6 +536,53 @@ describe('customer erasure clears email_queue', () => {
     await expectUntouched(beforeCreation, firstAddress, 'Before Creation', 'sent');
     await expectUntouched(earlierPending, firstAddress, 'Earlier Pending', 'pending');
     await expectUntouched(earlierSent, firstAddress, 'Earlier Sent', 'sent');
+  });
+
+  it('redacts the invitation the customer accepted, queued before the account existed', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+    const { eraseCustomer, updateCustomer } = require('../../src/services/customerAccountsService');
+    const { auditedInsert } = require('../../src/services/accountingHistory');
+    const { digestCapabilityToken } = require('../../src/utils/capabilityToken');
+    const address = 'invited-first@example.com';
+    const adminId = (await db('admin_users').first('id')).id;
+
+    // Two invitations to the address: one nobody accepted (12s), and the one
+    // accepted at 20s into a new account, which moves off the address at 40s.
+    const ownToken = crypto.randomBytes(32).toString('hex');
+    const otherToken = crypto.randomBytes(32).toString('hex');
+    const queueInvitation = async (token, createdAt, name) => {
+      const [row] = await db('email_queue').insert({
+        recipient_email: address, email_type: 'customer_invitation', status: 'sent',
+        email_data: JSON.stringify({ customer_name: name, invite_link: `https://photos.example.com/customer/invite/${token}` }),
+        rendered_html: `<p>${name}</p>`, created_at: createdAt, scheduled_at: createdAt, retry_count: 0,
+      }).returning('id');
+      return row?.id ?? row;
+    };
+    const otherInvitation = await queueInvitation(otherToken, at(12), 'Other Invitation');
+    const ownInvitation = await queueInvitation(ownToken, at(15), 'Own Invitation');
+    const [created] = await auditedInsert(db, 'customer_accounts', {
+      email: address, display_name: 'Invited 1971', preferred_language: 'de',
+      is_active: 1, created_at: at(20),
+    }, { actor: 'customer-invitation', source: 'test' });
+    await db('customer_invitations').insert([
+      {
+        email: address, token: digestCapabilityToken(otherToken), token_digest: digestCapabilityToken(otherToken),
+        invited_by: adminId, expires_at: at(13), created_at: at(12),
+      },
+      {
+        email: address, token: digestCapabilityToken(ownToken), token_digest: digestCapabilityToken(ownToken),
+        invited_by: adminId, expires_at: new Date(Date.now() + 86400000).toISOString(),
+        accepted_at: at(20), accepted_customer_id: created.id, created_at: at(15),
+      },
+    ]);
+    await updateCustomer(created.id, { email: 'invited-moved@example.com' }, null);
+    await stampHistory(created.id, [at(20), at(40)]);
+
+    await eraseCustomer(created.id, null);
+
+    const own = await expectRedacted(ownInvitation, 'sent');
+    expect(JSON.stringify(own)).not.toContain(ownToken);
+    await expectUntouched(otherInvitation, address, 'Other Invitation', 'sent');
   });
 
   it('does not match the first recorded address of an account created before the change history (issue 1971)', async () => {
