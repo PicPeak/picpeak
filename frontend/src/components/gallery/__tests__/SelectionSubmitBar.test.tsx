@@ -243,13 +243,27 @@ describe('SelectionSubmitBar (issue 1733)', () => {
     });
 
     it('takes the name given on a bulk rating', async () => {
-      apiPost.mockResolvedValue({ data: { success: true, rating: 4, results: [] } });
+      apiPost.mockResolvedValue({ data: { success: true, rating: 4, results: [
+        { photo_id: 1, success: false, error: 'Photo not found' }, { photo_id: 2, success: true },
+      ] } });
       renderRequired(state({ approval: { can_submit: true } }));
       await act(() => feedbackService.submitBulkRating('g', [1, 2], 4, {
         guest_name: 'Clara', guest_email: 'clara@example.com',
       }));
       await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
       expect(screen.getByRole('dialog', { name: 'Approve the edited photos?' })).toBeInTheDocument();
+    });
+
+    it('does not take the name from a bulk rating that rated nothing', async () => {
+      apiPost.mockResolvedValue({ data: { success: true, rating: 4, results: [
+        { photo_id: 1, success: false, error: 'Photo not found' },
+      ] } });
+      renderRequired(state({ approval: { can_submit: true } }));
+      await act(() => feedbackService.submitBulkRating('g', [1], 4, {
+        guest_name: 'Bob', guest_email: 'bob@example.com',
+      }));
+      await userEvent.click(screen.getByRole('button', { name: 'Approve edited photos' }));
+      expect(screen.getByRole('dialog', { name: 'Your Information Required' })).toBeInTheDocument();
     });
 
     it('still asks after feedback that named nobody, or named someone in another gallery', async () => {

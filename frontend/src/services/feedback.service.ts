@@ -400,9 +400,13 @@ class FeedbackService {
     guest_email?: string;
   }): Promise<BulkRatingResponse> {
     const response = await api.post(`/gallery/${slug}/feedback/bulk`, { photo_ids: photoIds, rating, ...identity });
-    window.dispatchEvent(new CustomEvent<FeedbackSubmittedDetail>(FEEDBACK_SUBMITTED_EVENT, {
-      detail: { slug, feedback_type: 'rating', ...namedIdentity(identity) },
-    }));
+    // A 200 can rate nothing (every photo hidden or gone since it was picked):
+    // only a rating that landed names the visitor.
+    if ((response.data as BulkRatingResponse)?.results?.some((r) => r.success)) {
+      window.dispatchEvent(new CustomEvent<FeedbackSubmittedDetail>(FEEDBACK_SUBMITTED_EVENT, {
+        detail: { slug, feedback_type: 'rating', ...namedIdentity(identity) },
+      }));
+    }
     return response.data;
   }
 
