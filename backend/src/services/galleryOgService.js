@@ -1,5 +1,5 @@
 const { db } = require('../database/db');
-const { livePhotos } = require('../utils/photoVisibility');
+const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { ensureThumbnail } = require('./imageProcessor');
 const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
@@ -226,9 +226,10 @@ async function buildOgMetadata(slug, requestPath) {
   // crawlers must not get the hero photo either — fall back to the brand
   // logo like the opt-out case.
   if (event.og_image_share_enabled && event.hero_photo_id && !isGalleryHidden(event)) {
-    const heroPhoto = await livePhotos(db)
+    const heroPhoto = await wherePhotoProcessed(livePhotos(db))
       .where({ id: event.hero_photo_id, event_id: event.id })
-      // Never a team upload still under review (issue 743).
+      // Never a team upload still under review (issue 743), nor a photo the
+      // worker has not finished, which the gallery itself does not show.
       .whereNull('moderation_status')
       .select('id', 'thumbnail_path')
       .first();
@@ -337,7 +338,7 @@ async function handleGalleryOgCover(req, res) {
       return;
     }
 
-    const photo = await livePhotos(db)
+    const photo = await wherePhotoProcessed(livePhotos(db))
       .where({ id: event.hero_photo_id, event_id: event.id })
       .whereNull('moderation_status')
       .first();

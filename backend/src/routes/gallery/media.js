@@ -320,7 +320,13 @@ router.get('/:slug/photo/:photoId',
           const boundedEnd = Math.min(end, videoSize - 1);
           const chunksize = (boundedEnd - start) + 1;
 
-          res.writeHead(206, {
+          // Opened before any header, and the headers only staged: a storage
+          // that fails before the first byte still answers an error, so the
+          // slot admitVideoStream reserved goes back (responseDelivered).
+          const file = videoViaStorage
+            ? await storage.getRange(videoKey, start, boundedEnd)
+            : fs.createReadStream(videoPath, { start, end: boundedEnd });
+          res.status(206).set({
             'Content-Range': `bytes ${start}-${boundedEnd}/${videoSize}`,
             'Accept-Ranges': 'bytes',
             'Content-Length': chunksize,
@@ -329,13 +335,12 @@ router.get('/:slug/photo/:photoId',
             'X-Protection-Level': 'basic',
             ...disposition
           });
-
-          const file = videoViaStorage
-            ? await storage.getRange(videoKey, start, boundedEnd)
-            : fs.createReadStream(videoPath, { start, end: boundedEnd });
           pipeStreamToResponse(file, res, { context: `video range for photo ${photo.id}` });
         } else {
-          res.writeHead(200, {
+          const file = videoViaStorage
+            ? await storage.get(videoKey)
+            : fs.createReadStream(videoPath);
+          res.status(200).set({
             'Content-Length': videoSize,
             'Content-Type': videoContentType,
             'Accept-Ranges': 'bytes',
@@ -343,9 +348,6 @@ router.get('/:slug/photo/:photoId',
             'X-Protection-Level': 'basic',
             ...disposition
           });
-          const file = videoViaStorage
-            ? await storage.get(videoKey)
-            : fs.createReadStream(videoPath);
           pipeStreamToResponse(file, res, { context: `video for photo ${photo.id}` });
         }
         return;
