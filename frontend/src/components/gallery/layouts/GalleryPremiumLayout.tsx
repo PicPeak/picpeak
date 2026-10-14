@@ -299,18 +299,22 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
   // Per-viewer is_liked is the server's truth (#590 follow-up). Seeding it
   // once on mount left the nav count behind every later refetch, so the set
-  // follows each payload, as Story's does; only the ids whose submit is still
-  // in flight keep their optimistic state.
-  const inFlightLikesRef = useRef<Set<number>>(new Set());
+  // follows each payload. A like the viewer just toggled keeps its optimistic
+  // state until a payload agrees with it: the saved like reaches `photos`
+  // only through the parent's row refresh, and any payload before that one
+  // (another photo's refresh, a filter change) still carries the old value.
+  const pendingLikesRef = useRef<Map<number, boolean>>(new Map());
   useEffect(() => {
-    setLikedPhotoIds((previous) => {
-      const next = new Set(photos.filter(p => p.is_liked).map(p => p.id));
-      inFlightLikesRef.current.forEach((id) => {
-        if (previous.has(id)) next.add(id);
-        else next.delete(id);
-      });
-      return next;
+    const pending = pendingLikesRef.current;
+    photos.forEach((p) => {
+      if (pending.get(p.id) === !!p.is_liked) pending.delete(p.id);
     });
+    const next = new Set(photos.filter(p => p.is_liked).map(p => p.id));
+    pending.forEach((liked, id) => {
+      if (liked) next.add(id);
+      else next.delete(id);
+    });
+    setLikedPhotoIds(next);
   }, [photos]);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   // Emoji reactions (#839) inside the premium lightbox. This layout uses
@@ -477,12 +481,26 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }, [filteredPhotos, allowDownloads, showOriginalFilename, imageDimensions, t]);
   const showCaptions = showOriginalFilename || slides.some((slide) => !!slide.description);
 
-  const toggleLiked = (photoId: number) => setLikedPhotoIds(prev => {
+  // Toggle — server /feedback like is a toggle (#590) — and remember the
+  // state asked for until a payload confirms it.
+  const toggleLikedOptimistically = (photoId: number) => setLikedPhotoIds(prev => {
     const next = new Set(prev);
-    if (next.has(photoId)) next.delete(photoId);
-    else next.add(photoId);
+    const liked = !next.has(photoId);
+    if (liked) next.add(photoId);
+    else next.delete(photoId);
+    pendingLikesRef.current.set(photoId, liked);
     return next;
   });
+  // Refused: the heart goes back and nothing is awaited.
+  const rollBackLike = useCallback((photoId: number) => {
+    pendingLikesRef.current.delete(photoId);
+    setLikedPhotoIds(prev => {
+      const next = new Set(prev);
+      if (next.has(photoId)) next.delete(photoId);
+      else next.add(photoId);
+      return next;
+    });
+  }, []);
 
   const handleLike = useCallback(async (photo: Photo, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -494,13 +512,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         return;
       }
       // Toggle — server /feedback like is a toggle (#590).
-      inFlightLikesRef.current.add(photo.id);
-      setLikedPhotoIds(prev => {
-        const next = new Set(prev);
-        if (next.has(photo.id)) next.delete(photo.id);
-        else next.add(photo.id);
-        return next;
-      });
+      toggleLikedOptimistically(photo.id);
       try {
         await feedbackService.submitFeedback(slug, String(photo.id), {
           feedback_type: 'like',
@@ -510,10 +522,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         // Refused (a finished selection, issue 1733, or the like limit): the
         // heart goes back, so the nav count matches what the Liked filter,
         // which reads the server's is_liked, will show.
-        toggleLiked(photo.id);
+        rollBackLike(photo.id);
         if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
-      } finally {
-        inFlightLikesRef.current.delete(photo.id);
       }
       return;
     }
@@ -525,13 +535,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }
 
     // Optimistic update — toggle, not add (#590).
-    inFlightLikesRef.current.add(photo.id);
-    setLikedPhotoIds(prev => {
-      const next = new Set(prev);
-      if (next.has(photo.id)) next.delete(photo.id);
-      else next.add(photo.id);
-      return next;
-    });
+    toggleLikedOptimistically(photo.id);
 
     try {
       await feedbackService.submitFeedback(slug, String(photo.id), {
@@ -541,12 +545,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       });
       onFeedbackChange?.(photo.id);
     } catch (err) {
-      toggleLiked(photo.id);
+      rollBackLike(photo.id);
       if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
-    } finally {
-      inFlightLikesRef.current.delete(photo.id);
     }
-  }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity]);
+  }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity, rollBackLike]);
 
   const handleIdentitySubmit = useCallback(async (name: string, email: string) => {
     setSavedIdentity({ name, email });
@@ -557,13 +559,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       // modal only fires the first time per session, so the user is
       // intentionally liking a not-yet-liked photo here, but keep the
       // setter shape consistent with the other paths.
-      inFlightLikesRef.current.add(pendingLikePhotoId);
-      setLikedPhotoIds(prev => {
-        const next = new Set(prev);
-        if (next.has(pendingLikePhotoId)) next.delete(pendingLikePhotoId);
-        else next.add(pendingLikePhotoId);
-        return next;
-      });
+      toggleLikedOptimistically(pendingLikePhotoId);
 
       try {
         await feedbackService.submitFeedback(slug, String(pendingLikePhotoId), {
@@ -573,14 +569,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         });
         onFeedbackChange?.(pendingLikePhotoId);
       } catch (err) {
-        toggleLiked(pendingLikePhotoId);
+        rollBackLike(pendingLikePhotoId);
         if (!feedbackLockKind(err)) console.warn('Like submit failed', err);
-      } finally {
-        inFlightLikesRef.current.delete(pendingLikePhotoId);
       }
       setPendingLikePhotoId(null);
     }
-  }, [slug, pendingLikePhotoId, onFeedbackChange]);
+  }, [slug, pendingLikePhotoId, onFeedbackChange, rollBackLike]);
 
   const handleSelectAll = useCallback(() => {
     if (selectedPhotos.size === filteredPhotos.length) {

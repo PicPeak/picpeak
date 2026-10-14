@@ -141,7 +141,7 @@ describe('Gallery Premium — nav heart filters to the viewer\'s likes', () => {
     expect(navCount()).toBe('1');
   });
 
-  it('keeps a like whose submit is still in flight across a refetch', async () => {
+  it('keeps a toggled like until a payload confirms it', async () => {
     submitFeedback.mockClear();
     let resolve: () => void = () => {};
     submitFeedback.mockImplementationOnce(() => new Promise<void>((r) => { resolve = r; }));
@@ -153,7 +153,16 @@ describe('Gallery Premium — nav heart filters to the viewer\'s likes', () => {
     rerender(<Harness source={makePhotos([1, 3]).map((p) => ({ ...p }))} />);
     expect(navCount()).toBe('3');
     resolve();
+    await waitFor(() => expect(submitFeedback).toHaveBeenCalledTimes(1));
+    // Saved, but the photo's own row refresh has not landed yet: another
+    // payload still carrying the old value must not undo the heart.
+    await new Promise((r) => setTimeout(r, 0));
+    rerender(<Harness source={makePhotos([1, 3]).map((p) => ({ ...p }))} />);
+    expect(navCount()).toBe('3');
     rerender(<Harness source={makePhotos([1, 3, 4])} />);
-    await waitFor(() => expect(navCount()).toBe('3'));
+    expect(navCount()).toBe('3');
+    // Confirmed; from here the payload alone decides again.
+    rerender(<Harness source={makePhotos([1, 3])} />);
+    expect(navCount()).toBe('2');
   });
 });
