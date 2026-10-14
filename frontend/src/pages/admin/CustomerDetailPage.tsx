@@ -81,7 +81,7 @@ export const CustomerDetailPage: React.FC = () => {
   // "Pending in this month's bill" list shown between the cadence
   // controls and the Trigger button. null until the first invoice
   // line is appended; refetched on every trigger / invoice mutation.
-  const { format: fmtDate } = useLocalizedDate();
+  const { format: fmtDate, formatExpiry: fmtExpiry } = useLocalizedDate();
   const { data: monthlyDraftRes } = useQuery({
     queryKey: ['admin-customer-monthly-draft', customerId],
     queryFn: () => customerAdminService.getMonthlyDraft(customerId),
@@ -487,7 +487,7 @@ export const CustomerDetailPage: React.FC = () => {
                 </Link>
                 <span className="text-xs text-muted">
                   {ev.eventDate ? fmtDate(ev.eventDate) : ''}
-                  {ev.expiresAt ? ` · ${t('customers.detail.expires', 'expires')} ${fmtDate(ev.expiresAt)}` : ''}
+                  {ev.expiresAt ? ` · ${t('customers.detail.expires', 'expires')} ${fmtExpiry(ev.expiresAt)}` : ''}
                 </span>
               </li>
             ))}

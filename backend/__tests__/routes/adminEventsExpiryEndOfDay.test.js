@@ -96,6 +96,14 @@ describe('the settings date field (PUT /:id)', () => {
     expect(res.status).toBe(200);
     expect(res.body.expiry_time_zone).toBe('America/New_York');
   });
+
+  it('public settings name the same zone, for the lists and the guest gallery', async () => {
+    const publicApp = express();
+    publicApp.use('/api/public/settings', require('../../src/routes/publicSettings'));
+    const res = await request(publicApp).get('/api/public/settings');
+    expect(res.status).toBe(200);
+    expect(res.body.expiry_time_zone).toBe('America/New_York');
+  });
 });
 
 describe('event creation (POST /)', () => {

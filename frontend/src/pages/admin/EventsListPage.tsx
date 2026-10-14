@@ -54,7 +54,7 @@ const MENU_SORT_KEYS: readonly EventSortBy[] = [
 
 export const EventsListPage: React.FC = () => {
   const { t } = useTranslation();
-  const { format } = useLocalizedDate();
+  const { format, formatExpiry } = useLocalizedDate();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
@@ -781,7 +781,7 @@ export const EventsListPage: React.FC = () => {
                     {deliveryPill(event)}
                   </TableCell>
                   <TableCell>
-                    {event.expires_at ? format(parseISO(event.expires_at)) : 'N/A'}
+                    {event.expires_at ? formatExpiry(event.expires_at) : 'N/A'}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1">

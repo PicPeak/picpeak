@@ -3,6 +3,7 @@ import { format as dateFnsFormat, formatDistanceToNow as dateFnsFormatDistanceTo
 import { de, enUS, es, fr, nl, ptBR, ru, sl } from 'date-fns/locale';
 import type { Locale } from 'date-fns';
 import { usePublicSettings } from './usePublicSettings';
+import { expiryDay } from '../utils/expiryDay';
 
 // One entry per shipped UI locale (src/i18n/locales). Keyed by base
 // language so a regional tag like `de-DE` or `fr-CH` resolves too.
@@ -75,6 +76,18 @@ export const useLocalizedDate = () => {
     return dateFnsFormat(dateObj, dateFormat, { locale: getLocale() });
   };
   
+  /**
+   * A gallery expiry as the day it stands for in the instance time zone (see
+   * utils/expiryDay), so every view names the day the settings field shows,
+   * wherever the viewer is. Formatted like `format()`.
+   */
+  const formatExpiry = (date: Date | string, formatStr?: string) => {
+    const dateObj = toDisplayDate(date);
+    if (!isValid(dateObj)) return '';
+    const [y, m, d] = expiryDay(dateObj, settings?.expiry_time_zone).split('-').map(Number);
+    return format(new Date(y, m - 1, d), formatStr);
+  };
+
   const formatDistanceToNow = (date: Date | string, options?: { addSuffix?: boolean }) => {
     const dateObj = toDisplayDate(date);
     if (!isValid(dateObj)) return '';
@@ -132,6 +145,7 @@ export const useLocalizedDate = () => {
 
   return {
     format,
+    formatExpiry,
     formatTime,
     formatDateTime,
     formatDistanceToNow,

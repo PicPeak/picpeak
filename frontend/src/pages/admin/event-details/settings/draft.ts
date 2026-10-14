@@ -12,12 +12,12 @@
  * it was loaded from, and the events row only receives the fields whose
  * request value differs. A save the admin never touched writes nothing.
  */
-import { format } from 'date-fns';
 import type { AssignedAdmin, Event } from '../../../../types';
 import type { FeedbackSettings } from '../../../../services/feedback.service';
 import { DEFAULT_SLIDESHOW_STYLE, type SlideshowStyle } from '../../../../services/slideshow.service';
 import { GALLERY_THEME_PRESETS, type ThemeConfig } from '../../../../types/theme.types';
 import { normalizeRequirePassword } from '../../../../utils/accessControl';
+import { expiryDay } from '../../../../utils/expiryDay';
 import type { CustomerGroup } from '../../../../services/customerAdmin.service';
 import type { EditFormState } from '../types';
 import { safeParseDate } from '../utils';
@@ -127,32 +127,13 @@ export function usesCustomTheme(event: Event): boolean {
 }
 
 /**
- * The date field's value for a stored expiry. A picked date is stored as the
- * end of that day in the instance time zone (`timeZone`, from the event
- * detail payload), so the stored instant is read back in that zone. Older
- * rows keep their shapes: the settings field used to store midnight UTC,
- * read as its UTC date (issue 1975); event creation and duplication stored
- * the server's local midnight, which is its day in the instance zone when
- * that is the server zone. Without a usable zone, the browser's.
+ * The date field's value for a stored expiry: the day it stands for in the
+ * instance time zone (`timeZone`, from the event detail payload). See
+ * utils/expiryDay for the stored shapes.
  */
 export function expiryDateField(value: unknown, timeZone?: string | null): string {
   const date = safeParseDate(value);
-  if (!date || Number.isNaN(date.getTime())) return '';
-  const iso = date.toISOString();
-  if (iso.endsWith('T00:00:00.000Z')) return iso.slice(0, 10);
-  if (timeZone) {
-    try {
-      const parts = Object.fromEntries(
-        new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
-          .formatToParts(date)
-          .map((p) => [p.type, p.value]),
-      );
-      return `${parts.year}-${parts.month}-${parts.day}`;
-    } catch {
-      // An unknown zone: fall through to the browser's.
-    }
-  }
-  return format(date, 'yyyy-MM-dd');
+  return date ? expiryDay(date, timeZone) : '';
 }
 
 /**

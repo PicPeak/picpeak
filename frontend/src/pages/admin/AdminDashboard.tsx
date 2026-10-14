@@ -91,7 +91,7 @@ export function activityMessageKey(activity: Activity): string {
 export const AdminDashboard: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { format, formatDistanceToNow } = useLocalizedDate();
+  const { format, formatExpiry, formatDistanceToNow } = useLocalizedDate();
 
   // Fetch dashboard statistics
   const { data: dashboardStats, isLoading: statsLoading } = useQuery({
@@ -360,7 +360,7 @@ export const AdminDashboard: React.FC = () => {
                           {t('admin.daysLeft', { count: daysLeft })}
                         </p>
                         <p className="text-xs text-muted">
-                          {t('gallery.expires')} {format(parseISO(event.expires_at!), 'PP')}
+                          {t('gallery.expires')} {formatExpiry(event.expires_at!, 'PP')}
                         </p>
                       </div>
                     </div>

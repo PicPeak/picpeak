@@ -54,7 +54,14 @@ function endOfDayInZone(ymd, tz) {
   if (check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d) return null;
   // 23:59 exists on every day in every zone (DST moves happen at or after
   // midnight), where the next day's 00:00 may not.
-  return new Date(zonedWallClockToUtc(y, mo, d, 23, 59, tz).getTime() + 59999);
+  const end = zonedWallClockToUtc(y, mo, d, 23, 59, tz).getTime() + 59999;
+  // Where the clocks go back at midnight (Santiago in April), 23:00-23:59
+  // happens twice and the day ends at the later 23:59.
+  for (const shift of [3600000, 1800000]) {
+    const p = getZonedParts(new Date(end + shift), tz);
+    if (p.y === y && p.mo === mo && p.d === d && p.hh === 23 && p.mi === 59) return new Date(end + shift);
+  }
+  return new Date(end);
 }
 
 /** 'yyyy-MM-dd' + n calendar days. */
@@ -106,6 +113,11 @@ function extendExpiry(instant, days, tz) {
   if (isMidnightUtc(instant)) return new Date(ms + days * 86400000);
   const p = getZonedParts(instant, tz);
   const next = addDays(p.y, p.mo, p.d, days);
+  // An end-of-day expiry stays the end of the new day, the later 23:59 where
+  // that hour repeats.
+  if (p.hh === 23 && p.mi === 59 && p.ss === 59 && ((ms % 1000) + 1000) % 1000 === 999) {
+    return endOfDayInZone(`${next.y}-${pad(next.mo)}-${pad(next.d)}`, tz);
+  }
   const subMinute = p.ss * 1000 + (((ms % 1000) + 1000) % 1000);
   return new Date(zonedWallClockToUtc(next.y, next.mo, next.d, p.hh, p.mi, tz).getTime() + subMinute);
 }

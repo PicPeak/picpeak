@@ -45,11 +45,14 @@ describe('endOfDayInZone', () => {
     // Santiago skips from 24:00 to 01:00 on 5 Sep 2026: the next day's
     // midnight does not exist, 23:59:59.999 of the 5th does (UTC-4).
     expect(iso(endOfDayInZone('2026-09-05', 'America/Santiago'))).toBe('2026-09-06T03:59:59.999Z');
+    // Santiago goes back from 24:00 to 23:00 on 4 Apr 2026: 23:59 happens
+    // twice, and the day ends at the later one (UTC-4), not an hour early.
+    expect(iso(endOfDayInZone('2026-04-04', 'America/Santiago'))).toBe('2026-04-05T03:59:59.999Z');
   });
 
   test('is the last millisecond of that day in the zone', () => {
     for (const tz of ['America/New_York', 'Europe/Berlin', 'Pacific/Kiritimati', 'America/Santiago']) {
-      for (const day of ['2026-03-08', '2026-03-29', '2026-09-05', '2026-11-01', '2026-12-24']) {
+      for (const day of ['2026-03-08', '2026-03-29', '2026-04-04', '2026-09-05', '2026-11-01', '2026-12-24']) {
         const end = endOfDayInZone(day, tz);
         expect(dateInZone(end, tz)).toBe(day);
         expect(dateInZone(new Date(end.getTime() + 1), tz)).toBe(addDaysToDate(day, 1));
@@ -117,6 +120,11 @@ describe('extendExpiry', () => {
     expect(iso(extendExpiry(from, 14, 'Europe/Berlin'))).toBe(iso(endOfDayInZone('2026-04-03', 'Europe/Berlin')));
     const ny = endOfDayInZone('2026-10-28', 'America/New_York'); // EDT → EST on 1 Nov
     expect(iso(extendExpiry(ny, 7, 'America/New_York'))).toBe(iso(endOfDayInZone('2026-11-04', 'America/New_York')));
+  });
+
+  test('extending onto a day whose last hour repeats ends at its later 23:59', () => {
+    const from = endOfDayInZone('2026-04-03', 'America/Santiago');
+    expect(iso(extendExpiry(from, 1, 'America/Santiago'))).toBe('2026-04-05T03:59:59.999Z');
   });
 
   test('a plain 24 h step would have landed on the wrong day', () => {
