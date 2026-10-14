@@ -572,4 +572,48 @@ describe('one archive job per gallery', () => {
     expect(row.archive_path.length).toBeLessThanOrEqual(255);
     expect(row.archive_path).toMatch(/^events\/archived\/long-x+-[0-9a-f]{12}\.zip$/);
   });
+
+  it('keeps a removed abandoned upload on record, as a stalled run can still land it', async () => {
+    const event = await makeEvent('abandoned-late');
+    const deadKey = 'events/archived/abandoned-late-0123456789ab.zip';
+    await holdClaim(event.id);
+    await db('maintenance_jobs').where({ job_name: jobName(event.id) }).update({
+      last_result: JSON.stringify({ upload: deadKey }),
+      heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString(),
+    });
+
+    const { claimArchive, supersededArchives } = require('../../src/services/archiveService');
+    const lease = await claimArchive(event.id);
+    await lease.release();
+
+    expect(deletedKeys()).toEqual([deadKey]);
+    expect(await supersededArchives(event.id)).toEqual([deadKey]);
+  });
+
+  it('leaves the next owner\'s upload alone once its own claim has moved on', async () => {
+    const event = await makeEvent('abandoned-overtaken');
+    const liveKey = 'events/archived/abandoned-overtaken-0123456789ab.zip';
+    const realClaim = jobState.claim;
+    const claimSpy = jest.spyOn(jobState, 'claim').mockImplementationOnce(async (name) => {
+      const token = await realClaim(name);
+      // This claimer stalls past its lease right away; the next owner takes
+      // over and records the zip it is uploading.
+      await db('maintenance_jobs').where({ job_name: name })
+        .update({ heartbeat_at: new Date(Date.now() - jobState.DEFAULT_STALE_MS - 60000).toISOString() });
+      const next = await realClaim(name);
+      await db('maintenance_jobs').where({ job_name: name, claim_token: next })
+        .update({ last_result: JSON.stringify({ upload: liveKey }) });
+      return token;
+    });
+    try {
+      const lease = await require('../../src/services/archiveService').claimArchive(event.id);
+      await lease.release();
+    } finally {
+      claimSpy.mockRestore();
+    }
+
+    expect(deletedKeys()).toEqual([]);
+    const row = await db('maintenance_jobs').where({ job_name: jobName(event.id) }).first();
+    expect(JSON.parse(row.last_result)).toEqual({ upload: liveKey });
+  });
 });

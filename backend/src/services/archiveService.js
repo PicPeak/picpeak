@@ -84,24 +84,42 @@ async function claimArchive(eventId) {
 //   - superseded: zips a restore brought back. Kept until the gallery has a
 //     newer archive, or is deleted: until then the zip is the copy to fall
 //     back on, should anything (a job that stalled past its lease with a
-//     delete under way) take a restored file. An abandoned upload whose
-//     removal failed joins them, to be retried at the same points.
+//     delete under way) take a restored file. An abandoned upload joins
+//     them once removed, to be removed again at the same points.
 // Written only under the writer's own claim token.
 const isArchiveKey = (key) => typeof key === 'string' && key.startsWith('events/archived/');
 
-async function readArchiveState(jobName, conn = db) {
-  const row = await conn('maintenance_jobs').where({ job_name: jobName }).first('last_result');
+const parseArchiveState = (row) => {
   let state = null;
   try { state = JSON.parse(row?.last_result || 'null'); } catch { state = null; }
   return state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+};
+
+async function readArchiveState(jobName, conn = db) {
+  return parseArchiveState(await conn('maintenance_jobs').where({ job_name: jobName }).first('last_result'));
+}
+
+// The state as this lease sees it, or null once the claim has moved on: a
+// run that lost its claim must not act on what the new owner recorded.
+async function readOwnState(lease, conn = db) {
+  const row = await conn('maintenance_jobs')
+    .where({ job_name: lease.jobName, claim_token: lease.token })
+    .first('last_result');
+  return row ? parseArchiveState(row) : null;
 }
 
 const writeArchiveState = (lease, state, conn = db) => conn('maintenance_jobs')
   .where({ job_name: lease.jobName, claim_token: lease.token })
   .update({ last_result: Object.keys(state).length ? JSON.stringify(state) : null });
 
+const withSuperseded = (state, key) => {
+  const superseded = Array.isArray(state.superseded) ? state.superseded : [];
+  if (!superseded.includes(key)) superseded.push(key);
+  return { ...state, superseded };
+};
+
 async function recordUpload(lease, key) {
-  const { upload: _previous, ...state } = await readArchiveState(lease.jobName);
+  const { upload: _previous, ...state } = (await readOwnState(lease)) || {};
   await writeArchiveState(lease, key ? { ...state, upload: key } : state);
 }
 
@@ -113,10 +131,8 @@ async function recordUpload(lease, key) {
  */
 async function recordSupersededArchive(lease, key, conn = db) {
   if (!isArchiveKey(key)) return;
-  const state = await readArchiveState(lease.jobName, conn);
-  const superseded = Array.isArray(state.superseded) ? state.superseded : [];
-  if (!superseded.includes(key)) superseded.push(key);
-  if (!(await writeArchiveState(lease, { ...state, superseded }, conn))) {
+  const state = await readOwnState(lease, conn);
+  if (!state || !(await writeArchiveState(lease, withSuperseded(state, key), conn))) {
     throw new AppError('The archive claim was taken over', 409, 'ARCHIVE_IN_PROGRESS');
   }
 }
@@ -132,25 +148,21 @@ const isReferenced = async (key) => Boolean(await db('events').where('archive_pa
 
 async function removeAbandonedUpload(lease) {
   try {
-    const { upload: key } = await readArchiveState(lease.jobName);
-    if (!isArchiveKey(key)) return;
+    const own = await readOwnState(lease);
+    if (!own || !isArchiveKey(own.upload)) return;
+    const { upload: key, ...state } = own;
+    let next = state;
     // Published after all (the answer to its commit was lost): keep it.
-    const { upload: _abandoned, ...state } = await readArchiveState(lease.jobName);
     if (!(await isReferenced(key))) {
-      try {
-        await getStorage().delete(key);
-        logger.info(`Removed the archive upload an interrupted run left behind: ${key}`);
-      } catch (err) {
-        // Kept with the superseded zips, or the next upload record would
-        // replace the only reference to it: the next publish or the gallery
-        // delete retries it.
-        logger.warn(`Failed to remove the abandoned archive upload ${key}: ${err.message}`);
-        const superseded = Array.isArray(state.superseded) ? state.superseded : [];
-        if (!superseded.includes(key)) superseded.push(key);
-        state.superseded = superseded;
-      }
+      await getStorage().delete(key).then(
+        () => logger.info(`Removed the archive upload an interrupted run left behind: ${key}`),
+        (err) => logger.warn(`Failed to remove the abandoned archive upload ${key}: ${err.message}`));
+      // Kept with the superseded zips either way: the removal can fail, and a
+      // run stalled mid-upload can still land the zip after it. The next
+      // publish or the gallery delete removes it again.
+      next = withSuperseded(state, key);
     }
-    await writeArchiveState(lease, state);
+    await writeArchiveState(lease, next);
   } catch (err) {
     logger.warn(`Could not check ${lease.jobName} for an abandoned archive upload: ${err.message}`);
   }
@@ -159,7 +171,8 @@ async function removeAbandonedUpload(lease) {
 /** After a publish: the gallery has a newer archive, the restored-from zips can go. */
 async function removeSupersededArchives(lease, publishedKey) {
   try {
-    const state = await readArchiveState(lease.jobName);
+    const state = await readOwnState(lease);
+    if (!state) return;
     const kept = [];
     for (const key of Array.isArray(state.superseded) ? state.superseded : []) {
       if (!isArchiveKey(key) || key === publishedKey) continue;
@@ -449,7 +462,7 @@ async function buildArchive(event, lease) {
           .modify((q) => { if (trx.client.config.client === 'pg') q.forUpdate(); })
           .first('job_name');
         if (!held) return 0;
-        const { upload: _published, ...state } = await readArchiveState(lease.jobName, trx);
+        const { upload: _published, ...state } = (await readOwnState(lease, trx)) || {};
         await writeArchiveState(lease, state, trx);
         return trx('events')
           .where('id', event.id)
