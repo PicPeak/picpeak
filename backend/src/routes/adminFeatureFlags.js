@@ -307,7 +307,7 @@ router.put('/', adminAuth, requirePermission('settings.features'), async (req, r
       'feature_flags_updated',
       { changed, actor: adminUsername },
       null,
-      { type: 'admin' }
+      { type: 'admin', id: adminId, name: req.admin?.username || null }
     );
 
     res.json(merged);
