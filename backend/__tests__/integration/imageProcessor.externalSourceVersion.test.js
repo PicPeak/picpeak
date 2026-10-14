@@ -170,6 +170,25 @@ describe('renditions of an external file rewritten in place', () => {
     for (const key of legacyKeys) expect(await storage.stat(key)).toBeFalsy();
   });
 
+  test('deleting the gallery sweeps the versioned tiers of its external photos', async () => {
+    const adminId = (await db('admin_users').first('id')).id;
+    const otherId = resultId(await db('events').insert({ slug: 'source-version-delete', event_type: 'wedding', event_name: 'Delete me',
+      event_date: '2026-10-14', host_email: 'host@fixture.invalid', admin_email: 'admin@fixture.invalid',
+      password_hash: 'x', share_link: '/gallery/source-version-delete/share', expires_at: new Date(Date.now() + 3600000).toISOString(),
+      is_active: 1, is_archived: 0, is_draft: 0, created_by: adminId, source_mode: 'reference', external_path: 'shoot' }).returning('id'));
+    const row = await externalPhoto('cascade.jpg');
+    await db('photos').where({ id: row.id }).update({ event_id: otherId });
+    const moved = await db('photos').where({ id: row.id }).first();
+    const tiers = [
+      await imageProcessor.ensurePreviewImageAtWidth(moved, 640),
+      await imageProcessor.ensureThumbnailAtWidth(moved, 600),
+    ];
+    for (const key of tiers) expect(key).toContain(`_v${moved.size_bytes}_`);
+
+    await require('../../src/routes/adminEvents/helpers').deleteEventCascade(otherId, { id: adminId });
+    for (const key of tiers) expect(await storage.stat(key)).toBeFalsy();
+  });
+
   test('a tier written before the version was part of the name is still served and cleaned up', async () => {
     const row = await externalPhoto('legacy-tier.jpg');
     const legacyKey = `previews/preview_w640_p${row.id}_legacy-tier.jpg`;
