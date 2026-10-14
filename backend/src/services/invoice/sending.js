@@ -214,7 +214,7 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     __language: ctx.locale,
     cc: invoiceCc,
     attachments: invoiceAttachments,
-  });
+  }, { customerAccountId: customer.id });
 
   try { await logActivity('invoice_sent', { invoiceId: id }, invoice.event_id || null, adminActivityActor(adminId)); } catch (_) { /* non-fatal */ }
 
@@ -525,7 +525,7 @@ async function sendStornoOnce(stornoId, adminId) {
       contentPath: pdfPath,
       contentType: 'application/pdf',
     }],
-  });
+  }, { customerAccountId: customer.id });
 
   try {
     await logActivity('storno_sent',

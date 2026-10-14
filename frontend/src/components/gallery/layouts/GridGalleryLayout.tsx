@@ -1,9 +1,10 @@
 import React from 'react';
-import { MessageSquare, Star, Heart, Video, Eye, EyeOff } from 'lucide-react';
+import { MessageSquare, Star, Heart, Video } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { PhotoCard } from '../PhotoCard';
 import { firstLookAboveChips } from '../GalleryTileBadges';
+import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
@@ -37,6 +38,10 @@ interface GridPhotoProps {
   // Immediate UI like state and callback
   liked?: boolean;
   onLikeSuccess?: () => void;
+  /** The client's hide/show button (#172), when the viewer is the client. */
+  visibilityToggle?: React.ReactNode;
+  /** Dim the photo: the client hid it from guests. */
+  dimmed?: boolean;
 }
 
 const GridPhoto: React.FC<GridPhotoProps> = ({
@@ -57,7 +62,9 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
   onQuickComment,
   onFeedbackChange,
   liked = false,
-  onLikeSuccess
+  onLikeSuccess,
+  visibilityToggle,
+  dimmed = false,
 }) => {
   const bands = useLazyBands();
   const { t } = useTranslation();
@@ -148,7 +155,9 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
       imageProps={{
         src: photo.thumbnail_url || photo.url,
         alt: photo.filename,
-        className: 'w-full h-full object-cover rounded-lg',
+        // The image only, not the tile, so the toggle and the chips stay at
+        // full strength (issue 1992).
+        className: `w-full h-full object-cover rounded-lg${dimmed ? ' opacity-40' : ''}`,
         loading: 'lazy',
         isGallery: true,
         slug,
@@ -169,6 +178,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
       onRequireIdentity={onRequireIdentity}
       onIdentitySaved={onIdentitySaved}
       checkboxTestId
+      topLeftControl={visibilityToggle}
     >
       {/* Feedback Indicators (always visible, bottom-left). Show like immediately when user liked */}
       {(commentCount > 0 || averageRating > 0 || likeCount > 0 || liked) && (
@@ -249,7 +259,6 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   isClient = false,
   onToggleVisibility
 }) => {
-  const { t } = useTranslation();
   const { theme } = useTheme();
   const gallerySettings = theme.gallerySettings || {};
   const animation = gallerySettings.photoAnimation || 'fade';
@@ -272,9 +281,8 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   return (
     <div className={gridClass}>
       {photos.map((photo, index) => {
-        const isHidden = photo.visibility === 'hidden';
         return (
-          <div key={photo.id} className={`relative ${isClient && isHidden ? 'opacity-40' : ''}`}>
+          <div key={photo.id} className="relative">
             <GridPhoto
               photo={photo}
               isSelected={selectedPhotos.has(photo.id)}
@@ -307,32 +315,12 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                   return next;
                 });
               }}
+              // Client visibility toggle (#172) and the dimmed hidden photo.
+              visibilityToggle={isClient && onToggleVisibility
+                ? <ClientVisibilityToggle photo={photo} onToggle={onToggleVisibility} />
+                : undefined}
+              dimmed={isClient && Boolean(onToggleVisibility) && isHiddenFromGuests(photo)}
             />
-            {/* Client visibility toggle overlay (#172) */}
-            {isClient && onToggleVisibility && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleVisibility(photo.id, photo.visibility || 'visible');
-                }}
-                className={`absolute top-2 left-2 z-10 p-1.5 rounded-full shadow-md transition-colors ${
-                  isHidden
-                    ? 'bg-danger text-white hover:opacity-90'
-                    // On the photo: a fixed white chip, whatever the theme.
-                    : 'bg-white/90 text-neutral-700 hover:bg-white'
-                }`}
-                title={isHidden
-                  ? t('clientAccess.hiddenFromGuests', 'Hidden from guests')
-                  : t('clientAccess.visibleToGuests', 'Visible to guests')}
-                aria-label={isHidden
-                  ? t('clientAccess.hiddenFromGuests', 'Hidden from guests')
-                  : t('clientAccess.visibleToGuests', 'Visible to guests')}
-                aria-pressed={isHidden}
-              >
-                {isHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            )}
           </div>
         );
       })}

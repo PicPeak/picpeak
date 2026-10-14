@@ -33,7 +33,16 @@ const ensureIntOr = (v) => (v == null ? 1 : Number(v));
 async function sendContract(id, adminId, { reviewToken = null, collectData = false } = {}) {
   // Ask the customer for their details first; this send runs once they have
   // (#1446, dataCollection.js).
-  if (collectData) return require('./dataCollection').requestData(id, adminId);
+  if (collectData) {
+    // The request travels by email, which a customer who takes no
+    // administrative emails (migration 300) never gets: the contract would
+    // sit in awaiting_data with nobody able to answer. Refuse instead.
+    const contract = await db('contracts').where({ id }).first('customer_account_id');
+    if (contract && await require('../_adminEmailOptOut').customerTakesNoAdminEmails(contract.customer_account_id)) {
+      throw new AppError('This customer takes no administrative emails, so they can\'t be asked for their details by email. Enter the missing address on the customer first.', 409, 'NO_ADMIN_EMAILS');
+    }
+    return require('./dataCollection').requestData(id, adminId);
+  }
 
   // Self-heal: dev installs that ran migration 130 BEFORE we added
   // contract_fully_signed to the seed list won't have all three
