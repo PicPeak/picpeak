@@ -470,8 +470,11 @@ async function renderWebCopy(photoId) {
   const event = await db('events').where({ id: photo.event_id }).first();
   if (!event) throw new Error(`Event ${photo.event_id} not found for photo ${photoId}`);
 
+  // Case-blind like SQLite's LIKE in IS_VIDEO_SQL: a row the sweeps take as
+  // a video must not be marked skipped here, or the janitor's 'skipped'
+  // sweep (requeueStranded) would queue it again every minute.
   const isVideo = photo.media_type === 'video'
-    || (typeof photo.mime_type === 'string' && photo.mime_type.startsWith('video/'));
+    || (typeof photo.mime_type === 'string' && photo.mime_type.toLowerCase().startsWith('video/'));
   if (!isVideo) {
     await mediaAttempts.guard(attempt, db, true).update({ web_status: 'skipped', web_started_at: null, web_error: null });
     return 'skipped';

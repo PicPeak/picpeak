@@ -640,6 +640,17 @@ describe('renderWebCopy', () => {
     expect(dbModule.__state.updates.filter((u) => u.table === 'photos')).toHaveLength(0);
   });
 
+  it('takes an upper-case video MIME type as a video, as the SQLite sweeps do', async () => {
+    dbModule.__state.setting = { setting_value: 'false' };
+    service.clearCache();
+    dbModule.__state.photo = { id: 33, event_id: 9, filename: 'shout.mov', media_type: 'image', mime_type: 'VIDEO/QUICKTIME' };
+    mockProbe([{ index: 0, codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p' }], { format_name: 'mov,mp4', tags: { major_brand: 'qt  ' } });
+    const atoms = await writeAtoms(box('ftyp', 16), box('mdat', 100), box('moov', 40));
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+    // Not 'skipped' (the janitor would queue that again every minute): probed and deferred.
+    expect(await service.renderWebCopy(33)).toBe('deferred');
+  });
+
   it('marks a row that is not a video as skipped without touching ffmpeg', async () => {
     dbModule.__state.photo = { id: 25, event_id: 9, filename: 'still.jpg', media_type: 'image', mime_type: 'image/jpeg' };
     expect(await service.renderWebCopy(25)).toBe('skipped');
