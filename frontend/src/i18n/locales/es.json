@@ -543,6 +543,17 @@
         "pets": "Mascotas",
         "black_and_white": "Blanco y negro"
       }
+    },
+    "tile": {
+      "viewFullSize": "Ver a tamaño completo",
+      "downloadPhoto": "Descargar foto",
+      "commentOnPhoto": "Comentar la foto",
+      "likePhoto": "Me gusta la foto",
+      "unlikePhoto": "Quitar me gusta",
+      "comment": "Comentar",
+      "like": "Me gusta",
+      "unlike": "Quitar me gusta",
+      "selectPhoto": "Seleccionar {{name}}"
     }
   },
   "categories": {
@@ -1085,7 +1096,12 @@
       "publishLink": "Publicar"
     },
     "showExifToGuests": "Mostrar los datos de cámara a los invitados",
-    "showExifToGuestsHelp": "La cámara, el objetivo, la distancia focal, la apertura, la velocidad de obturación y el ISO aparecen bajo la foto en la vista a pantalla completa. La ubicación y los números de serie nunca se guardan ni se muestran."
+    "showExifToGuestsHelp": "La cámara, el objetivo, la distancia focal, la apertura, la velocidad de obturación y el ISO aparecen bajo la foto en la vista a pantalla completa. La ubicación y los números de serie nunca se guardan ni se muestran.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "Los saltos de línea se conservan en los correos",
+      "tip": "Consejo: pulsa Intro para crear una nueva línea. Cada línea aparecerá como un párrafo independiente en los correos.",
+      "preview": "Vista previa:"
+    }
   },
   "settings": {
     "title": "Ajustes del sistema",

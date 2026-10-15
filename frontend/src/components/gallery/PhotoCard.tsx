@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { Download, Maximize2, Check, MessageSquare, Heart, Loader2 } from 'lucide-react';
 import { useInView } from 'react-intersection-observer';
 import { AuthenticatedImage } from '../common';
@@ -160,6 +161,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // #1275 — the input in use right now, not what the device is capable of.
   // On a hybrid the two disagree, and acting on the device's primary pointer
   // handles one of its two inputs as if it were the other.
+  const { t } = useTranslation();
   const isTouchDevice = useInputMode() === 'touch';
   const overlayTimeoutRef = useRef<number | null>(null);
 
@@ -312,9 +314,12 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // wrong input. Withholding them on touch is what the breakpoint was really
   // for, since :hover latches on a touchscreen once a tile has been tapped.
   const revealed = (visible: boolean) => {
+    // A control reached by keyboard reveals its overlay: opacity-0 hides
+    // pixels, not focus, so Tab landed on an invisible button (issue 2074).
+    // :focus-visible, not :focus-within, so a mouse click leaves it hidden.
     const base = visible
       ? 'opacity-100 pointer-events-auto'
-      : 'opacity-0 pointer-events-none';
+      : 'opacity-0 pointer-events-none has-[:focus-visible]:opacity-100 has-[:focus-visible]:pointer-events-auto';
     return isTouchDevice
       ? base
       : `${base} group-hover:opacity-100 group-hover:pointer-events-auto`;
@@ -330,7 +335,9 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // with the checkbox, so it steps aside whenever the checkbox shows.
   const folderHintVisibilityClass = isSelected || isSelectionMode || overlayVisible
     ? 'opacity-0'
-    : isTouchDevice ? 'opacity-100' : 'opacity-100 group-hover:opacity-0';
+    : isTouchDevice
+      ? 'opacity-100 group-has-[:focus-visible]:opacity-0'
+      : 'opacity-100 group-hover:opacity-0 group-has-[:focus-visible]:opacity-0';
 
   const buttonType = actionVariant === 'dark' ? ('button' as const) : undefined;
   const actionButtonClass =
@@ -419,8 +426,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           onQuickComment();
           hideOverlay();
         }}
-        aria-label="Comment on photo"
-        title="Comment"
+        aria-label={t('gallery.tile.commentOnPhoto', 'Comment on photo')}
+        title={t('gallery.tile.comment', 'Comment')}
       >
         <MessageSquare className={actionIconClass} />
       </button>
@@ -433,9 +440,9 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           liked ? 'bg-danger hover:opacity-90' : 'bg-white/90 hover:bg-white'
         }`}
         onClick={handleLike}
-        aria-label={likeToggleLabels && liked ? 'Unlike photo' : 'Like photo'}
+        aria-label={likeToggleLabels && liked ? t('gallery.tile.unlikePhoto', 'Unlike photo') : t('gallery.tile.likePhoto', 'Like photo')}
         aria-pressed={liked}
-        title={likeToggleLabels ? (liked ? 'Unlike' : 'Like') : 'Like'}
+        title={likeToggleLabels && liked ? t('gallery.tile.unlike', 'Unlike') : t('gallery.tile.like', 'Like')}
       >
         <Heart className={`w-5 h-5 ${liked ? 'text-white fill-white' : 'text-neutral-800'}`} />
       </button>
@@ -551,7 +558,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                     onClick(e);
                     hideOverlay();
                   }}
-                  aria-label="View full size"
+                  aria-label={t('gallery.tile.viewFullSize', 'View full size')}
                 >
                   <Maximize2 className={actionIconClass} />
                 </button>
@@ -564,7 +571,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                       onDownload(e);
                       hideOverlay();
                     }}
-                    aria-label={downloadPending ? preparingDownloadMessage() : 'Download photo'}
+                    aria-label={downloadPending ? preparingDownloadMessage() : t('gallery.tile.downloadPhoto', 'Download photo')}
                     aria-disabled={!withinDownloadLimit || downloadPending || undefined}
                     aria-busy={downloadPending || undefined}
                     title={withinDownloadLimit ? undefined : downloadLimitReachedMessage()}
@@ -636,7 +643,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* Selection Checkbox (visible on hover or when selected) */}
           <button
             type="button"
-            aria-label={`Select ${photo.filename}`}
+            aria-label={t('gallery.tile.selectPhoto', 'Select {{name}}', { name: photo.filename })}
             role="checkbox"
             aria-checked={isSelected}
             data-testid={checkboxTestId ? `gallery-photo-checkbox-${photo.id}` : undefined}

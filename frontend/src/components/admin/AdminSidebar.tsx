@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useGuardedLinkClick, useLeaveGuard } from '../../contexts/UnsavedChangesContext';
 import {
@@ -42,6 +42,7 @@ import { useAccountingNavItems } from './AccountingLayout';
 import { useSharingNavItems, SHARING_PATHS } from './sharingNav';
 import { useAutomationNavItems } from './AutomationLayout';
 import { isImeComposing } from '../../utils/imeComposition';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 // A section that takes over the sidebar while the admin is inside it:
 // the main menu is replaced by the section's own navigation, with a
@@ -249,6 +250,8 @@ export function navItemAllowed(
   return true;
 }
 
+const DRAWER_QUERY = '(max-width: 1023.98px)';
+
 export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, collapsed = false, onToggleCollapse }) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -260,6 +263,38 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
     guardedLinkClick(e, href, { replace, after });
   const { t } = useTranslation();
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+
+  // Below lg the sidebar is a drawer: translated off screen while closed, so
+  // it must also leave the tab order and the accessibility tree (inert), and
+  // an open one holds focus like a dialog. On lg+ it is always on screen.
+  const [isDrawer, setIsDrawer] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(DRAWER_QUERY).matches
+      : false
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mql = window.matchMedia(DRAWER_QUERY);
+    const onChange = () => setIsDrawer(mql.matches);
+    onChange();
+    mql.addEventListener?.('change', onChange);
+    return () => mql.removeEventListener?.('change', onChange);
+  }, []);
+  const drawerRef = useFocusTrap(isDrawer && isOpen, { containFocus: true });
+  // The hamburger that opened the drawer gets focus back when it closes; the
+  // closed drawer is inert, so focus left inside would drop to the body.
+  const openerRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (!isDrawer) return;
+    if (isOpen) {
+      const active = document.activeElement;
+      openerRef.current = active instanceof HTMLElement && !drawerRef.current?.contains(active) ? active : null;
+      return;
+    }
+    if (drawerRef.current?.contains(document.activeElement)) {
+      openerRef.current?.focus();
+    }
+  }, [isDrawer, isOpen, drawerRef]);
   const { flags } = useFeatureFlags();
   // Branding lookup for the "logo_position = sidepanel" mode — when
   // chosen, the logo replaces the "PicPeak Admin" text in the brand
@@ -476,6 +511,10 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
 
   return (
     <div
+      ref={drawerRef}
+      // Closed drawer: out of the tab order and the accessibility tree
+      // (issue 2074). Spread, as React 18 does not know `inert` as a prop.
+      {...(isDrawer && !isOpen ? { inert: '' } : {})}
       // Right edge drawn via box-shadow rather than `border-r` so the
       // brand row's `border-b` can extend to the sidebar's full width
       // and meet the header's `border-b` cleanly at the L-junction. A
