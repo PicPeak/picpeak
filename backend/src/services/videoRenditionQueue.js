@@ -25,7 +25,7 @@
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
-const { queuesVideos, renderWebCopy, queueForMetadataStrip } = require('./videoRenditionService');
+const { queuesVideos, renderWebCopy, queueForMetadataStrip, requeueStranded } = require('./videoRenditionService');
 const mediaAttempts = require('./mediaAttemptService');
 const { isTransient } = require('./imageResourcePolicy');
 
@@ -122,6 +122,9 @@ async function janitorLoop() {
       if (reset > 0) {
         logger.warn(`videoRenditionQueue: janitor reset ${reset} stuck video(s) from 'processing' to 'pending'`);
       }
+      // A worker that decided on a setting a moment before it changed.
+      const stranded = await requeueStranded();
+      if (stranded > 0) logger.info(`videoRenditionQueue: queued ${stranded} video(s) decided just before a setting changed`);
     } catch (e) {
       logger.warn('videoRenditionQueue: janitor error', { error: e.message });
     }

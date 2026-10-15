@@ -144,6 +144,25 @@ describe('general_video_strip_metadata (issue 2102)', () => {
     expect(row.web_path).toBe('videos/web_1_remux_x.mp4');
   });
 
+  it('the janitor re-queues a row a worker deferred or skipped just before the setting changed', async () => {
+    // Stripping is off and the copies are off here.
+    await db('photos').where({ id: rows.deferred }).update({ web_status: 'deferred' });
+    service.clearCache();
+    expect(await service.requeueStranded()).toBe(0);
+    // The copies were switched on while a worker, still reading "off",
+    // deferred this video: the switch-on backfill could not take it.
+    await db('app_settings').insert({ setting_key: 'general_video_web_rendition', setting_value: JSON.stringify(true), setting_type: 'general' })
+      .onConflict('setting_key').merge();
+    service.clearCache();
+    expect(await service.requeueStranded()).toBe(1);
+    expect(await statusOf('deferred')).toBe('pending');
+    // Skipped rows stay: stripping is off.
+    expect(await statusOf('skipped')).toBe('skipped');
+    await db('photos').where({ id: rows.deferred }).update({ web_status: 'deferred' });
+    await db('app_settings').where({ setting_key: 'general_video_web_rendition' }).update({ setting_value: JSON.stringify(false) });
+    service.clearCache();
+  });
+
   it('with stripping off, switching the copies on queues deferred, failed and never-seen videos, not skipped ones', async () => {
     const res = await put({ general_video_web_rendition: true });
     expect(res.status).toBe(200);

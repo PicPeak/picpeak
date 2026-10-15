@@ -10,6 +10,7 @@ jest.mock('../../src/services/videoRenditionService', () => ({
   queuesVideos: jest.fn(),
   renderWebCopy: jest.fn(),
   queueForMetadataStrip: jest.fn(async () => 0),
+  requeueStranded: jest.fn(async () => 0),
 }));
 jest.mock('../../src/services/mediaProcessService', () => ({ start: jest.fn() }));
 jest.mock('../../src/utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
@@ -57,6 +58,8 @@ describe('videoRenditionQueue.start', () => {
     expect(service.queuesVideos).toHaveBeenCalled();
     expect(mediaAttempts.claimNext).toHaveBeenCalledWith('web');
     expect(service.queueForMetadataStrip).toHaveBeenCalledTimes(1);
+    // The janitor's first tick re-queues rows stranded by a setting change.
+    expect(service.requeueStranded).toHaveBeenCalled();
   });
 
   it('claims nothing while both settings are off', async () => {

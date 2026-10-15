@@ -175,6 +175,22 @@ async function queueForMetadataStrip({ eventId } = {}) {
 }
 
 /**
+ * Re-queue rows a worker decided on a moment before a setting changed: a
+ * video marked 'deferred' while the transcodes were being switched on, or
+ * 'skipped' while stripping was. The switch-on backfill could not take
+ * them (they were in flight), and nothing else would. Run by the queue's
+ * janitor every minute; both statuses are indexed and normally match no
+ * row, so it is cheap. Returns the number of rows queued.
+ */
+async function requeueStranded() {
+  const statuses = [];
+  if (await isEnabled()) statuses.push('deferred');
+  if (await isStripEnabled()) statuses.push('skipped');
+  if (statuses.length === 0) return 0;
+  return queueVideos(statuses);
+}
+
+/**
  * The storage key of a video's copy. The id keeps NAS basenames apart; the
  * claim token keeps attempts apart: a worker whose claim was lost deletes
  * its own object and can never touch the one the current attempt wrote.
@@ -564,6 +580,7 @@ module.exports = {
   clearCache,
   backfillPending,
   queueForMetadataStrip,
+  requeueStranded,
   webKeyFor,
   hasFaststart,
   probe,
