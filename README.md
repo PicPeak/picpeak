@@ -72,7 +72,11 @@ it). For public access, terminate TLS in a reverse proxy on the host and set
 `PICPEAK_BIND_ADDRESS=127.0.0.1` so the plain-HTTP port cannot be reached
 around it.
 
-Compose trusts one forwarding hop (its frontend nginx). For a host-local TLS
+Compose trusts one forwarding hop (its frontend nginx) unless `TRUST_PROXY` is
+set, so a client-supplied `X-Forwarded-For` cannot change its rate-limit key.
+If another proxy already sits in front of the frontend (Cloudflare Tunnel,
+Traefik, NPM, Caddy) and `TRUST_PROXY` is not set, set it to `2`, otherwise
+all visitors share the proxy's address. For a host-local TLS
 proxy in front of the frontend, set `TRUST_PROXY=2`, `COOKIE_SECURE=true` and
 `ENABLE_HSTS=true`. Keep the frontend loopback-only with this two-hop setting,
 and configure the outer proxy to append or overwrite forwarding headers using
