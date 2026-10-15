@@ -15,14 +15,22 @@
  * Adding the column with its default fills existing rows with 1 on both
  * engines, so they are set to 0 right after, in the same guarded branch: a
  * re-run finds the column and leaves already-refreshed rows alone.
+ *
+ * Both steps in one transaction. The runners give a migration one only on
+ * PostgreSQL; on SQLite a backfill that failed after the column was added
+ * would leave every legacy row at 1, and the re-run would skip it for good.
  */
 exports.up = async function up(knex) {
-  const has = await knex.schema.hasColumn('photos', 'rendition_version');
-  if (has) return;
-  await knex.schema.alterTable('photos', (t) => {
-    t.integer('rendition_version').notNullable().defaultTo(1);
-  });
-  await knex('photos').update({ rendition_version: 0 });
+  const addAndBackfill = async (trx) => {
+    const has = await trx.schema.hasColumn('photos', 'rendition_version');
+    if (has) return;
+    await trx.schema.alterTable('photos', (t) => {
+      t.integer('rendition_version').notNullable().defaultTo(1);
+    });
+    await trx('photos').update({ rendition_version: 0 });
+  };
+  if (knex.isTransaction) await addAndBackfill(knex);
+  else await knex.transaction(addAndBackfill);
 };
 
 exports.down = async function down(knex) {
