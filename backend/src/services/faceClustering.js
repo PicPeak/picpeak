@@ -127,7 +127,35 @@ function meetsQualityFloor(face, thresholds) {
  */
 const eventLocks = new Map();
 
+/**
+ * The PostgreSQL half of withEventLock on its own: the event's people lock,
+ * held until `trx` ends. Re-entrant within the transaction. A no-op without a
+ * transaction and on SQLite.
+ *
+ * A scan takes it before it rewrites the people its old faces belonged to
+ * (issue 2108): those writes lock person rows, and a second scan holding this
+ * lock in assignFaces writes the same rows. Taken after them, each scan waited
+ * for the other.
+ */
+async function lockEventPeople(eventId, trx) {
+  // pg_advisory_xact_lock is released automatically when the transaction
+  // ends, including on rollback — no leak if the caller throws.
+  if (trx && typeof trx.raw === 'function') {
+    const client = db.client.config.client;
+    const isPg = client === 'pg' || (typeof client === 'string' && client.includes('postgres'));
+    if (isPg) {
+      await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [1074, Number(eventId)]);
+    }
+  }
+}
+
 async function withEventLock(eventId, trx, fn) {
+  // The advisory lock before the in-process mutex, not inside it: a scan can
+  // already hold it (lockEventPeople) when it gets here, and a worker of the
+  // same process waiting for it in PostgreSQL while holding the mutex would
+  // be a cycle PostgreSQL cannot see. Nothing reports it; both hang.
+  await lockEventPeople(eventId, trx);
+
   const previous = eventLocks.get(eventId) || Promise.resolve();
   let release;
   const current = new Promise((resolve) => { release = resolve; });
@@ -135,15 +163,6 @@ async function withEventLock(eventId, trx, fn) {
 
   await previous;
   try {
-    // pg_advisory_xact_lock is released automatically when the transaction
-    // ends, including on rollback — no leak if the caller throws.
-    if (trx && typeof trx.raw === 'function') {
-      const client = db.client.config.client;
-      const isPg = client === 'pg' || (typeof client === 'string' && client.includes('postgres'));
-      if (isPg) {
-        await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [1074, Number(eventId)]);
-      }
-    }
     return await fn();
   } finally {
     release();
@@ -855,6 +874,11 @@ async function mergePeople(eventId, sourceIds, targetId) {
   if (!ids.length) return { moved: 0 };
 
   return db.transaction(async (trx) => {
+    // The event's people lock first (PostgreSQL), as a scan takes it before
+    // it touches face or person rows: moving faces and deleting the sources
+    // locks the rows a scan of the same people rewrites, in another order
+    // (issue 2069).
+    await lockEventPeople(eventId, trx);
     // Carry metadata forward before the sources are deleted. Without this a
     // merge silently discards a photographer-entered name, or un-hides a
     // person they had suppressed — the target keeps its own values where it
@@ -948,6 +972,18 @@ async function splitPerson(eventId, personId, faceIds) {
   if (!faceIds?.length) return null;
 
   return db.transaction(async (trx) => {
+    // The event's people lock before the faces are read (PostgreSQL), as
+    // mergePeople takes it (issue 2119). Without it a scan assigning faces to
+    // this person could commit between the read and the recompute below, and
+    // the person's centroid and count would miss its face; and moving faces
+    // and rewriting both people locks rows a scan of the same people writes,
+    // in another order. The event row before it, as a key share: the person
+    // inserted below takes one through its event FK, and the lock order is
+    // event row, then this lock.
+    if (trx.client.config.client === 'pg') {
+      await trx('events').where({ id: eventId }).forKeyShare().first('id');
+    }
+    await lockEventPeople(eventId, trx);
     const faces = await trx('photo_faces')
       .where({ event_id: eventId, person_id: personId })
       .whereIn('id', faceIds)
@@ -1173,6 +1209,7 @@ module.exports = {
   normalize,
   meetsQualityFloor,
   assignFaces,
+  lockEventPeople,
   consolidate,
   suggestMerges,
   dismissMergeSuggestion,
