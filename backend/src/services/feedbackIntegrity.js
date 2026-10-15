@@ -5,7 +5,8 @@
  * One visible rating per guest and photo (issue 2075).
  *
  * Two partial unique indexes: one keyed on guest_id for registered guests, one
- * on guest_identifier for the rest. Hidden rows stay out of both: they are the
+ * on a non-empty guest_identifier for the rest (an empty one is no identity to
+ * the service either). Hidden rows stay out of both: they are the
  * admin's moderation record, and the service already scopes every rating write
  * to visible rows.
  *
@@ -57,8 +58,8 @@ async function dedupeRatings(trx) {
   for (const row of rows) {
     let key;
     if (row.guest_id !== null && row.guest_id !== undefined) key = `g:${row.photo_id}:${row.guest_id}`;
-    // Mirrors the index predicate: an empty identifier is still NOT NULL.
-    else if (row.guest_identifier !== null && row.guest_identifier !== undefined) key = `i:${row.photo_id}:${row.guest_identifier}`;
+    // An empty identifier is no identity, here as in the service and the index.
+    else if (row.guest_identifier) key = `i:${row.photo_id}:${row.guest_identifier}`;
     else continue;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
@@ -96,7 +97,8 @@ async function createRatingIndexes(knex) {
   );
   await knex.raw(
     `CREATE UNIQUE INDEX IF NOT EXISTS ${BY_IDENTIFIER} ON photo_feedback (photo_id, guest_identifier) `
-    + 'WHERE feedback_type = \'rating\' AND NOT is_hidden AND guest_id IS NULL AND guest_identifier IS NOT NULL',
+    + 'WHERE feedback_type = \'rating\' AND NOT is_hidden AND guest_id IS NULL '
+    + 'AND guest_identifier IS NOT NULL AND guest_identifier <> \'\'',
   );
 }
 

@@ -207,16 +207,20 @@ describe('one rating per guest (issue 2075)', () => {
     expect(at('await backfillCommentCounts(trx)')).toBeGreaterThan(at('trx.batchInsert(table'));
   });
 
-  test('migration 309 collapses duplicates with an empty identifier instead of failing on the index', async () => {
+  test('an empty identifier is no identity: migration 309 and moderation leave such ratings alone', async () => {
     const migration = require('../../migrations/core/309_photo_feedback_rating_unique_comment_count');
     await migration.down(db);
-    const base = { photo_id: photoId, event_id: eventId, feedback_type: 'rating', is_approved: true, is_hidden: false };
-    await db('photo_feedback').insert([
-      { ...base, rating: 2, guest_identifier: '', created_at: '2026-01-01T10:00:00.000Z', updated_at: '2026-01-01T10:00:00.000Z' },
-      { ...base, rating: 4, guest_identifier: '', created_at: '2026-01-01T10:00:01.000Z', updated_at: '2026-01-01T10:00:01.000Z' },
-    ]);
+    const base = { photo_id: photoId, event_id: eventId, feedback_type: 'rating', is_approved: true, guest_identifier: '' };
+    const [hidden] = await db('photo_feedback').insert([
+      { ...base, rating: 1, is_hidden: true },
+      { ...base, rating: 2, is_hidden: false },
+      { ...base, rating: 4, is_hidden: false },
+    ]).returning('id');
     await migration.up(db);
-    expect(Array.from(await ratingRows()).map((r) => Number(r.rating))).toEqual([4]);
+    expect(Array.from(await ratingRows()).map((r) => Number(r.rating)).sort()).toEqual([1, 2, 4]);
+
+    await feedbackService.moderateFeedback(hidden.id ?? hidden, 'approve', null);
+    expect(Array.from(await ratingRows()).filter((r) => !r.is_hidden)).toHaveLength(3);
   });
 
   test('erasing a guest whose device also rated anonymously keeps one rating instead of failing', async () => {

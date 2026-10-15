@@ -1600,6 +1600,7 @@ class FeedbackService {
         const ratings = Array.from(await trx('photo_feedback')
           .where({ guest_id: guestId, feedback_type: 'rating', is_hidden: false })
           .whereNotNull('guest_identifier')
+          .whereNot('guest_identifier', '')
           .select('id', 'photo_id', 'guest_identifier', 'created_at', 'updated_at'));
         const doomed = [];
         for (let i = 0; i < ratings.length; i += 500) {
