@@ -366,18 +366,20 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   };
   for (const column of DERIVATIVE_COLUMNS) updates[column] = null;
   // A video's web copy and ladder as the row names them at the commit, read
-  // under the row lock: one a transcode published just before is removed
-  // too, and one claimed after the commit converts the new bytes and is kept.
-  let previousWebPath = null;
-  let sweepOldLadder = async () => {};
+  // under the row lock: one a transcode claimed or published since the
+  // ladder was listed is removed too, and one claimed after the commit
+  // converts the new bytes and is kept. The listing is made before the
+  // transaction: on SQLite it holds the only connection.
+  const sweepOldLadder = isVideo
+    ? await require('./videoHlsService').captureLadder(await db('photos').where({ id: row.id }).first())
+    : null;
+  let atCommit = null;
   const committed = await db.transaction(async (trx) => {
     if (isVideo) {
       let read = trx('photos').where(fence);
       if (isPostgreSQL()) read = read.forUpdate();
-      const current = await read.first();
-      if (!current) return false;
-      previousWebPath = current.web_path || null;
-      sweepOldLadder = await require('./videoHlsService').captureLadder(current);
+      atCommit = await read.first();
+      if (!atCommit) return false;
     }
     if (await trx('photos').where(fence).update(updates) !== 1) return false;
     if (isVideo) return true;
@@ -415,8 +417,8 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   const thisVersion = { id: row.id, size_bytes: stats.size, source_mtime_ms: Math.floor(stats.mtimeMs) };
   if (isVideo) {
     // Nothing names the old copy or ladder any more.
-    await require('./videoRenditionService').deleteWebCopy({ web_path: previousWebPath });
-    await sweepOldLadder();
+    await require('./videoRenditionService').deleteWebCopy(atCommit);
+    await sweepOldLadder(atCommit);
     // The poster, under the key the import wrote it (the old file there
     // went with the caches above), as the import makes it.
     try {
@@ -425,11 +427,17 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
         `thumb_ext${row.id}_${path.basename(f.rel).replace(/\.[^.]+$/, '.jpg')}`
       );
       const result = await processUploadedVideo(f.full, thumbnailKey);
-      await db('photos').where(thisVersion).whereNull('thumbnail_path').update({
+      const took = await db('photos').where(thisVersion).whereNull('thumbnail_path').update({
         thumbnail_path: result.thumbnailKey,
         thumb_hash: result.thumbHash || null,
         processing_error: result.placeholder ? posterFrameError(result.thumbnailError) : null,
       });
+      // A viewer's lazy poster got there first (under a key of its own), or
+      // the file changed again: this one is nobody's.
+      if (!took && result.thumbnailKey) {
+        const now = await db('photos').where({ id: row.id }).first('thumbnail_path');
+        if (now?.thumbnail_path !== result.thumbnailKey) await storage.delete(result.thumbnailKey).catch(() => {});
+      }
     } catch (videoErr) {
       // ensureThumbnail makes it on first view instead.
       logger.warn(`Poster regeneration failed for changed external video ${row.id} (${f.rel}): ${videoErr.message}`);

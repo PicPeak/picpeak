@@ -268,6 +268,48 @@ describe('external re-scan of a video changed in place (issue 2114)', () => {
     expect(exists(keys.web)).toBe(false);
   });
 
+  it('removes a ladder published after the listing and before the commit, listing outside the transaction', async () => {
+    const eventId = await seedEvent();
+    const { video, keys } = await importWithRenditions(eventId);
+    const videoHls = require('../../src/services/videoHlsService');
+    const late = '99999999-8888-4777-8666-555555555555';
+    const lateKey = `hls/${video.id}/${late}/master.m3u8`;
+    const realCapture = videoHls.captureLadder;
+    const spy = jest.spyOn(videoHls, 'captureLadder').mockImplementationOnce(async (photo) => {
+      const sweep = await realCapture(photo);
+      // A transcode of the old bytes publishes right behind the listing.
+      // A query here would wait for SQLite's only connection if the listing
+      // ran inside the refresh's transaction.
+      await writeStored(lateKey);
+      await db('photos').where({ id: video.id }).update({ hls_path: `hls/${video.id}/${late}`, hls_status: 'complete' });
+      return sweep;
+    });
+    try {
+      await editVideo();
+      expect((await runImport(eventId)).body.refreshed).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(exists(lateKey)).toBe(false);
+    for (const key of keys.ladder) expect(exists(key)).toBe(false);
+    expect((await db('photos').where({ id: video.id }).first()).hls_path).toBeNull();
+  }, 20000);
+
+  it('drops its own poster when a viewer\'s lazy poster was published first', async () => {
+    const eventId = await seedEvent();
+    const { video, keys } = await importWithRenditions(eventId);
+    await editVideo();
+    const lazyKey = `thumbnails/thumb_ext${video.id}_lazy.jpg`;
+    processUploadedVideo.mockImplementation(async (_videoPath, thumbnailKey) => {
+      await writeStored(thumbnailKey);
+      await db('photos').where({ id: video.id }).update({ thumbnail_path: lazyKey });
+      return { success: true, thumbnailKey, metadata: {} };
+    });
+    expect((await runImport(eventId)).body.refreshed).toBe(1);
+    expect((await db('photos').where({ id: video.id }).first()).thumbnail_path).toBe(lazyKey);
+    expect(exists(keys.poster)).toBe(false);
+  });
+
   it('records the poster note when no poster frame can be made from the new file', async () => {
     const eventId = await seedEvent();
     const { video } = await importWithRenditions(eventId);
