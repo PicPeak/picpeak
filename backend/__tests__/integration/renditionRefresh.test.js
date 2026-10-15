@@ -218,11 +218,14 @@ describe('rendition refresh after EXIF stripping', () => {
     expect(fs.readFileSync(storagePath(originalKey)).equals(taggedJpeg)).toBe(true);
   }, 60000);
 
-  it.each(['./previews/preview_shared.jpg', 'previews\\preview_shared.jpg'])(
-    'keeps a superseded rendition a trashed row still names as %s', async (spelling) => {
+  // Each case its own file, so an earlier case's rows cannot keep it.
+  it.each(['./previews/%s', 'previews\\%s', 'previews/./%s', 'previews//%s'])(
+    'keeps a superseded rendition a trashed row still names as %s', async (shape) => {
       const event = await makeEvent();
       const id = await addLegacyPhoto(event, { renditions: ['preview'] });
-      const key = 'previews/preview_shared.jpg';
+      const name = `preview_shared_${counter}.jpg`;
+      const key = `previews/${name}`;
+      const spelling = shape.replace('%s', name);
       await db('photos').where({ id }).update({ preview_path: key });
       await writeKey(key, taggedJpeg);
       const other = await addLegacyPhoto(event, { renditions: [], deleted_at: new Date().toISOString() });
