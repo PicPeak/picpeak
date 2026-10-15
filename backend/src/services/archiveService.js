@@ -661,6 +661,16 @@ async function buildArchive(event, lease) {
       });
     } catch (e) { /* non-fatal */ }
 
+    // The download cache goes with the originals and is not in the zip, so a
+    // finished download job would be reused after a restore and answer 410
+    // until it expired: fail them, the next request builds a new one.
+    await assertStillHeld();
+    await db('download_jobs').where({ event_id: event.id, status: 'ready' }).update({
+      status: 'failed',
+      error: 'The gallery was archived, please request the download again',
+      completed_at: new Date().toISOString(),
+    });
+
     // Delete the originals from storage.
     for (const entry of allEntries) {
       await assertStillHeld();

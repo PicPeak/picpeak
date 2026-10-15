@@ -195,6 +195,24 @@ describe('one archive job per gallery', () => {
     await fsp.rm(root, { recursive: true, force: true });
   });
 
+  it('fails the finished download jobs whose cached archive it deletes', async () => {
+    const event = await makeEvent('download-cache-jobs', { photoCount: 1 });
+    const zipKey = 'events/active/download-cache-jobs/.download-cache/job-1.zip';
+    bodies.set(zipKey, crypto.randomBytes(16));
+    const [row] = await db('download_jobs').insert({
+      token: crypto.randomBytes(32).toString('hex'), event_id: event.id, resolution: 'original',
+      dedup_key: 'a'.repeat(64), status: 'ready', zip_path: zipKey,
+      expires_at: new Date(Date.now() + 864e5).toISOString(), created_at: new Date().toISOString(),
+    }).returning('id');
+    const jobId = typeof row === 'object' ? row.id : row;
+    await archiveEvent(event);
+    expect(deletedKeys()).toContain(zipKey);
+    expect((await db('download_jobs').where({ id: jobId }).first()).status).toBe('failed');
+    const reusable = await require('../../src/services/downloadJobService').findReusable(event.id, 'a'.repeat(64));
+    expect(reusable).toBeNull();
+    bodies.delete(zipKey);
+  });
+
   it('refuses a stale caller row once another job has archived the gallery', async () => {
     const event = await makeEvent('stale-row');
     await archiveEvent(event);
