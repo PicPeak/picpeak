@@ -1,9 +1,11 @@
 /**
  * The general_video_strip_metadata setting (issue 2102): on when no row
  * exists, stored as a boolean, and switching it on queues the videos that
- * were skipped as browser-compatible, for their metadata-free remux, but
- * only while the web copies are on. Switching it off leaves every row and
- * every copy as it is, so nothing that plays stops playing.
+ * were skipped as browser-compatible or never looked at, for their
+ * metadata-free remux, whether or not the web copies are on. Videos deferred
+ * for a transcode and failed ones are left to the copies' own backfill.
+ * Switching it off leaves every row and every copy as it is, so nothing
+ * that plays stops playing.
  */
 
 const path = require('path');
@@ -37,7 +39,10 @@ describe('general_video_strip_metadata (issue 2102)', () => {
     .send(body);
 
   const statusOf = async (name) => (await db('photos').where({ id: rows[name] }).first()).web_status ?? null;
-  const resetSkipped = () => db('photos').whereIn('id', [rows.skipped, rows.skipped2]).update({ web_status: 'skipped' });
+  const resetRows = async () => {
+    await db('photos').whereIn('id', [rows.skipped, rows.skipped2]).update({ web_status: 'skipped' });
+    await db('photos').where({ id: rows.never }).update({ web_status: null });
+  };
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
@@ -75,6 +80,7 @@ describe('general_video_strip_metadata (issue 2102)', () => {
     await mk('remuxed', { web_status: 'complete', web_path: 'videos/web_1_remux_x.mp4' });
     await mk('failed', { web_status: 'failed', web_error: 'ffmpeg exited with code 1' });
     await mk('never', {});
+    await mk('deferred', { web_status: 'deferred' });
     await mk('photo', { web_status: 'skipped', media_type: 'image', mime_type: 'image/jpeg' });
     await mk('archived', { event_id: archivedId, web_status: 'skipped' });
 
@@ -93,17 +99,8 @@ describe('general_video_strip_metadata (issue 2102)', () => {
     expect(await service.isStripEnabled()).toBe(true);
   });
 
-  it('queues nothing while the web copies are off', async () => {
+  it('switching it on with the web copies off queues the skipped and never-seen videos, and the workers run', async () => {
     await put({ general_video_web_rendition: false });
-    const res = await put({ general_video_strip_metadata: true });
-    expect(res.status).toBe(200);
-    expect(await statusOf('skipped')).toBe('skipped');
-    expect(await service.queueSkippedForRemux()).toBe(0);
-  });
-
-  it('switching it on, with the copies on, queues the skipped videos and nothing else', async () => {
-    await db('app_settings').insert({ setting_key: 'general_video_web_rendition', setting_value: JSON.stringify(true), setting_type: 'general' })
-      .onConflict('setting_key').merge();
     const res = await put({ general_video_strip_metadata: 'true' });
     expect(res.status).toBe(200);
     const stored = await db('app_settings').where({ setting_key: 'general_video_strip_metadata' }).first();
@@ -112,28 +109,33 @@ describe('general_video_strip_metadata (issue 2102)', () => {
     expect(await statusOf('skipped')).toBe('pending');
     // The file watcher's shape: media_type 'image', a video MIME type.
     expect(await statusOf('skipped2')).toBe('pending');
+    expect(await statusOf('never')).toBe('pending');
     expect(await statusOf('remuxed')).toBe('complete');
-    // The strip switch is not a retry of failed copies or a first look at new ones.
+    // Needs a transcode the copies would make, or a retry they own.
+    expect(await statusOf('deferred')).toBe('deferred');
     expect(await statusOf('failed')).toBe('failed');
-    expect(await statusOf('never')).toBeNull();
     expect(await statusOf('photo')).toBe('skipped');
     expect(await statusOf('archived')).toBe('skipped');
+    expect(await service.isEnabled()).toBe(false);
+    expect(await service.queuesVideos()).toBe(true);
   });
 
-  it('the once-per-start backfill re-queues skipped videos, and is a no-op with stripping off', async () => {
-    await resetSkipped();
+  it('the once-per-start backfill queues the same rows, and is a no-op with stripping off', async () => {
+    await resetRows();
     service.clearCache();
-    expect(await service.queueSkippedForRemux()).toBe(2);
+    expect(await service.queueForMetadataStrip()).toBe(3);
     expect(await statusOf('skipped')).toBe('pending');
+    expect(await statusOf('never')).toBe('pending');
 
-    await resetSkipped();
+    await resetRows();
     const res = await put({ general_video_strip_metadata: false });
     expect(res.status).toBe(200);
     const stored = await db('app_settings').where({ setting_key: 'general_video_strip_metadata' }).first();
     expect(decodeSettingValue(db, stored.setting_value)).toBe(false);
     expect(await service.isStripEnabled()).toBe(false);
-    expect(await service.queueSkippedForRemux()).toBe(0);
+    expect(await service.queueForMetadataStrip()).toBe(0);
     expect(await statusOf('skipped')).toBe('skipped');
+    expect(await service.queuesVideos()).toBe(false);
   });
 
   it('switching it off keeps the remux already written: the video goes on playing it', async () => {
@@ -142,10 +144,12 @@ describe('general_video_strip_metadata (issue 2102)', () => {
     expect(row.web_path).toBe('videos/web_1_remux_x.mp4');
   });
 
-  it('with stripping off, switching the copies on leaves skipped videos alone', async () => {
+  it('with stripping off, switching the copies on queues deferred, failed and never-seen videos, not skipped ones', async () => {
     const res = await put({ general_video_web_rendition: true });
     expect(res.status).toBe(200);
     expect(await statusOf('skipped')).toBe('skipped');
+    expect(await statusOf('deferred')).toBe('pending');
     expect(await statusOf('failed')).toBe('pending');
+    expect(await statusOf('never')).toBe('pending');
   });
 });

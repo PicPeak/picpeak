@@ -320,7 +320,8 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       web_attempt_id: null,
       web_attempts: 0,
       web_retry_at: null,
-      web_status: isVideoReplacement && await videoRendition.isEnabled() ? 'pending' : null,
+      // Either setting queues it (metadata stripping, issue 2102, included).
+      web_status: isVideoReplacement && await videoRendition.queuesVideos() ? 'pending' : null,
       web_started_at: null,
       web_error: null,
       // The ladder starts over the same way; the queue picks a video up.

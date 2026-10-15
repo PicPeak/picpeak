@@ -2004,8 +2004,8 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       clearShareLinkSettingsCache();
     }
     // Switching the video copies on queues the back catalogue: every video
-    // never looked at or whose last attempt failed. The queue probes each
-    // one and skips what already plays. Off leaves the rows as they are; the
+    // never looked at, deferred while they were off, or whose last attempt
+    // failed. The queue probes each one and skips what already plays. Off leaves the rows as they are; the
     // workers idle until it is on again.
     if (Object.prototype.hasOwnProperty.call(settings, 'general_video_web_rendition')) {
       const videoRendition = require('../services/videoRenditionService');
@@ -2020,15 +2020,15 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       }
     }
     // Switching metadata stripping on queues the videos skipped because they
-    // played as they were, for their remux (while the copies are on). Off
-    // keeps the remuxes already written: they go on playing, and only videos
-    // decided from now on are skipped again.
+    // played as they were, and those never looked at, for their remux, with
+    // or without the transcodes. Off keeps the remuxes already written: they
+    // go on playing, and only videos decided from now on are skipped again.
     if (Object.prototype.hasOwnProperty.call(settings, 'general_video_strip_metadata')) {
       const videoRendition = require('../services/videoRenditionService');
       videoRendition.clearCache();
       if (settings.general_video_strip_metadata) {
         try {
-          const queued = await videoRendition.queueSkippedForRemux();
+          const queued = await videoRendition.queueForMetadataStrip();
           if (queued > 0) logger.info(`videoRendition: queued ${queued} existing video(s) for a metadata-free copy`);
         } catch (e) {
           logger.warn('videoRendition: failed to queue videos for a metadata-free copy:', e.message);

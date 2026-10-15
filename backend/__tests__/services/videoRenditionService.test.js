@@ -213,6 +213,20 @@ describe('isStripEnabled', () => {
   });
 });
 
+describe('queuesVideos', () => {
+  beforeEach(() => service.clearCache());
+  afterAll(() => { dbModule.__state.setting = null; dbModule.__state.stripSetting = null; service.clearCache(); });
+
+  it('is on while either the transcodes or metadata stripping is on', async () => {
+    for (const [copies, strip, expected] of [[null, null, true], [false, false, false], [true, false, true], [false, true, true]]) {
+      service.clearCache();
+      dbModule.__state.setting = copies == null ? null : { setting_value: String(copies) };
+      dbModule.__state.stripSetting = strip == null ? null : { setting_value: String(strip) };
+      expect(await service.queuesVideos()).toBe(expected);
+    }
+  });
+});
+
 describe('isEnabled', () => {
   beforeEach(() => service.clearCache());
 
@@ -292,12 +306,62 @@ describe('renderWebCopy', () => {
     dbModule.__state.updates.length = 0;
     dbModule.__state.updateResult = null;
     dbModule.__state.event = { id: 9, slug: 'wedding' };
+    // The transcodes are on unless a test says otherwise.
+    dbModule.__state.setting = { setting_value: 'true' };
+    service.clearCache();
     storage.putFromFile.mockClear();
     storage.delete.mockClear();
     ffmpeg.mockReset();
   });
 
-  afterEach(() => { dbModule.__state.stripSetting = null; service.clearCache(); });
+  afterEach(() => { dbModule.__state.stripSetting = null; dbModule.__state.setting = null; service.clearCache(); });
+
+  it('defers a video that needs a transcode while the transcodes are off: nothing written, no ffmpeg', async () => {
+    dbModule.__state.setting = { setting_value: 'false' };
+    service.clearCache();
+    dbModule.__state.photo = { id: 31, event_id: 9, filename: 'phone.mov', media_type: 'video', mime_type: 'video/quicktime' };
+    mockProbe(
+      [{ index: 0, codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p' }],
+      { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'qt  ' } },
+    );
+    const atoms = await writeAtoms(box('ftyp', 16), box('mdat', 100), box('moov', 40));
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+
+    expect(await service.renderWebCopy(31)).toBe('deferred');
+    expect(ffmpeg).not.toHaveBeenCalled();
+    expect(storage.putFromFile).not.toHaveBeenCalled();
+    expect(dbModule.__state.updates.find((u) => u.table === 'photos').data).toMatchObject({ web_path: null, web_status: 'deferred' });
+  });
+
+  it('remuxes a compatible video with the transcodes off, and never falls back to a transcode then', async () => {
+    dbModule.__state.setting = { setting_value: 'false' };
+    service.clearCache();
+    dbModule.__state.photo = { id: 32, event_id: 9, filename: 'clip.mp4', media_type: 'video' };
+    const format = { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'isom' } };
+    const h264 = { streams: [{ index: 0, codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p' }], format };
+    const hevc = { streams: [{ index: 0, codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p' }], format };
+    const command = {
+      outputOptions: jest.fn(function () { return this; }),
+      on: jest.fn(function (event, handler) { if (event === 'end') this._end = handler; return this; }),
+      save: jest.fn(function (out) { fs.writeFileSync(out, 'remuxed-bytes'); setImmediate(() => this._end()); }),
+      kill: jest.fn(),
+    };
+    ffmpeg.mockImplementation(() => command);
+    const atoms = await writeAtoms(box('ftyp', 16), box('moov', 40), box('mdat', 100));
+
+    ffmpeg.ffprobe = jest.fn((_p, cb) => cb(null, h264));
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+    expect(await service.renderWebCopy(32)).toBe('complete');
+    expect(command.outputOptions).toHaveBeenCalledWith(service.remuxOptions({ videoIndex: 0, audioIndex: null }));
+
+    // Replaced by HEVC before the snapshot: no transcode with the copies off.
+    let calls = 0;
+    ffmpeg.ffprobe = jest.fn((_p, cb) => cb(null, calls++ === 0 ? h264 : hevc));
+    command.outputOptions.mockClear();
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+    await expect(service.renderWebCopy(32)).rejects.toThrow('browser-playable copies are off');
+    expect(command.outputOptions).not.toHaveBeenCalled();
+  });
 
   it('skips a video that already plays when metadata stripping is off, dropping a stale copy', async () => {
     dbModule.__state.stripSetting = { setting_value: 'false' };

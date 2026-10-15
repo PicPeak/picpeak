@@ -817,9 +817,12 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
     // Browser-playable copies (issue 1430): archiving dropped them and reset
     // the rows (archiveService). With the setting on, the restored videos are
     // queued again here; off, they wait for the next switch-on backfill.
+    // Metadata stripping (issue 2102) queues them on its own while it is on.
     const videoRendition = require('../services/videoRenditionService');
     if (await videoRendition.isEnabled()) {
       await videoRendition.backfillPending({ eventId: archive.id });
+    } else {
+      await videoRendition.queueForMetadataStrip({ eventId: archive.id });
     }
 
     // Log activity

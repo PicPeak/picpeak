@@ -1,22 +1,25 @@
 /**
  * Browser-playable copies of videos (issue 1430, item 8).
  *
- * Off by default: a copy costs CPU on ingest and a second file per video on
- * every install, so `general_video_web_rendition` has to be switched on. The
- * queue (videoRenditionQueue.js) claims rows with web_status = 'pending' and
- * calls renderWebCopy below, which decides per video:
+ * Two settings put videos on the queue (videoRenditionQueue.js), which
+ * claims rows with web_status = 'pending' and calls renderWebCopy below:
+ * `general_video_web_rendition` (transcodes, off by default: CPU on ingest
+ * and a second file per video) and `general_video_strip_metadata` (issue
+ * 2102, on by default: no guest receives a phone's recording location).
+ * Per video:
  *
  *   - the original already plays in a browser (H.264 in an MP4 container,
  *     AAC or no audio, 8-bit 4:2:0, moov atom ahead of the media data):
- *     a remux without the source's metadata (issue 2102), so a phone's
- *     recording location never reaches a guest who plays it. Stream copy,
- *     no re-encode; published like a transcoded copy. With
- *     `general_video_strip_metadata` switched off: web_status 'skipped',
- *     nothing written, and the original plays as it is
- *   - anything else: an H.264/AAC faststart MP4, capped at 1920 px on the
- *     long edge, written through the storage backend under videos/, and the
- *     gallery streams it instead of the original. The download stays the
- *     original.
+ *     with stripping on, a remux without the source's metadata. Stream copy,
+ *     no re-encode; published like a transcoded copy, whether or not the
+ *     transcodes are on. With stripping off: web_status 'skipped', nothing
+ *     written, and the original plays as it is
+ *   - anything else, with the transcodes on: an H.264/AAC faststart MP4,
+ *     capped at 1920 px on the long edge, written through the storage
+ *     backend under videos/, and the gallery streams it instead of the
+ *     original. The download stays the original.
+ *   - anything else, with the transcodes off: web_status 'deferred', nothing
+ *     written; switching the transcodes on queues it (backfillPending)
  *
  * The copy lives in the managed backend even for an external (NAS) video:
  * PicPeak does not write into reference folders.
@@ -63,8 +66,8 @@ let cachedEnabled = false;
 let cacheExpiresAt = 0;
 
 /** The setting, cached 60 s like the other upload settings. */
-async function isEnabled() {
-  if (Date.now() < cacheExpiresAt) return cachedEnabled;
+async function isEnabled({ fresh = false } = {}) {
+  if (!fresh && Date.now() < cacheExpiresAt) return cachedEnabled;
   try {
     const row = await db('app_settings').where({ setting_key: SETTING_KEY }).first();
     let value = row ? row.setting_value : null;
@@ -108,7 +111,16 @@ function clearCache() {
   stripExpiresAt = 0;
 }
 
-/** The rows backfillPending and queueSkippedForRemux hand to the queue. */
+/**
+ * Whether new videos go on the queue and the workers run: while either the
+ * transcodes or metadata stripping is on. renderWebCopy decides per video
+ * what, if anything, it writes.
+ */
+async function queuesVideos() {
+  return (await isEnabled()) || (await isStripEnabled());
+}
+
+/** The rows backfillPending and queueForMetadataStrip hand to the queue. */
 function queueVideos(statuses, { eventId, includeNull = false } = {}) {
   const { formatBoolean } = require('../utils/dbCompat');
   return db('photos')
@@ -139,23 +151,27 @@ async function backfillPending({ eventId } = {}) {
   // when its turn comes, and a long backlog simply waits.
   // Videos in the trash are queued too; the queue leaves them alone until
   // they are restored (mediaAttemptService.claimNext).
-  // With metadata stripping on, a video skipped earlier (it played as it
-  // was) is queued too: it gets its remux now.
-  const statuses = (await isStripEnabled()) ? ['failed', 'skipped'] : ['failed'];
+  // 'deferred' is a video that needs a transcode and was looked at while
+  // the transcodes were off. With metadata stripping on, a video skipped
+  // earlier (it played as it was) is queued too: it gets its remux now.
+  const statuses = (await isStripEnabled()) ? ['failed', 'deferred', 'skipped'] : ['failed', 'deferred'];
   return queueVideos(statuses, { eventId, includeNull: true });
 }
 
 /**
- * Queue the videos skipped as browser-compatible, for their metadata-free
- * remux (issue 2102). Called when the strip setting is switched on and once
- * per start (an upgraded install's back catalogue); only while both settings
- * are on, so it is a no-op otherwise. A row stays 'pending' until a worker
- * takes it, so an interrupted backfill resumes by itself. Returns the number
- * of rows queued.
+ * Queue the videos that may need a metadata-free remux (issue 2102): those
+ * skipped as browser-compatible and those never looked at. Called when the
+ * strip setting is switched on, after an archive restore, and once per
+ * start (an upgraded install's back catalogue); a no-op while stripping is
+ * off, and whether or not the transcodes are on. 'deferred' and 'failed'
+ * rows are left alone: the first needs a transcode, the second gets its
+ * retry from backfillPending. A row stays 'pending' until a worker takes
+ * it, so an interrupted backfill resumes by itself. Returns the number of
+ * rows queued.
  */
-async function queueSkippedForRemux() {
-  if (!(await isEnabled()) || !(await isStripEnabled())) return 0;
-  return queueVideos(['skipped']);
+async function queueForMetadataStrip({ eventId } = {}) {
+  if (!(await isStripEnabled())) return 0;
+  return queueVideos(['skipped'], { eventId, includeNull: true });
 }
 
 /**
@@ -385,7 +401,7 @@ function remuxOptions({ videoIndex = null, audioIndex = null } = {}) {
  * gets longer than VIDEO_RENDITION_TIMEOUT_MS, which is only the minimum.
  * `timeoutMs` overrides it (tests).
  */
-function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, remux = false } = {}) {
+function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, remux = false, mayTranscode = true } = {}) {
   return mediaProcesses.withSnapshot(localPath, 'rendition', async (snapshot, details) => {
     const { policy } = details;
     const metadata = await mediaProcesses.probeSnapshot(snapshot, details);
@@ -393,13 +409,15 @@ function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, r
     const streams = playedStreamIndexes(metadata);
     // The decision was made on an earlier read of the file. A NAS file
     // replaced since by one a browser cannot play must not be stream-copied
-    // into a "copy" that plays black: it is transcoded instead (the faststart
+    // into a "copy" that plays black: it is transcoded instead, or, with the
+    // transcodes off, the attempt fails and the original plays (the faststart
     // of the snapshot does not matter, the remux writes its own).
     let copy = remux;
     let mapTones = toneMap;
     if (remux) {
       const now = describeProbe(metadata);
       if (!playsInBrowser(now, true)) {
+        if (!mayTranscode) throw new Error('The video changed before its remux and no longer plays as it is; browser-playable copies are off');
         copy = false;
         mapTones = isHdr(now) && await canToneMap();
         logger.warn(`videoRendition: ${localPath} changed before its remux and no longer plays as it is; transcoding it instead`);
@@ -453,6 +471,18 @@ async function renderWebCopy(photoId) {
   const status = await withSource(async (localPath) => {
     const probed = await probe(localPath);
     const remux = playsInBrowser(probed, await hasFaststart(localPath));
+    // Needs a transcode, and the transcodes are off (the row is here for
+    // metadata stripping): nothing is written, the original plays as it
+    // always did, and switching the transcodes on queues it again. Read past
+    // the cache for the same reason as below.
+    if (!remux && !(await isEnabled({ fresh: true }))) {
+      await attempt.assertCurrent();
+      const published = await mediaAttempts.guard(attempt, db, true).update({
+        web_path: null, web_status: 'deferred', web_started_at: null, web_error: null,
+      });
+      if (published && photo.web_path) await getStorage().delete(photo.web_path).catch(() => {});
+      return 'deferred';
+    }
     // Read past the cache: another replica may have switched stripping on
     // and queued this row a moment ago; a stale "off" here would mark it
     // skipped again, and nothing would queue it a second time.
@@ -482,7 +512,9 @@ async function renderWebCopy(photoId) {
       logger.warn(`videoRendition: photo ${photoId} is HDR (${probed.colorTransfer}) but this ffmpeg lacks zscale/tonemap; the copy is not tone-mapped`);
     }
     try {
-      ({ remuxed } = await transcode(localPath, tmpPath, { toneMap, duration: probed.duration, remux }));
+      ({ remuxed } = await transcode(localPath, tmpPath, {
+        toneMap, duration: probed.duration, remux, mayTranscode: !remux || await isEnabled(),
+      }));
       webKey = webKeyFor(photo, attempt.id, { remux: remuxed });
       const stat = await fsp.stat(tmpPath).catch(() => null);
       if (!stat || stat.size === 0) throw new Error('ffmpeg produced no output');
@@ -528,9 +560,10 @@ module.exports = {
   STRIP_SETTING_KEY,
   isEnabled,
   isStripEnabled,
+  queuesVideos,
   clearCache,
   backfillPending,
-  queueSkippedForRemux,
+  queueForMetadataStrip,
   webKeyFor,
   hasFaststart,
   probe,
