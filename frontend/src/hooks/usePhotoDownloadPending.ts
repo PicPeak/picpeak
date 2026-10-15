@@ -13,8 +13,10 @@ import i18n from 'i18next';
 //
 // A request that never settles (the API client has no timeout; a phone that
 // changed networks) must not lock the photo until a reload, so a mark lets
-// go on its own after STALE_MS. Each mark carries a token, so a late settle
-// of a download whose mark already expired cannot clear a newer one.
+// go on its own after STALE_MS without progress. A slow download that is
+// still arriving reports progress (touchPhotoDownload) and keeps its mark.
+// Each mark carries a token, so a late settle of a download whose mark
+// already expired cannot clear a newer one.
 const STALE_MS = 60_000;
 const pending = new Map<number, { token: number; timer: ReturnType<typeof setTimeout> }>();
 const listeners = new Set<() => void>();
@@ -41,6 +43,14 @@ export function beginPhotoDownload(photoId: number): number | null {
   pending.set(photoId, { token, timer });
   notify();
   return token;
+}
+
+/** Bytes arrived: the download is alive, so its deadline starts over. */
+export function touchPhotoDownload(photoId: number, token: number): void {
+  const mark = pending.get(photoId);
+  if (!mark || mark.token !== token) return;
+  clearTimeout(mark.timer);
+  mark.timer = setTimeout(() => endPhotoDownload(photoId, token), STALE_MS);
 }
 
 /** The download was handed to the browser, or failed (or its mark went stale). */

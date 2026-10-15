@@ -77,6 +77,7 @@ import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
+import { beginPhotoDownload, endPhotoDownload, touchPhotoDownload } from '../../hooks/usePhotoDownloadPending';
 import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle } from 'lucide-react';
 import { galleryService, splitIntoArchives } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
@@ -359,6 +360,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   
   // Data updates are handled by React Query
   const downloadAllMutation = useDownloadAllPhotos();
+  // Issue 2043: "Download selected" while it is still running ignores a
+  // repeat click, and its button shows it is busy. The ref catches a second
+  // click before the state has re-rendered.
+  const downloadingSelectedRef = useRef(false);
+  const [downloadingSelected, setDownloadingSelected] = useState(false);
 
   // Handle window resize
   useEffect(() => {
@@ -1127,6 +1133,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   const handleDownloadSelected = async () => {
     if (selectedPhotos.size === 0) return;
+    if (downloadingSelectedRef.current) return;
 
     // Prevent downloads if gallery is expired or downloads disabled
     if (!allowDownloads) {
@@ -1143,32 +1150,48 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       return;
     }
 
-    // Track bulk download
-    analyticsService.trackGalleryEvent('bulk_download', {
-      gallery: slug,
-      photo_count: selectedPhotos.size
-    });
-    
-    // Download limit (issue 1560): one zip, which the server grants whole or
-    // not at all. Photo by photo, a refusal halfway through would already have
-    // charged the ones before it. A refusal keeps the selection to trim. A
-    // preview-only guest gets one zip too, which leaves out the videos they
-    // cannot take rather than failing on them one by one.
-    //
-    // The whole selection (issue 1972), as the picker branch above hands over:
-    // a search or filter applied after selecting hides photos, it does not
-    // unselect them.
-    if (downloadQuota.limited || downloadQuota.previewOnly) {
-      try {
-        await galleryService.downloadSelectedPhotos(slug, selectedPhotoList.map((p) => p.id));
-      } catch (error) {
-        if (!isDownloadLimitError(error)) throw error;
-        return;
+    downloadingSelectedRef.current = true;
+    setDownloadingSelected(true);
+    try {
+      // Track bulk download
+      analyticsService.trackGalleryEvent('bulk_download', {
+        gallery: slug,
+        photo_count: selectedPhotos.size
+      });
+
+      // Download limit (issue 1560): one zip, which the server grants whole or
+      // not at all. Photo by photo, a refusal halfway through would already have
+      // charged the ones before it. A refusal keeps the selection to trim. A
+      // preview-only guest gets one zip too, which leaves out the videos they
+      // cannot take rather than failing on them one by one.
+      //
+      // The whole selection (issue 1972), as the picker branch above hands over:
+      // a search or filter applied after selecting hides photos, it does not
+      // unselect them.
+      if (downloadQuota.limited || downloadQuota.previewOnly) {
+        try {
+          await galleryService.downloadSelectedPhotos(slug, selectedPhotoList.map((p) => p.id));
+        } catch (error) {
+          if (!isDownloadLimitError(error)) throw error;
+          return;
+        }
+      } else {
+        for (const photo of selectedPhotoList) {
+          // Marked like a tile's download (issue 2043): its buttons show it,
+          // and a photo whose download is already being prepared is not
+          // fetched a second time.
+          const token = beginPhotoDownload(photo.id);
+          if (token === null) continue;
+          try {
+            await galleryService.downloadPhoto(slug, photo.id, photo.filename, () => touchPhotoDownload(photo.id, token));
+          } finally {
+            endPhotoDownload(photo.id, token);
+          }
+        }
       }
-    } else {
-      for (const photo of selectedPhotoList) {
-        await galleryService.downloadPhoto(slug, photo.id, photo.filename);
-      }
+    } finally {
+      downloadingSelectedRef.current = false;
+      setDownloadingSelected(false);
     }
     
     // Clear selection after download
@@ -1830,6 +1853,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onDownloadAll={handleDownloadAll}
           onDownloadSelected={handleDownloadSelected}
           isDownloading={downloadAllMutation.isPending}
+          isDownloadingSelected={downloadingSelected}
           allowDownloads={allowDownloads}
           photoCounts={photoCounts}
           totalPhotos={scopedPhotos.length}

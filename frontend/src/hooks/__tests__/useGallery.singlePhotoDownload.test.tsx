@@ -61,4 +61,35 @@ describe('single-photo download hooks (issue 2043)', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(isPhotoDownloadPending(803)).toBe(false);
   });
+
+  it('keeps a slow download marked while it reports progress, and lets a silent one go', async () => {
+    vi.useFakeTimers();
+    try {
+      let reportProgress!: () => void;
+      svc.savePhotoToDevice.mockImplementationOnce((_slug: string, _id: number, _name: string, onProgress: () => void) => {
+        reportProgress = onProgress;
+        return new Promise(() => {});
+      });
+      const { result } = renderHook(() => useSavePhotoToDevice(), { wrapper });
+      act(() => { result.current.mutate({ slug: 'g', photoId: 804, filename: 'c.jpg' }); });
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(reportProgress).toBeTypeOf('function');
+
+      // A large original over a slow line: well past a minute, still arriving.
+      for (let i = 0; i < 3; i += 1) {
+        await act(() => vi.advanceTimersByTimeAsync(50_000));
+        reportProgress();
+      }
+      expect(isPhotoDownloadPending(804)).toBe(true);
+      let repeat = true;
+      act(() => { repeat = result.current.mutate({ slug: 'g', photoId: 804, filename: 'c.jpg' }); });
+      expect(repeat).toBe(false);
+
+      // The bytes stop: a minute later the photo is free again.
+      await act(() => vi.advanceTimersByTimeAsync(60_000));
+      expect(isPhotoDownloadPending(804)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

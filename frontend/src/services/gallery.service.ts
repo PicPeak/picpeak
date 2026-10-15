@@ -198,11 +198,14 @@ export const galleryService = {
   // A gallery with a download limit (issue 1560) fetches instead of
   // navigating: a refused navigation lands as a broken file in the browser's
   // download list, and the page never learns it should say why.
-  async savePhotoToDevice(slug: string, photoId: number, filename: string): Promise<void> {
-    return withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename));
+  //
+  // `onProgress` (issue 2043) is called as the bytes of a fetched photo
+  // arrive, so the caller can tell a slow download from a hung one.
+  async savePhotoToDevice(slug: string, photoId: number, filename: string, onProgress?: () => void): Promise<void> {
+    return withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename, onProgress));
   },
 
-  async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string): Promise<void> {
+  async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string, onProgress?: () => void): Promise<void> {
     if (!isIOS() && !isGalleryLimited(slug)) {
       this.triggerDirectDownload(
         withAdminPreview(api.getUri({ url: `/gallery/${slug}/download/${photoId}` })),
@@ -211,12 +214,12 @@ export const galleryService = {
       return;
     }
     if (!isIOS()) {
-      const direct = await this.fetchPhotoBlob(slug, photoId);
+      const direct = await this.fetchPhotoBlob(slug, photoId, onProgress);
       this.triggerBrowserDownload(direct.blob, direct.serverFilename || filename);
       return;
     }
 
-    const fetched = await this.fetchPhotoBlob(slug, photoId);
+    const fetched = await this.fetchPhotoBlob(slug, photoId, onProgress);
     const resolvedFilename = fetched.serverFilename || filename;
 
     // canShare() returns false on browsers without Web Share file
@@ -256,7 +259,9 @@ export const galleryService = {
   async fetchPhotoBlob(
     slug: string,
     photoId: number,
+    onProgress?: () => void,
   ): Promise<{ blob: Blob; serverFilename: string | null }> {
+    const progress = onProgress ? { onDownloadProgress: () => onProgress() } : {};
     const readResponse = (response: AxiosResponse<Blob>) => {
       const headerName =
         response.headers['content-disposition'] || response.headers['Content-Disposition'];
@@ -269,6 +274,7 @@ export const galleryService = {
     try {
       const response = await api.get<Blob>(`/gallery/${slug}/download/${photoId}`, {
         responseType: 'blob',
+        ...progress,
       });
       return readResponse(response);
     } catch (error) {
@@ -284,6 +290,7 @@ export const galleryService = {
 
       const response = await api.get<Blob>(`/gallery/${slug}/photo/${photoId}`, {
         responseType: 'blob',
+        ...progress,
       });
       return readResponse(response);
     }
@@ -314,9 +321,9 @@ export const galleryService = {
   // Download single photo — kept as the canonical name for the existing
   // grid + lightbox-action callers that haven't been migrated to the
   // share-aware savePhotoToDevice path yet.
-  async downloadPhoto(slug: string, photoId: number, filename: string): Promise<void> {
+  async downloadPhoto(slug: string, photoId: number, filename: string, onProgress?: () => void): Promise<void> {
     return withDownloadLimit(slug, async () => {
-      const fetched = await this.fetchPhotoBlob(slug, photoId);
+      const fetched = await this.fetchPhotoBlob(slug, photoId, onProgress);
       this.triggerBrowserDownload(fetched.blob, fetched.serverFilename || filename);
     });
   },

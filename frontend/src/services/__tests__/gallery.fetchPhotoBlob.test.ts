@@ -85,4 +85,30 @@ describe('galleryService.fetchPhotoBlob — fallback only on a genuine 404', () 
     });
     expect(apiMock.get).toHaveBeenCalledTimes(1);
   });
+
+  it('reports download progress to the caller (issue 2043)', async () => {
+    apiMock.get.mockImplementationOnce(async (_url: string, config: { onDownloadProgress?: (e: unknown) => void }) => {
+      config.onDownloadProgress?.({ loaded: 10 });
+      config.onDownloadProgress?.({ loaded: 20 });
+      return { data: new Blob(['x']), headers: {} };
+    });
+    const onProgress = vi.fn();
+    await galleryService.fetchPhotoBlob('wedding-2026', 5, onProgress);
+    expect(onProgress).toHaveBeenCalledTimes(2);
+  });
+
+  it('forwards progress from downloadPhoto and savePhotoToDevice (issue 2043)', async () => {
+    apiMock.get.mockImplementation(async (_url: string, config: { onDownloadProgress?: (e: unknown) => void }) => {
+      config.onDownloadProgress?.({ loaded: 10 });
+      return { data: new Blob(['x']), headers: {} };
+    });
+    vi.spyOn(galleryService, 'triggerBrowserDownload').mockImplementation(() => {});
+    const { markGalleryLimited } = await import('../../utils/downloadLimit');
+    // A limited gallery fetches the blob on every platform.
+    markGalleryLimited('wedding-2026', true);
+    const onProgress = vi.fn();
+    await galleryService.downloadPhoto('wedding-2026', 5, 'a.jpg', onProgress);
+    await galleryService.savePhotoToDevice('wedding-2026', 5, 'a.jpg', onProgress);
+    expect(onProgress).toHaveBeenCalledTimes(2);
+  });
 });

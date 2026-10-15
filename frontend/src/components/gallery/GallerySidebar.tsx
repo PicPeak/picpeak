@@ -47,6 +47,8 @@ interface GallerySidebarProps {
   onDownloadAll: () => void;
   onDownloadSelected: () => void;
   isDownloading: boolean;
+  /** "Download selected" is still running (issue 2043): the button spins and ignores clicks. */
+  isDownloadingSelected?: boolean;
   allowDownloads?: boolean;
   photoCounts?: Record<number | string, number>;
   totalPhotos: number;
@@ -139,6 +141,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   visibleCount = 0,
   onDownloadAll,
   onDownloadSelected,
+  isDownloadingSelected = false,
   isDownloading,
   allowDownloads = true,
   photoCounts = {},
@@ -383,6 +386,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                     leftIcon={<Download className="w-4 h-4" />}
                     onClick={onDownloadSelected}
                     disabled={isDownloading}
+                    isLoading={isDownloadingSelected}
                     className="gallery-btn gallery-btn-download w-full"
                   >
                     {t('gallery.downloadSelected', { count: selectedCount })} ({selectedCount})

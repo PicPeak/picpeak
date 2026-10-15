@@ -4,7 +4,7 @@ import { galleryService } from '../services';
 import { toast } from 'react-toastify';
 import { isDownloadLimitError } from '../utils/downloadLimit';
 import { renamedGallerySlug } from './useFollowGalleryRename';
-import { beginPhotoDownload, endPhotoDownload } from './usePhotoDownloadPending';
+import { beginPhotoDownload, endPhotoDownload, touchPhotoDownload } from './usePhotoDownloadPending';
 
 export const useGalleryInfo = (slug?: string, token?: string, enabled: boolean = true) => {
   return useQuery({
@@ -57,13 +57,14 @@ type PhotoDownload = { slug: string; photoId: number; filename: string };
 // busy before the request starts (so a second tap in the same moment is
 // caught too) and answers false, starting nothing, while it already is.
 const useSinglePhotoDownload = (
-  download: (vars: PhotoDownload) => Promise<void>,
+  download: (vars: PhotoDownload, onProgress: () => void) => Promise<void>,
   options: Omit<UseMutationOptions<void, Error, PhotoDownload & { token: number }>, 'mutationFn'>,
 ) => {
   const mutation = useMutation({
     ...options,
     mutationFn: ({ token, ...vars }: PhotoDownload & { token: number }) =>
-      download(vars).finally(() => endPhotoDownload(vars.photoId, token)),
+      download(vars, () => touchPhotoDownload(vars.photoId, token))
+        .finally(() => endPhotoDownload(vars.photoId, token)),
   });
   const { mutate } = mutation;
   const startDownload = useCallback((vars: PhotoDownload): boolean => {
@@ -77,7 +78,7 @@ const useSinglePhotoDownload = (
 
 export const useDownloadPhoto = () => {
   return useSinglePhotoDownload(
-    ({ slug, photoId, filename }) => galleryService.downloadPhoto(slug, photoId, filename),
+    ({ slug, photoId, filename }, onProgress) => galleryService.downloadPhoto(slug, photoId, filename, onProgress),
     {
       onSuccess: () => {
         toast.success('Photo downloaded successfully');
@@ -105,7 +106,7 @@ export const useDownloadPhoto = () => {
 // is its own affordance.
 export const useSavePhotoToDevice = () => {
   return useSinglePhotoDownload(
-    ({ slug, photoId, filename }) => galleryService.savePhotoToDevice(slug, photoId, filename),
+    ({ slug, photoId, filename }, onProgress) => galleryService.savePhotoToDevice(slug, photoId, filename, onProgress),
     {
       onError: (error) => {
         if (isDownloadLimitError(error)) return;
