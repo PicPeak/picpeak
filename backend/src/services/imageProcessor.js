@@ -43,15 +43,27 @@ const { RAW_EXTENSIONS, isRawFilename, originalNeedsPreview } = require('../util
 
 const derivativeSourceFields = ['event_id', 'path', 'filename', 'external_relpath', 'source_origin', 'processing_attempt_id'];
 // A file on a reference share can be rewritten in place: same path, other
-// bytes, and none of the fields above change. Its size is what an import
-// pass records and compares, so it is the external source's version. A
-// rendition built from the old bytes must neither publish over the new
-// row nor share a storage key with the renditions of the new bytes.
-// Managed sources are never rewritten in place (a replacement moves the
-// path), so their keys and guards stay as they were.
+// bytes, and none of the fields above change. Its size and modification
+// time are what an import pass records and compares, so together they are
+// the external source's version (the size alone misses an edit that keeps
+// the byte count). A rendition built from the old bytes must neither
+// publish over the new row nor share a storage key with the renditions of
+// the new bytes. Managed sources are never rewritten in place (a
+// replacement moves the path), so their keys and guards stay as they were.
 const isExternalSource = photo => photo.source_origin === 'external' || photo.source_origin === 'reference';
-const sourceVersion = photo => (isExternalSource(photo) && photo.size_bytes != null ? String(photo.size_bytes) : null);
+const sizeVersion = photo => (isExternalSource(photo) && photo.size_bytes != null ? String(photo.size_bytes) : null);
+// A row whose mtime is not recorded yet (imported before it was) keeps the
+// size-only version its tiers were named with.
+const sourceVersion = photo => (sizeVersion(photo) && photo.source_mtime_ms != null
+  ? `${sizeVersion(photo)}m${photo.source_mtime_ms}` : sizeVersion(photo));
 const versionTag = photo => (sourceVersion(photo) ? `v${sourceVersion(photo)}_` : '');
+// The tags this source's tiers carried under an earlier key scheme: none
+// (before the version), and the size alone (before the mtime). Still found
+// for cleanup; see the lookups for which of them they trust.
+const legacyVersionTags = photo => {
+  if (!sourceVersion(photo)) return [];
+  return sourceVersion(photo) === sizeVersion(photo) ? [''] : ['', `v${sizeVersion(photo)}_`];
+};
 const boundedDerivative = photo => isVideoPhoto(photo) || isRawFilename(photo.filename || photo.external_relpath || photo.path || '');
 const derivativeCacheId = photo => crypto.createHash('sha256')
   .update(JSON.stringify([
@@ -61,27 +73,38 @@ const derivativeCacheId = photo => crypto.createHash('sha256')
     ...(sourceVersion(photo) ? [sourceVersion(photo)] : []),
   ])).digest('hex').slice(0, 24);
 // Callers hand in rows from many selects. An external row without its size
-// would derive unversioned keys and skip the size in its guard, so it is
-// read here once rather than trusting every select to carry it.
+// or mtime would derive other keys and skip them in its guard, so they are
+// read here once rather than trusting every select to carry them.
 async function withSourceVersion(photo) {
-  if (!photo || !isExternalSource(photo) || photo.size_bytes !== undefined || photo.id == null) return photo;
-  const row = await db('photos').where({ id: photo.id }).first('size_bytes');
-  return row ? { ...photo, size_bytes: row.size_bytes } : photo;
+  if (!photo || !isExternalSource(photo) || photo.id == null
+      || (photo.size_bytes !== undefined && photo.source_mtime_ms !== undefined)) return photo;
+  const row = await db('photos').where({ id: photo.id }).first('size_bytes', 'source_mtime_ms');
+  if (!row) return photo;
+  return {
+    ...photo,
+    size_bytes: photo.size_bytes !== undefined ? photo.size_bytes : row.size_bytes,
+    source_mtime_ms: photo.source_mtime_ms !== undefined ? photo.source_mtime_ms : row.source_mtime_ms,
+  };
 }
 function cacheBasename(photo, name) {
   return boundedDerivative(photo) ? require('./mediaAttemptService').outputName(name, { id: derivativeCacheId(photo) }) : name;
 }
-// The scoped name a RAW/video tier of an external row had before the source
-// version was part of the cache id. Cleanup only: lookup never trusts it.
-function unversionedCacheBasename(photo, name) {
+// The scoped name a RAW/video tier of an external row had under an earlier
+// version (`tag`, one of legacyVersionTags). Cleanup only: lookup never
+// trusts it.
+function unversionedCacheBasename(photo, name, tag = '') {
   const id = crypto.createHash('sha256')
-    .update(JSON.stringify(derivativeSourceFields.map(field => photo[field] ?? null))).digest('hex').slice(0, 24);
+    .update(JSON.stringify([
+      ...derivativeSourceFields.map(field => photo[field] ?? null),
+      ...(tag ? [sizeVersion(photo)] : []),
+    ])).digest('hex').slice(0, 24);
   return require('./mediaAttemptService').outputName(name, { id });
 }
 function sourceGuard(photo) {
   const match = { id: photo.id };
   for (const field of derivativeSourceFields) if (photo[field] !== undefined) match[field] = photo[field];
   if (isExternalSource(photo) && photo.size_bytes !== undefined) match.size_bytes = photo.size_bytes;
+  if (isExternalSource(photo) && photo.source_mtime_ms !== undefined) match.source_mtime_ms = photo.source_mtime_ms;
   return db('photos').where(match);
 }
 function withLazyDerivative(photo, callback) {
@@ -1608,15 +1631,16 @@ function previewTierKeys(photo) {
  * collision hands one gallery's photo to another. Scoping by id is what makes
  * the cache safe to trust; it is not a tidiness choice.
  */
-function previewTierBasename(photo, { legacy = false } = {}) {
+function previewTierBasename(photo, { legacyTag = null } = {}) {
   const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
   // An external tier carries its source's version (see sourceVersion), so a
-  // tier of the old bytes is never found for the new ones. `legacy` is the
-  // name tiers had before the version, still read and cleaned up.
-  return `p${photo.id}_${legacy ? '' : versionTag(photo)}${sourceBasename}`;
+  // tier of the old bytes is never found for the new ones. `legacyTag` (one
+  // of legacyVersionTags) is a name tiers had under an earlier key scheme,
+  // still read and cleaned up.
+  return `p${photo.id}_${legacyTag ?? versionTag(photo)}${sourceBasename}`;
 }
 
 /**
@@ -1643,12 +1667,12 @@ function previewTierKeyCandidates(photo, width) {
   const keys = [`${stem}${base}.jpg`, `${stem}${base}.webp`];
   const legacy = `${stem}${outputBasename}`;
   if (!keys.includes(legacy)) keys.push(legacy);
-  if (versionTag(photo)) {
-    const unversioned = previewTierBasename(photo, { legacy: true });
+  for (const legacyTag of legacyVersionTags(photo)) {
+    const unversioned = previewTierBasename(photo, { legacyTag });
     const unversionedBase = unversioned.replace(/\.[^./\\]+$/, '');
     const legacyKeys = [`${stem}${unversionedBase}.jpg`, `${stem}${unversionedBase}.webp`, `${stem}${unversioned}`];
     if (boundedDerivative(photo)) {
-      const scoped = unversionedCacheBasename(photo, unversioned).replace(/\.[^./\\]+$/, '');
+      const scoped = unversionedCacheBasename(photo, unversioned, legacyTag).replace(/\.[^./\\]+$/, '');
       legacyKeys.push(`${stem}${scoped}.jpg`, `${stem}${scoped}.webp`);
     }
     for (const k of legacyKeys) if (!keys.includes(k)) keys.push(k);
@@ -1687,11 +1711,11 @@ function thumbnailTierKeys(photo) {
   );
   const outputBasename = `p${photo.id}_${versionTag(photo)}${sourceBasename}`;
   const basenames = boundedDerivative(photo) ? [cacheBasename(photo, outputBasename), outputBasename] : [outputBasename];
-  // Tiers written before the source version was part of the name.
-  if (versionTag(photo)) {
-    const unversioned = `p${photo.id}_${sourceBasename}`;
+  // Tiers written under an earlier version scheme (none, or the size alone).
+  for (const legacyTag of legacyVersionTags(photo)) {
+    const unversioned = `p${photo.id}_${legacyTag}${sourceBasename}`;
     basenames.push(unversioned);
-    if (boundedDerivative(photo)) basenames.push(unversionedCacheBasename(photo, unversioned));
+    if (boundedDerivative(photo)) basenames.push(unversionedCacheBasename(photo, unversioned, legacyTag));
   }
   return THUMBNAIL_WIDTHS.flatMap(w => basenames.map(name => path.posix.join('thumbnails', `thumb_w${w}_${name}`)));
 }
@@ -1786,13 +1810,13 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
   );
   const outputBasename = derivativeBasename(`p${photo.id}_${versionTag(photo)}${sourceBasename}`, { cache: true });
   const key = path.posix.join('thumbnails', `thumb_w${width}_${outputBasename}`);
-  // A tier written before the source version was part of the name is still
-  // this source's (an in-place edit deletes it along with the versioned
-  // ones). A scoped (RAW/video) tier never trusts an unversioned key.
-  const legacyKey = versionTag(photo) && !derivativeContext.getStore()
-    ? path.posix.join('thumbnails', `thumb_w${width}_p${photo.id}_${sourceBasename}`) : null;
+  // A tier written under an earlier version scheme (none, or the size
+  // alone) is still this source's (an in-place edit deletes it along with
+  // the versioned ones). A scoped (RAW/video) tier never trusts such a key.
+  const legacyKeys = derivativeContext.getStore() ? [] : legacyVersionTags(photo)
+    .map(tag => path.posix.join('thumbnails', `thumb_w${width}_p${photo.id}_${tag}${sourceBasename}`));
 
-  for (const candidate of [key, legacyKey].filter(Boolean)) {
+  for (const candidate of [key, ...legacyKeys]) {
     try {
       if (await storage.stat(candidate)) return candidate;
     } catch (e) {
@@ -2168,6 +2192,7 @@ module.exports = {
   deleteThumbnailTiers,
   previewTierKeys,
   deletePreviewTiers,
+  sourceVersion,
   PREVIEW_WIDTHS,
   THUMBNAIL_WIDTHS,
   normalizeTierWidth,

@@ -642,9 +642,10 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           // database pointers were cleared while the objects stayed in storage.
           'photos.preview_path', 'photos.thumbnail_path', 'photos.hero_path',
           'photos.watermark_path',
-          // An external row's tier keys carry its size (imageProcessor's
-          // sourceVersion); the survivor check below derives them.
-          'photos.size_bytes',
+          // An external row's tier keys carry its size and mtime
+          // (imageProcessor's sourceVersion); the survivor check below
+          // derives them.
+          'photos.size_bytes', 'photos.source_mtime_ms',
           'events.source_mode', 'events.external_path', 'events.slug'
         );
     } catch (err) {
@@ -675,12 +676,12 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
       // swaps a new file under an existing row and rewrites path/filename, so a
       // replacement landing mid-run would otherwise be given the previous
       // file's dimensions and have its fresh renditions cleared. An external
-      // file edited in place keeps its path and filename; the size the
-      // import pass records for it is what changes.
+      // file edited in place keeps its path and filename; the size and
+      // mtime the import pass records for it are what change.
       const fenceOf = (photo) => ({
         id: photo.id, path: photo.path, filename: photo.filename,
         ...((photo.source_origin === 'external' || photo.source_origin === 'reference')
-          ? { size_bytes: photo.size_bytes } : {}),
+          ? { size_bytes: photo.size_bytes, source_mtime_ms: photo.source_mtime_ms } : {}),
       });
       const nowIso = () => new Date().toISOString();
 

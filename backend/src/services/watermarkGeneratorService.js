@@ -131,8 +131,16 @@ class WatermarkGeneratorService {
    * the new picture the old one's watermark. Its file is then nobody's.
    */
   async recordWatermark(photo, result) {
+    // An external file edited in place keeps its name: its version is what
+    // tells the old picture's watermark from the new one's.
+    const fence = { id: photo.id, filename: photo.filename };
+    if (photo.source_origin === 'external' || photo.source_origin === 'reference') {
+      for (const column of ['size_bytes', 'source_mtime_ms']) {
+        if (photo[column] !== undefined) fence[column] = photo[column];
+      }
+    }
     const written = await db('photos')
-      .where({ id: photo.id, filename: photo.filename })
+      .where(fence)
       .update({
         watermark_path: result.watermarkPath,
         watermark_generated_at: db.fn.now()

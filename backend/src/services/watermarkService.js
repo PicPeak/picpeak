@@ -112,7 +112,15 @@ class WatermarkService {
       // than the watermark) and no reuse across requests, so skip the cache.
       // keepMetadata is part of the key: the gallery-view rendition and the
       // download of the same photo must never serve each other's bytes.
-      const cacheKey = isBuffer ? null : `${imagePath}_${JSON.stringify(settings)}_${keepMetadata ? 'meta' : 'stripped'}`;
+      // So is the file's version (size and modification time, statted here):
+      // a file on a reference share is edited in place under the same path,
+      // and every process must stop serving the old picture as soon as it
+      // reads the new one, not only the one whose import pass noticed.
+      let cacheKey = null;
+      if (!isBuffer) {
+        const st = await fs.stat(imagePath).catch(() => null);
+        if (st) cacheKey = `${imagePath}_${st.size}:${st.mtimeMs}_${JSON.stringify(settings)}_${keepMetadata ? 'meta' : 'stripped'}`;
+      }
       if (cacheKey) {
         const cached = this.cache.get(cacheKey);
         if (cached && Date.now() - cached.timestamp < this.cacheMaxAge) {
@@ -329,10 +337,14 @@ class WatermarkService {
   /**
    * Storage key of a photo's watermark. Named after the file it is cut from
    * as well as the photo id: a replacement keeps the id, and a job still
-   * cutting the old file must not overwrite the new file's watermark.
+   * cutting the old file must not overwrite the new file's watermark. An
+   * external file edited in place keeps its name, so its version (size and
+   * mtime, see imageProcessor's sourceVersion) is part of the name too.
    */
   watermarkKey(photo, attempt = null) {
-    const source = crypto.createHash('sha256').update(String(photo.filename || '')).digest('hex').slice(0, 12);
+    const version = require('./imageProcessor').sourceVersion(photo);
+    const source = crypto.createHash('sha256')
+      .update(String(photo.filename || '') + (version ? `\0${version}` : '')).digest('hex').slice(0, 12);
     return `watermarks/${photo.id}_watermarked_${source}${attempt ? `_${attempt.id}` : ''}${this.getFileExtension(photo.filename || '')}`;
   }
 

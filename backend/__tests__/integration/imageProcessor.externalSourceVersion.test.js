@@ -201,6 +201,109 @@ describe('renditions of an external file rewritten in place', () => {
     for (const key of tiers) expect(await storage.stat(key)).toBeFalsy();
   });
 
+  // Issue 2059: the mtime is part of the version, so an edit that keeps the
+  // byte count is told apart as well.
+  async function externalPhotoWithMtime(name) {
+    const row = await externalPhoto(name);
+    const { mtimeMs } = await fsp.stat(path.join(mediaRoot, row.external_relpath));
+    await db('photos').where({ id: row.id }).update({ source_mtime_ms: Math.floor(mtimeMs) });
+    return db('photos').where({ id: row.id }).first();
+  }
+  // The import pass on an edit that kept the byte count: only the mtime moves.
+  async function editKeepingSize(row, width, height) {
+    await writeSource(path.basename(row.external_relpath), width, height);
+    await db('photos').where({ id: row.id })
+      .update({ source_mtime_ms: Number(row.source_mtime_ms) + 1000, preview_path: null, hero_path: null });
+    return db('photos').where({ id: row.id }).first();
+  }
+
+  test('tier keys carry the mtime next to the size', async () => {
+    const row = await externalPhotoWithMtime('mtime-key.jpg');
+    const tier = await imageProcessor.ensurePreviewImageAtWidth(row, 640);
+    expect(tier).toContain(`_v${row.size_bytes}m${row.source_mtime_ms}_`);
+  });
+
+  test('a preview tier of the old bytes is not served after an edit that kept the byte count', async () => {
+    const row = await externalPhotoWithMtime('same-size-tier.jpg');
+    const stale = await imageProcessor.ensurePreviewImageAtWidth(row, 640);
+    expect(await widthOf(stale)).toBe(400);
+
+    const edited = await editKeepingSize(row, 260, 200);
+    expect(Number(edited.size_bytes)).toBe(Number(row.size_bytes));
+    const fresh = await imageProcessor.ensurePreviewImageAtWidth(edited, 640);
+    expect(fresh).not.toBe(stale);
+    expect(await widthOf(fresh)).toBe(260);
+  });
+
+  test('a preview built from the old bytes is not recorded after an edit that kept the byte count', async () => {
+    const row = await externalPhotoWithMtime('same-size-preview.jpg');
+    const spy = onRenditionWrite('previews/', async () => { await editKeepingSize(row, 260, 200); });
+
+    await expect(imageProcessor.ensurePreviewImage(row, { force: true })).resolves.toBeNull();
+
+    const stale = spy.mock.calls.find(([key]) => key.startsWith('previews/'))[0];
+    expect((await db('photos').where({ id: row.id }).first()).preview_path).toBeNull();
+    expect(await storage.stat(stale)).toBeFalsy();
+  });
+
+  test('a row selected without its mtime derives the same tier key', async () => {
+    const row = await externalPhotoWithMtime('partial-mtime.jpg');
+    const tier = await imageProcessor.ensurePreviewImageAtWidth(row, 640);
+    const { source_mtime_ms: _omitted, ...partial } = row;
+    const put = jest.spyOn(storage, 'put');
+    await expect(imageProcessor.ensurePreviewImageAtWidth(partial, 640)).resolves.toBe(tier);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  test('a tier named with the size alone is still served once the mtime is recorded, and cleaned up', async () => {
+    const row = await externalPhotoWithMtime('size-only-tier.jpg');
+    const sizeOnly = [
+      `previews/preview_w640_p${row.id}_v${row.size_bytes}_size-only-tier.jpg`,
+      `thumbnails/thumb_w600_p${row.id}_v${row.size_bytes}_size-only-tier.jpg`,
+    ];
+    const jpeg = await sharp({ create: { width: 400, height: 300, channels: 3, background: 'red' } }).jpeg().toBuffer();
+    for (const key of sizeOnly) await storage.put(key, jpeg, { contentType: 'image/jpeg' });
+
+    await expect(imageProcessor.ensurePreviewImageAtWidth(row, 640)).resolves.toBe(sizeOnly[0]);
+    await expect(imageProcessor.ensureThumbnailAtWidth(row, 600)).resolves.toBe(sizeOnly[1]);
+    await imageProcessor.deletePreviewTiers(row);
+    await imageProcessor.deleteThumbnailTiers(row);
+    for (const key of sizeOnly) expect(await storage.stat(key)).toBeFalsy();
+  });
+
+  test('a RAW tier named with the size alone in its cache id is cleaned up', async () => {
+    const row = await externalPhotoWithMtime('size-only-raw.jpg');
+    await db('photos').where({ id: row.id }).update({ filename: 'size-only-raw.dng', external_relpath: 'shoot/size-only-raw.dng' });
+    const raw = await db('photos').where({ id: row.id }).first();
+    const fields = ['event_id', 'path', 'filename', 'external_relpath', 'source_origin', 'processing_attempt_id'];
+    const sizeOnlyId = require('crypto').createHash('sha256')
+      .update(JSON.stringify([...fields.map(field => raw[field] ?? null), String(raw.size_bytes)])).digest('hex').slice(0, 24);
+    const scoped = require('../../src/services/mediaAttemptService')
+      .outputName(`p${raw.id}_v${raw.size_bytes}_size-only-raw.dng`, { id: sizeOnlyId });
+    const keys = [`previews/preview_w640_${scoped.replace(/\.[^.]+$/, '')}.jpg`, `thumbnails/thumb_w600_${scoped}`];
+    expect(imageProcessor.previewTierKeys(raw)).toContain(keys[0]);
+    expect(imageProcessor.thumbnailTierKeys(raw)).toContain(keys[1]);
+  });
+
+  test('deleting the gallery sweeps the tiers of an external photo with a recorded mtime', async () => {
+    const adminId = (await db('admin_users').first('id')).id;
+    const otherId = resultId(await db('events').insert({ slug: 'source-mtime-delete', event_type: 'wedding', event_name: 'Delete me too',
+      event_date: '2026-10-14', host_email: 'host@fixture.invalid', admin_email: 'admin@fixture.invalid',
+      password_hash: 'x', share_link: '/gallery/source-mtime-delete/share', expires_at: new Date(Date.now() + 3600000).toISOString(),
+      is_active: 1, is_archived: 0, is_draft: 0, created_by: adminId, source_mode: 'reference', external_path: 'shoot' }).returning('id'));
+    const row = await externalPhotoWithMtime('cascade-mtime.jpg');
+    await db('photos').where({ id: row.id }).update({ event_id: otherId });
+    const moved = await db('photos').where({ id: row.id }).first();
+    const tiers = [
+      await imageProcessor.ensurePreviewImageAtWidth(moved, 640),
+      await imageProcessor.ensureThumbnailAtWidth(moved, 600),
+    ];
+    for (const key of tiers) expect(key).toContain(`m${moved.source_mtime_ms}_`);
+
+    await require('../../src/routes/adminEvents/helpers').deleteEventCascade(otherId, { id: adminId });
+    for (const key of tiers) expect(await storage.stat(key)).toBeFalsy();
+  });
+
   test('a tier written before the version was part of the name is still served and cleaned up', async () => {
     const row = await externalPhoto('legacy-tier.jpg');
     const legacyKey = `previews/preview_w640_p${row.id}_legacy-tier.jpg`;

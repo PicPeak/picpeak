@@ -35,7 +35,7 @@ const ALL_ROWS = {
   'services/backupManifest.js': [1, 'backup manifest counts every row it carries'],
   'services/databaseBackup.js': [1, 'restore-time reset of every row'],
   'services/eventRenameService.js': [2, 'renaming a gallery renames the files of trashed photos too'],
-  'services/externalImportService.js': [14, 'which files already belong to a photo; state of the import in flight; queues the rows it just imported for tagging; refreshes a row whose file changed by id, and keeps a derivative any other row (trashed included) still points at'],
+  'services/externalImportService.js': [15, 'which files already belong to a photo; state of the import in flight; queues the rows it just imported for tagging; refreshes a row whose file changed by id (and records the mtime of one imported before it was), and keeps a derivative any other row (trashed included) still points at'],
   'services/externalPhotoDedupe.js': [8, 'dedupe decides which row owns a file and deletes the others outright, their streaming ladders included'],
   'services/externalRelpathFold.js': [5, 'data backfill run by a migration'],
   'services/faceAutoCategories.js': [3, 'derived categorisation kept consistent for a restore'],

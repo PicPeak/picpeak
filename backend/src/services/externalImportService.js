@@ -176,8 +176,9 @@ const DERIVATIVE_COLUMNS = ['thumbnail_path', 'preview_path', 'hero_path', 'wate
 /**
  * A file already imported at this path, seen again on a re-scan.
  *
- * Unchanged (same size as recorded): nothing to do. Changed: the row takes the
- * new dimensions, capture date, camera details and size, its derivatives are
+ * Unchanged (same size and modification time as recorded): nothing to do.
+ * Changed: the row takes the new dimensions, capture date, camera details,
+ * size and mtime, its derivatives are
  * dropped (the lazy paths build them again from the new bytes on first view)
  * and the thumbnail is made at once, as on import. Faces and scene tags
  * describe the old picture, so they are purged and queued again where the
@@ -196,15 +197,31 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   if (row.size_bytes == null) {
     // Imported before the size was recorded: nothing to compare against, so
     // record it and treat the file as the one the derivatives were made from.
-    await db('photos').where({ id: row.id }).whereNull('size_bytes').update({ size_bytes: f.size });
+    await db('photos').where({ id: row.id }).whereNull('size_bytes')
+      .update({ size_bytes: f.size, source_mtime_ms: Math.floor(f.mtimeMs) });
     return 'skipped';
   }
-  if (Number(row.size_bytes) === f.size) return 'skipped';
+  // Size and modification time: an edit that keeps the byte count (a rating
+  // or keyword written into the file) still moves the mtime. A row imported
+  // before the mtime was recorded compares by size alone this once.
+  const unchanged = (st) => Number(row.size_bytes) === st.size
+    && (row.source_mtime_ms == null || Number(row.source_mtime_ms) === Math.floor(st.mtimeMs));
+  if (unchanged(f)) {
+    // Recorded now, with the same assumption as the size above: the file
+    // seen is the one the derivatives were made from. Treating every such
+    // row as changed would rebuild every external photo, and purge its
+    // faces and tags, on the first pass after an upgrade.
+    if (row.source_mtime_ms == null) {
+      await db('photos').where({ id: row.id, size_bytes: row.size_bytes }).whereNull('source_mtime_ms')
+        .update({ source_mtime_ms: Math.floor(f.mtimeMs) });
+    }
+    return 'skipped';
+  }
   // Stat again: the walk that produced `f` can be minutes old. A copy still
   // landing on the mount is left for the next pass, the same settle rule new
   // files get.
   const before = await fs.stat(f.full);
-  if (Number(row.size_bytes) === before.size) return 'skipped';
+  if (unchanged(before)) return 'skipped';
   if (automatic && settleMs > 0 && Date.now() - before.mtimeMs < settleMs) return 'deferred';
 
   let width = null;
@@ -276,11 +293,12 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   // Fenced on what was read: a concurrent pass that already refreshed the
   // row, or a replacement that repointed it, wins and this one does nothing.
   const fence = {
-    id: row.id, size_bytes: row.size_bytes, source_origin: row.source_origin,
-    external_relpath: row.external_relpath,
+    id: row.id, size_bytes: row.size_bytes, source_mtime_ms: row.source_mtime_ms ?? null,
+    source_origin: row.source_origin, external_relpath: row.external_relpath,
   };
   const updates = {
     size_bytes: stats.size,
+    source_mtime_ms: Math.floor(stats.mtimeMs),
     width,
     height,
     captured_at: capturedAt ? capturedAt.toISOString() : null,
@@ -317,7 +335,8 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     const outputBasename = `ext${row.id}_${path.basename(f.rel)}`;
     const thumbnailPath = await generateThumbnail(f.full, { outputBasename, meta });
     if (thumbnailPath) {
-      await db('photos').where({ id: row.id, size_bytes: stats.size }).whereNull('thumbnail_path')
+      await db('photos').where({ id: row.id, size_bytes: stats.size, source_mtime_ms: Math.floor(stats.mtimeMs) })
+        .whereNull('thumbnail_path')
         .update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null });
     }
   } catch (thumbErr) {
@@ -325,10 +344,10 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     logger.warn(`Thumbnail regeneration failed for changed external photo ${row.id} (${f.rel}): ${thumbErr.message}`);
   }
 
-  // The watermark service keeps results in memory by the path it read: the
-  // source for the full image, the local derivative file for thumbnails,
-  // previews and heroes. None of those paths changed. Last, so nothing read
-  // before the swap is left in it. (This process only; see the Limits.)
+  // The watermark service keeps results in memory by the path it read and
+  // that file's size and mtime, so no process serves the old picture from
+  // it once the file changed. Its entries for the old bytes are dropped here
+  // only to free the memory sooner (this process; others age them out).
   const watermarkService = require('./watermarkService');
   watermarkService.forgetSource(f.full);
   if (typeof storage.resolveLocalPath === 'function') {
@@ -767,6 +786,8 @@ async function importExternalFolder({
             thumbnail_path: null,
             type,
             size_bytes: stats.size,
+            // With the size, the version a re-scan compares (issue 2059).
+            source_mtime_ms: Math.floor(stats.mtimeMs),
             width,
             height,
             source_origin: 'external',

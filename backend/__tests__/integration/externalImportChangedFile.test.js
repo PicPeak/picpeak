@@ -161,6 +161,52 @@ describe('external re-scan of a file changed in place', () => {
     expect(exists(keys.watermark_path)).toBe(false);
   });
 
+  it('refreshes a file edited in place that kept its byte count (issue 2059)', async () => {
+    const eventId = await seedEvent();
+    const full = path.join(mediaRoot, 'shoot/a.jpg');
+    await fs.promises.mkdir(path.dirname(full), { recursive: true });
+    // A rating or keyword written into the file: same length, other bytes.
+    const writeTagged = async (artist, when) => {
+      await sharp({ create: { width: 60, height: 40, channels: 3, background: { r: 10, g: 20, b: 30 } } })
+        .withExif({ IFD0: { Artist: artist } }).jpeg().toFile(full);
+      await fs.promises.utimes(full, when, when);
+      return fs.promises.stat(full);
+    };
+    const first = await writeTagged('AAAA', new Date('2026-06-01T10:00:00Z'));
+    expect((await runImport(eventId, 'shoot')).body.imported).toBe(1);
+    const photo = await db('photos').where({ event_id: eventId }).first();
+    expect(Number(photo.source_mtime_ms)).toBe(Math.floor(first.mtimeMs));
+    const previewKey = `previews/preview_ext${photo.id}_a.jpg`;
+    await writeStored(previewKey);
+    await db('photos').where({ id: photo.id }).update({ preview_path: previewKey });
+
+    const second = await writeTagged('BBBB', new Date('2026-06-02T10:00:00Z'));
+    expect(second.size).toBe(first.size);
+    const res = await runImport(eventId, 'shoot');
+    expect(res.body.refreshed).toBe(1);
+
+    const after = await db('photos').where({ id: photo.id }).first();
+    expect(Number(after.source_mtime_ms)).toBe(Math.floor(second.mtimeMs));
+    expect(after.preview_path).toBeNull();
+    expect(exists(previewKey)).toBe(false);
+  });
+
+  it('records the mtime of a row imported before it was, without a refresh', async () => {
+    const eventId = await seedEvent();
+    const { photo, keys } = await importWithRenditions(eventId);
+    await db('photos').where({ id: photo.id }).update({ source_mtime_ms: null });
+    generateThumbnail.mockClear();
+
+    const res = await runImport(eventId, 'shoot');
+    expect(res.body.refreshed).toBe(0);
+    const after = await db('photos').where({ id: photo.id }).first();
+    const { mtimeMs } = await fs.promises.stat(path.join(mediaRoot, 'shoot/a.jpg'));
+    expect(Number(after.source_mtime_ms)).toBe(Math.floor(mtimeMs));
+    expect(after.preview_path).toBe(keys.preview_path);
+    expect(generateThumbnail).not.toHaveBeenCalled();
+    for (const key of Object.values(keys)) expect(exists(key)).toBe(true);
+  });
+
   it('leaves an unchanged file and its derivatives alone', async () => {
     const eventId = await seedEvent();
     const { photo, keys } = await importWithRenditions(eventId);
