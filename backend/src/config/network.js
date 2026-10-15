@@ -50,8 +50,11 @@ function isPrivateHop(address) {
  * another proxy sits in front of the bundled nginx. nginx appends the address
  * it saw, so with one trusted hop req.ip is that address. When it is private
  * and the header carries an earlier entry, something on a private network
- * forwarded the request to nginx: every client then shares that proxy's
- * address. Behaviour is unchanged; only the private hop is logged.
+ * probably forwarded the request to nginx: every client then shares that
+ * proxy's address. The earlier entry can also be sent by a LAN client that
+ * reaches nginx directly, so the message is conditional: raising the hop
+ * count for such a client would let it choose its own address. Behaviour is
+ * unchanged; only the private hop is logged.
  */
 function createProxyChainWarning({ trustProxy, logger }) {
   let warned = trustProxy !== 1;
@@ -65,9 +68,10 @@ function createProxyChainWarning({ trustProxy, logger }) {
       if (hops.length >= 2 && isPrivateHop(nginxPeer)) {
         warned = true;
         logger.warn(
-          `Requests arrive through another proxy (${nginxPeer}) in front of the bundled nginx; `
-          + 'all clients share that proxy\'s address for rate limits. '
-          + 'Set TRUST_PROXY=2 (see README upgrade note).'
+          `A request reached the bundled nginx from ${nginxPeer} with a forwarded client address. `
+          + 'If another reverse proxy forwards to nginx, all clients share that proxy\'s address '
+          + 'for rate limits: set TRUST_PROXY=2 (see README upgrade note). Leave TRUST_PROXY=1 '
+          + 'if clients can reach nginx directly, or they can choose their own address.'
         );
       }
     }
