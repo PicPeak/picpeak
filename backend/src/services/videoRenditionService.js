@@ -88,8 +88,8 @@ let stripExpiresAt = 0;
  * of being skipped. Defaults to on: no row, or one that cannot be read, is
  * the privacy-preserving answer.
  */
-async function isStripEnabled() {
-  if (Date.now() < stripExpiresAt) return cachedStrip;
+async function isStripEnabled({ fresh = false } = {}) {
+  if (!fresh && Date.now() < stripExpiresAt) return cachedStrip;
   try {
     const { decodeSettingValue } = require('./eventSettings');
     const row = await db('app_settings').where({ setting_key: STRIP_SETTING_KEY }).first();
@@ -222,11 +222,26 @@ async function hasFaststart(localPath) {
   }
 }
 
+/**
+ * The stream of a type a player picks: the one flagged default, else the
+ * first. A cover image (attached_pic) is never the picture.
+ */
+function playedStream(streams, type) {
+  const candidates = streams.filter((s) => s.codec_type === type && !s.disposition?.attached_pic);
+  return candidates.find((s) => s.disposition?.default) || candidates[0]
+    || streams.find((s) => s.codec_type === type);
+}
+
 async function probe(localPath) {
   const metadata = await mediaProcesses.probeVideo(localPath);
-  const video = (metadata.streams || []).find((s) => s.codec_type === 'video');
-  const audio = (metadata.streams || []).find((s) => s.codec_type === 'audio');
+  const streams = metadata.streams || [];
+  const video = playedStream(streams, 'video');
+  const audio = playedStream(streams, 'audio');
   return {
+    // Absolute stream indexes, so the remux keeps the tracks the original
+    // played with when a file carries more than one.
+    videoIndex: Number.isInteger(video?.index) ? video.index : null,
+    audioIndex: Number.isInteger(audio?.index) ? audio.index : null,
     formatName: metadata.format?.format_name || '',
     majorBrand: String(metadata.format?.tags?.major_brand || '').trim().toLowerCase(),
     videoCodec: video?.codec_name || null,
@@ -327,12 +342,14 @@ function transcodeOptions({ toneMap = false } = {}) {
  * plays (issue 2102). Stream copy: same picture and sound, no re-encode. The
  * container, stream and chapter metadata (location, artist, device tags) is
  * dropped; the rotation is stream side data, not a tag, and survives the
- * copy. Faststart keeps the moov in front, as the original had it.
+ * copy. Faststart keeps the moov in front, as the original had it. With the
+ * probe's indexes it maps the tracks a player picks in the original (the
+ * default ones), not merely the first.
  */
-function remuxOptions() {
+function remuxOptions({ videoIndex = null, audioIndex = null } = {}) {
   return [
-    '-map', '0:v:0',
-    '-map', '0:a:0?',
+    '-map', videoIndex == null ? '0:v:0' : `0:${videoIndex}`,
+    '-map', audioIndex == null ? '0:a:0?' : `0:${audioIndex}`,
     '-c', 'copy',
     '-map_metadata', '-1', '-map_chapters', '-1',
     '-movflags', '+faststart',
@@ -345,14 +362,14 @@ function remuxOptions() {
  * gets longer than VIDEO_RENDITION_TIMEOUT_MS, which is only the minimum.
  * `timeoutMs` overrides it (tests).
  */
-function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, remux = false } = {}) {
+function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, remux = null } = {}) {
   return mediaProcesses.withSnapshot(localPath, 'rendition', async (snapshot, details) => {
     const { policy } = details;
     const metadata = await mediaProcesses.probeSnapshot(snapshot, details);
     const budget = renditionBudget(Number.isFinite(duration) ? duration : Number(metadata.format?.duration), policy);
     await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
       ...mediaProcesses.inputOptions(details.format, policy.threads), '-i', snapshot,
-      ...(remux ? remuxOptions() : transcodeOptions({ toneMap })), '-threads', String(policy.threads), '-filter_threads', String(policy.threads), outPath], {
+      ...(remux ? remuxOptions(remux) : transcodeOptions({ toneMap })), '-threads', String(policy.threads), '-filter_threads', String(policy.threads), outPath], {
       // Its own lane, so posters and probes never wait behind a transcode.
       lane: 'long', memoryBytes: policy.transcodeBytes, wallMs: timeoutMs || budget.wallMs, cpuSeconds: budget.cpuSeconds,
       fileBytes: policy.outputBytes || 1024 * 1024 * 1024 * 1024,
@@ -395,7 +412,10 @@ async function renderWebCopy(photoId) {
   const status = await withSource(async (localPath) => {
     const probed = await probe(localPath);
     const remux = playsInBrowser(probed, await hasFaststart(localPath));
-    if (remux && !(await isStripEnabled())) {
+    // Read past the cache: another replica may have switched stripping on
+    // and queued this row a moment ago; a stale "off" here would mark it
+    // skipped again, and nothing would queue it a second time.
+    if (remux && !(await isStripEnabled({ fresh: true }))) {
       // A stale copy from an earlier source (a replacement, say) is not
       // worth keeping: the original is what plays now.
       await attempt.assertCurrent();
@@ -420,7 +440,10 @@ async function renderWebCopy(photoId) {
       logger.warn(`videoRendition: photo ${photoId} is HDR (${probed.colorTransfer}) but this ffmpeg lacks zscale/tonemap; the copy is not tone-mapped`);
     }
     try {
-      await transcode(localPath, tmpPath, { toneMap, duration: probed.duration, remux });
+      await transcode(localPath, tmpPath, {
+        toneMap, duration: probed.duration,
+        remux: remux ? { videoIndex: probed.videoIndex, audioIndex: probed.audioIndex } : null,
+      });
       const stat = await fsp.stat(tmpPath).catch(() => null);
       if (!stat || stat.size === 0) throw new Error('ffmpeg produced no output');
       const { outputBytes } = mediaPolicy();

@@ -161,6 +161,33 @@ describe('remuxOptions', () => {
       '-movflags', '+faststart', '-f', 'mp4',
     ]);
   });
+
+  it('maps the probed tracks by absolute index when it has them', () => {
+    const opts = service.remuxOptions({ videoIndex: 1, audioIndex: 3 });
+    expect(opts.slice(0, 4)).toEqual(['-map', '0:1', '-map', '0:3']);
+    expect(service.remuxOptions({ videoIndex: 0, audioIndex: null }).slice(0, 4)).toEqual(['-map', '0:0', '-map', '0:a:0?']);
+  });
+});
+
+describe('probe', () => {
+  it('picks the default video and audio track, never a cover image', async () => {
+    mockProbe([
+      { index: 0, codec_type: 'video', codec_name: 'mjpeg', disposition: { attached_pic: 1, default: 1 } },
+      { index: 1, codec_type: 'video', codec_name: 'h264', disposition: { default: 0 }, width: 160 },
+      { index: 2, codec_type: 'video', codec_name: 'h264', disposition: { default: 1 }, width: 320 },
+      { index: 3, codec_type: 'audio', codec_name: 'aac', disposition: { default: 0 } },
+      { index: 4, codec_type: 'audio', codec_name: 'aac', disposition: { default: 1 } },
+    ], { format_name: 'mov,mp4', tags: {} });
+    const probed = await service.probe('/tmp/x.mp4');
+    expect(probed).toMatchObject({ videoIndex: 2, audioIndex: 4, videoCodec: 'h264', width: 320 });
+
+    // Nothing flagged default: the first real one.
+    mockProbe([
+      { index: 0, codec_type: 'video', codec_name: 'h264', width: 160 },
+      { index: 1, codec_type: 'video', codec_name: 'h264', width: 320 },
+    ], { format_name: 'mov,mp4', tags: {} });
+    expect(await service.probe('/tmp/x.mp4')).toMatchObject({ videoIndex: 0, audioIndex: null, width: 160 });
+  });
 });
 
 describe('isStripEnabled', () => {
@@ -286,7 +313,7 @@ describe('renderWebCopy', () => {
     dbModule.__state.photo = { id: 26, event_id: 9, filename: 'phone.mp4', media_type: 'video', web_path: 'videos/web_26_old.mp4' };
     service.clearCache();
     mockProbe(
-      [{ codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p', width: 1920, height: 1080 }, { codec_type: 'audio', codec_name: 'aac' }],
+      [{ index: 0, codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p', width: 1920, height: 1080 }, { index: 1, codec_type: 'audio', codec_name: 'aac' }],
       { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'isom' } },
     );
     const atoms = await writeAtoms(box('ftyp', 16), box('moov', 40), box('mdat', 100));
@@ -301,7 +328,7 @@ describe('renderWebCopy', () => {
     ffmpeg.mockImplementation(() => command);
 
     expect(await service.renderWebCopy(26)).toBe('complete');
-    expect(command.outputOptions).toHaveBeenCalledWith(service.remuxOptions());
+    expect(command.outputOptions).toHaveBeenCalledWith(service.remuxOptions({ videoIndex: 0, audioIndex: 1 }));
     const key = 'videos/web_26_remux_11111111-1111-4111-8111-111111111111_phone.mp4';
     expect(storage.putFromFile).toHaveBeenCalledWith(key, savedTo, { contentType: 'video/mp4' });
     const update = dbModule.__state.updates.find((u) => u.table === 'photos');
@@ -309,6 +336,32 @@ describe('renderWebCopy', () => {
     expect(update.where).toEqual({ id: 26, web_status: 'processing', web_attempt_id: '11111111-1111-4111-8111-111111111111' });
     // The copy an earlier attempt left behind is dropped once the remux is published.
     expect(storage.delete).toHaveBeenCalledWith('videos/web_26_old.mp4');
+  });
+
+  it('reads the strip setting past its cache before skipping: another replica may just have switched it on', async () => {
+    dbModule.__state.stripSetting = { setting_value: 'false' };
+    service.clearCache();
+    expect(await service.isStripEnabled()).toBe(false);
+    // Switched on elsewhere; this process still caches "off".
+    dbModule.__state.stripSetting = { setting_value: 'true' };
+    expect(await service.isStripEnabled()).toBe(false);
+    dbModule.__state.photo = { id: 27, event_id: 9, filename: 'late.mp4', media_type: 'video' };
+    mockProbe(
+      [{ index: 0, codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p' }],
+      { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'isom' } },
+    );
+    const atoms = await writeAtoms(box('ftyp', 16), box('moov', 40), box('mdat', 100));
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+    const command = {
+      outputOptions: jest.fn(function () { return this; }),
+      on: jest.fn(function (event, handler) { if (event === 'end') this._end = handler; return this; }),
+      save: jest.fn(function (out) { fs.writeFileSync(out, 'remuxed-bytes'); setImmediate(() => this._end()); }),
+      kill: jest.fn(),
+    };
+    ffmpeg.mockImplementation(() => command);
+
+    expect(await service.renderWebCopy(27)).toBe('complete');
+    expect(command.outputOptions).toHaveBeenCalledWith(service.remuxOptions({ videoIndex: 0, audioIndex: null }));
   });
 
   it('transcodes an HEVC clip, stores the copy under videos/ and records it', async () => {
