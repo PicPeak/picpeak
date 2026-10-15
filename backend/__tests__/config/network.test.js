@@ -197,6 +197,16 @@ describe('createProxyChainWarning', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
+  test('a LAN client forging the header gets a conditional message, not a bare TRUST_PROXY=2', async () => {
+    const { logger, bodies } = await run(parseTrustProxy('1'), ['1.1.1.1, 192.168.1.20']);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const [message] = logger.warn.mock.calls[0];
+    expect(message).toMatch(/If another reverse proxy forwards to nginx/);
+    expect(message).toMatch(/Leave TRUST_PROXY=1 if clients can reach nginx directly/);
+    expect(message).not.toContain('1.1.1.1');
+    expect(bodies[0].ip).toBe('192.168.1.20');
+  });
+
   test.each([['2'], ['false'], [undefined], ['loopback']])(
     'stays quiet when TRUST_PROXY is %p',
     async (value) => {
