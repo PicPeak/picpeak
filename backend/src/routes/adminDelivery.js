@@ -36,11 +36,12 @@ const router = express.Router();
 // held or rejected first-look upload paired with an approved full-set photo
 // is not in that count, so its pair must not take the full-set photo off it
 // (issue 2086).
-async function countedDuplicates(duplicates) {
+// Reads the event's held ids rather than binding one parameter per pair.
+async function countedDuplicates(eventId, duplicates) {
   if (duplicates.length === 0) return 0;
-  const row = await livePhotos(db).whereIn('id', duplicates.map((d) => d.first_look_id))
-    .whereNull('moderation_status').count('id as c').first();
-  return Number(row.c) || 0;
+  const held = new Set((await livePhotos(db).where('event_id', eventId)
+    .whereNotNull('moderation_status').pluck('id')).map(Number));
+  return duplicates.filter((d) => !held.has(Number(d.first_look_id))).length;
 }
 
 async function deliveryState(eventId) {
@@ -61,7 +62,7 @@ async function deliveryState(eventId) {
     delivered_count: Number(total) || 0,
     first_look_count: Number(firstLook) || 0,
     duplicate_count: duplicates.length,
-    delivered_duplicate_count: await countedDuplicates(duplicates),
+    delivered_duplicate_count: await countedDuplicates(eventId, duplicates),
   };
 }
 
@@ -92,7 +93,7 @@ router.post('/events/:eventId/delivery/complete', adminAuth, requirePermission('
     const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
     // Held and rejected guest uploads are not part of the delivery (issue 2086).
     const [{ total }] = await livePhotos(db).where('event_id', eventId).whereNull('moderation_status').count('id as total');
-    const photoCount = Math.max(0, (Number(total) || 0) - await countedDuplicates(result.duplicates));
+    const photoCount = Math.max(0, (Number(total) || 0) - await countedDuplicates(eventId, result.duplicates));
 
     // The inline address and every assigned customer account the gallery
     // was announced to (customers.events, as on every announcing route).
