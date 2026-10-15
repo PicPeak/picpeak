@@ -666,6 +666,17 @@ class RestoreService {
           `A container restart will retry via wait-for-db.sh. Error: ${migErr.message}`);
       }
 
+      // The restored rows may be at rendition_version 0 (a pre-311 database
+      // the migration above just set back, or legacy rows the backup carried)
+      // and the boot-time refresh has long finished (issue 2096).
+      if ((options.restoreType === 'full' || options.restoreType === 'database') && migrationsApplied) {
+        try {
+          require('./renditionRefresh').requestPass();
+        } catch (err) {
+          this.log('warn', `Could not schedule the rendition refresh: ${err.message}`);
+        }
+      }
+
       // Documents the source read from its legacy root (<cwd>/storage) were
       // backed up under a storage-relative path; point their rows at it once
       // both the rows and the files are back (legacyStoredFiles.js).

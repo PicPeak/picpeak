@@ -384,6 +384,32 @@ describe('rendition refresh after EXIF stripping', () => {
     }, 60000);
   });
 
+  it('requestPass runs a pass after the boot-time one has finished', async () => {
+    const event = await makeEvent();
+    const id = await addLegacyPhoto(event);
+    process.env.RENDITION_REFRESH_DELAY_MS = '0';
+    try {
+      refresh.requestPass();
+      const deadline = Date.now() + 20000;
+      while (Number((await db('photos').where({ id }).first()).rendition_version) !== refresh.RENDITION_VERSION) {
+        if (Date.now() > deadline) throw new Error('no pass ran');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    } finally {
+      delete process.env.RENDITION_REFRESH_DELAY_MS;
+      await refresh.stop();
+    }
+  }, 30000);
+
+  it('a full or database restore asks for a pass once its migrations ran', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../src/services/restoreService.js'), 'utf8');
+    const migrate = source.indexOf('migrations/run-migrations-safe.js');
+    const request = source.indexOf('renditionRefresh\').requestPass()');
+    expect(migrate).toBeGreaterThan(0);
+    expect(request).toBeGreaterThan(migrate);
+    expect(source.slice(request - 300, request)).toMatch(/'full' \|\| options\.restoreType === 'database'\) && migrationsApplied/);
+  });
+
   it('does not run while another replica holds the claim', async () => {
     const event = await makeEvent();
     await addLegacyPhoto(event);
