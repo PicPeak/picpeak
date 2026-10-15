@@ -80,7 +80,13 @@ router.post('/events/:eventId/delivery/complete', adminAuth, requirePermission('
     const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
     // Held and rejected guest uploads are not part of the delivery (issue 2086).
     const [{ total }] = await livePhotos(db).where('event_id', eventId).whereNull('moderation_status').count('id as total');
-    const photoCount = Math.max(0, (Number(total) || 0) - result.duplicates.length);
+    // A duplicate pair only shrinks the count when its first-look copy was
+    // counted: a held first-look upload paired with an approved full-set
+    // photo is not in `total` to begin with.
+    const firstLookIds = result.duplicates.map((d) => d.first_look_id);
+    const countedDuplicates = firstLookIds.length === 0 ? 0 : Number((await livePhotos(db)
+      .whereIn('id', firstLookIds).whereNull('moderation_status').count('id as c').first()).c) || 0;
+    const photoCount = Math.max(0, (Number(total) || 0) - countedDuplicates);
 
     // The inline address and every assigned customer account the gallery
     // was announced to (customers.events, as on every announcing route).

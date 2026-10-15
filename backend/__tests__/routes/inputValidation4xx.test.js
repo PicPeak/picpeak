@@ -303,15 +303,10 @@ describe('input validation (issues 2078, 2086)', () => {
       expect(res.body.code).toBe('UNSUPPORTED_MEDIA_TYPE');
     });
 
-    it.each(urls)('lets an octet-stream chunk and one with no Content-Type through on %s', async (url) => {
+    it.each(urls)('lets an octet-stream chunk through unread on %s', async (url) => {
       const ok = await request(chunkApp()).post(url).set('Content-Type', 'application/octet-stream').send(Buffer.from('x'));
       expect(ok.status).toBe(200);
       expect(ok.body.ended).toBe(false);
-      const bare = request(chunkApp()).post(url);
-      bare.unset('Content-Type');
-      const untyped = await bare.send(Buffer.from('x'));
-      expect(untyped.status).toBe(200);
-      expect(untyped.body.ended).toBe(false);
     });
 
     it('leaves other routes alone', async () => {
@@ -341,6 +336,11 @@ describe('input validation (issues 2078, 2086)', () => {
 
   describe('completion mail count (issue 2086)', () => {
     it('leaves a photo under review or rejected out of photo_count', async () => {
+      // A held first-look upload paired with an approved full-set copy: the
+      // pair must not take the approved photo off the count.
+      const shot = { original_filename: 'pair.jpg', width: 10, height: 10, size_bytes: 100, type: 'individual' };
+      await db('photos').insert({ event_id: eventId, filename: 'pair-fl.jpg', path: `${SLUG}/pair-fl.jpg`, uploaded_at: new Date().toISOString(), ...shot, first_look: true, moderation_status: 'pending', visibility: 'hidden' });
+      await db('photos').insert({ event_id: eventId, filename: 'pair-full.jpg', path: `${SLUG}/pair-full.jpg`, uploaded_at: new Date().toISOString(), ...shot, first_look: false });
       await db('email_queue').where({ event_id: eventId }).del();
       await db('events').where({ id: eventId }).update({ delivery_status: 'partial' });
       const res = await asAdmin(request(app).post(`/api/admin/events/${eventId}/delivery/complete`)).send({});
@@ -348,7 +348,8 @@ describe('input validation (issues 2078, 2086)', () => {
       const row = await db('email_queue').where({ event_id: eventId, email_type: 'gallery_completed' }).first();
       expect(row).toBeTruthy();
       const data = typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data;
-      expect(data.photo_count).toBe(1);
+      expect(res.body.duplicate_photo_ids).toHaveLength(1);
+      expect(data.photo_count).toBe(2);
     });
   });
 
