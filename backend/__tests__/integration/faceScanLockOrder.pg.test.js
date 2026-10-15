@@ -1,8 +1,9 @@
 /**
  * Face scan commit vs. purges on PostgreSQL (issue 2069): the lock order.
  *
- * The scan takes the event row (key share, which its foreign keys need
- * anyway), then checks its claim, which locks the photo row, and the purges
+ * A scan with faces to insert takes the event row (key share, which their
+ * foreign keys need anyway), then checks its claim, which locks the photo
+ * row, and the purges
  * invalidate the photo before they touch its faces. So everything takes
  * event, photo, faces, in that order. Checked last, an event purge could delete the
  * faces, the scan commit new ones and the purge then only clear the status
@@ -26,6 +27,8 @@ let mockPreviewBuffer;
 let mockGate = null;
 let mockReached = null;
 let openGate = null;
+// Resolvers of transactions a test holds open; released if it fails early.
+const held = [];
 
 (pgUrl ? describe : describe.skip)('face scan lock order on PostgreSQL (issue 2069)', () => {
   let owner; let db; let schema; let tmpDir; let cleanup; let previousClient;
@@ -102,7 +105,11 @@ let openGate = null;
   });
 
   // A failed assertion must not leave a scan parked with its locks held.
-  afterEach(() => { if (openGate) openGate(); openGate = null; mockGate = null; });
+  afterEach(() => {
+    if (openGate) openGate();
+    openGate = null; mockGate = null;
+    while (held.length) held.pop()();
+  });
 
   async function seed() {
     const [e] = await db('events').insert({
@@ -136,8 +143,9 @@ let openGate = null;
     return { scan, release: () => { mockGate = null; openGate(); openGate = null; } };
   }
 
-  // Resolves once `promise` is waiting on a row lock in this schema's
-  // database (not merely slow), and fails if it settles first.
+  // Resolves once `promise` is waiting on a row lock (not merely slow), and
+  // fails if it settles first. Counts lock waits across the database: the
+  // suite expects a PostgreSQL of its own, as the other *.pg tests do.
   async function blockedOnLock(promise) {
     let settled = false;
     promise.then(() => { settled = true; }, () => { settled = true; });
@@ -176,7 +184,7 @@ let openGate = null;
     // What photoTrash.restorePhotos does in a capped gallery: the event row
     // FOR UPDATE, then the photo. Held open between the two.
     let holdEvent; let eventLocked;
-    const hold = new Promise((resolve) => { holdEvent = resolve; });
+    const hold = new Promise((resolve) => { holdEvent = resolve; held.push(resolve); });
     const locked = new Promise((resolve) => { eventLocked = resolve; });
     const restore = db.transaction(async (trx) => {
       await trx('events').where({ id: eventId }).forUpdate().first();

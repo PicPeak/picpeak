@@ -269,12 +269,13 @@ async function processPhotoFaces(claimed) {
       // could delete the faces, this scan commit new ones, and the purge then
       // only clear the status; or the two could deadlock on each other.
       //
-      // The event row before that: the face and person inserts below take a
-      // key-share lock on it for their foreign key, and a capped trash restore
-      // or an archive holds it FOR UPDATE before it touches the photo. Taken
-      // after the photo, that is a lock cycle; taken first, it is the order
-      // everything else uses (event, photo, faces).
-      if (trx.client.config.client === 'pg') {
+      // The event row before that, when there are faces to insert: their
+      // foreign key (and a new person's) takes a key-share lock on it, and a
+      // capped trash restore or an archive holds it FOR UPDATE before it
+      // touches the photo. Taken after the photo, that is a lock cycle. A scan
+      // with no faces inserts nothing and takes no event lock at all, as
+      // before.
+      if (faces.length && trx.client.config.client === 'pg') {
         await trx('events').where({ id: photo.event_id }).forKeyShare().first('id');
       }
       const committed = await claimGuard(claimed, trx)

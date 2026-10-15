@@ -519,13 +519,7 @@ class EventRenameService {
           backupData.folderRenamed = true;
         }
 
-        // 5. Rename photo files and update paths. The event row first: step 6
-        // changes its unique slug, which waits for every key-share lock on
-        // it, and a face scan holds one while it waits for a photo row
-        // (issue 2069). Taking the photos first would close that cycle.
-        if (trx.client.config.client === 'pg') {
-          await trx('events').where({ id: eventId }).forUpdate().first('id');
-        }
+        // 5. Rename photo files and update paths
         const filesRenamed = await this.renamePhotoFiles(eventId, oldName, newEventName.trim(), oldSlug, newSlug, trx);
 
         // 6. Update database records
