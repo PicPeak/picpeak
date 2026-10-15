@@ -46,7 +46,7 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
-const { sameStorageKey } = require('../utils/storageKey');
+const { sameStorageKey, canonicalStorageKey } = require('../utils/storageKey');
 const maintenanceJobs = require('./maintenanceJobState');
 const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
 
@@ -99,33 +99,67 @@ const selectPhoto = (query) => query.select(PHOTO_COLUMNS.map((column) => `photo
 const RENDITION_KIND = { thumbnail_path: 'thumbnail', preview_path: 'preview', hero_path: 'hero' };
 
 /**
+ * Which rows name each rendition file, by canonical key, so a superseded key
+ * can be checked without a query per rendition. Read in one paged scan of
+ * every row (trashed rows included: they are restorable), and only once a key
+ * actually moves, which on local storage it rarely does. Canonical keys cover
+ * every spelling the storage backends fold into one file (`./previews/...`,
+ * backslashes, `previews//...`).
+ *
+ * Kept current for the moves this pass makes. A row another process points at
+ * an old key mid-pass is not seen; nothing writes an old rendition key into a
+ * row (new renditions get new names), so that is accepted.
+ */
+function createReferenceIndex() {
+  let owners = null;
+  const add = (key, id) => {
+    const canonical = canonicalStorageKey(key);
+    if (!owners.has(canonical)) owners.set(canonical, new Set());
+    owners.get(canonical).add(id);
+  };
+  async function load() {
+    owners = new Map();
+    let lastId = 0;
+    for (;;) {
+      const rows = await db('photos').where('id', '>', lastId).orderBy('id').limit(1000)
+        .select('id', 'thumbnail_path', 'preview_path', 'hero_path');
+      if (!rows.length) break;
+      for (const row of rows) {
+        for (const key of [row.thumbnail_path, row.preview_path, row.hero_path]) if (key) add(key, row.id);
+      }
+      lastId = rows[rows.length - 1].id;
+    }
+  }
+  return {
+    /** Record that `photoId` moved from oldKey to newKey; true when no other row names oldKey. */
+    async moved(photoId, oldKey, newKey) {
+      if (!owners) await load();
+      add(newKey, photoId);
+      const canonical = canonicalStorageKey(oldKey);
+      const ids = owners.get(canonical);
+      if (ids) ids.delete(photoId);
+      if (ids && ids.size > 0) return false;
+      owners.delete(canonical);
+      return true;
+    },
+  };
+}
+
+/**
  * Delete a rendition key this photo no longer points at, unless another row
- * (trashed rows included: they are restorable) still uses it. On local
- * storage the key usually stays the same and the new file replaced the old
- * one; on S3 a managed source renders from a temp copy and the key moves.
+ * still uses it (see createReferenceIndex). On local storage the key usually
+ * stays the same and the new file replaced the old one; on S3 a managed
+ * source renders from a temp copy and the key moves.
  *
  * Only a key in that rendition's own namespace is ever deleted. A legacy row
  * can point its rendition column at the original (or anything else); the
  * column is no authority to delete that file, and this runs unattended.
  */
-async function dropSuperseded(photo, column, oldKey, newKey) {
+async function dropSuperseded(photo, column, oldKey, newKey, references) {
   if (!oldKey || !newKey || sameStorageKey(oldKey, newKey)) return;
   if (!isPresentationRenditionKey(oldKey, RENDITION_KIND[column])) return;
   try {
-    // Another row may name the same file in a spelling the storage backends
-    // read as this key (`./previews/...`, backslashes, `previews//...`). Every
-    // such spelling still contains the file name (it has no separator in it),
-    // so the rows that do are read and compared canonically. LIKE over-matching
-    // (`_`, case on SQLite) only costs a comparison.
-    const name = `%${oldKey.slice(oldKey.lastIndexOf('/') + 1)}%`;
-    const rows = await db('photos')
-      .where(function () {
-        this.where('thumbnail_path', 'like', name).orWhere('preview_path', 'like', name).orWhere('hero_path', 'like', name);
-      })
-      .select('thumbnail_path', 'preview_path', 'hero_path');
-    const shared = Array.from(rows).some((row) => [row.thumbnail_path, row.preview_path, row.hero_path]
-      .some((key) => key && sameStorageKey(key, oldKey)));
-    if (shared) return;
+    if (!(await references.moved(photo.id, oldKey, newKey))) return;
     await require('./storage').getStorage().delete(oldKey);
   } catch (err) {
     // Losing the old object is untidy, not a failed refresh.
@@ -137,7 +171,7 @@ async function dropSuperseded(photo, column, oldKey, newKey) {
  * Rebuild the stored renditions of one photo. True when every rendition it
  * had was regenerated (or it had none); false leaves the row for a later pass.
  */
-async function refreshPhoto(photo) {
+async function refreshPhoto(photo, references = createReferenceIndex()) {
   // A video's thumbnail is an ffmpeg poster frame; it never carried the
   // source's EXIF, and videos have no preview or hero rendition.
   if (isVideo(photo)) return true;
@@ -158,18 +192,18 @@ async function refreshPhoto(photo) {
     // lazy generation already in flight is not adopted (as adminThumbnails).
     const key = await imageProcessor.ensureThumbnail({ ...photo, thumbnail_path: null }, { force: true });
     if (!key) return false;
-    await dropSuperseded(photo, 'thumbnail_path', photo.thumbnail_path, key);
+    await dropSuperseded(photo, 'thumbnail_path', photo.thumbnail_path, key, references);
   }
   if (photo.preview_path) {
     const key = await imageProcessor.ensurePreviewImage({ ...photo, preview_path: null }, { force: true });
     if (!key) return false;
-    await dropSuperseded(photo, 'preview_path', photo.preview_path, key);
+    await dropSuperseded(photo, 'preview_path', photo.preview_path, key, references);
   }
   if (photo.hero_path) {
     // No anchor: cut at the gallery's current focal point, as a request would.
     const key = await imageProcessor.ensureHeroImage({ ...photo, hero_path: null });
     if (!key) return false;
-    await dropSuperseded(photo, 'hero_path', photo.hero_path, key);
+    await dropSuperseded(photo, 'hero_path', photo.hero_path, key, references);
   }
   return true;
 }
@@ -182,9 +216,9 @@ async function markRefreshed(photoId) {
 }
 
 /** Refresh and mark one photo; false (logged) when it has to wait for a later pass. */
-async function refreshAndMark(photo) {
+async function refreshAndMark(photo, references) {
   try {
-    if (!(await refreshPhoto(photo))) {
+    if (!(await refreshPhoto(photo, references))) {
       logger.warn(`Rendition refresh: photo ${photo.id} could not be regenerated; it is retried on the next pass`);
       return false;
     }
@@ -254,6 +288,8 @@ async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms)
   if (!token) return 'busy';
   const lease = maintenanceJobs.startLeaseKeeper(JOB_NAME, token);
   const counts = { refreshed: 0, failed: 0 };
+  // One reference index for the whole pass, read on the first moved key.
+  const references = createReferenceIndex();
   let lost = false;
   const pause = intEnv('RENDITION_REFRESH_PAUSE_MS', 200);
 
@@ -261,7 +297,7 @@ async function runPass({ active = () => running, sleep = (ms) => waits.sleep(ms)
     await yieldToUploads(active, sleep);
     if (!active()) return false;
     if (lease.lost()) { lost = true; return false; }
-    if (await refreshAndMark(photo)) counts.refreshed++; else counts.failed++;
+    if (await refreshAndMark(photo, references)) counts.refreshed++; else counts.failed++;
     const done = counts.refreshed + counts.failed;
     if (done % PROGRESS_EVERY === 0) {
       logger.info(`Rendition refresh: ${counts.refreshed} photos cleaned, ${counts.failed} failed so far`);

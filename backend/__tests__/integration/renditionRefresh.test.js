@@ -236,6 +236,31 @@ describe('rendition refresh after EXIF stripping', () => {
       expect(exists(key)).toBe(true);
     }, 60000);
 
+  it('reads the references once per pass and deletes a shared file after its last row moves off', async () => {
+    const event = await makeEvent();
+    const key = `previews/preview_pair_${counter}.jpg`;
+    const first = await addLegacyPhoto(event, { renditions: ['preview'] });
+    const second = await addLegacyPhoto(event, { renditions: ['preview'] });
+    await db('photos').whereIn('id', [first, second]).update({ preview_path: key });
+    await writeKey(key, taggedJpeg);
+
+    const { db: appDb } = require('../../src/database/db');
+    let scans = 0;
+    const onQuery = (q) => {
+      if (/hero_path.* from [`"]photos[`"] where [`"]id[`"] > \? order by [`"]id[`"]/i.test(q.sql)) scans++;
+    };
+    appDb.on('query', onQuery);
+    try {
+      expect(await refresh.runPass(passOptions)).toEqual({ refreshed: 2, failed: 0 });
+    } finally {
+      appDb.removeListener('query', onQuery);
+    }
+    // Two pages at most for this library (rows, then the empty page).
+    expect(scans).toBeLessThanOrEqual(2);
+    expect(scans).toBeGreaterThan(0);
+    expect(exists(key)).toBe(false);
+  }, 60000);
+
   it('drops the tiers a RAW photo was actually served under (its attempt names them)', async () => {
     const event = await makeEvent();
     const id = await addLegacyPhoto(event, { processing_attempt_id: 'attempt-2096' });
