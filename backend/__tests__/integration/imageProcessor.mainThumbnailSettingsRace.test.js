@@ -70,13 +70,15 @@ describe('a lazy main thumbnail across a settings change and a forced regenerate
   }
 
   // Replica A. `whileRendering` runs once, after A has read its settings and
-  // fetched the source, before its first sharp call.
-  function replicaA(whileRendering) {
+  // fetched the source, before its first sharp call. `seen.sourceOpens`
+  // counts A's sharp calls on a file (two per thumbnail render).
+  function replicaA(whileRendering, seen = {}) {
     const shared = { db: require(DB), storage: require(STORAGE), sharp: require(SHARP) };
     let pending = whileRendering;
     const hooked = new Proxy(shared.sharp, {
       apply(target, self, args) {
         const chain = Reflect.apply(target, self, args);
+        if (typeof args[0] === 'string') seen.sourceOpens = (seen.sourceOpens || 0) + 1;
         if (pending) {
           const run = pending;
           pending = null;
@@ -102,64 +104,128 @@ describe('a lazy main thumbnail across a settings change and a forced regenerate
   const thumbnailPuts = spy => spy.mock.calls.map(([key]) => key).filter(key => key.startsWith('thumbnails/'));
   const heightOf = async key => (await sharp(path.join(root, key)).metadata()).height;
 
-  test.each([['local storage', LocalFs], ['S3-like storage', RemoteLike]])(
-    '%s: the forced render under the new settings stays', async (_label, Kind) => {
-      const storage = await useStorage(Kind);
-      const row = await photo(storage, `race-${Kind.name}.jpg`);
-      const put = jest.spyOn(storage, 'put');
-      let forced;
-      const a = replicaA(async () => {
+  const storages = [['local storage', LocalFs], ['S3-like storage', RemoteLike]];
+  const rowKey = async id => (await db('photos').where({ id }).first()).thumbnail_path;
+
+  test.each(storages)('%s: the forced render under the new settings stays, and A answers it', async (_label, Kind) => {
+    const storage = await useStorage(Kind);
+    const row = await photo(storage, `race-${Kind.name}.jpg`);
+    const put = jest.spyOn(storage, 'put');
+    let forced;
+    const a = replicaA(async () => {
+      await setFit('inside');
+      forced = await replicaB.ensureThumbnail({ ...row, thumbnail_path: null }, { force: true });
+    });
+
+    const key = await a.ensureThumbnail(row);
+
+    expect(forced).toMatch(/^thumbnails\/thumb_/);
+    expect(key).toBe(forced);
+    expect(thumbnailPuts(put)).toEqual([forced]);
+    expect(await rowKey(row.id)).toBe(forced);
+    expect(await heightOf(forced)).toBe(225);
+  });
+
+  // The settings change and B's forced render land after A's write, before A
+  // records it: on S3 A's key is its own, on local storage it is B's too.
+  test.each(storages)('%s: a change landing between the write and the row update is caught too', async (_label, Kind) => {
+    const storage = await useStorage(Kind);
+    const row = await photo(storage, `late-${Kind.name}.jpg`);
+    const put = storage.put.bind(storage);
+    let written;
+    let forced;
+    jest.spyOn(storage, 'put').mockImplementation(async (key, ...args) => {
+      const value = await put(key, ...args);
+      if (!written && key.startsWith('thumbnails/')) {
+        written = key;
         await setFit('inside');
         forced = await replicaB.ensureThumbnail({ ...row, thumbnail_path: null }, { force: true });
-      });
+      }
+      return value;
+    });
+    const a = replicaA(null);
 
-      await expect(a.ensureThumbnail(row)).resolves.toBeNull();
+    const key = await a.ensureThumbnail(row);
 
-      expect(forced).toMatch(/^thumbnails\/thumb_/);
-      expect(thumbnailPuts(put)).toEqual([forced]);
-      expect((await db('photos').where({ id: row.id }).first()).thumbnail_path).toBe(forced);
-      expect(await heightOf(forced)).toBe(225);
-    }
-  );
+    expect(key).toBe(forced);
+    expect(await rowKey(row.id)).toBe(forced);
+    expect(await heightOf(forced)).toBe(225);
+    if (written !== forced) expect(await storage.stat(written)).toBeFalsy();
+  });
 
-  test.each([['local storage', LocalFs], ['S3-like storage', RemoteLike]])(
-    '%s: without a settings change the lazy render publishes, as before', async (_label, Kind) => {
-      const storage = await useStorage(Kind);
-      const row = await photo(storage, `plain-${Kind.name}.jpg`);
-      const a = replicaA(null);
+  test.each(storages)('%s: a change with no forced render yet renders again under the new settings', async (_label, Kind) => {
+    const storage = await useStorage(Kind);
+    const row = await photo(storage, `again-${Kind.name}.jpg`);
+    const put = jest.spyOn(storage, 'put');
+    const a = replicaA(() => setFit('inside'));
 
-      const key = await a.ensureThumbnail(row);
+    const key = await a.ensureThumbnail(row);
 
-      expect(key).toMatch(/^thumbnails\/thumb_/);
-      expect((await db('photos').where({ id: row.id }).first()).thumbnail_path).toBe(key);
-      expect(await heightOf(key)).toBe(300);
-    }
-  );
+    expect(key).toMatch(/^thumbnails\/thumb_/);
+    expect(thumbnailPuts(put)).toEqual([key]);
+    expect(await rowKey(row.id)).toBe(key);
+    expect(await heightOf(key)).toBe(225);
+  });
 
-  test('a settings read that fails at the check publishes, as before', async () => {
-    const storage = await useStorage(LocalFs);
-    const row = await photo(storage, 'read-fails.jpg');
+  test.each(storages)('%s: without a settings change the lazy render publishes, as before', async (_label, Kind) => {
+    const storage = await useStorage(Kind);
+    const row = await photo(storage, `plain-${Kind.name}.jpg`);
+    const a = replicaA(null);
+
+    const key = await a.ensureThumbnail(row);
+
+    expect(key).toMatch(/^thumbnails\/thumb_/);
+    expect(await rowKey(row.id)).toBe(key);
+    expect(await heightOf(key)).toBe(300);
+  });
+
+  // Fails the next app_settings read once `arm()` was called.
+  function failNextSettingsRead() {
     const realDb = require(DB).db;
     const original = realDb.client.runner;
-    let failNext = false;
-    let failed = false;
-    // Fail only the app_settings read issued once the render has started.
+    const state = { armed: false, failed: false, arm: () => { state.armed = true; } };
     jest.spyOn(realDb.client, 'runner').mockImplementation(function (builder) {
       const runner = original.call(this, builder);
-      if (failNext && builder._single && builder._single.table === 'app_settings') {
-        failNext = false;
-        failed = true;
+      if (state.armed && builder._single && builder._single.table === 'app_settings') {
+        state.armed = false;
+        state.failed = true;
         runner.run = () => Promise.reject(new Error('settings unavailable'));
       }
       return runner;
     });
-    const a = replicaA(async () => { failNext = true; });
+    return state;
+  }
+
+  test('a settings read that fails at the check publishes, as before', async () => {
+    const storage = await useStorage(LocalFs);
+    const row = await photo(storage, 'read-fails.jpg');
+    const read = failNextSettingsRead();
+    const a = replicaA(async () => read.arm());
 
     const key = await a.ensureThumbnail(row);
 
-    expect(failed).toBe(true);
+    expect(read.failed).toBe(true);
     expect(key).toMatch(/^thumbnails\/thumb_/);
-    expect((await db('photos').where({ id: row.id }).first()).thumbnail_path).toBe(key);
+    expect(await rowKey(row.id)).toBe(key);
+  });
+
+  test('a first settings read that fails renders under the stored settings and publishes', async () => {
+    // The fit is 'cover' (beforeEach), not the default: comparing against the
+    // defaults a failed read answers would drop the render.
+    const storage = await useStorage(LocalFs);
+    const row = await photo(storage, 'first-read-fails.jpg');
+    const read = failNextSettingsRead();
+    const seen = {};
+    const a = replicaA(null, seen);
+    read.arm();
+
+    const key = await a.ensureThumbnail(row);
+
+    expect(read.failed).toBe(true);
+    expect(seen.sourceOpens).toBe(2);
+    expect(key).toMatch(/^thumbnails\/thumb_/);
+    expect(await rowKey(row.id)).toBe(key);
+    expect(await heightOf(key)).toBe(300);
   });
 
   test('a forced render does not check the settings', async () => {

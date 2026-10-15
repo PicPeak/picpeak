@@ -949,7 +949,7 @@ async function ensureThumbnail(photo, { force = false, boundVideoSource = true }
   return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: !force })), { force });
 }
 
-async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false } = {}) {
+async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
   const event = await db('events').where('id', photo.event_id).first();
@@ -960,30 +960,39 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
 
   const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
 
-  // A lazy render (issue 2131) renders with the settings read here and writes
-  // only if they are still the stored ones. Otherwise one still running under
-  // the old settings while an admin saved new ones and "Regenerate
-  // thumbnails" force-rendered this photo on another replica lands after the
-  // sweep: on local storage both write the same key, so the old fit
-  // overwrites the new file; on S3 it is the row that ends up on the old
-  // render. (In one process `force` already waits for the lazy flight.)
+  // A lazy render (issue 2131) renders with the settings read here and keeps
+  // its result only if they are still the stored ones. Otherwise one still
+  // running under the old settings while an admin saved new ones and
+  // "Regenerate thumbnails" force-rendered this photo on another replica
+  // lands after the sweep: on local storage both write the same key, so the
+  // old fit overwrites the new file; on S3 it is the row that ends up on the
+  // old render. (In one process `force` already waits for the lazy flight.)
   //
-  // Checked before the write, not after it like a tier (keepTierIfCurrent):
-  // a canonical key is shared with the forced render on local storage, so a
-  // stale file written there could not be dropped without deleting the
-  // forced render's bytes too. What is left is the settings save and a whole
-  // forced render of this photo falling between this check and this write.
-  // A settings read that fails at the check writes, as before. Forced renders
-  // (the sweep, the rendition refresh) apply whatever settings they read, and
-  // a video's poster frame does not depend on them.
-  const settings = lazy && !isVideoPhoto(photo) ? await getThumbnailSettings() : undefined;
+  // Checked before the write, unlike a tier (keepTierIfCurrent): a canonical
+  // key is shared with the forced render on local storage, so a stale file
+  // written there could not be dropped without deleting the forced render's
+  // bytes too. Checked again before the row is updated, which covers the
+  // put and the placeholder hash on S3; a key written by then is deleted
+  // unless a row records it (on local storage it is the shared one). What is
+  // left: the settings save and a whole forced render of this photo landing
+  // within one put on local storage, or one row update.
+  //
+  // A settings read that fails, first or at a check, renders and publishes
+  // as before. Forced renders (the sweep, the rendition refresh) apply
+  // whatever settings they read, and a video's poster frame does not depend
+  // on them.
+  const settings = lazy && !isVideoPhoto(photo)
+    ? await getThumbnailSettings({ strict: true }).catch(() => undefined)
+    : undefined;
+  let settingsChanged = false;
   const stillCurrent = settings && (async () => {
     try {
       if (await thumbnailSettingsUnchanged(settings)) return true;
-      logger.info(`Thumbnail settings changed while photo ${photo.id}'s thumbnail was rendered; not writing it`);
+      logger.info(`Thumbnail settings changed while photo ${photo.id}'s thumbnail was rendered; not keeping it`);
+      settingsChanged = true;
       return false;
     } catch (e) {
-      logger.warn(`Could not re-read thumbnail settings for photo ${photo.id}; writing its thumbnail: ${e.message}`);
+      logger.warn(`Could not re-read thumbnail settings for photo ${photo.id}; keeping its thumbnail: ${e.message}`);
       return true;
     }
   });
@@ -1057,6 +1066,17 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     });
   }
 
+  if (newThumbnailPath && stillCurrent && !(await stillCurrent())) {
+    try {
+      if (!(await db('photos').where('thumbnail_path', newThumbnailPath).first())) {
+        await getStorage().delete(newThumbnailPath).catch(() => {});
+      }
+    } catch (e) {
+      logger.warn(`Could not check whether ${newThumbnailPath} is in use; keeping it: ${e.message}`);
+    }
+    newThumbnailPath = null;
+  }
+
   if (newThumbnailPath) {
     if (!await publishPhotoDerivative(photo, newThumbnailPath, {
       thumbnail_path: newThumbnailPath,
@@ -1066,6 +1086,16 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
 
     logger.info(`Regenerated thumbnail for photo ${photo.id}`);
     return newThumbnailPath;
+  }
+
+  // Dropped for a settings change: a caller still needs a thumbnail (a tag
+  // job would fail for good on null). Take the one another replica has
+  // recorded since, or render once more under the current settings.
+  if (settingsChanged && !retried) {
+    const current = await db('photos').where({ id: photo.id }).first('thumbnail_path');
+    if (current?.thumbnail_path && current.thumbnail_path !== photo.thumbnail_path
+        && await isThumbnailValid(current.thumbnail_path)) return current.thumbnail_path;
+    return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true });
   }
 
   return null;
