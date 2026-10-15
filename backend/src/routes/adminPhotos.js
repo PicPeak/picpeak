@@ -1472,7 +1472,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
         'Content-Disposition': contentDisposition,
       });
       const stream = await storage.get(storageKey);
-      stream.pipe(res);
+      pipeStreamToResponse(stream, res, { context: `admin download for photo ${photo.id}` });
       return;
     }
 
@@ -1868,7 +1868,7 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
       }
       res.setHeader('Content-Length', stat.size);
       const stream = await storage.get(storageKey);
-      stream.pipe(res);
+      pipeStreamToResponse(stream, res, { context: `admin photo ${photo.id}` });
       return;
     }
 
@@ -1934,7 +1934,7 @@ router.get('/:eventId/thumbnail/:photoId', adminAuth, requirePermission('photos.
     }
     res.setHeader('Content-Length', stat.size);
     const stream = await storage.get(thumbnailPath);
-    stream.pipe(res);
+    pipeStreamToResponse(stream, res, { context: `admin thumbnail for photo ${photo.id}` });
   } catch (error) {
     logger.error('Error serving thumbnail:', error);
     logger.error('Photo ID:', req.params.photoId);
@@ -1987,7 +1987,7 @@ router.get('/:eventId/preview/:photoId', adminAuth, requirePermission('photos.vi
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Content-Length', stat.size);
-    (await storage.get(previewPath)).pipe(res);
+    pipeStreamToResponse(await storage.get(previewPath), res, { context: `admin preview for photo ${photo.id}` });
   } catch (error) {
     logger.error('Error serving admin preview:', error);
     errorResponse(res, error, 500, 'Failed to serve preview');

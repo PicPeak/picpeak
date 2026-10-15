@@ -34,6 +34,14 @@ function pipeStreamToResponse(stream, res, options = {}) {
   const { context = 'file', missingStatus = 404, onStorageUnavailable } = options;
 
   stream.on('error', (err) => {
+    // The client is gone (or the stream was torn down because it left), or
+    // the response is already complete: there is nobody left to answer, and
+    // a 404/500 written now either goes nowhere or writes after end.
+    if (res.destroyed || res.writableEnded) {
+      logger.debug(`Stream for ${context} failed after the response was over: ${err && err.message}`);
+      return;
+    }
+
     const gone = err && (err.code === 'ENOENT' || err.code === 'EISDIR');
 
     // Once bytes are on the wire the status line is spent — there is no way to
@@ -86,6 +94,17 @@ function pipeStreamToResponse(stream, res, options = {}) {
     logger.error(`Failed to stream ${context}`, { error: err.message, code: err.code });
     res.status(500).json({ error: 'Failed to serve file' });
   });
+
+  // The caller awaited storage.get() before handing the stream over. A client
+  // that left during that await has already emitted 'close', so the listener
+  // below would never fire and pipe() into a destroyed response just parks
+  // the source. For S3 that is an opened GetObject body holding a pooled
+  // socket until socketTimeout; under fast scrolling, enough of them drain
+  // the pool. An already-ended response has nowhere to put the bytes either.
+  if (res.destroyed || res.writableEnded) {
+    stream.destroy();
+    return;
+  }
 
   // A client that navigates away mid-download leaves the source handle open
   // otherwise; on a gallery grid that is one leaked fd per abandoned tile.

@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const { ensureThumbnail } = require('./imageProcessor');
 const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
 const { getStorage } = require('./storage');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 const { isGalleryAvailable } = require('../utils/galleryLifecycle');
 const { isPotentialShareToken } = require('../utils/shareLinkUtils');
@@ -388,7 +389,7 @@ async function handleGalleryOgCover(req, res) {
     });
     if (stat.size) res.setHeader('Content-Length', stat.size);
     const stream = await storage.get(thumbnailPath);
-    stream.pipe(res);
+    pipeStreamToResponse(stream, res, { context: `gallery OG cover for photo ${photo.id}` });
   } catch (error) {
     logger.error('Failed to stream gallery OG cover', { error: error.message });
     res.status(500).type('text/plain').send('Internal server error');
