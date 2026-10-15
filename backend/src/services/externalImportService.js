@@ -569,7 +569,7 @@ async function importExternalFolder({
         }
         for (const f of unsettled) {
           deferred++;
-          dedupeMap.delete(`${f.type}:${path.basename(f.rel).toLowerCase()}`);
+          dedupeMap.delete(dedupeKeyOf(f));
         }
         if (deferred) logger.info(`External import for event ${eventId}: ${deferred} file(s) still changing, left for the next pass`);
       }
