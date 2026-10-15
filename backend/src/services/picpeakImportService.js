@@ -673,7 +673,8 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       await createRatingIndexes(trx);
     }
     // An archive taken before migration 309 carries the comment_count zeros
-    // that migration backfills (issue 2071); a recount of a newer one is a no-op.
+    // that migration backfills (issue 2071); a newer one's counts recount to
+    // the same values.
     await backfillCommentCounts(trx);
 
     const operatorId = await reinjectCurrentAdmin(trx, currentAdmin);
