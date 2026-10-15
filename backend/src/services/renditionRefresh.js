@@ -150,8 +150,13 @@ async function refreshPhoto(photo) {
   const imageProcessor = require('./imageProcessor');
 
   // Tiers are a cache recorded nowhere, cut again from the source on demand.
-  await imageProcessor.deleteThumbnailTiers(photo);
-  await imageProcessor.deletePreviewTiers(photo);
+  // Deleted here rather than through deleteThumbnailTiers/deletePreviewTiers,
+  // which swallow a failed delete: a tier that is still there is served as it
+  // is, so the row must not be marked (a missing key is not a failure). The
+  // row carries size_bytes and source_mtime_ms, so the keys are complete.
+  const storage = require('./storage').getStorage();
+  const tierKeys = [...imageProcessor.thumbnailTierKeys(photo), ...imageProcessor.previewTierKeys(photo)];
+  await Promise.all(tierKeys.map((key) => storage.delete(key)));
 
   if (photo.thumbnail_path) {
     // Nulled so the validity check does not keep the old file, forced so a

@@ -238,12 +238,32 @@ describe('rendition refresh after EXIF stripping', () => {
     const id = await addLegacyPhoto(event, { processing_attempt_id: 'attempt-2096' });
     await db('photos').where({ id }).update({ filename: 'legacy.cr2', path: `${event.slug}/legacy.cr2` });
     const full = await db('photos').where({ id }).first();
-    const thumbs = jest.spyOn(imageProcessor, 'deleteThumbnailTiers');
-    const previews = jest.spyOn(imageProcessor, 'deletePreviewTiers');
+    const storage = require('../../src/services/storage').getStorage();
+    const deleted = jest.spyOn(storage, 'delete');
 
     await refresh.runPass(passOptions);
-    expect(imageProcessor.thumbnailTierKeys(thumbs.mock.calls[0][0])).toEqual(imageProcessor.thumbnailTierKeys(full));
-    expect(imageProcessor.previewTierKeys(previews.mock.calls[0][0])).toEqual(imageProcessor.previewTierKeys(full));
+    const keys = deleted.mock.calls.map(([key]) => key);
+    expect(keys).toEqual(expect.arrayContaining([
+      ...imageProcessor.thumbnailTierKeys(full), ...imageProcessor.previewTierKeys(full),
+    ]));
+  }, 60000);
+
+  it('does not mark a photo whose old tier could not be deleted', async () => {
+    const event = await makeEvent();
+    const id = await addLegacyPhoto(event);
+    const full = await db('photos').where({ id }).first();
+    const tier = imageProcessor.thumbnailTierKeys(full)[0];
+    await writeKey(tier, taggedJpeg);
+    const storage = require('../../src/services/storage').getStorage();
+    const realDelete = storage.delete.bind(storage);
+    jest.spyOn(storage, 'delete').mockImplementation(async (key) => {
+      if (key === tier) throw Object.assign(new Error('storage unavailable'), { code: 'EIO' });
+      return realDelete(key);
+    });
+
+    expect(await refresh.runPass(passOptions)).toEqual({ refreshed: 0, failed: 1 });
+    expect(Number((await db('photos').where({ id }).first()).rendition_version)).toBe(0);
+    expect(exists(tier)).toBe(true);
   }, 60000);
 
   it('does not run while another replica holds the claim', async () => {
