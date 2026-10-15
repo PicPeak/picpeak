@@ -23,6 +23,11 @@ const { ConflictError, NotFoundError, ValidationError } = require('../utils/erro
 const { capabilityTokenColumns, digestCapabilityToken } = require('../utils/capabilityToken');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
 
+// A search term in every stored form a name can have: NFC (stored since
+// issue 2079), NFD (macOS input saved before it) and as typed. No backfill,
+// so a name saved decomposed earlier still matches either way.
+const nameSearchTerms = (raw) => [...new Set([raw, raw.normalize('NFC'), raw.normalize('NFD')])];
+
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, matches admin invites
 
 /**
@@ -587,13 +592,14 @@ async function listCustomers({
     .orderBy('customer_accounts.created_at', 'desc');
 
   if (search && String(search).trim()) {
-    // NFC like the stored names, or a decomposed query misses them.
-    const term = `%${String(search).trim().normalize('NFC').toLowerCase()}%`;
+    const terms = nameSearchTerms(String(search).trim()).map((t) => `%${t.toLowerCase()}%`);
     q = q.where(function () {
-      this.whereRaw('LOWER(customer_accounts.email) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(customer_accounts.display_name, \'\')) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(customer_accounts.last_name, \'\')) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(customer_accounts.company_name, \'\')) LIKE ?', [term]);
+      for (const term of terms) {
+        this.orWhereRaw('LOWER(customer_accounts.email) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(customer_accounts.display_name, \'\')) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(customer_accounts.last_name, \'\')) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(customer_accounts.company_name, \'\')) LIKE ?', [term]);
+      }
     });
   }
 
@@ -1485,15 +1491,18 @@ async function eraseCustomer(id, erasedByAdminId) {
  * accounts shouldn't show up as assignable options.
  */
 async function searchCustomers(query, { limit = 10 } = {}) {
-  const term = `%${String(query || '').trim().normalize('NFC').toLowerCase()}%`;
-  if (!term || term === '%%') return [];
+  const typed = String(query || '').trim();
+  if (!typed) return [];
+  const terms = nameSearchTerms(typed).map((t) => `%${t.toLowerCase()}%`);
   return db('customer_accounts')
     .where('is_active', formatBoolean(true))
     .andWhere(function () {
-      this.whereRaw('LOWER(email) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(display_name, \'\')) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(last_name, \'\')) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(company_name, \'\')) LIKE ?', [term]);
+      for (const term of terms) {
+        this.orWhereRaw('LOWER(email) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(display_name, \'\')) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(last_name, \'\')) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(company_name, \'\')) LIKE ?', [term]);
+      }
     })
     // password_hash is required by transformCustomer to compute the
     // isPassive flag (passwordHash == null = passive / admin-only).

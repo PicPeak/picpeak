@@ -311,10 +311,17 @@ module.exports = (router) => {
 
       // Apply search filter
       if (search) {
-        const pattern = `%${escapeLikePattern(nfcName(search))}%`;
+        const pattern = `%${escapeLikePattern(search)}%`;
+        // Names are stored NFC since issue 2079, without a backfill: match
+        // the NFC and NFD spellings too, so a name saved decomposed earlier
+        // and one saved since both answer either input.
+        const namePatterns = typeof search === 'string'
+          ? [...new Set([search, search.normalize('NFC'), search.normalize('NFD')])]
+            .map((s) => `%${escapeLikePattern(s)}%`)
+          : [pattern];
         query = query.where((builder) => {
-          builder.whereRaw(likeWithEscape('event_name'), [pattern])
-            .orWhereRaw(likeWithEscape('admin_email'), [pattern])
+          for (const p of namePatterns) builder.orWhereRaw(likeWithEscape('event_name'), [p]);
+          builder.orWhereRaw(likeWithEscape('admin_email'), [pattern])
             .orWhereRaw(likeWithEscape('customer_email'), [pattern])
             .orWhereRaw(likeWithEscape('slug'), [pattern]);
         });

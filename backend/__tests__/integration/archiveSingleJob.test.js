@@ -687,10 +687,20 @@ describe('one archive job per gallery', () => {
 
   it('finds an NFC gallery name with a decomposed search', async () => {
     const event = await makeEvent('search-nfc', { photoCount: 0 });
-    await db('events').where({ id: event.id }).update({ event_name: 'Jörg sucht' });
-    const res = await request(app).get('/admin/events').query({ search: 'Jörg' });
+    await db('events').where({ id: event.id }).update({ event_name: 'J\u00f6rg sucht' });
+    const res = await request(app).get('/admin/events').query({ search: 'Jo\u0308rg' });
     expect(res.status).toBe(200);
     expect(JSON.stringify(res.body)).toContain('search-nfc');
+  });
+
+  it('still finds a gallery name saved decomposed before the change, with either spelling', async () => {
+    const event = await makeEvent('search-nfd', { photoCount: 0 });
+    await db('events').where({ id: event.id }).update({ event_name: 'Jo\u0308rg legacy' });
+    for (const search of ['Jo\u0308rg legacy', 'J\u00f6rg legacy']) {
+      const res = await request(app).get('/admin/events').query({ search });
+      expect(res.status).toBe(200);
+      expect(JSON.stringify(res.body)).toContain('search-nfd');
+    }
   });
 
   it('removes an archive\'s unheld claim row with it, and leaves one a restore took meanwhile', async () => {

@@ -85,4 +85,15 @@ describe('names stored and searched in NFC', () => {
     const picked = await service.searchCustomers(`${DECOMPOSED} nfc`);
     expect(picked.map((c) => c.id)).toContain(customerId);
   });
+
+  it('still finds a name saved decomposed before the change, with either spelling', async () => {
+    // No backfill: rows written before NFC keep their decomposed form.
+    await db('customer_accounts').where({ id: customerId })
+      .update({ display_name: `${DECOMPOSED} Legacy`, is_active: true });
+    const service = require('../../src/services/customerAccountsService');
+    for (const query of [`${DECOMPOSED} legacy`, `${PRECOMPOSED} legacy`]) {
+      expect((await service.listCustomers({ search: query })).map((c) => c.id)).toContain(customerId);
+      expect((await service.searchCustomers(query)).map((c) => c.id)).toContain(customerId);
+    }
+  });
 });
