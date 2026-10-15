@@ -5,6 +5,17 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.174.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.174.0-beta.0...v3.174.1-beta.0) (2026-10-15)
+
+
+### Bug Fixes
+
+* **external:** version an external file by size and mtime, watermarks too ([#2067](https://github.com/PicPeak/picpeak/issues/2067)) ([7e43205](https://github.com/PicPeak/picpeak/commit/7e43205fb9c3b627079dbd598b42c16949c4249a))
+* **feedback:** refuse feedback on photos that are not finished processing ([#2063](https://github.com/PicPeak/picpeak/issues/2063)) ([1275501](https://github.com/PicPeak/picpeak/commit/1275501a9f3ae2c65b529582b4b74b540e5f7c33))
+* **gallery:** show a busy single-photo download button and ignore repeated taps ([#2066](https://github.com/PicPeak/picpeak/issues/2066)) ([f43d8f5](https://github.com/PicPeak/picpeak/commit/f43d8f59d6d603254e07ef75f6738f5a16eef81b))
+* **media:** delete replaced previews and old-version tiers nothing reads ([#2065](https://github.com/PicPeak/picpeak/issues/2065)) ([456ecf6](https://github.com/PicPeak/picpeak/commit/456ecf60372904452b9cea7a51c5dcb6fb4df242))
+* **transfers:** hold the ready email until a transfer has something to download ([#2068](https://github.com/PicPeak/picpeak/issues/2068)) ([e54621b](https://github.com/PicPeak/picpeak/commit/e54621b40de17f21d379ab3b304cf5b38b179bcc))
+
 ## [3.174.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.173.0-beta.0...v3.174.0-beta.0) (2026-10-15)
 
 
