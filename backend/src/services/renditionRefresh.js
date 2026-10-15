@@ -112,29 +112,32 @@ const RENDITION_KIND = { thumbnail_path: 'thumbnail', preview_path: 'preview', h
  */
 function createReferenceIndex() {
   let owners = null;
-  const add = (key, id) => {
+  const add = (map, key, id) => {
     const canonical = canonicalStorageKey(key);
-    if (!owners.has(canonical)) owners.set(canonical, new Set());
-    owners.get(canonical).add(id);
+    if (!map.has(canonical)) map.set(canonical, new Set());
+    map.get(canonical).add(id);
   };
+  // Published only once complete: a scan that fails half-way must not leave
+  // a partial map that later calls trust to delete files still in use.
   async function load() {
-    owners = new Map();
+    const scanned = new Map();
     let lastId = 0;
     for (;;) {
       const rows = await db('photos').where('id', '>', lastId).orderBy('id').limit(1000)
         .select('id', 'thumbnail_path', 'preview_path', 'hero_path');
       if (!rows.length) break;
       for (const row of rows) {
-        for (const key of [row.thumbnail_path, row.preview_path, row.hero_path]) if (key) add(key, row.id);
+        for (const key of [row.thumbnail_path, row.preview_path, row.hero_path]) if (key) add(scanned, key, row.id);
       }
       lastId = rows[rows.length - 1].id;
     }
+    owners = scanned;
   }
   return {
     /** Record that `photoId` moved from oldKey to newKey; true when no other row names oldKey. */
     async moved(photoId, oldKey, newKey) {
       if (!owners) await load();
-      add(newKey, photoId);
+      add(owners, newKey, photoId);
       const canonical = canonicalStorageKey(oldKey);
       const ids = owners.get(canonical);
       if (ids) ids.delete(photoId);

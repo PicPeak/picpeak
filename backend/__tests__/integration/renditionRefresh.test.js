@@ -261,6 +261,39 @@ describe('rendition refresh after EXIF stripping', () => {
     expect(exists(key)).toBe(false);
   }, 60000);
 
+  it('does not trust a reference scan that failed half-way', async () => {
+    const event = await makeEvent();
+    const pair = async () => {
+      const key = `previews/preview_kept_${counter}.jpg`;
+      const id = await addLegacyPhoto(event, { renditions: ['preview'] });
+      const trashed = await addLegacyPhoto(event, { renditions: [], deleted_at: new Date().toISOString() });
+      await db('photos').whereIn('id', [id, trashed]).update({ preview_path: key });
+      await writeKey(key, taggedJpeg);
+      return key;
+    };
+    const firstKey = await pair();
+    const secondKey = await pair();
+
+    const { db: appDb } = require('../../src/database/db');
+    const realQuery = appDb.client.query;
+    let failNext = true;
+    appDb.client.query = function (connection, obj) {
+      if (failNext && /hero_path.* from [`"]photos[`"] where [`"]id[`"] > \?/i.test(obj.sql)) {
+        failNext = false;
+        return Promise.reject(new Error('connection reset'));
+      }
+      return realQuery.call(this, connection, obj);
+    };
+    try {
+      expect(await refresh.runPass(passOptions)).toEqual({ refreshed: 2, failed: 0 });
+    } finally {
+      appDb.client.query = realQuery;
+    }
+    // Both files are still named by a trashed row, so both stay.
+    expect(exists(firstKey)).toBe(true);
+    expect(exists(secondKey)).toBe(true);
+  }, 60000);
+
   it('drops the tiers a RAW photo was actually served under (its attempt names them)', async () => {
     const event = await makeEvent();
     const id = await addLegacyPhoto(event, { processing_attempt_id: 'attempt-2096' });
