@@ -25,7 +25,10 @@ function sameStorageKey(a, b) {
   const canonical = (key) => String(key)
     .replace(/\\/g, '/')
     .replace(/^\.?\/+/, '')
-    .replace(/\/+/g, '/');
+    .replace(/\/+/g, '/')
+    // LocalFsStorage resolves an interior `./` too; where a backend would
+    // not, calling them equal only keeps a file.
+    .replace(/\/(\.\/)+/g, '/');
   return canonical(a) === canonical(b);
 }
 
@@ -390,13 +393,13 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
             // randomly-named temp copy, and an external row's name carries
             // its source version: in each case the new key differs and the
             // nulled preview_path hid the old one from every cleanup.
-            // ensurePreviewImage returns a path only once the row records it,
-            // so the old key is no longer this row's. Another row may still
-            // point at it (managed names derive from the source basename);
-            // that file stays, in whichever spelling that row stores it.
+            // A row that still points at it keeps it, in whichever spelling
+            // it stores it: another photo (managed names derive from the
+            // source basename), or this one, when an older render on another
+            // replica published that key again after the snapshot.
             const moved = photo.preview_path && !sameStorageKey(photo.preview_path, newPreviewPath);
             const baseName = moved && String(photo.preview_path).replace(/\\/g, '/').split('/').pop();
-            const stillShared = moved && (await db('photos').whereNot('id', photo.id)
+            const stillShared = moved && (await db('photos')
               .where('preview_path', 'like', `%${baseName}`).select('preview_path'))
               .some((other) => sameStorageKey(other.preview_path, photo.preview_path));
             if (moved && !stillShared) {

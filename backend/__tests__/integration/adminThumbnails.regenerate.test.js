@@ -339,11 +339,15 @@ describe('admin thumbnail regeneration (#1129)', () => {
   describe('superseded previews', () => {
     it('removes the old preview when the key moved', async () => {
       const eventId = await seedEvent();
-      await seedPhoto(eventId, {
+      const id = await seedPhoto(eventId, {
         source_origin: 'managed', filename: 'IMG_1.jpg', source_filename: 'IMG_1.jpg',
         preview_path: 'previews/preview_IMG_1.jpg',
       });
-      imageProcessor.ensurePreviewImage.mockResolvedValueOnce('previews/preview_p1_IMG_1.jpg');
+      // Publishes on the row, as a real generation does.
+      imageProcessor.ensurePreviewImage.mockImplementationOnce(async () => {
+        await db('photos').where({ id }).update({ preview_path: `previews/preview_p${id}_IMG_1.jpg` });
+        return `previews/preview_p${id}_IMG_1.jpg`;
+      });
 
       await request(app).post('/admin/thumbnails/regenerate-previews').send({});
       await drain();
@@ -351,10 +355,29 @@ describe('admin thumbnail regeneration (#1129)', () => {
       expect(storage.delete).toHaveBeenCalledWith('previews/preview_IMG_1.jpg');
     });
 
-    it('keeps the old preview when the key is unchanged, in any spelling', async () => {
+    it.each([
+      ['a leading ./', './previews/preview_stable.jpg'],
+      ['an interior ./', 'previews/./preview_stable.jpg'],
+    ])('keeps the old preview when the key is unchanged, spelled with %s', async (_name, stored) => {
       const eventId = await seedEvent();
-      await seedPhoto(eventId, { source_origin: 'managed', preview_path: './previews/preview_stable.jpg' });
+      await seedPhoto(eventId, { source_origin: 'managed', preview_path: stored });
       imageProcessor.ensurePreviewImage.mockResolvedValueOnce('previews/preview_stable.jpg');
+
+      await request(app).post('/admin/thumbnails/regenerate-previews').send({});
+      await drain();
+
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('keeps the old preview when an older render published it on the row again', async () => {
+      const eventId = await seedEvent();
+      const id = await seedPhoto(eventId, { source_origin: 'managed', preview_path: 'previews/preview_K.jpg' });
+      // Our render publishes K.webp; another replica's older one then puts
+      // K.jpg back on the row before the cleanup looks.
+      imageProcessor.ensurePreviewImage.mockImplementationOnce(async () => {
+        await db('photos').where({ id }).update({ preview_path: 'previews/preview_K.jpg' });
+        return 'previews/preview_K.webp';
+      });
 
       await request(app).post('/admin/thumbnails/regenerate-previews').send({});
       await drain();
@@ -385,7 +408,7 @@ describe('admin thumbnail regeneration (#1129)', () => {
 
     it('keeps the old preview while another gallery stores it in another spelling', async () => {
       const eventId = await seedEvent();
-      await seedPhoto(eventId, { source_origin: 'managed', preview_path: 'previews/preview_IMG_1.jpg' });
+      const id = await seedPhoto(eventId, { source_origin: 'managed', preview_path: 'previews/preview_IMG_1.jpg' });
       const [other] = await db('events').insert({
         slug: 'other', event_type: 'wedding', event_name: 'other', event_date: '2026-01-01',
         host_email: 'h@example.com', admin_email: 'a@example.com', password_hash: 'x',
@@ -394,7 +417,10 @@ describe('admin thumbnail regeneration (#1129)', () => {
       await seedPhoto(typeof other === 'object' ? other.id : other, {
         source_origin: 'managed', preview_path: '.\\previews\\preview_IMG_1.jpg',
       });
-      imageProcessor.ensurePreviewImage.mockResolvedValueOnce('previews/preview_p1_IMG_1.jpg');
+      imageProcessor.ensurePreviewImage.mockImplementationOnce(async () => {
+        await db('photos').where({ id }).update({ preview_path: 'previews/preview_p1_IMG_1.jpg' });
+        return 'previews/preview_p1_IMG_1.jpg';
+      });
 
       await request(app).post('/admin/thumbnails/regenerate-previews').send({ eventId });
       await drain();
