@@ -1551,6 +1551,11 @@ async function startServerInternal() {
     // general_video_adaptive_streaming is switched on.
     require('./src/services/videoHlsQueue').start();
 
+    // Renditions written before derived images were stripped of the source's
+    // EXIF (issue 2096) are regenerated once in the background, the public OG
+    // covers first. One replica runs it; it resumes after a restart.
+    require('./src/services/renditionRefresh').start();
+
     // Coordinated portable restore is optional. Where this host cannot run it
     // one startup line says why, the import answers 503 and nothing else
     // changes; where it can, requests are tracked so a restore can drain them.

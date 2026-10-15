@@ -1,0 +1,269 @@
+/**
+ * Renditions written before derived images were stripped of EXIF (issue
+ * 2096) are regenerated in the background, the public OG cover first:
+ *  - the pass rebuilds thumbnail, preview and hero, output without EXIF/GPS,
+ *    and marks the row (rendition_version)
+ *  - the OG cover photo goes first, and the cover endpoint refreshes it once
+ *    on request before serving it
+ *  - a second pass (a restart) skips rows already done
+ *  - trashed photos are left alone; a failed row stays unmarked
+ *  - originals are untouched
+ */
+
+const fs = require('fs');
+const path = require('path');
+const { PassThrough } = require('stream');
+const sharp = require('sharp');
+
+const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
+
+describe('rendition refresh after EXIF stripping', () => {
+  let db;
+  let cleanup;
+  let taggedJpeg;
+  let counter = 0;
+  let imageProcessor;
+  let refresh;
+
+  const storagePath = (...parts) => path.join(process.env.STORAGE_PATH, ...parts);
+  const exists = (key) => fs.existsSync(storagePath(key));
+  const passOptions = { active: () => true, sleep: async () => {} };
+
+  async function writeKey(key, bytes) {
+    await fs.promises.mkdir(path.dirname(storagePath(key)), { recursive: true });
+    await fs.promises.writeFile(storagePath(key), bytes);
+  }
+
+  async function makeEvent(fields = {}) {
+    counter += 1;
+    const slug = `rendition-refresh-${counter}`;
+    const inserted = await db('events').insert({
+      slug,
+      event_type: 'wedding',
+      event_name: `Rendition Refresh ${counter}`,
+      event_date: '2026-08-01',
+      host_email: 'host@example.com',
+      admin_email: 'admin@example.com',
+      password_hash: 'x',
+      share_link: `/gallery/${slug}/share`,
+      share_token: `rendition-refresh-share-${counter}`,
+      expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      is_active: 1,
+      is_archived: 0,
+      is_draft: 0,
+      created_at: new Date().toISOString(),
+      ...fields,
+    }).returning('id');
+    const id = inserted[0]?.id ?? inserted[0];
+    return db('events').where({ id }).first();
+  }
+
+  // A photo as it looked before the fix: the original and every stored
+  // rendition carry GPS, Make and Copyright.
+  async function addLegacyPhoto(event, { renditions = ['thumbnail'], ...fields } = {}) {
+    counter += 1;
+    const filename = `legacy-${counter}.jpg`;
+    await writeKey(path.posix.join('events/active', event.slug, filename), taggedJpeg);
+    const row = {
+      event_id: event.id,
+      filename,
+      original_filename: filename,
+      path: `${event.slug}/${filename}`,
+      type: 'individual',
+      media_type: 'image',
+      mime_type: 'image/jpeg',
+      size_bytes: taggedJpeg.length,
+      processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+      rendition_version: 0,
+      ...fields,
+    };
+    if (renditions.includes('thumbnail')) row.thumbnail_path = `thumbnails/old_thumb_${filename}`;
+    if (renditions.includes('preview')) row.preview_path = `previews/old_preview_${filename}`;
+    if (renditions.includes('hero')) row.hero_path = `heroes/old_hero_${filename}`;
+    for (const key of [row.thumbnail_path, row.preview_path, row.hero_path].filter(Boolean)) {
+      await writeKey(key, taggedJpeg);
+    }
+    const r = await db('photos').insert(row).returning('id');
+    return r[0]?.id ?? r[0];
+  }
+
+  const expectStripped = async (key) => {
+    expect(key).toBeTruthy();
+    const out = await sharp(storagePath(key)).metadata();
+    expect(out.exif).toBeUndefined();
+    expect(out.xmp).toBeUndefined();
+    expect(out.iptc).toBeUndefined();
+  };
+
+  beforeAll(async () => {
+    ({ db, cleanup } = await bootCrmDb());
+    await seedMinimal(db);
+    process.env.RENDITION_REFRESH_PAUSE_MS = '0';
+    taggedJpeg = await sharp({ create: { width: 120, height: 80, channels: 3, background: { r: 120, g: 80, b: 40 } } })
+      .withExif({
+        IFD0: { Make: 'SecretCam', Copyright: 'Jane Doe' },
+        IFD3: { GPSLatitudeRef: 'N', GPSLatitude: '52/1 30/1 0/1', GPSLongitudeRef: 'E', GPSLongitude: '13/1 24/1 0/1' },
+      })
+      .jpeg()
+      .toBuffer();
+    expect((await sharp(taggedJpeg).metadata()).exif.toString('latin1')).toContain('SecretCam');
+    imageProcessor = require('../../src/services/imageProcessor');
+    refresh = require('../../src/services/renditionRefresh');
+  }, 120000);
+
+  beforeEach(async () => {
+    // Every case starts from a library with nothing left to do.
+    await db('photos').update({ rendition_version: refresh.RENDITION_VERSION });
+    await db('maintenance_jobs').where({ job_name: refresh.JOB_NAME }).del();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  afterAll(async () => {
+    delete process.env.RENDITION_REFRESH_PAUSE_MS;
+    await require('../../src/services/isolatedSharp').shutdown();
+    if (cleanup) await cleanup();
+  });
+
+  it('a new row starts at the current version and re-running migration 311 resets nothing', async () => {
+    const event = await makeEvent();
+    const r = await db('photos').insert({
+      event_id: event.id, filename: 'fresh.jpg', original_filename: 'fresh.jpg', path: `${event.slug}/fresh.jpg`,
+      type: 'individual', media_type: 'image', mime_type: 'image/jpeg', processing_status: 'complete',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id');
+    const id = r[0]?.id ?? r[0];
+    expect(Number((await db('photos').where({ id }).first()).rendition_version)).toBe(refresh.RENDITION_VERSION);
+
+    // Re-running up() finds the column and does not reset refreshed rows.
+    const migration = require('../../migrations/core/311_photos_rendition_version');
+    await migration.up(db);
+    expect(Number((await db('photos').where({ id }).first()).rendition_version)).toBe(refresh.RENDITION_VERSION);
+  });
+
+  it('regenerates every stored rendition without EXIF, cover first, and marks the rows', async () => {
+    const event = await makeEvent({ og_image_share_enabled: true });
+    // Inserted first, so a walk by id alone would reach it before the cover.
+    const other = await addLegacyPhoto(event, { renditions: ['thumbnail', 'preview', 'hero'] });
+    const cover = await addLegacyPhoto(event);
+    await db('events').where({ id: event.id }).update({ hero_photo_id: cover });
+    const trashed = await addLegacyPhoto(event, { deleted_at: new Date().toISOString() });
+    const before = await db('photos').whereIn('id', [other, cover]).select('id', 'path', 'thumbnail_path', 'preview_path', 'hero_path');
+
+    const ensureThumbnail = jest.spyOn(imageProcessor, 'ensureThumbnail');
+
+    const counts = await refresh.runPass(passOptions);
+    expect(counts).toEqual({ refreshed: 2, failed: 0 });
+    expect(ensureThumbnail.mock.calls.map(([photo]) => photo.id)).toEqual([cover, other]);
+
+    const rows = await db('photos').whereIn('id', [other, cover, trashed]).select();
+    const byId = Object.fromEntries(Array.from(rows).map((row) => [row.id, row]));
+    expect(Number(byId[cover].rendition_version)).toBe(refresh.RENDITION_VERSION);
+    expect(Number(byId[other].rendition_version)).toBe(refresh.RENDITION_VERSION);
+    await expectStripped(byId[cover].thumbnail_path);
+    await expectStripped(byId[other].thumbnail_path);
+    await expectStripped(byId[other].preview_path);
+    await expectStripped(byId[other].hero_path);
+
+    // The superseded legacy files are gone; the originals are untouched.
+    for (const row of before) {
+      for (const key of [row.thumbnail_path, row.preview_path, row.hero_path].filter(Boolean)) {
+        expect(exists(key)).toBe(false);
+      }
+      expect(fs.readFileSync(storagePath('events/active', row.path)).equals(taggedJpeg)).toBe(true);
+    }
+
+    // The trashed photo is skipped: still unmarked, its rendition unchanged.
+    expect(Number(byId[trashed].rendition_version)).toBe(0);
+    expect(fs.readFileSync(storagePath(byId[trashed].thumbnail_path)).equals(taggedJpeg)).toBe(true);
+
+    const status = await refresh.status();
+    expect(status.isRunning).toBe(false);
+    expect(status.lastResult).toEqual({ refreshed: 2, failed: 0 });
+  }, 60000);
+
+  it('resumes: a second pass skips rows already done and retries a failed one', async () => {
+    const event = await makeEvent();
+    const done = await addLegacyPhoto(event);
+    const failing = await addLegacyPhoto(event);
+    // The original of this one is missing, so nothing can be regenerated.
+    const failingRow = await db('photos').where({ id: failing }).first();
+    fs.rmSync(storagePath('events/active', failingRow.path));
+
+    expect(await refresh.runPass(passOptions)).toEqual({ refreshed: 1, failed: 1 });
+    expect(Number((await db('photos').where({ id: done }).first()).rendition_version)).toBe(refresh.RENDITION_VERSION);
+    const stillFailing = await db('photos').where({ id: failing }).first();
+    expect(Number(stillFailing.rendition_version)).toBe(0);
+    // Its old rendition stays where it was; nothing pointed at nothing.
+    expect(stillFailing.thumbnail_path).toBe(failingRow.thumbnail_path);
+
+    const ensureThumbnail = jest.spyOn(imageProcessor, 'ensureThumbnail');
+    expect(await refresh.runPass(passOptions)).toEqual({ refreshed: 0, failed: 1 });
+    expect(ensureThumbnail.mock.calls.map(([photo]) => photo.id)).toEqual([failing]);
+  }, 60000);
+
+  it('does not run while another replica holds the claim', async () => {
+    const event = await makeEvent();
+    await addLegacyPhoto(event);
+    const maintenanceJobs = require('../../src/services/maintenanceJobState');
+    await maintenanceJobs.ensure(refresh.JOB_NAME);
+    const token = await maintenanceJobs.claim(refresh.JOB_NAME);
+    expect(token).toBeTruthy();
+    expect(await refresh.runPass(passOptions)).toBe('busy');
+    await maintenanceJobs.release(refresh.JOB_NAME, token);
+  });
+
+  it('the OG cover endpoint regenerates a legacy cover once and serves it without EXIF', async () => {
+    const event = await makeEvent({ og_image_share_enabled: true });
+    const cover = await addLegacyPhoto(event);
+    await db('events').where({ id: event.id }).update({ hero_photo_id: cover });
+    const { handleGalleryOgCover } = require('../../src/services/galleryOgService');
+    const ensureThumbnail = jest.spyOn(imageProcessor, 'ensureThumbnail');
+
+    const fetchCover = () => new Promise((resolve, reject) => {
+      const res = new PassThrough();
+      const chunks = [];
+      res.statusCode = 200;
+      res.headers = {};
+      res.status = (code) => { res.statusCode = code; return res; };
+      res.type = () => res;
+      res.set = (headers) => { Object.assign(res.headers, headers); return res; };
+      res.setHeader = (name, value) => { res.headers[name] = value; };
+      res.send = (body) => resolve({ status: res.statusCode, body: Buffer.from(String(body)) });
+      res.end = () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) });
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('finish', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));
+      res.on('error', reject);
+      handleGalleryOgCover({ params: { slug: event.slug }, headers: {} }, res).catch(reject);
+    });
+
+    const first = await fetchCover();
+    expect(first.status).toBe(200);
+    expect((await sharp(first.body).metadata()).exif).toBeUndefined();
+    const forced = () => ensureThumbnail.mock.calls.filter(([, options]) => options && options.force).length;
+    expect(forced()).toBe(1);
+    expect(Number((await db('photos').where({ id: cover }).first()).rendition_version)).toBe(refresh.RENDITION_VERSION);
+
+    const second = await fetchCover();
+    expect(second.status).toBe(200);
+    expect(forced()).toBe(1);
+
+    // The background pass has nothing left to do for it.
+    expect(await refresh.runPass(passOptions)).toEqual({ refreshed: 0, failed: 0 });
+  }, 60000);
+
+  it('the OG cover endpoint does not serve a legacy cover it could not regenerate', async () => {
+    const event = await makeEvent({ og_image_share_enabled: true });
+    const cover = await addLegacyPhoto(event);
+    await db('events').where({ id: event.id }).update({ hero_photo_id: cover });
+    const row = await db('photos').where({ id: cover }).first();
+    fs.rmSync(storagePath('events/active', row.path));
+    const { handleGalleryOgCover } = require('../../src/services/galleryOgService');
+
+    const res = { status: jest.fn(() => res), type: jest.fn(() => res), send: jest.fn(), set: jest.fn(), setHeader: jest.fn() };
+    await handleGalleryOgCover({ params: { slug: event.slug }, headers: {} }, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(Number((await db('photos').where({ id: cover }).first()).rendition_version)).toBe(0);
+  }, 60000);
+});
