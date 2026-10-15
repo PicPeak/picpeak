@@ -299,6 +299,36 @@ describe('gallery watermark text (issue 2095)', () => {
     expect(watermarkService.storedWatermarkCurrent(stored, { text: 'Current' })).toBe(true);
   });
 
+  test('two overlapping cuts with different texts leave no file behind unnamed', async () => {
+    withGlobal(GLOBAL);
+    const { photoIds } = await makeEvent({ text: 'P', photos: 1 });
+    await generator.generateForPhoto(photoIds[0]);
+    // Both jobs read the photo while it still named the first file.
+    const snapshot = await db('photos').where({ id: photoIds[0] }).first();
+    const keyA = watermarkService.watermarkKey(snapshot, null, { text: 'A' });
+    const keyB = watermarkService.watermarkKey(snapshot, null, { text: 'B' });
+    const remove = jest.spyOn(watermarkService, 'deleteWatermarkFile').mockResolvedValue(true);
+
+    expect((await generator.recordWatermark(snapshot, { success: true, watermarkPath: keyA })).success).toBe(true);
+    expect(remove).toHaveBeenCalledWith(snapshot.watermark_path);
+    expect((await generator.recordWatermark(snapshot, { success: true, watermarkPath: keyB })).success).toBe(true);
+    // The second displaced A, which its snapshot never named.
+    expect(remove).toHaveBeenCalledWith(keyA);
+    expect((await db('photos').where({ id: photoIds[0] }).first()).watermark_path).toBe(keyB);
+  });
+
+  test('an attempt-named watermark with a gallery text is still recognised as an attempt\'s file', async () => {
+    const attempt = { id: '0f8e2a4c-1b3d-4e5f-8a9b-0c1d2e3f4a5b' };
+    const photo = { id: 9, filename: 'a.jpg', source_origin: 'managed' };
+    const key = watermarkService.watermarkKey(photo, attempt, { text: 'Anna' });
+    expect(key.endsWith(`_${attempt.id}.jpg`)).toBe(true);
+    expect(watermarkService.storedWatermarkCurrent(key, { text: 'Anna' })).toBe(true);
+    expect(watermarkService.storedWatermarkCurrent(key, {})).toBe(false);
+    const storage = { delete: jest.fn(async () => {}) };
+    await require('../../src/services/mediaAttemptService').dropSuperseded(storage, key, 'watermarks/other.jpg');
+    expect(storage.delete).toHaveBeenCalledWith(key);
+  });
+
   test('the stored key carries the text; a file without one only matches a gallery without one', () => {
     const photo = { id: 9, filename: 'a.jpg', source_origin: 'managed' };
     const plain = watermarkService.watermarkKey(photo);
@@ -310,6 +340,5 @@ describe('gallery watermark text (issue 2095)', () => {
     expect(watermarkService.storedWatermarkCurrent(anna, { text: 'Anna' })).toBe(true);
     expect(watermarkService.storedWatermarkCurrent(anna, { text: 'Ben' })).toBe(false);
     expect(watermarkService.storedWatermarkCurrent(anna, {})).toBe(false);
-    expect(watermarkService.storedWatermarkCurrent(watermarkService.watermarkKey(photo, { id: 42 }, { text: 'Anna' }), { text: 'Anna' })).toBe(true);
   });
 });

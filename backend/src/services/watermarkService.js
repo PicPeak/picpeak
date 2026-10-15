@@ -24,6 +24,8 @@ const textHash = (text) => crypto.createHash('sha256').update(text).digest('hex'
 // The gallery text a stored watermark was cut with, at the end of its key.
 const textTag = (settings) => (settings?.text ? `_t${textHash(settings.text)}` : '');
 const TEXT_TAG = /_t[0-9a-f]{8}$/;
+// A media attempt's id, which ends an attempt's file name (watermarkKey).
+const ATTEMPT_ID = /_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 class WatermarkService {
   constructor() {
@@ -109,7 +111,8 @@ class WatermarkService {
    * and queues a fresh cut instead.
    */
   storedWatermarkCurrent(watermarkPath, settings) {
-    const name = path.basename(String(watermarkPath || ''), path.extname(String(watermarkPath || '')));
+    const name = path.basename(String(watermarkPath || ''), path.extname(String(watermarkPath || '')))
+      .replace(ATTEMPT_ID, '');
     const tag = textTag(settings);
     return tag ? name.endsWith(tag) : !TEXT_TAG.test(name);
   }
@@ -406,13 +409,15 @@ class WatermarkService {
    * cutting the old file must not overwrite the new file's watermark. An
    * external file edited in place keeps its name, so its version (size and
    * mtime, see imageProcessor's sourceVersion) is part of the name too, and
-   * so is the gallery's watermark text (see storedWatermarkCurrent).
+   * so is the gallery's watermark text (see storedWatermarkCurrent). The
+   * attempt id stays last: mediaAttemptService recognises an attempt's file
+   * by it ending the name.
    */
   watermarkKey(photo, attempt = null, settings = null) {
     const version = require('./imageProcessor').sourceVersion(photo);
     const source = crypto.createHash('sha256')
       .update(String(photo.filename || '') + (version ? `\0${version}` : '')).digest('hex').slice(0, 12);
-    return `watermarks/${photo.id}_watermarked_${source}${attempt ? `_${attempt.id}` : ''}${textTag(settings)}${this.getFileExtension(photo.filename || '')}`;
+    return `watermarks/${photo.id}_watermarked_${source}${textTag(settings)}${attempt ? `_${attempt.id}` : ''}${this.getFileExtension(photo.filename || '')}`;
   }
 
   /**
