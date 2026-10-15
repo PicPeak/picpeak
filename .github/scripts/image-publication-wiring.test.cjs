@@ -71,17 +71,18 @@ test('both trusted callers pass exact pinned-action outputs without broad secret
 
 // Evaluate the checked-in conditions, including GitHub's implicit success()
 // for jobs without an explicit status function. This is not a hosted runner.
-function eligible(name, needs, ml = true) {
+function eligible(name, needs, ml = true, cancelled = false) {
   const block = job(name);
   const expression = block.match(/^    if: (.+)$/m)[1]
+    .replace(/^\$\{\{ (.+) \}\}$/, '$1')
     .replace(/needs\.([a-z-]+)\./g, 'needs["$1"].');
   const dependencies = block.match(/^    needs: (.+)$/m)[1]
     .replace(/[\[\] ]/g, '').split(',');
-  const implicitSuccess = /always\(\)/.test(expression) ||
+  const implicitSuccess = /always\(\)|cancelled\(\)/.test(expression) ||
     dependencies.every((dependency) => needs[dependency].result === 'success');
-  return implicitSuccess && Function('needs', 'github', 'vars', 'always',
+  return implicitSuccess && Function('needs', 'github', 'vars', 'always', 'cancelled',
     `return (${expression});`)(needs, { repository: 'PicPeak/picpeak' },
-    { FACENET_ONNX_URL: ml ? 'https://example.invalid/model' : '' }, () => true);
+    { FACENET_ONNX_URL: ml ? 'https://example.invalid/model' : '' }, () => true, () => cancelled);
 }
 
 test('checked-in gates preserve automatic rolling, version approval and verify-only paths', () => {
@@ -95,6 +96,8 @@ test('checked-in gates preserve automatic rolling, version approval and verify-o
       needs[`merge-${image}`] = { result: 'success' };
       assert.equal(eligible(`build-${image}`, needs), true);
       assert.equal(eligible(`merge-${image}`, needs), true);
+      // A superseded run (concurrency cancel-in-progress) must stop building.
+      assert.equal(eligible(`build-${image}`, needs, true, true), false);
       for (const result of ['failure', 'cancelled', 'skipped']) {
         needs['approve-publication'].result = result;
         assert.equal(eligible(`build-${image}`, needs), false);
@@ -106,6 +109,7 @@ test('checked-in gates preserve automatic rolling, version approval and verify-o
       needs[`build-${image}`].result = 'success';
     }
     assert.equal(eligible('dockerhub-descriptions', needs), !release);
+    assert.equal(eligible('dockerhub-descriptions', needs, true, true), false);
     needs['merge-ml'].result = 'skipped';
     assert.equal(eligible('dockerhub-descriptions', needs, false), !release);
     assert.equal(eligible('build-ml', needs, false), false);

@@ -137,7 +137,7 @@ jobs:
   # -----------------------------------------------------------------------------
   build-backend:
     needs: [publication-policy, approve-publication]
-    if: always() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success')
+    if: ${{ !cancelled() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success') }}
     strategy:
       fail-fast: false
       matrix:
@@ -403,7 +403,7 @@ jobs:
   # -----------------------------------------------------------------------------
   build-frontend:
     needs: [publication-policy, approve-publication]
-    if: always() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success')
+    if: ${{ !cancelled() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success') }}
     strategy:
       fail-fast: false
       matrix:
@@ -650,7 +650,7 @@ jobs:
   # -----------------------------------------------------------------------------
   build-aio:
     needs: [publication-policy, approve-publication]
-    if: always() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success')
+    if: ${{ !cancelled() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success') }}
     strategy:
       fail-fast: false
       matrix:
@@ -1123,7 +1123,7 @@ jobs:
   # See ml/README.md for producing them.
   build-ml:
     needs: [publication-policy, approve-publication]
-    if: always() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success') && vars.FACENET_ONNX_URL != ''
+    if: ${{ !cancelled() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success') && vars.FACENET_ONNX_URL != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1357,7 +1357,7 @@ jobs:
   dockerhub-descriptions:
     needs: [publication-policy, approve-publication, merge-aio, merge-ml]
     environment: picpeak-publication
-    if: always() && needs.publication-policy.outputs.publish == 'true' && needs.publication-policy.outputs.release_tag == '' && needs.publication-policy.outputs.channel == 'beta' && github.repository == 'PicPeak/picpeak' && needs.merge-aio.result == 'success'
+    if: ${{ !cancelled() && needs.publication-policy.outputs.publish == 'true' && needs.publication-policy.outputs.release_tag == '' && needs.publication-policy.outputs.channel == 'beta' && github.repository == 'PicPeak/picpeak' && needs.merge-aio.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
