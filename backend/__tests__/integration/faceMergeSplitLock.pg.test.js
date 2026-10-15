@@ -348,7 +348,10 @@ const mockDetected = [];
       mockDetected.push(Array.from(makeEmbedding(82, 5)));
       pending.push(scanned(results, 'rescan', faceProcessor.processPhotoFaces(rescanned.photo_id)));
       expect(await until(async () => (await waitingOnEventLock(eventId)) >= 1)).toBe(true);
-      expect(await db('photo_faces').where({ id: rescanned.id }).first()).toBeDefined();
+      // Parked before its delete: the old face row is still free to lock.
+      // The merge stopped at Ben's first face and has not reached it either.
+      await expect(db.transaction((t) => t('photo_faces').where({ id: rescanned.id })
+        .forUpdate().noWait().first('id'))).resolves.toEqual({ id: rescanned.id });
 
       await blocker.commit();
       await Promise.all(pending);
