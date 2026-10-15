@@ -571,8 +571,9 @@ async function generateThumbnail(imagePath, options = {}) {
   const outputBasename = options.outputBasename || sourceBasename;
   const storage = getStorage();
 
-  // Get thumbnail settings. A responsive tier passes the ones it read before
-  // rendering, so the check after the write compares what shaped it.
+  // Get thumbnail settings. A responsive tier or a lazy canonical render
+  // passes the ones it read before rendering, so its check compares what
+  // shaped it.
   const settings = options.settings || await getThumbnailSettings();
 
   // Tag against the CONFIGURED canonical width, not the 300 default — the tag
@@ -673,6 +674,9 @@ async function generateThumbnail(imagePath, options = {}) {
     if (!buffer || buffer.length === 0) {
       throw new Error('Generated thumbnail is empty');
     }
+    // A lazy canonical render writes only while its settings are current
+    // (issue 2131, see regenerateThumbnail).
+    if (options.stillCurrent && !(await options.stillCurrent())) return null;
 
     await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: contentTypeFor(settings.format) }), thumbnailRelKey);
     // Tile placeholder (issue 1733): for a caller that writes the photo row.
@@ -942,10 +946,10 @@ async function ensureThumbnail(photo, { force = false, boundVideoSource = true }
   }
 
   photo = await withSourceVersion(photo);
-  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource })), { force });
+  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: !force })), { force });
 }
 
-async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
+async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
   const event = await db('events').where('id', photo.event_id).first();
@@ -955,6 +959,34 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
   }
 
   const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+
+  // A lazy render (issue 2131) renders with the settings read here and writes
+  // only if they are still the stored ones. Otherwise one still running under
+  // the old settings while an admin saved new ones and "Regenerate
+  // thumbnails" force-rendered this photo on another replica lands after the
+  // sweep: on local storage both write the same key, so the old fit
+  // overwrites the new file; on S3 it is the row that ends up on the old
+  // render. (In one process `force` already waits for the lazy flight.)
+  //
+  // Checked before the write, not after it like a tier (keepTierIfCurrent):
+  // a canonical key is shared with the forced render on local storage, so a
+  // stale file written there could not be dropped without deleting the
+  // forced render's bytes too. What is left is the settings save and a whole
+  // forced render of this photo falling between this check and this write.
+  // A settings read that fails at the check writes, as before. Forced renders
+  // (the sweep, the rendition refresh) apply whatever settings they read, and
+  // a video's poster frame does not depend on them.
+  const settings = lazy && !isVideoPhoto(photo) ? await getThumbnailSettings() : undefined;
+  const stillCurrent = settings && (async () => {
+    try {
+      if (await thumbnailSettingsUnchanged(settings)) return true;
+      logger.info(`Thumbnail settings changed while photo ${photo.id}'s thumbnail was rendered; not writing it`);
+      return false;
+    } catch (e) {
+      logger.warn(`Could not re-read thumbnail settings for photo ${photo.id}; writing its thumbnail: ${e.message}`);
+      return true;
+    }
+  });
 
   let newThumbnailPath;
   // For a video: the processing note the row should carry afterwards
@@ -1001,7 +1033,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
     // permanently rather than being repaired on the next view.
     const proc = await withProcessableImage(localPath, sourceBasename);
     try {
-      newThumbnailPath = await generateThumbnail(proc.path, { regenerate: true, outputBasename, meta });
+      newThumbnailPath = await generateThumbnail(proc.path, { regenerate: true, outputBasename, meta, settings, stillCurrent });
     } finally {
       await proc.cleanup();
     }
@@ -1018,7 +1050,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
         const name = await ownDerivativeName(photo, proc.outputBasename || path.basename(localPath));
-        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(name), meta });
+        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(name), meta, settings, stillCurrent });
       } finally {
         await proc.cleanup();
       }
