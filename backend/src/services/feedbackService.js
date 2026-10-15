@@ -87,6 +87,9 @@ let settingsTableKnownToExist = false;
 // 186's duplicate-photo dedupe recomputes stats on a schema that predates
 // them, so they are only read and written once they are known to exist.
 let decisionColumnsKnownToExist = false;
+// photos.comment_count predates every migration that calls the recount, but a
+// migration test builds a bare photos table; asked once, like the above.
+let commentCountColumnKnownToExist = false;
 
 function isSharedColorLabel(identityMode, feedbackType) {
   return identityMode === 'shared' && feedbackType === 'color_label';
@@ -806,7 +809,14 @@ class FeedbackService {
           : (feedback_type !== 'comment' || !feedbackData.moderate_comments),
         created_at: new Date(),
         updated_at: new Date()
-      }).returning('id');
+      });
+      // A rating is held to one visible row per guest and photo by a unique
+      // index (migration 309), so a racing insert loses quietly and falls
+      // into the update below instead of adding a second row (issue 2075).
+      const insertRow = (executor) => {
+        const q = insertFeedback(executor);
+        return (feedback_type === 'rating' ? q.onConflict().ignore() : q).returning('id');
+      };
 
       // A guest merge soft-deletes its source guests while holding their rows
       // locked. resolveGuest ran before that, so re-check the guest in the
@@ -819,14 +829,32 @@ class FeedbackService {
           const guest = trx('gallery_guests').where({ id: guest_id }).first('is_deleted');
           if (trx.client.config.client === 'pg') guest.forShare();
           if ((await guest)?.is_deleted) return null;
-          return insertFeedback(trx);
+          return insertRow(trx);
         });
         if (!result) return { guest_missing: true };
       } else {
-        result = await insertFeedback(executor);
+        result = await insertRow(executor);
       }
-      
-      const id = result[0]?.id || result[0];
+
+      let id = result[0]?.id || result[0];
+
+      if (!id && feedback_type === 'rating') {
+        // The insert lost the race to the guest's other request: their row
+        // exists now, so this submission changes its value instead.
+        const own = executor('photo_feedback').where({
+          photo_id: photoId, event_id: eventId, feedback_type: 'rating', is_hidden: false,
+        });
+        if (guest_id) own.where('guest_id', guest_id);
+        else own.where('guest_identifier', guestIdentifier);
+        const winner = await own.first('id', 'rating');
+        if (!winner) return { id: null, exists: true };
+        if (Number(winner.rating) === Number(rating)) return { id: winner.id, exists: true };
+        await executor('photo_feedback')
+          .where('id', winner.id)
+          .update({ rating, updated_at: new Date().toISOString() });
+        await recount();
+        return { id: winner.id, updated: true };
+      }
       
       // Update photo stats
       await recount();
@@ -1115,6 +1143,10 @@ class FeedbackService {
         ]
         : [];
 
+      if (!commentCountColumnKnownToExist) {
+        commentCountColumnKnownToExist = await trx.schema.hasColumn('photos', 'comment_count');
+      }
+
       // Get aggregated stats
       const stats = await trx('photo_feedback')
         .where('photo_id', photoId)
@@ -1146,6 +1178,9 @@ class FeedbackService {
         .where('id', photoId)
         .update({
           feedback_count: stats.feedback_count || 0,
+          // Approved, visible comments: the admin "Has comments" filter and
+          // the exports read this column (issue 2071).
+          ...(commentCountColumnKnownToExist ? { comment_count: Number(stats.comment_count) || 0 } : {}),
           like_count: stats.like_count || 0,
           average_rating: stats.average_rating || 0,
           favorite_count: stats.favorite_count || 0,

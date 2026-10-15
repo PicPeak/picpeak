@@ -82,7 +82,7 @@ const CHILD_REFERENCES = {
   'routes/adminFeedback.js': 7, 'routes/adminGuests.js': 5, 'routes/adminPhotos.js': 3,
   'routes/galleryFeedback.js': 4, 'services/downloadQuota.js': 10, 'services/externalPhotoDedupe.js': 4,
   'services/faceAutoCategories.js': 1, 'services/faceClustering.js': 8, 'services/facePeopleService.js': 3,
-  'services/faceProcessor.js': 7, 'services/feedbackModeration.js': 2, 'services/feedbackService.js': 35,
+  'services/faceProcessor.js': 7, 'services/feedbackModeration.js': 2, 'services/feedbackService.js': 37,
   'services/galleryPhotoQuery.js': 1, 'services/galleryQueryService.js': 6,
   'services/photoAdminMarksService.js': 8, 'services/picpeakImportService.js': 2,
   'services/selectionSubmissions.js': 2, 'services/transferCleanupService.js': 1, 'services/transferService.js': 12,
