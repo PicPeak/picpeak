@@ -110,7 +110,9 @@ async function imagePublicationPolicy({ github, context, workflowRef, inputs = {
   const channel = branch === 'main' ? 'beta' : 'stable';
   const tags = tag ? [tag.slice(1), tag] : [branch];
   if (version && channel === 'stable') tags.push(`${version[1]}.${version[2]}`, version[1]);
-  if (channel === 'stable') tags.push('latest', 'stable');
+  // Mutable channel aliases follow the rolling branch run only: a version run
+  // can wait for approval while newer stable commits publish.
+  if (!tag && channel === 'stable') tags.push('latest', 'stable');
   if (!tag && branch === 'main') tags.push('beta');
   tags.push(`sha-${sha.slice(0, 7)}`);
   return { publish: 'true', sha, release_tag: tag, channel, gate_environment: gateEnvironment,

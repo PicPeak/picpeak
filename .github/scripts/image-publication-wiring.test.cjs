@@ -54,6 +54,12 @@ test('both trusted callers pass exact pinned-action outputs without broad secret
     assert.match(caller, /googleapis\/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071/);
     assert.match(caller, /sha: \$\{\{ steps\.release\.outputs\.sha \}\}/);
     assert.match(caller, /release_id: \$\{\{ steps\.release\.outputs\.id \}\}/);
+    // No GITHUB_TOKEN fallback: it cannot create v* tags under the ruleset.
+    assert.match(caller, /^          token: \$\{\{ secrets\.RELEASE_PLEASE_TOKEN \}\}$/m);
+    assert.ok(!caller.includes('secrets.RELEASE_PLEASE_TOKEN ||'));
+    assert.ok(caller.indexOf('- name: Require a working RELEASE_PLEASE_TOKEN') <
+      caller.indexOf('- name: Run Release Please'));
+    assert.ok(caller.indexOf('- name: Require a working RELEASE_PLEASE_TOKEN') > 0);
     const publish = caller.split('  publish-images:')[1].split('  whatsnew:')[0];
     assert.match(publish, /release_created == 'true'/);
     assert.match(publish, /uses: \.\/\.github\/workflows\/docker-build.yml/);

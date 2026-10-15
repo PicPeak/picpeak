@@ -14,7 +14,10 @@ Please workflow, using the pinned action's generated tag, SHA and release ID.
 The policy verifies the caller, channel, exact current tag target, release
 identity and ancestry before approving an immutable checkout. All four images
 share the decision and explicit tags; a beta version does not relabel itself as
-the rolling `main` image. Tag pushes and release events no longer start this
+the rolling `main` image, and a stable version does not move `latest`/`stable`.
+Those mutable channel aliases come only from the rolling `stable` branch run,
+which the same release merge also starts, so a version approved late cannot
+rewind them past newer stable commits. Tag pushes and release events no longer start this
 pipeline. Manual publication is only available on protected main/stable.
 
 Ordinary branch merges and explicit manual rolling publication do not require a
@@ -44,6 +47,18 @@ workflow by itself. External immutable version-tag rules are essential.
    prefer a dedicated Release Please GitHub App long term. Do not allow general
    write/maintain users to create version tags. Confirm legitimate tag creation
    with the existing release actor; never loosen immutability to restore releases.
+   Both Release Please workflows require `RELEASE_PLEASE_TOKEN` and have no
+   `GITHUB_TOKEN` fallback: the Actions token cannot use the creation bypass, so
+   it could not tag a merged release PR. The token is a fine-grained PAT owned by
+   the release actor, scoped to this repository with **Contents**, **Pull
+   requests** and **Issues** read/write (release commits, tags and releases; the
+   release PR and its auto-merge; release labels). Fine-grained PATs expire:
+   note the expiry date and renew before it. A first step in each workflow
+   fails the run with an explicit error when the secret is missing or GitHub
+   rejects it (expired, revoked or without repository access); no release PR
+   update, tag or image publication happens until it is renewed. A stable or
+   beta release PR merged while the token is broken stays untagged; rerun the
+   failed Release Please run after renewing the token.
 3. Create **two** environments, both allowing **protected branches only**, with
    administrator bypass disabled and no wait timers or custom deployment gates:
    - `picpeak-release`: enable required reviewers and add `the-luap` (your own
@@ -98,6 +113,13 @@ ordinary protected-branch merge publishes without any review request, then
 approve your own exact Release Please version in each channel. Verify there is
 only one review wave and compare image revisions/tags with the approved SHA.
 Do not create live test tags or publish images without separate authorization.
+
+Known limit: the `X.Y` and `X` aliases on stable versions are not ordered. If
+two stable versions of the same line wait for approval and the older one is
+approved last, its manifest jobs move `X.Y`/`X` back to it. The policy job runs
+before the approval wait, so it cannot see versions that appear during it; a
+reliable guard would need a re-check after approval. Approve pending stable
+versions oldest first, or re-run the newest version's publication afterwards.
 
 For rollback, stop publication and revoke/rotate credentials as needed; retain
 tag and environment protections. Reverting only workflow code can restore old
