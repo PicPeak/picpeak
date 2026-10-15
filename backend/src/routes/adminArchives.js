@@ -964,6 +964,10 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       // opposite order could deadlock on PostgreSQL.
       if (trx.client.config.client === 'pg') {
         await trx('events').where({ id: req.params.id }).forUpdate().first();
+        // Then its photos (issue 2069): a face scan locks its photo before
+        // the photo's faces, so deleting the faces below first could wait for
+        // a scan that waits for the photo delete at the end.
+        await trx('photos').where('event_id', req.params.id).orderBy('id').forUpdate().pluck('id');
       }
       await trx('activity_logs').where('event_id', req.params.id).del();
       await trx('access_logs').where('event_id', req.params.id).del();

@@ -27,6 +27,11 @@ let mockPreviewBuffer;
 let mockGate = null;
 let mockReached = null;
 let openGate = null;
+// Which seam parks the scan: 'assign' (assignFaces) or 'people' (the
+// people lock, taken right after the claim check, before any face row).
+let mockGateAt = 'assign';
+// One-hot embeddings by index: the same index is the same person.
+let mockFaces = [0];
 // Resolvers of transactions a test holds open; released if it fails early.
 const held = [];
 
@@ -53,29 +58,40 @@ const held = [];
       ...jest.requireActual('../../src/services/imageProcessor'),
       ensurePreviewImage: async () => 'previews/preview_test.jpg',
     }));
+    // get() serves the preview; anything else (an event delete's sweeps)
+    // is a no-op.
     jest.doMock('../../src/services/storage', () => ({
-      getStorage: () => ({ get: async () => mockPreviewBuffer }),
+      getStorage: () => new Proxy({ get: async () => mockPreviewBuffer, kind: () => 'local' }, {
+        get: (target, key) => (key in target ? target[key] : (key === 'then' ? undefined : async () => null)),
+      }),
     }));
     jest.doMock('../../src/services/faceClient', () => ({
       detectFaces: async () => ({
         model_version: 'test-v1',
-        faces: [{
-          bbox: [10, 10, 50, 60], score: 0.99, yaw: 0, pitch: 0, blur: 500,
-          embedding: Array.from({ length: 64 }, (_, i) => (i === 0 ? 1 : 0)),
-        }],
+        faces: mockFaces.map((n, k) => ({
+          bbox: [10 + k * 100, 10, 50, 60], score: 0.99, yaw: 0, pitch: 0, blur: 500,
+          embedding: Array.from({ length: 64 }, (_, i) => (i === n ? 1 : 0)),
+        })),
       }),
       SidecarUnavailableError: class extends Error {},
     }));
     jest.doMock('../../src/services/faceClustering', () => {
       const actual = jest.requireActual('../../src/services/faceClustering');
+      const park = async (at) => {
+        if (mockGate && mockGateAt === at) {
+          mockReached();
+          await mockGate;
+        }
+      };
       return {
         ...actual,
         assignFaces: async (...args) => {
-          if (mockGate) {
-            mockReached();
-            await mockGate;
-          }
+          await park('assign');
           return actual.assignFaces(...args);
+        },
+        lockEventPeople: async (...args) => {
+          await park('people');
+          return actual.lockEventPeople(...args);
         },
       };
     });
@@ -102,6 +118,8 @@ const held = [];
     await db('event_people').del();
     await db('photos').del();
     mockGate = null;
+    mockGateAt = 'assign';
+    mockFaces = [0];
   });
 
   // A failed assertion must not leave a scan parked with its locks held.
@@ -146,13 +164,16 @@ const held = [];
   // Resolves once `promise` is waiting on a row lock (not merely slow), and
   // fails if it settles first. Counts lock waits across the database: the
   // suite expects a PostgreSQL of its own, as the other *.pg tests do.
-  async function blockedOnLock(promise) {
+  // `waitEvent` narrows it to one kind of lock ('advisory', 'tuple', ...).
+  async function blockedOnLock(promise, waitEvent = null) {
     let settled = false;
     promise.then(() => { settled = true; }, () => { settled = true; });
     for (let i = 0; i < 100; i += 1) {
       if (settled) throw new Error('expected to wait on a lock, but it finished');
       const { rows } = await owner.raw(
-        'select count(*)::int as n from pg_stat_activity where wait_event_type = \'Lock\' and datname = current_database()',
+        'select count(*)::int as n from pg_stat_activity where wait_event_type = \'Lock\' and datname = current_database()'
+          + (waitEvent ? ' and wait_event = ?' : ''),
+        waitEvent ? [waitEvent] : [],
       );
       if (rows[0].n > 0) return;
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -227,5 +248,62 @@ const held = [];
 
     expect(await db('photo_faces').where({ photo_id: photoId }).count({ c: '*' }).first()).toEqual({ c: '0' });
     expect(await db('photos').where({ id: photoId }).first()).toMatchObject({ face_status: 'pending' });
+  });
+
+  test('an event delete and a no-face re-scan holding its photo do not deadlock', async () => {
+    const { eventId, photoId } = await seed();
+    // A first scan leaves a face and a person behind for the re-scan to drop.
+    await faceProcessor.processPhotoFaces(await faceQueue.claimNextPhoto());
+    await db('photos').where({ id: photoId }).update({ face_status: 'pending' });
+
+    // The re-scan finds nobody: it takes no event lock, holds its photo, and
+    // parks before it deletes the old face.
+    mockFaces = [];
+    mockGateAt = 'people';
+    const { scan, release } = await parkScan();
+
+    const { deleteEventCascade } = require('../../src/routes/adminEvents/helpers');
+    const remove = deleteEventCascade(eventId, { id: null });
+    // Waits for the scan's photo before it touches the faces.
+    await blockedOnLock(remove);
+
+    release();
+    await expect(scan).resolves.toMatchObject({ status: 'done' });
+    await expect(remove).resolves.toBeDefined();
+    expect(await db('events').where({ id: eventId }).first()).toBeUndefined();
+    expect(await db('photo_faces').where({ event_id: eventId }).count({ c: '*' }).first()).toEqual({ c: '0' });
+    expect(await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first()).toEqual({ c: '0' });
+  });
+
+  test('a merge of people waits for a scan rewriting them instead of deadlocking', async () => {
+    const { eventId, photoId } = await seed();
+    // Photo P shows people A and B; a second photo Q shows B again.
+    mockFaces = [0, 1];
+    await faceProcessor.processPhotoFaces(await faceQueue.claimNextPhoto());
+    const [q] = await db('photos').insert({
+      event_id: eventId, filename: 'q.jpg', path: '/tmp/q.jpg', type: 'individual',
+      width: 1920, height: 1440, processing_status: 'complete', face_status: 'pending',
+    }).returning('id');
+    mockFaces = [1];
+    await faceProcessor.processPhotoFaces(await faceQueue.claimNextPhoto());
+    const people = await db('photo_faces').where({ photo_id: photoId }).orderBy('bbox_x').pluck('person_id');
+    expect(new Set(people).size).toBe(2);
+    expect(await db('photo_faces').where({ photo_id: typeof q === 'object' ? q.id : q }).first('person_id'))
+      .toEqual({ person_id: people[1] });
+
+    // P is re-scanned and parks holding the people lock, its old faces
+    // deleted and its people rebuilt.
+    await db('photos').where({ id: photoId }).update({ face_status: 'pending' });
+    mockFaces = [0, 1];
+    const { scan, release } = await parkScan();
+
+    const { mergePeople } = jest.requireActual('../../src/services/faceClustering');
+    const merge = mergePeople(eventId, [people[1]], people[0]);
+    // On the people lock, before it has moved a single face.
+    await blockedOnLock(merge, 'advisory');
+
+    release();
+    await expect(scan).resolves.toMatchObject({ status: 'done' });
+    await expect(merge).resolves.toBeDefined();
   });
 });

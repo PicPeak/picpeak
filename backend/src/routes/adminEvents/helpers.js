@@ -201,6 +201,10 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     // serialises writers anyway.
     if (trx.client.config.client === 'pg') {
       await trx('events').where({ id: eventId }).forUpdate().first();
+      // Then its photos (issue 2069): a face scan locks its photo before
+      // the photo's faces, so deleting the faces below first could wait for
+      // a scan that waits for the photo delete at the end.
+      await trx('photos').where('event_id', eventId).orderBy('id').forUpdate().pluck('id');
     }
     // 1. Delete activity logs (audit trail) — and the per-admin bell
     // dismissals that point at them (migration 261). On PostgreSQL the FK

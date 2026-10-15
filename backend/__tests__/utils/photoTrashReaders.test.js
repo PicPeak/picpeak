@@ -18,11 +18,11 @@ const SRC = path.join(__dirname, '../../src');
 
 // file: [bare references, why they see trashed rows too]
 const ALL_ROWS = {
-  'routes/adminArchives.js': [4, 'restoring an archive matches files to rows and inserts them; deleting one removes every row and thumbnail'],
+  'routes/adminArchives.js': [5, 'restoring an archive matches files to rows and inserts them; deleting one locks, then removes, every row and thumbnail'],
   'routes/adminCategories.js': [4, 'folder/category restructuring keeps trashed photos consistent for a restore'],
   'routes/adminDashboard.js': [1, 'storage: trashed photos still take space'],
   'routes/adminEvents/crud.js': [1, 'storage: the gallery size counts trashed photos'],
-  'routes/adminEvents/helpers.js': [3, 'gallery deletion removes every row and file, trashed ones included'],
+  'routes/adminEvents/helpers.js': [4, 'gallery deletion locks, then removes, every row and file, trashed ones included'],
   'routes/adminFolders.js': [2, 'folder structure is applied to trashed photos too, so a restore lands in the right folder'],
   'routes/adminImageSecurity.js': [1, 'access log listing is an audit trail and keeps the entries of trashed photos'],
   'routes/adminPhotoDimensions.js': [19, 'repair backfills (dimensions, capture date, EXIF, orientation, credits, tile placeholders) and their progress counts run over every row'],

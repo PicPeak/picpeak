@@ -19,7 +19,9 @@ const { ensurePreviewImage } = require('./imageProcessor');
 // SidecarUnavailableError is deliberately NOT caught here — it propagates to
 // faceQueue, which is the only layer that knows to retry rather than fail.
 const { detectFaces } = require('./faceClient');
-const { assignFaces, packEmbedding, recomputeCentroid } = require('./faceClustering');
+const {
+  assignFaces, lockEventPeople, packEmbedding, recomputeCentroid,
+} = require('./faceClustering');
 const { getThresholds, isEnabledForEvent } = require('./faceSettings');
 
 /**
@@ -307,6 +309,14 @@ async function processPhotoFaces(claimed) {
         .whereNotNull('person_id')
         .distinct('person_id')
         .pluck('person_id');
+
+      // The event's people lock (PostgreSQL) before any face or person row,
+      // when this scan writes people at all: assignFaces takes it anyway, and
+      // a merge takes it first thing. Taken later, a merge holding it could
+      // wait for the face rows deleted below while this scan waited for the
+      // lock. After the claim check, so a superseded scan never holds it while
+      // it waits for the photo (issue 2069).
+      if (faces.length || affectedPeople.length) await lockEventPeople(photo.event_id, trx);
 
       await trx('photo_faces').where({ photo_id: photoId }).del();
 
