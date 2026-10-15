@@ -110,7 +110,8 @@ The image trusts no forwarding headers (`TRUST_PROXY=0`): nothing sits in
 front of Node inside it. **Upgrading an all-in-one container behind a reverse
 proxy** (NAS proxy, Traefik, NPM, Caddy, Cloudflare Tunnel) that never set
 `TRUST_PROXY`: add `-e TRUST_PROXY=1` when you recreate it, otherwise every
-visitor shares the proxy's address for rate limits and login lockouts.
+visitor shares the proxy's address for rate limits and login lockouts, and
+the backend treats HTTPS requests as plain HTTP.
 
 Then open **http://localhost:3000/admin** and read the setup token with `docker exec picpeak cat /data/db/SETUP_TOKEN`, or open `db/SETUP_TOKEN` on the volume with any file manager if the host has no shell.
 
