@@ -17,6 +17,7 @@ jest.setTimeout(120000);
 describe('transfer ready mail held while nothing is downloadable', () => {
   let db; let cleanup; let storage; let jpeg; let transferService; let photoProcessor; let send;
   let adminApp; let token;
+  let afterQuery = null;
   let seq = 0;
 
   const now = () => new Date().toISOString();
@@ -74,7 +75,13 @@ describe('transfer ready mail held while nothing is downloadable', () => {
           (b) => (b && typeof b === 'object' && typeof b.toISOString === 'function' ? b.toISOString() : b),
         );
       }
-      return origQuery.call(this, connection, obj);
+      const hook = afterQuery && afterQuery.match.test(obj?.sql || '') ? afterQuery : null;
+      if (hook) afterQuery = null;
+      const result = origQuery.call(this, connection, obj);
+      if (!hook) return result;
+      // Run the injected statement on the same connection once this query
+      // has answered, before the service sees the answer.
+      return result.then((answer) => origQuery.call(this, connection, hook.statement).then(() => answer));
     };
     jpeg = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#557799' } }).jpeg().toBuffer();
     storage = require('../../src/services/storage').getStorage();
@@ -255,6 +262,28 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     release();
     expect((await resend).sent).toBe(1);
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a send again does not mail a held recipient a photo claimed after the recipients were read', async () => {
+    const event = await mkEvent();
+    const done = await mkPhoto(event, 'complete');
+    const transfer = await mkTransfer([done]);
+    const [row] = await db('transfer_recipients').insert({
+      transfer_id: transfer.id, email: 'anna@example.com', created_at: now(), last_sent_at: null,
+    }).returning('id');
+    // A finishing photo claims (and mails) the held row right after the
+    // recipients were read, while the files are being counted.
+    afterQuery = {
+      match: /from [`"]transfer_extra_files[`"]/i,
+      statement: {
+        sql: 'update transfer_recipients set last_sent_at = ? where id = ? and last_sent_at is null',
+        bindings: [now(), row?.id ?? row],
+      },
+    };
+    const result = await transferService.sendTransferEmails(transfer.id, ['anna@example.com']);
+    expect(afterQuery).toBeNull();
+    expect(result.sent).toBe(0);
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('still sends at once when a file is ready', async () => {

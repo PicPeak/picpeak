@@ -1280,7 +1280,10 @@ async function sendTransferEmails(transferId, emails) {
   for (const email of clean) {
     // Record the recipient regardless of delivery so the detail panel shows who
     // it was addressed to (and a future resend has the list).
-    const existing = await db('transfer_recipients').where({ transfer_id: transferId, email }).first();
+    // Decided from the snapshot read before the count, not a fresh read: a
+    // held row a finishing photo claims meanwhile would otherwise look sent
+    // and be mailed again here.
+    const existing = before.find((r) => r.email === email);
     if (existing && existing.last_sent_at == null) {
       // Held: claimed like sendHeldReadyEmails does, so a photo finishing
       // meanwhile does not mail it too. Lost means it is being sent already.
