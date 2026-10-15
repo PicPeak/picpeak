@@ -197,6 +197,22 @@ describe('gallery watermark text (issue 2095)', () => {
     expect(drawn.at(-1).text).toBe('Other Text');
   });
 
+  test('the hero ETag changes with the gallery text', async () => {
+    withGlobal(GLOBAL);
+    const { event, photoIds, token } = await makeEvent({ text: 'Hero One', photos: 1 });
+    const hero = (etag) => {
+      const r = request(app).get(`/api/gallery/${event.slug}/hero/${photoIds[0]}`).set('Authorization', `Bearer ${token}`);
+      return etag ? r.set('If-None-Match', etag) : r;
+    };
+    const first = await hero().expect(200);
+    expect(first.headers['x-hero-image']).toBe('true');
+    await hero(first.headers.etag).expect(304);
+    await db('events').where({ id: event.id }).update({ watermark_text: 'Hero Two' });
+    const second = await hero(first.headers.etag).expect(200);
+    expect(second.headers.etag).not.toBe(first.headers.etag);
+    expect(drawn.at(-1).text).toBe('Hero Two');
+  });
+
   test('stored watermark files are cut with the gallery text', async () => {
     withGlobal(GLOBAL);
     const { photoIds } = await makeEvent({ text: 'Stored Text', photos: 1 });

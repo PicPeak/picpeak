@@ -809,12 +809,13 @@ router.get('/:slug/hero/:photoId',
       }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
-      const etag = `"hero-${photoId}-${mtimeMs}"`;
+      // The mark is part of the bytes: a changed gallery text must not 304.
+      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      const watermarkHash = watermarkSettings?.enabled ? `-wm${watermarkService.versionTag(watermarkSettings)}` : '';
+      const etag = `"hero-${photoId}-${mtimeMs}${watermarkHash}"`;
       if (req.headers['if-none-match'] === etag) {
         return res.status(304).end();
       }
-
-      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
 
       res.set({
         'Content-Type': 'image/jpeg',
