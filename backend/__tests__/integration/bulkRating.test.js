@@ -131,12 +131,13 @@ test('a photo in the trash is refused and costs nothing', async () => {
 
 // The gallery list leaves out a photo the worker has not finished or failed
 // on (wherePhotoProcessed); by id the feedback routes must not reach it either.
-describe('a photo still processing or failed', () => {
+describe('a photo still pending, processing or failed', () => {
   let unfinished;
   beforeAll(async () => {
     unfinished = [
       await insertPhoto(eventId, 'processing.jpg', { processing_status: 'processing' }),
       await insertPhoto(eventId, 'failed.jpg', { processing_status: 'failed' }),
+      await insertPhoto(eventId, 'pending.jpg', { processing_status: 'pending' }),
     ];
   });
 
