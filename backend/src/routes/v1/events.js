@@ -55,7 +55,7 @@ const { getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB } = require('../../service
 const { withPublicUpload } = require('../../middleware/publicUploadStream');
 const { createUploadFileGuard } = require('../../utils/uploadAdmissionType');
 const uploadQuota = require('../../services/publicUploadQuota');
-const { validateFileContent, normalizeUploadMimeType } = require('../../utils/fileSecurityUtils');
+const { validateFileContent, normalizeUploadMimeType, ALLOWED_MEDIA_TYPES } = require('../../utils/fileSecurityUtils');
 const { validateUploadedFiles } = require('../../middleware/uploadValidation');
 const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
@@ -452,6 +452,21 @@ router.post(
   }
 );
 
+// Whether Sharp reads the file as an image with dimensions. A busy image
+// worker says nothing about the file, so it passes; a resource limit is
+// thrown like the metadata read further down throws it.
+async function readsAsImage(filePath) {
+  try {
+    const meta = await sharp(filePath).metadata();
+    return Boolean(meta && meta.width && meta.height);
+  } catch (error) {
+    const policy = require('../../services/imageResourcePolicy');
+    if (policy.isTransient(error)) return true;
+    if (policy.isResourceError(error)) throw error;
+    return false;
+  }
+}
+
 async function handleV1PhotoUpload(req, res) {
   let tempPath = null;
   let object;
@@ -464,8 +479,14 @@ async function handleV1PhotoUpload(req, res) {
 
     // The same content check the admin multipart upload applies: the bytes
     // must match the declared type, and an image must decode. The declared
-    // image/* type says nothing about the file.
-    if (!(await validateFileContent(tempPath, normalizeUploadMimeType(req.file.originalname, req.file.mimetype)))) {
+    // image/* type says nothing about the file. v1 takes any image/* type
+    // (TIFF, AVIF, ...); one the signature table does not know has to be an
+    // image Sharp can read instead.
+    const declaredType = normalizeUploadMimeType(req.file.originalname, req.file.mimetype);
+    const contentMatches = ALLOWED_MEDIA_TYPES[declaredType]
+      ? await validateFileContent(tempPath, declaredType)
+      : await readsAsImage(tempPath);
+    if (!contentMatches) {
       await fs.unlink(tempPath).catch(() => {});
       return res.status(400).json({ error: `File content does not match declared type: ${req.file.originalname}` });
     }
