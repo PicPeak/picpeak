@@ -271,6 +271,26 @@ describe('renditions of an external file rewritten in place', () => {
     for (const key of sizeOnly) expect(await storage.stat(key)).toBeFalsy();
   });
 
+  test('a tier cut before the mtime was recorded is not kept when it lands after', async () => {
+    // The scan records the mtime of a row imported before it was without a
+    // refresh; a tier still rendering from the bytes it read before then
+    // lands under the size-only name, which the row's keys still include.
+    const row = await externalPhoto('adopted-mtime.jpg');
+    expect(row.source_mtime_ms).toBeNull();
+    const spy = onRenditionWrite('previews/preview_w640_', async () => {
+      await writeSource('adopted-mtime.jpg', 260, 200);
+      await db('photos').where({ id: row.id }).update({ source_mtime_ms: 1760000000000 });
+    });
+
+    await expect(imageProcessor.ensurePreviewImageAtWidth(row, 640)).resolves.toBeNull();
+    const stale = spy.mock.calls.find(([key]) => key.startsWith('previews/preview_w640_'))[0];
+    expect(await storage.stat(stale)).toBeFalsy();
+    jest.restoreAllMocks();
+
+    const fresh = await imageProcessor.ensurePreviewImageAtWidth(await db('photos').where({ id: row.id }).first(), 640);
+    expect(await widthOf(fresh)).toBe(260);
+  });
+
   test('a RAW tier named with the size alone in its cache id is cleaned up', async () => {
     const row = await externalPhotoWithMtime('size-only-raw.jpg');
     await db('photos').where({ id: row.id }).update({ filename: 'size-only-raw.dng', external_relpath: 'shoot/size-only-raw.dng' });

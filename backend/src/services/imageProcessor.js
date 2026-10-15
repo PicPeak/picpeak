@@ -1730,7 +1730,10 @@ async function keepTierIfCurrent(photo, key, keysOf) {
   if (!key) return key;
   try {
     const current = await db('photos').where({ id: photo.id }).first();
-    if (current && keysOf(current).includes(key)) return key;
+    // The version too, not only the key: the keys of a row include the names
+    // its tiers had under an earlier version, and a tier cut while the row
+    // still had that version may be of bytes since replaced (issue 2059).
+    if (current && keysOf(current).includes(key) && sourceVersion(current) === sourceVersion(photo)) return key;
   } catch (e) {
     logger.warn(`Could not check whether tier ${key} is current; keeping it: ${e.message}`);
     return key;
