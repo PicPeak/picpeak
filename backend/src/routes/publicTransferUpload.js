@@ -53,7 +53,10 @@ const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders:
 const TOKEN_RE = /^[A-Za-z0-9]{10,16}$/;
 
 async function loadUploadTransfer(req, res) {
-  const ip = clientIpForAudit(req);
+  // Keyed like the limiters above: an IPv6 /64 counts as one client, so a
+  // guesser rotating addresses inside one allocation does not reset the
+  // count. The audit log keeps the full address (clientIpForAudit).
+  const ip = rateLimitKey(req);
   const token = req.params.token;
   if (!token || !TOKEN_RE.test(token)) {
     res.status(400).json({ error: 'Invalid token format', code: 'BAD_TOKEN' });
