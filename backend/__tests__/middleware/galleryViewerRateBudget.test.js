@@ -71,6 +71,18 @@ describe('a verified viewer working in their gallery', () => {
     expect(await statuses(app, 1, 'get', '/api/public/settings')).toEqual([429]);
   });
 
+  it('counts every address in an IPv6 /64 against one viewer bucket', async () => {
+    const app = await buildApp();
+    app.set('trust proxy', true);
+    const budget = MAX * GALLERY_VIEWER_BUDGET_FACTOR;
+    for (let i = 1; i <= budget; i += 1) {
+      const headers = { ...viewer(), 'X-Forwarded-For': `2001:db8:1:2::${i.toString(16)}` };
+      expect((await request(app).get(FEEDBACK).set(headers)).status).toBe(200);
+    }
+    expect((await request(app).get(FEEDBACK).set({ ...viewer(), 'X-Forwarded-For': '2001:db8:1:2:dead::1' })).status).toBe(429);
+    expect((await request(app).get(FEEDBACK).set({ ...viewer(), 'X-Forwarded-For': '2001:db8:1:3::1' })).status).toBe(200);
+  });
+
   // photo/<id>/view is the beacon the lightbox posts for every slide: left
   // on the ordinary budget, about 300 slides still locked the guest out.
   it.each(['photos', 'photos/42/feedback', 'my-feedback', 'feedback-summary', 'feedback-settings', 'info', 'stats', 'people', 'photo/42/view'])(

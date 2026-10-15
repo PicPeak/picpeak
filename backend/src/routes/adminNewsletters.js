@@ -14,6 +14,7 @@
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { body, param, query } = require('express-validator');
 
 const { db } = require('../database/db');
@@ -37,7 +38,7 @@ const testLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `newsletter-test:${req.admin?.id || req.ip}`,
+  keyGenerator: (req) => `newsletter-test:${req.admin?.id || rateLimitKey(req)}`,
 });
 
 /** DB shape → API shape. Narrow, so a new column can't leak by accident. */

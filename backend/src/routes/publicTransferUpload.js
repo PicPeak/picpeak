@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { param } = require('express-validator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
@@ -41,11 +42,11 @@ router.use(requireFeatureFlag('transfers'));
 const MAX_FILES_PER_UPLOAD = 25;
 const DEFAULT_ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/tiff', 'application/pdf', 'application/zip'];
 
-const infoLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+const infoLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
 // The page splits one selection (up to MAX_FILES_PER_UPLOAD files) into
 // requests that each fit the per-request byte budget; bytes are bounded by
 // the upload quota, this only bounds the request count.
-const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
 
 // Upload tokens are drawn from an unambiguous alphabet (see transferService).
 // Legacy shorter codes are rotated by migration 241 and rejected afterward.
