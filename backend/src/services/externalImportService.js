@@ -288,8 +288,9 @@ const DERIVATIVE_COLUMNS = ['thumbnail_path', 'preview_path', 'hero_path', 'wate
  * Only rows still served from the share: a photo replaced by an upload keeps
  * its external_relpath (the dedupe key) but no longer reads this file.
  *
- * Returns 'refreshed', 'deferred' (automatic pass, file still being written)
- * or 'skipped'.
+ * Returns 'refreshed', 'unchanged' (the file is the version recorded),
+ * 'deferred' (automatic pass, file still being written) or 'skipped' (not
+ * served from the share, or not refreshed this time).
  */
 async function refreshChangedFile(row, f, { automatic, settleMs }) {
   const served = row.source_origin === 'external' || row.source_origin === 'reference';
@@ -300,7 +301,7 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     // record it and treat the file as the one the derivatives were made from.
     await db('photos').where({ id: row.id }).whereNull('size_bytes')
       .update({ size_bytes: f.size, source_mtime_ms: Math.floor(f.mtimeMs) });
-    return 'skipped';
+    return 'unchanged';
   }
   // Size and modification time: an edit that keeps the byte count (a rating
   // or keyword written into the file) still moves the mtime. A row imported
@@ -316,13 +317,13 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
       await db('photos').where({ id: row.id, size_bytes: row.size_bytes }).whereNull('source_mtime_ms')
         .update({ source_mtime_ms: Math.floor(f.mtimeMs) });
     }
-    return 'skipped';
+    return 'unchanged';
   }
   // Stat again: the walk that produced `f` can be minutes old. A copy still
   // landing on the mount is left for the next pass, the same settle rule new
   // files get.
   const before = await fs.stat(f.full);
-  if (unchanged(before)) return 'skipped';
+  if (unchanged(before)) return 'unchanged';
   if (automatic && settleMs > 0 && Date.now() - before.mtimeMs < settleMs) return 'deferred';
 
   let width = null;
@@ -884,7 +885,8 @@ async function importExternalFolder({
     let moved = 0;
     let missing = 0;
     let returned = 0;
-    // Rows whose returning file was left for the next pass: they stay marked.
+    // Rows whose returning file was not taken this pass (still landing, or
+    // not readable): they stay marked.
     const unsettledIds = new Set();
     if (walkComplete) {
       const unseen = (await servedRowsInScope(eventId, inScope)).filter((r) => !seenRelpaths.has(r.external_relpath));
@@ -945,9 +947,10 @@ async function importExternalFolder({
           if (outcome === 'refreshed') refreshed++;
           else if (outcome === 'deferred') deferred++;
           else skipped++;
-          // The file is back on the share: the photo is again in the gallery,
-          // once the file has settled (a copy still landing stays out).
-          if (outcome === 'deferred') unsettledIds.add(exists.id);
+          // The file is back on the share: the photo is again in the gallery
+          // once the row describes it, as recorded or refreshed. A copy still
+          // landing, or bytes that could not be read, keep it out.
+          if (outcome !== 'refreshed' && outcome !== 'unchanged') unsettledIds.add(exists.id);
           else if (exists.unavailable_reason === SOURCE_MISSING) {
             returned += await livePhotos(db).where({ id: exists.id, unavailable_reason: SOURCE_MISSING })
               .update({ unavailable_reason: null });

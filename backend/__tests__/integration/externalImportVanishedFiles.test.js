@@ -173,6 +173,21 @@ describe('external re-scan of files gone from the share', () => {
     expect((await db('photos').where({ id: a.id }).first()).unavailable_reason).toBeNull();
   });
 
+  it('keeps the photo out while its returning file cannot be read', async () => {
+    const eventId = await importTwo();
+    const a = await byName(eventId, 'a.jpg');
+    await rm('shoot/a.jpg');
+    await scan(eventId);
+    await fs.promises.writeFile(path.join(mediaRoot, 'shoot', 'a.jpg'), 'not a jpeg at all');
+
+    expect(await scan(eventId)).toMatchObject({ refreshed: 0, returned: 0 });
+    expect((await db('photos').where({ id: a.id }).first()).unavailable_reason).toBe('source_missing');
+
+    await writeJpeg('shoot/a.jpg', { r: 1, g: 2, b: 3 });
+    expect(await scan(eventId)).toMatchObject({ refreshed: 1, returned: 1 });
+    expect((await db('photos').where({ id: a.id }).first()).unavailable_reason).toBeNull();
+  });
+
   it('keeps a photo the admin hid hidden when its file comes back', async () => {
     const eventId = await importTwo();
     const a = await byName(eventId, 'a.jpg');
