@@ -33,7 +33,9 @@ const {
 // A process that dies stops renewing, and the gallery is free again once the
 // lease goes stale (maintenanceJobState.DEFAULT_STALE_MS); a fixed timeout
 // would have to outlast the slowest archive on the slowest storage instead.
-const archiveJobName = (eventId) => `event_archive:${eventId}`;
+// archiveJobName, isZipKey, isExpiryAttempt and importArchiveRecords live in
+// archiveRecords.js: the restore worker loads that one without this service.
+const { archiveJobName, isZipKey, isExpiryAttempt, importArchiveRecords } = require('./archiveRecords');
 // How often the post-publish cleanup re-checks the claim (see buildArchive).
 const CLEANUP_CLAIM_CHECK_MS = 5000;
 // events.archive_path is 255 characters; `events/archived/<slug>-<12 hex>.zip`
@@ -137,10 +139,6 @@ async function recordSupersededArchive(lease, key, conn = db) {
   }
 }
 
-// An archive zip as this service names them: a direct child of
-// events/archived. Records from a portable archive are checked against it,
-// as anyone holding the file can edit them.
-const isZipKey = (key) => typeof key === 'string' && /^events\/archived\/[^/\\]+\.zip$/.test(key);
 
 /**
  * Zips restores brought back for this gallery, not yet removed. Never one
@@ -184,12 +182,6 @@ async function legacyArchiveKeys(event) {
   return claimedElsewhere ? [] : [key];
 }
 
-const isExpiryAttempt = (attempt) => Boolean(attempt) && typeof attempt === 'object'
-  && Number.isSafeInteger(attempt.attempts) && attempt.attempts > 0
-  && typeof attempt.at === 'string' && attempt.at.length <= 64
-  // The expiry it was made for, epoch ms (null when unreadable, as NaN
-  // serialises).
-  && (attempt.expiresAt === null || Number.isFinite(attempt.expiresAt));
 
 /**
  * The claim rows' records, per gallery, for a portable export:
@@ -219,41 +211,6 @@ async function exportArchiveRecords(conn = db) {
   return records;
 }
 
-/**
- * Write the records of a portable import (exportArchiveRecords), inside the
- * import's transaction. The target's own records go first: the import
- * replaces every gallery, so they name zips of galleries that are gone, under
- * ids the imported galleries now hold, and an expiry retry recorded for one of
- * them would be run against the imported gallery. Records for a gallery the
- * import does not carry are dropped.
- */
-async function importArchiveRecords(trx, records) {
-  await trx('maintenance_jobs')
-    .where('job_name', 'like', `${archiveJobName('')}%`)
-    .whereNotNull('last_result')
-    .update({ last_result: null });
-  if (!records || typeof records !== 'object' || Array.isArray(records)) return 0;
-  let written = 0;
-  for (const [id, record] of Object.entries(records)) {
-    const eventId = Number(id);
-    if (!/^[1-9][0-9]*$/.test(id) || !Number.isSafeInteger(eventId)) continue;
-    if (!record || typeof record !== 'object' || Array.isArray(record)) continue;
-    const state = {};
-    const superseded = Array.isArray(record.superseded) ? [...new Set(record.superseded.filter(isZipKey))] : [];
-    if (superseded.length) state.superseded = superseded;
-    if (isExpiryAttempt(record.expiry)) {
-      state.expiry = { attempts: record.expiry.attempts, at: record.expiry.at, expiresAt: record.expiry.expiresAt };
-    }
-    if (!Object.keys(state).length) continue;
-    if (!(await trx('events').where('id', eventId).first('id'))) continue;
-    const jobName = archiveJobName(eventId);
-    const lastResult = JSON.stringify(state);
-    const updated = await trx('maintenance_jobs').where({ job_name: jobName }).update({ last_result: lastResult });
-    if (!updated) await trx('maintenance_jobs').insert({ job_name: jobName, is_running: false, last_result: lastResult });
-    written += 1;
-  }
-  return written;
-}
 
 // The expiry checker's attempt to archive a gallery it deactivated, kept on
 // the same claim row (state key `expiry`: { attempts, at, expiresAt }) so a
