@@ -145,6 +145,13 @@ async function lockEventPeople(eventId, trx) {
 }
 
 async function withEventLock(eventId, trx, fn) {
+  // The advisory lock before the in-process mutex, not inside it: a recluster
+  // holds it without the mutex (lockEventPeople) while it waits for a scan's
+  // rows, and a worker of this process waiting for it in PostgreSQL while
+  // holding the mutex would park that scan behind the mutex, a cycle
+  // PostgreSQL cannot see. Nothing reports it; all of them hang.
+  await lockEventPeople(eventId, trx);
+
   const previous = eventLocks.get(eventId) || Promise.resolve();
   let release;
   const current = new Promise((resolve) => { release = resolve; });
@@ -152,7 +159,6 @@ async function withEventLock(eventId, trx, fn) {
 
   await previous;
   try {
-    await lockEventPeople(eventId, trx);
     return await fn();
   } finally {
     release();

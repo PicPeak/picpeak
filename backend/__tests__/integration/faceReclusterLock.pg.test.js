@@ -206,7 +206,7 @@ const pgUrl = process.env.PICPEAK_PG_TEST_URL;
     expect(Number((await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first()).c)).toBe(2);
   }, 60000);
 
-  test('a re-scan that rebuilt its old people first never hangs a recluster', async () => {
+  test('a re-scan that rebuilt its old people first never hangs a recluster or another scan', async () => {
     const eventId = await seedEvent();
     await seedPeople(eventId);
     const [old] = await db('photo_faces').where({ event_id: eventId }).orderBy('id').limit(1);
@@ -226,6 +226,16 @@ const pgUrl = process.env.PICPEAK_PG_TEST_URL;
       // and neither side ever finished.
       pending.push(settled(results, 'recluster', clustering.recluster(eventId)));
       expect(await until(async () => (await behind(pid)) >= 1)).toBe(true);
+
+      // A second worker of this process scanning a new photo waits for the
+      // recluster's advisory lock. Had it taken the in-process mutex first,
+      // the re-scan below would park behind it in Node: a three-way cycle
+      // PostgreSQL cannot see.
+      pending.push(settled(results, 'other', db.transaction(async (trx) => {
+        const face = await insertFace(trx, eventId, makeEmbedding(82, 5));
+        await clustering.assignFaces(eventId, [face], { trx });
+      })));
+      expect(await until(async () => (await waitingOnEventLock(eventId)) >= 1)).toBe(true);
 
       pending.push(settled(results, 'scan', (async () => {
         const [photo] = await scan('photos').where({ id: old.photo_id }).select('id');
@@ -254,6 +264,7 @@ const pgUrl = process.env.PICPEAK_PG_TEST_URL;
     // cycle here, and breaks it: a recluster that loses runs once more, a scan
     // that loses rolls back and is retried by the queue.
     expect(results.recluster).toBe('ok');
+    expect(results.other).toBe('ok');
     if (results.scan !== 'ok') expect(results.scan).toMatchObject({ code: '40P01' });
     expect(await unassigned(eventId)).toBe(0);
   }, 60000);
