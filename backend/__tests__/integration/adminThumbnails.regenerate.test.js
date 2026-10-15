@@ -383,6 +383,27 @@ describe('admin thumbnail regeneration (#1129)', () => {
       expect(storage.delete).toHaveBeenCalledWith('previews/preview_IMG_1.jpg');
     });
 
+    it('keeps the old preview while another gallery stores it in another spelling', async () => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, { source_origin: 'managed', preview_path: 'previews/preview_IMG_1.jpg' });
+      const [other] = await db('events').insert({
+        slug: 'other', event_type: 'wedding', event_name: 'other', event_date: '2026-01-01',
+        host_email: 'h@example.com', admin_email: 'a@example.com', password_hash: 'x',
+        share_link: 'other-share', expires_at: new Date().toISOString(),
+      }).returning('id');
+      await seedPhoto(typeof other === 'object' ? other.id : other, {
+        source_origin: 'managed', preview_path: '.\\previews\\preview_IMG_1.jpg',
+      });
+      imageProcessor.ensurePreviewImage.mockResolvedValueOnce('previews/preview_p1_IMG_1.jpg');
+
+      await request(app).post('/admin/thumbnails/regenerate-previews').send({ eventId });
+      await drain();
+
+      // Both backends fold the two spellings to one object.
+      expect(imageProcessor.ensurePreviewImage).toHaveBeenCalledTimes(1);
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
     it('keeps the old preview when nothing was generated', async () => {
       const eventId = await seedEvent();
       await seedPhoto(eventId, { source_origin: 'managed', preview_path: 'previews/preview_old.jpg' });

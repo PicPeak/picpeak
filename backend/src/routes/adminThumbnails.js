@@ -393,10 +393,12 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
             // ensurePreviewImage returns a path only once the row records it,
             // so the old key is no longer this row's. Another row may still
             // point at it (managed names derive from the source basename);
-            // that file stays.
+            // that file stays, in whichever spelling that row stores it.
             const moved = photo.preview_path && !sameStorageKey(photo.preview_path, newPreviewPath);
-            const stillShared = moved
-              && await db('photos').where('preview_path', photo.preview_path).whereNot('id', photo.id).first('id');
+            const baseName = moved && String(photo.preview_path).replace(/\\/g, '/').split('/').pop();
+            const stillShared = moved && (await db('photos').whereNot('id', photo.id)
+              .where('preview_path', 'like', `%${baseName}`).select('preview_path'))
+              .some((other) => sameStorageKey(other.preview_path, photo.preview_path));
             if (moved && !stillShared) {
               await getStorage().delete(photo.preview_path).catch((err) => {
                 logger.warn(
