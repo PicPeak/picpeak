@@ -480,6 +480,27 @@ describe('renderWebCopy', () => {
     expect(command.outputOptions).toHaveBeenCalledWith(service.remuxOptions({ videoIndex: 0, audioIndex: 2 }));
   });
 
+  it('transcodes instead of stream-copying when the file was replaced by one a browser cannot play', async () => {
+    dbModule.__state.photo = { id: 30, event_id: 9, filename: 'swap.mp4', media_type: 'video' };
+    const format = { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'isom' } };
+    const before = { streams: [{ index: 0, codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p' }], format };
+    const after = { streams: [{ index: 0, codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p' }, { index: 1, codec_type: 'audio', codec_name: 'aac' }], format };
+    let calls = 0;
+    ffmpeg.ffprobe = jest.fn((_p, cb) => cb(null, calls++ === 0 ? before : after));
+    const atoms = await writeAtoms(box('ftyp', 16), box('moov', 40), box('mdat', 100));
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+    const command = {
+      outputOptions: jest.fn(function () { return this; }),
+      on: jest.fn(function (event, handler) { if (event === 'end') this._end = handler; return this; }),
+      save: jest.fn(function (out) { fs.writeFileSync(out, 'h264-bytes'); setImmediate(() => this._end()); }),
+      kill: jest.fn(),
+    };
+    ffmpeg.mockImplementation(() => command);
+
+    expect(await service.renderWebCopy(30)).toBe('complete');
+    expect(command.outputOptions).toHaveBeenCalledWith(service.transcodeOptions({ toneMap: false, videoIndex: 0, audioIndex: 1 }));
+  });
+
   it('drops the copy and leaves the row alone when the claim was lost during the transcode', async () => {
     // A replacement re-queued the new file (or the row is gone) while ffmpeg
     // ran: the fenced UPDATE matches nothing, the old source's copy must not

@@ -245,13 +245,17 @@ function playedStreamIndexes(metadata) {
 }
 
 async function probe(localPath) {
-  const metadata = await mediaProcesses.probeVideo(localPath);
-  const streams = metadata.streams || [];
+  return describeProbe(await mediaProcesses.probeVideo(localPath));
+}
+
+/** ffprobe's answer, reduced to what the decisions below read. */
+function describeProbe(metadata) {
+  const streams = metadata?.streams || [];
   const video = playedStream(streams, 'video');
   const audio = playedStream(streams, 'audio');
   return {
-    formatName: metadata.format?.format_name || '',
-    majorBrand: String(metadata.format?.tags?.major_brand || '').trim().toLowerCase(),
+    formatName: metadata?.format?.format_name || '',
+    majorBrand: String(metadata?.format?.tags?.major_brand || '').trim().toLowerCase(),
     videoCodec: video?.codec_name || null,
     audioCodec: audio?.codec_name || null,
     pixFmt: video?.pix_fmt || null,
@@ -261,7 +265,7 @@ async function probe(localPath) {
     // (arib-std-b67). The primaries (bt2020) alone do not make a video HDR.
     colorTransfer: video?.color_transfer || null,
     colorPrimaries: video?.color_primaries || null,
-    duration: Number(metadata.format?.duration) || null,
+    duration: Number(metadata?.format?.duration) || null,
   };
 }
 
@@ -387,9 +391,23 @@ function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, r
     const metadata = await mediaProcesses.probeSnapshot(snapshot, details);
     const budget = renditionBudget(Number.isFinite(duration) ? duration : Number(metadata.format?.duration), policy);
     const streams = playedStreamIndexes(metadata);
+    // The decision was made on an earlier read of the file. A NAS file
+    // replaced since by one a browser cannot play must not be stream-copied
+    // into a "copy" that plays black: it is transcoded instead (the faststart
+    // of the snapshot does not matter, the remux writes its own).
+    let copy = remux;
+    let mapTones = toneMap;
+    if (remux) {
+      const now = describeProbe(metadata);
+      if (!playsInBrowser(now, true)) {
+        copy = false;
+        mapTones = isHdr(now) && await canToneMap();
+        logger.warn(`videoRendition: ${localPath} changed before its remux and no longer plays as it is; transcoding it instead`);
+      }
+    }
     await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
       ...mediaProcesses.inputOptions(details.format, policy.threads), '-i', snapshot,
-      ...(remux ? remuxOptions(streams) : transcodeOptions({ toneMap, ...streams })), '-threads', String(policy.threads), '-filter_threads', String(policy.threads), outPath], {
+      ...(copy ? remuxOptions(streams) : transcodeOptions({ toneMap: mapTones, ...streams })), '-threads', String(policy.threads), '-filter_threads', String(policy.threads), outPath], {
       // Its own lane, so posters and probes never wait behind a transcode.
       lane: 'long', memoryBytes: policy.transcodeBytes, wallMs: timeoutMs || budget.wallMs, cpuSeconds: budget.cpuSeconds,
       fileBytes: policy.outputBytes || 1024 * 1024 * 1024 * 1024,
