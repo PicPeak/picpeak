@@ -44,6 +44,8 @@ const { withPublicUpload } = require('../../middleware/publicUploadStream');
 const { createUploadFileGuard } = require('../../utils/uploadAdmissionType');
 const uploadQuota = require('../../services/publicUploadQuota');
 const { getStorage } = require('../../services/storage');
+const { validateFileContent, normalizeUploadMimeType } = require('../../utils/fileSecurityUtils');
+const { validateUploadedFiles } = require('../../middleware/uploadValidation');
 const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
 const { PhotoExportService } = require('../../services/photoExportService');
@@ -423,6 +425,20 @@ async function handleV1PhotoUpload(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded under field "photo"' });
     tempPath = req.file.path;
+
+    // The same content check the admin multipart upload applies: the bytes
+    // must match the declared type, and an image must decode. The declared
+    // image/* type says nothing about the file.
+    if (!(await validateFileContent(tempPath, normalizeUploadMimeType(req.file.originalname, req.file.mimetype)))) {
+      await fs.unlink(tempPath).catch(() => {});
+      return res.status(400).json({ error: `File content does not match declared type: ${req.file.originalname}` });
+    }
+    const checked = { files: [{ originalname: req.file.originalname, path: tempPath }] };
+    await validateUploadedFiles(checked, res, () => {});
+    if (checked.files.length === 0) {
+      await fs.unlink(tempPath).catch(() => {});
+      return res.status(400).json({ error: `Invalid image file: ${req.file.originalname}` });
+    }
 
     const event = await db('events').where({ id: req.params.id }).first();
     if (!event) {

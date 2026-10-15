@@ -1,5 +1,5 @@
 /**
- * Guest and chunked uploads apply the same content check as the multipart
+ * Guest, chunked and API v1 uploads apply the same content check as the multipart
  * admin upload: bytes must match the declared type and an image must decode.
  */
 
@@ -19,7 +19,7 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 jest.mock('../../src/services/downloadZipService', () => ({ invalidate: jest.fn() }));
 
 describe('Upload content validation on guest and chunked uploads', () => {
-  let db; let cleanup; let app; let adminToken; let jpeg;
+  let db; let cleanup; let app; let adminToken; let apiToken; let jpeg;
   let counter = 0;
   const idOf = (rows) => rows[0]?.id ?? rows[0];
 
@@ -47,6 +47,10 @@ describe('Upload content validation on guest and chunked uploads', () => {
     adminToken = jwt.sign({ id: adminId, username: 'tester', type: 'admin', loginTime: Date.now() },
       process.env.JWT_SECRET, { expiresIn: '1h', issuer: 'picpeak-auth' });
 
+    const issued = require('../../src/middleware/apiTokenAuth').generateApiToken();
+    await db('api_tokens').insert({ name: 'Content', hashed_token: issued.hashed, scopes: 'write', created_by: adminId });
+    apiToken = issued.plaintext;
+
     const image = (r) => sharp({ create: { width: 32, height: 24, channels: 3, background: { r, g: 120, b: 200 } } }).jpeg().toBuffer();
     jpeg = await image(10);
 
@@ -54,6 +58,7 @@ describe('Upload content validation on guest and chunked uploads', () => {
     app.use(express.json());
     app.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
     app.use('/api/gallery', require('../../src/routes/gallery'));
+    app.use('/api/v1', require('../../src/routes/v1/events'));
   }, 120000);
 
   afterAll(async () => {
@@ -133,6 +138,45 @@ describe('Upload content validation on guest and chunked uploads', () => {
       const event = await makeEvent();
       const res = await chunked(event, jpeg);
       expect(res.status).toBe(200);
+      expect(await photosOf(event)).toHaveLength(1);
+    });
+  });
+
+  describe('API v1 upload', () => {
+    const v1Upload = (event, bytes, filename = 'api.jpg') => request(app)
+      .post(`/api/v1/events/${event.id}/photos`).set('Authorization', `Bearer ${apiToken}`)
+      .attach('photo', bytes, { filename, contentType: 'image/jpeg' });
+    const filesUnder = (dir) => {
+      if (!fs.existsSync(dir)) return [];
+      return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (
+        e.isDirectory() ? filesUnder(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+    };
+    const storedFiles = () => filesUnder(require('../../src/config/storage').getStoragePath()).sort();
+
+    it('refuses text named .jpg: no row, no leftover file', async () => {
+      const event = await makeEvent();
+      const before = storedFiles();
+      const res = await v1Upload(event, Buffer.from('127.0.0.1 localhost\n'), 'evil.jpg');
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/does not match declared type/);
+      expect(await photosOf(event)).toHaveLength(0);
+      expect(storedFiles()).toEqual(before);
+    });
+
+    it('refuses a JPEG signature with no decodable image', async () => {
+      const event = await makeEvent();
+      const before = storedFiles();
+      const bytes = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), crypto.randomBytes(2000)]);
+      const res = await v1Upload(event, bytes, 'broken.jpg');
+      expect(res.status).toBe(400);
+      expect(await photosOf(event)).toHaveLength(0);
+      expect(storedFiles()).toEqual(before);
+    });
+
+    it('still accepts a valid JPEG', async () => {
+      const event = await makeEvent();
+      const res = await v1Upload(event, jpeg);
+      expect(res.status).toBe(201);
       expect(await photosOf(event)).toHaveLength(1);
     });
   });
