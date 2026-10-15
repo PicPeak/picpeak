@@ -10,8 +10,15 @@ import i18n from 'i18next';
 // now, shared by every button that downloads them (tile, carousel,
 // lightbox), so each can show it is busy and ignore the repeated tap.
 // Keyed by photo id: ids are unique across galleries.
-const pending = new Set<number>();
+//
+// A request that never settles (the API client has no timeout; a phone that
+// changed networks) must not lock the photo until a reload, so a mark lets
+// go on its own after STALE_MS. Each mark carries a token, so a late settle
+// of a download whose mark already expired cannot clear a newer one.
+const STALE_MS = 60_000;
+const pending = new Map<number, { token: number; timer: ReturnType<typeof setTimeout> }>();
 const listeners = new Set<() => void>();
+let lastToken = 0;
 
 function notify() {
   listeners.forEach((listener) => listener());
@@ -26,17 +33,23 @@ function subscribe(listener: () => void) {
 
 export const isPhotoDownloadPending = (photoId: number): boolean => pending.has(photoId);
 
-/** Marks the download as started; false when it already is. */
-export function beginPhotoDownload(photoId: number): boolean {
-  if (pending.has(photoId)) return false;
-  pending.add(photoId);
+/** Marks the download as started: its token, or null when it already is. */
+export function beginPhotoDownload(photoId: number): number | null {
+  if (pending.has(photoId)) return null;
+  const token = ++lastToken;
+  const timer = setTimeout(() => endPhotoDownload(photoId, token), STALE_MS);
+  pending.set(photoId, { token, timer });
   notify();
-  return true;
+  return token;
 }
 
-/** The download was handed to the browser, or failed. */
-export function endPhotoDownload(photoId: number): void {
-  if (pending.delete(photoId)) notify();
+/** The download was handed to the browser, or failed (or its mark went stale). */
+export function endPhotoDownload(photoId: number, token?: number): void {
+  const mark = pending.get(photoId);
+  if (!mark || (token !== undefined && mark.token !== token)) return;
+  clearTimeout(mark.timer);
+  pending.delete(photoId);
+  notify();
 }
 
 export function usePhotoDownloadPending(photoId: number | null | undefined): boolean {

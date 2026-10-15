@@ -58,16 +58,18 @@ type PhotoDownload = { slug: string; photoId: number; filename: string };
 // caught too) and answers false, starting nothing, while it already is.
 const useSinglePhotoDownload = (
   download: (vars: PhotoDownload) => Promise<void>,
-  options: Omit<UseMutationOptions<void, Error, PhotoDownload>, 'mutationFn'>,
+  options: Omit<UseMutationOptions<void, Error, PhotoDownload & { token: number }>, 'mutationFn'>,
 ) => {
   const mutation = useMutation({
     ...options,
-    mutationFn: (vars: PhotoDownload) => download(vars).finally(() => endPhotoDownload(vars.photoId)),
+    mutationFn: ({ token, ...vars }: PhotoDownload & { token: number }) =>
+      download(vars).finally(() => endPhotoDownload(vars.photoId, token)),
   });
   const { mutate } = mutation;
   const startDownload = useCallback((vars: PhotoDownload): boolean => {
-    if (!beginPhotoDownload(vars.photoId)) return false;
-    mutate(vars);
+    const token = beginPhotoDownload(vars.photoId);
+    if (token === null) return false;
+    mutate({ ...vars, token });
     return true;
   }, [mutate]);
   return { ...mutation, mutate: startDownload };
