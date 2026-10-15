@@ -885,9 +885,6 @@ async function importExternalFolder({
     let moved = 0;
     let missing = 0;
     let returned = 0;
-    // Rows whose returning file was not taken this pass (still landing, or
-    // not readable): they stay marked.
-    const unsettledIds = new Set();
     if (walkComplete) {
       const unseen = (await servedRowsInScope(eventId, inScope)).filter((r) => !seenRelpaths.has(r.external_relpath));
       if (unseen.length) {
@@ -950,8 +947,7 @@ async function importExternalFolder({
           // The file is back on the share: the photo is again in the gallery
           // once the row describes it, as recorded or refreshed. A copy still
           // landing, or bytes that could not be read, keep it out.
-          if (outcome !== 'refreshed' && outcome !== 'unchanged') unsettledIds.add(exists.id);
-          else if (exists.unavailable_reason === SOURCE_MISSING) {
+          if ((outcome === 'refreshed' || outcome === 'unchanged') && exists.unavailable_reason === SOURCE_MISSING) {
             returned += await livePhotos(db).where({ id: exists.id, unavailable_reason: SOURCE_MISSING })
               .update({ unavailable_reason: null });
           }
@@ -1196,12 +1192,13 @@ async function importExternalFolder({
       const stillThere = await fs.readdir(baseAbs).then((entries) => entries.length > 0).catch(() => false);
       for (const row of stillThere ? await servedRowsInScope(eventId, inScope) : []) {
         if (lost) break;
-        let state = 'present';
-        if (!seenRelpaths.has(row.external_relpath)) {
-          filesSinceAuthorized += 1;
-          await reauthorizeIfDue();
-          state = await sourcePresence(access, fullOf(row.external_relpath));
-        }
+        // A file the walk listed is the loop's to restore: only after its
+        // refresh (or a check that it is the version recorded) succeeded.
+        if (seenRelpaths.has(row.external_relpath)) continue;
+        filesSinceAuthorized += 1;
+        await reauthorizeIfDue();
+        const full = fullOf(row.external_relpath);
+        const state = await sourcePresence(access, full);
         if (state === 'missing' && row.unavailable_reason == null) {
           // Fenced on the path and origin read: a row moved or replaced
           // since is not this file's.
@@ -1210,9 +1207,16 @@ async function importExternalFolder({
             .whereIn('source_origin', SERVED_ORIGINS)
             .whereNull('unavailable_reason')
             .update({ unavailable_reason: SOURCE_MISSING });
-        } else if (state === 'present' && row.unavailable_reason === SOURCE_MISSING && !unsettledIds.has(row.id)) {
-          returned += await livePhotos(db).where({ id: row.id, unavailable_reason: SOURCE_MISSING })
-            .update({ unavailable_reason: null });
+        } else if (state === 'present' && row.unavailable_reason === SOURCE_MISSING) {
+          // Back at its path, outside what the walk lists (a type no longer
+          // imported): restored only as the very version the row recorded.
+          const st = await fs.stat(full).catch(() => null);
+          const recorded = st && row.size_bytes != null && row.source_mtime_ms != null
+            && Number(row.size_bytes) === st.size && Number(row.source_mtime_ms) === Math.floor(st.mtimeMs);
+          if (recorded) {
+            returned += await livePhotos(db).where({ id: row.id, unavailable_reason: SOURCE_MISSING })
+              .update({ unavailable_reason: null });
+          }
         }
       }
       if (missing) logger.info(`External import for event ${eventId}: ${missing} photo(s) whose file is gone from the share left the gallery`);

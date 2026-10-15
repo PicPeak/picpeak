@@ -188,6 +188,29 @@ describe('external re-scan of files gone from the share', () => {
     expect((await db('photos').where({ id: a.id }).first()).unavailable_reason).toBeNull();
   });
 
+  it('keeps the photo out when refreshing its returning file fails', async () => {
+    const eventId = await importTwo();
+    const a = await byName(eventId, 'a.jpg');
+    await rm('shoot/a.jpg');
+    await scan(eventId);
+    const full = await writeJpeg('shoot/a.jpg', { r: 9, g: 9, b: 9 });
+
+    // The walk's stat answers, the refresh's does not (a NAS hiccup).
+    const realStat = fs.promises.stat;
+    let calls = 0;
+    const stat = jest.spyOn(fs.promises, 'stat').mockImplementation(async (p, ...rest) => {
+      if (p === full && ++calls === 2) throw Object.assign(new Error('I/O error'), { code: 'EIO' });
+      return realStat.call(fs.promises, p, ...rest);
+    });
+    try {
+      expect(await scan(eventId)).toMatchObject({ refreshed: 0, returned: 0 });
+    } finally {
+      stat.mockRestore();
+    }
+    expect(calls).toBeGreaterThanOrEqual(2);
+    expect((await db('photos').where({ id: a.id }).first()).unavailable_reason).toBe('source_missing');
+  });
+
   it('keeps a photo the admin hid hidden when its file comes back', async () => {
     const eventId = await importTwo();
     const a = await byName(eventId, 'a.jpg');
@@ -242,6 +265,18 @@ describe('external re-scan of files gone from the share', () => {
     });
 
     expect(await scan(eventId)).toMatchObject({ missing: 0 });
+    expect((await byName(eventId, 'notes.xyz')).unavailable_reason).toBeNull();
+
+    // Gone, it is marked; back as the version recorded, it is restored.
+    const full = path.join(mediaRoot, 'shoot', 'notes.xyz');
+    const st = await fs.promises.stat(full);
+    await db('photos').where({ event_id: eventId, filename: 'notes.xyz' })
+      .update({ size_bytes: st.size, source_mtime_ms: Math.floor(st.mtimeMs) });
+    const aside = path.join(tmpDir, 'notes-aside.xyz');
+    await fs.promises.rename(full, aside);
+    expect(await scan(eventId)).toMatchObject({ missing: 1 });
+    await fs.promises.rename(aside, full);
+    expect(await scan(eventId)).toMatchObject({ returned: 1 });
     expect((await byName(eventId, 'notes.xyz')).unavailable_reason).toBeNull();
   });
 
