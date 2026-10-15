@@ -490,7 +490,10 @@ async function handleV1PhotoUpload(req, res) {
       await fs.unlink(tempPath).catch(() => {});
       return res.status(400).json({ error: `File content does not match declared type: ${req.file.originalname}` });
     }
-    const checked = { files: [{ originalname: req.file.originalname, path: tempPath }] };
+    const checked = {
+      files: [{ originalname: req.file.originalname, path: tempPath, mimetype: declaredType }],
+      publicUploadReservation: req.publicUploadReservation,
+    };
     await validateUploadedFiles(checked, res, () => {});
     if (checked.files.length === 0) {
       await fs.unlink(tempPath).catch(() => {});
