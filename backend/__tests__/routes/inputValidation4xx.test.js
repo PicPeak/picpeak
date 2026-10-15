@@ -343,6 +343,8 @@ describe('input validation (issues 2078, 2086)', () => {
       await db('photos').insert({ event_id: eventId, filename: 'pair-full.jpg', path: `${SLUG}/pair-full.jpg`, uploaded_at: new Date().toISOString(), ...shot, first_look: false });
       await db('email_queue').where({ event_id: eventId }).del();
       await db('events').where({ id: eventId }).update({ delivery_status: 'partial' });
+      const state = await asAdmin(request(app).get(`/api/admin/events/${eventId}/delivery`));
+      expect(state.body).toMatchObject({ delivered_count: 2, duplicate_count: 1, delivered_duplicate_count: 0 });
       const res = await asAdmin(request(app).post(`/api/admin/events/${eventId}/delivery/complete`)).send({});
       expect(res.status).toBe(200);
       const row = await db('email_queue').where({ event_id: eventId, email_type: 'gallery_completed' }).first();
