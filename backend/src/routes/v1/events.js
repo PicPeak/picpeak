@@ -63,6 +63,7 @@ const feedbackService = require('../../services/feedbackService');
 const archiver = require('archiver');
 const { Readable } = require('stream');
 const { getStorage } = require('../../services/storage');
+const { isStorageNotFoundError } = require('../../services/storage/storageErrors');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
 const { pickRawDownloadName } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, sanitizeForZipEntry } = require('../../utils/filenameSanitizer');
@@ -2065,7 +2066,16 @@ router.get(
       const stat = await getStorage().stat(previewPath);
       if (!stat) return unavailable();
 
-      const stream = await getStorage().get(previewPath);
+      let stream;
+      try {
+        stream = await getStorage().get(previewPath);
+      } catch (error) {
+        // Removed since the stat (issue 2129), which S3's get() reports by
+        // rejecting: the failed stat's answer, not a 500. The local stream
+        // opens lazily and is answered by pipeStreamToResponse.
+        if (isStorageNotFoundError(error)) return unavailable();
+        throw error;
+      }
       // Left while the read was opening: pipeStreamToResponse's cleanup would
       // never run for this stream.
       if (res.destroyed) {
