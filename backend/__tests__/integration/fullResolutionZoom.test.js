@@ -260,8 +260,14 @@ describe('Full-resolution zoom (issue 1733)', () => {
     // The client downloads it; the original is then theirs, zoom stays off.
     await request(app).get(`/api/gallery/${event.slug}/download/${photoId}`)
       .set('Authorization', `Bearer ${client}`).expect(200);
-    const grants = await db('event_download_grants').where({ event_id: event.id });
-    expect(grants).toHaveLength(1);
+    // Delivered, not just reserved: the grant settles when the response closes.
+    let grants = [];
+    for (let i = 0; i < 200; i += 1) {
+      grants = await db('event_download_grants').where({ event_id: event.id });
+      if (grants.length === 1 && Number(grants[0].pending_holders) === 0) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(Array.from(grants, (row) => Number(row.pending_holders))).toEqual([0]);
     await refused(await zoom(event, photoId, client));
     expect(await db('event_download_grants').where({ event_id: event.id })).toHaveLength(1);
   });

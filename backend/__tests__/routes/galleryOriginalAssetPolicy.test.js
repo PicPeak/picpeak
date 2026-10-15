@@ -327,21 +327,28 @@ describe('gallery original-asset authority', () => {
     const client = { Authorization: `Bearer ${token({ accessLevel: 'client' })}` };
     const grants = () => db('event_download_grants').where({ event_id: eventId, photo_id: videoId });
     const videoKey = `events/active/${SLUG}/individual/source.mp4`;
+    // The slot is reserved before storage is read: record it there, so the
+    // wait below is for a release that has something to release.
+    let heldAtFailure;
     const fail = (method) => {
       const real = storage[method].bind(storage);
-      return jest.spyOn(storage, method).mockImplementation((key, ...rest) => (key === videoKey
-        ? Promise.reject(new Error('storage unreachable'))
-        : real(key, ...rest)));
+      return jest.spyOn(storage, method).mockImplementation(async (key, ...rest) => {
+        if (key !== videoKey) return real(key, ...rest);
+        heldAtFailure = Array.from(await grants(), (row) => Number(row.pending_holders));
+        throw new Error('storage unreachable');
+      });
     };
     try {
       for (const [method, headers] of [['get', client], ['getRange', { ...client, Range: 'bytes=0-5' }]]) {
         const spy = fail(method);
+        heldAtFailure = null;
         try {
           const res = await get('photo', videoId, headers);
           expect(res.status).toBeGreaterThanOrEqual(500);
         } finally {
           spy.mockRestore();
         }
+        expect(heldAtFailure).toEqual([1]);
         // The reservation settles on close: once it has, nothing may remain.
         await grantsSettled();
         expect(await grants()).toHaveLength(0);

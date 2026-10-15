@@ -114,6 +114,16 @@ describe('Download limit (issue 1560)', () => {
     const row = await db('event_download_grants').where({ event_id: eventId }).count('id as count').first();
     return Number(row.count);
   };
+  // A reserved grant is delivered or given back on the response's 'close',
+  // which can come after supertest resolved: count only once none is pending.
+  const settledGrantCount = async (eventId) => {
+    for (let i = 0; i < 200; i += 1) {
+      const pending = await db('event_download_grants').where({ event_id: eventId }).where('pending_holders', '>', 0).first();
+      if (!pending) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    return grantCount(eventId);
+  };
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
@@ -182,7 +192,7 @@ describe('Download limit (issue 1560)', () => {
         .get(`/api/gallery/${event.slug}/download/${photoIds[0]}`)
         .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(404);
-      expect(await grantCount(event.id)).toBe(0);
+      expect(await settledGrantCount(event.id)).toBe(0);
       // The slot is still there for a photo that exists.
       await request(app)
         .get(`/api/gallery/${event.slug}/download/${photoIds[1]}`)
