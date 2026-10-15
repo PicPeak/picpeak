@@ -129,6 +129,43 @@ test('a photo in the trash is refused and costs nothing', async () => {
   expect(await unitsSpent()).toEqual([1]);
 });
 
+// The gallery list leaves out a photo the worker has not finished or failed
+// on (wherePhotoProcessed); by id the feedback routes must not reach it either.
+describe('a photo still processing or failed', () => {
+  let unfinished;
+  beforeAll(async () => {
+    unfinished = [
+      await insertPhoto(eventId, 'processing.jpg', { processing_status: 'processing' }),
+      await insertPhoto(eventId, 'failed.jpg', { processing_status: 'failed' }),
+    ];
+  });
+
+  test('is refused by the bulk route and costs nothing', async () => {
+    const res = await bulk(request.agent(app), { photo_ids: [photoIds[0], ...unfinished], rating: 5 }).expect(200);
+    expect(res.body.results).toEqual([
+      expect.objectContaining({ photo_id: photoIds[0], success: true }),
+      ...unfinished.map(id => ({ photo_id: id, success: false, error: 'Photo not found' })),
+    ]);
+    expect(await ratings()).toEqual({ [photoIds[0]]: 5 });
+    expect(await unitsSpent()).toEqual([1]);
+  });
+
+  test('is a 404 on the single routes, as a hidden photo is', async () => {
+    const client = request.agent(app);
+    for (const id of unfinished) {
+      await single(client, id, 4).expect(404);
+      await client.post(`/api/gallery/${SLUG}/photos/${id}/feedback`).set('Authorization', `Bearer ${token}`)
+        .send({ feedback_type: 'like' }).expect(404);
+      await client.get(`/api/gallery/${SLUG}/photos/${id}/feedback`).set('Authorization', `Bearer ${token}`).expect(404);
+    }
+    const { n } = await db('photo_feedback').whereIn('photo_id', unfinished).count('id as n').first();
+    expect(Number(n)).toBe(0);
+    // A finished photo still takes the same requests.
+    await single(client, photoIds[1], 4).expect(200);
+    await client.get(`/api/gallery/${SLUG}/photos/${photoIds[1]}/feedback`).set('Authorization', `Bearer ${token}`).expect(200);
+  });
+});
+
 test('a repeated id is rated and charged once', async () => {
   const res = await bulk(request.agent(app), { photo_ids: [photoIds[0], photoIds[0]], rating: 3 }).expect(200);
   expect(res.body.results).toHaveLength(1);
