@@ -24,7 +24,7 @@
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
-const { isEnabled, renderWebCopy } = require('./videoRenditionService');
+const { isEnabled, renderWebCopy, queueSkippedForRemux } = require('./videoRenditionService');
 const mediaAttempts = require('./mediaAttemptService');
 const { isTransient } = require('./imageResourcePolicy');
 
@@ -149,6 +149,12 @@ function start() {
   janitorHandle = janitorLoop().catch((e) =>
     logger.error('videoRenditionQueue: janitor crashed', { error: e.message, stack: e.stack })
   );
+  // An upgraded install's videos skipped before metadata stripping existed
+  // (issue 2102) get their remux. Once per start: a no-op when nothing is
+  // skipped or either setting is off.
+  Promise.resolve().then(() => queueSkippedForRemux()).then((queued) => {
+    if (queued > 0) logger.info(`videoRenditionQueue: queued ${queued} skipped video(s) for a metadata-free copy`);
+  }).catch((e) => logger.warn('videoRenditionQueue: could not queue skipped videos', { error: e.message }));
 
   logger.info(
     `videoRenditionQueue: started ${CONCURRENCY} worker(s), poll=${POLL_INTERVAL_MS}ms, stuck=${STUCK_TIMEOUT_MS}ms ` +

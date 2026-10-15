@@ -22,7 +22,7 @@ const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
 const { safePathJoin } = require('../../utils/fileSecurityUtils');
 const {
-  originalAssetDenial, grantDenial, isPresentationRenditionKey, fullResolutionDenial,
+  originalAssetDenial, grantDenial, isPresentationRenditionKey, isRemuxWebKey, fullResolutionDenial,
 } = require('../../services/galleryAssetPolicy');
 const {
   currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
@@ -298,8 +298,10 @@ router.get('/:slug/photo/:photoId',
           }
         }
         // The quota counts original bytes. The web copy is a presentation
-        // rendition and plays free for the client and the guest alike.
-        if (!servesWebCopy && !(await admitVideoStream(req, res, photo))) return;
+        // rendition and plays free for the client and the guest alike. A
+        // remux (issue 2102) is the original's picture without its metadata:
+        // it counts like the original it stands in for.
+        if ((!servesWebCopy || isRemuxWebKey(videoKey)) && !(await admitVideoStream(req, res, photo))) return;
         // Playback, not a download, for a viewer who may not take the
         // original: never an attachment or a filename.
         const disposition = originalDenial ? { 'Content-Disposition': 'inline' } : {};
@@ -491,7 +493,7 @@ async function loadStreamedVideo(req, res) {
  * Download limit (issue 1560) for a stream. The ladder stands in for what
  * the photo route would play: free where that is the web copy (this video's
  * own key in its namespace, and in storage, not the row's word for it), one slot
- * where it is the original. Fetching the master playlist is the playback, so
+ * where it is the original or its remux (issue 2102). Fetching the master playlist is the playback, so
  * that is what takes the slot, once per video and for the client only, as
  * admitVideoStream does for the file. Unlike a file the grant is delivered
  * at once: the playlist is a few hundred bytes, and the rung requests right
@@ -503,6 +505,7 @@ async function loadStreamedVideo(req, res) {
 async function admitStream(req, res, photo, { playback }) {
   if (req.isAdminPreview || !(await currentDownloadLimit(req.event))) return true;
   if (photo.web_path && photo.web_status === 'complete' && isPresentationRenditionKey(photo.web_path, 'web')
+      && !isRemuxWebKey(photo.web_path)
       && photo.web_path.startsWith(`videos/web_${photo.id}_`) && photo.web_path.endsWith('.mp4')
       && await getStorage().stat(photo.web_path).catch(() => null)) return true;
   const photoId = Number(photo.id);

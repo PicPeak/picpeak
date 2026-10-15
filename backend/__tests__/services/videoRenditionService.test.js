@@ -28,7 +28,7 @@ jest.mock('../../src/services/mediaAttemptService', () => ({
 }));
 
 jest.mock('../../src/database/db', () => {
-  const state = { photo: null, event: null, setting: null, updates: [], updateResult: null };
+  const state = { photo: null, event: null, setting: null, stripSetting: null, updates: [], updateResult: null };
   let pendingWhere = null;
   function query(table) {
     return {
@@ -40,7 +40,9 @@ jest.mock('../../src/database/db', () => {
       async first() {
         if (table === 'photos') return state.photo;
         if (table === 'events') return state.event;
-        if (table === 'app_settings') return state.setting;
+        if (table === 'app_settings') {
+          return pendingWhere?.setting_key === 'general_video_strip_metadata' ? state.stripSetting : state.setting;
+        }
         return null;
       },
       async update(data) { state.updates.push({ table, where: pendingWhere, data }); return table === 'photos' && state.updateResult != null ? state.updateResult : 1; },
@@ -151,6 +153,31 @@ describe('transcodeOptions', () => {
   });
 });
 
+describe('remuxOptions', () => {
+  it('copies the first video and optional audio stream into a faststart MP4 without metadata or chapters', () => {
+    expect(service.remuxOptions()).toEqual([
+      '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy',
+      '-map_metadata', '-1', '-map_chapters', '-1',
+      '-movflags', '+faststart', '-f', 'mp4',
+    ]);
+  });
+});
+
+describe('isStripEnabled', () => {
+  beforeEach(() => service.clearCache());
+  afterAll(() => { dbModule.__state.stripSetting = null; service.clearCache(); });
+
+  it('is on when no row exists, and off only for a stored false', async () => {
+    dbModule.__state.stripSetting = null;
+    expect(await service.isStripEnabled()).toBe(true);
+    for (const [stored, expected] of [['false', false], [false, false], ['"false"', false], [0, false], ['true', true], [true, true]]) {
+      service.clearCache();
+      dbModule.__state.stripSetting = { setting_value: stored };
+      expect(await service.isStripEnabled()).toBe(expected);
+    }
+  });
+});
+
 describe('isEnabled', () => {
   beforeEach(() => service.clearCache());
 
@@ -181,6 +208,15 @@ describe('webKeyFor', () => {
     expect(wide.endsWith('.mp4')).toBe(true);
     // Never a half character.
     expect(wide).toBe(Buffer.from(wide, 'utf8').toString('utf8'));
+  });
+
+  it('marks a remux, and the gallery tells it from a transcode by that marker', () => {
+    const { isRemuxWebKey } = require('../../src/services/galleryAssetPolicy');
+    const remux = service.webKeyFor({ id: 7, filename: 'clip.mp4' }, '11111111-1111-4111-8111-111111111111', { remux: true });
+    expect(remux).toBe('videos/web_7_remux_11111111-1111-4111-8111-111111111111_clip.mp4');
+    expect(isRemuxWebKey(remux)).toBe(true);
+    expect(isRemuxWebKey(service.webKeyFor({ id: 7, filename: 'remux_clip.mp4' }, '11111111-1111-4111-8111-111111111111'))).toBe(false);
+    expect(isRemuxWebKey(null)).toBe(false);
   });
 });
 
@@ -226,7 +262,11 @@ describe('renderWebCopy', () => {
     ffmpeg.mockReset();
   });
 
-  it('skips a video that already plays, dropping a stale copy', async () => {
+  afterEach(() => { dbModule.__state.stripSetting = null; service.clearCache(); });
+
+  it('skips a video that already plays when metadata stripping is off, dropping a stale copy', async () => {
+    dbModule.__state.stripSetting = { setting_value: 'false' };
+    service.clearCache();
     dbModule.__state.photo = { id: 21, event_id: 9, filename: 'clip.mp4', media_type: 'video', web_path: 'videos/web_21_old.mp4' };
     mockProbe(
       [{ codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p', width: 1920, height: 1080 }, { codec_type: 'audio', codec_name: 'aac' }],
@@ -240,6 +280,35 @@ describe('renderWebCopy', () => {
     expect(update.data).toMatchObject({ web_path: null, web_status: 'skipped', web_error: null });
     expect(storage.delete).toHaveBeenCalledWith('videos/web_21_old.mp4');
     expect(ffmpeg).not.toHaveBeenCalled();
+  });
+
+  it('remuxes a video that already plays (stripping is on by default) and publishes it like a copy', async () => {
+    dbModule.__state.photo = { id: 26, event_id: 9, filename: 'phone.mp4', media_type: 'video', web_path: 'videos/web_26_old.mp4' };
+    service.clearCache();
+    mockProbe(
+      [{ codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p', width: 1920, height: 1080 }, { codec_type: 'audio', codec_name: 'aac' }],
+      { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'isom' } },
+    );
+    const atoms = await writeAtoms(box('ftyp', 16), box('moov', 40), box('mdat', 100));
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+    let savedTo = null;
+    const command = {
+      outputOptions: jest.fn(function () { return this; }),
+      on: jest.fn(function (event, handler) { if (event === 'end') this._end = handler; return this; }),
+      save: jest.fn(function (out) { savedTo = out; fs.writeFileSync(out, 'remuxed-bytes'); setImmediate(() => this._end()); }),
+      kill: jest.fn(),
+    };
+    ffmpeg.mockImplementation(() => command);
+
+    expect(await service.renderWebCopy(26)).toBe('complete');
+    expect(command.outputOptions).toHaveBeenCalledWith(service.remuxOptions());
+    const key = 'videos/web_26_remux_11111111-1111-4111-8111-111111111111_phone.mp4';
+    expect(storage.putFromFile).toHaveBeenCalledWith(key, savedTo, { contentType: 'video/mp4' });
+    const update = dbModule.__state.updates.find((u) => u.table === 'photos');
+    expect(update.data).toMatchObject({ web_path: key, web_status: 'complete', web_error: null });
+    expect(update.where).toEqual({ id: 26, web_status: 'processing', web_attempt_id: '11111111-1111-4111-8111-111111111111' });
+    // The copy an earlier attempt left behind is dropped once the remux is published.
+    expect(storage.delete).toHaveBeenCalledWith('videos/web_26_old.mp4');
   });
 
   it('transcodes an HEVC clip, stores the copy under videos/ and records it', async () => {

@@ -1101,6 +1101,8 @@
       "maxFileSize": "Tamaño máximo de archivo (MB)",
       "videoWebRendition": "Copias de vídeo reproducibles en el navegador",
       "videoWebRenditionHelp": "Recodifica los vídeos que un navegador no puede reproducir (HEVC, QuickTime, MP4 no transmitibles) a un MP4 H.264 para la reproducción. El original sigue siendo la descarga. Consume CPU por vídeo y un segundo archivo; al activarlo se ponen en cola los vídeos ya subidos.",
+      "videoStripMetadata": "Quitar los datos de ubicación y del dispositivo de los vídeos reproducidos",
+      "videoStripMetadataHelp": "Los vídeos que ya se reproducen en un navegador reciben una copia sin la ubicación de la grabación, la cámara ni otros metadatos, creada sin recodificar; los invitados reproducen esa copia. Ocupa aproximadamente otro tanto de almacenamiento por vídeo. Se aplica mientras las copias reproducibles en el navegador estén activadas; el original sigue siendo la descarga. Al desactivarlo se conservan las copias ya creadas.",
       "videoAdaptiveStreaming": "Streaming de vídeo adaptativo",
       "videoAdaptiveStreamingHelp": "Convierte cada vídeo en una transmisión en hasta tres calidades (480p, 720p, 1080p), para que la reproducción empiece rápido y se adapte a la conexión. El original sigue siendo la descarga. Consume CPU por vídeo y aproximadamente otro tanto de almacenamiento; los vídeos de más de 30 minutos se reproducen como hasta ahora.",
       "maxFileSizeHelp": "Tamaño máximo por foto subida",

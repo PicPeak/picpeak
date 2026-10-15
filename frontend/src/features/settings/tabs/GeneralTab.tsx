@@ -223,6 +223,23 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 {t('settings.general.videoWebRenditionHelp', 'Re-encodes videos a browser cannot play (HEVC, QuickTime, MP4s that are not streamable) into an H.264 MP4 for playback. The original stays the download. Costs CPU per video and a second file; switching it on queues the videos already uploaded.')}
               </p>
             </div>
+            <div className="ml-6">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={generalSettings.video_strip_metadata}
+                  onChange={(e) => setGeneralSettings(prev => ({ ...prev, video_strip_metadata: e.target.checked }))}
+                  className="w-4 h-4 text-accent rounded focus:ring-accent"
+                  data-testid="general-video-strip-metadata"
+                />
+                <span className="ml-2 text-sm text-body">
+                  {t('settings.general.videoStripMetadata', 'Strip location and device data from played videos')}
+                </span>
+              </label>
+              <p className="text-xs text-muted ml-6 mt-1">
+                {t('settings.general.videoStripMetadataHelp', 'Videos that already play in a browser get a copy without the recording location, camera and other metadata, made without re-encoding; guests play that copy. Takes about as much storage again per video. Applies while browser-playable copies are on; the original stays the download. Switching it off keeps the copies already made.')}
+              </p>
+            </div>
             <div>
               <label className="flex items-center">
                 <input
