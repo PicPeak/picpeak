@@ -587,7 +587,8 @@ async function listCustomers({
     .orderBy('customer_accounts.created_at', 'desc');
 
   if (search && String(search).trim()) {
-    const term = `%${String(search).trim().toLowerCase()}%`;
+    // NFC like the stored names, or a decomposed query misses them.
+    const term = `%${String(search).trim().normalize('NFC').toLowerCase()}%`;
     q = q.where(function () {
       this.whereRaw('LOWER(customer_accounts.email) LIKE ?', [term])
         .orWhereRaw('LOWER(COALESCE(customer_accounts.display_name, \'\')) LIKE ?', [term])
@@ -1484,7 +1485,7 @@ async function eraseCustomer(id, erasedByAdminId) {
  * accounts shouldn't show up as assignable options.
  */
 async function searchCustomers(query, { limit = 10 } = {}) {
-  const term = `%${String(query || '').trim().toLowerCase()}%`;
+  const term = `%${String(query || '').trim().normalize('NFC').toLowerCase()}%`;
   if (!term || term === '%%') return [];
   return db('customer_accounts')
     .where('is_active', formatBoolean(true))

@@ -26,6 +26,7 @@ const {
   claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives, legacyArchiveKeys,
 } = require('../services/archiveService');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
+const { DEFAULT_STALE_MS } = require('../services/maintenanceJobState');
 const router = express.Router();
 
 /**
@@ -995,7 +996,12 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       // taking the two in the other order can deadlock on PostgreSQL.
       await trx('photo_tags').where('event_id', req.params.id).del();
       if (await trx.schema.hasTable('maintenance_jobs')) {
-        await trx('maintenance_jobs').where({ job_name: `event_archive:${Number(req.params.id)}` }).del();
+        // Only a claim nobody holds, on claim()'s own terms: a restore that
+        // took the gallery after the check above still needs its row.
+        const cutoff = new Date(Date.now() - DEFAULT_STALE_MS).toISOString();
+        await trx('maintenance_jobs').where({ job_name: `event_archive:${Number(req.params.id)}` })
+          .where(function () { this.where('is_running', false).orWhere('heartbeat_at', '<', cutoff); })
+          .del();
       }
       await deleteWithAccountingHistory(trx, 'events', { id: req.params.id },
         { actor: req.admin.id, source: 'archive.delete' });

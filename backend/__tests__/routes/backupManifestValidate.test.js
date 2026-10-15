@@ -81,6 +81,15 @@ describe('backup manifest validate endpoints (issue 2089)', () => {
     expect(mockState.validated).toHaveLength(0);
   });
 
+  it('answers 400 for a symlink in the directory that leads outside it, and reads nothing', async () => {
+    const outside = path.join(root, 'outside.json');
+    fs.writeFileSync(outside, '{}');
+    fs.symlinkSync(outside, path.join(manifestDir, 'escape.json'));
+    const res = await post('/backup/manifest/validate', { manifestPath: 'escape.json' });
+    expect(res.status).toBe(400);
+    expect(mockState.validated).toHaveLength(0);
+  });
+
   it('answers 400 for a traversal input and reads nothing', async () => {
     const res = await post('/backup/manifests/validate', { manifestPath: '../../../etc/passwd' });
     expect(res.status).toBe(400);

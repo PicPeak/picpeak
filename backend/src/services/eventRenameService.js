@@ -604,7 +604,12 @@ class EventRenameService {
     } catch (error) {
       logger.error('Event rename failed', { eventId, error: error.message });
       await this.rollbackRename(backupData);
-      return { success: false, error: error.message || 'Failed to rename event' };
+      // A claim taken over mid-rename (recordSupersededArchive) is a 409 too.
+      return {
+        success: false,
+        error: error.message || 'Failed to rename event',
+        ...(error.statusCode === 409 ? { conflict: true } : {}),
+      };
     } finally {
       if (tracked) renamingIds.delete(eventId);
       if (lease) await lease.release();

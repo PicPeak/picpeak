@@ -311,7 +311,7 @@ module.exports = (router) => {
 
       // Apply search filter
       if (search) {
-        const pattern = `%${escapeLikePattern(search)}%`;
+        const pattern = `%${escapeLikePattern(nfcName(search))}%`;
         query = query.where((builder) => {
           builder.whereRaw(likeWithEscape('event_name'), [pattern])
             .orWhereRaw(likeWithEscape('admin_email'), [pattern])

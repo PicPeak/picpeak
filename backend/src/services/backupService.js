@@ -2170,7 +2170,7 @@ async function validateBackupManifest(manifestPath) {
  * those directories is read. Returns null when no such file exists.
  */
 async function resolveManifestFile(manifestPath, providedConfig = null) {
-  const { safePathJoin } = require('../utils/fileSecurityUtils');
+  const { safePathJoin, assertRealpathUnder } = require('../utils/fileSecurityUtils');
   const config = providedConfig || await getBackupConfigInternal().catch(() => ({})) || {};
   const bases = [
     config.backup_manifest_path,
@@ -2190,7 +2190,12 @@ async function resolveManifestFile(manifestPath, providedConfig = null) {
     const candidate = safePathJoin(base, relative);
     if (!found) {
       const stat = await fs.stat(candidate).catch(() => null);
-      if (stat && stat.isFile()) found = candidate;
+      if (stat && stat.isFile()) {
+        // safePathJoin is lexical: a symlink inside the directory must not
+        // lead the read outside it.
+        await assertRealpathUnder(base, candidate);
+        found = candidate;
+      }
     }
   }
   return found;

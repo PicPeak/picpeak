@@ -668,6 +668,57 @@ describe('one archive job per gallery', () => {
     expect(await db('maintenance_jobs').where({ job_name: jobName(event.id) }).first()).toBeUndefined();
   });
 
+  it('reports a claim taken over while the rename records its old zips as a conflict', async () => {
+    const event = await makeEvent('rename-takeover');
+    const archiveService = require('../../src/services/archiveService');
+    const { AppError } = require('../../src/utils/errors');
+    const recordSpy = jest.spyOn(archiveService, 'recordSupersededArchive').mockImplementationOnce(async () => {
+      throw new AppError('The archive claim was taken over', 409, 'ARCHIVE_IN_PROGRESS');
+    });
+    const eventRenameService = require('../../src/services/eventRenameService');
+    try {
+      const result = await eventRenameService.renameEvent(event.id, 'Taken over name');
+      expect(result).toMatchObject({ success: false, conflict: true });
+    } finally {
+      recordSpy.mockRestore();
+    }
+    expect((await db('events').where({ id: event.id }).first()).slug).toBe('rename-takeover');
+  });
+
+  it('finds an NFC gallery name with a decomposed search', async () => {
+    const event = await makeEvent('search-nfc', { photoCount: 0 });
+    await db('events').where({ id: event.id }).update({ event_name: 'Jörg sucht' });
+    const res = await request(app).get('/admin/events').query({ search: 'Jörg' });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).toContain('search-nfc');
+  });
+
+  it('removes an archive\'s unheld claim row with it, and leaves one a restore took meanwhile', async () => {
+    const released = await makeEvent('archive-row-free', { photoCount: 0 });
+    await jobState.ensure(jobName(released.id));
+    await db('events').where({ id: released.id }).update({ is_archived: 1, is_active: 0 });
+    expect((await request(app).delete(`/admin/archives/${released.id}`)).status).toBe(200);
+    expect(await db('maintenance_jobs').where({ job_name: jobName(released.id) }).first()).toBeUndefined();
+
+    const event = await makeEvent('archive-row-held', { photoCount: 0 });
+    const zip = 'events/archived/archive-row-held-0123456789ab.zip';
+    await db('events').where({ id: event.id }).update({ is_archived: 1, is_active: 0, archive_path: zip });
+    let open;
+    deleteGate = new Promise((resolve) => { open = resolve; });
+    const pending = request(app).delete(`/admin/archives/${event.id}`).then((r) => r);
+    // Past its running check, parked deleting the zip: a restore claims now.
+    await new Promise((resolve) => {
+      const tick = () => (deletedKeys().includes(zip) ? resolve() : setTimeout(tick, 5));
+      tick();
+    });
+    const token = await holdClaim(event.id);
+    open();
+    expect((await pending).status).toBe(200);
+    const row = await db('maintenance_jobs').where({ job_name: jobName(event.id) }).first();
+    expect(row).toMatchObject({ claim_token: token });
+    expect(Boolean(row.is_running)).toBe(true);
+  });
+
   it('deletes the zip of an archive that finished between the delete and its claim', async () => {
     const event = await makeEvent('delete-race');
     const archiveService = require('../../src/services/archiveService');
