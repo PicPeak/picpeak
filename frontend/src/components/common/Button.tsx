@@ -8,6 +8,12 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /** `icon-sm` / `icon-md`: square icon-only button — pass `aria-label`. */
   size?: 'sm' | 'md' | 'lg' | 'icon-sm' | 'icon-md';
   isLoading?: boolean;
+  /**
+   * While loading, stay focusable (aria-disabled, activation ignored) rather
+   * than natively disabled, so a keyboard user's focus is not dropped by a
+   * button that goes busy under it (issue 2043).
+   */
+  focusableWhileLoading?: boolean;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   children: React.ReactNode;
@@ -20,7 +26,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       variant = 'primary',
       size = 'md',
       isLoading = false,
+      focusableWhileLoading = false,
       disabled,
+      onClick,
       leftIcon,
       rightIcon,
       children,
@@ -58,7 +66,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           sizes[size],
           className
         )}
-        disabled={disabled || isLoading}
+        disabled={disabled || (isLoading && !focusableWhileLoading)}
+        onClick={isLoading ? undefined : onClick}
         {...props}
         aria-busy={isLoading}
         aria-disabled={disabled || isLoading}

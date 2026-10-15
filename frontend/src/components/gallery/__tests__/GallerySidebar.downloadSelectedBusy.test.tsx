@@ -13,8 +13,8 @@ vi.mock('react-i18next', async () => {
   return { ...actual, useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) };
 });
 
-function renderSidebar(isDownloadingSelected: boolean, onDownloadSelected = vi.fn()) {
-  render(
+function sidebar(isDownloadingSelected: boolean, onDownloadSelected: () => void) {
+  return (
     <GallerySidebar
       isOpen
       onClose={() => {}}
@@ -35,16 +35,20 @@ function renderSidebar(isDownloadingSelected: boolean, onDownloadSelected = vi.f
       allowDownloads
       totalPhotos={3}
       isMobile={false}
-    />,
+    />
   );
-  return { onDownloadSelected, button: screen.getByText(/gallery\.downloadSelected/).closest('button')! };
+}
+
+function renderSidebar(isDownloadingSelected: boolean, onDownloadSelected = vi.fn()) {
+  const view = render(sidebar(isDownloadingSelected, onDownloadSelected));
+  return { view, onDownloadSelected, button: screen.getByText(/gallery\.downloadSelected/).closest('button')! };
 }
 
 describe('GallerySidebar "Download selected" busy state (issue 2043)', () => {
   it('spins, is marked busy and ignores clicks while the download runs', () => {
     const { button, onDownloadSelected } = renderSidebar(true);
     expect(button).toHaveAttribute('aria-busy', 'true');
-    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
     expect(button.querySelector('.animate-spin')).not.toBeNull();
     fireEvent.click(button);
     expect(onDownloadSelected).not.toHaveBeenCalled();
@@ -56,5 +60,13 @@ describe('GallerySidebar "Download selected" busy state (issue 2043)', () => {
     expect(button.querySelector('.animate-spin')).toBeNull();
     fireEvent.click(button);
     expect(onDownloadSelected).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps keyboard focus on the button when it goes busy', () => {
+    const { view, button, onDownloadSelected } = renderSidebar(false);
+    button.focus();
+    view.rerender(sidebar(true, onDownloadSelected));
+    expect(button).toHaveFocus();
+    expect(button).not.toBeDisabled();
   });
 });

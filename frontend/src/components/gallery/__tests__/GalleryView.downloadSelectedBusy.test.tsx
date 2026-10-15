@@ -262,4 +262,21 @@ describe('GalleryView "Download selected" while it runs (issue 2043)', () => {
     await act(async () => { finishStalled(); });
     expect(service.downloadPhoto.mock.calls.map((call) => call[1])).toEqual([7, 7, 8]);
   });
+
+  it('stops the batch before its next photo when the view goes away', async () => {
+    let finishFirst!: () => void;
+    service.downloadPhoto.mockImplementationOnce(() => new Promise<void>((resolve) => { finishFirst = resolve; }));
+    show();
+    act(() => captured.grid.onSelectionChange(new Set([7, 8])));
+    await waitFor(() => expect(captured.sidebar.selectedCount).toBe(2));
+
+    let run!: Promise<void>;
+    act(() => { run = captured.sidebar.onDownloadSelected(); });
+    await waitFor(() => expect(service.downloadPhoto).toHaveBeenCalledTimes(1));
+    cleanup();
+
+    await act(async () => { finishFirst(); await run; });
+    expect(service.downloadPhoto.mock.calls.map((call) => call[1])).toEqual([7]);
+    expect(isPhotoDownloadPending(7)).toBe(false);
+  });
 });

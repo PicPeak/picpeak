@@ -376,6 +376,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     selectedRunRef.current = null;
     setDownloadingSelected(false);
   }, []);
+  // Leaving the view stops the run before its next photo, and its timer
+  // with it.
+  useEffect(() => () => {
+    const run = selectedRunRef.current;
+    if (run) clearTimeout(run.timer);
+    selectedRunRef.current = null;
+  }, []);
   const keepSelectedRunAlive = useCallback((id: number) => {
     const run = selectedRunRef.current;
     if (!run || run.id !== id) return;

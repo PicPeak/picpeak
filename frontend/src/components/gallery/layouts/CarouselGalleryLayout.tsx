@@ -206,6 +206,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 size="sm"
                 onClick={(e) => onDownload(currentPhoto, e)}
                 isLoading={downloadPending}
+                focusableWhileLoading
                 className={`text-white hover:bg-white/20${currentPhotoAtLimit ? ' opacity-50 cursor-not-allowed' : ''}`}
                 aria-disabled={currentPhotoAtLimit || undefined}
                 title={currentPhotoAtLimit

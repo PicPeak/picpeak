@@ -387,6 +387,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                     onClick={onDownloadSelected}
                     disabled={isDownloading}
                     isLoading={isDownloadingSelected}
+                    focusableWhileLoading
                     className="gallery-btn gallery-btn-download w-full"
                   >
                     {t('gallery.downloadSelected', { count: selectedCount })} ({selectedCount})
