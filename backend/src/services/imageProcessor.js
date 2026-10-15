@@ -1773,7 +1773,9 @@ async function keepTierIfCurrent(photo, key, keysOf, shapeIsCurrent) {
  * dropped the tiers of that photo would be served as current (issue 2122).
  * Read after the write, from the database every replica shares: a settings
  * change committed before this read is seen, and one committed after it
- * precedes the regenerate sweep, which deletes the tier anyway.
+ * precedes the regenerate sweep that applies it, which deletes the tier
+ * anyway. (A sweep run before the settings are saved applies nothing new:
+ * its own renditions are of the old settings too.)
  */
 async function thumbnailSettingsUnchanged(settings) {
   const current = await getThumbnailSettings({ strict: true });
