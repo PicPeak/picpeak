@@ -222,6 +222,12 @@ describe('gallery aggregates and client-hidden photos', () => {
       expect(JSON.stringify(res.body)).not.toContain('unfinished-secret');
     });
 
+    it.each([['a guest', guest, 1], ['the client', client, 2]])('leaves it out of /stats for %s', async (_who, tok, photos) => {
+      const res = await get('/stats', tok());
+      expect(res.status).toBe(200);
+      expect(Number(res.body.total_photos)).toBe(photos);
+    });
+
     it('keeps it in the admin totals', async () => {
       const feedbackService = require('../../src/services/feedbackService');
       const summary = await feedbackService.getEventFeedbackSummary(eventId);
