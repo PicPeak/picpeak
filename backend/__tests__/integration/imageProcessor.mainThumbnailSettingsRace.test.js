@@ -150,7 +150,71 @@ describe('a lazy main thumbnail across a settings change and a forced regenerate
     expect(key).toBe(forced);
     expect(await rowKey(row.id)).toBe(forced);
     expect(await heightOf(forced)).toBe(225);
-    if (written !== forced) expect(await storage.stat(written)).toBeFalsy();
+    if (Kind === LocalFs) {
+      expect(written).toBe(forced);
+    } else {
+      expect(written).not.toBe(forced);
+      expect(await storage.stat(written)).toBeFalsy();
+    }
+  });
+
+  // Local storage: B has written the shared key but not recorded it yet when
+  // A finds its own write stale. Deleting "a key no row records" would take
+  // B's file with it.
+  test('local storage: a forced render written but not yet recorded is not deleted', async () => {
+    const storage = await useStorage(LocalFs);
+    const row = await photo(storage, 'unrecorded.jpg');
+    const put = storage.put.bind(storage);
+    const del = jest.spyOn(storage, 'delete');
+    let releaseB;
+    const holdB = new Promise(resolve => { releaseB = resolve; });
+    let bWrote;
+    let forcedRun;
+    let puts = 0;
+    jest.spyOn(storage, 'put').mockImplementation(async (key, ...args) => {
+      const value = await put(key, ...args);
+      if (!key.startsWith('thumbnails/')) return value;
+      puts += 1;
+      if (puts === 1) { // A's write, under the old settings
+        await setFit('inside');
+        const written = new Promise(resolve => { bWrote = resolve; });
+        forcedRun = replicaB.ensureThumbnail({ ...row, thumbnail_path: null }, { force: true });
+        await written;
+      } else if (puts === 2) { // B's write: hold B before its row update
+        bWrote();
+        await holdB;
+      }
+      return value;
+    });
+    const a = replicaA(null);
+
+    const key = await a.ensureThumbnail(row);
+    releaseB();
+    const forced = await forcedRun;
+
+    expect(key).toBe(forced);
+    expect(del).not.toHaveBeenCalledWith(forced);
+    expect(await rowKey(row.id)).toBe(forced);
+    expect(await heightOf(forced)).toBe(225);
+  });
+
+  test('a thumbnail recorded since for a replaced source is not taken', async () => {
+    const storage = await useStorage(RemoteLike);
+    const row = await photo(storage, 'before.jpg');
+    const replacement = await sharp({ create: { width: 640, height: 480, channels: 3, background: 'blue' } }).jpeg().toBuffer();
+    await storage.put('events/active/main-thumb-race/individual/after.jpg', replacement, { contentType: 'image/jpeg' });
+    let forced;
+    const a = replicaA(async () => {
+      await setFit('inside');
+      await db('photos').where({ id: row.id }).update({ filename: 'after.jpg', path: 'main-thumb-race/individual/after.jpg' });
+      forced = await replicaB.ensureThumbnail({ ...(await db('photos').where({ id: row.id }).first()), thumbnail_path: null }, { force: true });
+    });
+
+    const key = await a.ensureThumbnail(row);
+
+    expect(forced).toMatch(/^thumbnails\/thumb_/);
+    expect(key).toBeNull();
+    expect(await rowKey(row.id)).toBe(forced);
   });
 
   test.each(storages)('%s: a change with no forced render yet renders again under the new settings', async (_label, Kind) => {

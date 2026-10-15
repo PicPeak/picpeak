@@ -972,10 +972,9 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // key is shared with the forced render on local storage, so a stale file
   // written there could not be dropped without deleting the forced render's
   // bytes too. Checked again before the row is updated, which covers the
-  // put and the placeholder hash on S3; a key written by then is deleted
-  // unless a row records it (on local storage it is the shared one). What is
-  // left: the settings save and a whole forced render of this photo landing
-  // within one put on local storage, or one row update.
+  // put and the placeholder hash (see below for the key written by then).
+  // What is left: the settings save and a whole forced render of this photo
+  // landing between that second check and the row update.
   //
   // A settings read that fails, first or at a check, renders and publishes
   // as before. Forced renders (the sweep, the rendition refresh) apply
@@ -1066,13 +1065,17 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     });
   }
 
+  // A stale key written by then is deleted only when it is this render's
+  // alone: a lazy scope's, or a managed render's on remote storage (named
+  // after a random download). Any other key is the name every render of this
+  // photo writes, which another replica may have just written and not yet
+  // recorded; it is kept and written again under the current settings.
+  let rewriteShared = false;
   if (newThumbnailPath && stillCurrent && !(await stillCurrent())) {
-    try {
-      if (!(await db('photos').where('thumbnail_path', newThumbnailPath).first())) {
-        await getStorage().delete(newThumbnailPath).catch(() => {});
-      }
-    } catch (e) {
-      logger.warn(`Could not check whether ${newThumbnailPath} is in use; keeping it: ${e.message}`);
+    if (derivativeContext.getStore() || (!isExternal && getStorage().kind() !== 'local')) {
+      await getStorage().delete(newThumbnailPath).catch(() => {});
+    } else {
+      rewriteShared = true;
     }
     newThumbnailPath = null;
   }
@@ -1090,9 +1093,10 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
 
   // Dropped for a settings change: a caller still needs a thumbnail (a tag
   // job would fail for good on null). Take the one another replica has
-  // recorded since, or render once more under the current settings.
+  // recorded since for this same source, or render once more under the
+  // current settings.
   if (settingsChanged && !retried) {
-    const current = await db('photos').where({ id: photo.id }).first('thumbnail_path');
+    const current = rewriteShared ? null : await sourceGuard(photo).first('thumbnail_path');
     if (current?.thumbnail_path && current.thumbnail_path !== photo.thumbnail_path
         && await isThumbnailValid(current.thumbnail_path)) return current.thumbnail_path;
     return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true });
