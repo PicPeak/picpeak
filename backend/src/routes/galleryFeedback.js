@@ -10,7 +10,9 @@ const feedbackModeration = require('../services/feedbackModeration');
 const selectionSubmissions = require('../services/selectionSubmissions');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
-const { isPhotoHiddenFromViewer, isPhotoProcessed, applyPhotoVisibilityFilter, joinLivePhotos, livePhotos } = require('../utils/photoVisibility');
+const {
+  isPhotoHiddenFromViewer, isPhotoProcessed, applyPhotoVisibilityFilter, joinLivePhotos, livePhotos, wherePhotoProcessed,
+} = require('../utils/photoVisibility');
 const {
   validatePhotoId,
   validateFeedbackSubmission,
@@ -640,8 +642,9 @@ router.get('/:slug/feedback-summary',
       const guestSummary = {
         stats: summary.stats,
         top_rated: summary.photos
-          // No filenames or ratings of photos this viewer cannot see.
-          .filter(p => !isPhotoHiddenFromViewer(p, req.accessLevel))
+          // No filenames or ratings of photos this viewer cannot see, nor of
+          // photos the gallery list leaves out while they are processed.
+          .filter(p => !isPhotoHiddenFromViewer(p, req.accessLevel) && isPhotoProcessed(p))
           .filter(p => p.average_rating > 0)
           .slice(0, 5)
           .map(p => ({
@@ -690,7 +693,9 @@ router.get('/:slug/my-feedback',
       }
 
       const query = applyPhotoVisibilityFilter(
-        db('photo_feedback')
+        // A photo back in processing (an admin retry) is not in the gallery
+        // list; its rows are kept and come back once it is complete again.
+        wherePhotoProcessed(db('photo_feedback'))
           .modify(joinLivePhotos, 'photo_feedback.photo_id', 'photos.id')
           .where('photo_feedback.event_id', event.id)
           // Hidden rows are absent for the guest who left them too (#1150). In

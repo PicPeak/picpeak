@@ -20,7 +20,7 @@ const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { toUtcIso } = require('../utils/queueTimestamps');
-const { applyPhotoVisibilityFilter, joinLivePhotos } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, joinLivePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 
 const KINDS = ['selection', 'approval'];
 const NOTE_MAX_LENGTH = 1000;
@@ -131,15 +131,17 @@ function selectionPicks(settings) {
 /**
  * The viewer's feedback rows on the photos they can still see, as
  * /my-feedback lists them: a pick on a photo the client has since hidden is
- * not in the guest's count, so it is not in the one handed in either.
+ * not in the guest's count, so it is not in the one handed in either. Nor is
+ * one on a photo back in processing (an admin retry), which the gallery list
+ * leaves out until it is complete again; the row is kept and counts then.
  */
 function visibleFeedback(eventId, viewer, executor) {
   return scopeToViewer(
     applyPhotoVisibilityFilter(
-      executor('photo_feedback')
+      wherePhotoProcessed(executor('photo_feedback')
         .modify(joinLivePhotos, 'photo_feedback.photo_id', 'photos.id')
         // Hidden rows are absent everywhere else, the cap included (#1150).
-        .where({ 'photo_feedback.event_id': eventId, 'photo_feedback.is_hidden': false }),
+        .where({ 'photo_feedback.event_id': eventId, 'photo_feedback.is_hidden': false })),
       viewer.accessLevel,
     ),
     viewer,

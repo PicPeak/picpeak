@@ -175,6 +175,35 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
       }
     });
 
+    // An admin retry puts a finished photo back to pending; the gallery list
+    // leaves it out until it is complete again, and so do the guest's counts.
+    it.each(['pending', 'processing', 'failed'])(
+      'leaves a pick on a photo back in %s out of the list, the count and the hand-over, and keeps the row',
+      async (status) => {
+        await feedback('device-A', photoIds[0], { feedback_type: 'like' });
+        await feedback('device-A', photoIds[1], { feedback_type: 'like' });
+        await setSettings({ allow_decisions: true });
+        await feedback('device-A', photoIds[1], { feedback_type: 'decision', decision: 'rejected' });
+        await db('photos').where({ id: photoIds[1] }).update({ processing_status: status });
+        try {
+          const mine = await as('device-A', 'get', '/my-feedback');
+          expect(mine.body.map((row) => row.photo_id)).toEqual([photoIds[0]]);
+
+          const { selection, approval } = await state('device-A');
+          expect(selection.used).toBe(1);
+          expect(approval.rejected).toBe(0);
+          expect((await submit('device-A')).body.submission.item_count).toBe(1);
+          expect(await rows('like')).toHaveLength(2);
+        } finally {
+          await db('photos').where({ id: photoIds[1] }).update({ processing_status: 'complete' });
+        }
+        // Complete again: the kept rows are back.
+        const mine = await as('device-A', 'get', '/my-feedback');
+        expect(mine.body.map((row) => row.photo_id).sort()).toEqual([photoIds[0], photoIds[1], photoIds[1]].sort());
+        expect((await state('device-A')).selection.used).toBe(2);
+      },
+    );
+
     it('is off without a cap and without the switch', async () => {
       await setSettings({ allow_selection_submit: false });
       expect((await state('device-A')).selection).toMatchObject({ counter: false, can_submit: false });

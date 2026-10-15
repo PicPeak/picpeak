@@ -192,4 +192,41 @@ describe('gallery aggregates and client-hidden photos', () => {
       expect(res.body.map((r) => r.photo_id).sort()).toEqual([visiblePhoto, hiddenPhoto].sort());
     });
   });
+
+  // An admin retry puts a finished photo back to pending: the gallery list
+  // leaves it out until it is complete again, so the summary does too. Its
+  // feedback rows stay, and the admin totals keep them, as for a hidden photo.
+  describe.each(['pending', 'processing', 'failed'])('/feedback-summary and a photo back in %s', (status) => {
+    let unfinished;
+
+    beforeAll(async () => {
+      unfinished = await db('photos').insert({
+        event_id: eventId, filename: 'unfinished-secret.jpg', path: `events/${SLUG}/unfinished-secret.jpg`,
+        type: 'individual', uploaded_at: new Date().toISOString(), average_rating: 5, processing_status: status,
+      }).returning('id').then(unwrap);
+      await db('photo_feedback').insert({
+        photo_id: unfinished, event_id: eventId, feedback_type: 'rating', rating: 5, guest_identifier: 'someone-else',
+        is_approved: true, is_hidden: false, created_at: new Date().toISOString(),
+      });
+    });
+    afterAll(async () => {
+      await db('photo_feedback').where({ photo_id: unfinished }).del();
+      await db('photos').where({ id: unfinished }).del();
+    });
+
+    it.each([['a guest', guest, 1], ['the client', client, 2]])('leaves it out for %s', async (_who, tok, ratings) => {
+      const res = await get('/feedback-summary', tok());
+      expect(res.status).toBe(200);
+      expect(Number(res.body.summary.stats.total_ratings)).toBe(ratings);
+      expect(res.body.summary.top_rated.map((p) => p.id)).not.toContain(unfinished);
+      expect(JSON.stringify(res.body)).not.toContain('unfinished-secret');
+    });
+
+    it('keeps it in the admin totals', async () => {
+      const feedbackService = require('../../src/services/feedbackService');
+      const summary = await feedbackService.getEventFeedbackSummary(eventId);
+      expect(Number(summary.stats.total_ratings)).toBe(3);
+      expect(summary.photos.map((p) => p.id)).toContain(unfinished);
+    });
+  });
 });
