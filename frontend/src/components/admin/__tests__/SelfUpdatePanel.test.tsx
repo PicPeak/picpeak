@@ -27,8 +27,12 @@ vi.mock('../../../services/selfUpdate.service', () => ({
 }));
 
 // Recent, with milliseconds, as the backend writes it. The updater writes whole
-// seconds, so its run in the same second reads as SAME_SECOND.
-const nowSecond = Math.floor(Date.now() / 1000) * 1000;
+// seconds, so its run in the same second reads as SAME_SECOND. The second
+// before the current one: the panel only judges a request lost on a status
+// fetched after it (dataUpdatedAt > requestedAt), and a STARTED up to 250 ms
+// in the future let a fast refetch land "before" the request, leaving the
+// result to the next poll 2 s later, past findBy's timeout.
+const nowSecond = Math.floor(Date.now() / 1000) * 1000 - 1000;
 const STARTED = new Date(nowSecond + 250).toISOString();
 const SAME_SECOND = new Date(nowSecond).toISOString().replace('.000Z', 'Z');
 const LATER = new Date(nowSecond + 5000).toISOString().replace('.000Z', 'Z');
