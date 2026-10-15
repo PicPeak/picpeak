@@ -885,6 +885,8 @@ async function importExternalFolder({
     let moved = 0;
     let missing = 0;
     let returned = 0;
+    // Paths of existing rows the loop below took through refreshChangedFile.
+    const refreshedPaths = new Set();
     if (walkComplete) {
       const unseen = (await servedRowsInScope(eventId, inScope)).filter((r) => !seenRelpaths.has(r.external_relpath));
       if (unseen.length) {
@@ -941,6 +943,7 @@ async function importExternalFolder({
           // kept the old dimensions, capture date and every derivative, so
           // the gallery showed the old picture for as long as they lived.
           const outcome = await refreshChangedFile(exists, f, { automatic, settleMs });
+          refreshedPaths.add(relFromRoot);
           if (outcome === 'refreshed') refreshed++;
           else if (outcome === 'deferred') deferred++;
           else skipped++;
@@ -1192,13 +1195,16 @@ async function importExternalFolder({
       const stillThere = await fs.readdir(baseAbs).then((entries) => entries.length > 0).catch(() => false);
       for (const row of stillThere ? await servedRowsInScope(eventId, inScope) : []) {
         if (lost) break;
-        // A file the walk listed is the loop's to restore: only after its
-        // refresh (or a check that it is the version recorded) succeeded.
-        if (seenRelpaths.has(row.external_relpath)) continue;
-        filesSinceAuthorized += 1;
-        await reauthorizeIfDue();
+        // A file the loop took is its to restore: only after its refresh (or
+        // a check that it is the version recorded) succeeded.
+        if (refreshedPaths.has(row.external_relpath)) continue;
         const full = fullOf(row.external_relpath);
-        const state = await sourcePresence(access, full);
+        let state = 'present';
+        if (!seenRelpaths.has(row.external_relpath)) {
+          filesSinceAuthorized += 1;
+          await reauthorizeIfDue();
+          state = await sourcePresence(access, full);
+        }
         if (state === 'missing' && row.unavailable_reason == null) {
           // Fenced on the path and origin read: a row moved or replaced
           // since is not this file's.
@@ -1208,8 +1214,9 @@ async function importExternalFolder({
             .whereNull('unavailable_reason')
             .update({ unavailable_reason: SOURCE_MISSING });
         } else if (state === 'present' && row.unavailable_reason === SOURCE_MISSING) {
-          // Back at its path, outside what the walk lists (a type no longer
-          // imported): restored only as the very version the row recorded.
+          // Back at its path but not taken by the loop (a type no longer
+          // imported, a file another of the same name shadows): restored
+          // only as the very version the row recorded.
           const st = await fs.stat(full).catch(() => null);
           const recorded = st && row.size_bytes != null && row.source_mtime_ms != null
             && Number(row.size_bytes) === st.size && Number(row.source_mtime_ms) === Math.floor(st.mtimeMs);

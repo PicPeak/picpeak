@@ -211,6 +211,32 @@ describe('external re-scan of files gone from the share', () => {
     expect((await db('photos').where({ id: a.id }).first()).unavailable_reason).toBe('source_missing');
   });
 
+  it('restores a returning file another file of the same name shadows', async () => {
+    const eventId = await seedEvent();
+    // Two folders imported one by one into a flat gallery: two a.jpg rows.
+    await writeJpeg('shoot/x/a.jpg');
+    await sharp({ create: { width: 200, height: 200, channels: 3, background: { r: 5, g: 90, b: 5 } } })
+      .jpeg().toFile(path.join(mediaRoot, 'shoot', 'big.tmp'));
+    await fs.promises.mkdir(path.join(mediaRoot, 'shoot', 'y'), { recursive: true });
+    await fs.promises.rename(path.join(mediaRoot, 'shoot', 'big.tmp'), path.join(mediaRoot, 'shoot', 'y', 'a.jpg'));
+    const old = new Date(Date.now() - 600000);
+    await fs.promises.utimes(path.join(mediaRoot, 'shoot', 'y', 'a.jpg'), old, old);
+    expect(await scan(eventId, 'shoot/x')).toMatchObject({ imported: 1 });
+    expect(await scan(eventId, 'shoot/y')).toMatchObject({ imported: 1 });
+    await writeJpeg('shoot/keep.jpg', { r: 1, g: 1, b: 1 });
+    const small = await db('photos').where({ event_id: eventId, external_relpath: path.join('shoot', 'x', 'a.jpg') }).first();
+
+    // A pass over the parent keeps the larger a.jpg only.
+    const aside = path.join(tmpDir, 'small-aside.jpg');
+    await fs.promises.rename(path.join(mediaRoot, 'shoot', 'x', 'a.jpg'), aside);
+    await scan(eventId, 'shoot');
+    expect((await db('photos').where({ id: small.id }).first()).unavailable_reason).toBe('source_missing');
+
+    await fs.promises.rename(aside, path.join(mediaRoot, 'shoot', 'x', 'a.jpg'));
+    expect(await scan(eventId, 'shoot')).toMatchObject({ returned: 1 });
+    expect((await db('photos').where({ id: small.id }).first()).unavailable_reason).toBeNull();
+  });
+
   it('keeps a photo the admin hid hidden when its file comes back', async () => {
     const eventId = await importTwo();
     const a = await byName(eventId, 'a.jpg');
