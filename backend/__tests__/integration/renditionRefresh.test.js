@@ -327,6 +327,63 @@ describe('rendition refresh after EXIF stripping', () => {
     expect(exists(tier)).toBe(true);
   }, 60000);
 
+  describe('a files restore that puts back renditions', () => {
+    beforeAll(() => { process.env.RENDITION_REFRESH_DISABLED = 'true'; });
+    afterAll(() => { delete process.env.RENDITION_REFRESH_DISABLED; });
+
+    it('un-marks the photos whose rendition or tier came back, and only those', async () => {
+      const event = await makeEvent();
+      const byColumn = await addLegacyPhoto(event, { renditions: ['thumbnail', 'preview'] });
+      const byTier = await addLegacyPhoto(event);
+      const trashed = await addLegacyPhoto(event, { renditions: ['preview'], deleted_at: new Date().toISOString() });
+      const untouched = await addLegacyPhoto(event);
+      await db('photos').whereIn('id', [byColumn, byTier, trashed, untouched]).update({ rendition_version: 1 });
+      const preview = (await db('photos').where({ id: byColumn }).first()).preview_path;
+      const trashedPreview = (await db('photos').where({ id: trashed }).first()).preview_path;
+
+      const reset = await refresh.invalidateRestoredRenditions([
+        `./${preview}`,                                   // a canonical rendition, legacy spelling
+        `thumbnails/thumb_w600_p${byTier}_legacy.jpg`,   // a tier, named after its photo
+        trashedPreview,
+        'thumbnails/thumb_nobody.jpg',                   // a rendition no row names
+        'events/active/some/original.jpg',               // not a rendition
+      ]);
+      expect(reset).toBe(3);
+      const versions = Object.fromEntries(Array.from(await db('photos')
+        .whereIn('id', [byColumn, byTier, trashed, untouched]).select('id', 'rendition_version'))
+        .map((r) => [r.id, Number(r.rendition_version)]));
+      expect(versions).toEqual({ [byColumn]: 0, [byTier]: 0, [trashed]: 0, [untouched]: 1 });
+    });
+
+    it('restoreService un-marks a photo after a files restore of its old thumbnail, not after a full restore', async () => {
+      const event = await makeEvent();
+      const id = await addLegacyPhoto(event);
+      await db('photos').where({ id }).update({ rendition_version: 1 });
+      const { thumbnail_path: key } = await db('photos').where({ id }).first();
+
+      const crypto = require('crypto');
+      const backupRoot = fs.mkdtempSync(path.join(require('os').tmpdir(), 'picpeak-rv-restore-'));
+      fs.mkdirSync(path.join(backupRoot, path.dirname(key)), { recursive: true });
+      fs.writeFileSync(path.join(backupRoot, key), taggedJpeg);
+      const manifest = { files: { manifest: [{
+        path: key, size: taggedJpeg.length, checksum: crypto.createHash('sha256').update(taggedJpeg).digest('hex'),
+      }] } };
+      const { restoreService } = require('../../src/services/restoreService');
+      try {
+        const result = await restoreService.performFilesRestore(backupRoot, manifest, { restoreType: 'files' });
+        expect(result.restoredPaths).toEqual([key]);
+
+        await restoreService.markRestoredRenditions({ restoreType: 'full' }, result);
+        expect(Number((await db('photos').where({ id }).first()).rendition_version)).toBe(1);
+
+        await restoreService.markRestoredRenditions({ restoreType: 'files' }, result);
+        expect(Number((await db('photos').where({ id }).first()).rendition_version)).toBe(0);
+      } finally {
+        fs.rmSync(backupRoot, { recursive: true, force: true });
+      }
+    }, 60000);
+  });
+
   it('does not run while another replica holds the claim', async () => {
     const event = await makeEvent();
     await addLegacyPhoto(event);

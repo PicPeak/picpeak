@@ -269,6 +269,7 @@ async function refreshCover(photo) {
 let running = false;
 let loop = null;
 let waits = null;
+let rerunRequested = false;
 
 /** Wait while the upload pipeline has work, bounded so the pass still moves. */
 async function yieldToUploads(active, sleep) {
@@ -369,7 +370,13 @@ async function runLoop() {
       logger.error('Rendition refresh aborted; it runs again on the next start', { error: err.message });
       return;
     }
-    if (outcome !== 'busy') return;
+    if (outcome !== 'busy') {
+      // Rows reset while this pass ran (a files restore) may lie behind its
+      // cursor: walk once more.
+      if (!rerunRequested) return;
+      rerunRequested = false;
+      continue;
+    }
     // Another replica holds the claim. Try again later: if it finishes, the
     // pass finds nothing left; if it died, its lease goes stale and is taken.
     await waits.sleep(RETRY_CLAIM_MS);
@@ -405,6 +412,66 @@ function stop() {
   return loop;
 }
 
+/**
+ * Run a pass soon: start the loop, or have the running one walk again when
+ * it is done. A loop that is stopping is left alone; the rows wait at 0 for
+ * the next start.
+ */
+function requestPass() {
+  if (!loop) start();
+  else if (running) rerunRequested = true;
+}
+
+// Rendition keys a restore may put back, and the photo id a responsive tier
+// is named after (thumbnailTierKeys / previewTierKeyCandidates: `p<id>_`
+// right after the width, whatever follows).
+const RENDITION_PREFIXES = ['thumbnails/thumb_', 'previews/preview_', 'heroes/hero_'];
+const TIER_KEY = /^(?:thumbnails\/thumb|previews\/preview)_w\d+_p(\d+)_/;
+
+/**
+ * A files-only or selective restore put these storage keys back. Any of them
+ * that is a rendition may be a file from before EXIF stripping, so the photos
+ * serving them are set back to 0 (trashed rows too: they can be restored)
+ * and a pass is requested. A canonical rendition is mapped to its photos by
+ * the rows' rendition columns (one paged scan, compared canonically), a tier
+ * by the photo id in its name. A rendition key no row names and that is no
+ * tier is served by nothing and needs no row. Returns the number of rows set
+ * back.
+ */
+async function invalidateRestoredRenditions(restoredKeys) {
+  const keys = new Set(restoredKeys.map((key) => canonicalStorageKey(key))
+    .filter((key) => RENDITION_PREFIXES.some((prefix) => key.startsWith(prefix))));
+  if (keys.size === 0) return 0;
+  const ids = new Set();
+  for (const key of keys) {
+    const tier = TIER_KEY.exec(key);
+    if (tier) ids.add(Number(tier[1]));
+  }
+  let lastId = 0;
+  for (;;) {
+    const rows = await db('photos').where('id', '>', lastId).orderBy('id').limit(1000)
+      .select('id', 'thumbnail_path', 'preview_path', 'hero_path');
+    if (!rows.length) break;
+    for (const row of rows) {
+      if ([row.thumbnail_path, row.preview_path, row.hero_path]
+        .some((key) => key && keys.has(canonicalStorageKey(key)))) ids.add(row.id);
+    }
+    lastId = rows[rows.length - 1].id;
+  }
+  let reset = 0;
+  const list = [...ids];
+  for (let i = 0; i < list.length; i += 500) {
+    reset += await db('photos').whereIn('id', list.slice(i, i + 500))
+      .where('rendition_version', '>=', RENDITION_VERSION)
+      .update({ rendition_version: 0 });
+  }
+  if (reset > 0) {
+    logger.info(`Rendition refresh: ${reset} photos had renditions restored from a backup; regenerating them in the background`);
+    requestPass();
+  }
+  return reset;
+}
+
 /** Progress for the admin status endpoint. */
 async function status() {
   const counts = await wherePhotoProcessed(livePhotos(db))
@@ -435,6 +502,8 @@ module.exports = {
   refreshPhoto,
   refreshCover,
   runPass,
+  invalidateRestoredRenditions,
+  requestPass,
   start,
   stop,
   status,

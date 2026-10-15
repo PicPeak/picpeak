@@ -55,7 +55,7 @@ const ALL_ROWS = {
   'services/picpeakImportService.js': [1, 'portable import: the flag travels with the row'],
   'services/portableImportMaintenance.js': [1, 'portable import: re-queues every imported row'],
   'services/publicUploadQuota.js': [2, 'guest upload quota is storage; the pending-hold reconcile names the flag on its next line'],
-  'services/renditionRefresh.js': [3, 'marks a refreshed row by id; a superseded rendition another row (trashed or not) still uses is kept; waits while the upload pipeline has rows in flight'],
+  'services/renditionRefresh.js': [5, 'marks a refreshed row by id; a superseded rendition another row (trashed or not) still uses is kept; waits while the upload pipeline has rows in flight; a restored rendition sets back every row naming it, trashed ones included'],
   'services/restoreService.js': [1, 'backup restore: re-queues every restored row'],
   'services/s3AutoImporter.js': [2, 'which object already belongs to a photo; insert'],
   'services/secureImageService.js': [1, 'resolves the gallery for an access-log row'],
