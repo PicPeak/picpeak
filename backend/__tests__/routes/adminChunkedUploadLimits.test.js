@@ -21,6 +21,10 @@ jest.mock('../../src/services/photoProcessor', () => ({
   processUploadedPhotos: (...args) => mockProcessUploadedPhotos(...args),
 }));
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const JPEG = require('../helpers/minimalJpeg');
 const request = require('supertest');
 const express = require('express');
 const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('../integration/helpers/crmDb');
@@ -57,7 +61,13 @@ describe('admin chunked upload /complete limits', () => {
     .set('Authorization', `Bearer ${token}`)
     .send(body);
 
+  let mergedDir; let mergedPath;
+
   beforeAll(async () => {
+    // The merge is mocked, but /complete reads the merged file's content.
+    mergedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-chunk-limits-'));
+    mergedPath = path.join(mergedDir, 'big.jpg');
+    fs.writeFileSync(mergedPath, JPEG);
     ({ db, cleanup } = await bootCrmDb());
     const { adminId } = await seedMinimal(db);
     await assignAdminRole(db, adminId, 'super_admin');
@@ -67,12 +77,15 @@ describe('admin chunked upload /complete limits', () => {
     app.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
   }, 180000);
 
-  afterAll(async () => { if (cleanup) await cleanup(); });
+  afterAll(async () => {
+    fs.rmSync(mergedDir, { recursive: true, force: true });
+    if (cleanup) await cleanup();
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockCompleteUpload.mockResolvedValue({
-      filename: 'big.jpg', mimeType: 'image/jpeg', size: 3, path: '/tmp/not-used', tempDir: '/tmp/not-used-dir', eventId: 1,
+      filename: 'big.jpg', mimeType: 'image/jpeg', size: JPEG.length, path: mergedPath, tempDir: mergedDir, eventId: 1,
     });
   });
 
