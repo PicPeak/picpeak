@@ -218,6 +218,19 @@ describe('rendition refresh after EXIF stripping', () => {
     expect(fs.readFileSync(storagePath(originalKey)).equals(taggedJpeg)).toBe(true);
   }, 60000);
 
+  it('drops the tiers a RAW photo was actually served under (its attempt names them)', async () => {
+    const event = await makeEvent();
+    const id = await addLegacyPhoto(event, { processing_attempt_id: 'attempt-2096' });
+    await db('photos').where({ id }).update({ filename: 'legacy.cr2', path: `${event.slug}/legacy.cr2` });
+    const full = await db('photos').where({ id }).first();
+    const thumbs = jest.spyOn(imageProcessor, 'deleteThumbnailTiers');
+    const previews = jest.spyOn(imageProcessor, 'deletePreviewTiers');
+
+    await refresh.runPass(passOptions);
+    expect(imageProcessor.thumbnailTierKeys(thumbs.mock.calls[0][0])).toEqual(imageProcessor.thumbnailTierKeys(full));
+    expect(imageProcessor.previewTierKeys(previews.mock.calls[0][0])).toEqual(imageProcessor.previewTierKeys(full));
+  }, 60000);
+
   it('does not run while another replica holds the claim', async () => {
     const event = await makeEvent();
     await addLegacyPhoto(event);

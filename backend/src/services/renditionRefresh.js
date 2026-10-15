@@ -65,10 +65,12 @@ const intEnv = (name, fallback) => {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 };
 
-// What the rendition helpers need to resolve a source and name its outputs;
-// the same columns the admin regenerate actions select, plus the hero's.
+// What the rendition helpers need to resolve a source and name its outputs:
+// the columns the admin regenerate actions select, plus the hero's, plus
+// processing_attempt_id, which names a RAW photo's responsive tiers
+// (derivativeCacheId). Without it the tier cleanup misses those files.
 const PHOTO_COLUMNS = [
-  'id', 'event_id', 'path', 'media_type', 'mime_type', 'processing_status',
+  'id', 'event_id', 'path', 'media_type', 'mime_type', 'processing_status', 'processing_attempt_id',
   'thumbnail_path', 'preview_path', 'hero_path', 'hero_anchor',
   'source_origin', 'external_relpath', 'filename', 'size_bytes', 'source_mtime_ms', 'source_filename',
   'rendition_version',
