@@ -519,7 +519,17 @@ class EventRenameService {
           backupData.folderRenamed = true;
         }
 
-        // 5. Rename photo files and update paths
+        // 5. The event row before the photos on PostgreSQL (issue 2108). The
+        // slug update below needs it FOR UPDATE, and a face scan, a tag
+        // commit or a trash restore takes it before the photo; held only
+        // from the photo rewrite on, each could hold its photo's event and
+        // wait for the photo while this waited for the event. After the
+        // object move, so a slow S3 copy does not hold up the gallery.
+        if (trx.client.config.client === 'pg') {
+          await trx('events').where({ id: eventId }).forUpdate().first('id');
+        }
+
+        // Rename photo files and update paths
         const filesRenamed = await this.renamePhotoFiles(eventId, oldName, newEventName.trim(), oldSlug, newSlug, trx);
 
         // 6. Update database records

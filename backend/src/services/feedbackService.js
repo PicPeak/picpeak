@@ -286,6 +286,13 @@ class FeedbackService {
     let outcome;
 
     await db.transaction(async (trx) => {
+      // The event before the photo on PostgreSQL (issue 2108): a new tag row
+      // takes a key-share lock on it through its foreign key, and a rename,
+      // a capped trash restore or an archive delete holds it FOR UPDATE
+      // before the photo. Taken after the photo lock below, that is a cycle.
+      if (trx.client.config.client === 'pg') {
+        await trx('events').where({ id: eventId }).forKeyShare().first('id');
+      }
       await trx('photos').where({ id: photoId }).forUpdate().first();
 
       // Visible rows only, like every other single-value path (#1150): a

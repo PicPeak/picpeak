@@ -19,7 +19,9 @@ const { ensurePreviewImage } = require('./imageProcessor');
 // SidecarUnavailableError is deliberately NOT caught here — it propagates to
 // faceQueue, which is the only layer that knows to retry rather than fail.
 const { detectFaces } = require('./faceClient');
-const { assignFaces, packEmbedding, recomputeCentroid } = require('./faceClustering');
+const {
+  assignFaces, lockEventPeople, packEmbedding, recomputeCentroid,
+} = require('./faceClustering');
 const { getThresholds, isEnabledForEvent } = require('./faceSettings');
 
 /**
@@ -275,6 +277,12 @@ async function processPhotoFaces(photoId) {
 
       // Rebuild the people the removed faces belonged to BEFORE assigning the
       // replacements, so assignment compares against honest centroids.
+      //
+      // Under the event's people lock (PostgreSQL), the one assignFaces takes
+      // below anyway: rebuilding locks those person rows, and a second scan
+      // of this event holding the lock in assignFaces writes the same rows.
+      // Taken in between, each scan waited for the other (issue 2108).
+      if (affectedPeople.length) await lockEventPeople(photo.event_id, trx);
       for (const personId of affectedPeople) {
         await recomputeCentroid(personId, trx);
       }
@@ -366,6 +374,14 @@ async function enqueueEvent(eventId, { onlyUnscanned = false } = {}) {
  */
 async function purgeEvent(eventId) {
   return db.transaction(async (trx) => {
+    // The event row first on PostgreSQL (issue 2108), where this transaction
+    // ends anyway: a capped trash restore, an archive delete and a rename
+    // hold it FOR UPDATE before they touch the photos, and taken last it
+    // closed a lock cycle with each of them. NO KEY UPDATE is the lock the
+    // update below takes, so a scan's key share does not wait for it.
+    if (trx.client.config.client === 'pg') {
+      await trx('events').where({ id: eventId }).forNoKeyUpdate().first('id');
+    }
     // Detach before deleting people so the SET NULL FK never fires against
     // rows that are about to go anyway.
     await trx('photo_faces').where({ event_id: eventId }).update({ person_id: null });

@@ -127,7 +127,35 @@ function meetsQualityFloor(face, thresholds) {
  */
 const eventLocks = new Map();
 
+/**
+ * The PostgreSQL half of withEventLock on its own: the event's people lock,
+ * held until `trx` ends. Re-entrant within the transaction. A no-op without a
+ * transaction and on SQLite.
+ *
+ * A scan takes it before it rewrites the people its old faces belonged to
+ * (issue 2108): those writes lock person rows, and a second scan holding this
+ * lock in assignFaces writes the same rows. Taken after them, each scan waited
+ * for the other.
+ */
+async function lockEventPeople(eventId, trx) {
+  // pg_advisory_xact_lock is released automatically when the transaction
+  // ends, including on rollback — no leak if the caller throws.
+  if (trx && typeof trx.raw === 'function') {
+    const client = db.client.config.client;
+    const isPg = client === 'pg' || (typeof client === 'string' && client.includes('postgres'));
+    if (isPg) {
+      await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [1074, Number(eventId)]);
+    }
+  }
+}
+
 async function withEventLock(eventId, trx, fn) {
+  // The advisory lock before the in-process mutex, not inside it: a scan can
+  // already hold it (lockEventPeople) when it gets here, and a worker of the
+  // same process waiting for it in PostgreSQL while holding the mutex would
+  // be a cycle PostgreSQL cannot see. Nothing reports it; both hang.
+  await lockEventPeople(eventId, trx);
+
   const previous = eventLocks.get(eventId) || Promise.resolve();
   let release;
   const current = new Promise((resolve) => { release = resolve; });
@@ -135,15 +163,6 @@ async function withEventLock(eventId, trx, fn) {
 
   await previous;
   try {
-    // pg_advisory_xact_lock is released automatically when the transaction
-    // ends, including on rollback — no leak if the caller throws.
-    if (trx && typeof trx.raw === 'function') {
-      const client = db.client.config.client;
-      const isPg = client === 'pg' || (typeof client === 'string' && client.includes('postgres'));
-      if (isPg) {
-        await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [1074, Number(eventId)]);
-      }
-    }
     return await fn();
   } finally {
     release();
@@ -854,7 +873,7 @@ async function mergePeople(eventId, sourceIds, targetId) {
   const ids = sourceIds.filter((id) => id !== targetId);
   if (!ids.length) return { moved: 0 };
 
-  return db.transaction(async (trx) => {
+  const merge = () => db.transaction(async (trx) => {
     // Carry metadata forward before the sources are deleted. Without this a
     // merge silently discards a photographer-entered name, or un-hides a
     // person they had suppressed — the target keeps its own values where it
@@ -939,6 +958,21 @@ async function mergePeople(eventId, sourceIds, targetId) {
     await recomputeCentroid(targetId, trx);
     return { moved };
   });
+
+  // Once more after a deadlock on PostgreSQL (SQLSTATE 40P01, issue 2108).
+  // Moving the faces takes a key-share lock on the target through the
+  // foreign key before the sources are deleted; a scan rebuilding the same
+  // people locks them in its own order (one it updates, one it deletes once
+  // it has no faces left). No order taken here fits every scan, and the
+  // transaction has no effect outside the database, so the loser simply runs
+  // again against what the other side committed.
+  try {
+    return await merge();
+  } catch (err) {
+    if (err?.code !== '40P01') throw err;
+    logger.warn(`faceClustering: merge into person ${targetId} hit a deadlock, retrying once`);
+    return merge();
+  }
 }
 
 /**
@@ -1173,6 +1207,7 @@ module.exports = {
   normalize,
   meetsQualityFloor,
   assignFaces,
+  lockEventPeople,
   consolidate,
   suggestMerges,
   dismissMergeSuggestion,
