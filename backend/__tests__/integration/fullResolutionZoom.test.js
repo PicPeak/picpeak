@@ -490,5 +490,15 @@ describe('Full-resolution zoom (issue 1733)', () => {
       expect(res.body.equals(jpeg)).toBe(false);
       expect(res.body.length).toBeGreaterThan(0);
     });
+
+    it('versions the listed photo URL by the event flag, so a flip is not served from cache', async () => {
+      const urlOf = async (event, token) => (await request(app)
+        .get(`/api/gallery/${event.slug}/photos`)
+        .set('Authorization', `Bearer ${token}`)).body.photos[0].url;
+      const plainEvent = await makeEvent();
+      expect(await urlOf(plainEvent.event, plainEvent.token)).not.toMatch(/wm=/);
+      const marked = await makeEvent({ watermark_downloads: 1 });
+      expect(await urlOf(marked.event, marked.token)).toMatch(/[?&]wm=ev(&|$)/);
+    });
   });
 });
