@@ -33,7 +33,8 @@ const {
 } = require('./externalMediaTypes');
 const { generateThumbnail, extractCaptureDate, orientedDimensions } = require('./imageProcessor');
 const { exifColumn } = require('./photoExif');
-const { processUploadedVideo, posterFrameError } = require('./videoProcessor');
+const { processUploadedVideo, posterFrameError, extractVideoMetadata } = require('./videoProcessor');
+const { isInterruption: isResourceError } = require('./mediaProcessPolicy');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { resolveCredit } = require('./photoCredit');
 const { photoCapOf, insertPhotoWithinCap } = require('./photoCap');
@@ -41,7 +42,7 @@ const jobState = require('./maintenanceJobState');
 const externalAccess = require('./externalMediaAccess');
 const folderTree = require('./folderTreeService');
 const { parseBooleanInput } = require('../utils/parsers');
-const { formatBoolean } = require('../utils/dbCompat');
+const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
 
 /**
  * Where an external file lands (issues 1786 + 1562), from its path relative
@@ -184,16 +185,24 @@ const DERIVATIVE_COLUMNS = ['thumbnail_path', 'preview_path', 'hero_path', 'wate
  * describe the old picture, so they are purged and queued again where the
  * gallery has them on.
  *
+ * A video (issue 2114) takes the new size, mtime, runtime, codecs and
+ * dimensions, gets a new poster frame, and its web copy and adaptive
+ * streaming ladder start over: their columns are reset in the same update,
+ * attempt ids included, so a transcode still running on the old bytes loses
+ * its claim and cannot publish, and the queues convert the new file while
+ * the settings are on. The old copy and ladder are removed once the row no
+ * longer names them. Videos have no faces, scene tags or EXIF credit.
+ *
  * Only rows still served from the share: a photo replaced by an upload keeps
- * its external_relpath (the dedupe key) but no longer reads this file. Videos
- * are left alone, see the Limits of the change that added this.
+ * its external_relpath (the dedupe key) but no longer reads this file.
  *
  * Returns 'refreshed', 'deferred' (automatic pass, file still being written)
  * or 'skipped'.
  */
 async function refreshChangedFile(row, f, { automatic, settleMs }) {
   const served = row.source_origin === 'external' || row.source_origin === 'reference';
-  if (!served || row.media_type === 'video' || isVideoFile(f.name)) return 'skipped';
+  if (!served) return 'skipped';
+  const isVideo = row.media_type === 'video' || isVideoFile(f.name);
   if (row.size_bytes == null) {
     // Imported before the size was recorded: nothing to compare against, so
     // record it and treat the file as the one the derivatives were made from.
@@ -226,24 +235,43 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
 
   let width = null;
   let height = null;
-  try {
-    ({ width, height } = orientedDimensions(await retryTransient(() => sharp(f.full).metadata())));
-  } catch (dimErr) {
-    // Unreadable now (a half-written file the settle rule missed, or a
-    // format Sharp refuses): keep the row as it is and try on the next pass.
-    logger.warn(`Could not read changed external file ${f.rel}: ${dimErr.message}`);
-    return 'skipped';
-  }
   let capturedAt = null;
-  try {
-    capturedAt = await extractCaptureDate(f.full);
-  } catch (dateErr) {
-    logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
+  let exif = {};
+  let credit = null;
+  let video = null;
+  if (isVideo) {
+    // What ffprobe can tell, as on import. A file it cannot read still
+    // gets the refresh (the poster falls back to the placeholder, as on
+    // import); only a busy media worker leaves it for the next pass.
+    let probed = null;
+    try {
+      probed = await extractVideoMetadata(f.full);
+    } catch (probeErr) {
+      if (isResourceError(probeErr)) return 'skipped';
+      logger.warn(`Could not read changed external video ${f.rel}: ${probeErr.message}`);
+    }
+    // Read before the transaction: a query inside it would wait on
+    // SQLite's single connection.
+    video = { probed, webCopy: await require('./videoRenditionService').isEnabled() };
+  } else {
+    try {
+      ({ width, height } = orientedDimensions(await retryTransient(() => sharp(f.full).metadata())));
+    } catch (dimErr) {
+      // Unreadable now (a half-written file the settle rule missed, or a
+      // format Sharp refuses): keep the row as it is and try on the next pass.
+      logger.warn(`Could not read changed external file ${f.rel}: ${dimErr.message}`);
+      return 'skipped';
+    }
+    try {
+      capturedAt = await extractCaptureDate(f.full);
+    } catch (dateErr) {
+      logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
+    }
+    exif = await exifColumn(f.full);
+    // The credit read from the file follows the file; a manual one stays.
+    const creditFromFile = !row.credit_source || row.credit_source === 'exif';
+    credit = creditFromFile ? await resolveCredit({ localPath: f.full, isVideo: false }) : null;
   }
-  const exif = await exifColumn(f.full);
-  // The credit read from the file follows the file; a manual one stays.
-  const creditFromFile = !row.credit_source || row.credit_source === 'exif';
-  const credit = creditFromFile ? await resolveCredit({ localPath: f.full, isVideo: false }) : null;
   // Everything above must describe one version of the file: if it moved
   // while being read, try again on the next pass.
   const stats = await fs.stat(f.full);
@@ -296,20 +324,63 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     id: row.id, size_bytes: row.size_bytes, source_mtime_ms: row.source_mtime_ms ?? null,
     source_origin: row.source_origin, external_relpath: row.external_relpath,
   };
+  const m = video?.probed || {};
   const updates = {
     size_bytes: stats.size,
     source_mtime_ms: Math.floor(stats.mtimeMs),
-    width,
-    height,
-    captured_at: capturedAt ? capturedAt.toISOString() : null,
-    // Camera details describe the file: the new one's, or none.
-    exif_json: null,
-    ...exif,
+    ...(isVideo ? {
+      duration: m.duration ?? null,
+      video_codec: m.videoCodec || null,
+      audio_codec: m.audioCodec || null,
+      width: m.width || null,
+      height: m.height || null,
+      // The poster note is written again with the new poster below.
+      processing_error: null,
+      // The web copy and the ladder start over, as on a replacement: the
+      // attempt ids go, so a transcode of the old bytes can publish nothing.
+      // The web copy is queued while its setting is on; the ladder's queue
+      // picks up a video with no status by itself.
+      web_path: null,
+      web_attempt_id: null,
+      web_attempts: 0,
+      web_retry_at: null,
+      web_status: video.webCopy ? 'pending' : null,
+      web_started_at: null,
+      web_error: null,
+      hls_path: null,
+      hls_status: null,
+      hls_attempt_id: null,
+      hls_attempts: 0,
+      hls_retry_at: null,
+      hls_started_at: null,
+      hls_error: null,
+    } : {
+      width,
+      height,
+      captured_at: capturedAt ? capturedAt.toISOString() : null,
+      // Camera details describe the file: the new one's, or none.
+      exif_json: null,
+      ...exif,
+    }),
     thumb_hash: null,
   };
   for (const column of DERIVATIVE_COLUMNS) updates[column] = null;
+  // A video's web copy and ladder as the row names them at the commit, read
+  // under the row lock: one a transcode published just before is removed
+  // too, and one claimed after the commit converts the new bytes and is kept.
+  let previousWebPath = null;
+  let sweepOldLadder = async () => {};
   const committed = await db.transaction(async (trx) => {
+    if (isVideo) {
+      let read = trx('photos').where(fence);
+      if (isPostgreSQL()) read = read.forUpdate();
+      const current = await read.first();
+      if (!current) return false;
+      previousWebPath = current.web_path || null;
+      sweepOldLadder = await require('./videoHlsService').captureLadder(current);
+    }
     if (await trx('photos').where(fence).update(updates) !== 1) return false;
+    if (isVideo) return true;
     if (credit) {
       await trx('photos').where({ id: row.id })
         .where((q) => q.whereNull('credit_source').orWhere('credit_source', 'exif'))
@@ -341,18 +412,43 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     .filter((k) => !currentKeys.has(k))
     .map((k) => storage.delete(k).catch(() => {})));
 
-  try {
-    const meta = {};
-    const outputBasename = `ext${row.id}_${path.basename(f.rel)}`;
-    const thumbnailPath = await generateThumbnail(f.full, { outputBasename, meta });
-    if (thumbnailPath) {
-      await db('photos').where({ id: row.id, size_bytes: stats.size, source_mtime_ms: Math.floor(stats.mtimeMs) })
-        .whereNull('thumbnail_path')
-        .update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null });
+  const thisVersion = { id: row.id, size_bytes: stats.size, source_mtime_ms: Math.floor(stats.mtimeMs) };
+  if (isVideo) {
+    // Nothing names the old copy or ladder any more.
+    await require('./videoRenditionService').deleteWebCopy({ web_path: previousWebPath });
+    await sweepOldLadder();
+    // The poster, under the key the import wrote it (the old file there
+    // went with the caches above), as the import makes it.
+    try {
+      const thumbnailKey = path.posix.join(
+        'thumbnails',
+        `thumb_ext${row.id}_${path.basename(f.rel).replace(/\.[^.]+$/, '.jpg')}`
+      );
+      const result = await processUploadedVideo(f.full, thumbnailKey);
+      await db('photos').where(thisVersion).whereNull('thumbnail_path').update({
+        thumbnail_path: result.thumbnailKey,
+        thumb_hash: result.thumbHash || null,
+        processing_error: result.placeholder ? posterFrameError(result.thumbnailError) : null,
+      });
+    } catch (videoErr) {
+      // ensureThumbnail makes it on first view instead.
+      logger.warn(`Poster regeneration failed for changed external video ${row.id} (${f.rel}): ${videoErr.message}`);
+      await db('photos').where(thisVersion).update({ processing_error: posterFrameError(videoErr.message) }).catch(() => {});
     }
-  } catch (thumbErr) {
-    // ensureThumbnail makes it on first view instead.
-    logger.warn(`Thumbnail regeneration failed for changed external photo ${row.id} (${f.rel}): ${thumbErr.message}`);
+  } else {
+    try {
+      const meta = {};
+      const outputBasename = `ext${row.id}_${path.basename(f.rel)}`;
+      const thumbnailPath = await generateThumbnail(f.full, { outputBasename, meta });
+      if (thumbnailPath) {
+        await db('photos').where(thisVersion)
+          .whereNull('thumbnail_path')
+          .update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null });
+      }
+    } catch (thumbErr) {
+      // ensureThumbnail makes it on first view instead.
+      logger.warn(`Thumbnail regeneration failed for changed external photo ${row.id} (${f.rel}): ${thumbErr.message}`);
+    }
   }
 
   // The watermark service keeps results in memory by the path it read and
