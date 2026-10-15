@@ -132,10 +132,19 @@ async function run(job) {
     }
   };
   let pipeline = sharp(input, options);
-  const allowed = new Set(['rotate', 'withMetadata', 'keepMetadata', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw']);
+  const allowed = new Set(['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw']);
   for (const [name, encodedArgs] of job.steps) {
     if (!allowed.has(name)) throw refusal('Unsupported image operation');
     const args = decode(encodedArgs);
+    // Narrow on purpose: a profile argument can be a file path, and EXIF is
+    // only ever written to carry an Orientation tag.
+    if (name === 'withIccProfile' && args[0] !== 'srgb') throw refusal('Unsupported image operation');
+    if (name === 'withExif') {
+      const exif = args[0];
+      const keys = exif && typeof exif === 'object' ? Object.keys(exif) : [];
+      const ifd0 = keys.length === 1 && keys[0] === 'IFD0' && exif.IFD0 && typeof exif.IFD0 === 'object' ? exif.IFD0 : null;
+      if (!ifd0 || Object.keys(ifd0).join() !== 'Orientation' || !/^[1-8]$/.test(ifd0.Orientation)) throw refusal('Unsupported image operation');
+    }
     if (name === 'composite') {
       for (const overlay of args[0]) {
         if (typeof overlay.input === 'string') { check(overlay.input); overlay.input = fs.readFileSync(overlay.input); }
