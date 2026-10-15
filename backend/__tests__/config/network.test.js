@@ -207,6 +207,14 @@ describe('createProxyChainWarning', () => {
     expect(bodies[0].ip).toBe('192.168.1.20');
   });
 
+  test('logs the private hop canonically, without an IPv6 zone from the header', async () => {
+    const { logger } = await run(parseTrustProxy('1'), ['203.0.113.9, fe80::1%zoneSecret']);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const [message] = logger.warn.mock.calls[0];
+    expect(message).toContain('from fe80::1 ');
+    expect(message).not.toContain('zoneSecret');
+  });
+
   test.each([['2'], ['false'], [undefined], ['loopback']])(
     'stays quiet when TRUST_PROXY is %p',
     async (value) => {

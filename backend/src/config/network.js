@@ -37,11 +37,16 @@ function parseTrustProxy(value = process.env.TRUST_PROXY) {
 
 const PROXY_HOP_RANGES = new Set(['private', 'loopback', 'linkLocal', 'uniqueLocal']);
 
-function isPrivateHop(address) {
+// The hop as a canonical address without an IPv6 zone (the zone is free
+// text from the header), or null when it is not a private-range address.
+function privateHop(address) {
   try {
-    return PROXY_HOP_RANGES.has(ipaddr.process(address).range());
+    const parsed = ipaddr.process(address);
+    if (!PROXY_HOP_RANGES.has(parsed.range())) return null;
+    if (parsed.zoneId) parsed.zoneId = undefined;
+    return parsed.toString();
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -64,8 +69,8 @@ function createProxyChainWarning({ trustProxy, logger }) {
       const hops = typeof header === 'string'
         ? header.split(',').map((hop) => hop.trim()).filter(Boolean)
         : [];
-      const nginxPeer = hops[hops.length - 1];
-      if (hops.length >= 2 && isPrivateHop(nginxPeer)) {
+      const nginxPeer = hops.length >= 2 ? privateHop(hops[hops.length - 1]) : null;
+      if (nginxPeer) {
         warned = true;
         logger.warn(
           `A request reached the bundled nginx from ${nginxPeer} with a forwarded client address. `
