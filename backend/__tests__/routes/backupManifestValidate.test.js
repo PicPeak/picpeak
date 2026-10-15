@@ -67,6 +67,17 @@ describe('backup manifest validate endpoints (issue 2089)', () => {
     },
   );
 
+  it('does not list the destination for a manifest found in a configured directory', async () => {
+    const readdir = jest.spyOn(fs.promises, 'readdir');
+    try {
+      const res = await post('/backup/manifest/validate', { manifestPath: 'backup-manifest-1.json' });
+      expect(res.status).toBe(200);
+      expect(readdir).not.toHaveBeenCalled();
+    } finally {
+      readdir.mockRestore();
+    }
+  });
+
   it('accepts the absolute path the status endpoint reports, when inside the directory', async () => {
     const res = await post('/backup/manifest/validate', { manifestPath: path.join(manifestDir, 'backup-manifest-1.json') });
     expect(res.status).toBe(200);
@@ -91,6 +102,22 @@ describe('backup manifest validate endpoints (issue 2089)', () => {
     const res = await post('/backup/manifest/validate', { manifestPath: path.join(root, 'backup-0b1c', 'files', 'data.json') });
     expect([400, 404]).toContain(res.status);
     expect(mockState.validated).toHaveLength(0);
+  });
+
+  it('does not follow a run\'s manifests folder that is a symlink out of the destination', async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-manifest-outside-'));
+    fs.writeFileSync(path.join(outside, 'secret-manifest.json'), '{}');
+    fs.mkdirSync(path.join(root, 'backup-link'), { recursive: true });
+    fs.symlinkSync(outside, path.join(root, 'backup-link', 'manifests'));
+    try {
+      for (const manifestPath of ['secret-manifest.json', path.join(root, 'backup-link', 'manifests', 'secret-manifest.json')]) {
+        const res = await post('/backup/manifest/validate', { manifestPath });
+        expect([400, 404]).toContain(res.status);
+      }
+      expect(mockState.validated).toHaveLength(0);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it('answers 404 without a path for a manifest that does not exist', async () => {
