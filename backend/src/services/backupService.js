@@ -2161,6 +2161,42 @@ async function validateBackupManifest(manifestPath) {
   }
 }
 
+/**
+ * Resolve a manifest file name given to the validate endpoints to a file
+ * inside one of the directories manifests are written to (the configured
+ * manifest directory, the default one next to the backup, and the
+ * BACKUP_PATH override the endpoints used to be bound to). Every candidate
+ * goes through safePathJoin, so a traversal input throws and nothing outside
+ * those directories is read. Returns null when no such file exists.
+ */
+async function resolveManifestFile(manifestPath, providedConfig = null) {
+  const { safePathJoin } = require('../utils/fileSecurityUtils');
+  const config = providedConfig || await getBackupConfigInternal().catch(() => ({})) || {};
+  const bases = [
+    config.backup_manifest_path,
+    path.join(config.backup_destination_path || path.join(getStoragePath(), 'backups'), 'manifests'),
+    process.env.BACKUP_PATH,
+  ].filter((base) => typeof base === 'string' && base);
+  let found = null;
+  for (const base of bases) {
+    // A path as the status endpoint reports it (absolute) maps to its
+    // place under the directory; anything outside stays outside and is
+    // refused by safePathJoin below.
+    let relative = manifestPath;
+    if (path.isAbsolute(manifestPath)) {
+      const rel = path.relative(path.resolve(base), manifestPath);
+      if (!rel.startsWith('..') && !path.isAbsolute(rel)) relative = rel;
+    }
+    const candidate = safePathJoin(base, relative);
+    if (!found) {
+      const stat = await fs.stat(candidate).catch(() => null);
+      if (stat && stat.isFile()) found = candidate;
+    }
+  }
+  return found;
+}
+
+service.resolveManifestFile = resolveManifestFile;
 service.getBackupConfig = getBackupConfigInternal;
 service.getDatabaseBackupInfo = getDatabaseBackupInfoInternal;
 service.getFilesToBackup = getFilesToBackupInternal;

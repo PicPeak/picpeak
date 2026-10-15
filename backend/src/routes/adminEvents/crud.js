@@ -50,6 +50,8 @@ const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
 const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
 const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, claimEventArchive } = require('./helpers');
+// One stored form per name (NFC): a decomposed "Jörg" must match a precomposed search.
+const nfcName = (v) => (typeof v === 'string' ? v.normalize('NFC') : v);
 
 // Client PIN floor. The PIN guards the client review page and used to accept
 // any string, one character included. Six is the least that the login
@@ -129,7 +131,7 @@ module.exports = (router) => {
       }
       return true;
     }),
-    body('event_name').notEmpty().trim(),
+    body('event_name').customSanitizer(nfcName).notEmpty().trim(),
     body('event_date').optional({ values: 'falsy' }).isDate(),
     // Migration 137 — calendar time fields.
     body('event_time_start').optional({ values: 'falsy' }).matches(/^([01]\d|2[0-3]):[0-5]\d$/)
@@ -883,7 +885,7 @@ module.exports = (router) => {
   // client-access secrets, customer assignments, archive/sent state are NOT
   // carried over.
   router.post('/:id/duplicate', adminAuth, requirePermission('events.create'), requireEventOwnership, [
-    body('event_name').trim().notEmpty().withMessage('Event name is required'),
+    body('event_name').customSanitizer(nfcName).trim().notEmpty().withMessage('Event name is required'),
     body('event_date').optional({ values: 'falsy' }).isDate(),
     body('customer_name').optional().trim(),
     body('customer_email').optional({ values: 'falsy' }).isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
@@ -1130,7 +1132,7 @@ module.exports = (router) => {
 
   // Update event
   router.put('/:id', adminAuth, requirePermission('events.edit'), requireEventOwnership, [
-    body('event_name').optional().trim().notEmpty(),
+    body('event_name').optional().customSanitizer(nfcName).trim().notEmpty(),
     body('event_date').optional({ values: 'falsy' }).isDate(),
     // Migration 137 — calendar time fields. Same regex/range rule as POST.
     body('event_time_start').optional({ values: 'falsy', nullable: true })

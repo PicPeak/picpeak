@@ -180,6 +180,21 @@ describe('one archive job per gallery', () => {
     expect((await jobState.read(jobName(event.id))).isRunning).toBe(false);
   });
 
+  it('prunes the empty folders an archive leaves on local disk, and only the empty ones', async () => {
+    const fsp = require('fs/promises');
+    const os = require('os');
+    const root = await fsp.mkdtemp(require('path').join(os.tmpdir(), 'picpeak-prune-'));
+    const slug = require('path').join(root, 'gallery');
+    await fsp.mkdir(require('path').join(slug, 'collages'), { recursive: true });
+    await fsp.mkdir(require('path').join(slug, 'individual'), { recursive: true });
+    await fsp.mkdir(require('path').join(slug, '.download-cache'), { recursive: true });
+    await fsp.mkdir(require('path').join(slug, 'kept'), { recursive: true });
+    await fsp.writeFile(require('path').join(slug, 'kept', 'late-upload.jpg'), 'x');
+    await require('../../src/services/archiveService').pruneEmptyDirs(slug);
+    expect(await fsp.readdir(slug)).toEqual(['kept']);
+    await fsp.rm(root, { recursive: true, force: true });
+  });
+
   it('refuses a stale caller row once another job has archived the gallery', async () => {
     const event = await makeEvent('stale-row');
     await archiveEvent(event);
@@ -612,12 +627,45 @@ describe('one archive job per gallery', () => {
     const eventRenameService = require('../../src/services/eventRenameService');
     try {
       const result = await eventRenameService.renameEvent(event.id, 'A brand new name');
-      expect(result).toEqual({ success: false, error: expect.stringMatching(/being archived/) });
+      expect(result).toEqual({ success: false, conflict: true, error: expect.stringMatching(/being archived/) });
     } finally {
       claimSpy.mockRestore();
     }
     expect(mockStorage.copy).not.toHaveBeenCalled();
     expect((await db('events').where({ id: event.id }).first()).slug).toBe('rename-race');
+  });
+
+  it('reports a concurrent rename as a conflict, not as an archive', async () => {
+    const event = await makeEvent('rename-concurrent');
+    const eventRenameService = require('../../src/services/eventRenameService');
+    const results = await Promise.all([
+      eventRenameService.renameEvent(event.id, 'First new name'),
+      eventRenameService.renameEvent(event.id, 'Second new name'),
+    ]);
+    const lost = results.filter((r) => !r.success);
+    expect(results.filter((r) => r.success)).toHaveLength(1);
+    expect(lost).toHaveLength(1);
+    expect(lost[0].conflict).toBe(true);
+    expect(lost[0].error).toMatch(/renamed/);
+  });
+
+  it('stores a renamed gallery name in NFC', async () => {
+    const event = await makeEvent('rename-nfc');
+    const eventRenameService = require('../../src/services/eventRenameService');
+    const result = await eventRenameService.renameEvent(event.id, 'Jo\u0308rg und Anna');
+    expect(result.success).toBe(true);
+    const row = await db('events').where({ id: event.id }).first();
+    expect(row.event_name).toBe('J\u00f6rg und Anna');
+  });
+
+  it('removes the archive claim row with the gallery', async () => {
+    const event = await makeEvent('claim-row-delete');
+    const eventRenameService = require('../../src/services/eventRenameService');
+    expect((await eventRenameService.renameEvent(event.id, 'Claim row renamed')).success).toBe(true);
+    expect(await db('maintenance_jobs').where({ job_name: jobName(event.id) }).first()).toBeTruthy();
+    const res = await request(app).delete(`/admin/events/${event.id}`);
+    expect(res.status).toBe(200);
+    expect(await db('maintenance_jobs').where({ job_name: jobName(event.id) }).first()).toBeUndefined();
   });
 
   it('deletes the zip of an archive that finished between the delete and its claim', async () => {

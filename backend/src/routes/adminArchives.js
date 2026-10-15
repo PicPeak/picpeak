@@ -994,6 +994,9 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       // After the photos: a tagging worker locks the photo row first, and
       // taking the two in the other order can deadlock on PostgreSQL.
       await trx('photo_tags').where('event_id', req.params.id).del();
+      if (await trx.schema.hasTable('maintenance_jobs')) {
+        await trx('maintenance_jobs').where({ job_name: `event_archive:${Number(req.params.id)}` }).del();
+      }
       await deleteWithAccountingHistory(trx, 'events', { id: req.params.id },
         { actor: req.admin.id, source: 'archive.delete' });
     });

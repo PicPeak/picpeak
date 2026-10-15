@@ -82,7 +82,8 @@ function sanitisePrefill(input) {
   for (const field of PREFILLABLE_FIELDS) {
     const raw = input[field];
     if (raw === undefined || raw === null) continue;
-    const trimmed = String(raw).trim();
+    // NFC: "Jörg" typed decomposed must match a precomposed search.
+    const trimmed = String(raw).trim().normalize('NFC');
     if (!trimmed) continue;
     if (field === 'country_code') {
       out[field] = trimmed.toUpperCase().slice(0, 2);
@@ -724,6 +725,12 @@ async function updateCustomer(id, updates, updatedByAdminId) {
         allowed[f] = String(updates[f] || '').trim().toLowerCase();
       } else if (f === 'country_code' && updates[f]) {
         allowed[f] = String(updates[f]).trim().toUpperCase().slice(0, 2);
+      } else if (
+        ['first_name', 'last_name', 'display_name', 'company_name'].includes(f)
+        && typeof updates[f] === 'string'
+      ) {
+        // One stored form per name: NFC, so a precomposed search matches.
+        allowed[f] = updates[f].normalize('NFC');
       } else if (
         f === 'feature_calendar' || f === 'feature_quotes'
         || f === 'feature_bills' || f === 'feature_hours_logging'
