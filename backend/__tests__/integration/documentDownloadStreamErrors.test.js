@@ -128,7 +128,7 @@ const cases = [
     const grant = verification.issueGrant('contract', await db('contract_action_tokens').where({ token }).first(), token);
     return () => request(publicApp).get(`/api/public/contracts/${token}/pdf`)
       .set('X-Document-Access', grant).set('X-Forwarded-For', nextIp());
-  }],
+  }, { 'referrer-policy': 'no-referrer' }],
   ['GET /api/admin/expenses/inbound/:id/file', async () => {
     const rel = `business-docs/inbound/${Math.random().toString(16).slice(2)}.pdf`;
     writeFile(rel);
@@ -137,7 +137,7 @@ const cases = [
       created_by_admin_id: adminId, file_path: path.join(process.env.STORAGE_PATH, rel), mime_type: 'application/pdf',
     }).returning('id'));
     return () => admin(expensesApp, `/api/admin/expenses/inbound/${id}/file`);
-  }],
+  }, { 'x-content-type-options': 'nosniff', 'content-disposition': 'attachment' }],
   ['GET /api/admin/expenses/inbound/:id/page/:n', async () => {
     const rel = `business-docs/inbound/${Math.random().toString(16).slice(2)}.pdf`;
     writeFile(rel);
@@ -151,7 +151,7 @@ const cases = [
     const png = writeFile(`business-docs/inbound-rendered/${id}/page-1.png`, 'png bytes');
     rasterSpy = jest.spyOn(require('../../src/services/rasterizeService'), 'getRenderedPagePath').mockResolvedValue(png);
     return () => admin(expensesApp, `/api/admin/expenses/inbound/${id}/page/1`);
-  }],
+  }, { 'content-type': 'image/png', 'x-content-type-options': 'nosniff', 'content-disposition': 'inline' }],
   ['GET /api/admin/expenses/:id/proof', async () => {
     const rel = `business-docs/receipts/${Math.random().toString(16).slice(2)}.pdf`;
     writeFile(rel);
@@ -161,15 +161,19 @@ const cases = [
       created_by_admin_id: adminId, receipt_path: path.join(process.env.STORAGE_PATH, rel),
     }).returning('id'));
     return () => admin(expensesApp, `/api/admin/expenses/${id}/proof`);
-  }],
+  }, { 'content-type': 'application/pdf', 'x-content-type-options': 'nosniff', 'content-disposition': 'attachment' }],
 ];
 
-describe.each(cases)('%s', (_name, setup) => {
+describe.each(cases)('%s', (_name, setup, expectedHeaders = {}) => {
   it('serves the file when it opens', async () => {
     const send = await setup();
     const res = await send().buffer(true).parse((r, cb) => { const c = []; r.on('data', d => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThan(0);
+    // The route's own headers still go out with the file.
+    expect(res.headers['content-type']).not.toMatch(/application\/json/);
+    expect(res.headers['content-disposition']).toMatch(/^(inline|attachment)/);
+    for (const [name, value] of Object.entries(expectedHeaders)) expect(res.headers[name]).toBe(value);
   });
 
   it('answers 404 with the file headers cleared when the file vanishes before it opens', async () => {
