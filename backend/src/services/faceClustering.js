@@ -127,6 +127,23 @@ function meetsQualityFloor(face, thresholds) {
  */
 const eventLocks = new Map();
 
+/**
+ * The PostgreSQL half of withEventLock on its own: the event's advisory lock,
+ * held until `trx` ends and re-entrant within it. A no-op without a
+ * transaction and on SQLite.
+ */
+async function lockEventPeople(eventId, trx) {
+  // pg_advisory_xact_lock is released automatically when the transaction
+  // ends, including on rollback — no leak if the caller throws.
+  if (trx && typeof trx.raw === 'function') {
+    const client = db.client.config.client;
+    const isPg = client === 'pg' || (typeof client === 'string' && client.includes('postgres'));
+    if (isPg) {
+      await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [1074, Number(eventId)]);
+    }
+  }
+}
+
 async function withEventLock(eventId, trx, fn) {
   const previous = eventLocks.get(eventId) || Promise.resolve();
   let release;
@@ -135,15 +152,7 @@ async function withEventLock(eventId, trx, fn) {
 
   await previous;
   try {
-    // pg_advisory_xact_lock is released automatically when the transaction
-    // ends, including on rollback — no leak if the caller throws.
-    if (trx && typeof trx.raw === 'function') {
-      const client = db.client.config.client;
-      const isPg = client === 'pg' || (typeof client === 'string' && client.includes('postgres'));
-      if (isPg) {
-        await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [1074, Number(eventId)]);
-      }
-    }
+    await lockEventPeople(eventId, trx);
     return await fn();
   } finally {
     release();
@@ -1050,18 +1059,40 @@ async function recluster(eventId) {
   const thresholds = await getThresholds();
 
   // Clearing, re-assigning, re-attaching the human state and recomputing the
-  // centroids are ONE transaction under the event's clustering lock (issue
+  // centroids are ONE transaction under the event's advisory lock (issue
   // 2112). Run as separate steps, the event showed no people (then unnamed,
   // un-hidden ones) until the last step landed, a failure part-way left it
   // that way, and assignFaces ran without a transaction: it held the
   // in-process lock without the PostgreSQL one, so a scan holding that one
   // and waiting for the in-process lock hung both, unseen by either side.
   //
-  // Everything inside goes through `trx`, never `db`: SQLite has one
-  // connection, and a second query waiting for it would wait for this
-  // transaction. consolidate() stays outside, since every merge it makes is
-  // a transaction of its own.
-  await db.transaction((trx) => withEventLock(eventId, trx, () => reclusterLocked(eventId, thresholds, trx)));
+  // The advisory lock alone, not withEventLock's in-process mutex: this
+  // transaction waits on row locks a scan of the event may hold (a re-scan
+  // deletes its old faces and rebuilds their people before it reaches
+  // assignFaces), and holding the mutex meanwhile would park that scan on it
+  // in Node, a cycle PostgreSQL cannot see. Every scan writes through
+  // assignFaces under the advisory lock, so it still serialises against
+  // this. On SQLite the transaction holds the only connection, so nothing
+  // else runs until it ends.
+  //
+  // Everything inside goes through `trx`, never `db`: on SQLite a second
+  // query would wait for this transaction. consolidate() stays outside,
+  // since every merge it makes is a transaction of its own.
+  const run = () => db.transaction(async (trx) => {
+    await lockEventPeople(eventId, trx);
+    await reclusterLocked(eventId, thresholds, trx);
+  });
+  try {
+    await run();
+  } catch (err) {
+    // A re-scan that rebuilt its old people before it asked for the lock can
+    // still close a cycle with this one, which PostgreSQL breaks with
+    // SQLSTATE 40P01. Nothing here acts outside the database, so the loser
+    // runs once more against what the scan committed.
+    if (err?.code !== '40P01') throw err;
+    logger.warn(`faceClustering: recluster of event ${eventId} hit a deadlock, retrying once`);
+    await run();
+  }
 
   await consolidate(eventId, { thresholds });
 
@@ -1105,8 +1136,8 @@ async function reclusterLocked(eventId, thresholds, trx) {
     .orderBy('id', 'asc')
     .select('id', 'embedding', 'model_version', 'det_score', 'bbox_w', 'bbox_h');
 
-  // assignFacesLocked, not assignFaces: the event lock is already held here,
-  // and the in-process half of it is not re-entrant.
+  // assignFacesLocked, not assignFaces: the advisory lock is already held,
+  // and the in-process mutex must not be taken here (see recluster).
   const assignments = await assignFacesLocked(eventId, faces, thresholds, trx);
 
   // Re-attach labels by majority inheritance.

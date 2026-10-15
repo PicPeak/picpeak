@@ -5,8 +5,9 @@
  * recluster() cleared the event's people in one transaction and re-assigned
  * them without one, so assignFaces took the in-process lock but never the
  * event's advisory lock, pg_advisory_xact_lock(1074, event). It now runs as
- * one transaction under both, so it waits for a scan that holds the advisory
- * lock and a scan waits for it, in either order, and both finish.
+ * one transaction under the advisory lock (and never holds the in-process
+ * mutex while it waits in PostgreSQL), so it waits for a scan that holds the
+ * lock, a scan waits for it, and both finish.
  *
  * The scan here is the clustering half of processPhotoFaces: a transaction
  * that inserts a face and hands it to assignFaces with that transaction.
@@ -184,8 +185,7 @@ const pgUrl = process.env.PICPEAK_PG_TEST_URL;
       expect(await until(async () => (await behind(pid)) >= 1)).toBe(true);
 
       // A scan of a new photo of the same event: it inserts its face, then
-      // waits in assignFaces for the recluster's lock (in-process or
-      // advisory, depending on the order withEventLock takes them).
+      // waits in assignFaces for the advisory lock the recluster holds.
       pending.push(settled(results, 'scan', db.transaction(async (trx) => {
         const face = await insertFace(trx, eventId, makeEmbedding(82, 4));
         await clustering.assignFaces(eventId, [face], { trx });
@@ -204,5 +204,57 @@ const pgUrl = process.env.PICPEAK_PG_TEST_URL;
     // The scan ran after the recluster and joined its face to a person.
     expect(await unassigned(eventId)).toBe(0);
     expect(Number((await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first()).c)).toBe(2);
+  }, 60000);
+
+  test('a re-scan that rebuilt its old people first never hangs a recluster', async () => {
+    const eventId = await seedEvent();
+    await seedPeople(eventId);
+    const [old] = await db('photo_faces').where({ event_id: eventId }).orderBy('id').limit(1);
+
+    // processPhotoFaces' opening on a photo it scanned before: delete the old
+    // face and rebuild its person, both before assignFaces asks for the lock.
+    const scan = await db.transaction();
+    const results = {};
+    const pending = [];
+    try {
+      await scan('photo_faces').where({ id: old.id }).del();
+      await clustering.recomputeCentroid(old.person_id, scan);
+      const pid = await backendPid(scan);
+
+      // Takes the advisory lock, then waits for the rows the scan holds. With
+      // the in-process mutex also held, the scan below parked on it in Node
+      // and neither side ever finished.
+      pending.push(settled(results, 'recluster', clustering.recluster(eventId)));
+      expect(await until(async () => (await behind(pid)) >= 1)).toBe(true);
+
+      pending.push(settled(results, 'scan', (async () => {
+        const [photo] = await scan('photos').where({ id: old.photo_id }).select('id');
+        const row = {
+          photo_id: photo.id, event_id: eventId, bbox_x: 0, bbox_y: 0, bbox_w: 200, bbox_h: 200,
+          det_score: 0.99, embedding: clustering.packEmbedding(makeEmbedding(81, 5)),
+          model_version: 'test-v1', created_at: new Date().toISOString(),
+        };
+        try {
+          const [f] = await scan('photo_faces').insert(row).returning('id');
+          await clustering.assignFaces(eventId, [{ ...row, id: typeof f === 'object' ? f.id : f }], { trx: scan });
+          await scan.commit();
+        } catch (err) {
+          // An aborted transaction keeps its locks until it is rolled back.
+          await rollback(scan);
+          throw err;
+        }
+      })()));
+      await Promise.all(pending);
+    } finally {
+      await rollback(scan);
+      await Promise.all(pending);
+    }
+
+    // Without the scan-side lock (issue 2069) PostgreSQL may still see a
+    // cycle here, and breaks it: a recluster that loses runs once more, a scan
+    // that loses rolls back and is retried by the queue.
+    expect(results.recluster).toBe('ok');
+    if (results.scan !== 'ok') expect(results.scan).toMatchObject({ code: '40P01' });
+    expect(await unassigned(eventId)).toBe(0);
   }, 60000);
 });

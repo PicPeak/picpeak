@@ -359,6 +359,47 @@ describe('faceClustering (#1074)', () => {
       expect(Array.from(await db('photo_faces').where({ event_id: eventId }).orderBy('id').select('id', 'person_id')))
         .toEqual(before);
     });
+
+    // The first recluster transaction runs to the end, then fails with `code`.
+    const failFirstTransaction = (code) => {
+      const original = db.client.transaction;
+      return jest.spyOn(db.client, 'transaction').mockImplementationOnce(function (container, ...rest) {
+        return original.call(this, async (trx) => {
+          await container(trx);
+          throw Object.assign(new Error(`failed with ${code}`), { code });
+        }, ...rest);
+      });
+    };
+
+    it('runs once more when PostgreSQL breaks a deadlock with it, and only then', async () => {
+      const eventId = await seedEvent('recluster-deadlock-retry');
+      const faces = [];
+      for (let v = 0; v < 3; v++) {
+        for (const id of [66, 67]) faces.push(await insertFace(eventId, makeEmbedding(id, v)));
+      }
+      await clustering.assignFaces(eventId, faces);
+      const [first] = Array.from(await db('event_people').where({ event_id: eventId }).orderBy('id'));
+      await db('event_people').where({ id: first.id }).update({ label: 'Anna' });
+
+      const deadlock = failFirstTransaction('40P01');
+      try {
+        expect(await clustering.recluster(eventId)).toBe(2);
+      } finally {
+        deadlock.mockRestore();
+      }
+      const after = Array.from(await db('event_people').where({ event_id: eventId }));
+      expect(after.map((p) => p.label).filter(Boolean)).toEqual(['Anna']);
+      expect(after.some((p) => p.id === first.id)).toBe(false);
+
+      const other = failFirstTransaction('SQLITE_IOERR');
+      const calls = () => other.mock.calls.length;
+      try {
+        await expect(clustering.recluster(eventId)).rejects.toThrow('failed with SQLITE_IOERR');
+        expect(calls()).toBe(1);
+      } finally {
+        other.mockRestore();
+      }
+    });
   });
 
   describe('consolidate', () => {
