@@ -287,8 +287,11 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
   useLayoutEffect(() => {
     if (!isDrawer) return;
     if (isOpen) {
+      // Only focus outside the drawer is an opener. Re-entering drawer mode
+      // with the drawer still open (lg and back) finds focus inside it and
+      // keeps the opener recorded when it was opened.
       const active = document.activeElement;
-      openerRef.current = active instanceof HTMLElement && !drawerRef.current?.contains(active) ? active : null;
+      if (active instanceof HTMLElement && !drawerRef.current?.contains(active)) openerRef.current = active;
       return;
     }
     if (drawerRef.current?.contains(document.activeElement)) {

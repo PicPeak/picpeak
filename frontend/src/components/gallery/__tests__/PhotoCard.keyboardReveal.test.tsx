@@ -69,7 +69,11 @@ describe('PhotoCard keyboard focus (issue 2074)', () => {
       expect(overlay.classList.contains(cls)).toBe(true);
     }
     const checkbox = container.querySelector('[role="checkbox"]') as HTMLElement;
-    expect(checkbox.classList.contains('has-[:focus-visible]:opacity-100')).toBe(true);
+    // The checkbox is the focused element itself, which :has() (descendants
+    // only) does not match.
+    for (const cls of ['focus-visible:opacity-100', 'focus-visible:pointer-events-auto']) {
+      expect(checkbox.classList.contains(cls)).toBe(true);
+    }
   });
 
   it('takes the overlay labels from the locale', () => {

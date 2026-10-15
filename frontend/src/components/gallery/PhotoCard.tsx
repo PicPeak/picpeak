@@ -317,9 +317,11 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     // A control reached by keyboard reveals its overlay: opacity-0 hides
     // pixels, not focus, so Tab landed on an invisible button (issue 2074).
     // :focus-visible, not :focus-within, so a mouse click leaves it hidden.
+    // `has-` covers the overlay (a control inside it has focus), `focus-visible:`
+    // the checkbox, which is itself the focused control.
     const base = visible
       ? 'opacity-100 pointer-events-auto'
-      : 'opacity-0 pointer-events-none has-[:focus-visible]:opacity-100 has-[:focus-visible]:pointer-events-auto';
+      : 'opacity-0 pointer-events-none has-[:focus-visible]:opacity-100 has-[:focus-visible]:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto';
     return isTouchDevice
       ? base
       : `${base} group-hover:opacity-100 group-hover:pointer-events-auto`;

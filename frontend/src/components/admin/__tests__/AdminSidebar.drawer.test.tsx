@@ -5,7 +5,7 @@
  * when it closes (issue 2074). On lg+ it is always on screen and never inert.
  */
 import React, { useRef, useState } from 'react';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -42,6 +42,7 @@ vi.mock('../../../services/settings.service', () => ({
 vi.mock('../VersionInfo', () => ({ VersionInfo: () => null }));
 
 import { AdminSidebar } from '../AdminSidebar';
+import adminLayoutSource from '../AdminLayout.tsx?raw';
 
 function stubViewport(isDrawer: boolean) {
   Object.defineProperty(window, 'matchMedia', {
@@ -58,6 +59,30 @@ function stubViewport(isDrawer: boolean) {
       dispatchEvent: () => false,
     }),
   });
+}
+
+// A viewport whose drawer breakpoint can be crossed mid-test.
+function stubResizableViewport(initiallyDrawer: boolean) {
+  let isDrawer = initiallyDrawer;
+  const listeners = new Set<() => void>();
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({
+      get matches() { return isDrawer && query.includes('max-width'); },
+      media: query,
+      addEventListener: (_t: string, cb: () => void) => listeners.add(cb),
+      removeEventListener: (_t: string, cb: () => void) => listeners.delete(cb),
+      addListener: () => {},
+      removeListener: () => {},
+      onchange: null,
+      dispatchEvent: () => false,
+    }),
+  });
+  return (next: boolean) => {
+    isDrawer = next;
+    act(() => listeners.forEach((cb) => cb()));
+  };
 }
 
 const Harness: React.FC<{ path?: string }> = ({ path = '/admin/dashboard' }) => {
@@ -122,6 +147,28 @@ describe('AdminSidebar drawer (issue 2074)', () => {
       if (original) proto.checkVisibility = original;
       else delete proto.checkVisibility;
     }
+  });
+
+  it('still returns focus to the opener after an lg round trip with the drawer open', () => {
+    const resize = stubResizableViewport(true);
+    const { container } = render(<Harness />);
+    const hamburger = screen.getByText('hamburger');
+    hamburger.focus();
+    fireEvent.click(hamburger);
+    expect(drawer(container).contains(document.activeElement)).toBe(true);
+
+    resize(false);
+    resize(true);
+    expect(drawer(container).contains(document.activeElement)).toBe(true);
+
+    fireEvent.click(screen.getByLabelText('Close menu'));
+    expect(document.activeElement).toBe(hamburger);
+  });
+
+  it('keeps the sidebar out of keyboard reach during a mandatory password change', () => {
+    // pointer-events-none alone leaves the keyboard in, and the drawer trap
+    // would hold focus in a sidebar that cannot be used.
+    expect(adminLayoutSource).toMatch(/\{\.\.\.\(mustChangePassword \? \{ inert: '' \} : \{\}\)\}/);
   });
 
   it('is never inert on lg and wider, where it is always on screen', () => {
