@@ -380,6 +380,30 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
     expect(rows[0].id).toBe(legacy.id);
     expect(rows[0].content_sha256).toBe(sha(jpegB));
     expect(rows[0].original_filename).toBe('ümläut.jpg');
+    // The mangled camera name is repaired too, only because the match came
+    // through the legacy form.
+    expect(rows[0].source_filename).toBe('ümläut.jpg');
+  });
+
+  it('a legacy-name match keeps a different camera name in source_filename', async () => {
+    const event = await makeEvent();
+    await adminUpload(event, [['legacy.jpg', jpegA]]);
+    const [legacy] = await photosOf(event);
+    await db('photos').where({ id: legacy.id })
+      .update({ original_filename: 'Ã¼mlÃ¤ut.jpg', source_filename: 'IMG_0042.CR2' });
+    const res = await adminUpload(event, [['ümläut.jpg', jpegB]], { replace_by_name: 'true' });
+    expect(res.body).toMatchObject({ count: 0, replacedCount: 1 });
+    expect((await photosOf(event))[0].source_filename).toBe('IMG_0042.CR2');
+  });
+
+  it('a normal-name match leaves source_filename untouched (migration 193)', async () => {
+    const event = await makeEvent();
+    await adminUpload(event, [['ümläut.jpg', jpegA]]);
+    const [row] = await photosOf(event);
+    await db('photos').where({ id: row.id }).update({ source_filename: 'Ã¼mlÃ¤ut.jpg' });
+    const res = await adminUpload(event, [['ümläut.jpg', jpegB]], { replace_by_name: 'true' });
+    expect(res.body).toMatchObject({ count: 0, replacedCount: 1 });
+    expect((await photosOf(event))[0].source_filename).toBe('Ã¼mlÃ¤ut.jpg');
   });
 
   it('a replacement rewrites the hash', async () => {
