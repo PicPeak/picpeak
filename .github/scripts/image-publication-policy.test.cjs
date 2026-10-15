@@ -68,6 +68,7 @@ test('protected rolling pushes and explicit manual true authorize automatically 
       ['picpeak-publication', 'picpeak-publication']);
       assert.match(result.tags, new RegExp(`value=${branch}(?:\\n|$)`));
       assert.equal(result.tags.includes('value=latest'), branch === 'stable');
+      assert.equal(/value=stable(?:\n|$)/.test(result.tags), branch === 'stable');
       assert.equal(result.tags.includes('value=beta'), branch === 'main');
     }
   }
@@ -83,7 +84,9 @@ test('trusted Release Please output publishes exact stable/beta tags and revisio
       .map(({ parameters }) => parameters.environment_name),
     ['picpeak-publication', 'picpeak-publication', 'picpeak-release', 'picpeak-release']);
     assert.ok(result.tags.includes(`value=${f.inputs.release_tag}`));
-    assert.equal(result.tags.includes('value=latest'), branch === 'stable');
+    // Rolling stable runs own latest/stable; a delayed version approval must not rewind them.
+    assert.ok(!result.tags.includes('value=latest'));
+    assert.ok(!/value=stable(?:\n|$)/.test(result.tags));
     assert.ok(!result.tags.includes('value=main'));
     assert.ok(!result.tags.includes('value=beta\n'));
   }

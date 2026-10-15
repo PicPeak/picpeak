@@ -18,13 +18,29 @@ jobs:
       release_id: ${{ steps.release.outputs.id }}
       version: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
     steps:
+      # No GITHUB_TOKEN fallback: the v* tag-creation ruleset only lets the
+      # release actor create tags, so a fallback run could not tag a merged
+      # release PR. Fail loudly here instead.
+      - name: Require a working RELEASE_PLEASE_TOKEN
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_PLEASE_TOKEN" ]; then
+            echo "::error::RELEASE_PLEASE_TOKEN is not set. Add the release actor's PAT (see docs/RELEASE_IMAGE_SECURITY.md); releases cannot be cut without it."
+            exit 1
+          fi
+          if ! GH_TOKEN="$RELEASE_PLEASE_TOKEN" gh api "repos/$GITHUB_REPOSITORY" --silent; then
+            echo "::error::RELEASE_PLEASE_TOKEN was rejected (expired, revoked or missing repository access). Renew it (see docs/RELEASE_IMAGE_SECURITY.md)."
+            exit 1
+          fi
+
       - name: Run Release Please
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         id: release
         with:
           # Dedicated token so the release PR runs CI + can auto-merge without a
-          # manual review. Falls back to GITHUB_TOKEN before the secret is set (#719).
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # manual review (#719). Required: checked by the step above.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: stable
@@ -46,9 +62,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Docker images will be built and tagged with this version." >> $GITHUB_STEP_SUMMARY
 
-  # Best-effort "What's New" highlights on the freshly-created release. Runs in
-  # this same workflow run (not a `release:` trigger) because release-please
-  # creates the release with GITHUB_TOKEN, which never starts new workflow runs.
   # Same-commit reusable workflow: exact outputs from the pinned action, not
   # an arbitrary tag/release event. No RELEASE_PLEASE_TOKEN is passed onward.
   publish-images:
@@ -69,6 +82,9 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
+  # Best-effort "What's New" highlights on the freshly-created release. Runs in
+  # this same workflow run (not a `release:` trigger) because release-please
+  # creates the release with GITHUB_TOKEN, which never starts new workflow runs.
   whatsnew:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
