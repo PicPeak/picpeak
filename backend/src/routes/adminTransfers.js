@@ -389,6 +389,8 @@ router.patch('/:id',
       maxFilesPerUpload: req.body.maxFilesPerUpload,
     });
     if (!transfer) return res.status(404).json({ error: 'Transfer not found' });
+    // Re-activated or extended: a ready mail held back meanwhile (issue 2061).
+    await transferService.sendHeldReadyEmails(transfer.id);
     return successResponse(res, { transfer }, 200, 'Transfer updated');
   }),
 );

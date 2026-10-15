@@ -1336,15 +1336,17 @@ async function sendHeldReadyEmails(transferId) {
 }
 
 /**
- * The background worker finished a photo: send any ready mail that was held
- * back for a transfer holding it. Driven from the held recipients, which are
- * few, rather than from transfer_files, which has no photo_id index.
+ * Photos became downloadable (the background worker finished them, or they
+ * came back from the trash): send any ready mail that was held back for a
+ * transfer holding one. Driven from the held recipients, which are few,
+ * rather than from transfer_files, which has no photo_id index.
  */
-async function sendHeldReadyEmailsForPhoto(photoId) {
+async function sendHeldReadyEmailsForPhotos(photoIds) {
+  if (!photoIds.length) return;
   const rows = await db('transfer_recipients')
     .join('transfer_files', 'transfer_files.transfer_id', 'transfer_recipients.transfer_id')
     .whereNull('transfer_recipients.last_sent_at')
-    .where('transfer_files.photo_id', photoId)
+    .whereIn('transfer_files.photo_id', photoIds)
     .distinct('transfer_recipients.transfer_id as transfer_id');
   for (const row of rows) await sendHeldReadyEmails(row.transfer_id);
 }
@@ -1627,7 +1629,7 @@ module.exports = {
   disableUploadCode,
   sendTransferEmails,
   sendHeldReadyEmails,
-  sendHeldReadyEmailsForPhoto,
+  sendHeldReadyEmailsForPhotos,
   sendTransferRequestEmails,
   notifyFilesReceived,
   // public

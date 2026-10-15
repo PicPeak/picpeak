@@ -87,10 +87,19 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     adminApp = buildRouteApp('/api/admin/transfers', require('../../src/routes/adminTransfers'));
   }, 180000);
 
+  let wake;
   beforeEach(() => {
     send = jest.spyOn(require('../../src/services/emailProcessor'), 'sendTemplateEmail').mockResolvedValue(undefined);
+    wake = jest.spyOn(transferService, 'sendHeldReadyEmailsForPhotos');
   });
-  afterEach(() => send.mockRestore());
+  afterEach(() => { send.mockRestore(); wake.mockRestore(); });
+
+  /** processPhoto does not wait for the held mail: wait for it here. */
+  async function finish(photoId) {
+    await photoProcessor.processPhoto(photoId);
+    expect((await db('photos').where({ id: photoId }).first()).processing_status).toBe('complete');
+    await Promise.all(wake.mock.results.map((r) => r.value));
+  }
 
   afterAll(async () => {
     await require('../../src/services/downloadZipService').stop();
@@ -111,8 +120,7 @@ describe('transfer ready mail held while nothing is downloadable', () => {
       ['anna@example.com', null], ['ben@example.com', null],
     ]);
 
-    await photoProcessor.processPhoto(first);
-    expect((await db('photos').where({ id: first }).first()).processing_status).toBe('complete');
+    await finish(first);
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls.map((c) => [c[0], c[1], c[2].file_count])).toEqual([
       ['anna@example.com', 'transfer_ready', '1'], ['ben@example.com', 'transfer_ready', '1'],
@@ -120,8 +128,25 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     expect((await recipients(transfer.id)).every((r) => r.last_sent_at != null)).toBe(true);
 
     // The next photo to finish sends nothing again.
-    await photoProcessor.processPhoto(second);
+    await finish(second);
     expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('a slow mail server does not hold the photo worker', async () => {
+    const event = await mkEvent();
+    const photo = await mkPhoto(event, 'pending');
+    const transfer = await mkTransfer([photo]);
+    await transferService.sendTransferEmails(transfer.id, ['anna@example.com']);
+    let sending;
+    const sent = new Promise((resolve) => { sending = resolve; });
+    let release;
+    send.mockImplementation(() => { sending(); return new Promise((resolve) => { release = resolve; }); });
+    // processPhoto returns while the SMTP send is still open.
+    await photoProcessor.processPhoto(photo);
+    await sent;
+    release();
+    await Promise.all(wake.mock.results.map((r) => r.value));
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('sends a held mail once when several callers race for it', async () => {
@@ -135,8 +160,8 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     // Both photos finish at once, on two workers or two replicas.
     await db('photos').whereIn('id', [a, b]).update({ processing_status: 'complete' });
     await Promise.all([
-      transferService.sendHeldReadyEmailsForPhoto(a),
-      transferService.sendHeldReadyEmailsForPhoto(b),
+      transferService.sendHeldReadyEmailsForPhotos([a]),
+      transferService.sendHeldReadyEmailsForPhotos([b]),
       transferService.sendHeldReadyEmails(transfer.id),
     ]);
     expect(send).toHaveBeenCalledTimes(1);
@@ -148,7 +173,7 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     const transfer = await mkTransfer([photo]);
     await transferService.sendTransferEmails(transfer.id, ['anna@example.com']);
     await db('photos').where({ id: photo }).update({ processing_status: 'failed' });
-    await transferService.sendHeldReadyEmailsForPhoto(photo);
+    await transferService.sendHeldReadyEmailsForPhotos([photo]);
     await transferService.sendHeldReadyEmails(transfer.id);
     expect(send).not.toHaveBeenCalled();
     expect((await recipients(transfer.id))[0].last_sent_at).toBeNull();
@@ -160,7 +185,7 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     const transfer = await mkTransfer([photo]);
     await transferService.sendTransferEmails(transfer.id, ['anna@example.com']);
     await db('transfers').where({ id: transfer.id }).update({ is_active: false });
-    await photoProcessor.processPhoto(photo);
+    await finish(photo);
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -177,9 +202,26 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     expect(result).toMatchObject({ sent: 0, held: true });
     expect(send).toHaveBeenCalledTimes(1);
 
-    await photoProcessor.processPhoto(done);
+    await finish(done);
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[1][2].file_count).toBe('1');
+  });
+
+  it('a photo restored from the trash sends the held mail', async () => {
+    const event = await mkEvent();
+    const photo = await mkPhoto(event, 'pending');
+    const transfer = await mkTransfer([photo]);
+    await transferService.sendTransferEmails(transfer.id, ['anna@example.com']);
+    // Trashed while its worker ran, which then finished it out of reach.
+    await db('photos').where({ id: photo }).update({
+      deleted_at: now(), purge_after: new Date(Date.now() + 864e5).toISOString(), processing_status: 'complete',
+    });
+    await transferService.sendHeldReadyEmailsForPhotos([photo]);
+    expect(send).not.toHaveBeenCalled();
+
+    const { restored } = await require('../../src/services/photoTrash').restorePhotos(event, [photo]);
+    expect(restored).toEqual([photo]);
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('still sends at once when a file is ready', async () => {
@@ -190,7 +232,7 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     const result = await transferService.sendTransferEmails(transfer.id, ['anna@example.com']);
     expect(result.sent).toBe(1);
     expect(send.mock.calls[0][2].file_count).toBe('1');
-    await photoProcessor.processPhoto(pending);
+    await finish(pending);
     expect(send).toHaveBeenCalledTimes(1);
   });
 
@@ -221,7 +263,21 @@ describe('transfer ready mail held while nothing is downloadable', () => {
       expect(send).toHaveBeenCalledTimes(1);
       expect(send.mock.calls[0][2].file_count).toBe('1');
 
-      await photoProcessor.processPhoto(pending);
+      await finish(pending);
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-activating a link sends the mail held back while it was off', async () => {
+      const event = await mkEvent();
+      const photo = await mkPhoto(event, 'pending');
+      const transfer = await mkTransfer([photo]);
+      await transferService.sendTransferEmails(transfer.id, ['anna@example.com']);
+      await db('transfers').where({ id: transfer.id }).update({ is_active: false });
+      await finish(photo);
+      expect(send).not.toHaveBeenCalled();
+
+      const res = await admin('patch', `/${transfer.id}`).send({ isActive: true });
+      expect(res.status).toBe(200);
       expect(send).toHaveBeenCalledTimes(1);
     });
   });

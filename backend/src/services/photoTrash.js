@@ -108,7 +108,7 @@ function findTrashed(eventId, photoId) {
  */
 async function restorePhotos(event, photoIds) {
   const cap = photoCapOf(event);
-  return db.transaction(async (trx) => {
+  const result = await db.transaction(async (trx) => {
     if (cap && trx.client.config.client === 'pg') await trx('events').where({ id: event.id }).forUpdate().first();
     let live = cap ? await countEventPhotos(event.id, trx) : 0;
     const restored = [];
@@ -132,6 +132,14 @@ async function restorePhotos(event, photoIds) {
     }
     return { restored, failed };
   });
+  // A transfer holding a restored photo may have held its ready mail back
+  // while it had nothing to hand out (issue 2061).
+  try {
+    await require('./transferService').sendHeldReadyEmailsForPhotos(result.restored);
+  } catch (err) {
+    logger.warn('photoTrash: held transfer email failed', { error: err.message });
+  }
+  return result;
 }
 
 /**
