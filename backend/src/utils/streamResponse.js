@@ -18,7 +18,7 @@
  */
 
 const logger = require('./logger');
-const { isStorageUnavailableError } = require('../services/storage/storageErrors');
+const { isStorageUnavailableError, isStorageNotFoundError } = require('../services/storage/storageErrors');
 
 /**
  * @param {import('stream').Readable} stream  source, already opened or lazy
@@ -96,4 +96,23 @@ function pipeStreamToResponse(stream, res, options = {}) {
   stream.pipe(res);
 }
 
-module.exports = { pipeStreamToResponse };
+/**
+ * A file stat() found and the read then did not (issues 2118, 2129): removed
+ * in between, by a replacement, a delete or a re-render. Answered as the
+ * failed stat would have been (`status`, 404 unless the route answers a
+ * missing file otherwise), not a 500. The headers staged for the file go
+ * first: Express keeps a Content-Type that is already set, and the cache
+ * lifetime staged for the file would keep the 404. False when the error is
+ * anything else, or the response has already started.
+ */
+function answerVanished(res, error, message, status = 404) {
+  if (res.headersSent || !isStorageNotFoundError(error)) return false;
+  for (const name of ['ETag', 'Content-Type', 'Content-Length', 'Content-Disposition', 'Content-Range', 'Accept-Ranges']) {
+    res.removeHeader(name);
+  }
+  res.set('Cache-Control', 'no-store');
+  res.status(status).json({ error: message });
+  return true;
+}
+
+module.exports = { pipeStreamToResponse, answerVanished };

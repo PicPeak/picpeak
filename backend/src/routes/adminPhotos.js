@@ -43,7 +43,7 @@ const { requireEventOwnership, canAccessEvent } = require('../middleware/ownersh
 const { mayReviewUploads, adminUploadColumns, moderatePhotos, moderationCounts, MODERATION_STATUSES, MAX_MODERATION_IDS } = require('../services/uploadReviewService');
 const { getStorage } = require('../services/storage');
 const photoTrash = require('../services/photoTrash');
-const { pipeStreamToResponse } = require('../utils/streamResponse');
+const { pipeStreamToResponse, answerVanished } = require('../utils/streamResponse');
 const { errorResponse } = require('../utils/routeHelpers');
 const { withPublicUpload } = require('../middleware/publicUploadStream');
 const { createUploadFileGuard } = require('../utils/uploadAdmissionType');
@@ -1242,13 +1242,16 @@ router.get('/:eventId/photos/trash/:photoId/thumbnail', adminAuth, requirePermis
     const photo = Number.isInteger(photoId) ? await photoTrash.findTrashed(req.params.eventId, photoId) : null;
     const stat = photo?.thumbnail_path ? await getStorage().stat(photo.thumbnail_path) : null;
     if (!stat) return res.status(404).json({ error: 'Thumbnail not found' });
+    // A purge can remove the file between the stat and the read (issue
+    // 2129): S3's get() then rejects, before any header is staged.
+    const stream = await getStorage().get(photo.thumbnail_path);
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Content-Length', stat.size);
-    // A purge can remove the file between the stat and the read.
-    pipeStreamToResponse(await getStorage().get(photo.thumbnail_path), res, { context: 'trashed photo thumbnail' });
+    pipeStreamToResponse(stream, res, { context: 'trashed photo thumbnail' });
   } catch (error) {
+    if (answerVanished(res, error, 'Thumbnail not found')) return;
     errorResponse(res, error, 500, 'Failed to serve thumbnail');
   }
 });
@@ -1466,13 +1469,16 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
       if (!stat) {
         return res.status(404).json({ error: 'Photo file not found' });
       }
+      // Opened before the headers (issue 2129): a file removed since the
+      // stat makes S3's get() reject here, and the lazy local stream fails
+      // in pipeStreamToResponse, both as a 404.
+      const stream = await storage.get(storageKey);
       res.set({
         'Content-Type': resolvePhotoContentType(photo),
         'Content-Length': stat.size,
         'Content-Disposition': contentDisposition,
       });
-      const stream = await storage.get(storageKey);
-      stream.pipe(res);
+      pipeStreamToResponse(stream, res, { context: `download of photo ${photo.id}` });
       return;
     }
 
@@ -1489,6 +1495,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
     });
     res.sendFile(filePath);
   } catch (error) {
+    if (answerVanished(res, error, 'Photo file not found')) return;
     errorResponse(res, error, 500, 'Failed to download photo');
   }
 });
@@ -1856,9 +1863,11 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     // Content-Type resolution (#908 + external review) lives in
     // utils/photoContentType so the gallery routes apply the same rule.
     const contentType = resolvePhotoContentType(photo);
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'private, max-age=3600');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    const stageFileHeaders = () => {
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    };
 
     if (storageKey) {
       const storage = getStorage();
@@ -1866,9 +1875,13 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
       if (!stat) {
         return res.status(404).json({ error: 'Photo file not found' });
       }
-      res.setHeader('Content-Length', stat.size);
+      // Opened before the headers (issue 2129): a file removed since the
+      // stat makes S3's get() reject here, and the lazy local stream fails
+      // in pipeStreamToResponse, both as a 404.
       const stream = await storage.get(storageKey);
-      stream.pipe(res);
+      stageFileHeaders();
+      res.setHeader('Content-Length', stat.size);
+      pipeStreamToResponse(stream, res, { context: `photo ${photo.id}` });
       return;
     }
 
@@ -1879,8 +1892,10 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     } catch (error) {
       return res.status(404).json({ error: 'Photo file not found' });
     }
+    stageFileHeaders();
     res.sendFile(path.resolve(filePath));
   } catch (error) {
+    if (answerVanished(res, error, 'Photo file not found')) return;
     errorResponse(res, error, 500, 'Failed to serve photo');
   }
 });
@@ -1923,19 +1938,22 @@ router.get('/:eventId/thumbnail/:photoId', adminAuth, requirePermission('photos.
       return res.status(404).json({ error: 'Thumbnail generation failed' });
     }
 
-    res.setHeader('Content-Type', 'image/jpeg'); // Thumbnails are always JPEG
-    res.setHeader('Cache-Control', 'private, max-age=3600');
-    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-
     const storage = getStorage();
     const stat = await storage.stat(thumbnailPath);
     if (!stat) {
       return res.status(404).json({ error: 'Thumbnail not found' });
     }
-    res.setHeader('Content-Length', stat.size);
+    // Opened before the headers: a thumbnail removed since the stat, by a
+    // regeneration (issue 2129), makes S3's get() reject here, and the lazy
+    // local stream fails in pipeStreamToResponse, both as a 404.
     const stream = await storage.get(thumbnailPath);
-    stream.pipe(res);
+    res.setHeader('Content-Type', 'image/jpeg'); // Thumbnails are always JPEG
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Content-Length', stat.size);
+    pipeStreamToResponse(stream, res, { context: `admin thumbnail for photo ${photoId}` });
   } catch (error) {
+    if (answerVanished(res, error, 'Thumbnail not found')) return;
     logger.error('Error serving thumbnail:', error);
     logger.error('Photo ID:', req.params.photoId);
     errorResponse(res, error, 500, 'Failed to serve thumbnail');
@@ -1982,13 +2000,18 @@ router.get('/:eventId/preview/:photoId', adminAuth, requirePermission('photos.vi
     const storage = getStorage();
     const stat = await storage.stat(previewPath);
     if (!stat) return res.status(404).json({ error: 'Preview not found' });
+    // Opened before the headers: a preview removed since the stat (issue
+    // 2129) makes S3's get() reject here, and the lazy local stream fails
+    // in pipeStreamToResponse, both as a 404.
+    const stream = await storage.get(previewPath);
 
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Content-Length', stat.size);
-    (await storage.get(previewPath)).pipe(res);
+    pipeStreamToResponse(stream, res, { context: `admin preview for photo ${photoId}` });
   } catch (error) {
+    if (answerVanished(res, error, 'Preview not found')) return;
     logger.error('Error serving admin preview:', error);
     errorResponse(res, error, 500, 'Failed to serve preview');
   }

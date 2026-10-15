@@ -25,7 +25,7 @@ const { getStorage } = require('../services/storage');
 const {
   claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives, legacyArchiveKeys,
 } = require('../services/archiveService');
-const { pipeStreamToResponse } = require('../utils/streamResponse');
+const { pipeStreamToResponse, answerVanished } = require('../utils/streamResponse');
 const router = express.Router();
 
 /**
@@ -891,6 +891,8 @@ router.get('/:id/download', adminAuth, requirePermission('archives.download'), r
       metadata: JSON.stringify({ event_name: archive.event_name })
     });
   } catch (error) {
+    // Removed since the stat (issue 2129): the failed stat's 404.
+    if (answerVanished(res, error, 'Archive file not found in storage')) return;
     logger.error('Archive download error:', error);
     res.status(500).json({ error: 'Failed to download archive' });
   }

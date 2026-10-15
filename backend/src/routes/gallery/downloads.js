@@ -15,7 +15,9 @@ const logger = require('../../utils/logger');
 const statsWriteFailed = (what) => (err) => {
   logger.warn(`Download stats not recorded (${what})`, { error: err && err.message });
 };
-const { pipeStreamToResponse } = require('../../utils/streamResponse');
+const { once } = require('events');
+const { pipeStreamToResponse, answerVanished } = require('../../utils/streamResponse');
+const { isStorageNotFoundError } = require('../../services/storage/storageErrors');
 const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../../services/photoResolver');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
@@ -576,6 +578,24 @@ function abortStreamingArchive({ archive, guard, res, err, eventId, route }) {
 }
 
 /**
+ * The prebuilt archive getZipInfo() found, opened; null when it was removed
+ * since that stat (an invalidation, issue 2129), so the route streams the
+ * archive instead, as it does when the stat misses. S3's get() rejects on a
+ * missing key; the local read stream opens lazily, so it is waited for here,
+ * where its ENOENT can still choose the fallback. Any other error throws.
+ */
+async function openCachedZip(key) {
+  try {
+    const stream = await getStorage().get(key);
+    if (stream.pending) await once(stream, 'open');
+    return stream;
+  } catch (error) {
+    if (isStorageNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+/**
  * Admission to the synchronous archive routes (archiveStreamGuard). Returns the
  * release function, or null after answering 429 when the process already has
  * its share of archives running and waiting. The slot is released when the
@@ -683,16 +703,16 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // Again after the cache lookup, which awaits storage: a limit set in the
     // meantime must still send this request down the counted stream.
     if (zipInfo && await currentDownloadLimit(req.event)) zipInfo = null;
-    if (zipInfo) {
-      const storage = getStorage();
-
+    // Opened before the zip headers go on: a cached archive removed since
+    // the stat falls through to the stream below.
+    const cachedZip = zipInfo ? await openCachedZip(zipInfo.key) : null;
+    if (cachedZip) {
       // Stream via the authenticated route so logout, restore and account
       // changes are checked on every download, including S3-backed archives.
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Length', zipInfo.size);
       res.setHeader('Content-Disposition', `attachment; filename="${req.event.slug}.zip"`);
-      const stream = await storage.get(zipInfo.key);
-      pipeStreamToResponse(stream, res, { context: `prepared zip for event ${req.event.id}`, missingStatus: 410 });
+      pipeStreamToResponse(cachedZip, res, { context: `prepared zip for event ${req.event.id}`, missingStatus: 410 });
 
       // Log bulk download (admin preview #868 excluded — stats stay client-only).
       if (!req.isAdminPreview) {
@@ -1426,13 +1446,17 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
         req.event.id, galleryActor(req));
     });
 
+    // Opened before the headers: an archive removed since the stat (issue
+    // 2129) makes S3's get() reject here, and the lazy local stream fails in
+    // pipeStreamToResponse, both with the failed stat's 410.
+    const stream = await storage.get(job.zip_path);
     const suffix = job.resolution === 'original' ? 'original' : job.resolution;
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Disposition', `attachment; filename="${req.event.slug}-${suffix}.zip"`);
-    const stream = await storage.get(job.zip_path);
     pipeStreamToResponse(stream, res, { context: `download job ${job.id}`, missingStatus: 410 });
   } catch (error) {
+    if (answerVanished(res, error, 'This download is no longer available', 410)) return;
     errorResponse(res, error, 500, 'Failed to serve prepared download');
   }
 });

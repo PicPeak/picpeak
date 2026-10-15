@@ -9,7 +9,7 @@ const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/ga
 const withPreview = (req, url) => (req.isAdminPreview ? `${url}${url.includes('?') ? '&' : '?'}admin_preview=1` : url);
 const secureImageService = require('../../services/secureImageService');
 const logger = require('../../utils/logger');
-const { pipeStreamToResponse } = require('../../utils/streamResponse');
+const { pipeStreamToResponse, answerVanished } = require('../../utils/streamResponse');
 
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
@@ -108,24 +108,6 @@ router.post('/:slug/photo/:photoId/view',
       errorResponse(res, error, 500, 'Failed to record view');
     }
   });
-
-/**
- * A file stat() found and the read then did not (issue 2118): removed in
- * between, by a replacement, a delete or a re-render. Answered as the failed
- * stat would have been, a 404, not a 500. The headers staged for the file go
- * first: Express keeps a Content-Type that is already set, and the cache
- * lifetime staged for the file would keep the 404. False when the error is
- * anything else, or the response has already started.
- */
-function answerVanished(res, error, message) {
-  if (res.headersSent || !isStorageNotFoundError(error)) return false;
-  for (const name of ['ETag', 'Content-Type', 'Content-Length', 'Content-Disposition', 'Content-Range', 'Accept-Ranges']) {
-    res.removeHeader(name);
-  }
-  res.set('Cache-Control', 'no-store');
-  res.status(404).json({ error: message });
-  return true;
-}
 
 // View single photo (with watermark if enabled)
 router.get('/:slug/photo/:photoId',
