@@ -442,13 +442,17 @@ describe('external re-scan of a file changed in place', () => {
     });
     const { importExternalFolder } = require('../../src/services/externalImportService');
 
-    await writeJpeg(rel, { width: 60, height: 40, color: { r: 10, g: 20, b: 30 } });
+    const full = await writeJpeg(rel, { width: 60, height: 40, color: { r: 10, g: 20, b: 30 } });
+    // An mtime ahead of the clock stays inside the settle window however slow
+    // the run is.
+    const ahead = new Date(Date.now() + 60000);
+    await fs.promises.utimes(full, ahead, ahead);
     const pass = { eventId, externalPath: 'shoot', actor: { type: 'system' }, automatic: true, settleMs: 2000 };
     expect(await importExternalFolder(pass)).toMatchObject({ imported: 0, deferred: 1 });
     expect(await db('photos').where({ event_id: eventId }).count({ n: '*' }).first()).toMatchObject({ n: 0 });
 
     const old = new Date(Date.now() - 60000);
-    await fs.promises.utimes(path.join(mediaRoot, rel), old, old);
+    await fs.promises.utimes(full, old, old);
     expect(await importExternalFolder(pass)).toMatchObject({ imported: 1, deferred: 0 });
   });
 
