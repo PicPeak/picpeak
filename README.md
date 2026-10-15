@@ -89,7 +89,9 @@ the real client address. The installer selects these settings in proxy mode.
 > defaults `TRUST_PROXY` to `1`. If Cloudflare Tunnel, Traefik, NPM or Caddy
 > sits in front of the frontend and your `.env` has no `TRUST_PROXY`, set
 > `TRUST_PROXY=2` before updating, otherwise every visitor shares the proxy's
-> address for rate limits, login lockouts and audit IPs. A native install with
+> address for rate limits, login lockouts and audit IPs. The backend logs a
+> warning once per start when it sees such a proxy in front of the bundled
+> nginx while `TRUST_PROXY` is `1`. A native install with
 > `TRUST_PROXY` unset still trusts forwarding headers from every private-range
 > address (and logs a warning at startup); set it to the exact number of
 > reverse-proxy hops instead. Behind TLS, also set `COOKIE_SECURE=true`, and
