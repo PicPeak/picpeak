@@ -98,6 +98,15 @@ const selectPhoto = (query) => query.select(PHOTO_COLUMNS.map((column) => `photo
 
 const RENDITION_KIND = { thumbnail_path: 'thumbnail', preview_path: 'preview', hero_path: 'hero' };
 
+// The spellings of a rendition key that canonicalStorageKey folds into it:
+// either separator, with or without a leading `/`, `./` or their backslash
+// forms.
+function legacySpellings(key) {
+  const bodies = [key, key.replace(/\//g, '\\')];
+  return ['', '/', './', '\\', '.\\'].flatMap((lead) => bodies.map((body) => lead + body))
+    .filter((spelling) => sameStorageKey(spelling, key));
+}
+
 /**
  * Delete a rendition key this photo no longer points at, unless another row
  * (trashed rows included: they are restorable) still uses it. On local
@@ -112,9 +121,13 @@ async function dropSuperseded(photo, column, oldKey, newKey) {
   if (!oldKey || !newKey || sameStorageKey(oldKey, newKey)) return;
   if (!isPresentationRenditionKey(oldKey, RENDITION_KIND[column])) return;
   try {
+    // Another row may name the same file in a legacy spelling the storage
+    // backends read as this key (`./previews/...`, backslashes). The key is
+    // one `<folder>/<name>` pair, so its spellings are few enough to list.
+    const spellings = legacySpellings(oldKey);
     const shared = await db('photos')
       .where(function () {
-        this.where('thumbnail_path', oldKey).orWhere('preview_path', oldKey).orWhere('hero_path', oldKey);
+        this.whereIn('thumbnail_path', spellings).orWhereIn('preview_path', spellings).orWhereIn('hero_path', spellings);
       })
       .first('id');
     if (shared) return;

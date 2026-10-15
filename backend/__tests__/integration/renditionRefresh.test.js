@@ -218,6 +218,21 @@ describe('rendition refresh after EXIF stripping', () => {
     expect(fs.readFileSync(storagePath(originalKey)).equals(taggedJpeg)).toBe(true);
   }, 60000);
 
+  it.each(['./previews/preview_shared.jpg', 'previews\\preview_shared.jpg'])(
+    'keeps a superseded rendition a trashed row still names as %s', async (spelling) => {
+      const event = await makeEvent();
+      const id = await addLegacyPhoto(event, { renditions: ['preview'] });
+      const key = 'previews/preview_shared.jpg';
+      await db('photos').where({ id }).update({ preview_path: key });
+      await writeKey(key, taggedJpeg);
+      const other = await addLegacyPhoto(event, { renditions: [], deleted_at: new Date().toISOString() });
+      await db('photos').where({ id: other }).update({ preview_path: spelling });
+
+      expect(await refresh.runPass(passOptions)).toEqual({ refreshed: 1, failed: 0 });
+      expect((await db('photos').where({ id }).first()).preview_path).not.toBe(key);
+      expect(exists(key)).toBe(true);
+    }, 60000);
+
   it('drops the tiers a RAW photo was actually served under (its attempt names them)', async () => {
     const event = await makeEvent();
     const id = await addLegacyPhoto(event, { processing_attempt_id: 'attempt-2096' });
