@@ -6,9 +6,10 @@
  * clustering lock, pg_advisory_xact_lock(1074, event), that assignFaces takes.
  * A merge deleted a source person a scan had just assigned a face to, and a
  * split recomputed a person from a member list a scan changed under it. Both
- * now take the lock first in their transaction, and assignFaces asks for it
- * before the in-process mutex, so a worker parked on it in PostgreSQL never
- * holds that mutex.
+ * now take the lock first in their transaction, a scan takes it before it
+ * touches a face or person row, and assignFaces asks for it before the
+ * in-process mutex, so a worker parked on it in PostgreSQL never holds that
+ * mutex.
  *
  * Connections run with a lock_timeout, so a wait PostgreSQL cannot resolve
  * (one side parked in Node) fails the test instead of hanging it.
@@ -36,11 +37,35 @@ function makeEmbedding(id, variant = 0, dim = 64) {
   return vec;
 }
 
+let mockPreviewBuffer;
+const mockDetected = [];
+
 (pgUrl ? describe : describe.skip)('merge and split against face assignment (pg, issue 2119)', () => {
   let owner; let db; let schema; let tmpDir; let cleanup; let previousClient;
-  let clustering;
+  let clustering; let faceProcessor;
 
   beforeAll(async () => {
+    const sharp = require('sharp');
+    mockPreviewBuffer = await sharp({
+      create: { width: 1920, height: 1440, channels: 3, background: { r: 20, g: 40, b: 80 } },
+    }).jpeg().toBuffer();
+    // The scan's storage and sidecar halves are not what is under test.
+    jest.doMock('../../src/services/imageProcessor', () => ({
+      ...jest.requireActual('../../src/services/imageProcessor'),
+      ensurePreviewImage: async () => 'previews/preview_test.jpg',
+    }));
+    jest.doMock('../../src/services/storage', () => ({
+      ...jest.requireActual('../../src/services/storage'),
+      getStorage: () => ({ get: async () => mockPreviewBuffer }),
+    }));
+    jest.doMock('../../src/services/faceClient', () => ({
+      ...jest.requireActual('../../src/services/faceClient'),
+      detectFaces: async () => ({
+        model_version: 'test-v1',
+        faces: [{ bbox: [10, 10, 400, 400], score: 0.99, yaw: 0, pitch: 0, blur: 500, embedding: mockDetected.shift() }],
+      }),
+    }));
+
     schema = `face_merge_split_${crypto.randomUUID().replace(/-/g, '')}`;
     owner = knex({ client: 'pg', connection: pgUrl });
     await owner.schema.createSchema(schema);
@@ -59,6 +84,7 @@ function makeEmbedding(id, variant = 0, dim = 64) {
     ({ cleanup } = await require('./helpers/crmDb').bootCrmDb());
     await db('feature_flags').insert({ key: 'faces', value: true }).onConflict('key').merge();
     clustering = require('../../src/services/faceClustering');
+    faceProcessor = require('../../src/services/faceProcessor');
   }, 180000);
 
   afterAll(async () => {
@@ -152,6 +178,14 @@ function makeEmbedding(id, variant = 0, dim = 64) {
     const face = await insertFace(trx, eventId, embedding);
     await clustering.assignFaces(eventId, [face], { trx });
   });
+  // processPhotoFaces reports its outcome rather than throwing for most.
+  const scanned = (results, name, promise) => promise.then(
+    (value) => { results[name] = value; },
+    (e) => { results[name] = e; },
+  );
+  // A photo claimed by the face queue, as processPhotoFaces expects it.
+  const claim = (photoId) => db('photos').where({ id: photoId })
+    .update({ face_status: 'processing', face_started_at: new Date().toISOString() });
   const members = async (personId) => Number((await db('photo_faces')
     .where({ person_id: personId }).count({ c: '*' }).first()).c);
   const unassigned = async (eventId) => Number((await db('photo_faces')
@@ -290,5 +324,43 @@ function makeEmbedding(id, variant = 0, dim = 64) {
     expect(await members(newPerson)).toBeGreaterThanOrEqual(1);
     const annaRow = await db('event_people').where({ id: anna }).first();
     expect(annaRow.face_count_total).toBe(await members(anna));
+  }, 60000);
+
+  test('a re-scan during a merge waits for the lock before it deletes its old face', async () => {
+    const eventId = await seedEvent();
+    const { faces, anna, ben } = await seedPeople(eventId);
+    // Ben's last face, re-scanned while the merge is parked on his first.
+    const rescanned = faces[5];
+
+    const blocker = await db.transaction();
+    const results = {};
+    const pending = [];
+    try {
+      await blocker('photo_faces').where({ id: faces[1].id }).forUpdate().first();
+      const pid = await backendPid(blocker);
+      pending.push(settled(results, 'merge', clustering.mergePeople(eventId, [ben], anna)));
+      expect(await until(async () => (await behind(pid)) >= 1)).toBe(true);
+
+      // Deleting its old face first, the re-scan held that row while the
+      // merge went on to move it, then waited in assignFaces for the lock
+      // the merge holds: 40P01, and either side failed.
+      await claim(rescanned.photo_id);
+      mockDetected.push(Array.from(makeEmbedding(82, 5)));
+      pending.push(scanned(results, 'rescan', faceProcessor.processPhotoFaces(rescanned.photo_id)));
+      expect(await until(async () => (await waitingOnEventLock(eventId)) >= 1)).toBe(true);
+      expect(await db('photo_faces').where({ id: rescanned.id }).first()).toBeDefined();
+
+      await blocker.commit();
+      await Promise.all(pending);
+    } finally {
+      await rollback(blocker);
+      await Promise.all(pending);
+    }
+
+    expect(results.merge).toBe('ok');
+    expect(results.rescan).toMatchObject({ status: 'done' });
+    expect(await db('photo_faces').where({ id: rescanned.id }).first()).toBeUndefined();
+    expect(await unassigned(eventId)).toBe(0);
+    expect(await db('event_people').where({ id: ben }).first()).toBeUndefined();
   }, 60000);
 });
