@@ -248,6 +248,9 @@ function transcodeOptions({ toneMap = false } = {}) {
     '-map', '0:v:0',
     '-map', '0:a:0?',
     '-sn', '-dn',
+    // No container, stream or chapter metadata from the source: a phone's
+    // recording location, artist and device tags must not reach guests.
+    '-map_metadata', '-1', '-map_chapters', '-1',
     '-c:v', 'libx264',
     '-preset', 'medium',
     '-crf', String(CRF),

@@ -143,6 +143,12 @@ describe('transcodeOptions', () => {
     expect(opts).toContain('scale=w=\'min(1920,iw)\':h=\'min(1920,ih)\':force_original_aspect_ratio=decrease:force_divisible_by=2');
     expect(opts).toContain('-f mp4');
   });
+
+  it('drops the source metadata (location, artist, device tags) and chapters', () => {
+    const opts = service.transcodeOptions().join(' ');
+    expect(opts).toContain('-map_metadata -1 -map_chapters -1');
+    expect(service.transcodeOptions({ toneMap: true }).join(' ')).toContain('-map_metadata -1 -map_chapters -1');
+  });
 });
 
 describe('isEnabled', () => {
