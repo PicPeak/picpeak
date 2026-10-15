@@ -1,3 +1,5 @@
+const ipaddr = require('ipaddr.js');
+
 // What an unset TRUST_PROXY has always meant. Kept so an install that only
 // pulls a new image (old compose file, native install behind nginx/Caddy)
 // still resolves the real client address behind its private-range proxy.
@@ -33,6 +35,46 @@ function parseTrustProxy(value = process.env.TRUST_PROXY) {
   return raw;
 }
 
+const PROXY_HOP_RANGES = new Set(['private', 'loopback', 'linkLocal', 'uniqueLocal']);
+
+function isPrivateHop(address) {
+  try {
+    return PROXY_HOP_RANGES.has(ipaddr.process(address).range());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Middleware that logs once per process when TRUST_PROXY is one hop but
+ * another proxy sits in front of the bundled nginx. nginx appends the address
+ * it saw, so with one trusted hop req.ip is that address. When it is private
+ * and the header carries an earlier entry, something on a private network
+ * forwarded the request to nginx: every client then shares that proxy's
+ * address. Behaviour is unchanged; only the private hop is logged.
+ */
+function createProxyChainWarning({ trustProxy, logger }) {
+  let warned = trustProxy !== 1;
+  return function proxyChainWarning(req, res, next) {
+    if (!warned) {
+      const header = req.headers['x-forwarded-for'];
+      const hops = typeof header === 'string'
+        ? header.split(',').map((hop) => hop.trim()).filter(Boolean)
+        : [];
+      const nginxPeer = hops[hops.length - 1];
+      if (hops.length >= 2 && isPrivateHop(nginxPeer)) {
+        warned = true;
+        logger.warn(
+          `Requests arrive through another proxy (${nginxPeer}) in front of the bundled nginx; `
+          + 'all clients share that proxy\'s address for rate limits. '
+          + 'Set TRUST_PROXY=2 (see README upgrade note).'
+        );
+      }
+    }
+    next();
+  };
+}
+
 /**
  * Honour an explicit LISTEN_HOST. Unset returns undefined, which leaves the
  * host out of `listen()` so Node binds every interface as it always has
@@ -46,6 +88,7 @@ function resolveListenHost({ value = process.env.LISTEN_HOST } = {}) {
 
 module.exports = {
   LEGACY_TRUST_PROXY,
+  createProxyChainWarning,
   isTrustProxyUnset,
   parseTrustProxy,
   resolveListenHost,
