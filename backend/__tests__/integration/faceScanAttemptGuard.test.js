@@ -200,6 +200,19 @@ describe('face scan attempt guard (issue 2069)', () => {
       .toMatchObject({ face_status: 'processing', face_attempt_id: second.face_attempt_id, face_error: null });
   });
 
+  it('takes the photo before its faces in the scan commit and the event purge', () => {
+    // The lock order faceScanLockOrder.pg.test.js exercises on PostgreSQL;
+    // pinned here too because that suite only runs with a PG URL.
+    const src = fs.readFileSync(path.join(__dirname, '../../src/services/faceProcessor.js'), 'utf8');
+    const between = (from, to) => src.slice(src.indexOf(from), src.indexOf(to, src.indexOf(from)));
+    const scanTrx = between('await db.transaction(async (trx) => {', '} catch (err) {');
+    expect(scanTrx.indexOf('claimGuard(claimed, trx)')).toBeGreaterThan(-1);
+    expect(scanTrx.indexOf('claimGuard(claimed, trx)')).toBeLessThan(scanTrx.indexOf("trx('photo_faces')"));
+    const purge = between('async function purgeEvent(', '\n}\n');
+    expect(purge.indexOf("trx('photos')")).toBeGreaterThan(-1);
+    expect(purge.indexOf("trx('photos')")).toBeLessThan(purge.indexOf("trx('photo_faces')"));
+  });
+
   it('a claim taken away before the scan starts is skipped without a sidecar call', async () => {
     const seeded = await seedPendingPhoto();
     const first = await faceQueue.claimNextPhoto();

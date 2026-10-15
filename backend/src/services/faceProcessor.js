@@ -254,14 +254,44 @@ async function processPhotoFaces(claimed) {
 
   try {
     await db.transaction(async (trx) => {
-    // Replace rather than append: a re-scan of the same photo must not
-    // double its faces. Detaching first keeps the FK to event_people clean.
-    //
-    // Remember which people the OLD faces belonged to. Deleting the rows does
-    // not undo their contribution to event_people.face_count_total or to the
-    // running-mean centroid, so without recomputing those afterwards a
-    // re-scan inflates every count (typically doubling it) and leaves ghost
-    // people behind when a face is no longer detected.
+      // Commit the photo only if it is STILL the row we claimed. An admin who
+      // purges or archives the event while this worker was waiting on the
+      // sidecar has already cleared face_status; without this guard the worker
+      // would write its rows back moments after "all face data deleted"
+      // reported success, so an erasure request would silently not stick.
+      // The attempt id also catches a purge followed by a new claim (a file
+      // refreshed in place, a re-scan): that claim scans the new bytes, and
+      // these faces describe the old ones (issue 2069).
+      //
+      // First, not last: on PostgreSQL the update locks the photo row, so the
+      // purges (which invalidate the photo before touching its faces) and
+      // this scan take their locks in the same order. Checked last, a purge
+      // could delete the faces, this scan commit new ones, and the purge then
+      // only clear the status; or the two could deadlock on each other.
+      const committed = await claimGuard(claimed, trx)
+        .update({
+          face_status: 'done',
+          face_count: faces.length,
+          face_started_at: null,
+          face_attempt_id: null,
+          face_error: null,
+        });
+
+      if (committed === 0) {
+        logger.info(
+          `faceProcessor: photo ${photoId} was purged or re-queued while scanning — discarding results`
+        );
+        throw new StaleScanError(photoId);
+      }
+
+      // Replace rather than append: a re-scan of the same photo must not
+      // double its faces. Detaching first keeps the FK to event_people clean.
+      //
+      // Remember which people the OLD faces belonged to. Deleting the rows does
+      // not undo their contribution to event_people.face_count_total or to the
+      // running-mean centroid, so without recomputing those afterwards a
+      // re-scan inflates every count (typically doubling it) and leaves ghost
+      // people behind when a face is no longer detected.
       const affectedPeople = await trx('photo_faces')
         .where({ photo_id: photoId })
         .whereNotNull('person_id')
@@ -301,30 +331,6 @@ async function processPhotoFaces(claimed) {
         await assignFaces(photo.event_id, inserted, { thresholds, trx });
       }
 
-      // Commit the photo only if it is STILL the row we claimed. An admin who
-      // purges or archives the event while this worker was waiting on the
-      // sidecar has already cleared face_status; without this guard the worker
-      // would write its rows back moments after "all face data deleted"
-      // reported success, so an erasure request would silently not stick.
-      // The attempt id also catches a purge followed by a new claim (a file
-      // refreshed in place, a re-scan): that claim scans the new bytes, and
-      // these faces describe the old ones (issue 2069).
-      const committed = await claimGuard(claimed, trx)
-        .update({
-          face_status: 'done',
-          face_count: faces.length,
-          face_started_at: null,
-          face_attempt_id: null,
-          face_error: null,
-        });
-
-      if (committed === 0) {
-        logger.info(
-          `faceProcessor: photo ${photoId} was purged or re-queued while scanning — discarding results`
-        );
-        // Undo this transaction's inserts rather than leaving orphans behind.
-        throw new StaleScanError(photoId);
-      }
     });
   } catch (err) {
     // Losing a race with a purge is an expected outcome, not a photo that
@@ -388,14 +394,19 @@ async function enqueueEvent(eventId, { onlyUnscanned = false } = {}) {
  */
 async function purgeEvent(eventId) {
   return db.transaction(async (trx) => {
+    // The claims first, as purgePhotoFaces does: on PostgreSQL this locks the
+    // photo rows, so a scan committing at the same moment either finished
+    // before (and its faces are deleted below) or finds its claim gone. With
+    // the faces deleted first, a scan could commit in between and its faces
+    // would outlive the erasure.
+    await trx('photos').where({ event_id: eventId }).update({
+      face_status: null, face_count: null, face_started_at: null, face_attempt_id: null, face_error: null,
+    });
     // Detach before deleting people so the SET NULL FK never fires against
     // rows that are about to go anyway.
     await trx('photo_faces').where({ event_id: eventId }).update({ person_id: null });
     const faces = await trx('photo_faces').where({ event_id: eventId }).del();
     const people = await trx('event_people').where({ event_id: eventId }).del();
-    await trx('photos').where({ event_id: eventId }).update({
-      face_status: null, face_count: null, face_started_at: null, face_attempt_id: null, face_error: null,
-    });
 
     // Everything the erasure was about is gone, so the records ABOUT that
     // grouping go too (#1107): dismissal rows name people that no longer
