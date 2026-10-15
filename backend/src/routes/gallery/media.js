@@ -15,7 +15,7 @@ const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const { isPhotoHiddenFromViewer, isPhotoProcessed, livePhotos } = require('../../utils/photoVisibility');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../../services/imageProcessor');
-const { isStorageUnavailableError } = require('../../services/storage/storageErrors');
+const { isStorageUnavailableError, isStorageNotFoundError } = require('../../services/storage/storageErrors');
 const { heroQueryRedirect } = require('../../utils/heroAnchor');
 const { getStorage } = require('../../services/storage');
 const fs = require('fs');
@@ -108,6 +108,24 @@ router.post('/:slug/photo/:photoId/view',
       errorResponse(res, error, 500, 'Failed to record view');
     }
   });
+
+/**
+ * A file stat() found and the read then did not (issue 2118): removed in
+ * between, by a replacement, a delete or a re-render. Answered as the failed
+ * stat would have been, a 404, not a 500. The headers staged for the file go
+ * first: Express keeps a Content-Type that is already set, and the cache
+ * lifetime staged for the file would keep the 404. False when the error is
+ * anything else, or the response has already started.
+ */
+function answerVanished(res, error, message) {
+  if (res.headersSent || !isStorageNotFoundError(error)) return false;
+  for (const name of ['ETag', 'Content-Type', 'Content-Length', 'Content-Disposition', 'Content-Range', 'Accept-Ranges']) {
+    res.removeHeader(name);
+  }
+  res.set('Cache-Control', 'no-store');
+  res.status(404).json({ error: message });
+  return true;
+}
 
 // View single photo (with watermark if enabled)
 router.get('/:slug/photo/:photoId',
@@ -455,6 +473,7 @@ router.get('/:slug/photo/:photoId',
         }
       }
     } catch (error) {
+      if (answerVanished(res, error, 'Photo file not found')) return;
       errorResponse(res, error, 500, 'Failed to serve photo');
     }
   }
@@ -560,6 +579,18 @@ async function sendPlaylist(req, res, key, kind) {
   answerPlaylist(res, await readPlaylist(req, key, kind));
 }
 
+/**
+ * The row names a ladder storage does not have (a restore without hls/, a
+ * bucket cleaned by hand). The row starts over, the queue transcodes again,
+ * and this player falls back to the original.
+ */
+async function answerMissingLadder(res, photo) {
+  await livePhotos(db).where({ id: photo.id, hls_path: photo.hls_path, hls_status: 'complete' })
+    .update({ hls_path: null, hls_status: null, hls_error: 'ladder missing from storage' })
+    .catch((e) => logger.warn(`Could not re-queue the missing ladder of video ${photo.id}: ${e.message}`));
+  return res.status(404).json({ error: 'No stream for this video' });
+}
+
 const hlsAccess = [requireAdaptiveStreaming, verifyGalleryAccess, denySlideshowToken, blockHiddenGallery];
 
 router.get('/:slug/hls/:photoId/master.m3u8', ...hlsAccess, async (req, res) => {
@@ -568,19 +599,18 @@ router.get('/:slug/hls/:photoId/master.m3u8', ...hlsAccess, async (req, res) => 
     if (!photo) return;
     const key = videoHls.ladderKey(photo, undefined, 'master.m3u8');
     if (!key || namesAnotherLadder(req, photo)) return res.status(404).json({ error: 'No stream for this video' });
-    if (!(await getStorage().stat(key))) {
-      // The row names a ladder storage does not have (a restore without
-      // hls/, a bucket cleaned by hand). The row starts over, the queue
-      // transcodes again, and this player falls back to the original.
-      await livePhotos(db).where({ id: photo.id, hls_path: photo.hls_path, hls_status: 'complete' })
-        .update({ hls_path: null, hls_status: null, hls_error: 'ladder missing from storage' })
-        .catch((e) => logger.warn(`Could not re-queue the missing ladder of video ${photo.id}: ${e.message}`));
-      return res.status(404).json({ error: 'No stream for this video' });
-    }
+    if (!(await getStorage().stat(key))) return await answerMissingLadder(res, photo);
     // Read before the slot is taken: the grant is delivered as soon as it is
     // made, so a playlist storage then fails to return would cost the guest
     // a download for a video that never played.
-    const body = await readPlaylist(req, key, 'master');
+    let body;
+    try {
+      body = await readPlaylist(req, key, 'master');
+    } catch (error) {
+      // Removed since the stat (issue 2118): the same answer as above.
+      if (isStorageNotFoundError(error)) return await answerMissingLadder(res, photo);
+      throw error;
+    }
     if (!(await admitStream(req, res, photo, { playback: true }))) return;
     refundRateLimit(req);
     answerPlaylist(res, body);
@@ -604,15 +634,21 @@ router.get('/:slug/hls/:photoId/:rung/:file', ...hlsAccess, async (req, res) => 
     // not count against the address's API budget (rateLimitService).
     refundRateLimit(req);
     if (req.params.file === 'index.m3u8') return await sendPlaylist(req, res, key, 'media');
-    res.writeHead(200, {
+    const headers = {
       'Content-Length': stat.size,
       'Content-Type': req.params.file === 'init.mp4' ? 'video/mp4' : 'video/iso.segment',
       'Cache-Control': 'private, max-age=1800',
       'Content-Disposition': 'inline',
-    });
-    if (req.method === 'HEAD') return res.end();
-    pipeStreamToResponse(await getStorage().get(key), res, { context: `video segment for photo ${photo.id}` });
+    };
+    if (req.method === 'HEAD') return res.writeHead(200, headers).end();
+    // Opened before any header, and the headers only staged: a file removed
+    // since the stat (issue 2118) still answers 404, here on S3, whose get()
+    // rejects, or in pipeStreamToResponse for the lazy local stream.
+    const file = await getStorage().get(key);
+    res.status(200).set(headers);
+    pipeStreamToResponse(file, res, { context: `video segment for photo ${photo.id}` });
   } catch (error) {
+    if (answerVanished(res, error, 'No stream for this video')) return;
     errorResponse(res, error, 500, 'Failed to serve video stream');
   }
 });
@@ -732,6 +768,7 @@ router.get('/:slug/thumbnail/:photoId',
         pipeStreamToResponse(stream, res, { context: `thumbnail for photo ${photoId}` });
       }
     } catch (error) {
+      if (answerVanished(res, error, 'Thumbnail not found')) return;
       errorResponse(res, error, 500, 'Failed to serve thumbnail');
     }
   }

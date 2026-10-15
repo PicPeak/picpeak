@@ -4,7 +4,7 @@
  * forever behind a 503; too narrow and a timeout is read as a broken
  * rendition again.
  */
-const { isStorageUnavailableError } = require('../../src/services/storage/storageErrors');
+const { isStorageUnavailableError, isStorageNotFoundError } = require('../../src/services/storage/storageErrors');
 
 const sdkError = (name, httpStatusCode) => Object.assign(new Error(name), { name, $metadata: { httpStatusCode } });
 
@@ -38,5 +38,29 @@ describe('isStorageUnavailableError', () => {
     ['a string', 'TimeoutError'],
   ])('is false for %s', (_label, err) => {
     expect(isStorageUnavailableError(err)).toBe(false);
+  });
+});
+
+// Issue 2118: a read that misses a key stat() just found answers 404, the
+// way the failed stat does. Only "not there" counts; everything else is 500.
+describe('isStorageNotFoundError', () => {
+  it.each([
+    ['a missing local file', Object.assign(new Error('enoent'), { code: 'ENOENT' })],
+    ['an S3 GetObject on a missing key', sdkError('NoSuchKey', 404)],
+    ['an S3 HeadObject on a missing key', sdkError('NotFound', 404)],
+    ['a bare 404', sdkError('UnknownError', 404)],
+  ])('is true for %s', (_label, err) => {
+    expect(isStorageNotFoundError(err)).toBe(true);
+  });
+
+  it.each([
+    ['denied access', sdkError('AccessDenied', 403)],
+    ['a timeout', Object.assign(new Error('timeout'), { name: 'TimeoutError' })],
+    ['a server error', sdkError('InternalError', 500)],
+    ['a local permission error', Object.assign(new Error('eacces'), { code: 'EACCES' })],
+    ['nothing', null],
+    ['a string', 'ENOENT'],
+  ])('is false for %s', (_label, err) => {
+    expect(isStorageNotFoundError(err)).toBe(false);
   });
 });

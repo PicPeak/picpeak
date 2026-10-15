@@ -44,4 +44,19 @@ function isStorageUnavailableError(err) {
   return status === 429 || (typeof status === 'number' && status >= 500);
 }
 
-module.exports = { isStorageUnavailableError };
+/**
+ * The object is not there: ENOENT from LocalFsStorage (its get() stream is
+ * lazy, so the error arrives while it is read), NoSuchKey or a 404 from S3
+ * (its get() rejects). Lets a route that found a key with stat() answer a
+ * read that then misses it, because the key was removed in between, the
+ * way it answers the failed stat (issue 2118).
+ */
+function isStorageNotFoundError(err) {
+  if (!err || typeof err !== 'object') return false;
+  return err.code === 'ENOENT'
+    || err.name === 'NoSuchKey'
+    || err.name === 'NotFound'
+    || err.$metadata?.httpStatusCode === 404;
+}
+
+module.exports = { isStorageUnavailableError, isStorageNotFoundError };
