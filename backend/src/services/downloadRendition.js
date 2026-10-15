@@ -115,9 +115,8 @@ async function resolveWatermarkSettings(event) {
   const shouldApply = (settings && settings.enabled) || eventEnabled;
   if (!shouldApply) return null;
   return {
-    ...settings,
+    ...watermarkService.forEvent(settings, event),
     enabled: true,
-    text: event.watermark_text || settings?.text || 'Protected',
   };
 }
 

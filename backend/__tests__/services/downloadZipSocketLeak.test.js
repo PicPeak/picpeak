@@ -90,6 +90,7 @@ jest.mock('../../src/services/storage', () => ({
 // branch, which is the one that holds sockets.
 jest.mock('../../src/services/downloadRendition', () => ({
   renderPhotoForDownload: jest.fn(async () => null),
+  resolveWatermarkSettings: jest.fn(async () => null),
 }));
 
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');

@@ -740,6 +740,8 @@
     "downloadProtection": "Downloadbeveiliging",
     "disableRightClick": "Rechtermuisknop blokkeren",
     "watermarkDownloads": "Watermerk toevoegen aan downloads",
+    "watermarkText": "Watermerktekst",
+    "watermarkTextHelp": "Vervangt de bedrijfsnaam in het tekstwatermerk van deze galerij. Laat leeg om de bedrijfsnaam te gebruiken. Wordt niet getoond als Branding een watermerklogo heeft.",
     "enableDevtoolsProtection": "Ontwikkelaarstools detecteren",
     "useCanvasRendering": "Canvas-rendering (geavanceerde beveiliging)",
     "protectionInfo": "Beveiligingsfuncties helpen ongeautoriseerde downloads te voorkomen, maar kunnen niet alle methoden blokkeren.",

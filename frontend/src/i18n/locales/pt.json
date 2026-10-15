@@ -858,6 +858,8 @@
     "downloadProtection": "Proteção de Download",
     "disableRightClick": "Bloquear menu do botão direito",
     "watermarkDownloads": "Adicionar marca d'água aos downloads",
+    "watermarkText": "Texto da marca d'água",
+    "watermarkTextHelp": "Substitui o nome da empresa na marca d'água de texto desta galeria. Deixe vazio para usar o nome da empresa. Não é exibido quando o Branding tem um logotipo de marca d'água.",
     "enableDevtoolsProtection": "Detectar ferramentas de desenvolvedor",
     "useCanvasRendering": "Renderização em Canvas (proteção avançada)",
     "protectionInfo": "Recursos de proteção ajudam a evitar downloads não autorizados, mas não bloqueiam todos os métodos.",

@@ -354,11 +354,11 @@ router.get('/:slug/photo/:photoId',
       }
 
       // Image path
-      const watermarkSettings = await watermarkService.getWatermarkSettings();
+      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
       const watermarkHash = watermarkSettings?.enabled
-        ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
+        ? `-wm${watermarkService.versionTag(watermarkSettings)}`
         : '-nowm';
       // orientation_checked_at participates because the backfill (#1198) can
       // change these bytes without touching either of the other two inputs:
@@ -691,12 +691,12 @@ router.get('/:slug/thumbnail/:photoId',
       );
 
       // Check if watermarks are enabled and apply to thumbnail
-      const watermarkSettings = await watermarkService.getWatermarkSettings();
+      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
 
       // ETag uses storage stat mtime + photo id + watermark hash.
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
       const watermarkHash = watermarkSettings?.enabled
-        ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
+        ? `-wm${watermarkService.versionTag(watermarkSettings)}`
         : '-nowm';
       // Tier in the ETag, same reason as the preview route: without it a
       // client holding the 300px thumbnail gets a 304 for its 600px request
@@ -813,7 +813,7 @@ router.get('/:slug/hero/:photoId',
         return res.status(304).end();
       }
 
-      const watermarkSettings = await watermarkService.getWatermarkSettings();
+      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
 
       res.set({
         'Content-Type': 'image/jpeg',
@@ -957,9 +957,9 @@ router.get('/:slug/preview/:photoId',
       }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
-      const watermarkSettings = await watermarkService.getWatermarkSettings();
+      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
       const watermarkHash = watermarkSettings?.enabled
-        ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
+        ? `-wm${watermarkService.versionTag(watermarkSettings)}`
         : '-nowm';
       // Tier is part of the etag: without it a client that already holds the
       // 1920 rendition would get a 304 for its 640 request and render the

@@ -1800,6 +1800,8 @@
     "downloadProtection": "Zaščita prenosa",
     "disableRightClick": "Blokiraj meni desnega klika",
     "watermarkDownloads": "Dodaj vodni žig prenosom",
+    "watermarkText": "Besedilo vodnega žiga",
+    "watermarkTextHelp": "Nadomesti ime podjetja v besedilnem vodnem žigu te galerije. Pustite prazno za uporabo imena podjetja. Ni prikazano, če ima Branding nastavljen logotip vodnega žiga.",
     "enableDevtoolsProtection": "Zaznaj orodja za razvijalce",
     "useCanvasRendering": "Izris prek canvas v pregledovalniku (napredna zaščita)",
     "protectionInfo": "Zaščitne funkcije pomagajo preprečiti nepooblaščene prenose, vendar ne morejo blokirati vseh metod.",

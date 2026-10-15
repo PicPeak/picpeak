@@ -8,6 +8,18 @@ const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const logger = require('../utils/logger');
 
+// Text goes into the SVG markup: `<` or `&` in it would make the SVG invalid
+// and the mark would silently not render (applyWatermark falls back to the
+// unmarked original).
+function escapeXml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 class WatermarkService {
   constructor() {
     this.cache = new Map();
@@ -51,6 +63,38 @@ class WatermarkService {
       logger.error('Error fetching watermark settings:', error);
       return null;
     }
+  }
+
+  /** The text a text watermark draws: the gallery's own, else the company name. */
+  watermarkLabel(settings) {
+    return String(settings?.text || '').trim() || String(settings?.companyName || '').trim();
+  }
+
+  /**
+   * The global settings with one gallery's watermark text applied. Every
+   * renderer of a gallery's photos goes through this, so the downloads, the
+   * ZIPs and the gallery view draw the same text.
+   */
+  forEvent(settings, event) {
+    if (!settings) return settings;
+    const { text: _globalText, ...base } = settings;
+    const text = String(event?.watermark_text || '').trim();
+    return text ? { ...base, text } : base;
+  }
+
+  async getWatermarkSettingsForEvent(event) {
+    return this.forEvent(await this.getWatermarkSettings(), event);
+  }
+
+  /**
+   * Version of the mark for cache busting (ETags, the `wm=` URL parameter).
+   * A gallery's text is part of it, so changing the text is a new URL and a
+   * browser does not keep showing the old mark.
+   */
+  versionTag(settings) {
+    const base = `${settings.opacity}${settings.position}${settings.size}`;
+    if (!settings.text) return base;
+    return `${base}t${crypto.createHash('sha256').update(settings.text).digest('hex').slice(0, 8)}`;
   }
 
   /**
@@ -184,22 +228,27 @@ class WatermarkService {
         }
       }
 
-      // Nothing to draw (no usable logo, no company name) is not a failed
+      // The gallery's own text (settings.text, see forEvent) wins over the
+      // global company name.
+      const label = this.watermarkLabel(settings);
+
+      // Nothing to draw (no usable logo, no text) is not a failed
       // watermark: fail-closed callers must not turn it into an error.
-      if (!watermarkBuffer && !String(settings.companyName || '').trim()) {
+      if (!watermarkBuffer && !label) {
         return isBuffer ? imagePath : await fs.readFile(imagePath);
       }
 
       // If no logo or logo failed, create text watermark
       if (!watermarkBuffer) {
         const padding = 10;
-        const textWidth = (size) => settings.companyName.length * size * 0.6 + padding * 2;
+        // Estimated from the characters drawn, not from the escaped markup.
+        const textWidth = (size) => label.length * size * 0.6 + padding * 2;
         // The mark has to fit inside the image or sharp refuses the
         // composite: a long name on a 300px thumbnail is wider than the
         // thumbnail at the 16px floor. Shrink the font to fit, down to 8px.
         let fontSize = Math.max(16, Math.floor(metadata.width * 0.03));
         if (textWidth(fontSize) > metadata.width) {
-          fontSize = Math.max(8, Math.floor((metadata.width - padding * 2) / (settings.companyName.length * 0.6)));
+          fontSize = Math.max(8, Math.floor((metadata.width - padding * 2) / (label.length * 0.6)));
         }
         const svgWidth = Math.ceil(textWidth(fontSize));
         const svgHeight = fontSize + padding * 2;
@@ -218,7 +267,7 @@ class WatermarkService {
               font-size="${fontSize}" 
               fill="white" 
               opacity="${settings.opacity / 100}">
-              ${settings.companyName}
+              ${escapeXml(label)}
             </text>
           </svg>
         `;

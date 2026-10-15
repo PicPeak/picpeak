@@ -2102,6 +2102,12 @@ module.exports = (router) => {
       if (changeKeys.includes('watermark_downloads') || changeKeys.includes('watermark_text')) {
         downloadZipService.invalidate(parseInt(id));
       }
+      // The gallery's stored watermarks (the gallery view) draw its text too.
+      if (changeKeys.includes('watermark_text')
+          && String(updates.watermark_text ?? '').trim() !== String(event.watermark_text ?? '').trim()) {
+        require('../../services/watermarkGeneratorService').regenerateForEvent(parseInt(id))
+          .catch((err) => logger.error('Gallery watermark regeneration failed', { eventId: id, error: err.message }));
+      }
 
       if (teamError) {
         return res.status(500).json({

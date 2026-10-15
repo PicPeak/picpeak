@@ -774,6 +774,8 @@
     "downloadProtection": "Protección de descargas",
     "disableRightClick": "Bloquear menú de clic derecho",
     "watermarkDownloads": "Agregar marca de agua a las descargas",
+    "watermarkText": "Texto de la marca de agua",
+    "watermarkTextHelp": "Sustituye el nombre de la empresa en la marca de agua de texto de esta galería. Déjalo vacío para usar el nombre de la empresa. No se muestra si Branding tiene un logotipo de marca de agua.",
     "enableDevtoolsProtection": "Detectar herramientas de desarrollo",
     "useCanvasRendering": "Renderizado con canvas (protección avanzada)",
     "protectionInfo": "Las funciones de protección ayudan a prevenir descargas no autorizadas, pero no pueden bloquear todos los métodos.",

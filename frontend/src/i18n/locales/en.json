@@ -1941,6 +1941,8 @@
     "downloadProtection": "Download Protection",
     "disableRightClick": "Block right-click menu",
     "watermarkDownloads": "Add watermark to downloads",
+    "watermarkText": "Watermark text",
+    "watermarkTextHelp": "Replaces the company name in this gallery's text watermark. Leave empty to use the company name. Not shown when Branding has a watermark logo.",
     "enableDevtoolsProtection": "Detect developer tools",
     "useCanvasRendering": "Canvas rendering in the lightbox (advanced protection)",
     "protectionInfo": "Protection features help prevent unauthorized downloads but cannot block all methods.",

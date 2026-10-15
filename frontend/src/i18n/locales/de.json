@@ -2537,6 +2537,8 @@
     "downloadProtection": "Download-Schutz",
     "disableRightClick": "Rechtsklick-Menü blockieren",
     "watermarkDownloads": "Wasserzeichen bei Downloads hinzufügen",
+    "watermarkText": "Wasserzeichen-Text",
+    "watermarkTextHelp": "Ersetzt den Firmennamen im Text-Wasserzeichen dieser Galerie. Leer lassen, um den Firmennamen zu verwenden. Wird nicht angezeigt, wenn unter Branding ein Wasserzeichen-Logo gesetzt ist.",
     "enableDevtoolsProtection": "Entwicklertools erkennen",
     "useCanvasRendering": "Canvas-Rendering in der Lightbox (erweiterter Schutz)",
     "protectionInfo": "Schutzfunktionen helfen, unerlaubte Downloads zu verhindern, können jedoch nicht alle Methoden blockieren.",

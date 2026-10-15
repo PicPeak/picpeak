@@ -97,9 +97,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   const { sort = 'upload_date', order = 'desc' } = query;
 
   // Get watermark settings to generate cache-busting version for URLs
-  const watermarkSettings = await watermarkService.getWatermarkSettings();
+  const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(event);
   const wmVersion = watermarkSettings?.enabled
-    ? `wm=${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
+    ? `wm=${watermarkService.versionTag(watermarkSettings)}`
     : '';
 
   // Build the query with sorting

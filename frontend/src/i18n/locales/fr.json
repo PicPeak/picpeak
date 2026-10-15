@@ -752,6 +752,8 @@
     "downloadProtection": "Protection des téléchargements",
     "disableRightClick": "Bloquer le clic droit",
     "watermarkDownloads": "Ajouter un filigrane aux téléchargements",
+    "watermarkText": "Texte du filigrane",
+    "watermarkTextHelp": "Remplace le nom de l'entreprise dans le filigrane texte de cette galerie. Laissez vide pour utiliser le nom de l'entreprise. Non affiché lorsque Branding définit un logo de filigrane.",
     "enableDevtoolsProtection": "Détecter les outils de développement",
     "useCanvasRendering": "Rendu canvas dans la visionneuse (protection avancée)",
     "protectionInfo": "Les fonctionnalités de protection aident à prévenir les téléchargements non autorisés mais ne peuvent pas bloquer toutes les méthodes.",
