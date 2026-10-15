@@ -21,10 +21,12 @@ const sharp = require('sharp');
 describe('external re-scan of files gone from the share', () => {
   let tmpDir; let db; let app; let mediaRoot; let importExternalFolder;
 
-  const writeJpeg = async (rel, color = { r: 10, g: 20, b: 30 }) => {
+  const writeJpeg = async (rel, color = { r: 10, g: 20, b: 30 }, { exifDate = '2026:06:01 10:00:00' } = {}) => {
     const full = path.join(mediaRoot, rel);
     await fs.promises.mkdir(path.dirname(full), { recursive: true });
-    await sharp({ create: { width: 24, height: 16, channels: 3, background: color } }).jpeg().toFile(full);
+    let img = sharp({ create: { width: 24, height: 16, channels: 3, background: color } });
+    if (exifDate) img = img.withExif({ IFD2: { DateTimeOriginal: exifDate } });
+    await img.jpeg().toFile(full);
     // Older than any settle window an automatic pass uses.
     const old = new Date(Date.now() - 600000);
     await fs.promises.utimes(full, old, old);
@@ -384,6 +386,17 @@ describe('external re-scan of files gone from the share', () => {
     expect(await db('photos').where({ id: a.id }).first()).toMatchObject({
       external_relpath: path.join('shoot', 'a.jpg'), unavailable_reason: 'source_missing',
     });
+  });
+
+  it('does not take two pictures without a capture date for one', async () => {
+    const eventId = await seedEvent();
+    await writeJpeg('shoot/a.jpg', undefined, { exifDate: null });
+    await scan(eventId);
+    const a = await byName(eventId, 'a.jpg');
+    await fs.promises.rename(path.join(mediaRoot, 'shoot', 'a.jpg'), path.join(mediaRoot, 'shoot', 'b.jpg'));
+
+    expect(await scan(eventId)).toMatchObject({ moved: 0, imported: 1, missing: 1 });
+    expect((await db('photos').where({ id: a.id }).first()).external_relpath).toBe(path.join('shoot', 'a.jpg'));
   });
 
   it('moves a row already marked missing when its file turns up renamed', async () => {

@@ -170,7 +170,8 @@ async function sourcePresence(access, full) {
 /**
  * Whether a new file reads as the picture a vanished row recorded: same
  * dimensions and capture date (photo) or dimensions and runtime (video).
- * Anything unreadable, or a row without those values, is not a match.
+ * Anything unreadable, or a row without those values (a photo without a
+ * capture date included), is not a match.
  */
 async function describesRow(row, f) {
   if (row.width == null || row.height == null) return false;
@@ -183,9 +184,10 @@ async function describesRow(row, f) {
     }
     const { width, height } = orientedDimensions(await sharp(f.full).metadata());
     if (width !== Number(row.width) || height !== Number(row.height)) return false;
+    // Two pictures without a capture date prove nothing: no match.
+    if (!row.captured_at) return false;
     const taken = await extractCaptureDate(f.full).catch(() => null);
-    const recorded = row.captured_at ? new Date(row.captured_at).getTime() : null;
-    return (taken ? taken.getTime() : null) === recorded;
+    return Boolean(taken) && taken.getTime() === new Date(row.captured_at).getTime();
   } catch (_) {
     return false;
   }
