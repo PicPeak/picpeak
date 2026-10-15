@@ -73,6 +73,26 @@ describe('backup manifest validate endpoints (issue 2089)', () => {
     expect(mockState.validated).toHaveLength(1);
   });
 
+  it('finds a manifest a local backup wrote into its own run directory, by name or reported path', async () => {
+    const runManifests = path.join(root, 'backup-0b1c', 'manifests');
+    fs.mkdirSync(runManifests, { recursive: true });
+    fs.writeFileSync(path.join(runManifests, 'backup-manifest-2.json'), '{}');
+    fs.mkdirSync(path.join(root, 'backup-0b1c', 'files'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'backup-0b1c', 'files', 'data.json'), '{}');
+
+    for (const manifestPath of ['backup-manifest-2.json', path.join(runManifests, 'backup-manifest-2.json')]) {
+      mockState.validated.length = 0;
+      const res = await post('/backup/manifest/validate', { manifestPath });
+      expect(res.status).toBe(200);
+      expect(mockState.validated).toEqual([path.join(runManifests, 'backup-manifest-2.json')]);
+    }
+    // The run's backed-up files are not manifests and stay out of reach.
+    mockState.validated.length = 0;
+    const res = await post('/backup/manifest/validate', { manifestPath: path.join(root, 'backup-0b1c', 'files', 'data.json') });
+    expect([400, 404]).toContain(res.status);
+    expect(mockState.validated).toHaveLength(0);
+  });
+
   it('answers 404 without a path for a manifest that does not exist', async () => {
     const res = await post('/backup/manifest/validate', { manifestPath: 'nope.json' });
     expect(res.status).toBe(404);

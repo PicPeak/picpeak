@@ -2164,17 +2164,26 @@ async function validateBackupManifest(manifestPath) {
 /**
  * Resolve a manifest file name given to the validate endpoints to a file
  * inside one of the directories manifests are written to (the configured
- * manifest directory, the default one next to the backup, and the
- * BACKUP_PATH override the endpoints used to be bound to). Every candidate
+ * manifest directory, the default one next to the backup, each local run's
+ * own manifests/ folder, and the BACKUP_PATH override the endpoints used to be bound to). Every candidate
  * goes through safePathJoin, so a traversal input throws and nothing outside
  * those directories is read. Returns null when no such file exists.
  */
 async function resolveManifestFile(manifestPath, providedConfig = null) {
   const { safePathJoin, assertRealpathUnder } = require('../utils/fileSecurityUtils');
   const config = providedConfig || await getBackupConfigInternal().catch(() => ({})) || {};
+  const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
+  // A local backup writes its manifest into its own run directory,
+  // <destination>/backup-<uuid>/manifests, unless backup_manifest_path is
+  // set and usable (saveManifestToLocal gets the run directory as its
+  // destination). Only those manifests/ folders, not the backed-up files.
+  const runDirs = (await fs.readdir(destinationRoot, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('backup-'))
+    .map((entry) => path.join(destinationRoot, entry.name, 'manifests'));
   const bases = [
     config.backup_manifest_path,
-    path.join(config.backup_destination_path || path.join(getStoragePath(), 'backups'), 'manifests'),
+    path.join(destinationRoot, 'manifests'),
+    ...runDirs,
     process.env.BACKUP_PATH,
   ].filter((base) => typeof base === 'string' && base);
   let found = null;
