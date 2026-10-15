@@ -884,6 +884,8 @@ async function importExternalFolder({
     let moved = 0;
     let missing = 0;
     let returned = 0;
+    // Rows whose returning file was left for the next pass: they stay marked.
+    const unsettledIds = new Set();
     if (walkComplete) {
       const unseen = (await servedRowsInScope(eventId, inScope)).filter((r) => !seenRelpaths.has(r.external_relpath));
       if (unseen.length) {
@@ -935,11 +937,6 @@ async function importExternalFolder({
           .first();
         if (!exists && capReached) { skipped++; continue; }
         if (exists) {
-          // The file is back on the share: the photo is again in the gallery.
-          if (exists.unavailable_reason === SOURCE_MISSING) {
-            returned += await livePhotos(db).where({ id: exists.id, unavailable_reason: SOURCE_MISSING })
-              .update({ unavailable_reason: null });
-          }
           // The same path with other bytes: the file was edited on the share
           // (a re-export from Lightroom over the proof). Without this the row
           // kept the old dimensions, capture date and every derivative, so
@@ -948,6 +945,13 @@ async function importExternalFolder({
           if (outcome === 'refreshed') refreshed++;
           else if (outcome === 'deferred') deferred++;
           else skipped++;
+          // The file is back on the share: the photo is again in the gallery,
+          // once the file has settled (a copy still landing stays out).
+          if (outcome === 'deferred') unsettledIds.add(exists.id);
+          else if (exists.unavailable_reason === SOURCE_MISSING) {
+            returned += await livePhotos(db).where({ id: exists.id, unavailable_reason: SOURCE_MISSING })
+              .update({ unavailable_reason: null });
+          }
           continue;
         }
 
@@ -1203,7 +1207,7 @@ async function importExternalFolder({
             .whereIn('source_origin', SERVED_ORIGINS)
             .whereNull('unavailable_reason')
             .update({ unavailable_reason: SOURCE_MISSING });
-        } else if (state === 'present' && row.unavailable_reason === SOURCE_MISSING) {
+        } else if (state === 'present' && row.unavailable_reason === SOURCE_MISSING && !unsettledIds.has(row.id)) {
           returned += await livePhotos(db).where({ id: row.id, unavailable_reason: SOURCE_MISSING })
             .update({ unavailable_reason: null });
         }

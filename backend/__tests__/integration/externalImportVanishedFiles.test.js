@@ -149,6 +149,30 @@ describe('external re-scan of files gone from the share', () => {
     expect((await byName(eventId, 'a.jpg')).unavailable_reason).toBeNull();
   });
 
+  it('keeps the photo out while its returning file is still being copied', async () => {
+    const eventId = await importTwo();
+    await db('events').where({ id: eventId }).update({
+      external_path: 'shoot', external_watch: 1, is_active: 1, is_archived: 0,
+    });
+    const a = await byName(eventId, 'a.jpg');
+    await rm('shoot/a.jpg');
+    await scan(eventId);
+    expect((await db('photos').where({ id: a.id }).first()).unavailable_reason).toBe('source_missing');
+
+    // Back with other bytes, written just now: inside the settle window.
+    const full = await writeJpeg('shoot/a.jpg', { r: 250, g: 250, b: 0 });
+    await fs.promises.utimes(full, new Date(), new Date());
+    const pass = { eventId, externalPath: 'shoot', actor: { type: 'system' }, automatic: true, settleMs: 5000 };
+    expect(await importExternalFolder(pass)).toMatchObject({ deferred: 1, returned: 0 });
+    expect((await db('photos').where({ id: a.id }).first()).unavailable_reason).toBe('source_missing');
+
+    // Settled: refreshed and back.
+    const old = new Date(Date.now() - 60000);
+    await fs.promises.utimes(full, old, old);
+    expect(await importExternalFolder(pass)).toMatchObject({ refreshed: 1, returned: 1 });
+    expect((await db('photos').where({ id: a.id }).first()).unavailable_reason).toBeNull();
+  });
+
   it('keeps a photo the admin hid hidden when its file comes back', async () => {
     const eventId = await importTwo();
     const a = await byName(eventId, 'a.jpg');
