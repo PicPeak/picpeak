@@ -210,4 +210,56 @@ describe('GalleryView "Download selected" while it runs (issue 2043)', () => {
       vi.useRealTimers();
     }
   });
+
+  it('keeps a zip download busy while its bytes arrive, past a minute', async () => {
+    let reportProgress!: () => void;
+    service.downloadSelectedPhotos.mockImplementationOnce(
+      (_s: string, _ids: number[], _part: unknown, onProgress: () => void) => {
+        reportProgress = onProgress;
+        return new Promise(() => {});
+      },
+    );
+    show({ download_limit: 10, downloads_used: 0 });
+    act(() => captured.grid.onSelectionChange(new Set([7])));
+    await waitFor(() => expect(captured.sidebar.selectedCount).toBe(1));
+
+    vi.useFakeTimers();
+    try {
+      act(() => { void captured.sidebar.onDownloadSelected(); });
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      for (let i = 0; i < 3; i += 1) {
+        await act(() => vi.advanceTimersByTimeAsync(50_000));
+        reportProgress();
+      }
+      expect(captured.sidebar.isDownloadingSelected).toBe(true);
+      await act(() => captured.sidebar.onDownloadSelected());
+      expect(service.downloadSelectedPhotos).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops a run that let go once its stalled photo finally arrives', async () => {
+    let finishStalled!: () => void;
+    service.downloadPhoto.mockImplementationOnce(() => new Promise<void>((resolve) => { finishStalled = resolve; }));
+    show();
+    act(() => captured.grid.onSelectionChange(new Set([7, 8])));
+    await waitFor(() => expect(captured.sidebar.selectedCount).toBe(2));
+
+    vi.useFakeTimers();
+    try {
+      act(() => { void captured.sidebar.onDownloadSelected(); });
+      await act(() => vi.advanceTimersByTimeAsync(60_000));
+      expect(captured.sidebar.isDownloadingSelected).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+    // The retry fetches both photos.
+    await act(() => captured.sidebar.onDownloadSelected());
+    expect(service.downloadPhoto.mock.calls.map((call) => call[1])).toEqual([7, 7, 8]);
+
+    // The stalled request finishes late: its run does not go on to photo 8.
+    await act(async () => { finishStalled(); });
+    expect(service.downloadPhoto.mock.calls.map((call) => call[1])).toEqual([7, 7, 8]);
+  });
 });

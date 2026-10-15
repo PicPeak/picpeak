@@ -1189,13 +1189,21 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // unselect them.
       if (downloadQuota.limited || downloadQuota.previewOnly) {
         try {
-          await galleryService.downloadSelectedPhotos(slug, selectedPhotoList.map((p) => p.id));
+          await galleryService.downloadSelectedPhotos(
+            slug,
+            selectedPhotoList.map((p) => p.id),
+            undefined,
+            () => keepSelectedRunAlive(runId),
+          );
         } catch (error) {
           if (!isDownloadLimitError(error)) throw error;
           return;
         }
       } else {
         for (const photo of selectedPhotoList) {
+          // A run that stalled and let go stops here: a click since then may
+          // already have fetched the photos still to come.
+          if (selectedRunRef.current?.id !== runId) break;
           // Marked like a tile's download (issue 2043): its buttons show it,
           // and a photo whose download is already being prepared is not
           // fetched a second time.

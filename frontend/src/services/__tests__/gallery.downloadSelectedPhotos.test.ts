@@ -90,6 +90,17 @@ describe('galleryService.downloadSelectedPhotos — iOS Web Share path (#557)', 
     expect(apiMock.post).not.toHaveBeenCalled();
   });
 
+  it('reports the zip download progress to the caller (issue 2043)', async () => {
+    installNavigator({ userAgent: ANDROID_UA });
+    apiMock.post.mockImplementationOnce(async (_url: string, _body: unknown, config: { onDownloadProgress?: (e: unknown) => void }) => {
+      config.onDownloadProgress?.({ loaded: 10 });
+      return { data: new Blob(['zip-bytes']) };
+    });
+    const onProgress = vi.fn();
+    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2], undefined, onProgress);
+    expect(onProgress).toHaveBeenCalledTimes(1);
+  });
+
   it('falls back to the zip endpoint on Android, even with canShare available', async () => {
     const share = vi.fn().mockResolvedValue(undefined);
     const canShare = vi.fn().mockReturnValue(true);

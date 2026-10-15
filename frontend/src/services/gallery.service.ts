@@ -370,6 +370,8 @@ export const galleryService = {
     slug: string,
     photoIds: number[],
     part?: { index: number; total: number },
+    // Called as the zip's bytes arrive (issue 2043).
+    onProgress?: () => void,
   ): Promise<void> {
     // Not on a limited gallery (issue 1560): the share path fetches photo by
     // photo, so a refusal halfway through would already have used up the
@@ -391,6 +393,7 @@ export const galleryService = {
 
     const response = await withDownloadLimit(slug, () => api.post(`/gallery/${slug}/download-selected`, { photo_ids: photoIds }, {
       responseType: 'blob',
+      ...(onProgress ? { onDownloadProgress: () => onProgress() } : {}),
     }));
 
     saveBlob(response.data, part
