@@ -14,6 +14,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
+const { unicodeSearchForms } = require('../utils/sqlSecurity');
 const { getBcryptRounds } = require('../utils/passwordValidation');
 const { queueEmail } = require('./emailProcessor');
 const { auditedInsert, auditedUpdate, redactCustomerHistory } = require('./accountingHistory');
@@ -22,11 +23,6 @@ const logger = require('../utils/logger');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 const { capabilityTokenColumns, digestCapabilityToken } = require('../utils/capabilityToken');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
-
-// A search term in every stored form a name can have: NFC (stored since
-// issue 2079), NFD (macOS input saved before it) and as typed. No backfill,
-// so a name saved decomposed earlier still matches either way.
-const nameSearchTerms = (raw) => [...new Set([raw, raw.normalize('NFC'), raw.normalize('NFD')])];
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, matches admin invites
 
@@ -374,7 +370,7 @@ async function acceptInvitationOnce({ token, name, password, profile }) {
   // compatibility with clients that haven't been updated to send the
   // structured profile.
   if (name && !merged.display_name) {
-    merged.display_name = String(name).trim();
+    merged.display_name = String(name).trim().normalize('NFC');
   }
 
   // Default the customer's preferred_language to the business profile's
@@ -592,7 +588,7 @@ async function listCustomers({
     .orderBy('customer_accounts.created_at', 'desc');
 
   if (search && String(search).trim()) {
-    const terms = nameSearchTerms(String(search).trim()).map((t) => `%${t.toLowerCase()}%`);
+    const terms = unicodeSearchForms(String(search).trim()).map((t) => `%${t.toLowerCase()}%`);
     q = q.where(function () {
       for (const term of terms) {
         this.orWhereRaw('LOWER(customer_accounts.email) LIKE ?', [term])
@@ -1493,7 +1489,7 @@ async function eraseCustomer(id, erasedByAdminId) {
 async function searchCustomers(query, { limit = 10 } = {}) {
   const typed = String(query || '').trim();
   if (!typed) return [];
-  const terms = nameSearchTerms(typed).map((t) => `%${t.toLowerCase()}%`);
+  const terms = unicodeSearchForms(typed).map((t) => `%${t.toLowerCase()}%`);
   return db('customer_accounts')
     .where('is_active', formatBoolean(true))
     .andWhere(function () {

@@ -96,4 +96,36 @@ describe('names stored and searched in NFC', () => {
       expect((await service.searchCustomers(query)).map((c) => c.id)).toContain(customerId);
     }
   });
+
+  it('stores the company name a customer sends with contract details in NFC', () => {
+    const { validateDetails } = require('../../src/services/contract/dataCollection');
+    const out = validateDetails({ company_name: ' Ba\u0308ckerei ' }, { fields: ['company_name'], required: [] });
+    expect(out.company_name).toBe('B\u00e4ckerei');
+  });
+
+  it('finds quotes, invoices and contracts by a company name with either spelling', async () => {
+    await db('customer_accounts').where({ id: customerId }).update({ company_name: 'B\u00e4ckerei Nord' });
+    const now = new Date().toISOString();
+    const today = now.slice(0, 10);
+    await db('quotes').insert({
+      quote_number: 'Q-NFC-1', customer_account_id: customerId, currency: 'CHF', status: 'draft', language: 'de',
+      issue_date: today, net_amount_minor: 100, vat_amount_minor: 0, total_amount_minor: 100, created_at: now,
+    });
+    await db('contracts').insert({
+      contract_number: 'K-NFC-1', customer_account_id: customerId, title: 'Vertrag', status: 'draft',
+      language: 'de', issue_date: today, created_at: now,
+    });
+    await db('invoices').insert({
+      invoice_number: 'R-NFC-1', customer_account_id: customerId, currency: 'CHF', status: 'draft',
+      language: 'de', issue_date: today, due_date: today, created_at: now,
+    });
+    const { listQuotes } = require('../../src/services/quoteService');
+    const { listContracts } = require('../../src/services/contract/crud');
+    const { listInvoices } = require('../../src/services/invoice/queries');
+    for (const q of ['Ba\u0308ckerei', 'B\u00e4ckerei']) {
+      expect((await listQuotes({ filters: { q } })).rows.map((r) => r.quote_number)).toContain('Q-NFC-1');
+      expect((await listContracts({ filters: { q } })).rows.map((r) => r.contract_number)).toContain('K-NFC-1');
+      expect((await listInvoices({ filters: { q } })).rows.map((r) => r.invoice_number)).toContain('R-NFC-1');
+    }
+  });
 });

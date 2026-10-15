@@ -12,7 +12,7 @@ const { requirePermission } = require('../middleware/permissions');
 const StreamZip = require('node-stream-zip');
 const { requireEventOwnership, requireEventOwner, scopeEventsListQuery } = require('../middleware/ownership');
 const { assertZipEntriesWithin } = require('../utils/safePath');
-const { escapeLikePattern, likeWithEscape } = require('../utils/sqlSecurity');
+const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../utils/sqlSecurity');
 const logger = require('../utils/logger');
 const { sanitizeForZipEntry } = require('../utils/filenameSanitizer');
 const { getPagination } = require('../utils/routeHelpers');
@@ -75,10 +75,12 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
       // to its own events.
       scopeEventsListQuery(query, req.admin, 'events.created_by');
       if (search) {
-        query.whereRaw(
-          likeWithEscape('events.event_name'),
-          [`%${escapeLikePattern(search)}%`]
-        );
+        // Every stored spelling of the name (unicodeSearchForms).
+        query.where((builder) => {
+          for (const form of unicodeSearchForms(search)) {
+            builder.orWhereRaw(likeWithEscape('events.event_name'), [`%${escapeLikePattern(form)}%`]);
+          }
+        });
       }
       if (type && type !== 'all') {
         query.where('events.event_type', type);

@@ -17,7 +17,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
-const { escapeLikePattern, likeWithEscape } = require('../../utils/sqlSecurity');
+const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../../utils/sqlSecurity');
 const { validatePasswordInContext, getBcryptRounds } = require('../../utils/passwordValidation');
 const logger = require('../../utils/logger');
 const { sanitizeForLog, sanitizeValidationErrors } = require('../../utils/sanitizeForLog');
@@ -312,12 +312,9 @@ module.exports = (router) => {
       // Apply search filter
       if (search) {
         const pattern = `%${escapeLikePattern(search)}%`;
-        // Names are stored NFC since issue 2079, without a backfill: match
-        // the NFC and NFD spellings too, so a name saved decomposed earlier
-        // and one saved since both answer either input.
+        // Every stored spelling of the name (unicodeSearchForms).
         const namePatterns = typeof search === 'string'
-          ? [...new Set([search, search.normalize('NFC'), search.normalize('NFD')])]
-            .map((s) => `%${escapeLikePattern(s)}%`)
+          ? unicodeSearchForms(search).map((s) => `%${escapeLikePattern(s)}%`)
           : [pattern];
         query = query.where((builder) => {
           for (const p of namePatterns) builder.orWhereRaw(likeWithEscape('event_name'), [p]);

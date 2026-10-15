@@ -721,6 +721,16 @@ describe('one archive job per gallery', () => {
     }
   });
 
+  it('finds an archived gallery by its name with either Unicode spelling', async () => {
+    const event = await makeEvent('archive-search-nfc', { photoCount: 0 });
+    await db('events').where({ id: event.id }).update({ event_name: 'J\u00f6rg im Archiv', is_archived: 1, is_active: 0 });
+    for (const search of ['Jo\u0308rg im', 'J\u00f6rg im']) {
+      const res = await request(app).get('/admin/archives').query({ search });
+      expect(res.status).toBe(200);
+      expect(JSON.stringify(res.body)).toContain('archive-search-nfc');
+    }
+  });
+
   it('removes an archive\'s unheld claim row with it, and leaves one a restore took meanwhile', async () => {
     const released = await makeEvent('archive-row-free', { photoCount: 0 });
     await jobState.ensure(jobName(released.id));
