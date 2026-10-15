@@ -421,6 +421,7 @@ async function removePhoto(filePath) {
       const ids = await trx('photos').where({ path: relativePath })
         .whereNot(function () { this.whereNotNull('deleted_at').whereNull('purge_after'); })
         .pluck('id');
+      await require('./heroPhotoLock').lockHeroEvents(trx, ids);
       await trx('photos').whereIn('id', ids).delete();
       await trx('photo_tags').whereIn('photo_id', ids).del();
     });

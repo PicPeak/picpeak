@@ -11,7 +11,10 @@
  *
  * That turns one older writer around: the shared colour tag locked its photo
  * and then inserted the tag row (key share on the event). It now takes the
- * event first as well, so the rename and a guest's tap serialise on it.
+ * event first as well, so the rename and a guest's tap serialise on it. And
+ * deleting a gallery's hero photo updates the event row through the
+ * hero_photo_id foreign key after it has locked the photo: the delete now
+ * takes that event row first.
  *
  * Gated on PICPEAK_PG_TEST_URL; runs the core migrations in a schema of its
  * own and drops it afterwards. Not run locally.
@@ -28,7 +31,7 @@ const held = [];
 
 (pgUrl ? describe : describe.skip)('event rename lock order on PostgreSQL (issue 2108)', () => {
   let owner; let db; let teardown;
-  let faceProcessor; let faceQueue; let renameService; let feedbackService;
+  let faceProcessor; let faceQueue; let renameService; let feedbackService; let photoTrash;
   let blockedOnLock; let heldTransaction; let seedEvent; let seedPhoto;
 
   beforeAll(async () => {
@@ -85,6 +88,7 @@ const held = [];
     faceQueue = require('../../src/services/faceQueue');
     renameService = require('../../src/services/eventRenameService');
     feedbackService = require('../../src/services/feedbackService');
+    photoTrash = require('../../src/services/photoTrash');
   }, 180000);
 
   afterAll(async () => { if (teardown) await teardown(); });
@@ -139,5 +143,29 @@ const held = [];
     await expect(rename.done).resolves.toBeUndefined();
     await expect(tag).resolves.toMatchObject({ created: true, shared: true });
     expect(await db('photos').where({ id: photoId }).first()).toMatchObject({ path: '/tmp/renamed.jpg' });
+  });
+
+  test('a rename holding the event and the delete of its hero photo do not deadlock', async () => {
+    const eventId = await seedEvent(db);
+    const photoId = await seedPhoto(db, eventId);
+    await db('events').where({ id: eventId }).update({ hero_photo_id: photoId });
+    const photo = await db('photos').where({ id: photoId }).first();
+    const event = await db('events').where({ id: eventId }).first();
+
+    // The rename's order: the event row FOR UPDATE, then the photo.
+    const rename = heldTransaction(db, held,
+      (trx) => trx('events').where({ id: eventId }).forUpdate().first(),
+      (trx) => trx('photos').where({ id: photoId }).update({ path: '/tmp/renamed.jpg' }));
+    await rename.locked;
+
+    const removal = photoTrash.deletePhotoForGood(event, photo);
+    // Waits for the event row, without holding the photo.
+    await blockedOnLock(owner, removal);
+
+    rename.release();
+    await expect(rename.done).resolves.toBeUndefined();
+    await expect(removal).resolves.toBeUndefined();
+    expect(await db('photos').where({ id: photoId }).first()).toBeUndefined();
+    expect(await db('events').where({ id: eventId }).first()).toMatchObject({ hero_photo_id: null });
   });
 });
