@@ -143,7 +143,8 @@ async function servedRowsInScope(eventId, inScope) {
     .where({ event_id: eventId })
     .whereIn('source_origin', SERVED_ORIGINS)
     .whereNotNull('external_relpath')
-    .select('id', 'external_relpath', 'unavailable_reason', 'size_bytes', 'source_mtime_ms', 'filename', 'source_filename');
+    .select('id', 'external_relpath', 'unavailable_reason', 'size_bytes', 'source_mtime_ms', 'filename', 'source_filename',
+      'media_type', 'width', 'height', 'captured_at', 'duration');
   return rows.filter((r) => inScope(r.external_relpath));
 }
 
@@ -167,10 +168,36 @@ async function sourcePresence(access, full) {
 }
 
 /**
+ * Whether a new file reads as the picture a vanished row recorded: same
+ * dimensions and capture date (photo) or dimensions and runtime (video).
+ * Anything unreadable, or a row without those values, is not a match.
+ */
+async function describesRow(row, f) {
+  if (row.width == null || row.height == null) return false;
+  try {
+    if (row.media_type === 'video' || isVideoFile(f.name)) {
+      if (row.duration == null) return false;
+      const m = await extractVideoMetadata(f.full);
+      return Number(m.width) === Number(row.width) && Number(m.height) === Number(row.height)
+        && Math.abs(Number(m.duration) - Number(row.duration)) < 0.5;
+    }
+    const { width, height } = orientedDimensions(await sharp(f.full).metadata());
+    if (width !== Number(row.width) || height !== Number(row.height)) return false;
+    const taken = await extractCaptureDate(f.full).catch(() => null);
+    const recorded = row.captured_at ? new Date(row.captured_at).getTime() : null;
+    return (taken ? taken.getTime() : null) === recorded;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
  * A file renamed or moved on the share (issue 2121): its row, whose file is
  * gone, and a new file of the same size, modification time and extension,
  * seen in the same pass. The row takes the new path instead of the new file
- * being imported next to it. Only one-to-one matches move: two candidates on
+ * being imported next to it. Size and time alone can meet by chance, so the
+ * new file must also describe what the row recorded (describesRow). Only
+ * one-to-one matches move: two candidates on
  * either side are left alone (the old row is marked missing and the new file
  * imported, as without this). The file name follows when the row still
  * carried the old one; folder, category and everything else stay.
@@ -200,6 +227,9 @@ async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, full
     const f = arrived.get(key);
     if (!row || !f) continue;
     if (await sourcePresence(access, fullOf(row.external_relpath)) !== 'missing') continue;
+    if (!(await describesRow(row, f))) continue;
+    // The lookups above can outlast the claim: checked again before writing.
+    if (isLost()) break;
     const newRel = toRootRelative(f.rel);
     if (automatic && await db('external_import_exclusions').where({ event_id: eventId, external_relpath: newRel }).first()) continue;
     const oldName = path.basename(row.external_relpath);

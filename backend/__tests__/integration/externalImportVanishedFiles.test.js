@@ -368,6 +368,24 @@ describe('external re-scan of files gone from the share', () => {
     expect(await scan(eventId)).toMatchObject({ imported: 0, moved: 0, missing: 0, refreshed: 0 });
   });
 
+  it('does not hand a photo\'s row to another picture of the same size and time', async () => {
+    const eventId = await importTwo();
+    const a = await byName(eventId, 'a.jpg');
+    const st = await fs.promises.stat(path.join(mediaRoot, 'shoot', 'a.jpg'));
+    await rm('shoot/a.jpg');
+    // Another picture, padded to the same byte count and given the same time.
+    const other = await sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 0, g: 0, b: 250 } } }).jpeg().toBuffer();
+    expect(other.length).toBeLessThanOrEqual(st.size);
+    const full = path.join(mediaRoot, 'shoot', 'other.jpg');
+    await fs.promises.writeFile(full, Buffer.concat([other, Buffer.alloc(st.size - other.length)]));
+    await fs.promises.utimes(full, st.atime, st.mtime);
+
+    expect(await scan(eventId)).toMatchObject({ moved: 0, imported: 1, missing: 1 });
+    expect(await db('photos').where({ id: a.id }).first()).toMatchObject({
+      external_relpath: path.join('shoot', 'a.jpg'), unavailable_reason: 'source_missing',
+    });
+  });
+
   it('moves a row already marked missing when its file turns up renamed', async () => {
     const eventId = await importTwo();
     const a = await byName(eventId, 'a.jpg');
