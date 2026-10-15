@@ -231,6 +231,26 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it('a send again of a held recipient claims it, so a finishing photo does not mail it too', async () => {
+    const event = await mkEvent();
+    const done = await mkPhoto(event, 'complete');
+    const transfer = await mkTransfer([done]);
+    // Held earlier, while the photo was still processing.
+    await db('transfer_recipients').insert({ transfer_id: transfer.id, email: 'anna@example.com', created_at: now(), last_sent_at: null });
+    let sending;
+    const inSmtp = new Promise((resolve) => { sending = resolve; });
+    let release;
+    send.mockImplementation(() => { sending(); return new Promise((resolve) => { release = resolve; }); });
+
+    const resend = transferService.sendTransferEmails(transfer.id, ['anna@example.com']);
+    await inSmtp;
+    // Another photo of the transfer finishes while the resend is in SMTP.
+    await transferService.sendHeldReadyEmailsForPhotos([done]);
+    release();
+    expect((await resend).sent).toBe(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it('still sends at once when a file is ready', async () => {
     const event = await mkEvent();
     const done = await mkPhoto(event, 'complete');

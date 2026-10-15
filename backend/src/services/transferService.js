@@ -1275,17 +1275,23 @@ async function sendTransferEmails(transferId, emails) {
   const vars = await readyEmailVars(transfer, fileCount);
   let sent = 0;
   for (const email of clean) {
-    if (await sendReadyEmail(transferId, email, vars)) sent += 1;
     // Record the recipient regardless of delivery so the detail panel shows who
     // it was addressed to (and a future resend has the list).
     const existing = await db('transfer_recipients').where({ transfer_id: transferId, email }).first();
-    if (existing) {
+    if (existing && existing.last_sent_at == null) {
+      // Held: claimed like sendHeldReadyEmails does, so a photo finishing
+      // meanwhile does not mail it too. Lost means it is being sent already.
+      const claimed = await db('transfer_recipients').where({ id: existing.id }).whereNull('last_sent_at')
+        .update({ last_sent_at: new Date() });
+      if (claimed !== 1) continue;
+    } else if (existing) {
       await db('transfer_recipients').where({ id: existing.id }).update({ last_sent_at: new Date() });
     } else {
       await db('transfer_recipients').insert({
         transfer_id: transferId, email, created_at: new Date(), last_sent_at: new Date(),
       });
     }
+    if (await sendReadyEmail(transferId, email, vars)) sent += 1;
   }
   return { sent, recipients: clean };
 }
