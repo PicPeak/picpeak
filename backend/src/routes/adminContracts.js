@@ -32,6 +32,7 @@ const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
 const { assertContractPdfPath } = require('../utils/safePath');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const { resolveStoredPath, toStoredPath } = require('../utils/storedPath');
 const { body, header, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
@@ -847,7 +848,9 @@ router.get(
       'Content-Disposition',
       `inline; filename="${data.contract.contract_number}.pdf"`,
     );
-    fs.createReadStream(safePath).pipe(res);
+    // existsSync above does not close the window: the read stream opens
+    // lazily, and a file removed in between errors outside handleAsync.
+    pipeStreamToResponse(fs.createReadStream(safePath), res, { context: `contract ${data.contract.id} PDF` });
   }),
 );
 
@@ -871,7 +874,7 @@ router.get(
       'Content-Disposition',
       `inline; filename="${data.contract.contract_number}-signed.pdf"`,
     );
-    fs.createReadStream(safePath).pipe(res);
+    pipeStreamToResponse(fs.createReadStream(safePath), res, { context: `contract ${data.contract.id} signed PDF` });
   }),
 );
 

@@ -26,6 +26,7 @@ const rateLimit = require('express-rate-limit');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 const { body, param } = require('express-validator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const contractService = require('../services/contractService');
 const publicDocumentViews = require('../services/publicDocumentViews');
 const verification = require('../services/publicDocumentVerificationService');
@@ -218,7 +219,9 @@ router.get(
     }
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
-    return fs.createReadStream(filePath).pipe(res);
+    // Lazy open: a file removed after the path check errors outside
+    // handleAsync, so the helper answers it instead of the process dying.
+    return pipeStreamToResponse(fs.createReadStream(filePath), res, { context: `contract ${contract.id} PDF` });
   }),
 );
 

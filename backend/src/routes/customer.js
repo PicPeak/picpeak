@@ -21,6 +21,7 @@ const { db, logActivity } = require('../database/db');
 const { getBcryptRounds, MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
 const { resolveStoredPathStrict, contractPdfRoots } = require('../utils/safePath');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const logger = require('../utils/logger');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const { getClientIp } = require('../utils/requestIp');
@@ -850,7 +851,9 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
     }
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `inline; filename="${path.basename(filePath)}"`);
-    fs.createReadStream(filePath).pipe(res);
+    // The read stream opens lazily: a file removed after the check above
+    // errors after this handler returned, outside the try/catch.
+    pipeStreamToResponse(fs.createReadStream(filePath), res, { context: `contract ${contract.id} PDF` });
   } catch (error) {
     if (error && error.statusCode === 403) return res.status(403).json({ error: error.message, code: error.code });
     errorResponse(res, error, 500, 'Failed to render contract PDF');

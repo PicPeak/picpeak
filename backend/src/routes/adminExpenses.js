@@ -23,6 +23,7 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const { getStoragePath } = require('../config/storage');
 const { assertPathInside, assertStoredPathInside } = require('../utils/safePath');
 const { toStoredPath } = require('../utils/storedPath');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const { db } = require('../database/db');
 const expenseService = require('../services/expenseService');
 const { ownedBy } = require('../services/expenseAccess');
@@ -143,7 +144,9 @@ router.get('/inbound/:id/file', requireIncoming, requirePermission('accounting.v
     res.setHeader('Content-Disposition', isPdf ? 'attachment' : 'inline');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (!isPdf) res.setHeader('Content-Security-Policy', 'default-src \'none\'; img-src \'self\' data:; style-src \'unsafe-inline\'');
-    createReadStream(safe).pipe(res);
+    // Never a bare pipe: the read stream opens lazily, and a missing or
+    // unreadable file would emit 'error' with no listener and end the process.
+    pipeStreamToResponse(createReadStream(safe), res, { context: 'inbound document file' });
   }));
 
 router.get('/inbound/:id/page/:n', requireIncoming, requirePermission('accounting.view'),
@@ -162,7 +165,7 @@ router.get('/inbound/:id/page/:n', requireIncoming, requirePermission('accountin
     res.setHeader('Content-Disposition', 'inline');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', 'default-src \'none\'; img-src \'self\' data:; style-src \'unsafe-inline\'');
-    createReadStream(safePng).pipe(res);
+    pipeStreamToResponse(createReadStream(safePng), res, { context: `inbound document ${id} page ${page}` });
   }));
 
 // Change history (migration 219), oldest first.
@@ -239,7 +242,7 @@ router.get('/:id/proof', requireExpenses, requirePermission('accounting.view'),
     res.setHeader('Content-Disposition', isPdf ? 'attachment' : 'inline');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (!isPdf) res.setHeader('Content-Security-Policy', 'default-src \'none\'; img-src \'self\' data:; style-src \'unsafe-inline\'');
-    createReadStream(safe).pipe(res);
+    pipeStreamToResponse(createReadStream(safe), res, { context: 'expense proof' });
   }));
 
 router.get('/:id/history', requireExpenses, requirePermission('accounting.view'),
