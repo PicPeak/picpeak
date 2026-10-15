@@ -60,14 +60,15 @@ function stubViewport(isDrawer: boolean) {
   });
 }
 
-const Harness: React.FC = () => {
+const Harness: React.FC<{ path?: string }> = ({ path = '/admin/dashboard' }) => {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
   return (
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={['/admin/dashboard']}>
+      <MemoryRouter initialEntries={[path]}>
         <button ref={toggleRef} onClick={() => setOpen(true)}>hamburger</button>
-        <AdminSidebar isOpen={open} onClose={() => setOpen(false)} />
+        {/* AdminLayout always passes onToggleCollapse: its button is `hidden lg:flex`. */}
+        <AdminSidebar isOpen={open} onClose={() => setOpen(false)} onToggleCollapse={() => {}} />
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -97,6 +98,30 @@ describe('AdminSidebar drawer (issue 2074)', () => {
     fireEvent.click(screen.getByLabelText('Close menu'));
     expect(drawer(container)).toHaveAttribute('inert');
     expect(document.activeElement).toBe(hamburger);
+  });
+
+  it('wraps Shift+Tab past the desktop-only collapse button', () => {
+    stubViewport(true);
+    // jsdom has no layout: stand in checkVisibility for the `hidden` class.
+    const proto = HTMLElement.prototype as HTMLElement & { checkVisibility?: () => boolean };
+    const original = proto.checkVisibility;
+    proto.checkVisibility = function (this: HTMLElement) { return !this.closest('.hidden'); };
+    try {
+      // Section mode drops the footer widgets, so the collapse button is the
+      // last focusable control in the drawer.
+      const { container } = render(<Harness path="/admin/settings" />);
+      fireEvent.click(screen.getByText('hamburger'));
+      const first = document.activeElement as HTMLElement;
+      expect(drawer(container).contains(first)).toBe(true);
+      fireEvent.keyDown(first, { key: 'Tab', shiftKey: true });
+      const collapse = screen.getByLabelText('Collapse sidebar');
+      expect(document.activeElement).not.toBe(collapse);
+      expect(document.activeElement).not.toBe(first);
+      expect(drawer(container).contains(document.activeElement)).toBe(true);
+    } finally {
+      if (original) proto.checkVisibility = original;
+      else delete proto.checkVisibility;
+    }
   });
 
   it('is never inert on lg and wider, where it is always on screen', () => {
