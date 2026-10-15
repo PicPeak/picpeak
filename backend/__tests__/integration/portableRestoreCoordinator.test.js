@@ -371,8 +371,12 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
     it('waits for a registration that is still heartbeating, then gives up and reopens', async () => {
       const a = create({ drainGraceMs: 20, forceGraceMs: 20 });
       await a.coordinator.activate();
-      const handle = await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+      // Registered before the restore starts: start() launches its own tick,
+      // and with settleMs 0 that tick can find the cohort quiescent and admit
+      // the worker before a row inserted afterwards exists. The row then fails
+      // the worker's pre-exec check and the run ends in recovery_required.
       await db('portable_restore_instances').insert(foreign({ heartbeat_at: new Date().toISOString() }));
+      const handle = await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
       await drive('open', a);
       expect(starts).toHaveLength(0);
       expect(await a.coordinator.progress(handle.attemptId, handle.progressToken))
