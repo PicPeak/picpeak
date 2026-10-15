@@ -20,6 +20,11 @@ function escapeXml(value) {
     .replace(/'/g, '&apos;');
 }
 
+const textHash = (text) => crypto.createHash('sha256').update(text).digest('hex').slice(0, 8);
+// The gallery text a stored watermark was cut with, at the end of its key.
+const textTag = (settings) => (settings?.text ? `_t${textHash(settings.text)}` : '');
+const TEXT_TAG = /_t[0-9a-f]{8}$/;
+
 class WatermarkService {
   constructor() {
     this.cache = new Map();
@@ -93,8 +98,20 @@ class WatermarkService {
    */
   versionTag(settings) {
     const base = `${settings.opacity}${settings.position}${settings.size}`;
-    if (!settings.text) return base;
-    return `${base}t${crypto.createHash('sha256').update(settings.text).digest('hex').slice(0, 8)}`;
+    return settings.text ? `${base}t${textHash(settings.text)}` : base;
+  }
+
+  /**
+   * Whether a stored watermark file was cut with the text these settings
+   * draw. Its key carries the text (watermarkKey), so a file cut before the
+   * gallery's text changed, or by a job that read the old text, is never
+   * served under the new text's ETag; the photo route renders on the fly
+   * and queues a fresh cut instead.
+   */
+  storedWatermarkCurrent(watermarkPath, settings) {
+    const name = path.basename(String(watermarkPath || ''), path.extname(String(watermarkPath || '')));
+    const tag = textTag(settings);
+    return tag ? name.endsWith(tag) : !TEXT_TAG.test(name);
   }
 
   /**
@@ -388,13 +405,14 @@ class WatermarkService {
    * as well as the photo id: a replacement keeps the id, and a job still
    * cutting the old file must not overwrite the new file's watermark. An
    * external file edited in place keeps its name, so its version (size and
-   * mtime, see imageProcessor's sourceVersion) is part of the name too.
+   * mtime, see imageProcessor's sourceVersion) is part of the name too, and
+   * so is the gallery's watermark text (see storedWatermarkCurrent).
    */
-  watermarkKey(photo, attempt = null) {
+  watermarkKey(photo, attempt = null, settings = null) {
     const version = require('./imageProcessor').sourceVersion(photo);
     const source = crypto.createHash('sha256')
       .update(String(photo.filename || '') + (version ? `\0${version}` : '')).digest('hex').slice(0, 12);
-    return `watermarks/${photo.id}_watermarked_${source}${attempt ? `_${attempt.id}` : ''}${this.getFileExtension(photo.filename || '')}`;
+    return `watermarks/${photo.id}_watermarked_${source}${attempt ? `_${attempt.id}` : ''}${textTag(settings)}${this.getFileExtension(photo.filename || '')}`;
   }
 
   /**
@@ -429,7 +447,7 @@ class WatermarkService {
 
       const ext = this.getFileExtension(photo.filename);
       const attempt = require('./mediaAttemptContext').current();
-      const relativePath = this.watermarkKey(photo, attempt);
+      const relativePath = this.watermarkKey(photo, attempt, settings);
 
       await attempt?.assertCurrent();
       await getStorage().put(relativePath, watermarkedBuffer, {

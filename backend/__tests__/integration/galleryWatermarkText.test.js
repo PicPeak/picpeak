@@ -230,16 +230,70 @@ describe('gallery watermark text (issue 2095)', () => {
     expect(after.every((p) => p.watermark_path)).toBe(true);
   });
 
-  test('regenerating drops a stored watermark before re-cutting it', async () => {
+  test('changing the text re-cuts the stored watermarks and drops the old files', async () => {
     withGlobal(GLOBAL);
-    const { event, photoIds } = await makeEvent({ text: 'One', photos: 1 });
+    const { event, photoIds } = await makeEvent({ text: 'Before', photos: 2 });
+    for (const id of photoIds) await generator.generateForPhoto(id);
+    const before = await db('photos').whereIn('id', photoIds).select('id', 'watermark_path');
+    const remove = jest.spyOn(watermarkService, 'deleteWatermarkFile');
+
+    await db('events').where({ id: event.id }).update({ watermark_text: 'After' });
+    await generator.regenerateForEvent(event.id);
+    const after = await db('photos').whereIn('id', photoIds).select('id', 'watermark_path');
+    for (const row of after) {
+      const old = before.find((b) => b.id === row.id).watermark_path;
+      expect(row.watermark_path).not.toBe(old);
+      expect(watermarkService.storedWatermarkCurrent(row.watermark_path, { text: 'After' })).toBe(true);
+      expect(remove).toHaveBeenCalledWith(old);
+    }
+  });
+
+  test('a stored watermark cut with another text is not served; the photo is marked on the fly', async () => {
+    withGlobal(GLOBAL);
+    const queued = jest.spyOn(generator, 'generateForPhoto').mockResolvedValue({ success: false });
+    const { event, photoIds, token } = await makeEvent({ text: 'Old', photos: 1 });
+    queued.mockRestore();
     await generator.generateForPhoto(photoIds[0]);
     const { watermark_path: stored } = await db('photos').where({ id: photoIds[0] }).first();
-    const remove = jest.spyOn(watermarkService, 'deleteWatermarkFile');
-    // The re-cut fails: the stale file must not stay behind as the photo's watermark.
-    jest.spyOn(generator, 'generateForEvent').mockResolvedValue({ total: 1, success: 0, failed: 1, errors: [] });
-    await generator.regenerateForEvent(event.id);
-    expect(remove).toHaveBeenCalledWith(stored);
-    expect((await db('photos').where({ id: photoIds[0] }).first()).watermark_path).toBeNull();
+    expect(stored).toBeTruthy();
+
+    // The text changed; the stored file (cut with "Old") is still recorded,
+    // as it is until the re-cut reaches this photo.
+    await db('events').where({ id: event.id }).update({ watermark_text: 'New' });
+    jest.spyOn(generator, 'generateForPhoto').mockResolvedValue({ success: false });
+    drawn = [];
+    await request(app).get(`/api/gallery/${event.slug}/photo/${photoIds[0]}`)
+      .set('Authorization', `Bearer ${token}`).expect(200);
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0].text).toBe('New');
+    expect(generator.generateForPhoto).toHaveBeenCalledWith(photoIds[0]);
+  });
+
+  test('a job that queued before a text change cuts the current text', async () => {
+    withGlobal(GLOBAL);
+    const { event, photoIds } = await makeEvent({ text: 'Queued', photos: 1 });
+    // The batch read its rows (and the old text) before the admin's change.
+    const row = await db('photos').join('events', 'photos.event_id', 'events.id')
+      .where('photos.id', photoIds[0]).select('photos.*', 'events.slug', 'events.source_mode', 'events.external_path').first();
+    await db('events').where({ id: event.id }).update({ watermark_text: 'Current' });
+    const result = await generator.processPhotoWatermark({ ...row, watermark_text: 'Queued' }, GLOBAL);
+    expect(result.success).toBe(true);
+    expect(drawn.at(-1).text).toBe('Current');
+    const { watermark_path: stored } = await db('photos').where({ id: photoIds[0] }).first();
+    expect(watermarkService.storedWatermarkCurrent(stored, { text: 'Current' })).toBe(true);
+  });
+
+  test('the stored key carries the text; a file without one only matches a gallery without one', () => {
+    const photo = { id: 9, filename: 'a.jpg', source_origin: 'managed' };
+    const plain = watermarkService.watermarkKey(photo);
+    const anna = watermarkService.watermarkKey(photo, null, { text: 'Anna' });
+    expect(anna).not.toBe(plain);
+    expect(anna.endsWith('.jpg')).toBe(true);
+    expect(watermarkService.storedWatermarkCurrent(plain, {})).toBe(true);
+    expect(watermarkService.storedWatermarkCurrent(plain, { text: 'Anna' })).toBe(false);
+    expect(watermarkService.storedWatermarkCurrent(anna, { text: 'Anna' })).toBe(true);
+    expect(watermarkService.storedWatermarkCurrent(anna, { text: 'Ben' })).toBe(false);
+    expect(watermarkService.storedWatermarkCurrent(anna, {})).toBe(false);
+    expect(watermarkService.storedWatermarkCurrent(watermarkService.watermarkKey(photo, { id: 42 }, { text: 'Anna' }), { text: 'Anna' })).toBe(true);
   });
 });

@@ -53,8 +53,7 @@ class WatermarkGeneratorService {
           'photos.*',
           'events.slug',
           'events.source_mode',
-          'events.external_path',
-          'events.watermark_text'
+          'events.external_path'
         )
         .first();
 
@@ -94,8 +93,10 @@ class WatermarkGeneratorService {
         if (!fresh || !fresh.enabled) {
           return { success: false, watermarkPath: null, error: 'Watermarking is disabled' };
         }
-        // The gallery's own watermark text (selected with the photo).
-        const forGallery = watermarkService.forEvent(fresh, photo);
+        // The gallery's own watermark text, read in the slot for the same
+        // reason: the admin may have changed it while this job queued.
+        const gallery = await db('events').where('id', photo.event_id).first('watermark_text');
+        const forGallery = watermarkService.forEvent(fresh, gallery);
         return storageKey
           ? withLocalCopy(storageKey, (lp) =>
             watermarkService.generateAndSaveWatermark(photo, lp, forGallery)
@@ -185,8 +186,7 @@ class WatermarkGeneratorService {
           'photos.*',
           'events.slug',
           'events.source_mode',
-          'events.external_path',
-          'events.watermark_text'
+          'events.external_path'
         );
 
       results.total = photos.length;
@@ -246,26 +246,12 @@ class WatermarkGeneratorService {
 
   /**
    * Re-cut one gallery's stored watermarks after its watermark text changed.
-   * The stored files are dropped first: the photo route serves them under an
-   * ETag that already carries the new text, so a stale file must not answer
-   * in the meantime (the route renders on the fly while none is stored).
+   * The old files are not served in the meantime (their key carries the old
+   * text, see watermarkService.storedWatermarkCurrent) and each is dropped
+   * once its replacement is recorded.
    */
   regenerateForEvent(eventId) {
-    return applicationWork.track('gallery watermark regeneration', async () => {
-      const settings = await watermarkService.getWatermarkSettings();
-      if (!settings || !settings.enabled) return { total: 0, success: 0, failed: 0, errors: [] };
-      const stored = await db('photos')
-        .where('event_id', eventId)
-        .whereNotNull('watermark_path')
-        .select('id', 'watermark_path');
-      for (const photo of stored) {
-        const cleared = await db('photos')
-          .where({ id: photo.id, watermark_path: photo.watermark_path })
-          .update({ watermark_path: null, watermark_generated_at: null });
-        if (cleared) await watermarkService.deleteWatermarkFile(photo.watermark_path);
-      }
-      return this.generateForEvent(eventId);
-    });
+    return applicationWork.track('gallery watermark regeneration', () => this.generateForEvent(eventId));
   }
 
   /**
@@ -284,8 +270,10 @@ class WatermarkGeneratorService {
         if (!fresh || !fresh.enabled) {
           return { success: false, watermarkPath: null, error: 'Watermarking is disabled' };
         }
-        // Batch jobs span galleries: each photo carries its gallery's text.
-        const forGallery = watermarkService.forEvent(settings, photo);
+        // The gallery's text as of now, not as of the batch query: the admin
+        // may have changed it while this job queued.
+        const gallery = await db('events').where('id', photo.event_id).first('watermark_text');
+        const forGallery = watermarkService.forEvent(settings, gallery);
         return storageKey
           ? withLocalCopy(storageKey, (lp) =>
             watermarkService.generateAndSaveWatermark(photo, lp, forGallery)
@@ -338,8 +326,7 @@ class WatermarkGeneratorService {
           'photos.*',
           'events.slug',
           'events.source_mode',
-          'events.external_path',
-          'events.watermark_text'
+          'events.external_path'
         );
 
       results.total = photos.length;

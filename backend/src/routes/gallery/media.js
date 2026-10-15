@@ -377,8 +377,9 @@ router.get('/:slug/photo/:photoId',
 
       if (watermarkSettings && watermarkSettings.enabled) {
         // Pre-generated watermarked file: served via the storage backend
-        // (managed) or directly from local fs (external).
-        if (photo.watermark_path) {
+        // (managed) or directly from local fs (external), when it was cut
+        // with the gallery's current watermark text.
+        if (photo.watermark_path && watermarkService.storedWatermarkCurrent(photo.watermark_path, watermarkSettings)) {
           try {
             if (useStorageBackend) {
               const wmStat = await storage.stat(photo.watermark_path);
