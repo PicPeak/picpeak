@@ -78,7 +78,8 @@ router.post('/events/:eventId/delivery/complete', adminAuth, requirePermission('
     const sendEmail = !(req.body.send_email === false || req.body.send_email === 'false');
     const recipient = event.customer_email || event.host_email || null;
     const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
-    const [{ total }] = await livePhotos(db).where('event_id', eventId).count('id as total');
+    // Held and rejected guest uploads are not part of the delivery (issue 2086).
+    const [{ total }] = await livePhotos(db).where('event_id', eventId).whereNull('moderation_status').count('id as total');
     const photoCount = Math.max(0, (Number(total) || 0) - result.duplicates.length);
 
     // The inline address and every assigned customer account the gallery

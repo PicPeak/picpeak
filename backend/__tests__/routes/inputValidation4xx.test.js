@@ -22,7 +22,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
-const { requireOctetStreamChunk } = require('../../src/middleware/chunkBodyType');
+const { requireOctetStreamChunk, CHUNK_ROUTE_PREFIXES } = require('../../src/middleware/chunkBodyType');
 const { parsePositiveInt32 } = require('../../src/utils/parsers');
 
 const SLUG = 'validation-event';
@@ -214,6 +214,25 @@ describe('input validation (issues 2078, 2086)', () => {
       expect((await db('events').where({ id: eventId }).first()).event_name).toBe('Renamed');
     });
 
+    it('checks unknown keys against one cached column set, not a query per key', async () => {
+      const schemaCache = require('../../src/utils/schemaCache');
+      schemaCache.invalidateSchemaCacheForTable('events');
+      const queries = [];
+      const onQuery = (q) => { if (/pragma|information_schema/i.test(q.sql)) queries.push(q.sql); };
+      db.on('query', onQuery);
+      try {
+        for (let round = 0; round < 2; round += 1) {
+          const body = { event_name: 'Renamed' };
+          for (let i = 0; i < 20; i += 1) body[`made_up_${round}_${i}`] = 'x';
+          const res = await asAdmin(request(app).put(`/api/admin/events/${eventId}`)).send(body);
+          expect(res.status).toBe(200);
+        }
+      } finally {
+        db.removeListener('query', onQuery);
+      }
+      expect(queries.filter((q) => /events/.test(q)).length).toBeLessThanOrEqual(1);
+    });
+
     it('ignores a body of only unknown fields', async () => {
       const res = await asAdmin(request(app).put(`/api/admin/events/${eventId}`)).send({ bogus_field: 'x' });
       expect(res.status).toBe(200);
@@ -255,17 +274,28 @@ describe('input validation (issues 2078, 2086)', () => {
   });
 
   describe('chunk body type (issue 2078)', () => {
+    // Mirrors server.js: the guard on every prefix adminPhotos is mounted at,
+    // then the parsers, then the router.
     const chunkApp = () => {
       const a = express();
-      a.use('/api/admin/photos', requireOctetStreamChunk);
+      a.use(CHUNK_ROUTE_PREFIXES, requireOctetStreamChunk);
       a.use(express.json({ limit: '2mb' }));
-      a.post('/api/admin/photos/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', (req, res) => res.json({ ok: true }));
-      a.post('/api/admin/photos/:eventId/other', (req, res) => res.json({ body: req.body }));
+      const r = express.Router();
+      r.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', (req, res) => res.json({ ok: true, ended: req.readableEnded }));
+      r.post('/:eventId/other', (req, res) => res.json({ body: req.body }));
+      a.use('/api/admin/photos', r);
+      a.use('/api/admin/events', r);
       return a;
     };
-    const url = '/api/admin/photos/1/chunked-upload/abc/chunk/0';
+    const urls = ['/api/admin/photos/1/chunked-upload/abc/chunk/0', '/api/admin/events/1/chunked-upload/abc/chunk/0'];
 
-    it('answers 415 for a chunk sent as JSON, before any parser reads it', async () => {
+    it('sits on both mounts of the photos router', () => {
+      expect(CHUNK_ROUTE_PREFIXES).toEqual(expect.arrayContaining(['/api/admin/photos', '/api/admin/events']));
+      const server = fs.readFileSync(path.join(__dirname, '../../server.js'), 'utf8');
+      expect(server).toMatch(/app\.use\(CHUNK_ROUTE_PREFIXES, requireOctetStreamChunk\)/);
+    });
+
+    it.each(urls)('answers 415 for a chunk sent as JSON to %s, before any parser reads it', async (url) => {
       const res = await request(chunkApp()).post(url)
         .set('Content-Type', 'application/json')
         .send(Buffer.alloc(64 * 1024, 'a'));
@@ -273,10 +303,19 @@ describe('input validation (issues 2078, 2086)', () => {
       expect(res.body.code).toBe('UNSUPPORTED_MEDIA_TYPE');
     });
 
-    it('lets an octet-stream chunk through, and leaves other routes alone', async () => {
+    it.each(urls)('lets an octet-stream chunk and one with no Content-Type through on %s', async (url) => {
       const ok = await request(chunkApp()).post(url).set('Content-Type', 'application/octet-stream').send(Buffer.from('x'));
       expect(ok.status).toBe(200);
-      const other = await request(chunkApp()).post('/api/admin/photos/1/other').send({ a: 1 });
+      expect(ok.body.ended).toBe(false);
+      const bare = request(chunkApp()).post(url);
+      bare.unset('Content-Type');
+      const untyped = await bare.send(Buffer.from('x'));
+      expect(untyped.status).toBe(200);
+      expect(untyped.body.ended).toBe(false);
+    });
+
+    it('leaves other routes alone', async () => {
+      const other = await request(chunkApp()).post('/api/admin/events/1/other').send({ a: 1 });
       expect(other.body).toEqual({ body: { a: 1 } });
     });
 
@@ -297,6 +336,19 @@ describe('input validation (issues 2078, 2086)', () => {
       const res = await asAdmin(request(app).get(`/api/admin/events/${eventId}/delivery`));
       expect(res.status).toBe(200);
       expect(res.body.delivered_count).toBe(1);
+    });
+  });
+
+  describe('completion mail count (issue 2086)', () => {
+    it('leaves a photo under review or rejected out of photo_count', async () => {
+      await db('email_queue').where({ event_id: eventId }).del();
+      await db('events').where({ id: eventId }).update({ delivery_status: 'partial' });
+      const res = await asAdmin(request(app).post(`/api/admin/events/${eventId}/delivery/complete`)).send({});
+      expect(res.status).toBe(200);
+      const row = await db('email_queue').where({ event_id: eventId, email_type: 'gallery_completed' }).first();
+      expect(row).toBeTruthy();
+      const data = typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data;
+      expect(data.photo_count).toBe(1);
     });
   });
 

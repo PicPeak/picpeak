@@ -29,7 +29,7 @@ const externalAccess = require('../../services/externalMediaAccess');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
 const { findSlugHolder } = require('../../services/slugRedirects');
-const { hasColumnCached } = require('../../utils/schemaCache');
+const { hasColumnCached, columnNamesCached } = require('../../utils/schemaCache');
 const { requireEventOwnership, requireEventOwner, scopeEventsListQuery, withoutForeignEventSecrets, scopeEventsQuery, ownsEvent, canLinkCrmToEvent } = require('../../middleware/ownership');
 const eventAdminAssignments = require('../../services/eventAdminAssignmentsService');
 const { mayReviewUploads, holdsForReview } = require('../../services/uploadReviewService');
@@ -2019,8 +2019,10 @@ module.exports = (router) => {
       // back as a 500 (issue 2078). Every legitimate input-only key has been
       // taken out of `updates` above, so what is left and unknown is ignored,
       // as the denylist above does with the keys it drops.
+      // One cached column set, not a schema query per request key.
+      const eventColumns = await columnNamesCached('events');
       for (const key of Object.keys(updates)) {
-        if (!(await hasColumnCached('events', key))) delete updates[key];
+        if (!eventColumns.has(key)) delete updates[key];
       }
 
       // Update event. Skip the write when the denylist (or masked secrets)
