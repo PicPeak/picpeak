@@ -206,11 +206,12 @@ describe('face scan attempt guard (issue 2069)', () => {
     const src = fs.readFileSync(path.join(__dirname, '../../src/services/faceProcessor.js'), 'utf8');
     const between = (from, to) => src.slice(src.indexOf(from), src.indexOf(to, src.indexOf(from)));
     const scanTrx = between('await db.transaction(async (trx) => {', '} catch (err) {');
-    expect(scanTrx.indexOf('claimGuard(claimed, trx)')).toBeGreaterThan(-1);
-    expect(scanTrx.indexOf('claimGuard(claimed, trx)')).toBeLessThan(scanTrx.indexOf("trx('photo_faces')"));
+    expect(scanTrx.indexOf('forKeyShare()')).toBeGreaterThan(-1);
+    expect(scanTrx.indexOf('forKeyShare()')).toBeLessThan(scanTrx.indexOf('claimGuard(claimed, trx)'));
+    expect(scanTrx.indexOf('claimGuard(claimed, trx)')).toBeLessThan(scanTrx.indexOf('trx(\'photo_faces\')'));
     const purge = between('async function purgeEvent(', '\n}\n');
-    expect(purge.indexOf("trx('photos')")).toBeGreaterThan(-1);
-    expect(purge.indexOf("trx('photos')")).toBeLessThan(purge.indexOf("trx('photo_faces')"));
+    expect(purge.indexOf('trx(\'photos\')')).toBeGreaterThan(-1);
+    expect(purge.indexOf('trx(\'photos\')')).toBeLessThan(purge.indexOf('trx(\'photo_faces\')'));
   });
 
   it('a claim taken away before the scan starts is skipped without a sidecar call', async () => {

@@ -1,9 +1,10 @@
 /**
  * Face scan commit vs. purges on PostgreSQL (issue 2069): the lock order.
  *
- * The scan checks its claim FIRST in its transaction, which locks the photo
- * row, and the purges invalidate the photo before they touch its faces. So
- * both take photo, then faces. Checked last, an event purge could delete the
+ * The scan takes the event row (key share, which its foreign keys need
+ * anyway), then checks its claim, which locks the photo row, and the purges
+ * invalidate the photo before they touch its faces. So everything takes
+ * event, photo, faces, in that order. Checked last, an event purge could delete the
  * faces, the scan commit new ones and the purge then only clear the status
  * (the erasure does not stick), and an external refresh holding the photo
  * could deadlock with a scan holding the photo's old face rows.
@@ -151,6 +152,33 @@ let mockReached = null;
     expect(await db('photo_faces').where({ photo_id: photoId }).count({ c: '*' }).first()).toEqual({ c: '0' });
     expect(await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first()).toEqual({ c: '0' });
     expect(await db('photos').where({ id: photoId }).first()).toMatchObject({ face_status: null, face_attempt_id: null });
+  });
+
+  test('a scan and a capped trash restore holding the event row do not deadlock', async () => {
+    const { eventId, photoId } = await seed();
+    const claimed = await faceQueue.claimNextPhoto();
+
+    // What photoTrash.restorePhotos does in a capped gallery: the event row
+    // FOR UPDATE, then the photo. Held open between the two.
+    let holdEvent; let eventLocked;
+    const hold = new Promise((resolve) => { holdEvent = resolve; });
+    const locked = new Promise((resolve) => { eventLocked = resolve; });
+    const restore = db.transaction(async (trx) => {
+      await trx('events').where({ id: eventId }).forUpdate().first();
+      eventLocked();
+      await hold;
+      await trx('photos').where({ id: photoId }).update({ deleted_at: null, purge_after: null });
+    });
+    await locked;
+
+    const scan = faceProcessor.processPhotoFaces(claimed);
+    // Waits for the event row, without holding the photo.
+    expect(await settledWithin(scan, 500)).toBe(false);
+
+    holdEvent();
+    await expect(restore).resolves.toBeUndefined();
+    await expect(scan).resolves.toMatchObject({ status: 'done' });
+    expect(await db('photos').where({ id: photoId }).first()).toMatchObject({ face_status: 'done', face_count: 1 });
   });
 
   test('an external refresh and a re-scan holding the old faces do not deadlock', async () => {
