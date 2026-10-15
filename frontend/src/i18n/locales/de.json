@@ -1048,6 +1048,10 @@
     "addFiles": "Dateien hinzufügen",
     "noUploadedFiles": "Keine hochgeladenen Dateien. Fügen Sie Dateien von Ihrem Computer hinzu, um sie in den Download aufzunehmen.",
     "sentTo": "Per E-Mail an",
+    "emailHeld": "E-Mail zurückgehalten, bis ein Foto fertig ist",
+    "heldHeading": "E-Mail wartet, bis ein Foto fertig ist",
+    "heldBadge": "Noch nicht gesendet",
+    "heldHint": "Noch kein Foto in diesem Transfer ist fertig verarbeitet. Die E-Mail geht von selbst raus, sobald eines fertig ist.",
     "delivery": {
       "link": "Link teilen",
       "email": "Per E-Mail senden"

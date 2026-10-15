@@ -1048,6 +1048,10 @@
     "addFiles": "Add files",
     "noUploadedFiles": "No uploaded files. Add files from your computer to include them in the download.",
     "sentTo": "Emailed to",
+    "emailHeld": "Email held until a photo is ready",
+    "heldHeading": "Email waits until a photo is ready",
+    "heldBadge": "Not sent yet",
+    "heldHint": "No photo in this transfer has finished processing yet. The email goes out on its own once one is ready.",
     "delivery": {
       "link": "Share a link",
       "email": "Send by email"

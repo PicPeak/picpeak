@@ -996,6 +996,10 @@
     "addFiles": "Dodaj datoteke",
     "noUploadedFiles": "Ni naloženih datotek. Dodajte datoteke iz računalnika, če jih želite vključiti v prenos.",
     "sentTo": "Poslano po e-pošti na",
+    "emailHeld": "E-pošta zadržana, dokler fotografija ni pripravljena",
+    "heldHeading": "E-pošta čaka, da bo fotografija pripravljena",
+    "heldBadge": "Še ni poslano",
+    "heldHint": "Nobena fotografija v tem prenosu še ni obdelana. E-pošta bo poslana samodejno, ko bo ena pripravljena.",
     "delivery": {
       "link": "Deli povezavo",
       "email": "Pošlji po e-pošti"

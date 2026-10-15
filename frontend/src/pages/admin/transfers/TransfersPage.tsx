@@ -683,6 +683,9 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
     enabled: canView,
   });
   const isRequest = transfer?.kind === 'request';
+  const recipients = transfer?.recipients || [];
+  const heldRecipients = isRequest ? [] : recipients.filter((r) => r.held);
+  const sentRecipients = recipients.filter((r) => !heldRecipients.includes(r));
   // The ZIP route is photos.download, NOT events.edit — a different permission
   // from everything else in this modal. It is a plain <a href>, so an admin
   // without it would navigate to raw 403 JSON rather than see an error toast.
@@ -721,7 +724,9 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
   });
   const resendMutation = useMutationWithToast({
     mutationFn: () => transfersService.resendEmail(transferId),
-    successMessage: t('transfers.emailResent', 'Email sent again'),
+    successMessage: (result) => (result.held
+      ? t('transfers.emailHeld', 'Email held until a photo is ready')
+      : t('transfers.emailResent', 'Email sent again')),
     onSuccess: () => refetch(),
   });
   const deleteMutation = useMutationWithToast({
@@ -1002,19 +1007,38 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
               </>
             )}
 
-            {/* Email recipients (both kinds) */}
-            {transfer.recipients && transfer.recipients.length > 0 && (
+            {/* Email recipients (both kinds). A send's ready email can be
+                held while nothing is downloadable yet (issue 2061). */}
+            {sentRecipients.length > 0 && (
               <div className="rounded-lg border border-line p-4">
                 <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-body">
                   <Mail className="h-4 w-4" /> {isRequest ? t('transfers.askedOf', 'Asked of') : t('transfers.sentTo', 'Emailed to')}
                 </h3>
                 <div className="flex flex-wrap gap-2">
-                  {transfer.recipients.map((r) => (
+                  {sentRecipients.map((r) => (
                     <span key={r.id} className="rounded-full bg-subtle px-2.5 py-1 text-xs text-body">
                       {r.email}
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+            {heldRecipients.length > 0 && (
+              <div className="rounded-lg border border-line p-4" data-testid="transfer-held-recipients">
+                <h3 className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-body">
+                  <Clock className="h-4 w-4" /> {t('transfers.heldHeading', 'Email waits until a photo is ready')}
+                  <Badge tone="warning" appearance="outline" dot>{t('transfers.heldBadge', 'Not sent yet')}</Badge>
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {heldRecipients.map((r) => (
+                    <span key={r.id} className="rounded-full bg-subtle px-2.5 py-1 text-xs text-body">
+                      {r.email}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-muted">
+                  {t('transfers.heldHint', 'No photo in this transfer has finished processing yet. The email goes out on its own once one is ready.')}
+                </p>
               </div>
             )}
           </div>

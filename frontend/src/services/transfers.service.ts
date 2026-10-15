@@ -46,6 +46,8 @@ export interface TransferRecipient {
   id: number;
   email: string;
   last_sent_at: string | null;
+  /** The ready email waits until the transfer has a finished photo. */
+  held: boolean;
 }
 
 export type TransferKind = 'send' | 'request';
@@ -274,9 +276,9 @@ export const transfersService = {
     return res.data.transfer;
   },
   /** Re-send the delivery/request email to the addresses already on the row. */
-  async resendEmail(id: number, recipientEmails?: string[]): Promise<Transfer> {
+  async resendEmail(id: number, recipientEmails?: string[]): Promise<{ transfer: Transfer; held: boolean }> {
     const res = await api.post(`/admin/transfers/${id}/resend`, { recipientEmails });
-    return res.data.transfer;
+    return { transfer: res.data.transfer, held: res.data.held === true };
   },
   /** Absolute API URL for the admin ZIP download (cookie auth → usable as href). */
   adminDownloadUrl(id: number): string {

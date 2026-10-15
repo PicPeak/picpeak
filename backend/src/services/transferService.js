@@ -438,7 +438,10 @@ async function getTransfer(id) {
       size_bytes: f.size_bytes,
       mime_type: f.mime_type,
     })),
-    recipients: recipients.map((r) => ({ id: r.id, email: r.email, last_sent_at: r.last_sent_at || null })),
+    // held: the ready mail waits for a downloadable file (issue 2061).
+    recipients: recipients.map((r) => ({
+      id: r.id, email: r.email, last_sent_at: r.last_sent_at || null, held: r.last_sent_at == null,
+    })),
     files: files.map((f) => ({
       file_id: f.file_id,
       photo_id: f.photo_id,

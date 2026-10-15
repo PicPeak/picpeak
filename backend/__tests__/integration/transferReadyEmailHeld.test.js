@@ -119,6 +119,11 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     expect((await recipients(transfer.id)).map((r) => [r.email, r.last_sent_at])).toEqual([
       ['anna@example.com', null], ['ben@example.com', null],
     ]);
+    // The admin view says which ones wait; the recipient page names none.
+    expect((await transferService.getTransfer(transfer.id)).recipients.map((r) => [r.email, r.held])).toEqual([
+      ['anna@example.com', true], ['ben@example.com', true],
+    ]);
+    expect(JSON.stringify(await transferService.getPublicView(transfer))).not.toMatch(/anna@example|held/);
 
     await finish(first);
     expect(send).toHaveBeenCalledTimes(2);
@@ -126,6 +131,7 @@ describe('transfer ready mail held while nothing is downloadable', () => {
       ['anna@example.com', 'transfer_ready', '1'], ['ben@example.com', 'transfer_ready', '1'],
     ]);
     expect((await recipients(transfer.id)).every((r) => r.last_sent_at != null)).toBe(true);
+    expect((await transferService.getTransfer(transfer.id)).recipients.every((r) => r.held === false)).toBe(true);
 
     // The next photo to finish sends nothing again.
     await finish(second);
