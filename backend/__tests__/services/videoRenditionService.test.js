@@ -499,6 +499,10 @@ describe('renderWebCopy', () => {
 
     expect(await service.renderWebCopy(30)).toBe('complete');
     expect(command.outputOptions).toHaveBeenCalledWith(service.transcodeOptions({ toneMap: false, videoIndex: 0, audioIndex: 1 }));
+    // A transcoded copy, keyed as one: it plays free like any other.
+    const key = 'videos/web_30_11111111-1111-4111-8111-111111111111_swap.mp4';
+    expect(storage.putFromFile).toHaveBeenCalledWith(key, expect.any(String), { contentType: 'video/mp4' });
+    expect(dbModule.__state.updates.find((u) => u.table === 'photos').data).toMatchObject({ web_path: key, web_status: 'complete' });
   });
 
   it('drops the copy and leaves the row alone when the claim was lost during the transcode', async () => {

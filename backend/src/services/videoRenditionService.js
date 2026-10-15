@@ -412,6 +412,9 @@ function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, r
       lane: 'long', memoryBytes: policy.transcodeBytes, wallMs: timeoutMs || budget.wallMs, cpuSeconds: budget.cpuSeconds,
       fileBytes: policy.outputBytes || 1024 * 1024 * 1024 * 1024,
     });
+    // What was written, so the copy's key names it (a remux is counted like
+    // the original, a transcode plays free).
+    return { remuxed: !!copy };
   });
 }
 
@@ -465,7 +468,8 @@ async function renderWebCopy(photoId) {
       return 'skipped';
     }
 
-    const webKey = webKeyFor(photo, attempt.id, { remux });
+    let webKey = null;
+    let remuxed = false;
     const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-webcopy-'));
     const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.mp4`);
     // An HDR source is tone-mapped to SDR when this ffmpeg can; otherwise the
@@ -478,7 +482,8 @@ async function renderWebCopy(photoId) {
       logger.warn(`videoRendition: photo ${photoId} is HDR (${probed.colorTransfer}) but this ffmpeg lacks zscale/tonemap; the copy is not tone-mapped`);
     }
     try {
-      await transcode(localPath, tmpPath, { toneMap, duration: probed.duration, remux });
+      ({ remuxed } = await transcode(localPath, tmpPath, { toneMap, duration: probed.duration, remux }));
+      webKey = webKeyFor(photo, attempt.id, { remux: remuxed });
       const stat = await fsp.stat(tmpPath).catch(() => null);
       if (!stat || stat.size === 0) throw new Error('ffmpeg produced no output');
       const { outputBytes } = mediaPolicy();
@@ -506,7 +511,7 @@ async function renderWebCopy(photoId) {
     }
     // The copy an earlier attempt or source left behind is unreferenced now.
     if (photo.web_path && photo.web_path !== webKey) await getStorage().delete(photo.web_path).catch(() => {});
-    logger.info(`videoRendition: wrote ${webKey} for photo ${photoId} (${remux ? 'metadata-free remux, ' : ''}${probed.videoCodec}/${probed.audioCodec || 'no audio'}, ${probed.majorBrand || probed.formatName}${toneMap ? ', HDR tone-mapped' : ''})`);
+    logger.info(`videoRendition: wrote ${webKey} for photo ${photoId} (${remuxed ? 'metadata-free remux, ' : ''}${probed.videoCodec}/${probed.audioCodec || 'no audio'}, ${probed.majorBrand || probed.formatName}${toneMap ? ', HDR tone-mapped' : ''})`);
     return 'complete';
   });
   return status;
