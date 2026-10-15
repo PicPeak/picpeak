@@ -175,9 +175,10 @@ async function sourcePresence(access, full) {
  * imported, as without this). The file name follows when the row still
  * carried the old one; folder, category and everything else stay.
  *
+ * Stops as soon as `isLost()` says the pass lost its claim or eligibility.
  * Returns the number of rows moved.
  */
-async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic }) {
+async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic, isLost }) {
   const keyOf = (size, mtimeMs, name) => `${Number(size)}:${Math.floor(Number(mtimeMs))}:${path.extname(name).toLowerCase()}`;
   const group = (items, key) => {
     const map = new Map();
@@ -194,6 +195,8 @@ async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, full
   const arrived = group(newFiles, (f) => keyOf(f.size, f.mtimeMs, f.name));
   let moved = 0;
   for (const [key, row] of gone) {
+    // The claim or (automatic passes) the event's eligibility went: stop.
+    if (isLost()) break;
     const f = arrived.get(key);
     if (!row || !f) continue;
     if (await sourcePresence(access, fullOf(row.external_relpath)) !== 'missing') continue;
@@ -894,7 +897,9 @@ async function importExternalFolder({
         const known = await existingRelpaths(eventId, candidates.map((f) => toRootRelative(f.rel)));
         const newFiles = candidates.filter((f) => !known.has(toRootRelative(f.rel)));
         if (newFiles.length) {
-          moved = await moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic });
+          moved = await moveRenamedRows({
+            eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic, isLost: () => lost,
+          });
         }
       }
     }
