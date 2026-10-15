@@ -67,7 +67,7 @@ const ALL_ROWS = {
   'services/videoRenditionQueue.js': [1, 'state of a rendition in flight'],
   'services/videoRenditionService.js': [2, 'queues every video (the queue skips trashed rows); rendition in flight'],
   'services/watermarkGeneratorService.js': [8, 'watermarks are made, renewed and cleared for trashed photos too: a restore must not serve one from old settings'],
-  'routes/adminThumbnails.js': [5, 'thumbnail and preview regeneration covers trashed photos too: a restore must not bring back stale renditions; a superseded thumbnail another row still uses (trashed or not) is kept'],
+  'routes/adminThumbnails.js': [6, 'thumbnail and preview regeneration covers trashed photos too: a restore must not bring back stale renditions; a superseded thumbnail or preview another row still uses (trashed or not) is kept'],
 };
 
 // Tables that name a photo by id keep their rows while the photo is in the
