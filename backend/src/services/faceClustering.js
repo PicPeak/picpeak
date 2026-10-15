@@ -1049,11 +1049,33 @@ async function recomputeCentroid(personId, trx = db) {
 async function recluster(eventId) {
   const thresholds = await getThresholds();
 
+  // Clearing, re-assigning, re-attaching the human state and recomputing the
+  // centroids are ONE transaction under the event's clustering lock (issue
+  // 2112). Run as separate steps, the event showed no people (then unnamed,
+  // un-hidden ones) until the last step landed, a failure part-way left it
+  // that way, and assignFaces ran without a transaction: it held the
+  // in-process lock without the PostgreSQL one, so a scan holding that one
+  // and waiting for the in-process lock hung both, unseen by either side.
+  //
+  // Everything inside goes through `trx`, never `db`: SQLite has one
+  // connection, and a second query waiting for it would wait for this
+  // transaction. consolidate() stays outside, since every merge it makes is
+  // a transaction of its own.
+  await db.transaction((trx) => withEventLock(eventId, trx, () => reclusterLocked(eventId, thresholds, trx)));
+
+  await consolidate(eventId, { thresholds });
+
+  const count = await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first();
+  logger.info(`faceClustering: reclustered event ${eventId} → ${count?.c ?? 0} people`);
+  return Number(count?.c ?? 0);
+}
+
+async function reclusterLocked(eventId, thresholds, trx) {
   // Remember every person carrying HUMAN state — a name, or a hidden/ignored
   // decision. Keying this on `label` alone silently dropped the privacy flags
   // of unnamed people: a bystander the photographer had suppressed came back
   // guest-visible after one "Re-group people".
-  const previousLabels = await db('event_people')
+  const previousLabels = await trx('event_people')
     .where({ event_id: eventId })
     .where(function () {
       this.whereNotNull('label')
@@ -1068,24 +1090,24 @@ async function recluster(eventId) {
 
   const priorMembership = new Map();
   if (previousLabels.length) {
-    const rows = await db('photo_faces')
+    const rows = await trx('photo_faces')
       .where({ event_id: eventId })
       .whereIn('person_id', previousLabels.map((p) => p.id))
       .select('id', 'person_id');
     for (const row of rows) priorMembership.set(row.id, row.person_id);
   }
 
-  await db.transaction(async (trx) => {
-    await trx('photo_faces').where({ event_id: eventId }).update({ person_id: null });
-    await trx('event_people').where({ event_id: eventId }).del();
-  });
+  await trx('photo_faces').where({ event_id: eventId }).update({ person_id: null });
+  await trx('event_people').where({ event_id: eventId }).del();
 
-  const faces = await db('photo_faces')
+  const faces = await trx('photo_faces')
     .where({ event_id: eventId })
     .orderBy('id', 'asc')
     .select('id', 'embedding', 'model_version', 'det_score', 'bbox_w', 'bbox_h');
 
-  const assignments = await assignFaces(eventId, faces, { thresholds });
+  // assignFacesLocked, not assignFaces: the event lock is already held here,
+  // and the in-process half of it is not re-entrant.
+  const assignments = await assignFacesLocked(eventId, faces, thresholds, trx);
 
   // Re-attach labels by majority inheritance.
   if (previousLabels.length) {
@@ -1152,18 +1174,13 @@ async function recluster(eventId) {
       const update = { ...flags, updated_at: new Date().toISOString() };
       if (coverFor.has(newId)) update.cover_face_id = coverFor.get(newId);
       if (labelFor.has(newId)) update.label = labelFor.get(newId);
-      await db('event_people').where({ id: newId }).update(update);
+      await trx('event_people').where({ id: newId }).update(update);
     }
   }
 
   for (const personId of new Set(assignments.map((a) => a.personId).filter(Boolean))) {
-    await recomputeCentroid(personId);
+    await recomputeCentroid(personId, trx);
   }
-  await consolidate(eventId, { thresholds });
-
-  const count = await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first();
-  logger.info(`faceClustering: reclustered event ${eventId} → ${count?.c ?? 0} people`);
-  return Number(count?.c ?? 0);
 }
 
 module.exports = {
