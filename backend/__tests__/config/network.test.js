@@ -7,6 +7,34 @@ const {
 const express = require('express');
 const request = require('supertest');
 
+describe('rate-limit client IP behind the bundled nginx hop', () => {
+  // nginx does `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`,
+  // which appends the address it saw to whatever the client sent.
+  const NGINX_PEER_SEEN = '192.168.1.20';
+  const ipFor = async (trustProxy, spoofed) => {
+    const app = express();
+    app.set('trust proxy', trustProxy);
+    app.get('/ip', (req, res) => res.json({ ip: req.ip }));
+    const res = await request(app)
+      .get('/ip')
+      .set('X-Forwarded-For', `${spoofed}, ${NGINX_PEER_SEEN}`);
+    return res.body.ip;
+  };
+
+  test('with the Compose default of one hop a spoofed header does not change the key', async () => {
+    const keys = new Set();
+    for (const spoofed of ['1.1.1.1', '2.2.2.2', '3.3.3.3']) {
+      keys.add(await ipFor(parseTrustProxy('1'), spoofed));
+    }
+    expect([...keys]).toEqual([NGINX_PEER_SEEN]);
+  });
+
+  test('the legacy private-range trust lets a private-range client choose its key', async () => {
+    expect(await ipFor(parseTrustProxy(undefined), '1.1.1.1')).toBe('1.1.1.1');
+    expect(await ipFor(parseTrustProxy(undefined), '2.2.2.2')).toBe('2.2.2.2');
+  });
+});
+
 describe('network boundary configuration', () => {
   describe('parseTrustProxy', () => {
     test.each([undefined, null, '', '   '])(
