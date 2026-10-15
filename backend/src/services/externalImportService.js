@@ -338,13 +338,14 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
       processing_error: null,
       // The web copy and the ladder start over, as on a replacement: the
       // attempt ids go, so a transcode of the old bytes can publish nothing.
-      // The web copy is queued while its setting is on; the ladder's queue
-      // picks up a video with no status by itself.
+      // The web copy is queued while its setting is on, except in an
+      // archived gallery (as backfillPending); the ladder's queue picks up a
+      // video with no status by itself.
       web_path: null,
       web_attempt_id: null,
       web_attempts: 0,
       web_retry_at: null,
-      web_status: video.webCopy ? 'pending' : null,
+      web_status: video.webCopy && !parseBooleanInput(event?.is_archived, false) ? 'pending' : null,
       web_started_at: null,
       web_error: null,
       hls_path: null,
@@ -419,12 +420,13 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     // Nothing names the old copy or ladder any more.
     await require('./videoRenditionService').deleteWebCopy(atCommit);
     await sweepOldLadder(atCommit);
-    // The poster, under the key the import wrote it (the old file there
-    // went with the caches above), as the import makes it.
+    // The poster, as the import makes it, under a key naming this version
+    // (the old one went with the caches above): a pass over a later edit
+    // never writes, or deletes, this one's file.
     try {
       const thumbnailKey = path.posix.join(
         'thumbnails',
-        `thumb_ext${row.id}_${path.basename(f.rel).replace(/\.[^.]+$/, '.jpg')}`
+        `thumb_ext${row.id}_v${stats.size}m${Math.floor(stats.mtimeMs)}_${path.basename(f.rel).replace(/\.[^.]+$/, '.jpg')}`
       );
       const result = await processUploadedVideo(f.full, thumbnailKey);
       const took = await db('photos').where(thisVersion).whereNull('thumbnail_path').update({

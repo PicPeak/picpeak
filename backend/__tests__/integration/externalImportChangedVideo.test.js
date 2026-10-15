@@ -187,12 +187,13 @@ describe('external re-scan of a video changed in place (issue 2114)', () => {
     });
     expect(Number(after.web_attempts)).toBe(0);
     expect(Number(after.hls_attempts)).toBe(0);
-    // A new poster from the new file, under the key the import used.
+    // A new poster from the new file, under a key naming the new version.
     expect(processUploadedVideo).toHaveBeenCalledTimes(1);
     expect(processUploadedVideo.mock.calls[0][0]).toBe(path.join(mediaRoot, 'shoot/clip.mp4'));
-    expect(after.thumbnail_path).toBe(keys.poster);
+    expect(after.thumbnail_path).toBe(`thumbnails/thumb_ext${video.id}_v${edited.size}m${Math.floor(edited.mtimeMs)}_clip.jpg`);
     expect(after.thumb_hash).toBe('new-hash');
     // Nothing of the old version is left in storage.
+    expect(exists(keys.poster)).toBe(false);
     expect(exists(keys.web)).toBe(false);
     for (const key of keys.ladder) expect(exists(key)).toBe(false);
   });
@@ -201,6 +202,15 @@ describe('external re-scan of a video changed in place (issue 2114)', () => {
     const eventId = await seedEvent();
     const { video } = await importWithRenditions(eventId);
     await setWebCopy(false);
+    await editVideo();
+    expect((await runImport(eventId)).body.refreshed).toBe(1);
+    expect(await db('photos').where({ id: video.id }).first()).toMatchObject({ web_path: null, web_status: null });
+  });
+
+  it('does not queue a web copy for a video in an archived gallery', async () => {
+    const eventId = await seedEvent();
+    const { video } = await importWithRenditions(eventId);
+    await db('events').where({ id: eventId }).update({ is_archived: true });
     await editVideo();
     expect((await runImport(eventId)).body.refreshed).toBe(1);
     expect(await db('photos').where({ id: video.id }).first()).toMatchObject({ web_path: null, web_status: null });
@@ -300,13 +310,17 @@ describe('external re-scan of a video changed in place (issue 2114)', () => {
     const { video, keys } = await importWithRenditions(eventId);
     await editVideo();
     const lazyKey = `thumbnails/thumb_ext${video.id}_lazy.jpg`;
+    let written;
     processUploadedVideo.mockImplementation(async (_videoPath, thumbnailKey) => {
+      written = thumbnailKey;
       await writeStored(thumbnailKey);
       await db('photos').where({ id: video.id }).update({ thumbnail_path: lazyKey });
       return { success: true, thumbnailKey, metadata: {} };
     });
     expect((await runImport(eventId)).body.refreshed).toBe(1);
     expect((await db('photos').where({ id: video.id }).first()).thumbnail_path).toBe(lazyKey);
+    expect(written).toBeTruthy();
+    expect(exists(written)).toBe(false);
     expect(exists(keys.poster)).toBe(false);
   });
 
