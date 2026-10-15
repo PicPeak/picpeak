@@ -25,6 +25,7 @@ let mockPreviewBuffer;
 // scan parked here holds whatever locks it has taken so far.
 let mockGate = null;
 let mockReached = null;
+let openGate = null;
 
 (pgUrl ? describe : describe.skip)('face scan lock order on PostgreSQL (issue 2069)', () => {
   let owner; let db; let schema; let tmpDir; let cleanup; let previousClient;
@@ -100,6 +101,9 @@ let mockReached = null;
     mockGate = null;
   });
 
+  // A failed assertion must not leave a scan parked with its locks held.
+  afterEach(() => { if (openGate) openGate(); openGate = null; mockGate = null; });
+
   async function seed() {
     const [e] = await db('events').insert({
       slug: `lock-${randomUUID().slice(0, 8)}`,
@@ -123,19 +127,30 @@ let mockReached = null;
 
   // Starts a scan and returns once it is parked inside its transaction.
   async function parkScan() {
-    let open;
-    mockGate = new Promise((resolve) => { open = resolve; });
+    mockGate = new Promise((resolve) => { openGate = resolve; });
     const reached = new Promise((resolve) => { mockReached = resolve; });
     const claimed = await faceQueue.claimNextPhoto();
     const scan = faceProcessor.processPhotoFaces(claimed);
-    await reached;
-    return { scan, release: () => { mockGate = null; open(); } };
+    // A scan that fails before the gate surfaces here instead of hanging.
+    await Promise.race([reached, scan.then(() => { throw new Error('scan finished before the gate'); })]);
+    return { scan, release: () => { mockGate = null; openGate(); openGate = null; } };
   }
 
-  const settledWithin = (promise, ms) => Promise.race([
-    promise.then(() => true, () => true),
-    new Promise((resolve) => setTimeout(() => resolve(false), ms)),
-  ]);
+  // Resolves once `promise` is waiting on a row lock in this schema's
+  // database (not merely slow), and fails if it settles first.
+  async function blockedOnLock(promise) {
+    let settled = false;
+    promise.then(() => { settled = true; }, () => { settled = true; });
+    for (let i = 0; i < 100; i += 1) {
+      if (settled) throw new Error('expected to wait on a lock, but it finished');
+      const { rows } = await owner.raw(
+        'select count(*)::int as n from pg_stat_activity where wait_event_type = \'Lock\' and datname = current_database()',
+      );
+      if (rows[0].n > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('never observed a lock wait');
+  }
 
   test('an event purge waits for a scan in its transaction and then erases its faces', async () => {
     const { eventId, photoId } = await seed();
@@ -143,7 +158,7 @@ let mockReached = null;
 
     const purge = faceProcessor.purgeEvent(eventId);
     // Blocked on the photo row the scan's claim check locked.
-    expect(await settledWithin(purge, 500)).toBe(false);
+    await blockedOnLock(purge);
 
     release();
     await expect(scan).resolves.toMatchObject({ status: 'done' });
@@ -173,7 +188,7 @@ let mockReached = null;
 
     const scan = faceProcessor.processPhotoFaces(claimed);
     // Waits for the event row, without holding the photo.
-    expect(await settledWithin(scan, 500)).toBe(false);
+    await blockedOnLock(scan);
 
     holdEvent();
     await expect(restore).resolves.toBeUndefined();
@@ -196,7 +211,7 @@ let mockReached = null;
       await faceProcessor.purgePhotoFaces(photoId, trx);
       await trx('photos').where({ id: photoId }).update({ face_status: 'pending' });
     });
-    expect(await settledWithin(refresh, 500)).toBe(false);
+    await blockedOnLock(refresh);
 
     release();
     await expect(scan).resolves.toMatchObject({ status: 'done' });

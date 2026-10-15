@@ -214,6 +214,15 @@ describe('face scan attempt guard (issue 2069)', () => {
     expect(purge.indexOf('trx(\'photos\')')).toBeLessThan(purge.indexOf('trx(\'photo_faces\')'));
   });
 
+  it('an event rename takes the event row before it rewrites the photos', () => {
+    // The face scan holds a key-share lock on the event while it waits for
+    // its photo row; the rename's slug change waits for that lock.
+    const src = fs.readFileSync(path.join(__dirname, '../../src/services/eventRenameService.js'), 'utf8');
+    const lock = src.indexOf('trx(\'events\').where({ id: eventId }).forUpdate()');
+    expect(lock).toBeGreaterThan(-1);
+    expect(lock).toBeLessThan(src.indexOf('await this.renamePhotoFiles('));
+  });
+
   it('a claim taken away before the scan starts is skipped without a sidecar call', async () => {
     const seeded = await seedPendingPhoto();
     const first = await faceQueue.claimNextPhoto();
