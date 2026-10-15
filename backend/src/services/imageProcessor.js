@@ -370,6 +370,14 @@ async function generateThumbnail(imagePath, options = {}) {
     // No keepMetadata()/withMetadata() on purpose: sharp strips EXIF, GPS,
     // XMP and IPTC from the output by default (privacy). Do not pass
     // withMetadata(false) here — in sharp 0.35 that KEEPS the metadata.
+    //
+    // A source with an embedded profile still gets an explicit sRGB transform
+    // (not attached). sharp's implicit conversion processes a 16-bit tagged
+    // source in P3 and then relabels those numbers as sRGB, which shifts the
+    // colours; withMetadata() used to hide that by transforming explicitly.
+    // An untagged source is left alone: the explicit transform would assume
+    // P3 for a 16-bit one and get it wrong the other way.
+    if (metadata.hasProfile) sharpInstance = sharpInstance.withIccProfile('srgb', { attach: false });
 
     // options.width/height override the admin setting for responsive tiers
     // (#1095). The configured `fit` is kept deliberately: the grid renders
@@ -875,7 +883,8 @@ async function generateHeroImage(imagePath, options = {}) {
     // this output is a still whatever the source was.
     sharpInstance = sharpInstance.rotate();
 
-    // Metadata is stripped by sharp's default; see generateThumbnail.
+    // Metadata is stripped by sharp's default; colour as in generateThumbnail.
+    if (metadata.hasProfile) sharpInstance = sharpInstance.withIccProfile('srgb', { attach: false });
 
     // Cover-crop at the event's focal point (issue 1737). This used to be
     // `fit: 'cover', position: 'center'`, and the anchor only reached the
@@ -1172,9 +1181,14 @@ async function generatePreviewImage(imagePath, options = {}) {
     // by frame rather than dropping the animation.
     if (!isAnimated) {
       sharpInstance = sharpInstance.rotate();
+    } else if (metadata.orientation > 1 && metadata.orientation <= 8) {
+      // The frames stay unrotated, so keep the Orientation tag (and nothing
+      // else from the EXIF) as the viewer's only hint.
+      sharpInstance = sharpInstance.withExif({ IFD0: { Orientation: String(metadata.orientation) } });
     }
 
-    // Metadata is stripped by sharp's default; see generateThumbnail.
+    // Metadata is stripped by sharp's default; colour as in generateThumbnail.
+    if (metadata.hasProfile) sharpInstance = sharpInstance.withIccProfile('srgb', { attach: false });
 
     // fit: 'inside' + withoutEnlargement keeps small originals at
     // their native size (no upscaling artefacts) and shrinks larger
