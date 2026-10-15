@@ -132,7 +132,7 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     expect(send).toHaveBeenCalledTimes(2);
   });
 
-  it('a slow mail server does not hold the photo worker', async () => {
+  it('a slow mail server does not hold the photo worker, but shutdown waits for it', async () => {
     const event = await mkEvent();
     const photo = await mkPhoto(event, 'pending');
     const transfer = await mkTransfer([photo]);
@@ -144,7 +144,14 @@ describe('transfer ready mail held while nothing is downloadable', () => {
     // processPhoto returns while the SMTP send is still open.
     await photoProcessor.processPhoto(photo);
     await sent;
+    // Still owned, so shutdown and a coordinated restore wait for it.
+    const applicationWork = require('../../src/services/activeApplicationWork');
+    let drained = false;
+    const draining = applicationWork.drain().then(() => { drained = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(drained).toBe(false);
     release();
+    await draining;
     await Promise.all(wake.mock.results.map((r) => r.value));
     expect(send).toHaveBeenCalledTimes(1);
   });

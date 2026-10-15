@@ -1244,13 +1244,22 @@ async function sendTransferEmails(transferId, emails) {
   const transfer = await db('transfers').where({ id: transferId }).first();
   if (!transfer) return { sent: 0, recipients: [] };
 
+  // Read before the count: a held row that a finishing photo claims (and
+  // mails) after the count must not be put back on hold below, or it is
+  // claimed and mailed a second time.
+  const before = await db('transfer_recipients')
+    .where({ transfer_id: transferId }).whereIn('email', clean)
+    .select('id', 'email', 'last_sent_at');
   const fileCount = await countRecipientFiles(transferId);
 
   if (fileCount === 0) {
     for (const email of clean) {
-      const existing = await db('transfer_recipients').where({ transfer_id: transferId, email }).first();
+      const existing = before.find((r) => r.email === email);
       if (existing) {
-        await db('transfer_recipients').where({ id: existing.id }).update({ last_sent_at: null });
+        if (existing.last_sent_at != null) {
+          await db('transfer_recipients').where({ id: existing.id }).whereNotNull('last_sent_at')
+            .update({ last_sent_at: null });
+        }
       } else {
         await db('transfer_recipients').insert({
           transfer_id: transferId, email, created_at: new Date(), last_sent_at: null,
@@ -1341,7 +1350,13 @@ async function sendHeldReadyEmails(transferId) {
  * transfer holding one. Driven from the held recipients, which are few,
  * rather than from transfer_files, which has no photo_id index.
  */
-async function sendHeldReadyEmailsForPhotos(photoIds) {
+function sendHeldReadyEmailsForPhotos(photoIds) {
+  // Tracked so shutdown and a coordinated restore wait for a send the photo
+  // worker did not wait for.
+  return applicationWork.track('transfer ready email', () => sendHeldReadyEmailsForPhotosInternal(photoIds));
+}
+
+async function sendHeldReadyEmailsForPhotosInternal(photoIds) {
   if (!photoIds.length) return;
   const rows = await db('transfer_recipients')
     .join('transfer_files', 'transfer_files.transfer_id', 'transfer_recipients.transfer_id')
