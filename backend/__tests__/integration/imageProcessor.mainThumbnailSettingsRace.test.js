@@ -10,6 +10,8 @@
  * database, the storage and the sharp pool with replica B, the copy this
  * file requires normally.
  */
+const fsp = require('fs').promises;
+const os = require('os');
 const path = require('path');
 const sharp = require('sharp');
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
@@ -196,6 +198,39 @@ describe('a lazy main thumbnail across a settings change and a forced regenerate
     expect(del).not.toHaveBeenCalledWith(forced);
     expect(await rowKey(row.id)).toBe(forced);
     expect(await heightOf(forced)).toBe(225);
+  });
+
+  // Inside a processing attempt a RAW gets no lazy scope, and its key is
+  // named after the RAW, not after the random download: shared on S3 too.
+  test('S3-like storage: an unscoped RAW key is kept and written again, not deleted', async () => {
+    const storage = await useStorage(RemoteLike);
+    const row = await photo(storage, 'attempt.dng');
+    const preview = await sharp({ create: { width: 640, height: 480, channels: 3, background: 'green' } }).jpeg().toBuffer();
+    jest.spyOn(require('../../src/services/mediaProcessService'), 'withSnapshot').mockImplementation(async () => {
+      const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-raw-test-'));
+      const file = path.join(dir, 'preview.jpg');
+      await fsp.writeFile(file, preview);
+      return { path: file, cleanup: () => fsp.rm(dir, { recursive: true, force: true }) };
+    });
+    const put = storage.put.bind(storage);
+    const del = jest.spyOn(storage, 'delete');
+    const writes = [];
+    jest.spyOn(storage, 'put').mockImplementation(async (key, ...args) => {
+      const value = await put(key, ...args);
+      if (key.startsWith('thumbnails/')) {
+        writes.push(key);
+        if (writes.length === 1) await setFit('inside');
+      }
+      return value;
+    });
+
+    const key = await require('../../src/services/mediaAttemptContext')
+      .run({ assertCurrent: async () => {} }, () => replicaB.ensureThumbnail(row));
+
+    expect(writes).toEqual([key, key]);
+    expect(del).not.toHaveBeenCalledWith(key);
+    expect(await rowKey(row.id)).toBe(key);
+    expect(await heightOf(key)).toBe(225);
   });
 
   test('a thumbnail recorded since for a replaced source is not taken', async () => {

@@ -997,6 +997,8 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   });
 
   let newThumbnailPath;
+  // Whether that key is this render's alone (see the second check below).
+  let ownKey = Boolean(derivativeContext.getStore());
   // For a video: the processing note the row should carry afterwards
   // (undefined = leave it). A placeholder gets the "No poster frame" note the
   // upload paths write, a real frame clears it — otherwise the admin
@@ -1058,6 +1060,9 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
         const name = await ownDerivativeName(photo, proc.outputBasename || path.basename(localPath));
+        // Named after a random download on remote storage, unless a RAW's
+        // own name replaces it.
+        if (!proc.outputBasename && getStorage().kind() !== 'local') ownKey = true;
         return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(name), meta, settings, stillCurrent });
       } finally {
         await proc.cleanup();
@@ -1066,13 +1071,13 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   }
 
   // A stale key written by then is deleted only when it is this render's
-  // alone: a lazy scope's, or a managed render's on remote storage (named
-  // after a random download). Any other key is the name every render of this
-  // photo writes, which another replica may have just written and not yet
-  // recorded; it is kept and written again under the current settings.
+  // alone: a lazy scope's, or one named after a random download. Any other
+  // key is the name every render of this photo writes, which another replica
+  // may have just written and not yet recorded; it is kept and written again
+  // under the current settings.
   let rewriteShared = false;
   if (newThumbnailPath && stillCurrent && !(await stillCurrent())) {
-    if (derivativeContext.getStore() || (!isExternal && getStorage().kind() !== 'local')) {
+    if (ownKey) {
       await getStorage().delete(newThumbnailPath).catch(() => {});
     } else {
       rewriteShared = true;
