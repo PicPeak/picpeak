@@ -1,6 +1,7 @@
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
+const { isUniqueViolation } = require('../utils/dbErrors');
 const { REACTION_EMOJIS } = require('../constants/reactions');
 const { isValidColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const { isValidDecision } = require('../constants/photoDecisions');
@@ -1241,8 +1242,10 @@ class FeedbackService {
       // The replacement goes BEFORE the unhide, in one transaction: a rating
       // is held to one visible row per guest by a unique index (migration
       // 309), so unhiding first would fail on the replacement (issue 2075).
+      // A replacement that commits between the delete and the unhide still
+      // trips the index; one retry finds and removes it.
       const collapseIdentity = feedback.guest_id || feedback.guest_identifier;
-      await db.transaction(async (trx) => {
+      const unhide = () => db.transaction(async (trx) => {
         if (updates.is_hidden === false && feedback.feedback_type !== 'comment' && collapseIdentity) {
           const superseded = trx('photo_feedback')
             .where({
@@ -1261,6 +1264,12 @@ class FeedbackService {
           .where('id', feedbackId)
           .update(updates);
       });
+      try {
+        await unhide();
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        await unhide();
+      }
       
       // Update photo stats if visibility changed
       await this.updatePhotoFeedbackStats(feedback.photo_id);
@@ -1583,14 +1592,43 @@ class FeedbackService {
         .select('photo_id');
       const photoIds = [...new Set(affected.map((r) => r.photo_id))];
 
-      await db('photo_feedback')
-        .where('guest_id', guestId)
-        .update({
-          guest_id: null,
-          guest_name: null,
-          guest_email: null,
-          updated_at: new Date(),
-        });
+      await db.transaction(async (trx) => {
+        // Clearing guest_id moves a visible rating under the identifier index
+        // (migration 309), where an anonymous rating from the same identifier
+        // on the same photo would collide (issue 2075). Keep whichever of the
+        // two changed last, the row the readers already show.
+        const ratings = Array.from(await trx('photo_feedback')
+          .where({ guest_id: guestId, feedback_type: 'rating', is_hidden: false })
+          .whereNotNull('guest_identifier')
+          .select('id', 'photo_id', 'guest_identifier', 'created_at', 'updated_at'));
+        const doomed = [];
+        for (let i = 0; i < ratings.length; i += 500) {
+          const chunk = ratings.slice(i, i + 500);
+          const rivals = Array.from(await trx('photo_feedback')
+            .whereIn('photo_id', chunk.map((r) => r.photo_id))
+            .whereIn('guest_identifier', [...new Set(chunk.map((r) => r.guest_identifier))])
+            .where({ feedback_type: 'rating', is_hidden: false })
+            .whereNull('guest_id')
+            .select('id', 'photo_id', 'guest_identifier', 'created_at', 'updated_at'));
+          for (const own of chunk) {
+            const pair = rivals.filter((r) => Number(r.photo_id) === Number(own.photo_id)
+              && r.guest_identifier === own.guest_identifier);
+            if (pair.length) doomed.push(...[own, ...pair].sort(lastMutatedFirst).slice(1).map((r) => r.id));
+          }
+        }
+        for (let i = 0; i < doomed.length; i += 500) {
+          await trx('photo_feedback').whereIn('id', doomed.slice(i, i + 500)).delete();
+        }
+
+        await trx('photo_feedback')
+          .where('guest_id', guestId)
+          .update({
+            guest_id: null,
+            guest_name: null,
+            guest_email: null,
+            updated_at: new Date(),
+          });
+      });
 
       for (const pid of photoIds) {
         await this.updatePhotoFeedbackStats(pid);

@@ -37,7 +37,8 @@ const {
   dedupeRatings,
   createRatingIndexes,
   dropRatingIndexes,
-} = require('./ratingUniqueness');
+  backfillCommentCounts,
+} = require('./feedbackIntegrity');
 const {
   hardenAccountRecoveryStorage,
   installAccountRecoveryWriteGuards,
@@ -671,6 +672,9 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       }
       await createRatingIndexes(trx);
     }
+    // An archive taken before migration 309 carries the comment_count zeros
+    // that migration backfills (issue 2071); a recount of a newer one is a no-op.
+    await backfillCommentCounts(trx);
 
     const operatorId = await reinjectCurrentAdmin(trx, currentAdmin);
     if (operatorId && roleSnapshot) {

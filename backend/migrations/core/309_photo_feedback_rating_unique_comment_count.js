@@ -9,8 +9,8 @@
  *    keyed on guest_id for registered guests, one on guest_identifier for the
  *    rest. Hidden rows stay out of both: they are the admin's moderation
  *    record, and the service already scopes every rating write to visible rows.
- *    The work lives in services/ratingUniqueness.js, because a .picpeak
- *    restore of a pre-309 backup has to run it too.
+ *    The work for both lives in services/feedbackIntegrity.js, because a
+ *    .picpeak restore of a pre-309 backup has to run it too.
  * 2. photos.comment_count was never written, so the admin "Has comments"
  *    filter was always empty. Backfilled to approved, visible comments, the
  *    same count updatePhotoFeedbackStats keeps from now on.
@@ -23,7 +23,8 @@ const {
   dedupeRatings,
   createRatingIndexes,
   dropRatingIndexes,
-} = require('../../src/services/ratingUniqueness');
+  backfillCommentCounts,
+} = require('../../src/services/feedbackIntegrity');
 
 exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('photo_feedback'))) return;
@@ -35,17 +36,7 @@ exports.up = async function up(knex) {
     });
   }
 
-  if (await knex.schema.hasColumn('photo_feedback', 'is_hidden')
-    && await knex.schema.hasColumn('photo_feedback', 'is_approved')
-    && await knex.schema.hasTable('photos')
-    && await knex.schema.hasColumn('photos', 'comment_count')) {
-    await knex.raw(
-      'UPDATE photos SET comment_count = ('
-      + 'SELECT COUNT(*) FROM photo_feedback f WHERE f.photo_id = photos.id '
-      + 'AND f.feedback_type = \'comment\' AND f.is_approved = ? AND f.is_hidden = ?)',
-      [true, false],
-    );
-  }
+  await backfillCommentCounts(knex);
 };
 
 // Irreversible by design for the data: the collapsed duplicates and the

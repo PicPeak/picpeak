@@ -176,7 +176,7 @@ describe('one rating per guest (issue 2075)', () => {
   });
 
   test('a restore of a pre-309 archive loads its duplicate ratings and comes back constrained', async () => {
-    const ratingUniqueness = require('../../src/services/ratingUniqueness');
+    const feedbackIntegrity = require('../../src/services/feedbackIntegrity');
     const base = { photo_id: photoId, event_id: eventId, feedback_type: 'rating', is_approved: true, is_hidden: false };
     const archive = [
       { ...base, rating: 1, guest_identifier: 'old', created_at: '2026-01-01T10:00:00.000Z', updated_at: '2026-01-01T10:00:00.000Z' },
@@ -186,11 +186,11 @@ describe('one rating per guest (issue 2075)', () => {
     await expect(db.batchInsert('photo_feedback', archive, 10)).rejects.toThrow(/unique/i);
 
     await db.transaction(async (trx) => {
-      expect(await ratingUniqueness.ratingIndexesSupported(trx)).toBe(true);
-      await ratingUniqueness.dropRatingIndexes(trx);
+      expect(await feedbackIntegrity.ratingIndexesSupported(trx)).toBe(true);
+      await feedbackIntegrity.dropRatingIndexes(trx);
       await trx.batchInsert('photo_feedback', archive, 10);
-      expect(await ratingUniqueness.dedupeRatings(trx)).toBe(1);
-      await ratingUniqueness.createRatingIndexes(trx);
+      expect(await feedbackIntegrity.dedupeRatings(trx)).toBe(1);
+      await feedbackIntegrity.createRatingIndexes(trx);
     });
     expect(Array.from(await ratingRows()).map((r) => Number(r.rating))).toEqual([4]);
     await expect(db('photo_feedback').insert({ ...base, rating: 3, guest_identifier: 'old' })).rejects.toThrow();
@@ -203,5 +203,40 @@ describe('one rating per guest (issue 2075)', () => {
     expect(at('await dropRatingIndexes(trx)')).toBeLessThan(at('trx.batchInsert(table'));
     expect(at('await dedupeRatings(trx)')).toBeGreaterThan(at('trx.batchInsert(table'));
     expect(at('await createRatingIndexes(trx)')).toBeGreaterThan(at('await dedupeRatings(trx)'));
+    // The comment counters such an archive carries are recounted too (issue 2071).
+    expect(at('await backfillCommentCounts(trx)')).toBeGreaterThan(at('trx.batchInsert(table'));
+  });
+
+  test('migration 309 collapses duplicates with an empty identifier instead of failing on the index', async () => {
+    const migration = require('../../migrations/core/309_photo_feedback_rating_unique_comment_count');
+    await migration.down(db);
+    const base = { photo_id: photoId, event_id: eventId, feedback_type: 'rating', is_approved: true, is_hidden: false };
+    await db('photo_feedback').insert([
+      { ...base, rating: 2, guest_identifier: '', created_at: '2026-01-01T10:00:00.000Z', updated_at: '2026-01-01T10:00:00.000Z' },
+      { ...base, rating: 4, guest_identifier: '', created_at: '2026-01-01T10:00:01.000Z', updated_at: '2026-01-01T10:00:01.000Z' },
+    ]);
+    await migration.up(db);
+    expect(Array.from(await ratingRows()).map((r) => Number(r.rating))).toEqual([4]);
+  });
+
+  test('erasing a guest whose device also rated anonymously keeps one rating instead of failing', async () => {
+    const [guest] = await db('gallery_guests')
+      .insert({ event_id: eventId, name: 'C', identifier: `c-${seq}`, is_deleted: false }).returning('id');
+    const guestId = guest.id ?? guest;
+    const base = { photo_id: photoId, event_id: eventId, feedback_type: 'rating', is_approved: true, is_hidden: false, guest_identifier: 'shared' };
+    await db('photo_feedback').insert([
+      { ...base, rating: 1, guest_id: null, created_at: '2026-01-01T10:00:00.000Z', updated_at: '2026-01-01T10:00:00.000Z' },
+      { ...base, rating: 5, guest_id: guestId, created_at: '2026-01-01T10:00:01.000Z', updated_at: '2026-01-01T10:00:01.000Z' },
+    ]);
+    const other = await insertPhoto();
+    await db('photo_feedback').insert({ ...base, photo_id: other, rating: 3, guest_id: guestId });
+
+    await feedbackService.anonymizeGuestFeedback(guestId);
+
+    const rows = Array.from(await db('photo_feedback').where({ feedback_type: 'rating' })
+      .whereIn('photo_id', [photoId, other]).select('photo_id', 'rating', 'guest_id'));
+    expect(rows.map((r) => [Number(r.photo_id), Number(r.rating), r.guest_id]).sort())
+      .toEqual([[Number(photoId), 5, null], [Number(other), 3, null]].sort());
+    expect(Number((await db('photos').where({ id: photoId }).first('average_rating')).average_rating)).toBe(5);
   });
 });

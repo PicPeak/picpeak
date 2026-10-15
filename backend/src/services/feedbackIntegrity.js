@@ -1,4 +1,7 @@
 /**
+ * Repairs migration 309 makes to photo_feedback and photos, shared with the
+ * .picpeak restore.
+ *
  * One visible rating per guest and photo (issue 2075).
  *
  * Two partial unique indexes: one keyed on guest_id for registered guests, one
@@ -9,7 +12,8 @@
  * Lives here rather than in migration 309 because a .picpeak restore needs it
  * too: the archive carries photo_feedback verbatim, so a backup taken before
  * 309 can hold the duplicates the migration removes and would otherwise hit
- * the indexes mid-restore and roll the whole restore back.
+ * the indexes mid-restore and roll the whole restore back. Likewise its
+ * photos.comment_count, which nothing wrote before 309 (issue 2071).
  */
 const BY_GUEST_ID = 'photo_feedback_rating_guest_id_unique';
 const BY_IDENTIFIER = 'photo_feedback_rating_guest_identifier_unique';
@@ -53,7 +57,8 @@ async function dedupeRatings(trx) {
   for (const row of rows) {
     let key;
     if (row.guest_id !== null && row.guest_id !== undefined) key = `g:${row.photo_id}:${row.guest_id}`;
-    else if (row.guest_identifier) key = `i:${row.photo_id}:${row.guest_identifier}`;
+    // Mirrors the index predicate: an empty identifier is still NOT NULL.
+    else if (row.guest_identifier !== null && row.guest_identifier !== undefined) key = `i:${row.photo_id}:${row.guest_identifier}`;
     else continue;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
@@ -100,6 +105,24 @@ async function dropRatingIndexes(knex) {
   await knex.raw(`DROP INDEX IF EXISTS ${BY_IDENTIFIER}`);
 }
 
+/**
+ * photos.comment_count as updatePhotoFeedbackStats keeps it: approved,
+ * visible comments.
+ */
+async function backfillCommentCounts(knex) {
+  if (!(await knex.schema.hasTable('photo_feedback'))) return;
+  if (!(await knex.schema.hasColumn('photo_feedback', 'is_hidden'))) return;
+  if (!(await knex.schema.hasColumn('photo_feedback', 'is_approved'))) return;
+  if (!(await knex.schema.hasTable('photos'))) return;
+  if (!(await knex.schema.hasColumn('photos', 'comment_count'))) return;
+  await knex.raw(
+    'UPDATE photos SET comment_count = ('
+    + 'SELECT COUNT(*) FROM photo_feedback f WHERE f.photo_id = photos.id '
+    + 'AND f.feedback_type = \'comment\' AND f.is_approved = ? AND f.is_hidden = ?)',
+    [true, false],
+  );
+}
+
 module.exports = {
   BY_GUEST_ID,
   BY_IDENTIFIER,
@@ -107,4 +130,5 @@ module.exports = {
   dedupeRatings,
   createRatingIndexes,
   dropRatingIndexes,
+  backfillCommentCounts,
 };
