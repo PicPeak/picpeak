@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Maximize2, Check, MessageSquare, Heart } from 'lucide-react';
+import { Download, Maximize2, Check, MessageSquare, Heart, Loader2 } from 'lucide-react';
 import { useInView } from 'react-intersection-observer';
 import { AuthenticatedImage } from '../common';
 import { thumbnailUrlForTile } from './imageTiers';
@@ -15,6 +15,7 @@ import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { downloadLimitReachedMessage } from '../../utils/downloadLimit';
 import { useInputMode } from '../../hooks/useInputMode';
+import { usePhotoDownloadPending, preparingDownloadMessage } from '../../hooks/usePhotoDownloadPending';
 import type { Photo } from '../../types';
 
 export /** Action buttons (36px) + gap + rating pill (28px); below this the row would overlap the buttons. */
@@ -152,6 +153,9 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // handler (which explains the refusal) instead of falling through to the
   // tile and opening the lightbox.
   const withinDownloadLimit = useDownloadQuota().canDownload(photo);
+  // Issue 2043: while this photo's download is being prepared the button
+  // spins, and the overlay stays up so a touch user sees it.
+  const downloadPending = usePhotoDownloadPending(photo.id);
   const [overlayVisible, setOverlayVisible] = useState(false);
   // #1275 — the input in use right now, not what the device is capable of.
   // On a hybrid the two disagree, and acting on the device's primary pointer
@@ -316,7 +320,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       : `${base} group-hover:opacity-100 group-hover:pointer-events-auto`;
   };
 
-  const overlayClassName = `${overlayBaseClassName} ${revealed(overlayVisible)}`;
+  const overlayClassName = `${overlayBaseClassName} ${revealed(overlayVisible || (downloadPending && !isSelectionMode))}`;
 
   const checkboxVisibilityClass = revealed(
     isSelected || isSelectionMode || overlayVisible,
@@ -560,12 +564,15 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                       onDownload(e);
                       hideOverlay();
                     }}
-                    aria-label="Download photo"
-                    aria-disabled={!withinDownloadLimit || undefined}
+                    aria-label={downloadPending ? preparingDownloadMessage() : 'Download photo'}
+                    aria-disabled={!withinDownloadLimit || downloadPending || undefined}
+                    aria-busy={downloadPending || undefined}
                     title={withinDownloadLimit ? undefined : downloadLimitReachedMessage()}
-                    style={withinDownloadLimit ? undefined : { opacity: 0.5, cursor: 'not-allowed' }}
+                    style={withinDownloadLimit ? (downloadPending ? { cursor: 'wait' } : undefined) : { opacity: 0.5, cursor: 'not-allowed' }}
                   >
-                    <Download className={actionIconClass} />
+                    {downloadPending
+                      ? <Loader2 className={`${actionIconClass} animate-spin`} aria-hidden="true" />
+                      : <Download className={actionIconClass} />}
                   </button>
                 )}
                 {likeBeforeComment ? (

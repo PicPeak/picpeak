@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { Photo, DownloadResolutionChoice, GalleryPerson } from '../../types';
 import { useDownloadPhoto } from '../../hooks/useGallery';
+import { isPhotoDownloadPending } from '../../hooks/usePhotoDownloadPending';
 import { PhotoLightbox } from './PhotoLightbox';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
 import { Button } from '../common';
@@ -326,6 +327,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
 
   const handleDownload = (photo: Photo, e: React.MouseEvent) => {
     e.stopPropagation();
+    // Issue 2043: a repeated tap while this photo is still being prepared.
+    if (isPhotoDownloadPending(photo.id)) return;
     // Download limit (issue 1560): say why instead of sending a request the
     // server is bound to refuse.
     if (!downloadQuota.canDownload(photo)) {

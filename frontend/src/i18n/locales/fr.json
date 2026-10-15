@@ -363,6 +363,7 @@
     "photosOnly": "Photos seulement",
     "videosOnly": "Vidéos seulement",
     "download": "Télécharger",
+    "preparingDownload": "Préparation de votre téléchargement…",
     "noMedia": "Aucun média téléversé pour l'instant",
     "searchPlaceholder": "Rechercher des photos...",
     "sortBy": "Trier par",

@@ -13,6 +13,7 @@ import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { downloadLimitReachedMessage } from '../../../utils/downloadLimit';
+import { usePhotoDownloadPending, preparingDownloadMessage } from '../../../hooks/usePhotoDownloadPending';
 
 export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   photos,
@@ -98,6 +99,8 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     likedSeededRef.current = true;
   }, [photos]);
   const canQuickComment = Boolean(feedbackEnabled && feedbackOptions?.allowComments && onOpenPhotoWithFeedback);
+  // Issue 2043: spins while the photo on screen is being prepared.
+  const downloadPending = usePhotoDownloadPending(currentPhoto?.id);
 
   if (!currentPhoto) return null;
   const currentPhotoAtLimit = !downloadQuota.canDownload(currentPhoto);
@@ -202,11 +205,14 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 variant="ghost"
                 size="sm"
                 onClick={(e) => onDownload(currentPhoto, e)}
+                isLoading={downloadPending}
                 className={`text-white hover:bg-white/20${currentPhotoAtLimit ? ' opacity-50 cursor-not-allowed' : ''}`}
                 aria-disabled={currentPhotoAtLimit || undefined}
-                title={currentPhotoAtLimit ? downloadLimitReachedMessage() : 'Download photo'}
+                title={currentPhotoAtLimit
+                  ? downloadLimitReachedMessage()
+                  : downloadPending ? preparingDownloadMessage() : 'Download photo'}
               >
-                <Download className="w-5 h-5" />
+                {downloadPending ? null : <Download className="w-5 h-5" />}
               </Button>
             )}
             {feedbackEnabled && feedbackOptions?.allowLikes && (

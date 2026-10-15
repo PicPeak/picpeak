@@ -5,6 +5,7 @@ import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock, Loader2 } from 'lucide-react';
 import type { Photo, GalleryPerson } from '../../types';
 import { useSavePhotoToDevice } from '../../hooks/useGallery';
+import { isPhotoDownloadPending, usePhotoDownloadPending } from '../../hooks/usePhotoDownloadPending';
 import { AuthenticatedImage } from '../common';
 import { useFullResolutionZoom, FullResolutionImage } from './hooks/useFullResolutionZoom';
 import { PhotoFeedback } from './PhotoFeedback';
@@ -314,6 +315,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // once nothing is left — except for photos already downloaded, which are free.
   const downloadQuota = useDownloadQuota();
   const withinDownloadLimit = !currentPhoto || downloadQuota.canDownload(currentPhoto);
+  // Issue 2043: shown while the photo on screen is being prepared.
+  const downloadPending = usePhotoDownloadPending(currentPhoto?.id);
   // Playing a video streams its original, which on a limited gallery takes a
   // slot like a download; replays of it are free. A video not yet granted
   // cannot play once no slot is left, nor for a share-link guest, who never
@@ -763,6 +766,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
   const handleDownload = () => {
     if (!photoAllowsDownload) return;
+    // Issue 2043: a repeated tap while this photo is still being prepared.
+    if (isPhotoDownloadPending(currentPhoto.id)) return;
     if (!withinDownloadLimit) {
       showDownloadLimitReached({ remaining: 0 });
       return;
@@ -1280,14 +1285,19 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 // aria-disabled, not disabled: the click still reaches the
                 // handler, which explains the refusal and re-reads the quota
                 // an admin may have reset since.
-                aria-disabled={!withinDownloadLimit || undefined}
-                className={`p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors${withinDownloadLimit ? '' : ' opacity-50 cursor-not-allowed'}`}
-                aria-label="Download photo"
+                aria-disabled={!withinDownloadLimit || downloadPending || undefined}
+                aria-busy={downloadPending || undefined}
+                className={`p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors${withinDownloadLimit ? '' : ' opacity-50 cursor-not-allowed'}${downloadPending ? ' cursor-wait' : ''}`}
+                aria-label={downloadPending
+                  ? t('gallery.preparingDownload', 'Preparing your download…')
+                  : 'Download photo'}
                 title={withinDownloadLimit
                   ? undefined
                   : t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.')}
               >
-                <Download className="w-5 h-5 text-white" />
+                {downloadPending
+                  ? <Loader2 className="w-5 h-5 text-white animate-spin" aria-hidden="true" />
+                  : <Download className="w-5 h-5 text-white" />}
               </button>
             )}
 

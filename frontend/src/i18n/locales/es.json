@@ -382,6 +382,7 @@
     "photosOnly": "Fotos",
     "videosOnly": "Videos",
     "download": "Descargar",
+    "preparingDownload": "Preparando tu descarga…",
     "noMedia": "No se han subido medios aún",
     "searchPlaceholder": "Buscar fotos...",
     "sortBy": "Ordenar por",

@@ -1,8 +1,10 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { useQuery, useMutation, type UseMutationOptions } from '@tanstack/react-query';
 import { galleryService } from '../services';
 import { toast } from 'react-toastify';
 import { isDownloadLimitError } from '../utils/downloadLimit';
 import { renamedGallerySlug } from './useFollowGalleryRename';
+import { beginPhotoDownload, endPhotoDownload } from './usePhotoDownloadPending';
 
 export const useGalleryInfo = (slug?: string, token?: string, enabled: boolean = true) => {
   return useQuery({
@@ -49,26 +51,42 @@ export const useGalleryStats = (slug: string, enabled: boolean = true) => {
   });
 };
 
-export const useDownloadPhoto = () => {
-  return useMutation({
-    mutationFn: ({
-      slug,
-      photoId,
-      filename,
-    }: {
-      slug: string;
-      photoId: number;
-      filename: string;
-    }) => galleryService.downloadPhoto(slug, photoId, filename),
-    onSuccess: () => {
-      toast.success('Photo downloaded successfully');
-    },
-    onError: (error) => {
-      // The limit refusal already said why (issue 1560).
-      if (isDownloadLimitError(error)) return;
-      toast.error('Failed to download photo');
-    },
+type PhotoDownload = { slug: string; photoId: number; filename: string };
+
+// Issue 2043: one download per photo at a time. `mutate` marks the photo
+// busy before the request starts (so a second tap in the same moment is
+// caught too) and answers false, starting nothing, while it already is.
+const useSinglePhotoDownload = (
+  download: (vars: PhotoDownload) => Promise<void>,
+  options: Omit<UseMutationOptions<void, Error, PhotoDownload>, 'mutationFn'>,
+) => {
+  const mutation = useMutation({
+    ...options,
+    mutationFn: (vars: PhotoDownload) => download(vars).finally(() => endPhotoDownload(vars.photoId)),
   });
+  const { mutate } = mutation;
+  const startDownload = useCallback((vars: PhotoDownload): boolean => {
+    if (!beginPhotoDownload(vars.photoId)) return false;
+    mutate(vars);
+    return true;
+  }, [mutate]);
+  return { ...mutation, mutate: startDownload };
+};
+
+export const useDownloadPhoto = () => {
+  return useSinglePhotoDownload(
+    ({ slug, photoId, filename }) => galleryService.downloadPhoto(slug, photoId, filename),
+    {
+      onSuccess: () => {
+        toast.success('Photo downloaded successfully');
+      },
+      onError: (error) => {
+        // The limit refusal already said why (issue 1560).
+        if (isDownloadLimitError(error)) return;
+        toast.error('Failed to download photo');
+      },
+    },
+  );
 };
 
 // Save-aware download — opens the OS share sheet on mobile (so "Save to
@@ -84,21 +102,15 @@ export const useDownloadPhoto = () => {
 // to keep the two paths symmetrical; the file appearing in Downloads
 // is its own affordance.
 export const useSavePhotoToDevice = () => {
-  return useMutation({
-    mutationFn: ({
-      slug,
-      photoId,
-      filename,
-    }: {
-      slug: string;
-      photoId: number;
-      filename: string;
-    }) => galleryService.savePhotoToDevice(slug, photoId, filename),
-    onError: (error) => {
-      if (isDownloadLimitError(error)) return;
-      toast.error('Failed to save photo');
+  return useSinglePhotoDownload(
+    ({ slug, photoId, filename }) => galleryService.savePhotoToDevice(slug, photoId, filename),
+    {
+      onError: (error) => {
+        if (isDownloadLimitError(error)) return;
+        toast.error('Failed to save photo');
+      },
     },
-  });
+  );
 };
 
 export const useDownloadAllPhotos = () => {

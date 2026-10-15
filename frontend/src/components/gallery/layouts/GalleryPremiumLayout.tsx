@@ -45,6 +45,8 @@ import './GalleryPremiumLayout.css';
 import { lightboxImageUrl } from '../imageTiers';
 import { exifLine } from '../../../utils/photoExif';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
+import { PremiumLightboxDownloadButton } from './PremiumLightboxDownloadButton';
+import { isPhotoDownloadPending } from '../../../hooks/usePhotoDownloadPending';
 
 const isVideoPhoto = (photo: Photo) => photo.media_type === 'video' || photo.type === 'video';
 
@@ -676,6 +678,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     const photo = slide.photoId != null
       ? filteredPhotos.find(p => p.id === slide.photoId)
       : filteredPhotos.find(p => p.url === slide.src);
+    // Issue 2043: a repeated tap while this photo is still being prepared.
+    if (photo && isPhotoDownloadPending(photo.id)) return;
     if (photo && !downloadQuota.canDownload(photo)) {
       showDownloadLimitReached({ remaining: 0 });
       return;
@@ -1004,13 +1008,9 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           }),
           buttonPrev: slides.length <= 1 ? () => null : undefined,
           buttonNext: slides.length <= 1 ? () => null : undefined,
+          buttonDownload: () => <PremiumLightboxDownloadButton onDownload={handleDownloadFromLightbox} />,
         }}
         controller={{ closeOnBackdropClick: true }}
-        download={{
-          download: ({ slide }) => {
-            handleDownloadFromLightbox(slide);
-          }
-        }}
       />
 
       {/* Emoji reaction bar over the lightbox (#839). Portaled to

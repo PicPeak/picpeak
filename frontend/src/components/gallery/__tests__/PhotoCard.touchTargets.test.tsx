@@ -18,6 +18,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 
 import { PhotoCard } from '../PhotoCard';
 import { __inputModeTesting } from '../../../hooks/useInputMode';
+import { beginPhotoDownload, endPhotoDownload } from '../../../hooks/usePhotoDownloadPending';
 import type { Photo } from '../../../types';
 
 vi.mock('../../common', () => ({
@@ -293,5 +294,26 @@ describe('PhotoCard overlay hit-testing (#1263)', () => {
 
     fireEvent.click(container.querySelector('.tile')!);
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PhotoCard download in progress on a touchscreen (issue 2043)', () => {
+  it('keeps the overlay up while the tapped photo is prepared, then lets it go', () => {
+    const onDownload = vi.fn(() => { beginPhotoDownload(PHOTO.id); });
+    const { container } = renderCard({ onDownload });
+    fireEvent.click(screen.getByTestId('tile'));
+    expect(tokens(overlayOf(container))).toContain('opacity-100');
+
+    // The tap hides the overlay, as before; the busy button keeps it up.
+    fireEvent.click(screen.getByRole('button', { name: 'Download photo' }));
+    expect(onDownload).toHaveBeenCalledTimes(1);
+    const busy = screen.getByRole('button', { name: 'Preparing your download…' });
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+    expect(tokens(overlayOf(container))).toContain('opacity-100');
+    expect(tokens(overlayOf(container))).toContain('pointer-events-auto');
+
+    act(() => endPhotoDownload(PHOTO.id));
+    expect(tokens(overlayOf(container))).toContain('opacity-0');
+    expect(screen.getByRole('button', { name: 'Download photo', hidden: true })).not.toHaveAttribute('aria-busy');
   });
 });

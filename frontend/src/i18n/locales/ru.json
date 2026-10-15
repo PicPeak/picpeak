@@ -380,6 +380,7 @@
     "photosOnly": "Фото",
     "videosOnly": "Видео",
     "download": "Скачать",
+    "preparingDownload": "Готовим загрузку…",
     "noMedia": "Медиафайлы ещё не загружены",
     "searchPlaceholder": "Поиск фото...",
     "sortBy": "Сортировать",
