@@ -5,6 +5,69 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.174.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.173.0-beta.0...v3.174.0-beta.0) (2026-10-15)
+
+
+### Features
+
+* **gallery:** Story layout filename caption setting and editable footer ([#2018](https://github.com/PicPeak/picpeak/issues/2018)) ([0dbcde7](https://github.com/PicPeak/picpeak/commit/0dbcde7bdc5ddd9ed89e415e0afce77acca12469))
+
+
+### Bug Fixes
+
+* **activity:** attribute activity-log entries to the right admin and gallery ([#2034](https://github.com/PicPeak/picpeak/issues/2034)) ([cb5db7d](https://github.com/PicPeak/picpeak/commit/cb5db7dd13b0d791a3244456f7f119497d4a9a2d))
+* **activity:** log quote, invoice and billing actions under their admin ([#2009](https://github.com/PicPeak/picpeak/issues/2009)) ([39c7327](https://github.com/PicPeak/picpeak/commit/39c7327db8527f54c614cce4e8f124400b9c65e4))
+* **admin:** leave Escape and Enter of an IME composition to the field ([#2051](https://github.com/PicPeak/picpeak/issues/2051)) ([f43059d](https://github.com/PicPeak/picpeak/commit/f43059d0a9a12bfb754626c5e0da2fbd22314d03))
+* **archive:** remove restored-from zips after a portable import and at the old shared key ([#2039](https://github.com/PicPeak/picpeak/issues/2039)) ([381bf78](https://github.com/PicPeak/picpeak/commit/381bf7864f0ef190b17d1772c212d52f4efe2505))
+* **archive:** run one archive job per gallery at a time ([#2014](https://github.com/PicPeak/picpeak/issues/2014)) ([3f4848a](https://github.com/PicPeak/picpeak/commit/3f4848a502254920005f3278ce7dde9055fdbc4b))
+* **backup:** harden manifest key creation, directory trust and old-key verification ([#2021](https://github.com/PicPeak/picpeak/issues/2021)) ([ae66259](https://github.com/PicPeak/picpeak/commit/ae66259bb3cf84631e460dca14203975144b942b))
+* **backup:** self-heal a writable manifest key and fail before the copy ([#2015](https://github.com/PicPeak/picpeak/issues/2015)) ([1c5f793](https://github.com/PicPeak/picpeak/commit/1c5f793d70b1ad5d5445292eac15184c29045a8a))
+* **crm:** check the gallery slug a quote or contract conversion draws ([#2044](https://github.com/PicPeak/picpeak/issues/2044)) ([fc69695](https://github.com/PicPeak/picpeak/commit/fc6969581213816a09d76e2dff63fbab0aba29c4))
+* **crm:** return the gallery on a repeated conversion, create one on concurrent ones ([#2053](https://github.com/PicPeak/picpeak/issues/2053)) ([60de77a](https://github.com/PicPeak/picpeak/commit/60de77a0e9f5947918b199dfab75faff6c7f35bd))
+* **customers:** attribute resent mail by its original time and bound legacy accounts by creation ([#2049](https://github.com/PicPeak/picpeak/issues/2049)) ([6e26aa3](https://github.com/PicPeak/picpeak/commit/6e26aa3c2c3186e5a4183ea4d4d881cb6f6001d6))
+* **customers:** bound erasure of mail to the current address by the customer's tenure ([#2031](https://github.com/PicPeak/picpeak/issues/2031)) ([be1c587](https://github.com/PicPeak/picpeak/commit/be1c587a336a7a0c15ed5d7730067fa88a2793c4))
+* **customers:** erase mail queued or sent to a former address ([#1997](https://github.com/PicPeak/picpeak/issues/1997)) ([a736ba1](https://github.com/PicPeak/picpeak/commit/a736ba14a82ec93eb5598265b195c8e2ae9abc76))
+* **customers:** keep a moved account's password out of reach of its old address ([#2041](https://github.com/PicPeak/picpeak/issues/2041)) ([15206e3](https://github.com/PicPeak/picpeak/commit/15206e374ec682ff8a239a4643c8511d930edb0b))
+* **delivery:** end a promised delivery day in the instance time zone ([#2050](https://github.com/PicPeak/picpeak/issues/2050)) ([919d173](https://github.com/PicPeak/picpeak/commit/919d173575b300493551fba70674a28986855164))
+* **delivery:** one calendar-day rule for promised delivery, document due dates and email dates ([#2032](https://github.com/PicPeak/picpeak/issues/2032)) ([b8938b0](https://github.com/PicPeak/picpeak/commit/b8938b0f7601d519c7c0f219c989f6d1d9795e9a))
+* **events:** end a date-only gallery expiry at the end of that day in the instance zone ([#2011](https://github.com/PicPeak/picpeak/issues/2011)) ([0d24861](https://github.com/PicPeak/picpeak/commit/0d24861fa4a55345a0a74ca088bb58caabdb14b2))
+* **events:** read stored expiry and due dates in UTC for the settings date fields ([#2001](https://github.com/PicPeak/picpeak/issues/2001)) ([2ba2529](https://github.com/PicPeak/picpeak/commit/2ba2529ea8edbe8e02fb4841d3e137af5e6e12b7))
+* **expiry:** retry failed expiry archives, re-check expiry under the claim, hold the claim on extend ([#2035](https://github.com/PicPeak/picpeak/issues/2035)) ([b080176](https://github.com/PicPeak/picpeak/commit/b080176dcdb79496d969a21f100ccd2f9a109f2d))
+* **external:** refresh a reference photo whose file was edited in place ([#2052](https://github.com/PicPeak/picpeak/issues/2052)) ([8e1076b](https://github.com/PicPeak/picpeak/commit/8e1076b01c21f4b0942a9c21d94335fef0f04bbb))
+* **faces:** log face-recognition activity with its gallery and actor ([#2003](https://github.com/PicPeak/picpeak/issues/2003)) ([91a8e7f](https://github.com/PicPeak/picpeak/commit/91a8e7f3e00d5452e350ae527c64fd714c6a0c3f))
+* **feedback:** accept accented and non-Latin guest names ([#2020](https://github.com/PicPeak/picpeak/issues/2020)) ([f3d9859](https://github.com/PicPeak/picpeak/commit/f3d98590d77fc63cde4c96d453b98c5281ce3013))
+* **gallery, customer:** keyboard focus in phone drawers, wrapping sort buttons ([#2023](https://github.com/PicPeak/picpeak/issues/2023)) ([7f2c9ab](https://github.com/PicPeak/picpeak/commit/7f2c9abc5ec44f985afe312d580a3c3e29524ef8))
+* **gallery:** ask for name and email before a hand-over when the gallery requires them ([#2006](https://github.com/PicPeak/picpeak/issues/2006)) ([2d68648](https://github.com/PicPeak/picpeak/commit/2d68648544bb7ffd7f639e5e8513c2ab1f5f6f02))
+* **gallery:** bulk downloads hold what the gallery shows, and never cut a selection ([#2033](https://github.com/PicPeak/picpeak/issues/2033)) ([d40025c](https://github.com/PicPeak/picpeak/commit/d40025c08fe4464ddf102058a613cd0055fc0835))
+* **gallery:** close upload, like and search gaps in the Premium and Story layouts ([#2036](https://github.com/PicPeak/picpeak/issues/2036)) ([ea08c26](https://github.com/PicPeak/picpeak/commit/ea08c2636ff7f19c8925100bd494a608cbff55a7))
+* **gallery:** download the whole selection, not just what the filter shows ([#1998](https://github.com/PicPeak/picpeak/issues/1998)) ([b2d6d76](https://github.com/PicPeak/picpeak/commit/b2d6d76a4a20e2e86dfe60068ba293e1b9d29d3c))
+* **gallery:** keep a visitor's session across a gallery rename ([#2037](https://github.com/PicPeak/picpeak/issues/2037)) ([1a186cc](https://github.com/PicPeak/picpeak/commit/1a186ccd6db47ee32317db17e7e5d0cbea586c2c))
+* **gallery:** keep lightbox keys out of fields and dialogs on top ([#1999](https://github.com/PicPeak/picpeak/issues/1999)) ([a67a2b3](https://github.com/PicPeak/picpeak/commit/a67a2b3bf8ecab4a321c62f3d75c04768bb6a54c))
+* **gallery:** keep renamed galleries' old links working ([#2029](https://github.com/PicPeak/picpeak/issues/2029)) ([4f5c401](https://github.com/PicPeak/picpeak/commit/4f5c401f9e74f5cb7210838ac797f64cfb83578b))
+* **gallery:** keep unfinished photos off the by-id routes, charge streams only for bytes sent ([#2054](https://github.com/PicPeak/picpeak/issues/2054)) ([0bc5ead](https://github.com/PicPeak/picpeak/commit/0bc5eadf0407d7f599e543964e619b208fd6f0b6))
+* **gallery:** leave an Escape that cancels an IME composition to the field ([#2024](https://github.com/PicPeak/picpeak/issues/2024)) ([d3d6145](https://github.com/PicPeak/picpeak/commit/d3d6145203d222f339d673875d332df1808e8012))
+* **gallery:** make Premium's Download All download and keep selections priced whole ([#2028](https://github.com/PicPeak/picpeak/issues/2028)) ([4d3f7ac](https://github.com/PicPeak/picpeak/commit/4d3f7acb4f888823a04477ebb4f1c5901506ab09))
+* **gallery:** make the closed sidebar inert ([#2002](https://github.com/PicPeak/picpeak/issues/2002)) ([ea43390](https://github.com/PicPeak/picpeak/commit/ea43390112c6c85c812720afe7d43612d8cfd548))
+* **gallery:** make the Premium and Story nav heart filter to my likes ([#2017](https://github.com/PicPeak/picpeak/issues/2017)) ([125c946](https://github.com/PicPeak/picpeak/commit/125c946cdb48fa6d69b5b332136d23494fda6474))
+* **gallery:** offer guest upload in the Premium and Story layouts ([#2016](https://github.com/PicPeak/picpeak/issues/2016)) ([7f74d8f](https://github.com/PicPeak/picpeak/commit/7f74d8f5042d1fe7bf37378329abcad70c317174))
+* **gallery:** offer the client hide/show toggle in every gallery layout ([#2007](https://github.com/PicPeak/picpeak/issues/2007)) ([d188670](https://github.com/PicPeak/picpeak/commit/d1886708802c2362c0cebbc13947684f38f819c1))
+* **gallery:** people-filter downloads past 500, keep the selection when the size picker delivers nothing ([#2046](https://github.com/PicPeak/picpeak/issues/2046)) ([d52cc70](https://github.com/PicPeak/picpeak/commit/d52cc7088f381f45269b5632130d8e6a4e25120e))
+* **gallery:** use a live gallery session over a dead token for the same gallery ([#2047](https://github.com/PicPeak/picpeak/issues/2047)) ([3425738](https://github.com/PicPeak/picpeak/commit/3425738fef52847043510bce605cd0ad4dd0ecd6))
+* keep short links and old gallery links working after a rename ([#2019](https://github.com/PicPeak/picpeak/issues/2019)) ([0980fb4](https://github.com/PicPeak/picpeak/commit/0980fb441fcea71710a8bcc02bf0d37f829d7847))
+* **media:** guard lazy renditions of ordinary images against a replaced source ([#2000](https://github.com/PicPeak/picpeak/issues/2000)) ([fb5b638](https://github.com/PicPeak/picpeak/commit/fb5b638af45fc043ef7665514932a7e5eb246c33))
+* **media:** version external renditions by the source's size ([#2056](https://github.com/PicPeak/picpeak/issues/2056)) ([edffb4b](https://github.com/PicPeak/picpeak/commit/edffb4bf31fadeed5ab10a1dcbf329b16ff6e1d2))
+* **names, exports:** store names in one Unicode form, neutralise formulas behind leading whitespace ([#2045](https://github.com/PicPeak/picpeak/issues/2045)) ([b6de1dd](https://github.com/PicPeak/picpeak/commit/b6de1dd4dc86a908b289bb07b7c14271d81cc523))
+* **photos:** replacing a photo regenerates its preview, hero and watermark, and never loses the old one ([#2025](https://github.com/PicPeak/picpeak/issues/2025)) ([cb5a3aa](https://github.com/PicPeak/picpeak/commit/cb5a3aa82233250cce587f367b436fc67bf4192d))
+* **transfers:** hand out only finished photos ([#2048](https://github.com/PicPeak/picpeak/issues/2048)) ([7f519b5](https://github.com/PicPeak/picpeak/commit/7f519b50fff54972ff3b3027673a6c07ca5b31d6))
+* **upload:** clean up failed chunked uploads, read capture dates on direct imports, import RAW from S3 ([#2027](https://github.com/PicPeak/picpeak/issues/2027)) ([6cf75fc](https://github.com/PicPeak/picpeak/commit/6cf75fc9d06023552d79df168240c4a6900202db))
+* **upload:** read the capture date on chunked uploads, hold no transaction through their media work ([#2008](https://github.com/PicPeak/picpeak/issues/2008)) ([1a62fd7](https://github.com/PicPeak/picpeak/commit/1a62fd7d97cf4549a900b2eed0d48f6dea336d40))
+* **uploads:** delete an unfinished upload's file before dropping its ledger record ([#2030](https://github.com/PicPeak/picpeak/issues/2030)) ([f7aafad](https://github.com/PicPeak/picpeak/commit/f7aafadbc16ed297189f17444a3dc1b9c3fa936a))
+* **uploads:** delete an upload object again when a late S3 write lands after cleanup ([#2040](https://github.com/PicPeak/picpeak/issues/2040)) ([560da75](https://github.com/PicPeak/picpeak/commit/560da75743051de1dc78a1587e7bf25c58a7c178))
+* **uploads:** keep the watch folder off files an upload is still promoting ([#1996](https://github.com/PicPeak/picpeak/issues/1996)) ([e672e28](https://github.com/PicPeak/picpeak/commit/e672e28abc41699c6c4fd6b8c40f340763465e29))
+* **users:** lock gallery assignments in id order on admin delete and team save ([#2004](https://github.com/PicPeak/picpeak/issues/2004)) ([e79e2b3](https://github.com/PicPeak/picpeak/commit/e79e2b3a659144b9fd189568cf5365d5f5d1af54))
+* **users:** take event and inviter rows first so admin delete cannot deadlock ([#2022](https://github.com/PicPeak/picpeak/issues/2022)) ([1a1079e](https://github.com/PicPeak/picpeak/commit/1a1079e24e8187e9399bb31eae629d1be17560a6))
+* **watcher:** give same-named watch-folder photos their own thumbnails, previews and heroes ([#2038](https://github.com/PicPeak/picpeak/issues/2038)) ([b49beb1](https://github.com/PicPeak/picpeak/commit/b49beb1bedeb4b0b24eea48b9305046d15be72ad))
+
 ## [3.173.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.172.0-beta.0...v3.173.0-beta.0) (2026-10-14)
 
 
