@@ -354,7 +354,7 @@ async function generateThumbnail(imagePath, options = {}) {
     // Apply EXIF orientation before resizing (#1185). Without this a photo
     // whose Orientation tag is not 1 — routine for portrait shots on bodies
     // that tag rather than rotate the sensor data — is resized from the raw
-    // pixels and comes out sideways. `.withMetadata(false)` below then strips
+    // pixels and comes out sideways. sharp's default metadata strip below removes
     // the tag, so the browser has no hint left to correct it either, which is
     // why this cannot be left to the client.
     //
@@ -367,8 +367,9 @@ async function generateThumbnail(imagePath, options = {}) {
     // the rotated one.
     sharpInstance = sharpInstance.rotate();
 
-    // Strip EXIF/metadata from thumbnails (privacy: prevent GPS leak etc.)
-    sharpInstance = sharpInstance.withMetadata(false);
+    // No keepMetadata()/withMetadata() on purpose: sharp strips EXIF, GPS,
+    // XMP and IPTC from the output by default (privacy). Do not pass
+    // withMetadata(false) here — in sharp 0.35 that KEEPS the metadata.
 
     // options.width/height override the admin setting for responsive tiers
     // (#1095). The configured `fit` is kept deliberately: the grid renders
@@ -874,8 +875,7 @@ async function generateHeroImage(imagePath, options = {}) {
     // this output is a still whatever the source was.
     sharpInstance = sharpInstance.rotate();
 
-    // Strip EXIF/metadata from hero images (privacy: prevent GPS leak etc.)
-    sharpInstance = sharpInstance.withMetadata(false);
+    // Metadata is stripped by sharp's default; see generateThumbnail.
 
     // Cover-crop at the event's focal point (issue 1737). This used to be
     // `fit: 'cover', position: 'center'`, and the anchor only reached the
@@ -1174,8 +1174,7 @@ async function generatePreviewImage(imagePath, options = {}) {
       sharpInstance = sharpInstance.rotate();
     }
 
-    // Strip EXIF — same privacy reasoning as thumbnails/heroes.
-    sharpInstance = sharpInstance.withMetadata(false);
+    // Metadata is stripped by sharp's default; see generateThumbnail.
 
     // fit: 'inside' + withoutEnlargement keeps small originals at
     // their native size (no upscaling artefacts) and shrinks larger
