@@ -86,11 +86,16 @@ jobs:
 
       - name: Output Release Info
         if: ${{ steps.release.outputs.release_created }}
+        # Release-please outputs derive from PR titles/commits: pass them as
+        # env, never as ${{ }} inside run:, so they are data, not shell code.
+        env:
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           echo "## Beta Release Created!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** ${{ steps.release.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${TAG_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${VERSION}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Docker images will be built and tagged with this beta version." >> $GITHUB_STEP_SUMMARY
 
