@@ -117,12 +117,22 @@ async function findReplacementCandidate(eventId, originalFilename, opts = {}) {
     return null;
   }
 
-  const matches = await livePhotos(db)
+  const exactMatches = (name) => livePhotos(db)
     .where({ event_id: eventId })
     .where(function () {
-      this.whereRaw('LOWER(original_filename) = LOWER(?)', [originalFilename])
-        .orWhereRaw('LOWER(source_filename) = LOWER(?)', [originalFilename]);
+      this.whereRaw('LOWER(original_filename) = LOWER(?)', [name])
+        .orWhereRaw('LOWER(source_filename) = LOWER(?)', [name]);
     });
+
+  let matches = await exactMatches(originalFilename);
+  // Uploads before issue 2072 stored non-ASCII names latin1-decoded
+  // (`ümläut.jpg` as `Ã¼mlÃ¤ut.jpg`). A re-upload now arrives correctly
+  // decoded, so without this it would land as a new photo. Only that exact
+  // legacy form, and only when nothing matches the real name.
+  if (matches.length === 0) {
+    const legacyName = Buffer.from(originalFilename, 'utf8').toString('latin1');
+    if (legacyName !== originalFilename) matches = await exactMatches(legacyName);
+  }
 
   if (matches.length === 1) return matches[0];
   if (matches.length > 1) return { ambiguous: true, count: matches.length };
