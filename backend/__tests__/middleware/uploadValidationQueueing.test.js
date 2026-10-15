@@ -1,6 +1,6 @@
-// The decode check runs while a request waits: it must submit interactive
-// work (a full queue answers busy instead of waiting behind background jobs)
-// carrying the upload's cancellation signal.
+// The decode check runs while a request waits: it carries the upload's
+// cancellation signal, and is not interactive work, because a full queue
+// would answer busy and "busy" keeps a file unchecked.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -27,7 +27,7 @@ describe('validateUploadedFiles queueing', () => {
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
   beforeEach(() => { calls.length = 0; });
 
-  it('submits interactive work with the upload signal', async () => {
+  it('submits the decode with the upload signal, never as interactive work', async () => {
     const file = path.join(dir, 'staged');
     fs.writeFileSync(file, 'x');
     const signal = new AbortController().signal;
@@ -35,7 +35,10 @@ describe('validateUploadedFiles queueing', () => {
     await validateUploadedFiles(req, {}, () => {});
     expect(req.files).toHaveLength(1);
     expect(calls.length).toBeGreaterThan(0);
-    for (const options of calls) expect(options).toMatchObject({ interactive: true, signal });
+    for (const options of calls) {
+      expect(options).toMatchObject({ signal });
+      expect(options.interactive).toBeFalsy();
+    }
   });
 
   it('decodes by the declared type when the name has no image extension', async () => {

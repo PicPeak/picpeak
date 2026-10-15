@@ -84,10 +84,10 @@ async function validateUploadedFiles(req, res, next) {
     const ext = (path.extname(file.path) || path.extname(file.originalname || '')).toLowerCase();
     return imageExtensions.includes(ext) ? ext : (DECODABLE_TYPES[file.mimetype] || ext);
   };
-  // A request is waiting on this: a full image queue answers "busy" (kept,
-  // see below) instead of queueing behind background work, and a dropped
-  // upload stops its decode.
-  const queueing = { signal: req.publicUploadReservation?.signal, interactive: true };
+  // A dropped upload stops its decode. Not interactive: a full queue would
+  // answer "busy", which keeps the file unchecked (see below), so flooding
+  // the queue would skip the check. The check waits for a worker instead.
+  const queueing = { signal: req.publicUploadReservation?.signal };
   const entries = req.files.filter(file => imageExtensions.includes(extOf(file))).map(file => file.path);
   let validated = null;
   if (entries.length >= 8) {
