@@ -229,8 +229,10 @@ proxy hop.
 > which trusted every private-range hop. If a proxy sits in front of the
 > container and you never set `TRUST_PROXY`, add `-e TRUST_PROXY=1` when you
 > recreate it. Otherwise every visitor shares the proxy's address for rate
-> limits, login lockouts and audit IPs, and `COOKIE_SECURE=auto` no longer sees
-> the proxy's `X-Forwarded-Proto: https`.
+> limits, login lockouts and audit IPs, and the backend treats every request
+> as plain HTTP: `COOKIE_SECURE=auto` drops `Secure`, and links built from the
+> request (when no site URL is saved in Settings → General) start with
+> `http://`.
 
 ## NAS notes
 
