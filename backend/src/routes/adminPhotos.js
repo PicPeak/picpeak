@@ -65,8 +65,12 @@ const { resolveUploadPlacement, placementColumns, afterUploadPlacement } = requi
 
 /** `folder_id` from a request as a photo column: a folder of this event, or null for the root. */
 async function folderIdUpdate(eventId, raw) {
-  const id = parseInt(raw, 10);
-  if (raw === null || raw === undefined || raw === '' || !(id > 0)) return { folder_id: null };
+  // null, '' and 0 mean the gallery root; anything else that is not a
+  // positive integer is refused rather than silently moving to the root.
+  if (raw === null || raw === undefined || raw === '' || raw === 0 || raw === '0') return { folder_id: null };
+  const isWhole = (typeof raw === 'number' && Number.isSafeInteger(raw)) || (typeof raw === 'string' && /^\d{1,10}$/.test(raw));
+  const id = isWhole ? Number(raw) : NaN;
+  if (!(id > 0 && id <= 2147483647)) return { error: `Invalid folder_id ${JSON.stringify(raw)}` };
   const folder = await require('../services/folderTreeService').findEventFolder(eventId, id);
   if (!folder) return { error: `Unknown folder_id ${id}` };
   return { folder_id: id };
@@ -539,17 +543,21 @@ async function handleAdminPhotoUpload(req, res) {
     // The type split lets the activity line say "2 videos" instead of
     // "2 photos" for a video upload (issue 1430, item 3).
     const videoCount = uploadedPhotos.filter((p) => p.media_type === 'video').length;
-    await logActivity('photos_uploaded',
-      {
-        count: uploadedPhotos.length,
-        photoCount: uploadedPhotos.length - videoCount,
-        videoCount,
-        replacedCount: replacedPhotos.length,
-        eventName: event.event_name,
-      },
-      eventId,
-      { type: 'admin', id: req.admin.id, name: req.admin.username }
-    );
+    // Nothing stored and nothing replaced (every file a duplicate or
+    // refused) is not an upload to log (issue 2086).
+    if (uploadedPhotos.length > 0 || replacedPhotos.length > 0) {
+      await logActivity('photos_uploaded',
+        {
+          count: uploadedPhotos.length,
+          photoCount: uploadedPhotos.length - videoCount,
+          videoCount,
+          replacedCount: replacedPhotos.length,
+          eventName: event.event_name,
+        },
+        eventId,
+        { type: 'admin', id: req.admin.id, name: req.admin.username }
+      );
+    }
 
     await afterUploadPlacement(eventId, placement, uploadedPhotos.length,
       { type: 'admin', id: req.admin.id, name: req.admin.username });

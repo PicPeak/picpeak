@@ -35,8 +35,10 @@ const router = express.Router();
 async function deliveryState(eventId) {
   const event = await db('events').where('id', eventId).first();
   if (!event) return null;
-  const [{ total }] = await livePhotos(db).where('event_id', eventId).count('id as total');
-  const [{ firstLook }] = await livePhotos(db).where('event_id', eventId).where('first_look', true).count('id as firstLook');
+  // A guest upload held for review or rejected is not delivered work: the
+  // guest-facing count leaves it out, and so does this one (issue 2086).
+  const [{ total }] = await livePhotos(db).where('event_id', eventId).whereNull('moderation_status').count('id as total');
+  const [{ firstLook }] = await livePhotos(db).where('event_id', eventId).whereNull('moderation_status').where('first_look', true).count('id as firstLook');
   const duplicates = delivery.isPartial(event) ? await delivery.findFirstLookDuplicates(eventId) : [];
   return {
     status: event.delivery_status || 'complete',

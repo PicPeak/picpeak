@@ -4,7 +4,17 @@ const { originalAssetDenial } = require('../../services/galleryAssetPolicy');
 const archiver = require('archiver');
 const path = require('path');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
+const { parsePositiveInt32 } = require('../../utils/parsers');
 const router = express.Router();
+
+// A photoId that is not a plausible row id is refused here (issue 2078);
+// PostgreSQL answers a non-numeric or int4-overflowing id with a 500.
+router.param('photoId', (req, res, next, value) => {
+  if (parsePositiveInt32(value) === null) {
+    return res.status(404).json({ error: 'Photo not found' });
+  }
+  next();
+});
 const watermarkService = require('../../services/watermarkService');
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
 const { noStoreCache } = require('../../middleware/noStoreCache');

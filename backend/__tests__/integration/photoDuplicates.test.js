@@ -118,6 +118,17 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
     expect((await photosOf(event)).map((p) => p.original_filename)).toEqual(['first.jpg', 'other.jpg']);
   });
 
+  it('logs no photos_uploaded entry for a request that stored nothing (issue 2086)', async () => {
+    const event = await makeEvent();
+    await adminUpload(event, [['first.jpg', jpegA]]);
+    const logged = () => db('activity_logs').where({ activity_type: 'photos_uploaded', event_id: event.id });
+    expect(await logged()).toHaveLength(1);
+
+    const res = await adminUpload(event, [['copy.jpg', jpegA]], { detect_duplicates: 'true' });
+    expect(res.body.count).toBe(0);
+    expect(await logged()).toHaveLength(1);
+  });
+
   it('a photo in the trash is not a duplicate: the file is stored again', async () => {
     const event = await makeEvent();
     await adminUpload(event, [['first.jpg', jpegA]]);

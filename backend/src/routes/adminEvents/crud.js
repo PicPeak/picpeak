@@ -51,6 +51,9 @@ const { GUEST_NAME_MODES } = require('../../services/photoCredit');
 const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
 const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, claimEventArchive } = require('./helpers');
 
+// Largest page the admin events list returns (the pickers ask for 200).
+const EVENT_LIST_MAX_LIMIT = 500;
+
 // Client PIN floor. The PIN guards the client review page and used to accept
 // any string, one character included. Six is the least that the login
 // lockout makes worth guessing at. An empty string keeps its meaning: "no
@@ -291,7 +294,13 @@ module.exports = (router) => {
   router.get('/', adminAuth, requirePermission('events.view'), async (req, res) => {
     try {
       const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 20;
+      const requestedLimit = parseInt(req.query.limit) || 20;
+      if (page < 1 || requestedLimit < 1) {
+        return res.status(400).json({ error: 'page and limit must be positive integers' });
+      }
+      // The admin pickers ask for at most 200; an unbounded limit returned
+      // every gallery in one response (issue 2078).
+      const limit = Math.min(requestedLimit, EVENT_LIST_MAX_LIMIT);
       const offset = (page - 1) * limit;
       const search = req.query.search || '';
       const status = req.query.status || 'all';
@@ -2004,6 +2013,14 @@ module.exports = (router) => {
       if ((updates.client_password_hash || event.client_password_hash)
         && !event.client_share_token && !updates.client_share_token) {
         updates.client_share_token = crypto.randomBytes(32).toString('hex');
+      }
+
+      // A key that is not a column of events would reach the UPDATE and come
+      // back as a 500 (issue 2078). Every legitimate input-only key has been
+      // taken out of `updates` above, so what is left and unknown is ignored,
+      // as the denylist above does with the keys it drops.
+      for (const key of Object.keys(updates)) {
+        if (!(await hasColumnCached('events', key))) delete updates[key];
       }
 
       // Update event. Skip the write when the denylist (or masked secrets)

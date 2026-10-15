@@ -82,6 +82,15 @@ const handleKnownErrors = (err) => {
     return new ValidationError('Invalid JSON in request body');
   }
 
+  // body-parser's refusal of a body over its limit is the client's, not a
+  // server fault (issue 2078: it surfaced as 413 with INTERNAL_ERROR).
+  if (err.type === 'entity.too.large') {
+    const { AppError } = require('../utils/errors');
+    const error = new AppError('Request body is too large', 413, 'PAYLOAD_TOO_LARGE');
+    error.isOperational = true;
+    return error;
+  }
+
   // Handle multer file upload errors
   if (err.code === 'LIMIT_FILE_SIZE') {
     const { ValidationError } = require('../utils/errors');

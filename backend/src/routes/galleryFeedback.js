@@ -504,7 +504,7 @@ router.post('/:slug/feedback/bulk',
   body('photo_ids')
     .isArray({ min: 1, max: BULK_RATING_MAX_PHOTOS })
     .withMessage(`photo_ids must list 1 to ${BULK_RATING_MAX_PHOTOS} photos`),
-  body('photo_ids.*').isInt({ min: 1 }).withMessage('Invalid photo ID').toInt(),
+  body('photo_ids.*').isInt({ min: 1, max: 2147483647 }).withMessage('Invalid photo ID').toInt(),
   checkValidation,
   async (req, res) => {
     try {
