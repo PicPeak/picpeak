@@ -286,6 +286,14 @@ const held = [];
     }).returning('id');
     mockFaces = [1];
     await faceProcessor.processPhotoFaces(await faceQueue.claimNextPhoto());
+    // And a third photo R shows A again, so the re-scan of P below rebuilds
+    // A rather than deleting it (and the merge target keeps its id).
+    await db('photos').insert({
+      event_id: eventId, filename: 'r.jpg', path: '/tmp/r.jpg', type: 'individual',
+      width: 1920, height: 1440, processing_status: 'complete', face_status: 'pending',
+    });
+    mockFaces = [0];
+    await faceProcessor.processPhotoFaces(await faceQueue.claimNextPhoto());
     const people = await db('photo_faces').where({ photo_id: photoId }).orderBy('bbox_x').pluck('person_id');
     expect(new Set(people).size).toBe(2);
     expect(await db('photo_faces').where({ photo_id: typeof q === 'object' ? q.id : q }).first('person_id'))
@@ -305,5 +313,8 @@ const held = [];
     release();
     await expect(scan).resolves.toMatchObject({ status: 'done' });
     await expect(merge).resolves.toBeDefined();
+    // Everyone ends up in A.
+    expect(await db('event_people').where({ id: people[1] }).first()).toBeUndefined();
+    expect(new Set(await db('photo_faces').where({ event_id: eventId }).pluck('person_id'))).toEqual(new Set([people[0]]));
   });
 });
