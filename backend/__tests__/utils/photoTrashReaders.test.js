@@ -55,6 +55,7 @@ const ALL_ROWS = {
   'services/picpeakImportService.js': [1, 'portable import: the flag travels with the row'],
   'services/portableImportMaintenance.js': [1, 'portable import: re-queues every imported row'],
   'services/publicUploadQuota.js': [2, 'guest upload quota is storage; the pending-hold reconcile names the flag on its next line'],
+  'services/ratingUniqueness.js': [1, 'rating dedupe (migration 309, portable restore) recomputes the average of a photo it removed a duplicate from, trashed or not'],
   'services/restoreService.js': [1, 'backup restore: re-queues every restored row'],
   'services/s3AutoImporter.js': [2, 'which object already belongs to a photo; insert'],
   'services/secureImageService.js': [1, 'resolves the gallery for an access-log row'],
@@ -85,7 +86,7 @@ const CHILD_REFERENCES = {
   'services/faceProcessor.js': 7, 'services/feedbackModeration.js': 2, 'services/feedbackService.js': 37,
   'services/galleryPhotoQuery.js': 1, 'services/galleryQueryService.js': 6,
   'services/photoAdminMarksService.js': 8, 'services/picpeakImportService.js': 2,
-  'services/selectionSubmissions.js': 2, 'services/transferCleanupService.js': 1, 'services/transferService.js': 12,
+  'services/ratingUniqueness.js': 5, 'services/selectionSubmissions.js': 2, 'services/transferCleanupService.js': 1, 'services/transferService.js': 12,
   'utils/anonymousFeedbackIdentity.js': 3, 'utils/photoFilterBuilder.js': 5,
 };
 

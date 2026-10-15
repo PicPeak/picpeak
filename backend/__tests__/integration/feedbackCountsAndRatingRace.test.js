@@ -160,4 +160,48 @@ describe('one rating per guest (issue 2075)', () => {
     expect(Array.from(await ratingRows())).toHaveLength(2);
     await expect(db('photo_feedback').insert({ ...base, rating: 4, guest_identifier: 'solo' })).rejects.toThrow();
   });
+
+  test('approving a hidden rating replaces the guest\'s newer one instead of failing', async () => {
+    const base = { photo_id: photoId, event_id: eventId, feedback_type: 'rating', is_approved: true };
+    const [hidden] = await db('photo_feedback')
+      .insert({ ...base, rating: 2, guest_identifier: 'mod', is_hidden: true }).returning('id');
+    await rate(5, null, 'mod');
+
+    await feedbackService.moderateFeedback(hidden.id ?? hidden, 'approve', null);
+
+    const rows = Array.from(await ratingRows());
+    expect(rows.map((r) => [Number(r.id), Number(r.rating), Boolean(r.is_hidden)]))
+      .toEqual([[Number(hidden.id ?? hidden), 2, false]]);
+    expect(Number((await db('photos').where({ id: photoId }).first('average_rating')).average_rating)).toBe(2);
+  });
+
+  test('a restore of a pre-309 archive loads its duplicate ratings and comes back constrained', async () => {
+    const ratingUniqueness = require('../../src/services/ratingUniqueness');
+    const base = { photo_id: photoId, event_id: eventId, feedback_type: 'rating', is_approved: true, is_hidden: false };
+    const archive = [
+      { ...base, rating: 1, guest_identifier: 'old', created_at: '2026-01-01T10:00:00.000Z', updated_at: '2026-01-01T10:00:00.000Z' },
+      { ...base, rating: 4, guest_identifier: 'old', created_at: '2026-01-01T10:00:01.000Z', updated_at: '2026-01-01T10:00:01.000Z' },
+    ];
+    // What replaceAllTables hits without the drop.
+    await expect(db.batchInsert('photo_feedback', archive, 10)).rejects.toThrow(/unique/i);
+
+    await db.transaction(async (trx) => {
+      expect(await ratingUniqueness.ratingIndexesSupported(trx)).toBe(true);
+      await ratingUniqueness.dropRatingIndexes(trx);
+      await trx.batchInsert('photo_feedback', archive, 10);
+      expect(await ratingUniqueness.dedupeRatings(trx)).toBe(1);
+      await ratingUniqueness.createRatingIndexes(trx);
+    });
+    expect(Array.from(await ratingRows()).map((r) => Number(r.rating))).toEqual([4]);
+    await expect(db('photo_feedback').insert({ ...base, rating: 3, guest_identifier: 'old' })).rejects.toThrow();
+
+    // And the restore runs that sequence around its load.
+    const source = require('fs').readFileSync(require.resolve('../../src/services/picpeakImportService'), 'utf8');
+    const body = source.slice(source.indexOf('async function replaceAllTables'));
+    const at = (needle) => body.indexOf(needle);
+    expect(at('await dropRatingIndexes(trx)')).toBeGreaterThan(-1);
+    expect(at('await dropRatingIndexes(trx)')).toBeLessThan(at('trx.batchInsert(table'));
+    expect(at('await dedupeRatings(trx)')).toBeGreaterThan(at('trx.batchInsert(table'));
+    expect(at('await createRatingIndexes(trx)')).toBeGreaterThan(at('await dedupeRatings(trx)'));
+  });
 });

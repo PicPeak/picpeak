@@ -1223,10 +1223,6 @@ class FeedbackService {
       
       const feedback = target;
 
-      await db('photo_feedback')
-        .where('id', feedbackId)
-        .update(updates);
-
       // Unhiding can collide with a replacement (#1150). A hidden row reads as
       // absent, so the guest may well have re-added the same feedback in the
       // meantime; making the original visible again would leave TWO visible
@@ -1241,20 +1237,30 @@ class FeedbackService {
       // `guest_identifier IS NULL`, which is every identifier-less row on the
       // photo — other people's, deleted. Nothing to converge in that case, so
       // leave it alone.
+      //
+      // The replacement goes BEFORE the unhide, in one transaction: a rating
+      // is held to one visible row per guest by a unique index (migration
+      // 309), so unhiding first would fail on the replacement (issue 2075).
       const collapseIdentity = feedback.guest_id || feedback.guest_identifier;
-      if (updates.is_hidden === false && feedback.feedback_type !== 'comment' && collapseIdentity) {
-        const superseded = db('photo_feedback')
-          .where({
-            photo_id: feedback.photo_id,
-            event_id: feedback.event_id,
-            feedback_type: feedback.feedback_type,
-            is_hidden: false,
-          })
-          .whereNot('id', feedbackId);
-        if (feedback.guest_id) superseded.where('guest_id', feedback.guest_id);
-        else superseded.where('guest_identifier', feedback.guest_identifier);
-        await superseded.delete();
-      }
+      await db.transaction(async (trx) => {
+        if (updates.is_hidden === false && feedback.feedback_type !== 'comment' && collapseIdentity) {
+          const superseded = trx('photo_feedback')
+            .where({
+              photo_id: feedback.photo_id,
+              event_id: feedback.event_id,
+              feedback_type: feedback.feedback_type,
+              is_hidden: false,
+            })
+            .whereNot('id', feedbackId);
+          if (feedback.guest_id) superseded.where('guest_id', feedback.guest_id);
+          else superseded.where('guest_identifier', feedback.guest_identifier);
+          await superseded.delete();
+        }
+
+        await trx('photo_feedback')
+          .where('id', feedbackId)
+          .update(updates);
+      });
       
       // Update photo stats if visibility changed
       await this.updatePhotoFeedbackStats(feedback.photo_id);

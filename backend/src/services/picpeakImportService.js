@@ -33,6 +33,12 @@ const {
   dropExternalRelpathIndex,
 } = require('./externalPhotoDedupe');
 const {
+  ratingIndexesSupported,
+  dedupeRatings,
+  createRatingIndexes,
+  dropRatingIndexes,
+} = require('./ratingUniqueness');
+const {
   hardenAccountRecoveryStorage,
   installAccountRecoveryWriteGuards,
   removeAccountRecoveryWriteGuards,
@@ -565,6 +571,10 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       hadRelpathIndex = true;
       await dropExternalRelpathIndex(trx);
     }
+    // Same for the one-rating-per-guest indexes (issue 2075): a backup taken
+    // before migration 309 can carry the duplicate ratings it collapses.
+    const hadRatingIndexes = await ratingIndexesSupported(trx);
+    if (hadRatingIndexes) await dropRatingIndexes(trx);
 
     // Clear every table the CURRENT schema exports (`allTables`), not just
     // the tables this archive's manifest lists (`tables`, a subset of it).
@@ -653,6 +663,13 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
         logger.info(`picpeakImport: removed ${removed} duplicate external photo row(s) from the archive (#1162)`);
       }
       await createExternalRelpathIndex(trx);
+    }
+    if (hadRatingIndexes) {
+      const removed = await dedupeRatings(trx);
+      if (removed) {
+        logger.info(`picpeakImport: removed ${removed} duplicate rating row(s) from the archive (issue 2075)`);
+      }
+      await createRatingIndexes(trx);
     }
 
     const operatorId = await reinjectCurrentAdmin(trx, currentAdmin);
