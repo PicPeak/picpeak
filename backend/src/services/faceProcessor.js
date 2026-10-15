@@ -19,7 +19,9 @@ const { ensurePreviewImage } = require('./imageProcessor');
 // SidecarUnavailableError is deliberately NOT caught here — it propagates to
 // faceQueue, which is the only layer that knows to retry rather than fail.
 const { detectFaces } = require('./faceClient');
-const { assignFaces, packEmbedding, recomputeCentroid } = require('./faceClustering');
+const {
+  assignFaces, lockEventPeople, packEmbedding, recomputeCentroid,
+} = require('./faceClustering');
 const { getThresholds, isEnabledForEvent } = require('./faceSettings');
 
 /**
@@ -244,6 +246,15 @@ async function processPhotoFaces(photoId) {
     // running-mean centroid, so without recomputing those afterwards a
     // re-scan inflates every count (typically doubling it) and leaves ghost
     // people behind when a face is no longer detected.
+    //
+    // The event's people lock (PostgreSQL) before any face or person row is
+    // read or written, as a recluster takes it (issue 2112): a recluster
+    // holding it waits for the event's face rows, and a re-scan that deleted
+    // its old faces first and only then asked for the lock in assignFaces
+    // closed a cycle with it, which PostgreSQL broke by aborting either side.
+    // An aborted scan is failed, not retried. Taken first, the old people
+    // read below are also the ones a recluster that ran meanwhile left.
+      await lockEventPeople(photo.event_id, trx);
       const affectedPeople = await trx('photo_faces')
         .where({ photo_id: photoId })
         .whereNotNull('person_id')

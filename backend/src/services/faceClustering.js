@@ -1073,13 +1073,12 @@ async function recluster(eventId) {
   // and waiting for the in-process lock hung both, unseen by either side.
   //
   // The advisory lock alone, not withEventLock's in-process mutex: this
-  // transaction waits on row locks a scan of the event may hold (a re-scan
-  // deletes its old faces and rebuilds their people before it reaches
-  // assignFaces), and holding the mutex meanwhile would park that scan on it
-  // in Node, a cycle PostgreSQL cannot see. Every scan writes through
-  // assignFaces under the advisory lock, so it still serialises against
-  // this. On SQLite the transaction holds the only connection, so nothing
-  // else runs until it ends.
+  // transaction can wait on row locks other writers of the event hold, and
+  // holding the mutex meanwhile would park any of them that reaches
+  // assignFaces on it in Node, a cycle PostgreSQL cannot see. Every scan
+  // takes the advisory lock before its first face or person row, so it still
+  // serialises against this. On SQLite the transaction holds the only
+  // connection, so nothing else runs until it ends.
   //
   // Everything inside goes through `trx`, never `db`: on SQLite a second
   // query would wait for this transaction. consolidate() stays outside,
@@ -1098,10 +1097,11 @@ async function recluster(eventId) {
   try {
     await run();
   } catch (err) {
-    // A re-scan that rebuilt its old people before it asked for the lock can
-    // still close a cycle with this one, which PostgreSQL breaks with
-    // SQLSTATE 40P01. Nothing here acts outside the database, so the loser
-    // runs once more against what the scan committed.
+    // A writer that locks the event's face or person rows without the
+    // advisory lock (a merge or split moving faces) can still close a cycle
+    // with this one, which PostgreSQL breaks with SQLSTATE 40P01. Nothing
+    // here acts outside the database, so the loser runs once more against
+    // what the other side committed.
     if (err?.code !== '40P01') throw err;
     logger.warn(`faceClustering: recluster of event ${eventId} hit a deadlock, retrying once`);
     await run();
@@ -1234,6 +1234,7 @@ module.exports = {
   normalize,
   meetsQualityFloor,
   assignFaces,
+  lockEventPeople,
   consolidate,
   suggestMerges,
   dismissMergeSuggestion,
