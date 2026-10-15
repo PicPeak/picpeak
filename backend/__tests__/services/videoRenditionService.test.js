@@ -162,9 +162,10 @@ describe('remuxOptions', () => {
     ]);
   });
 
-  it('maps the probed tracks by absolute index when it has them', () => {
+  it('maps the probed tracks by absolute index when it has them, as the transcode does', () => {
     const opts = service.remuxOptions({ videoIndex: 1, audioIndex: 3 });
     expect(opts.slice(0, 4)).toEqual(['-map', '0:1', '-map', '0:3']);
+    expect(service.transcodeOptions({ toneMap: true, videoIndex: 1, audioIndex: 3 }).slice(0, 4)).toEqual(['-map', '0:1', '-map', '0:3']);
     expect(service.remuxOptions({ videoIndex: 0, audioIndex: null }).slice(0, 4)).toEqual(['-map', '0:0', '-map', '0:a:0?']);
   });
 });
@@ -385,6 +386,7 @@ describe('renderWebCopy', () => {
     expect(await service.renderWebCopy(22, { claimedAt: '2026-10-02T09:00:00.000Z' })).toBe('complete');
     expect(ffmpeg).toHaveBeenCalledWith(atoms);
     expect(command.outputOptions).toHaveBeenCalledWith(service.transcodeOptions());
+    expect(service.transcodeOptions().slice(0, 4)).toEqual(['-map', '0:v:0', '-map', '0:a:0?']);
     // The key carries the claim, so two attempts never share an object.
     expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_11111111-1111-4111-8111-111111111111_phone.mp4', savedTo, { contentType: 'video/mp4' });
     const update = dbModule.__state.updates.find((u) => u.table === 'photos');
@@ -422,6 +424,29 @@ describe('renderWebCopy', () => {
     expect(command.outputOptions).toHaveBeenCalledWith(service.transcodeOptions({ toneMap: mapped }));
     if (mapped) expect(logger.warn).not.toHaveBeenCalled();
     else expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('lacks zscale/tonemap'));
+  });
+
+  it('transcodes the default track it probed, so the HDR decision and the encode see the same picture', async () => {
+    service._resetToneMapSupportForTests();
+    ffmpeg.getAvailableFilters = jest.fn((cb) => cb(null, { zscale: {}, tonemap: {} }));
+    dbModule.__state.photo = { id: 28, event_id: 9, filename: 'two.mov', media_type: 'video', mime_type: 'video/quicktime' };
+    mockProbe([
+      { index: 0, codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p10le', color_transfer: 'smpte2084', disposition: { default: 0 } },
+      { index: 1, codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p', color_transfer: 'bt709', disposition: { default: 1 } },
+      { index: 2, codec_type: 'audio', codec_name: 'aac', disposition: { default: 1 } },
+    ], { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'qt  ' } });
+    const atoms = await writeAtoms(box('ftyp', 16), box('mdat', 100), box('moov', 40));
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+    const command = {
+      outputOptions: jest.fn(function () { return this; }),
+      on: jest.fn(function (event, handler) { if (event === 'end') this._end = handler; return this; }),
+      save: jest.fn(function (out) { fs.writeFileSync(out, 'h264-bytes'); setImmediate(() => this._end()); }),
+      kill: jest.fn(),
+    };
+    ffmpeg.mockImplementation(() => command);
+
+    expect(await service.renderWebCopy(28)).toBe('complete');
+    expect(command.outputOptions).toHaveBeenCalledWith(service.transcodeOptions({ toneMap: false, videoIndex: 1, audioIndex: 2 }));
   });
 
   it('drops the copy and leaves the row alone when the claim was lost during the transcode', async () => {

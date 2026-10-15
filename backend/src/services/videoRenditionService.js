@@ -238,8 +238,8 @@ async function probe(localPath) {
   const video = playedStream(streams, 'video');
   const audio = playedStream(streams, 'audio');
   return {
-    // Absolute stream indexes, so the remux keeps the tracks the original
-    // played with when a file carries more than one.
+    // Absolute stream indexes, so a copy is made from the tracks the
+    // original played with when a file carries more than one.
     videoIndex: Number.isInteger(video?.index) ? video.index : null,
     audioIndex: Number.isInteger(audio?.index) ? audio.index : null,
     formatName: metadata.format?.format_name || '',
@@ -307,17 +307,29 @@ function _resetToneMapSupportForTests() {
 }
 
 /**
+ * The tracks a copy is made from: the ones probe() described (the default
+ * tracks, by absolute index), so the decision, the tone mapping and the
+ * encode all see the same picture; the first video and optional audio
+ * stream when the probe gave no index.
+ */
+function streamMaps({ videoIndex = null, audioIndex = null } = {}) {
+  return [
+    '-map', videoIndex == null ? '0:v:0' : `0:${videoIndex}`,
+    '-map', audioIndex == null ? '0:a:0?' : `0:${audioIndex}`,
+  ];
+}
+
+/**
  * ffmpeg's arguments for the copy, in one place so the test can pin them.
  * The scale keeps the aspect ratio, never upsizes, and keeps both sides
  * even, which libx264 needs for 4:2:0. ffmpeg applies the rotation tag on
  * input, so a portrait phone recording comes out portrait. With `toneMap`
  * the HDR to SDR chain runs first, so the scale works on the SDR picture.
  */
-function transcodeOptions({ toneMap = false } = {}) {
+function transcodeOptions({ toneMap = false, videoIndex = null, audioIndex = null } = {}) {
   const scale = `scale=w='min(${MAX_EDGE},iw)':h='min(${MAX_EDGE},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
   return [
-    '-map', '0:v:0',
-    '-map', '0:a:0?',
+    ...streamMaps({ videoIndex, audioIndex }),
     '-sn', '-dn',
     // No container, stream or chapter metadata from the source: a phone's
     // recording location, artist and device tags must not reach guests.
@@ -348,8 +360,7 @@ function transcodeOptions({ toneMap = false } = {}) {
  */
 function remuxOptions({ videoIndex = null, audioIndex = null } = {}) {
   return [
-    '-map', videoIndex == null ? '0:v:0' : `0:${videoIndex}`,
-    '-map', audioIndex == null ? '0:a:0?' : `0:${audioIndex}`,
+    ...streamMaps({ videoIndex, audioIndex }),
     '-c', 'copy',
     '-map_metadata', '-1', '-map_chapters', '-1',
     '-movflags', '+faststart',
@@ -362,14 +373,14 @@ function remuxOptions({ videoIndex = null, audioIndex = null } = {}) {
  * gets longer than VIDEO_RENDITION_TIMEOUT_MS, which is only the minimum.
  * `timeoutMs` overrides it (tests).
  */
-function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, remux = null } = {}) {
+function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, remux = false, streams = {} } = {}) {
   return mediaProcesses.withSnapshot(localPath, 'rendition', async (snapshot, details) => {
     const { policy } = details;
     const metadata = await mediaProcesses.probeSnapshot(snapshot, details);
     const budget = renditionBudget(Number.isFinite(duration) ? duration : Number(metadata.format?.duration), policy);
     await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
       ...mediaProcesses.inputOptions(details.format, policy.threads), '-i', snapshot,
-      ...(remux ? remuxOptions(remux) : transcodeOptions({ toneMap })), '-threads', String(policy.threads), '-filter_threads', String(policy.threads), outPath], {
+      ...(remux ? remuxOptions(streams) : transcodeOptions({ toneMap, ...streams })), '-threads', String(policy.threads), '-filter_threads', String(policy.threads), outPath], {
       // Its own lane, so posters and probes never wait behind a transcode.
       lane: 'long', memoryBytes: policy.transcodeBytes, wallMs: timeoutMs || budget.wallMs, cpuSeconds: budget.cpuSeconds,
       fileBytes: policy.outputBytes || 1024 * 1024 * 1024 * 1024,
@@ -441,8 +452,8 @@ async function renderWebCopy(photoId) {
     }
     try {
       await transcode(localPath, tmpPath, {
-        toneMap, duration: probed.duration,
-        remux: remux ? { videoIndex: probed.videoIndex, audioIndex: probed.audioIndex } : null,
+        toneMap, duration: probed.duration, remux,
+        streams: { videoIndex: probed.videoIndex, audioIndex: probed.audioIndex },
       });
       const stat = await fsp.stat(tmpPath).catch(() => null);
       if (!stat || stat.size === 0) throw new Error('ffmpeg produced no output');
