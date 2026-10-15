@@ -815,7 +815,8 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
                   .where(fence)
                   .whereNotNull('face_status')
                   .whereNot('face_status', 'pending')
-                  .update({ face_status: 'pending' });
+                  // Voids a scan in flight on the old dimensions (issue 2069).
+                  .update({ face_status: 'pending', face_attempt_id: null });
               }
 
               // Same transaction as the work it records: a marker written

@@ -134,23 +134,40 @@ async function streamToBuffer(stream) {
 }
 
 /**
- * Detect and cluster the faces in one photo.
+ * The row as long as it still belongs to this claim (issue 2069).
+ * `face_attempt_id` is written by the claim and cleared by everything that
+ * takes the row away (purge, re-queue, janitor), and a new claim writes a new
+ * one. 'processing' alone cannot tell a purge followed by a second claim from
+ * the first claim, so a scan of the old bytes would publish over the new one.
+ */
+function claimGuard(claimed, conn = db) {
+  return conn('photos').where({
+    id: claimed.id, face_status: 'processing', face_attempt_id: claimed.face_attempt_id,
+  });
+}
+
+/**
+ * Detect and cluster the faces in one claimed photo (the row
+ * faceQueue.claimNextPhoto returned).
  *
  * Throws SidecarUnavailableError when the sidecar is down — the caller must
  * return the row to 'pending' rather than failing it.
  */
-async function processPhotoFaces(photoId) {
-  const photo = await db('photos').where({ id: photoId }).first();
+async function processPhotoFaces(claimed) {
+  const photoId = claimed.id;
+  // Read under the claim: a purge or re-claim between the claim and here
+  // already took the row away.
+  const photo = await claimGuard(claimed).first();
   if (!photo) {
-    logger.warn(`faceProcessor: photo ${photoId} disappeared before processing`);
+    logger.warn(`faceProcessor: photo ${photoId} disappeared or was re-queued before processing`);
     return { status: 'skipped' };
   }
 
   const event = await db('events').where({ id: photo.event_id }).first();
   if (!(await isEnabledForEvent(event))) {
     // The toggle was switched off between enqueue and claim. Not an error.
-    await db('photos').where({ id: photoId }).update({
-      face_status: 'skipped', face_started_at: null, face_error: null,
+    await claimGuard(claimed).update({
+      face_status: 'skipped', face_started_at: null, face_attempt_id: null, face_error: null,
     });
     return { status: 'skipped' };
   }
@@ -159,8 +176,8 @@ async function processPhotoFaces(photoId) {
   const isVideo = photo.media_type === 'video'
     || (photo.mime_type && photo.mime_type.startsWith('video/'));
   if (isVideo) {
-    await db('photos').where({ id: photoId }).update({
-      face_status: 'skipped', face_started_at: null, face_count: 0,
+    await claimGuard(claimed).update({
+      face_status: 'skipped', face_started_at: null, face_attempt_id: null, face_count: 0,
     });
     return { status: 'skipped' };
   }
@@ -190,9 +207,10 @@ async function processPhotoFaces(photoId) {
 
     // No preview and no way to make one — the source is missing or corrupt.
     // That is a property of this photo, so it fails rather than retries.
-    await db('photos').where({ id: photoId }).update({
+    await claimGuard(claimed).update({
       face_status: 'failed',
       face_started_at: null,
+      face_attempt_id: null,
       face_error: 'Could not generate a preview rendition to scan',
     });
     return { status: 'failed' };
@@ -288,12 +306,15 @@ async function processPhotoFaces(photoId) {
       // sidecar has already cleared face_status; without this guard the worker
       // would write its rows back moments after "all face data deleted"
       // reported success, so an erasure request would silently not stick.
-      const committed = await trx('photos')
-        .where({ id: photoId, face_status: 'processing' })
+      // The attempt id also catches a purge followed by a new claim (a file
+      // refreshed in place, a re-scan): that claim scans the new bytes, and
+      // these faces describe the old ones (issue 2069).
+      const committed = await claimGuard(claimed, trx)
         .update({
           face_status: 'done',
           face_count: faces.length,
           face_started_at: null,
+          face_attempt_id: null,
           face_error: null,
         });
 
@@ -353,6 +374,7 @@ async function enqueueEvent(eventId, { onlyUnscanned = false } = {}) {
   const updated = await query.update({
     face_status: 'pending',
     face_started_at: null,
+    face_attempt_id: null,
     face_error: null,
   });
 
@@ -372,7 +394,7 @@ async function purgeEvent(eventId) {
     const faces = await trx('photo_faces').where({ event_id: eventId }).del();
     const people = await trx('event_people').where({ event_id: eventId }).del();
     await trx('photos').where({ event_id: eventId }).update({
-      face_status: null, face_count: null, face_started_at: null, face_error: null,
+      face_status: null, face_count: null, face_started_at: null, face_attempt_id: null, face_error: null,
     });
 
     // Everything the erasure was about is gone, so the records ABOUT that
@@ -414,10 +436,12 @@ async function purgePhotoFaces(photoId, trx = db) {
   const eventId = affectedRows[0]?.event_id;
 
   // Drop any in-flight claim as well. A worker holding this photo would
-  // otherwise still satisfy its `face_status = 'processing'` commit guard and
-  // write fresh faces straight after the purge — and with FK enforcement off
-  // on SQLite, the subsequent photo delete cannot cascade them away, leaving
-  // orphaned biometric rows.
+  // otherwise still satisfy its commit guard and write fresh faces straight
+  // after the purge — and with FK enforcement off on SQLite, the subsequent
+  // photo delete cannot cascade them away, leaving orphaned biometric rows.
+  // face_attempt_id is left alone on purpose: migration 186 calls this before
+  // migration 310 adds the column, and NULL status already voids the claim
+  // (the next claim writes a new id anyway).
   await trx('photos').where({ id: photoId }).update({
     face_status: null, face_count: null, face_started_at: null, face_error: null,
   });
@@ -442,6 +466,6 @@ async function purgePhotoFaces(photoId, trx = db) {
 }
 
 module.exports = {
-  processPhotoFaces, enqueueEvent, purgeEvent, purgePhotoFaces, StaleScanError,
+  processPhotoFaces, claimGuard, enqueueEvent, purgeEvent, purgePhotoFaces, StaleScanError,
   TransientSourceError, externalSourceUnreachable,
 };

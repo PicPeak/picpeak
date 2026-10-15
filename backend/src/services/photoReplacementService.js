@@ -365,6 +365,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       updates.face_status = (await isEnabledForEvent(event)) ? 'pending' : null;
       updates.face_count = null;
       updates.face_started_at = null;
+      updates.face_attempt_id = null;
       updates.face_error = null;
     } catch (err) {
       logger.warn(`replacePhoto: face reset failed for photo ${existingPhoto.id}`, {
