@@ -1024,6 +1024,9 @@
       "duplicatesNotRemoved": "De galerie is volledig, maar de duplicaten van de eerste selectie konden niet worden verwijderd. Verwijder ze op het tabblad Foto's."
     },
     "externalSource": {
+      "missingFiles_one": "{{count}} bestand ontbreekt",
+      "missingFiles_other": "{{count}} bestanden ontbreken",
+      "missingFilesHint": "Toon de foto's waarvan het bestand niet meer in de map staat",
       "applyStructure": "Mapstructuur toepassen",
       "applyStructureHint": "De submappen overnemen voor foto's die zijn geïmporteerd voordat de mapstructuur aan stond",
       "applyStructureTitle": "Mapstructuur toepassen?",
@@ -2190,6 +2193,8 @@
       "collages": "Collages",
       "noPosterFrame": "Geen posterframe",
       "noPosterFrameRetry": "Posterframe opnieuw maken",
+      "fileMissing": "Bestand ontbreekt",
+      "fileMissingTooltip": "Het bestand staat niet meer in de externe map. Gasten zien deze foto niet; hij komt terug zodra het bestand terug is. Verwijder hem als het bestand voorgoed weg is.",
       "myMarks": "Jouw markeringen",
       "myMarksHelp": "Alleen jij ziet deze. Ze verschijnen nooit in de klantgalerij en gaan als XMP naar Lightroom.",
       "myRating": "Jouw beoordeling",

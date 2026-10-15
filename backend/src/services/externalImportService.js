@@ -43,6 +43,7 @@ const externalAccess = require('./externalMediaAccess');
 const folderTree = require('./folderTreeService');
 const { parseBooleanInput } = require('../utils/parsers');
 const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
+const { livePhotos } = require('../utils/photoVisibility');
 
 /**
  * Where an external file lands (issues 1786 + 1562), from its path relative
@@ -123,6 +124,97 @@ async function existingRelpaths(eventId, relpaths) {
     for (const r of rows) found.add(r.external_relpath);
   }
   return found;
+}
+
+// Rows read from the share: what a scan looks after. A photo replaced by an
+// upload keeps its external_relpath but is managed from then on.
+const SERVED_ORIGINS = ['external', 'reference'];
+
+// photos.unavailable_reason (migration 312) of a photo whose file is gone from
+// the share: no gallery viewer sees it, the admin does.
+const SOURCE_MISSING = 'source_missing';
+
+/**
+ * The served rows of an event under the folder a pass walked, with what the
+ * vanished-file handling needs. `inScope` takes a root-relative path.
+ */
+async function servedRowsInScope(eventId, inScope) {
+  const rows = await livePhotos(db)
+    .where({ event_id: eventId })
+    .whereIn('source_origin', SERVED_ORIGINS)
+    .whereNotNull('external_relpath')
+    .select('id', 'external_relpath', 'unavailable_reason', 'size_bytes', 'source_mtime_ms', 'filename', 'source_filename');
+  return rows.filter((r) => inScope(r.external_relpath));
+}
+
+/**
+ * Whether a row's file is on the share: 'present', 'missing' (nothing at the
+ * path) or 'unknown' (any other error, or a file only reachable through a
+ * link out of the folder). Only 'missing' ever hides a photo.
+ */
+async function sourcePresence(access, full) {
+  try {
+    await fs.lstat(full);
+  } catch (err) {
+    return err.code === 'ENOENT' || err.code === 'ENOTDIR' ? 'missing' : 'unknown';
+  }
+  try {
+    await externalAccess.authorizeSelectedFile(access, full);
+    return 'present';
+  } catch (_) {
+    return 'unknown';
+  }
+}
+
+/**
+ * A file renamed or moved on the share (issue 2121): its row, whose file is
+ * gone, and a new file of the same size, modification time and extension,
+ * seen in the same pass. The row takes the new path instead of the new file
+ * being imported next to it. Only one-to-one matches move: two candidates on
+ * either side are left alone (the old row is marked missing and the new file
+ * imported, as without this). The file name follows when the row still
+ * carried the old one; folder, category and everything else stay.
+ *
+ * Returns the number of rows moved.
+ */
+async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic }) {
+  const keyOf = (size, mtimeMs, name) => `${Number(size)}:${Math.floor(Number(mtimeMs))}:${path.extname(name).toLowerCase()}`;
+  const group = (items, key) => {
+    const map = new Map();
+    for (const item of items) {
+      const k = key(item);
+      map.set(k, map.has(k) ? null : item);
+    }
+    return map;
+  };
+  const gone = group(
+    unseen.filter((r) => r.size_bytes != null && r.source_mtime_ms != null),
+    (r) => keyOf(r.size_bytes, r.source_mtime_ms, r.external_relpath)
+  );
+  const arrived = group(newFiles, (f) => keyOf(f.size, f.mtimeMs, f.name));
+  let moved = 0;
+  for (const [key, row] of gone) {
+    const f = arrived.get(key);
+    if (!row || !f) continue;
+    if (await sourcePresence(access, fullOf(row.external_relpath)) !== 'missing') continue;
+    const newRel = toRootRelative(f.rel);
+    if (automatic && await db('external_import_exclusions').where({ event_id: eventId, external_relpath: newRel }).first()) continue;
+    const oldName = path.basename(row.external_relpath);
+    const updates = { external_relpath: newRel, unavailable_reason: null };
+    if (row.filename === oldName) updates.filename = f.name;
+    if (row.source_filename === oldName) updates.source_filename = f.name;
+    try {
+      // Fenced on what was read: a row repointed or replaced since stays.
+      moved += await livePhotos(db)
+        .where({ id: row.id, external_relpath: row.external_relpath })
+        .whereIn('source_origin', SERVED_ORIGINS)
+        .update(updates);
+    } catch (err) {
+      // Another writer imported the new path meanwhile: both rows stay.
+      if (!isUniqueViolation(err)) logger.warn(`Could not move photo ${row.id} to its renamed file: ${err.message}`);
+    }
+  }
+  return moved;
 }
 
 // Bounds on the recursive walk. An event owner with photos.upload chooses the
@@ -500,10 +592,13 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
  * @param {number} [opts.settleMs=0]  automatic passes: a new file modified
  *   within the last settleMs, or whose size moves during a wait of settleMs,
  *   is left for the next pass instead of being imported half-copied
- * @returns {Promise<{imported:number, skipped:number, deferred:number, excluded:number, thumbnailsGenerated:number, thumbnailsFailed:number, truncated:boolean, capReached:boolean}>}
+ * @returns {Promise<{imported:number, skipped:number, deferred:number, excluded:number, thumbnailsGenerated:number, thumbnailsFailed:number, truncated:boolean, capReached:boolean, moved:number, missing:number, returned:number}>}
  *   `truncated`: the recursive walk hit its depth or entry bound and the
  *   folder was not read in full. `capReached`: the event's photo cap stopped
- *   the import; what was not imported is counted in `skipped`.
+ *   the import; what was not imported is counted in `skipped`. `moved`: rows
+ *   that followed a renamed file; `missing`: photos whose file is gone from
+ *   the share, taken out of the gallery; `returned`: such photos whose file
+ *   is back (issue 2121).
  * @throws {EventNotFoundError} when the event does not exist
  * @throws {ImportInProgressError} when another run holds the claim for this event
  */
@@ -592,6 +687,26 @@ async function importExternalFolder({
       .filter(e => e.isFile())
       .map(e => ({ full: path.join(baseAbs, e.name), rel: e.name, name: e.name }))
       .filter(f => extensions.includes(path.extname(f.name).toLowerCase()));
+
+    // Files gone from the share (issue 2121) are only judged after a complete
+    // read of a folder that answered: a walk cut short says nothing about the
+    // files it did not reach, and a folder that lists no file at all is as
+    // likely an unmounted share (an empty mount point) as an emptied one. The
+    // rows judged are this event's served rows under the folder walked (only
+    // its own files when the walk was not recursive); a row whose file the
+    // walk did not list is looked up at its path, so a file the walk leaves
+    // out for another reason (a type no longer imported, a dot folder) is
+    // never taken for a deleted one.
+    const scopePrefix = basePrefix ? path.normalize(basePrefix) : '';
+    const relInBase = (rel) => (scopePrefix ? rel.slice(scopePrefix.length + 1) : rel);
+    const inScope = (rel) => {
+      if (scopePrefix && !rel.startsWith(scopePrefix + path.sep)) return false;
+      const inner = relInBase(rel);
+      return Boolean(inner) && !inner.split(path.sep).includes('..') && (recursive || !inner.includes(path.sep));
+    };
+    const fullOf = (rel) => path.join(baseAbs, relInBase(rel));
+    const walkComplete = !walkBudget.truncated && files.length > 0;
+    const seenRelpaths = new Set(files.map((f) => toRootRelative(f.rel)));
 
     // Prepare file metadata and deduplicate by filename within type (keep largest)
     let skipped = 0;
@@ -764,6 +879,23 @@ async function importExternalFolder({
     const photoCap = photoCapOf(event);
     let capReached = false;
 
+    // A renamed file takes its row along before the loop below would import
+    // it as a new photo (issue 2121).
+    let moved = 0;
+    let missing = 0;
+    let returned = 0;
+    if (walkComplete) {
+      const unseen = (await servedRowsInScope(eventId, inScope)).filter((r) => !seenRelpaths.has(r.external_relpath));
+      if (unseen.length) {
+        const candidates = [...dedupeMap.values()];
+        const known = await existingRelpaths(eventId, candidates.map((f) => toRootRelative(f.rel)));
+        const newFiles = candidates.filter((f) => !known.has(toRootRelative(f.rel)));
+        if (newFiles.length) {
+          moved = await moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic });
+        }
+      }
+    }
+
     // Insert photos
     for (const f of dedupeMap.values()) {
       filesSinceAuthorized += 1;
@@ -803,6 +935,11 @@ async function importExternalFolder({
           .first();
         if (!exists && capReached) { skipped++; continue; }
         if (exists) {
+          // The file is back on the share: the photo is again in the gallery.
+          if (exists.unavailable_reason === SOURCE_MISSING) {
+            returned += await livePhotos(db).where({ id: exists.id, unavailable_reason: SOURCE_MISSING })
+              .update({ unavailable_reason: null });
+          }
           // The same path with other bytes: the file was edited on the share
           // (a re-export from Lightroom over the proof). Without this the row
           // kept the old dimensions, capture date and every derivative, so
@@ -1033,6 +1170,47 @@ async function importExternalFolder({
       }
     }
 
+    // Files gone from the share (issue 2121): never deleted, since a share
+    // can come back. The photo leaves every gallery view and stays in the
+    // admin's, marked, until the file returns (the mark goes) or the admin
+    // deletes it. A visibility an admin chose is not touched either way.
+    if (walkComplete && !superseded && !lost) {
+      // On the loop's authorisation budget: each lookup counts as a file.
+      const reauthorizeIfDue = async () => {
+        if (filesSinceAuthorized >= REAUTHORIZE_EVERY_FILES || Date.now() - authorizedAt >= REAUTHORIZE_EVERY_MS) {
+          access = await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
+          authorizedAt = Date.now();
+          filesSinceAuthorized = 0;
+        }
+      };
+      await reauthorizeIfDue();
+      // The folder must still answer: a share that dropped since the walk
+      // would otherwise read as every file deleted.
+      const stillThere = await fs.readdir(baseAbs).then((entries) => entries.length > 0).catch(() => false);
+      for (const row of stillThere ? await servedRowsInScope(eventId, inScope) : []) {
+        if (lost) break;
+        let state = 'present';
+        if (!seenRelpaths.has(row.external_relpath)) {
+          filesSinceAuthorized += 1;
+          await reauthorizeIfDue();
+          state = await sourcePresence(access, fullOf(row.external_relpath));
+        }
+        if (state === 'missing' && row.unavailable_reason == null) {
+          // Fenced on the path and origin read: a row moved or replaced
+          // since is not this file's.
+          missing += await livePhotos(db)
+            .where({ id: row.id, external_relpath: row.external_relpath })
+            .whereIn('source_origin', SERVED_ORIGINS)
+            .whereNull('unavailable_reason')
+            .update({ unavailable_reason: SOURCE_MISSING });
+        } else if (state === 'present' && row.unavailable_reason === SOURCE_MISSING) {
+          returned += await livePhotos(db).where({ id: row.id, unavailable_reason: SOURCE_MISSING })
+            .update({ unavailable_reason: null });
+        }
+      }
+      if (missing) logger.info(`External import for event ${eventId}: ${missing} photo(s) whose file is gone from the share left the gallery`);
+    }
+
     // The event already resolves to the new directory (set before the loop),
     // so the queue is safe to open. Still done here rather than on insert so
     // the setting below is read after the loop. Guarded the same way
@@ -1086,14 +1264,15 @@ async function importExternalFolder({
 
     const result = {
       imported, refreshed, skipped, deferred, excluded, thumbnailsGenerated, thumbnailsFailed,
-      truncated: walkBudget.truncated, capReached,
+      truncated: walkBudget.truncated, capReached, moved, missing, returned,
     };
+    const changed = imported > 0 || refreshed > 0 || moved > 0 || missing > 0 || returned > 0;
 
     // A prebuilt "Download All" zip is only checked for existence, so it
     // kept serving the gallery as it was before this pass: without the new
     // photos, and with the old picture of an edited one. Once per pass, as
     // the upload and replacement routes do.
-    if (imported > 0 || refreshed > 0) {
+    if (changed) {
       try {
         require('./downloadZipService').invalidate(eventId);
       } catch (err) {
@@ -1110,7 +1289,7 @@ async function importExternalFolder({
     // watcher re-runs this pass on a timer for every watched event, and a
     // "0 imported, 6012 skipped" row every fifteen minutes per event would
     // bury the entries an admin is actually looking for.
-    if (imported > 0 || refreshed > 0 || actor?.type !== 'system') {
+    if (changed || actor?.type !== 'system') {
       await logActivity(
         'external_import_completed',
         { event_id: eventId, ...result, external_path },

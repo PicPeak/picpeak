@@ -2239,6 +2239,9 @@
       "watchHelp": "New photos copied into the folder show up by themselves."
     },
     "externalSource": {
+      "missingFiles_one": "{{count}} file missing",
+      "missingFiles_other": "{{count}} files missing",
+      "missingFilesHint": "Show the photos whose file is gone from the folder",
       "alreadyRunning": "An import of this folder is already running.",
       "changeFolder": "Change folder",
       "importNow": "Import now",
@@ -4747,6 +4750,8 @@
       "collages": "Collages",
       "noPosterFrame": "No poster frame",
       "noPosterFrameRetry": "Take the poster frame again",
+      "fileMissing": "File missing",
+      "fileMissingTooltip": "The file is no longer in the external folder. Guests do not see this photo; it comes back when the file does. Delete it if the file is gone for good.",
       "viewMode": "View mode",
       "gridView": "Grid view",
       "listView": "List view",

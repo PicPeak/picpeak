@@ -1150,6 +1150,10 @@
       "duplicatesNotRemoved": "A galeria está completa, mas os duplicados da primeira seleção não puderam ser removidos. Exclua-os na guia Fotos."
     },
     "externalSource": {
+      "missingFiles_one": "{{count}} ficheiro em falta",
+      "missingFiles_many": "{{count}} ficheiros em falta",
+      "missingFiles_other": "{{count}} ficheiros em falta",
+      "missingFilesHint": "Mostrar as fotos cujo ficheiro já não está na pasta",
       "applyStructure": "Aplicar estrutura de pastas",
       "applyStructureHint": "Espelhar as subpastas nas fotos importadas antes de a estrutura de pastas ser ativada",
       "applyStructureTitle": "Aplicar a estrutura de pastas?",
@@ -2324,6 +2328,8 @@
       "collages": "Colagens",
       "noPosterFrame": "Sem fotograma de capa",
       "noPosterFrameRetry": "Voltar a extrair o fotograma de capa",
+      "fileMissing": "Ficheiro em falta",
+      "fileMissingTooltip": "O ficheiro já não está na pasta externa. Os convidados não veem esta foto; ela volta quando o ficheiro voltar. Elimine-a se o ficheiro desapareceu de vez.",
       "myMarks": "As suas marcas",
       "myMarksHelp": "Só você as vê. Nunca aparecem na galeria do cliente e são exportadas para o Lightroom como XMP.",
       "myRating": "A sua classificação",

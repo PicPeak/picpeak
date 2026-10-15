@@ -922,7 +922,7 @@ class FeedbackService {
     try {
       const photos = await livePhotos(db)
         .where('event_id', eventId)
-        .select('id', 'filename', 'visibility', 'moderation_status', 'processing_status', 'feedback_count', 'like_count', 'average_rating', 'favorite_count', 'reaction_count', 'color_label_count', 'approved_count', 'rejected_count')
+        .select('id', 'filename', 'visibility', 'moderation_status', 'processing_status', 'unavailable_reason', 'feedback_count', 'like_count', 'average_rating', 'favorite_count', 'reaction_count', 'color_label_count', 'approved_count', 'rejected_count')
         .orderBy('average_rating', 'desc')
         .orderBy('like_count', 'desc');
 

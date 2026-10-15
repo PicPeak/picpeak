@@ -2833,6 +2833,9 @@
       "watchHelp": "Neue Fotos im Ordner erscheinen von selbst."
     },
     "externalSource": {
+      "missingFiles_one": "{{count}} Datei fehlt",
+      "missingFiles_other": "{{count}} Dateien fehlen",
+      "missingFilesHint": "Die Fotos zeigen, deren Datei nicht mehr im Ordner liegt",
       "alreadyRunning": "Für diesen Ordner läuft bereits ein Import.",
       "changeFolder": "Ordner ändern",
       "importNow": "Jetzt importieren",
@@ -5268,6 +5271,8 @@
       "collages": "Collagen",
       "noPosterFrame": "Kein Vorschaubild",
       "noPosterFrameRetry": "Vorschaubild erneut erzeugen",
+      "fileMissing": "Datei fehlt",
+      "fileMissingTooltip": "Die Datei liegt nicht mehr im externen Ordner. Gäste sehen dieses Foto nicht; es kommt zurück, sobald die Datei wieder da ist. Löschen Sie es, wenn die Datei endgültig weg ist.",
       "viewMode": "Ansicht",
       "gridView": "Rasteransicht",
       "listView": "Listenansicht",

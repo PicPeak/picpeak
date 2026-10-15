@@ -1036,6 +1036,10 @@
       "duplicatesNotRemoved": "La galerie est complète, mais les doublons de la première sélection n'ont pas pu être supprimés. Supprimez-les dans l'onglet Photos."
     },
     "externalSource": {
+      "missingFiles_one": "{{count}} fichier manquant",
+      "missingFiles_many": "{{count}} fichiers manquants",
+      "missingFiles_other": "{{count}} fichiers manquants",
+      "missingFilesHint": "Afficher les photos dont le fichier n’est plus dans le dossier",
       "applyStructure": "Appliquer la structure des dossiers",
       "applyStructureHint": "Reproduire les sous-dossiers sur les photos importées avant l'activation de la structure des dossiers",
       "applyStructureTitle": "Appliquer la structure des dossiers ?",
@@ -2234,6 +2238,8 @@
       "collages": "Collages",
       "noPosterFrame": "Pas d'image d'aperçu",
       "noPosterFrameRetry": "Reprendre l'image d'aperçu",
+      "fileMissing": "Fichier manquant",
+      "fileMissingTooltip": "Le fichier n’est plus dans le dossier externe. Les invités ne voient pas cette photo ; elle revient quand le fichier revient. Supprimez-la si le fichier a disparu pour de bon.",
       "myMarks": "Vos marques",
       "myMarksHelp": "Vous seul les voyez. Elles n'apparaissent jamais dans la galerie client et s'exportent vers Lightroom en XMP.",
       "myRating": "Votre note",

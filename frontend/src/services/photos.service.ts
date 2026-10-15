@@ -64,6 +64,9 @@ export interface AdminPhoto {
   first_look?: boolean;
   // Review of team members' uploads (issue 743): null = published as usual.
   moderation_status?: PhotoModerationStatus | null;
+  // Why no gallery viewer sees the photo (issue 2121): 'source_missing' when
+  // its file is gone from the external folder; null otherwise.
+  unavailable_reason?: 'source_missing' | null;
   // The admin account that ran the upload; null for imports and older rows.
   uploaded_by_admin?: { id: number; username: string | null } | null;
 }
@@ -159,6 +162,8 @@ export interface PhotoFilters {
   credit?: string;
   /** Only the photos under review with this status (issue 743). */
   moderation?: PhotoModerationStatus;
+  /** Only the photos whose file is gone from the external folder (issue 2121). */
+  unavailable?: boolean;
   logic?: 'AND' | 'OR';
 }
 
@@ -245,6 +250,7 @@ class PhotosService {
       }
       if (filters.credit) params.append('credit', filters.credit);
       if (filters.moderation) params.append('moderation', filters.moderation);
+      if (filters.unavailable) params.append('unavailable', 'true');
       if (filters.logic) params.append('logic', filters.logic);
     }
     

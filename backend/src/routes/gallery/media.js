@@ -92,7 +92,7 @@ router.post('/:slug/photo/:photoId/view',
     try {
       const photo = await livePhotos(db)
         .where({ id: req.params.photoId, event_id: req.event.id })
-        .first('id', 'visibility', 'moderation_status', 'category_id', 'processing_status');
+        .first('id', 'visibility', 'moderation_status', 'category_id', 'processing_status', 'unavailable_reason');
       if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
       }

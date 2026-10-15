@@ -2162,6 +2162,11 @@
       "duplicatesNotRemoved": "Galerija je celotna, dvojnikov prvega izbora pa ni bilo mogoče odstraniti. Izbrišite jih na zavihku Fotografije."
     },
     "externalSource": {
+      "missingFiles_one": "Manjkajoče datoteke: {{count}}",
+      "missingFiles_two": "Manjkajoče datoteke: {{count}}",
+      "missingFiles_few": "Manjkajoče datoteke: {{count}}",
+      "missingFiles_other": "Manjkajoče datoteke: {{count}}",
+      "missingFilesHint": "Pokaži fotografije, katerih datoteke ni več v mapi",
       "applyStructure": "Uporabi strukturo map",
       "applyStructureHint": "Prenesi podmape na fotografije, uvožene, preden je bila struktura map vklopljena",
       "applyStructureTitle": "Želite uporabiti strukturo map?",
@@ -4069,6 +4074,8 @@
       "collages": "Kolaži",
       "noPosterFrame": "Brez naslovne sličice",
       "noPosterFrameRetry": "Znova zajemi naslovno sličico",
+      "fileMissing": "Datoteka manjka",
+      "fileMissingTooltip": "Datoteke ni več v zunanji mapi. Gostje te fotografije ne vidijo; vrne se, ko se vrne datoteka. Izbrišite jo, če je datoteka dokončno izginila.",
       "viewMode": "Način prikaza",
       "gridView": "Mrežni prikaz",
       "listView": "Seznamski prikaz",

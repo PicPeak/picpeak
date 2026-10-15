@@ -410,7 +410,8 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     let directQuery = livePhotos(db)
       .where('event_id', event.id)
       .whereNotNull('folder_id')
-      .where((q) => q.where('processing_status', 'complete').orWhereNull('processing_status'));
+      .where((q) => q.where('processing_status', 'complete').orWhereNull('processing_status'))
+      .whereNull('unavailable_reason');
     directQuery = applyPhotoVisibilityFilter(directQuery, accessLevel);
     const direct = await directQuery.distinct('folder_id').pluck('folder_id');
     for (const id of direct) {

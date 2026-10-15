@@ -350,6 +350,9 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       // The external file itself is never touched: this repoints the row, it
       // does not delete or move anything on the share.
       source_origin: 'managed',
+      // A photo whose share file had vanished (issue 2121) is served from
+      // the new upload now; the scan no longer looks after it.
+      unavailable_reason: null,
     };
 
     // Face data (#1074): the row keeps its id but now points at a DIFFERENT

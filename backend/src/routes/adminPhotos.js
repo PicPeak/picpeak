@@ -1515,6 +1515,12 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       query = query.where('photos.moderation_status', req.query.moderation);
     }
 
+    // Photos whose file is gone from the external share (issue 2121), for
+    // the admin to delete or wait for.
+    if (req.query.unavailable === 'true') {
+      query = query.whereNotNull('photos.unavailable_reason');
+    }
+
     // Filter by category_id
     if (category_id !== undefined && category_id !== '' && category_id !== '0') {
       if (category_id === 'individual' || category_id === 'collage') {
@@ -1759,6 +1765,9 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // Set on a complete video that shows the placeholder tile (issue
         // 1430, item 6); the grid shows the note and offers Retry.
         processing_error: photo.processing_error || null,
+        // Why no gallery viewer sees the photo right now (issue 2121):
+        // 'source_missing' when its file is gone from the share.
+        unavailable_reason: photo.unavailable_reason || null,
         category_id: photo.category_id || photo.type,
         // Only a real category has a name here. The fallback used to be the
         // English "Individual Photos" / "Collages", which no locale could

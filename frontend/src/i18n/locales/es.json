@@ -1044,6 +1044,9 @@
       "duplicatesNotRemoved": "La galería está completa, pero no se pudieron quitar los duplicados de la primera selección. Elimínalos en la pestaña Fotos."
     },
     "externalSource": {
+      "missingFiles_one": "Falta {{count}} archivo",
+      "missingFiles_other": "Faltan {{count}} archivos",
+      "missingFilesHint": "Mostrar las fotos cuyo archivo ya no está en la carpeta",
       "applyStructure": "Aplicar estructura de carpetas",
       "applyStructureHint": "Reflejar las subcarpetas en las fotos importadas antes de activar la estructura de carpetas",
       "applyStructureTitle": "¿Aplicar la estructura de carpetas?",
@@ -2177,6 +2180,8 @@
       "collages": "Collages",
       "noPosterFrame": "Sin fotograma de portada",
       "noPosterFrameRetry": "Volver a tomar el fotograma de portada",
+      "fileMissing": "Falta el archivo",
+      "fileMissingTooltip": "El archivo ya no está en la carpeta externa. Los invitados no ven esta foto; vuelve cuando vuelva el archivo. Elimínala si el archivo ha desaparecido definitivamente.",
       "approvedBy": "Aprobada: {{value}}",
       "rejectedBy": "Rechazada: {{value}}",
       "cameraDetails": "Datos de cámara",
