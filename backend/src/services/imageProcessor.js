@@ -499,8 +499,10 @@ function validateFitValue(fit) {
   return DEFAULT_THUMBNAIL_FIT;
 }
 
-// Get thumbnail settings from database
-async function getThumbnailSettings() {
+// Get thumbnail settings from database. `strict` throws a failed read instead
+// of answering the defaults, for a caller that compares them (see
+// thumbnailSettingsUnchanged).
+async function getThumbnailSettings({ strict = false } = {}) {
   try {
     const settings = await db('app_settings')
       .whereIn('setting_key', [
@@ -528,6 +530,7 @@ async function getThumbnailSettings() {
       format: settingsMap.thumbnail_format || DEFAULT_THUMBNAIL_FORMAT
     };
   } catch (error) {
+    if (strict) throw error;
     // If database is not ready or settings don't exist, use defaults
     logger.warn('Could not fetch thumbnail settings, using defaults:', error.message);
     return {
@@ -568,8 +571,9 @@ async function generateThumbnail(imagePath, options = {}) {
   const outputBasename = options.outputBasename || sourceBasename;
   const storage = getStorage();
 
-  // Get thumbnail settings
-  const settings = await getThumbnailSettings();
+  // Get thumbnail settings. A responsive tier passes the ones it read before
+  // rendering, so the check after the write compares what shaped it.
+  const settings = options.settings || await getThumbnailSettings();
 
   // Tag against the CONFIGURED canonical width, not the 300 default — the tag
   // has to agree with the key ensureThumbnailAtWidth probed for. On an install
@@ -1744,20 +1748,36 @@ function thumbnailTierKeys(photo) {
  * sweep already ran) would stay in storage under the old name for good. Only
  * freshly generated tiers come through here; a cache hit costs no query.
  */
-async function keepTierIfCurrent(photo, key, keysOf) {
+async function keepTierIfCurrent(photo, key, keysOf, shapeIsCurrent) {
   if (!key) return key;
   try {
     const current = await db('photos').where({ id: photo.id }).first();
     // The version too, not only the key: the keys of a row include the names
     // its tiers had under an earlier version, and a tier cut while the row
     // still had that version may be of bytes since replaced (issue 2059).
-    if (current && keysOf(current).includes(key) && sourceVersion(current) === sourceVersion(photo)) return key;
+    if (current && keysOf(current).includes(key) && sourceVersion(current) === sourceVersion(photo)
+        && (!shapeIsCurrent || await shapeIsCurrent())) return key;
   } catch (e) {
     logger.warn(`Could not check whether tier ${key} is current; keeping it: ${e.message}`);
     return key;
   }
   await getStorage().delete(key).catch(() => {});
   return null;
+}
+
+/**
+ * Are the thumbnail settings still the ones a tier was rendered with?
+ *
+ * A tier's key carries no settings, so one rendered under the old fit,
+ * quality or format and written after "Regenerate thumbnails" had already
+ * dropped the tiers of that photo would be served as current (issue 2122).
+ * Read after the write, from the database every replica shares: a settings
+ * change committed before this read is seen, and one committed after it
+ * precedes the regenerate sweep, which deletes the tier anyway.
+ */
+async function thumbnailSettingsUnchanged(settings) {
+  const current = await getThumbnailSettings({ strict: true });
+  return ['width', 'height', 'fit', 'quality', 'format'].every((field) => current[field] === settings[field]);
 }
 
 async function deleteThumbnailTiers(photo, options) {
@@ -1873,7 +1893,8 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
       // than being repaired on the next view.
       const proc = await withProcessableImage(localPath, photo.external_relpath || photo.filename);
       try {
-        return await keepTierIfCurrent(photo, await generateThumbnail(proc.path, { outputBasename, width, height, interactive: true }), thumbnailTierKeys);
+        return await keepTierIfCurrent(photo, await generateThumbnail(proc.path, { outputBasename, width, height, settings, interactive: true }),
+          thumbnailTierKeys, () => thumbnailSettingsUnchanged(settings));
       } finally {
         await proc.cleanup();
       }
@@ -1883,11 +1904,11 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
     return await keepTierIfCurrent(photo, await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        return await generateThumbnail(proc.path, { outputBasename, width, height, interactive: true });
+        return await generateThumbnail(proc.path, { outputBasename, width, height, settings, interactive: true });
       } finally {
         await proc.cleanup();
       }
-    }), thumbnailTierKeys);
+    }), thumbnailTierKeys, () => thumbnailSettingsUnchanged(settings));
   } catch (e) {
     logger.warn(`Thumbnail tier w${width} failed for photo ${photo.id}: ${e.message}`);
     // \"Not now\" goes to the caller (503); an image over the limits falls back
