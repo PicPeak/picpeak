@@ -88,6 +88,17 @@ function wherePhotoProcessed(query) {
 }
 
 /**
+ * wherePhotoProcessed for a query on a table that names photos by id only
+ * (photo_feedback, ...) and never joins them, in the shape of wherePhotoLive.
+ */
+function wherePhotoProcessedById(query, photoIdColumn) {
+  query.whereNotExists(function () {
+    this.select(1).from('photos').whereRaw('?? = ??', ['photos.id', photoIdColumn])
+      .whereNotNull('photos.processing_status').whereNot('photos.processing_status', 'complete');
+  });
+}
+
+/**
  * Single-photo form of wherePhotoProcessed, for a row already read.
  */
 function isPhotoProcessed(photo) {
@@ -112,6 +123,7 @@ module.exports = {
   canSeeHiddenPhotos,
   applyPhotoVisibilityFilter,
   wherePhotoProcessed,
+  wherePhotoProcessedById,
   isPhotoProcessed,
   isPhotoHiddenFromViewer,
 };

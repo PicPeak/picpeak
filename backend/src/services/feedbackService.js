@@ -5,7 +5,7 @@ const { REACTION_EMOJIS } = require('../constants/reactions');
 const { isValidColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const { isValidDecision } = require('../constants/photoDecisions');
 const { resolveEventFeedbackDefaults, DEFAULT_KEYBIND_MODE, KEYBIND_MODES } = require('./feedbackDefaults');
-const { applyPhotoVisibilityFilter, joinLivePhotos, livePhotos, wherePhotoLive, wherePhotoProcessed } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, joinLivePhotos, livePhotos, wherePhotoLive, wherePhotoProcessed, wherePhotoProcessedById } = require('../utils/photoVisibility');
 const selectionSubmissions = require('./selectionSubmissions');
 const { serializeAnnotation, withParsedAnnotation } = require('../utils/photoAnnotation');
 
@@ -242,6 +242,11 @@ class FeedbackService {
     const query = executor('photo_feedback')
       // Nor do likes on photos in the trash: the guest cannot see or undo them.
       .modify(wherePhotoLive, 'photo_feedback.photo_id')
+      // Nor on photos back in processing (an admin retry): the gallery list
+      // leaves them out and the photo's feedback route answers 404, so the
+      // guest could neither see nor undo the pick. Once complete it counts
+      // again, which may put the guest over the cap until they remove one.
+      .modify(wherePhotoProcessedById, 'photo_feedback.photo_id')
       // Hidden rows do not count against the guest's cap (#1150). They are
       // absent everywhere else — the heart is empty, the tallies skip them,
       // and submitFeedback now treats one as room for a fresh row. Counting

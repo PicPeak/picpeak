@@ -204,6 +204,27 @@ describe('finish selection / approve edited photos (issue 1733)', () => {
       },
     );
 
+    // The photo's own feedback route answers 404 while it is unfinished, so a
+    // pick there could not be undone: it must not hold a slot of the cap.
+    it.each([['like', 'max_likes_per_guest'], ['favorite', 'max_favorites_per_guest']])(
+      'frees the %s slot of a photo back in processing',
+      async (type, capColumn) => {
+        await setSettings({ [capColumn]: 1, allow_selection_submit: false });
+        expect((await feedback('device-A', photoIds[0], { feedback_type: type })).status).toBeLessThan(300);
+        expect((await feedback('device-A', photoIds[1], { feedback_type: type })).body.code).toBe(`${type.toUpperCase()}_LIMIT_REACHED`);
+        await db('photos').where({ id: photoIds[0] }).update({ processing_status: 'processing' });
+        try {
+          expect((await state('device-A')).selection.used).toBe(0);
+          expect((await feedback('device-A', photoIds[1], { feedback_type: type })).status).toBeLessThan(300);
+          expect(await rows(type)).toHaveLength(2);
+        } finally {
+          await db('photos').where({ id: photoIds[0] }).update({ processing_status: 'complete' });
+        }
+        // Complete again: over the cap, so a new pick is refused until one goes.
+        expect((await feedback('device-A', photoIds[2], { feedback_type: type })).status).toBe(403);
+      },
+    );
+
     it('is off without a cap and without the switch', async () => {
       await setSettings({ allow_selection_submit: false });
       expect((await state('device-A')).selection).toMatchObject({ counter: false, can_submit: false });
