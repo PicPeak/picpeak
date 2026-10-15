@@ -802,6 +802,10 @@ async function loadTransferPhotos(transferId) {
 async function streamTransferArchive(transfer, res) {
   const photos = await loadTransferPhotos(transfer.id);
 
+  // Left while the rows were being read: 'close' has fired already and will
+  // not fire again for the listener below (issue 2130).
+  if (res.destroyed) return 0;
+
   const archiveName = `${sanitizeForZipEntry(transfer.title || 'transfer') || 'transfer'}.zip`;
   // A ZIP we built ourselves, so the type is known rather than echoed — but it
   // still carries the same nosniff/sandbox guarantees as every other transfer
@@ -811,11 +815,28 @@ async function streamTransferArchive(transfer, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Security-Policy', 'default-src \'none\'; sandbox');
 
+  // Reads go through the archive stream guard, as streamUploadsArchive's do:
+  // two open at a time instead of one S3 body per file parked behind
+  // archiver, and a recipient who closes the tab releases what is open
+  // instead of leaving it on a pooled socket (issue 2130).
   const archive = archiver('zip', { zlib: { level: 5 } });
-  archive.on('error', (err) => {
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    guard.destroyAll();
+    archive.unpipe(res);
+    try { archive.abort(); } catch (_) { /* already aborted */ }
+    archive.resume();
+  };
+  const fail = (err) => {
+    if (stopped) return;
     logger.error('transferService: archive error', { transferId: transfer.id, error: err.message });
+    stop();
     try { res.destroy(err); } catch (_) { /* noop */ }
-  });
+  };
+  const guard = createArchiveStreamGuard({ onFatalError: fail });
+  archive.on('error', fail);
+  res.on('close', () => { if (!res.writableFinished && !stopped) stop(); });
   archive.pipe(res);
 
   const storage = getStorage();
@@ -825,6 +846,7 @@ async function streamTransferArchive(transfer, res) {
 
   let appended = 0;
   for (let i = 0; i < photos.length; i += 1) {
+    if (stopped) break;
     const photo = photos[i];
     const event = {
       id: photo.event_id,
@@ -849,8 +871,16 @@ async function streamTransferArchive(transfer, res) {
       }
 
       if (storageKey) {
+        if (!await guard.acquire()) break;
         const stream = await storage.get(storageKey);
-        archive.append(stream, { name });
+        // Listen first: the download may have ended during the await, and a
+        // lazy read destroyed unread can still fail to open.
+        stream.on('error', () => {});
+        if (stopped) {
+          stream.destroy();
+          break;
+        }
+        archive.append(guard.track(stream), { name });
       } else {
         archive.file(resolvePhotoFilePath(event, photo), { name });
       }
@@ -867,6 +897,7 @@ async function streamTransferArchive(transfer, res) {
   const extraFiles = await loadTransferExtraFiles(transfer.id);
   const usedNames = new Set();
   for (const extra of extraFiles) {
+    if (stopped) break;
     let base = sanitizeForZipEntry(extra.original_filename) || `file-${extra.id}`;
     if (usedNames.has(base)) base = `${extra.id}-${base}`; // keep same-named uploads apart
     usedNames.add(base);
@@ -874,8 +905,14 @@ async function streamTransferArchive(transfer, res) {
     try {
       const srcStat = storage.kind() === 'local' ? await storage.stat(extra.stored_path) : true;
       if (!srcStat) throw new Error(`Extra file missing in storage: ${extra.stored_path}`);
+      if (!await guard.acquire()) break;
       const stream = await storage.get(extra.stored_path);
-      archive.append(stream, { name });
+      stream.on('error', () => {});
+      if (stopped) {
+        stream.destroy();
+        break;
+      }
+      archive.append(guard.track(stream), { name });
       appended += 1;
     } catch (err) {
       logger.warn('transferService: skipping extra file in transfer archive', {
@@ -884,7 +921,12 @@ async function streamTransferArchive(transfer, res) {
     }
   }
 
-  await archive.finalize();
+  if (stopped) return appended;
+  // finalize() settles on the archive's end or error, and an aborted archive
+  // may emit neither; the response closing ends the wait too.
+  const finalized = archive.finalize();
+  finalized.catch(() => {}); // reported through fail()
+  await Promise.race([finalized, new Promise((resolve) => res.once('close', resolve))]);
   return appended;
 }
 

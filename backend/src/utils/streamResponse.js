@@ -101,7 +101,10 @@ function pipeStreamToResponse(stream, res, options = {}) {
   // the source. For S3 that is an opened GetObject body holding a pooled
   // socket until socketTimeout; under fast scrolling, enough of them drain
   // the pool. An already-ended response has nowhere to put the bytes either.
-  if (res.destroyed || res.writableEnded) {
+  // req.aborted covers an HTTP/1.1 pipelined request whose response was still
+  // queued behind another when the socket closed: Node never assigned it the
+  // socket, so it is neither destroyed nor ever sees 'close'.
+  if (res.destroyed || res.writableEnded || res.req?.aborted) {
     stream.destroy();
     return;
   }

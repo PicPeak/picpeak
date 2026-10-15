@@ -241,6 +241,37 @@ describe('pipeStreamToResponse — client already gone (issue 2130)', () => {
     ])).resolves.toBe('released');
   });
 
+  it('destroys the stream of a pipelined request whose queued response never got the socket', async () => {
+    const net = require('net');
+    let source;
+    let piped;
+    const piping = new Promise((resolve) => { piped = resolve; });
+    let bothArrived;
+    const arrived = new Promise((resolve) => { bothArrived = resolve; });
+    const server = await withServer(async (req, res) => {
+      if (req.url === '/first') return; // holds the socket; never answers
+      bothArrived();
+      await new Promise((resolve) => req.socket.once('close', resolve));
+      // Queued behind /first, so Node never gave this response the socket:
+      // it is not destroyed and will never see 'close'.
+      source = trackedSource();
+      pipeStreamToResponse(source, res, { context: 'pipelined' });
+      piped();
+    });
+
+    const client = net.connect(server.address().port, '127.0.0.1');
+    client.on('error', () => {});
+    client.write('GET /first HTTP/1.1\r\nHost: x\r\n\r\nGET /second HTTP/1.1\r\nHost: x\r\n\r\n');
+    await arrived;
+    client.destroy();
+    await piping;
+
+    await expect(Promise.race([
+      source.released.then(() => 'released'),
+      new Promise((resolve) => setTimeout(() => resolve('leaked'), 500)),
+    ])).resolves.toBe('released');
+  });
+
   it('serves a completed response exactly as before', async () => {
     const payload = Buffer.from('a full image body');
     const server = await withServer((req, res) => {
