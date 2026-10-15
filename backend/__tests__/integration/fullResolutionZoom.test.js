@@ -461,4 +461,34 @@ describe('Full-resolution zoom (issue 1733)', () => {
       .set('Authorization', `Bearer ${reduced.token}`);
     expect(shown.status).toBe(200);
   });
+
+  // Issue 2076: the per-event flag has to cover the inline full-size route as
+  // well, or a guest simply saves /photo/:id instead of /download/:id.
+  describe('plain photo route and the per-event watermark flag (issue 2076)', () => {
+    const plain = (event, photoId, token) => request(app)
+      .get(`/api/gallery/${event.slug}/photo/${photoId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      });
+
+    it('serves the original bytes when neither watermark is on', async () => {
+      const { event, photoId, token } = await makeEvent();
+      const res = await plain(event, photoId, token);
+      expect(res.status).toBe(200);
+      expect(res.body.equals(jpeg)).toBe(true);
+    });
+
+    it('watermarks the response when only the event flag is on', async () => {
+      const { event, photoId, token } = await makeEvent({ watermark_downloads: 1, watermark_text: 'PROOF' });
+      const res = await plain(event, photoId, token);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/image\/jpeg/);
+      expect(res.body.equals(jpeg)).toBe(false);
+      expect(res.body.length).toBeGreaterThan(0);
+    });
+  });
 });

@@ -122,6 +122,7 @@ router.post('/:eventId/upload', selectEventGalleryCookie, verifyGalleryAccess, d
     }, ({ storage, streamHandler, maxFiles, rejectBody }) => multer({
       storage,
       streamHandler,
+      defParamCharset: 'utf8', // multer's latin1 default turns UTF-8 names into mojibake
       limits: {
         fileSize: maxFileSizeBytes,
         files: maxFiles,
