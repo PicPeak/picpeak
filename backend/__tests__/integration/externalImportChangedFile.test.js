@@ -304,7 +304,7 @@ describe('external re-scan of a file changed in place', () => {
     } finally {
       spy.mockRestore();
     }
-    expect(oldTiers[0]).toMatch(new RegExp(`_v${photo.size_bytes}_`));
+    expect(oldTiers[0]).toMatch(new RegExp(`_v${photo.size_bytes}(m\\d+)?_`));
     for (const key of oldTiers) expect(exists(key)).toBe(false);
     expect(newTier).not.toBe(oldTiers[0]);
     expect(exists(newTier)).toBe(true);
