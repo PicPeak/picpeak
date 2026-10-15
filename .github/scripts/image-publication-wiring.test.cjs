@@ -54,6 +54,10 @@ test('both trusted callers pass exact pinned-action outputs without broad secret
     assert.match(caller, /googleapis\/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071/);
     assert.match(caller, /sha: \$\{\{ steps\.release\.outputs\.sha \}\}/);
     assert.match(caller, /release_id: \$\{\{ steps\.release\.outputs\.id \}\}/);
+    // Forks lack the token: the release job (and its dependants) skip there.
+    assert.match(caller, /^  release-please:\n(?:    #.*\n)*    if: github\.repository == 'PicPeak\/picpeak'\n/m);
+    assert.match(caller.split('  publish-images:')[1], /^    needs: release-please$/m);
+    assert.ok(!caller.includes('if [ -z "$RELEASE_PAT" ]'));
     // No GITHUB_TOKEN fallback: it cannot create v* tags under the ruleset.
     assert.match(caller, /^          token: \$\{\{ secrets\.RELEASE_PLEASE_TOKEN \}\}$/m);
     assert.ok(!caller.includes('secrets.RELEASE_PLEASE_TOKEN ||'));

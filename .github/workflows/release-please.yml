@@ -10,6 +10,9 @@ permissions:
 
 jobs:
   release-please:
+    # Forks have no RELEASE_PLEASE_TOKEN; skip there instead of failing the
+    # token check. publish-images and whatsnew skip with it (needs).
+    if: github.repository == 'PicPeak/picpeak'
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}

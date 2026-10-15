@@ -10,6 +10,9 @@ permissions:
 
 jobs:
   release-please:
+    # Forks have no RELEASE_PLEASE_TOKEN; skip there instead of failing the
+    # token check. publish-images and whatsnew skip with it (needs).
+    if: github.repository == 'PicPeak/picpeak'
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -51,9 +54,8 @@ jobs:
       # with no manual clicks. Approval uses GITHUB_TOKEN (github-actions[bot]) —
       # a different identity than the PR author (RELEASE_PLEASE_TOKEN) — so it is
       # a valid review (requires the org's "Allow GitHub Actions to approve pull
-      # requests" + the repo's "Allow auto-merge"). Only meaningful when a PAT is
-      # set: without it the PR is bot-authored and can't be self-approved, so we
-      # skip and leave today's manual flow. Best-effort — never blocks the run.
+      # requests" + the repo's "Allow auto-merge"). The PAT is guaranteed by the
+      # token check above. Best-effort — never blocks the run.
       - name: Auto-approve and enable auto-merge on the release PR
         if: ${{ steps.release.outputs.release_created != 'true' }}
         env:
@@ -63,10 +65,6 @@ jobs:
           # remote — set it explicitly (same pattern as whatsnew, 2a5f0a8).
           GH_REPO: ${{ github.repository }}
         run: |
-          if [ -z "$RELEASE_PAT" ]; then
-            echo "RELEASE_PLEASE_TOKEN not set — skipping auto-merge (manual review still required)."
-            exit 0
-          fi
           # Strict selection: `gh pr list --head` matches the branch NAME only,
           # so a fork PR can spoof `release-please--branches--main`. Pin the
           # base to main AND require a same-repo head (a fork PR is
