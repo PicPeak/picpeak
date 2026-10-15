@@ -385,7 +385,7 @@ describe('admin thumbnail regeneration (#1129)', () => {
       expect(storage.delete).not.toHaveBeenCalled();
     });
 
-    it('keeps the old preview while another photo still points at it', async () => {
+    it('deletes a preview two regenerated photos shared once, after both moved off it', async () => {
       const eventId = await seedEvent();
       await seedPhoto(eventId, { source_origin: 'managed', preview_path: 'previews/preview_IMG_1.jpg' });
       await seedPhoto(eventId, { source_origin: 'managed', preview_path: 'previews/preview_IMG_1.jpg' });
@@ -400,8 +400,7 @@ describe('admin thumbnail regeneration (#1129)', () => {
       await request(app).post('/admin/thumbnails/regenerate-previews').send({});
       await drain();
 
-      // The first photo moves off while the second still holds the key, so
-      // only the second photo's move deletes it.
+      // Both moved off it during the run: deleted once, after the loop.
       expect(storage.delete).toHaveBeenCalledTimes(1);
       expect(storage.delete).toHaveBeenCalledWith('previews/preview_IMG_1.jpg');
     });
@@ -428,6 +427,36 @@ describe('admin thumbnail regeneration (#1129)', () => {
       // Both backends fold the two spellings to one object.
       expect(imageProcessor.ensurePreviewImage).toHaveBeenCalledTimes(1);
       expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('checks the references once for the whole run, not once per moved preview', async () => {
+      const eventId = await seedEvent();
+      for (let i = 1; i <= 3; i++) {
+        await seedPhoto(eventId, { source_origin: 'managed', preview_path: `previews/preview_OLD${i}.jpg` });
+      }
+      // Kept: another photo, not regenerated here, still points at OLD3.
+      await seedPhoto(eventId, { source_origin: 'managed', media_type: 'video', preview_path: 'previews/preview_OLD3.jpg' });
+      imageProcessor.ensurePreviewImage.mockImplementation(async (photo) => {
+        const key = `previews/preview_NEW${photo.id}.jpg`;
+        await db('photos').where({ id: photo.id }).update({ preview_path: key });
+        return key;
+      });
+      const lookups = [];
+      const onQuery = (q) => { if (/preview_path. is not null/i.test(q.sql)) lookups.push(q.sql); };
+      db.on('query', onQuery);
+      try {
+        await request(app).post('/admin/thumbnails/regenerate-previews').send({});
+        await drain();
+      } finally {
+        db.removeListener('query', onQuery);
+        imageProcessor.ensurePreviewImage.mockReset();
+        imageProcessor.ensurePreviewImage.mockResolvedValue('previews/p.jpg');
+      }
+
+      expect(storage.delete.mock.calls.map((c) => c[0]).sort())
+        .toEqual(['previews/preview_OLD1.jpg', 'previews/preview_OLD2.jpg']);
+      // One paged pass for all three moves: a page, then the empty page.
+      expect(lookups).toHaveLength(2);
     });
 
     it('keeps the old preview when nothing was generated', async () => {

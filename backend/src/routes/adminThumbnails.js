@@ -21,15 +21,15 @@ const applicationWork = require('../services/activeApplicationWork');
  * delete the thumbnail that had just been written, leaving every regenerated
  * photo pointing at nothing.
  */
+const canonicalStorageKey = (key) => String(key)
+  .replace(/\\/g, '/')
+  .replace(/^\.?\/+/, '')
+  .replace(/\/+/g, '/')
+  // LocalFsStorage resolves an interior `./` too; where a backend would
+  // not, calling them equal only keeps a file.
+  .replace(/\/(\.\/)+/g, '/');
 function sameStorageKey(a, b) {
-  const canonical = (key) => String(key)
-    .replace(/\\/g, '/')
-    .replace(/^\.?\/+/, '')
-    .replace(/\/+/g, '/')
-    // LocalFsStorage resolves an interior `./` too; where a backend would
-    // not, calling them equal only keeps a file.
-    .replace(/\/(\.\/)+/g, '/');
-  return canonical(a) === canonical(b);
+  return canonicalStorageKey(a) === canonicalStorageKey(b);
 }
 
 // One regeneration of each kind at a time. Two overlapping library-wide runs
@@ -373,6 +373,8 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
     applicationWork.defer('preview regeneration', async () => {
       let successCount = 0;
       let errorCount = 0;
+      // Previews this run replaced, removed after the loop (see below).
+      const superseded = [];
       for (const photo of photos) {
         try {
           // Force regeneration regardless of existing preview state by
@@ -387,27 +389,14 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
           // `force`: never adopt a lazy generation already in flight (#1020).
           const newPreviewPath = await ensurePreviewImage({ ...photo, preview_path: null }, { force: true });
           if (newPreviewPath) {
-            // Drop the replaced preview when the key MOVED, as the thumbnail
-            // endpoint above does. A camera-named (watch-folder) photo's
-            // preview is now named per photo, an S3 source renders from a
-            // randomly-named temp copy, and an external row's name carries
-            // its source version: in each case the new key differs and the
-            // nulled preview_path hid the old one from every cleanup.
-            // A row that still points at it keeps it, in whichever spelling
-            // it stores it: another photo (managed names derive from the
-            // source basename), or this one, when an older render on another
-            // replica published that key again after the snapshot.
-            const moved = photo.preview_path && !sameStorageKey(photo.preview_path, newPreviewPath);
-            const baseName = moved && String(photo.preview_path).replace(/\\/g, '/').split('/').pop();
-            const stillShared = moved && (await db('photos')
-              .where('preview_path', 'like', `%${baseName}`).select('preview_path'))
-              .some((other) => sameStorageKey(other.preview_path, photo.preview_path));
-            if (moved && !stillShared) {
-              await getStorage().delete(photo.preview_path).catch((err) => {
-                logger.warn(
-                  `Could not remove superseded preview ${photo.preview_path} for photo ${photo.id}: ${err.message}`
-                );
-              });
+            // The replaced preview, when the key MOVED. A camera-named
+            // (watch-folder) photo's preview is now named per photo, an S3
+            // source renders from a randomly-named temp copy, and an external
+            // row's name carries its source version: in each case the new key
+            // differs and the nulled preview_path hid the old one from every
+            // cleanup.
+            if (photo.preview_path && !sameStorageKey(photo.preview_path, newPreviewPath)) {
+              superseded.push({ id: photo.id, key: photo.preview_path });
             }
             successCount++;
           } else {
@@ -416,6 +405,37 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
         } catch (error) {
           logger.error(`Error regenerating preview for photo ${photo.id}:`, error);
           errorCount++;
+        }
+      }
+      // Delete the replaced previews no row points at any more, as the
+      // thumbnail endpoint does. One pass over every row's preview_path after
+      // the loop, not a lookup per photo (on S3 every key moves). A row that
+      // still holds a key keeps it, in whichever spelling it stores it:
+      // another photo (managed names derive from the source basename), or
+      // this one, when an older render on another replica published that key
+      // again. Trashed rows count; they are restorable.
+      if (superseded.length) {
+        try {
+          const referenced = new Set();
+          let lastId = 0;
+          for (;;) {
+            const rows = await db('photos').whereNotNull('preview_path').where('id', '>', lastId)
+              .orderBy('id').limit(1000).select('id', 'preview_path');
+            if (!rows.length) break;
+            for (const row of rows) referenced.add(canonicalStorageKey(row.preview_path));
+            lastId = rows[rows.length - 1].id;
+          }
+          for (const { id, key } of superseded) {
+            if (referenced.has(canonicalStorageKey(key))) continue;
+            // Two photos of this run may have shared it: one delete.
+            referenced.add(canonicalStorageKey(key));
+            await getStorage().delete(key).catch((err) => {
+              // Losing the old object is untidy, not a failed regeneration.
+              logger.warn(`Could not remove superseded preview ${key} for photo ${id}: ${err.message}`);
+            });
+          }
+        } catch (err) {
+          logger.warn(`Could not check which superseded previews are still in use; keeping them: ${err.message}`);
         }
       }
       runningJobs.previews = false;
