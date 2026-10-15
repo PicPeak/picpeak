@@ -17,7 +17,9 @@ share the decision and explicit tags; a beta version does not relabel itself as
 the rolling `main` image, and a stable version does not move `latest`/`stable`.
 Those mutable channel aliases come only from the rolling `stable` branch run,
 which the same release merge also starts, so a version approved late cannot
-rewind them past newer stable commits. Tag pushes and release events no longer start this
+rewind them past newer stable commits. If a newer stable push cancels that
+rolling run and its own build then fails, the aliases stay on the older image
+even though the version published; re-run the latest stable rolling build. Tag pushes and release events no longer start this
 pipeline. Manual publication is only available on protected main/stable.
 
 Ordinary branch merges and explicit manual rolling publication do not require a
@@ -51,12 +53,15 @@ workflow by itself. External immutable version-tag rules are essential.
    `GITHUB_TOKEN` fallback: the Actions token cannot use the creation bypass, so
    it could not tag a merged release PR. The token is a fine-grained PAT owned by
    the release actor, scoped to this repository with **Contents**, **Pull
-   requests** and **Issues** read/write (release commits, tags and releases; the
-   release PR and its auto-merge; release labels). Fine-grained PATs expire:
-   note the expiry date and renew before it. A first step in each workflow
-   fails the run with an explicit error when the secret is missing or GitHub
-   rejects it (expired, revoked or without repository access); no release PR
-   update, tag or image publication happens until it is renewed. A stable or
+   requests**, **Issues** and **Workflows** read/write (release commits, tags
+   and releases; the release PR and its auto-merge; release labels; creating a
+   release whose target commit has workflow files that differ from the default
+   branch, which is normal for `stable`). Fine-grained PATs expire: note the
+   expiry date and renew before it. A first step in each workflow fails the run
+   with an explicit error when the secret is missing or GitHub rejects it
+   (expired or revoked); no release PR update, tag or image publication happens
+   until it is renewed. That probe only reads repository metadata, so a valid
+   but under-scoped token passes it and fails later in Release Please. A stable or
    beta release PR merged while the token is broken stays untagged; rerun the
    failed Release Please run after renewing the token.
 3. Create **two** environments, both allowing **protected branches only**, with

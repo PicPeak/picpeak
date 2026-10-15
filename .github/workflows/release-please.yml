@@ -30,7 +30,7 @@ jobs:
             exit 1
           fi
           if ! GH_TOKEN="$RELEASE_PLEASE_TOKEN" gh api "repos/$GITHUB_REPOSITORY" --silent; then
-            echo "::error::RELEASE_PLEASE_TOKEN was rejected (expired, revoked or missing repository access). Renew it (see docs/RELEASE_IMAGE_SECURITY.md)."
+            echo "::error::RELEASE_PLEASE_TOKEN was rejected (expired or revoked). Renew it (see docs/RELEASE_IMAGE_SECURITY.md)."
             exit 1
           fi
 
