@@ -79,7 +79,8 @@ router.post('/:eventId/upload', selectEventGalleryCookie, verifyGalleryAccess, d
     // Import multer and photo processing
     const multer = require('multer');
     const { getAllowedMimeTypes, getMaxFilesPerUpload, getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB } = require('../../services/uploadSettings');
-    const { validateFileType, normalizeUploadMimeType } = require('../../utils/fileSecurityUtils');
+    const { validateFileType, normalizeUploadMimeType, validateFileContent } = require('../../utils/fileSecurityUtils');
+    const { validateUploadedFiles } = require('../../middleware/uploadValidation');
 
     // Resolve allowed MIME types from settings
     let allowedMimeTypes;
@@ -171,6 +172,35 @@ router.post('/:eventId/upload', selectEventGalleryCookie, verifyGalleryAccess, d
       };
 
       try {
+        // The same content check the admin multipart upload applies: the
+        // bytes must match the declared type, and an image must decode. The
+        // extension and the browser's MIME type say nothing about the file.
+        for (const file of req.files) {
+          const matches = await validateFileContent(
+            file.path, normalizeUploadMimeType(file.originalname, file.mimetype));
+          if (!matches) {
+            await removeTempFiles();
+            return res.status(400).json({
+              error: `File content does not match declared type: ${file.originalname}`
+            });
+          }
+        }
+        await validateUploadedFiles(req, res, () => {});
+        // Files the decode check dropped are reported beside the accepted
+        // ones, as the admin upload does; a request left with none is a
+        // partial-batch 202 when the cause is a resource limit, else a 400.
+        const rejected = (req.invalidFiles || []).map(({ filename, error, code, imageLimit, imageMax }) => (
+          { filename, error, ...(code ? { code } : {}), ...(imageLimit ? { imageLimit, imageMax } : {}) }));
+        if (req.files.length === 0) {
+          if (rejected.length && rejected.every((r) => r.code && /^(IMAGE|MEDIA)_/.test(r.code))) {
+            return res.status(202).json({ message: 'Photos queued for processing', count: 0, photo_ids: [], photos: [], errors: rejected });
+          }
+          return res.status(400).json({
+            error: `Invalid image file: ${rejected[0]?.filename || 'upload'}`,
+            errors: rejected
+          });
+        }
+
         let numericCategoryId = null;
         const rawRequestedCategory = req.body.category_id;
         const requestedCategoryId = parseCategoryId(rawRequestedCategory);
@@ -240,7 +270,7 @@ router.post('/:eventId/upload', selectEventGalleryCookie, verifyGalleryAccess, d
           photos: result.photos,
           // The photos wait for approval and will not show up in the gallery.
           held_for_review: heldForReview && result.photos.length > 0 ? true : undefined,
-          errors: result.errors.length > 0 ? result.errors : undefined,
+          errors: (result.errors.length + rejected.length) > 0 ? [...rejected, ...result.errors] : undefined,
         });
       } catch (processError) {
         // Multer does not await this callback, so every failure has to end
