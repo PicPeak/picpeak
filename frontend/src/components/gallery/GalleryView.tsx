@@ -77,7 +77,7 @@ import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
-import { beginPhotoDownload, endPhotoDownload, touchPhotoDownload } from '../../hooks/usePhotoDownloadPending';
+import { beginPhotoDownload, endPhotoDownload, touchPhotoDownload, PHOTO_DOWNLOAD_STALE_MS } from '../../hooks/usePhotoDownloadPending';
 import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle } from 'lucide-react';
 import { galleryService, splitIntoArchives } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
@@ -362,9 +362,26 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const downloadAllMutation = useDownloadAllPhotos();
   // Issue 2043: "Download selected" while it is still running ignores a
   // repeat click, and its button shows it is busy. The ref catches a second
-  // click before the state has re-rendered.
-  const downloadingSelectedRef = useRef(false);
+  // click before the state has re-rendered. Like a photo's own mark, the run
+  // lets go after a minute without progress, so a request that never settles
+  // does not disable the button until a reload; the id keeps a late finish of
+  // a run that already let go from releasing a newer one.
+  const selectedRunRef = useRef<{ id: number; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const lastSelectedRunRef = useRef(0);
   const [downloadingSelected, setDownloadingSelected] = useState(false);
+  const releaseSelectedRun = useCallback((id: number) => {
+    const run = selectedRunRef.current;
+    if (!run || run.id !== id) return;
+    clearTimeout(run.timer);
+    selectedRunRef.current = null;
+    setDownloadingSelected(false);
+  }, []);
+  const keepSelectedRunAlive = useCallback((id: number) => {
+    const run = selectedRunRef.current;
+    if (!run || run.id !== id) return;
+    clearTimeout(run.timer);
+    run.timer = setTimeout(() => releaseSelectedRun(id), PHOTO_DOWNLOAD_STALE_MS);
+  }, [releaseSelectedRun]);
 
   // Handle window resize
   useEffect(() => {
@@ -1133,7 +1150,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   const handleDownloadSelected = async () => {
     if (selectedPhotos.size === 0) return;
-    if (downloadingSelectedRef.current) return;
+    if (selectedRunRef.current) return;
 
     // Prevent downloads if gallery is expired or downloads disabled
     if (!allowDownloads) {
@@ -1150,8 +1167,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       return;
     }
 
-    downloadingSelectedRef.current = true;
+    const runId = ++lastSelectedRunRef.current;
+    selectedRunRef.current = { id: runId, timer: setTimeout(() => releaseSelectedRun(runId), PHOTO_DOWNLOAD_STALE_MS) };
     setDownloadingSelected(true);
+    let stillCurrent = true;
     try {
       // Track bulk download
       analyticsService.trackGalleryEvent('bulk_download', {
@@ -1182,18 +1201,25 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // fetched a second time.
           const token = beginPhotoDownload(photo.id);
           if (token === null) continue;
+          keepSelectedRunAlive(runId);
           try {
-            await galleryService.downloadPhoto(slug, photo.id, photo.filename, () => touchPhotoDownload(photo.id, token));
+            await galleryService.downloadPhoto(slug, photo.id, photo.filename, () => {
+              touchPhotoDownload(photo.id, token);
+              keepSelectedRunAlive(runId);
+            });
           } finally {
             endPhotoDownload(photo.id, token);
           }
         }
       }
     } finally {
-      downloadingSelectedRef.current = false;
-      setDownloadingSelected(false);
+      stillCurrent = selectedRunRef.current?.id === runId;
+      releaseSelectedRun(runId);
     }
-    
+    // A run that stalled and let go may finish after a new selection was
+    // made; that one is not cleared.
+    if (!stillCurrent) return;
+
     // Clear selection after download
     setSelectedPhotos(new Set());
     setIsSelectionMode(false);

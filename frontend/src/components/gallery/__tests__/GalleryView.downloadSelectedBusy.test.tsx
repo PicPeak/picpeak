@@ -175,4 +175,39 @@ describe('GalleryView "Download selected" while it runs (issue 2043)', () => {
     }
     expect(service.downloadPhoto.mock.calls.map((call) => call[1])).toEqual([8]);
   });
+
+  it('lets a stalled run go after a minute without progress, but not a slow one still arriving', async () => {
+    let reportProgress!: () => void;
+    service.downloadPhoto.mockImplementationOnce((_s: string, _id: number, _n: string, onProgress: () => void) => {
+      reportProgress = onProgress;
+      return new Promise(() => {});
+    });
+    show();
+    act(() => captured.grid.onSelectionChange(new Set([7])));
+    await waitFor(() => expect(captured.sidebar.selectedCount).toBe(1));
+
+    vi.useFakeTimers();
+    try {
+      act(() => { void captured.sidebar.onDownloadSelected(); });
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(captured.sidebar.isDownloadingSelected).toBe(true);
+
+      // Still arriving after well over a minute: stays busy, repeat ignored.
+      for (let i = 0; i < 3; i += 1) {
+        await act(() => vi.advanceTimersByTimeAsync(50_000));
+        reportProgress();
+      }
+      expect(captured.sidebar.isDownloadingSelected).toBe(true);
+      await act(() => captured.sidebar.onDownloadSelected());
+      expect(service.downloadPhoto).toHaveBeenCalledTimes(1);
+
+      // The bytes stop: a minute later the button works again.
+      await act(() => vi.advanceTimersByTimeAsync(60_000));
+      expect(captured.sidebar.isDownloadingSelected).toBe(false);
+      await act(() => captured.sidebar.onDownloadSelected());
+      expect(service.downloadPhoto).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
