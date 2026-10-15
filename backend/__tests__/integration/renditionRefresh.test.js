@@ -78,9 +78,9 @@ describe('rendition refresh after EXIF stripping', () => {
       rendition_version: 0,
       ...fields,
     };
-    if (renditions.includes('thumbnail')) row.thumbnail_path = `thumbnails/old_thumb_${filename}`;
-    if (renditions.includes('preview')) row.preview_path = `previews/old_preview_${filename}`;
-    if (renditions.includes('hero')) row.hero_path = `heroes/old_hero_${filename}`;
+    if (renditions.includes('thumbnail')) row.thumbnail_path = `thumbnails/thumb_old_${filename}`;
+    if (renditions.includes('preview')) row.preview_path = `previews/preview_old_${filename}`;
+    if (renditions.includes('hero')) row.hero_path = `heroes/hero_old_${filename}`;
     for (const key of [row.thumbnail_path, row.preview_path, row.hero_path].filter(Boolean)) {
       await writeKey(key, taggedJpeg);
     }
@@ -201,6 +201,21 @@ describe('rendition refresh after EXIF stripping', () => {
     const ensureThumbnail = jest.spyOn(imageProcessor, 'ensureThumbnail');
     expect(await refresh.runPass(passOptions)).toEqual({ refreshed: 0, failed: 1 });
     expect(ensureThumbnail.mock.calls.map(([photo]) => photo.id)).toEqual([failing]);
+  }, 60000);
+
+  it('never deletes a file outside the rendition namespace a legacy pointer names', async () => {
+    const event = await makeEvent();
+    const id = await addLegacyPhoto(event);
+    const row = await db('photos').where({ id }).first();
+    // A legacy row whose thumbnail column points at the original itself.
+    const originalKey = path.posix.join('events/active', row.path);
+    await db('photos').where({ id }).update({ thumbnail_path: originalKey });
+
+    expect(await refresh.runPass(passOptions)).toEqual({ refreshed: 1, failed: 0 });
+    const after = await db('photos').where({ id }).first();
+    expect(after.thumbnail_path).not.toBe(originalKey);
+    await expectStripped(after.thumbnail_path);
+    expect(fs.readFileSync(storagePath(originalKey)).equals(taggedJpeg)).toBe(true);
   }, 60000);
 
   it('does not run while another replica holds the claim', async () => {

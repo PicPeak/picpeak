@@ -619,6 +619,12 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       }
     }
 
+    // An archive made before migration 311 carries no rendition_version, and
+    // its photos would take the column default (1, "already stripped") while
+    // the renditions restored with them still carry the source's EXIF (issue
+    // 2096). Such rows come back as 0, so the background refresh cleans them.
+    const markLegacyRenditions = tables.includes('photos') && await trx.schema.hasColumn('photos', 'rendition_version');
+
     for (const table of tables) {
       const jsonCols = await jsonColumnsFor(trx, table);
       const types = crossEngine ? await typedColumnsFor(trx, table) : null;
@@ -629,6 +635,9 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
         prepared = serialiseJsonColumns(prepared, crossEngine ? new Set() : jsonCols);
         prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
         assertContainedPaths(table, prepared);
+        if (table === 'photos' && markLegacyRenditions) {
+          prepared = prepared.map((row) => (row.rendition_version === undefined ? { ...row, rendition_version: 0 } : row));
+        }
         await trx.batchInsert(table, prepared, prepared.length);
       }
       // Archived queue rows come back as they were, text timestamps included,

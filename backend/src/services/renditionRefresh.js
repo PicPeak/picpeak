@@ -48,6 +48,7 @@ const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { sameStorageKey } = require('../utils/storageKey');
 const maintenanceJobs = require('./maintenanceJobState');
+const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
 
 // 1: thumbnails, previews and heroes carry no source EXIF (issue 2096).
 const RENDITION_VERSION = 1;
@@ -93,14 +94,21 @@ function candidates() {
 
 const selectPhoto = (query) => query.select(PHOTO_COLUMNS.map((column) => `photos.${column}`));
 
+const RENDITION_KIND = { thumbnail_path: 'thumbnail', preview_path: 'preview', hero_path: 'hero' };
+
 /**
  * Delete a rendition key this photo no longer points at, unless another row
  * (trashed rows included: they are restorable) still uses it. On local
  * storage the key usually stays the same and the new file replaced the old
  * one; on S3 a managed source renders from a temp copy and the key moves.
+ *
+ * Only a key in that rendition's own namespace is ever deleted. A legacy row
+ * can point its rendition column at the original (or anything else); the
+ * column is no authority to delete that file, and this runs unattended.
  */
 async function dropSuperseded(photo, column, oldKey, newKey) {
   if (!oldKey || !newKey || sameStorageKey(oldKey, newKey)) return;
+  if (!isPresentationRenditionKey(oldKey, RENDITION_KIND[column])) return;
   try {
     const shared = await db('photos')
       .where(function () {
