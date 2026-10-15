@@ -19,7 +19,7 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 jest.mock('../../src/services/downloadZipService', () => ({ invalidate: jest.fn() }));
 
 describe('Upload content validation on guest and chunked uploads', () => {
-  let db; let cleanup; let app; let adminToken; let apiToken; let jpeg;
+  let db; let cleanup; let app; let adminToken; let apiToken; let jpeg; let gif; let tiff;
   let counter = 0;
   const idOf = (rows) => rows[0]?.id ?? rows[0];
 
@@ -53,6 +53,8 @@ describe('Upload content validation on guest and chunked uploads', () => {
 
     const image = (r) => sharp({ create: { width: 32, height: 24, channels: 3, background: { r, g: 120, b: 200 } } }).jpeg().toBuffer();
     jpeg = await image(10);
+    gif = await sharp({ create: { width: 32, height: 24, channels: 3, background: 'white' } }).gif().toBuffer();
+    tiff = await sharp({ create: { width: 32, height: 24, channels: 3, background: 'white' } }).tiff().toBuffer();
 
     app = express();
     app.use(express.json());
@@ -66,17 +68,12 @@ describe('Upload content validation on guest and chunked uploads', () => {
     if (cleanup) await cleanup();
   });
 
-  afterAll(async () => {
-    require('../../src/services/chunkedUploadService').stop();
-    if (cleanup) await cleanup();
-  });
-
   describe('guest upload', () => {
-    const guestUpload = (event, bytes, filename = 'guest.jpg') => request(app)
+    const guestUpload = (event, bytes, filename = 'guest.jpg', contentType = 'image/jpeg') => request(app)
       .post(`/api/gallery/${event.id}/upload`)
       .set('Authorization', `Bearer ${jwt.sign({ eventId: event.id, eventSlug: event.slug, type: 'gallery' },
         process.env.JWT_SECRET, { expiresIn: '1h', issuer: 'picpeak-auth' })}`)
-      .attach('photos', bytes, { filename, contentType: 'image/jpeg' });
+      .attach('photos', bytes, { filename, contentType });
 
     it('refuses text named .jpg and stores no photo', async () => {
       const event = await makeEvent();
@@ -99,6 +96,23 @@ describe('Upload content validation on guest and chunked uploads', () => {
       const res = await guestUpload(event, jpeg);
       expect(res.status).toBe(202);
       expect(await photosOf(event)).toHaveLength(1);
+    });
+
+    it('accepts a valid GIF when GIF is allowed', async () => {
+      const settings = require('../../src/services/uploadSettings');
+      await db('app_settings').insert({
+        setting_key: 'general_allowed_file_types', setting_value: JSON.stringify('jpg,jpeg,png,webp,gif'), setting_type: 'general',
+      }).onConflict('setting_key').merge();
+      settings.clearAllowedTypesCache();
+      try {
+        const event = await makeEvent();
+        const res = await guestUpload(event, gif, 'guest.gif', 'image/gif');
+        expect(res.status).toBe(202);
+        expect(await photosOf(event)).toHaveLength(1);
+      } finally {
+        await db('app_settings').where({ setting_key: 'general_allowed_file_types' }).del();
+        settings.clearAllowedTypesCache();
+      }
     });
   });
 
@@ -143,9 +157,9 @@ describe('Upload content validation on guest and chunked uploads', () => {
   });
 
   describe('API v1 upload', () => {
-    const v1Upload = (event, bytes, filename = 'api.jpg') => request(app)
+    const v1Upload = (event, bytes, filename = 'api.jpg', contentType = 'image/jpeg') => request(app)
       .post(`/api/v1/events/${event.id}/photos`).set('Authorization', `Bearer ${apiToken}`)
-      .attach('photo', bytes, { filename, contentType: 'image/jpeg' });
+      .attach('photo', bytes, { filename, contentType });
     const filesUnder = (dir) => {
       if (!fs.existsSync(dir)) return [];
       return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (
@@ -177,6 +191,17 @@ describe('Upload content validation on guest and chunked uploads', () => {
       const event = await makeEvent();
       const res = await v1Upload(event, jpeg);
       expect(res.status).toBe(201);
+      expect(await photosOf(event)).toHaveLength(1);
+    });
+
+    // v1 takes any image/* type; one the signature table does not know must
+    // be an image Sharp reads.
+    it('accepts a valid TIFF and refuses text named .tiff', async () => {
+      const event = await makeEvent();
+      const ok = await v1Upload(event, tiff, 'scan.tiff', 'image/tiff');
+      expect(ok.status).toBe(201);
+      const bad = await v1Upload(event, Buffer.from('not an image at all\n'), 'evil.tiff', 'image/tiff');
+      expect(bad.status).toBe(400);
       expect(await photosOf(event)).toHaveLength(1);
     });
   });
