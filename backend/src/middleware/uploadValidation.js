@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 /**
  * Validate uploaded file is complete and not corrupted
  */
-async function validateUploadedFile(filePath) {
+async function validateUploadedFile(filePath, extension) {
   try {
     // Check file exists and has size
     const stats = await fs.stat(filePath);
@@ -15,7 +15,9 @@ async function validateUploadedFile(filePath) {
     }
     
     // For image files, verify they can be read by Sharp
-    const ext = path.extname(filePath).toLowerCase();
+    // A public upload is staged under an extension-less name; the caller
+    // passes the extension of the original filename then.
+    const ext = (extension || path.extname(filePath)).toLowerCase();
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
     
     if (imageExtensions.includes(ext)) {
@@ -73,7 +75,8 @@ async function validateUploadedFiles(req, res, next) {
   const validFiles = [];
   const invalidFiles = [];
   const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-  const entries = req.files.filter(file => imageExtensions.includes(path.extname(file.path).toLowerCase())).map(file => file.path);
+  const extOf = (file) => (path.extname(file.path) || path.extname(file.originalname || '')).toLowerCase();
+  const entries = req.files.filter(file => imageExtensions.includes(extOf(file))).map(file => file.path);
   let validated = null;
   if (entries.length >= 8) {
     try { validated = new Map((await sharp.metadataBatch(entries, { validate: true, signal: req.publicUploadReservation?.signal })).map(result => [result.input, result])); }
@@ -86,7 +89,7 @@ async function validateUploadedFiles(req, res, next) {
       const cached = validated?.get(file.path);
       if (cached?.error) throw Object.assign(new Error(cached.error.message), cached.error);
       const stat = cached && await fs.stat(file.path);
-      if (!cached || !Object.entries(cached.fingerprint).every(([key, value]) => stat[key] === value)) await validateUploadedFile(file.path);
+      if (!cached || !Object.entries(cached.fingerprint).every(([key, value]) => stat[key] === value)) await validateUploadedFile(file.path, extOf(file));
       validFiles.push(file);
     } catch (error) {
       // A busy or unavailable image worker says nothing about the file: it is
