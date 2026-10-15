@@ -1752,7 +1752,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     // match the declared type, and an image must decode. The merged file is
     // the first moment the whole content exists here.
     const resolvedMimeType = normalizeUploadMimeType(mergedFile.filename, mergedFile.mimeType);
-    const contentFiles = [{ originalname: mergedFile.filename, path: mergedFile.path }];
+    const contentFiles = [{ originalname: mergedFile.filename, path: mergedFile.path, mimetype: resolvedMimeType }];
     let contentError = null;
     if (!(await validateFileContent(mergedFile.path, resolvedMimeType))) {
       contentError = `File content does not match declared type: ${mergedFile.filename}`;

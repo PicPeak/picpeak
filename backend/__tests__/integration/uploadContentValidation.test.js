@@ -194,6 +194,15 @@ describe('Upload content validation on guest and chunked uploads', () => {
       expect(await photosOf(event)).toHaveLength(1);
     });
 
+    // v1 checks no extension, so the declared type picks the decode check.
+    it('refuses undecodable JPEG bytes under a non-image filename', async () => {
+      const event = await makeEvent();
+      const bytes = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), crypto.randomBytes(2000)]);
+      const res = await v1Upload(event, bytes, 'broken.bin');
+      expect(res.status).toBe(400);
+      expect(await photosOf(event)).toHaveLength(0);
+    });
+
     // v1 takes any image/* type; one the signature table does not know must
     // be an image Sharp reads.
     it('accepts a valid TIFF and refuses text named .tiff', async () => {
