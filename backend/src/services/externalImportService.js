@@ -422,12 +422,14 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     await sweepOldLadder(atCommit);
     // The poster, as the import makes it, under a key naming this version
     // (the old one went with the caches above): a pass over a later edit
-    // never writes, or deletes, this one's file.
+    // never writes, or deletes, this one's file. The stem is cut to a
+    // length the version suffix and storage's staging name still fit in.
     try {
-      const thumbnailKey = path.posix.join(
-        'thumbnails',
-        `thumb_ext${row.id}_v${stats.size}m${Math.floor(stats.mtimeMs)}_${path.basename(f.rel).replace(/\.[^.]+$/, '.jpg')}`
+      const posterName = require('./mediaAttemptService').outputName(
+        `ext${row.id}_${path.basename(f.rel).replace(/\.[^.]+$/, '.jpg')}`,
+        { id: `v${stats.size}m${Math.floor(stats.mtimeMs)}` }
       );
+      const thumbnailKey = path.posix.join('thumbnails', `thumb_${posterName}`);
       const result = await processUploadedVideo(f.full, thumbnailKey);
       const took = await db('photos').where(thisVersion).whereNull('thumbnail_path').update({
         thumbnail_path: result.thumbnailKey,

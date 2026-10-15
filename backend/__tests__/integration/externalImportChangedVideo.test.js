@@ -190,7 +190,7 @@ describe('external re-scan of a video changed in place (issue 2114)', () => {
     // A new poster from the new file, under a key naming the new version.
     expect(processUploadedVideo).toHaveBeenCalledTimes(1);
     expect(processUploadedVideo.mock.calls[0][0]).toBe(path.join(mediaRoot, 'shoot/clip.mp4'));
-    expect(after.thumbnail_path).toBe(`thumbnails/thumb_ext${video.id}_v${edited.size}m${Math.floor(edited.mtimeMs)}_clip.jpg`);
+    expect(after.thumbnail_path).toBe(`thumbnails/thumb_ext${video.id}_clip_v${edited.size}m${Math.floor(edited.mtimeMs)}.jpg`);
     expect(after.thumb_hash).toBe('new-hash');
     // Nothing of the old version is left in storage.
     expect(exists(keys.poster)).toBe(false);
@@ -304,6 +304,20 @@ describe('external re-scan of a video changed in place (issue 2114)', () => {
     for (const key of keys.ladder) expect(exists(key)).toBe(false);
     expect((await db('photos').where({ id: video.id }).first()).hls_path).toBeNull();
   }, 20000);
+
+  it('keeps the poster key of a long file name within a file name\'s length', async () => {
+    const eventId = await seedEvent();
+    const stem = 'x'.repeat(205);
+    await writeVideo(`shoot/${stem}.mp4`, 'first version of the clip');
+    expect((await runImport(eventId)).body.imported).toBe(1);
+    const video = await db('photos').where({ event_id: eventId }).first();
+    const edited = await writeVideo(`shoot/${stem}.mp4`, 'second, longer version of the same clip');
+    expect((await runImport(eventId)).body).toMatchObject({ imported: 0, refreshed: 1 });
+    const key = (await db('photos').where({ id: video.id }).first()).thumbnail_path;
+    expect(key).toMatch(new RegExp(`_v${edited.size}m${Math.floor(edited.mtimeMs)}\\.jpg$`));
+    // Room for LocalFsStorage's staging suffix under the 255-byte limit.
+    expect(Buffer.byteLength(path.posix.basename(key))).toBeLessThanOrEqual(200);
+  });
 
   it('drops its own poster when a viewer\'s lazy poster was published first', async () => {
     const eventId = await seedEvent();
