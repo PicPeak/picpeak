@@ -167,6 +167,49 @@ describe('admin thumbnail regeneration (#1129)', () => {
   });
 
   /**
+   * Issue 2113. A RAW photo's cached sizes are named through its processing
+   * attempt, so the row the sweep gets must carry it; and a tier that could
+   * not be deleted keeps being served, so the photo counts as failed.
+   */
+  describe('RAW tiers and failed tier deletes (issue 2113)', () => {
+    const completion = () => logInfo.mock.calls.map((c) => String(c[0])).find((m) => /regeneration complete/.test(m));
+    const raw = { source_origin: 'managed', filename: 'IMG_1.NEF', path: 'nas-wedding/IMG_1.NEF', processing_attempt_id: 'attempt-a1' };
+
+    it.each([
+      ['thumbnails', '/admin/thumbnails/regenerate', 'deleteThumbnailTiers'],
+      ['previews', '/admin/thumbnails/regenerate-previews', 'deletePreviewTiers'],
+    ])('hands the %s sweep the processing attempt, strictly', async (_kind, url, helper) => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, raw);
+
+      await request(app).post(url).send({});
+      await drain();
+
+      const [photoArg, options] = imageProcessor[helper].mock.calls[0];
+      expect(photoArg).toMatchObject({ event_id: eventId, filename: 'IMG_1.NEF', processing_attempt_id: 'attempt-a1' });
+      expect(options).toEqual({ strict: true });
+      expect(completion()).toMatch(/1 success, 0 errors/);
+    });
+
+    it.each([
+      ['thumbnails', '/admin/thumbnails/regenerate', 'deleteThumbnailTiers', 'ensureThumbnail'],
+      ['previews', '/admin/thumbnails/regenerate-previews', 'deletePreviewTiers', 'ensurePreviewImage'],
+    ])('counts a photo whose %s tiers could not be deleted as failed', async (_kind, url, helper, ensure) => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, raw);
+      await seedPhoto(eventId, { source_origin: 'managed', filename: 'fine.jpg' });
+      imageProcessor[helper].mockRejectedValueOnce(new Error('Could not delete 1 tier(s): AccessDenied'));
+
+      await request(app).post(url).send({});
+      await drain();
+
+      // The rebuild still runs for both; only the count changes.
+      expect(imageProcessor[ensure]).toHaveBeenCalledTimes(2);
+      expect(completion()).toMatch(/1 success, 1 errors/);
+    });
+  });
+
+  /**
    * Videos used to be filtered out of this query: ensureThumbnail had no video
    * branch, so each one only produced a Sharp error. It has one now (issue
    * 1414), and this button is what an admin with a galleryful of broken video

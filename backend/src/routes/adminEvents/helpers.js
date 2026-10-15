@@ -72,8 +72,10 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     .where('event_id', eventId)
     // size_bytes, source_mtime_ms: an external row's tier keys carry them,
     // and the tiers are swept after the rows are gone, when they can no
-    // longer be read.
-    .select('id', 'path', 'filename', 'source_origin', 'external_relpath', 'size_bytes', 'source_mtime_ms',
+    // longer be read. event_id and processing_attempt_id likewise for a RAW
+    // row, whose tier keys are scoped by them (derivativeCacheId).
+    .select('id', 'event_id', 'path', 'filename', 'source_origin', 'external_relpath', 'size_bytes', 'source_mtime_ms',
+      'processing_attempt_id',
       'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path', 'hls_path', 'hls_status');
 
   // A Set because a photo can carry the same key in two columns (an unresized

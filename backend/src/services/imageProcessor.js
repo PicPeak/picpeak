@@ -1684,11 +1684,29 @@ function previewTierKeyCandidates(photo, width) {
   return keys.map((k) => path.posix.join('previews', k));
 }
 
-/** Best-effort removal of every responsive tier for a photo. */
-async function deletePreviewTiers(photo) {
-  photo = await withSourceVersion(photo);
+/**
+ * Delete every key, then report what could not be deleted. A missing object
+ * is not a failure: both storage backends resolve delete() for it. Anything
+ * else (an S3 error, a permission) is logged, and with `strict` thrown once
+ * every key has been tried, so a caller that must not report the old tiers
+ * as gone (an admin regeneration) can count the photo as failed. Without it
+ * the delete stays best-effort: photo delete, trash purge, archive,
+ * replacement and rename clean up tiers after the work that matters is done.
+ */
+async function deleteTierKeys(photo, keys, kind, { strict = false } = {}) {
   const storage = getStorage();
-  await Promise.all(previewTierKeys(photo).map((k) => storage.delete(k).catch(() => {})));
+  const results = await Promise.allSettled(keys.map((k) => storage.delete(k)));
+  const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [{ key: keys[i], error: r.reason }] : []));
+  if (!failed.length) return;
+  const message = `Could not delete ${failed.length} ${kind} tier(s) of photo ${photo.id}: ${failed[0].error?.message || failed[0].error}`;
+  if (strict) throw Object.assign(new Error(message), { failedKeys: failed.map((f) => f.key) });
+  logger.warn(message);
+}
+
+/** Removal of every responsive tier for a photo; see deleteTierKeys. */
+async function deletePreviewTiers(photo, options) {
+  photo = await withSourceVersion(photo);
+  await deleteTierKeys(photo, previewTierKeys(photo), 'preview', options);
 }
 
 /**
@@ -1700,7 +1718,7 @@ async function deletePreviewTiers(photo) {
  * width is canonical depends on the thumbnail_width setting, so on a
  * 600-configured install it is w300 that exists as a tier file. Reading the
  * setting here would make the whole cleanup path async for no gain — deleting
- * a key that was never written is already a swallowed no-op, so the inclusive
+ * a key that was never written is already a no-op, so the inclusive
  * list is both simpler and the one that cannot strand a file.
  */
 function thumbnailTierKeys(photo) {
@@ -1742,10 +1760,9 @@ async function keepTierIfCurrent(photo, key, keysOf) {
   return null;
 }
 
-async function deleteThumbnailTiers(photo) {
+async function deleteThumbnailTiers(photo, options) {
   photo = await withSourceVersion(photo);
-  const storage = getStorage();
-  await Promise.all(thumbnailTierKeys(photo).map((k) => storage.delete(k).catch(() => {})));
+  await deleteTierKeys(photo, thumbnailTierKeys(photo), 'thumbnail', options);
 }
 
 /**

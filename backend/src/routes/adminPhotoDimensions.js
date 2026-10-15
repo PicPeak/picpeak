@@ -646,6 +646,8 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           // (imageProcessor's sourceVersion); the survivor check below
           // derives them.
           'photos.size_bytes', 'photos.source_mtime_ms',
+          // A RAW row's tier keys are scoped by its processing attempt.
+          'photos.processing_attempt_id',
           'events.source_mode', 'events.external_path', 'events.slug'
         );
     } catch (err) {
