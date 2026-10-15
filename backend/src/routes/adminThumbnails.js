@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const router = express.Router();
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
@@ -21,13 +22,14 @@ const applicationWork = require('../services/activeApplicationWork');
  * delete the thumbnail that had just been written, leaving every regenerated
  * photo pointing at nothing.
  */
-const canonicalStorageKey = (key) => String(key)
-  .replace(/\\/g, '/')
-  .replace(/^\.?\/+/, '')
-  .replace(/\/+/g, '/')
-  // LocalFsStorage resolves an interior `./` too; where a backend would
-  // not, calling them equal only keeps a file.
-  .replace(/\/(\.\/)+/g, '/');
+// As LocalFsStorage._resolve reads a key (path.posix.normalize), the coarser
+// of the two backends: S3 keeps an interior `./` or `//` as its own object,
+// and calling two keys equal here can only keep a file, never delete one.
+const canonicalStorageKey = (key) => {
+  let canonical = path.posix.normalize(String(key).replace(/\\/g, '/'));
+  while (/^\.?\//.test(canonical)) canonical = canonical.replace(/^\.?\/+/, '');
+  return canonical;
+};
 function sameStorageKey(a, b) {
   return canonicalStorageKey(a) === canonicalStorageKey(b);
 }

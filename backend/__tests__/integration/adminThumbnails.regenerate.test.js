@@ -358,6 +358,10 @@ describe('admin thumbnail regeneration (#1129)', () => {
     it.each([
       ['a leading ./', './previews/preview_stable.jpg'],
       ['an interior ./', 'previews/./preview_stable.jpg'],
+      ['a repeated leading ./', '././previews/preview_stable.jpg'],
+      ['a leading /./', '/./previews/preview_stable.jpg'],
+      ['a doubled separator before ./', 'previews//./preview_stable.jpg'],
+      ['a resolved ..', 'previews/x/../preview_stable.jpg'],
     ])('keeps the old preview when the key is unchanged, spelled with %s', async (_name, stored) => {
       const eventId = await seedEvent();
       await seedPhoto(eventId, { source_origin: 'managed', preview_path: stored });
@@ -405,7 +409,11 @@ describe('admin thumbnail regeneration (#1129)', () => {
       expect(storage.delete).toHaveBeenCalledWith('previews/preview_IMG_1.jpg');
     });
 
-    it('keeps the old preview while another gallery stores it in another spelling', async () => {
+    it.each([
+      ['backslashes', '.\\previews\\preview_IMG_1.jpg'],
+      ['a repeated leading ./', '././previews/preview_IMG_1.jpg'],
+      ['a leading /./', '/./previews/preview_IMG_1.jpg'],
+    ])('keeps the old preview while another gallery stores it with %s', async (_name, stored) => {
       const eventId = await seedEvent();
       const id = await seedPhoto(eventId, { source_origin: 'managed', preview_path: 'previews/preview_IMG_1.jpg' });
       const [other] = await db('events').insert({
@@ -414,7 +422,7 @@ describe('admin thumbnail regeneration (#1129)', () => {
         share_link: 'other-share', expires_at: new Date().toISOString(),
       }).returning('id');
       await seedPhoto(typeof other === 'object' ? other.id : other, {
-        source_origin: 'managed', preview_path: '.\\previews\\preview_IMG_1.jpg',
+        source_origin: 'managed', preview_path: stored,
       });
       imageProcessor.ensurePreviewImage.mockImplementationOnce(async () => {
         await db('photos').where({ id }).update({ preview_path: 'previews/preview_p1_IMG_1.jpg' });
