@@ -128,4 +128,32 @@ describe('names stored and searched in NFC', () => {
       expect((await listInvoices({ filters: { q } })).rows.map((r) => r.invoice_number)).toContain('R-NFC-1');
     }
   });
+
+  describe('rename slugs strip accents like utils/slug.js', () => {
+    const date = '2026-08-01';
+    const slugOf = (name) => require('../../src/services/eventRenameService').generateSlug('wedding', name, date);
+    const tail = slugOf('x').replace(/^wedding-x-/, '');
+
+    it('gives NFC, NFD and mixed input the same slug', () => {
+      expect(slugOf(PRECOMPOSED)).toBe(`wedding-jorg-${tail}`);
+      expect(slugOf(DECOMPOSED)).toBe(`wedding-jorg-${tail}`);
+      expect(slugOf(`${PRECOMPOSED} und ${DECOMPOSED}`)).toBe(`wedding-jorg-und-jorg-${tail}`);
+    });
+
+    it('treats umlauts and sharp s exactly as slugify does', () => {
+      const { slugify } = require('../../src/utils/slug');
+      for (const name of ['\u00c4rger \u00fcber \u00d6l', 'Stra\u00dfe', 'Fam\u00edlia Decora\u00e7\u00e3o']) {
+        expect(slugOf(name)).toBe(`wedding-${slugify(name)}-${tail}`);
+      }
+      expect(slugOf('\u00c4rger \u00fcber \u00d6l')).toBe(`wedding-arger-uber-ol-${tail}`);
+      expect(slugOf('Stra\u00dfe')).toBe(`wedding-stra-e-${tail}`);
+    });
+
+    it('slugs an ASCII name exactly as the old pipeline did', () => {
+      const old = (n) => n.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      for (const name of ['Anna & Ben', '  Summer -- Party 2026! ', 'x_y.z']) {
+        expect(slugOf(name)).toBe(`wedding-${old(name)}-${tail}`);
+      }
+    });
+  });
 });

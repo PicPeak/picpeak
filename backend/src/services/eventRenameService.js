@@ -12,6 +12,7 @@ const { galleryLinkFor } = require('./galleryNotificationService');
 const { queueEmail } = require('./emailProcessor');
 const { getStorage } = require('./storage');
 const { findSlugHolder } = require('./slugRedirects');
+const { slugify } = require('../utils/slug');
 
 /**
  * Run `fn` over `items` with at most `limit` in flight. On the first failure
@@ -79,11 +80,10 @@ class EventRenameService {
    * @returns {string} Generated slug
    */
   generateSlug(eventType, eventName, eventDate) {
-    const processedEventName = eventName
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
+    // The shared slugify, as event creation uses: accents are stripped, so
+    // NFC and NFD (macOS) input give the same slug ("Jörg" → "jorg"). ASCII
+    // names slug exactly as before; existing slugs are not touched.
+    const processedEventName = slugify(eventName);
     const formattedDate = this.formatDate(eventDate);
     return `${eventType}-${processedEventName}-${formattedDate}`;
   }

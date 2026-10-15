@@ -676,6 +676,17 @@ describe('one archive job per gallery', () => {
     expect(row.event_name).toBe('J\u00f6rg und Anna');
   });
 
+  it('gives a decomposed and a precomposed rename the same accent-free slug', async () => {
+    const event = await makeEvent('rename-slug-nfd');
+    const eventRenameService = require('../../src/services/eventRenameService');
+    const result = await eventRenameService.renameEvent(event.id, 'Jo\u0308rg Slug');
+    expect(result.success).toBe(true);
+    expect(result.data.newSlug).toMatch(/^wedding-jorg-slug-/);
+    // The NFC spelling of the same name is the same URL.
+    const again = await eventRenameService.validateRename(event.id, 'J\u00f6rg Slug');
+    expect(again).toMatchObject({ valid: false, error: expect.stringMatching(/same URL/) });
+  });
+
   it('removes the archive claim row with the gallery', async () => {
     const event = await makeEvent('claim-row-delete');
     const eventRenameService = require('../../src/services/eventRenameService');
