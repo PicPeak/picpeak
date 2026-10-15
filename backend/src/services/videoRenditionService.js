@@ -232,16 +232,24 @@ function playedStream(streams, type) {
     || streams.find((s) => s.codec_type === type);
 }
 
+/**
+ * Absolute indexes of the played video and audio stream, for the -map
+ * arguments. Taken from the probe of the very snapshot ffmpeg reads (see
+ * transcode): a NAS file replaced since the first probe must not be mapped
+ * by its predecessor's layout.
+ */
+function playedStreamIndexes(metadata) {
+  const streams = metadata?.streams || [];
+  const index = (s) => (Number.isInteger(s?.index) ? s.index : null);
+  return { videoIndex: index(playedStream(streams, 'video')), audioIndex: index(playedStream(streams, 'audio')) };
+}
+
 async function probe(localPath) {
   const metadata = await mediaProcesses.probeVideo(localPath);
   const streams = metadata.streams || [];
   const video = playedStream(streams, 'video');
   const audio = playedStream(streams, 'audio');
   return {
-    // Absolute stream indexes, so a copy is made from the tracks the
-    // original played with when a file carries more than one.
-    videoIndex: Number.isInteger(video?.index) ? video.index : null,
-    audioIndex: Number.isInteger(audio?.index) ? audio.index : null,
     formatName: metadata.format?.format_name || '',
     majorBrand: String(metadata.format?.tags?.major_brand || '').trim().toLowerCase(),
     videoCodec: video?.codec_name || null,
@@ -307,10 +315,10 @@ function _resetToneMapSupportForTests() {
 }
 
 /**
- * The tracks a copy is made from: the ones probe() described (the default
- * tracks, by absolute index), so the decision, the tone mapping and the
- * encode all see the same picture; the first video and optional audio
- * stream when the probe gave no index.
+ * The tracks a copy is made from: the played (default) ones, by absolute
+ * index (playedStreamIndexes), the same choice probe() bases the decision
+ * and the tone mapping on; the first video and optional audio stream when
+ * there is no index.
  */
 function streamMaps({ videoIndex = null, audioIndex = null } = {}) {
   return [
@@ -373,11 +381,12 @@ function remuxOptions({ videoIndex = null, audioIndex = null } = {}) {
  * gets longer than VIDEO_RENDITION_TIMEOUT_MS, which is only the minimum.
  * `timeoutMs` overrides it (tests).
  */
-function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, remux = false, streams = {} } = {}) {
+function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, remux = false } = {}) {
   return mediaProcesses.withSnapshot(localPath, 'rendition', async (snapshot, details) => {
     const { policy } = details;
     const metadata = await mediaProcesses.probeSnapshot(snapshot, details);
     const budget = renditionBudget(Number.isFinite(duration) ? duration : Number(metadata.format?.duration), policy);
+    const streams = playedStreamIndexes(metadata);
     await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
       ...mediaProcesses.inputOptions(details.format, policy.threads), '-i', snapshot,
       ...(remux ? remuxOptions(streams) : transcodeOptions({ toneMap, ...streams })), '-threads', String(policy.threads), '-filter_threads', String(policy.threads), outPath], {
@@ -451,10 +460,7 @@ async function renderWebCopy(photoId) {
       logger.warn(`videoRendition: photo ${photoId} is HDR (${probed.colorTransfer}) but this ffmpeg lacks zscale/tonemap; the copy is not tone-mapped`);
     }
     try {
-      await transcode(localPath, tmpPath, {
-        toneMap, duration: probed.duration, remux,
-        streams: { videoIndex: probed.videoIndex, audioIndex: probed.audioIndex },
-      });
+      await transcode(localPath, tmpPath, { toneMap, duration: probed.duration, remux });
       const stat = await fsp.stat(tmpPath).catch(() => null);
       if (!stat || stat.size === 0) throw new Error('ffmpeg produced no output');
       const { outputBytes } = mediaPolicy();
@@ -505,6 +511,7 @@ module.exports = {
   webKeyFor,
   hasFaststart,
   probe,
+  playedStreamIndexes,
   playsInBrowser,
   transcodeOptions,
   remuxOptions,

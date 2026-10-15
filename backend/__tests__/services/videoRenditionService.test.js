@@ -11,7 +11,9 @@ jest.mock('../../src/utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), e
 jest.mock('fluent-ffmpeg');
 jest.mock('../../src/services/mediaProcessService', () => ({
   probeVideo: path => new Promise((resolve, reject) => require('fluent-ffmpeg').ffprobe(path, (error, value) => error ? reject(error) : resolve(value))),
-  probeSnapshot: jest.fn(async () => ({})), inputOptions: () => [],
+  // The snapshot is the file itself here, probed like it.
+  probeSnapshot: path => new Promise((resolve, reject) => require('fluent-ffmpeg').ffprobe(path, (error, value) => error ? reject(error) : resolve(value))),
+  inputOptions: () => [],
   withSnapshot: (path, _kind, callback) => callback(path, { format: 'mov,mp4', policy: { nativeBytes: 2048 * 1024 * 1024, transcodeBytes: 0, threads: 2, renditionMs: 3600000, renditionMaxMs: 86400000, outputBytes: null } }),
   run: (_command, args) => new Promise((resolve, reject) => {
     const ffmpeg = require('fluent-ffmpeg');
@@ -170,8 +172,8 @@ describe('remuxOptions', () => {
   });
 });
 
-describe('probe', () => {
-  it('picks the default video and audio track, never a cover image', async () => {
+describe('probe and playedStreamIndexes', () => {
+  it('pick the default video and audio track, never a cover image', async () => {
     mockProbe([
       { index: 0, codec_type: 'video', codec_name: 'mjpeg', disposition: { attached_pic: 1, default: 1 } },
       { index: 1, codec_type: 'video', codec_name: 'h264', disposition: { default: 0 }, width: 160 },
@@ -180,14 +182,19 @@ describe('probe', () => {
       { index: 4, codec_type: 'audio', codec_name: 'aac', disposition: { default: 1 } },
     ], { format_name: 'mov,mp4', tags: {} });
     const probed = await service.probe('/tmp/x.mp4');
-    expect(probed).toMatchObject({ videoIndex: 2, audioIndex: 4, videoCodec: 'h264', width: 320 });
+    expect(probed).toMatchObject({ videoCodec: 'h264', width: 320 });
+    const metadata = await new Promise((resolve) => ffmpeg.ffprobe('/tmp/x.mp4', (_e, v) => resolve(v)));
+    expect(service.playedStreamIndexes(metadata)).toEqual({ videoIndex: 2, audioIndex: 4 });
 
     // Nothing flagged default: the first real one.
     mockProbe([
       { index: 0, codec_type: 'video', codec_name: 'h264', width: 160 },
       { index: 1, codec_type: 'video', codec_name: 'h264', width: 320 },
     ], { format_name: 'mov,mp4', tags: {} });
-    expect(await service.probe('/tmp/x.mp4')).toMatchObject({ videoIndex: 0, audioIndex: null, width: 160 });
+    expect(await service.probe('/tmp/x.mp4')).toMatchObject({ width: 160 });
+    const single = await new Promise((resolve) => ffmpeg.ffprobe('/tmp/x.mp4', (_e, v) => resolve(v)));
+    expect(service.playedStreamIndexes(single)).toEqual({ videoIndex: 0, audioIndex: null });
+    expect(service.playedStreamIndexes({})).toEqual({ videoIndex: null, audioIndex: null });
   });
 });
 
@@ -447,6 +454,30 @@ describe('renderWebCopy', () => {
 
     expect(await service.renderWebCopy(28)).toBe('complete');
     expect(command.outputOptions).toHaveBeenCalledWith(service.transcodeOptions({ toneMap: false, videoIndex: 1, audioIndex: 2 }));
+  });
+
+  it('maps the streams of the snapshot ffmpeg reads, not of an earlier probe of a since-replaced file', async () => {
+    dbModule.__state.photo = { id: 29, event_id: 9, filename: 'swap.mp4', media_type: 'video' };
+    // First probe: [video, audio]. By the time the snapshot is taken the NAS
+    // file was replaced by one laid out [video, video, audio].
+    const before = { streams: [{ index: 0, codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p' }, { index: 1, codec_type: 'audio', codec_name: 'aac' }],
+      format: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'isom' } } };
+    const after = { streams: [{ index: 0, codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p' }, { index: 1, codec_type: 'video', codec_name: 'h264' },
+      { index: 2, codec_type: 'audio', codec_name: 'aac' }], format: before.format };
+    let calls = 0;
+    ffmpeg.ffprobe = jest.fn((_p, cb) => cb(null, calls++ === 0 ? before : after));
+    const atoms = await writeAtoms(box('ftyp', 16), box('moov', 40), box('mdat', 100));
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+    const command = {
+      outputOptions: jest.fn(function () { return this; }),
+      on: jest.fn(function (event, handler) { if (event === 'end') this._end = handler; return this; }),
+      save: jest.fn(function (out) { fs.writeFileSync(out, 'remuxed-bytes'); setImmediate(() => this._end()); }),
+      kill: jest.fn(),
+    };
+    ffmpeg.mockImplementation(() => command);
+
+    expect(await service.renderWebCopy(29)).toBe('complete');
+    expect(command.outputOptions).toHaveBeenCalledWith(service.remuxOptions({ videoIndex: 0, audioIndex: 2 }));
   });
 
   it('drops the copy and leaves the row alone when the claim was lost during the transcode', async () => {
