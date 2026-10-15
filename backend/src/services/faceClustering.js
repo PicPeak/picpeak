@@ -1085,6 +1085,13 @@ async function recluster(eventId) {
   // query would wait for this transaction. consolidate() stays outside,
   // since every merge it makes is a transaction of its own.
   const run = () => db.transaction(async (trx) => {
+    // The event row first on PostgreSQL, as a key share: every person this
+    // inserts takes one through its event FK, and taken there, after the
+    // event's faces were locked, it closed a cycle with a gallery delete,
+    // which locks the event FOR UPDATE and then deletes those faces.
+    if (trx.client.config.client === 'pg') {
+      await trx('events').where({ id: eventId }).forKeyShare().first('id');
+    }
     await lockEventPeople(eventId, trx);
     await reclusterLocked(eventId, thresholds, trx);
   });

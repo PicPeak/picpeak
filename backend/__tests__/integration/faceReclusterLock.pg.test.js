@@ -268,4 +268,40 @@ const pgUrl = process.env.PICPEAK_PG_TEST_URL;
     if (results.scan !== 'ok') expect(results.scan).toMatchObject({ code: '40P01' });
     expect(await unassigned(eventId)).toBe(0);
   }, 60000);
+
+  test('a gallery delete holding the event row and a recluster both finish', async () => {
+    const eventId = await seedEvent();
+    await seedPeople(eventId);
+
+    // deleteEventCascade's order: the event row FOR UPDATE, then its faces
+    // and people, then the rest.
+    const del = await db.transaction();
+    const results = {};
+    const pending = [];
+    try {
+      await del('events').where({ id: eventId }).forUpdate().first();
+      const pid = await backendPid(del);
+      // Parks on the event row before it locks a face. Without that it
+      // cleared the faces first and then waited on the event row for the
+      // event FK of the first person it inserted: 40P01 against the delete.
+      pending.push(settled(results, 'recluster', clustering.recluster(eventId)));
+      expect(await until(async () => (await behind(pid)) >= 1)).toBe(true);
+
+      pending.push(settled(results, 'delete', (async () => {
+        await del('photo_faces').where({ event_id: eventId }).del();
+        await del('event_people').where({ event_id: eventId }).del();
+        await del('photos').where({ event_id: eventId }).del();
+        await del('events').where({ id: eventId }).del();
+        await del.commit();
+      })()));
+      await Promise.all(pending);
+    } finally {
+      await rollback(del);
+      await Promise.all(pending);
+    }
+
+    expect(results).toEqual({ delete: 'ok', recluster: 'ok' });
+    expect(await db('events').where({ id: eventId }).first()).toBeUndefined();
+    expect(Number((await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first()).c)).toBe(0);
+  }, 60000);
 });
