@@ -384,6 +384,26 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
           // `force`: never adopt a lazy generation already in flight (#1020).
           const newPreviewPath = await ensurePreviewImage({ ...photo, preview_path: null }, { force: true });
           if (newPreviewPath) {
+            // Drop the replaced preview when the key MOVED, as the thumbnail
+            // endpoint above does. A camera-named (watch-folder) photo's
+            // preview is now named per photo, an S3 source renders from a
+            // randomly-named temp copy, and an external row's name carries
+            // its source version: in each case the new key differs and the
+            // nulled preview_path hid the old one from every cleanup.
+            // ensurePreviewImage returns a path only once the row records it,
+            // so the old key is no longer this row's. Another row may still
+            // point at it (managed names derive from the source basename);
+            // that file stays.
+            const moved = photo.preview_path && !sameStorageKey(photo.preview_path, newPreviewPath);
+            const stillShared = moved
+              && await db('photos').where('preview_path', photo.preview_path).whereNot('id', photo.id).first('id');
+            if (moved && !stillShared) {
+              await getStorage().delete(photo.preview_path).catch((err) => {
+                logger.warn(
+                  `Could not remove superseded preview ${photo.preview_path} for photo ${photo.id}: ${err.message}`
+                );
+              });
+            }
             successCount++;
           } else {
             errorCount++;

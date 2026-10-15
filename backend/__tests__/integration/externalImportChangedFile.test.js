@@ -278,6 +278,38 @@ describe('external re-scan of a file changed in place', () => {
     expect(keys.preview_path).toBeTruthy();
   });
 
+  it('drops an old-version tier written between the tier sweep and the commit', async () => {
+    // A tier render of the old bytes checks the row after writing its file
+    // (keepTierIfCurrent). One that checked while the refresh had swept the
+    // tiers but not yet moved the version kept its file, under a key no
+    // version derives once the row moves.
+    const eventId = await seedEvent();
+    const { photo } = await importWithRenditions(eventId);
+    const imageProcessor = require('../../src/services/imageProcessor');
+    const oldTiers = [imageProcessor.previewTierKeys(photo)[0], imageProcessor.thumbnailTierKeys(photo)[0]];
+    // Before the commit, so a key the NEW version lists is one a viewer may
+    // be reading: it stays.
+    let newTier;
+    const faceSettings = require('../../src/services/faceSettings');
+    const spy = jest.spyOn(faceSettings, 'isEnabledForEvent').mockImplementationOnce(async () => {
+      for (const key of oldTiers) await writeStored(key);
+      const size = (await fs.promises.stat(path.join(mediaRoot, 'shoot/a.jpg'))).size;
+      newTier = imageProcessor.previewTierKeys({ ...photo, size_bytes: size })[0];
+      await writeStored(newTier);
+      return false;
+    });
+    try {
+      await writeJpeg('shoot/a.jpg', { width: 300, height: 500, color: { r: 240, g: 200, b: 10 } });
+      expect((await runImport(eventId, 'shoot')).body.refreshed).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(oldTiers[0]).toMatch(new RegExp(`_v${photo.size_bytes}_`));
+    for (const key of oldTiers) expect(exists(key)).toBe(false);
+    expect(newTier).not.toBe(oldTiers[0]);
+    expect(exists(newTier)).toBe(true);
+  });
+
   it('purges faces and scene tags with the new metadata', async () => {
     const eventId = await seedEvent();
     const { photo } = await importWithRenditions(eventId);

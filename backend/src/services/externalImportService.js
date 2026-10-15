@@ -312,6 +312,17 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   });
   if (!committed) return 'skipped';
 
+  // The tiers again, now that the row names the new version. A tier render
+  // of the old bytes checks the row after writing (keepTierIfCurrent): one
+  // that checked between the sweep above and the commit kept its file, under
+  // an old-version key nothing derives any more. Only keys the new version
+  // does not also list, so nothing it still reads goes.
+  const current = { ...row, ...updates };
+  const currentKeys = new Set([...previewTierKeys(current), ...thumbnailTierKeys(current)]);
+  await Promise.all([...previewTierKeys(row), ...thumbnailTierKeys(row)]
+    .filter((k) => !currentKeys.has(k))
+    .map((k) => storage.delete(k).catch(() => {})));
+
   try {
     const meta = {};
     const outputBasename = `ext${row.id}_${path.basename(f.rel)}`;
