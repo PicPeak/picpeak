@@ -106,7 +106,7 @@ describe('face bbox coordinate space (#1074)', () => {
   it('scales preview-space boxes into ORIGINAL image coordinates', async () => {
     // 4000px original, 1920px preview -> every coordinate must grow by 4000/1920.
     const { photoId } = await seedPhoto(4000, 3000);
-    await faceProcessor.processPhotoFaces(photoId);
+    await faceProcessor.processPhotoFaces({ id: photoId, face_attempt_id: null });
 
     const face = await db('photo_faces').where({ photo_id: photoId }).first();
     const scale = 4000 / 1920;
@@ -126,7 +126,7 @@ describe('face bbox coordinate space (#1074)', () => {
     // The case that hid the bug: no downscale, so scale is exactly 1 and the
     // stored box equals what the sidecar reported.
     const { photoId } = await seedPhoto(1920, 1440);
-    await faceProcessor.processPhotoFaces(photoId);
+    await faceProcessor.processPhotoFaces({ id: photoId, face_attempt_id: null });
 
     const face = await db('photo_faces').where({ photo_id: photoId }).first();
     expect(face.bbox_x).toBeCloseTo(mockSidecarBox[0], 1);
@@ -137,7 +137,7 @@ describe('face bbox coordinate space (#1074)', () => {
     // Pre-dimension-migration rows have no width. Storing a box scaled by
     // NaN/0 would be worse than storing an unscaled one.
     const { photoId } = await seedPhoto(null, null);
-    await faceProcessor.processPhotoFaces(photoId);
+    await faceProcessor.processPhotoFaces({ id: photoId, face_attempt_id: null });
 
     const face = await db('photo_faces').where({ photo_id: photoId }).first();
     expect(Number.isFinite(face.bbox_x)).toBe(true);

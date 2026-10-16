@@ -1,6 +1,7 @@
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
+const { isUniqueViolation } = require('../utils/dbErrors');
 const { REACTION_EMOJIS } = require('../constants/reactions');
 const { isValidColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const { isValidDecision } = require('../constants/photoDecisions');
@@ -87,6 +88,9 @@ let settingsTableKnownToExist = false;
 // 186's duplicate-photo dedupe recomputes stats on a schema that predates
 // them, so they are only read and written once they are known to exist.
 let decisionColumnsKnownToExist = false;
+// photos.comment_count predates every migration that calls the recount, but a
+// migration test builds a bare photos table; asked once, like the above.
+let commentCountColumnKnownToExist = false;
 
 function isSharedColorLabel(identityMode, feedbackType) {
   return identityMode === 'shared' && feedbackType === 'color_label';
@@ -813,7 +817,14 @@ class FeedbackService {
           : (feedback_type !== 'comment' || !feedbackData.moderate_comments),
         created_at: new Date(),
         updated_at: new Date()
-      }).returning('id');
+      });
+      // A rating is held to one visible row per guest and photo by a unique
+      // index (migration 309), so a racing insert loses quietly and falls
+      // into the update below instead of adding a second row (issue 2075).
+      const insertRow = (executor) => {
+        const q = insertFeedback(executor);
+        return (feedback_type === 'rating' ? q.onConflict().ignore() : q).returning('id');
+      };
 
       // A guest merge soft-deletes its source guests while holding their rows
       // locked. resolveGuest ran before that, so re-check the guest in the
@@ -826,14 +837,32 @@ class FeedbackService {
           const guest = trx('gallery_guests').where({ id: guest_id }).first('is_deleted');
           if (trx.client.config.client === 'pg') guest.forShare();
           if ((await guest)?.is_deleted) return null;
-          return insertFeedback(trx);
+          return insertRow(trx);
         });
         if (!result) return { guest_missing: true };
       } else {
-        result = await insertFeedback(executor);
+        result = await insertRow(executor);
       }
-      
-      const id = result[0]?.id || result[0];
+
+      let id = result[0]?.id || result[0];
+
+      if (!id && feedback_type === 'rating') {
+        // The insert lost the race to the guest's other request: their row
+        // exists now, so this submission changes its value instead.
+        const own = executor('photo_feedback').where({
+          photo_id: photoId, event_id: eventId, feedback_type: 'rating', is_hidden: false,
+        });
+        if (guest_id) own.where('guest_id', guest_id);
+        else own.where('guest_identifier', guestIdentifier);
+        const winner = await own.first('id', 'rating');
+        if (!winner) return { id: null, exists: true };
+        if (Number(winner.rating) === Number(rating)) return { id: winner.id, exists: true };
+        await executor('photo_feedback')
+          .where('id', winner.id)
+          .update({ rating, updated_at: new Date().toISOString() });
+        await recount();
+        return { id: winner.id, updated: true };
+      }
       
       // Update photo stats
       await recount();
@@ -1122,6 +1151,10 @@ class FeedbackService {
         ]
         : [];
 
+      if (!commentCountColumnKnownToExist) {
+        commentCountColumnKnownToExist = await trx.schema.hasColumn('photos', 'comment_count');
+      }
+
       // Get aggregated stats
       const stats = await trx('photo_feedback')
         .where('photo_id', photoId)
@@ -1153,6 +1186,9 @@ class FeedbackService {
         .where('id', photoId)
         .update({
           feedback_count: stats.feedback_count || 0,
+          // Approved, visible comments: the admin "Has comments" filter and
+          // the exports read this column (issue 2071).
+          ...(commentCountColumnKnownToExist ? { comment_count: Number(stats.comment_count) || 0 } : {}),
           like_count: stats.like_count || 0,
           average_rating: stats.average_rating || 0,
           favorite_count: stats.favorite_count || 0,
@@ -1195,10 +1231,6 @@ class FeedbackService {
       
       const feedback = target;
 
-      await db('photo_feedback')
-        .where('id', feedbackId)
-        .update(updates);
-
       // Unhiding can collide with a replacement (#1150). A hidden row reads as
       // absent, so the guest may well have re-added the same feedback in the
       // meantime; making the original visible again would leave TWO visible
@@ -1213,19 +1245,37 @@ class FeedbackService {
       // `guest_identifier IS NULL`, which is every identifier-less row on the
       // photo — other people's, deleted. Nothing to converge in that case, so
       // leave it alone.
+      //
+      // The replacement goes BEFORE the unhide, in one transaction: a rating
+      // is held to one visible row per guest by a unique index (migration
+      // 309), so unhiding first would fail on the replacement (issue 2075).
+      // A replacement that commits between the delete and the unhide still
+      // trips the index; one retry finds and removes it.
       const collapseIdentity = feedback.guest_id || feedback.guest_identifier;
-      if (updates.is_hidden === false && feedback.feedback_type !== 'comment' && collapseIdentity) {
-        const superseded = db('photo_feedback')
-          .where({
-            photo_id: feedback.photo_id,
-            event_id: feedback.event_id,
-            feedback_type: feedback.feedback_type,
-            is_hidden: false,
-          })
-          .whereNot('id', feedbackId);
-        if (feedback.guest_id) superseded.where('guest_id', feedback.guest_id);
-        else superseded.where('guest_identifier', feedback.guest_identifier);
-        await superseded.delete();
+      const unhide = () => db.transaction(async (trx) => {
+        if (updates.is_hidden === false && feedback.feedback_type !== 'comment' && collapseIdentity) {
+          const superseded = trx('photo_feedback')
+            .where({
+              photo_id: feedback.photo_id,
+              event_id: feedback.event_id,
+              feedback_type: feedback.feedback_type,
+              is_hidden: false,
+            })
+            .whereNot('id', feedbackId);
+          if (feedback.guest_id) superseded.where('guest_id', feedback.guest_id);
+          else superseded.where('guest_identifier', feedback.guest_identifier);
+          await superseded.delete();
+        }
+
+        await trx('photo_feedback')
+          .where('id', feedbackId)
+          .update(updates);
+      });
+      try {
+        await unhide();
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        await unhide();
       }
       
       // Update photo stats if visibility changed
@@ -1549,14 +1599,44 @@ class FeedbackService {
         .select('photo_id');
       const photoIds = [...new Set(affected.map((r) => r.photo_id))];
 
-      await db('photo_feedback')
-        .where('guest_id', guestId)
-        .update({
-          guest_id: null,
-          guest_name: null,
-          guest_email: null,
-          updated_at: new Date(),
-        });
+      await db.transaction(async (trx) => {
+        // Clearing guest_id moves a visible rating under the identifier index
+        // (migration 309), where an anonymous rating from the same identifier
+        // on the same photo would collide (issue 2075). Keep whichever of the
+        // two changed last, the row the readers already show.
+        const ratings = Array.from(await trx('photo_feedback')
+          .where({ guest_id: guestId, feedback_type: 'rating', is_hidden: false })
+          .whereNotNull('guest_identifier')
+          .whereNot('guest_identifier', '')
+          .select('id', 'photo_id', 'guest_identifier', 'created_at', 'updated_at'));
+        const doomed = [];
+        for (let i = 0; i < ratings.length; i += 500) {
+          const chunk = ratings.slice(i, i + 500);
+          const rivals = Array.from(await trx('photo_feedback')
+            .whereIn('photo_id', chunk.map((r) => r.photo_id))
+            .whereIn('guest_identifier', [...new Set(chunk.map((r) => r.guest_identifier))])
+            .where({ feedback_type: 'rating', is_hidden: false })
+            .whereNull('guest_id')
+            .select('id', 'photo_id', 'guest_identifier', 'created_at', 'updated_at'));
+          for (const own of chunk) {
+            const pair = rivals.filter((r) => Number(r.photo_id) === Number(own.photo_id)
+              && r.guest_identifier === own.guest_identifier);
+            if (pair.length) doomed.push(...[own, ...pair].sort(lastMutatedFirst).slice(1).map((r) => r.id));
+          }
+        }
+        for (let i = 0; i < doomed.length; i += 500) {
+          await trx('photo_feedback').whereIn('id', doomed.slice(i, i + 500)).delete();
+        }
+
+        await trx('photo_feedback')
+          .where('guest_id', guestId)
+          .update({
+            guest_id: null,
+            guest_name: null,
+            guest_email: null,
+            updated_at: new Date(),
+          });
+      });
 
       for (const pid of photoIds) {
         await this.updatePhotoFeedbackStats(pid);

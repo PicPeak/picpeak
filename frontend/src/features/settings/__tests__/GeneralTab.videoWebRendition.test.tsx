@@ -21,6 +21,7 @@ const base: GeneralSettings = {
   max_file_size_mb: 50,
   max_video_size_mb: 500,
   video_web_rendition: false,
+  video_strip_metadata: true,
   max_files_per_upload: 500,
   allowed_file_types: 'jpg,png,mp4',
   max_upload_batch_size_mb: 95,
@@ -79,5 +80,23 @@ describe('GeneralTab video web rendition', () => {
   it('reflects a stored true', () => {
     renderTab({ ...base, video_web_rendition: true });
     expect((screen.getByTestId('general-video-web-rendition') as HTMLInputElement).checked).toBe(true);
+  });
+});
+
+describe('GeneralTab video metadata stripping (issue 2102)', () => {
+  it('is on by default, and flips the form state off', () => {
+    const { setGeneralSettings, applied } = renderTab(base);
+    const box = screen.getByTestId('general-video-strip-metadata') as HTMLInputElement;
+    expect(box.checked).toBe(true);
+
+    fireEvent.click(box);
+
+    expect(setGeneralSettings).toHaveBeenCalledTimes(1);
+    expect(applied[0].video_strip_metadata).toBe(false);
+  });
+
+  it('reflects a stored false', () => {
+    renderTab({ ...base, video_strip_metadata: false });
+    expect((screen.getByTestId('general-video-strip-metadata') as HTMLInputElement).checked).toBe(false);
   });
 });

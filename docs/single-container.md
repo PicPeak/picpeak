@@ -216,9 +216,23 @@ Keep the published port on `127.0.0.1` when the TLS proxy runs on the host. For
 a containerized proxy, attach both containers to a private network instead of
 publishing the origin publicly. Behind TLS set `COOKIE_SECURE=true` and
 `ENABLE_HSTS=true`, and set `TRUST_PROXY` to the exact hop count or proxy
-subnet/list (unset, PicPeak trusts `X-Forwarded-*` headers from every
-private-range address for compatibility and logs a warning at startup). Do not use `TRUST_PROXY=true`
+subnet/list. Do not use `TRUST_PROXY=true`
 unless every route to the container crosses a proxy you control.
+
+The image sets `TRUST_PROXY=0`: nothing sits in front of Node inside the
+container, so it trusts no `X-Forwarded-*` headers and a client cannot choose
+its own rate-limit address. Behind one reverse proxy (the NAS proxy, Traefik,
+NPM, Caddy or a Cloudflare Tunnel) set `-e TRUST_PROXY=1`, one more per extra
+proxy hop.
+
+> **Upgrading behind a reverse proxy:** older images left `TRUST_PROXY` unset,
+> which trusted every private-range hop. If a proxy sits in front of the
+> container and you never set `TRUST_PROXY`, add `-e TRUST_PROXY=1` when you
+> recreate it. Otherwise every visitor shares the proxy's address for rate
+> limits, login lockouts and audit IPs, and the backend treats every request
+> as plain HTTP: `COOKIE_SECURE=auto` drops `Secure`, and links built from the
+> request (when no site URL is saved in Settings → General) start with
+> `http://`.
 
 ## NAS notes
 

@@ -874,6 +874,11 @@ async function mergePeople(eventId, sourceIds, targetId) {
   if (!ids.length) return { moved: 0 };
 
   const merge = () => db.transaction(async (trx) => {
+    // The event's people lock first (PostgreSQL), as a scan takes it before
+    // it touches face or person rows: moving faces and deleting the sources
+    // locks the rows a scan of the same people rewrites, in another order
+    // (issue 2069).
+    await lockEventPeople(eventId, trx);
     // Carry metadata forward before the sources are deleted. Without this a
     // merge silently discards a photographer-entered name, or un-hides a
     // person they had suppressed — the target keeps its own values where it

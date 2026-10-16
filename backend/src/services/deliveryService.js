@@ -256,7 +256,7 @@ async function runDeliveryReminderPass({ now = new Date() } = {}) {
     const claimed = await db('events').where('id', event.id).whereNull(column).update({ [column]: now.toISOString() });
     if (!claimed) continue;
     try {
-      const delivered = Number((await livePhotos(db).where('event_id', event.id).count('id as c').first()).c) || 0;
+      const delivered = Number((await livePhotos(db).where('event_id', event.id).whereNull('moderation_status').count('id as c').first()).c) || 0;
       const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
       const base = await getAbsoluteFrontendUrl(null, { override: process.env.ADMIN_URL });
       await queueEmail(event.id, to, 'delivery_due_reminder', {
