@@ -74,6 +74,7 @@ const FILES_ONLY_FIELD_LIMITS = { fields: 0, fieldSize: 1 };
 function buildAdminUploader(maxSizeBytes, policy, fieldLimits) {
   return multer({
     storage: tempStorage,
+    defParamCharset: 'utf8', // multer's latin1 default turns UTF-8 names into mojibake
     // CVE-2026-82333: files arrive as repeated `files` parts via .array(),
     // not bracket-indexed field names like `files[0]` — no legitimate
     // field name uses array-index syntax at all. Reject any that do.
