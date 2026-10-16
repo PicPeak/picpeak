@@ -284,16 +284,8 @@ app.use(require('./src/routes/portableRestoreShell').createRestoreShellRouter({ 
 // A restore keeps this process alive and busy on purpose. While one runs the
 // health probes answer 200 from memory, outside the request fence and without
 // touching the database, so a health-based restarter does not kill it halfway.
-app.get(['/health', '/api/health'], (req, res, next) => {
-  if (!restoreCoordinator.isFenced()) return next();
-  return res.json({
-    status: 'ok',
-    maintenance: restoreCoordinator.status().restartRequired ? 'restart_required' : 'restoring',
-    timestamp: new Date().toISOString(),
-    pid: process.pid,
-    uptime: process.uptime()
-  });
-});
+const healthHandlers = require('./src/services/healthCheck').createHealthHandlers({ db, restoreCoordinator, logger });
+app.get(['/health', '/api/health'], healthHandlers.duringRestore);
 // The fence is a flag in memory, refreshed by the coordinator's own watch;
 // an ordinary request never reads the control row.
 app.use(createApplicationWorkMiddleware({ enabled: () => restoreCoordinator.tracking() }));
@@ -306,8 +298,8 @@ app.options('/api/*', cors(corsOptions));
 // PicPeak credentials, or forwards arbitrary upstream responses.
 app.use('/api/analytics/tracker', require('./src/routes/analyticsTrackerProxy'));
 
-// Health check endpoint. `pid` + `uptime` let monitors (and the local E2E
-// watchdog) detect a silent process restart between two checks.
+// Health check endpoint. Public, so it answers only `status` (see
+// src/services/healthCheck.js).
 //
 // Served at BOTH paths: /health is the canonical one, /api/health exists
 // because probes reasonably assume the API lives under /api and otherwise
@@ -318,25 +310,7 @@ app.use('/api/analytics/tracker', require('./src/routes/analyticsTrackerProxy'))
 // couple of seconds does not pay for — or pollute — the body parsers, the
 // request logger, the maintenance gate (/health is on its skip list anyway)
 // or the rate limiter's per-IP budget.
-app.get(['/health', '/api/health'], async (req, res) => {
-  try {
-    await db.raw('SELECT 1');
-    res.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      pid: process.pid,
-      uptime: process.uptime()
-    });
-  } catch (error) {
-    logger.error('Health check failed:', error);
-    res.status(503).json({
-      status: 'error',
-      timestamp: new Date().toISOString(),
-      pid: process.pid,
-      uptime: process.uptime()
-    });
-  }
-});
+app.get(['/health', '/api/health'], healthHandlers.ordinary);
 
 // Initialize rate limiters (they will be created dynamically)
 
