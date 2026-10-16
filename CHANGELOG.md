@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.174.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.174.3-beta.0...v3.174.4-beta.0) (2026-10-16)
+
+
+### Bug Fixes
+
+* **downloads:** count nothing on a HEAD probe of an unlimited gallery ([#2146](https://github.com/PicPeak/picpeak/issues/2146)) ([4e12a48](https://github.com/PicPeak/picpeak/commit/4e12a482e0c52802e518c0b7d63239a15a1bbd73))
+
 ## [3.174.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.174.2-beta.0...v3.174.3-beta.0) (2026-10-16)
 
 
