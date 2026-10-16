@@ -5,6 +5,42 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.174.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.174.1-beta.0...v3.174.2-beta.0) (2026-10-16)
+
+
+### Bug Fixes
+
+* **a11y:** inert admin drawer, visible tile focus, localized tile labels ([#2094](https://github.com/PicPeak/picpeak/issues/2094)) ([0fee5ef](https://github.com/PicPeak/picpeak/commit/0fee5ef957f2224ac6614ff34f532766a3aede9a))
+* **admin:** rename conflicts, archive leftovers and backup validate polish ([#2091](https://github.com/PicPeak/picpeak/issues/2091)) ([ef83026](https://github.com/PicPeak/picpeak/commit/ef83026b45bfed7bb65996436b66dc05845abf86))
+* **api:** answer 4xx for bad ids, limits, folder ids and empty transfers ([#2093](https://github.com/PicPeak/picpeak/issues/2093)) ([90fb51a](https://github.com/PicPeak/picpeak/commit/90fb51ad11a6a1f5979786804cf9a40fba6c7a86))
+* **archive:** leave restored metadata files out of gallery archives ([#2042](https://github.com/PicPeak/picpeak/issues/2042)) ([75fb770](https://github.com/PicPeak/picpeak/commit/75fb77059758049b9c55691adcd5516ef2d0ba75))
+* **ci:** pass release-please outputs to the summary step as env ([#2100](https://github.com/PicPeak/picpeak/issues/2100)) ([cfe9dff](https://github.com/PicPeak/picpeak/commit/cfe9dffab836fd221af6770f324af87b9c823b0f))
+* **db:** one lock order for event-scoped writers on PostgreSQL ([#2109](https://github.com/PicPeak/picpeak/issues/2109)) ([398928e](https://github.com/PicPeak/picpeak/commit/398928e0475dc05410ba2094654ddbff16e63c2d))
+* **documents:** stop document downloads from crashing on a vanished file ([#2141](https://github.com/PicPeak/picpeak/issues/2141)) ([747c973](https://github.com/PicPeak/picpeak/commit/747c973bc5afd1234772b4e0bcaff5faf3ab3b9e))
+* **external:** defer a half-written file under its real dedupe key ([#2132](https://github.com/PicPeak/picpeak/issues/2132)) ([f4dc776](https://github.com/PicPeak/picpeak/commit/f4dc776bd77014bae041ace7140b3f2d64c65f54))
+* **external:** hide photos whose file left the share, follow renames ([#2127](https://github.com/PicPeak/picpeak/issues/2127)) ([13b172a](https://github.com/PicPeak/picpeak/commit/13b172a48593572240a3dde289f2899457f6af6a))
+* **external:** refresh an external video edited in place ([#2117](https://github.com/PicPeak/picpeak/issues/2117)) ([2155ee8](https://github.com/PicPeak/picpeak/commit/2155ee8061cd21d2db5f5bc23bfdf9c53a1f7e3b))
+* **external:** refresh existing rows of a type that is no longer allowed ([#2123](https://github.com/PicPeak/picpeak/issues/2123)) ([40f289e](https://github.com/PicPeak/picpeak/commit/40f289e60416ebe1d8d2ee52bd6c05bf9a5ce41a))
+* **faces:** guard a face scan's commit with its own claim attempt ([#2107](https://github.com/PicPeak/picpeak/issues/2107)) ([3eeb140](https://github.com/PicPeak/picpeak/commit/3eeb140a80a7389b88d2b8de1704c83598c13e73))
+* **faces:** recluster in one transaction under the clustering lock ([#2116](https://github.com/PicPeak/picpeak/issues/2116)) ([327e471](https://github.com/PicPeak/picpeak/commit/327e47139069b31e98a585ee44ee4c6c90cfd513))
+* **faces:** take the clustering lock in people merge and split ([#2125](https://github.com/PicPeak/picpeak/issues/2125)) ([037dc7c](https://github.com/PicPeak/picpeak/commit/037dc7c798e7fb2fa9ad0e8427ce3423cda38e60))
+* **feedback:** count comments, one rating per guest, honest moderation toast ([#2092](https://github.com/PicPeak/picpeak/issues/2092)) ([e5ca7fe](https://github.com/PicPeak/picpeak/commit/e5ca7fe5f83799b6a7c66e0fc935d7173bc7e219))
+* **media:** answer 404 when a ladder or file vanishes between stat and read ([#2126](https://github.com/PicPeak/picpeak/issues/2126)) ([23a0040](https://github.com/PicPeak/picpeak/commit/23a004011163e487b2d0a0c985f2b7e59a0e873a))
+* **media:** answer 404 when admin and download files vanish after stat ([#2134](https://github.com/PicPeak/picpeak/issues/2134)) ([c50f283](https://github.com/PicPeak/picpeak/commit/c50f28305eb3447a18017fd34e5c42ce80078c39))
+* **media:** destroy storage streams that arrive after the client left ([#2133](https://github.com/PicPeak/picpeak/issues/2133)) ([9a0a390](https://github.com/PicPeak/picpeak/commit/9a0a390c2e904364dc857dbfcfcfce29ef92be9f))
+* **media:** regenerate renditions written before EXIF stripping ([#2110](https://github.com/PicPeak/picpeak/issues/2110)) ([0709cae](https://github.com/PicPeak/picpeak/commit/0709cae3cff0b576b339751c6637c799ff4749b2))
+* **media:** serve browser-compatible videos from a metadata-free remux ([#2111](https://github.com/PicPeak/picpeak/issues/2111)) ([6dfa075](https://github.com/PicPeak/picpeak/commit/6dfa075a8daabb0c95aa4dc8974eaea95ac46b0f))
+* **media:** strip EXIF and GPS from derived images ([#2080](https://github.com/PicPeak/picpeak/issues/2080)) ([bc86c98](https://github.com/PicPeak/picpeak/commit/bc86c98f9e5f4344435e824d16c3681503f33f27))
+* **media:** strip source metadata from video web copies and HLS rungs ([#2099](https://github.com/PicPeak/picpeak/issues/2099)) ([4a23a6e](https://github.com/PicPeak/picpeak/commit/4a23a6ec6defc6c2e8c796ea812bb9590bf7df86))
+* **photos:** UTF-8 upload names, sort by original name, watermark flag on photo route ([#2090](https://github.com/PicPeak/picpeak/issues/2090)) ([50d4755](https://github.com/PicPeak/picpeak/commit/50d4755ad96ab7c4528b72e10d361160a8fd421c))
+* **security:** derive the rate-limit client IP from the trusted proxy hop ([#2082](https://github.com/PicPeak/picpeak/issues/2082)) ([58303df](https://github.com/PicPeak/picpeak/commit/58303df7489521a67b710b1d9f4d5f098a411209))
+* **security:** trust no proxy hop by default in the all-in-one image ([#2104](https://github.com/PicPeak/picpeak/issues/2104)) ([6e13b72](https://github.com/PicPeak/picpeak/commit/6e13b724982cb584c8547b06009539903eeed8c1))
+* **thumbnails:** drop a lazy tier rendered with settings changed since ([#2124](https://github.com/PicPeak/picpeak/issues/2124)) ([9296782](https://github.com/PicPeak/picpeak/commit/9296782c9e2bf14d24d6e68da6d831c8e9478adf))
+* **thumbnails:** keep a lazy main-thumbnail render from overwriting a regenerate ([#2135](https://github.com/PicPeak/picpeak/issues/2135)) ([9ab232d](https://github.com/PicPeak/picpeak/commit/9ab232da821a5acc4f7f38f12b55ef3c981ac2f5))
+* **thumbnails:** regenerate RAW cached sizes and report failed tier deletes ([#2115](https://github.com/PicPeak/picpeak/issues/2115)) ([39a71d4](https://github.com/PicPeak/picpeak/commit/39a71d4c035f3d3abe70e7476fdb45e849e930ad))
+* **upload:** validate file content on guest and chunked uploads ([#2084](https://github.com/PicPeak/picpeak/issues/2084)) ([f594cbc](https://github.com/PicPeak/picpeak/commit/f594cbc7b89b04b07860c5eb2a671f66841c5336))
+* **watermark:** draw the gallery's watermark text and escape it in the SVG ([#2106](https://github.com/PicPeak/picpeak/issues/2106)) ([b6b0349](https://github.com/PicPeak/picpeak/commit/b6b03493b87be3efc6edfc49ae3599ab7118734d))
+
 ## [3.174.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.174.0-beta.0...v3.174.1-beta.0) (2026-10-15)
 
 
