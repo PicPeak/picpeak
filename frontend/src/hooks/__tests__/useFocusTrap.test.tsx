@@ -32,3 +32,33 @@ it('reaches a control enabled after the trap opened, then wraps', async () => {
   await user.tab({ shift: true });
   expect(screen.getByRole('button', { name: 'Send' })).toHaveFocus();
 });
+
+const WithHiddenLast: React.FC = () => {
+  const trap = useFocusTrap(true);
+  return (
+    <div ref={trap}>
+      <button type="button">First</button>
+      <button type="button">Last visible</button>
+      <button type="button" className="hidden">Desktop only</button>
+    </div>
+  );
+};
+
+it('skips a control that is not rendered, so the wrap does not stall on it', async () => {
+  // jsdom has no layout: stand in checkVisibility for a `hidden` class.
+  const proto = HTMLElement.prototype as HTMLElement & { checkVisibility?: () => boolean };
+  const original = proto.checkVisibility;
+  proto.checkVisibility = function (this: HTMLElement) { return !this.closest('.hidden'); };
+  try {
+    const user = userEvent.setup();
+    render(<WithHiddenLast />);
+    expect(screen.getByRole('button', { name: 'First' })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole('button', { name: 'Last visible' })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'First' })).toHaveFocus();
+  } finally {
+    if (original) proto.checkVisibility = original;
+    else delete proto.checkVisibility;
+  }
+});

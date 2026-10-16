@@ -359,3 +359,63 @@ describe('GET /:id/uploads/download', () => {
     expect((await request(app).get(`/api/admin/transfers/${id}/uploads/download`)).status).toBe(401);
   });
 });
+
+// Issue 2130: the outgoing bundle appended one storage read per file with no
+// guard, so a recipient who closed the tab left every opened body (and any
+// that resolved afterwards) parked on a pooled S3 socket.
+describe('streamTransferArchive releases its reads (issue 2130)', () => {
+  async function addExtra(transferId, filename, content) {
+    const key = `transfers/bundle-${transferId}/${filename}`;
+    await storage.put(key, Buffer.from(content));
+    return transferService.addExtraFile(transferId, {
+      originalFilename: filename, storedPath: key, sizeBytes: content.length, mimeType: 'text/plain',
+    });
+  }
+
+  it('zips more files than the guard keeps open at once', async () => {
+    const id = await makeTransfer('send', 'bundle');
+    for (const n of ['a', 'b', 'c', 'd']) await addExtra(id, `${n}.txt`, `content ${n}`);
+
+    const res = await auth(request(app).get(`/api/admin/transfers/${id}/download`))
+      .buffer(true).parse(binary);
+
+    expect(res.status).toBe(200);
+    expect(unzip(res.body)).toEqual({
+      'a.txt': 'content a', 'b.txt': 'content b', 'c.txt': 'content c', 'd.txt': 'content d',
+    });
+  });
+
+  it('opens nothing for a response that was closed before streaming began', async () => {
+    const id = await makeTransfer('send', 'bundle-closed-early');
+    await addExtra(id, 'a.txt', 'a');
+    const get = jest.spyOn(storage, 'get');
+    const res = { destroyed: true, setHeader: jest.fn(), on: jest.fn() };
+
+    expect(await transferService.streamTransferArchive({ id, title: 'bundle-closed-early' }, res)).toBe(0);
+    expect(get).not.toHaveBeenCalled();
+    expect(res.setHeader).not.toHaveBeenCalled();
+  });
+
+  it('destroys a read that resolves after the recipient left, and opens no more', async () => {
+    const id = await makeTransfer('send', 'bundle-cancel');
+    await addExtra(id, 'a.txt', 'a');
+    await addExtra(id, 'b.txt', 'b');
+    const { Readable } = require('stream');
+    const { EventEmitter } = require('events');
+    const res = Object.assign(new EventEmitter(), {
+      destroyed: false, writableFinished: false, setHeader: jest.fn(),
+      write: () => true, end: jest.fn(), destroy: jest.fn(),
+    });
+    const late = new Readable({ read() {} });
+    const get = jest.spyOn(storage, 'get').mockImplementation(async () => {
+      res.emit('close'); // the recipient left while the read was opening
+      return late;
+    });
+
+    await transferService.streamTransferArchive({ id, title: 'bundle-cancel' }, res);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(late.destroyed).toBe(true);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+});

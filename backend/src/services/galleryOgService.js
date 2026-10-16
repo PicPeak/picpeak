@@ -4,6 +4,8 @@ const logger = require('../utils/logger');
 const { ensureThumbnail } = require('./imageProcessor');
 const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
 const { getStorage } = require('./storage');
+const renditionRefresh = require('./renditionRefresh');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 const { isGalleryAvailable } = require('../utils/galleryLifecycle');
 const { isPotentialShareToken } = require('../utils/shareLinkUtils');
@@ -342,13 +344,30 @@ async function handleGalleryOgCover(req, res) {
       return;
     }
 
-    const photo = await wherePhotoProcessed(livePhotos(db))
+    const coverQuery = () => wherePhotoProcessed(livePhotos(db))
       .where({ id: event.hero_photo_id, event_id: event.id })
       .whereNull('moderation_status')
       .first();
+    let photo = await coverQuery();
     if (!photo) {
       res.status(404).type('text/plain').send('Cover not available');
       return;
+    }
+
+    // Renditions from before EXIF stripping (issue 2096) still carry the
+    // photo's GPS position. This is the one rendition reachable without the
+    // gallery password, so it is regenerated before it is served, not when the
+    // background pass gets to it. If that fails the old file is not served.
+    if (renditionRefresh.needsRefresh(photo)) {
+      if (!(await renditionRefresh.refreshCover(photo))) {
+        res.status(404).type('text/plain').send('Cover not available');
+        return;
+      }
+      photo = await coverQuery();
+      if (!photo) {
+        res.status(404).type('text/plain').send('Cover not available');
+        return;
+      }
     }
 
     // This endpoint is public, so the row's pointer gets the same check as
@@ -388,7 +407,7 @@ async function handleGalleryOgCover(req, res) {
     });
     if (stat.size) res.setHeader('Content-Length', stat.size);
     const stream = await storage.get(thumbnailPath);
-    stream.pipe(res);
+    pipeStreamToResponse(stream, res, { context: `gallery OG cover for photo ${photo.id}` });
   } catch (error) {
     logger.error('Failed to stream gallery OG cover', { error: error.message });
     res.status(500).type('text/plain').send('Internal server error');

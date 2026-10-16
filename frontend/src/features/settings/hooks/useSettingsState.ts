@@ -30,6 +30,8 @@ export interface GeneralSettings {
   max_video_size_mb: number;
   /** Browser-playable H.264 copies of videos (issue 1430). Off by default. */
   video_web_rendition: boolean;
+  /** Metadata-free copies of videos that already play (issue 2102). On by default. */
+  video_strip_metadata: boolean;
   /** Adaptive HLS streaming of videos (issue 1733). Off by default. */
   video_adaptive_streaming: boolean;
   max_files_per_upload: number;
@@ -186,6 +188,7 @@ export function useSettingsState() {
     max_file_size_mb: 50,
     max_video_size_mb: 500,
     video_web_rendition: false,
+    video_strip_metadata: true,
     video_adaptive_streaming: false,
     max_files_per_upload: 500,
     photo_trash_retention_days: 30,
@@ -336,6 +339,7 @@ export function useSettingsState() {
         max_file_size_mb: toNumber(settings.general_max_file_size_mb, 50),
         max_video_size_mb: toNumber(settings.general_max_video_size_mb, 500),
         video_web_rendition: toBoolean(settings.general_video_web_rendition, false),
+        video_strip_metadata: toBoolean(settings.general_video_strip_metadata, true),
         video_adaptive_streaming: toBoolean(settings.general_video_adaptive_streaming, false),
         max_files_per_upload: Math.min(
           MAX_FILES_PER_UPLOAD_LIMIT,

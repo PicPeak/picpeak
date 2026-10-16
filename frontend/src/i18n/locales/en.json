@@ -1700,6 +1700,17 @@
         "pets": "Pets",
         "black_and_white": "Black & white"
       }
+    },
+    "tile": {
+      "viewFullSize": "View full size",
+      "downloadPhoto": "Download photo",
+      "commentOnPhoto": "Comment on photo",
+      "likePhoto": "Like photo",
+      "unlikePhoto": "Unlike photo",
+      "comment": "Comment",
+      "like": "Like",
+      "unlike": "Unlike",
+      "selectPhoto": "Select {{name}}"
     }
   },
   "categories": {
@@ -1941,6 +1952,8 @@
     "downloadProtection": "Download Protection",
     "disableRightClick": "Block right-click menu",
     "watermarkDownloads": "Add watermark to downloads",
+    "watermarkText": "Watermark text",
+    "watermarkTextHelp": "Replaces the company name in this gallery's text watermark. Leave empty to use the company name. Not shown when Branding has a watermark logo.",
     "enableDevtoolsProtection": "Detect developer tools",
     "useCanvasRendering": "Canvas rendering in the lightbox (advanced protection)",
     "protectionInfo": "Protection features help prevent unauthorized downloads but cannot block all methods.",
@@ -2239,6 +2252,9 @@
       "watchHelp": "New photos copied into the folder show up by themselves."
     },
     "externalSource": {
+      "missingFiles_one": "{{count}} file missing",
+      "missingFiles_other": "{{count}} files missing",
+      "missingFilesHint": "Show the photos whose file is gone from the folder",
       "alreadyRunning": "An import of this folder is already running.",
       "changeFolder": "Change folder",
       "importNow": "Import now",
@@ -2492,7 +2508,12 @@
       "publishLink": "Publish"
     },
     "showExifToGuests": "Show camera details to guests",
-    "showExifToGuestsHelp": "Camera, lens, focal length, aperture, shutter speed and ISO appear below the photo in the full-screen view. Location and serial numbers are never stored or shown."
+    "showExifToGuestsHelp": "Camera, lens, focal length, aperture, shutter speed and ISO appear below the photo in the full-screen view. Location and serial numbers are never stored or shown.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "Line breaks will be preserved in emails",
+      "tip": "Tip: Press Enter to create a new line. Each line will appear as a separate paragraph in emails.",
+      "preview": "Preview:"
+    }
   },
   "settings": {
     "title": "System Settings",
@@ -2510,6 +2531,8 @@
       "maxVideoSizeHelp": "Separate per-file limit for video uploads, so photos can keep a smaller limit.",
       "videoWebRendition": "Browser-playable copies of videos",
       "videoWebRenditionHelp": "Re-encodes videos a browser cannot play (HEVC, QuickTime, MP4s that are not streamable) into an H.264 MP4 for playback. The original stays the download. Costs CPU per video and a second file; switching it on queues the videos already uploaded.",
+      "videoStripMetadata": "Strip location and device data from played videos",
+      "videoStripMetadataHelp": "Videos that already play in a browser get a copy without the recording location, camera and other metadata, made without re-encoding; guests play that copy. Stores one extra file per such video, about the size of the original. The original stays the download. Switching it off keeps the copies already made.",
       "videoAdaptiveStreaming": "Adaptive video streaming",
       "videoAdaptiveStreamingHelp": "Converts each video into a stream in up to three qualities (480p, 720p, 1080p), so playback starts quickly and adapts to the viewer’s connection. The original stays the download. Costs CPU per video and roughly as much storage again; videos longer than 30 minutes keep playing as before.",
       "maxFilesPerUpload": "Max Files per Upload",
@@ -4747,6 +4770,8 @@
       "collages": "Collages",
       "noPosterFrame": "No poster frame",
       "noPosterFrameRetry": "Take the poster frame again",
+      "fileMissing": "File missing",
+      "fileMissingTooltip": "The file is no longer in the external folder. Guests do not see this photo; it comes back when the file does. Delete it if the file is gone for good.",
       "viewMode": "View mode",
       "gridView": "Grid view",
       "listView": "List view",

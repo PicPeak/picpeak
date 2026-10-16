@@ -158,3 +158,183 @@ describe('pipeStreamToResponse (#1128)', () => {
     expect(destroyed).toBe(true);
   });
 });
+
+/**
+ * Issue 2130: routes await storage.get() and only then call the helper. These
+ * run against a REAL http server, because what matters is Node's own
+ * ServerResponse state (`destroyed`, the 'close' event having already fired)
+ * at the moment the stream arrives — a hand-rolled res would assert whatever
+ * the fake says.
+ */
+describe('pipeStreamToResponse — client already gone (issue 2130)', () => {
+  const http = require('http');
+
+  /** A storage body that records whether it was released. */
+  function trackedSource(chunks = []) {
+    const src = new Readable({ read() {} });
+    src.released = new Promise((resolve) => src.once('close', resolve));
+    for (const c of chunks) src.push(c);
+    return src;
+  }
+
+  // Closed in afterEach, so a failing assertion cannot leave a listener that
+  // keeps jest from exiting.
+  let servers = [];
+  function withServer(handler) {
+    const server = http.createServer(handler);
+    servers.push(server);
+    return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
+  }
+
+  afterEach(async () => {
+    await Promise.all(servers.map((server) => new Promise((resolve) => {
+      server.closeAllConnections();
+      server.close(resolve);
+    })));
+    servers = [];
+  });
+
+  it('destroys a stream that arrives after the client aborted', async () => {
+    let source;
+    let piped;
+    const piping = new Promise((resolve) => { piped = resolve; });
+    const server = await withServer(async (req, res) => {
+      // The delayed get(): resolve only once the client has hung up.
+      await new Promise((resolve) => res.once('close', resolve));
+      source = trackedSource();
+      pipeStreamToResponse(source, res, { context: 'delayed get' });
+      piped();
+    });
+
+    const req = http.get({ port: server.address().port, host: '127.0.0.1', path: '/' });
+    req.on('error', () => {});
+    setTimeout(() => req.destroy(), 20);
+    await piping;
+
+    // Before the fix this never resolved: 'close' had already fired, so the
+    // helper's close listener was never called and the body stayed open.
+    await expect(Promise.race([
+      source.released.then(() => 'released'),
+      new Promise((resolve) => setTimeout(() => resolve('leaked'), 500)),
+    ])).resolves.toBe('released');
+    expect(source.destroyed).toBe(true);
+  });
+
+  it('destroys the stream when the client disconnects mid-body', async () => {
+    let source;
+    const server = await withServer((req, res) => {
+      res.setHeader('Content-Length', 1000);
+      source = trackedSource([Buffer.alloc(100, 1)]);
+      pipeStreamToResponse(source, res, { context: 'mid-body' });
+    });
+
+    await new Promise((resolve) => {
+      const req = http.get({ port: server.address().port, host: '127.0.0.1', path: '/' }, (resp) => {
+        resp.once('data', () => { req.destroy(); resolve(); });
+      });
+      req.on('error', () => {});
+    });
+
+    await expect(Promise.race([
+      source.released.then(() => 'released'),
+      new Promise((resolve) => setTimeout(() => resolve('leaked'), 500)),
+    ])).resolves.toBe('released');
+  });
+
+  it('destroys the stream of a pipelined request whose queued response never got the socket', async () => {
+    const net = require('net');
+    let source;
+    let piped;
+    const piping = new Promise((resolve) => { piped = resolve; });
+    let bothArrived;
+    const arrived = new Promise((resolve) => { bothArrived = resolve; });
+    const server = await withServer(async (req, res) => {
+      if (req.url === '/first') return; // holds the socket; never answers
+      bothArrived();
+      await new Promise((resolve) => req.socket.once('close', resolve));
+      // Queued behind /first, so Node never gave this response the socket:
+      // it is not destroyed and will never see 'close'.
+      source = trackedSource();
+      pipeStreamToResponse(source, res, { context: 'pipelined' });
+      piped();
+    });
+
+    const client = net.connect(server.address().port, '127.0.0.1');
+    client.on('error', () => {});
+    client.write('GET /first HTTP/1.1\r\nHost: x\r\n\r\nGET /second HTTP/1.1\r\nHost: x\r\n\r\n');
+    await arrived;
+    client.destroy();
+    await piping;
+
+    await expect(Promise.race([
+      source.released.then(() => 'released'),
+      new Promise((resolve) => setTimeout(() => resolve('leaked'), 500)),
+    ])).resolves.toBe('released');
+  });
+
+  it('serves a completed response exactly as before', async () => {
+    const payload = Buffer.from('a full image body');
+    const server = await withServer((req, res) => {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Content-Length', payload.length);
+      pipeStreamToResponse(Readable.from([payload]), res, { context: 'normal' });
+    });
+
+    const { status, type, body } = await new Promise((resolve, reject) => {
+      http.get({ port: server.address().port, host: '127.0.0.1', path: '/' }, (resp) => {
+        const parts = [];
+        resp.on('data', (c) => parts.push(c));
+        resp.on('end', () => resolve({
+          status: resp.statusCode, type: resp.headers['content-type'], body: Buffer.concat(parts),
+        }));
+      }).on('error', reject);
+    });
+
+    expect(status).toBe(200);
+    expect(type).toBe('image/jpeg');
+    expect(body.equals(payload)).toBe(true);
+  });
+
+  it('releases the stream instead of writing into an already-ended response', async () => {
+    const res = makeRes();
+    res.writableEnded = true;
+    const writes = [];
+    res.write = (c) => { writes.push(c); return true; };
+    const stream = new Readable({ read() {} });
+    stream.push(Buffer.from('late bytes'));
+
+    pipeStreamToResponse(stream, res);
+    await settle();
+
+    expect(stream.destroyed).toBe(true);
+    expect(writes).toHaveLength(0);
+  });
+
+  it('does not answer a destroyed response when the released stream errors', async () => {
+    const res = makeRes();
+    res.destroyed = true;
+    const stream = new Readable({ read() {} });
+
+    pipeStreamToResponse(stream, res);
+    stream.emit('error', Object.assign(new Error('aborted'), { code: 'ECONNRESET' }));
+    await settle();
+
+    expect(stream.destroyed).toBe(true);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBeNull();
+  });
+});
+
+// The admin photo/thumbnail/preview/download routes and the OG cover used to
+// pipe the storage stream straight into res, with neither the abort release
+// above nor the #1128 error handler. Pin that they go through the helper.
+describe('storage streams reach the response through the helper (issue 2130)', () => {
+  it.each([
+    'src/routes/adminPhotos.js',
+    'src/services/galleryOgService.js',
+  ])('%s has no raw .pipe(res)', (rel) => {
+    const src = fs.readFileSync(path.join(__dirname, '../..', rel), 'utf8');
+    expect(src).not.toMatch(/\.pipe\(res\)/);
+    expect(src).toMatch(/pipeStreamToResponse\(/);
+  });
+});

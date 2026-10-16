@@ -473,6 +473,43 @@ describe('v1 photo renditions and previews', () => {
       expect(json(res).code).toBe('INSUFFICIENT_SCOPE');
     });
 
+    // Issue 2129: the preview found by the stat is removed before the read.
+    describe('a preview removed between the stat and the read', () => {
+      const url = () => `/api/v1/events/${eventId}/photos/${photos.large}/preview`;
+      const onPreviewGet = (fn) => {
+        const storage = require('../../src/services/storage').getStorage();
+        const realGet = storage.get.bind(storage);
+        jest.spyOn(storage, 'get').mockImplementation(async (key, ...rest) => fn(key, () => realGet(key, ...rest)));
+      };
+      beforeAll(async () => { expect((await get(url())).status).toBe(200); });
+      afterEach(() => jest.restoreAllMocks());
+
+      it('answers the missing-preview 404 when S3 no longer has it', async () => {
+        onPreviewGet(async () => {
+          throw Object.assign(new Error('The specified key does not exist.'),
+            { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } });
+        });
+        const res = await get(url());
+        expect(res.status).toBe(404);
+        expect(json(res).code).toBe('PREVIEW_UNAVAILABLE');
+      });
+
+      it('answers 404 when the local file is gone by the time it opens', async () => {
+        const storage = require('../../src/services/storage').getStorage();
+        onPreviewGet(async (key, read) => { await storage.delete(key); return read(); });
+        const res = await get(url());
+        expect(res.status).toBe(404);
+        expect(res.headers['content-type']).toMatch(/^application\/json/);
+      });
+
+      it('keeps the 500 for any other read error', async () => {
+        onPreviewGet(async () => {
+          throw Object.assign(new Error('Access Denied'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } });
+        });
+        expect((await get(url())).status).toBe(500);
+      });
+    });
+
     it('refuses an event the token owner does not own', async () => {
       const res = await get(`/api/v1/events/${eventId}/photos/${photos.large}/preview`, otherAdminToken);
       // created_by is set on the fixture, so requireEventOwnership refuses it

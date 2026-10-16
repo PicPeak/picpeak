@@ -80,11 +80,14 @@ function applyPhotoVisibilityFilter(query, accessLevel) {
  * the original is stored, but the gallery does not show the photo yet. NULL
  * is a pre-async-migration row and counts as complete. The gallery list and
  * every bulk download share it, so an archive holds what the list shows.
+ *
+ * Nor a photo that cannot be served (unavailable_reason, migration 312): an
+ * external photo whose file is gone from the share. The admin views keep it.
  */
 function wherePhotoProcessed(query) {
   return query.where(function () {
     this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
-  });
+  }).whereNull('photos.unavailable_reason');
 }
 
 /**
@@ -94,15 +97,21 @@ function wherePhotoProcessed(query) {
 function wherePhotoProcessedById(query, photoIdColumn) {
   query.whereNotExists(function () {
     this.select(1).from('photos').whereRaw('?? = ??', ['photos.id', photoIdColumn])
-      .whereNotNull('photos.processing_status').whereNot('photos.processing_status', 'complete');
+      .where(function () {
+        this.where(function () {
+          this.whereNotNull('photos.processing_status').whereNot('photos.processing_status', 'complete');
+        }).orWhereNotNull('photos.unavailable_reason');
+      });
   });
 }
 
 /**
- * Single-photo form of wherePhotoProcessed, for a row already read.
+ * Single-photo form of wherePhotoProcessed, for a row already read (with
+ * unavailable_reason among its columns).
  */
 function isPhotoProcessed(photo) {
-  return photo.processing_status == null || photo.processing_status === 'complete';
+  return (photo.processing_status == null || photo.processing_status === 'complete')
+    && photo.unavailable_reason == null;
 }
 
 /**

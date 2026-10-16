@@ -138,6 +138,40 @@ describe('findReplacementCandidate', () => {
       eventId, 'untitled.jpg', { matchMode: 'number_token' },
     )).toBeNull();
   });
+
+  // Issue 2072: names uploaded before the utf8 fix were stored latin1-decoded.
+  describe('legacy latin1-decoded names', () => {
+    it('matches a row stored as mojibake when the proper name is re-uploaded', async () => {
+      const id = await addPhoto({
+        filename: 'stored_moji.jpg', originalFilename: 'MÃ¼ller_Hochzeit.jpg', sourceFilename: 'MÃ¼ller_Hochzeit.jpg',
+      });
+      const hit = await findReplacementCandidate(eventId, 'Müller_Hochzeit.jpg');
+      expect(hit && hit.id).toBe(id);
+    });
+
+    it('prefers a row stored under the proper name over a mojibake row', async () => {
+      await addPhoto({
+        filename: 'stored_moji_b.jpg', originalFilename: 'GrÃ¼n.jpg', sourceFilename: 'GrÃ¼n.jpg',
+      });
+      const properId = await addPhoto({
+        filename: 'stored_utf8_b.jpg', originalFilename: 'Grün.jpg', sourceFilename: 'Grün.jpg',
+      });
+      const hit = await findReplacementCandidate(eventId, 'Grün.jpg');
+      expect(hit && hit.id).toBe(properId);
+    });
+
+    it('does not fall back for a plain ASCII name', async () => {
+      // An ASCII name has no distinct legacy form, so only the exact lookup runs.
+      expect(await findReplacementCandidate(eventId, 'Gruen.jpg')).toBeNull();
+    });
+
+    it('does not reinterpret a stored proper name as a match for a different upload', async () => {
+      await addPhoto({
+        filename: 'stored_utf8_c.jpg', originalFilename: 'Straße.jpg', sourceFilename: 'Straße.jpg',
+      });
+      expect(await findReplacementCandidate(eventId, 'StraÃ\u009fe.jpg')).toBeNull();
+    });
+  });
 });
 
 describe('replacePhoto — review blockers on #1165', () => {

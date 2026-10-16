@@ -152,6 +152,9 @@ function transcodeOptions(rungs, outDir, { toneMap = false, threads = 1 } = {}) 
     const dir = path.join(outDir, rung.name);
     args.push(
       '-map', `[v${i}]`, '-map', '0:a:0?', '-sn', '-dn',
+      // Each output gets none of the source's metadata (location, artist,
+      // device tags), which would otherwise land in every rung's init.mp4.
+      '-map_metadata', '-1', '-map_chapters', '-1',
       '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'high', '-pix_fmt', 'yuv420p',
       '-crf', '23', '-maxrate', String(rung.bitrate), '-bufsize', String(rung.bitrate * 2),
       '-force_key_frames', `expr:gte(t,n_forced*${SEGMENT_SECONDS})`, '-sc_threshold', '0',
@@ -302,16 +305,28 @@ async function deleteLadder(photo) {
  * deletes everything under these attempts' prefixes, whatever a worker still
  * busy with one of them wrote in between. An attempt that starts after this
  * (the new file's, on another replica) has a prefix of its own and is kept.
+ *
+ * The function takes the row as the reset found it, when the caller read it
+ * after this listing: an attempt claimed or published in between is removed
+ * too.
  */
 async function captureLadder(photo) {
-  if (!photo?.id || (!photo.hls_status && !photo.hls_path)) return async () => {};
+  if (!photo?.id) return async () => {};
   const root = `hls/${Number(photo.id)}`;
   const attemptOf = key => key.split('/').slice(0, 3).join('/');
   const warn = error => logger.warn(`videoHls: could not remove the ladder of photo ${photo.id}: ${error.message}`);
-  const attempts = new Set((await keysUnder(root).catch((error) => { warn(error); return []; })).map(attemptOf));
-  // A claimed attempt that has not uploaded anything yet.
-  if (photo.hls_attempt_id) attempts.add(`${root}/${photo.hls_attempt_id}`);
-  return async () => {
+  const attempts = new Set();
+  // A claimed attempt that has not uploaded anything yet, and a published one.
+  const add = (row) => {
+    if (row?.hls_attempt_id) attempts.add(`${root}/${row.hls_attempt_id}`);
+    if (typeof row?.hls_path === 'string' && row.hls_path.startsWith(`${root}/`)) attempts.add(attemptOf(row.hls_path));
+  };
+  if (photo.hls_status || photo.hls_path) {
+    for (const key of await keysUnder(root).catch((error) => { warn(error); return []; })) attempts.add(attemptOf(key));
+    add(photo);
+  }
+  return async (reset = null) => {
+    add(reset);
     if (!attempts.size) return;
     await keysUnder(root).then(keys => removeKeys(root, keys.filter(key => attempts.has(attemptOf(key))))).catch(warn);
   };

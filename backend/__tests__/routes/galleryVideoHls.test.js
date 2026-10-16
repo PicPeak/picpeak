@@ -246,6 +246,79 @@ describe('adaptive streaming routes (issue 1733)', () => {
     });
   });
 
+  // Issue 2118: a file the stat found and the read then misses was removed
+  // in between (a replacement, a delete, a re-render). It answers like the
+  // failed stat; any other read error stays a 500.
+  describe('a ladder removed between the stat and the read', () => {
+    const notFoundOnS3 = () => Object.assign(new Error('The specified key does not exist.'),
+      { name: 'NoSuchKey', $metadata: { httpStatusCode: 404 } });
+    // The local backend's own race: the stat sees the file, then it is gone.
+    const removeAfterStat = (suffix) => {
+      const realStat = storage.stat.bind(storage);
+      return jest.spyOn(storage, 'stat').mockImplementation(async (key) => {
+        const found = await realStat(key);
+        if (key.endsWith(suffix)) await storage.delete(key);
+        return found;
+      });
+    };
+    const failGet = (suffix, error) => {
+      const realGet = storage.get.bind(storage);
+      return jest.spyOn(storage, 'get').mockImplementation(async (key, ...rest) => {
+        if (key.endsWith(suffix)) throw error;
+        return realGet(key, ...rest);
+      });
+    };
+    let id;
+    beforeEach(async () => { id = await insertVideo(`raced-${Date.now()}.mp4`); });
+    afterEach(async () => {
+      jest.restoreAllMocks();
+      await db('photos').where({ id }).delete();
+    });
+
+    test.each([
+      ['removed from local storage', () => removeAfterStat('/master.m3u8')],
+      ['missing on S3', () => failGet('/master.m3u8', notFoundOnS3())],
+    ])('the master playlist %s answers 404 and puts the row back for the queue', async (_label, race) => {
+      race();
+      const res = await get(`${id}/master.m3u8`);
+      expect(res.status).toBe(404);
+      expect(JSON.parse(res.body.toString())).toEqual({ error: 'No stream for this video' });
+      expect(await db('photos').where({ id }).first('hls_status', 'hls_path', 'hls_error'))
+        .toEqual({ hls_status: null, hls_path: null, hls_error: 'ladder missing from storage' });
+    });
+
+    test.each([
+      ['480p/index.m3u8', 'removed from local storage', () => removeAfterStat('/480p/index.m3u8')],
+      ['480p/index.m3u8', 'missing on S3', () => failGet('/480p/index.m3u8', notFoundOnS3())],
+      ['480p/seg_00000.m4s', 'removed from local storage', () => removeAfterStat('/seg_00000.m4s')],
+      ['480p/seg_00000.m4s', 'missing on S3', () => failGet('/seg_00000.m4s', notFoundOnS3())],
+    ])('%s %s answers 404, without the headers staged for the file', async (route, _label, race) => {
+      race();
+      const res = await get(`${id}/${route}`);
+      expect(res.status).toBe(404);
+      expect(res.headers['content-type']).toMatch(/^application\/json/);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['content-disposition']).toBeUndefined();
+      // A rung is not the master: the row keeps its ladder.
+      expect(await db('photos').where({ id }).first('hls_status')).toEqual({ hls_status: 'complete' });
+    });
+
+    test.each(['master.m3u8', '480p/index.m3u8', '480p/seg_00000.m4s'])('any other read error on %s stays a 500', async (route) => {
+      failGet(route.split('/').pop(), Object.assign(new Error('Access Denied'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }));
+      expect((await get(`${id}/${route}`)).status).toBe(500);
+      expect(await db('photos').where({ id }).first('hls_status')).toEqual({ hls_status: 'complete' });
+    });
+
+    test('the original a video plays from, missing on S3 after the stat, answers 404', async () => {
+      const photo = await db('photos').where({ id }).first('filename');
+      failGet(photo.filename, notFoundOnS3());
+      const res = await request(app).get(`/api/gallery/${SLUG}/photo/${id}`);
+      expect(res.status).toBe(404);
+      expect(res.headers['content-type']).toMatch(/^application\/json/);
+      expect(res.headers['cache-control']).toBe('no-store');
+    });
+  });
+
   describe('access', () => {
     const routes = id => [`${id}/master.m3u8`, `${id}/480p/index.m3u8`, `${id}/480p/init.mp4`, `${id}/480p/seg_00000.m4s`];
 

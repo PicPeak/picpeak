@@ -7,7 +7,7 @@ import React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { FolderOpen, FolderTree, RefreshCw } from 'lucide-react';
+import { FileX, FolderOpen, FolderTree, RefreshCw } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, useConfirm, Badge } from '../../../components/common';
 import { folderErrorMessage, invalidateFolderViews } from '../../../components/admin/folders/folderQueries';
@@ -16,7 +16,13 @@ import { usePermission } from '../../../hooks/usePermission';
 import { useExternalImport } from './useExternalImport';
 import { toBoolean } from '../../../utils/parsers';
 
-export const ExternalSourceBar: React.FC<{ event: Event; onChangeFolder: () => void }> = ({ event, onChangeFolder }) => {
+export const ExternalSourceBar: React.FC<{
+  event: Event;
+  onChangeFolder: () => void;
+  /** The grid shows only the photos whose file is gone (issue 2121). */
+  missingFilter?: boolean;
+  onToggleMissing?: () => void;
+}> = ({ event, onChangeFolder, missingFilter = false, onToggleMissing }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const canChangeFolder = usePermission('events.edit') && !event.is_archived;
@@ -79,6 +85,18 @@ export const ExternalSourceBar: React.FC<{ event: Event; onChangeFolder: () => v
         </span>
       )}
       <div className="ml-auto flex flex-wrap items-center gap-2">
+        {onToggleMissing && (imp.missingFiles > 0 || missingFilter) && (
+          <Button
+            variant={missingFilter ? 'secondary' : 'outline'}
+            size="sm"
+            leftIcon={<FileX className="w-4 h-4" />}
+            onClick={onToggleMissing}
+            aria-pressed={missingFilter}
+            title={t('events.externalSource.missingFilesHint', 'Show the photos whose file is gone from the folder')}
+          >
+            {t('events.externalSource.missingFiles', '{{count}} files missing', { count: imp.missingFiles })}
+          </Button>
+        )}
         {imp.canImport && (
           <Button
             variant="outline"

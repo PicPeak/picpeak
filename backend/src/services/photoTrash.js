@@ -195,6 +195,7 @@ async function deletePhotoForGood(event, photo, { strict = false } = {}) {
   // before this (and is deleted here) or after it (and finds no row). The
   // row first, the order tagProcessor locks in.
   await db.transaction(async (trx) => {
+    await require('./heroPhotoLock').lockHeroEvents(trx, [photo.id]);
     await trx('photos').where({ id: photo.id, event_id: photo.event_id }).delete();
     await trx('photo_tags').where({ photo_id: photo.id }).del();
   });
