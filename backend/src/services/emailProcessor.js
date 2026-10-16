@@ -1464,10 +1464,10 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
           continue;
         }
         // Increment retry count without rewriting email_data. Protected
-        // account-recovery rows therefore remain encrypted; ordinary rows
-        // retain their variables because a row past the cap can still be
-        // re-queued (Messages "retry" resets retry_count, ignoreSchedule
-        // skips the cap).
+        // account-recovery rows therefore remain encrypted, and so do the
+        // password fields of ordinary rows; those keep their variables
+        // because a row past the cap can still be re-queued (Messages
+        // "retry" resets retry_count, ignoreSchedule skips the cap).
         try {
           await db('email_queue')
             .where('id', email.id)

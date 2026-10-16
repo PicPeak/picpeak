@@ -17,6 +17,7 @@ const { getAppSetting } = require('../utils/appSettings');
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../utils/galleryPasswordVault');
 const { clampIntOrUndefined } = require('../utils/numericHelpers');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
+const { encryptEmailData } = require('../utils/emailQueueEncryption');
 const { resolveEventFeedbackDefaults, applyFeedbackDefaults } = require('./feedbackDefaults');
 const { getStoragePath, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults,
   getImageSecurityDefaults, resolveImageSecurityColumns, getBrandingDefaults, getCustomerNameFromPayload,
@@ -543,7 +544,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
         event_id: eventId,
         recipient_email: customerEmail,
         email_type: 'gallery_created',
-        email_data: JSON.stringify(emailData),
+        // The password is sealed at rest, as queueEmail does (emailQueueEncryption).
+        email_data: JSON.stringify(encryptEmailData('gallery_created', emailData, customerEmail)),
         status: 'pending',
         created_at: new Date(),
         // Explicit NULL, not the column default: on SQLite the default is

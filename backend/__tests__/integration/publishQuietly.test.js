@@ -82,6 +82,11 @@ async function seedDraft({ slug, customerEmail = 'client@example.com', isDraft =
   return typeof row === 'object' ? row.id : row;
 }
 
+// The password fields are sealed at rest (emailQueueEncryption); open them
+// as the sender does.
+const emailData = (row) => require('../../src/utils/emailQueueEncryption').decryptEmailData(
+  row.email_type, typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data, row.recipient_email);
+
 const queuedFor = (eventId) =>
   db('email_queue').where({ event_id: eventId, email_type: 'gallery_created' });
 
@@ -229,7 +234,9 @@ describe('publish quietly (#1235)', () => {
     expect(res.status).toBe(200);
 
     const [queued] = await queuedFor(id);
-    expect(JSON.parse(queued.email_data).gallery_password).toBe('Sup3r-Secret');
+    expect(String(typeof queued.email_data === 'string' ? queued.email_data : JSON.stringify(queued.email_data)))
+      .not.toContain('Sup3r-Secret');
+    expect(emailData(queued).gallery_password).toBe('Sup3r-Secret');
   });
 
   it('persists a changed password so the emailed one actually works', async () => {
@@ -250,7 +257,7 @@ describe('publish quietly (#1235)', () => {
     expect(await bcrypt.compare('Brand-New-Pass1', row.password_hash)).toBe(true);
 
     const [queued] = await queuedFor(id);
-    expect(JSON.parse(queued.email_data).gallery_password).toBe('Brand-New-Pass1');
+    expect(emailData(queued).gallery_password).toBe('Brand-New-Pass1');
   });
 
   it('does NOT touch the gallery password when only an account notice goes out', async () => {
