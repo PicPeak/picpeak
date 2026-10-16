@@ -14,6 +14,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
+const { unicodeSearchForms } = require('../utils/sqlSecurity');
 const { getBcryptRounds } = require('../utils/passwordValidation');
 const { queueEmail } = require('./emailProcessor');
 const { auditedInsert, auditedUpdate, redactCustomerHistory } = require('./accountingHistory');
@@ -82,7 +83,8 @@ function sanitisePrefill(input) {
   for (const field of PREFILLABLE_FIELDS) {
     const raw = input[field];
     if (raw === undefined || raw === null) continue;
-    const trimmed = String(raw).trim();
+    // NFC: "Jörg" typed decomposed must match a precomposed search.
+    const trimmed = String(raw).trim().normalize('NFC');
     if (!trimmed) continue;
     if (field === 'country_code') {
       out[field] = trimmed.toUpperCase().slice(0, 2);
@@ -368,7 +370,7 @@ async function acceptInvitationOnce({ token, name, password, profile }) {
   // compatibility with clients that haven't been updated to send the
   // structured profile.
   if (name && !merged.display_name) {
-    merged.display_name = String(name).trim();
+    merged.display_name = String(name).trim().normalize('NFC');
   }
 
   // Default the customer's preferred_language to the business profile's
@@ -586,12 +588,14 @@ async function listCustomers({
     .orderBy('customer_accounts.created_at', 'desc');
 
   if (search && String(search).trim()) {
-    const term = `%${String(search).trim().toLowerCase()}%`;
+    const terms = unicodeSearchForms(String(search).trim()).map((t) => `%${t.toLowerCase()}%`);
     q = q.where(function () {
-      this.whereRaw('LOWER(customer_accounts.email) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(customer_accounts.display_name, \'\')) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(customer_accounts.last_name, \'\')) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(customer_accounts.company_name, \'\')) LIKE ?', [term]);
+      for (const term of terms) {
+        this.orWhereRaw('LOWER(customer_accounts.email) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(customer_accounts.display_name, \'\')) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(customer_accounts.last_name, \'\')) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(customer_accounts.company_name, \'\')) LIKE ?', [term]);
+      }
     });
   }
 
@@ -724,6 +728,12 @@ async function updateCustomer(id, updates, updatedByAdminId) {
         allowed[f] = String(updates[f] || '').trim().toLowerCase();
       } else if (f === 'country_code' && updates[f]) {
         allowed[f] = String(updates[f]).trim().toUpperCase().slice(0, 2);
+      } else if (
+        ['first_name', 'last_name', 'display_name', 'company_name'].includes(f)
+        && typeof updates[f] === 'string'
+      ) {
+        // One stored form per name: NFC, so a precomposed search matches.
+        allowed[f] = updates[f].normalize('NFC');
       } else if (
         f === 'feature_calendar' || f === 'feature_quotes'
         || f === 'feature_bills' || f === 'feature_hours_logging'
@@ -1477,15 +1487,18 @@ async function eraseCustomer(id, erasedByAdminId) {
  * accounts shouldn't show up as assignable options.
  */
 async function searchCustomers(query, { limit = 10 } = {}) {
-  const term = `%${String(query || '').trim().toLowerCase()}%`;
-  if (!term || term === '%%') return [];
+  const typed = String(query || '').trim();
+  if (!typed) return [];
+  const terms = unicodeSearchForms(typed).map((t) => `%${t.toLowerCase()}%`);
   return db('customer_accounts')
     .where('is_active', formatBoolean(true))
     .andWhere(function () {
-      this.whereRaw('LOWER(email) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(display_name, \'\')) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(last_name, \'\')) LIKE ?', [term])
-        .orWhereRaw('LOWER(COALESCE(company_name, \'\')) LIKE ?', [term]);
+      for (const term of terms) {
+        this.orWhereRaw('LOWER(email) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(display_name, \'\')) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(last_name, \'\')) LIKE ?', [term])
+          .orWhereRaw('LOWER(COALESCE(company_name, \'\')) LIKE ?', [term]);
+      }
     })
     // password_hash is required by transformCustomer to compute the
     // isPassive flag (passwordHash == null = passive / admin-only).

@@ -2,7 +2,7 @@ const express = require('express');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission, requireSuperAdmin, isSuperAdminUser } = require('../middleware/permissions');
-const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest } = require('../services/backupService');
+const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest, resolveManifestFile } = require('../services/backupService');
 const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { formatBytes } = require('../utils/formatBytes');
@@ -898,6 +898,32 @@ router.get('/manifest/:backupRunId', adminAuth, requirePermission('backup.view')
   }
 });
 
+// Validate a manifest file named by the caller. It has to be inside one of
+// the directories manifests are written to (resolveManifestFile refuses
+// anything else); the server's absolute path is never put in a response.
+async function validateManifestFile(manifestPath) {
+  if (typeof manifestPath !== 'string') {
+    return { status: 400, body: { valid: false, error: 'manifestPath must be a string' } };
+  }
+  let safePath;
+  try {
+    safePath = await resolveManifestFile(manifestPath);
+  } catch (error) {
+    if (/Path traversal/.test(error.message)) {
+      return { status: 400, body: { valid: false, error: 'manifestPath is outside the backup manifest directories' } };
+    }
+    throw error;
+  }
+  if (!safePath) {
+    return { status: 404, body: { valid: false, error: 'Manifest not found in the backup manifest directories' } };
+  }
+  const result = await validateBackupManifest(safePath);
+  const error = typeof result.error === 'string'
+    ? result.error.split(safePath).join(path.basename(safePath))
+    : result.error;
+  return { body: { valid: result.valid, error, manifestPath } };
+}
+
 // Validate a backup manifest
 router.post('/manifest/validate', adminAuth, requirePermission('backup.view'), async (req, res) => {
   try {
@@ -907,18 +933,9 @@ router.post('/manifest/validate', adminAuth, requirePermission('backup.view'), a
       return res.status(400).json({ error: 'manifestPath is required' });
     }
 
-    // Prevent path traversal — manifest must be within backup directory
-    const backupBasePath = process.env.BACKUP_PATH || path.join(__dirname, '../../../backups');
-    const { safePathJoin } = require('../utils/fileSecurityUtils');
-    const safePath = safePathJoin(backupBasePath, manifestPath);
-
-    const result = await validateBackupManifest(safePath);
-    
-    res.json({
-      valid: result.valid,
-      error: result.error,
-      manifestPath
-    });
+    const outcome = await validateManifestFile(manifestPath);
+    if (outcome.status) return res.status(outcome.status).json(outcome.body);
+    res.json(outcome.body);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to validate manifest');
   }
@@ -1019,19 +1036,9 @@ router.post('/manifests/validate', adminAuth, requirePermission('backup.view'), 
       return res.json(validationResult);
     }
 
-    // Prevent path traversal — manifest must be within backup directory
-    const backupBasePath = process.env.BACKUP_PATH || path.join(__dirname, '../../../backups');
-    const { safePathJoin } = require('../utils/fileSecurityUtils');
-    const safePath = safePathJoin(backupBasePath, manifestPath);
-
-    // Use existing validation function for path
-    const result = await validateBackupManifest(safePath);
-    
-    res.json({
-      valid: result.valid,
-      error: result.error,
-      manifestPath
-    });
+    const outcome = await validateManifestFile(manifestPath);
+    if (outcome.status) return res.status(outcome.status).json(outcome.body);
+    res.json(outcome.body);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to validate manifest');
   }

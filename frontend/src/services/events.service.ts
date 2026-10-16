@@ -129,6 +129,8 @@ export interface DeliveryState {
   first_look_count: number;
   /** First-look photos whose original filename arrived again in the full set. */
   duplicate_count: number;
+  /** The duplicates among delivered_count: held or rejected first-look uploads are not in it. */
+  delivered_duplicate_count: number;
 }
 
 export interface CompleteDeliveryResult {
