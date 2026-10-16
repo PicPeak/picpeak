@@ -1557,6 +1557,17 @@
         "pets": "Hišni ljubljenčki",
         "black_and_white": "Črno-belo"
       }
+    },
+    "tile": {
+      "viewFullSize": "Prikaži v polni velikosti",
+      "downloadPhoto": "Prenesi fotografijo",
+      "commentOnPhoto": "Komentiraj fotografijo",
+      "likePhoto": "Všečkaj fotografijo",
+      "unlikePhoto": "Odstrani všeček",
+      "comment": "Komentiraj",
+      "like": "Všeček",
+      "unlike": "Odstrani všeček",
+      "selectPhoto": "Izberi {{name}}"
     }
   },
   "categories": {
@@ -2224,7 +2235,12 @@
       "publishLink": "Objavi"
     },
     "showExifToGuests": "Pokaži podatke o fotoaparatu gostom",
-    "showExifToGuestsHelp": "Fotoaparat, objektiv, goriščna razdalja, zaslonka, čas osvetlitve in ISO so prikazani pod fotografijo v celozaslonskem pogledu. Lokacija in serijske številke se nikoli ne shranijo in ne prikažejo."
+    "showExifToGuestsHelp": "Fotoaparat, objektiv, goriščna razdalja, zaslonka, čas osvetlitve in ISO so prikazani pod fotografijo v celozaslonskem pogledu. Lokacija in serijske številke se nikoli ne shranijo in ne prikažejo.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "Prelomi vrstic se ohranijo v e-poštnih sporočilih",
+      "tip": "Namig: pritisnite Enter za novo vrstico. Vsaka vrstica bo v e-poštnih sporočilih ločen odstavek.",
+      "preview": "Predogled:"
+    }
   },
   "settings": {
     "title": "Sistemske nastavitve",
@@ -2242,6 +2258,8 @@
       "maxVideoSizeHelp": "Ločena omejitev velikosti posamezne datoteke za videe, da lahko fotografije ohranijo manjšo omejitev.",
       "videoWebRendition": "Kopije videov, ki jih brskalnik lahko predvaja",
       "videoWebRenditionHelp": "Videe, ki jih brskalnik ne more predvajati (HEVC, QuickTime, MP4 brez pretakanja), prekodira v MP4 H.264 za predvajanje. Za prenos ostane izvirnik. Porabi CPU za vsak video in drugo datoteko; ob vklopu se že naloženi videi uvrstijo v čakalno vrsto.",
+      "videoStripMetadata": "Odstrani podatke o lokaciji in napravi iz predvajanih videov",
+      "videoStripMetadataHelp": "Videi, ki jih brskalnik že lahko predvaja, dobijo kopijo brez lokacije snemanja, kamere in drugih metapodatkov, narejeno brez prekodiranja; gostje predvajajo to kopijo. Za vsak tak video shrani eno dodatno datoteko, približno velikosti izvirnika. Za prenos ostane izvirnik. Ob izklopu ostanejo že narejene kopije.",
       "videoAdaptiveStreaming": "Prilagodljivo pretakanje videa",
       "videoAdaptiveStreamingHelp": "Vsak video pretvori v pretok v največ treh kakovostih (480p, 720p, 1080p), da se predvajanje začne hitro in se prilagaja povezavi. Za prenos ostane izvirnik. Porabi CPU za vsak video in približno še enkrat toliko prostora; videi, daljši od 30 minut, se predvajajo kot doslej.",
       "maxFilesPerUpload": "Največ datotek na nalaganje",

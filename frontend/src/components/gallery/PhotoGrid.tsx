@@ -247,6 +247,7 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
   slug,
   feedbackEnabled = false
 }) => {
+  const { t } = useTranslation();
   const { ref, inView } = useInView({
     triggerOnce: true,
     threshold: 0.1,
@@ -295,7 +296,7 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
               #1263: `md:opacity-0` hides the pixels but not the hit area, so
               on a narrow pointer-device window the buttons stayed tappable
               while invisible. pointer-events tracks opacity. */}
-          <div className="absolute inset-0 bg-black/40 opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2">
+          <div className="absolute inset-0 bg-black/40 opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto md:has-[:focus-visible]:opacity-100 md:has-[:focus-visible]:pointer-events-auto transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2">
             {!isSelectionMode && (
               <>
                 <button
@@ -304,7 +305,7 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
                     e.stopPropagation();
                     onClick(e);
                   }}
-                  aria-label="View full size"
+                  aria-label={t('gallery.tile.viewFullSize', 'View full size')}
                 >
                   <Maximize2 className="w-5 h-5 text-theme" />
                 </button>
@@ -317,7 +318,7 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
                       e.stopPropagation();
                       onDownload(e);
                     }}
-                    aria-label="Download photo"
+                    aria-label={t('gallery.tile.downloadPhoto', 'Download photo')}
                   >
                     <Download className="w-5 h-5 text-theme" />
                   </button>

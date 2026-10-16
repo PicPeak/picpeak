@@ -206,12 +206,15 @@ export const CustomerManagementPage: React.FC = () => {
   const filteredCustomers = useMemo(() => {
     const list = customers || [];
     if (!debouncedTerm.trim()) return list;
-    const term = debouncedTerm.trim().toLowerCase();
+    // NFC on both sides: names are stored NFC, older rows and macOS input
+    // can be decomposed.
+    const fold = (value: string) => value.normalize('NFC').toLowerCase();
+    const term = fold(debouncedTerm.trim());
     return list.filter((c) =>
-      c.email.toLowerCase().includes(term)
-      || (c.displayName || '').toLowerCase().includes(term)
-      || (c.lastName || '').toLowerCase().includes(term)
-      || (c.companyName || '').toLowerCase().includes(term)
+      fold(c.email).includes(term)
+      || fold(c.displayName || '').includes(term)
+      || fold(c.lastName || '').includes(term)
+      || fold(c.companyName || '').includes(term)
     );
   }, [customers, debouncedTerm]);
 

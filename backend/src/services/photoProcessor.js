@@ -82,8 +82,9 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
   // Read the setting before any transaction opens: on SQLite the pool is one
   // connection, and a read through `db` while `trx` holds it waits for the
   // acquire timeout (isEnabled then logs and answers false). The value is
-  // cached for a minute, so once per batch is right.
-  const webCopyEnabled = await require('./videoRenditionService').isEnabled();
+  // cached for a minute, so once per batch is right. Metadata stripping
+  // (issue 2102) queues videos too.
+  const webCopyEnabled = await require('./videoRenditionService').queuesVideos();
 
   // Process each file
   for (const file of fileList) {
@@ -300,8 +301,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         source_origin: 'managed',
         media_type: mediaType,
         mime_type: file.mimetype,
-        // Browser-playable copy (issue 1430): queued only while the setting
-        // is on, so installs without it never write a web_status.
+        // Browser-playable copy (issue 1430) or metadata-free remux (issue
+        // 2102): queued only while one of the two settings is on.
         ...(isVideo && webCopyEnabled ? { web_status: 'pending' } : {}),
         ...(processingError ? { processing_error: processingError } : {}),
         ...placement,
@@ -850,7 +851,7 @@ async function processPhoto(photoId) {
   // Browser-playable copy (issue 1430, item 8): same UPDATE for the same
   // reason as the face enqueue above, and only while the setting is on.
   try {
-    if (isVideo && await require('./videoRenditionService').isEnabled()) {
+    if (isVideo && await require('./videoRenditionService').queuesVideos()) {
       updateData.web_status = 'pending';
     }
   } catch (err) {

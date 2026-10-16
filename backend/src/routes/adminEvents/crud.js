@@ -17,7 +17,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
-const { escapeLikePattern, likeWithEscape } = require('../../utils/sqlSecurity');
+const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../../utils/sqlSecurity');
 const { validatePasswordInContext, getBcryptRounds } = require('../../utils/passwordValidation');
 const logger = require('../../utils/logger');
 const { sanitizeForLog, sanitizeValidationErrors } = require('../../utils/sanitizeForLog');
@@ -29,7 +29,7 @@ const externalAccess = require('../../services/externalMediaAccess');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
 const { findSlugHolder } = require('../../services/slugRedirects');
-const { hasColumnCached } = require('../../utils/schemaCache');
+const { hasColumnCached, columnNamesCached } = require('../../utils/schemaCache');
 const { requireEventOwnership, requireEventOwner, scopeEventsListQuery, withoutForeignEventSecrets, scopeEventsQuery, ownsEvent, canLinkCrmToEvent } = require('../../middleware/ownership');
 const eventAdminAssignments = require('../../services/eventAdminAssignmentsService');
 const { mayReviewUploads, holdsForReview } = require('../../services/uploadReviewService');
@@ -50,6 +50,11 @@ const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
 const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
 const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, claimEventArchive } = require('./helpers');
+// One stored form per name (NFC): a decomposed "Jörg" must match a precomposed search.
+const nfcName = (v) => (typeof v === 'string' ? v.normalize('NFC') : v);
+
+// Largest page the admin events list returns (the pickers ask for 200).
+const EVENT_LIST_MAX_LIMIT = 500;
 
 // Client PIN floor. The PIN guards the client review page and used to accept
 // any string, one character included. Six is the least that the login
@@ -129,7 +134,7 @@ module.exports = (router) => {
       }
       return true;
     }),
-    body('event_name').notEmpty().trim(),
+    body('event_name').customSanitizer(nfcName).notEmpty().trim(),
     body('event_date').optional({ values: 'falsy' }).isDate(),
     // Migration 137 — calendar time fields.
     body('event_time_start').optional({ values: 'falsy' }).matches(/^([01]\d|2[0-3]):[0-5]\d$/)
@@ -291,7 +296,13 @@ module.exports = (router) => {
   router.get('/', adminAuth, requirePermission('events.view'), async (req, res) => {
     try {
       const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 20;
+      const requestedLimit = parseInt(req.query.limit) || 20;
+      if (page < 1 || requestedLimit < 1) {
+        return res.status(400).json({ error: 'page and limit must be positive integers' });
+      }
+      // The admin pickers ask for at most 200; an unbounded limit returned
+      // every gallery in one response (issue 2078).
+      const limit = Math.min(requestedLimit, EVENT_LIST_MAX_LIMIT);
       const offset = (page - 1) * limit;
       const search = req.query.search || '';
       const status = req.query.status || 'all';
@@ -310,9 +321,13 @@ module.exports = (router) => {
       // Apply search filter
       if (search) {
         const pattern = `%${escapeLikePattern(search)}%`;
+        // Every stored spelling of the name (unicodeSearchForms).
+        const namePatterns = typeof search === 'string'
+          ? unicodeSearchForms(search).map((s) => `%${escapeLikePattern(s)}%`)
+          : [pattern];
         query = query.where((builder) => {
-          builder.whereRaw(likeWithEscape('event_name'), [pattern])
-            .orWhereRaw(likeWithEscape('admin_email'), [pattern])
+          for (const p of namePatterns) builder.orWhereRaw(likeWithEscape('event_name'), [p]);
+          builder.orWhereRaw(likeWithEscape('admin_email'), [pattern])
             .orWhereRaw(likeWithEscape('customer_email'), [pattern])
             .orWhereRaw(likeWithEscape('slug'), [pattern]);
         });
@@ -883,7 +898,7 @@ module.exports = (router) => {
   // client-access secrets, customer assignments, archive/sent state are NOT
   // carried over.
   router.post('/:id/duplicate', adminAuth, requirePermission('events.create'), requireEventOwnership, [
-    body('event_name').trim().notEmpty().withMessage('Event name is required'),
+    body('event_name').customSanitizer(nfcName).trim().notEmpty().withMessage('Event name is required'),
     body('event_date').optional({ values: 'falsy' }).isDate(),
     body('customer_name').optional().trim(),
     body('customer_email').optional({ values: 'falsy' }).isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
@@ -1130,7 +1145,7 @@ module.exports = (router) => {
 
   // Update event
   router.put('/:id', adminAuth, requirePermission('events.edit'), requireEventOwnership, [
-    body('event_name').optional().trim().notEmpty(),
+    body('event_name').optional().customSanitizer(nfcName).trim().notEmpty(),
     body('event_date').optional({ values: 'falsy' }).isDate(),
     // Migration 137 — calendar time fields. Same regex/range rule as POST.
     body('event_time_start').optional({ values: 'falsy', nullable: true })
@@ -2004,6 +2019,16 @@ module.exports = (router) => {
       if ((updates.client_password_hash || event.client_password_hash)
         && !event.client_share_token && !updates.client_share_token) {
         updates.client_share_token = crypto.randomBytes(32).toString('hex');
+      }
+
+      // A key that is not a column of events would reach the UPDATE and come
+      // back as a 500 (issue 2078). Every legitimate input-only key has been
+      // taken out of `updates` above, so what is left and unknown is ignored,
+      // as the denylist above does with the keys it drops.
+      // One cached column set, not a schema query per request key.
+      const eventColumns = await columnNamesCached('events');
+      for (const key of Object.keys(updates)) {
+        if (!eventColumns.has(key)) delete updates[key];
       }
 
       // Update event. Skip the write when the denylist (or masked secrets)

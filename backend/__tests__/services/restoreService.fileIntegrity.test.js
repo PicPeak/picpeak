@@ -92,7 +92,7 @@ describe('restoreService — file restore integrity', () => {
       const a = writeFixture('plain/uploads/a.jpg', Buffer.from('aaa'));
       const b = writeFixture('plain/thumbnails/b.jpg', Buffer.from('bbb'));
       const result = await restoreService.performFilesRestore(backupRoot, { files: { manifest: [a, b] } }, { restoreType: 'files' });
-      expect(result).toEqual({ filesRestored: 2, totalFiles: 2, errors: [] });
+      expect(result).toEqual({ filesRestored: 2, totalFiles: 2, restoredPaths: ['plain/uploads/a.jpg', 'plain/thumbnails/b.jpg'], errors: [] });
       expect(fs.readFileSync(path.join(storageRoot, 'plain/thumbnails/b.jpg'), 'utf8')).toBe('bbb');
     });
   });

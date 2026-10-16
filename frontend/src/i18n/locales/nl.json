@@ -561,6 +561,17 @@
         "pets": "Huisdieren",
         "black_and_white": "Zwart-wit"
       }
+    },
+    "tile": {
+      "viewFullSize": "Op volledige grootte bekijken",
+      "downloadPhoto": "Foto downloaden",
+      "commentOnPhoto": "Reageren op foto",
+      "likePhoto": "Foto leuk vinden",
+      "unlikePhoto": "Foto niet meer leuk vinden",
+      "comment": "Reageren",
+      "like": "Leuk",
+      "unlike": "Niet meer leuk",
+      "selectPhoto": "{{name}} selecteren"
     }
   },
   "categories": {
@@ -1066,7 +1077,12 @@
       "publishLink": "Publiceren"
     },
     "showExifToGuests": "Cameragegevens aan gasten tonen",
-    "showExifToGuestsHelp": "Camera, objectief, brandpuntsafstand, diafragma, sluitertijd en ISO verschijnen onder de foto in de volledige weergave. Locatie en serienummers worden nooit opgeslagen of getoond."
+    "showExifToGuestsHelp": "Camera, objectief, brandpuntsafstand, diafragma, sluitertijd en ISO verschijnen onder de foto in de volledige weergave. Locatie en serienummers worden nooit opgeslagen of getoond.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "Regeleinden blijven behouden in e-mails",
+      "tip": "Tip: druk op Enter voor een nieuwe regel. Elke regel verschijnt in e-mails als een aparte alinea.",
+      "preview": "Voorbeeld:"
+    }
   },
   "settings": {
     "title": "Systeeminstellingen",
@@ -1081,6 +1097,8 @@
       "maxFileSize": "Max. bestandsgrootte (MB)",
       "videoWebRendition": "In de browser afspeelbare kopieën van video’s",
       "videoWebRenditionHelp": "Codeert video’s die een browser niet kan afspelen (HEVC, QuickTime, niet-streambare MP4’s) om naar een H.264-MP4 voor het afspelen. Het origineel blijft de download. Kost CPU per video en een tweede bestand; bij inschakelen worden de al geüploade video’s in de wachtrij gezet.",
+      "videoStripMetadata": "Locatie- en apparaatgegevens uit afgespeelde video’s verwijderen",
+      "videoStripMetadataHelp": "Video’s die een browser al kan afspelen krijgen een kopie zonder opnamelocatie, camera en andere metadata, gemaakt zonder hercodering; gasten spelen die kopie af. Slaat per zo’n video één extra bestand op, ongeveer zo groot als het origineel. Het origineel blijft de download. Bij uitschakelen blijven de al gemaakte kopieën bewaard.",
       "videoAdaptiveStreaming": "Adaptieve videostreaming",
       "videoAdaptiveStreamingHelp": "Zet elke video om naar een stream in maximaal drie kwaliteiten (480p, 720p, 1080p), zodat het afspelen snel start en zich aanpast aan de verbinding. Het origineel blijft de download. Kost CPU per video en ongeveer nog eens zoveel opslag; video’s langer dan 30 minuten worden afgespeeld zoals voorheen.",
       "maxFilesPerUpload": "Max. bestanden per upload",

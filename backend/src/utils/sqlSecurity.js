@@ -138,7 +138,19 @@ function validateSortOrder(order) {
   return lowerOrder === 'asc' ? 'asc' : 'desc';
 }
 
+/**
+ * A search term in the forms a stored name has: as typed, NFC (how names
+ * are stored since issue 2079) and NFD (how macOS input was saved before
+ * it, with no backfill). LIKE does no Unicode normalisation, so a name
+ * search ORs one condition per form. Plain ASCII gives one term. A legacy
+ * value mixing both forms in one string still matches neither.
+ */
+function unicodeSearchForms(term) {
+  return [...new Set([term, term.normalize('NFC'), term.normalize('NFD')])];
+}
+
 module.exports = {
+  unicodeSearchForms,
   sanitizeDays,
   escapeLikePattern,
   likeWithEscape,

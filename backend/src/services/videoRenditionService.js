@@ -1,18 +1,25 @@
 /**
  * Browser-playable copies of videos (issue 1430, item 8).
  *
- * Off by default: a copy costs CPU on ingest and a second file per video on
- * every install, so `general_video_web_rendition` has to be switched on. The
- * queue (videoRenditionQueue.js) claims rows with web_status = 'pending' and
- * calls renderWebCopy below, which decides per video:
+ * Two settings put videos on the queue (videoRenditionQueue.js), which
+ * claims rows with web_status = 'pending' and calls renderWebCopy below:
+ * `general_video_web_rendition` (transcodes, off by default: CPU on ingest
+ * and a second file per video) and `general_video_strip_metadata` (issue
+ * 2102, on by default: no guest receives a phone's recording location).
+ * Per video:
  *
  *   - the original already plays in a browser (H.264 in an MP4 container,
  *     AAC or no audio, 8-bit 4:2:0, moov atom ahead of the media data):
- *     web_status 'skipped', nothing written
- *   - anything else: an H.264/AAC faststart MP4, capped at 1920 px on the
- *     long edge, written through the storage backend under videos/, and the
- *     gallery streams it instead of the original. The download stays the
- *     original.
+ *     with stripping on, a remux without the source's metadata. Stream copy,
+ *     no re-encode; published like a transcoded copy, whether or not the
+ *     transcodes are on. With stripping off: web_status 'skipped', nothing
+ *     written, and the original plays as it is
+ *   - anything else, with the transcodes on: an H.264/AAC faststart MP4,
+ *     capped at 1920 px on the long edge, written through the storage
+ *     backend under videos/, and the gallery streams it instead of the
+ *     original. The download stays the original.
+ *   - anything else, with the transcodes off: web_status 'deferred', nothing
+ *     written; switching the transcodes on queues it (backfillPending)
  *
  * The copy lives in the managed backend even for an external (NAS) video:
  * PicPeak does not write into reference folders.
@@ -47,6 +54,9 @@ function capUtf8Bytes(str, max) {
   return out;
 }
 const SETTING_KEY = 'general_video_web_rendition';
+// Issue 2102: a played video carries no location or device tags. On unless
+// an admin switched it off, so a missing row means on.
+const STRIP_SETTING_KEY = 'general_video_strip_metadata';
 const CACHE_TTL_MS = 60_000;
 
 const MAX_EDGE = Math.min(4096, Math.max(240, parseInt(process.env.VIDEO_RENDITION_MAX_EDGE || '1920', 10) || 1920));
@@ -56,8 +66,8 @@ let cachedEnabled = false;
 let cacheExpiresAt = 0;
 
 /** The setting, cached 60 s like the other upload settings. */
-async function isEnabled() {
-  if (Date.now() < cacheExpiresAt) return cachedEnabled;
+async function isEnabled({ fresh = false } = {}) {
+  if (!fresh && Date.now() < cacheExpiresAt) return cachedEnabled;
   try {
     const row = await db('app_settings').where({ setting_key: SETTING_KEY }).first();
     let value = row ? row.setting_value : null;
@@ -73,8 +83,60 @@ async function isEnabled() {
   return cachedEnabled;
 }
 
+let cachedStrip = true;
+let stripExpiresAt = 0;
+
+/**
+ * Whether a browser-compatible original gets a metadata-free remux instead
+ * of being skipped. Defaults to on: no row, or one that cannot be read, is
+ * the privacy-preserving answer.
+ */
+async function isStripEnabled({ fresh = false } = {}) {
+  if (!fresh && Date.now() < stripExpiresAt) return cachedStrip;
+  try {
+    const { decodeSettingValue } = require('./eventSettings');
+    const row = await db('app_settings').where({ setting_key: STRIP_SETTING_KEY }).first();
+    const value = row ? decodeSettingValue(row.setting_value) : null;
+    cachedStrip = !(value === false || value === 'false' || value === 0 || value === '0');
+  } catch (error) {
+    logger.error('Failed to read the video metadata setting:', error.message);
+    cachedStrip = true;
+  }
+  stripExpiresAt = Date.now() + CACHE_TTL_MS;
+  return cachedStrip;
+}
+
 function clearCache() {
   cacheExpiresAt = 0;
+  stripExpiresAt = 0;
+}
+
+/**
+ * Whether new videos go on the queue and the workers run: while either the
+ * transcodes or metadata stripping is on. renderWebCopy decides per video
+ * what, if anything, it writes.
+ */
+async function queuesVideos() {
+  return (await isEnabled()) || (await isStripEnabled());
+}
+
+/** The rows backfillPending and queueForMetadataStrip hand to the queue. */
+function queueVideos(statuses, { eventId, includeNull = false } = {}) {
+  const { formatBoolean } = require('../utils/dbCompat');
+  return db('photos')
+    .modify((q) => { if (eventId != null) q.where('event_id', eventId); })
+    // An archived gallery's originals are in its zip, not in storage: queuing
+    // its rows would only fail. The restore route backfills the event again.
+    .whereNotIn('event_id', db('events').select('id').where('is_archived', formatBoolean(true)))
+    .whereRaw(IS_VIDEO_SQL)
+    .where(function () {
+      this.whereIn('web_status', statuses);
+      if (includeNull) this.orWhereNull('web_status');
+    })
+    .where(function () {
+      this.where('processing_status', 'complete').orWhereNull('processing_status');
+    })
+    .update({ web_status: 'pending', web_error: null, web_started_at: null, web_attempts: 0, web_retry_at: null });
 }
 
 /**
@@ -84,25 +146,48 @@ function clearCache() {
  * one and skips what already plays. Returns the number of rows queued.
  */
 async function backfillPending({ eventId } = {}) {
-  const { formatBoolean } = require('../utils/dbCompat');
   // One UPDATE and nothing else: the settings request that switches the
   // feature on must not probe a back catalogue. The queue probes each video
   // when its turn comes, and a long backlog simply waits.
   // Videos in the trash are queued too; the queue leaves them alone until
   // they are restored (mediaAttemptService.claimNext).
-  return db('photos')
-    .modify((q) => { if (eventId != null) q.where('event_id', eventId); })
-    // An archived gallery's originals are in its zip, not in storage: queuing
-    // its rows would only fail. The restore route backfills the event again.
-    .whereNotIn('event_id', db('events').select('id').where('is_archived', formatBoolean(true)))
-    .whereRaw(IS_VIDEO_SQL)
-    .where(function () {
-      this.whereNull('web_status').orWhere('web_status', 'failed');
-    })
-    .where(function () {
-      this.where('processing_status', 'complete').orWhereNull('processing_status');
-    })
-    .update({ web_status: 'pending', web_error: null, web_started_at: null, web_attempts: 0, web_retry_at: null });
+  // 'deferred' is a video that needs a transcode and was looked at while
+  // the transcodes were off. With metadata stripping on, a video skipped
+  // earlier (it played as it was) is queued too: it gets its remux now.
+  const statuses = (await isStripEnabled()) ? ['failed', 'deferred', 'skipped'] : ['failed', 'deferred'];
+  return queueVideos(statuses, { eventId, includeNull: true });
+}
+
+/**
+ * Queue the videos that may need a metadata-free remux (issue 2102): those
+ * skipped as browser-compatible and those never looked at. Called when the
+ * strip setting is switched on, after an archive restore, and once per
+ * start (an upgraded install's back catalogue); a no-op while stripping is
+ * off, and whether or not the transcodes are on. 'deferred' and 'failed'
+ * rows are left alone: the first needs a transcode, the second gets its
+ * retry from backfillPending. A row stays 'pending' until a worker takes
+ * it, so an interrupted backfill resumes by itself. Returns the number of
+ * rows queued.
+ */
+async function queueForMetadataStrip({ eventId } = {}) {
+  if (!(await isStripEnabled())) return 0;
+  return queueVideos(['skipped'], { eventId, includeNull: true });
+}
+
+/**
+ * Re-queue rows a worker decided on a moment before a setting changed: a
+ * video marked 'deferred' while the transcodes were being switched on, or
+ * 'skipped' while stripping was. The switch-on backfill could not take
+ * them (they were in flight), and nothing else would. Run by the queue's
+ * janitor every minute; both statuses are indexed and normally match no
+ * row, so it is cheap. Returns the number of rows queued.
+ */
+async function requeueStranded() {
+  const statuses = [];
+  if (await isEnabled()) statuses.push('deferred');
+  if (await isStripEnabled()) statuses.push('skipped');
+  if (statuses.length === 0) return 0;
+  return queueVideos(statuses);
 }
 
 /**
@@ -110,7 +195,7 @@ async function backfillPending({ eventId } = {}) {
  * claim token keeps attempts apart: a worker whose claim was lost deletes
  * its own object and can never touch the one the current attempt wrote.
  */
-function webKeyFor(photo, claimedAt) {
+function webKeyFor(photo, claimedAt, { remux = false } = {}) {
   const token = /^[a-f0-9-]{36}$/i.test(claimedAt || '') ? claimedAt : claimedAt ? new Date(claimedAt).getTime().toString(36) : '';
   const attempt = token ? `${token}_` : '';
   // The basename is for a human reading the bucket; the id and claim make
@@ -121,7 +206,10 @@ function webKeyFor(photo, claimedAt) {
     path.basename(photo.external_relpath || photo.filename || `video-${photo.id}`).replace(/\.[^.]+$/, ''),
     WEB_KEY_BASENAME_MAX,
   );
-  return path.posix.join('videos', `web_${photo.id}_${attempt}${base}.mp4`);
+  // A remux carries a marker the gallery reads (galleryAssetPolicy.isRemuxWebKey):
+  // it is the original's picture, so playing it is not free under a
+  // download limit the way a transcoded copy is.
+  return path.posix.join('videos', `web_${photo.id}_${remux ? 'remux_' : ''}${attempt}${base}.mp4`);
 }
 
 /**
@@ -166,13 +254,40 @@ async function hasFaststart(localPath) {
   }
 }
 
+/**
+ * The stream of a type a player picks: the one flagged default, else the
+ * first. A cover image (attached_pic) is never the picture.
+ */
+function playedStream(streams, type) {
+  const candidates = streams.filter((s) => s.codec_type === type && !s.disposition?.attached_pic);
+  return candidates.find((s) => s.disposition?.default) || candidates[0]
+    || streams.find((s) => s.codec_type === type);
+}
+
+/**
+ * Absolute indexes of the played video and audio stream, for the -map
+ * arguments. Taken from the probe of the very snapshot ffmpeg reads (see
+ * transcode): a NAS file replaced since the first probe must not be mapped
+ * by its predecessor's layout.
+ */
+function playedStreamIndexes(metadata) {
+  const streams = metadata?.streams || [];
+  const index = (s) => (Number.isInteger(s?.index) ? s.index : null);
+  return { videoIndex: index(playedStream(streams, 'video')), audioIndex: index(playedStream(streams, 'audio')) };
+}
+
 async function probe(localPath) {
-  const metadata = await mediaProcesses.probeVideo(localPath);
-  const video = (metadata.streams || []).find((s) => s.codec_type === 'video');
-  const audio = (metadata.streams || []).find((s) => s.codec_type === 'audio');
+  return describeProbe(await mediaProcesses.probeVideo(localPath));
+}
+
+/** ffprobe's answer, reduced to what the decisions below read. */
+function describeProbe(metadata) {
+  const streams = metadata?.streams || [];
+  const video = playedStream(streams, 'video');
+  const audio = playedStream(streams, 'audio');
   return {
-    formatName: metadata.format?.format_name || '',
-    majorBrand: String(metadata.format?.tags?.major_brand || '').trim().toLowerCase(),
+    formatName: metadata?.format?.format_name || '',
+    majorBrand: String(metadata?.format?.tags?.major_brand || '').trim().toLowerCase(),
     videoCodec: video?.codec_name || null,
     audioCodec: audio?.codec_name || null,
     pixFmt: video?.pix_fmt || null,
@@ -182,7 +297,7 @@ async function probe(localPath) {
     // (arib-std-b67). The primaries (bt2020) alone do not make a video HDR.
     colorTransfer: video?.color_transfer || null,
     colorPrimaries: video?.color_primaries || null,
-    duration: Number(metadata.format?.duration) || null,
+    duration: Number(metadata?.format?.duration) || null,
   };
 }
 
@@ -236,18 +351,33 @@ function _resetToneMapSupportForTests() {
 }
 
 /**
+ * The tracks a copy is made from: the played (default) ones, by absolute
+ * index (playedStreamIndexes), the same choice probe() bases the decision
+ * and the tone mapping on; the first video and optional audio stream when
+ * there is no index.
+ */
+function streamMaps({ videoIndex = null, audioIndex = null } = {}) {
+  return [
+    '-map', videoIndex == null ? '0:v:0' : `0:${videoIndex}`,
+    '-map', audioIndex == null ? '0:a:0?' : `0:${audioIndex}`,
+  ];
+}
+
+/**
  * ffmpeg's arguments for the copy, in one place so the test can pin them.
  * The scale keeps the aspect ratio, never upsizes, and keeps both sides
  * even, which libx264 needs for 4:2:0. ffmpeg applies the rotation tag on
  * input, so a portrait phone recording comes out portrait. With `toneMap`
  * the HDR to SDR chain runs first, so the scale works on the SDR picture.
  */
-function transcodeOptions({ toneMap = false } = {}) {
+function transcodeOptions({ toneMap = false, videoIndex = null, audioIndex = null } = {}) {
   const scale = `scale=w='min(${MAX_EDGE},iw)':h='min(${MAX_EDGE},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
   return [
-    '-map', '0:v:0',
-    '-map', '0:a:0?',
+    ...streamMaps({ videoIndex, audioIndex }),
     '-sn', '-dn',
+    // No container, stream or chapter metadata from the source: a phone's
+    // recording location, artist and device tags must not reach guests.
+    '-map_metadata', '-1', '-map_chapters', '-1',
     '-c:v', 'libx264',
     '-preset', 'medium',
     '-crf', String(CRF),
@@ -264,22 +394,61 @@ function transcodeOptions({ toneMap = false } = {}) {
 }
 
 /**
+ * ffmpeg's arguments for the metadata-free remux of a video that already
+ * plays (issue 2102). Stream copy: same picture and sound, no re-encode. The
+ * container, stream and chapter metadata (location, artist, device tags) is
+ * dropped; the rotation is stream side data, not a tag, and survives the
+ * copy. Faststart keeps the moov in front, as the original had it. With the
+ * probe's indexes it maps the tracks a player picks in the original (the
+ * default ones), not merely the first.
+ */
+function remuxOptions({ videoIndex = null, audioIndex = null } = {}) {
+  return [
+    ...streamMaps({ videoIndex, audioIndex }),
+    '-c', 'copy',
+    '-map_metadata', '-1', '-map_chapters', '-1',
+    '-movflags', '+faststart',
+    '-f', 'mp4',
+  ];
+}
+
+/**
  * `duration` (seconds, from the probe) sizes the time budget: a long video
  * gets longer than VIDEO_RENDITION_TIMEOUT_MS, which is only the minimum.
  * `timeoutMs` overrides it (tests).
  */
-function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration } = {}) {
+function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration, remux = false, mayTranscode = true } = {}) {
   return mediaProcesses.withSnapshot(localPath, 'rendition', async (snapshot, details) => {
     const { policy } = details;
     const metadata = await mediaProcesses.probeSnapshot(snapshot, details);
     const budget = renditionBudget(Number.isFinite(duration) ? duration : Number(metadata.format?.duration), policy);
+    const streams = playedStreamIndexes(metadata);
+    // The decision was made on an earlier read of the file. A NAS file
+    // replaced since by one a browser cannot play must not be stream-copied
+    // into a "copy" that plays black: it is transcoded instead, or, with the
+    // transcodes off, the attempt fails and the original plays (the faststart
+    // of the snapshot does not matter, the remux writes its own).
+    let copy = remux;
+    let mapTones = toneMap;
+    if (remux) {
+      const now = describeProbe(metadata);
+      if (!playsInBrowser(now, true)) {
+        if (!mayTranscode) throw new Error('The video changed before its remux and no longer plays as it is; browser-playable copies are off');
+        copy = false;
+        mapTones = isHdr(now) && await canToneMap();
+        logger.warn(`videoRendition: ${localPath} changed before its remux and no longer plays as it is; transcoding it instead`);
+      }
+    }
     await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
       ...mediaProcesses.inputOptions(details.format, policy.threads), '-i', snapshot,
-      ...transcodeOptions({ toneMap }), '-threads', String(policy.threads), '-filter_threads', String(policy.threads), outPath], {
+      ...(copy ? remuxOptions(streams) : transcodeOptions({ toneMap: mapTones, ...streams })), '-threads', String(policy.threads), '-filter_threads', String(policy.threads), outPath], {
       // Its own lane, so posters and probes never wait behind a transcode.
       lane: 'long', memoryBytes: policy.transcodeBytes, wallMs: timeoutMs || budget.wallMs, cpuSeconds: budget.cpuSeconds,
       fileBytes: policy.outputBytes || 1024 * 1024 * 1024 * 1024,
     });
+    // What was written, so the copy's key names it (a remux is counted like
+    // the original, a transcode plays free).
+    return { remuxed: !!copy };
   });
 }
 
@@ -301,8 +470,11 @@ async function renderWebCopy(photoId) {
   const event = await db('events').where({ id: photo.event_id }).first();
   if (!event) throw new Error(`Event ${photo.event_id} not found for photo ${photoId}`);
 
+  // Case-blind like SQLite's LIKE in IS_VIDEO_SQL: a row the sweeps take as
+  // a video must not be marked skipped here, or the janitor's 'skipped'
+  // sweep (requeueStranded) would queue it again every minute.
   const isVideo = photo.media_type === 'video'
-    || (typeof photo.mime_type === 'string' && photo.mime_type.startsWith('video/'));
+    || (typeof photo.mime_type === 'string' && photo.mime_type.toLowerCase().startsWith('video/'));
   if (!isVideo) {
     await mediaAttempts.guard(attempt, db, true).update({ web_status: 'skipped', web_started_at: null, web_error: null });
     return 'skipped';
@@ -317,7 +489,23 @@ async function renderWebCopy(photoId) {
 
   const status = await withSource(async (localPath) => {
     const probed = await probe(localPath);
-    if (playsInBrowser(probed, await hasFaststart(localPath))) {
+    const remux = playsInBrowser(probed, await hasFaststart(localPath));
+    // Needs a transcode, and the transcodes are off (the row is here for
+    // metadata stripping): nothing is written, the original plays as it
+    // always did, and switching the transcodes on queues it again. Read past
+    // the cache for the same reason as below.
+    if (!remux && !(await isEnabled({ fresh: true }))) {
+      await attempt.assertCurrent();
+      const published = await mediaAttempts.guard(attempt, db, true).update({
+        web_path: null, web_status: 'deferred', web_started_at: null, web_error: null,
+      });
+      if (published && photo.web_path) await getStorage().delete(photo.web_path).catch(() => {});
+      return 'deferred';
+    }
+    // Read past the cache: another replica may have switched stripping on
+    // and queued this row a moment ago; a stale "off" here would mark it
+    // skipped again, and nothing would queue it a second time.
+    if (remux && !(await isStripEnabled({ fresh: true }))) {
       // A stale copy from an earlier source (a replacement, say) is not
       // worth keeping: the original is what plays now.
       await attempt.assertCurrent();
@@ -329,19 +517,24 @@ async function renderWebCopy(photoId) {
       return 'skipped';
     }
 
-    const webKey = webKeyFor(photo, attempt.id);
+    let webKey = null;
+    let remuxed = false;
     const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-webcopy-'));
     const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.mp4`);
     // An HDR source is tone-mapped to SDR when this ffmpeg can; otherwise the
     // copy is still made (it plays, which the original did not) and the log
     // says why it looks flat.
-    const hdr = isHdr(probed);
+    // A remux copies the streams: there is nothing to tone-map.
+    const hdr = !remux && isHdr(probed);
     const toneMap = hdr && await canToneMap();
     if (hdr && !toneMap) {
       logger.warn(`videoRendition: photo ${photoId} is HDR (${probed.colorTransfer}) but this ffmpeg lacks zscale/tonemap; the copy is not tone-mapped`);
     }
     try {
-      await transcode(localPath, tmpPath, { toneMap, duration: probed.duration });
+      ({ remuxed } = await transcode(localPath, tmpPath, {
+        toneMap, duration: probed.duration, remux, mayTranscode: !remux || await isEnabled(),
+      }));
+      webKey = webKeyFor(photo, attempt.id, { remux: remuxed });
       const stat = await fsp.stat(tmpPath).catch(() => null);
       if (!stat || stat.size === 0) throw new Error('ffmpeg produced no output');
       const { outputBytes } = mediaPolicy();
@@ -369,7 +562,7 @@ async function renderWebCopy(photoId) {
     }
     // The copy an earlier attempt or source left behind is unreferenced now.
     if (photo.web_path && photo.web_path !== webKey) await getStorage().delete(photo.web_path).catch(() => {});
-    logger.info(`videoRendition: wrote ${webKey} for photo ${photoId} (${probed.videoCodec}/${probed.audioCodec || 'no audio'}, ${probed.majorBrand || probed.formatName}${toneMap ? ', HDR tone-mapped' : ''})`);
+    logger.info(`videoRendition: wrote ${webKey} for photo ${photoId} (${remuxed ? 'metadata-free remux, ' : ''}${probed.videoCodec}/${probed.audioCodec || 'no audio'}, ${probed.majorBrand || probed.formatName}${toneMap ? ', HDR tone-mapped' : ''})`);
     return 'complete';
   });
   return status;
@@ -383,14 +576,21 @@ async function deleteWebCopy(photo) {
 
 module.exports = {
   SETTING_KEY,
+  STRIP_SETTING_KEY,
   isEnabled,
+  isStripEnabled,
+  queuesVideos,
   clearCache,
   backfillPending,
+  queueForMetadataStrip,
+  requeueStranded,
   webKeyFor,
   hasFaststart,
   probe,
+  playedStreamIndexes,
   playsInBrowser,
   transcodeOptions,
+  remuxOptions,
   isHdr,
   canToneMap,
   _resetToneMapSupportForTests,

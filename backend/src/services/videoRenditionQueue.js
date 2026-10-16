@@ -6,9 +6,10 @@
  * tunable shape are identical, and a shared queue framework would make all
  * three harder to read. What differs is what a worker does with a claimed
  * row (videoRenditionService.renderWebCopy) and what gates it: the
- * `general_video_web_rendition` setting, re-read every tick so an admin
- * switching it off stops the workers without a restart. Rows left 'pending'
- * stay queued and resume when it is switched on again.
+ * `general_video_web_rendition` and `general_video_strip_metadata` settings
+ * (either one runs the workers), re-read every tick so an admin switching
+ * both off stops the workers without a restart. Rows left 'pending' stay
+ * queued and resume when one is switched on again.
  *
  * One worker by default. A transcode keeps a core busy for the length of the
  * clip and this project's floor is a 2 GB VPS that is also serving galleries.
@@ -24,7 +25,7 @@
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
-const { isEnabled, renderWebCopy } = require('./videoRenditionService');
+const { queuesVideos, renderWebCopy, queueForMetadataStrip, requeueStranded } = require('./videoRenditionService');
 const mediaAttempts = require('./mediaAttemptService');
 const { isTransient } = require('./imageResourcePolicy');
 
@@ -56,7 +57,7 @@ async function claimNext() {
 
 async function workerLoop(workerIdx) {
   while (running) {
-    if (!(await isEnabled())) {
+    if (!(await queuesVideos())) {
       await sleep(POLL_INTERVAL_MS * 5);
       continue;
     }
@@ -121,6 +122,9 @@ async function janitorLoop() {
       if (reset > 0) {
         logger.warn(`videoRenditionQueue: janitor reset ${reset} stuck video(s) from 'processing' to 'pending'`);
       }
+      // A worker that decided on a setting a moment before it changed.
+      const stranded = await requeueStranded();
+      if (stranded > 0) logger.info(`videoRenditionQueue: queued ${stranded} video(s) decided just before a setting changed`);
     } catch (e) {
       logger.warn('videoRenditionQueue: janitor error', { error: e.message });
     }
@@ -149,10 +153,16 @@ function start() {
   janitorHandle = janitorLoop().catch((e) =>
     logger.error('videoRenditionQueue: janitor crashed', { error: e.message, stack: e.stack })
   );
+  // An upgraded install's videos from before metadata stripping existed
+  // (issue 2102) get their remux. Once per start: a no-op when stripping is
+  // off or nothing is left to look at.
+  Promise.resolve().then(() => queueForMetadataStrip()).then((queued) => {
+    if (queued > 0) logger.info(`videoRenditionQueue: queued ${queued} video(s) for a metadata-free copy`);
+  }).catch((e) => logger.warn('videoRenditionQueue: could not queue skipped videos', { error: e.message }));
 
   logger.info(
     `videoRenditionQueue: started ${CONCURRENCY} worker(s), poll=${POLL_INTERVAL_MS}ms, stuck=${STUCK_TIMEOUT_MS}ms ` +
-    '(idle until general_video_web_rendition is enabled)'
+    '(idle while general_video_web_rendition and general_video_strip_metadata are both off)'
   );
 }
 
