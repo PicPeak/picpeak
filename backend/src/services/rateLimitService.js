@@ -6,6 +6,7 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getAdminTokenFromRequest, getGalleryTokenFromRequest } = require('../utils/tokenUtils');
 const { verifyLiveAdminJwt } = require('../utils/liveAdminSession');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 
 // What applies when app_settings has no row for a key — a fresh install has
 // none. Keyed by setting name so the admin settings read can surface the
@@ -289,7 +290,7 @@ async function createRateLimiter(store = new MemoryStore()) {
     // A bucket of its own, or the viewer budget would be spent by the
     // anonymous requests of everyone else behind the same address.
     keyGenerator: async (req) => (usesGalleryViewerBudget(req, await getRateLimitSettings())
-      ? `gallery-viewer:${req.ip}` : req.ip),
+      ? `gallery-viewer:${rateLimitKey(req)}` : rateLimitKey(req)),
     skip: async (req) => {
       const currentConfig = await getRateLimitSettings();
       return await shouldSkipRateLimit(req, currentConfig);
@@ -358,7 +359,7 @@ async function createAuthRateLimiter(store = new MemoryStore()) {
       return currentConfig.authMaxRequests;
     },
     skipSuccessfulRequests: true,
-    keyGenerator: (req) => req.ip,
+    keyGenerator: rateLimitKey,
     skip: async () => {
       const currentConfig = await getRateLimitSettings();
       return !currentConfig.enabled;

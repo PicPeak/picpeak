@@ -13,6 +13,7 @@
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { param } = require('express-validator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
@@ -26,8 +27,8 @@ const router = express.Router();
 // module. The token is still the only secret; this just fails closed.
 router.use(requireFeatureFlag('transfers'));
 
-const viewLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
-const downloadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+const viewLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
+const downloadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
 
 const tokenValidator = [param('token').isString().isLength({ min: 64, max: 64 }).matches(/^[a-f0-9]+$/i)];
 

@@ -21,6 +21,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const quoteService = require('../services/quoteService');
 const publicDocumentViews = require('../services/publicDocumentViews');
@@ -37,10 +38,10 @@ router.use(require('../database/crmAccess').crmCapabilityRouter('public quote ac
 
 // Rate-limit: 30 token previews per IP per minute, 10 responses.
 const previewLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+  windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
 });
 const respondLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
+  windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
 });
 
 mountVerification(router, {

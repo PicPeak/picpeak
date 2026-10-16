@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { param } = require('express-validator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
@@ -41,18 +42,21 @@ router.use(requireFeatureFlag('transfers'));
 const MAX_FILES_PER_UPLOAD = 25;
 const DEFAULT_ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/tiff', 'application/pdf', 'application/zip'];
 
-const infoLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+const infoLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
 // The page splits one selection (up to MAX_FILES_PER_UPLOAD files) into
 // requests that each fit the per-request byte budget; bytes are bounded by
 // the upload quota, this only bounds the request count.
-const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
 
 // Upload tokens are drawn from an unambiguous alphabet (see transferService).
 // Legacy shorter codes are rotated by migration 241 and rejected afterward.
 const TOKEN_RE = /^[A-Za-z0-9]{10,16}$/;
 
 async function loadUploadTransfer(req, res) {
-  const ip = clientIpForAudit(req);
+  // Keyed like the limiters above: an IPv6 /64 counts as one client, so a
+  // guesser rotating addresses inside one allocation does not reset the
+  // count. The audit log keeps the full address (clientIpForAudit).
+  const ip = rateLimitKey(req);
   const token = req.params.token;
   if (!token || !TOKEN_RE.test(token)) {
     res.status(400).json({ error: 'Invalid token format', code: 'BAD_TOKEN' });
