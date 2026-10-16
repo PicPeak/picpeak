@@ -1960,7 +1960,7 @@
     "protectionLevelBasic": "Basic - Right-click blocking only",
     "protectionLevelStandard": "Standard - Keyboard shortcuts blocked",
     "protectionLevelEnhanced": "Enhanced - Print screen detection",
-    "protectionLevelMaximum": "Maximum - DevTools detection & canvas rendering",
+    "protectionLevelMaximum": "Maximum - DevTools detection, canvas rendering & full-size view capped at 1920×1080",
     "heroLogoSettings": "Hero Logo Settings",
     "heroLogoVisible": "Display logo in hero section",
     "heroLogoInherit": "Use branding default",

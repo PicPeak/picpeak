@@ -21,7 +21,7 @@ const { db, logActivity } = require('../database/db');
 const { getBcryptRounds, MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
 const { resolveStoredPathStrict, contractPdfRoots } = require('../utils/safePath');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
-const { pipeStreamToResponse } = require('../utils/streamResponse');
+const { pipeStreamToResponse, answerVanished } = require('../utils/streamResponse');
 const logger = require('../utils/logger');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const { getClientIp } = require('../utils/requestIp');
@@ -1353,14 +1353,22 @@ router.get('/documents/:id/download', customerAuth, requireDocumentsFeature, asy
       return res.status(409).json({ error: 'This document was rejected and cannot be downloaded.', code: 'DOCUMENT_REJECTED' });
     }
     const stream = await customerDocumentsService.openStream(row);
-    await customerDocumentsService.recordView(row.id, 'customer', req.customer.id);
-    await logActivity('customer_document_downloaded',
-      { documentId: row.id, customerId: req.customer.id },
-      row.event_id || null,
-      { type: 'customer', id: req.customer.id, name: req.customer.email }
-    );
+    try {
+      await customerDocumentsService.recordView(row.id, 'customer', req.customer.id);
+      await logActivity('customer_document_downloaded',
+        { documentId: row.id, customerId: req.customer.id },
+        row.event_id || null,
+        { type: 'customer', id: req.customer.id, name: req.customer.email }
+      );
+    } catch (error) {
+      // Nothing will read it now; on S3 it holds a pooled socket.
+      stream.destroy();
+      throw error;
+    }
     sendDocumentAttachment(res, stream, row);
   } catch (error) {
+    // Removed after the lookup: answered as a missing file, not a 500.
+    if (answerVanished(res, error, 'Document file not found')) return;
     sendDocumentError(res, error, 'Failed to download document');
   }
 });

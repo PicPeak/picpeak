@@ -110,6 +110,19 @@ async function fullResolutionDenial(req, photo) {
     || galleryFullResolutionDenial(req.event, req.accessLevel);
 }
 
+/**
+ * Maximum protection (issue 2152): the full-size view route answers a copy
+ * that fits inside this box at this quality instead of the stored original,
+ * the limits the secure route removed in PR 1669 applied. Videos are exempt.
+ * `tag` versions the ETag and the list URL, so a capped answer and the
+ * original never stand in for each other in a cache.
+ */
+const MAXIMUM_PROTECTION_CAP = { width: 1920, height: 1080, quality: 60, tag: '1920x1080q60' };
+
+function capsFullSizeView(event) {
+  return event?.protection_level === 'maximum';
+}
+
 // DB rendition pointers are not authority to read arbitrary source keys.
 // These namespaces are written by imageProcessor's bounded generators and,
 // for `web`, by videoRenditionService.
@@ -133,5 +146,5 @@ function isRemuxWebKey(key) {
 
 module.exports = {
   originalAssetDenial, grantDenial, isPresentationRenditionKey, isRemuxWebKey,
-  galleryFullResolutionDenial, fullResolutionDenial,
+  galleryFullResolutionDenial, fullResolutionDenial, MAXIMUM_PROTECTION_CAP, capsFullSizeView,
 };

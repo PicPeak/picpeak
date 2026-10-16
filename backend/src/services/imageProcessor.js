@@ -944,7 +944,10 @@ async function ownDerivativeName(photo, name) {
   return cameraNamed ? prefixedBasename(`p${photo.id}_`, name) : name;
 }
 
-async function ensureThumbnail(photo, { force = false, boundVideoSource = true } = {}) {
+// `checkSettings` gives a forced render the settings check of a lazy one
+// (issue 2140): a request-path rebuild, unlike the regenerate sweep, must not
+// publish over a regenerate that ran on new settings meanwhile.
+async function ensureThumbnail(photo, { force = false, boundVideoSource = true, checkSettings = !force } = {}) {
   // Check if thumbnail exists and is valid (works for any source).
   if (!force && photo.thumbnail_path) {
     const isValid = await isThumbnailValid(photo.thumbnail_path);
@@ -955,7 +958,7 @@ async function ensureThumbnail(photo, { force = false, boundVideoSource = true }
   }
 
   photo = await withSourceVersion(photo);
-  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: !force })), { force });
+  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: checkSettings })), { force });
 }
 
 async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false } = {}) {
@@ -987,7 +990,8 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   //
   // A settings read that fails, first or at a check, renders and publishes
   // as before. Forced renders (the sweep, the rendition refresh) apply
-  // whatever settings they read, and a video's poster frame does not depend
+  // whatever settings they read, unless the caller asks for the check
+  // (checkSettings, issue 2140), and a video's poster frame does not depend
   // on them.
   const settings = lazy && !isVideoPhoto(photo)
     ? await getThumbnailSettings({ strict: true }).catch(() => undefined)
