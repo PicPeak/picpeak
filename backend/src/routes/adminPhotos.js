@@ -77,7 +77,7 @@ const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
 const { sha256File, findDuplicate, duplicateName } = require('../services/photoDuplicates');
 
 
-const { validateFileType, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
+const { validateFileType, validateFileContent, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
 
 // Create a multer instance that uses dynamically resolved allowed MIME types.
 // The allowed types are fetched from the database once per request (before multer
@@ -2212,6 +2212,26 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     if (capRefusal) {
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
       return res.status(400).json(capRefusal);
+    }
+
+    // The same content check the multipart upload applies: the bytes must
+    // match the declared type, and an image must decode. The merged file is
+    // the first moment the whole content exists here.
+    const resolvedMimeType = normalizeUploadMimeType(mergedFile.filename, mergedFile.mimeType);
+    const contentFiles = [{ originalname: mergedFile.filename, path: mergedFile.path, mimetype: resolvedMimeType }];
+    let contentError = null;
+    if (!(await validateFileContent(mergedFile.path, resolvedMimeType))) {
+      contentError = `File content does not match declared type: ${mergedFile.filename}`;
+    } else {
+      const checked = { files: contentFiles };
+      await validateUploadedFiles(checked, res, () => {});
+      if (checked.files.length === 0) {
+        contentError = `Invalid image file: ${mergedFile.filename}`;
+      }
+    }
+    if (contentError) {
+      await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
+      return res.status(400).json({ error: contentError });
     }
 
     // Process the merged file as a regular upload
