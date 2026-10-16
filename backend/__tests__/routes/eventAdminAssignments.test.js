@@ -625,6 +625,22 @@ describe('gallery team members and upload review (issue 743)', () => {
       expect(await stored()).toEqual(before);
     });
 
+    it('does not write a team member\'s echo back, so it cannot undo the owner\'s newer change', async () => {
+      // Writing customer_email also rewrites its host_email mirror; a stale
+      // mirror that survives the echo shows the echo was not written.
+      await db('events').where({ id: eventId }).update({ host_email: 'mirror@mail-lock.test' });
+      try {
+        const echo = await as(request(app).put(`/api/admin/events/${eventId}`), 'hand')
+          .send({ customer_email: 'client@mail-lock.test', admin_email: 'studio@mail-lock.test', welcome_message: 'Echo only' });
+        expect(echo.status).toBe(200);
+        expect(await stored()).toEqual({
+          customer_email: 'client@mail-lock.test', host_email: 'mirror@mail-lock.test', admin_email: 'studio@mail-lock.test',
+        });
+      } finally {
+        await db('events').where({ id: eventId }).update({ host_email: 'client@mail-lock.test' });
+      }
+    });
+
     it('refuses a team member holding customers.events changing the assigned customer accounts', async () => {
       await setPortal(true);
       try {

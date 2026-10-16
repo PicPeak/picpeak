@@ -1404,6 +1404,16 @@ module.exports = (router) => {
           if (changesRecipients) {
             return res.status(403).json({ error: 'Only the gallery owner can change who receives its emails', code: 'EVENT_OWNER_REQUIRED' });
           }
+          // A real no-op, as for the account echo above: written back, the
+          // echo would undo a change the owner made since the page loaded.
+          for (const key of recipientKeys) {
+            delete updates[key];
+            delete req.body[key];
+          }
+          if (touchesAccounts) {
+            delete updates.customer_account_ids;
+            delete req.body.customer_account_ids;
+          }
         }
       }
 
