@@ -372,10 +372,12 @@ async function handleGalleryOgCover(req, res) {
 
     // This endpoint is public, so the row's pointer gets the same check as
     // the gallery thumbnail route: a legacy-shaped one is rebuilt, and only a
-    // key in the thumbnail namespace is ever read.
+    // key in the thumbnail namespace is ever read. The rebuild is checked
+    // against a concurrent settings change like the gallery route's (issue
+    // 2140).
     let thumbnailPath = await ensureThumbnail(photo);
     if (thumbnailPath && !isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
-      thumbnailPath = await ensureThumbnail({ ...photo, thumbnail_path: null }, { force: true });
+      thumbnailPath = await ensureThumbnail(photo, { force: true, checkSettings: true });
     }
     if (!isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
       res.status(404).type('text/plain').send('Cover not available');

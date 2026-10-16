@@ -24,6 +24,7 @@ const requireHoursLogging = requireFeatureFlag('hoursLogging', 'HOURS_LOGGING_DI
 // gate it behind incoming-invoices (no re-bills to combine when it's off).
 const requireIncoming = requireFeatureFlag('incomingInvoices', 'INCOMING_INVOICES_DISABLED');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
+const { answerVanished } = require('../utils/streamResponse');
 const customerAccountsService = require('../services/customerAccountsService');
 const accountingHistory = require('../services/accountingHistory');
 const customerHoursService = require('../services/customerHoursService');
@@ -1185,10 +1186,23 @@ router.post('/:id/documents/:docId/review', [
 router.get('/:id/documents/:docId/download', documentItemGuards, handleAsync(async (req, res) => {
   const customerId = await loadDocumentCustomer(req);
   const row = await customerDocumentsService.getForAdmin(customerId, parseInt(req.params.docId, 10));
-  const stream = await customerDocumentsService.openStream(row);
-  await customerDocumentsService.recordView(row.id, 'admin', req.admin.id);
-  await logActivity('customer_document_downloaded',
-    { documentId: row.id, customerId }, row.event_id || null, adminActor(req.admin));
+  let stream;
+  try {
+    stream = await customerDocumentsService.openStream(row);
+  } catch (error) {
+    // Removed after the lookup: answered as a missing file, not a 500.
+    if (answerVanished(res, error, 'Document file not found')) return;
+    throw error;
+  }
+  try {
+    await customerDocumentsService.recordView(row.id, 'admin', req.admin.id);
+    await logActivity('customer_document_downloaded',
+      { documentId: row.id, customerId }, row.event_id || null, adminActor(req.admin));
+  } catch (error) {
+    // Nothing will read it now; on S3 it holds a pooled socket.
+    stream.destroy();
+    throw error;
+  }
   sendDocumentAttachment(res, stream, row);
 }));
 

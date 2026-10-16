@@ -135,7 +135,9 @@ async function repairSharedThumbnails() {
   const { getStorage } = require('./storage');
   const archived = () => db('events').where('is_archived', formatBoolean(true)).select('id');
   const kinds = {
-    thumbnail_path: (photo) => ensureThumbnail({ ...photo, thumbnail_path: null }, { force: true }),
+    // Checked against a concurrent settings change (issue 2140); the row
+    // keeps the shared key so a dropped render does not hand it back.
+    thumbnail_path: (photo) => ensureThumbnail(photo, { force: true, checkSettings: true }),
     preview_path: (photo) => ensurePreviewImage({ ...photo, preview_path: null }, { force: true }),
     // The event's own focal point, as the gallery hero route asks for it.
     hero_path: (photo) => ensureHeroImage({ ...photo, hero_path: null }),

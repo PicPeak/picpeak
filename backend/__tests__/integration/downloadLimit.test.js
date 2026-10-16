@@ -1064,4 +1064,112 @@ describe('Download limit (issue 1560)', () => {
       }
     });
   });
+
+  // Issue 2139: a HEAD probe (browser, download manager, link previewer) is
+  // not a download on an unlimited gallery either.
+  describe('HEAD probes count nothing', () => {
+    const downloadCounts = async (photoIds) => (await db('photos').whereIn('id', photoIds).select('download_count'))
+      .map((p) => Number(p.download_count || 0));
+    const activityCount = async (eventId) => Number((await db('activity_logs')
+      .where({ event_id: eventId, activity_type: 'gallery_downloaded' }).count('id as c').first()).c);
+    const accessLogCount = async (eventId) => Number((await db('access_logs')
+      .where({ event_id: eventId }).count('id as c').first()).c);
+    // The counters run on 'finish', after supertest resolved.
+    const settle = () => new Promise((r) => setTimeout(r, 100));
+
+    async function makeReadyJob(event, photoIds, accessLevel, tokenChar) {
+      const jobToken = tokenChar.repeat(64);
+      const zipKey = `download-jobs/${event.slug}-head.zip`;
+      await fs.promises.mkdir(path.join(process.env.STORAGE_PATH, 'download-jobs'), { recursive: true });
+      await fs.promises.writeFile(path.join(process.env.STORAGE_PATH, zipKey), Buffer.from('PK-head-probe'));
+      const jobs = require('../../src/services/downloadJobService');
+      // The real identity, so isStillDeliverable lets the archive through.
+      const dedupKey = jobs.dedupKey(event.id, 'original', photoIds, null, jobs.visibilityScopeFor(accessLevel));
+      await db('download_jobs').insert({
+        token: jobToken, event_id: event.id, resolution: 'original',
+        photo_ids: JSON.stringify(photoIds), delivered_photo_ids: JSON.stringify(photoIds),
+        dedup_key: dedupKey, status: 'ready', zip_path: zipKey, photo_count: photoIds.length,
+        visibility_scope: jobs.visibilityScopeFor(accessLevel),
+        expires_at: new Date(Date.now() + 3600 * 1000).toISOString(), created_at: new Date().toISOString(),
+      });
+      return jobToken;
+    }
+
+    it('a HEAD of a prepared archive on an unlimited gallery answers the headers and counts nothing', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: null, photos: 2 });
+      const jobToken = await makeReadyJob(event, photoIds, 'client', '1');
+      const res = await request(app)
+        .head(`/api/gallery/${event.slug}/download-jobs/${jobToken}/file`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('application/zip');
+      expect(res.headers['content-length']).toBe(String('PK-head-probe'.length));
+      expect(res.headers['content-disposition']).toBe(`attachment; filename="${event.slug}-original.zip"`);
+      await settle();
+      expect(await downloadCounts(photoIds)).toEqual([0, 0]);
+      expect(await activityCount(event.id)).toBe(0);
+      expect(await accessLogCount(event.id)).toBe(0);
+    });
+
+    it('a GET of a prepared archive on an unlimited gallery still counts once', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: null, photos: 2 });
+      const jobToken = await makeReadyJob(event, photoIds, 'client', '2');
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/download-jobs/${jobToken}/file`)
+        .set('Authorization', `Bearer ${token}`)
+        .buffer(true).parse(drainBody);
+      expect(res.status).toBe(200);
+      expect(await eventually(() => activityCount(event.id), 1)).toBe(1);
+      expect(await eventually(async () => (await downloadCounts(photoIds)).join(), '1,1')).toBe('1,1');
+      expect(await accessLogCount(event.id)).toBe(1);
+    });
+
+    it('a HEAD of a prepared archive on a limited gallery takes no slot and is refused past the limit', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 2, photos: 3 });
+      const jobToken = await makeReadyJob(event, photoIds.slice(0, 2), 'client', '3');
+      const head = () => request(app)
+        .head(`/api/gallery/${event.slug}/download-jobs/${jobToken}/file`)
+        .set('Authorization', `Bearer ${token}`);
+      const res = await head();
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('application/zip');
+      await settle();
+      expect(await grantCount(event.id)).toBe(0);
+      expect(await downloadCounts(photoIds)).toEqual([0, 0, 0]);
+      expect(await activityCount(event.id)).toBe(0);
+
+      await quota.grantDownloads(event, [photoIds[2]]);
+      expect((await head()).status).toBe(403);
+      expect(await grantCount(event.id)).toBe(1);
+    });
+
+    it('a HEAD of download-all on an unlimited gallery counts nothing (streamed archive)', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: null, photos: 2 });
+      const res = await request(app)
+        .head(`/api/gallery/${event.slug}/download-all`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('application/zip');
+      await settle();
+      expect(await downloadCounts(photoIds)).toEqual([0, 0]);
+      expect(await activityCount(event.id)).toBe(0);
+      expect(await accessLogCount(event.id)).toBe(0);
+    });
+
+    it('a HEAD of download-all on an unlimited gallery counts nothing (prebuilt archive)', async () => {
+      const { event, photoIds, guestToken } = await makeEvent({ limit: null, photos: 2 });
+      const built = await require('../../src/services/downloadZipService').generateZip(event.id);
+      expect(built.success).toBe(true);
+      const res = await request(app)
+        .head(`/api/gallery/${event.slug}/download-all`)
+        .set('Authorization', `Bearer ${guestToken}`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('application/zip');
+      expect(res.headers['content-length']).toBe(String(built.size));
+      await settle();
+      expect(await downloadCounts(photoIds)).toEqual([0, 0]);
+      expect(await activityCount(event.id)).toBe(0);
+      expect(await accessLogCount(event.id)).toBe(0);
+    });
+  });
 });
