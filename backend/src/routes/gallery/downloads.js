@@ -712,6 +712,15 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // Again after the cache lookup, which awaits storage: a limit set in the
     // meantime must still send this request down the counted stream.
     if (zipInfo && await currentDownloadLimit(req.event)) zipInfo = null;
+    // A HEAD probe is not a download (issue 2139): headers only, nothing counted.
+    if (zipInfo && req.method === 'HEAD') {
+      res.set({
+        'Content-Type': 'application/zip',
+        'Content-Length': zipInfo.size,
+        'Content-Disposition': `attachment; filename="${req.event.slug}.zip"`,
+      });
+      return res.end();
+    }
     // Opened before the zip headers go on: a cached archive removed since
     // the stat falls through to the stream below.
     const cachedZip = zipInfo ? await openCachedZip(zipInfo.key) : null;
@@ -783,8 +792,9 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     const previewOnly = await isPreviewOnly(req);
 
     // Download limit (issue 1560): a HEAD probe (a download manager asking
-    // for the size first) answers without taking any of the quota.
-    if (req.method === 'HEAD' && downloadLimitOf(req.event)) {
+    // for the size first) answers without taking any of the quota — and on
+    // an unlimited gallery without building or counting an archive (issue 2139).
+    if (req.method === 'HEAD') {
       if (!previewOnly) {
         const check = await checkDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview });
         if (!check.ok) return res.status(403).end();
@@ -1403,20 +1413,30 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
 
     // Download limit (issue 1560). A limited gallery must know what it is
     // handing over, so an unreadable manifest refuses rather than ships.
-    if (!req.isAdminPreview && await currentDownloadLimit(req.event)) {
-      if (!Array.isArray(deliveredIds) || deliveredIds.length === 0) {
-        return res.status(409).json({
-          error: 'This gallery changed since the download was prepared — please request it again',
-          status: 'stale',
-        });
-      }
-      // A HEAD probe answers without taking any of the quota.
-      if (req.method === 'HEAD') {
+    const limited = !req.isAdminPreview && await currentDownloadLimit(req.event);
+    if (limited && (!Array.isArray(deliveredIds) || deliveredIds.length === 0)) {
+      return res.status(409).json({
+        error: 'This gallery changed since the download was prepared — please request it again',
+        status: 'stale',
+      });
+    }
+    const suffix = job.resolution === 'original' ? 'original' : job.resolution;
+    // A HEAD probe is not a download (issue 2139): it answers the headers
+    // without taking any of the quota, and on any gallery before the
+    // counters below.
+    if (req.method === 'HEAD') {
+      if (limited) {
         const check = await checkDownloads(req.event, deliveredIds);
         if (!check.ok) return res.status(403).end();
-        res.set({ 'Content-Type': 'application/zip', 'Content-Length': stat.size });
-        return res.end();
       }
+      res.set({
+        'Content-Type': 'application/zip',
+        'Content-Length': stat.size,
+        'Content-Disposition': `attachment; filename="${req.event.slug}-${suffix}.zip"`,
+      });
+      return res.end();
+    }
+    if (limited) {
       const quota = await grantDownloads(req.event, deliveredIds, { reserve: true });
       if (!quota.ok) return refuseDownload(res, quota);
       settleWhenDone(res, req.event.id, quota, responseDelivered(res, deliveredIds));
@@ -1445,7 +1465,6 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     // 2129) makes S3's get() reject here, and the lazy local stream fails in
     // pipeStreamToResponse, both with the failed stat's 410.
     const stream = await storage.get(job.zip_path);
-    const suffix = job.resolution === 'original' ? 'original' : job.resolution;
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Disposition', `attachment; filename="${req.event.slug}-${suffix}.zip"`);
