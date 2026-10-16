@@ -28,6 +28,7 @@
 
 const crypto = require('crypto');
 const { buildShareLinkVariants } = require('./shareLinkService');
+const { unicodeSearchForms } = require('../utils/sqlSecurity');
 const { db, withRetry, logActivity } = require('../database/db');
 const { adminActivityActor } = require('../utils/activityActor');
 const logger = require('../utils/logger');
@@ -386,12 +387,15 @@ async function listQuotes({ filters = {}, sort = 'issue_desc', page = 1, pageSiz
       query = query.where('quotes.issue_date', '<=', filters.to);
     }
     if (filters.q && String(filters.q).trim()) {
-      const term = `%${String(filters.q).trim()}%`;
+      // Every stored spelling of a name (unicodeSearchForms).
+      const terms = unicodeSearchForms(String(filters.q).trim()).map((t) => `%${t}%`);
       query = query.andWhere(function() {
-        this.where('quotes.quote_number', 'like', term)
-          .orWhere('quotes.event_name', 'like', term)
-          .orWhere('customer_accounts.email', 'like', term)
-          .orWhere('customer_accounts.company_name', 'like', term);
+        for (const term of terms) {
+          this.orWhere('quotes.quote_number', 'like', term)
+            .orWhere('quotes.event_name', 'like', term)
+            .orWhere('customer_accounts.email', 'like', term)
+            .orWhere('customer_accounts.company_name', 'like', term);
+        }
       });
     }
 

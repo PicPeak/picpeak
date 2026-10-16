@@ -31,6 +31,8 @@ pg('PostgreSQL photo trash', () => {
 
     await db.schema.createTable('events', (table) => {
       table.increments('id'); table.string('slug'); table.integer('photo_cap'); table.string('source_mode');
+      // Read by the hard delete's event lock (heroPhotoLock, issue 2108).
+      table.integer('hero_photo_id');
     });
     await db.schema.createTable('admin_users', (table) => { table.increments('id'); table.string('username'); });
     await db.schema.createTable('photos', (table) => {

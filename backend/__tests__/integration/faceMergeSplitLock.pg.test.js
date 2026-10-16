@@ -184,8 +184,14 @@ const mockDetected = [];
     (e) => { results[name] = e; },
   );
   // A photo claimed by the face queue, as processPhotoFaces expects it.
-  const claim = (photoId) => db('photos').where({ id: photoId })
-    .update({ face_status: 'processing', face_started_at: new Date().toISOString() });
+  // The claimed row, its attempt id included (issue 2069).
+  const claim = async (photoId) => {
+    const claimed = { id: photoId, face_attempt_id: crypto.randomUUID() };
+    await db('photos').where({ id: photoId }).update({
+      face_status: 'processing', face_started_at: new Date().toISOString(), face_attempt_id: claimed.face_attempt_id,
+    });
+    return claimed;
+  };
   const members = async (personId) => Number((await db('photo_faces')
     .where({ person_id: personId }).count({ c: '*' }).first()).c);
   const unassigned = async (eventId) => Number((await db('photo_faces')
@@ -344,9 +350,9 @@ const mockDetected = [];
       // Deleting its old face first, the re-scan held that row while the
       // merge went on to move it, then waited in assignFaces for the lock
       // the merge holds: 40P01, and either side failed.
-      await claim(rescanned.photo_id);
+      const rescan = await claim(rescanned.photo_id);
       mockDetected.push(Array.from(makeEmbedding(82, 5)));
-      pending.push(scanned(results, 'rescan', faceProcessor.processPhotoFaces(rescanned.photo_id)));
+      pending.push(scanned(results, 'rescan', faceProcessor.processPhotoFaces(rescan)));
       expect(await until(async () => (await waitingOnEventLock(eventId)) >= 1)).toBe(true);
       // Parked before its delete: the old face row is still free to lock.
       // The merge stopped at Ben's first face and has not reached it either.

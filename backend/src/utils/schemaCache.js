@@ -56,6 +56,9 @@
 const { db } = require('../database/db');
 
 const cache = new Map();
+// table -> Set of its column names, for checks against caller-supplied keys:
+// one entry per table, however many distinct keys are asked about.
+const columnSets = new Map();
 
 async function hasColumnCached(table, column) {
   const key = `${table}.${column}`;
@@ -70,12 +73,26 @@ async function hasColumnCached(table, column) {
 }
 
 /**
+ * The column names of `table`, read once per process. Use it to check keys
+ * that come from a request: hasColumnCached would run one schema query per
+ * distinct key and keep every negative answer, so a client sending made-up
+ * keys could grow the cache without bound.
+ */
+async function columnNamesCached(table) {
+  if (columnSets.has(table)) return columnSets.get(table);
+  const names = new Set(Object.keys(await db(table).columnInfo()));
+  columnSets.set(table, names);
+  return names;
+}
+
+/**
  * Drop every cached entry. Call this after a runtime schema change
  * (rare — only the dev tooling does this today). Safe to call any
  * time; the next hasColumnCached lookup will re-resolve.
  */
 function invalidateSchemaCache() {
   cache.clear();
+  columnSets.clear();
 }
 
 /**
@@ -87,10 +104,12 @@ function invalidateSchemaCacheForTable(table) {
   for (const k of cache.keys()) {
     if (k.startsWith(prefix)) cache.delete(k);
   }
+  columnSets.delete(table);
 }
 
 module.exports = {
   hasColumnCached,
+  columnNamesCached,
   invalidateSchemaCache,
   invalidateSchemaCacheForTable,
 };
