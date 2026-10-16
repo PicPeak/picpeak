@@ -2556,7 +2556,7 @@
     "protectionLevelBasic": "Einfach - Nur Rechtsklick-Sperre",
     "protectionLevelStandard": "Standard - Tastenkombinationen blockiert",
     "protectionLevelEnhanced": "Erweitert - Bildschirmfoto-Erkennung",
-    "protectionLevelMaximum": "Maximum - DevTools-Erkennung & Canvas-Rendering",
+    "protectionLevelMaximum": "Maximum - DevTools-Erkennung, Canvas-Rendering & Großansicht auf 1920×1080 begrenzt",
     "heroLogoSettings": "Hero-Logo-Einstellungen",
     "heroLogoVisible": "Logo im Hero-Bereich anzeigen",
     "heroLogoInherit": "Branding-Standard verwenden",

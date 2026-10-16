@@ -33,7 +33,9 @@ const { getStoragePath } = require('../../config/storage');
 const { safePathJoin } = require('../../utils/fileSecurityUtils');
 const {
   originalAssetDenial, grantDenial, isPresentationRenditionKey, isRemuxWebKey, fullResolutionDenial,
+  MAXIMUM_PROTECTION_CAP, capsFullSizeView,
 } = require('../../services/galleryAssetPolicy');
+const sharp = require('../../services/isolatedSharp');
 const {
   currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
   drawsOnQuota, clientOnlyError, refuseDownload, downloadLimitError, settleWhenDone, responseDelivered,
@@ -94,6 +96,39 @@ function isPhotoOutsideGrant(req, photo) {
     && Number(photo.category_id) !== Number(req.event.show_category_id);
 }
 
+/**
+ * The full-size view at maximum protection (issue 2152): the photo inside
+ * MAXIMUM_PROTECTION_CAP, re-encoded at its quality, with no metadata (sharp
+ * strips it). Cut from the stored preview tier rather than the original, so
+ * each request decodes at most a 1920px image, in the image worker pool
+ * (`interactive`: refused with a 503 under a flood, not queued); no further
+ * derived file is stored. The watermark goes on first, through the same
+ * path-keyed cache the preview route uses, and is scaled down with the
+ * picture; marking after the resize would re-encode at the watermark's own
+ * quality. A WebP preview (alpha or animation) stays WebP, as the removed
+ * secure route kept WebP. Null when no preview can be made.
+ */
+async function renderCappedView(photo, watermarkSettings) {
+  let previewPath = await ensurePreviewImage(photo);
+  // Same self-heal as the preview route for a legacy pointer shape.
+  if (previewPath && !isPresentationRenditionKey(previewPath, 'preview')) {
+    previewPath = await ensurePreviewImage({ ...photo, preview_path: null }, { force: true });
+  }
+  if (!isPresentationRenditionKey(previewPath, 'preview')) return null;
+  const webp = previewPath.endsWith('.webp');
+  const { width, height, quality } = MAXIMUM_PROTECTION_CAP;
+  const buffer = await withLocalCopy(previewPath, async (localPath) => {
+    const input = watermarkSettings?.enabled
+      ? await watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
+      : localPath;
+    const image = sharp(input, { interactive: true, failOn: 'none' })
+      .rotate()
+      .resize(width, height, { fit: 'inside', withoutEnlargement: true });
+    return (webp ? image.webp({ quality }) : image.jpeg({ quality, progressive: true, mozjpeg: true })).toBuffer();
+  });
+  return { buffer, contentType: webp ? 'image/webp' : 'image/jpeg' };
+}
+
 router.post('/:slug/photo/:photoId/view',
   verifyGalleryAccess,
   denySlideshowToken,
@@ -152,7 +187,8 @@ router.get('/:slug/photo/:photoId',
       // shipped frontend code calls, so still images at those levels were a
       // broken tile (#1370 exempted videos from the same bounce). The levels
       // are client-side rendering modes; the guest still needs a valid gallery
-      // token to get here at all.
+      // token to get here at all. Maximum also caps the still image's size
+      // and quality (issue 2152, below).
 
       // Download limit (issue 1560). While one applies, guests get the preview
       // tier rather than the original, which would otherwise be a full-size
@@ -395,10 +431,32 @@ router.get('/:slug/photo/:photoId',
       const orientationVersion = photo.orientation_checked_at
         ? `-o${new Date(photo.orientation_checked_at).getTime()}`
         : '';
-      const etag = `"${photoId}-${mtimeMs}${watermarkHash}${orientationVersion}"`;
+      // Maximum protection answers a capped copy (issue 2152), the admin
+      // preview included, so it shows what guests get. Its own ETag: a level
+      // change must not revalidate a cached original, or the other way round.
+      const capped = capsFullSizeView(req.event);
+      const capVersion = capped ? `-cap${MAXIMUM_PROTECTION_CAP.tag}` : '';
+      const etag = `"${photoId}-${mtimeMs}${watermarkHash}${orientationVersion}${capVersion}"`;
 
       if (req.headers['if-none-match'] === etag) {
         return res.status(304).end();
+      }
+
+      if (capped) {
+        const view = await renderCappedView(photo, watermarkSettings);
+        if (!view) {
+          logger.warn(`No preview to cap photo ${photoId} from at maximum protection`);
+          res.set('Cache-Control', 'no-store');
+          return res.status(404).json({ error: 'Photo not available' });
+        }
+        res.set({
+          'Content-Type': view.contentType,
+          'Content-Length': view.buffer.length,
+          'Cache-Control': 'private, max-age=1800',
+          'ETag': etag,
+          'X-Protection-Level': 'basic'
+        });
+        return res.send(view.buffer);
       }
 
       if (watermarkSettings && watermarkSettings.enabled) {

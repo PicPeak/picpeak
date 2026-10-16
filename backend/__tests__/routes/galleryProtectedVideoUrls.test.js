@@ -151,14 +151,15 @@ describe('videos stay playable under enhanced/maximum protection (#1370)', () =>
 
     test('still images take the JWT route too and stream, not a {{token}} template', async () => {
       const photo = await photoPayload(imageId);
-      expect(photo.url).toBe(`/api/gallery/${SLUG}/photo/${imageId}`);
+      // Maximum caps the still image (issue 2152) and versions its URL.
+      expect(photo.url).toBe(`/api/gallery/${SLUG}/photo/${imageId}${level === 'maximum' ? '?cap=1920x1080q60' : ''}`);
       expect(photo.url).not.toContain('{{token}}');
       expect(photo).not.toHaveProperty('requires_token');
 
       const res = await request(app).get(`/api/gallery/${SLUG}/photo/${imageId}`).buffer(true).parse(binary);
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toBe('image/jpeg');
-      expect(res.body.equals(IMAGE_BYTES)).toBe(true);
+      if (level === 'enhanced') expect(res.body.equals(IMAGE_BYTES)).toBe(true);
     });
   });
 

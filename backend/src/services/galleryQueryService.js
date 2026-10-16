@@ -22,7 +22,9 @@ const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
 const { guestUploadMaxEdgeOf } = require('./guestUploadDownscale');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
-const { galleryFullResolutionDenial, isRemuxWebKey } = require('./galleryAssetPolicy');
+const {
+  galleryFullResolutionDenial, isRemuxWebKey, MAXIMUM_PROTECTION_CAP, capsFullSizeView,
+} = require('./galleryAssetPolicy');
 /**
  * The photos a viewer's list is made of, before sorting and paging: this
  * event's processed photos, the viewer's visibility rule, the slideshow pin
@@ -695,9 +697,15 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         || (photo.folder_id && blockedFolderIds.has(Number(photo.folder_id)));
       const originalWithheld = !isVideo && !adminPreview && (accessLevel === 'slideshow'
         || downloadDisabled || (withholdOriginals && !deliveredIds.has(Number(photo.id))));
+      // Maximum protection caps what the photo route answers (issue 2152):
+      // the capped copy gets its own URL, so a browser never shows a cached
+      // original for it after a level change, or the other way round.
+      const photoQuery = !isVideo && capsFullSizeView(event)
+        ? `?${[imgQuery, `cap=${MAXIMUM_PROTECTION_CAP.tag}`].filter(Boolean).join('&')}`
+        : wmQuery;
       const photoUrl = originalWithheld
         ? previewUrl
-        : `/api/gallery/${slug}/photo/${photo.id}${wmQuery}`;
+        : `/api/gallery/${slug}/photo/${photo.id}${photoQuery}`;
 
       return {
         id: photo.id,
