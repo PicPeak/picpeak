@@ -735,9 +735,11 @@ describe('Download limit (issue 1560)', () => {
   // ── Review round: videos, guests, conditional GETs, races ──────────────
   const drainBody = (r, cb) => { const c = []; r.on('data', (d) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); };
   const eventually = async (read, expected) => {
-    // Grants settle when the response closes, after supertest resolves.
+    // Grants settle when the response closes, after supertest resolves. Up
+    // to 5 s: the counters and activity row are written on 'finish', which a
+    // loaded CI runner can take past a second to get to.
     let value;
-    for (let i = 0; i < 50; i += 1) {
+    for (let i = 0; i < 250; i += 1) {
       value = await read();
       if (value === expected) return value;
       await new Promise((r) => setTimeout(r, 20));
