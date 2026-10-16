@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.174.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.174.2-beta.0...v3.174.3-beta.0) (2026-10-16)
+
+
+### Bug Fixes
+
+* **documents:** stop customer document downloads from crashing on a vanished file ([#2144](https://github.com/PicPeak/picpeak/issues/2144)) ([9717887](https://github.com/PicPeak/picpeak/commit/971788775e151325b4712c0ab40c85723b49d979))
+* **gallery:** do not cache the hero and preview fallback redirect ([#2145](https://github.com/PicPeak/picpeak/issues/2145)) ([52f5d4d](https://github.com/PicPeak/picpeak/commit/52f5d4d2a4ae097de7504c761be22552a8b8f872))
+
 ## [3.174.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.174.1-beta.0...v3.174.2-beta.0) (2026-10-16)
 
 
