@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.175.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.174.4-beta.0...v3.175.0-beta.0) (2026-10-16)
+
+
+### Features
+
+* **gallery:** cap full-size images at maximum protection ([#2153](https://github.com/PicPeak/picpeak/issues/2153)) ([cf19318](https://github.com/PicPeak/picpeak/commit/cf19318a6a30ca73690373cb023802ce222d6480))
+
+
+### Bug Fixes
+
+* **security:** remove the image request budgets nothing enforces ([#2154](https://github.com/PicPeak/picpeak/issues/2154)) ([62cfe17](https://github.com/PicPeak/picpeak/commit/62cfe17cf378094a0e18543f7189b87aefd8fc31))
+* **thumbnails:** check the settings on forced request-path thumbnail renders ([#2147](https://github.com/PicPeak/picpeak/issues/2147)) ([abda034](https://github.com/PicPeak/picpeak/commit/abda03462587a43a348403ae925a34a04d2fabe8))
+
 ## [3.174.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.174.3-beta.0...v3.174.4-beta.0) (2026-10-16)
 
 
