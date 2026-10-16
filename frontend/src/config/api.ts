@@ -65,7 +65,6 @@ api.interceptors.request.use(
 
       const isGalleryEndpoint = !isAbsoluteUrl && (
         /^\/gallery\//.test(pathname)
-        || /^\/secure-images\//.test(pathname)
         || /^\/auth\/gallery\//.test(pathname));
 
       const isGallerySessionCheck = !isAbsoluteUrl && pathname === '/auth/session'
