@@ -477,7 +477,12 @@ router.post('/:slug/photos/:photoId/feedback',
       res.json({
         success: true,
         ...result,
-        message: feedbackType === 'comment' && !feedbackData.is_approved ?
+        // Held exactly when feedbackService stores the row unapproved: an
+        // explicit `false`, or the event moderating comments. `is_approved`
+        // stays undefined for an auto-approved comment, which `!undefined`
+        // used to read as held (issue 2077).
+        message: feedbackType === 'comment'
+          && (feedbackData.is_approved === false || Boolean(feedbackData.moderate_comments)) ?
           'Your comment has been submitted for moderation' : undefined
       });
     } catch (error) {

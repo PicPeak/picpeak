@@ -104,6 +104,7 @@ const {
 } = require('./src/utils/tokenUtils');
 const {
   LEGACY_TRUST_PROXY,
+  createProxyChainWarning,
   isTrustProxyUnset,
   parseTrustProxy,
   resolveListenHost,
@@ -179,6 +180,9 @@ app.use(cookieParser());
 // First, so every later middleware, route and the error handler can put the
 // same id in their logs and responses.
 app.use(require('./src/middleware/requestId'));
+
+// One trusted hop but another proxy in front of nginx: warn once per process.
+app.use(createProxyChainWarning({ trustProxy: app.get('trust proxy'), logger }));
 
 app.use((req, res, next) => {
   if (req.headers.authorization) {

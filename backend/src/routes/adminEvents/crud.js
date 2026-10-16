@@ -17,7 +17,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
-const { escapeLikePattern, likeWithEscape } = require('../../utils/sqlSecurity');
+const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../../utils/sqlSecurity');
 const { validatePasswordInContext, getBcryptRounds } = require('../../utils/passwordValidation');
 const logger = require('../../utils/logger');
 const { sanitizeForLog, sanitizeValidationErrors } = require('../../utils/sanitizeForLog');
@@ -50,6 +50,8 @@ const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
 const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
 const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, claimEventArchive } = require('./helpers');
+// One stored form per name (NFC): a decomposed "Jörg" must match a precomposed search.
+const nfcName = (v) => (typeof v === 'string' ? v.normalize('NFC') : v);
 
 // Largest page the admin events list returns (the pickers ask for 200).
 const EVENT_LIST_MAX_LIMIT = 500;
@@ -132,7 +134,7 @@ module.exports = (router) => {
       }
       return true;
     }),
-    body('event_name').notEmpty().trim(),
+    body('event_name').customSanitizer(nfcName).notEmpty().trim(),
     body('event_date').optional({ values: 'falsy' }).isDate(),
     // Migration 137 — calendar time fields.
     body('event_time_start').optional({ values: 'falsy' }).matches(/^([01]\d|2[0-3]):[0-5]\d$/)
@@ -319,9 +321,13 @@ module.exports = (router) => {
       // Apply search filter
       if (search) {
         const pattern = `%${escapeLikePattern(search)}%`;
+        // Every stored spelling of the name (unicodeSearchForms).
+        const namePatterns = typeof search === 'string'
+          ? unicodeSearchForms(search).map((s) => `%${escapeLikePattern(s)}%`)
+          : [pattern];
         query = query.where((builder) => {
-          builder.whereRaw(likeWithEscape('event_name'), [pattern])
-            .orWhereRaw(likeWithEscape('admin_email'), [pattern])
+          for (const p of namePatterns) builder.orWhereRaw(likeWithEscape('event_name'), [p]);
+          builder.orWhereRaw(likeWithEscape('admin_email'), [pattern])
             .orWhereRaw(likeWithEscape('customer_email'), [pattern])
             .orWhereRaw(likeWithEscape('slug'), [pattern]);
         });
@@ -892,7 +898,7 @@ module.exports = (router) => {
   // client-access secrets, customer assignments, archive/sent state are NOT
   // carried over.
   router.post('/:id/duplicate', adminAuth, requirePermission('events.create'), requireEventOwnership, [
-    body('event_name').trim().notEmpty().withMessage('Event name is required'),
+    body('event_name').customSanitizer(nfcName).trim().notEmpty().withMessage('Event name is required'),
     body('event_date').optional({ values: 'falsy' }).isDate(),
     body('customer_name').optional().trim(),
     body('customer_email').optional({ values: 'falsy' }).isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
@@ -1139,7 +1145,7 @@ module.exports = (router) => {
 
   // Update event
   router.put('/:id', adminAuth, requirePermission('events.edit'), requireEventOwnership, [
-    body('event_name').optional().trim().notEmpty(),
+    body('event_name').optional().customSanitizer(nfcName).trim().notEmpty(),
     body('event_date').optional({ values: 'falsy' }).isDate(),
     // Migration 137 — calendar time fields. Same regex/range rule as POST.
     body('event_time_start').optional({ values: 'falsy', nullable: true })
