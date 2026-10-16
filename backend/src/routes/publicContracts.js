@@ -23,6 +23,7 @@
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { body } = require('express-validator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const contractService = require('../services/contractService');
@@ -50,10 +51,10 @@ const router = express.Router();
 router.use(require('../database/crmAccess').crmCapabilityRouter('public contract action-token capability'));
 
 const previewLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+  windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
 });
 const respondLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
+  windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
 });
 
 mountVerification(router, {

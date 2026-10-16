@@ -185,7 +185,8 @@ function strictRateLimit(options = {}) {
   cleanupTimers.add(cleanupTimer);
   
   return (req, res, next) => {
-    const ip = req.ip || req.connection.remoteAddress;
+    // An IPv6 /64 is one client; see utils/rateLimitKey.js.
+    const ip = rateLimitKey(req) || req.connection?.remoteAddress;
     const now = Date.now();
     const resetTime = now + windowMs;
     
