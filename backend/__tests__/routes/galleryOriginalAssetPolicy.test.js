@@ -322,6 +322,31 @@ describe('gallery original-asset authority', () => {
       await db('events').where({ id: eventId }).update({ download_limit: null });
     }
   });
+  test('a metadata-free remux plays in place of the original and counts like it (issue 2102)', async () => {
+    const remux = Buffer.from('remuxed-original-without-metadata');
+    const remuxKey = `videos/web_${videoId}_remux_11111111-1111-4111-8111-111111111111_source.mp4`;
+    await storage.put(remuxKey, remux);
+    await db('photos').where({ id: videoId }).update({ web_path: remuxKey, web_status: 'complete' });
+    await db('events').where({ id: eventId }).update({ download_limit: 5 });
+    const client = { Authorization: `Bearer ${token({ accessLevel: 'client' })}` };
+    const grants = () => db('event_download_grants').where({ event_id: eventId, photo_id: videoId });
+    try {
+      // The guest may not draw on the quota: refused, as for the original.
+      expect((await get('photo', videoId)).status).toBe(403);
+      expect(await grants()).toHaveLength(0);
+      // The client plays the remux, never the original's bytes, and the play is counted.
+      const counted = await get('photo', videoId, client);
+      expect(counted.status).toBe(200);
+      expect(counted.body).toEqual(remux);
+      expect(await grants()).toHaveLength(1);
+    } finally {
+      await grantsSettled();
+      await grants().del();
+      await storage.delete(remuxKey).catch(() => {});
+      await db('photos').where({ id: videoId }).update({ web_path: null, web_status: null });
+      await db('events').where({ id: eventId }).update({ download_limit: null });
+    }
+  });
   test('a video storage fails to return takes no download slot, whole or by range', async () => {
     await db('events').where({ id: eventId }).update({ download_limit: 5 });
     const client = { Authorization: `Bearer ${token({ accessLevel: 'client' })}` };

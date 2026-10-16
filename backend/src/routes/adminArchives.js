@@ -12,7 +12,7 @@ const { requirePermission } = require('../middleware/permissions');
 const StreamZip = require('node-stream-zip');
 const { requireEventOwnership, requireEventOwner, scopeEventsListQuery } = require('../middleware/ownership');
 const { assertZipEntriesWithin } = require('../utils/safePath');
-const { escapeLikePattern, likeWithEscape } = require('../utils/sqlSecurity');
+const { escapeLikePattern, likeWithEscape, unicodeSearchForms } = require('../utils/sqlSecurity');
 const logger = require('../utils/logger');
 const { sanitizeForZipEntry } = require('../utils/filenameSanitizer');
 const { getPagination } = require('../utils/routeHelpers');
@@ -25,7 +25,8 @@ const { getStorage } = require('../services/storage');
 const {
   claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives, legacyArchiveKeys,
 } = require('../services/archiveService');
-const { pipeStreamToResponse } = require('../utils/streamResponse');
+const { pipeStreamToResponse, answerVanished } = require('../utils/streamResponse');
+const { DEFAULT_STALE_MS } = require('../services/maintenanceJobState');
 const router = express.Router();
 
 /**
@@ -74,10 +75,12 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
       // to its own events.
       scopeEventsListQuery(query, req.admin, 'events.created_by');
       if (search) {
-        query.whereRaw(
-          likeWithEscape('events.event_name'),
-          [`%${escapeLikePattern(search)}%`]
-        );
+        // Every stored spelling of the name (unicodeSearchForms).
+        query.where((builder) => {
+          for (const form of unicodeSearchForms(search)) {
+            builder.orWhereRaw(likeWithEscape('events.event_name'), [`%${escapeLikePattern(form)}%`]);
+          }
+        });
       }
       if (type && type !== 'all') {
         query.where('events.event_type', type);
@@ -817,9 +820,12 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
     // Browser-playable copies (issue 1430): archiving dropped them and reset
     // the rows (archiveService). With the setting on, the restored videos are
     // queued again here; off, they wait for the next switch-on backfill.
+    // Metadata stripping (issue 2102) queues them on its own while it is on.
     const videoRendition = require('../services/videoRenditionService');
     if (await videoRendition.isEnabled()) {
       await videoRendition.backfillPending({ eventId: archive.id });
+    } else {
+      await videoRendition.queueForMetadataStrip({ eventId: archive.id });
     }
 
     // Log activity
@@ -891,6 +897,8 @@ router.get('/:id/download', adminAuth, requirePermission('archives.download'), r
       metadata: JSON.stringify({ event_name: archive.event_name })
     });
   } catch (error) {
+    // Removed since the stat (issue 2129): the failed stat's 404.
+    if (answerVanished(res, error, 'Archive file not found in storage')) return;
     logger.error('Archive download error:', error);
     res.status(500).json({ error: 'Failed to download archive' });
   }
@@ -964,6 +972,10 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       // opposite order could deadlock on PostgreSQL.
       if (trx.client.config.client === 'pg') {
         await trx('events').where({ id: req.params.id }).forUpdate().first();
+        // Then its photos (issue 2069): a face scan locks its photo before
+        // the photo's faces, so deleting the faces below first could wait for
+        // a scan that waits for the photo delete at the end.
+        await trx('photos').where('event_id', req.params.id).orderBy('id').forUpdate().pluck('id');
       }
       await trx('activity_logs').where('event_id', req.params.id).del();
       await trx('access_logs').where('event_id', req.params.id).del();
@@ -994,6 +1006,14 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       // After the photos: a tagging worker locks the photo row first, and
       // taking the two in the other order can deadlock on PostgreSQL.
       await trx('photo_tags').where('event_id', req.params.id).del();
+      if (await trx.schema.hasTable('maintenance_jobs')) {
+        // Only a claim nobody holds, on claim()'s own terms: a restore that
+        // took the gallery after the check above still needs its row.
+        const cutoff = new Date(Date.now() - DEFAULT_STALE_MS).toISOString();
+        await trx('maintenance_jobs').where({ job_name: `event_archive:${Number(req.params.id)}` })
+          .where(function () { this.where('is_running', false).orWhere('heartbeat_at', '<', cutoff); })
+          .del();
+      }
       await deleteWithAccountingHistory(trx, 'events', { id: req.params.id },
         { actor: req.admin.id, source: 'archive.delete' });
     });

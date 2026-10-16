@@ -1,6 +1,7 @@
 import React from 'react';
 import { HelpCircle } from 'lucide-react';
 import DOMPurify from 'dompurify';
+import { useTranslation } from 'react-i18next';
 
 interface WelcomeMessageEditorProps {
   value: string;
@@ -15,6 +16,7 @@ export const WelcomeMessageEditor: React.FC<WelcomeMessageEditorProps> = ({
   placeholder,
   rows = 6
 }) => {
+  const { t } = useTranslation();
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
   };
@@ -45,18 +47,18 @@ export const WelcomeMessageEditor: React.FC<WelcomeMessageEditorProps> = ({
           rows={rows}
           className="w-full px-3 py-2 border border-line-strong bg-panel text-heading placeholder-faint rounded-lg focus:ring-2 focus:ring-accent focus:border-accent-dark transition-colors resize-none font-mono text-sm"
         />
-        <div className="absolute top-2 right-2 text-faint" title="Line breaks will be preserved in emails">
+        <div className="absolute top-2 right-2 text-faint" title={t('events.welcomeEditor.lineBreaksPreserved', 'Line breaks will be preserved in emails')}>
           <HelpCircle className="w-4 h-4" aria-hidden="true" />
         </div>
       </div>
       
       <div className="text-xs text-muted">
-        Tip: Press Enter to create a new line. Each line will appear as a separate paragraph in emails.
+        {t('events.welcomeEditor.tip', 'Tip: Press Enter to create a new line. Each line will appear as a separate paragraph in emails.')}
       </div>
 
       {value && (
         <div className="mt-4">
-          <p className="text-sm font-medium text-body mb-2">Preview:</p>
+          <p className="text-sm font-medium text-body mb-2">{t('events.welcomeEditor.preview', 'Preview:')}</p>
           <div className="p-4 bg-subtle rounded-lg border border-line">
             <div
               className="text-sm text-body whitespace-pre-wrap"

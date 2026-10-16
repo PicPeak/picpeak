@@ -1,3 +1,5 @@
+const ipaddr = require('ipaddr.js');
+
 // What an unset TRUST_PROXY has always meant. Kept so an install that only
 // pulls a new image (old compose file, native install behind nginx/Caddy)
 // still resolves the real client address behind its private-range proxy.
@@ -33,6 +35,55 @@ function parseTrustProxy(value = process.env.TRUST_PROXY) {
   return raw;
 }
 
+const PROXY_HOP_RANGES = new Set(['private', 'loopback', 'linkLocal', 'uniqueLocal']);
+
+// The hop as a canonical address without an IPv6 zone (the zone is free
+// text from the header), or null when it is not a private-range address.
+function privateHop(address) {
+  try {
+    const parsed = ipaddr.process(address);
+    if (!PROXY_HOP_RANGES.has(parsed.range())) return null;
+    if (parsed.zoneId) parsed.zoneId = undefined;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Middleware that logs once per process when TRUST_PROXY is one hop but
+ * another proxy sits in front of the bundled nginx. nginx appends the address
+ * it saw, so with one trusted hop req.ip is that address. When it is private
+ * and the header carries an earlier entry, something on a private network
+ * probably forwarded the request to nginx: every client then shares that
+ * proxy's address. The earlier entry can also be sent by a LAN client that
+ * reaches nginx directly, so the message is conditional: raising the hop
+ * count for such a client would let it choose its own address. Behaviour is
+ * unchanged; only the private hop is logged.
+ */
+function createProxyChainWarning({ trustProxy, logger }) {
+  let warned = trustProxy !== 1;
+  return function proxyChainWarning(req, res, next) {
+    if (!warned) {
+      const header = req.headers['x-forwarded-for'];
+      const hops = typeof header === 'string'
+        ? header.split(',').map((hop) => hop.trim()).filter(Boolean)
+        : [];
+      const nginxPeer = hops.length >= 2 ? privateHop(hops[hops.length - 1]) : null;
+      if (nginxPeer) {
+        warned = true;
+        logger.warn(
+          `A request reached the bundled nginx from ${nginxPeer} with a forwarded client address. `
+          + 'If another reverse proxy forwards to nginx, all clients share that proxy\'s address '
+          + 'for rate limits: set TRUST_PROXY=2 (see README upgrade note). Leave TRUST_PROXY=1 '
+          + 'if clients can reach nginx directly, or they can choose their own address.'
+        );
+      }
+    }
+    next();
+  };
+}
+
 /**
  * Honour an explicit LISTEN_HOST. Unset returns undefined, which leaves the
  * host out of `listen()` so Node binds every interface as it always has
@@ -46,6 +97,7 @@ function resolveListenHost({ value = process.env.LISTEN_HOST } = {}) {
 
 module.exports = {
   LEGACY_TRUST_PROXY,
+  createProxyChainWarning,
   isTrustProxyUnset,
   parseTrustProxy,
   resolveListenHost,

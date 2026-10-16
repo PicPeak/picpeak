@@ -673,6 +673,13 @@ router.post(
       }
 
       const result = await db.transaction(async (trx) => {
+        // The event row first on PostgreSQL (issue 2108): the activity row at
+        // the end takes a key share on it through its foreign key, after the
+        // merge has rewritten the guests' photos, and a rename holds it FOR
+        // UPDATE before it rewrites the same photos.
+        if (trx.client.config.client === 'pg') {
+          await trx('events').where({ id: eventId }).forKeyShare().first('id');
+        }
         // Lock in a stable order on PostgreSQL so overlapping merges cannot
         // move feedback into an identity another merge has just deleted.
         const guestQuery = trx('gallery_guests')

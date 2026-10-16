@@ -4,7 +4,8 @@ const { AppError } = require('../utils/errors');
 const { normaliseEventTimeTriple } = require('./eventService');
 const optionalText = Joi.string().allow('', null);
 const schema = Joi.object({
-  event_name: Joi.string().trim().min(1).max(255).required(),
+  // NFC, like every other stored name: macOS input arrives decomposed.
+  event_name: Joi.string().trim().normalize('NFC').min(1).max(255).required(),
   event_type: Joi.string().trim().min(1).max(255).required(),
   event_date: Joi.string().isoDate().raw().allow('', null),
   expires_at: Joi.string().isoDate().raw().allow('', null),

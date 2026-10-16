@@ -348,7 +348,8 @@ async function processNewPhoto(filePath) {
   // Browser-playable copy (issue 1430): a video the watcher picks up is
   // queued like an uploaded one while the setting is on; otherwise it would
   // wait for the next switch-on backfill. No transaction is open here.
-  const webCopyEnabled = isVideo && await require('./videoRenditionService').isEnabled();
+  // Metadata stripping (issue 2102) queues it too.
+  const webCopyEnabled = isVideo && await require('./videoRenditionService').queuesVideos();
 
   // Add to database
   const insertResult = await db('photos').insert({
@@ -421,6 +422,7 @@ async function removePhoto(filePath) {
       const ids = await trx('photos').where({ path: relativePath })
         .whereNot(function () { this.whereNotNull('deleted_at').whereNull('purge_after'); })
         .pluck('id');
+      await require('./heroPhotoLock').lockHeroEvents(trx, ids);
       await trx('photos').whereIn('id', ids).delete();
       await trx('photo_tags').whereIn('photo_id', ids).del();
     });
