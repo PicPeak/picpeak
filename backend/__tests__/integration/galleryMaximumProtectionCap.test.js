@@ -230,4 +230,56 @@ describe('maximum protection caps the full-size view (issue 2152)', () => {
     const again = await fetchPhoto(g).set('If-None-Match', capped.headers.etag).expect(200);
     expect(again.body.equals(source)).toBe(true);
   });
+
+  // The lightbox loads the preview tier when it is enabled (and a withheld
+  // original or the slideshow always do), so the cap has to hold there too.
+  test('at maximum, the preview route is capped too, with its own ETag and URL', async () => {
+    const g = await makeEvent('standard');
+    const fetchPreview = () => get(g, `/api/gallery/${g.event.slug}/preview/${g.photoId}`).buffer(true).parse(binary);
+    const uncapped = await fetchPreview().expect(200);
+    const uncappedMeta = await sharp(uncapped.body).metadata();
+    expect(uncappedMeta.height).toBeGreaterThan(1080);
+    const standardList = await get(g, `/api/gallery/${g.event.slug}/photos`).expect(200);
+    const standardPhoto = standardList.body.photos.find((p) => p.id === g.photoId);
+
+    await db('events').where({ id: g.event.id }).update({ protection_level: 'maximum' });
+    const capped = await fetchPreview().set('If-None-Match', uncapped.headers.etag).expect(200);
+    expect(capped.headers.etag).not.toBe(uncapped.headers.etag);
+    const meta = await sharp(capped.body).metadata();
+    expect(meta.width).toBeLessThanOrEqual(1920);
+    expect(meta.height).toBeLessThanOrEqual(1080);
+    expect(capped.body.length).toBeLessThan(uncapped.body.length);
+
+    const cappedList = await get(g, `/api/gallery/${g.event.slug}/photos`).expect(200);
+    const cappedPhoto = cappedList.body.photos.find((p) => p.id === g.photoId);
+    expect(cappedPhoto.slideshow_url).not.toBe(standardPhoto.slideshow_url);
+    expect(cappedPhoto.slideshow_url).toContain('cap=');
+  });
+
+  test('an animated preview keeps its frames when capped', async () => {
+    const g = await makeEvent('maximum');
+    const frame = (r) => sharp({ create: { width: 2400, height: 1600, channels: 4, background: { r, g: 0, b: 0, alpha: 1 } } }).png().toBuffer();
+    const frames = await Promise.all([frame(255), frame(0)]);
+    const animated = await sharp(frames, { join: { animated: true } }).webp({ loop: 0 }).toBuffer();
+    const dir = path.join(process.env.STORAGE_PATH, 'events', 'active', g.event.slug);
+    await fs.promises.writeFile(path.join(dir, 'anim.webp'), animated);
+    const inserted = await db('photos').insert({
+      event_id: g.event.id,
+      filename: 'anim.webp',
+      path: `${g.event.slug}/anim.webp`,
+      type: 'individual',
+      media_type: 'image',
+      mime_type: 'image/webp',
+      size_bytes: animated.length,
+      uploaded_at: new Date().toISOString(),
+    }).returning('id');
+    const id = inserted[0]?.id ?? inserted[0];
+
+    const res = await get(g, `/api/gallery/${g.event.slug}/photo/${id}`).buffer(true).parse(binary).expect(200);
+    expect(res.headers['content-type']).toMatch(/^image\/webp/);
+    const meta = await sharp(res.body, { animated: true }).metadata();
+    expect(meta.pages).toBe(2);
+    expect(meta.width).toBeLessThanOrEqual(1920);
+    expect(meta.pageHeight).toBeLessThanOrEqual(1080);
+  });
 });

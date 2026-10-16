@@ -687,7 +687,13 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // hero route caches for an hour, so a non-centre anchor rides in the
       // URL: a changed anchor is a new URL, not a stale cached crop.
       const heroQuery = [imgQuery, heroAnchorQuery(event.hero_image_anchor)].filter(Boolean).join('&');
-      const previewUrl = `/api/gallery/${slug}/preview/${photo.id}${wmQuery}`;
+      // Maximum protection caps the photo and preview routes (issue 2152):
+      // a capped copy gets its own URL, so a browser never shows a cached
+      // uncapped image for it after a level change, or the other way round.
+      const capQuery = !isVideo && capsFullSizeView(event)
+        ? `?${[imgQuery, `cap=${MAXIMUM_PROTECTION_CAP.tag}`].filter(Boolean).join('&')}`
+        : wmQuery;
+      const previewUrl = `/api/gallery/${slug}/preview/${photo.id}${capQuery}`;
       // A limited gallery withholds the original of every image it has not
       // granted yet (routes/gallery/media.js), so point straight at the
       // preview instead of at a redirect.
@@ -697,15 +703,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         || (photo.folder_id && blockedFolderIds.has(Number(photo.folder_id)));
       const originalWithheld = !isVideo && !adminPreview && (accessLevel === 'slideshow'
         || downloadDisabled || (withholdOriginals && !deliveredIds.has(Number(photo.id))));
-      // Maximum protection caps what the photo route answers (issue 2152):
-      // the capped copy gets its own URL, so a browser never shows a cached
-      // original for it after a level change, or the other way round.
-      const photoQuery = !isVideo && capsFullSizeView(event)
-        ? `?${[imgQuery, `cap=${MAXIMUM_PROTECTION_CAP.tag}`].filter(Boolean).join('&')}`
-        : wmQuery;
       const photoUrl = originalWithheld
         ? previewUrl
-        : `/api/gallery/${slug}/photo/${photo.id}${photoQuery}`;
+        : `/api/gallery/${slug}/photo/${photo.id}${capQuery}`;
 
       return {
         id: photo.id,
@@ -751,7 +751,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // failure, so this is safe even where no preview exists yet.
         slideshow_url: photo.media_type !== 'video'
             && (!photo.mime_type || !photo.mime_type.startsWith('video/'))
-          ? `/api/gallery/${slug}/preview/${photo.id}${wmQuery}`
+          ? previewUrl
           : null,
         // Full-resolution zoom (issue 1733): where the lightbox may load the
         // original once the viewer zooms in, null where it may not. Only a
