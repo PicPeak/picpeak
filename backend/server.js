@@ -104,6 +104,7 @@ const {
 } = require('./src/utils/tokenUtils');
 const {
   LEGACY_TRUST_PROXY,
+  createProxyChainWarning,
   isTrustProxyUnset,
   parseTrustProxy,
   resolveListenHost,
@@ -179,6 +180,9 @@ app.use(cookieParser());
 // First, so every later middleware, route and the error handler can put the
 // same id in their logs and responses.
 app.use(require('./src/middleware/requestId'));
+
+// One trusted hop but another proxy in front of nginx: warn once per process.
+app.use(createProxyChainWarning({ trustProxy: app.get('trust proxy'), logger }));
 
 app.use((req, res, next) => {
   if (req.headers.authorization) {
@@ -604,6 +608,11 @@ app.use(createAuthRateLimitGate(rateLimitService.getAuthLimiter));
 // body is already parsed, so the scoped parser must run first.
 // fallbackLimitBytes mirrors the 2mb parser right below: a body that fits it
 // never triggers the identity check.
+// A chunk body is raw bytes; refuse a mislabelled one before a parser reads it.
+{
+  const { requireOctetStreamChunk, CHUNK_ROUTE_PREFIXES } = require('./src/middleware/chunkBodyType');
+  app.use(CHUNK_ROUTE_PREFIXES, requireOctetStreamChunk);
+}
 app.use(['/api/admin', '/api/v1'], createLargeJsonBody({ limit: '50mb', fallbackLimitBytes: 2 * 1024 * 1024 }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
@@ -1550,6 +1559,11 @@ async function startServerInternal() {
     // Adaptive streaming ladders (issue 1733). Idle in the same way until
     // general_video_adaptive_streaming is switched on.
     require('./src/services/videoHlsQueue').start();
+
+    // Renditions written before derived images were stripped of the source's
+    // EXIF (issue 2096) are regenerated once in the background, the public OG
+    // covers first. One replica runs it; it resumes after a restart.
+    require('./src/services/renditionRefresh').start();
 
     // Coordinated portable restore is optional. Where this host cannot run it
     // one startup line says why, the import answers 503 and nothing else

@@ -85,7 +85,7 @@ export const CompleteDeliveryDialog: React.FC<CompleteDeliveryDialogProps> = ({ 
   });
 
   if (!isOpen) return null;
-  const guestsSee = Math.max(0, state.delivered_count - (removeDuplicates && canDelete ? state.duplicate_count : 0));
+  const guestsSee = Math.max(0, state.delivered_count - (removeDuplicates && canDelete ? state.delivered_duplicate_count : 0));
 
   return (
     <Modal

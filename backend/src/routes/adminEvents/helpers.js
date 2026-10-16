@@ -203,6 +203,10 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     // serialises writers anyway.
     if (trx.client.config.client === 'pg') {
       await trx('events').where({ id: eventId }).forUpdate().first();
+      // Then its photos (issue 2069): a face scan locks its photo before
+      // the photo's faces, so deleting the faces below first could wait for
+      // a scan that waits for the photo delete at the end.
+      await trx('photos').where('event_id', eventId).orderBy('id').forUpdate().pluck('id');
     }
     // 1. Delete activity logs (audit trail) — and the per-admin bell
     // dismissals that point at them (migration 261). On PostgreSQL the FK
@@ -264,6 +268,11 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     // photos, not with the face data above: a tagging worker locks the photo
     // row before its tags, and the reverse order can deadlock on PostgreSQL.
     await trx('photo_tags').where('event_id', eventId).del();
+    // The archive claim row (event_archive:<id>) has no FK to the event, so
+    // it would outlive it. Guarded for a pre-migration install.
+    if (await trx.schema.hasTable('maintenance_jobs')) {
+      await trx('maintenance_jobs').where({ job_name: `event_archive:${eventId}` }).del();
+    }
     // 5. Finally delete the event row
     await deleteWithAccountingHistory(trx, 'events', { id: eventId },
       { actor: adminContext?.id ?? null, source: 'event.delete' });

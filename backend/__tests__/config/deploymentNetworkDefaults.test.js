@@ -1,5 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const express = require('express');
+const request = require('supertest');
+const { parseTrustProxy } = require('../../src/config/network');
 
 const ROOT = path.resolve(__dirname, '../../..');
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
@@ -9,12 +12,38 @@ describe('shipped deployment network boundaries', () => {
     '%s keeps the frontend reachable on upgrade and the raw backend on loopback',
     (file) => {
       const compose = read(file);
-      expect(compose).toContain('TRUST_PROXY=${TRUST_PROXY:-}');
+      expect(compose).toContain('TRUST_PROXY=${TRUST_PROXY:-1}');
       expect(compose).toContain('COOKIE_SECURE=${COOKIE_SECURE:-auto}');
       expect(compose).toContain('${PICPEAK_BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-3001}:3000');
       expect(compose).toContain('${PICPEAK_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:80');
     }
   );
+
+  // The all-in-one image has no proxy inside it: Node takes the client
+  // connection itself. Unset would fall back to the legacy private-range
+  // trust and let a LAN client choose its own address (issue 2098).
+  test('Dockerfile.aio trusts no forwarding hop by default', async () => {
+    const lines = read('Dockerfile.aio').split('\n').filter((l) => /\bTRUST_PROXY=/.test(l) && !l.trim().startsWith('#'));
+    expect(lines).toEqual(['ENV TRUST_PROXY=0']);
+
+    const app = express();
+    app.set('trust proxy', parseTrustProxy('0'));
+    app.get('/ip', (req, res) => res.json({ ip: req.ip }));
+    const ips = new Set();
+    for (const spoofed of ['10.1.1.1', '10.2.2.2', '10.3.3.3']) {
+      const res = await request(app).get('/ip').set('X-Forwarded-For', spoofed);
+      ips.add(res.body.ip);
+    }
+    expect(ips.size).toBe(1);
+    expect([...ips][0]).not.toMatch(/^10\./);
+  });
+
+  // The e2e stack fronts the backend with the same frontend nginx as the
+  // shipped Compose files, so it uses the same one-hop boundary.
+  test('docker-compose.e2e.yml trusts exactly the frontend nginx hop', () => {
+    const lines = read('docker-compose.e2e.yml').split('\n').filter((l) => /\bTRUST_PROXY=/.test(l) && !l.trim().startsWith('#'));
+    expect(lines.map((l) => l.trim())).toEqual(['- TRUST_PROXY=1']);
+  });
 
   // An image-only upgrade keeps the old compose file, whose healthcheck
   // probes http://localhost:3000 (::1 first on Alpine). Pinning the listener

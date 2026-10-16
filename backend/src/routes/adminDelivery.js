@@ -32,11 +32,25 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
+// Duplicate pairs whose first-look copy is part of the delivered count. A
+// held or rejected first-look upload paired with an approved full-set photo
+// is not in that count, so its pair must not take the full-set photo off it
+// (issue 2086).
+// Reads the event's held ids rather than binding one parameter per pair.
+async function countedDuplicates(eventId, duplicates) {
+  if (duplicates.length === 0) return 0;
+  const held = new Set((await livePhotos(db).where('event_id', eventId)
+    .whereNotNull('moderation_status').pluck('id')).map(Number));
+  return duplicates.filter((d) => !held.has(Number(d.first_look_id))).length;
+}
+
 async function deliveryState(eventId) {
   const event = await db('events').where('id', eventId).first();
   if (!event) return null;
-  const [{ total }] = await livePhotos(db).where('event_id', eventId).count('id as total');
-  const [{ firstLook }] = await livePhotos(db).where('event_id', eventId).where('first_look', true).count('id as firstLook');
+  // A guest upload held for review or rejected is not delivered work: the
+  // guest-facing count leaves it out, and so does this one (issue 2086).
+  const [{ total }] = await livePhotos(db).where('event_id', eventId).whereNull('moderation_status').count('id as total');
+  const [{ firstLook }] = await livePhotos(db).where('event_id', eventId).whereNull('moderation_status').where('first_look', true).count('id as firstLook');
   const duplicates = delivery.isPartial(event) ? await delivery.findFirstLookDuplicates(eventId) : [];
   return {
     status: event.delivery_status || 'complete',
@@ -48,6 +62,7 @@ async function deliveryState(eventId) {
     delivered_count: Number(total) || 0,
     first_look_count: Number(firstLook) || 0,
     duplicate_count: duplicates.length,
+    delivered_duplicate_count: await countedDuplicates(eventId, duplicates),
   };
 }
 
@@ -76,8 +91,9 @@ router.post('/events/:eventId/delivery/complete', adminAuth, requirePermission('
     const sendEmail = !(req.body.send_email === false || req.body.send_email === 'false');
     const recipient = event.customer_email || event.host_email || null;
     const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
-    const [{ total }] = await livePhotos(db).where('event_id', eventId).count('id as total');
-    const photoCount = Math.max(0, (Number(total) || 0) - result.duplicates.length);
+    // Held and rejected guest uploads are not part of the delivery (issue 2086).
+    const [{ total }] = await livePhotos(db).where('event_id', eventId).whereNull('moderation_status').count('id as total');
+    const photoCount = Math.max(0, (Number(total) || 0) - await countedDuplicates(eventId, result.duplicates));
 
     // The inline address and every assigned customer account the gallery
     // was announced to (customers.events, as on every announcing route).
