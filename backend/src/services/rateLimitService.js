@@ -122,7 +122,7 @@ function clearSettingsCache() {
  */
 async function isAuthenticated(req) {
   try {
-    const slugMatch = req.path.match(/\/api\/(?:gallery|secure-images)\/([^/]+)/);
+    const slugMatch = req.path.match(/\/api\/gallery\/([^/]+)/);
     const slug = slugMatch ? slugMatch[1] : req.requestedSlug;
     const token = getAdminTokenFromRequest(req) || getGalleryTokenFromRequest(req, slug);
     // Same checks the auth middleware applies — signature, revocation,
