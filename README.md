@@ -124,6 +124,13 @@ The cookie mode above (also the default) suits this loopback-only HTTP quick
 start. A TLS deployment should set `COOKIE_SECURE=true` and enable HSTS. The
 JWT secret is generated on first start and kept on the volume.
 
+The image trusts no forwarding headers (`TRUST_PROXY=0`): nothing sits in
+front of Node inside it. **Upgrading an all-in-one container behind a reverse
+proxy** (NAS proxy, Traefik, NPM, Caddy, Cloudflare Tunnel) that never set
+`TRUST_PROXY`: add `-e TRUST_PROXY=1` when you recreate it, otherwise every
+visitor shares the proxy's address for rate limits and login lockouts, and
+the backend treats HTTPS requests as plain HTTP.
+
 Then open **http://localhost:3000/admin** and read the setup token with `docker exec picpeak cat /data/db/SETUP_TOKEN`, or open `db/SETUP_TOKEN` on the volume with any file manager if the host has no shell.
 
 The same image is on Docker Hub as `picpeak/aio:stable`. NAS container apps (Synology Container Manager, QNAP Container Station, UGREEN Docker) search Docker Hub by default, so search for `picpeak/aio`, pick the `stable` tag, map port `3000` and mount one volume at `/data`. Use `:beta` to follow the beta channel, or pin a published version tag.
