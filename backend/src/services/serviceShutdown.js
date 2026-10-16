@@ -7,7 +7,7 @@ const applicationWork = require('./activeApplicationWork');
 const resources = [
   ['../middleware/sessionTimeout', 'dispose', 'startSessionCleanup'], ['./chunkedUploadService', 'stop', 'start'],
   ['../utils/cleanupTempUploads', 'stopTempUploadCleanup', 'startTempUploadCleanup'],
-  ['../middleware/secureImageMiddleware', 'dispose'], ['../middleware/feedbackRateLimit', 'dispose'],
+  ['../middleware/feedbackRateLimit', 'dispose'],
   ['./downloadZipService', 'stop'],
   ['./fileWatcher', 'stopFileWatcher', 'startFileWatcher'], ['./externalMediaWatcher', 'stopExternalMediaWatcher', 'startExternalMediaWatcher'],
   ['./expirationChecker', 'stopExpirationChecker', 'startExpirationChecker'], ['./transferCleanupService', 'stopTransferCleanup', 'startTransferCleanup'],
@@ -24,7 +24,6 @@ const resources = [
   ['./backupService', 'stopBackupService', 'startBackupService'], ['./databaseBackup', 'stopScheduledBackups', 'startScheduledBackups'],
   ['./backgroundProcessor', 'stop', 'start'], ['./faceQueue', 'stop', 'start'], ['./tagQueue', 'stop', 'start'], ['./videoRenditionQueue', 'stop', 'start'], ['./videoHlsQueue', 'stop', 'start'], ['./renditionRefresh', 'stop', 'start'],
   ['./mediaProcessService', 'stop', 'start'], ['./nativeProcessRunner', 'stop', 'start'],
-  ['./secureImageService', 'dispose'],
   ['../utils/authSecurity', 'stopCleanupJob', 'initializeCleanupJob'], ['../utils/tokenRevocation', 'stopRevocationCleanup'],
   ['./publicUploadQuota', 'stopMaintenance', 'startMaintenance'],
 ];

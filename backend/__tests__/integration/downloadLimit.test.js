@@ -37,16 +37,6 @@ jest.mock('../../src/services/downloadQuota', () => {
   return { ...actual, grantDownloads: jest.fn(actual.grantDownloads) };
 });
 
-// A deterministic fingerprint, so a token minted below verifies on the
-// secure-image serve route.
-jest.mock('../../src/middleware/secureImageMiddleware', () => ({
-  secureImageAccess: (req, _res, next) => {
-    req.clientInfo = { fingerprint: 'test-fp', ip: '127.0.0.1', userAgent: 'jest' };
-    next();
-  },
-  getSecurityStatus: (_req, res) => res.json({ ok: true }),
-}));
-
 describe('Download limit (issue 1560)', () => {
   let db;
   let cleanup;

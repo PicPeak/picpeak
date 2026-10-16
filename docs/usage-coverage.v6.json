@@ -974,7 +974,6 @@
         "GET /dashboard",
         "GET /logs",
         "GET /events/:eventId/access-logs",
-        "POST /block-ip",
         "DELETE /logs/cleanup",
         "GET /export"
       ]

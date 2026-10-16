@@ -58,7 +58,7 @@ test('dashboard aggregates, photo names, and visitor counts use the same ownersh
   const res = await get('/dashboard').expect(200);
   expect(res.body.summary).toEqual({ totalAccess: 2, uniqueVisitors: 2, totalSecurityEvents: 0, suspiciousIPsCount: 0 });
   expect(res.body.topPhotos.map(p => p.filename).sort()).toEqual(['legacy.jpg', 'own.jpg']);
-  expect(res.body.middlewareStatus).toBeNull();
+  expect(res.body).not.toHaveProperty('middlewareStatus');
   expect(res.body.suspiciousIPs).toEqual([]);
 });
 test('global logs and their pagination do not disclose incidents to scoped users', async () => {
@@ -83,4 +83,31 @@ test('super admins retain the global dashboard, logs, and exports on both databa
   const exported = await get('/export', superId).expect(200);
   expect(exported.body.accessLogs).toHaveLength(3);
   expect(exported.body.securityLogs).toHaveLength(1);
+});
+
+// Issue 2152: the image request budgets and the monitoring switches were read
+// by nothing (the only reader, secureImageMiddleware, was mounted on no
+// route), so the settings route no longer offers them. Their migration rows
+// stay in app_settings, untouched.
+const DEAD_KEYS = ['max_image_requests_per_minute', 'max_image_requests_per_5_minutes',
+  'max_image_requests_per_hour', 'suspicious_activity_threshold', 'auto_block_threshold',
+  'security_monitoring_enabled', 'block_suspicious_ips', 'log_security_events_to_db'];
+const storedValue = async (key) => (await db('app_settings').where({ setting_key: key }).first())?.setting_value;
+test('settings GET returns the protection defaults only, not the dead budget and monitoring keys', async () => {
+  for (const key of DEAD_KEYS) expect([key, await storedValue(key)]).not.toEqual([key, undefined]);
+  const res = await get('/settings', superId).expect(200);
+  expect(Object.keys(res.body).sort()).toEqual(['default_image_quality', 'default_protection_level',
+    'enable_canvas_rendering', 'enable_devtools_protection']);
+});
+test('settings PUT ignores the dead keys and still saves a protection default', async () => {
+  const before = {};
+  for (const key of DEAD_KEYS) before[key] = await storedValue(key);
+  await request(app).put('/security/settings').set('Authorization', `Bearer ${mintAdminToken(superId)}`)
+    .send({ ...Object.fromEntries(DEAD_KEYS.map(key => [key, 7])), default_image_quality: 77 }).expect(200);
+  for (const key of DEAD_KEYS) expect([key, await storedValue(key)]).toEqual([key, before[key]]);
+  expect(JSON.parse(await storedValue('default_image_quality'))).toBe(77);
+});
+test('the IP block list endpoint is gone: nothing ever read the list', async () => {
+  await request(app).post('/security/block-ip').set('Authorization', `Bearer ${mintAdminToken(superId)}`)
+    .send({ ip: '192.0.2.5' }).expect(404);
 });

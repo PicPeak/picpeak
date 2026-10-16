@@ -11,30 +11,14 @@ interface ImageSecuritySettings {
   default_protection_level: 'basic' | 'standard' | 'enhanced' | 'maximum';
   default_image_quality: number;
   enable_devtools_protection: boolean;
-  max_image_requests_per_minute: number;
-  max_image_requests_per_5_minutes: number;
-  max_image_requests_per_hour: number;
-  suspicious_activity_threshold: number;
   enable_canvas_rendering: boolean;
-  security_monitoring_enabled: boolean;
-  block_suspicious_ips: boolean;
-  log_security_events_to_db: boolean;
-  auto_block_threshold: number;
 }
 
 const defaultSettings: ImageSecuritySettings = {
   default_protection_level: 'standard',
   default_image_quality: 85,
   enable_devtools_protection: true,
-  max_image_requests_per_minute: 30,
-  max_image_requests_per_5_minutes: 100,
-  max_image_requests_per_hour: 500,
-  suspicious_activity_threshold: 10,
   enable_canvas_rendering: false,
-  security_monitoring_enabled: true,
-  block_suspicious_ips: true,
-  log_security_events_to_db: true,
-  auto_block_threshold: 50,
 };
 
 export const ImageSecurityTab: React.FC = () => {
@@ -185,139 +169,6 @@ export const ImageSecurityTab: React.FC = () => {
               <Image className="w-4 h-4 ml-2 mr-1 text-muted" />
               <span className="text-sm text-body">
                 {t('settings.imageSecurity.enableCanvas', 'Enable canvas rendering in the lightbox by default (advanced protection)')}
-              </span>
-            </label>
-          </div>
-        </div>
-      </Card>
-
-      {/* Rate Limiting */}
-      <Card padding="md">
-        <h2 className="text-lg font-semibold text-heading mb-4">
-          {t('settings.imageSecurity.rateLimiting', 'Rate Limiting')}
-        </h2>
-        <p className="text-sm text-soft mb-4">
-          {t('settings.imageSecurity.rateLimitingHelp', 'Limit how many images can be requested to prevent scraping.')}
-        </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-body mb-1">
-              {t('settings.imageSecurity.requestsPerMinute', 'Requests per minute')}
-            </label>
-            <input
-              type="number"
-              min="1"
-              max="1000"
-              value={settings.max_image_requests_per_minute}
-              onChange={(e) => handleChange('max_image_requests_per_minute', parseInt(e.target.value) || 30)}
-              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-body mb-1">
-              {t('settings.imageSecurity.requestsPer5Minutes', 'Requests per 5 min')}
-            </label>
-            <input
-              type="number"
-              min="1"
-              max="5000"
-              value={settings.max_image_requests_per_5_minutes}
-              onChange={(e) => handleChange('max_image_requests_per_5_minutes', parseInt(e.target.value) || 100)}
-              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-body mb-1">
-              {t('settings.imageSecurity.requestsPerHour', 'Requests per hour')}
-            </label>
-            <input
-              type="number"
-              min="1"
-              max="10000"
-              value={settings.max_image_requests_per_hour}
-              onChange={(e) => handleChange('max_image_requests_per_hour', parseInt(e.target.value) || 500)}
-              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent"
-            />
-          </div>
-        </div>
-      </Card>
-
-      {/* Security Monitoring */}
-      <Card padding="md">
-        <h2 className="text-lg font-semibold text-heading mb-4">
-          {t('settings.imageSecurity.securityMonitoring', 'Security Monitoring')}
-        </h2>
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-body mb-1">
-                {t('settings.imageSecurity.suspiciousThreshold', 'Suspicious activity threshold')}
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={settings.suspicious_activity_threshold}
-                onChange={(e) => handleChange('suspicious_activity_threshold', parseInt(e.target.value) || 10)}
-                className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent"
-              />
-              <p className="text-xs text-muted mt-1">{t('settings.imageSecurity.suspiciousActivityThresholdHelp', 'Violations before flagging as suspicious')}</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-body mb-1">
-                {t('settings.imageSecurity.autoBlockThreshold', 'Auto-block threshold')}
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="500"
-                value={settings.auto_block_threshold}
-                onChange={(e) => handleChange('auto_block_threshold', parseInt(e.target.value) || 50)}
-                className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent"
-              />
-              <p className="text-xs text-muted mt-1">{t('settings.imageSecurity.autoBlockThresholdHelp', 'Violations before auto-blocking IP')}</p>
-            </div>
-          </div>
-
-          <div className="space-y-3 pt-2">
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={settings.security_monitoring_enabled}
-                onChange={(e) => handleChange('security_monitoring_enabled', e.target.checked)}
-                className="w-4 h-4 text-accent border-line-strong rounded focus:ring-accent"
-              />
-              <span className="ml-2 text-sm text-neutral-700 dark:text-neutral-300 dark:text-neutral-300">
-                {t('settings.imageSecurity.enableMonitoring', 'Enable security monitoring')}
-              </span>
-            </label>
-
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={settings.block_suspicious_ips}
-                onChange={(e) => handleChange('block_suspicious_ips', e.target.checked)}
-                className="w-4 h-4 text-accent border-line-strong rounded focus:ring-accent"
-              />
-              <span className="ml-2 text-sm text-neutral-700 dark:text-neutral-300 dark:text-neutral-300">
-                {t('settings.imageSecurity.blockSuspiciousIps', 'Automatically block suspicious IPs')}
-              </span>
-            </label>
-
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={settings.log_security_events_to_db}
-                onChange={(e) => handleChange('log_security_events_to_db', e.target.checked)}
-                className="w-4 h-4 text-accent border-line-strong rounded focus:ring-accent"
-              />
-              <span className="ml-2 text-sm text-neutral-700 dark:text-neutral-300 dark:text-neutral-300">
-                {t('settings.imageSecurity.logEvents', 'Log security events to database')}
               </span>
             </label>
           </div>

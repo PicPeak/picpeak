@@ -18,14 +18,6 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'watermark-text-test-secret';
 
-jest.mock('../../src/middleware/secureImageMiddleware', () => ({
-  secureImageAccess: (req, _res, next) => {
-    req.clientInfo = { fingerprint: 'test-fp', ip: '127.0.0.1', userAgent: 'jest' };
-    next();
-  },
-  getSecurityStatus: (_req, res) => res.json({ ok: true }),
-}));
-
 const GLOBAL = { enabled: true, logoPath: null, position: 'bottom-right', opacity: 50, size: 15, companyName: 'Global Studio' };
 
 describe('gallery watermark text (issue 2095)', () => {

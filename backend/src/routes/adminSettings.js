@@ -109,15 +109,13 @@ const stripReservedSettingKeys = (settings) => {
 //                                 (settings.security; range-validated — a
 //                                 settings.edit holder could otherwise switch
 //                                 the limiter off through /general)
-//   max_image_requests_*          PUT /admin/image-security/settings
-//                                 (image_security.manage)
 //   ledger_*                      PATCH /admin/ledger/mappings/settings
 //                                 (accounting.manage)
 //   restore_*                     PUT /admin/restore/settings (backup.restore;
 //                                 restore_allow_force and
 //                                 restore_require_pre_backup gate restore-start)
 const DEDICATED_ROUTE_KEY_PREFIXES = [
-  'backup_', 'database_backup_', 'rate_limit_', 'max_image_requests_', 'ledger_', 'restore_',
+  'backup_', 'database_backup_', 'rate_limit_', 'ledger_', 'restore_',
 ];
 const isDedicatedRouteOwnedKey = (key) => DEDICATED_ROUTE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
 // 400 (naming the keys) when a generic write carries route-owned keys, rather

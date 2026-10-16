@@ -1,102 +1,7 @@
-const crypto = require('crypto');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
-const { rateLimitKey } = require('../utils/rateLimitKey');
 
 class SecureImageService {
-  constructor() {
-    this.rateLimitCache = new Map();
-    this.rateLimitWindows = new Map();
-    this.cleanupTimer = null;
-  }
-
-  start() {
-    if (this.cleanupTimer) return;
-    this.cleanupTimer = setInterval(() => this.cleanup(), 60_000);
-    this.cleanupTimer.unref();
-  }
-
-  stop() {
-    clearInterval(this.cleanupTimer);
-    this.cleanupTimer = null;
-  }
-
-  dispose() {
-    this.stop();
-    this.rateLimitCache.clear();
-    this.rateLimitWindows.clear();
-  }
-
-  /**
-   * Create client fingerprint from request.
-   *
-   * Binds a secure image token to the device it was minted for, so it keys
-   * on the full address. Rate limits and block lists use
-   * createRateLimitFingerprint() instead (issue 1564).
-   */
-  createClientFingerprint(req) {
-    return this.fingerprintFor(req, req.ip);
-  }
-
-  /**
-   * The same fingerprint with the address collapsed by rateLimitKey: an IPv6
-   * /64 is one client, so rotating through it neither resets the image rate
-   * limit nor escapes a block. For a plain IPv4 client it equals
-   * createClientFingerprint(), so nothing changes there. Never use it for
-   * token binding: that would let every device in the /64 use one token.
-   */
-  createRateLimitFingerprint(req) {
-    return this.fingerprintFor(req, rateLimitKey(req) || req.ip);
-  }
-
-  fingerprintFor(req, address) {
-    const components = [
-      address,
-      req.get('User-Agent') || '',
-      req.get('Accept-Language') || '',
-      req.get('Accept-Encoding') || ''
-    ];
-    
-    return crypto
-      .createHash('sha256')
-      .update(components.join('|'))
-      .digest('hex')
-      .substring(0, 16);
-  }
-
-  /**
-   * Rate limiting for image requests
-   */
-  checkRateLimit(clientId, limit = 50, windowMs = 60000) {
-    if (!this.peekRateLimit(clientId, limit, windowMs)) return false;
-    this.recordRateLimit(clientId, windowMs);
-    return true;
-  }
-
-  /**
-   * Whether one more request fits the window, without counting it. With
-   * recordRateLimit() a caller checks several windows before charging any,
-   * so a request refused by one window does not spend the others.
-   */
-  peekRateLimit(clientId, limit, windowMs) {
-    const windowStart = Date.now() - windowMs;
-    const recentRequests = (this.rateLimitCache.get(clientId) || [])
-      .filter(timestamp => timestamp > windowStart);
-    this.rateLimitCache.set(clientId, recentRequests);
-    // cleanup() prunes each key by its own window, not a fixed minute.
-    this.rateLimitWindows.set(clientId, windowMs);
-    return recentRequests.length < limit;
-  }
-
-  recordRateLimit(clientId, windowMs) {
-    // The sweep used to start with the first minted token; the rate windows
-    // are what is left to prune, so it starts with the first charge.
-    this.start();
-    if (!this.rateLimitCache.has(clientId)) this.rateLimitCache.set(clientId, []);
-    this.rateLimitWindows.set(clientId, windowMs);
-    this.rateLimitCache.get(clientId).push(Date.now());
-  }
-
   /**
    * Log image access for security monitoring
    */
@@ -216,58 +121,11 @@ class SecureImageService {
 
       if (parseInt(recentSuspicious.count) >= 3) {
         logger.warn(`Client fingerprint flagged for blocking: ${clientFingerprint}`);
-        // This would be handled by the middleware's blocking system
+        // Logged only: nothing blocks on it.
       }
 
     } catch (error) {
       logger.error('Error flagging suspicious activity:', error);
-    }
-  }
-
-  /**
-   * Detect suspicious access patterns
-   */
-  async detectSuspiciousActivity(clientFingerprint, photoId) {
-    try {
-      const recentAccess = await db('image_access_logs')
-        .where('client_fingerprint', clientFingerprint)
-        .where('photo_id', photoId)
-        .where('accessed_at', '>', new Date(Date.now() - 300000).toISOString()) // Last 5 minutes
-        .count('* as count')
-        .first();
-
-      const accessCount = parseInt(recentAccess.count);
-      
-      // Flag if more than 10 accesses to same photo in 5 minutes
-      if (accessCount > 10) {
-        logger.warn(`Suspicious activity detected: ${accessCount} accesses to photo ${photoId} from ${clientFingerprint}`);
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      logger.error('Error detecting suspicious activity:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Clean up expired tokens and logs
-   */
-  cleanup() {
-    // Clear expired rate limit entries
-    const now = Date.now();
-    for (const [clientId, requests] of this.rateLimitCache.entries()) {
-      // A fixed minute here emptied the five-minute and hourly windows every
-      // minute, so only the per-minute limits ever held.
-      const windowMs = this.rateLimitWindows.get(clientId) || 60000;
-      const recent = requests.filter(timestamp => timestamp > now - windowMs);
-      if (recent.length === 0) {
-        this.rateLimitCache.delete(clientId);
-        this.rateLimitWindows.delete(clientId);
-      } else {
-        this.rateLimitCache.set(clientId, recent);
-      }
     }
   }
 }

@@ -1279,8 +1279,8 @@ async function startServerInternal() {
     await initializeDatabase();
     await require('./src/utils/authSecurity').assertAuthSecuritySchema();
 
-    // Warm the public-origin cache so the SYNCHRONOUS resolver (CORS headers,
-    // secureImageMiddleware) can see the general_site_url setting. Best-effort:
+    // Warm the public-origin cache so the SYNCHRONOUS resolver (CORS headers)
+    // can see the general_site_url setting. Best-effort:
     // the async resolver reads through on its own, and a cold cache only means
     // falling back to the environment.
     await primeSiteUrlCache().catch(() => {});

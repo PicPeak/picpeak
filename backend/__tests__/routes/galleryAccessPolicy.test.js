@@ -9,15 +9,7 @@ const fs = require('fs/promises');
 const path = require('path');
 process.env.JWT_SECRET = 'gallery-policy-regression-secret-at-least-32-characters';
 
-jest.mock('../../src/middleware/secureImageMiddleware', () => ({
-  secureImageAccess: (req, _res, next) => {
-    req.clientInfo = { fingerprint: 'policy-test', ip: '127.0.0.1', userAgent: 'jest' };
-    next();
-  },
-  getSecurityStatus: (_req, res) => res.json({}),
-}));
-
-let db, cleanup, app, adminId, customerId, foreignId, event, secure, cutoff, revokeToken;
+let db, cleanup, app, adminId, customerId, foreignId, event, cutoff, revokeToken;
 const eventId = 70001, photoId = 70002, slug = 'policy-test';
 const token = (claims = {}) => jwt.sign({ type: 'gallery', eventId, eventSlug: slug,
   iat: Math.floor(Date.now() / 1000) - 60, jti: crypto.randomUUID(), ...claims },
@@ -48,8 +40,6 @@ beforeAll(async () => {
   await db('photos').insert({ id: photoId, event_id: eventId, filename: 'fixture.jpg', path: `${slug}/individual/fixture.jpg`,
     type: 'individual', mime_type: 'image/jpeg', processing_status: 'complete', size_bytes: (await fs.stat(file)).size });
   await db('event_customer_assignments').insert({ event_id: eventId, customer_account_id: customerId });
-  secure = require('../../src/services/secureImageService');
-  jest.spyOn(secure, 'createClientFingerprint').mockReturnValue('policy-test');
   cutoff = require('../../src/utils/sessionCutoff');
   ({ revokeToken } = require('../../src/utils/tokenRevocation'));
   app = express(); app.use(express.json()); app.use(cookieParser());
@@ -68,7 +58,7 @@ beforeEach(async () => {
   await cutoff.setSessionsValidAfter(0);
   event = await db('events').where({ id: eventId }).first();
 });
-afterAll(async () => { secure?.dispose(); if (cleanup) await cleanup(); });
+afterAll(async () => { if (cleanup) await cleanup(); });
 
 it('serves a valid session as a real list and JPEG', async () => {
   const bearer = token();

@@ -1,13 +1,10 @@
 const express = require('express');
-const net = require('net');
 const { db } = require('../database/db');
 const { joinLivePhotos } = require('../utils/photoVisibility');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership, scopeEventsQuery } = require('../middleware/ownership');
-const secureImageMiddleware = require('../middleware/secureImageMiddleware');
 const logger = require('../utils/logger');
-const { rateLimitKey } = require('../utils/rateLimitKey');
 const { decodeSettingValue } = require('./adminEvents/helpers');
 
 const router = express.Router();
@@ -42,15 +39,7 @@ router.get('/settings', adminAuth, requirePermission(['settings.view', 'image_se
         'default_protection_level',
         'default_image_quality',
         'enable_devtools_protection',
-        'max_image_requests_per_minute',
-        'max_image_requests_per_5_minutes',
-        'max_image_requests_per_hour',
-        'suspicious_activity_threshold',
-        'enable_canvas_rendering',
-        'security_monitoring_enabled',
-        'block_suspicious_ips',
-        'log_security_events_to_db',
-        'auto_block_threshold'
+        'enable_canvas_rendering'
       ])
       .select('setting_key', 'setting_value');
 
@@ -86,15 +75,7 @@ router.put('/settings', adminAuth, requirePermission('image_security.manage'), a
       'default_protection_level',
       'default_image_quality',
       'enable_devtools_protection',
-      'max_image_requests_per_minute',
-      'max_image_requests_per_5_minutes',
-      'max_image_requests_per_hour',
-      'suspicious_activity_threshold',
-      'enable_canvas_rendering',
-      'security_monitoring_enabled',
-      'block_suspicious_ips',
-      'log_security_events_to_db',
-      'auto_block_threshold'
+      'enable_canvas_rendering'
     ];
 
     // Update each setting
@@ -181,9 +162,6 @@ router.get('/dashboard', adminAuth, requirePermission(['settings.view', 'image_s
       .orderBy('access_count', 'desc')
       .limit(10);
 
-    // Get middleware status
-    const middlewareStatus = req.admin.roleName === 'super_admin' ? secureImageMiddleware.getSecurityStatus() : null;
-
     // Calculate totals
     const totalAccess = accessStats.reduce((sum, stat) => sum + parseInt(stat.count), 0);
     const totalSecurityEvents = securityEvents.reduce((sum, stat) => sum + parseInt(stat.count), 0);
@@ -219,8 +197,7 @@ router.get('/dashboard', adminAuth, requirePermission(['settings.view', 'image_s
         filename: photo.filename,
         eventName: photo.event_name,
         accessCount: parseInt(photo.access_count)
-      })),
-      middlewareStatus
+      }))
     });
 
   } catch (error) {
@@ -345,71 +322,6 @@ router.get('/events/:eventId/access-logs', adminAuth, requirePermission(['settin
       eventId: req.params.eventId 
     });
     res.status(500).json({ error: 'Failed to get access logs' });
-  }
-});
-
-/**
- * Block/unblock suspicious IPs
- */
-router.post('/block-ip', adminAuth, requirePermission('image_security.manage'), async (req, res) => {
-  try {
-    const { ip, action = 'block' } = req.body;
-    
-    if (!ip) {
-      return res.status(400).json({ error: 'IP address required' });
-    }
-
-    // The middleware checks the list against rateLimitKey (issue 1564), so
-    // an entry has to be stored in that form: blocking an IPv6 address blocks
-    // its /64, and an IPv4-mapped address is stored as the dotted IPv4 one.
-    // Unblocking normalises the same way, so either spelling removes it.
-    // A /64 in CIDR form (as the list stores it) is accepted too; anything
-    // else that is not an address would be stored and never match, so it is
-    // refused instead of reported as blocked.
-    // A proxy-forwarded IPv6 address can be logged in URI form
-    // ([2001:db8::1] or [2001:db8::1]:443); rateLimitKey accepts that too.
-    const raw = typeof ip === 'string' ? ip.trim() : '';
-    const bracketed = raw.match(/^\[([^\]]+)\](?::\d+)?$/);
-    const text = bracketed ? bracketed[1] : raw;
-    const cidr = text.match(/^(.+)\/64$/);
-    const address = cidr ? cidr[1] : text;
-    if (net.isIP(address) === 0 || (cidr && net.isIPv6(address) === false)) {
-      return res.status(400).json({ error: 'Invalid IP address' });
-    }
-    const listKey = rateLimitKey({ ip: address });
-
-    if (action === 'block') {
-      // Add to blocked IPs in middleware
-      secureImageMiddleware.suspiciousIPs.add(listKey);
-      
-      logger.warn('IP manually blocked by admin', {
-        ip,
-        adminId: req.admin.id,
-        adminUsername: req.admin.username
-      });
-    } else if (action === 'unblock') {
-      // Remove from blocked IPs
-      secureImageMiddleware.suspiciousIPs.delete(listKey);
-      
-      logger.info('IP manually unblocked by admin', {
-        ip,
-        adminId: req.admin.id,
-        adminUsername: req.admin.username
-      });
-    }
-
-    res.json({ 
-      message: `IP ${ip} ${action}ed successfully`,
-      action,
-      ip
-    });
-
-  } catch (error) {
-    logger.error('Error blocking/unblocking IP', { 
-      error: error.message,
-      adminId: req.admin.id 
-    });
-    res.status(500).json({ error: 'Failed to update IP status' });
   }
 });
 

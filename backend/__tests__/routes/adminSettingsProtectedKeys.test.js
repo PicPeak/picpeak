@@ -312,22 +312,21 @@ describe('settings protected-key boundary (/general)', () => {
     expect(await readSetting('backup_destination_type')).toBe(destinationBefore);
   });
 
-  // Rate limits (settings.security, range-validated), image-request caps
-  // (image_security.manage), ledger mappings (accounting.manage) and the
-  // restore safety switches (backup.restore) each have a dedicated writer.
+  // Rate limits (settings.security, range-validated), ledger mappings
+  // (accounting.manage) and the restore safety switches (backup.restore)
+  // each have a dedicated writer.
   // The generic writers must refuse them for every caller — a settings.edit
   // holder could otherwise switch the limiter off or allow a forced restore,
   // and even a permitted caller would skip the dedicated route's validation.
   const ROUTE_OWNED = {
     rate_limit_enabled: false,
     rate_limit_max_requests: 999999,
-    max_image_requests_per_minute: 100000,
     ledger_account_debitoren: '9999',
     restore_allow_force: true,
     restore_require_pre_backup: false,
   };
 
-  it('generic writers refuse rate_limit_*, max_image_requests_*, ledger_* and restore_* keys for every caller', async () => {
+  it('generic writers refuse rate_limit_*, ledger_* and restore_* keys for every caller', async () => {
     // Migration 032 seeds restore_allow_force; pin it to the safe value so the
     // attack payload is a real change. Every value stored for these keys must
     // survive unchanged.

@@ -19,14 +19,6 @@ process.env.JWT_SECRET = 'watermark-containment-secret-at-least-32-characters';
 const EXTERNAL_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-wm-ext-'));
 process.env.EXTERNAL_MEDIA_ROOT = EXTERNAL_ROOT;
 
-jest.mock('../../src/middleware/secureImageMiddleware', () => ({
-  secureImageAccess: (req, _res, next) => {
-    req.clientInfo = { fingerprint: 'wm-test', ip: '127.0.0.1', userAgent: 'jest' };
-    next();
-  },
-  getSecurityStatus: (_req, res) => res.json({}),
-}));
-
 let db, cleanup, tmpDir, app, adminId;
 const eventId = 82001, photoId = 82002, slug = 'wm-containment';
 const SECRET = Buffer.from('this file lives outside the storage root and must never be served');
@@ -61,8 +53,6 @@ beforeAll(async () => {
     watermark_path: '../outside/secret.bin' });
   await db('app_settings').insert({ setting_key: 'branding_watermark_enabled', setting_value: 'true', setting_type: 'boolean' })
     .onConflict('setting_key').merge();
-  const secure = require('../../src/services/secureImageService');
-  jest.spyOn(secure, 'createClientFingerprint').mockReturnValue('wm-test');
   app = express(); app.use(express.json()); app.use(cookieParser());
   app.use('/api/gallery', require('../../src/routes/gallery'));
 }, 120000);
