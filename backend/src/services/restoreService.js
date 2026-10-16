@@ -557,6 +557,9 @@ class RestoreService {
         throw new Error(`Post-restore verification failed: ${verification.errors.join(', ')}`);
       }
 
+      // Step 7-renditions: see markRestoredRenditions.
+      await this.markRestoredRenditions(options, restoreResult);
+
       // Step 7a: every admin, customer and gallery JWT issued before the
       // identity tables were replaced must stop authenticating — a numeric
       // id in an old token may now name a different or re-enabled principal.
@@ -661,6 +664,17 @@ class RestoreService {
         this.log('warn',
           'Post-restore migrate:safe failed — restore data is in place but the schema may lag the running image. ' +
           `A container restart will retry via wait-for-db.sh. Error: ${migErr.message}`);
+      }
+
+      // The restored rows may be at rendition_version 0 (a pre-311 database
+      // the migration above just set back, or legacy rows the backup carried)
+      // and the boot-time refresh has long finished (issue 2096).
+      if ((options.restoreType === 'full' || options.restoreType === 'database') && migrationsApplied) {
+        try {
+          require('./renditionRefresh').requestPass();
+        } catch (err) {
+          this.log('warn', `Could not schedule the rendition refresh: ${err.message}`);
+        }
       }
 
       // Documents the source read from its legacy root (<cwd>/storage) were
@@ -1751,6 +1765,26 @@ END $$;`
   }
 
   /**
+   * A files-only or selective restore can put back thumbnails, previews or
+   * heroes from before EXIF stripping over clean ones while the live rows
+   * still say they are clean (issue 2096). Those photos go back to
+   * rendition_version 0 and the background refresh runs again. A full or
+   * database restore brings its own rows: a pre-311 database is set to 0 by
+   * the migration that runs after it. Never fails the restore.
+   */
+  async markRestoredRenditions(options, restoreResult) {
+    if (options.restoreType !== 'files' && options.restoreType !== 'selective') return;
+    if (!restoreResult || !restoreResult.restoredPaths || !restoreResult.restoredPaths.length) return;
+    try {
+      if (await db.schema.hasColumn('photos', 'rendition_version')) {
+        await require('./renditionRefresh').invalidateRestoredRenditions(restoreResult.restoredPaths);
+      }
+    } catch (err) {
+      this.log('warn', `Could not mark restored renditions for regeneration: ${err.message}`);
+    }
+  }
+
+  /**
    * Perform files-only restore
    */
   async performFilesRestore(backupPath, manifest, options) {
@@ -1760,6 +1794,8 @@ END $$;`
     const filesToRestore = resolveRestoreFiles(manifest, options);
 
     let restoredCount = 0;
+    // Storage keys put back, for the rendition check after the restore.
+    const restoredPaths = [];
     const errors = [];
     const maxBytes = await getRestoreMaxFileBytes();
     // Symlink checks below compare against the REAL root (macOS keeps
@@ -1817,6 +1853,7 @@ END $$;`
             await getStorage().putFromFile(file.path, captured.path, metadata);
             await recoveryFiles.verifyAdapter(file.path, captured.checksum, metadata, maxBytes);
             restoredCount++;
+            restoredPaths.push(file.path);
             continue;
           } finally {
             await sourceHandle.close().catch(() => {});
@@ -1867,6 +1904,7 @@ END $$;`
           }
 
           restoredCount++;
+          restoredPaths.push(file.path);
           
           if (restoredCount % 100 === 0) {
             this.updateProgress(`Restored ${restoredCount}/${filesToRestore.length} files`);
@@ -1905,6 +1943,7 @@ END $$;`
     return {
       filesRestored: restoredCount,
       totalFiles: filesToRestore.length,
+      restoredPaths,
       errors
     };
   }
@@ -1935,6 +1974,7 @@ END $$;`
         selectedItems: fileItems
       });
       result.itemsRestored += filesResult.filesRestored;
+      result.restoredPaths = filesResult.restoredPaths;
       result.errors.push(...filesResult.errors);
     }
 
@@ -2330,11 +2370,14 @@ END $$;`
    * Log message
    */
   log(level, message, details = {}) {
+    // The entries reach API responses and the stored restore log: a stack
+    // trace names server paths and internals, and goes to the server log only.
+    const { stack: _stack, ...publicDetails } = details || {};
     const logEntry = {
       timestamp: new Date().toISOString(),
       level,
       message,
-      details
+      details: publicDetails
     };
     
     this.restoreLog.push(logEntry);

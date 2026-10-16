@@ -112,7 +112,7 @@ jest.mock('../../src/services/videoProcessor', () => ({
 jest.mock('../../src/services/storage', () => ({ getStorage: jest.fn() }));
 
 jest.mock('../../src/services/videoRenditionService', () => ({
-  isEnabled: jest.fn(async () => false),
+  queuesVideos: jest.fn(async () => false),
 }));
 
 jest.mock('../../src/services/photoResolver', () => ({
@@ -354,8 +354,8 @@ describe('photoProcessor.processPhoto', () => {
     expect(finalUpdate.data.processing_error).toBe('No poster frame: ffmpeg exited with code 1');
   });
 
-  it('queues a completed video for its browser-playable copy only while the setting is on (issue 1430)', async () => {
-    const { isEnabled } = require('../../src/services/videoRenditionService');
+  it('queues a completed video only while a video setting (copies, metadata stripping) is on (issues 1430, 2102)', async () => {
+    const { queuesVideos: isEnabled } = require('../../src/services/videoRenditionService');
     const videoRow = {
       id: 204, event_id: 9, filename: 'reel.mov', mime_type: 'video/quicktime', media_type: 'video', size_bytes: 1,
     };

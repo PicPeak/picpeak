@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const logger = require('./logger');
+const { videoPrefix, PREFIX_BYTES: VIDEO_PREFIX_BYTES } = require('./uploadAdmissionType');
 
 /**
  * Secure file security utilities to prevent path traversal and validate file types
@@ -156,9 +157,11 @@ const ALLOWED_IMAGE_TYPES = {
   },
   'image/gif': {
     extensions: ['.gif'],
-    magicNumbers: [
-      { offset: 0, bytes: [0x47, 0x49, 0x46, 0x38, 0x37, 0x61] }, // GIF87a
-      { offset: 0, bytes: [0x47, 0x49, 0x46, 0x38, 0x39, 0x61] }  // GIF89a
+    // Two versions at the same offset: alternatives, not one AND group, or
+    // no GIF could ever match.
+    magicNumberAlternatives: [
+      [{ offset: 0, bytes: [0x47, 0x49, 0x46, 0x38, 0x37, 0x61] }], // GIF87a
+      [{ offset: 0, bytes: [0x47, 0x49, 0x46, 0x38, 0x39, 0x61] }]  // GIF89a
     ]
   },
   'image/svg+xml': {
@@ -405,16 +408,25 @@ async function validateFileContent(filePath, expectedMimeType) {
       return true;
     }
 
-    const buffer = Buffer.alloc(SIGNATURE_READ_BYTES);
+    // MP4 and QuickTime get the container check the streaming upload guard
+    // applies: any ISO-BMFF video brand, and a classic QuickTime file that
+    // opens with moov/mdat/wide/... instead of an ftyp box. The fixed table
+    // entry knows only 'ftyp' and 'ftypqt', which refuses real camera files.
+    const bmffVideo = expectedMimeType === 'video/mp4' || expectedMimeType === 'video/quicktime';
+    const readBytes = bmffVideo ? VIDEO_PREFIX_BYTES : SIGNATURE_READ_BYTES;
+    const buffer = Buffer.alloc(readBytes);
+    let bytesRead = 0;
     const fileHandle = await fs.open(filePath, 'r');
     try {
-      await fileHandle.read(buffer, 0, SIGNATURE_READ_BYTES, 0);
+      ({ bytesRead } = await fileHandle.read(buffer, 0, readBytes, 0));
     } finally {
       // In a finally so a failed read cannot leak the descriptor. A short file
       // is not an error here: the buffer stays zero-filled and simply fails to
       // match, which is the right answer for a 3-byte "JPEG".
       await fileHandle.close();
     }
+
+    if (bmffVideo) return videoPrefix(buffer.subarray(0, bytesRead), expectedMimeType, true) === true;
 
     // Check magic numbers
     return groups.some(group => group.every(magic => {

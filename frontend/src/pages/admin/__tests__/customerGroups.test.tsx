@@ -339,6 +339,16 @@ describe('filters in the URL', () => {
     await waitFor(() => expect(currentSearch()).toBe('?q=secondx'));
   });
 
+  it('finds a name with either Unicode spelling, as stored (NFC) and as typed on a Mac (NFD)', async () => {
+    list.mockResolvedValue([
+      { ...customer(20, 'nfc@example.com'), displayName: 'J\u00f6rg Stored' },
+      { ...customer(21, 'nfd@example.com'), displayName: 'Jo\u0308rg Legacy' },
+    ]);
+    renderPage('/admin/clients/accounts?q=' + encodeURIComponent('Jo\u0308rg'));
+    expect(await screen.findByText('nfc@example.com')).toBeInTheDocument();
+    expect(screen.getByText('nfd@example.com')).toBeInTheDocument();
+  });
+
   it('keeps the tab in the URL', async () => {
     const user = userEvent.setup();
     renderPage('/admin/clients/accounts?tab=groups');

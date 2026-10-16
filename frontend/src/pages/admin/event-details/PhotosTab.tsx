@@ -122,6 +122,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
     queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
     queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id, 'moderation'] });
     queryClient.invalidateQueries({ queryKey: photoTrashQueryKey(eventId) });
+    queryClient.invalidateQueries({ queryKey: ['external-import-status', eventId] });
   };
   const moderationFilter = photoFilters.moderation;
   const setModerationFilter = (value: PhotoFilterParams['moderation']) =>
@@ -153,7 +154,12 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
       />
 
       {event.source_mode === 'reference' && event.external_path && (
-        <ExternalSourceBar event={event} onChangeFolder={onChangeFolder} />
+        <ExternalSourceBar
+          event={event}
+          onChangeFolder={onChangeFolder}
+          missingFilter={photoFilters.unavailable === true}
+          onToggleMissing={() => setPhotoFilters((prev) => ({ ...prev, unavailable: prev.unavailable ? undefined : true }))}
+        />
       )}
 
       {showReviewBar && (

@@ -24,6 +24,8 @@ function slideshowPhotosQuery(eventId, categoryId = null) {
     .where(function() {
       this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
     })
+    // A file gone from the share (migration 312) is in no gallery view.
+    .whereNull('photos.unavailable_reason')
     .where(function() {
       this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
     });

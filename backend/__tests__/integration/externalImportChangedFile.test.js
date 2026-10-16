@@ -425,6 +425,37 @@ describe('external re-scan of a file changed in place', () => {
     expect((await db('photos').where({ id: photo.id }).first()).preview_path).toBeNull();
   });
 
+  // The settle loop dropped unsettled files with the flat type+name key, so in
+  // mirrored folders and for FirstLook files (whose keys carry the folder or
+  // the fl: prefix) the half-written file was deferred and imported anyway
+  // (issue 2128).
+  it.each([
+    ['flat', 'shoot/new.jpg', false],
+    ['a mirrored folder', 'shoot/Friday/new.jpg', true],
+    ['FirstLook, flat', 'shoot/FirstLook/new.jpg', false],
+    ['FirstLook, mirrored', 'shoot/FirstLook/new.jpg', true],
+  ])('leaves a new file still being written for the next automatic pass (%s)', async (_label, rel, mirror) => {
+    const eventId = await seedEvent();
+    await db('events').where({ id: eventId }).update({
+      created_by: 1, external_path: 'shoot', external_watch: 1, is_active: 1, is_archived: 0,
+      folder_structure: mirror ? 1 : 0,
+    });
+    const { importExternalFolder } = require('../../src/services/externalImportService');
+
+    const full = await writeJpeg(rel, { width: 60, height: 40, color: { r: 10, g: 20, b: 30 } });
+    // An mtime ahead of the clock stays inside the settle window however slow
+    // the run is.
+    const ahead = new Date(Date.now() + 60000);
+    await fs.promises.utimes(full, ahead, ahead);
+    const pass = { eventId, externalPath: 'shoot', actor: { type: 'system' }, automatic: true, settleMs: 2000 };
+    expect(await importExternalFolder(pass)).toMatchObject({ imported: 0, deferred: 1 });
+    expect(await db('photos').where({ event_id: eventId }).count({ n: '*' }).first()).toMatchObject({ n: 0 });
+
+    const old = new Date(Date.now() - 60000);
+    await fs.promises.utimes(full, old, old);
+    expect(await importExternalFolder(pass)).toMatchObject({ imported: 1, deferred: 0 });
+  });
+
   it('does not touch a photo an upload replaced, which no longer reads the share', async () => {
     const eventId = await seedEvent();
     const { photo, keys } = await importWithRenditions(eventId);

@@ -127,6 +127,13 @@ describe('transcodeOptions', () => {
     expect(after('-filter_complex_threads')).toBe('4');
   });
 
+  it('drops the source metadata and chapters from every rung', () => {
+    expect(args.filter(arg => arg === '-map_metadata')).toHaveLength(3);
+    expect(args.filter(arg => arg === '-map_chapters')).toHaveLength(3);
+    expect(after('-map_metadata')).toBe('-1');
+    expect(after('-map_chapters')).toBe('-1');
+  });
+
   it('a single rung needs no split', () => {
     const one = hls.transcodeOptions(hls.selectLadder({ width: 640, height: 360, bitrate: 900000 }), '/tmp/out');
     expect(one.filter(arg => arg === 'libx264')).toHaveLength(1);

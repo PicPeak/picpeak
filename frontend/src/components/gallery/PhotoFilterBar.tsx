@@ -88,6 +88,14 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
   const [showSortMenu, setShowSortMenu] = useState(false);
   const isActive = (filter: FilterType) =>
     filter === 'all' ? activeFilters.length === 0 : activeFilters.includes(filter as FeedbackFilterType);
+  // The gallery.sortBy* strings are whole phrases ("Nach Datum sortieren"),
+  // so they are used as they are rather than glued to "Sortieren nach".
+  const sortButtonLabel =
+    sortBy === 'date' ? t('gallery.sortByDate') :
+    sortBy === 'name' ? t('gallery.sortByName') :
+    sortBy === 'size' ? t('gallery.sortBySize') :
+    sortBy === 'capture_date' ? t('gallery.sortByCaptureDate', 'Sort by Capture Date') :
+    t('gallery.sortByRating', 'Sort by Rating');
   return (
     <div className="space-y-4">
       {/* Search and Sort */}
@@ -115,14 +123,11 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
             leftIcon={onSortDescChange && sortDesc ? <SortDesc className="w-4 h-4" /> : <SortAsc className="w-4 h-4" />}
             onClick={() => setShowSortMenu(!showSortMenu)}
             className="w-full md:w-auto text-sm md:text-base"
+            // Icon-only below md: the name must not depend on the hidden text.
+            aria-label={sortButtonLabel}
+            aria-expanded={showSortMenu}
           >
-            <span className="hidden md:inline">{t('common.sortBy')}{" "}
-            {sortBy === 'date' ? t('gallery.sortByDate').replace(t('common.sortBy'), '') :
-             sortBy === 'name' ? t('gallery.sortByName').replace(t('common.sortBy'), '') :
-             sortBy === 'size' ? t('gallery.sortBySize').replace(t('common.sortBy'), '') :
-             sortBy === 'capture_date' ? t('photoSort.dateTaken', 'Date Taken') :
-             t('gallery.sortByRating', 'Rating')}
-              </span>
+            <span className="hidden md:inline">{sortButtonLabel}</span>
           </Button>
           
           {showSortMenu && (
