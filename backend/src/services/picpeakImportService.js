@@ -33,6 +33,13 @@ const {
   dropExternalRelpathIndex,
 } = require('./externalPhotoDedupe');
 const {
+  ratingIndexesSupported,
+  dedupeRatings,
+  createRatingIndexes,
+  dropRatingIndexes,
+  backfillCommentCounts,
+} = require('./feedbackIntegrity');
+const {
   hardenAccountRecoveryStorage,
   installAccountRecoveryWriteGuards,
   removeAccountRecoveryWriteGuards,
@@ -565,6 +572,10 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       hadRelpathIndex = true;
       await dropExternalRelpathIndex(trx);
     }
+    // Same for the one-rating-per-guest indexes (issue 2075): a backup taken
+    // before migration 309 can carry the duplicate ratings it collapses.
+    const hadRatingIndexes = await ratingIndexesSupported(trx);
+    if (hadRatingIndexes) await dropRatingIndexes(trx);
 
     // Clear every table the CURRENT schema exports (`allTables`), not just
     // the tables this archive's manifest lists (`tables`, a subset of it).
@@ -619,6 +630,12 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       }
     }
 
+    // An archive made before migration 311 carries no rendition_version, and
+    // its photos would take the column default (1, "already stripped") while
+    // the renditions restored with them still carry the source's EXIF (issue
+    // 2096). Such rows come back as 0, so the background refresh cleans them.
+    const markLegacyRenditions = tables.includes('photos') && await trx.schema.hasColumn('photos', 'rendition_version');
+
     for (const table of tables) {
       const jsonCols = await jsonColumnsFor(trx, table);
       const types = crossEngine ? await typedColumnsFor(trx, table) : null;
@@ -629,6 +646,9 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
         prepared = serialiseJsonColumns(prepared, crossEngine ? new Set() : jsonCols);
         prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
         assertContainedPaths(table, prepared);
+        if (table === 'photos' && markLegacyRenditions) {
+          prepared = prepared.map((row) => (row.rendition_version === undefined ? { ...row, rendition_version: 0 } : row));
+        }
         await trx.batchInsert(table, prepared, prepared.length);
       }
       // Archived queue rows come back as they were, text timestamps included,
@@ -654,6 +674,17 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       }
       await createExternalRelpathIndex(trx);
     }
+    if (hadRatingIndexes) {
+      const removed = await dedupeRatings(trx);
+      if (removed) {
+        logger.info(`picpeakImport: removed ${removed} duplicate rating row(s) from the archive (issue 2075)`);
+      }
+      await createRatingIndexes(trx);
+    }
+    // An archive taken before migration 309 carries the comment_count zeros
+    // that migration backfills (issue 2071); a newer one's counts recount to
+    // the same values.
+    await backfillCommentCounts(trx);
 
     const operatorId = await reinjectCurrentAdmin(trx, currentAdmin);
     if (operatorId && roleSnapshot) {

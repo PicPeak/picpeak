@@ -2,7 +2,17 @@ const express = require('express');
 const { db } = require('../../database/db');
 const path = require('path');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
+const { parsePositiveInt32 } = require('../../utils/parsers');
 const router = express.Router();
+
+// A photoId that is not a plausible row id is refused here (issue 2078);
+// PostgreSQL answers a non-numeric or int4-overflowing id with a 500.
+router.param('photoId', (req, res, next, value) => {
+  if (parsePositiveInt32(value) === null) {
+    return res.status(404).json({ error: 'Photo not found' });
+  }
+  next();
+});
 const watermarkService = require('../../services/watermarkService');
 const watermarkGeneratorService = require('../../services/watermarkGeneratorService');
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
@@ -22,7 +32,7 @@ const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
 const { safePathJoin } = require('../../utils/fileSecurityUtils');
 const {
-  originalAssetDenial, grantDenial, isPresentationRenditionKey, fullResolutionDenial,
+  originalAssetDenial, grantDenial, isPresentationRenditionKey, isRemuxWebKey, fullResolutionDenial,
 } = require('../../services/galleryAssetPolicy');
 const {
   currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
@@ -284,11 +294,11 @@ router.get('/:slug/photo/:photoId',
             // without videos/, or a bucket cleaned by hand. Left at
             // `complete` it would never be rebuilt (the switch-on backfill
             // takes NULL and failed rows only), so it goes back to the queue
-            // now while the setting is on, or to `failed` for the next
-            // switch-on. Guarded on the stale pointer, so a concurrent
+            // now while either video setting is on (copies or metadata
+            // stripping), or to `failed` for the next switch-on. Guarded on the stale pointer, so a concurrent
             // worker's fresh publish is not undone.
-            const { isEnabled } = require('../../services/videoRenditionService');
-            const enabled = await isEnabled().catch(() => false);
+            const { queuesVideos } = require('../../services/videoRenditionService');
+            const enabled = await queuesVideos().catch(() => false);
             await livePhotos(db).where({ id: photo.id, web_path: photo.web_path, web_status: 'complete' }).update({
               web_path: null,
               web_status: enabled ? 'pending' : 'failed',
@@ -298,8 +308,10 @@ router.get('/:slug/photo/:photoId',
           }
         }
         // The quota counts original bytes. The web copy is a presentation
-        // rendition and plays free for the client and the guest alike.
-        if (!servesWebCopy && !(await admitVideoStream(req, res, photo))) return;
+        // rendition and plays free for the client and the guest alike. A
+        // remux (issue 2102) is the original's picture without its metadata:
+        // it counts like the original it stands in for.
+        if ((!servesWebCopy || isRemuxWebKey(videoKey)) && !(await admitVideoStream(req, res, photo))) return;
         // Playback, not a download, for a viewer who may not take the
         // original: never an attachment or a filename.
         const disposition = originalDenial ? { 'Content-Disposition': 'inline' } : {};
@@ -354,11 +366,25 @@ router.get('/:slug/photo/:photoId',
       }
 
       // Image path
-      const watermarkSettings = await watermarkService.getWatermarkSettings();
+      let watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      // The per-event "watermark downloads" flag follows the same global-OR-event
+      // rule as the download routes. This route hands out the full-size original
+      // (it only falls back to the preview tier where originals are withheld),
+      // so leaving it unmarked would let a guest save an unwatermarked copy
+      // around the flag (issue 2076). The pre-generated watermark file is
+      // rendered from the global settings, so an event-only watermark is
+      // applied on the fly.
+      const eventOnlyWatermark = !watermarkSettings?.enabled
+        && (req.event.watermark_downloads === true || req.event.watermark_downloads === 1
+          || req.event.watermark_downloads === '1');
+      if (eventOnlyWatermark) {
+        watermarkSettings = { ...watermarkSettings, enabled: true };
+        if (!watermarkService.watermarkLabel(watermarkSettings)) watermarkSettings.text = 'Protected';
+      }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
       const watermarkHash = watermarkSettings?.enabled
-        ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
+        ? `-wm${watermarkService.versionTag(watermarkSettings)}${eventOnlyWatermark ? '-ev' : ''}`
         : '-nowm';
       // orientation_checked_at participates because the backfill (#1198) can
       // change these bytes without touching either of the other two inputs:
@@ -377,8 +403,10 @@ router.get('/:slug/photo/:photoId',
 
       if (watermarkSettings && watermarkSettings.enabled) {
         // Pre-generated watermarked file: served via the storage backend
-        // (managed) or directly from local fs (external).
-        if (photo.watermark_path) {
+        // (managed) or directly from local fs (external), when it was cut
+        // with the gallery's current watermark text.
+        if (photo.watermark_path && !eventOnlyWatermark
+          && watermarkService.storedWatermarkCurrent(photo.watermark_path, watermarkSettings)) {
           try {
             if (useStorageBackend) {
               const wmStat = await storage.stat(photo.watermark_path);
@@ -427,8 +455,10 @@ router.get('/:slug/photo/:photoId',
           : await watermarkService.applyWatermark(filePath, watermarkSettings, { failClosed: true });
 
         // Queue watermark generation in background for next request
-        watermarkGeneratorService.generateForPhoto(photo.id)
-          .catch(err => logger.warn(`Background watermark generation failed for photo ${photo.id}:`, err.message));
+        if (!eventOnlyWatermark) {
+          watermarkGeneratorService.generateForPhoto(photo.id)
+            .catch(err => logger.warn(`Background watermark generation failed for photo ${photo.id}:`, err.message));
+        }
 
         res.set({
           'Content-Type': resolvePhotoContentType(photo),
@@ -491,7 +521,7 @@ async function loadStreamedVideo(req, res) {
  * Download limit (issue 1560) for a stream. The ladder stands in for what
  * the photo route would play: free where that is the web copy (this video's
  * own key in its namespace, and in storage, not the row's word for it), one slot
- * where it is the original. Fetching the master playlist is the playback, so
+ * where it is the original or its remux (issue 2102). Fetching the master playlist is the playback, so
  * that is what takes the slot, once per video and for the client only, as
  * admitVideoStream does for the file. Unlike a file the grant is delivered
  * at once: the playlist is a few hundred bytes, and the rung requests right
@@ -503,6 +533,7 @@ async function loadStreamedVideo(req, res) {
 async function admitStream(req, res, photo, { playback }) {
   if (req.isAdminPreview || !(await currentDownloadLimit(req.event))) return true;
   if (photo.web_path && photo.web_status === 'complete' && isPresentationRenditionKey(photo.web_path, 'web')
+      && !isRemuxWebKey(photo.web_path)
       && photo.web_path.startsWith(`videos/web_${photo.id}_`) && photo.web_path.endsWith('.mp4')
       && await getStorage().stat(photo.web_path).catch(() => null)) return true;
   const photoId = Number(photo.id);
@@ -691,12 +722,12 @@ router.get('/:slug/thumbnail/:photoId',
       );
 
       // Check if watermarks are enabled and apply to thumbnail
-      const watermarkSettings = await watermarkService.getWatermarkSettings();
+      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
 
       // ETag uses storage stat mtime + photo id + watermark hash.
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
       const watermarkHash = watermarkSettings?.enabled
-        ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
+        ? `-wm${watermarkService.versionTag(watermarkSettings)}`
         : '-nowm';
       // Tier in the ETag, same reason as the preview route: without it a
       // client holding the 300px thumbnail gets a 304 for its 600px request
@@ -808,12 +839,13 @@ router.get('/:slug/hero/:photoId',
       }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
-      const etag = `"hero-${photoId}-${mtimeMs}"`;
+      // The mark is part of the bytes: a changed gallery text must not 304.
+      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      const watermarkHash = watermarkSettings?.enabled ? `-wm${watermarkService.versionTag(watermarkSettings)}` : '';
+      const etag = `"hero-${photoId}-${mtimeMs}${watermarkHash}"`;
       if (req.headers['if-none-match'] === etag) {
         return res.status(304).end();
       }
-
-      const watermarkSettings = await watermarkService.getWatermarkSettings();
 
       res.set({
         'Content-Type': 'image/jpeg',
@@ -957,9 +989,9 @@ router.get('/:slug/preview/:photoId',
       }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
-      const watermarkSettings = await watermarkService.getWatermarkSettings();
+      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
       const watermarkHash = watermarkSettings?.enabled
-        ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
+        ? `-wm${watermarkService.versionTag(watermarkSettings)}`
         : '-nowm';
       // Tier is part of the etag: without it a client that already holds the
       // 1920 rendition would get a 304 for its 640 request and render the

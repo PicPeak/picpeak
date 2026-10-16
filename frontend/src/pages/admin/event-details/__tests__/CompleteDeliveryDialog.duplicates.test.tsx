@@ -13,6 +13,7 @@ import { CompleteDeliveryDialog } from '../CompleteDeliveryDialog';
 import type { Event } from '../../../../types';
 import type { DeliveryState } from '../../../../services/events.service';
 
+const { translate } = vi.hoisted(() => ({ translate: vi.fn((key: string) => key) }));
 const completeDelivery = vi.fn();
 const deletePhotos = vi.fn();
 const toastSuccess = vi.fn();
@@ -20,7 +21,7 @@ const toastError = vi.fn();
 
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
-  return { ...actual, useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) };
+  return { ...actual, useTranslation: () => ({ t: translate, i18n: { language: 'en' } }) };
 });
 vi.mock('react-toastify', () => ({
   toast: { success: (...args: unknown[]) => toastSuccess(...args), error: (...args: unknown[]) => toastError(...args) },
@@ -39,19 +40,21 @@ vi.mock('../OverviewTab', () => ({
   eventNotice: () => ({ inlineEmail: null, accountNames: [], accountCount: 0, skippedAccountCount: 0 }),
 }));
 
+const renderDialog = (state: Partial<DeliveryState>, onCompleted = vi.fn()) => render(
+  <QueryClientProvider client={new QueryClient()}>
+    <CompleteDeliveryDialog
+      event={{ id: 7 } as Event}
+      state={state as DeliveryState}
+      isOpen
+      onClose={vi.fn()}
+      onCompleted={onCompleted}
+    />
+  </QueryClientProvider>
+);
+
 const completeWithDuplicates = async () => {
   const onCompleted = vi.fn();
-  render(
-    <QueryClientProvider client={new QueryClient()}>
-      <CompleteDeliveryDialog
-        event={{ id: 7 } as Event}
-        state={{ delivered_count: 10, duplicate_count: 2 } as DeliveryState}
-        isOpen
-        onClose={vi.fn()}
-        onCompleted={onCompleted}
-      />
-    </QueryClientProvider>
-  );
+  renderDialog({ delivered_count: 10, duplicate_count: 2, delivered_duplicate_count: 2 }, onCompleted);
   const user = userEvent.setup();
   await user.click(screen.getByRole('checkbox', { name: /events\.delivery\.removeDuplicates/ }));
   await user.click(screen.getByRole('button', { name: 'events.delivery.completeAndNotify' }));
@@ -75,6 +78,15 @@ describe('CompleteDeliveryDialog: removing the first-look duplicates', () => {
     deletePhotos.mockResolvedValue({ trashed: 1, deleted: 0, failed: [22] });
     await completeWithDuplicates();
     expect(toastError).toHaveBeenCalledWith('events.delivery.duplicatesNotRemoved');
+  });
+
+  it('takes only the duplicates that are in the delivered count off what guests see', async () => {
+    // Two duplicate pairs; one first-look copy is a held upload, so only one
+    // of them is among the 10 delivered photos (issue 2086).
+    renderDialog({ delivered_count: 10, duplicate_count: 2, delivered_duplicate_count: 1 });
+    await userEvent.setup().click(screen.getByRole('checkbox', { name: /events\.delivery\.removeDuplicates/ }));
+    const last = translate.mock.calls.filter(([key]) => key === 'events.delivery.completeBody').pop();
+    expect(last?.[2]).toEqual({ count: 9 });
   });
 
   it('warns when the delete request failed', async () => {

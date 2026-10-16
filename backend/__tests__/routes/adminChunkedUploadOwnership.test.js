@@ -26,6 +26,7 @@ jest.mock('../../src/services/photoProcessor', () => ({
 const request = require('supertest');
 const express = require('express');
 const bcrypt = require('bcrypt');
+const JPEG = require('../helpers/minimalJpeg');
 const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('../integration/helpers/crmDb');
 
 describe('admin chunked upload ownership', () => {
@@ -74,7 +75,7 @@ describe('admin chunked upload ownership', () => {
   const init = (token, eventId) => request(app)
     .post(`/api/admin/photos/${eventId}/chunked-upload/init`)
     .set('Authorization', `Bearer ${token}`)
-    .send({ filename: 'shot.jpg', fileSize: 3, totalChunks: 1 });
+    .send({ filename: 'shot.jpg', fileSize: JPEG.length, totalChunks: 1 });
 
   const status = (token, eventId, id) => request(app)
     .get(`/api/admin/photos/${eventId}/chunked-upload/${id}/status`)
@@ -84,7 +85,7 @@ describe('admin chunked upload ownership', () => {
     .post(`/api/admin/photos/${eventId}/chunked-upload/${id}/chunk/0`)
     .set('Authorization', `Bearer ${token}`)
     .set('Content-Type', 'application/octet-stream')
-    .send(Buffer.from('abc'));
+    .send(JPEG);
 
   const complete = (token, eventId, id) => request(app)
     .post(`/api/admin/photos/${eventId}/chunked-upload/${id}/complete`)

@@ -86,7 +86,7 @@ describe('deferred photos do not block the queue', () => {
     );
     const branch = src.match(/if \(isStorageUnavailableError\(err\)\) \{([\s\S]*?)\n {6}\}/);
     expect(branch).not.toBeNull();
-    expect(branch[1]).toContain('await releaseToPending(claimed.id)');
+    expect(branch[1]).toContain('await releaseToPending(claimed)');
     expect(branch[1]).toContain('await sleep(UNAVAILABLE_BACKOFF_MS)');
     expect(branch[1]).toContain('continue;');
     expect(src.indexOf('if (isStorageUnavailableError(err))')).toBeLessThan(src.indexOf("face_status: 'failed'"));

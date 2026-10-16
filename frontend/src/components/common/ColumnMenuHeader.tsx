@@ -208,7 +208,12 @@ export const ColumnMenuHeader: React.FC<ColumnMenuHeaderProps> = ({
   const applied = state !== null;
 
   return (
-    <th className={`${className} ${align === 'right' ? 'text-right' : 'text-left'}`}>
+    // aria-sort only where the column IS the active sort; a filter state
+    // ('set') or an untouched column carries none (issue 2074).
+    <th
+      className={`${className} ${align === 'right' ? 'text-right' : 'text-left'}`}
+      aria-sort={state === 'asc' ? 'ascending' : state === 'desc' ? 'descending' : undefined}
+    >
       <button
         ref={triggerRef}
         type="button"

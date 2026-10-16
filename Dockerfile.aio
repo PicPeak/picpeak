@@ -165,6 +165,14 @@ ENV SERVE_FRONTEND=true \
 # none of them should lose the feature by accident.
 ENV PICPEAK_SINGLE_CONTAINER=true
 
+# No proxy hop sits in front of Node inside this image (see the header: no
+# nginx), so trust no forwarding headers by default. Left unset, the backend
+# would keep the legacy private-range trust and take a LAN client's own
+# X-Forwarded-For entry as its address, which lets it pick a fresh rate-limit
+# key per request. Behind a reverse proxy (NAS proxy, Traefik, NPM, Caddy,
+# Cloudflare Tunnel) the operator sets -e TRUST_PROXY=1, one per proxy hop.
+ENV TRUST_PROXY=0
+
 # No USER directive — same as backend/Dockerfile: the container starts as root
 # so wait-for-db.sh can chown bind-mounted volumes to UID 1001, then drops
 # privileges via su-exec (#484).

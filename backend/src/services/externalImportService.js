@@ -890,7 +890,8 @@ async function importExternalFolder({
               // Browser-playable copy (issue 1430, item 8). The copy is
               // written to the managed backend; the NAS file is never
               // touched.
-              ...(await require('./videoRenditionService').isEnabled() ? { web_status: 'pending' } : {}),
+              // Metadata stripping (issue 2102) queues it too.
+              ...(await require('./videoRenditionService').queuesVideos() ? { web_status: 'pending' } : {}),
               // The placeholder is a completed row with a note, so the admin
               // grid can show it and offer a retry (issue 1430, item 6).
               processing_error: result.placeholder ? posterFrameError(result.thumbnailError) : null,

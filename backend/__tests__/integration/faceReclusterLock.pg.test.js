@@ -136,9 +136,15 @@ const mockDetected = [];
     return faces;
   }
 
-  // A photo claimed by the face queue, as processPhotoFaces expects it.
-  const claim = (photoId) => db('photos').where({ id: photoId })
-    .update({ face_status: 'processing', face_started_at: new Date().toISOString() });
+  // A photo claimed by the face queue, as processPhotoFaces expects it: the
+  // claimed row, its attempt id included (issue 2069).
+  const claim = async (photoId) => {
+    const claimed = { id: photoId, face_attempt_id: crypto.randomUUID() };
+    await db('photos').where({ id: photoId }).update({
+      face_status: 'processing', face_started_at: new Date().toISOString(), face_attempt_id: claimed.face_attempt_id,
+    });
+    return claimed;
+  };
 
   // Backends parked on this event's clustering lock.
   const waitingOnEventLock = async (eventId) => {
@@ -237,15 +243,15 @@ const mockDetected = [];
       // deletes its old face. Deleting first, it held that row while the
       // recluster waited for it, then waited for the lock itself: 40P01, and
       // a scan that loses is failed rather than retried.
-      await claim(old.photo_id);
+      const rescan = await claim(old.photo_id);
       mockDetected.push(Array.from(makeEmbedding(81, 5)));
-      pending.push(scanned(results, 'rescan', faceProcessor.processPhotoFaces(old.photo_id)));
+      pending.push(scanned(results, 'rescan', faceProcessor.processPhotoFaces(rescan)));
       expect(await until(async () => (await waitingOnEventLock(eventId)) >= 1)).toBe(true);
 
       // A second worker of this process on a new photo. Had withEventLock
       // taken the in-process mutex before the advisory lock, a worker parked
       // in PostgreSQL would hold it while the others waited for it in Node.
-      const fresh = await seedPhoto(db, eventId, { face_status: 'processing', face_started_at: new Date().toISOString() });
+      const fresh = await claim(await seedPhoto(db, eventId));
       mockDetected.push(Array.from(makeEmbedding(82, 5)));
       pending.push(scanned(results, 'scan', faceProcessor.processPhotoFaces(fresh)));
       expect(await until(async () => (await waitingOnEventLock(eventId)) >= 2)).toBe(true);
