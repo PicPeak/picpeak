@@ -109,13 +109,16 @@ const stripReservedSettingKeys = (settings) => {
 //                                 (settings.security; range-validated — a
 //                                 settings.edit holder could otherwise switch
 //                                 the limiter off through /general)
+//   max_image_requests_*          retired (issue 2152): nothing reads them
+//                                 any more, and they stay refused here so a
+//                                 generic write cannot bring them back
 //   ledger_*                      PATCH /admin/ledger/mappings/settings
 //                                 (accounting.manage)
 //   restore_*                     PUT /admin/restore/settings (backup.restore;
 //                                 restore_allow_force and
 //                                 restore_require_pre_backup gate restore-start)
 const DEDICATED_ROUTE_KEY_PREFIXES = [
-  'backup_', 'database_backup_', 'rate_limit_', 'ledger_', 'restore_',
+  'backup_', 'database_backup_', 'rate_limit_', 'max_image_requests_', 'ledger_', 'restore_',
 ];
 const isDedicatedRouteOwnedKey = (key) => DEDICATED_ROUTE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
 // 400 (naming the keys) when a generic write carries route-owned keys, rather
@@ -1757,8 +1760,7 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
     if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
 
     // The public origin is no longer just an email link: it feeds the CORS
-    // allowlist (server.js) and the Access-Control-Allow-Origin header
-    // (secureImageMiddleware) since #705. A schemeless value like
+    // allowlist (server.js) since #705. A schemeless value like
     // "gallery.example.com" therefore produces both links that don't resolve
     // AND an allowlist entry no browser origin can ever match, so validate it
     // server-side rather than trusting the input type (#1104). require_tld is
