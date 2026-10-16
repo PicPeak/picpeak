@@ -40,6 +40,13 @@ const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
 
 const SLUG = 'protected-video-gallery';
 const VIDEO_BYTES = Buffer.from('not really an mp4, but the route only streams bytes');
+// A real (tiny) JPEG: the image route may inspect the bytes before streaming.
+let IMAGE_BYTES;
+const binary = (res, cb) => {
+  const chunks = [];
+  res.on('data', (c) => chunks.push(c));
+  res.on('end', () => cb(null, Buffer.concat(chunks)));
+};
 
 describe('videos stay playable under enhanced/maximum protection (#1370)', () => {
   let db; let cleanup; let app; let eventId; let videoId; let imageId;
@@ -84,7 +91,8 @@ describe('videos stay playable under enhanced/maximum protection (#1370)', () =>
     const mediaDir = path.join(process.env.STORAGE_PATH, 'events/active', SLUG, 'individual');
     fs.mkdirSync(mediaDir, { recursive: true });
     fs.writeFileSync(path.join(mediaDir, 'clip.mp4'), VIDEO_BYTES);
-    fs.writeFileSync(path.join(mediaDir, 'still.jpg'), Buffer.from('jpeg-ish'));
+    IMAGE_BYTES = await require('sharp')({ create: { width: 8, height: 8, channels: 3, background: '#336699' } }).jpeg().toBuffer();
+    fs.writeFileSync(path.join(mediaDir, 'still.jpg'), IMAGE_BYTES);
 
     const vid = await db('photos').insert({
       event_id: eventId,
@@ -122,7 +130,7 @@ describe('videos stay playable under enhanced/maximum protection (#1370)', () =>
       const photo = await photoPayload(videoId);
       expect(photo.url).toBe(`/api/gallery/${SLUG}/photo/${videoId}`);
       expect(photo.url).not.toContain('{{token}}');
-      expect(photo.requires_token).toBe(false);
+      expect(photo).not.toHaveProperty('requires_token');
     });
 
     test('the video streams instead of bouncing to the secure endpoint', async () => {
@@ -141,14 +149,16 @@ describe('videos stay playable under enhanced/maximum protection (#1370)', () =>
       expect(res.headers['content-range']).toBe(`bytes 0-9/${VIDEO_BYTES.length}`);
     });
 
-    test('still images keep bouncing to the secure endpoint', async () => {
+    test('still images take the JWT route too and stream, not a {{token}} template', async () => {
       const photo = await photoPayload(imageId);
-      expect(photo.url).toBe(`/api/secure-images/${SLUG}/secure/${imageId}/{{token}}`);
-      expect(photo.requires_token).toBe(true);
+      expect(photo.url).toBe(`/api/gallery/${SLUG}/photo/${imageId}`);
+      expect(photo.url).not.toContain('{{token}}');
+      expect(photo).not.toHaveProperty('requires_token');
 
-      const res = await request(app).get(`/api/gallery/${SLUG}/photo/${imageId}`);
-      expect(res.status).toBe(302);
-      expect(res.body.error).toBe('Secure access required');
+      const res = await request(app).get(`/api/gallery/${SLUG}/photo/${imageId}`).buffer(true).parse(binary);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('image/jpeg');
+      expect(res.body.equals(IMAGE_BYTES)).toBe(true);
     });
   });
 

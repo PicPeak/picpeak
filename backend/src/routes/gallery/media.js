@@ -103,24 +103,12 @@ router.get('/:slug/photo/:photoId',
         return res.redirect(`/api/gallery/${req.params.slug}/preview/${photoId}${query}`);
       }
 
-      // Check protection level - basic and standard protection allow direct JWT access
-      const protectionLevel = req.event.protection_level || 'standard';
-
-      // Videos are exempt (#1370). The secure-images endpoint this bounces to
-      // pipes every byte through sharp (secureImageService.processProtectedImage),
-      // which throws on an mp4 — so under enhanced/maximum a video was
-      // unservable by either route, and the lightbox showed a poster stuck at
-      // 0:00. Serving it here instead is not a new exposure: thumbnails of the
-      // same videos already come from this route at every protection level, and
-      // the guest still needs a valid gallery token to get here at all.
-      if (!isVideo && (protectionLevel === 'enhanced' || protectionLevel === 'maximum')) {
-        // For enhanced/maximum protection, redirect to secure endpoint
-        return res.status(302).json({
-          error: 'Secure access required',
-          secureEndpoint: `/api/secure-images/${req.params.slug}/generate-token`,
-          photoId: photoId
-        });
-      }
+      // Every protection level is served here. Enhanced/maximum used to answer
+      // a 302 JSON pointing at /api/secure-images/.../generate-token, which no
+      // shipped frontend code calls, so still images at those levels were a
+      // broken tile (#1370 exempted videos from the same bounce). The levels
+      // are client-side rendering modes; the guest still needs a valid gallery
+      // token to get here at all.
 
       // Resolve where to read the photo bytes from. For external/reference
       // photos the source is always a local mount path. For managed photos
