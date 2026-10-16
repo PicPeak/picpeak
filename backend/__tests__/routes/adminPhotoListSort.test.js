@@ -118,6 +118,20 @@ describe('admin photo list sorting (issue 1739)', () => {
       ]);
     });
 
+    it('orders by the original name, not the generated storage name (issue 2073)', async () => {
+      await db('photos').where({ event_id: eventId }).del();
+      // Storage names carry an upload-order prefix, so ordering by them is upload order.
+      await addPhoto('1700000003_aaa.jpg', { original_filename: 'IMG_10.jpg' });
+      await addPhoto('1700000002_bbb.jpg', { original_filename: 'IMG_2.jpg' });
+      await addPhoto('1700000001_ccc.jpg', { original_filename: 'IMG_1.jpg' });
+      // No original name stored: falls back to the stored name.
+      await addPhoto('IMG_3.jpg', { original_filename: null });
+      const list_ = (await list('sort=name&order=asc')).map((p) => p.original_filename || p.filename);
+      expect(list_).toEqual(['IMG_1.jpg', 'IMG_2.jpg', 'IMG_3.jpg', 'IMG_10.jpg']);
+      const desc = (await list('sort=name&order=desc')).map((p) => p.original_filename || p.filename);
+      expect(desc).toEqual(['IMG_10.jpg', 'IMG_3.jpg', 'IMG_2.jpg', 'IMG_1.jpg']);
+    });
+
     it('does not split names on letter case', async () => {
       await db('photos').where('event_id', eventId).del();
       for (const name of ['b2.jpg', 'B10.jpg', 'a3.jpg', 'B1.jpg']) await addPhoto(name);

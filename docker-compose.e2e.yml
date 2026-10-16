@@ -40,6 +40,9 @@ services:
       - ADMIN_URL=http://localhost:7200
       - TZ=UTC
       - STORAGE_PATH=/app/storage
+      # One hop: the frontend nginx the suite drives on 7200, instead of the
+      # legacy private-range trust an unset TRUST_PROXY keeps.
+      - TRUST_PROXY=1
       # external-media-gallery.spec.ts copies its fixtures into the host side of
       # this mount (scripts/e2e.sh creates it). Kept outside STORAGE_PATH, which
       # the entrypoint chowns and a read-only mount would make it fail on.

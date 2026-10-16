@@ -77,7 +77,7 @@ const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
 const { sha256File, findDuplicate, duplicateName } = require('../services/photoDuplicates');
 
 
-const { validateFileType, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
+const { validateFileType, validateFileContent, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
 
 // Create a multer instance that uses dynamically resolved allowed MIME types.
 // The allowed types are fetched from the database once per request (before multer
@@ -99,6 +99,7 @@ const UPLOAD_TEXT_FIELDS = 7;
 const createUpload = (maxFileSizeBytes, maxFiles, { storage, streamHandler, rejectBody }) => multer({
   storage,
   streamHandler,
+  defParamCharset: 'utf8', // multer's latin1 default turns UTF-8 names into mojibake
   limits: {
     fileSize: maxFileSizeBytes,
     files: maxFiles,
@@ -1694,9 +1695,13 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     // picked up the wrong files. Sorted here rather than in SQL: the list is
     // not paginated, and neither engine has a natural collation to ask for.
     if (sort === 'name') {
+      // The generated `filename` is the storage name (timestamp/uuid prefix), so
+      // ordering by it gives upload order. The name the photographer sees and
+      // searches by is original_filename (issue 2073).
+      const displayNameOf = (p) => p.original_filename || p.filename || '';
       const direction = order === 'asc' ? 1 : -1;
       photos.sort((a, b) => direction
-        * (NATURAL_NAME_ORDER.compare(a.filename || '', b.filename || '') || a.id - b.id));
+        * (NATURAL_NAME_ORDER.compare(displayNameOf(a), displayNameOf(b)) || a.id - b.id));
     }
     
     // Get comment counts separately
@@ -2207,6 +2212,26 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     if (capRefusal) {
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
       return res.status(400).json(capRefusal);
+    }
+
+    // The same content check the multipart upload applies: the bytes must
+    // match the declared type, and an image must decode. The merged file is
+    // the first moment the whole content exists here.
+    const resolvedMimeType = normalizeUploadMimeType(mergedFile.filename, mergedFile.mimeType);
+    const contentFiles = [{ originalname: mergedFile.filename, path: mergedFile.path, mimetype: resolvedMimeType }];
+    let contentError = null;
+    if (!(await validateFileContent(mergedFile.path, resolvedMimeType))) {
+      contentError = `File content does not match declared type: ${mergedFile.filename}`;
+    } else {
+      const checked = { files: contentFiles };
+      await validateUploadedFiles(checked, res, () => {});
+      if (checked.files.length === 0) {
+        contentError = `Invalid image file: ${mergedFile.filename}`;
+      }
+    }
+    if (contentError) {
+      await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
+      return res.status(400).json({ error: contentError });
     }
 
     // Process the merged file as a regular upload
