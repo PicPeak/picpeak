@@ -543,6 +543,17 @@
         "pets": "Mascotas",
         "black_and_white": "Blanco y negro"
       }
+    },
+    "tile": {
+      "viewFullSize": "Ver a tamaño completo",
+      "downloadPhoto": "Descargar foto",
+      "commentOnPhoto": "Comentar la foto",
+      "likePhoto": "Me gusta la foto",
+      "unlikePhoto": "Quitar me gusta",
+      "comment": "Comentar",
+      "like": "Me gusta",
+      "unlike": "Quitar me gusta",
+      "selectPhoto": "Seleccionar {{name}}"
     }
   },
   "categories": {
@@ -774,6 +785,8 @@
     "downloadProtection": "Protección de descargas",
     "disableRightClick": "Bloquear menú de clic derecho",
     "watermarkDownloads": "Agregar marca de agua a las descargas",
+    "watermarkText": "Texto de la marca de agua",
+    "watermarkTextHelp": "Sustituye el nombre de la empresa en la marca de agua de texto de esta galería. Déjalo vacío para usar el nombre de la empresa. No se muestra si Branding tiene un logotipo de marca de agua.",
     "enableDevtoolsProtection": "Detectar herramientas de desarrollo",
     "useCanvasRendering": "Renderizado con canvas (protección avanzada)",
     "protectionInfo": "Las funciones de protección ayudan a prevenir descargas no autorizadas, pero no pueden bloquear todos los métodos.",
@@ -1088,7 +1101,12 @@
       "publishLink": "Publicar"
     },
     "showExifToGuests": "Mostrar los datos de cámara a los invitados",
-    "showExifToGuestsHelp": "La cámara, el objetivo, la distancia focal, la apertura, la velocidad de obturación y el ISO aparecen bajo la foto en la vista a pantalla completa. La ubicación y los números de serie nunca se guardan ni se muestran."
+    "showExifToGuestsHelp": "La cámara, el objetivo, la distancia focal, la apertura, la velocidad de obturación y el ISO aparecen bajo la foto en la vista a pantalla completa. La ubicación y los números de serie nunca se guardan ni se muestran.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "Los saltos de línea se conservan en los correos",
+      "tip": "Consejo: pulsa Intro para crear una nueva línea. Cada línea aparecerá como un párrafo independiente en los correos.",
+      "preview": "Vista previa:"
+    }
   },
   "settings": {
     "title": "Ajustes del sistema",
@@ -1104,6 +1122,8 @@
       "maxFileSize": "Tamaño máximo de archivo (MB)",
       "videoWebRendition": "Copias de vídeo reproducibles en el navegador",
       "videoWebRenditionHelp": "Recodifica los vídeos que un navegador no puede reproducir (HEVC, QuickTime, MP4 no transmitibles) a un MP4 H.264 para la reproducción. El original sigue siendo la descarga. Consume CPU por vídeo y un segundo archivo; al activarlo se ponen en cola los vídeos ya subidos.",
+      "videoStripMetadata": "Quitar los datos de ubicación y del dispositivo de los vídeos reproducidos",
+      "videoStripMetadataHelp": "Los vídeos que ya se reproducen en un navegador reciben una copia sin la ubicación de la grabación, la cámara ni otros metadatos, creada sin recodificar; los invitados reproducen esa copia. Guarda un archivo adicional por cada uno de esos vídeos, de un tamaño similar al original. El original sigue siendo la descarga. Al desactivarlo se conservan las copias ya creadas.",
       "videoAdaptiveStreaming": "Streaming de vídeo adaptativo",
       "videoAdaptiveStreamingHelp": "Convierte cada vídeo en una transmisión en hasta tres calidades (480p, 720p, 1080p), para que la reproducción empiece rápido y se adapte a la conexión. El original sigue siendo la descarga. Consume CPU por vídeo y aproximadamente otro tanto de almacenamiento; los vídeos de más de 30 minutos se reproducen como hasta ahora.",
       "maxFileSizeHelp": "Tamaño máximo por foto subida",

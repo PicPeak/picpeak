@@ -1078,7 +1078,8 @@
         "POST /repair-credits",
         "GET /repair-credits/status",
         "POST /repair-thumb-hashes",
-        "GET /repair-thumb-hashes/status"
+        "GET /repair-thumb-hashes/status",
+        "GET /refresh-renditions/status"
       ]
     },
     "adminPhotoExport.js": {

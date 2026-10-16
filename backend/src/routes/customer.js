@@ -89,6 +89,7 @@ const PROFILE_FIELD_MAP = {
   countryCode: 'country_code',
   preferredLanguage: 'preferred_language',
 };
+const CUSTOMER_NAME_FIELDS = new Set(['first_name', 'last_name', 'display_name', 'company_name']);
 
 function shapeProfile(row) {
   if (!row) return null;
@@ -322,6 +323,8 @@ router.put('/profile', [
       if (!Object.prototype.hasOwnProperty.call(req.body, camel)) continue;
       let value = req.body[camel];
       if (typeof value === 'string') value = value.trim();
+      // One stored form per name (NFC), as the admin update path writes it.
+      if (typeof value === 'string' && CUSTOMER_NAME_FIELDS.has(snake)) value = value.normalize('NFC');
       if (value === '') value = null;
       if (snake === 'country_code' && value) {
         value = String(value).toUpperCase().slice(0, 2);

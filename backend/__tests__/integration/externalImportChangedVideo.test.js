@@ -338,6 +338,64 @@ describe('external re-scan of a video changed in place (issue 2114)', () => {
     expect(exists(keys.poster)).toBe(false);
   });
 
+  describe('a type no longer allowed (issue 2120)', () => {
+    const allowTypes = async (types) => {
+      await setSetting('general_allowed_file_types', types);
+      require('../../src/services/uploadSettings').clearAllowedTypesCache();
+    };
+    afterEach(() => allowTypes('jpg,mp4'));
+
+    it('still refreshes an edited row of that type, and imports no new file of it', async () => {
+      const eventId = await seedEvent();
+      const { video, keys } = await importWithRenditions(eventId);
+      await allowTypes('jpg');
+      processUploadedVideo.mockClear();
+
+      const edited = await editVideo();
+      await writeVideo('shoot/new-clip.mp4', 'a clip added after the type was removed');
+      // An allowed type still imports as before.
+      await writeVideo('shoot/new-photo.jpg', 'not decodable, imported without dimensions');
+      const res = await runImport(eventId);
+      expect(res.body).toMatchObject({ imported: 1, refreshed: 1 });
+      expect(await db('photos').where({ event_id: eventId, filename: 'new-photo.jpg' }).first()).toBeTruthy();
+      expect(await db('photos').where({ event_id: eventId, filename: 'new-clip.mp4' }).first()).toBeUndefined();
+
+      const after = await db('photos').where({ id: video.id }).first();
+      expect(Number(after.size_bytes)).toBe(edited.size);
+      expect(Number(after.source_mtime_ms)).toBe(Math.floor(edited.mtimeMs));
+      expect(after).toMatchObject({ duration: 25, web_path: null, hls_path: null });
+      expect(processUploadedVideo).toHaveBeenCalledTimes(1);
+      expect(exists(keys.web)).toBe(false);
+    });
+
+    it('leaves an unchanged row of that type alone', async () => {
+      const eventId = await seedEvent();
+      const { video, keys } = await importWithRenditions(eventId);
+      await allowTypes('jpg');
+      processUploadedVideo.mockClear();
+
+      expect((await runImport(eventId)).body).toMatchObject({ imported: 0, refreshed: 0, skipped: 1 });
+      expect(processUploadedVideo).not.toHaveBeenCalled();
+      expect(await db('photos').where({ id: video.id }).first()).toMatchObject({ web_path: keys.web, web_status: 'complete' });
+    });
+
+    it('does not import a file of that type on an automatic pass either', async () => {
+      const eventId = await seedEvent();
+      await db('events').where({ id: eventId }).update({
+        created_by: 1, external_path: 'shoot', external_watch: 1, is_active: 1, is_archived: 0,
+      });
+      const { video } = await importWithRenditions(eventId);
+      await allowTypes('jpg');
+      await editVideo();
+      await writeVideo('shoot/new-clip.mp4', 'a clip added after the type was removed');
+      const { importExternalFolder } = require('../../src/services/externalImportService');
+      const pass = { eventId, externalPath: 'shoot', actor: { type: 'system' }, automatic: true, settleMs: 5000 };
+      expect(await importExternalFolder(pass)).toMatchObject({ imported: 0, refreshed: 1 });
+      expect((await db('photos').where({ id: video.id }).first()).duration).toBe(25);
+      expect(await db('photos').where({ event_id: eventId }).count('* as n').first()).toMatchObject({ n: 1 });
+    }, 20000);
+  });
+
   it('records the poster note when no poster frame can be made from the new file', async () => {
     const eventId = await seedEvent();
     const { video } = await importWithRenditions(eventId);

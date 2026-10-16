@@ -115,6 +115,23 @@ describe('manifest checksum keying (GHSA-hgp8)', () => {
     delete process.env.BACKUP_MANIFEST_KEY;
     expect(() => backupManifest.validateManifest(m)).toThrow(/signing key is missing/);
   });
+
+  it('names the key id a manifest was signed with when this server does not hold it (issue 2089)', () => {
+    const m = baseManifest();
+    backupManifest.signManifest(m);
+    m.verification.key_id = '0123456789abcdef';
+
+    expect(() => backupManifest.validateManifest(m))
+      .toThrow(/signed with key 0123456789abcdef, which is not among the keys this server holds/);
+  });
+
+  it('keeps stack traces out of the restore log entries (issue 2089)', () => {
+    restoreService.restoreLog = [];
+    restoreService.log('error', 'Restore failed', { error: 'boom', stack: 'Error: boom\n    at /app/src/x.js:1' });
+    const [entry] = restoreService.restoreLog;
+    expect(entry.details).toEqual({ error: 'boom' });
+    expect(JSON.stringify(restoreService.restoreLog)).not.toContain('/app/src');
+  });
 });
 
 describe('manifest checksum coverage (canonicalization)', () => {

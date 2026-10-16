@@ -716,13 +716,25 @@ async function importExternalFolder({
     const toRootRelative = (rel) => (basePrefix ? path.join(basePrefix, rel) : rel);
 
     // Collect files. Images always; videos only for the types this install
-    // accepts as uploads (see importableExtensions).
+    // accepts as uploads (see importableExtensions). The walk lists every
+    // media type: a file of a type that is no longer allowed is still
+    // visited when the gallery already has a row for it, so an edit to it is
+    // picked up (issue 2120). It is never imported new.
     const extensions = await importableExtensions();
+    const mediaExtensions = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS];
     const walkBudget = { entries: MAX_WALK_ENTRIES, truncated: false };
-    const files = recursive ? await walkDir(baseAbs, baseAbs, extensions, walkBudget, 0, access) : (await fs.readdir(baseAbs, { withFileTypes: true }))
+    const walked = recursive ? await walkDir(baseAbs, baseAbs, mediaExtensions, walkBudget, 0, access) : (await fs.readdir(baseAbs, { withFileTypes: true }))
       .filter(e => e.isFile())
       .map(e => ({ full: path.join(baseAbs, e.name), rel: e.name, name: e.name }))
-      .filter(f => extensions.includes(path.extname(f.name).toLowerCase()));
+      .filter(f => mediaExtensions.includes(path.extname(f.name).toLowerCase()));
+    const isAllowed = (f) => extensions.includes(path.extname(f.name).toLowerCase());
+    const disallowed = walked.filter((f) => !isAllowed(f));
+    const disallowedWithRow = disallowed.length
+      ? await existingRelpaths(eventId, disallowed.map((f) => toRootRelative(f.rel)))
+      : new Set();
+    const files = walked
+      .filter((f) => isAllowed(f) || disallowedWithRow.has(toRootRelative(f.rel)))
+      .map((f) => (isAllowed(f) ? f : { ...f, refreshOnly: true }));
 
     // Files gone from the share (issue 2121) are only judged after a complete
     // read of a folder that answered: a walk cut short says nothing about the
@@ -747,6 +759,10 @@ async function importExternalFolder({
     // Prepare file metadata and deduplicate by filename within type (keep largest)
     let skipped = 0;
     const preparedFiles = [];
+    // Files of a type no longer allowed, with a row: refreshed, never
+    // inserted, so they stay out of the dedupe and the settle wait below,
+    // which only decide what gets inserted.
+    const refreshOnlyFiles = [];
     for (const f of files) {
       await externalAccess.authorizeSelectedFile(access, f.full);
       try {
@@ -757,7 +773,7 @@ async function importExternalFolder({
         if (segs[0] === map.individual) type = 'individual';
         const where = externalPlacement(f.rel, { map, keywords: firstLookKeywords, mirror: mirrorFolders });
         if (where.segments === null) { skipped++; continue; }
-        preparedFiles.push({ ...f, type, size: stats.size, mtimeMs: stats.mtimeMs, where });
+        (f.refreshOnly ? refreshOnlyFiles : preparedFiles).push({ ...f, type, size: stats.size, mtimeMs: stats.mtimeMs, where });
       } catch (err) {
         skipped++;
       }
@@ -937,7 +953,7 @@ async function importExternalFolder({
     }
 
     // Insert photos
-    for (const f of dedupeMap.values()) {
+    for (const f of [...dedupeMap.values(), ...refreshOnlyFiles]) {
       filesSinceAuthorized += 1;
       if (filesSinceAuthorized >= REAUTHORIZE_EVERY_FILES || Date.now() - authorizedAt >= REAUTHORIZE_EVERY_MS) {
         await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
@@ -973,6 +989,9 @@ async function importExternalFolder({
         const exists = await db('photos')
           .where({ event_id: eventId, external_relpath: relFromRoot })
           .first();
+        // Its row went away since the walk: a type no longer allowed is not
+        // imported again.
+        if (!exists && f.refreshOnly) { skipped++; continue; }
         if (!exists && capReached) { skipped++; continue; }
         if (exists) {
           // The same path with other bytes: the file was edited on the share
@@ -1178,7 +1197,8 @@ async function importExternalFolder({
               // Browser-playable copy (issue 1430, item 8). The copy is
               // written to the managed backend; the NAS file is never
               // touched.
-              ...(await require('./videoRenditionService').isEnabled() ? { web_status: 'pending' } : {}),
+              // Metadata stripping (issue 2102) queues it too.
+              ...(await require('./videoRenditionService').queuesVideos() ? { web_status: 'pending' } : {}),
               // The placeholder is a completed row with a note, so the admin
               // grid can show it and offer a retry (issue 1430, item 6).
               processing_error: result.placeholder ? posterFrameError(result.thumbnailError) : null,
