@@ -93,11 +93,15 @@ class WatermarkGeneratorService {
         if (!fresh || !fresh.enabled) {
           return { success: false, watermarkPath: null, error: 'Watermarking is disabled' };
         }
+        // The gallery's own watermark text, read in the slot for the same
+        // reason: the admin may have changed it while this job queued.
+        const gallery = await db('events').where('id', photo.event_id).first('watermark_text');
+        const forGallery = watermarkService.forEvent(fresh, gallery);
         return storageKey
           ? withLocalCopy(storageKey, (lp) =>
-            watermarkService.generateAndSaveWatermark(photo, lp, fresh)
+            watermarkService.generateAndSaveWatermark(photo, lp, forGallery)
           )
-          : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), fresh);
+          : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), forGallery);
       });
 
       if (result.success) {
@@ -139,16 +143,36 @@ class WatermarkGeneratorService {
         if (photo[column] !== undefined) fence[column] = photo[column];
       }
     }
-    const written = await db('photos')
-      .where(fence)
-      .update({
+    // Set only over the path it read, so the file it displaces is known and
+    // dropped below: two cuts of one photo with different gallery texts have
+    // different keys, and the one overwritten must not stay behind unnamed.
+    let written = 0;
+    let displaced = null;
+    let current = null;
+    for (let tries = 0; tries < 5 && !written; tries += 1) {
+      current = await db('photos').where(fence).first('watermark_path');
+      if (!current) break;
+      displaced = current.watermark_path || null;
+      const update = displaced
+        ? db('photos').where(fence).where('watermark_path', displaced)
+        : db('photos').where(fence).whereNull('watermark_path');
+      written = await update.update({
         watermark_path: result.watermarkPath,
         watermark_generated_at: db.fn.now()
       });
+    }
     const unreferenced = async (key) => !(await db('photos').where({ watermark_path: key }).first('id'));
     if (!written) {
       if (await unreferenced(result.watermarkPath)) await watermarkService.deleteWatermarkFile(result.watermarkPath);
-      return { success: false, watermarkPath: null, error: 'Photo was replaced while its watermark was generated' };
+      return {
+        success: false,
+        watermarkPath: null,
+        error: current ? 'Watermark kept changing while it was recorded' : 'Photo was replaced while its watermark was generated'
+      };
+    }
+    if (displaced && displaced !== result.watermarkPath && displaced !== photo.watermark_path
+        && await unreferenced(displaced)) {
+      await watermarkService.deleteWatermarkFile(displaced);
     }
     // Keys are per source file now; the previous name (the pre-source-key
     // `<id>_watermarked.jpg`, or an attempt's) is dropped once nothing names
@@ -241,6 +265,16 @@ class WatermarkGeneratorService {
   }
 
   /**
+   * Re-cut one gallery's stored watermarks after its watermark text changed.
+   * The old files are not served in the meantime (their key carries the old
+   * text, see watermarkService.storedWatermarkCurrent) and each is dropped
+   * once its replacement is recorded.
+   */
+  regenerateForEvent(eventId) {
+    return applicationWork.track('gallery watermark regeneration', () => this.generateForEvent(eventId));
+  }
+
+  /**
    * Process watermark for a single photo (internal helper)
    */
   async processPhotoWatermark(photo, settings) {
@@ -256,11 +290,15 @@ class WatermarkGeneratorService {
         if (!fresh || !fresh.enabled) {
           return { success: false, watermarkPath: null, error: 'Watermarking is disabled' };
         }
+        // The gallery's text as of now, not as of the batch query: the admin
+        // may have changed it while this job queued.
+        const gallery = await db('events').where('id', photo.event_id).first('watermark_text');
+        const forGallery = watermarkService.forEvent(settings, gallery);
         return storageKey
           ? withLocalCopy(storageKey, (lp) =>
-            watermarkService.generateAndSaveWatermark(photo, lp, settings)
+            watermarkService.generateAndSaveWatermark(photo, lp, forGallery)
           )
-          : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), settings);
+          : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), forGallery);
       });
 
       return { ...(result.success ? await this.recordWatermark(photo, result) : result), photoId: photo.id };

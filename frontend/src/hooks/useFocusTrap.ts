@@ -18,10 +18,13 @@ export const useFocusTrap = (isActive: boolean, { containFocus = false }: { cont
     const container = containerRef.current;
     // Read on every Tab, not once: a control enabled or added after the trap
     // opened (a dialog's primary action, once its data has loaded) must be
-    // reachable too.
+    // reachable too. A control not rendered at this breakpoint (`hidden
+    // lg:flex`) is skipped: as the first or last entry it cannot take focus,
+    // so the wrap would stall on it. Without checkVisibility (jsdom, older
+    // Safari) every match counts, as before.
     const focusable = () => Array.from(container.querySelectorAll<HTMLElement>(
       'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    ));
+    )).filter((el) => typeof el.checkVisibility !== 'function' || el.checkVisibility());
 
     // Focus first element when trap is activated
     if (!(containFocus && inOtherDialog(document.activeElement, container))) {

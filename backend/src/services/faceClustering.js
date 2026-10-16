@@ -127,7 +127,31 @@ function meetsQualityFloor(face, thresholds) {
  */
 const eventLocks = new Map();
 
+/**
+ * The PostgreSQL half of withEventLock on its own: the event's advisory lock,
+ * held until `trx` ends and re-entrant within it. A no-op without a
+ * transaction and on SQLite.
+ */
+async function lockEventPeople(eventId, trx) {
+  // pg_advisory_xact_lock is released automatically when the transaction
+  // ends, including on rollback — no leak if the caller throws.
+  if (trx && typeof trx.raw === 'function') {
+    const client = db.client.config.client;
+    const isPg = client === 'pg' || (typeof client === 'string' && client.includes('postgres'));
+    if (isPg) {
+      await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [1074, Number(eventId)]);
+    }
+  }
+}
+
 async function withEventLock(eventId, trx, fn) {
+  // The advisory lock before the in-process mutex, not inside it: a recluster
+  // holds it without the mutex (lockEventPeople) while it waits for a scan's
+  // rows, and a worker of this process waiting for it in PostgreSQL while
+  // holding the mutex would park that scan behind the mutex, a cycle
+  // PostgreSQL cannot see. Nothing reports it; all of them hang.
+  await lockEventPeople(eventId, trx);
+
   const previous = eventLocks.get(eventId) || Promise.resolve();
   let release;
   const current = new Promise((resolve) => { release = resolve; });
@@ -135,15 +159,6 @@ async function withEventLock(eventId, trx, fn) {
 
   await previous;
   try {
-    // pg_advisory_xact_lock is released automatically when the transaction
-    // ends, including on rollback — no leak if the caller throws.
-    if (trx && typeof trx.raw === 'function') {
-      const client = db.client.config.client;
-      const isPg = client === 'pg' || (typeof client === 'string' && client.includes('postgres'));
-      if (isPg) {
-        await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [1074, Number(eventId)]);
-      }
-    }
     return await fn();
   } finally {
     release();
@@ -854,7 +869,12 @@ async function mergePeople(eventId, sourceIds, targetId) {
   const ids = sourceIds.filter((id) => id !== targetId);
   if (!ids.length) return { moved: 0 };
 
-  return db.transaction(async (trx) => {
+  const merge = () => db.transaction(async (trx) => {
+    // The event's people lock first (PostgreSQL), as a scan takes it before
+    // it touches face or person rows: moving faces and deleting the sources
+    // locks the rows a scan of the same people rewrites, in another order
+    // (issue 2069).
+    await lockEventPeople(eventId, trx);
     // Carry metadata forward before the sources are deleted. Without this a
     // merge silently discards a photographer-entered name, or un-hides a
     // person they had suppressed — the target keeps its own values where it
@@ -939,6 +959,21 @@ async function mergePeople(eventId, sourceIds, targetId) {
     await recomputeCentroid(targetId, trx);
     return { moved };
   });
+
+  // Once more after a deadlock on PostgreSQL (SQLSTATE 40P01, issue 2108).
+  // Moving the faces takes a key-share lock on the target through the
+  // foreign key before the sources are deleted; a scan rebuilding the same
+  // people locks them in its own order (one it updates, one it deletes once
+  // it has no faces left). No order taken here fits every scan, and the
+  // transaction has no effect outside the database, so the loser simply runs
+  // again against what the other side committed.
+  try {
+    return await merge();
+  } catch (err) {
+    if (err?.code !== '40P01') throw err;
+    logger.warn(`faceClustering: merge into person ${targetId} hit a deadlock, retrying once`);
+    return merge();
+  }
 }
 
 /**
@@ -948,6 +983,18 @@ async function splitPerson(eventId, personId, faceIds) {
   if (!faceIds?.length) return null;
 
   return db.transaction(async (trx) => {
+    // The event's people lock before the faces are read (PostgreSQL), as
+    // mergePeople takes it (issue 2119). Without it a scan assigning faces to
+    // this person could commit between the read and the recompute below, and
+    // the person's centroid and count would miss its face; and moving faces
+    // and rewriting both people locks rows a scan of the same people writes,
+    // in another order. The event row before it, as a key share: the person
+    // inserted below takes one through its event FK, and the lock order is
+    // event row, then this lock.
+    if (trx.client.config.client === 'pg') {
+      await trx('events').where({ id: eventId }).forKeyShare().first('id');
+    }
+    await lockEventPeople(eventId, trx);
     const faces = await trx('photo_faces')
       .where({ event_id: eventId, person_id: personId })
       .whereIn('id', faceIds)
@@ -1049,11 +1096,62 @@ async function recomputeCentroid(personId, trx = db) {
 async function recluster(eventId) {
   const thresholds = await getThresholds();
 
+  // Clearing, re-assigning, re-attaching the human state and recomputing the
+  // centroids are ONE transaction under the event's advisory lock (issue
+  // 2112). Run as separate steps, the event showed no people (then unnamed,
+  // un-hidden ones) until the last step landed, a failure part-way left it
+  // that way, and assignFaces ran without a transaction: it held the
+  // in-process lock without the PostgreSQL one, so a scan holding that one
+  // and waiting for the in-process lock hung both, unseen by either side.
+  //
+  // The advisory lock alone, not withEventLock's in-process mutex: this
+  // transaction can wait on row locks other writers of the event hold, and
+  // holding the mutex meanwhile would park any of them that reaches
+  // assignFaces on it in Node, a cycle PostgreSQL cannot see. Every scan
+  // takes the advisory lock before its first face or person row, so it still
+  // serialises against this. On SQLite the transaction holds the only
+  // connection, so nothing else runs until it ends.
+  //
+  // Everything inside goes through `trx`, never `db`: on SQLite a second
+  // query would wait for this transaction. consolidate() stays outside,
+  // since every merge it makes is a transaction of its own.
+  const run = () => db.transaction(async (trx) => {
+    // The event row first on PostgreSQL, as a key share: every person this
+    // inserts takes one through its event FK, and taken there, after the
+    // event's faces were locked, it closed a cycle with a gallery delete,
+    // which locks the event FOR UPDATE and then deletes those faces.
+    if (trx.client.config.client === 'pg') {
+      await trx('events').where({ id: eventId }).forKeyShare().first('id');
+    }
+    await lockEventPeople(eventId, trx);
+    await reclusterLocked(eventId, thresholds, trx);
+  });
+  try {
+    await run();
+  } catch (err) {
+    // A writer that locks the event's face or person rows without the
+    // advisory lock (a merge or split moving faces) can still close a cycle
+    // with this one, which PostgreSQL breaks with SQLSTATE 40P01. Nothing
+    // here acts outside the database, so the loser runs once more against
+    // what the other side committed.
+    if (err?.code !== '40P01') throw err;
+    logger.warn(`faceClustering: recluster of event ${eventId} hit a deadlock, retrying once`);
+    await run();
+  }
+
+  await consolidate(eventId, { thresholds });
+
+  const count = await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first();
+  logger.info(`faceClustering: reclustered event ${eventId} → ${count?.c ?? 0} people`);
+  return Number(count?.c ?? 0);
+}
+
+async function reclusterLocked(eventId, thresholds, trx) {
   // Remember every person carrying HUMAN state — a name, or a hidden/ignored
   // decision. Keying this on `label` alone silently dropped the privacy flags
   // of unnamed people: a bystander the photographer had suppressed came back
   // guest-visible after one "Re-group people".
-  const previousLabels = await db('event_people')
+  const previousLabels = await trx('event_people')
     .where({ event_id: eventId })
     .where(function () {
       this.whereNotNull('label')
@@ -1068,24 +1166,24 @@ async function recluster(eventId) {
 
   const priorMembership = new Map();
   if (previousLabels.length) {
-    const rows = await db('photo_faces')
+    const rows = await trx('photo_faces')
       .where({ event_id: eventId })
       .whereIn('person_id', previousLabels.map((p) => p.id))
       .select('id', 'person_id');
     for (const row of rows) priorMembership.set(row.id, row.person_id);
   }
 
-  await db.transaction(async (trx) => {
-    await trx('photo_faces').where({ event_id: eventId }).update({ person_id: null });
-    await trx('event_people').where({ event_id: eventId }).del();
-  });
+  await trx('photo_faces').where({ event_id: eventId }).update({ person_id: null });
+  await trx('event_people').where({ event_id: eventId }).del();
 
-  const faces = await db('photo_faces')
+  const faces = await trx('photo_faces')
     .where({ event_id: eventId })
     .orderBy('id', 'asc')
     .select('id', 'embedding', 'model_version', 'det_score', 'bbox_w', 'bbox_h');
 
-  const assignments = await assignFaces(eventId, faces, { thresholds });
+  // assignFacesLocked, not assignFaces: the advisory lock is already held,
+  // and the in-process mutex must not be taken here (see recluster).
+  const assignments = await assignFacesLocked(eventId, faces, thresholds, trx);
 
   // Re-attach labels by majority inheritance.
   if (previousLabels.length) {
@@ -1152,18 +1250,13 @@ async function recluster(eventId) {
       const update = { ...flags, updated_at: new Date().toISOString() };
       if (coverFor.has(newId)) update.cover_face_id = coverFor.get(newId);
       if (labelFor.has(newId)) update.label = labelFor.get(newId);
-      await db('event_people').where({ id: newId }).update(update);
+      await trx('event_people').where({ id: newId }).update(update);
     }
   }
 
   for (const personId of new Set(assignments.map((a) => a.personId).filter(Boolean))) {
-    await recomputeCentroid(personId);
+    await recomputeCentroid(personId, trx);
   }
-  await consolidate(eventId, { thresholds });
-
-  const count = await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first();
-  logger.info(`faceClustering: reclustered event ${eventId} → ${count?.c ?? 0} people`);
-  return Number(count?.c ?? 0);
 }
 
 module.exports = {
@@ -1173,6 +1266,7 @@ module.exports = {
   normalize,
   meetsQualityFloor,
   assignFaces,
+  lockEventPeople,
   consolidate,
   suggestMerges,
   dismissMergeSuggestion,

@@ -353,14 +353,15 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
 
               {/* Notifications dropdown */}
               {notificationsModal.isOpen && (
-                <div className="absolute right-0 mt-2 w-96 bg-panel rounded-lg shadow-lg border border-line">
-                  <div className="px-4 py-3 border-b border-line flex items-center justify-between">
+                <div className="absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-panel rounded-lg shadow-lg border border-line">
+                  {/* Wraps instead of squeezing: the two actions beside the title overran the 384px panel in German (issue 2088). */}
+                  <div className="px-4 py-3 border-b border-line flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                     <h3 className="text-sm font-semibold text-heading">{t('admin.notifications')}</h3>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       {unreadCount > 0 && (
                         <button
                           onClick={() => markAllAsReadMutation.mutate()}
-                          className="text-xs text-accent hover:opacity-80 flex items-center gap-1"
+                          className="text-xs text-accent hover:opacity-80 flex items-center gap-1 whitespace-nowrap"
                           title={t('admin.markAllRead')}
                         >
                           <CheckCircle className="w-3 h-3" />
@@ -369,7 +370,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
                       )}
                       <button
                         onClick={() => clearAllMutation.mutate()}
-                        className="text-xs text-soft hover:text-body flex items-center gap-1"
+                        className="text-xs text-soft hover:text-body flex items-center gap-1 whitespace-nowrap"
                         title={t('admin.clearAll')}
                       >
                         <Trash2 className="w-3 h-3" />

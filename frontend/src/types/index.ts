@@ -84,6 +84,7 @@ export interface Event {
   protection_level?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   disable_right_click?: boolean;
   watermark_downloads?: boolean;
+  watermark_text?: string | null;
   enable_devtools_protection?: boolean;
   use_canvas_rendering?: boolean;
   // Hero logo customization fields
