@@ -24,6 +24,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { once } = require('events');
 const { db, logActivity } = require('../database/db');
 const { getAppSetting } = require('../utils/appSettings');
 const { getStorage } = require('./storage');
@@ -750,6 +751,12 @@ async function softDeleteByCustomer(customerId, documentId, actor) {
  * Open the stored bytes. On local storage the resolved path is checked to sit
  * inside business-docs/customer-documents before it is opened, so a bad row
  * can't turn a download into a read of some other file.
+ *
+ * The local stream is returned open, not lazy (issue 2137): the download
+ * routes await their bookkeeping before piping it, and a file removed in
+ * between would emit ENOENT with no listener and end the process. Waiting
+ * for 'ready' turns that into a rejection here, as S3's get() rejects for a
+ * missing key, before a view is recorded.
  */
 async function openStream(row) {
   if (row.purged_at) throw new AppError('This document is no longer available', 410, 'DOCUMENT_PURGED');
@@ -758,7 +765,9 @@ async function openStream(row) {
   if (storage.kind() === 'local') {
     const abs = storage.resolveLocalPath(row.storage_key);
     const safe = assertPathInside(abs, [path.join(getStoragePath(), STORAGE_PREFIX)]);
-    return fs.createReadStream(safe);
+    const stream = fs.createReadStream(safe);
+    await once(stream, 'ready');
+    return stream;
   }
   return storage.get(row.storage_key);
 }
