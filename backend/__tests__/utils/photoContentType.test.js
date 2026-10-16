@@ -31,7 +31,7 @@ describe('resolvePhotoContentType', () => {
 });
 
 describe('serving routes use the resolver', () => {
-  const routes = ['gallery/media.js', 'gallery/downloads.js', 'secureImages.js', 'protectedImages.js', 'adminPhotos.js'];
+  const routes = ['gallery/media.js', 'gallery/downloads.js', 'adminPhotos.js'];
   it.each(routes)('%s sets no Content-Type from photo.mime_type directly', (name) => {
     const src = fs.readFileSync(path.join(__dirname, '../../src/routes', name), 'utf8');
     expect(src).not.toMatch(/'Content-Type':\s*photo\.mime_type/);

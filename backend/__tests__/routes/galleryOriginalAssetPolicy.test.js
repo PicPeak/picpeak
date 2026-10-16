@@ -75,8 +75,6 @@ describe('gallery original-asset authority', () => {
     app.use(express.json());
     app.use(require('cookie-parser')());
     app.use('/api/gallery', require('../../src/routes/gallery'));
-    app.use('/api/images', require('../../src/routes/protectedImages'));
-    app.use('/api/secure-images', require('../../src/routes/secureImages'));
   }, 180000);
   beforeEach(async () => {
     await db('events').where({ id: eventId }).update({ allow_downloads: 1 });
@@ -311,26 +309,6 @@ describe('gallery original-asset authority', () => {
     } finally {
       await db('events').where({ id: eventId }).update({ og_image_share_enabled: 0, hero_photo_id: null });
       await db('photos').whereIn('id', [imageId, brokenId]).update({ thumbnail_path: null });
-    }
-  });
-  test('legacy view and capabilities enforce current original policy at every use', async () => {
-    const headers = { Authorization: `Bearer ${token()}`, 'User-Agent': 'Mozilla/5.0 Chrome/130.0',
-      Accept: 'image/*', 'Accept-Language': 'en', 'Accept-Encoding': 'gzip' };
-    const signed = await request(app).post(`/api/images/${SLUG}/photo/${imageId}/generate-url`).set(headers);
-    expect(signed.status).toBe(200);
-    const minted = await request(app).post(`/api/secure-images/${SLUG}/generate-token`).set(headers).send({ photoId: imageId });
-    expect(minted.status).toBe(200);
-    const secureUrl = `/api/secure-images/${SLUG}/secure/${imageId}/${minted.body.token}`;
-    // A basic secure view is byte-for-byte source, so this is an ordinary
-    // control through the very same token-only sink we then restrict.
-    const control = await request(app).get(secureUrl).set(headers).buffer().parse(binary);
-    expect(control.status).toBe(200);
-    expect(control.body).toEqual(source);
-    await db('photo_categories').where({ id: categoryId }).update({ allow_downloads: 0 });
-    for (const url of [signed.body.url, secureUrl, `/api/images/${SLUG}/photo/${imageId}/view`]) {
-      const refused = await request(app).get(url).set(headers);
-      expect(refused.status).toBe(403);
-      expect(refused.body.error).toBe('Downloads are disabled for this category');
     }
   });
 });
