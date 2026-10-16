@@ -187,6 +187,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     disable_right_click: event.disable_right_click == null ? true : truthy(event.disable_right_click),
     allow_downloads: event.allow_downloads == null ? true : truthy(event.allow_downloads),
     watermark_downloads: truthy(event.watermark_downloads),
+    watermark_text: event.watermark_text || '',
     enable_devtools_protection: event.enable_devtools_protection == null ? true : truthy(event.enable_devtools_protection),
     use_canvas_rendering: truthy(event.use_canvas_rendering),
     // null = inherit the global branding toggle / size (#756)
@@ -260,6 +261,7 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   disable_right_click: 'downloads',
   allow_downloads: 'downloads',
   watermark_downloads: 'downloads',
+  watermark_text: 'downloads',
   enable_devtools_protection: 'downloads',
   use_canvas_rendering: 'downloads',
   allow_user_uploads: 'guests',
@@ -420,6 +422,7 @@ function requestFields(f: EventFields): Record<string, unknown> {
     disable_right_click: f.disable_right_click,
     allow_downloads: f.allow_downloads,
     watermark_downloads: f.watermark_downloads,
+    watermark_text: f.watermark_text.trim(),
     enable_devtools_protection: f.enable_devtools_protection,
     use_canvas_rendering: f.use_canvas_rendering,
     photo_cap: f.photo_cap > 0 ? f.photo_cap : null,

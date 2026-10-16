@@ -270,6 +270,17 @@ async function removeAbandonedUpload(lease) {
   }
 }
 
+/** rmdir, bottom-up, every directory under `dir` (and `dir`) that holds nothing. */
+async function pruneEmptyDirs(dir) {
+  const entries = await fsp.readdir(dir, { withFileTypes: true }).catch(() => null);
+  if (!entries) return;
+  for (const entry of entries) {
+    if (entry.isDirectory()) await pruneEmptyDirs(path.join(dir, entry.name));
+  }
+  // Fails, and is meant to, on a directory that still holds something.
+  await fsp.rmdir(dir).catch(() => {});
+}
+
 /** After a publish: the gallery has a newer archive, the restored-from zips can go. */
 async function removeSupersededArchives(lease, publishedKey, event) {
   try {
@@ -440,7 +451,12 @@ async function buildArchive(event, lease) {
 
     // Stream every photo (and any other content under events/active/{slug}/) into
     // the zip directly from the storage backend.
-    const photoEntries = await storage.list(eventPrefix);
+    const allEntries = await storage.list(eventPrefix);
+    // The prepared-download cache (.download-cache/all.zip and the download
+    // job artifacts) is derived data: left out of the zip, which it would
+    // otherwise double, and deleted with the originals below.
+    const cachePrefix = `${eventPrefix}/.download-cache/`;
+    const photoEntries = allEntries.filter((entry) => !entry.key.startsWith(cachePrefix));
 
     // #493: optionally rename zip entries to use original camera filenames.
     // Build a Map<storage_key, original_filename> from the photos table so we
@@ -645,12 +661,28 @@ async function buildArchive(event, lease) {
       });
     } catch (e) { /* non-fatal */ }
 
+    // The download cache goes with the originals and is not in the zip, so a
+    // finished download job would be reused after a restore and answer 410
+    // until it expired: fail them, the next request builds a new one.
+    await assertStillHeld();
+    await db('download_jobs').where({ event_id: event.id, status: 'ready' }).update({
+      status: 'failed',
+      error: 'The gallery was archived, please request the download again',
+      completed_at: new Date().toISOString(),
+    });
+
     // Delete the originals from storage.
-    for (const entry of photoEntries) {
+    for (const entry of allEntries) {
       await assertStillHeld();
       await storage.delete(entry.key).catch((err) =>
         logger.warn(`Failed to delete archived original ${entry.key}: ${err.message}`)
       );
+    }
+
+    // On local disk the deleted keys were files in subfolders (collages/,
+    // individual/, .download-cache/): drop what is empty now.
+    if (storage.kind() === 'local') {
+      await pruneEmptyDirs(storage.resolveLocalPath(eventPrefix)).catch(() => {});
     }
 
     // Delete derived images (thumbnails / heroes / previews / watermarks)
@@ -768,7 +800,7 @@ function convertToCSV(data) {
 }
 
 module.exports = {
-  archiveEvent, claimArchive, isArchiveRunning, recordSupersededArchive, supersededArchives,
+  archiveEvent, claimArchive, isArchiveRunning, pruneEmptyDirs, recordSupersededArchive, supersededArchives,
   legacyArchiveKeys, exportArchiveRecords, importArchiveRecords,
   expiryAttempts, readExpiryAttempt, writeExpiryAttempt,
 };

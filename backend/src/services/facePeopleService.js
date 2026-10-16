@@ -30,6 +30,8 @@ function applyVisibilityScope(query, { isClient, forAdmin = false }) {
   query.where(function () {
     this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
   });
+  // A file gone from the share (migration 312): in no gallery view.
+  if (!forAdmin) query.whereNull('photos.unavailable_reason');
   if (!isClient) {
     query.where(function () {
       this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');

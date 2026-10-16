@@ -65,8 +65,12 @@ const { resolveUploadPlacement, placementColumns, afterUploadPlacement } = requi
 
 /** `folder_id` from a request as a photo column: a folder of this event, or null for the root. */
 async function folderIdUpdate(eventId, raw) {
-  const id = parseInt(raw, 10);
-  if (raw === null || raw === undefined || raw === '' || !(id > 0)) return { folder_id: null };
+  // null, '' and 0 mean the gallery root; anything else that is not a
+  // positive integer is refused rather than silently moving to the root.
+  if (raw === null || raw === undefined || raw === '' || raw === 0 || raw === '0') return { folder_id: null };
+  const isWhole = (typeof raw === 'number' && Number.isSafeInteger(raw)) || (typeof raw === 'string' && /^\d{1,10}$/.test(raw));
+  const id = isWhole ? Number(raw) : NaN;
+  if (!(id > 0 && id <= 2147483647)) return { error: `Invalid folder_id ${JSON.stringify(raw)}` };
   const folder = await require('../services/folderTreeService').findEventFolder(eventId, id);
   if (!folder) return { error: `Unknown folder_id ${id}` };
   return { folder_id: id };
@@ -77,7 +81,7 @@ const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
 const { sha256File, findDuplicate, duplicateName } = require('../services/photoDuplicates');
 
 
-const { validateFileType, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
+const { validateFileType, validateFileContent, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
 
 // Create a multer instance that uses dynamically resolved allowed MIME types.
 // The allowed types are fetched from the database once per request (before multer
@@ -99,6 +103,7 @@ const UPLOAD_TEXT_FIELDS = 7;
 const createUpload = (maxFileSizeBytes, maxFiles, { storage, streamHandler, rejectBody }) => multer({
   storage,
   streamHandler,
+  defParamCharset: 'utf8', // multer's latin1 default turns UTF-8 names into mojibake
   limits: {
     fileSize: maxFileSizeBytes,
     files: maxFiles,
@@ -539,17 +544,21 @@ async function handleAdminPhotoUpload(req, res) {
     // The type split lets the activity line say "2 videos" instead of
     // "2 photos" for a video upload (issue 1430, item 3).
     const videoCount = uploadedPhotos.filter((p) => p.media_type === 'video').length;
-    await logActivity('photos_uploaded',
-      {
-        count: uploadedPhotos.length,
-        photoCount: uploadedPhotos.length - videoCount,
-        videoCount,
-        replacedCount: replacedPhotos.length,
-        eventName: event.event_name,
-      },
-      eventId,
-      { type: 'admin', id: req.admin.id, name: req.admin.username }
-    );
+    // Nothing stored and nothing replaced (every file a duplicate or
+    // refused) is not an upload to log (issue 2086).
+    if (uploadedPhotos.length > 0 || replacedPhotos.length > 0) {
+      await logActivity('photos_uploaded',
+        {
+          count: uploadedPhotos.length,
+          photoCount: uploadedPhotos.length - videoCount,
+          videoCount,
+          replacedCount: replacedPhotos.length,
+          eventName: event.event_name,
+        },
+        eventId,
+        { type: 'admin', id: req.admin.id, name: req.admin.username }
+      );
+    }
 
     await afterUploadPlacement(eventId, placement, uploadedPhotos.length,
       { type: 'admin', id: req.admin.id, name: req.admin.username });
@@ -1515,6 +1524,12 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       query = query.where('photos.moderation_status', req.query.moderation);
     }
 
+    // Photos whose file is gone from the external share (issue 2121), for
+    // the admin to delete or wait for.
+    if (req.query.unavailable === 'true') {
+      query = query.whereNotNull('photos.unavailable_reason');
+    }
+
     // Filter by category_id
     if (category_id !== undefined && category_id !== '' && category_id !== '0') {
       if (category_id === 'individual' || category_id === 'collage') {
@@ -1694,9 +1709,13 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     // picked up the wrong files. Sorted here rather than in SQL: the list is
     // not paginated, and neither engine has a natural collation to ask for.
     if (sort === 'name') {
+      // The generated `filename` is the storage name (timestamp/uuid prefix), so
+      // ordering by it gives upload order. The name the photographer sees and
+      // searches by is original_filename (issue 2073).
+      const displayNameOf = (p) => p.original_filename || p.filename || '';
       const direction = order === 'asc' ? 1 : -1;
       photos.sort((a, b) => direction
-        * (NATURAL_NAME_ORDER.compare(a.filename || '', b.filename || '') || a.id - b.id));
+        * (NATURAL_NAME_ORDER.compare(displayNameOf(a), displayNameOf(b)) || a.id - b.id));
     }
     
     // Get comment counts separately
@@ -1759,6 +1778,9 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // Set on a complete video that shows the placeholder tile (issue
         // 1430, item 6); the grid shows the note and offers Retry.
         processing_error: photo.processing_error || null,
+        // Why no gallery viewer sees the photo right now (issue 2121):
+        // 'source_missing' when its file is gone from the share.
+        unavailable_reason: photo.unavailable_reason || null,
         category_id: photo.category_id || photo.type,
         // Only a real category has a name here. The fallback used to be the
         // English "Individual Photos" / "Collages", which no locale could
@@ -2207,6 +2229,26 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     if (capRefusal) {
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
       return res.status(400).json(capRefusal);
+    }
+
+    // The same content check the multipart upload applies: the bytes must
+    // match the declared type, and an image must decode. The merged file is
+    // the first moment the whole content exists here.
+    const resolvedMimeType = normalizeUploadMimeType(mergedFile.filename, mergedFile.mimeType);
+    const contentFiles = [{ originalname: mergedFile.filename, path: mergedFile.path, mimetype: resolvedMimeType }];
+    let contentError = null;
+    if (!(await validateFileContent(mergedFile.path, resolvedMimeType))) {
+      contentError = `File content does not match declared type: ${mergedFile.filename}`;
+    } else {
+      const checked = { files: contentFiles };
+      await validateUploadedFiles(checked, res, () => {});
+      if (checked.files.length === 0) {
+        contentError = `Invalid image file: ${mergedFile.filename}`;
+      }
+    }
+    if (contentError) {
+      await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
+      return res.status(400).json({ error: contentError });
     }
 
     // Process the merged file as a regular upload

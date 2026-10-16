@@ -38,6 +38,17 @@ export const DownloadsSection: React.FC<FieldsProps & {
               <span className="text-sm text-body">{label}</span>
             </label>
           ))}
+          <div className="max-w-md">
+            <label className={labelClass} htmlFor="event-watermark-text">{t('events.watermarkText', 'Watermark text')}</label>
+            <input
+              id="event-watermark-text"
+              type="text"
+              value={f.watermark_text}
+              onChange={(e) => set({ watermark_text: e.target.value })}
+              className={inputClass}
+            />
+            <p className="text-xs text-muted mt-1">{t('events.watermarkTextHelp', 'Replaces the company name in this gallery\'s text watermark. Leave empty to use the company name. Not shown when Branding has a watermark logo.')}</p>
+          </div>
           <p className="text-xs text-muted flex items-center gap-1">
             <Shield className="w-3.5 h-3.5" />
             {t('events.protectionInfo', 'Protection features help prevent unauthorized downloads but cannot block all methods.')}

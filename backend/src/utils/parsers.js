@@ -193,7 +193,20 @@ const parseArrayInput = (value, defaultValue = []) => {
   return defaultValue;
 };
 
+/**
+ * A row id from a URL segment or body: digits only, 1 to the int4 maximum
+ * (photo ids are int4 on PostgreSQL, where a wider value is a 500, not a miss).
+ * Returns the number, or null for anything else ("1e3", "1.5", "abc", "-1").
+ */
+const parsePositiveInt32 = (value) => {
+  const text = typeof value === 'number' ? String(value) : value;
+  if (typeof text !== 'string' || !/^[0-9]{1,10}$/.test(text)) return null;
+  const n = Number(text);
+  return n >= 1 && n <= 2147483647 ? n : null;
+};
+
 module.exports = {
+  parsePositiveInt32,
   parseBooleanInput,
   parseNumberInput,
   parseStringInput,

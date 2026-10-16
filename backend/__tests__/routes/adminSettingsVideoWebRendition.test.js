@@ -114,7 +114,9 @@ describe('general_video_web_rendition (issue 1430)', () => {
     expect((await db('photos').where({ id: rows.failed }).first()).web_error).toBeNull();
 
     expect(await statusOf('done')).toBe('complete');
-    expect(await statusOf('skipped')).toBe('skipped');
+    // Metadata stripping is on by default (issue 2102): a video skipped
+    // because it played as it was gets its metadata-free remux now.
+    expect(await statusOf('skipped')).toBe('pending');
     expect(await statusOf('busy')).toBe('processing');
     // Not complete yet: the upload worker queues it when it is.
     expect(await statusOf('still-uploading')).toBeNull();

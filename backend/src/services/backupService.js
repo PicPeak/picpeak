@@ -2161,6 +2161,78 @@ async function validateBackupManifest(manifestPath) {
   }
 }
 
+/**
+ * Resolve a manifest file name given to the validate endpoints to a file
+ * inside one of the directories manifests are written to (the configured
+ * manifest directory, the default one next to the backup, the BACKUP_PATH
+ * override the endpoints used to be bound to, and on a miss each local run's
+ * own manifests/ folder). Every candidate goes through safePathJoin, so a
+ * traversal input throws and nothing outside those directories is read.
+ * Returns null when no such file exists.
+ */
+async function resolveManifestFile(manifestPath, providedConfig = null) {
+  const { safePathJoin, assertRealpathUnder } = require('../utils/fileSecurityUtils');
+  const config = providedConfig || await getBackupConfigInternal().catch(() => ({})) || {};
+  const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
+  const findIn = async (bases) => {
+    let found = null;
+    for (const base of bases) {
+      // A path as the status endpoint reports it (absolute) maps to its
+      // place under the directory; anything outside stays outside and is
+      // refused by safePathJoin below.
+      let relative = manifestPath;
+      if (path.isAbsolute(manifestPath)) {
+        const rel = path.relative(path.resolve(base), manifestPath);
+        if (!rel.startsWith('..') && !path.isAbsolute(rel)) relative = rel;
+      }
+      const candidate = safePathJoin(base, relative);
+      if (!found) {
+        const stat = await fs.stat(candidate).catch(() => null);
+        if (stat && stat.isFile()) {
+          // safePathJoin is lexical: a symlink inside the directory must not
+          // lead the read outside it.
+          await assertRealpathUnder(base, candidate);
+          found = candidate;
+        }
+      }
+    }
+    return found;
+  };
+
+  const found = await findIn([
+    config.backup_manifest_path,
+    path.join(destinationRoot, 'manifests'),
+    process.env.BACKUP_PATH,
+  ].filter((base) => typeof base === 'string' && base));
+  if (found) return found;
+
+  // A local backup writes its manifest into its own run directory,
+  // <destination>/backup-<uuid>/manifests, unless backup_manifest_path is
+  // set and usable (saveManifestToLocal gets the run directory as its
+  // destination). Only asked on a miss, and only that run when the path
+  // names one, so a slow destination does not hold up the common case.
+  const named = path.isAbsolute(manifestPath)
+    ? path.relative(path.resolve(destinationRoot), manifestPath).split(path.sep) : [];
+  const runNames = named.length === 3 && named[0].startsWith('backup-') && named[1] === 'manifests'
+    ? [named[0]]
+    : (await fs.readdir(destinationRoot, { withFileTypes: true }).catch(() => []))
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('backup-'))
+      .map((entry) => entry.name);
+  const runBases = [];
+  for (const name of runNames) {
+    const base = path.join(destinationRoot, name, 'manifests');
+    // Real directories only, the run's and its manifests/: a symlink would
+    // move the base, and the realpath check with it, outside the destination.
+    const [run, manifests] = await Promise.all([
+      fs.lstat(path.join(destinationRoot, name)).catch(() => null),
+      fs.lstat(base).catch(() => null),
+    ]);
+    if (run && run.isDirectory() && manifests && manifests.isDirectory()) runBases.push(base);
+  }
+  return findIn(runBases);
+}
+
+service.resolveManifestFile = resolveManifestFile;
 service.getBackupConfig = getBackupConfigInternal;
 service.getDatabaseBackupInfo = getDatabaseBackupInfoInternal;
 service.getFilesToBackup = getFilesToBackupInternal;

@@ -571,6 +571,17 @@
         "pets": "Animaux",
         "black_and_white": "Noir et blanc"
       }
+    },
+    "tile": {
+      "viewFullSize": "Afficher en plein écran",
+      "downloadPhoto": "Télécharger la photo",
+      "commentOnPhoto": "Commenter la photo",
+      "likePhoto": "Aimer la photo",
+      "unlikePhoto": "Ne plus aimer la photo",
+      "comment": "Commenter",
+      "like": "J’aime",
+      "unlike": "Retirer le j’aime",
+      "selectPhoto": "Sélectionner {{name}}"
     }
   },
   "categories": {
@@ -752,6 +763,8 @@
     "downloadProtection": "Protection des téléchargements",
     "disableRightClick": "Bloquer le clic droit",
     "watermarkDownloads": "Ajouter un filigrane aux téléchargements",
+    "watermarkText": "Texte du filigrane",
+    "watermarkTextHelp": "Remplace le nom de l'entreprise dans le filigrane texte de cette galerie. Laissez vide pour utiliser le nom de l'entreprise. Non affiché lorsque Branding définit un logo de filigrane.",
     "enableDevtoolsProtection": "Détecter les outils de développement",
     "useCanvasRendering": "Rendu canvas dans la visionneuse (protection avancée)",
     "protectionInfo": "Les fonctionnalités de protection aident à prévenir les téléchargements non autorisés mais ne peuvent pas bloquer toutes les méthodes.",
@@ -1036,6 +1049,10 @@
       "duplicatesNotRemoved": "La galerie est complète, mais les doublons de la première sélection n'ont pas pu être supprimés. Supprimez-les dans l'onglet Photos."
     },
     "externalSource": {
+      "missingFiles_one": "{{count}} fichier manquant",
+      "missingFiles_many": "{{count}} fichiers manquants",
+      "missingFiles_other": "{{count}} fichiers manquants",
+      "missingFilesHint": "Afficher les photos dont le fichier n’est plus dans le dossier",
       "applyStructure": "Appliquer la structure des dossiers",
       "applyStructureHint": "Reproduire les sous-dossiers sur les photos importées avant l'activation de la structure des dossiers",
       "applyStructureTitle": "Appliquer la structure des dossiers ?",
@@ -1077,7 +1094,12 @@
       "publishLink": "Publier"
     },
     "showExifToGuests": "Afficher les données de prise de vue aux invités",
-    "showExifToGuestsHelp": "L'appareil, l'objectif, la focale, l'ouverture, la vitesse d'obturation et la sensibilité ISO apparaissent sous la photo en plein écran. La position et les numéros de série ne sont jamais enregistrés ni affichés."
+    "showExifToGuestsHelp": "L'appareil, l'objectif, la focale, l'ouverture, la vitesse d'obturation et la sensibilité ISO apparaissent sous la photo en plein écran. La position et les numéros de série ne sont jamais enregistrés ni affichés.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "Les sauts de ligne sont conservés dans les e-mails",
+      "tip": "Astuce : appuyez sur Entrée pour créer une nouvelle ligne. Chaque ligne apparaîtra comme un paragraphe distinct dans les e-mails.",
+      "preview": "Aperçu :"
+    }
   },
   "settings": {
     "title": "Paramètres système",
@@ -1092,6 +1114,8 @@
       "maxFileSize": "Taille maximale des fichiers (Mo)",
       "videoWebRendition": "Copies de vidéos lisibles dans le navigateur",
       "videoWebRenditionHelp": "Réencode les vidéos qu’un navigateur ne peut pas lire (HEVC, QuickTime, MP4 non diffusables) en MP4 H.264 pour la lecture. L’original reste le fichier téléchargé. Coûte du CPU par vidéo et un second fichier ; l’activation met en file les vidéos déjà téléversées.",
+      "videoStripMetadata": "Retirer la localisation et les données de l’appareil des vidéos lues",
+      "videoStripMetadataHelp": "Les vidéos qu’un navigateur lit déjà reçoivent une copie sans le lieu d’enregistrement, l’appareil ni d’autres métadonnées, faite sans réencodage ; les invités lisent cette copie. Stocke un fichier supplémentaire par vidéo concernée, d’environ la taille de l’original. L’original reste le fichier téléchargé. La désactivation conserve les copies déjà faites.",
       "videoAdaptiveStreaming": "Streaming vidéo adaptatif",
       "videoAdaptiveStreamingHelp": "Convertit chaque vidéo en un flux en trois qualités au plus (480p, 720p, 1080p), pour que la lecture démarre vite et s’adapte à la connexion. L’original reste le fichier téléchargé. Coûte du CPU par vidéo et à peu près autant d’espace de stockage en plus ; les vidéos de plus de 30 minutes sont lues comme avant.",
       "maxFilesPerUpload": "Nombre maximal de fichiers par téléversement",
@@ -2234,6 +2258,8 @@
       "collages": "Collages",
       "noPosterFrame": "Pas d'image d'aperçu",
       "noPosterFrameRetry": "Reprendre l'image d'aperçu",
+      "fileMissing": "Fichier manquant",
+      "fileMissingTooltip": "Le fichier n’est plus dans le dossier externe. Les invités ne voient pas cette photo ; elle revient quand le fichier revient. Supprimez-la si le fichier a disparu pour de bon.",
       "myMarks": "Vos marques",
       "myMarksHelp": "Vous seul les voyez. Elles n'apparaissent jamais dans la galerie client et s'exportent vers Lightroom en XMP.",
       "myRating": "Votre note",

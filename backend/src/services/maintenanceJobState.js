@@ -195,7 +195,48 @@ async function read(jobName, { staleAfterMs = DEFAULT_STALE_MS } = {}) {
   };
 }
 
+/**
+ * Renew the lease on a timer for as long as the run holds it.
+ *
+ * On a timer, not between photos: a single hung read on a stalled NAS mount or
+ * a slow S3 object can outlast the whole stale window inside one iteration, and
+ * a renewal that only fires between photos never gets to run. The lease would
+ * expire while the job was demonstrably alive, another replica would take it
+ * over, and the two would walk the same rows — precisely the case the lease
+ * exists to prevent. The timer also covers the candidate query, which on a
+ * large library is itself slow.
+ *
+ * `lost()` reports whether the claim has since been taken over. The loops check
+ * it between photos and stop: mid-photo interruption is not possible, so the
+ * worst case is one extra row written by the old runner, and its release is
+ * fenced on the token anyway.
+ */
+function startLeaseKeeper(jobName, token) {
+  let lost = false;
+  const timer = setInterval(async () => {
+    try {
+      if (!(await heartbeat(jobName, token))) {
+        lost = true;
+        clearInterval(timer);
+      }
+    } catch (err) {
+      // heartbeat() already swallows query errors and reports the claim as
+      // held; this is belt-and-braces so an unexpected throw cannot kill the
+      // timer callback and silently stop all renewals.
+      logger.warn(`Lease renewal error for ${jobName}: ${err.message}`);
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+  // Do not hold the event loop open on account of a maintenance sweep.
+  if (typeof timer.unref === 'function') timer.unref();
+
+  return {
+    lost: () => lost,
+    stop: () => clearInterval(timer),
+  };
+}
+
 module.exports = {
+  startLeaseKeeper,
   ensure,
   claim,
   heartbeat,

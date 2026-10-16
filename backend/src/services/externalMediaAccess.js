@@ -191,10 +191,21 @@ async function assignSource(adminId, value, ownerId) {
   const target = safePathJoin(root, relativePath);
   await assertRealpathUnder(root, target);
   // A symlink alias must not turn the same physical folder into two owners.
-  const realRoot = await fs.realpath(root);
-  const realTarget = await fs.realpath(target);
-  if (path.relative(realRoot, realTarget).split(path.sep).join('/') !== relativePath
-    || !(await fs.stat(target)).isDirectory()) {
+  let realRoot;
+  let realTarget;
+  let isDirectory;
+  try {
+    realRoot = await fs.realpath(root);
+    realTarget = await fs.realpath(target);
+    isDirectory = (await fs.stat(target)).isDirectory();
+  } catch (error) {
+    // A folder that is not there is a bad request, not a server fault.
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
+      throw new ExternalMediaAccessError('Source folder does not exist', 400);
+    }
+    throw error;
+  }
+  if (path.relative(realRoot, realTarget).split(path.sep).join('/') !== relativePath || !isDirectory) {
     throw new ExternalMediaAccessError('Source must be a real directory, not a symlink alias', 400);
   }
   return db.transaction(async (trx) => {
