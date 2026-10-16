@@ -2370,11 +2370,14 @@ END $$;`
    * Log message
    */
   log(level, message, details = {}) {
+    // The entries reach API responses and the stored restore log: a stack
+    // trace names server paths and internals, and goes to the server log only.
+    const { stack: _stack, ...publicDetails } = details || {};
     const logEntry = {
       timestamp: new Date().toISOString(),
       level,
       message,
-      details
+      details: publicDetails
     };
     
     this.restoreLog.push(logEntry);

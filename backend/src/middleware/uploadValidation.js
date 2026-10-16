@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 /**
  * Validate uploaded file is complete and not corrupted
  */
-async function validateUploadedFile(filePath) {
+async function validateUploadedFile(filePath, extension, queueing = {}) {
   try {
     // Check file exists and has size
     const stats = await fs.stat(filePath);
@@ -15,7 +15,9 @@ async function validateUploadedFile(filePath) {
     }
     
     // For image files, verify they can be read by Sharp
-    const ext = path.extname(filePath).toLowerCase();
+    // A public upload is staged under an extension-less name; the caller
+    // passes the extension of the original filename then.
+    const ext = (extension || path.extname(filePath)).toLowerCase();
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
     
     if (imageExtensions.includes(ext)) {
@@ -24,7 +26,8 @@ async function validateUploadedFile(filePath) {
       try {
         metadata = await sharp(filePath, {
           failOn: 'none', // Don't fail on recoverable errors
-          limitInputPixels: 268402689 // ~16k x 16k max
+          limitInputPixels: 268402689, // ~16k x 16k max
+          ...queueing
         }).metadata();
       } catch (metadataError) {
         // If metadata reading fails, the file is likely incomplete
@@ -44,7 +47,8 @@ async function validateUploadedFile(filePath) {
       try {
         await sharp(filePath, {
           failOn: 'none',
-          limitInputPixels: 268402689
+          limitInputPixels: 268402689,
+          ...queueing
         })
           .resize(10, 10) // Try to resize to very small size
           .toBuffer();
@@ -73,10 +77,21 @@ async function validateUploadedFiles(req, res, next) {
   const validFiles = [];
   const invalidFiles = [];
   const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-  const entries = req.files.filter(file => imageExtensions.includes(path.extname(file.path).toLowerCase())).map(file => file.path);
+  // The declared type decides when the name carries no image extension: the
+  // v1 upload takes any image/* type under any filename.
+  const DECODABLE_TYPES = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp' };
+  const extOf = (file) => {
+    const ext = (path.extname(file.path) || path.extname(file.originalname || '')).toLowerCase();
+    return imageExtensions.includes(ext) ? ext : (DECODABLE_TYPES[file.mimetype] || ext);
+  };
+  // A dropped upload stops its decode. Not interactive: a full queue would
+  // answer "busy", which keeps the file unchecked (see below), so flooding
+  // the queue would skip the check. The check waits for a worker instead.
+  const queueing = { signal: req.publicUploadReservation?.signal };
+  const entries = req.files.filter(file => imageExtensions.includes(extOf(file))).map(file => file.path);
   let validated = null;
   if (entries.length >= 8) {
-    try { validated = new Map((await sharp.metadataBatch(entries, { validate: true, signal: req.publicUploadReservation?.signal })).map(result => [result.input, result])); }
+    try { validated = new Map((await sharp.metadataBatch(entries, { validate: true, ...queueing })).map(result => [result.input, result])); }
     catch (error) { validated = null; } // Each file is then checked on its own, below.
   }
   
@@ -86,7 +101,7 @@ async function validateUploadedFiles(req, res, next) {
       const cached = validated?.get(file.path);
       if (cached?.error) throw Object.assign(new Error(cached.error.message), cached.error);
       const stat = cached && await fs.stat(file.path);
-      if (!cached || !Object.entries(cached.fingerprint).every(([key, value]) => stat[key] === value)) await validateUploadedFile(file.path);
+      if (!cached || !Object.entries(cached.fingerprint).every(([key, value]) => stat[key] === value)) await validateUploadedFile(file.path, extOf(file), queueing);
       validFiles.push(file);
     } catch (error) {
       // A busy or unavailable image worker says nothing about the file: it is

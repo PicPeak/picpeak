@@ -571,6 +571,17 @@
         "pets": "Animaux",
         "black_and_white": "Noir et blanc"
       }
+    },
+    "tile": {
+      "viewFullSize": "Afficher en plein écran",
+      "downloadPhoto": "Télécharger la photo",
+      "commentOnPhoto": "Commenter la photo",
+      "likePhoto": "Aimer la photo",
+      "unlikePhoto": "Ne plus aimer la photo",
+      "comment": "Commenter",
+      "like": "J’aime",
+      "unlike": "Retirer le j’aime",
+      "selectPhoto": "Sélectionner {{name}}"
     }
   },
   "categories": {
@@ -1077,7 +1088,12 @@
       "publishLink": "Publier"
     },
     "showExifToGuests": "Afficher les données de prise de vue aux invités",
-    "showExifToGuestsHelp": "L'appareil, l'objectif, la focale, l'ouverture, la vitesse d'obturation et la sensibilité ISO apparaissent sous la photo en plein écran. La position et les numéros de série ne sont jamais enregistrés ni affichés."
+    "showExifToGuestsHelp": "L'appareil, l'objectif, la focale, l'ouverture, la vitesse d'obturation et la sensibilité ISO apparaissent sous la photo en plein écran. La position et les numéros de série ne sont jamais enregistrés ni affichés.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "Les sauts de ligne sont conservés dans les e-mails",
+      "tip": "Astuce : appuyez sur Entrée pour créer une nouvelle ligne. Chaque ligne apparaîtra comme un paragraphe distinct dans les e-mails.",
+      "preview": "Aperçu :"
+    }
   },
   "settings": {
     "title": "Paramètres système",

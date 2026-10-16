@@ -1,5 +1,6 @@
 import { usePhotoSelection } from '../../../hooks/usePhotoSelection';
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Download, Maximize2, Play, Pause, Heart, MessageSquare, Sparkles } from 'lucide-react';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { AuthenticatedImage, Button } from '../../common';
@@ -28,6 +29,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   isClient = false,
   onToggleVisibility,
 }) => {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const { currentPhoto, currentIndex, setCurrentIndex } = usePhotoSelection(photos);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -195,7 +197,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               size="sm"
               onClick={() => onPhotoClick(currentIndex)}
               className="text-white hover:bg-white/20"
-              title="View fullscreen"
+              title={t('gallery.tile.viewFullSize', 'View full size')}
             >
               <Maximize2 className="w-5 h-5" />
             </Button>
@@ -211,7 +213,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 aria-disabled={currentPhotoAtLimit || undefined}
                 title={currentPhotoAtLimit
                   ? downloadLimitReachedMessage()
-                  : downloadPending ? preparingDownloadMessage() : 'Download photo'}
+                  : downloadPending ? preparingDownloadMessage() : t('gallery.tile.downloadPhoto', 'Download photo')}
               >
                 {downloadPending ? null : <Download className="w-5 h-5" />}
               </Button>
@@ -275,7 +277,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                   }
                 }}
                 className={`bg-black/30 hover:bg-black/50 rounded-full border border-white/40 ${likedIds.has(currentPhoto.id) ? 'text-danger' : 'text-white'}`}
-                title="Like photo"
+                title={t('gallery.tile.likePhoto', 'Like photo')}
                 aria-pressed={likedIds.has(currentPhoto.id)}
               >
                 <Heart className="w-5 h-5" />
@@ -287,8 +289,8 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 size="sm"
                 onClick={() => { onOpenPhotoWithFeedback?.(currentIndex); }}
                 className="text-white bg-black/30 hover:bg-black/50 rounded-full border border-white/40"
-                title="Comment"
-                aria-label="Comment on photo"
+                title={t('gallery.tile.comment', 'Comment')}
+                aria-label={t('gallery.tile.commentOnPhoto', 'Comment on photo')}
               >
                 <MessageSquare className="w-5 h-5" />
               </Button>

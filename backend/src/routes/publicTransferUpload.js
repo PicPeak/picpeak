@@ -166,6 +166,7 @@ function buildUploader(maxSizeBytes, policy, { storage, streamHandler, maxFiles 
   return multer({
     storage,
     streamHandler,
+    defParamCharset: 'utf8', // multer's latin1 default turns UTF-8 names into mojibake
     // CVE-2026-82333: files arrive as repeated `files` parts via .array(),
     // not bracket-indexed field names like `files[0]`, and this route is
     // unauthenticated (token-only) — no legitimate field name uses

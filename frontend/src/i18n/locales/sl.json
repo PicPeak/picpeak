@@ -1557,6 +1557,17 @@
         "pets": "Hišni ljubljenčki",
         "black_and_white": "Črno-belo"
       }
+    },
+    "tile": {
+      "viewFullSize": "Prikaži v polni velikosti",
+      "downloadPhoto": "Prenesi fotografijo",
+      "commentOnPhoto": "Komentiraj fotografijo",
+      "likePhoto": "Všečkaj fotografijo",
+      "unlikePhoto": "Odstrani všeček",
+      "comment": "Komentiraj",
+      "like": "Všeček",
+      "unlike": "Odstrani všeček",
+      "selectPhoto": "Izberi {{name}}"
     }
   },
   "categories": {
@@ -2222,7 +2233,12 @@
       "publishLink": "Objavi"
     },
     "showExifToGuests": "Pokaži podatke o fotoaparatu gostom",
-    "showExifToGuestsHelp": "Fotoaparat, objektiv, goriščna razdalja, zaslonka, čas osvetlitve in ISO so prikazani pod fotografijo v celozaslonskem pogledu. Lokacija in serijske številke se nikoli ne shranijo in ne prikažejo."
+    "showExifToGuestsHelp": "Fotoaparat, objektiv, goriščna razdalja, zaslonka, čas osvetlitve in ISO so prikazani pod fotografijo v celozaslonskem pogledu. Lokacija in serijske številke se nikoli ne shranijo in ne prikažejo.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "Prelomi vrstic se ohranijo v e-poštnih sporočilih",
+      "tip": "Namig: pritisnite Enter za novo vrstico. Vsaka vrstica bo v e-poštnih sporočilih ločen odstavek.",
+      "preview": "Predogled:"
+    }
   },
   "settings": {
     "title": "Sistemske nastavitve",
