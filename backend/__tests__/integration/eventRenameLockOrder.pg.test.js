@@ -104,7 +104,8 @@ const held = [];
   const scanArg = (claimed) => (faceProcessor.claimGuard ? claimed : claimed.id);
 
   test('a rename and a face scan that holds the event do not deadlock', async () => {
-    const eventId = await seedEvent(db, { face_recognition_enabled: true });
+    // The rename rebuilds the share link from the token.
+    const eventId = await seedEvent(db, { face_recognition_enabled: true, share_token: 'rename-lock-share' });
     const photoId = await seedPhoto(db, eventId, { face_status: 'pending' });
 
     mockGate = new Promise((resolve) => { openGate = resolve; });
