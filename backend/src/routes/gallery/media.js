@@ -899,6 +899,10 @@ router.get('/:slug/hero/:photoId',
       // and with the original as fallbackSrc by HeroHeader, and neither can
       // retry a 503. What changed is upstream: an unreachable backend no
       // longer makes ensureHeroImage regenerate a healthy rendition.
+      // The hero's ETag and hour-long lifetime may already be staged; left on
+      // the redirect, the browser keeps a transient failure (issue 2138).
+      res.removeHeader('ETag');
+      res.set('Cache-Control', 'no-store');
       res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
     }
   }
@@ -939,6 +943,10 @@ async function fallBackToOriginal(req, res, photo) {
     res.set('Cache-Control', 'no-store');
     return res.status(404).json({ error: 'Preview not available' });
   }
+  // Same for the redirect: the preview's ETag and lifetime may already be
+  // staged, and the browser would keep a transient failure (issue 2138).
+  res.removeHeader('ETag');
+  res.set('Cache-Control', 'no-store');
   return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
 }
 
