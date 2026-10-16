@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.175.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.175.0-beta.0...v3.175.1-beta.0) (2026-10-16)
+
+
+### Bug Fixes
+
+* **security:** make a gallery's customer and admin email owner-only ([#2163](https://github.com/PicPeak/picpeak/issues/2163)) ([19a91d6](https://github.com/PicPeak/picpeak/commit/19a91d6566f9b9a9180179770ee70f682fec75e0))
+* **security:** send uploaded SVGs with a strict CSP and trim /health ([#2159](https://github.com/PicPeak/picpeak/issues/2159)) ([f4ee7b3](https://github.com/PicPeak/picpeak/commit/f4ee7b345bfa29d3ad3322fe4e6b748f6ce0f18e))
+* **security:** stop keeping gallery passwords in the mail queue ([#2161](https://github.com/PicPeak/picpeak/issues/2161)) ([23f59b6](https://github.com/PicPeak/picpeak/commit/23f59b6bf00a60745cd6f21a7cde89ae5e4c147d))
+
 ## [3.175.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.174.4-beta.0...v3.175.0-beta.0) (2026-10-16)
 
 
