@@ -4,8 +4,17 @@ const { originalAssetDenial } = require('../../services/galleryAssetPolicy');
 const archiver = require('archiver');
 const path = require('path');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
+const { parsePositiveInt32 } = require('../../utils/parsers');
 const router = express.Router();
-const watermarkService = require('../../services/watermarkService');
+
+// A photoId that is not a plausible row id is refused here (issue 2078);
+// PostgreSQL answers a non-numeric or int4-overflowing id with a 500.
+router.param('photoId', (req, res, next, value) => {
+  if (parsePositiveInt32(value) === null) {
+    return res.status(404).json({ error: 'Photo not found' });
+  }
+  next();
+});
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const logger = require('../../utils/logger');
@@ -813,15 +822,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
 
     archive.pipe(res);
 
-    // Get watermark settings - apply if global setting OR event-level setting is enabled
-    const watermarkSettings = await watermarkService.getWatermarkSettings();
-    const eventWatermarkEnabled = req.event.watermark_downloads === true || req.event.watermark_downloads === 1;
-    const shouldApplyWatermark = (watermarkSettings && watermarkSettings.enabled) || eventWatermarkEnabled;
-    const effectiveSettings = shouldApplyWatermark ? {
-      ...watermarkSettings,
-      enabled: true,
-      text: req.event.watermark_text || watermarkSettings?.text || 'Protected'
-    } : null;
+    // Global setting OR the gallery's own flag, with the gallery's text.
+    const effectiveSettings = await resolveWatermarkSettings(req.event);
 
     // The gallery's standard resolution applies to the streamed archive too,
     // not only the cached one (#858).
@@ -1057,15 +1059,8 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
 
     archive.pipe(res);
 
-    // Check watermark settings - apply if global setting OR event-level setting is enabled
-    const watermarkSettings = await watermarkService.getWatermarkSettings();
-    const eventWatermarkEnabled = req.event.watermark_downloads === true || req.event.watermark_downloads === 1;
-    const shouldApplyWatermark = (watermarkSettings && watermarkSettings.enabled) || eventWatermarkEnabled;
-    const effectiveSettings = shouldApplyWatermark ? {
-      ...watermarkSettings,
-      enabled: true,
-      text: req.event.watermark_text || watermarkSettings?.text || 'Protected'
-    } : null;
+    // Global setting OR the gallery's own flag, with the gallery's text.
+    const effectiveSettings = await resolveWatermarkSettings(req.event);
 
     const { resolvePhotoStorageKey: resolveSelectedKey } = require('../../services/photoResolver');
     const selectedStorage = getStorage();

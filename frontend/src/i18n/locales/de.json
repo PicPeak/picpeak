@@ -2294,6 +2294,17 @@
         "pets": "Haustiere",
         "black_and_white": "Schwarz-Weiß"
       }
+    },
+    "tile": {
+      "viewFullSize": "Vollbild anzeigen",
+      "downloadPhoto": "Foto herunterladen",
+      "commentOnPhoto": "Foto kommentieren",
+      "likePhoto": "Foto mit Gefällt mir markieren",
+      "unlikePhoto": "Gefällt mir zurücknehmen",
+      "comment": "Kommentieren",
+      "like": "Gefällt mir",
+      "unlike": "Gefällt mir zurücknehmen",
+      "selectPhoto": "{{name}} auswählen"
     }
   },
   "categories": {
@@ -2537,6 +2548,8 @@
     "downloadProtection": "Download-Schutz",
     "disableRightClick": "Rechtsklick-Menü blockieren",
     "watermarkDownloads": "Wasserzeichen bei Downloads hinzufügen",
+    "watermarkText": "Wasserzeichen-Text",
+    "watermarkTextHelp": "Ersetzt den Firmennamen im Text-Wasserzeichen dieser Galerie. Leer lassen, um den Firmennamen zu verwenden. Wird nicht angezeigt, wenn unter Branding ein Wasserzeichen-Logo gesetzt ist.",
     "enableDevtoolsProtection": "Entwicklertools erkennen",
     "useCanvasRendering": "Canvas-Rendering in der Lightbox (erweiterter Schutz)",
     "protectionInfo": "Schutzfunktionen helfen, unerlaubte Downloads zu verhindern, können jedoch nicht alle Methoden blockieren.",
@@ -3086,7 +3099,12 @@
       "publishLink": "Veröffentlichen"
     },
     "showExifToGuests": "Kameradaten den Gästen anzeigen",
-    "showExifToGuestsHelp": "Kamera, Objektiv, Brennweite, Blende, Belichtungszeit und ISO erscheinen in der Vollbildansicht unter dem Foto. Standort und Seriennummern werden nie gespeichert oder angezeigt."
+    "showExifToGuestsHelp": "Kamera, Objektiv, Brennweite, Blende, Belichtungszeit und ISO erscheinen in der Vollbildansicht unter dem Foto. Standort und Seriennummern werden nie gespeichert oder angezeigt.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "Zeilenumbrüche bleiben in E-Mails erhalten",
+      "tip": "Tipp: Mit der Eingabetaste beginnst du eine neue Zeile. Jede Zeile erscheint in E-Mails als eigener Absatz.",
+      "preview": "Vorschau:"
+    }
   },
   "settings": {
     "title": "Systemeinstellungen",
@@ -3104,6 +3122,8 @@
       "maxVideoSizeHelp": "Eigenes Limit pro Videodatei, damit für Fotos ein kleineres Limit gelten kann.",
       "videoWebRendition": "Browser-abspielbare Kopien von Videos",
       "videoWebRenditionHelp": "Kodiert Videos, die ein Browser nicht abspielen kann (HEVC, QuickTime, nicht streambare MP4s), für die Wiedergabe in ein H.264-MP4 um. Zum Herunterladen bleibt das Original. Kostet CPU pro Video und eine zweite Datei; beim Einschalten werden die bereits hochgeladenen Videos eingereiht.",
+      "videoStripMetadata": "Standort- und Gerätedaten aus abgespielten Videos entfernen",
+      "videoStripMetadataHelp": "Videos, die ein Browser bereits abspielen kann, erhalten eine Kopie ohne Aufnahmeort, Kamera und andere Metadaten, erstellt ohne Neukodierung; Gäste sehen diese Kopie. Speichert pro solchem Video eine zusätzliche Datei, etwa so groß wie das Original. Zum Herunterladen bleibt das Original. Beim Ausschalten bleiben die bereits erstellten Kopien erhalten.",
       "videoAdaptiveStreaming": "Adaptives Video-Streaming",
       "videoAdaptiveStreamingHelp": "Wandelt jedes Video in einen Stream in bis zu drei Qualitäten (480p, 720p, 1080p) um, damit die Wiedergabe schnell startet und sich an die Verbindung anpasst. Zum Herunterladen bleibt das Original. Kostet CPU pro Video und etwa noch einmal so viel Speicherplatz; Videos über 30 Minuten werden wie bisher abgespielt.",
       "maxFilesPerUpload": "Max. Dateien pro Upload",

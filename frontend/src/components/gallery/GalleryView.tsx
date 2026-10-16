@@ -1999,7 +1999,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             </Button>
           ) : undefined
         }
-        showHeaderDownload={allowDownloads}
+        // Nothing to download in a loaded, empty gallery (an admin preview of
+        // a draft, issue 2088); while it loads the button stays as it was.
+        showHeaderDownload={allowDownloads && !(data && (data.photos?.length ?? 0) === 0)}
         onHeaderDownload={handleDownloadAll}
         headerExtra={(() => {
           const items = [];

@@ -56,6 +56,10 @@ describe('my_rating on the photo list (issue 1733)', () => {
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
     await seedMinimal(db);
+    // Duplicate rating rows are legacy state: the migration 309 indexes forbid
+    // new ones, so this suite drops them to seed what older databases hold.
+    await db.raw('DROP INDEX IF EXISTS photo_feedback_rating_guest_id_unique');
+    await db.raw('DROP INDEX IF EXISTS photo_feedback_rating_guest_identifier_unique');
 
     const [ev] = await db('events').insert({
       slug: SLUG,

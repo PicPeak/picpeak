@@ -69,7 +69,12 @@ withFfmpeg('real video/RAW processing and execution fencing', () => {
     expect((await nativeSharp(storage.resolveLocalPath(complete.thumbnail_path)).metadata()).format).toBe('jpeg');
     expect(await db('media_process_attempts')).toEqual([]);
     if (caps.leases) expect((await fs.readdir(caps.leaseRoot)).filter(name => name.startsWith(complete.processing_attempt_id))).toEqual([]);
-    expect(await require('../../src/services/videoRenditionService').renderWebCopy(row.id)).toBe('skipped');
+    // The fixture plays as it is: with metadata stripping on by default it
+    // gets a real stream-copy remux (issue 2102) instead of being skipped.
+    expect(await require('../../src/services/videoRenditionService').renderWebCopy(row.id)).toBe('complete');
+    const { web_path: remuxKey } = await db('photos').where({ id: row.id }).first();
+    expect(require('../../src/services/galleryAssetPolicy').isRemuxWebKey(remuxKey)).toBe(true);
+    expect((await fs.stat(storage.resolveLocalPath(remuxKey))).size).toBeGreaterThan(0);
     // The fixture is shorter than the default one-second offset; its first frame is a real poster.
     const original = storage.resolveLocalPath(path.posix.join('events/active', complete.path));
     await require('../../src/services/videoProcessor').generateVideoThumbnail(original, 'thumbnails/ordinary-real-poster.jpg', { timeOffset: '00:00:00' });
