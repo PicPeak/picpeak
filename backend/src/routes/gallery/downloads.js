@@ -522,6 +522,15 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     const zipInfo = streamOnly
       ? null
       : await downloadZipService.getZipInfo(req.event.id);
+    // A HEAD probe is not a download (issue 2139): headers only, nothing counted.
+    if (zipInfo && req.method === 'HEAD') {
+      res.set({
+        'Content-Type': 'application/zip',
+        'Content-Length': zipInfo.size,
+        'Content-Disposition': `attachment; filename="${req.event.slug}.zip"`,
+      });
+      return res.end();
+    }
     if (zipInfo) {
       const storage = getStorage();
 
@@ -583,6 +592,13 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
 
     if (photos.length === 0) {
       return res.status(404).json({ error: 'No photos found' });
+    }
+
+    // A HEAD probe (a download manager asking for the size first) answers
+    // without building or counting an archive (issue 2139).
+    if (req.method === 'HEAD') {
+      res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${req.event.slug}.zip"` });
+      return res.end();
     }
 
     // One of a bounded number of archives this process builds at once.
@@ -1075,6 +1091,18 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
       return res.status(410).json({ error: 'This download is no longer available' });
     }
 
+    const suffix = job.resolution === 'original' ? 'original' : job.resolution;
+    // A HEAD probe is not a download (issue 2139): it answers the headers
+    // before the counters below.
+    if (req.method === 'HEAD') {
+      res.set({
+        'Content-Type': 'application/zip',
+        'Content-Length': stat.size,
+        'Content-Disposition': `attachment; filename="${req.event.slug}-${suffix}.zip"`,
+      });
+      return res.end();
+    }
+
     // Stats parity with the other bulk paths (#895): only count once the
     // response actually completed, and keep admin previews out of guest stats.
     res.on('finish', () => {
@@ -1099,7 +1127,6 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
         req.event.id, galleryActor(req));
     });
 
-    const suffix = job.resolution === 'original' ? 'original' : job.resolution;
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Disposition', `attachment; filename="${req.event.slug}-${suffix}.zip"`);
