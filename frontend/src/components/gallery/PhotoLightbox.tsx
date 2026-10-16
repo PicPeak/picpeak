@@ -1290,7 +1290,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 className={`p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors${withinDownloadLimit ? '' : ' opacity-50 cursor-not-allowed'}${downloadPending ? ' cursor-wait' : ''}`}
                 aria-label={downloadPending
                   ? t('gallery.preparingDownload', 'Preparing your download…')
-                  : 'Download photo'}
+                  : t('gallery.tile.downloadPhoto', 'Download photo')}
                 title={withinDownloadLimit
                   ? undefined
                   : t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.')}
@@ -1307,8 +1307,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 <button
                   onClick={submitLike}
                   className={`p-2 rounded-full transition-colors ${myLiked ? 'bg-danger hover:opacity-90' : 'bg-white/10 hover:bg-white/20'}`}
-                  aria-label={myLiked ? 'Unlike photo' : 'Like photo'}
-                  title={myLiked ? 'Unlike' : 'Like'}
+                  aria-label={myLiked ? t('gallery.tile.unlikePhoto', 'Unlike photo') : t('gallery.tile.likePhoto', 'Like photo')}
+                  title={myLiked ? t('gallery.tile.unlike', 'Unlike') : t('gallery.tile.like', 'Like')}
                 >
                   {/* fill-current on the liked state so the heart is
                       actually visible against the red background — both

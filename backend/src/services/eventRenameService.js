@@ -12,6 +12,7 @@ const { galleryLinkFor } = require('./galleryNotificationService');
 const { queueEmail } = require('./emailProcessor');
 const { getStorage } = require('./storage');
 const { findSlugHolder } = require('./slugRedirects');
+const { slugify } = require('../utils/slug');
 
 /**
  * Run `fn` over `items` with at most `limit` in flight. On the first failure
@@ -44,6 +45,13 @@ function isNotFound(err) {
     || err.$metadata?.httpStatusCode === 404;
 }
 
+// Galleries this process is renaming right now. The archive claim is the lock
+// for both jobs, so a refused claim alone cannot say which one holds it.
+const renamingIds = new Set();
+const busyMessage = (eventId) => (renamingIds.has(eventId)
+  ? 'This gallery is already being renamed'
+  : 'Cannot rename a gallery while it is being archived or renamed');
+
 class EventRenameService {
   constructor() {
     this.storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
@@ -72,11 +80,10 @@ class EventRenameService {
    * @returns {string} Generated slug
    */
   generateSlug(eventType, eventName, eventDate) {
-    const processedEventName = eventName
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
+    // The shared slugify, as event creation uses: accents are stripped, so
+    // NFC and NFD (macOS) input give the same slug ("Jörg" → "jorg"). ASCII
+    // names slug exactly as before; existing slugs are not touched.
+    const processedEventName = slugify(eventName);
     const formattedDate = this.formatDate(eventDate);
     return `${eventType}-${processedEventName}-${formattedDate}`;
   }
@@ -88,6 +95,8 @@ class EventRenameService {
    * @returns {Promise<{valid: boolean, error?: string, newSlug?: string}>}
    */
   async validateRename(eventId, newEventName) {
+    // NFC, like every other stored name: macOS input arrives decomposed.
+    if (typeof newEventName === 'string') newEventName = newEventName.normalize('NFC');
     try {
       // Get current event
       const event = await db('events').where({ id: eventId }).first();
@@ -100,7 +109,7 @@ class EventRenameService {
       }
       // The archive job reads the photos under the current slug (issue 2012).
       if (await require('./archiveService').isArchiveRunning(eventId)) {
-        return { valid: false, error: 'Cannot rename a gallery while it is being archived' };
+        return { valid: false, conflict: true, error: busyMessage(eventId) };
       }
 
       // Validate new name
@@ -455,14 +464,16 @@ class EventRenameService {
    * @returns {Promise<{success: boolean, data?: object, error?: string}>}
    */
   async renameEvent(eventId, newEventName, resendEmail = false, adminUser = null) {
+    if (typeof newEventName === 'string') newEventName = newEventName.normalize('NFC');
     const backupData = {};
     let lease = null;
+    let tracked = false;
 
     try {
       // 1. Validate
       const validation = await this.validateRename(eventId, newEventName);
       if (!validation.valid) {
-        return { success: false, error: validation.error };
+        return { success: false, error: validation.error, ...(validation.conflict && { conflict: true }) };
       }
 
       // The archive job reads the photos under the current slug (issue 2012).
@@ -470,8 +481,10 @@ class EventRenameService {
       // starting halfway and zipping an emptied prefix.
       lease = await require('./archiveService').claimArchive(eventId);
       if (!lease) {
-        return { success: false, error: 'Cannot rename a gallery while it is being archived' };
+        return { success: false, conflict: true, error: busyMessage(eventId) };
       }
+      renamingIds.add(eventId);
+      tracked = true;
 
       // 2. Get current event data, under the claim: an archive that finished
       // after the validation above has moved the photos on.
@@ -591,8 +604,14 @@ class EventRenameService {
     } catch (error) {
       logger.error('Event rename failed', { eventId, error: error.message });
       await this.rollbackRename(backupData);
-      return { success: false, error: error.message || 'Failed to rename event' };
+      // A claim taken over mid-rename (recordSupersededArchive) is a 409 too.
+      return {
+        success: false,
+        error: error.message || 'Failed to rename event',
+        ...(error.statusCode === 409 ? { conflict: true } : {}),
+      };
     } finally {
+      if (tracked) renamingIds.delete(eventId);
       if (lease) await lease.release();
     }
   }

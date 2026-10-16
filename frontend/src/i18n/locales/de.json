@@ -2294,6 +2294,17 @@
         "pets": "Haustiere",
         "black_and_white": "Schwarz-Weiß"
       }
+    },
+    "tile": {
+      "viewFullSize": "Vollbild anzeigen",
+      "downloadPhoto": "Foto herunterladen",
+      "commentOnPhoto": "Foto kommentieren",
+      "likePhoto": "Foto mit Gefällt mir markieren",
+      "unlikePhoto": "Gefällt mir zurücknehmen",
+      "comment": "Kommentieren",
+      "like": "Gefällt mir",
+      "unlike": "Gefällt mir zurücknehmen",
+      "selectPhoto": "{{name}} auswählen"
     }
   },
   "categories": {
@@ -3086,7 +3097,12 @@
       "publishLink": "Veröffentlichen"
     },
     "showExifToGuests": "Kameradaten den Gästen anzeigen",
-    "showExifToGuestsHelp": "Kamera, Objektiv, Brennweite, Blende, Belichtungszeit und ISO erscheinen in der Vollbildansicht unter dem Foto. Standort und Seriennummern werden nie gespeichert oder angezeigt."
+    "showExifToGuestsHelp": "Kamera, Objektiv, Brennweite, Blende, Belichtungszeit und ISO erscheinen in der Vollbildansicht unter dem Foto. Standort und Seriennummern werden nie gespeichert oder angezeigt.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "Zeilenumbrüche bleiben in E-Mails erhalten",
+      "tip": "Tipp: Mit der Eingabetaste beginnst du eine neue Zeile. Jede Zeile erscheint in E-Mails als eigener Absatz.",
+      "preview": "Vorschau:"
+    }
   },
   "settings": {
     "title": "Systemeinstellungen",
