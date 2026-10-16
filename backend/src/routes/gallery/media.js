@@ -2,7 +2,17 @@ const express = require('express');
 const { db } = require('../../database/db');
 const path = require('path');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
+const { parsePositiveInt32 } = require('../../utils/parsers');
 const router = express.Router();
+
+// A photoId that is not a plausible row id is refused here (issue 2078);
+// PostgreSQL answers a non-numeric or int4-overflowing id with a 500.
+router.param('photoId', (req, res, next, value) => {
+  if (parsePositiveInt32(value) === null) {
+    return res.status(404).json({ error: 'Photo not found' });
+  }
+  next();
+});
 const watermarkService = require('../../services/watermarkService');
 const watermarkGeneratorService = require('../../services/watermarkGeneratorService');
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
@@ -356,11 +366,28 @@ router.get('/:slug/photo/:photoId',
       }
 
       // Image path
-      const watermarkSettings = await watermarkService.getWatermarkSettings();
+      let watermarkSettings = await watermarkService.getWatermarkSettings();
+      // The per-event "watermark downloads" flag follows the same global-OR-event
+      // rule as the download routes. This route hands out the full-size original
+      // (it only falls back to the preview tier where originals are withheld),
+      // so leaving it unmarked would let a guest save an unwatermarked copy
+      // around the flag (issue 2076). The pre-generated watermark file is
+      // rendered from the global settings, so an event-only watermark is
+      // applied on the fly.
+      const eventOnlyWatermark = !watermarkSettings?.enabled
+        && (req.event.watermark_downloads === true || req.event.watermark_downloads === 1
+          || req.event.watermark_downloads === '1');
+      if (eventOnlyWatermark) {
+        watermarkSettings = {
+          ...watermarkSettings,
+          enabled: true,
+          text: req.event.watermark_text || watermarkSettings?.text || 'Protected'
+        };
+      }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
       const watermarkHash = watermarkSettings?.enabled
-        ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
+        ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}${eventOnlyWatermark ? '-ev' : ''}`
         : '-nowm';
       // orientation_checked_at participates because the backfill (#1198) can
       // change these bytes without touching either of the other two inputs:
@@ -380,7 +407,7 @@ router.get('/:slug/photo/:photoId',
       if (watermarkSettings && watermarkSettings.enabled) {
         // Pre-generated watermarked file: served via the storage backend
         // (managed) or directly from local fs (external).
-        if (photo.watermark_path) {
+        if (photo.watermark_path && !eventOnlyWatermark) {
           try {
             if (useStorageBackend) {
               const wmStat = await storage.stat(photo.watermark_path);
@@ -429,8 +456,10 @@ router.get('/:slug/photo/:photoId',
           : await watermarkService.applyWatermark(filePath, watermarkSettings, { failClosed: true });
 
         // Queue watermark generation in background for next request
-        watermarkGeneratorService.generateForPhoto(photo.id)
-          .catch(err => logger.warn(`Background watermark generation failed for photo ${photo.id}:`, err.message));
+        if (!eventOnlyWatermark) {
+          watermarkGeneratorService.generateForPhoto(photo.id)
+            .catch(err => logger.warn(`Background watermark generation failed for photo ${photo.id}:`, err.message));
+        }
 
         res.set({
           'Content-Type': resolvePhotoContentType(photo),

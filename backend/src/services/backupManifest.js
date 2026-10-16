@@ -548,7 +548,11 @@ class BackupManifestGenerator {
         }
         keyId = verification.key_id;
         key = manifestKey.keyRing().get(keyId);
-        if (!key) return reject('Manifest signing key is missing — retain the original key for disaster recovery');
+        if (!key) {
+          return reject(`Manifest signing key is missing: this manifest was signed with key ${keyId}, which is not `
+            + 'among the keys this server holds (current key or BACKUP_MANIFEST_KEYS_OLD) — retain the original key '
+            + 'for disaster recovery');
+        }
       } else {
         // Explicit migration compatibility for canonical pre-v3 HMACs.
         // The unsafe array-replacer serializer is NEVER retried.

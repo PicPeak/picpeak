@@ -18,8 +18,12 @@ jest.mock('../../src/services/storage', () => ({ getStorage: () => mockStorage, 
 // counter, whose own route suites continue to exercise its behavior.
 jest.mock('express-rate-limit', () => Object.assign(() => (_req, _res, next) => next(), jest.requireActual('express-rate-limit')));
 
-const JPEG = Buffer.from([255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 0, 1]);
-const largeJPEG = size => { const b = Buffer.alloc(size); JPEG.copy(b); return b; };
+// A real 16x16 JPEG: the gallery route decodes what it receives. Padded with
+// zero bytes after the end-of-image marker to the size a test asks for.
+const JPEG = Buffer.from('/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAQABADASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AJ2AbCD/2Q==', 'base64');
+const largeJPEG = size => { const b = Buffer.alloc(Math.max(size, JPEG.length)); JPEG.copy(b); return b; };
+// Transfers take any bytes; only a gallery upload is decoded.
+const headerOnly = size => { const b = Buffer.alloc(size); Buffer.from([255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 0, 1]).copy(b); return b; };
 const idOf = rows => rows[0]?.id ?? rows[0];
 let db; let cleanup; let galleryApp; let transferApp; let quota; let transferService; let event; let transfer; let token; let adminId;
 const originalLimits = process.env.PUBLIC_UPLOAD_LIMITS_JSON;
@@ -40,7 +44,7 @@ const galleryRequest = () => request(galleryApp).post(`/api/gallery/${event.id}/
   eventId: event.id, eventSlug: event.slug, type: 'gallery',
 }, process.env.JWT_SECRET, { expiresIn: '1h', issuer: 'picpeak-auth' })}`);
 const transferRequest = () => request(transferApp).post(`/api/public/transfer-upload/${token}`);
-const attach = (req, field, size = 12, name = 'ordinary.jpg') => req.attach(field, largeJPEG(size), { filename: name, contentType: 'image/jpeg' });
+const attach = (req, field, size = 12, name = 'ordinary.jpg') => req.attach(field, field === 'photos' ? largeJPEG(size) : headerOnly(size), { filename: name, contentType: 'image/jpeg' });
 async function waitSettled() {
   for (let n = 0; n < 100; n++) {
     if (!(await db('public_upload_requests').where({ active: 1 }).first())) return;
@@ -87,7 +91,7 @@ test('ordinary anonymous gallery upload commits a pending row and lifetime charg
   const res = await attach(galleryRequest(), 'photos');
   expect(res.status).toBe(202); expect(res.body.count).toBe(1);
   const object = await db('public_upload_objects').first();
-  expect(object).toMatchObject({ bytes: 12, reference_type: 'photo', reference_id: res.body.photo_ids[0], state: 'stored', pending: 1 });
+  expect(object).toMatchObject({ bytes: JPEG.length, reference_type: 'photo', reference_id: res.body.photo_ids[0], state: 'stored', pending: 1 });
   // No guest identity: the bucket is the client network, not one shared name.
   expect(object.guest_scope).toMatch(new RegExp(`^${event.id}:ip:.+`));
   expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
@@ -203,7 +207,7 @@ test('a photo whose processing fails terminally releases its pending hold', asyn
     }
   } finally { await worker.stop(); }
   expect(await db('photos').where({ id: first.body.photo_ids[0] }).first()).toMatchObject({ processing_status: 'failed' });
-  expect(await db('public_upload_objects').first()).toMatchObject({ pending: 0, state: 'stored', bytes: 12 });
+  expect(await db('public_upload_objects').first()).toMatchObject({ pending: 0, state: 'stored', bytes: JPEG.length });
   expect((await attach(galleryRequest(), 'photos')).status).toBe(202);
 });
 test('only confirmed successful processing releases pending capacity, not lifetime storage', async () => {

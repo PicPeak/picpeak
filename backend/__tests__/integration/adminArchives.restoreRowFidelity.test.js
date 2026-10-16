@@ -521,8 +521,8 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     }
 
     await archiveEvent(await db('events').where('id', eventId).first());
-    // The originals are gone (the directory itself is left behind).
-    expect(await fs.promises.readdir(dir)).toEqual([]);
+    // The originals are gone, and the folders they were in with them.
+    await expect(fs.promises.readdir(dir)).rejects.toMatchObject({ code: 'ENOENT' });
 
     await restore(eventId);
 
