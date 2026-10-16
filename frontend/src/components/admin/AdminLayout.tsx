@@ -145,8 +145,13 @@ const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSid
         />
       )}
 
-      {/* Sidebar - disabled when password change required */}
-      <div className={mustChangePassword ? 'pointer-events-none opacity-50' : ''}>
+      {/* Sidebar - disabled when password change required. Inert as well:
+          pointer-events-none leaves the keyboard in, and the drawer's focus
+          trap would then hold focus in a sidebar that cannot be used. */}
+      <div
+        className={mustChangePassword ? 'pointer-events-none opacity-50' : ''}
+        {...(mustChangePassword ? { inert: '' } : {})}
+      >
         <AdminSidebar
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}

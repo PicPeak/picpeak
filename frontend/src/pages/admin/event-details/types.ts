@@ -38,6 +38,8 @@ export type EditFormState = {
   disable_right_click: boolean;
   allow_downloads: boolean;
   watermark_downloads: boolean;
+  // '' = the company name from Branding.
+  watermark_text: string;
   enable_devtools_protection: boolean;
   use_canvas_rendering: boolean;
   // Hero logo settings. null = inherit the global branding toggle (#756).

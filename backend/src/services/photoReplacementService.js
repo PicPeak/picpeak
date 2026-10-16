@@ -117,16 +117,42 @@ async function findReplacementCandidate(eventId, originalFilename, opts = {}) {
     return null;
   }
 
-  const matches = await livePhotos(db)
+  const exactMatches = (name) => livePhotos(db)
     .where({ event_id: eventId })
     .where(function () {
-      this.whereRaw('LOWER(original_filename) = LOWER(?)', [originalFilename])
-        .orWhereRaw('LOWER(source_filename) = LOWER(?)', [originalFilename]);
+      this.whereRaw('LOWER(original_filename) = LOWER(?)', [name])
+        .orWhereRaw('LOWER(source_filename) = LOWER(?)', [name]);
     });
 
-  if (matches.length === 1) return matches[0];
+  let matches = await exactMatches(originalFilename);
+  // Uploads before issue 2072 stored non-ASCII names latin1-decoded
+  // (`ümläut.jpg` as `Ã¼mlÃ¤ut.jpg`). A re-upload now arrives correctly
+  // decoded, so without this it would land as a new photo. Only that exact
+  // legacy form, and only when nothing matches the real name.
+  let legacyName = null;
+  if (matches.length === 0) {
+    const decoded = Buffer.from(originalFilename, 'utf8').toString('latin1');
+    if (decoded !== originalFilename) {
+      matches = await exactMatches(decoded);
+      legacyName = decoded;
+    }
+  }
+
+  if (matches.length === 1) {
+    // Tells replacePhoto the row was found through its legacy name, so it can
+    // repair source_filename. Non-enumerable: never spread into a write.
+    if (legacyName) Object.defineProperty(matches[0], 'legacyNameMatch', { value: legacyName });
+    return matches[0];
+  }
   if (matches.length > 1) return { ambiguous: true, count: matches.length };
   return null;
+}
+
+/** True when a fallback match left source_filename mangled (or empty). */
+function repairsLegacySource(photo) {
+  if (!photo.legacyNameMatch) return false;
+  return !photo.source_filename
+    || photo.source_filename.toLowerCase() === photo.legacyNameMatch.toLowerCase();
 }
 
 /**
@@ -285,9 +311,14 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       // Lightroom round-trip (#745) loses its match key the first time an
       // editor uploads a renamed render over the proof. Backfilled here only
       // when the row predates migration 193 and has nothing stored yet.
-      ...(existingPhoto.source_filename
-        ? {}
-        : { source_filename: existingPhoto.original_filename || originalFilename }),
+      // One repair: a row matched only through its latin1-decoded legacy name
+      // (issue 2072) whose source_filename is that same mangled string, or
+      // empty, gets the correctly decoded name; any other camera name is kept.
+      ...(repairsLegacySource(existingPhoto)
+        ? { source_filename: originalFilename }
+        : existingPhoto.source_filename
+          ? {}
+          : { source_filename: existingPhoto.original_filename || originalFilename }),
       path: relativePath,
       thumbnail_path: thumbnailPath,
       // The old hash describes the replaced image; none beats a wrong one.
@@ -320,7 +351,8 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       web_attempt_id: null,
       web_attempts: 0,
       web_retry_at: null,
-      web_status: isVideoReplacement && await videoRendition.isEnabled() ? 'pending' : null,
+      // Either setting queues it (metadata stripping, issue 2102, included).
+      web_status: isVideoReplacement && await videoRendition.queuesVideos() ? 'pending' : null,
       web_started_at: null,
       web_error: null,
       // The ladder starts over the same way; the queue picks a video up.

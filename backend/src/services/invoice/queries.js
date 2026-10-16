@@ -3,6 +3,7 @@
 
 const { db, withRetry } = require('../../database/db');
 const { ensureInt } = require('../../utils/numericHelpers');
+const { unicodeSearchForms } = require('../../utils/sqlSecurity');
 
 
 // ---------------------------------------------------------------------
@@ -56,11 +57,14 @@ async function listInvoices({ filters = {}, sort = 'issue_desc', page = 1, pageS
       query = query.whereIn('invoices.status', ['scheduled', 'sent', 'overdue']);
     }
     if (filters.q && String(filters.q).trim()) {
-      const term = `%${String(filters.q).trim()}%`;
+      // Every stored spelling of a name (unicodeSearchForms).
+      const terms = unicodeSearchForms(String(filters.q).trim()).map((t) => `%${t}%`);
       query = query.andWhere(function() {
-        this.where('invoices.invoice_number', 'like', term)
-          .orWhere('customer_accounts.email', 'like', term)
-          .orWhere('customer_accounts.company_name', 'like', term);
+        for (const term of terms) {
+          this.orWhere('invoices.invoice_number', 'like', term)
+            .orWhere('customer_accounts.email', 'like', term)
+            .orWhere('customer_accounts.company_name', 'like', term);
+        }
       });
     }
     const countRow = await query.clone().clearSelect().clearOrder().count('invoices.id as total').first();

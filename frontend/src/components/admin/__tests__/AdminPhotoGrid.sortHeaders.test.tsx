@@ -102,6 +102,15 @@ describe('AdminPhotoGrid list sort headers', () => {
     }
   });
 
+  it('marks only the applied column with aria-sort (issue 2074)', () => {
+    renderList({ sortBy: 'size', sortOrder: 'desc', onSortChange: vi.fn() });
+    const headers = within(screen.getAllByRole('row')[0]).getAllByRole('columnheader');
+    const sorted = headers.filter((h) => h.hasAttribute('aria-sort'));
+    expect(sorted).toHaveLength(1);
+    expect(sorted[0]).toHaveTextContent('Size');
+    expect(sorted[0]).toHaveAttribute('aria-sort', 'descending');
+  });
+
   it('offers a menu only on the columns the list can sort by', () => {
     renderList({ sortBy: 'date', sortOrder: 'desc', onSortChange: vi.fn() });
     const header = screen.getAllByRole('row')[0];

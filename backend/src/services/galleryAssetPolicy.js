@@ -121,7 +121,17 @@ function isPresentationRenditionKey(key, kind) {
     && !key.slice(prefix.length).includes('/') && !key.includes('\\');
 }
 
+/**
+ * Whether a web-copy key names a metadata-free remux of the original
+ * (issue 2102, videoRenditionService.webKeyFor) rather than a transcode. The
+ * remux is the original's picture at full quality, so where playing the
+ * original takes a download slot, playing the remux does too.
+ */
+function isRemuxWebKey(key) {
+  return typeof key === 'string' && /^videos\/web_\d+_remux_/.test(key);
+}
+
 module.exports = {
-  originalAssetDenial, grantDenial, isPresentationRenditionKey,
+  originalAssetDenial, grantDenial, isPresentationRenditionKey, isRemuxWebKey,
   galleryFullResolutionDenial, fullResolutionDenial,
 };
