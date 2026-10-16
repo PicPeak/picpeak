@@ -256,6 +256,21 @@ describe('maximum protection caps the full-size view (issue 2152)', () => {
     expect(cappedPhoto.slideshow_url).toContain('cap=');
   });
 
+  test('a busy image worker on the capped preview answers 503, not a fallback', async () => {
+    const g = await makeEvent('maximum');
+    const { refusal } = require('../../src/services/imageResourcePolicy');
+    watermarkService.getWatermarkSettings.mockResolvedValue({ ...WATERMARK });
+    watermarkService.applyWatermark.mockRejectedValue(
+      refusal('Image processing is busy; try again shortly', 'IMAGE_QUEUE_FULL', { retryAfter: 5 })
+    );
+    const res = await get(g, `/api/gallery/${g.event.slug}/preview/${g.photoId}`).expect(503);
+    expect(res.headers['retry-after']).toBe('5');
+    expect(res.headers['cache-control']).toBe('no-store');
+    // Not the image's ETag (Express may add a weak one for the JSON body).
+    expect(res.headers.etag || '').not.toMatch(/preview-/);
+    expect(res.body).toMatchObject({ code: 'IMAGE_QUEUE_FULL' });
+  });
+
   test('an animated preview keeps its frames when capped', async () => {
     const g = await makeEvent('maximum');
     const frame = (r) => sharp({ create: { width: 2400, height: 1600, channels: 4, background: { r, g: 0, b: 0, alpha: 1 } } }).png().toBuffer();

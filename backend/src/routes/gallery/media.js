@@ -36,6 +36,7 @@ const {
   MAXIMUM_PROTECTION_CAP, capsFullSizeView,
 } = require('../../services/galleryAssetPolicy');
 const sharp = require('../../services/isolatedSharp');
+const imageResourcePolicy = require('../../services/imageResourcePolicy');
 const {
   currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
   drawsOnQuota, clientOnlyError, refuseDownload, downloadLimitError, settleWhenDone, responseDelivered,
@@ -118,7 +119,7 @@ async function capPreviewRendition(previewPath, watermarkSettings) {
       ? await watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
       : localPath;
     const animated = webp && !watermarkSettings?.enabled
-      && ((await sharp(input, { failOn: 'none' }).metadata()).pages || 1) > 1;
+      && ((await sharp(input, { interactive: true, failOn: 'none' }).metadata()).pages || 1) > 1;
     let image = sharp(input, { interactive: true, failOn: 'none', animated });
     if (!animated) image = image.rotate();
     image = image.resize(width, height, { fit: 'inside', withoutEnlargement: true });
@@ -1143,6 +1144,14 @@ router.get('/:slug/preview/:photoId',
       });
       if (res.headersSent) return;
       if (isStorageUnavailableError(error)) return answerStorageUnavailable(res);
+      // The capped copy at maximum protection (issue 2152) is cut per request:
+      // a busy or timed-out image worker is "try again", not a broken
+      // rendition to fall back from.
+      if (imageResourcePolicy.isTransient(error)) {
+        for (const name of ['ETag', 'Content-Type', 'Content-Length']) res.removeHeader(name);
+        res.set({ 'Retry-After': String(error.retryAfter || 5), 'Cache-Control': 'no-store' });
+        return res.status(503).json({ error: 'Image processing is busy, try again shortly', code: error.code });
+      }
       try {
         await fallBackToOriginal(req, res, { id: req.params.photoId });
       } catch (fallbackError) {
