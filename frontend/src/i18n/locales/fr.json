@@ -997,6 +997,7 @@
         "tags": "Taguer les photos par scène pour que les invités filtrent"
       },
       "passwordOwnerOnly": "Seul le propriétaire de la galerie peut modifier le mot de passe ou le désactiver.",
+      "recipientsOwnerOnly": "Seul le propriétaire de la galerie peut modifier qui reçoit l’e-mail de la galerie.",
       "tags": "Tags"
     },
     "folders": {

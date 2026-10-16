@@ -1111,6 +1111,7 @@
         "tags": "Marcar as fotos por cena para que os convidados filtrem"
       },
       "passwordOwnerOnly": "Apenas o proprietário da galeria pode alterar a senha ou desativá-la.",
+      "recipientsOwnerOnly": "Apenas o proprietário da galeria pode alterar quem recebe o e-mail da galeria.",
       "tags": "Tags"
     },
     "folders": {

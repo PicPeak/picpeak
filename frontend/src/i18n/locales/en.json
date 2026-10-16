@@ -2400,6 +2400,7 @@
       "undoSection": "Undo changes in this section",
       "delivery": "Folders & delivery",
       "passwordOwnerOnly": "Only the gallery owner can change the password or turn it off.",
+      "recipientsOwnerOnly": "Only the gallery owner can change who receives the gallery email.",
       "tags": "Tags"
     },
     "folders": {

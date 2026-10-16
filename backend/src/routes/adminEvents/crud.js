@@ -1377,6 +1377,36 @@ module.exports = (router) => {
         }
       }
 
+      // Who the gallery's emails go to is the owner's as well: the gallery
+      // email carries the share link, so a team member who could retarget the
+      // customer or admin address, or the assigned customer accounts, could
+      // send the gallery anywhere. A non-owner's echo of the stored values
+      // (the settings form sends what it loaded) changes nothing and passes.
+      const recipientKeys = ['customer_email', 'admin_email']
+        .filter((key) => Object.prototype.hasOwnProperty.call(req.body, key));
+      const touchesAccounts = Array.isArray(req.body.customer_account_ids);
+      if (recipientKeys.length > 0 || touchesAccounts) {
+        const stored = await db('events').where('id', id).first('id', 'created_by', 'customer_email', 'host_email', 'admin_email');
+        if (!stored) return res.status(404).json({ error: 'Event not found' });
+        if (!ownsEvent(req.admin, stored)) {
+          const address = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+          const storedAddress = {
+            customer_email: stored.customer_email ?? stored.host_email,
+            admin_email: stored.admin_email,
+          };
+          let changesRecipients = recipientKeys.some((key) => address(req.body[key]) !== address(storedAddress[key]));
+          if (!changesRecipients && touchesAccounts) {
+            const current = (await require('../../services/customerAccountsService').getAssignmentsForEvent(parseInt(id, 10)))
+              .map((c) => Number(c.id));
+            const submitted = [...new Set(req.body.customer_account_ids.map(Number))];
+            changesRecipients = submitted.length !== current.length || submitted.some((v) => !current.includes(v));
+          }
+          if (changesRecipients) {
+            return res.status(403).json({ error: 'Only the gallery owner can change who receives its emails', code: 'EVENT_OWNER_REQUIRED' });
+          }
+        }
+      }
+
       // Who works on the gallery and whether their uploads wait for review
       // (issue 743) are the owner's to decide: an assigned admin holding
       // events.edit edits the gallery, not its team. A non-owner's echo of the

@@ -2123,6 +2123,7 @@
         "tags": "Oznake po prizorih, da lahko gostje filtrirajo"
       },
       "passwordOwnerOnly": "Samo lastnik galerije lahko spremeni geslo ali ga izklopi.",
+      "recipientsOwnerOnly": "Samo lastnik galerije lahko spremeni, kdo prejme e-pošto galerije.",
       "tags": "Oznake"
     },
     "folders": {

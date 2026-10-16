@@ -61,6 +61,10 @@ export const GeneralSection: React.FC<FieldsProps & {
   // Only the owner changes the team and the review switch; everyone else
   // sees them read-only (the backend refuses the change with 403).
   const canManageTeam = event?.can_manage_assignments === true;
+  // Who receives the gallery email (the customer address and the customer
+  // accounts) is the owner's too; a team member sees it read-only. An older
+  // payload without the field is read as the owner's, as for the password.
+  const ownsEvent = event?.can_manage_assignments !== false;
   return (
     <SectionCard>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -82,6 +86,7 @@ export const GeneralSection: React.FC<FieldsProps & {
             value={f.customer_email}
             onChange={(e) => set({ customer_email: e.target.value })}
             placeholder={t('events.hostEmailPlaceholder')}
+            disabled={!ownsEvent}
           />
         </div>
         {emailNeedsPassword(f) && (
@@ -160,7 +165,13 @@ export const GeneralSection: React.FC<FieldsProps & {
       <CustomerAccountPicker
         value={f.customer_accounts}
         onChange={(next) => set({ customer_accounts: next })}
+        disabled={!ownsEvent}
       />
+      {!ownsEvent && (
+        <p className="text-xs text-muted">
+          {t('events.settingsTab.recipientsOwnerOnly', 'Only the gallery owner can change who receives the gallery email.')}
+        </p>
+      )}
       {/* Team members (issue 743) */}
       {canManageTeam ? (
         <TeamMemberPicker

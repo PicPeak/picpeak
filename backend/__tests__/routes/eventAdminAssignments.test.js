@@ -553,4 +553,120 @@ describe('gallery team members and upload review (issue 743)', () => {
       }
     });
   });
+
+  describe('who the gallery emails go to stays with the owner', () => {
+    let eventId; let accountId; let otherAccountId;
+    const stored = () => db('events').where({ id: eventId }).first('customer_email', 'host_email', 'admin_email');
+    const setPortal = async (enabled) => {
+      const existing = await db('feature_flags').where({ key: 'customerPortal' }).first();
+      if (existing) await db('feature_flags').where({ key: 'customerPortal' }).update({ value: enabled });
+      else await db('feature_flags').insert({ key: 'customerPortal', value: enabled });
+    };
+
+    beforeAll(async () => {
+      // Runs galleries and assigns customer accounts, so only the owner rule
+      // stands between it and the recipient list.
+      const [roleRow] = await db('roles').insert({
+        name: 'gallery_crm_hand', display_name: 'Gallery CRM hand', is_system: false, priority: 43,
+        created_at: now(), updated_at: now(),
+      }).returning('id');
+      const roleId = roleRow?.id ?? roleRow;
+      const perms = await db('permissions').whereIn('name', [
+        'events.view', 'events.edit', 'events.support', 'customers.view', 'customers.events',
+      ]).select('id');
+      await db('role_permissions').insert(perms.map((p) => ({ role_id: roleId, permission_id: p.id })));
+      require('../../src/middleware/permissions').clearPermissionCache();
+      id.crmHand = await mkAdmin('crm-hand', 'gallery_crm_hand');
+      if (!id.hand) id.hand = await mkAdmin('mail-hand', 'editor');
+      id.mailRoot = await mkAdmin('mail-root', 'super_admin');
+
+      eventId = await mkEvent('mail-lock', id.owner);
+      await db('events').where({ id: eventId }).update({
+        customer_email: 'client@mail-lock.test', host_email: 'client@mail-lock.test', admin_email: 'studio@mail-lock.test',
+      });
+      await db('event_admin_assignments').insert([
+        { event_id: eventId, admin_user_id: id.hand, assigned_by: id.owner },
+        { event_id: eventId, admin_user_id: id.crmHand, assigned_by: id.owner },
+      ]);
+      const mkAccount = async (email) => {
+        const rows = await db('customer_accounts').insert({
+          email, display_name: email, is_active: true, created_at: now(),
+        }).returning('id');
+        return rows[0]?.id ?? rows[0];
+      };
+      accountId = await mkAccount('assigned@mail-lock.test');
+      otherAccountId = await mkAccount('elsewhere@mail-lock.test');
+      await db('event_customer_assignments').insert({
+        event_id: eventId, customer_account_id: accountId, assigned_by_admin_id: id.owner, assigned_at: now(),
+      });
+    });
+
+    it('refuses a team member changing or clearing the customer or admin email', async () => {
+      const before = await stored();
+      const refused = [
+        { customer_email: 'someone@elsewhere.test' },
+        { customer_email: null },
+        { customer_email: '' },
+        { admin_email: 'someone@elsewhere.test' },
+        { customer_email: 'client@mail-lock.test', admin_email: 'someone@elsewhere.test' },
+      ];
+      for (const body of refused) {
+        // eslint-disable-next-line no-await-in-loop
+        const res = await as(request(app).put(`/api/admin/events/${eventId}`), 'hand').send(body);
+        expect([body, res.status, res.body.code]).toEqual([body, 403, 'EVENT_OWNER_REQUIRED']);
+      }
+      expect(await stored()).toEqual(before);
+
+      // The settings draft's echo of the stored addresses is not a change.
+      const echo = await as(request(app).put(`/api/admin/events/${eventId}`), 'hand')
+        .send({ customer_email: 'Client@Mail-Lock.test', admin_email: 'studio@mail-lock.test', welcome_message: 'Echo' });
+      expect(echo.status).toBe(200);
+      expect((await db('events').where({ id: eventId }).first()).welcome_message).toBe('Echo');
+      expect(await stored()).toEqual(before);
+    });
+
+    it('refuses a team member holding customers.events changing the assigned customer accounts', async () => {
+      await setPortal(true);
+      try {
+        const res = await as(request(app).put(`/api/admin/events/${eventId}`), 'crm-hand')
+          .send({ customer_account_ids: [accountId, otherAccountId] });
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('EVENT_OWNER_REQUIRED');
+        const cleared = await as(request(app).put(`/api/admin/events/${eventId}`), 'crm-hand')
+          .send({ customer_account_ids: [] });
+        expect(cleared.status).toBe(403);
+        const assigned = await db('event_customer_assignments').where({ event_id: eventId }).pluck('customer_account_id');
+        expect(assigned.map(Number)).toEqual([accountId]);
+
+        const echo = await as(request(app).put(`/api/admin/events/${eventId}`), 'crm-hand')
+          .send({ customer_account_ids: [accountId], welcome_message: 'CRM echo' });
+        expect(echo.status).toBe(200);
+      } finally {
+        await setPortal(false);
+      }
+    });
+
+    it('does not send the gallery email to an address from the request body', async () => {
+      await db('email_queue').where({ event_id: eventId }).del();
+      const res = await as(request(app).post(`/api/admin/events/${eventId}/send-gallery-email`), 'hand').send({
+        customer_email: 'someone@elsewhere.test', recipient_email: 'someone@elsewhere.test',
+        email: 'someone@elsewhere.test', to: 'someone@elsewhere.test', recipients: ['someone@elsewhere.test'],
+      });
+      expect(res.status).toBe(200);
+      const rows = await db('email_queue').where({ event_id: eventId }).pluck('recipient_email');
+      expect(rows).toEqual(['client@mail-lock.test']);
+    });
+
+    it('lets the owner and a super admin change the addresses', async () => {
+      const owner = await as(request(app).put(`/api/admin/events/${eventId}`), 'owner')
+        .send({ customer_email: 'new-client@mail-lock.test', admin_email: 'owner@mail-lock.test' });
+      expect(owner.status).toBe(200);
+      expect(await stored()).toMatchObject({ customer_email: 'new-client@mail-lock.test', admin_email: 'owner@mail-lock.test' });
+
+      const root = await as(request(app).put(`/api/admin/events/${eventId}`), 'mail-root')
+        .send({ customer_email: 'root-client@mail-lock.test', admin_email: 'root@mail-lock.test' });
+      expect(root.status).toBe(200);
+      expect(await stored()).toMatchObject({ customer_email: 'root-client@mail-lock.test', admin_email: 'root@mail-lock.test' });
+    });
+  });
 });

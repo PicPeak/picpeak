@@ -2994,6 +2994,7 @@
       "undoSection": "Diesen Bereich zurücksetzen",
       "delivery": "Ordner & Auslieferung",
       "passwordOwnerOnly": "Nur der Besitzer der Galerie kann das Passwort ändern oder ausschalten.",
+      "recipientsOwnerOnly": "Nur der Besitzer der Galerie kann ändern, wer die Galerie-E-Mail erhält.",
       "tags": "Tags"
     },
     "folders": {

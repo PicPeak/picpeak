@@ -1005,6 +1005,7 @@
         "tags": "Etiquetar las fotos por escena para que los invitados filtren"
       },
       "passwordOwnerOnly": "Solo el propietario de la galería puede cambiar la contraseña o desactivarla.",
+      "recipientsOwnerOnly": "Solo el propietario de la galería puede cambiar quién recibe el correo de la galería.",
       "tags": "Etiquetas"
     },
     "folders": {

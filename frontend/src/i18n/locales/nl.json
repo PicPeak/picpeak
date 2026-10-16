@@ -985,6 +985,7 @@
         "tags": "Foto's op scène taggen zodat gasten kunnen filteren"
       },
       "passwordOwnerOnly": "Alleen de eigenaar van de galerij kan het wachtwoord wijzigen of uitschakelen.",
+      "recipientsOwnerOnly": "Alleen de eigenaar van de galerij kan wijzigen wie de galerij-e-mail ontvangt.",
       "tags": "Tags"
     },
     "folders": {
