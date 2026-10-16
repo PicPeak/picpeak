@@ -87,8 +87,10 @@ async function seedDraft({ slug, customerEmail = 'client@example.com', isDraft =
   return typeof row === 'object' ? row.id : row;
 }
 
-// Postgres hands the json column back parsed; SQLite as text.
-const emailData = (row) => (typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data);
+// Postgres hands the json column back parsed; SQLite as text. The password
+// fields are sealed at rest (emailQueueEncryption); open them as the sender does.
+const emailData = (row) => require('../../src/utils/emailQueueEncryption').decryptEmailData(
+  row.email_type, typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data, row.recipient_email);
 
 const queuedFor = (eventId) =>
   db('email_queue').where({ event_id: eventId, email_type: 'gallery_created' });

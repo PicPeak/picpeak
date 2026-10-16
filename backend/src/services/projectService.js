@@ -17,9 +17,9 @@ const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { auditedUpdate } = require('./accountingHistory');
-const { redactBearerLinks, hasMaskedRecoveryLink, parseEmailData } = require('../utils/emailSecretRedaction');
+const { redactBearerLinks, hasMaskedRecoveryLink, parseEmailData, MASK } = require('../utils/emailSecretRedaction');
 const {
-  isEncryptedEmailData, isProtectedEmailType, PROTECTED_PENDING_STATUS,
+  isEncryptedEmailData, isProtectedEmailType, maskSecretFields, PROTECTED_PENDING_STATUS,
 } = require('../utils/emailQueueEncryption');
 
 const PENDING_EMAIL_STATUSES = new Set(['pending', PROTECTED_PENDING_STATUS]);
@@ -745,6 +745,8 @@ async function getEmailPreview(emailId) {
   try {
     let variables = row.email_data;
     if (typeof variables === 'string') variables = JSON.parse(variables);
+    // A waiting row keeps its passwords sealed; the preview shows the mask.
+    variables = maskSecretFields(variables, MASK);
     const { renderQueuedEmail } = require('./emailProcessor');
     const rendered = await renderQueuedEmail(row.email_type, variables || {}, row.recipient_email);
     html = rendered && rendered.html ? rendered.html : null;
