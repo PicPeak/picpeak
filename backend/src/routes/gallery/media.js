@@ -700,9 +700,11 @@ router.get('/:slug/thumbnail/:photoId',
         : await ensureThumbnail(photo);
       // A stored pointer outside the rendition namespace (a legacy
       // `./thumbnails/...` or backslash shape) is rebuilt rather than served
-      // or left to 404 forever; the rebuild writes a canonical key.
+      // or left to 404 forever; the rebuild writes a canonical key. Checked
+      // against a concurrent settings change (issue 2140); the row keeps its
+      // pointer so a dropped render does not hand that pointer back.
       if (thumbnailPath && !isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
-        thumbnailPath = await ensureThumbnail({ ...photo, thumbnail_path: null }, { force: true });
+        thumbnailPath = await ensureThumbnail(photo, { force: true, checkSettings: true });
       }
 
       // What was actually resolved, not what was asked for. A tier request can
