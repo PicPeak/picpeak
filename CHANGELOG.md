@@ -5,6 +5,23 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.134.7](https://github.com/PicPeak/picpeak/compare/v3.134.6...v3.134.7) (2026-10-16)
+
+
+### Bug Fixes
+
+* **ci:** pass release-please outputs to the summary step as env ([#2101](https://github.com/PicPeak/picpeak/issues/2101)) ([59df71f](https://github.com/PicPeak/picpeak/commit/59df71fa1b79b17b9df1991edee4c1fc2657cb58))
+* **downloads:** count nothing on a HEAD probe ([#2149](https://github.com/PicPeak/picpeak/issues/2149)) ([b43aa40](https://github.com/PicPeak/picpeak/commit/b43aa40756c8844fa14adfb729bbed5414222928))
+* **gallery:** do not cache the hero and preview fallback redirect ([#2148](https://github.com/PicPeak/picpeak/issues/2148)) ([0988041](https://github.com/PicPeak/picpeak/commit/09880413541362d783eb43228609ab1bc177ecb2))
+* **gallery:** serve still images at enhanced and maximum protection instead of a dead token bounce (stable) ([#2150](https://github.com/PicPeak/picpeak/issues/2150)) ([48802a0](https://github.com/PicPeak/picpeak/commit/48802a0e7b05b77d27525c0170e90b039b7c0df6))
+* **media:** strip EXIF and GPS from derived images ([#2081](https://github.com/PicPeak/picpeak/issues/2081)) ([daad077](https://github.com/PicPeak/picpeak/commit/daad0770e91dfd6df4f3f9e6d69bf0b0a797a873))
+* **security:** count an IPv6 /64 as one client in the stable rate limiters ([#2103](https://github.com/PicPeak/picpeak/issues/2103)) ([6773366](https://github.com/PicPeak/picpeak/commit/677336676dc6df0e36f98da1f1533d2414c4d3cb))
+* **security:** derive the rate-limit client IP from the trusted proxy hop ([#2083](https://github.com/PicPeak/picpeak/issues/2083)) ([8211c5b](https://github.com/PicPeak/picpeak/commit/8211c5be9280c057cd40eaaef4473d0d062e9884))
+* **security:** send uploaded SVGs with a strict CSP and trim /health (stable) ([#2160](https://github.com/PicPeak/picpeak/issues/2160)) ([5e8be22](https://github.com/PicPeak/picpeak/commit/5e8be22039e78adc286301d76130b96bb12ca37a))
+* **security:** stop keeping gallery passwords in the mail queue (stable) ([#2162](https://github.com/PicPeak/picpeak/issues/2162)) ([b8d84f0](https://github.com/PicPeak/picpeak/commit/b8d84f0d9f94cf99a725ae267a1ca8b0fc793f44))
+* **security:** trust no proxy hop by default in the all-in-one image ([#2105](https://github.com/PicPeak/picpeak/issues/2105)) ([a92a468](https://github.com/PicPeak/picpeak/commit/a92a468f9bc42df40ea82d11ce153a03dc5f9d1b))
+* **upload:** validate file content on guest and chunked uploads ([#2085](https://github.com/PicPeak/picpeak/issues/2085)) ([cd513c7](https://github.com/PicPeak/picpeak/commit/cd513c7474b7cf8f0305f40021a7dc0f00dedc6f))
+
 ## [3.134.6](https://github.com/PicPeak/picpeak/compare/v3.134.5...v3.134.6) (2026-10-13)
 
 
