@@ -217,5 +217,92 @@ http {
                 run("docker", "rm", "-f", name)
 
 
+class UploadedSvgCspTest(unittest.TestCase):
+    # The server-level proxy_hide_header strips the backend's strict CSP from
+    # uploaded SVGs, so nginx itself must send the strict one for them, while
+    # every other response, the bundled SVG assets included, keeps the site CSP.
+    STRICT = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; sandbox"
+    BACKEND = """worker_processes 1;
+events { worker_connections 32; }
+http {
+    server {
+        listen 3000;
+        location ~* \\.svg$ {
+            default_type image/svg+xml;
+            add_header Content-Security-Policy "default-src *";
+            return 200 '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>';
+        }
+        location = /favicon.ico {
+            default_type "image/svg+xml; charset=utf-8";
+            return 200 '<svg xmlns="http://www.w3.org/2000/svg"/>';
+        }
+        location / {
+            default_type image/png;
+            return 200 'png';
+        }
+    }
+}
+"""
+
+    def get(self, port, uri):
+        for attempt in range(30):
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+            try:
+                connection.request("GET", uri, headers={"Host": "localhost"})
+                response = connection.getresponse()
+                response.read()
+                return response
+            except (ConnectionError, OSError):
+                if attempt == 29:
+                    raise
+                time.sleep(0.1)
+            finally:
+                connection.close()
+
+    def test_uploaded_svgs_get_the_strict_csp(self):
+        source = (ROOT / "frontend/nginx.conf").read_text()
+        site = re.search(r'add_header Content-Security-Policy "([^"]+)" always;', source).group(1)
+        network = "picpeak-nginx-test-" + uuid.uuid4().hex[:12]
+        with tempfile.TemporaryDirectory(prefix="picpeak-nginx-test-") as directory:
+            directory = Path(directory)
+            (directory / "frontend.conf").write_text(source)
+            (directory / "nginx.conf").write_text("""worker_processes 1;
+events { worker_connections 128; }
+http {
+    include /etc/nginx/mime.types;
+    include /fixtures/frontend.conf;
+}
+""")
+            (directory / "backend.conf").write_text(self.BACKEND)
+            backend = "picpeak-nginx-test-" + uuid.uuid4().hex[:12]
+            frontend = "picpeak-nginx-test-" + uuid.uuid4().hex[:12]
+            run("docker", "network", "create", network)
+            try:
+                run("docker", "run", "-d", "--name", backend, "--network", network,
+                    "--network-alias", "backend", "-v", f"{directory}:/fixtures:ro",
+                    IMAGE, "nginx", "-c", "/fixtures/backend.conf", "-g", "daemon off;")
+                run("docker", "run", "-d", "--name", frontend, "--network", network,
+                    "-p", "127.0.0.1::80", "-v", f"{directory}:/fixtures:ro",
+                    IMAGE, "nginx", "-c", "/fixtures/nginx.conf", "-g", "daemon off;")
+                port = int(run("docker", "port", frontend, "80/tcp").split(":")[-1])
+                for uri in ("/uploads/logos/logo.svg", "/uploads/logos/LOGO.SVG", "/favicon.ico"):
+                    with self.subTest(uri=uri):
+                        response = self.get(port, uri)
+                        self.assertEqual(response.status, 200)
+                        self.assertEqual(response.getheader("Content-Security-Policy"), self.STRICT)
+                        self.assertEqual(len(response.headers.get_all("Content-Security-Policy")), 1)
+                        self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
+                # A proxied non-SVG and nginx's own files keep the site CSP.
+                for uri, status in (("/uploads/logos/logo.png", 200), ("/assets/logo.svg", 404),
+                                    ("/admin/login", 200)):
+                    with self.subTest(uri=uri):
+                        response = self.get(port, uri)
+                        self.assertEqual(response.status, status)
+                        self.assertEqual(response.getheader("Content-Security-Policy"), site)
+            finally:
+                run("docker", "rm", "-f", backend, frontend)
+                run("docker", "network", "rm", network)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
