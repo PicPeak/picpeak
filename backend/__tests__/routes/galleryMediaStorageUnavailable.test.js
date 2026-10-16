@@ -191,6 +191,42 @@ describe('gallery media routes while storage cannot be reached', () => {
     expect(res.headers.location).toBe(`/api/gallery/${SLUG}/photo/${photoId}`);
   });
 
+  // The headers staged for the image must not ride along on the fallback
+  // redirect (issue 2138): the browser would cache a transient failure as a
+  // redirect to the original for the image's lifetime.
+  describe('falling back after the image headers were staged', () => {
+    const accessDenied = () => Object.assign(new Error('Access Denied'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } });
+
+    it.each([
+      ['/hero', 'hero-'],
+      ['/preview', 'preview-'],
+    ])('sends %s on to the original without its cache lifetime or ETag', async (route, etagPrefix) => {
+      storage.stat.mockResolvedValue({ size: 1024, mtime: new Date('2026-08-01T00:00:00Z') });
+      storage.get.mockRejectedValue(accessDenied());
+
+      const res = await get(`${route}/${photoId}`);
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(`/api/gallery/${SLUG}/photo/${photoId}`);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers.etag || '').not.toContain(etagPrefix);
+    });
+
+    it.each([
+      ['/hero', 'hero-'],
+      ['/preview', 'preview-'],
+    ])('keeps the caching headers on %s when the image is served', async (route, etagPrefix) => {
+      storage.stat.mockResolvedValue({ size: 3, mtime: new Date('2026-08-01T00:00:00Z') });
+      storage.get.mockResolvedValue(Readable.from([Buffer.from('abc')]));
+
+      const res = await get(`${route}/${photoId}`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['cache-control']).toBe('private, max-age=3600');
+      expect(res.headers.etag).toContain(etagPrefix);
+    });
+  });
+
   describe('writing a freshly made preview', () => {
     const fs = require('fs');
     const os = require('os');
