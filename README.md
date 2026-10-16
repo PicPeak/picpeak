@@ -72,7 +72,11 @@ it). For public access, terminate TLS in a reverse proxy on the host and set
 `PICPEAK_BIND_ADDRESS=127.0.0.1` so the plain-HTTP port cannot be reached
 around it.
 
-Compose trusts one forwarding hop (its frontend nginx). For a host-local TLS
+Compose trusts one forwarding hop (its frontend nginx) unless `TRUST_PROXY` is
+set, so a client-supplied `X-Forwarded-For` cannot change its rate-limit key.
+If another proxy already sits in front of the frontend (Cloudflare Tunnel,
+Traefik, NPM, Caddy) and `TRUST_PROXY` is not set, set it to `2`, otherwise
+all visitors share the proxy's address. For a host-local TLS
 proxy in front of the frontend, set `TRUST_PROXY=2`, `COOKIE_SECURE=true` and
 `ENABLE_HSTS=true`. Keep the frontend loopback-only with this two-hop setting,
 and configure the outer proxy to append or overwrite forwarding headers using
@@ -81,14 +85,20 @@ the real client address. The installer selects these settings in proxy mode.
 > **Updating / release channels:** set `PICPEAK_CHANNEL` (`stable` default, or `beta`) in `.env`, then `docker compose pull && docker compose up -d`. See [RELEASING.md](RELEASING.md) for the promotion cadence.
 
 > [!NOTE]
-> **Recommended hardening:** an existing install keeps working without
-> changes. With `TRUST_PROXY` unset PicPeak still trusts forwarding headers
-> from every private-range address (and logs a warning at startup); set it to
-> the exact number of reverse-proxy hops instead. Behind TLS, also set
-> `COOKIE_SECURE=true`, and bind the origin to loopback
-> (`PICPEAK_BIND_ADDRESS=127.0.0.1` for Compose, `LISTEN_HOST=127.0.0.1` for a
-> native install). The Compose files now publish the raw backend port on host
-> loopback only and pass `TRUST_PROXY` through unchanged (the installer writes an exact hop count for new installs). Unattended installer runs require
+> **Upgrading a Compose install behind another reverse proxy:** Compose now
+> defaults `TRUST_PROXY` to `1`. If Cloudflare Tunnel, Traefik, NPM or Caddy
+> sits in front of the frontend and your `.env` has no `TRUST_PROXY`, set
+> `TRUST_PROXY=2` before updating, otherwise every visitor shares the proxy's
+> address for rate limits, login lockouts and audit IPs. The backend logs a
+> warning once per start when it sees such a proxy in front of the bundled
+> nginx while `TRUST_PROXY` is `1`. A native install with
+> `TRUST_PROXY` unset still trusts forwarding headers from every private-range
+> address (and logs a warning at startup); set it to the exact number of
+> reverse-proxy hops instead. Behind TLS, also set `COOKIE_SECURE=true`, and
+> bind the origin to loopback (`PICPEAK_BIND_ADDRESS=127.0.0.1` for Compose,
+> `LISTEN_HOST=127.0.0.1` for a native install). The Compose files publish the
+> raw backend port on host loopback only (the installer writes an exact hop
+> count for new installs). Unattended installer runs require
 > `--allow-insecure-http` before creating a plaintext deployment.
 
 ### Or: one container, no compose file
