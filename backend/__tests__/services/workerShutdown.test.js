@@ -39,6 +39,7 @@ describe.each(['backgroundProcessor', 'faceQueue'])('%s shutdown', name => {
     }));
     jest.doMock('../../src/services/faceProcessor', () => ({
       processPhotoFaces: processPhoto, TransientSourceError: class extends Error {},
+      claimGuard: claimed => db('photos').where({ id: claimed.id }),
     }));
     jest.doMock('../../src/services/faceClient', () => ({ SidecarUnavailableError }));
     jest.doMock('../../src/services/faceSettings', () => ({
@@ -95,7 +96,8 @@ describe.each(['backgroundProcessor', 'faceQueue'])('%s shutdown', name => {
     db.transaction.mockResolvedValueOnce({ id: 1 });
     worker.start();
     await jest.advanceTimersByTimeAsync(0);
-    expect(processPhoto).toHaveBeenCalledWith(1);
+    // faceQueue hands over the claimed row (its attempt id guards the scan).
+    expect(processPhoto).toHaveBeenCalledWith(name === 'faceQueue' ? { id: 1 } : 1);
     let done = false;
     const first = worker.stop();
     expect(worker.stop()).toBe(first);
@@ -118,7 +120,7 @@ describe.each(['backgroundProcessor', 'faceQueue'])('%s shutdown', name => {
     const stopped = worker.stop();
     claim.resolve({ id: 2 });
     await expectPromptStop(() => stopped);
-    expect(processPhoto).toHaveBeenCalledWith(2);
+    expect(processPhoto).toHaveBeenCalledWith(name === 'faceQueue' ? { id: 2 } : 2);
     expect(db.transaction).toHaveBeenCalledTimes(2);
   });
 
@@ -153,7 +155,7 @@ describe.each(['backgroundProcessor', 'faceQueue'])('%s shutdown', name => {
       processPhoto.mockRejectedValue(new SidecarUnavailableError('offline'));
       worker.start();
       await jest.advanceTimersByTimeAsync(0);
-      expect(janitorUpdate).toHaveBeenCalledWith({ face_status: 'pending', face_started_at: null });
+      expect(janitorUpdate).toHaveBeenCalledWith({ face_status: 'pending', face_started_at: null, face_attempt_id: null });
       await expectPromptStop();
       expect(worker.inFlightByEvent.size).toBe(0);
     });

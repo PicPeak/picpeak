@@ -152,6 +152,9 @@ function transcodeOptions(rungs, outDir, { toneMap = false, threads = 1 } = {}) 
     const dir = path.join(outDir, rung.name);
     args.push(
       '-map', `[v${i}]`, '-map', '0:a:0?', '-sn', '-dn',
+      // Each output gets none of the source's metadata (location, artist,
+      // device tags), which would otherwise land in every rung's init.mp4.
+      '-map_metadata', '-1', '-map_chapters', '-1',
       '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'high', '-pix_fmt', 'yuv420p',
       '-crf', '23', '-maxrate', String(rung.bitrate), '-bufsize', String(rung.bitrate * 2),
       '-force_key_frames', `expr:gte(t,n_forced*${SEGMENT_SECONDS})`, '-sc_threshold', '0',
