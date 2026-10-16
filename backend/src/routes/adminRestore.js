@@ -133,6 +133,12 @@ router.post('/validate', requireSuperAdmin(), [
       data: {
         validation: result.validation,
         spaceCheck,
+        // A dry run checks the manifest (signature, structure, paths, space),
+        // not the backed-up files themselves: a corrupt or missing snapshot
+        // file is only caught by the checksum check of the real restore.
+        contentChecksumsVerified: false,
+        contentVerificationNote: 'The manifest was verified. The backed-up files and database dump are not read '
+          + 'by this check; their content checksums are verified when the restore runs.',
         logs: result.logs
       }
     });

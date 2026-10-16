@@ -75,6 +75,8 @@ function validateDetails(input, request) {
       continue;
     }
     let value = raw == null ? '' : raw.trim();
+    // Stored in NFC, like every customer name field (issue 2079).
+    if (key === 'company_name') value = value.normalize('NFC');
     if (key === 'country_code') {
       value = value.toUpperCase();
       if (value && !/^[A-Z]{2}$/.test(value)) invalid.push(key);

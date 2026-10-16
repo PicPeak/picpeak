@@ -142,8 +142,16 @@ async function categorizeEvent(eventId) {
     // Guard the UPDATE on category_id still being NULL. Between the SELECT
     // above and here a photographer may have set one by hand, and their
     // choice wins — rule 1 is not a best-effort.
+    //
+    // And on the scan result the rule was matched against (issue 2108): a
+    // purge or a re-queue since the SELECT took the photo out of 'done', and
+    // a re-scan that has finished since may have found other faces.
     const updated = await db('photos')
-      .where({ id: photo.id })
+      .where({ id: photo.id, face_status: 'done' })
+      .modify((q) => {
+        if (photo.face_count == null) q.whereNull('face_count');
+        else q.where('face_count', photo.face_count);
+      })
       .whereNull('category_id')
       .update({ category_id: category.id, auto_categorized: true });
 

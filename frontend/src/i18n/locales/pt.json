@@ -677,6 +677,17 @@
         "pets": "Animais de estimação",
         "black_and_white": "Preto e branco"
       }
+    },
+    "tile": {
+      "viewFullSize": "Ver em tamanho original",
+      "downloadPhoto": "Transferir foto",
+      "commentOnPhoto": "Comentar a foto",
+      "likePhoto": "Gostar da foto",
+      "unlikePhoto": "Remover o gosto da foto",
+      "comment": "Comentar",
+      "like": "Gostar",
+      "unlike": "Remover gosto",
+      "selectPhoto": "Selecionar {{name}}"
     }
   },
   "categories": {
@@ -858,6 +869,8 @@
     "downloadProtection": "Proteção de Download",
     "disableRightClick": "Bloquear menu do botão direito",
     "watermarkDownloads": "Adicionar marca d'água aos downloads",
+    "watermarkText": "Texto da marca d'água",
+    "watermarkTextHelp": "Substitui o nome da empresa na marca d'água de texto desta galeria. Deixe vazio para usar o nome da empresa. Não é exibido quando o Branding tem um logotipo de marca d'água.",
     "enableDevtoolsProtection": "Detectar ferramentas de desenvolvedor",
     "useCanvasRendering": "Renderização em Canvas (proteção avançada)",
     "protectionInfo": "Recursos de proteção ajudam a evitar downloads não autorizados, mas não bloqueiam todos os métodos.",
@@ -1191,7 +1204,12 @@
       "publishLink": "Publicar"
     },
     "showExifToGuests": "Mostrar os dados da câmera aos convidados",
-    "showExifToGuestsHelp": "Câmera, lente, distância focal, abertura, velocidade do obturador e ISO aparecem abaixo da foto na visualização em tela cheia. A localização e os números de série nunca são armazenados nem exibidos."
+    "showExifToGuestsHelp": "Câmera, lente, distância focal, abertura, velocidade do obturador e ISO aparecem abaixo da foto na visualização em tela cheia. A localização e os números de série nunca são armazenados nem exibidos.",
+    "welcomeEditor": {
+      "lineBreaksPreserved": "As quebras de linha são mantidas nos e-mails",
+      "tip": "Dica: prima Enter para criar uma nova linha. Cada linha aparecerá como um parágrafo separado nos e-mails.",
+      "preview": "Pré-visualização:"
+    }
   },
   "settings": {
     "title": "Configurações do Sistema",
@@ -1206,6 +1224,8 @@
       "maxFileSize": "Tamanho Máx. do Arquivo (MB)",
       "videoWebRendition": "Cópias de vídeos reproduzíveis no browser",
       "videoWebRenditionHelp": "Recodifica os vídeos que um browser não consegue reproduzir (HEVC, QuickTime, MP4 não transmissíveis) para um MP4 H.264 para reprodução. O original continua a ser a transferência. Consome CPU por vídeo e um segundo ficheiro; ao ativar, os vídeos já carregados entram na fila.",
+      "videoStripMetadata": "Remover a localização e os dados do dispositivo dos vídeos reproduzidos",
+      "videoStripMetadataHelp": "Os vídeos que um browser já reproduz recebem uma cópia sem a localização da gravação, a câmara e outros metadados, feita sem recodificar; os convidados reproduzem essa cópia. Guarda um ficheiro adicional por cada um desses vídeos, com cerca do tamanho do original. O original continua a ser a transferência. Ao desativar, as cópias já feitas mantêm-se.",
       "videoAdaptiveStreaming": "Streaming de vídeo adaptativo",
       "videoAdaptiveStreamingHelp": "Converte cada vídeo numa transmissão com até três qualidades (480p, 720p, 1080p), para que a reprodução comece depressa e se adapte à ligação. O original continua a ser a transferência. Consome CPU por vídeo e aproximadamente outro tanto de armazenamento; os vídeos com mais de 30 minutos são reproduzidos como antes.",
       "maxFilesPerUpload": "Máx. de Arquivos por Envio",

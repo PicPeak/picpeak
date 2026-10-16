@@ -21,11 +21,10 @@ const crypto = require('crypto');
 const archiver = require('archiver');
 const { db } = require('../database/db');
 const { livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
-const watermarkService = require('./watermarkService');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getStorage } = require('./storage');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
-const { renderPhotoForDownload } = require('./downloadRendition');
+const { renderPhotoForDownload, resolveWatermarkSettings } = require('./downloadRendition');
 const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const logger = require('../utils/logger');
 
@@ -252,15 +251,8 @@ class DownloadZipService {
 
       if (photos.length === 0) return { success: false, error: 'No photos' };
 
-      // Watermark logic (same as gallery.js download-all)
-      const watermarkSettings = await watermarkService.getWatermarkSettings();
-      const eventWatermarkEnabled = event.watermark_downloads === true || event.watermark_downloads === 1;
-      const shouldApplyWatermark = (watermarkSettings && watermarkSettings.enabled) || eventWatermarkEnabled;
-      const effectiveSettings = shouldApplyWatermark ? {
-        ...watermarkSettings,
-        enabled: true,
-        text: event.watermark_text || watermarkSettings?.text || 'Protected',
-      } : null;
+      // Same watermark rule as the streamed download-all.
+      const effectiveSettings = await resolveWatermarkSettings(event);
 
       // The cached archive is built AT the gallery's standard resolution
       // (#858) — 'original' keeps the historical behaviour. Any change to the

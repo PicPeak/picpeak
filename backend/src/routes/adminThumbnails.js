@@ -1,5 +1,4 @@
 const express = require('express');
-const path = require('path');
 const router = express.Router();
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
@@ -10,29 +9,7 @@ const { getStorage } = require('../services/storage');
 const logger = require('../utils/logger');
 const applicationWork = require('../services/activeApplicationWork');
 
-/**
- * Do these two stored paths address the same object?
- *
- * Compared the way the storage backends do, not as raw strings.
- * LocalFsStorage._resolve and S3StorageBackend._key both fold `\` to `/` and
- * strip a leading `./`, so `thumbnails\thumb_x.jpg`, `./thumbnails/thumb_x.jpg`
- * and `thumbnails/thumb_x.jpg` are all one file. A legacy thumbnail_path in
- * any of those shapes would compare unequal to the freshly generated POSIX
- * key — and the "the key moved, delete the old one" branch below would then
- * delete the thumbnail that had just been written, leaving every regenerated
- * photo pointing at nothing.
- */
-// As LocalFsStorage._resolve reads a key (path.posix.normalize), the coarser
-// of the two backends: S3 keeps an interior `./` or `//` as its own object,
-// and calling two keys equal here can only keep a file, never delete one.
-const canonicalStorageKey = (key) => {
-  let canonical = path.posix.normalize(String(key).replace(/\\/g, '/'));
-  while (/^\.?\//.test(canonical)) canonical = canonical.replace(/^\.?\/+/, '');
-  return canonical;
-};
-function sameStorageKey(a, b) {
-  return canonicalStorageKey(a) === canonicalStorageKey(b);
-}
+const { canonicalStorageKey, sameStorageKey } = require('../utils/storageKey');
 
 // One regeneration of each kind at a time. Two overlapping library-wide runs
 // double the load and delete each other's freshly written renditions. Held per
@@ -202,7 +179,11 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
         'processing_status',
         // An external row's tier keys carry its size and mtime; selected
         // here so the helpers need not read them per photo.
-        'source_origin', 'external_relpath', 'filename', 'size_bytes', 'source_mtime_ms', 'source_filename'
+        'source_origin', 'external_relpath', 'filename', 'size_bytes', 'source_mtime_ms', 'source_filename',
+        // A RAW photo's tier keys are scoped by its processing attempt
+        // (imageProcessor's derivativeCacheId): without it the sweep derives
+        // other keys and the old tiers stay served (issue 2113).
+        'processing_attempt_id'
       );
     if (eventId) {
       query = query.where('event_id', eventId);
@@ -258,7 +239,12 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
           // the canonical rendition leaves phones served the old fit, quality
           // or format indefinitely — which is exactly what this endpoint is
           // invoked to undo after a settings change.
-          await require('../services/imageProcessor').deleteThumbnailTiers(photo);
+          //
+          // `strict`: a tier that could not be deleted keeps being served, so
+          // the photo counts as failed, not regenerated. The rebuild still
+          // runs; only the count changes.
+          const tierError = await require('../services/imageProcessor')
+            .deleteThumbnailTiers(photo, { strict: true }).then(() => null, (err) => err);
 
           // Through ensureThumbnail, not a hand-rolled path (#1129). This
           // route used to resolve the source as `storage/events/active/<path>`
@@ -311,8 +297,13 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
                 );
               });
             }
-            successCount++;
-            logger.info(`Regenerated thumbnail for photo ${photo.id}`);
+            if (tierError) {
+              logger.error(`Regenerated thumbnail for photo ${photo.id}, but its old tiers remain: ${tierError.message}`);
+              errorCount++;
+            } else {
+              successCount++;
+              logger.info(`Regenerated thumbnail for photo ${photo.id}`);
+            }
           } else {
             errorCount++;
           }
@@ -353,7 +344,9 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
     // external photo looks managed here and generation is skipped.
     let query = db('photos').select(
       'id', 'event_id', 'path', 'media_type', 'mime_type', 'preview_path',
-      'source_origin', 'external_relpath', 'filename', 'size_bytes', 'source_mtime_ms'
+      'source_origin', 'external_relpath', 'filename', 'size_bytes', 'source_mtime_ms',
+      // RAW tier keys carry the processing attempt; see /regenerate.
+      'processing_attempt_id'
     );
     if (eventId) query = query.where('event_id', eventId);
     // Skip videos — preview tier is image-only.
@@ -387,7 +380,10 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
           // leaves phones served the stale 640/1280 copy indefinitely — which
           // is precisely the case this endpoint exists for (a replaced
           // reference source, or a corrupted rendition).
-          await require('../services/imageProcessor').deletePreviewTiers(photo);
+          // `strict`: a tier left behind counts the photo as failed (see
+          // /regenerate); the rebuild still runs.
+          const tierError = await require('../services/imageProcessor')
+            .deletePreviewTiers(photo, { strict: true }).then(() => null, (err) => err);
           // `force`: never adopt a lazy generation already in flight (#1020).
           const newPreviewPath = await ensurePreviewImage({ ...photo, preview_path: null }, { force: true });
           if (newPreviewPath) {
@@ -400,7 +396,12 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
             if (photo.preview_path && !sameStorageKey(photo.preview_path, newPreviewPath)) {
               superseded.push({ id: photo.id, key: photo.preview_path });
             }
-            successCount++;
+            if (tierError) {
+              logger.error(`Regenerated preview for photo ${photo.id}, but its old tiers remain: ${tierError.message}`);
+              errorCount++;
+            } else {
+              successCount++;
+            }
           } else {
             errorCount++;
           }

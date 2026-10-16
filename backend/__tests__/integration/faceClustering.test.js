@@ -293,6 +293,113 @@ describe('faceClustering (#1074)', () => {
       const second = await clustering.recluster(eventId);
       expect(second).toBe(first);
     });
+
+    // Issue 2112: clearing and re-assigning are one transaction.
+    const groupsOf = async (eventId) => {
+      const rows = Array.from(await db('photo_faces').where({ event_id: eventId }).orderBy('id').select('id', 'person_id'));
+      const groups = new Map();
+      for (const row of rows) {
+        if (!groups.has(row.person_id)) groups.set(row.person_id, []);
+        groups.get(row.person_id).push(row.id);
+      }
+      return [...groups.values()].map((ids) => ids.join(',')).sort();
+    };
+
+    it('groups the faces as before and never shows the event without people mid-way', async () => {
+      const eventId = await seedEvent('recluster-atomic');
+      const faces = [];
+      for (let v = 0; v < 3; v++) {
+        for (const id of [61, 62, 63]) faces.push(await insertFace(eventId, makeEmbedding(id, v)));
+      }
+      await clustering.assignFaces(eventId, faces);
+      const before = await groupsOf(eventId);
+      expect(before).toHaveLength(3);
+
+      // Reads racing the recluster on the same connection pool: before the
+      // fix they ran between the clearing transaction and the re-assignment.
+      const seen = [];
+      let done = false;
+      const run = clustering.recluster(eventId).finally(() => { done = true; });
+      while (!done) {
+        const [{ c }] = await db('event_people').where({ event_id: eventId }).count({ c: '*' });
+        seen.push(Number(c));
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      expect(await run).toBe(3);
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((n) => n > 0)).toBe(true);
+      expect(await groupsOf(eventId)).toEqual(before);
+    });
+
+    it('leaves the people as they were when it fails part-way', async () => {
+      const eventId = await seedEvent('recluster-rollback');
+      const faces = [];
+      for (let v = 0; v < 3; v++) {
+        for (const id of [64, 65]) faces.push(await insertFace(eventId, makeEmbedding(id, v)));
+      }
+      await clustering.assignFaces(eventId, faces);
+      const people = Array.from(await db('event_people').where({ event_id: eventId }).orderBy('id'));
+      await db('event_people').where({ id: people[0].id }).update({ label: 'Anna', is_hidden: true });
+      const before = Array.from(await db('photo_faces').where({ event_id: eventId }).orderBy('id').select('id', 'person_id'));
+
+      // Fails the step that carries the name over, after the people were
+      // cleared and re-assigned.
+      await db.raw(`CREATE TRIGGER fail_recluster_label BEFORE UPDATE OF label ON event_people
+        WHEN NEW.label = 'Anna' BEGIN SELECT RAISE(ABORT, 'label write refused'); END`);
+      try {
+        await expect(clustering.recluster(eventId)).rejects.toThrow('label write refused');
+      } finally {
+        await db.raw('DROP TRIGGER fail_recluster_label');
+      }
+
+      const after = Array.from(await db('event_people').where({ event_id: eventId }).orderBy('id'));
+      expect(after.map((p) => p.id)).toEqual(people.map((p) => p.id));
+      expect(after[0]).toMatchObject({ label: 'Anna' });
+      expect(!!after[0].is_hidden).toBe(true);
+      expect(Array.from(await db('photo_faces').where({ event_id: eventId }).orderBy('id').select('id', 'person_id')))
+        .toEqual(before);
+    });
+
+    // The first recluster transaction runs to the end, then fails with `code`.
+    const failFirstTransaction = (code) => {
+      const original = db.client.transaction;
+      return jest.spyOn(db.client, 'transaction').mockImplementationOnce(function (container, ...rest) {
+        return original.call(this, async (trx) => {
+          await container(trx);
+          throw Object.assign(new Error(`failed with ${code}`), { code });
+        }, ...rest);
+      });
+    };
+
+    it('runs once more when PostgreSQL breaks a deadlock with it, and only then', async () => {
+      const eventId = await seedEvent('recluster-deadlock-retry');
+      const faces = [];
+      for (let v = 0; v < 3; v++) {
+        for (const id of [66, 67]) faces.push(await insertFace(eventId, makeEmbedding(id, v)));
+      }
+      await clustering.assignFaces(eventId, faces);
+      const [first] = Array.from(await db('event_people').where({ event_id: eventId }).orderBy('id'));
+      await db('event_people').where({ id: first.id }).update({ label: 'Anna' });
+
+      const deadlock = failFirstTransaction('40P01');
+      try {
+        expect(await clustering.recluster(eventId)).toBe(2);
+      } finally {
+        deadlock.mockRestore();
+      }
+      const after = Array.from(await db('event_people').where({ event_id: eventId }));
+      expect(after.map((p) => p.label).filter(Boolean)).toEqual(['Anna']);
+      expect(after.some((p) => p.id === first.id)).toBe(false);
+
+      const other = failFirstTransaction('SQLITE_IOERR');
+      const calls = () => other.mock.calls.length;
+      try {
+        await expect(clustering.recluster(eventId)).rejects.toThrow('failed with SQLITE_IOERR');
+        expect(calls()).toBe(1);
+      } finally {
+        other.mockRestore();
+      }
+    });
   });
 
   describe('consolidate', () => {

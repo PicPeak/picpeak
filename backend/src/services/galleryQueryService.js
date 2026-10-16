@@ -22,7 +22,7 @@ const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
 const { guestUploadMaxEdgeOf } = require('./guestUploadDownscale');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
-const { galleryFullResolutionDenial } = require('./galleryAssetPolicy');
+const { galleryFullResolutionDenial, isRemuxWebKey } = require('./galleryAssetPolicy');
 /**
  * The photos a viewer's list is made of, before sorting and paging: this
  * event's processed photos, the viewer's visibility rule, the slideshow pin
@@ -97,10 +97,15 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   const { sort = 'upload_date', order = 'desc' } = query;
 
   // Get watermark settings to generate cache-busting version for URLs
-  const watermarkSettings = await watermarkService.getWatermarkSettings();
+  const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(event);
+  // The photo route also watermarks on the per-event flag alone (issue 2076),
+  // so that flag is part of the version: flipping it must be a new URL, not a
+  // 30-minute-fresh cached copy of the other variant.
   const wmVersion = watermarkSettings?.enabled
-    ? `wm=${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
-    : '';
+    ? `wm=${watermarkService.versionTag(watermarkSettings)}`
+    : (parseBooleanInput(event.watermark_downloads, false)
+      // The gallery's own text is drawn there too, so changing it is a new URL.
+      ? `wm=ev${watermarkSettings?.text ? watermarkService.versionTag(watermarkSettings) : ''}` : '');
 
   // Build the query with sorting
   const sortOrder = order === 'asc' ? 'asc' : 'desc';
@@ -791,7 +796,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         hls_url: adaptiveStreaming && isVideo && accessLevel !== 'slideshow'
             && photo.hls_status === 'complete' && photo.hls_path
             && (!withholdOriginals || deliveredIds.has(Number(photo.id))
-              || (photo.web_path && photo.web_status === 'complete'))
+              || (photo.web_path && photo.web_status === 'complete' && !isRemuxWebKey(photo.web_path)))
           ? `/api/gallery/${slug}/hls/${photo.id}/master.m3u8?v=${String(photo.hls_path).slice(-12)}${adminPreview ? '&admin_preview=1' : ''}`
           : null,
         // Feedback data (hidden when show_feedback_to_guests is disabled)

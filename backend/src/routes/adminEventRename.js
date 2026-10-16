@@ -44,7 +44,8 @@ router.post('/:eventId/rename', adminAuth, requirePermission('events.edit'), req
     );
 
     if (!result.success) {
-      return res.status(400).json(result);
+      // The gallery's archive claim is held (archive or another rename).
+      return res.status(result.conflict ? 409 : 400).json(result);
     }
 
     res.json({
