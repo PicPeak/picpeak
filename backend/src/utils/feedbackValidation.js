@@ -145,14 +145,14 @@ const validateFeedbackType = param('feedbackType')
  * Validate photo ID parameter
  */
 const validatePhotoId = param('photoId')
-  .isInt({ min: 1 })
+  .isInt({ min: 1, max: 2147483647 })
   .withMessage('Invalid photo ID');
 
 /**
  * Validate event ID parameter
  */
 const validateEventId = param('eventId')
-  .isInt({ min: 1 })
+  .isInt({ min: 1, max: 2147483647 })
   .withMessage('Invalid event ID');
 
 /**

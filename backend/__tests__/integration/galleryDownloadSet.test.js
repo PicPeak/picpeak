@@ -177,6 +177,43 @@ describe('gallery bulk download set', () => {
     });
   });
 
+  // Issue 2121: an external photo whose file is gone from the share.
+  describe('a photo whose file is gone from the share', () => {
+    let event; let kept; let gone;
+
+    beforeAll(async () => {
+      event = await mkEvent();
+      kept = await mkPhoto(event);
+      gone = await mkPhoto(event, { unavailable_reason: 'source_missing' });
+    });
+
+    it.each([[undefined], ['client']])('is in no list, count or Download All (access %s)', async (accessLevel) => {
+      const list = await guest(event, 'get', '/photos', accessLevel);
+      expect(list.status).toBe(200);
+      expect(list.body.photos.map((p) => p.id)).toEqual([kept.id]);
+      const zip = await asBuffer(guest(event, 'get', '/download-all', accessLevel));
+      expect(zip.status).toBe(200);
+      expect(has(zip.body, kept)).toBe(true);
+      expect(has(zip.body, gone)).toBe(false);
+      const jobs = require('../../src/services/downloadJobService');
+      const all = await jobs.photoQuery(event.id, null, accessLevel || 'guest').select('photos.id');
+      expect(all.map((r) => r.id)).toEqual([kept.id]);
+    });
+
+    it('is not in the prebuilt archive, a selected ZIP or a single download', async () => {
+      expect((await zipService.generateZip(event.id)).success).toBe(true);
+      const info = await zipService.getZipInfo(event.id);
+      const chunks = [];
+      for await (const chunk of await storage.get(info.key)) chunks.push(chunk);
+      expect(has(Buffer.concat(chunks), gone)).toBe(false);
+
+      expect((await guest(event, 'post', '/download-selected').send({ photo_ids: [gone.id] })).status).toBe(404);
+      const unknown = await guest(event, 'get', '/download/987654');
+      const single = await guest(event, 'get', `/download/${gone.id}`);
+      expect(single.status).toBe(unknown.status);
+    });
+  });
+
   it('finishing a photo of an event without an archive leaves the cache alone', async () => {
     // A large upload finishes photo after photo: no cleanup and no rebuild
     // armed for each one when there is nothing to drop.

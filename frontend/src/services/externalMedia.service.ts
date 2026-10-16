@@ -37,6 +37,8 @@ export interface ExternalImportStatus {
     failed?: boolean;
     error?: 'folder_missing' | 'permission_denied' | 'import_failed';
   } | null;
+  /** Photos of the gallery whose file the scans found gone (issue 2121). */
+  missing_files?: number;
 }
 
 export const externalMediaService = {

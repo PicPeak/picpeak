@@ -521,8 +521,8 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     }
 
     await archiveEvent(await db('events').where('id', eventId).first());
-    // The originals are gone (the directory itself is left behind).
-    expect(await fs.promises.readdir(dir)).toEqual([]);
+    // The originals are gone, and the folders they were in with them.
+    await expect(fs.promises.readdir(dir)).rejects.toMatchObject({ code: 'ENOENT' });
 
     await restore(eventId);
 
@@ -596,7 +596,9 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     try {
       await restore(eventId);
       expect(await db('photos').where('id', copied).first()).toMatchObject({ web_status: 'pending' });
-      expect(await db('photos').where('id', playable).first()).toMatchObject({ web_status: 'skipped' });
+      // Metadata stripping is on by default (issue 2102): the playable video
+      // is queued for its metadata-free remux too.
+      expect(await db('photos').where('id', playable).first()).toMatchObject({ web_status: 'pending' });
     } finally {
       await db('app_settings').where({ setting_key: 'general_video_web_rendition' }).del();
       videoRendition.clearCache();

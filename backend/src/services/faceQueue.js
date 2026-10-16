@@ -26,11 +26,12 @@
  *   FACE_PROCESSOR_DISABLED           default false ('true' to opt out, e.g. CI)
  */
 
+const crypto = require('crypto');
 const { db } = require('../database/db');
 const { livePhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
-const { processPhotoFaces } = require('./faceProcessor');
+const { processPhotoFaces, claimGuard } = require('./faceProcessor');
 const { SidecarUnavailableError } = require('./faceClient');
 const { TransientSourceError } = require('./faceProcessor');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
@@ -247,6 +248,10 @@ function isPostgres() {
  * Atomically claim the oldest pending photo. Returns the row or null.
  * Same two-path approach as backgroundProcessor: SKIP LOCKED on Postgres so
  * multiple pods race cleanly, a status-guarded UPDATE on SQLite.
+ *
+ * Every claim gets its own id (issue 2069), and everything the worker writes
+ * afterwards is guarded on it: after a purge and a re-queue the row can be
+ * 'processing' again under a newer claim, and the old scan must not land.
  */
 async function claimNextPhoto(excludeEventIds = []) {
   if (isPostgres()) {
@@ -259,11 +264,13 @@ async function claimNextPhoto(excludeEventIds = []) {
         .skipLocked()
         .first();
       if (!row) return null;
+      const attemptId = crypto.randomUUID();
       await trx('photos').where('id', row.id).update({
         face_status: 'processing',
         face_started_at: new Date().toISOString(),
+        face_attempt_id: attemptId,
       });
-      return row;
+      return { ...row, face_status: 'processing', face_attempt_id: attemptId };
     });
   }
 
@@ -274,26 +281,28 @@ async function claimNextPhoto(excludeEventIds = []) {
       .orderBy('id', 'asc')
       .first();
     if (!row) return null;
+    const attemptId = crypto.randomUUID();
     const updated = await trx('photos')
       .where({ id: row.id, face_status: 'pending' })
       .update({
         face_status: 'processing',
         face_started_at: new Date().toISOString(),
+        face_attempt_id: attemptId,
       });
-    return updated > 0 ? row : null;
+    return updated > 0 ? { ...row, face_status: 'processing', face_attempt_id: attemptId } : null;
   });
 }
 
-async function releaseToPending(photoId) {
-  // Guarded on 'processing' — the state THIS worker put the row in. If the
-  // event was purged while the sidecar request was in flight, purgeEvent has
-  // already set face_status to NULL, and an unconditional update would put it
-  // back to 'pending' and rescan it: biometric rows reappearing after the
-  // purge endpoint reported success. Same reasoning as the commit guard in
-  // faceProcessor; the retry path needed it too.
-  await db('photos')
-    .where({ id: photoId, face_status: 'processing' })
-    .update({ face_status: 'pending', face_started_at: null });
+async function releaseToPending(claimed) {
+  // Guarded on THIS worker's claim. If the event was purged while the sidecar
+  // request was in flight, purgeEvent has already set face_status to NULL,
+  // and an unconditional update would put it back to 'pending' and rescan it:
+  // biometric rows reappearing after the purge endpoint reported success. A
+  // newer claim of the same photo is not ours to release either. Same
+  // reasoning as the commit guard in faceProcessor; the retry path needed it
+  // too.
+  await claimGuard(claimed)
+    .update({ face_status: 'pending', face_started_at: null, face_attempt_id: null });
 }
 
 async function workerLoop(workerIdx) {
@@ -326,7 +335,7 @@ async function workerLoop(workerIdx) {
 
     markInFlight(claimed.event_id, +1);
     try {
-      const outcome = await processPhotoFaces(claimed.id);
+      const outcome = await processPhotoFaces(claimed);
       // Only a photo that actually went through detection can have moved this
       // event's clusters. 'skipped' covers videos, a purge that raced the
       // scan, and — the one that matters — detection being switched OFF
@@ -344,7 +353,7 @@ async function workerLoop(workerIdx) {
       // get on with.
       if (err instanceof SidecarUnavailableError) {
         // Retry, don't fail. faceClient already rate-limits the log line.
-        await releaseToPending(claimed.id).catch(() => {});
+        await releaseToPending(claimed).catch(() => {});
         await sleep(UNAVAILABLE_BACKOFF_MS);
         continue;
       }
@@ -355,7 +364,7 @@ async function workerLoop(workerIdx) {
       // and the per-event deferral below only covers external sources.
       if (isStorageUnavailableError(err)) {
         logStorageUnavailable(err);
-        await releaseToPending(claimed.id).catch(() => {});
+        await releaseToPending(claimed).catch(() => {});
         await sleep(UNAVAILABLE_BACKOFF_MS);
         continue;
       }
@@ -386,9 +395,11 @@ async function workerLoop(workerIdx) {
         stack: err.stack,
       });
       try {
-        await db('photos').where({ id: claimed.id }).update({
+        // Guarded: a purge or a newer claim meanwhile owns the row now.
+        await claimGuard(claimed).update({
           face_status: 'failed',
           face_started_at: null,
+          face_attempt_id: null,
           face_error: String(err.message || err).slice(0, 1000),
         });
       } catch (updateErr) {
@@ -412,7 +423,7 @@ async function janitorLoop() {
       const reset = await db('photos')
         .where('face_status', 'processing')
         .where('face_started_at', '<', cutoff)
-        .update({ face_status: 'pending', face_started_at: null });
+        .update({ face_status: 'pending', face_started_at: null, face_attempt_id: null });
       if (reset > 0) {
         logger.warn(`faceQueue: janitor reset ${reset} stuck photo(s) from 'processing' to 'pending'`);
       }

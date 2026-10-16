@@ -2,13 +2,22 @@ const express = require('express');
 const { db, logActivity } = require('../../database/db');
 const { livePhotos } = require('../../utils/photoVisibility');
 const router = express.Router();
+
+// A photoId that is not a plausible row id is refused here (issue 2078);
+// PostgreSQL answers a non-numeric or int4-overflowing id with a 500.
+router.param('photoId', (req, res, next, value) => {
+  if (parsePositiveInt32(value) === null) {
+    return res.status(400).json({ error: 'Invalid photo ID' });
+  }
+  next();
+});
 const { verifyGalleryAccess } = require('../../middleware/gallery');
 const { resolveGuest, scopeGuestToFeedback } = require('../../middleware/guestAuth');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const { generateGuestIdentifier } = require('../../middleware/feedbackRateLimit');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { guestBlockedByReveal } = require('../../utils/revealMode');
-const { parseBooleanInput } = require('../../utils/parsers');
+const { parseBooleanInput, parsePositiveInt32 } = require('../../utils/parsers');
 const downloadZipService = require('../../services/downloadZipService');
 const GALLERY_OPENED_DEBOUNCE_MS = 6 * 60 * 60 * 1000;
 const galleryOpenedNotifiedAt = new Map();
@@ -192,7 +201,8 @@ router.patch('/:slug/photos/visibility/bulk', verifyGalleryAccess, async (req, r
 
     const { photoIds, visibility } = req.body;
 
-    if (!Array.isArray(photoIds) || photoIds.length === 0) {
+    if (!Array.isArray(photoIds) || photoIds.length === 0
+      || photoIds.some((id) => parsePositiveInt32(id) === null)) {
       return res.status(400).json({ error: 'Invalid photo IDs' });
     }
 

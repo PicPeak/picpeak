@@ -100,6 +100,8 @@ export function useExternalImport(event: Event, { enabled = true }: { enabled?: 
     buttonLabel,
     // Archived galleries are read-only.
     canRun: canImport && !running && !event.is_archived,
+    // Photos whose file is gone from the folder (issue 2121).
+    missingFiles: status?.missing_files ?? 0,
     run: () => rescan.mutate(),
   };
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { radioGroupKeyDown } from '../../utils/ariaKeyboard';
-import { Check, ClipboardCheck, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, FolderInput, Cog, AlertTriangle, RefreshCw, LayoutGrid, List, UserRound, X, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Check, ClipboardCheck, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, FolderInput, Cog, AlertTriangle, RefreshCw, FileX, LayoutGrid, List, UserRound, X, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
@@ -662,6 +662,8 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
             (photo.mime_type && photo.mime_type.startsWith('video/')) ||
             photo.type === 'video';
           const isHidden = (photo as any).visibility === 'hidden';
+          // File gone from the external folder (issue 2121).
+          const isMissing = photo.unavailable_reason === 'source_missing';
           return (
             <div
               key={photo.id}
@@ -701,18 +703,30 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                 {reviewBadge(photo, 'solid')}
               </div>
             )}
-            {isHidden && !photo.moderation_status && (
-              <div
-                className="absolute top-2 left-2 z-20"
-                data-testid={`admin-photo-hidden-badge-${photo.id}`}
-              >
-                <span
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-danger text-white text-[10px] font-medium"
-                  title={t('admin.photos.hiddenTooltip', 'Hidden from guests — this photo is not shown in the client gallery.') as string}
-                >
-                  <EyeOff className="w-3 h-3" />
-                  {t('admin.photos.hidden', 'Hidden')}
-                </span>
+            {(isHidden || isMissing) && !photo.moderation_status && (
+              <div className="absolute top-2 left-2 z-20 flex max-w-[calc(100%-3rem)] gap-1">
+                {isMissing && (
+                  <div data-testid={`admin-photo-missing-badge-${photo.id}`}>
+                    <span
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-warning text-white text-[10px] font-medium whitespace-nowrap"
+                      title={t('admin.photos.fileMissingTooltip', 'The file is no longer in the external folder. Guests do not see this photo; it comes back when the file does. Delete it if the file is gone for good.') as string}
+                    >
+                      <FileX className="w-3 h-3" />
+                      {t('admin.photos.fileMissing', 'File missing')}
+                    </span>
+                  </div>
+                )}
+                {isHidden && (
+                  <div data-testid={`admin-photo-hidden-badge-${photo.id}`}>
+                    <span
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-danger text-white text-[10px] font-medium"
+                      title={t('admin.photos.hiddenTooltip', 'Hidden from guests — this photo is not shown in the client gallery.') as string}
+                    >
+                      <EyeOff className="w-3 h-3" />
+                      {t('admin.photos.hidden', 'Hidden')}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -817,7 +831,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
 
             {/* Category Badge - move to top-left and prevent overlap with select checkbox */}
             {defaultCategoryLabel(t, photo) && (
-              <div className={`absolute left-2 ${isHidden ? 'top-9' : 'top-2'} pointer-events-none`}>
+              <div className={`absolute left-2 ${isHidden || isMissing ? 'top-9' : 'top-2'} pointer-events-none`}>
                 <span className="px-2 py-1 text-xs font-medium bg-white/90 text-body rounded max-w-[70%] whitespace-nowrap overflow-hidden text-ellipsis">
                   {defaultCategoryLabel(t, photo)}
                 </span>
@@ -997,6 +1011,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                 (photo.mime_type && photo.mime_type.startsWith('video/')) ||
                 photo.type === 'video';
               const isHidden = (photo as any).visibility === 'hidden';
+              const isMissing = photo.unavailable_reason === 'source_missing';
               const status = (photo as any).processing_status;
               return (
                 <tr
@@ -1095,6 +1110,17 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                           )}
                           {photo.moderation_status && (
                             <span className="flex-shrink-0">{reviewBadge(photo, 'soft')}</span>
+                          )}
+                          {isMissing && (
+                            <span className="flex-shrink-0" data-testid={`admin-photo-missing-badge-${photo.id}`}>
+                              <Badge
+                                tone="warning"
+                                icon={<FileX />}
+                                title={t('admin.photos.fileMissingTooltip', 'The file is no longer in the external folder. Guests do not see this photo; it comes back when the file does. Delete it if the file is gone for good.') as string}
+                              >
+                                {t('admin.photos.fileMissing', 'File missing')}
+                              </Badge>
+                            </span>
                           )}
                           {isHidden && !photo.moderation_status && (
                             <Badge

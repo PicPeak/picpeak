@@ -46,7 +46,8 @@ async function getEventTagCounts(eventId, accessLevel) {
     .where('photos.event_id', eventId)
     .where(function () {
       this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
-    });
+    })
+    .whereNull('photos.unavailable_reason');
   const rows = await applyPhotoVisibilityFilter(query, accessLevel)
     .groupBy('photo_tags.tag')
     .select('photo_tags.tag as key')

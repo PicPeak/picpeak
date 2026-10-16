@@ -4,6 +4,7 @@ const { requirePermission, requireSuperAdmin } = require('../middleware/permissi
 const { requireEventOwnership } = require('../middleware/ownership');
 const { holdsForReview } = require('../services/uploadReviewService');
 const { db } = require('../database/db');
+const { livePhotos } = require('../utils/photoVisibility');
 const { list } = require('../services/externalMediaService');
 const externalAccess = require('../services/externalMediaAccess');
 const jobState = require('../services/maintenanceJobState');
@@ -148,7 +149,13 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
 router.get('/events/:id/status', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
   try {
     const state = await jobState.read(jobNameFor(parseInt(req.params.id)));
-    res.json({ is_running: state.isRunning, finished_at: state.finishedAt, last_result: state.lastResult });
+    // Photos whose file the scans found gone from the share (issue 2121).
+    const missing = await livePhotos(db).where({ event_id: parseInt(req.params.id), unavailable_reason: 'source_missing' })
+      .count({ count: '*' }).first();
+    res.json({
+      is_running: state.isRunning, finished_at: state.finishedAt, last_result: state.lastResult,
+      missing_files: Number(missing?.count || 0),
+    });
   } catch (error) {
     logger.error('External import status failed', { eventId: req.params.id, error: error.message });
     res.status(500).json({ error: 'Failed to read import status' });

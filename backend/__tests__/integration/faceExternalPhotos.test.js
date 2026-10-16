@@ -127,7 +127,7 @@ describe('face scanning of external/reference photos (#1090)', () => {
   it.each(['external', 'reference'])('scans a %s photo instead of skipping it', async (origin) => {
     const { photoId } = await seedPhoto({ sourceOrigin: origin, sourceMode: 'reference' });
 
-    const result = await faceProcessor.processPhotoFaces(photoId);
+    const result = await faceProcessor.processPhotoFaces({ id: photoId, face_attempt_id: null });
 
     // The regression: this used to return 'skipped' without ever building a
     // preview or contacting the sidecar.
@@ -152,7 +152,7 @@ describe('face scanning of external/reference photos (#1090)', () => {
     previewKeyResult = null;
     const { photoId } = await seedPhoto({ sourceOrigin: 'external', sourceMode: 'reference' });
 
-    const result = await faceProcessor.processPhotoFaces(photoId);
+    const result = await faceProcessor.processPhotoFaces({ id: photoId, face_attempt_id: null });
 
     expect(result.status).toBe('failed');
     expect(mockDetectFaces).not.toHaveBeenCalled();

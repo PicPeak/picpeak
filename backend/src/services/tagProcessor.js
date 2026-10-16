@@ -170,6 +170,15 @@ async function processPhotoTags(claimed) {
       // replaced or re-queued while the sidecar was working nothing is
       // written at all, instead of tags for a different picture (or, on
       // PostgreSQL, a foreign-key error for a photo that is gone).
+      //
+      // The event row before that, when there are tags to insert (issue
+      // 2108): their foreign key takes a key-share lock on it, and a capped
+      // trash restore, an archive delete or a rename holds it FOR UPDATE
+      // before it touches the photo. Taken after the photo, that is a lock
+      // cycle. The same lock, only earlier; no tags, no event lock.
+      if (tags.length && trx.client.config.client === 'pg') {
+        await trx('events').where({ id: photo.event_id }).forKeyShare().first('id');
+      }
       const committed = await claimGuard(claimed, trx)
         .update({ tag_status: 'done', tag_started_at: null, tag_attempt_id: null, tag_error: null });
       if (committed === 0) throw new StaleTagScanError(photoId);

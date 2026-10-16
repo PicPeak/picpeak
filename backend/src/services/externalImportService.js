@@ -33,7 +33,8 @@ const {
 } = require('./externalMediaTypes');
 const { generateThumbnail, extractCaptureDate, orientedDimensions } = require('./imageProcessor');
 const { exifColumn } = require('./photoExif');
-const { processUploadedVideo, posterFrameError } = require('./videoProcessor');
+const { processUploadedVideo, posterFrameError, extractVideoMetadata } = require('./videoProcessor');
+const { isInterruption: isResourceError } = require('./mediaProcessPolicy');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { resolveCredit } = require('./photoCredit');
 const { photoCapOf, insertPhotoWithinCap } = require('./photoCap');
@@ -41,7 +42,8 @@ const jobState = require('./maintenanceJobState');
 const externalAccess = require('./externalMediaAccess');
 const folderTree = require('./folderTreeService');
 const { parseBooleanInput } = require('../utils/parsers');
-const { formatBoolean } = require('../utils/dbCompat');
+const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
+const { livePhotos } = require('../utils/photoVisibility');
 
 /**
  * Where an external file lands (issues 1786 + 1562), from its path relative
@@ -124,6 +126,132 @@ async function existingRelpaths(eventId, relpaths) {
   return found;
 }
 
+// Rows read from the share: what a scan looks after. A photo replaced by an
+// upload keeps its external_relpath but is managed from then on.
+const SERVED_ORIGINS = ['external', 'reference'];
+
+// photos.unavailable_reason (migration 312) of a photo whose file is gone from
+// the share: no gallery viewer sees it, the admin does.
+const SOURCE_MISSING = 'source_missing';
+
+/**
+ * The served rows of an event under the folder a pass walked, with what the
+ * vanished-file handling needs. `inScope` takes a root-relative path.
+ */
+async function servedRowsInScope(eventId, inScope) {
+  const rows = await livePhotos(db)
+    .where({ event_id: eventId })
+    .whereIn('source_origin', SERVED_ORIGINS)
+    .whereNotNull('external_relpath')
+    .select('id', 'external_relpath', 'unavailable_reason', 'size_bytes', 'source_mtime_ms', 'filename', 'source_filename',
+      'media_type', 'width', 'height', 'captured_at', 'duration');
+  return rows.filter((r) => inScope(r.external_relpath));
+}
+
+/**
+ * Whether a row's file is on the share: 'present', 'missing' (nothing at the
+ * path) or 'unknown' (any other error, or a file only reachable through a
+ * link out of the folder). Only 'missing' ever hides a photo.
+ */
+async function sourcePresence(access, full) {
+  try {
+    await fs.lstat(full);
+  } catch (err) {
+    return err.code === 'ENOENT' || err.code === 'ENOTDIR' ? 'missing' : 'unknown';
+  }
+  try {
+    await externalAccess.authorizeSelectedFile(access, full);
+    return 'present';
+  } catch (_) {
+    return 'unknown';
+  }
+}
+
+/**
+ * Whether a new file reads as the picture a vanished row recorded: same
+ * dimensions and capture date (photo) or dimensions and runtime (video).
+ * Anything unreadable, or a row without those values (a photo without a
+ * capture date included), is not a match.
+ */
+async function describesRow(row, f) {
+  if (row.width == null || row.height == null) return false;
+  try {
+    if (row.media_type === 'video' || isVideoFile(f.name)) {
+      if (row.duration == null) return false;
+      const m = await extractVideoMetadata(f.full);
+      return Number(m.width) === Number(row.width) && Number(m.height) === Number(row.height)
+        && Math.abs(Number(m.duration) - Number(row.duration)) < 0.5;
+    }
+    const { width, height } = orientedDimensions(await sharp(f.full).metadata());
+    if (width !== Number(row.width) || height !== Number(row.height)) return false;
+    // Two pictures without a capture date prove nothing: no match.
+    if (!row.captured_at) return false;
+    const taken = await extractCaptureDate(f.full).catch(() => null);
+    return Boolean(taken) && taken.getTime() === new Date(row.captured_at).getTime();
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * A file renamed or moved on the share (issue 2121): its row, whose file is
+ * gone, and a new file of the same size, modification time and extension,
+ * seen in the same pass. The row takes the new path instead of the new file
+ * being imported next to it. Size and time alone can meet by chance, so the
+ * new file must also describe what the row recorded (describesRow). Only
+ * one-to-one matches move: two candidates on
+ * either side are left alone (the old row is marked missing and the new file
+ * imported, as without this). The file name follows when the row still
+ * carried the old one; folder, category and everything else stay.
+ *
+ * Stops as soon as `isLost()` says the pass lost its claim or eligibility.
+ * Returns the number of rows moved.
+ */
+async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic, isLost }) {
+  const keyOf = (size, mtimeMs, name) => `${Number(size)}:${Math.floor(Number(mtimeMs))}:${path.extname(name).toLowerCase()}`;
+  const group = (items, key) => {
+    const map = new Map();
+    for (const item of items) {
+      const k = key(item);
+      map.set(k, map.has(k) ? null : item);
+    }
+    return map;
+  };
+  const gone = group(
+    unseen.filter((r) => r.size_bytes != null && r.source_mtime_ms != null),
+    (r) => keyOf(r.size_bytes, r.source_mtime_ms, r.external_relpath)
+  );
+  const arrived = group(newFiles, (f) => keyOf(f.size, f.mtimeMs, f.name));
+  let moved = 0;
+  for (const [key, row] of gone) {
+    // The claim or (automatic passes) the event's eligibility went: stop.
+    if (isLost()) break;
+    const f = arrived.get(key);
+    if (!row || !f) continue;
+    if (await sourcePresence(access, fullOf(row.external_relpath)) !== 'missing') continue;
+    if (!(await describesRow(row, f))) continue;
+    // The lookups above can outlast the claim: checked again before writing.
+    if (isLost()) break;
+    const newRel = toRootRelative(f.rel);
+    if (automatic && await db('external_import_exclusions').where({ event_id: eventId, external_relpath: newRel }).first()) continue;
+    const oldName = path.basename(row.external_relpath);
+    const updates = { external_relpath: newRel, unavailable_reason: null };
+    if (row.filename === oldName) updates.filename = f.name;
+    if (row.source_filename === oldName) updates.source_filename = f.name;
+    try {
+      // Fenced on what was read: a row repointed or replaced since stays.
+      moved += await livePhotos(db)
+        .where({ id: row.id, external_relpath: row.external_relpath })
+        .whereIn('source_origin', SERVED_ORIGINS)
+        .update(updates);
+    } catch (err) {
+      // Another writer imported the new path meanwhile: both rows stay.
+      if (!isUniqueViolation(err)) logger.warn(`Could not move photo ${row.id} to its renamed file: ${err.message}`);
+    }
+  }
+  return moved;
+}
+
 // Bounds on the recursive walk. An event owner with photos.upload chooses the
 // subtree, and a mount can be arbitrarily deep and wide; the walk stops at
 // these, reports that it did, and imports what it found.
@@ -184,22 +312,31 @@ const DERIVATIVE_COLUMNS = ['thumbnail_path', 'preview_path', 'hero_path', 'wate
  * describe the old picture, so they are purged and queued again where the
  * gallery has them on.
  *
- * Only rows still served from the share: a photo replaced by an upload keeps
- * its external_relpath (the dedupe key) but no longer reads this file. Videos
- * are left alone, see the Limits of the change that added this.
+ * A video (issue 2114) takes the new size, mtime, runtime, codecs and
+ * dimensions, gets a new poster frame, and its web copy and adaptive
+ * streaming ladder start over: their columns are reset in the same update,
+ * attempt ids included, so a transcode still running on the old bytes loses
+ * its claim and cannot publish, and the queues convert the new file while
+ * the settings are on. The old copy and ladder are removed once the row no
+ * longer names them. Videos have no faces, scene tags or EXIF credit.
  *
- * Returns 'refreshed', 'deferred' (automatic pass, file still being written)
- * or 'skipped'.
+ * Only rows still served from the share: a photo replaced by an upload keeps
+ * its external_relpath (the dedupe key) but no longer reads this file.
+ *
+ * Returns 'refreshed', 'unchanged' (the file is the version recorded),
+ * 'deferred' (automatic pass, file still being written) or 'skipped' (not
+ * served from the share, or not refreshed this time).
  */
 async function refreshChangedFile(row, f, { automatic, settleMs }) {
   const served = row.source_origin === 'external' || row.source_origin === 'reference';
-  if (!served || row.media_type === 'video' || isVideoFile(f.name)) return 'skipped';
+  if (!served) return 'skipped';
+  const isVideo = row.media_type === 'video' || isVideoFile(f.name);
   if (row.size_bytes == null) {
     // Imported before the size was recorded: nothing to compare against, so
     // record it and treat the file as the one the derivatives were made from.
     await db('photos').where({ id: row.id }).whereNull('size_bytes')
       .update({ size_bytes: f.size, source_mtime_ms: Math.floor(f.mtimeMs) });
-    return 'skipped';
+    return 'unchanged';
   }
   // Size and modification time: an edit that keeps the byte count (a rating
   // or keyword written into the file) still moves the mtime. A row imported
@@ -215,35 +352,54 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
       await db('photos').where({ id: row.id, size_bytes: row.size_bytes }).whereNull('source_mtime_ms')
         .update({ source_mtime_ms: Math.floor(f.mtimeMs) });
     }
-    return 'skipped';
+    return 'unchanged';
   }
   // Stat again: the walk that produced `f` can be minutes old. A copy still
   // landing on the mount is left for the next pass, the same settle rule new
   // files get.
   const before = await fs.stat(f.full);
-  if (unchanged(before)) return 'skipped';
+  if (unchanged(before)) return 'unchanged';
   if (automatic && settleMs > 0 && Date.now() - before.mtimeMs < settleMs) return 'deferred';
 
   let width = null;
   let height = null;
-  try {
-    ({ width, height } = orientedDimensions(await retryTransient(() => sharp(f.full).metadata())));
-  } catch (dimErr) {
-    // Unreadable now (a half-written file the settle rule missed, or a
-    // format Sharp refuses): keep the row as it is and try on the next pass.
-    logger.warn(`Could not read changed external file ${f.rel}: ${dimErr.message}`);
-    return 'skipped';
-  }
   let capturedAt = null;
-  try {
-    capturedAt = await extractCaptureDate(f.full);
-  } catch (dateErr) {
-    logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
+  let exif = {};
+  let credit = null;
+  let video = null;
+  if (isVideo) {
+    // What ffprobe can tell, as on import. A file it cannot read still
+    // gets the refresh (the poster falls back to the placeholder, as on
+    // import); only a busy media worker leaves it for the next pass.
+    let probed = null;
+    try {
+      probed = await extractVideoMetadata(f.full);
+    } catch (probeErr) {
+      if (isResourceError(probeErr)) return 'skipped';
+      logger.warn(`Could not read changed external video ${f.rel}: ${probeErr.message}`);
+    }
+    // Read before the transaction: a query inside it would wait on
+    // SQLite's single connection.
+    video = { probed, webCopy: await require('./videoRenditionService').isEnabled() };
+  } else {
+    try {
+      ({ width, height } = orientedDimensions(await retryTransient(() => sharp(f.full).metadata())));
+    } catch (dimErr) {
+      // Unreadable now (a half-written file the settle rule missed, or a
+      // format Sharp refuses): keep the row as it is and try on the next pass.
+      logger.warn(`Could not read changed external file ${f.rel}: ${dimErr.message}`);
+      return 'skipped';
+    }
+    try {
+      capturedAt = await extractCaptureDate(f.full);
+    } catch (dateErr) {
+      logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
+    }
+    exif = await exifColumn(f.full);
+    // The credit read from the file follows the file; a manual one stays.
+    const creditFromFile = !row.credit_source || row.credit_source === 'exif';
+    credit = creditFromFile ? await resolveCredit({ localPath: f.full, isVideo: false }) : null;
   }
-  const exif = await exifColumn(f.full);
-  // The credit read from the file follows the file; a manual one stays.
-  const creditFromFile = !row.credit_source || row.credit_source === 'exif';
-  const credit = creditFromFile ? await resolveCredit({ localPath: f.full, isVideo: false }) : null;
   // Everything above must describe one version of the file: if it moved
   // while being read, try again on the next pass.
   const stats = await fs.stat(f.full);
@@ -296,20 +452,66 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     id: row.id, size_bytes: row.size_bytes, source_mtime_ms: row.source_mtime_ms ?? null,
     source_origin: row.source_origin, external_relpath: row.external_relpath,
   };
+  const m = video?.probed || {};
   const updates = {
     size_bytes: stats.size,
     source_mtime_ms: Math.floor(stats.mtimeMs),
-    width,
-    height,
-    captured_at: capturedAt ? capturedAt.toISOString() : null,
-    // Camera details describe the file: the new one's, or none.
-    exif_json: null,
-    ...exif,
+    ...(isVideo ? {
+      duration: m.duration ?? null,
+      video_codec: m.videoCodec || null,
+      audio_codec: m.audioCodec || null,
+      width: m.width || null,
+      height: m.height || null,
+      // The poster note is written again with the new poster below.
+      processing_error: null,
+      // The web copy and the ladder start over, as on a replacement: the
+      // attempt ids go, so a transcode of the old bytes can publish nothing.
+      // The web copy is queued while its setting is on, except in an
+      // archived gallery (as backfillPending); the ladder's queue picks up a
+      // video with no status by itself.
+      web_path: null,
+      web_attempt_id: null,
+      web_attempts: 0,
+      web_retry_at: null,
+      web_status: video.webCopy && !parseBooleanInput(event?.is_archived, false) ? 'pending' : null,
+      web_started_at: null,
+      web_error: null,
+      hls_path: null,
+      hls_status: null,
+      hls_attempt_id: null,
+      hls_attempts: 0,
+      hls_retry_at: null,
+      hls_started_at: null,
+      hls_error: null,
+    } : {
+      width,
+      height,
+      captured_at: capturedAt ? capturedAt.toISOString() : null,
+      // Camera details describe the file: the new one's, or none.
+      exif_json: null,
+      ...exif,
+    }),
     thumb_hash: null,
   };
   for (const column of DERIVATIVE_COLUMNS) updates[column] = null;
+  // A video's web copy and ladder as the row names them at the commit, read
+  // under the row lock: one a transcode claimed or published since the
+  // ladder was listed is removed too, and one claimed after the commit
+  // converts the new bytes and is kept. The listing is made before the
+  // transaction: on SQLite it holds the only connection.
+  const sweepOldLadder = isVideo
+    ? await require('./videoHlsService').captureLadder(await db('photos').where({ id: row.id }).first())
+    : null;
+  let atCommit = null;
   const committed = await db.transaction(async (trx) => {
+    if (isVideo) {
+      let read = trx('photos').where(fence);
+      if (isPostgreSQL()) read = read.forUpdate();
+      atCommit = await read.first();
+      if (!atCommit) return false;
+    }
     if (await trx('photos').where(fence).update(updates) !== 1) return false;
+    if (isVideo) return true;
     if (credit) {
       await trx('photos').where({ id: row.id })
         .where((q) => q.whereNull('credit_source').orWhere('credit_source', 'exif'))
@@ -341,18 +543,52 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     .filter((k) => !currentKeys.has(k))
     .map((k) => storage.delete(k).catch(() => {})));
 
-  try {
-    const meta = {};
-    const outputBasename = `ext${row.id}_${path.basename(f.rel)}`;
-    const thumbnailPath = await generateThumbnail(f.full, { outputBasename, meta });
-    if (thumbnailPath) {
-      await db('photos').where({ id: row.id, size_bytes: stats.size, source_mtime_ms: Math.floor(stats.mtimeMs) })
-        .whereNull('thumbnail_path')
-        .update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null });
+  const thisVersion = { id: row.id, size_bytes: stats.size, source_mtime_ms: Math.floor(stats.mtimeMs) };
+  if (isVideo) {
+    // Nothing names the old copy or ladder any more.
+    await require('./videoRenditionService').deleteWebCopy(atCommit);
+    await sweepOldLadder(atCommit);
+    // The poster, as the import makes it, under a key naming this version
+    // (the old one went with the caches above): a pass over a later edit
+    // never writes, or deletes, this one's file. The stem is cut to a
+    // length the version suffix and storage's staging name still fit in.
+    try {
+      const posterName = require('./mediaAttemptService').outputName(
+        `ext${row.id}_${path.basename(f.rel).replace(/\.[^.]+$/, '.jpg')}`,
+        { id: `v${stats.size}m${Math.floor(stats.mtimeMs)}` }
+      );
+      const thumbnailKey = path.posix.join('thumbnails', `thumb_${posterName}`);
+      const result = await processUploadedVideo(f.full, thumbnailKey);
+      const took = await db('photos').where(thisVersion).whereNull('thumbnail_path').update({
+        thumbnail_path: result.thumbnailKey,
+        thumb_hash: result.thumbHash || null,
+        processing_error: result.placeholder ? posterFrameError(result.thumbnailError) : null,
+      });
+      // A viewer's lazy poster got there first (under a key of its own), or
+      // the file changed again: this one is nobody's.
+      if (!took && result.thumbnailKey) {
+        const now = await db('photos').where({ id: row.id }).first('thumbnail_path');
+        if (now?.thumbnail_path !== result.thumbnailKey) await storage.delete(result.thumbnailKey).catch(() => {});
+      }
+    } catch (videoErr) {
+      // ensureThumbnail makes it on first view instead.
+      logger.warn(`Poster regeneration failed for changed external video ${row.id} (${f.rel}): ${videoErr.message}`);
+      await db('photos').where(thisVersion).update({ processing_error: posterFrameError(videoErr.message) }).catch(() => {});
     }
-  } catch (thumbErr) {
-    // ensureThumbnail makes it on first view instead.
-    logger.warn(`Thumbnail regeneration failed for changed external photo ${row.id} (${f.rel}): ${thumbErr.message}`);
+  } else {
+    try {
+      const meta = {};
+      const outputBasename = `ext${row.id}_${path.basename(f.rel)}`;
+      const thumbnailPath = await generateThumbnail(f.full, { outputBasename, meta });
+      if (thumbnailPath) {
+        await db('photos').where(thisVersion)
+          .whereNull('thumbnail_path')
+          .update({ thumbnail_path: thumbnailPath, thumb_hash: meta.thumbHash || null });
+      }
+    } catch (thumbErr) {
+      // ensureThumbnail makes it on first view instead.
+      logger.warn(`Thumbnail regeneration failed for changed external photo ${row.id} (${f.rel}): ${thumbErr.message}`);
+    }
   }
 
   // The watermark service keeps results in memory by the path it read and
@@ -392,10 +628,13 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
  * @param {number} [opts.settleMs=0]  automatic passes: a new file modified
  *   within the last settleMs, or whose size moves during a wait of settleMs,
  *   is left for the next pass instead of being imported half-copied
- * @returns {Promise<{imported:number, skipped:number, deferred:number, excluded:number, thumbnailsGenerated:number, thumbnailsFailed:number, truncated:boolean, capReached:boolean}>}
+ * @returns {Promise<{imported:number, skipped:number, deferred:number, excluded:number, thumbnailsGenerated:number, thumbnailsFailed:number, truncated:boolean, capReached:boolean, moved:number, missing:number, returned:number}>}
  *   `truncated`: the recursive walk hit its depth or entry bound and the
  *   folder was not read in full. `capReached`: the event's photo cap stopped
- *   the import; what was not imported is counted in `skipped`.
+ *   the import; what was not imported is counted in `skipped`. `moved`: rows
+ *   that followed a renamed file; `missing`: photos whose file is gone from
+ *   the share, taken out of the gallery; `returned`: such photos whose file
+ *   is back (issue 2121).
  * @throws {EventNotFoundError} when the event does not exist
  * @throws {ImportInProgressError} when another run holds the claim for this event
  */
@@ -477,17 +716,53 @@ async function importExternalFolder({
     const toRootRelative = (rel) => (basePrefix ? path.join(basePrefix, rel) : rel);
 
     // Collect files. Images always; videos only for the types this install
-    // accepts as uploads (see importableExtensions).
+    // accepts as uploads (see importableExtensions). The walk lists every
+    // media type: a file of a type that is no longer allowed is still
+    // visited when the gallery already has a row for it, so an edit to it is
+    // picked up (issue 2120). It is never imported new.
     const extensions = await importableExtensions();
+    const mediaExtensions = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS];
     const walkBudget = { entries: MAX_WALK_ENTRIES, truncated: false };
-    const files = recursive ? await walkDir(baseAbs, baseAbs, extensions, walkBudget, 0, access) : (await fs.readdir(baseAbs, { withFileTypes: true }))
+    const walked = recursive ? await walkDir(baseAbs, baseAbs, mediaExtensions, walkBudget, 0, access) : (await fs.readdir(baseAbs, { withFileTypes: true }))
       .filter(e => e.isFile())
       .map(e => ({ full: path.join(baseAbs, e.name), rel: e.name, name: e.name }))
-      .filter(f => extensions.includes(path.extname(f.name).toLowerCase()));
+      .filter(f => mediaExtensions.includes(path.extname(f.name).toLowerCase()));
+    const isAllowed = (f) => extensions.includes(path.extname(f.name).toLowerCase());
+    const disallowed = walked.filter((f) => !isAllowed(f));
+    const disallowedWithRow = disallowed.length
+      ? await existingRelpaths(eventId, disallowed.map((f) => toRootRelative(f.rel)))
+      : new Set();
+    const files = walked
+      .filter((f) => isAllowed(f) || disallowedWithRow.has(toRootRelative(f.rel)))
+      .map((f) => (isAllowed(f) ? f : { ...f, refreshOnly: true }));
+
+    // Files gone from the share (issue 2121) are only judged after a complete
+    // read of a folder that answered: a walk cut short says nothing about the
+    // files it did not reach, and a folder that lists no file at all is as
+    // likely an unmounted share (an empty mount point) as an emptied one. The
+    // rows judged are this event's served rows under the folder walked (only
+    // its own files when the walk was not recursive); a row whose file the
+    // walk did not list is looked up at its path, so a file the walk leaves
+    // out for another reason (a type no longer imported, a dot folder) is
+    // never taken for a deleted one.
+    const scopePrefix = basePrefix ? path.normalize(basePrefix) : '';
+    const relInBase = (rel) => (scopePrefix ? rel.slice(scopePrefix.length + 1) : rel);
+    const inScope = (rel) => {
+      if (scopePrefix && !rel.startsWith(scopePrefix + path.sep)) return false;
+      const inner = relInBase(rel);
+      return Boolean(inner) && !inner.split(path.sep).includes('..') && (recursive || !inner.includes(path.sep));
+    };
+    const fullOf = (rel) => path.join(baseAbs, relInBase(rel));
+    const walkComplete = !walkBudget.truncated && files.length > 0;
+    const seenRelpaths = new Set(files.map((f) => toRootRelative(f.rel)));
 
     // Prepare file metadata and deduplicate by filename within type (keep largest)
     let skipped = 0;
     const preparedFiles = [];
+    // Files of a type no longer allowed, with a row: refreshed, never
+    // inserted, so they stay out of the dedupe and the settle wait below,
+    // which only decide what gets inserted.
+    const refreshOnlyFiles = [];
     for (const f of files) {
       await externalAccess.authorizeSelectedFile(access, f.full);
       try {
@@ -498,7 +773,7 @@ async function importExternalFolder({
         if (segs[0] === map.individual) type = 'individual';
         const where = externalPlacement(f.rel, { map, keywords: firstLookKeywords, mirror: mirrorFolders });
         if (where.segments === null) { skipped++; continue; }
-        preparedFiles.push({ ...f, type, size: stats.size, mtimeMs: stats.mtimeMs, where });
+        (f.refreshOnly ? refreshOnlyFiles : preparedFiles).push({ ...f, type, size: stats.size, mtimeMs: stats.mtimeMs, where });
       } catch (err) {
         skipped++;
       }
@@ -656,8 +931,29 @@ async function importExternalFolder({
     const photoCap = photoCapOf(event);
     let capReached = false;
 
+    // A renamed file takes its row along before the loop below would import
+    // it as a new photo (issue 2121).
+    let moved = 0;
+    let missing = 0;
+    let returned = 0;
+    // Paths of existing rows the loop below took through refreshChangedFile.
+    const refreshedPaths = new Set();
+    if (walkComplete) {
+      const unseen = (await servedRowsInScope(eventId, inScope)).filter((r) => !seenRelpaths.has(r.external_relpath));
+      if (unseen.length) {
+        const candidates = [...dedupeMap.values()];
+        const known = await existingRelpaths(eventId, candidates.map((f) => toRootRelative(f.rel)));
+        const newFiles = candidates.filter((f) => !known.has(toRootRelative(f.rel)));
+        if (newFiles.length) {
+          moved = await moveRenamedRows({
+            eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic, isLost: () => lost,
+          });
+        }
+      }
+    }
+
     // Insert photos
-    for (const f of dedupeMap.values()) {
+    for (const f of [...dedupeMap.values(), ...refreshOnlyFiles]) {
       filesSinceAuthorized += 1;
       if (filesSinceAuthorized >= REAUTHORIZE_EVERY_FILES || Date.now() - authorizedAt >= REAUTHORIZE_EVERY_MS) {
         await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
@@ -693,6 +989,9 @@ async function importExternalFolder({
         const exists = await db('photos')
           .where({ event_id: eventId, external_relpath: relFromRoot })
           .first();
+        // Its row went away since the walk: a type no longer allowed is not
+        // imported again.
+        if (!exists && f.refreshOnly) { skipped++; continue; }
         if (!exists && capReached) { skipped++; continue; }
         if (exists) {
           // The same path with other bytes: the file was edited on the share
@@ -700,9 +999,17 @@ async function importExternalFolder({
           // kept the old dimensions, capture date and every derivative, so
           // the gallery showed the old picture for as long as they lived.
           const outcome = await refreshChangedFile(exists, f, { automatic, settleMs });
+          refreshedPaths.add(relFromRoot);
           if (outcome === 'refreshed') refreshed++;
           else if (outcome === 'deferred') deferred++;
           else skipped++;
+          // The file is back on the share: the photo is again in the gallery
+          // once the row describes it, as recorded or refreshed. A copy still
+          // landing, or bytes that could not be read, keep it out.
+          if ((outcome === 'refreshed' || outcome === 'unchanged') && exists.unavailable_reason === SOURCE_MISSING) {
+            returned += await livePhotos(db).where({ id: exists.id, unavailable_reason: SOURCE_MISSING })
+              .update({ unavailable_reason: null });
+          }
           continue;
         }
 
@@ -890,7 +1197,8 @@ async function importExternalFolder({
               // Browser-playable copy (issue 1430, item 8). The copy is
               // written to the managed backend; the NAS file is never
               // touched.
-              ...(await require('./videoRenditionService').isEnabled() ? { web_status: 'pending' } : {}),
+              // Metadata stripping (issue 2102) queues it too.
+              ...(await require('./videoRenditionService').queuesVideos() ? { web_status: 'pending' } : {}),
               // The placeholder is a completed row with a note, so the admin
               // grid can show it and offer a retry (issue 1430, item 6).
               processing_error: result.placeholder ? posterFrameError(result.thumbnailError) : null,
@@ -923,6 +1231,59 @@ async function importExternalFolder({
         if (e instanceof externalAccess.ExternalMediaAccessError || e.code === 'PATH_OUTSIDE_BASE') throw e;
         skipped++;
       }
+    }
+
+    // Files gone from the share (issue 2121): never deleted, since a share
+    // can come back. The photo leaves every gallery view and stays in the
+    // admin's, marked, until the file returns (the mark goes) or the admin
+    // deletes it. A visibility an admin chose is not touched either way.
+    if (walkComplete && !superseded && !lost) {
+      // On the loop's authorisation budget: each lookup counts as a file.
+      const reauthorizeIfDue = async () => {
+        if (filesSinceAuthorized >= REAUTHORIZE_EVERY_FILES || Date.now() - authorizedAt >= REAUTHORIZE_EVERY_MS) {
+          access = await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
+          authorizedAt = Date.now();
+          filesSinceAuthorized = 0;
+        }
+      };
+      await reauthorizeIfDue();
+      // The folder must still answer: a share that dropped since the walk
+      // would otherwise read as every file deleted.
+      const stillThere = await fs.readdir(baseAbs).then((entries) => entries.length > 0).catch(() => false);
+      for (const row of stillThere ? await servedRowsInScope(eventId, inScope) : []) {
+        if (lost) break;
+        // A file the loop took is its to restore: only after its refresh (or
+        // a check that it is the version recorded) succeeded.
+        if (refreshedPaths.has(row.external_relpath)) continue;
+        const full = fullOf(row.external_relpath);
+        let state = 'present';
+        if (!seenRelpaths.has(row.external_relpath)) {
+          filesSinceAuthorized += 1;
+          await reauthorizeIfDue();
+          state = await sourcePresence(access, full);
+        }
+        if (state === 'missing' && row.unavailable_reason == null) {
+          // Fenced on the path and origin read: a row moved or replaced
+          // since is not this file's.
+          missing += await livePhotos(db)
+            .where({ id: row.id, external_relpath: row.external_relpath })
+            .whereIn('source_origin', SERVED_ORIGINS)
+            .whereNull('unavailable_reason')
+            .update({ unavailable_reason: SOURCE_MISSING });
+        } else if (state === 'present' && row.unavailable_reason === SOURCE_MISSING) {
+          // Back at its path but not taken by the loop (a type no longer
+          // imported, a file another of the same name shadows): restored
+          // only as the very version the row recorded.
+          const st = await fs.stat(full).catch(() => null);
+          const recorded = st && row.size_bytes != null && row.source_mtime_ms != null
+            && Number(row.size_bytes) === st.size && Number(row.source_mtime_ms) === Math.floor(st.mtimeMs);
+          if (recorded) {
+            returned += await livePhotos(db).where({ id: row.id, unavailable_reason: SOURCE_MISSING })
+              .update({ unavailable_reason: null });
+          }
+        }
+      }
+      if (missing) logger.info(`External import for event ${eventId}: ${missing} photo(s) whose file is gone from the share left the gallery`);
     }
 
     // The event already resolves to the new directory (set before the loop),
@@ -978,14 +1339,15 @@ async function importExternalFolder({
 
     const result = {
       imported, refreshed, skipped, deferred, excluded, thumbnailsGenerated, thumbnailsFailed,
-      truncated: walkBudget.truncated, capReached,
+      truncated: walkBudget.truncated, capReached, moved, missing, returned,
     };
+    const changed = imported > 0 || refreshed > 0 || moved > 0 || missing > 0 || returned > 0;
 
     // A prebuilt "Download All" zip is only checked for existence, so it
     // kept serving the gallery as it was before this pass: without the new
     // photos, and with the old picture of an edited one. Once per pass, as
     // the upload and replacement routes do.
-    if (imported > 0 || refreshed > 0) {
+    if (changed) {
       try {
         require('./downloadZipService').invalidate(eventId);
       } catch (err) {
@@ -1002,7 +1364,7 @@ async function importExternalFolder({
     // watcher re-runs this pass on a timer for every watched event, and a
     // "0 imported, 6012 skipped" row every fifteen minutes per event would
     // bury the entries an admin is actually looking for.
-    if (imported > 0 || refreshed > 0 || actor?.type !== 'system') {
+    if (changed || actor?.type !== 'system') {
       await logActivity(
         'external_import_completed',
         { event_id: eventId, ...result, external_path },
