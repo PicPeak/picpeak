@@ -35,6 +35,7 @@ const {
 const {
   hardenAccountRecoveryStorage,
   installAccountRecoveryWriteGuards,
+  protectQueuedPasswords,
   removeAccountRecoveryWriteGuards,
 } = require('./accountRecoveryStorageHardening');
 
@@ -566,6 +567,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     }
 
     await hardenAccountRecoveryStorage(trx);
+    await protectQueuedPasswords(trx);
     await installAccountRecoveryWriteGuards(trx);
 
     // Reset the pg session flag BEFORE the connection returns to the pool.

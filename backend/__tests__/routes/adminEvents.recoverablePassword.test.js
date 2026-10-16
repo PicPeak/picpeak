@@ -122,7 +122,10 @@ describe('recoverable gallery passwords', () => {
       expect(res.status).toBe(200);
       expect(res.body.usedStoredPassword).toBe(true);
       const mail = await db('email_queue').where({ event_id: id, email_type: 'gallery_created' }).orderBy('id', 'desc').first();
-      const data = JSON.parse(mail.email_data);
+      // sealed at rest (emailQueueEncryption); opened as the sender does
+      expect(mail.email_data).not.toContain(PASSWORD);
+      const data = require('../../src/utils/emailQueueEncryption').decryptEmailData(
+        mail.email_type, JSON.parse(mail.email_data), mail.recipient_email);
       expect(data.gallery_password).toBe(PASSWORD);
       // client access is on for this event: the resend carries the stored PIN
       // and the client link, as the creation mail did

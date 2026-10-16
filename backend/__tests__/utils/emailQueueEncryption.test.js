@@ -2,6 +2,7 @@ const {
   decryptEmailData,
   encryptEmailData,
   isEncryptedEmailData,
+  maskSecretFields,
 } = require('../../src/utils/emailQueueEncryption');
 
 const originalKey = process.env.EMAIL_QUEUE_ENCRYPTION_KEY;
@@ -33,6 +34,31 @@ test('ordinary email variables are not encrypted', () => {
   const data = { event_name: 'Wedding' };
   expect(encryptEmailData('gallery_expired', data, 'guest@example.com')).toBe(data);
   expect(decryptEmailData('gallery_expired', data, 'guest@example.com')).toBe(data);
+});
+
+test('password fields of ordinary email are sealed one by one', () => {
+  const recipient = 'Client@Example.com';
+  const data = {
+    customer_name: 'Ada', gallery_password: 'Sunset-42!', client_password: '7788',
+    nested: { pin: '1234' }, untouched: 'No password required',
+  };
+  const sealed = encryptEmailData('gallery_created', data, recipient);
+  const stored = JSON.stringify(sealed);
+  expect(stored).not.toContain('Sunset-42!');
+  expect(stored).not.toContain('7788');
+  expect(stored).not.toContain('1234');
+  expect(sealed.customer_name).toBe('Ada');
+  expect(isEncryptedEmailData(sealed)).toBe(false);
+  // sealing again is a no-op; sentinels stay readable
+  expect(encryptEmailData('gallery_created', sealed, recipient)).toBe(sealed);
+  expect(decryptEmailData('gallery_created', sealed, ' client@example.com ')).toEqual(data);
+  expect(maskSecretFields(sealed, '••').gallery_password).toBe('••');
+
+  // bound to the type, the recipient and the field
+  expect(() => decryptEmailData('gallery_expired', sealed, recipient)).toThrow(/could not be decrypted/i);
+  expect(() => decryptEmailData('gallery_created', sealed, 'other@example.com')).toThrow(/could not be decrypted/i);
+  const swapped = { ...sealed, gallery_password: sealed.client_password };
+  expect(() => decryptEmailData('gallery_created', swapped, recipient)).toThrow(/could not be decrypted/i);
 });
 
 test('plaintext account-recovery variables fail closed', () => {

@@ -34,6 +34,7 @@ const { credentialChangeColumns, sameAsStored } = require('../../utils/galleryCr
 const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const downloadZipService = require('../../services/downloadZipService');
 const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
+const { encryptEmailData } = require('../../utils/emailQueueEncryption');
 const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade } = require('./helpers');
 
 /**
@@ -157,7 +158,8 @@ async function queueGalleryCreatedEmail(event, { password, requirePassword } = {
     event_id: event.id,
     recipient_email: customerEmail,
     email_type: 'gallery_created',
-    email_data: JSON.stringify({
+    // The password is sealed at rest, as queueEmail does (emailQueueEncryption).
+    email_data: JSON.stringify(encryptEmailData('gallery_created', {
       customer_name: customerName,
       customer_email: customerEmail,
       host_name: customerName || customerEmail.split('@')[0],
@@ -167,7 +169,7 @@ async function queueGalleryCreatedEmail(event, { password, requirePassword } = {
       gallery_password: galleryPasswordForEmail,
       expiry_date: event.expires_at ? new Date(event.expires_at).toISOString() : null,
       welcome_message: event.welcome_message || ''
-    }),
+    }, customerEmail)),
     status: 'pending',
     created_at: new Date(),
     // Explicit NULL: the column default is text on SQLite and never comes
