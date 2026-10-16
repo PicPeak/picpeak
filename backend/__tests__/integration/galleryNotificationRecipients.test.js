@@ -631,7 +631,9 @@ describe('"your complete gallery is ready" reaches the same people (issue 1562)'
 });
 
 describe('a CRM customer never gets the direct gallery link', () => {
-  const dataOf = (row) => (typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data);
+  // The password fields are sealed at rest; open them as the sender does.
+  const dataOf = (row) => require('../../src/utils/emailQueueEncryption').decryptEmailData(
+    row.email_type, typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data, row.recipient_email);
   const linkOf = async (type) => dataOf((await queued(type))[0]);
 
   it('the gallery email links to the portal when the admin may not mail accounts', async () => {

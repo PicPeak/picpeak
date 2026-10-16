@@ -100,22 +100,88 @@ describe('email archive redaction', () => {
     }
   });
 
-  it('keeps the variables in the clear while the row can still be retried', async () => {
-    const id = await queue({ retry_count: 1 });
-    const stub = stubWebhookTransport(async () => { throw new Error('transport down'); });
+  // queueEmail is how every gallery_created mail is written.
+  const queueViaService = async () => {
+    const { queueEmail } = require('../../src/services/emailProcessor');
+    await queueEmail(eventId, 'client@example.com', 'gallery_created', {
+      customer_name: 'Ada', host_name: 'Ada', event_name: 'Redaction Wedding', event_date: '2026-09-07',
+      gallery_link: 'https://photos.example/gallery/redaction-wedding/tok', gallery_password: PASSWORD,
+      client_link: 'https://photos.example/gallery/redaction-wedding/client-access?token=abc', client_password: PIN,
+      expiry_date: null, welcome_message: '',
+    });
+    return (await db('email_queue').where({ email_type: 'gallery_created' }).orderBy('id', 'desc').first()).id;
+  };
+  const storedText = async (id) => {
+    const raw = (await db('email_queue').where('id', id).first()).email_data;
+    return typeof raw === 'string' ? raw : JSON.stringify(raw);
+  };
+
+  it('never stores a queued gallery password in the clear, and still mails it', async () => {
+    const id = await queueViaService();
+    const waiting = await storedText(id);
+    expect(waiting).not.toContain(PASSWORD);
+    expect(waiting).not.toContain(PIN);
+    expect(JSON.parse(waiting).customer_name).toBe('Ada');
+
+    // the cockpit preview of a waiting row shows the mask, not the password
+    const { getEmailPreview } = require('../../src/services/projectService');
+    const preview = await getEmailPreview(id);
+    expect(preview.html).not.toContain(PASSWORD);
+    expect(preview.html).toContain(MASK);
+
+    const stub = stubWebhookTransport(async () => ({ messageId: 'sealed-1' }));
     try {
       const { processEmailQueue } = require('../../src/services/emailProcessor');
       await processEmailQueue({ ignoreSchedule: true, onlyId: id });
+    } finally { stub.restore(); }
+    expect(stub.mails).toHaveLength(1);
+    expect(String(stub.mails[0].html)).toContain(PASSWORD);
+    const row = await db('email_queue').where('id', id).first();
+    expect(row.status).toBe('sent');
+    expect(JSON.parse(row.email_data).gallery_password).toBe(MASK);
+    expect(row.rendered_html).not.toContain(PASSWORD);
+  });
+
+  it('keeps the password sealed while the row can still be retried, and the retry still mails it', async () => {
+    const id = await queueViaService();
+    await db('email_queue').where('id', id).update({ retry_count: 1 });
+    const { processEmailQueue } = require('../../src/services/emailProcessor');
+    const down = stubWebhookTransport(async () => { throw new Error('transport down'); });
+    try {
+      await processEmailQueue({ ignoreSchedule: true, onlyId: id });
       let row = await db('email_queue').where('id', id).first();
       expect(row.retry_count).toBe(2);
-      expect(JSON.parse(row.email_data).gallery_password).toBe(PASSWORD);
+      expect(await storedText(id)).not.toContain(PASSWORD);
       // out of retries — a Messages "retry" resets the counter and this row
       // must still be able to send the real password
       await processEmailQueue({ ignoreSchedule: true, onlyId: id });
       row = await db('email_queue').where('id', id).first();
       expect(row.retry_count).toBe(3);
       expect(row.status).not.toBe('sent');
-      expect(JSON.parse(row.email_data).gallery_password).toBe(PASSWORD);
+      expect(await storedText(id)).not.toContain(PASSWORD);
+    } finally { down.restore(); }
+
+    const { retryEmail } = require('../../src/services/projectService');
+    await retryEmail(id);
+    const up = stubWebhookTransport(async () => ({ messageId: 'sealed-retry' }));
+    try {
+      await processEmailQueue({ ignoreSchedule: true, onlyId: id });
+    } finally { up.restore(); }
+    expect(up.mails).toHaveLength(1);
+    expect(String(up.mails[0].html)).toContain(PASSWORD);
+  });
+
+  it('a resend of a waiting row carries the sealed password to the new mail', async () => {
+    const id = await queueViaService();
+    const { resendEmail } = require('../../src/services/projectService');
+    const resent = await resendEmail(id);
+    expect(await storedText(resent.id)).not.toContain(PASSWORD);
+    const stub = stubWebhookTransport(async () => ({ messageId: 'sealed-resend' }));
+    try {
+      const { processEmailQueue } = require('../../src/services/emailProcessor');
+      await processEmailQueue({ ignoreSchedule: true, onlyId: resent.id });
     } finally { stub.restore(); }
+    expect(stub.mails).toHaveLength(1);
+    expect(String(stub.mails[0].html)).toContain(PASSWORD);
   });
 });
