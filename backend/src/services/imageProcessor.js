@@ -618,6 +618,46 @@ function isVideoPhoto(photo) {
 }
 
 /**
+ * `<prefix><name>`, the stem cut to keep it a valid file name: a key adds
+ * `thumb_`/`preview_w1280_`-style prefixes and maybe an attempt id, and a
+ * component may not exceed 255 bytes. A camera name close to that limit
+ * would otherwise stop getting any thumbnail once a prefix is put in front.
+ */
+function prefixedBasename(prefix, name) {
+  const extension = path.extname(name);
+  let stem = '';
+  for (const character of name.slice(0, name.length - extension.length)) {
+    if (Buffer.byteLength(prefix + stem + character) > 160) break;
+    stem += character;
+  }
+  return `${prefix}${stem}${extension}`;
+}
+
+/**
+ * The basename a managed photo's derived files (thumbnail, preview, hero) are
+ * written under.
+ *
+ * Their keys (`thumbnails/thumb_<name>`, ...) have no gallery or photo in them.
+ * Uploads are safe because their stored file name is generated with a random
+ * suffix. A watch-folder import keeps the camera's name as its file name
+ * (filename === source_filename), and cameras restart at IMG_0001.JPG, so two
+ * galleries regenerating from that name wrote one file: the later one
+ * overwrote the other's tile or lightbox preview, and removing either photo's
+ * derivative removed both. Such a photo gets its id in front of the name.
+ * Inside a derivative scope (videos, RAW) derivativeBasename already adds a
+ * per-attempt id, so the name is left alone there. Callers pass rows selected
+ * with different columns, so one without source_filename is read by id.
+ */
+async function ownDerivativeName(photo, name) {
+  if (!name || derivativeContext.getStore()) return name;
+  const row = 'source_filename' in photo
+    ? photo
+    : await db('photos').where('id', photo.id).first('filename', 'source_filename');
+  const cameraNamed = Boolean(row?.filename) && row.filename === row.source_filename;
+  return cameraNamed ? prefixedBasename(`p${photo.id}_`, name) : name;
+}
+
+/**
  * Regenerate thumbnail if it's broken or missing.
  *
  * Works for both managed photos (stored via the storage backend, possibly
@@ -689,7 +729,8 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
     newThumbnailPath = await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename) });
+        const name = await ownDerivativeName(photo, proc.outputBasename || path.basename(localPath));
+        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(name) });
       } finally {
         await proc.cleanup();
       }
@@ -741,7 +782,9 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.filename) || `video-${photo.id}`
   );
-  const outputBasename = derivativeBasename(isExternal ? `ext${photo.id}_${sourceBasename}` : sourceBasename);
+  const outputBasename = derivativeBasename(isExternal
+    ? `ext${photo.id}_${sourceBasename}`
+    : await ownDerivativeName(photo, sourceBasename));
   const thumbnailKey = path.posix.join('thumbnails', `thumb_${outputBasename.replace(/\.[^.]+$/, '.jpg')}`);
 
   const generate = async (localPath) => {
@@ -1072,7 +1115,8 @@ async function regenerateHeroImage(photo, anchor) {
   newHeroPath = await withLocalCopy(sourceKey, async (localPath) => {
     const proc = await withProcessableImage(localPath, sourceKey);
     try {
-      return await generateHeroImage(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename), anchor: heroAnchor });
+      const name = await ownDerivativeName(photo, proc.outputBasename || path.basename(localPath));
+      return await generateHeroImage(proc.path, { regenerate: true, outputBasename: derivativeBasename(name), anchor: heroAnchor });
     } finally {
       await proc.cleanup();
     }
@@ -1624,7 +1668,8 @@ async function regeneratePreviewImage(photo) {
     newPreviewPath = await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        return await generatePreviewImage(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename) });
+        const name = await ownDerivativeName(photo, proc.outputBasename || path.basename(localPath));
+        return await generatePreviewImage(proc.path, { regenerate: true, outputBasename: derivativeBasename(name) });
       } finally {
         await proc.cleanup();
       }
@@ -1798,6 +1843,7 @@ module.exports = {
   isRawFilename,
   extractRawPreview,
   withProcessableImage,
+  prefixedBasename,
   RAW_EXTENSIONS,
   DEFAULT_THUMBNAIL_WIDTH,
   DEFAULT_THUMBNAIL_HEIGHT,

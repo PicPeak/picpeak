@@ -93,6 +93,7 @@ describe('fileWatcher concurrency bound', () => {
 
   it('routes add events through the shared limiter', async () => {
     loadFileWatcher().startFileWatcher();
+    mockLimit.mockClear(); // the start-up thumbnail repair
 
     expect(mockHandlers.add).toEqual(expect.any(Function));
     mockHandlers.add('/outside-watch-root'); // early-returns inside processNewPhoto
@@ -104,12 +105,20 @@ describe('fileWatcher concurrency bound', () => {
 
   it('routes unlink events through the same limiter', async () => {
     loadFileWatcher().startFileWatcher();
+    mockLimit.mockClear(); // the start-up thumbnail repair
 
     expect(mockHandlers.unlink).toEqual(expect.any(Function));
     mockHandlers.unlink('/outside-watch-root'); // early-returns inside removePhoto
 
     expect(mockLimit).toHaveBeenCalledTimes(1);
     await mockLimit.mock.results[0].value;
+  });
+
+  it('runs the start-up thumbnail repair through the same limiter', async () => {
+    loadFileWatcher().startFileWatcher();
+
+    expect(mockLimit).toHaveBeenCalledTimes(1);
+    await mockLimit.mock.results[0].value.catch(() => {});
   });
 
   it('logs instead of rejecting when a queued handler throws', async () => {
