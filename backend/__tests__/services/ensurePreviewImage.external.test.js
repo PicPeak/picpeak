@@ -32,6 +32,9 @@ jest.mock('../../src/database/db', () => {
             state.updates.push({ criteria, values });
             return 1;
           },
+          // ownDerivativeName finds no source_filename on the row, as for an
+          // uploaded photo.
+          first: async () => undefined,
         }),
       };
     }
