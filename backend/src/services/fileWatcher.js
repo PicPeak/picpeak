@@ -1,12 +1,13 @@
 const chokidar = require('chokidar');
 const path = require('path');
+const crypto = require('crypto');
 const fs = require('fs').promises;
 const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
-const { generateThumbnail, generateVideoPlaceholder } = require('./imageProcessor');
+const { generateThumbnail, generateVideoPlaceholder, prefixedBasename } = require('./imageProcessor');
 const logger = require('../utils/logger');
 const { isVideoMimeType } = require('./videoProcessor');
 const mime = require('mime-types');
@@ -76,8 +77,74 @@ function startFileWatcher() {
       });
     });
 
+  // Rows imported before thumbnails got a per-photo name may still share one.
+  // Through the watcher's queue: same concurrency bound, and stopFileWatcher
+  // waits for it.
+  enqueue(() => repairSharedThumbnails()).catch((error) => {
+    logger.warn('[fileWatcher] Shared thumbnail repair failed', { error: error.message });
+  });
+
   logger.info('File watcher started');
   return watcher;
+}
+
+/**
+ * Give every photo that shares a derived file with another photo its own.
+ *
+ * Watch-folder imports named the thumbnail after the camera's file name, and
+ * regenerating a thumbnail, lightbox preview or hero did the same, so
+ * same-named files in two galleries point at one file showing whichever was
+ * written last. Each such row is regenerated from its own original, under a
+ * per-photo name (imageProcessor's ownDerivativeName), and the old file is
+ * removed once no row points at it. Shared keys are found across every row,
+ * but archived galleries are not regenerated: their originals are in the
+ * zip, not in storage, and their rows keep the key (and so the file). A live
+ * row that cannot be regenerated loses the pointer instead, so it is rebuilt
+ * on its next view rather than showing another gallery's picture, and it no
+ * longer holds the key once the others have moved off. Idempotent: with no
+ * shared keys left, this is three grouped queries.
+ */
+async function repairSharedThumbnails() {
+  const { ensureThumbnail, ensurePreviewImage, ensureHeroImage } = require('./imageProcessor');
+  const { getStorage } = require('./storage');
+  const archived = () => db('events').where('is_archived', formatBoolean(true)).select('id');
+  const kinds = {
+    thumbnail_path: (photo) => ensureThumbnail({ ...photo, thumbnail_path: null }, { force: true }),
+    preview_path: (photo) => ensurePreviewImage({ ...photo, preview_path: null }, { force: true }),
+    // The event's own focal point, as the gallery hero route asks for it.
+    hero_path: (photo) => ensureHeroImage({ ...photo, hero_path: null }),
+  };
+  for (const [column, regenerate] of Object.entries(kinds)) {
+    const keys = await db('photos').whereNotNull(column)
+      .groupBy(column).havingRaw('count(*) > 1').pluck(column);
+    if (keys.length === 0) continue;
+    logger.info(`[fileWatcher] ${keys.length} ${column} file(s) shared by several photos; regenerating them per photo`);
+    for (const key of keys) {
+      const photos = await db('photos').where(column, key).whereNotIn('event_id', archived()).orderBy('id');
+      for (const photo of photos) {
+        let rebuilt = null;
+        try {
+          rebuilt = await regenerate(photo);
+        } catch (error) {
+          logger.warn(`[fileWatcher] Could not regenerate ${column} of photo ${photo.id}: ${error.message}`);
+        }
+        if (!rebuilt) {
+          await db('photos').where({ id: photo.id, [column]: key }).update({ [column]: null });
+        }
+      }
+      // Kept while any derived column of any row still names it, as the
+      // gallery delete checks (routes/adminEvents/helpers.js).
+      const stillReferenced = await db('photos').where((qb) => qb
+        .where('thumbnail_path', key)
+        .orWhere('hero_path', key)
+        .orWhere('preview_path', key)
+        .orWhere('watermark_path', key))
+        .first('id');
+      if (!stillReferenced) {
+        await getStorage().delete(key).catch(() => {});
+      }
+    }
+  }
 }
 
 /**
@@ -126,16 +193,48 @@ async function processNewPhoto(filePath) {
   // Find the event
   const event = await db('events').where({ slug: eventSlug, is_active: formatBoolean(true) }).first();
   if (!event) return;
-  
+
+  // Check if photo already exists.
+  //
+  // `source_filename` is in here, not just filename/path, because a REPLACEMENT
+  // changes both of those (#1226). replacePhoto generates a fresh filename and
+  // a fresh managed path, so a watched-folder photo that had its file replaced
+  // — through the Lightroom round-trip (#745) or the admin replace — stopped
+  // matching either arm, and the next sweep imported the untouched original a
+  // second time. The gallery then held the edit AND the original: the same
+  // duplicate shape external_relpath prevents for reference galleries.
+  //
+  // source_filename is the stable key: written once at ingest (below) and
+  // preserved across a replace by design. Rows predating migration 193 are
+  // covered too — its backfill sets source_filename from
+  // COALESCE(original_filename, filename), and this path never wrote
+  // original_filename, so for watcher rows that resolves to the basename this
+  // compares against.
+  //
+  // Checked before any processing: chokidar re-announces every file on each
+  // boot, and the thumbnail name below is random per import, so generating
+  // first would leave one unreferenced thumbnail per file per restart.
+  const existingPhoto = await findExistingPhoto(event.id, path.basename(filePath), relativePath);
+  if (existingPhoto) {
+    logger.debug(`Photo already exists: ${relativePath}`);
+    return;
+  }
+
   // Get file stats
   const stats = await fs.stat(filePath);
   
   // Generate thumbnail or placeholder
   let thumbnailPath = null;
+  // The thumbnail key has no gallery in it, and cameras restart at
+  // IMG_0001.JPG, so the camera's name alone made two galleries share one
+  // thumbnail: the later import overwrote it, and deleting either photo
+  // removed the other's. A random prefix, as the upload paths get from their
+  // generated file names; the name is shortened to leave room for it.
+  const thumbBasename = prefixedBasename(`w${crypto.randomBytes(6).toString('hex')}_`, filename);
   if (isVideo) {
-    thumbnailPath = await generateVideoPlaceholder(filename);
+    thumbnailPath = await generateVideoPlaceholder(thumbBasename);
   } else {
-    thumbnailPath = await generateThumbnail(filePath);
+    thumbnailPath = await generateThumbnail(filePath, { outputBasename: thumbBasename });
   }
   
   // Calculate relative thumbnail path
@@ -161,57 +260,35 @@ async function processNewPhoto(filePath) {
     }
   }
 
-  // Check if photo already exists.
-  //
-  // `source_filename` is in here, not just filename/path, because a REPLACEMENT
-  // changes both of those (#1226). replacePhoto generates a fresh filename and
-  // a fresh managed path, so a watched-folder photo that had its file replaced
-  // — through the Lightroom round-trip (#745) or the admin replace — stopped
-  // matching either arm, and the next sweep imported the untouched original a
-  // second time. The gallery then held the edit AND the original: the same
-  // duplicate shape external_relpath prevents for reference galleries.
-  //
-  // source_filename is the stable key: written once at ingest (below) and
-  // preserved across a replace by design. Rows predating migration 193 are
-  // covered too — its backfill sets source_filename from
-  // COALESCE(original_filename, filename), and this path never wrote
-  // original_filename, so for watcher rows that resolves to the basename this
-  // compares against.
-  const existingPhoto = await findExistingPhoto(event.id, path.basename(filePath), relativePath);
+  // Add to database
+  const insertResult = await db('photos').insert({
+    event_id: event.id,
+    filename: path.basename(filePath),
+    // The camera-original name. This path never sets original_filename, so
+    // without this the Lightroom round-trip (#745) has nothing to match a
+    // RAW against for auto-imported galleries.
+    source_filename: path.basename(filePath),
+    path: relativePath,
+    thumbnail_path: relativeThumbPath,
+    type: isVideo ? 'video' : photoType,
+    size_bytes: stats.size,
+    mime_type: mimeType,
+    ...(dimensions && { width: dimensions.width, height: dimensions.height })
+  }).returning('id');
+  const photoId = insertResult[0]?.id || insertResult[0];
 
-  if (!existingPhoto) {
-    // Add to database
-    const insertResult = await db('photos').insert({
-      event_id: event.id,
-      filename: path.basename(filePath),
-      // The camera-original name. This path never sets original_filename, so
-      // without this the Lightroom round-trip (#745) has nothing to match a
-      // RAW against for auto-imported galleries.
-      source_filename: path.basename(filePath),
-      path: relativePath,
-      thumbnail_path: relativeThumbPath,
-      type: isVideo ? 'video' : photoType,
-      size_bytes: stats.size,
-      mime_type: mimeType,
-      ...(dimensions && { width: dimensions.width, height: dimensions.height })
-    }).returning('id');
-    const photoId = insertResult[0]?.id || insertResult[0];
+  logger.info(`Added new photo: ${relativePath}`);
+  downloadZipService.invalidate(event.id);
 
-    logger.info(`Added new photo: ${relativePath}`);
-    downloadZipService.invalidate(event.id);
-
-    // Webhook (#327) — auto-import path. Only fires in local mode since
-    // the watcher is disabled in S3 mode.
-    try {
-      const webhookService = require('./webhookService');
-      await webhookService.fire('photo.uploaded', {
-        event: { id: event.id, slug: event.slug, event_name: event.event_name },
-        photo: { id: photoId, filename: path.basename(filePath), size_bytes: stats.size, source: 'auto-import' },
-      });
-    } catch (e) { /* non-fatal */ }
-  } else {
-    logger.debug(`Photo already exists: ${relativePath}`);
-  }
+  // Webhook (#327) — auto-import path. Only fires in local mode since
+  // the watcher is disabled in S3 mode.
+  try {
+    const webhookService = require('./webhookService');
+    await webhookService.fire('photo.uploaded', {
+      event: { id: event.id, slug: event.slug, event_name: event.event_name },
+      photo: { id: photoId, filename: path.basename(filePath), size_bytes: stats.size, source: 'auto-import' },
+    });
+  } catch (e) { /* non-fatal */ }
 }
 
 async function removePhoto(filePath) {
@@ -240,4 +317,4 @@ async function removePhoto(filePath) {
   logger.info(`Removed photo: ${relativePath}`);
 }
 
-module.exports = { stopFileWatcher, startFileWatcher, findExistingPhoto };
+module.exports = { stopFileWatcher, startFileWatcher, findExistingPhoto, processNewPhoto, removePhoto, repairSharedThumbnails };
