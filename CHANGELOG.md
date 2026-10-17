@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.175.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.175.1-beta.0...v3.175.2-beta.0) (2026-10-17)
+
+
+### Bug Fixes
+
+* **watcher:** keep restored and cross-column shared derivatives apart ([#2166](https://github.com/PicPeak/picpeak/issues/2166)) ([20b6f15](https://github.com/PicPeak/picpeak/commit/20b6f157049ac1551e8b4018e67ed5ba666d35a9))
+
 ## [3.175.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.175.0-beta.0...v3.175.1-beta.0) (2026-10-16)
 
 
