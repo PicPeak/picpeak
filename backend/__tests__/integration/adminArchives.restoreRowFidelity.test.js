@@ -631,6 +631,27 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     expect(rows['approved.jpg']).toMatchObject({ moderation_status: null, visibility: 'visible' });
   });
 
+  it('writes source_filename back so a restored camera-named photo keeps its own derivatives', async () => {
+    // fileWatcher never sets original_filename, so its manifest entry carries
+    // null there. imageProcessor tells a camera-named photo by filename ===
+    // source_filename; a restored row without source_filename regenerated to
+    // the bare camera name, shared with every other gallery's IMG_0001.JPG.
+    const archiveRelPath = await writeArchive('sourcename.zip', {
+      'individual/IMG_0001.JPG': BYTES,
+      'individual/upload_abc123.jpg': BYTES,
+      'photos_manifest.json': manifestOf([
+        { filename: 'IMG_0001.JPG', original_filename: null, type: 'individual' },
+        { filename: 'upload_abc123.jpg', original_filename: 'DSC_0009.jpg', type: 'individual' },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'source-name-event');
+
+    await restore(eventId);
+
+    expect(await columnByFilename(eventId, 'source_filename'))
+      .toEqual({ 'IMG_0001.JPG': 'IMG_0001.JPG', 'upload_abc123.jpg': 'DSC_0009.jpg' });
+  });
+
   it('keeps the original upload time rather than stamping the restore time', async () => {
     const uploadedAt = '2026-06-27T10:30:00.000Z';
     const archiveRelPath = await writeArchive('uploadedat.zip', {
