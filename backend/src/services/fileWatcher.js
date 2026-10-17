@@ -132,7 +132,15 @@ async function repairSharedThumbnails() {
           await db('photos').where({ id: photo.id, [column]: key }).update({ [column]: null });
         }
       }
-      if (!(await db('photos').where(column, key).first('id'))) {
+      // Kept while any derived column of any row still names it, as the
+      // gallery delete checks (routes/adminEvents/helpers.js).
+      const stillReferenced = await db('photos').where((qb) => qb
+        .where('thumbnail_path', key)
+        .orWhere('hero_path', key)
+        .orWhere('preview_path', key)
+        .orWhere('watermark_path', key))
+        .first('id');
+      if (!stillReferenced) {
         await getStorage().delete(key).catch(() => {});
       }
     }

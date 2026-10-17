@@ -266,6 +266,33 @@ describe('watch-folder thumbnail names', () => {
     expect(fs.existsSync(abs(shared))).toBe(false);
   });
 
+  it('keeps a shared file another row still names in a different column', async () => {
+    const a = await makeEvent('thumbs-cross-a');
+    const b = await makeEvent('thumbs-cross-b');
+    const c = await makeEvent('thumbs-cross-c');
+    await dropJpeg(a, 'IMG_0011.JPG', RED);
+    await dropJpeg(b, 'IMG_0011.JPG', BLUE);
+    const shared = 'thumbnails/thumb_IMG_0011.JPG';
+    await writeSolid(shared, 300, 225, BLUE);
+    const legacyRow = (event, extra) => ({
+      event_id: event.id, filename: 'IMG_0011.JPG', source_filename: 'IMG_0011.JPG',
+      path: `${event.slug}/individual/IMG_0011.JPG`,
+      type: 'individual', media_type: 'image', source_origin: 'managed',
+      processing_status: 'complete', size_bytes: 1, mime_type: 'image/jpeg', ...extra,
+    });
+    await db('photos').insert([
+      legacyRow(a, { thumbnail_path: shared }),
+      legacyRow(b, { thumbnail_path: shared }),
+      // A third row names the same file as its preview only.
+      legacyRow(c, { preview_path: shared }),
+    ]);
+
+    await repairSharedThumbnails();
+
+    expect(await db('photos').where('thumbnail_path', shared).first()).toBeUndefined();
+    expect(fs.existsSync(abs(shared))).toBe(true);
+  });
+
   it('admin regenerate moves a photo off a shared key without deleting the other gallery\'s file', async () => {
     const express = require('express');
     const request = require('supertest');
