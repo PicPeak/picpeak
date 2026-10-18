@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.134.8](https://github.com/PicPeak/picpeak/compare/v3.134.7...v3.134.8) (2026-10-18)
+
+
+### Bug Fixes
+
+* **admin:** remove the backup retention days and default image quality inputs ([#2172](https://github.com/PicPeak/picpeak/issues/2172)) ([3a1c57b](https://github.com/PicPeak/picpeak/commit/3a1c57b2370f457a0d0615d1b6a77915bd868360))
+* **downloads:** keep the server's content type on blob downloads ([#2177](https://github.com/PicPeak/picpeak/issues/2177)) ([6c69ec2](https://github.com/PicPeak/picpeak/commit/6c69ec241037f277ce781407b56e1362ffd67cea))
+* **watcher:** give same-named watch-folder photos their own thumbnails, previews and heroes (stable) ([#2165](https://github.com/PicPeak/picpeak/issues/2165)) ([6bd6a70](https://github.com/PicPeak/picpeak/commit/6bd6a70150019e03db57e03305aec6c73603e5b5))
+
 ## [3.134.7](https://github.com/PicPeak/picpeak/compare/v3.134.6...v3.134.7) (2026-10-16)
 
 
