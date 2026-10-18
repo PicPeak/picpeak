@@ -44,6 +44,19 @@ const {
 const videoHls = require('../../services/videoHlsService');
 const { refundRateLimit } = require('../../services/rateLimitService');
 
+// The image type a stored object's first bytes prove, or null. A stored
+// watermark is usually the JPEG applyWatermark re-encoded, but it can be the
+// untouched original when there was nothing to draw (issue 2178).
+async function sniffStoredImageType(storage, key) {
+  try {
+    const chunks = [];
+    for await (const chunk of await storage.getRange(key, 0, 63)) chunks.push(chunk);
+    return sniffImageType(Buffer.concat(chunks));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Download limit (issue 1560): a video without a web copy has no preview
  * tier, so playing it streams the original, and on a limited gallery that
@@ -480,7 +493,8 @@ router.get('/:slug/photo/:photoId',
               const wmStat = await storage.stat(photo.watermark_path);
               if (wmStat) {
                 res.set({
-                  'Content-Type': watermarkService.watermarkContentType(photo.filename),
+                  'Content-Type': await sniffStoredImageType(storage, photo.watermark_path)
+                    || resolvePhotoContentType(photo),
                   'Content-Length': wmStat.size,
                   'Cache-Control': 'private, max-age=1800',
                   'ETag': etag,

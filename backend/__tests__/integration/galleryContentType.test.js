@@ -184,6 +184,23 @@ describe('served photo content types (issue 2178)', () => {
     expect(res.headers['content-type']).toBe('image/jpeg');
   });
 
+  test('a stored watermark that kept the original GIF bytes stays labelled GIF', async () => {
+    withGlobal(GLOBAL);
+    const { event, token } = await makeEvent();
+    const photoId = await addPhoto(event, 'untouched.gif', gif, 'image/gif');
+    // applyWatermark hands back the original when it has nothing to draw.
+    const original = jest.spyOn(watermarkService, 'applyWatermark').mockResolvedValue(gif);
+    expect(await generator.generateForPhoto(photoId)).toMatchObject({ success: true });
+    original.mockRestore();
+
+    const spy = jest.spyOn(watermarkService, 'applyWatermark');
+    const res = await binary(request(app).get(`/api/gallery/${event.slug}/photo/${photoId}`)
+      .set('Authorization', `Bearer ${token}`)).expect(200);
+    expect(spy).not.toHaveBeenCalled();
+    expect(res.body.subarray(0, 3).toString()).toBe('GIF');
+    expect(res.headers['content-type']).toBe('image/gif');
+  });
+
   test('an unwatermarked external HEIC carries the resolved type, not sendFile\'s guess', async () => {
     withGlobal({ ...GLOBAL, enabled: false });
     const { event, token } = await makeEvent();
