@@ -91,5 +91,10 @@ describe('backup export super_admin gate (GHSA-pv6w)', () => {
       .set('Authorization', `Bearer ${superToken}`);
     expect(res.status).not.toBe(403);
     expect(res.status).toBeLessThan(500);
+    // Issue 2178: a .picpeak is a zip. Express would label the unknown
+    // extension application/octet-stream. (One download only: the route
+    // deletes the stub's directory once it has been sent.)
+    expect(res.headers['content-type']).toBe('application/zip');
+    expect(res.headers['content-disposition']).toContain('export.picpeak');
   });
 });

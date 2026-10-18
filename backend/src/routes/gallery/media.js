@@ -19,6 +19,7 @@ const { heroQueryRedirect } = require('../../utils/heroAnchor');
 const { getStorage } = require('../../services/storage');
 const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
+const { sniffImageType, sniffImageFileType } = require('../../utils/fileSecurityUtils');
 const { isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
 const { originalAssetDenial, grantDenial, isPresentationRenditionKey } = require('../../services/galleryAssetPolicy');
 
@@ -274,8 +275,10 @@ router.get('/:slug/photo/:photoId',
             } else {
               const watermarkFilePath = path.join(getStoragePath(), photo.watermark_path);
               if (fs.existsSync(watermarkFilePath)) {
+                // The file keeps the original's extension but holds what
+                // applyWatermark encoded: JPEG for a HEIC/GIF/TIFF (issue 2178).
                 res.set({
-                  'Content-Type': resolvePhotoContentType(photo),
+                  'Content-Type': await sniffImageFileType(watermarkFilePath) || resolvePhotoContentType(photo),
                   'Cache-Control': 'private, max-age=1800',
                   'ETag': etag,
                   'X-Protection-Level': 'basic'
@@ -303,7 +306,7 @@ router.get('/:slug/photo/:photoId',
           .catch(err => logger.warn(`Background watermark generation failed for photo ${photo.id}:`, err.message));
 
         res.set({
-          'Content-Type': resolvePhotoContentType(photo),
+          'Content-Type': sniffImageType(watermarkedBuffer) || resolvePhotoContentType(photo),
           'Cache-Control': 'private, max-age=1800',
           'ETag': etag,
           'X-Protection-Level': 'basic'
@@ -323,6 +326,9 @@ router.get('/:slug/photo/:photoId',
           pipeStreamToResponse(stream, res, { context: `photo ${photo.id}` });
         } else {
           const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(filePath);
+          // Set before sendFile, which then keeps it instead of guessing from
+          // the extension (issue 2178).
+          res.set('Content-Type', resolvePhotoContentType(photo));
           res.sendFile(absolutePath);
         }
       }

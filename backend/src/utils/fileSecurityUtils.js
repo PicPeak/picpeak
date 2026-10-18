@@ -305,6 +305,47 @@ async function validateFileContent(filePath, expectedMimeType) {
   }
 }
 
+// The formats sharp encodes a rendition in (resizeToBox, applyWatermark).
+// Deliberately no SVG, HEIF or anything else: a caller names bytes from this
+// list or not at all.
+const SNIFFED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+// Enough for those signatures; the deepest (WebP) ends at byte 12.
+const SNIFF_READ_BYTES = 16;
+
+/**
+ * The image type a buffer's own leading bytes prove, or null.
+ * @param {Buffer} buffer
+ * @returns {string|null}
+ */
+function sniffImageType(buffer) {
+  return SNIFFED_IMAGE_TYPES.find((type) => {
+    const typeConfig = ALLOWED_IMAGE_TYPES[type];
+    const signatureSets = typeConfig.magicNumberAlternatives || [typeConfig.magicNumbers];
+    return signatureSets.some((set) => set.every((magic) =>
+      magic.bytes.every((byte, i) => buffer[magic.offset + i] === byte)));
+  }) || null;
+}
+
+/**
+ * sniffImageType for a file, reading only its first bytes. Null when the
+ * file is unreadable too: the caller's own read reports that.
+ * @param {string} filePath
+ * @returns {Promise<string|null>}
+ */
+async function sniffImageFileType(filePath) {
+  let fileHandle;
+  try {
+    fileHandle = await fs.open(filePath, 'r');
+    const buffer = Buffer.alloc(SNIFF_READ_BYTES);
+    const { bytesRead } = await fileHandle.read(buffer, 0, SNIFF_READ_BYTES, 0);
+    return sniffImageType(buffer.subarray(0, bytesRead));
+  } catch {
+    return null;
+  } finally {
+    if (fileHandle) await fileHandle.close();
+  }
+}
+
 /**
  * Create a file upload validator middleware
  * @param {Object} options - Validation options
@@ -415,6 +456,8 @@ module.exports = {
   normalizeUploadMimeType,
   validateFileType,
   validateFileContent,
+  sniffImageType,
+  sniffImageFileType,
   createFileUploadValidator,
   ALLOWED_IMAGE_TYPES,
   ALLOWED_VIDEO_TYPES,

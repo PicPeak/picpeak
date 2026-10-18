@@ -19,6 +19,8 @@ const { withLocalCopy, resizeToBox } = require('./imageProcessor');
 const watermarkService = require('./watermarkService');
 const { getStorage } = require('./storage');
 const fs = require('fs');
+const { resolvePhotoContentType } = require('../utils/photoContentType');
+const { sniffImageType, ALLOWED_IMAGE_TYPES } = require('../utils/fileSecurityUtils');
 
 /** Videos have no resize path — they always ship as stored. */
 function isVideo(photo) {
@@ -63,6 +65,23 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
 }
 
 /**
+ * Content-Type and download name for a renderPhotoForDownload buffer. The
+ * watermark re-encodes anything but PNG/WebP as JPEG, and resizeToBox turns
+ * TIFF/AVIF into JPEG, so the stored type can name the wrong format (issue
+ * 2178). The bytes decide; the stored type stands when they prove nothing.
+ */
+function renderedDownloadType(buffer, photo, name) {
+  const storedType = resolvePhotoContentType(photo);
+  const contentType = sniffImageType(buffer) || storedType;
+  return {
+    contentType,
+    name: contentType === storedType
+      ? name
+      : `${String(name).replace(/\.[^./\\]*$/, '')}${ALLOWED_IMAGE_TYPES[contentType].extensions[0]}`,
+  };
+}
+
+/**
  * Resolve the effective watermark settings for an event, or null when no
  * watermark applies. Same global-OR-event rule the download routes already
  * used, lifted here so the job builder can't drift from it.
@@ -81,6 +100,7 @@ async function resolveWatermarkSettings(event) {
 
 module.exports = {
   renderPhotoForDownload,
+  renderedDownloadType,
   resolveWatermarkSettings,
   isVideo,
   getStorage,
