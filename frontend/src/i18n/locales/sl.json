@@ -2545,7 +2545,6 @@
       "defaultProtection": "Privzete nastavitve zaščite",
       "defaultProtectionHelp": "Te nastavitve veljajo za vse nove dogodke. Posamezni dogodki lahko te privzete nastavitve prepišejo.",
       "protectionLevel": "Privzeta raven zaščite",
-      "imageQuality": "Privzeta kakovost slike",
       "enableDevtools": "Privzeto omogoči zaznavanje DevTools",
       "enableCanvas": "Privzeto omogoči izris prek canvas v pregledovalniku (napredna zaščita)",
       "rateLimiting": "Omejevanje hitrosti",
@@ -2561,7 +2560,6 @@
       "logEvents": "Zapisuj varnostne dogodke v bazo",
       "infoTitle": "O zaščiti slik",
       "infoText": "Te zaščitne funkcije pomagajo preprečiti priložnostno prenašanje in kopiranje, vendar ne morejo blokirati vseh metod. Odločeni uporabniki lahko še vedno najdejo načine za zajem slik. Za celovito zaščito razmislite o vodnih žigih in pravnih dogovorih.",
-      "imageQualityHelp": "1–100, višje = boljša kakovost",
       "suspiciousActivityThresholdHelp": "Število kršitev pred označitvijo kot sumljivo",
       "autoBlockThresholdHelp": "Število kršitev pred samodejno blokado IP-ja"
     },
@@ -5336,10 +5334,7 @@
           "custom": "Cron izraz po meri"
         },
         "customCron": "Cron izraz",
-        "customCronHelp": "Vnesite veljaven cron izraz (npr. 0 3 * * *)",
-        "retention": "Obdobje hrambe",
-        "retentionDays": "Hrani varnostne kopije",
-        "retentionHelp": "dni (starejše varnostne kopije bodo samodejno izbrisane)"
+        "customCronHelp": "Vnesite veljaven cron izraz (npr. 0 3 * * *)"
       },
       "whatToBackup": {
         "title": "Kaj vključiti v varnostno kopijo",

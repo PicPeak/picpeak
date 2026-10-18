@@ -9,14 +9,12 @@ import { api } from '../../../config/api';
 
 interface ImageSecuritySettings {
   default_protection_level: 'basic' | 'standard' | 'enhanced' | 'maximum';
-  default_image_quality: number;
   enable_devtools_protection: boolean;
   enable_canvas_rendering: boolean;
 }
 
 const defaultSettings: ImageSecuritySettings = {
   default_protection_level: 'standard',
-  default_image_quality: 85,
   enable_devtools_protection: true,
   enable_canvas_rendering: false,
 };
@@ -126,23 +124,6 @@ export const ImageSecurityTab: React.FC = () => {
               <option value="enhanced">{t('events.protectionLevelEnhanced', 'Enhanced - Print screen detection')}</option>
               <option value="maximum">{t('events.protectionLevelMaximum', 'Maximum - DevTools detection & canvas rendering')}</option>
             </select>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-body mb-1">
-                {t('settings.imageSecurity.imageQuality', 'Default Image Quality')}
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={settings.default_image_quality}
-                onChange={(e) => handleChange('default_image_quality', parseInt(e.target.value) || 85)}
-                className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent"
-              />
-              <p className="text-xs text-muted mt-1">{t('settings.imageSecurity.imageQualityHelp', '1-100, higher = better quality')}</p>
-            </div>
           </div>
 
           <div className="space-y-3 pt-2">

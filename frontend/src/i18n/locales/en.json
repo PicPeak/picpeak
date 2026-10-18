@@ -2813,7 +2813,6 @@
       "defaultProtection": "Default Protection Settings",
       "defaultProtectionHelp": "These settings apply to all new events. Individual events can override these defaults.",
       "protectionLevel": "Default Protection Level",
-      "imageQuality": "Default Image Quality",
       "enableDevtools": "Enable DevTools detection by default",
       "enableCanvas": "Enable canvas rendering in the lightbox by default (advanced protection)",
       "rateLimiting": "Rate Limiting",
@@ -2829,7 +2828,6 @@
       "logEvents": "Log security events to database",
       "infoTitle": "About Image Protection",
       "infoText": "These protection features help prevent casual downloading and copying but cannot block all methods. Determined users may still find ways to capture images. Consider using watermarks and legal agreements for comprehensive protection.",
-      "imageQualityHelp": "1-100, higher = better quality",
       "suspiciousActivityThresholdHelp": "Violations before flagging as suspicious",
       "autoBlockThresholdHelp": "Violations before auto-blocking IP"
     },
@@ -6074,9 +6072,6 @@
         },
         "customCron": "Cron Expression",
         "customCronHelp": "Enter a valid cron expression (e.g., 0 3 * * *)",
-        "retention": "Retention Period",
-        "retentionDays": "Keep backups for",
-        "retentionHelp": "days (older backups will be automatically deleted)",
         "retentionCount": "Restore points to keep",
         "retentionCountHelp": "Complete restore points kept at a local or S3 destination. Older ones are deleted after each successful backup. 0 keeps all of them."
       },

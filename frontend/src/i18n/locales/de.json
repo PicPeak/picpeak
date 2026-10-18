@@ -1628,9 +1628,6 @@
         },
         "customCron": "Cron-Ausdruck",
         "customCronHelp": "Geben Sie einen gültigen Cron-Ausdruck ein (z.B. 0 3 * * *)",
-        "retention": "Aufbewahrungszeitraum",
-        "retentionDays": "Backups aufbewahren für",
-        "retentionHelp": "Tage (ältere Backups werden automatisch gelöscht)",
         "retentionCount": "Aufzubewahrende Wiederherstellungspunkte",
         "retentionCountHelp": "Vollständige Wiederherstellungspunkte, die an einem lokalen oder S3-Ziel aufbewahrt werden. Ältere werden nach jedem erfolgreichen Backup gelöscht. 0 behält alle."
       },
@@ -3341,7 +3338,6 @@
       "defaultProtection": "Standard-Schutzeinstellungen",
       "defaultProtectionHelp": "Diese Einstellungen gelten für alle neuen Veranstaltungen. Einzelne Veranstaltungen können diese Standardwerte überschreiben.",
       "protectionLevel": "Standard-Schutzstufe",
-      "imageQuality": "Standard-Bildqualität",
       "enableDevtools": "DevTools-Erkennung standardmäßig aktivieren",
       "enableCanvas": "Canvas-Rendering in der Lightbox standardmäßig aktivieren (erweiterter Schutz)",
       "rateLimiting": "Ratenbegrenzung",
@@ -3357,7 +3353,6 @@
       "logEvents": "Sicherheitsereignisse in Datenbank protokollieren",
       "infoTitle": "Über Bildschutz",
       "infoText": "Diese Schutzfunktionen helfen, gelegentliches Herunterladen und Kopieren zu verhindern, können aber nicht alle Methoden blockieren. Entschlossene Benutzer finden möglicherweise trotzdem Wege, Bilder zu erfassen. Erwägen Sie die Verwendung von Wasserzeichen und rechtlichen Vereinbarungen für umfassenden Schutz.",
-      "imageQualityHelp": "1–100, höher = bessere Qualität",
       "suspiciousActivityThresholdHelp": "Verstöße, bevor als verdächtig markiert wird",
       "autoBlockThresholdHelp": "Verstöße, bevor die IP automatisch gesperrt wird"
     },

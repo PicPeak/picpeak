@@ -1475,7 +1475,6 @@
       "defaultProtection": "Configurações de Proteção Padrão",
       "defaultProtectionHelp": "Aplicado a novos eventos por padrão. Podem ser substituídas individualmente.",
       "protectionLevel": "Nível de Proteção Padrão",
-      "imageQuality": "Qualidade de Imagem Padrão",
       "enableDevtools": "Ativar detecção de DevTools por padrão",
       "enableCanvas": "Ativar renderização em Canvas por padrão",
       "rateLimiting": "Limite de Requisições",
@@ -3077,10 +3076,7 @@
           "custom": "Expressão cron personalizada"
         },
         "customCron": "Expressão Cron",
-        "customCronHelp": "Insira uma expressão cron válida (ex: 0 3 * * *)",
-        "retention": "Período de Retenção",
-        "retentionDays": "Manter backups por",
-        "retentionHelp": "dias (backups antigos serão excluídos automaticamente)"
+        "customCronHelp": "Insira uma expressão cron válida (ex: 0 3 * * *)"
       },
       "whatToBackup": {
         "title": "O que incluir no Backup",

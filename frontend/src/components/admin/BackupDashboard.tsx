@@ -12,8 +12,7 @@ import {
   Server,
   Cloud,
   Play,
-  Loader2,
-  Info
+  Loader2
 } from 'lucide-react';
 // Per [[feedback_respect_general_format_settings]] — route every
 // displayed date/time through useLocalizedDate so general_date_format
@@ -61,7 +60,6 @@ interface BackupConfig {
   backup_s3_bucket?: string;
   backup_destination_path?: string;
   backup_rsync_host?: string;
-  backup_retention_days?: number;
 }
 
 interface StatCardProps {
@@ -421,17 +419,6 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
                 </p>
               </div>
             </div>
-
-            {config?.backup_retention_days && (
-              <div className="mt-4 p-3 bg-inset rounded-lg">
-                <div className="flex items-center space-x-2">
-                  <Info className="h-4 w-4 text-faint" />
-                  <span className="text-sm text-body">
-                    {t('backup.configuration.schedule.retentionDays')} {config.backup_retention_days} {t('backup.configuration.schedule.retentionHelp').replace('days (older backups will be automatically deleted)', '')}
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
         </Card>
       </div>

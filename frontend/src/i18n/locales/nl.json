@@ -1346,7 +1346,6 @@
       "defaultProtection": "Standaard beveiligingsinstellingen",
       "defaultProtectionHelp": "Deze instellingen zijn van toepassing op alle nieuwe evenementen. Individuele evenementen kunnen deze standaardwaarden overschrijven.",
       "protectionLevel": "Standaard beveiligingsniveau",
-      "imageQuality": "Standaard beeldkwaliteit",
       "enableDevtools": "Standaard DevTools-detectie inschakelen",
       "enableCanvas": "Standaard canvas-rendering inschakelen (geavanceerde beveiliging)",
       "rateLimiting": "Snelheidsbeperking",
@@ -2927,10 +2926,7 @@
           "custom": "Aangepaste cron-expressie"
         },
         "customCron": "Cron-expressie",
-        "customCronHelp": "Voer een geldige cron-expressie in (bijv. 0 3 * * *)",
-        "retention": "Bewaarperiode",
-        "retentionDays": "Back-ups bewaren voor",
-        "retentionHelp": "dagen (oudere back-ups worden automatisch verwijderd)"
+        "customCronHelp": "Voer een geldige cron-expressie in (bijv. 0 3 * * *)"
       },
       "whatToBackup": {
         "title": "Wat back-uppen",

@@ -35,7 +35,6 @@ interface BackupFormData {
   backup_s3_region: string;
   backup_schedule: string;
   backup_schedule_cron: string;
-  backup_retention_days: number;
   backup_retention_count: number;
   backup_include_database: boolean;
   backup_include_photos: boolean;
@@ -125,7 +124,6 @@ const INITIAL_FORM: BackupFormData = {
   backup_s3_region: '',
   backup_schedule: 'daily',
   backup_schedule_cron: '0 3 * * *',
-  backup_retention_days: 30,
   backup_retention_count: 7,
   backup_include_database: true,
   backup_include_photos: true,
@@ -686,22 +684,6 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
               </p>
             </div>
           )}
-
-          <div>
-            <label className="block text-sm font-medium text-body mb-1">
-              {t('backup.configuration.schedule.retention')}
-            </label>
-            <Input
-              type="number"
-              value={formData.backup_retention_days}
-              onChange={(e) => handleChange('backup_retention_days', parseInt(e.target.value))}
-              min="1"
-              max="365"
-            />
-            <p className="mt-1 text-xs text-muted">
-              {t('backup.configuration.schedule.retentionHelp')}
-            </p>
-          </div>
 
           <div>
             <label htmlFor="backup-retention-count" className="block text-sm font-medium text-body mb-1">
