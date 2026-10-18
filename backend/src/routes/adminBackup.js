@@ -373,7 +373,9 @@ router.get('/picpeak/export', adminAuth, requireSuperAdmin(), async (req, res) =
     const { filePath } = await createPicpeak({ includePhotos });
     const filename = path.basename(filePath);
     res.setHeader('X-Picpeak-Contains-Secrets', 'true');
-    res.download(filePath, filename, (err) => {
+    // A .picpeak is a zip; Express does not know the extension and would send
+    // application/octet-stream (issue 2178).
+    res.download(filePath, filename, { headers: { 'Content-Type': 'application/zip' } }, (err) => {
       // Best-effort cleanup of the temp .picpeak (and its temp dir) after send.
       fsSync.rm(path.dirname(filePath), { recursive: true, force: true }, () => {});
       if (err) logger.error('[picpeak-export] download failed', { error: err.message });

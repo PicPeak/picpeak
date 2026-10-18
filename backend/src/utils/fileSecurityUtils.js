@@ -428,18 +428,56 @@ async function validateFileContent(filePath, expectedMimeType) {
 
     if (bmffVideo) return videoPrefix(buffer.subarray(0, bytesRead), expectedMimeType, true) === true;
 
-    // Check magic numbers
-    return groups.some(group => group.every(magic => {
-      for (let i = 0; i < magic.bytes.length; i++) {
-        if (buffer[magic.offset + i] !== magic.bytes[i]) {
-          return false;
-        }
-      }
-      return true;
-    }));
+    return matchesSignature(buffer, groups);
   } catch (error) {
     logger.error('Error validating file content:', error);
     return false;
+  }
+}
+
+function matchesSignature(buffer, groups) {
+  return groups.some(group => group.every(magic => {
+    for (let i = 0; i < magic.bytes.length; i++) {
+      if (buffer[magic.offset + i] !== magic.bytes[i]) {
+        return false;
+      }
+    }
+    return true;
+  }));
+}
+
+// The formats sharp encodes a rendition in (resizeToBox, applyWatermark).
+// Deliberately no SVG, HEIF or anything else: a caller names bytes from this
+// list or not at all.
+const SNIFFED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+/**
+ * The image type a buffer's own leading bytes prove, or null.
+ * @param {Buffer} buffer
+ * @returns {string|null}
+ */
+function sniffImageType(buffer) {
+  return SNIFFED_IMAGE_TYPES.find(type =>
+    matchesSignature(buffer, signatureGroups(ALLOWED_IMAGE_TYPES[type]))) || null;
+}
+
+/**
+ * sniffImageType for a file, reading only its first bytes. Null when the
+ * file is unreadable too: the caller's own read reports that.
+ * @param {string} filePath
+ * @returns {Promise<string|null>}
+ */
+async function sniffImageFileType(filePath) {
+  let fileHandle;
+  try {
+    fileHandle = await fs.open(filePath, 'r');
+    const buffer = Buffer.alloc(SIGNATURE_READ_BYTES);
+    const { bytesRead } = await fileHandle.read(buffer, 0, SIGNATURE_READ_BYTES, 0);
+    return sniffImageType(buffer.subarray(0, bytesRead));
+  } catch {
+    return null;
+  } finally {
+    if (fileHandle) await fileHandle.close();
   }
 }
 
@@ -538,6 +576,8 @@ module.exports = {
   isRawUploadFilename,
   validateFileType,
   validateFileContent,
+  sniffImageType,
+  sniffImageFileType,
   createFileUploadValidator,
   RAW_UPLOAD_EXTENSIONS,
   ALLOWED_IMAGE_TYPES,
