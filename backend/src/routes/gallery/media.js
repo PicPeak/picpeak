@@ -23,6 +23,19 @@ const { sniffImageType, sniffImageFileType } = require('../../utils/fileSecurity
 const { isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
 const { originalAssetDenial, grantDenial, isPresentationRenditionKey } = require('../../services/galleryAssetPolicy');
 
+// The image type a stored object's first bytes prove, or null. A stored
+// watermark is usually the JPEG applyWatermark re-encoded, but it can be the
+// untouched original when there was nothing to draw (issue 2178).
+async function sniffStoredImageType(storage, key) {
+  try {
+    const chunks = [];
+    for await (const chunk of await storage.getRange(key, 0, 63)) chunks.push(chunk);
+    return sniffImageType(Buffer.concat(chunks));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Is this photo outside what the viewer's grant may reach?
  *
@@ -263,7 +276,8 @@ router.get('/:slug/photo/:photoId',
               const wmStat = await storage.stat(photo.watermark_path);
               if (wmStat) {
                 res.set({
-                  'Content-Type': watermarkService.watermarkContentType(photo.filename),
+                  'Content-Type': await sniffStoredImageType(storage, photo.watermark_path)
+                    || resolvePhotoContentType(photo),
                   'Content-Length': wmStat.size,
                   'Cache-Control': 'private, max-age=1800',
                   'ETag': etag,
