@@ -237,8 +237,13 @@ export const galleryService = {
   // Trigger a regular browser download via a transient <a download>
   // anchor. Extracted from downloadPhoto so the share-fallback path
   // can reuse it without re-fetching the blob.
+  //
+  // The blobs here come from axios and keep the server's Content-Type.
+  // Re-wrapping one would leave the type empty, and browsers that name a
+  // blob download from its type (DuckDuckGo on Android, issue 2175) then
+  // save the file as .bin.
   triggerBrowserDownload(blob: Blob, filename: string): void {
-    const url = window.URL.createObjectURL(new Blob([blob]));
+    const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', filename);
@@ -301,7 +306,7 @@ export const galleryService = {
       responseType: 'blob',
     });
 
-    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const url = window.URL.createObjectURL(response.data);
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', `${slug}.zip`);
@@ -333,7 +338,7 @@ export const galleryService = {
       responseType: 'blob',
     });
 
-    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const url = window.URL.createObjectURL(response.data);
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', `${slug}-selected.zip`);

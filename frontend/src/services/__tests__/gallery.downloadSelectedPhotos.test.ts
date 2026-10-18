@@ -202,3 +202,42 @@ describe('galleryService.downloadSelectedPhotos — iOS Web Share path (#557)', 
     expect(apiMock.post).toHaveBeenCalledTimes(1);
   });
 });
+
+// A re-wrapped blob has no type, and DuckDuckGo on Android then saves the
+// file as .bin (issue 2175).
+describe('gallery downloads keep the server type', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    galleryService = (await import('../gallery.service')).galleryService;
+    apiMock = (await import('../../config/api')).api as any;
+    apiMock.post.mockReset();
+    apiMock.get.mockReset();
+    apiMock.post.mockResolvedValue({ data: new Blob(['zip-bytes'], { type: 'application/zip' }) });
+    apiMock.get.mockResolvedValue({ data: new Blob(['zip-bytes'], { type: 'application/zip' }) });
+    (window.URL.createObjectURL as any) = vi.fn(() => 'blob:fake');
+    (window.URL.revokeObjectURL as any) = vi.fn();
+    installNavigator({ userAgent: ANDROID_UA });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const savedType = () => ((window.URL.createObjectURL as any).mock.calls[0][0] as Blob).type;
+
+  it('selected photos zip', async () => {
+    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
+    expect(savedType()).toBe('application/zip');
+  });
+
+  it('download-all fallback zip', async () => {
+    await galleryService.downloadAllPhotos('wedding-2026', false);
+    expect(savedType()).toBe('application/zip');
+  });
+
+  it('single photo', () => {
+    galleryService.triggerBrowserDownload(new Blob(['jpeg'], { type: 'image/jpeg' }), 'IMG_0001.jpg');
+    expect(savedType()).toBe('image/jpeg');
+  });
+});
