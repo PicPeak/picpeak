@@ -608,6 +608,60 @@ test('v1 replacement keeps identity/source filename and charges nothing', async 
   expect(await db('photos')).toHaveLength(1);
   expect(await db('public_upload_objects')).toHaveLength(0);
 });
+// Lightroom plugin issue 8: v1 takes a video under the admin upload's gate.
+const attachV1Video = (req, bytes = admissionVideo(), filename = 'clip.mp4') => req.attach('photo', bytes, { filename, contentType: 'video/mp4' });
+test('v1 stores an enabled video as a pending video row, like the admin upload', async () => {
+  const video = admissionVideo(2 * 1024 * 1024);
+  const res = await attachV1Video(v1Upload(), video);
+  expect(res.status).toBe(201);
+  expect(res.body).toMatchObject({ size_bytes: video.length, thumbnail_path: null, media_type: 'video' });
+  expect(await db('photos').where({ id: res.body.id }).first())
+    .toMatchObject({ media_type: 'video', mime_type: 'video/mp4', processing_status: 'pending', size_bytes: video.length, thumbnail_path: null });
+  expect(await storage.stat('events/active/' + res.body.path)).toMatchObject({ size: video.length });
+});
+test('v1 refuses a video whose type the admin has not enabled', async () => {
+  await setting('general_allowed_file_types', 'jpg,jpeg,png,webp'); settings.clearAllowedTypesCache();
+  const res = await attachV1Video(v1Upload());
+  expect(res.status).toBe(400); expect(res.body.error).toBe('This file type is not enabled on this server');
+  await waitSettled(); expect(storage.putFromFile).not.toHaveBeenCalled(); expect(await db('photos')).toHaveLength(0);
+});
+test('v1 holds a video to the video cap and an image to the photo cap', async () => {
+  await setting('general_max_video_size_mb', 1); settings.clearMaxVideoSizeCache();
+  const video = await attachV1Video(v1Upload(), admissionVideo(2 * 1024 * 1024));
+  expect(video.status).toBe(400); expect(video.body.error).toBe('File too large. Maximum size is 1 MB per file.');
+  // The video cap is the larger one here, so multer's own limit answers.
+  await setting('general_max_file_size_mb', 1); await setting('general_max_video_size_mb', 2);
+  settings.clearMaxFileSizeCache(); settings.clearMaxVideoSizeCache();
+  const larger = await attachV1Video(v1Upload(), admissionVideo(3 * 1024 * 1024));
+  expect(larger.status).toBe(400); expect(larger.body.error).toBe('File too large. Maximum size is 2 MB per file.');
+  const photo = await attachV1(v1Upload(), image(1536 * 1024));
+  expect(photo.status).toBe(400); expect(photo.body.error).toBe('File too large. Maximum size is 1 MB per file.');
+  await waitSettled(); expect(storage.putFromFile).not.toHaveBeenCalled(); expect(await db('photos')).toHaveLength(0);
+});
+test('v1 refuses bytes that are not the declared video type', async () => {
+  const fake = Buffer.concat([Buffer.from('not-a-video-header!!'), Buffer.alloc(4096)]);
+  const res = await attachV1Video(v1Upload(), fake, 'fake.mp4');
+  expect(res.status).toBe(400); expect(res.body.code).toBe('UPLOAD_TYPE_REJECTED');
+  await waitSettled(); expect(storage.putFromFile).not.toHaveBeenCalled(); expect(await db('photos')).toHaveLength(0);
+});
+test('v1 replaces a video only with a video and an image only with an image', async () => {
+  const photo = await attachV1(v1Upload(), jpeg, 'camera.jpg'); expect(photo.status).toBe(201);
+  const video = await attachV1Video(v1Upload()); expect(video.status).toBe(201);
+  const byVideo = await attachV1Video(v1Upload().field('replaces_photo_id', String(photo.body.id)));
+  expect(byVideo.status).toBe(400); expect(byVideo.body.error).toBe('A video can only replace a video');
+  const byImage = await attachV1(v1Upload().field('replaces_photo_id', String(video.body.id)), jpeg, 'edited.jpg');
+  expect(byImage.status).toBe(400); expect(byImage.body.error).toBe('An image can only replace an image');
+  expect(await db('photos').where({ id: photo.body.id }).first()).toMatchObject({ media_type: 'image', original_filename: 'camera.jpg' });
+  expect(await db('photos').where({ id: video.body.id }).first()).toMatchObject({ media_type: 'video', original_filename: 'clip.mp4' });
+  const sameType = await attachV1Video(v1Upload().field('replaces_photo_id', String(video.body.id)), admissionVideo(), 'recut.mp4');
+  expect(sameType.status).toBe(200); expect(sameType.body.photo).toMatchObject({ id: video.body.id, original_filename: 'recut.mp4' });
+  // A replaced video gets a poster from ffmpeg (or the placeholder), never
+  // none: a video row without a thumbnail makes the grid fetch the original.
+  const recut = await db('photos').where({ id: video.body.id }).first();
+  expect(recut.thumbnail_path).toMatch(/^thumbnails\/thumb_.+\.jpg$/);
+  expect(await storage.exists(recut.thumbnail_path)).toBe(true);
+  expect(await db('photos')).toHaveLength(2);
+});
 test('a typed session token cannot enter the v1 adapter or create a private reservation', async () => {
   const res = await request(app).post(`/api/v1/events/${eventId}/photos`).set('Authorization', `Bearer ${token}`).attach('photo', jpeg, 'wrong-auth.jpg');
   expect(res.status).toBe(401);
