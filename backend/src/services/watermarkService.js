@@ -6,6 +6,8 @@ const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const logger = require('../utils/logger');
+const { sniffImageType } = require('../utils/fileSecurityUtils');
+const { resolvePhotoContentType } = require('../utils/photoContentType');
 
 class WatermarkService {
   constructor() {
@@ -350,7 +352,10 @@ class WatermarkService {
 
       await attempt?.assertCurrent();
       await getStorage().put(relativePath, watermarkedBuffer, {
-        contentType: ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg',
+        // Usually the JPEG applyWatermark re-encoded, but it hands back the
+        // original when it has nothing to draw or fails to render: the bytes
+        // decide, and bytes it never writes are the original's (issue 2178).
+        contentType: sniffImageType(watermarkedBuffer) || resolvePhotoContentType(photo),
       });
       await attempt?.assertCurrent();
 

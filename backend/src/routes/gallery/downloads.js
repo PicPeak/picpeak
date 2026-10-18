@@ -14,7 +14,7 @@ const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../../services
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const downloadZipService = require('../../services/downloadZipService');
-const { renderPhotoForDownload, resolveWatermarkSettings } = require('../../services/downloadRendition');
+const { renderPhotoForDownload, renderedDownloadType, resolveWatermarkSettings } = require('../../services/downloadRendition');
 const downloadJobService = require('../../services/downloadJobService');
 const {
   resolveEventDownloadPolicy,
@@ -217,9 +217,10 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     }
 
     if (rendered) {
+      const { contentType, name } = renderedDownloadType(rendered, photo, downloadName);
       res.set({
-        'Content-Type': resolvePhotoContentType(photo),
-        'Content-Disposition': contentDisposition,
+        'Content-Type': contentType,
+        'Content-Disposition': buildContentDisposition(name),
         'Content-Length': rendered.length
       });
 
