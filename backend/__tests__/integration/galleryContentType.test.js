@@ -172,6 +172,20 @@ describe('served photo content types (issue 2178)', () => {
     expect(res.headers['content-type']).toBe('image/jpeg');
   });
 
+  test('the stored watermark of a managed GIF is labelled JPEG', async () => {
+    withGlobal(GLOBAL);
+    const { event, token } = await makeEvent();
+    const photoId = await addPhoto(event, 'managed.gif', gif, 'image/gif');
+    expect(await generator.generateForPhoto(photoId)).toMatchObject({ success: true });
+
+    const spy = jest.spyOn(watermarkService, 'applyWatermark');
+    const res = await binary(request(app).get(`/api/gallery/${event.slug}/photo/${photoId}`)
+      .set('Authorization', `Bearer ${token}`)).expect(200);
+    expect(spy).not.toHaveBeenCalled();
+    expect(isJpeg(res.body)).toBe(true);
+    expect(res.headers['content-type']).toBe('image/jpeg');
+  });
+
   test('an unwatermarked external HEIC carries the resolved type, not sendFile\'s guess', async () => {
     withGlobal({ ...GLOBAL, enabled: false });
     const { event, token } = await makeEvent();
