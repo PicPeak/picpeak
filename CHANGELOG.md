@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.175.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.175.3-beta.0...v3.175.4-beta.0) (2026-10-18)
+
+
+### Bug Fixes
+
+* **downloads:** keep the server's content type on blob downloads ([#2176](https://github.com/PicPeak/picpeak/issues/2176)) ([ac2e7d6](https://github.com/PicPeak/picpeak/commit/ac2e7d6b736367c4ae584bdaaa4a33ab9aab3acc))
+
 ## [3.175.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.175.2-beta.0...v3.175.3-beta.0) (2026-10-18)
 
 
