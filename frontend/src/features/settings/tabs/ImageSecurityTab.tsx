@@ -8,7 +8,6 @@ import { api } from '../../../config/api';
 
 interface ImageSecuritySettings {
   default_protection_level: 'basic' | 'standard' | 'enhanced' | 'maximum';
-  default_image_quality: number;
   enable_devtools_protection: boolean;
   max_image_requests_per_minute: number;
   max_image_requests_per_5_minutes: number;
@@ -23,7 +22,6 @@ interface ImageSecuritySettings {
 
 const defaultSettings: ImageSecuritySettings = {
   default_protection_level: 'standard',
-  default_image_quality: 85,
   enable_devtools_protection: true,
   max_image_requests_per_minute: 30,
   max_image_requests_per_5_minutes: 100,
@@ -142,23 +140,6 @@ export const ImageSecurityTab: React.FC = () => {
               <option value="enhanced">{t('events.protectionLevelEnhanced', 'Enhanced - Print screen detection')}</option>
               <option value="maximum">{t('events.protectionLevelMaximum', 'Maximum - DevTools detection & canvas rendering')}</option>
             </select>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                {t('settings.imageSecurity.imageQuality', 'Default Image Quality')}
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={settings.default_image_quality}
-                onChange={(e) => handleChange('default_image_quality', parseInt(e.target.value) || 85)}
-                className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('settings.imageSecurity.imageQualityHelp', '1-100, higher = better quality')}</p>
-            </div>
           </div>
 
           <div className="space-y-3 pt-2">

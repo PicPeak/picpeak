@@ -944,7 +944,6 @@
       "defaultProtection": "Ajustes de protección por defecto",
       "defaultProtectionHelp": "Estos ajustes se aplican a todos los nuevos eventos. Los eventos individuales pueden anular estos valores por defecto.",
       "protectionLevel": "Nivel de protección por defecto",
-      "imageQuality": "Calidad de imagen por defecto",
       "enableDevtools": "Habilitar detección de DevTools por defecto",
       "enableCanvas": "Habilitar renderizado con canvas por defecto (protección avanzada)",
       "rateLimiting": "Limitación de velocidad",
@@ -2051,10 +2050,7 @@
           "custom": "Cron personalizado"
         },
         "customCron": "Expresión cron",
-        "customCronHelp": "Introduce una expresión cron válida (p. ej., 0 3 * * *)",
-        "retention": "Periodo de retención",
-        "retentionDays": "Conservar copias por",
-        "retentionHelp": "días (las copias antiguas se eliminarán automáticamente)"
+        "customCronHelp": "Introduce una expresión cron válida (p. ej., 0 3 * * *)"
       },
       "whatToBackup": {
         "title": "Qué respaldar",
