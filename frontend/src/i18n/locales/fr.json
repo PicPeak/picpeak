@@ -914,7 +914,6 @@
       "defaultProtection": "Paramètres de protection par défaut",
       "defaultProtectionHelp": "Ces paramètres s'appliquent à tous les nouveaux événements. Les événements individuels peuvent remplacer ces valeurs par défaut.",
       "protectionLevel": "Niveau de protection par défaut",
-      "imageQuality": "Qualité d'image par défaut",
       "enableDevtools": "Activer la détection des outils DevTools par défaut",
       "enableCanvas": "Activer le rendu canvas dans la visionneuse par défaut (protection avancée)",
       "rateLimiting": "Limitation de débit",
@@ -2291,10 +2290,7 @@
           "custom": "Expression cron personnalisée"
         },
         "customCron": "Expression cron",
-        "customCronHelp": "Entrez une expression cron valide (ex. : 0 3 * * *)",
-        "retention": "Période de rétention",
-        "retentionDays": "Conserver les sauvegardes pendant",
-        "retentionHelp": "jours (les sauvegardes plus anciennes seront automatiquement supprimées)"
+        "customCronHelp": "Entrez une expression cron valide (ex. : 0 3 * * *)"
       },
       "whatToBackup": {
         "title": "Que sauvegarder",
