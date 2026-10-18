@@ -31,11 +31,11 @@ export function splitIntoArchives(photoIds: number[]): number[][] {
 // but soon: a download in parts would otherwise hold several zips at once.
 const BLOB_URL_RELEASE_MS = 1_000;
 
-// A Blob from axios keeps the server's Content-Type. Re-wrapping it would
-// leave the type empty, and browsers that name a blob download from its
-// type (DuckDuckGo on Android, issue 2175) then save the zip as .bin.
-function saveBlob(data: BlobPart, filename: string): void {
-  const blob = data instanceof Blob ? data : new Blob([data]);
+// Takes the Blob axios returned as is: it keeps the server's Content-Type.
+// Re-wrapping it would leave the type empty, and browsers that name a blob
+// download from its type (DuckDuckGo on Android, issue 2175) then save the
+// zip as .bin.
+function saveBlob(blob: Blob, filename: string): void {
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

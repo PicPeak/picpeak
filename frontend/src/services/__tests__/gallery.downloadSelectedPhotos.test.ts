@@ -314,6 +314,16 @@ describe('galleryService.downloadSelectedPhotos — object URL lifetime', () => 
     expect(saved.type).toBe('application/zip');
   });
 
+  it('keeps the zip type on the download-all fallback', async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    apiMock.get.mockResolvedValue({ data: new Blob(['zip-bytes'], { type: 'application/zip' }) });
+
+    await galleryService.downloadAllPhotos('wedding-2026', false);
+
+    const saved = (window.URL.createObjectURL as any).mock.calls[0][0] as Blob;
+    expect(saved.type).toBe('application/zip');
+  });
+
   it('keeps the image type on a single photo download', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
 
