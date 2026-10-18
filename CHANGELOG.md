@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.175.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.175.2-beta.0...v3.175.3-beta.0) (2026-10-18)
+
+
+### Bug Fixes
+
+* **admin:** remove the backup retention days and default image quality inputs ([#2171](https://github.com/PicPeak/picpeak/issues/2171)) ([9949699](https://github.com/PicPeak/picpeak/commit/9949699691b63dd18557af7f89d9a2909739d0d0))
+
 ## [3.175.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.175.1-beta.0...v3.175.2-beta.0) (2026-10-17)
 
 
