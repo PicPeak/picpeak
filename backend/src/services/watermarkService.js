@@ -394,6 +394,16 @@ class WatermarkService {
   }
 
   /**
+   * What a stored watermark holds: applyWatermark keeps PNG and WebP and
+   * re-encodes everything else as JPEG, while the file keeps the original's
+   * extension (issue 2178).
+   */
+  watermarkContentType(filename) {
+    const ext = this.getFileExtension(filename || '');
+    return ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+  }
+
+  /**
    * Get the file extension from a filename
    */
   getFileExtension(filename) {
@@ -450,13 +460,12 @@ class WatermarkService {
 
       const watermarkedBuffer = await this.applyWatermark(originalPath, settings);
 
-      const ext = this.getFileExtension(photo.filename);
       const attempt = require('./mediaAttemptContext').current();
       const relativePath = this.watermarkKey(photo, attempt, settings);
 
       await attempt?.assertCurrent();
       await getStorage().put(relativePath, watermarkedBuffer, {
-        contentType: ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg',
+        contentType: this.watermarkContentType(photo.filename),
       });
       uploaded = relativePath;
       await attempt?.assertCurrent();

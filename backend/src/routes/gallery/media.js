@@ -480,7 +480,7 @@ router.get('/:slug/photo/:photoId',
               const wmStat = await storage.stat(photo.watermark_path);
               if (wmStat) {
                 res.set({
-                  'Content-Type': resolvePhotoContentType(photo),
+                  'Content-Type': watermarkService.watermarkContentType(photo.filename),
                   'Content-Length': wmStat.size,
                   'Cache-Control': 'private, max-age=1800',
                   'ETag': etag,
