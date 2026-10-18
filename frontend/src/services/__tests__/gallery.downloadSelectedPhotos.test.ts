@@ -302,4 +302,24 @@ describe('galleryService.downloadSelectedPhotos — object URL lifetime', () => 
     vi.advanceTimersByTime(1_000);
     expect(window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
   });
+
+  // A re-wrapped blob has no type, and DuckDuckGo on Android then saves the
+  // archive as .bin (issue 2175).
+  it('hands the browser the zip with the type the server sent', async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
+
+    const saved = (window.URL.createObjectURL as any).mock.calls[0][0] as Blob;
+    expect(saved.type).toBe('application/zip');
+  });
+
+  it('keeps the image type on a single photo download', () => {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    galleryService.triggerBrowserDownload(new Blob(['jpeg'], { type: 'image/jpeg' }), 'IMG_0001.jpg');
+
+    const saved = (window.URL.createObjectURL as any).mock.calls[0][0] as Blob;
+    expect(saved.type).toBe('image/jpeg');
+  });
 });
