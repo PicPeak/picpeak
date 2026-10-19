@@ -896,6 +896,15 @@ module.exports = (router) => {
 
       const customerColumnsAvailable = await hasCustomerContactColumns();
       const calendarColumnsExist = await hasColumnCached('events', 'is_full_day');
+      // The Live Slideshow style is gallery configuration too (issue 2189).
+      // Its columns come from four migrations (138/139/158/163), so copy the
+      // ones this schema has. The share token stays behind: a copy gets its
+      // own link. show_category_id is mapped after the categories are cloned,
+      // with upload_category_id.
+      const slideshowStyle = {};
+      for (const column of ['show_interval_ms', 'show_transition', 'show_transition_ms', 'show_watermark', 'show_qr', 'show_colorfilter', 'show_order']) {
+        if (await hasColumnCached('events', column)) slideshowStyle[column] = source[column];
+      }
 
       // Build the insert row. Copy behaviour + branding fields from source;
       // leave per-gallery secrets / state / photos blank.
@@ -926,7 +935,6 @@ module.exports = (router) => {
         updated_at: new Date().toISOString(),
         created_by: req.admin.id,
         allow_user_uploads: source.allow_user_uploads,
-        upload_category_id: source.upload_category_id,
         allow_downloads: source.allow_downloads,
         disable_right_click: source.disable_right_click,
         enable_devtools_protection: source.enable_devtools_protection,
@@ -968,6 +976,7 @@ module.exports = (router) => {
         // carry over — admin re-decides per gallery.
         client_access_enabled: formatBoolean(false),
         og_image_share_enabled: formatBoolean(false),
+        ...slideshowStyle,
       }).returning('id');
 
       const newEventId = insertResult[0]?.id || insertResult[0];
@@ -1003,25 +1012,48 @@ module.exports = (router) => {
       // Copy per-event photo categories (global categories are not duplicated —
       // they apply to every event already). Mapping by name; photo_categories
       // has no foreign key into photos here so we just clone the rows.
+      // One insert per row so each clone's id is known: the category
+      // references below are mapped onto the clones.
+      const newIdByOld = new Map();
       if (await db.schema.hasTable('photo_categories')) {
         const sourceCategories = await db('photo_categories')
           .where({ event_id: id })
           .where(function () { this.whereNull('is_global').orWhere('is_global', formatBoolean(false)); })
-          .select('name', 'slug', 'is_global', 'is_folder');
-        if (sourceCategories.length > 0) {
-          await db('photo_categories').insert(
-            sourceCategories.map((c) => ({
-              event_id: newEventId,
-              name: c.name,
-              slug: c.slug,
-              is_global: formatBoolean(false),
-              // #1160: carry folder-ness across. Without this the clone silently
-              // falls back to the column default and a duplicated gallery turns
-              // every folder back into a filter.
-              is_folder: formatBoolean(parseBooleanInput(c.is_folder, false)),
-            })),
-          );
+          .select('id', 'name', 'slug', 'is_global', 'is_folder');
+        for (const c of sourceCategories) {
+          const inserted = await db('photo_categories').insert({
+            event_id: newEventId,
+            name: c.name,
+            slug: c.slug,
+            is_global: formatBoolean(false),
+            // #1160: carry folder-ness across. Without this the clone silently
+            // falls back to the column default and a duplicated gallery turns
+            // every folder back into a filter.
+            is_folder: formatBoolean(parseBooleanInput(c.is_folder, false)),
+          }).returning('id');
+          newIdByOld.set(Number(c.id), Number(inserted[0]?.id ?? inserted[0]));
         }
+      }
+
+      // The guest-upload default and the slideshow category filter (issue
+      // 2189) follow the clone of their category; a global category applies
+      // to the copy as it is. Anything else would point the copy at the
+      // source gallery's category, so it is left empty.
+      const copiedCategoryId = async (sourceCategoryId) => {
+        if (!sourceCategoryId) return null;
+        const sourceId = Number(sourceCategoryId);
+        if (newIdByOld.has(sourceId)) return newIdByOld.get(sourceId);
+        const globalCategory = await db('photo_categories')
+          .where({ id: sourceId, is_global: formatBoolean(true) })
+          .first('id');
+        return globalCategory ? sourceId : null;
+      };
+      const categoryFields = { upload_category_id: await copiedCategoryId(source.upload_category_id) };
+      if (await hasColumnCached('events', 'show_category_id')) {
+        categoryFields.show_category_id = await copiedCategoryId(source.show_category_id);
+      }
+      if (Object.values(categoryFields).some((value) => value !== null)) {
+        await db('events').where({ id: newEventId }).update(categoryFields);
       }
 
       await logActivity('event_duplicated',
