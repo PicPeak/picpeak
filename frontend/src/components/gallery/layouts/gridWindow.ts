@@ -1,0 +1,147 @@
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { RefObject } from 'react';
+import type { JustifiedLayoutItem } from '../../../utils/justifiedLayoutCalculator';
+import { useWindowedItems } from './rowWindow';
+
+/**
+ * Row windowing for the layouts that flow equal tiles through a CSS grid
+ * (Grid, Timeline) — issue 2193, the follow-up to Masonry rows in #1955.
+ *
+ * The grid's columns, gaps and tile height come from the browser, not from
+ * the theme: a CSS template may restyle `.photo-grid` (its own
+ * `grid-template-columns`, padding and gap). From those every tile's box is
+ * known, so the same row windowing as Masonry rows applies. The rows that are
+ * not mounted are replaced by two full-width spacers, which keeps the grid's
+ * height, every mounted tile's position and the scrollbar unchanged.
+ */
+
+/** Set on each tile, a direct child of the grid, so the grid can measure one. */
+export const GRID_TILE_ATTR = 'data-grid-tile';
+
+interface GridGeometry {
+  columns: number;
+  /** Column width in px. */
+  track: number;
+  rowGap: number;
+  paddingTop: number;
+  /** Content-box width, which is what the anchor check in rowWindow compares. */
+  width: number;
+  /** Tile height over column width, kept while no tile is mounted. */
+  ratio: number;
+}
+
+function readGeometry(container: HTMLElement, previousRatio: number | undefined): GridGeometry | null {
+  const style = getComputedStyle(container);
+  // Resolved track sizes, e.g. "280px 280px 280px"; "none" when it is not a grid.
+  const tracks = (style.gridTemplateColumns || '').split(/\s+/).filter(Boolean).map(parseFloat);
+  if (tracks.length === 0 || tracks.some((track) => !(track > 0))) return null;
+  const tile = Array.from(container.children).find((child) => child.hasAttribute(GRID_TILE_ATTR));
+  const height = tile ? tile.getBoundingClientRect().height : 0;
+  const ratio = height > 0 ? height / tracks[0] : previousRatio;
+  if (!ratio) return null;
+  const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+  return {
+    columns: tracks.length,
+    track: tracks[0],
+    rowGap: parseFloat(style.rowGap) || 0,
+    paddingTop: parseFloat(style.paddingTop) || 0,
+    width: container.clientWidth - padding,
+    ratio,
+  };
+}
+
+function sameGeometry(a: GridGeometry | null | undefined, b: GridGeometry | null): boolean {
+  if (!a || !b) return a === b;
+  return a.columns === b.columns
+    && Math.abs(a.track - b.track) < 0.5
+    && a.rowGap === b.rowGap
+    && a.paddingTop === b.paddingTop
+    && Math.abs(a.width - b.width) < 0.5
+    && Math.abs(a.ratio - b.ratio) < 0.001;
+}
+
+export interface GridWindow<P> {
+  /** The photos to render, in order, with their index in `photos`. */
+  tiles: Array<{ photo: P; index: number }>;
+  /** Heights of the spacers before and after the tiles; 0 means none. */
+  before: number;
+  after: number;
+}
+
+export function useGridWindow<P extends { id: number }>(
+  containerRef: RefObject<HTMLElement | null>,
+  photos: P[],
+  enabled: boolean,
+): GridWindow<P> {
+  // undefined: not measured yet. null: not measurable (not a grid, or hidden),
+  // in which case every tile is mounted.
+  const [geometry, setGeometry] = useState<GridGeometry | null | undefined>(undefined);
+  const geometryRef = useRef(geometry);
+  geometryRef.current = geometry;
+
+  // Measured on every commit even while windowing is off, so the grid is
+  // already known when a growing list crosses the threshold and nothing in
+  // view remounts.
+  const measure = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const previous = geometryRef.current;
+    const next = readGeometry(container, previous?.ratio);
+    if (!sameGeometry(previous, next)) {
+      geometryRef.current = next;
+      setGeometry(next);
+    }
+  }, [containerRef]);
+
+  // After every commit: a tile that just mounted gives the first height.
+  useLayoutEffect(measure);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!enabled || !container) return;
+    const observer = new ResizeObserver(() => measure());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [enabled, containerRef, measure]);
+
+  const windowed = enabled && Boolean(geometry);
+
+  const items = useMemo((): JustifiedLayoutItem[] => {
+    if (!windowed || !geometry) return [];
+    const height = geometry.track * geometry.ratio;
+    const pitch = height + geometry.rowGap;
+    return photos.map((photo, i) => {
+      const row = Math.floor(i / geometry.columns);
+      return { photoId: photo.id, x: 0, y: geometry.paddingTop + row * pitch, width: geometry.track, height, rowIndex: row };
+    });
+  }, [windowed, geometry, photos]);
+
+  const { visible } = useWindowedItems(containerRef, items, geometry?.width ?? 0, windowed);
+
+  return useMemo(() => {
+    const all = () => photos.map((photo, index) => ({ photo, index }));
+    if (!enabled || geometry === null) return { tiles: all(), before: 0, after: 0 };
+    // First render of a large gallery: one tile to measure the grid by,
+    // windowed before the first paint.
+    if (geometry === undefined) return { tiles: all().slice(0, 1), before: 0, after: 0 };
+
+    const indexById = new Map<number, number>();
+    photos.forEach((photo, index) => indexById.set(photo.id, index));
+    const tiles = visible.flatMap((item) => {
+      const index = indexById.get(item.photoId);
+      return index === undefined ? [] : [{ photo: photos[index], index }];
+    });
+
+    const pitch = geometry.track * geometry.ratio + geometry.rowGap;
+    const rows = Math.ceil(photos.length / geometry.columns);
+    if (visible.length === 0) return { tiles, before: Math.max(0, rows * pitch - geometry.rowGap), after: 0 };
+    // A spacer is a grid row of its own and brings a gap with it.
+    const first = visible[0].rowIndex;
+    const last = visible[visible.length - 1].rowIndex;
+    return {
+      tiles,
+      before: first > 0 ? first * pitch - geometry.rowGap : 0,
+      after: last < rows - 1 ? (rows - 1 - last) * pitch - geometry.rowGap : 0,
+    };
+  }, [enabled, geometry, photos, visible]);
+}

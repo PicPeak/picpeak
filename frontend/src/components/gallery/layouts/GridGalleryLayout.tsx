@@ -11,6 +11,8 @@ import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import type { GalleryLayoutSettings } from '../../../types/theme.types';
 import { useLazyBands } from './lazyBands';
+import { WINDOW_MIN_PHOTOS } from './rowWindow';
+import { GRID_TILE_ATTR, useGridWindow } from './gridWindow';
 
 interface GridPhotoProps {
   photo: Photo;
@@ -278,11 +280,16 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
 
   const gridClass = `photo-grid ${gridGeometryClass(gallerySettings)}`;
 
+  // A large gallery mounts only the rows near the viewport (issue 2193).
+  const gridRef = React.useRef<HTMLDivElement>(null);
+  const { tiles, before, after } = useGridWindow(gridRef, photos, photos.length >= WINDOW_MIN_PHOTOS);
+
   return (
-    <div className={gridClass}>
-      {photos.map((photo, index) => {
+    <div ref={gridRef} className={gridClass}>
+      {before > 0 && <div aria-hidden="true" style={{ gridColumn: '1 / -1', height: before }} />}
+      {tiles.map(({ photo, index }) => {
         return (
-          <div key={photo.id} className="relative">
+          <div key={photo.id} className="relative" {...{ [GRID_TILE_ATTR]: '' }}>
             <GridPhoto
               photo={photo}
               isSelected={selectedPhotos.has(photo.id)}
@@ -324,6 +331,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           </div>
         );
       })}
+      {after > 0 && <div aria-hidden="true" style={{ gridColumn: '1 / -1', height: after }} />}
       <FeedbackIdentityModal
         isOpen={showIdentityModal}
         onClose={() => { setShowIdentityModal(false); setPendingAction(null); }}
