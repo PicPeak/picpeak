@@ -142,6 +142,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             Gated behind the `slideshow` feature flag. */}
         {flags.slideshow && (
         <SlideshowSettingsCard
+          // One form per gallery: moving to another event (a cached one keeps
+          // this tree mounted) must not carry unsaved edits into it.
+          key={event.id}
           eventId={event.id}
           slug={event.slug}
           isArchived={event.is_archived}

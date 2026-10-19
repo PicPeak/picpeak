@@ -10,14 +10,16 @@ import { render } from '@testing-library/react';
 
 import type { Event } from '../../../../types';
 
-const { slideshowProps, stub } = vi.hoisted(() => ({
+const { slideshowProps, slideshowMounts, stub } = vi.hoisted(() => ({
   slideshowProps: vi.fn(),
+  slideshowMounts: vi.fn(),
   stub: () => null,
 }));
 
 vi.mock('../../../../components/admin/SlideshowSettingsCard', () => ({
   SlideshowSettingsCard: (props: unknown) => {
     slideshowProps(props);
+    React.useEffect(() => { slideshowMounts(); }, []);
     return null;
   },
 }));
@@ -69,5 +71,25 @@ describe('OverviewTab → SlideshowSettingsCard initial', () => {
     const { initial } = slideshowProps.mock.calls.at(-1)![0] as { initial: Record<string, unknown> };
     expect(initial.show_order).toBe('random');
     expect(initial.show_category_id).toBe(12);
+  });
+
+  it('mounts a fresh card for another event, so unsaved edits stay with their gallery', () => {
+    const tab = (id: number) => (
+      <OverviewTab
+        {...({} as React.ComponentProps<typeof OverviewTab>)}
+        event={{ id, slug: `event-${id}` } as unknown as Event}
+        id={String(id)}
+        refetchEvent={() => {}}
+        categories={[]}
+        photos={[]}
+        cssTemplates={[]}
+      />
+    );
+    slideshowMounts.mockClear();
+    const { rerender } = render(tab(1));
+    rerender(tab(1));
+    expect(slideshowMounts).toHaveBeenCalledTimes(1);
+    rerender(tab(2));
+    expect(slideshowMounts).toHaveBeenCalledTimes(2);
   });
 });
