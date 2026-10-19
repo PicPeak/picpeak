@@ -3389,8 +3389,10 @@
       "reopenError": "Inzending kon niet worden heropend"
     },
     "annotation": {
-      "draw": "Op foto tekenen",
-      "edit": "Tekening bewerken",
+      "modeLabel": "Modus",
+      "modeSelect": "Selecteren",
+      "modeAnnotate": "Aantekenen",
+      "hint": "Schakel naar Aantekenen om op de foto te tekenen.",
       "remove": "Tekening verwijderen",
       "attached": "Tekening toegevoegd",
       "inProgress": "Maak de tekening op de foto af en verstuur daarna je opmerking.",

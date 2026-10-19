@@ -13,6 +13,9 @@ interface PhotoFeedbackProps {
   gallerySlug: string;
   className?: string;
   showComments?: boolean;
+  // The lightbox bar has the rating, like and favourite buttons (issue
+  // 1733): the panel leaves them out rather than show them twice.
+  proofingInToolbar?: boolean;
   // A like or favourite toggle passes the photo id once the server accepted it.
   onFeedbackUpdate?: (toggledPhotoId?: number) => void;
 }
@@ -22,6 +25,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   gallerySlug,
   className = '',
   showComments = true,
+  proofingInToolbar = false,
   onFeedbackUpdate
 }) => {
   // Fetch feedback settings for the gallery
@@ -125,7 +129,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   return (
     <div className={`space-y-4 ${className}`}>
       {/* Rating Section */}
-      {settings.allow_ratings && (
+      {settings.allow_ratings && !proofingInToolbar && (
         <PhotoRating
           photoId={photoId}
           gallerySlug={gallerySlug}
@@ -139,7 +143,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
       )}
 
       {/* Action Buttons */}
-      {(settings.allow_likes || settings.allow_favorites) && (
+      {(settings.allow_likes || settings.allow_favorites) && !proofingInToolbar && (
         <div className="flex flex-wrap items-center gap-2">
           {settings.allow_likes && (
             <PhotoLikes

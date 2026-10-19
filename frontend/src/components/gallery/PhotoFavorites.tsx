@@ -18,6 +18,8 @@ interface PhotoFavoritesProps {
   onFavoriteChange?: (favorited: boolean) => void;
   /** The server accepted the toggle. */
   onSaved?: (photoId: string) => void;
+  /** 'toolbar': a round button for the lightbox's black bar (issue 1733). */
+  variant?: 'panel' | 'toolbar';
 }
 
 export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
@@ -28,7 +30,8 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
   isEnabled,
   requireNameEmail = false,
   onFavoriteChange,
-  onSaved
+  onSaved,
+  variant = 'panel'
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -123,10 +126,10 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       <button
       onClick={handleFavoriteClick}
       disabled={isSubmitting}
-      className={`group flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
-        isFavorited 
-          ? 'status-chip hue-warning hover:brightness-95' 
-          : 'bg-elevated text-muted-theme hover-surface'
+      className={`group flex items-center transition-all ${
+        variant === 'toolbar'
+          ? `gap-1 p-2 rounded-full text-white ${isFavorited ? 'bg-warning hover:opacity-90' : 'bg-white/10 hover:bg-white/20'}`
+          : `gap-2 px-3 py-2 rounded-lg ${isFavorited ? 'status-chip hue-warning hover:brightness-95' : 'bg-elevated text-muted-theme hover-surface'}`
       } ${isSubmitting ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
       aria-label={isFavorited ? t('feedback.unfavorite', 'Remove from favorites') : t('feedback.favorite', 'Add to favorites')}
     >
@@ -137,9 +140,11 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
           isFavorited ? 'fill-current' : 'group-hover:scale-110'
         }`}
       />
-      <span className="text-sm font-medium">
-        {favoriteCount > 0 ? favoriteCount : ''}
-      </span>
+      {(variant === 'panel' || favoriteCount > 0) && (
+        <span className="text-sm font-medium">
+          {favoriteCount > 0 ? favoriteCount : ''}
+        </span>
+      )}
       </button>
       <FeedbackIdentityModal
         isOpen={showIdentityModal}

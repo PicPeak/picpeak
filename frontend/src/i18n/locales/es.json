@@ -3199,8 +3199,10 @@
       "reopenError": "No se pudo reabrir el envío"
     },
     "annotation": {
-      "draw": "Dibujar en la foto",
-      "edit": "Editar dibujo",
+      "modeLabel": "Modo",
+      "modeSelect": "Seleccionar",
+      "modeAnnotate": "Anotar",
+      "hint": "Para dibujar en la foto, cambia a Anotar.",
       "remove": "Quitar dibujo",
       "attached": "Dibujo adjunto",
       "inProgress": "Termina el dibujo en la foto y después envía tu comentario.",

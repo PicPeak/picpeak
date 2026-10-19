@@ -5851,8 +5851,10 @@
       "reopenError": "Oddaje ni bilo mogoče znova odpreti"
     },
     "annotation": {
-      "draw": "Riši na fotografijo",
-      "edit": "Uredi risbo",
+      "modeLabel": "Način",
+      "modeSelect": "Izbira",
+      "modeAnnotate": "Označevanje",
+      "hint": "Za risanje na fotografijo preklopite na Označevanje.",
       "remove": "Odstrani risbo",
       "attached": "Risba priložena",
       "inProgress": "Dokončajte risbo na fotografiji in nato pošljite komentar.",

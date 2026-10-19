@@ -101,6 +101,24 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
     }
   });
 
+  // The lightbox's Annotate mode (issue 1733) stays shut while a comment is
+  // on its way: its success clears the form and the drawing, and would take
+  // a newer one too, on this photo or (the form is reused from photo to
+  // photo) on the next.
+  const setSending = annotation?.setSending;
+  const sending = submitCommentMutation.isPending;
+  useEffect(() => {
+    if (!setSending) return;
+    setSending(sending);
+    return () => setSending(false);
+  }, [setSending, sending]);
+
+  // A drawing is made for a comment: the form opens with it.
+  const drawingNow = !!annotation?.drawing;
+  useEffect(() => {
+    if (drawingNow) setShowCommentForm(true);
+  }, [drawingNow]);
+
   // The finished drawing, sent with the comment when the gallery allows it.
   const draftAnnotation = canDraw ? annotation?.draft ?? undefined : undefined;
 
@@ -234,49 +252,34 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
           </div>
 
           {/* Draw on the photo (issue 1733). The drawing is sent with this
-              comment, so the words stay required. */}
+              comment, so the words stay required. It is drawn in the
+              lightbox bar's Annotate mode, which this only points to. */}
           {canDraw && annotation && (
             <div className="flex flex-wrap items-center gap-2 text-sm">
               {annotation.drawing ? (
                 <p className="text-xs text-muted-theme" role="status">
                   {t('feedback.annotation.inProgress', 'Finish the drawing on the photo, then send your comment.')}
                 </p>
+              ) : !annotation.draft ? (
+                <p className="text-xs text-muted-theme">
+                  {t('feedback.annotation.hint', 'To draw on the photo, switch to Annotate.')}
+                </p>
               ) : (
                 <>
-                  {annotation.draft && (
-                    <span className="inline-flex items-center gap-1.5 text-theme">
-                      <Pencil className="w-4 h-4" aria-hidden="true" />
-                      {t('feedback.annotation.attached', 'Drawing attached')}
-                    </span>
-                  )}
+                  <span className="inline-flex items-center gap-1.5 text-theme">
+                    <Pencil className="w-4 h-4" aria-hidden="true" />
+                    {t('feedback.annotation.attached', 'Drawing attached')}
+                  </span>
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    leftIcon={annotation.draft ? undefined : <Pencil className="w-4 h-4" />}
-                    onClick={annotation.startDrawing}
-                    // Not while a comment is on its way: its success clears
-                    // the form and the drawing, and would take a newer one
-                    // too, on this photo or (the form is reused from photo
-                    // to photo) on the next.
+                    leftIcon={<X className="w-4 h-4" />}
+                    onClick={annotation.discard}
                     disabled={submitCommentMutation.isPending}
                   >
-                    {annotation.draft
-                      ? t('feedback.annotation.edit', 'Edit drawing')
-                      : t('feedback.annotation.draw', 'Draw on photo')}
+                    {t('feedback.annotation.remove', 'Remove drawing')}
                   </Button>
-                  {annotation.draft && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      leftIcon={<X className="w-4 h-4" />}
-                      onClick={annotation.discard}
-                      disabled={submitCommentMutation.isPending}
-                    >
-                      {t('feedback.annotation.remove', 'Remove drawing')}
-                    </Button>
-                  )}
                 </>
               )}
             </div>

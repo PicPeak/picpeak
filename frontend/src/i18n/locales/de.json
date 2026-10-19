@@ -6565,8 +6565,10 @@
       "reopenError": "Einreichung konnte nicht wieder geöffnet werden"
     },
     "annotation": {
-      "draw": "Auf Foto zeichnen",
-      "edit": "Zeichnung bearbeiten",
+      "modeLabel": "Modus",
+      "modeSelect": "Auswählen",
+      "modeAnnotate": "Zeichnen",
+      "hint": "Um auf das Foto zu zeichnen, wechsle zu „Zeichnen“.",
       "remove": "Zeichnung entfernen",
       "attached": "Zeichnung angehängt",
       "inProgress": "Schließe die Zeichnung auf dem Foto ab und sende dann deinen Kommentar.",
