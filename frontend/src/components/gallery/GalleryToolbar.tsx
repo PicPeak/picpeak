@@ -115,6 +115,18 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
     ? 'filters'
     : popover === 'tray' && trayShown ? 'tray' : null;
 
+  // A popover whose content went away (the last photo taken off the list, the
+  // filters withdrawn) is closed for good, so it does not pop back open by
+  // itself the next time that content returns. Its button may have gone with
+  // it; focus that fell to the page goes back to the bar.
+  useEffect(() => {
+    if (!popover || openPopover) return;
+    setPopover(null);
+    if (!document.activeElement || document.activeElement === document.body) {
+      rootRef.current?.querySelector<HTMLElement>('button:not([disabled]), input')?.focus();
+    }
+  }, [popover, openPopover]);
+
   // Escape and a press outside close the popover; Escape hands focus back to
   // the button that opened it.
   useEffect(() => {

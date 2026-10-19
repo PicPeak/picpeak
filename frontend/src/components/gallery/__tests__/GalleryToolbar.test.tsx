@@ -181,6 +181,26 @@ describe('GalleryToolbar', () => {
     expect(screen.getByTestId('tray')).toHaveTextContent('9');
   });
 
+  it('does not reopen the selection list by itself once it emptied', () => {
+    const withTray = (ids: number[]) => (
+      <GalleryToolbar
+        selection={selection({
+          isSelectionMode: true,
+          selectedCount: ids.length,
+          tray: { photos: ids.map((id) => ({ id, filename: `${id}.jpg` })) as never, onRemove: vi.fn() },
+        })}
+      />
+    );
+    const { rerender } = render(withTray([9]));
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.selectionTray.title:1' }));
+    expect(screen.getByTestId('tray')).toBeInTheDocument();
+    rerender(withTray([]));
+    expect(screen.queryByTestId('tray')).toBeNull();
+    expect(screen.getByRole('button', { name: 'gallery.cancelSelection' })).toHaveFocus();
+    rerender(withTray([4]));
+    expect(screen.queryByTestId('tray')).toBeNull();
+  });
+
   it('has no Select button where picking is not offered', () => {
     render(<GalleryToolbar search={search} selection={selection({ available: false })} />);
     expect(screen.queryByRole('button', { name: 'gallery.selectPhotos' })).toBeNull();
