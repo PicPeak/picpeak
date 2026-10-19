@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Bookmark } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -146,12 +147,17 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
         </span>
       )}
       </button>
-      <FeedbackIdentityModal
-        isOpen={showIdentityModal}
-        onClose={() => setShowIdentityModal(false)}
-        onSubmit={handleIdentitySubmit}
-        feedbackType={t('feedback.favorite', 'favorite')}
-      />
+      {/* Portalled to the body: in the lightbox bar (issue 1733) the bar's
+          z-index would hold the dialog under the feedback panel. */}
+      {showIdentityModal && createPortal(
+        <FeedbackIdentityModal
+          isOpen
+          onClose={() => setShowIdentityModal(false)}
+          onSubmit={handleIdentitySubmit}
+          feedbackType={t('feedback.favorite', 'favorite')}
+        />,
+        document.body
+      )}
       {limitModal}
     </>
   );

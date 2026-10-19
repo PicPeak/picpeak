@@ -42,4 +42,21 @@ describe('PhotoFavorites — my-feedback refresh', () => {
     await waitFor(() => expect(submitFeedback).toHaveBeenCalledWith('summer', '7', expect.objectContaining({ feedback_type: 'favorite' })));
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['my-feedback', 'summer'] }));
   });
+
+  it('opens the name/email dialog in the body, outside the stacking context it was clicked in', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <div style={{ position: 'absolute', zIndex: 20 }}>
+          <PhotoFavorites variant="toolbar" photoId="8" gallerySlug="summer" isFavorited={false} favoriteCount={0} isEnabled requireNameEmail />
+        </div>
+      </QueryClientProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add to favorites' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(container.contains(dialog)).toBe(false);
+    expect(document.body.contains(dialog)).toBe(true);
+  });
 });
