@@ -17,6 +17,12 @@ interface BulkRatingProps {
   requireNameEmail?: boolean;
   /** Told when the name-and-email dialog opens and closes. */
   onDialogChange?: (open: boolean) => void;
+  /**
+   * The name and email once given, held by a host that outlives this control
+   * (the phone's rating sheet unmounts it on close). Kept locally without one.
+   */
+  identity?: { name: string; email: string } | null;
+  onIdentityChange?: (identity: { name: string; email: string }) => void;
   className?: string;
 }
 
@@ -33,12 +39,22 @@ type RatedRow = { average_rating?: number; total_ratings?: number };
  * selection is often most of the gallery, and the list is not refetched for
  * it. The X clears the rating of every selected photo (#884).
  */
-export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireNameEmail = false, onDialogChange, className = '' }) => {
+export const BulkRating: React.FC<BulkRatingProps> = ({
+  slug,
+  photoIds,
+  requireNameEmail = false,
+  onDialogChange,
+  identity: hostIdentity,
+  onIdentityChange,
+  className = '',
+}) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const guestIdentity = useGuestIdentityOptional();
   const [pendingRating, setPendingRating] = useState<number | null>(null);
-  const [identity, setIdentity] = useState<{ name: string; email: string } | null>(null);
+  const [ownIdentity, setOwnIdentity] = useState<{ name: string; email: string } | null>(null);
+  const identity = onIdentityChange ? hostIdentity ?? null : ownIdentity;
+  const setIdentity = onIdentityChange ?? setOwnIdentity;
   const onDialogChangeRef = useRef(onDialogChange);
   onDialogChangeRef.current = onDialogChange;
   const dialogOpen = pendingRating !== null;

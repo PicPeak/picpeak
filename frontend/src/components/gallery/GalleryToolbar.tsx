@@ -175,6 +175,9 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   const livePhone = useIsPhone();
   const [isPhone, setIsPhone] = useState(livePhone);
   const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
+  // The name and email given to the rating, kept here: the phone's rating
+  // sheet unmounts its BulkRating on every close.
+  const [ratingIdentity, setRatingIdentity] = useState<{ name: string; email: string } | null>(null);
   useEffect(() => {
     if (!popover && !ratingDialogOpen) setIsPhone(livePhone);
   }, [livePhone, popover, ratingDialogOpen]);
@@ -206,14 +209,28 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   // focus that fell to the page with the control it was on goes back to the
   // button that opened it, or to the bar if that went too.
   const lastOpen = useRef<Popover>(null);
+  const lastTrigger = useRef<Popover>(null);
   useLayoutEffect(() => {
     const closed = lastOpen.current;
     lastOpen.current = openPopover;
+    if (openPopover) lastTrigger.current = openPopover;
     if (!closed || openPopover) return;
     if (document.activeElement && document.activeElement !== document.body) return;
     const trigger = (closed === 'filters' ? filterButtonRef : trayButtonRef).current;
     (trigger ?? rootRef.current?.querySelector<HTMLElement>('button:not([disabled]), input'))?.focus();
   }, [openPopover]);
+
+  // The held layout swaps once a sheet closes, which unmounts the button the
+  // sheet has just handed focus back to; its counterpart takes it instead.
+  const wasPhone = useRef(isPhone);
+  useLayoutEffect(() => {
+    if (wasPhone.current === isPhone) return;
+    wasPhone.current = isPhone;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const trigger = lastTrigger.current === 'filters' ? filterButtonRef.current
+      : lastTrigger.current === 'tray' ? trayButtonRef.current : null;
+    (trigger ?? cancelButtonRef.current ?? rootRef.current?.querySelector<HTMLElement>('button:not([disabled]), input'))?.focus();
+  }, [isPhone]);
 
   // The swap unmounts the button that started or ended the selection; focus
   // that fell to the page with it moves to its counterpart on the new face.
@@ -438,7 +455,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
         {selectAllButtons}
         <div className="flex items-center gap-2 flex-wrap ml-auto">
           {filterButton}
-          {rateShown && selection.bulkRating && <BulkRating {...selection.bulkRating} onDialogChange={setRatingDialogOpen} />}
+          {rateShown && selection.bulkRating && <BulkRating {...selection.bulkRating} onDialogChange={setRatingDialogOpen} identity={ratingIdentity} onIdentityChange={setRatingIdentity} />}
           {copyButton}
           {trayButton(false)}
           {downloadButton(false)}
@@ -506,7 +523,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
         />
       )
       : openPopover === 'rate' && selection?.bulkRating
-        ? <BulkRating {...selection.bulkRating} onDialogChange={setRatingDialogOpen} />
+        ? <BulkRating {...selection.bulkRating} onDialogChange={setRatingDialogOpen} identity={ratingIdentity} onIdentityChange={setRatingIdentity} />
         : null;
 
   return (

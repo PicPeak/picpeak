@@ -303,6 +303,19 @@ describe('BulkRating', () => {
     expect(onDialogChange).toHaveBeenLastCalledWith(false);
   });
 
+  it('rates under the name and email its host kept, without asking again', async () => {
+    seedCache([makePhoto(1)]);
+    submit.mockResolvedValue(ok([1], 4));
+    renderControl([1], {
+      requireNameEmail: true,
+      identity: { name: 'Ann', email: 'ann@example.com' },
+      onIdentityChange: vi.fn(),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(SLUG, [1], 4, { guest_name: 'Ann', guest_email: 'ann@example.com' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('asks for name and email first when the gallery requires them', async () => {
     seedCache([makePhoto(1)]);
     submit.mockResolvedValue(ok([1], 4));

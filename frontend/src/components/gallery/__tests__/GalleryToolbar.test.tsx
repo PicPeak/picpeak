@@ -427,6 +427,32 @@ describe('GalleryToolbar', () => {
       expect(screen.getByTestId('gallery-toolbar')).toHaveAttribute('data-mode', 'selection');
     });
 
+    it('hands focus to the desktop Filters when the held layout swaps on close', () => {
+      let listener: () => void = () => {};
+      let phone = true;
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        get matches() { return query === '(max-width: 639px)' && phone; },
+        media: query,
+        addEventListener: (_type: string, cb: () => void) => { listener = cb; },
+        removeEventListener: () => {},
+      }));
+      render(
+        <GalleryToolbar
+          search={search}
+          filters={{ activeCount: 0, render: () => <p>panel body</p> }}
+          selection={selection({ isSelectionMode: true, selectedCount: 1 })}
+        />,
+      );
+      const phoneButton = screen.getByRole('button', { name: 'gallery.filters' });
+      phoneButton.focus();
+      fireEvent.click(phoneButton);
+      phone = false;
+      act(() => listener());
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('gallery-selection-bar')).toBeNull();
+      expect(screen.getByRole('button', { name: 'gallery.filters' })).toHaveFocus();
+    });
+
     it('holds the desktop layout while the inline rating asks for name and email', () => {
       let listener: () => void = () => {};
       let phone = false;
