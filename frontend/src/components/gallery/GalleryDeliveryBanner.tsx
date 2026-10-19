@@ -16,6 +16,7 @@ import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { calendarDay } from '../../utils/calendarDay';
 import { useTheme } from '../../contexts/ThemeContext';
 import { gridGeometryClass } from './layouts/GridGalleryLayout';
+import { useGridDensity } from './gridDensity';
 
 interface GalleryDeliveryBannerProps {
   delivery: GalleryDelivery | null | undefined;
@@ -36,6 +37,8 @@ export const GalleryDeliveryBanner: React.FC<GalleryDeliveryBannerProps> = ({
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
   const { theme } = useTheme();
+  // The placeholders follow the viewer's tile size like the grid above them.
+  const density = useGridDensity();
 
   if (!delivery || delivery.status !== 'partial') return null;
 
@@ -108,7 +111,7 @@ export const GalleryDeliveryBanner: React.FC<GalleryDeliveryBannerProps> = ({
 
       {placeholders > 0 && (
         <div
-          className={`mt-4 ${gridGeometryClass(theme.gallerySettings || {})}`}
+          className={`mt-4 ${gridGeometryClass(theme.gallerySettings || {}, density)}`}
           aria-hidden="true"
           data-testid="gallery-delivery-placeholders"
           // Fade out downwards: these hint at more to come, they are not a

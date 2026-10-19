@@ -55,6 +55,8 @@ interface PhotoFilterBarProps {
   minRating?: number | null;
   onMinRatingChange?: (minRating: number | null) => void;
   minRatingCounts?: Partial<Record<number, number>>;
+  // The viewer's tile-size switch (issue 1733, E4), beside the sort button.
+  viewControl?: React.ReactNode;
 }
 
 export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
@@ -82,7 +84,8 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
   ratingsEnabled = false,
   minRating = null,
   onMinRatingChange,
-  minRatingCounts = {}
+  minRatingCounts = {},
+  viewControl
 }) => {
   const { t } = useTranslation();
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -113,8 +116,9 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
           />
         </div>
         
+        <div className="flex gap-3 md:gap-4">
         {/* Sort Dropdown */}
-        <div className="relative">
+        <div className="relative flex-1 md:flex-none">
           <Button
             variant="outline"
             size="md"
@@ -219,6 +223,8 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
               )}
             </div>
           )}
+        </div>
+        {viewControl}
         </div>
       </div>
 

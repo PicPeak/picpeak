@@ -1960,6 +1960,12 @@
     "contactOrganizer": "Bitte kontaktieren Sie den Veranstalter, wenn Sie Zugriff auf diese Fotos benötigen.",
     "searchPhotos": "Fotos nach Dateiname suchen...",
     "sortByDate": "Nach Datum sortieren",
+    "density": {
+      "label": "Kachelgröße",
+      "compact": "Kleinere Kacheln",
+      "default": "Standardgröße",
+      "large": "Größere Kacheln"
+    },
     "sortByName": "Nach Name sortieren",
     "sortBySize": "Nach Größe sortieren",
     "allPhotos": "Alle Fotos",

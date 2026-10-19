@@ -304,6 +304,12 @@
     "contactOrganizer": "Contacta con el organizador del evento si necesitas acceso a estas fotos.",
     "searchPhotos": "Buscar fotos por nombre de archivo...",
     "sortByDate": "Ordenar por fecha",
+    "density": {
+      "label": "Tamaño de las miniaturas",
+      "compact": "Miniaturas más pequeñas",
+      "default": "Tamaño estándar",
+      "large": "Miniaturas más grandes"
+    },
     "sortByName": "Ordenar por nombre",
     "sortBySize": "Ordenar por tamaño",
     "allPhotos": "Todas las fotos",

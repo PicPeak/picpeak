@@ -1237,6 +1237,12 @@
     "contactOrganizer": "Če potrebujete dostop do teh fotografij, se obrnite na organizatorja dogodka.",
     "searchPhotos": "Iskanje fotografij po imenu datoteke...",
     "sortByDate": "Razvrsti po datumu",
+    "density": {
+      "label": "Velikost ploščic",
+      "compact": "Manjše ploščice",
+      "default": "Običajna velikost",
+      "large": "Večje ploščice"
+    },
     "sortByName": "Razvrsti po imenu",
     "sortBySize": "Razvrsti po velikosti",
     "allPhotos": "Vse fotografije",

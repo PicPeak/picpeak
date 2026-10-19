@@ -1369,6 +1369,12 @@
     "contactOrganizer": "Please contact the event organizer if you need access to these photos.",
     "searchPhotos": "Search photos by filename...",
     "sortByDate": "Sort by Date",
+    "density": {
+      "label": "Tile size",
+      "compact": "Smaller tiles",
+      "default": "Standard size",
+      "large": "Larger tiles"
+    },
     "sortByName": "Sort by Name",
     "sortBySize": "Sort by Size",
     "allPhotos": "All Photos",

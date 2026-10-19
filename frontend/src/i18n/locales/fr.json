@@ -302,6 +302,12 @@
     "contactOrganizer": "Veuillez contacter l'organisateur de l'événement si vous avez besoin d'accéder à ces photos.",
     "searchPhotos": "Rechercher des photos par nom de fichier...",
     "sortByDate": "Trier par date",
+    "density": {
+      "label": "Taille des vignettes",
+      "compact": "Vignettes plus petites",
+      "default": "Taille standard",
+      "large": "Vignettes plus grandes"
+    },
     "sortByName": "Trier par nom",
     "sortBySize": "Trier par taille",
     "allPhotos": "Toutes les photos",

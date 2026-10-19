@@ -8,6 +8,7 @@ import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityT
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { useLazyBands } from './lazyBands';
+import { densityColumnDelta, useGridDensity } from '../gridDensity';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import { toDisplayDate, useLocalizedDate } from '../../../hooks/useLocalizedDate';
@@ -30,6 +31,10 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const bands = useLazyBands();
   const { theme } = useTheme();
   const { formatTime: fmtTime } = useLocalizedDate();
+  // The timeline's fixed 2/3/4 columns, moved by the viewer's density (issue
+  // 1733, E4). The grid-cols classes are safelisted in tailwind.config.
+  const delta = densityColumnDelta(useGridDensity());
+  const cols = (base: number) => Math.max(1, base + delta);
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
   // Seed from server is_liked on first non-empty payload (#590 follow-up).
   // Mount-only so refetches don't clobber in-session optimistic toggles.
@@ -130,7 +135,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
             )}
             
             {/* Photos grid for this date */}
-            <div className="photo-grid lg:ml-24 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className={`photo-grid lg:ml-24 grid grid-cols-${cols(2)} sm:grid-cols-${cols(3)} lg:grid-cols-${cols(4)} gap-4`}>
               {group.photos.map((photo) => {
                 const actualIndex = photoIndexById.get(photo.id) ?? -1;
                 return (

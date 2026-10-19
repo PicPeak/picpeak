@@ -295,6 +295,12 @@
     "contactOrganizer": "Neem contact op met de organisator als u toegang tot deze foto's nodig heeft.",
     "searchPhotos": "Zoek foto's op bestandsnaam...",
     "sortByDate": "Sorteren op datum",
+    "density": {
+      "label": "Tegelgrootte",
+      "compact": "Kleinere tegels",
+      "default": "Standaardgrootte",
+      "large": "Grotere tegels"
+    },
     "sortByName": "Sorteren op naam",
     "sortBySize": "Sorteren op grootte",
     "allPhotos": "Alle foto's",

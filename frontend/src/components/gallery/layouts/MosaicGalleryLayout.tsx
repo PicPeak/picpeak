@@ -9,6 +9,7 @@ import { feedbackService } from '../../../services/feedback.service';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { useLazyBands } from './lazyBands';
+import { densityColumnDelta, useGridDensity } from '../gridDensity';
 
 /**
  * Mosaic Gallery Layout
@@ -195,7 +196,9 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const { theme } = useTheme();
   const scale = theme.gallerySettings?.thumbnailScale || 'md';
   const scaleOffsets: Record<string, number> = { xs: 3, sm: 1, md: 0, lg: -1, xl: -2 };
-  const applyScale = (cols: number, min = 1) => Math.max(min, cols + (scaleOffsets[scale] ?? 0));
+  // The viewer's density (issue 1733, E4) moves every breakpoint by a column.
+  const delta = densityColumnDelta(useGridDensity());
+  const applyScale = (cols: number, min = 1) => Math.max(min, cols + (scaleOffsets[scale] ?? 0) + delta);
 
   const desktop = applyScale(4);
   const xlDown = applyScale(3);

@@ -59,6 +59,7 @@ import { CountdownTimer } from './CountdownTimer';
 import { GalleryLayout } from './GalleryLayout';
 import { GallerySidebar } from './GallerySidebar';
 import { PhotoFilterBar } from './PhotoFilterBar';
+import { GridDensityControl } from './GridDensityControl';
 import { UserPhotoUpload } from './UserPhotoUpload';
 import { CreditFilterChips } from './CreditFilterChips';
 import { TagFilterChips, tagChipsFor } from './TagFilterChips';
@@ -2123,6 +2124,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             minRating={minRating}
             onMinRatingChange={setMinRating}
             minRatingCounts={minRatingCounts}
+            viewControl={<GridDensityControl layout={theme.galleryLayout} />}
           />
           {creditsVisible && (
             <CreditFilterChips
