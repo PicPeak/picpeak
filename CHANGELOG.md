@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.176.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.175.5-beta.0...v3.176.0-beta.0) (2026-10-19)
+
+
+### Features
+
+* **api:** accept video uploads on the v1 photo endpoint ([#2184](https://github.com/PicPeak/picpeak/issues/2184)) ([4b04807](https://github.com/PicPeak/picpeak/commit/4b0480748d596e7d3f6af8d7bddb9f1421fe5f6c))
+
 ## [3.175.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.175.4-beta.0...v3.175.5-beta.0) (2026-10-18)
 
 
