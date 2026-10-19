@@ -8,9 +8,10 @@
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 
 import { PhotoCard } from '../PhotoCard';
+import { GridDensityOffered, resetGridDensityForTests, setGridDensity } from '../gridDensity';
 import type { Photo } from '../../../types';
 
 // AuthenticatedImage really fetches; all this test cares about is the src it
@@ -114,6 +115,37 @@ describe('PhotoCard tier sizing', () => {
     expect(screen.getByTestId('tile')).toHaveAttribute(
       'src', '/api/gallery/x/thumbnail/7?w=900',
     );
+  });
+
+  it('moves up a tier when the viewer enlarges the tiles, and keeps it when they shrink', () => {
+    // Issue 1733, E4: the tile size changes the mounted tiles in place.
+    window.localStorage.clear();
+    resetGridDensityForTests();
+    stubTileWidth(96);
+    const card = (
+      <PhotoCard
+        photo={PHOTO}
+        isSelected={false}
+        isSelectionMode={false}
+        onClick={() => {}}
+        onDownload={() => {}}
+        onToggleSelect={() => {}}
+        className="tile"
+        overlayBaseClassName="overlay"
+        imageProps={{ src: PHOTO.thumbnail_url!, alt: PHOTO.filename }}
+      />
+    );
+    render(<GridDensityOffered.Provider value>{card}</GridDensityOffered.Provider>);
+    expect(screen.getByTestId('tile')).toHaveAttribute('src', '/api/gallery/x/thumbnail/7');
+
+    stubTileWidth(390);
+    act(() => setGridDensity('large'));
+    expect(screen.getByTestId('tile')).toHaveAttribute('src', '/api/gallery/x/thumbnail/7?w=900');
+
+    stubTileWidth(96);
+    act(() => setGridDensity('compact'));
+    expect(screen.getByTestId('tile')).toHaveAttribute('src', '/api/gallery/x/thumbnail/7?w=900');
+    act(() => setGridDensity('default'));
   });
 
   it('leaves videos on the canonical thumbnail', () => {

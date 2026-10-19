@@ -17,6 +17,7 @@ import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { downloadLimitReachedMessage } from '../../utils/downloadLimit';
 import { useInputMode } from '../../hooks/useInputMode';
 import { usePhotoDownloadPending, preparingDownloadMessage } from '../../hooks/usePhotoDownloadPending';
+import { useGridDensity } from './gridDensity';
 import type { Photo } from '../../types';
 
 export /** Action buttons (36px) + gap + rating pill (28px); below this the row would overlap the buttons. */
@@ -277,6 +278,19 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     // back to the viewport estimate rather than pinning the smallest tier.
     setTile({ width: containerRef.current?.offsetWidth || null });
   }, [inView, tile]);
+
+  // The viewer's tile size (issue 1733, E4) resizes mounted tiles in place.
+  // A tile that grew is measured again so it moves up a tier; one that shrank
+  // keeps the larger file it already has rather than fetching a smaller one.
+  const density = useGridDensity();
+  const measuredDensity = useRef(density);
+  useLayoutEffect(() => {
+    if (measuredDensity.current === density) return;
+    measuredDensity.current = density;
+    if (!tile?.width) return;
+    const width = containerRef.current?.offsetWidth || 0;
+    if (width > tile.width) setTile({ width });
+  }, [density, tile]);
 
   const showFeedbackActions = feedbackEnabled && Boolean(feedbackOptions);
 
