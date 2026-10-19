@@ -63,6 +63,8 @@ let gridDisplay = 'grid';
 let tracks: string | null = null;
 let autoRows = 'auto';
 let tileMargin = 0;
+/** The grid's rows as a browser resolves them; '' is none (jsdom). */
+let gridRows = '';
 
 const tiles = () => screen.queryAllByTestId('tile');
 const tileIds = () => tiles().map((tile) => Number(tile.dataset.photo));
@@ -84,6 +86,7 @@ beforeEach(() => {
   tracks = null;
   autoRows = 'auto';
   tileMargin = 0;
+  gridRows = '';
   Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
     configurable: true,
@@ -102,8 +105,7 @@ beforeEach(() => {
     const overrides: Record<string, string> = {
       display: gridDisplay,
       gridAutoRows: autoRows,
-      // What a browser resolves it to: the rows the grid has.
-      gridTemplateRows: '300px 300px',
+      gridTemplateRows: gridRows,
       gridTemplateColumns: tracks ?? Array.from({ length: columns }, () => `${TILE}px`).join(' '),
       rowGap: `${GAP}px`,
       paddingTop: `${gridPadding}px`,
@@ -248,6 +250,30 @@ describe('Grid layout windowing', () => {
     autoRows = '200px';
     render(<GridGalleryLayout {...layoutProps(makePhotos(300))} />);
     expect(tiles()).toHaveLength(300);
+  });
+
+  it('stays windowed while each spacer sizes its own row', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<GridGalleryLayout {...layoutProps(photos)} />);
+    scrollGridTo(-100 * PITCH);
+    const [before, after] = spacers().map((spacer) => spacer.style.height);
+    // Rounded the way a browser lays rows out, to 1/64 px.
+    gridRows = `${Math.round(parseFloat(before) * 64) / 64}px ${TILE}px ${TILE}px ${after}`;
+    const getStyle = vi.mocked(window.getComputedStyle);
+    const reads = getStyle.mock.calls.length;
+    rerender(<GridGalleryLayout {...layoutProps([...photos])} />);
+    expect(getStyle.mock.calls.length).toBeGreaterThan(reads);
+    expect(tiles().length).toBeLessThan(200);
+    expect(spacers()).toHaveLength(2);
+  });
+
+  it('mounts every tile once a spacer turns out not to size its row', () => {
+    // A template's grid-template-rows: the spacer then sits in a 300px row.
+    gridRows = '300px 300px';
+    render(<GridGalleryLayout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-100 * PITCH);
+    expect(tiles()).toHaveLength(2000);
+    expect(spacers()).toHaveLength(0);
   });
 
   it('mounts every tile when the columns differ in width', () => {

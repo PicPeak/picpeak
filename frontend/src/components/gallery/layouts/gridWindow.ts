@@ -107,13 +107,21 @@ export interface GridWindow<P> {
 export function useGridWindow<P extends { id: number }>(
   containerRef: RefObject<HTMLElement | null>,
   photos: P[],
-  enabled: boolean,
+  requested: boolean,
 ): GridWindow<P> {
   // undefined: not measured yet. null: not measurable (not a grid, or hidden),
   // in which case every tile is mounted.
   const [geometry, setGeometry] = useState<GridGeometry | null | undefined>(undefined);
   const geometryRef = useRef(geometry);
   geometryRef.current = geometry;
+  // Set for good once a spacer turned out not to size its own row: a
+  // template that sizes rows itself (`grid-template-rows`) puts it in a row
+  // of that height instead, and no style read beforehand can tell. Every
+  // tile is mounted from then on.
+  const [unsupported, setUnsupported] = useState(false);
+  const enabled = requested && !unsupported;
+  // The spacers of the last render, which the commit after it laid out.
+  const spacedRef = useRef({ before: 0, after: 0 });
 
   // Measured on every commit even while windowing is off, so the grid is
   // already known when a growing list crosses the threshold and nothing in
@@ -126,7 +134,16 @@ export function useGridWindow<P extends { id: number }>(
     if (!sameGeometry(previous, next)) {
       geometryRef.current = next;
       setGeometry(next);
+      return;
     }
+    // Each spacer must be the only thing in its row, and that row as tall
+    // as the spacer. The resolved `grid-template-rows` lists every row.
+    const { before, after } = spacedRef.current;
+    if (!next || (before === 0 && after === 0)) return;
+    const rows = (getComputedStyle(container).gridTemplateRows || '').split(/\s+/).filter(Boolean).map(parseFloat);
+    if (rows.length === 0 || rows.some((row) => !(row >= 0))) return;
+    const off = (row: number, height: number) => height > 0 && Math.abs(row - height) >= 1;
+    if (off(rows[0], before) || off(rows[rows.length - 1], after)) setUnsupported(true);
   }, [containerRef]);
 
   // After every commit: a tile that just mounted gives the first height.
@@ -157,7 +174,7 @@ export function useGridWindow<P extends { id: number }>(
 
   const { visible } = useWindowedItems(containerRef, items, geometry?.width ?? 0, windowed);
 
-  return useMemo(() => {
+  const result = useMemo((): GridWindow<P> => {
     const all = () => photos.map((photo, index) => ({ photo, index }));
     if (!enabled || geometry === null) return { tiles: all(), before: 0, after: 0 };
     // First render of a large gallery: one tile to measure the grid by,
@@ -187,4 +204,6 @@ export function useGridWindow<P extends { id: number }>(
     const rest = total - (before > 0 ? before + gap : 0) - mounted - gap;
     return { tiles, before, after: rest > 0.5 ? rest : 0 };
   }, [enabled, geometry, photos, visible]);
+  spacedRef.current = { before: result.before, after: result.after };
+  return result;
 }
