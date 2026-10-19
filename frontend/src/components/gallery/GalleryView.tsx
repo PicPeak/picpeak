@@ -60,7 +60,7 @@ import { GalleryLayout } from './GalleryLayout';
 import { GallerySidebar } from './GallerySidebar';
 import { PhotoFilterBar } from './PhotoFilterBar';
 import { GridDensityControl } from './GridDensityControl';
-import { GridDensityOffered } from './gridDensity';
+import { GridDensityOffered, layoutHasDensity } from './gridDensity';
 import { UserPhotoUpload } from './UserPhotoUpload';
 import { CreditFilterChips } from './CreditFilterChips';
 import { TagFilterChips, tagChipsFor } from './TagFilterChips';
@@ -1449,8 +1449,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // empty filter row discussion #317 complained about.
     && scopedPhotos.length > 0;
   // The viewer's saved tile size (issue 1733, E4) applies only where one of
-  // the two control styles puts the switch on screen to change it back.
-  const densityOffered = filterBarShown || showSidebar;
+  // the two control styles puts the switch on screen to change it back. A
+  // Carousel gets no switch, so its delivery placeholders keep the theme size.
+  const densityOffered = (filterBarShown || showSidebar) && layoutHasDensity(theme.galleryLayout);
 
   // Reveal mode (#838): the server returned the event shell with no photos —
   // render the upload-only view for EVERY layout. Enforcement is server-side
