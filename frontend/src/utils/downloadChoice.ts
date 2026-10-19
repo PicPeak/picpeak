@@ -21,6 +21,21 @@ export function downloadChoiceKind(choice: Pick<DownloadResolutionChoice, 'id' |
   return 'small';
 }
 
+// Camera RAW formats, as backend/src/utils/rawFormats.js lists them (a test
+// keeps the two in step). The download route ships these as stored
+// (downloadRendition.shipsAsStored): no size but the uploaded file exists.
+const CAMERA_RAW_EXTENSIONS = new Set([
+  'dng', 'cr2', 'cr3', 'nef', 'nrw', 'arw', 'sr2', 'srf',
+  'raf', 'rw2', 'orf', 'pef', 'srw', 'raw', '3fr', 'dcr', 'kdc',
+]);
+
+/** Whether the download route hands this photo out as stored, by the name it checks. */
+export function isCameraRawPhoto(photo: { original_filename?: string | null; filename?: string | null }): boolean {
+  const name = photo.original_filename || photo.filename || '';
+  const dot = name.lastIndexOf('.');
+  return dot >= 0 && CAMERA_RAW_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+}
+
 /** Sum of the stored file sizes, or null when any of them is unknown. */
 export function knownTotalBytes(photos: ReadonlyArray<{ size?: number | null }>): number | null {
   if (photos.length === 0) return null;

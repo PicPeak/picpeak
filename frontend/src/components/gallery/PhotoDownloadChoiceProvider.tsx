@@ -1,8 +1,10 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { DownloadResolutionChoice, Photo } from '../../types';
 import { DownloadChoiceContext, type DownloadChoiceValue, type StartPhotoDownload } from '../../contexts/DownloadChoiceContext';
 import { isVideoItem } from '../../utils/mediaCounts';
+import { isCameraRawPhoto } from '../../utils/downloadChoice';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
 
 interface PhotoDownloadChoiceProviderProps {
@@ -31,7 +33,7 @@ export const PhotoDownloadChoiceProvider: React.FC<PhotoDownloadChoiceProviderPr
   const hasChoice = choices.length > 1;
 
   const choose = useCallback((photo: Photo, start: StartPhotoDownload) => {
-    if (!hasChoice || isVideoItem(photo)) {
+    if (!hasChoice || isVideoItem(photo) || isCameraRawPhoto(photo)) {
       start();
       return;
     }
@@ -43,7 +45,9 @@ export const PhotoDownloadChoiceProvider: React.FC<PhotoDownloadChoiceProviderPr
   return (
     <DownloadChoiceContext.Provider value={value}>
       {children}
-      {pending && (
+      {/* On body: the Premium lightbox (YARL) makes every other child of
+          body inert while open, the app root included. */}
+      {pending && createPortal(
         <DownloadResolutionModal
           slug={slug}
           choices={choices}
@@ -51,7 +55,8 @@ export const PhotoDownloadChoiceProvider: React.FC<PhotoDownloadChoiceProviderPr
           quotaPhotos={[pending.photo]}
           onPick={(resolution) => pending.start(resolution)}
           onClose={() => setPending(null)}
-        />
+        />,
+        document.body,
       )}
     </DownloadChoiceContext.Provider>
   );

@@ -302,7 +302,9 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="card-themed text-theme p-6 max-w-md w-full"
+        // Scrolls inside the viewport: the hints make the list tall on a
+        // short phone screen, and the body behind it does not scroll.
+        className="card-themed text-theme p-6 max-w-md w-full max-h-full overflow-y-auto overscroll-contain"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 mb-4">

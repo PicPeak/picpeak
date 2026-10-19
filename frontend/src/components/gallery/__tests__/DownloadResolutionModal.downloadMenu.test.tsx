@@ -57,6 +57,13 @@ describe('DownloadResolutionModal: download menu', () => {
     vi.clearAllMocks();
   });
 
+  it('keeps the panel inside the viewport and scrolls it, so the button stays reachable on a short screen', () => {
+    render(
+      <DownloadResolutionModal slug="party" choices={[ORIGINAL, LARGE, MEDIUM, SMALL]} photo={photo} onPick={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.getByRole('dialog')).toHaveClass('max-h-full', 'overflow-y-auto');
+  });
+
   it('explains each size in plain words, with the photo\'s real original size', () => {
     render(
       <DownloadResolutionModal slug="party" choices={[ORIGINAL, LARGE, MEDIUM, SMALL]} photo={photo} onPick={vi.fn()} onClose={vi.fn()} />,

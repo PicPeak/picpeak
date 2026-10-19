@@ -80,4 +80,23 @@ describe('PhotoDownloadChoiceProvider', () => {
     expect(start).toHaveBeenCalledWith();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
+
+  it('downloads a camera RAW at once: the server ships it as stored at any size', async () => {
+    const start = vi.fn();
+    const user = userEvent.setup();
+    const raw = { id: 5, filename: 'evt_5.jpg', original_filename: 'IMG_1.CR2', size: 1000, media_type: 'photo' } as Photo;
+    renderWith([ORIGINAL, MEDIUM], raw, start);
+    await user.click(screen.getByRole('button', { name: 'download evt_5.jpg' }));
+    expect(start).toHaveBeenCalledWith();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('opens on body, outside the app root the Premium lightbox makes inert', async () => {
+    const user = userEvent.setup();
+    const { container } = renderWith([ORIGINAL, MEDIUM], photo, vi.fn());
+    await user.click(screen.getByRole('button', { name: 'download a.jpg' }));
+    const dialog = screen.getByRole('dialog');
+    expect(container.contains(dialog)).toBe(false);
+    expect(document.body.contains(dialog)).toBe(true);
+  });
 });
