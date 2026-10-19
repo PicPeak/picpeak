@@ -282,15 +282,18 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // The viewer's tile size (issue 1733, E4) resizes mounted tiles in place.
   // A tile that grew is measured again so it moves up a tier; one that shrank
   // keeps the larger file it already has rather than fetching a smaller one.
+  // A layout that hands the card its px width (Masonry rows, Flickr) also
+  // animates it, so that target is read rather than the transition's start.
   const density = useGridDensity();
   const measuredDensity = useRef(density);
+  const targetWidth = typeof style?.width === 'number' ? style.width : null;
   useLayoutEffect(() => {
     if (measuredDensity.current === density) return;
     measuredDensity.current = density;
     if (!tile?.width) return;
-    const width = containerRef.current?.offsetWidth || 0;
+    const width = targetWidth ?? (containerRef.current?.offsetWidth || 0);
     if (width > tile.width) setTile({ width });
-  }, [density, tile]);
+  }, [density, tile, targetWidth]);
 
   const showFeedbackActions = feedbackEnabled && Boolean(feedbackOptions);
 

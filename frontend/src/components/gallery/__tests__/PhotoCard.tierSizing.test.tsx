@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 
 import { PhotoCard } from '../PhotoCard';
-import { GridDensityOffered, resetGridDensityForTests, setGridDensity } from '../gridDensity';
+import { GridDensityOffered, resetGridDensityForTests, setGridDensity, useGridDensity } from '../gridDensity';
 import type { Photo } from '../../../types';
 
 // AuthenticatedImage really fetches; all this test cares about is the src it
@@ -144,6 +144,38 @@ describe('PhotoCard tier sizing', () => {
 
     stubTileWidth(96);
     act(() => setGridDensity('compact'));
+    expect(screen.getByTestId('tile')).toHaveAttribute('src', '/api/gallery/x/thumbnail/7?w=900');
+    act(() => setGridDensity('default'));
+  });
+
+  it('takes the target width a layout animates the card to, not where the transition starts', () => {
+    // Masonry rows and Flickr set the px width in `style` and transition it.
+    window.localStorage.clear();
+    resetGridDensityForTests();
+    stubTileWidth(96);
+    // Stands in for the layout: it reads the density and sizes the card from it.
+    const Layout = () => {
+      const width = useGridDensity() === 'large' ? 390 : 96;
+      return (
+        <PhotoCard
+          photo={PHOTO}
+          isSelected={false}
+          isSelectionMode={false}
+          onClick={() => {}}
+          onDownload={() => {}}
+          onToggleSelect={() => {}}
+          className="tile"
+          overlayBaseClassName="overlay"
+          style={{ width, height: 100 }}
+          imageProps={{ src: PHOTO.thumbnail_url!, alt: PHOTO.filename }}
+        />
+      );
+    };
+    render(<GridDensityOffered.Provider value><Layout /></GridDensityOffered.Provider>);
+    expect(screen.getByTestId('tile')).toHaveAttribute('src', '/api/gallery/x/thumbnail/7');
+
+    // The element still measures the old width at the start of its transition.
+    act(() => setGridDensity('large'));
     expect(screen.getByTestId('tile')).toHaveAttribute('src', '/api/gallery/x/thumbnail/7?w=900');
     act(() => setGridDensity('default'));
   });
