@@ -250,6 +250,13 @@ describe('GalleryToolbar', () => {
     expect(screen.queryByTestId('tray')).toBeNull();
   });
 
+  it('wraps the browse buttons rather than crushing the search box', () => {
+    render(<GalleryToolbar search={search} sort={sort} selection={selection()} />);
+    const row = screen.getByRole('toolbar', { name: 'gallery.toolbar.browse' });
+    expect(row.className).toContain('flex-wrap');
+    expect(screen.getByRole('textbox', { name: 'gallery.searchPhotos' }).closest('.md\\:min-w-\\[14rem\\]')).not.toBeNull();
+  });
+
   it('has no Select button where picking is not offered', () => {
     render(<GalleryToolbar search={search} selection={selection({ available: false })} />);
     expect(screen.queryByRole('button', { name: 'gallery.selectPhotos' })).toBeNull();

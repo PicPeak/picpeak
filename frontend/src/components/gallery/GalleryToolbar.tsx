@@ -222,9 +222,11 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   ) : null;
 
   const browseRow = (
-    <div className="flex items-center gap-2 md:gap-3" role="toolbar" aria-label={t('gallery.toolbar.browse', 'Gallery tools')}>
+    // From md the buttons carry labels; once they and a usable search box no
+    // longer fit on one line, the buttons wrap instead of crushing the search.
+    <div className="flex flex-wrap items-center gap-2 md:gap-3" role="toolbar" aria-label={t('gallery.toolbar.browse', 'Gallery tools')}>
       {search && (
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 md:min-w-[14rem]">
           <Input
             themed
             type="text"
