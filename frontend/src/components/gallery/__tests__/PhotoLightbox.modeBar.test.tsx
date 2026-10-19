@@ -304,4 +304,15 @@ describe('PhotoLightbox — Select / Annotate bar (issue 1733, E1)', () => {
     expect(toast.error).toHaveBeenCalledWith('Failed to submit rating');
     expect(screen.queryByRole('button', { name: 'Remove rating' })).toBeNull();
   });
+
+  it('sends a rating for the next photo while the last one\'s is still out', async () => {
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise(() => {}) as never);
+    open({ ...SETTINGS, allow_ratings: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'Rate 4 stars' }));
+    key('ArrowRight');
+    await waitFor(() => expect(screen.getByText('2 / 3')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 3 stars' }));
+    expect(feedbackService.submitFeedback).toHaveBeenCalledTimes(2);
+    expect(feedbackService.submitFeedback).toHaveBeenLastCalledWith('g', '2', expect.objectContaining({ rating: 3 }));
+  });
 });

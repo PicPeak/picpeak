@@ -664,19 +664,21 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
   // The bar's stars are the only rating control in the lightbox (issue 1733:
   // the panel's PhotoRating left), so they say a refused rating out loud as
-  // it did, and send one rating at a time.
+  // it did, and send one rating at a time per photo (another photo's rating,
+  // in a quick proofing pass, goes out alongside).
   const showRatingError = (err: unknown) => {
     if (!handleLimitError(err)) toast.error(t('feedback.ratingError', 'Failed to submit rating'));
   };
-  const ratingPendingRef = useRef(false);
+  const ratingPendingRef = useRef(new Set<number>());
 
   const submitRating = async (value: number) => {
-    if (ratingPendingRef.current) return;
-    ratingPendingRef.current = true;
+    const photoId = currentPhoto.id;
+    if (ratingPendingRef.current.has(photoId)) return;
+    ratingPendingRef.current.add(photoId);
     try {
       await sendRating(value);
     } finally {
-      ratingPendingRef.current = false;
+      ratingPendingRef.current.delete(photoId);
     }
   };
 
