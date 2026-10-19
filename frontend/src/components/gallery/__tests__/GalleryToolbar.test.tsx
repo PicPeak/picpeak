@@ -124,6 +124,30 @@ describe('GalleryToolbar', () => {
     expect(button).toHaveFocus();
   });
 
+  it('keeps the filter panel within the screen under the stuck bar', () => {
+    render(
+      <GalleryToolbar
+        search={search}
+        filters={{ activeCount: 0, render: () => <p>panel body</p> }}
+        selection={selection()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.filters' }));
+    expect(screen.getByRole('dialog').getAttribute('style')).toContain('100dvh');
+  });
+
+  it('moves focus across the swap when Select and cancel unmount', () => {
+    const face = (isSelectionMode: boolean) => (
+      <GalleryToolbar search={search} selection={selection({ isSelectionMode })} />
+    );
+    const { rerender } = render(face(false));
+    screen.getByRole('button', { name: 'gallery.selectPhotos' }).focus();
+    rerender(face(true));
+    expect(screen.getByRole('button', { name: 'gallery.cancelSelection' })).toHaveFocus();
+    rerender(face(false));
+    expect(screen.getByRole('button', { name: 'gallery.selectPhotos' })).toHaveFocus();
+  });
+
   it('closes the filter panel on a press outside it', () => {
     render(
       <div>

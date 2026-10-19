@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { CheckSquare, ClipboardList, Filter, ListChecks, Package, Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../common';
@@ -81,6 +81,22 @@ function useHeaderOffset(ref: React.RefObject<HTMLElement>): number {
   return offset;
 }
 
+// The bar's own height, which the popover under it has to leave room for.
+function useHeight(ref: React.RefObject<HTMLElement>): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setHeight(Math.round(el.getBoundingClientRect().height));
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+  return height;
+}
+
 /**
  * The gallery toolbar (issue 1733, E8). It stays on screen while the guest
  * scrolls, and it is one bar with two faces: browse actions (search, filters,
@@ -101,9 +117,12 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
   const headerOffset = useHeaderOffset(rootRef);
+  const barHeight = useHeight(rootRef);
   const [popover, setPopover] = useState<Popover>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
   const trayButtonRef = useRef<HTMLButtonElement>(null);
+  const selectButtonRef = useRef<HTMLButtonElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const popoverId = useId();
 
@@ -126,6 +145,16 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
       rootRef.current?.querySelector<HTMLElement>('button:not([disabled]), input')?.focus();
     }
   }, [popover, openPopover]);
+
+  // The swap unmounts the button that started or ended the selection; focus
+  // that fell to the page with it moves to its counterpart on the new face.
+  const wasSelecting = useRef(selecting);
+  useLayoutEffect(() => {
+    if (wasSelecting.current === selecting) return;
+    wasSelecting.current = selecting;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    (selecting ? cancelButtonRef : selectButtonRef).current?.focus();
+  }, [selecting]);
 
   // Escape and a press outside close the popover; Escape hands focus back to
   // the button that opened it.
@@ -227,6 +256,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
       {copyButton}
       {selection?.available && (
         <Button
+          ref={selectButtonRef}
           variant="outline"
           size="md"
           onClick={selection.onStart}
@@ -245,6 +275,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2 flex-wrap" role="toolbar" aria-label={t('gallery.toolbar.selection', 'Selection')}>
         <Button
+          ref={cancelButtonRef}
           variant="ghost"
           size="icon-sm"
           onClick={selection.onCancel}
@@ -342,6 +373,9 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
           aria-label={openPopover === 'filters'
             ? t('gallery.filters', 'Filters')
             : t('gallery.selectionTray.title', 'Selected ({{count}})', { count: selection?.selectedCount ?? 0 })}
+          // Within the screen once the bar has stuck under the header, however
+          // tall the bar has grown; the class is the fallback without dvh.
+          style={{ maxHeight: `min(70vh, calc(100dvh - max(env(safe-area-inset-top, 0px), ${headerOffset}px) - ${barHeight}px - 1rem))` }}
           className={`absolute right-4 sm:right-6 lg:right-8 top-full mt-1 w-[min(32rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-lg border border-border-token bg-surface shadow-lg ${
             openPopover === 'filters' ? 'p-4' : ''
           }`}
