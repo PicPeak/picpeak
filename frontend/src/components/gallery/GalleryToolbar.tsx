@@ -141,10 +141,20 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   useEffect(() => {
     if (!popover || openPopover) return;
     setPopover(null);
-    if (!document.activeElement || document.activeElement === document.body) {
-      rootRef.current?.querySelector<HTMLElement>('button:not([disabled]), input')?.focus();
-    }
   }, [popover, openPopover]);
+
+  // However a popover closed (its own "Select these N", its content gone),
+  // focus that fell to the page with the control it was on goes back to the
+  // button that opened it, or to the bar if that went too.
+  const lastOpen = useRef<Popover>(null);
+  useLayoutEffect(() => {
+    const closed = lastOpen.current;
+    lastOpen.current = openPopover;
+    if (!closed || openPopover) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const trigger = (closed === 'filters' ? filterButtonRef : trayButtonRef).current;
+    (trigger ?? rootRef.current?.querySelector<HTMLElement>('button:not([disabled]), input'))?.focus();
+  }, [openPopover]);
 
   // The swap unmounts the button that started or ended the selection; focus
   // that fell to the page with it moves to its counterpart on the new face.
@@ -222,11 +232,11 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   ) : null;
 
   const browseRow = (
-    // From md the buttons carry labels; once they and a usable search box no
-    // longer fit on one line, the buttons wrap instead of crushing the search.
+    // Once the buttons (labelled from md) and a usable search box no longer
+    // fit on one line, the buttons wrap instead of crushing the search.
     <div className="flex flex-wrap items-center gap-2 md:gap-3" role="toolbar" aria-label={t('gallery.toolbar.browse', 'Gallery tools')}>
       {search && (
-        <div className="flex-1 min-w-0 md:min-w-[14rem]">
+        <div className="flex-1 min-w-[9rem] md:min-w-[14rem]">
           <Input
             themed
             type="text"
@@ -247,6 +257,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
           onSortChange={sort.onSortChange}
           sortDesc={sort.sortDesc}
           onSortDescChange={sort.onSortDescChange}
+          onOpen={close}
         />
       )}
       {viewControls}

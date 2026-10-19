@@ -12,6 +12,8 @@ interface GallerySortMenuProps {
   // is provided (PreviewPage doesn't pass it).
   sortDesc?: boolean;
   onSortDescChange?: (desc: boolean) => void;
+  /** Called as the menu opens, so the toolbar can close its filter panel. */
+  onOpen?: () => void;
   className?: string;
 }
 
@@ -24,17 +26,18 @@ export const GallerySortMenu: React.FC<GallerySortMenuProps> = ({
   onSortChange,
   sortDesc = true,
   onSortDescChange,
+  onOpen,
   className = '',
 }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  // A press outside (the toolbar's Filters among them) and Escape close the
-  // menu, so it never stays open over the filter panel.
+  // A press or focus outside (the toolbar's Filters among them) and Escape
+  // close the menu, so it never stays open over the filter panel.
   useEffect(() => {
     if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
+    const onOutside = (e: Event) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
@@ -42,10 +45,12 @@ export const GallerySortMenu: React.FC<GallerySortMenuProps> = ({
       setOpen(false);
       buttonRef.current?.focus();
     };
-    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('pointerdown', onOutside);
+    document.addEventListener('focusin', onOutside);
     document.addEventListener('keydown', onKeyDown);
     return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('pointerdown', onOutside);
+      document.removeEventListener('focusin', onOutside);
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [open]);
@@ -72,7 +77,10 @@ export const GallerySortMenu: React.FC<GallerySortMenuProps> = ({
         ref={buttonRef}
         variant="outline"
         size="md"
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!open) onOpen?.();
+          setOpen(!open);
+        }}
         className="text-sm md:text-base px-2.5 md:px-4 gap-2 whitespace-nowrap"
         // Icon-only below md: the name must not depend on the hidden text.
         aria-label={sortButtonLabel}

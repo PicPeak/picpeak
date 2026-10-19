@@ -173,6 +173,45 @@ describe('GalleryToolbar', () => {
     expect(sortButton).toHaveFocus();
   });
 
+  it('keeps only one of Sort and Filters open when driven by keyboard', () => {
+    render(
+      <GalleryToolbar
+        search={search}
+        sort={sort}
+        filters={{ activeCount: 0, render: () => <p>panel body</p> }}
+        selection={selection()}
+      />,
+    );
+    const sortButton = screen.getByRole('button', { name: 'gallery.sortByDate' });
+    const filterButton = screen.getByRole('button', { name: 'gallery.filters' });
+    fireEvent.click(sortButton);
+    filterButton.focus();
+    fireEvent.click(filterButton);
+    expect(screen.queryByRole('button', { name: 'photoSort.dateTaken' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toBeInTheDocument();
+    sortButton.focus();
+    fireEvent.click(sortButton);
+    expect(screen.getByRole('button', { name: 'photoSort.dateTaken' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('hands focus back to Filters when the panel closes itself under it', () => {
+    render(
+      <GalleryToolbar
+        search={search}
+        filters={{ activeCount: 0, render: (close) => <button type="button" onClick={close}>select these</button> }}
+        selection={selection({ isSelectionMode: true, selectedCount: 2 })}
+      />,
+    );
+    const filterButton = screen.getByRole('button', { name: 'gallery.filters' });
+    fireEvent.click(filterButton);
+    const inside = screen.getByRole('button', { name: 'select these' });
+    inside.focus();
+    fireEvent.click(inside);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(filterButton).toHaveFocus();
+  });
+
   it('closes the filter panel on a press outside it', () => {
     render(
       <div>
@@ -254,7 +293,9 @@ describe('GalleryToolbar', () => {
     render(<GalleryToolbar search={search} sort={sort} selection={selection()} />);
     const row = screen.getByRole('toolbar', { name: 'gallery.toolbar.browse' });
     expect(row.className).toContain('flex-wrap');
-    expect(screen.getByRole('textbox', { name: 'gallery.searchPhotos' }).closest('.md\\:min-w-\\[14rem\\]')).not.toBeNull();
+    const box = screen.getByRole('textbox', { name: 'gallery.searchPhotos' });
+    expect(box.closest('.min-w-\\[9rem\\]')).not.toBeNull();
+    expect(box.closest('.md\\:min-w-\\[14rem\\]')).not.toBeNull();
   });
 
   it('has no Select button where picking is not offered', () => {
