@@ -225,6 +225,11 @@ export function useWindowedItems(
     };
   }, [enabled, measure, markAnchor]);
 
+  // The items of the last commit. While windowing is off the window is never
+  // measured, so `win` can be many layouts old when it turns on; what was on
+  // screen is what the next window has to start from.
+  const renderedRef = useRef<JustifiedLayoutItem[]>([]);
+
   const visible = useMemo(() => {
     const { items, rows, indexOf } = model;
     if (!enabled) return items;
@@ -234,12 +239,8 @@ export function useWindowedItems(
       // numbers mean other photos here; mounting those would unmount every
       // tile in view (and whatever has focus) only to mount it again once
       // the window is measured, images refetched. Keep the same photos.
-      const was = win.model;
-      const shown = was.rows.length === 0
-        ? was.items
-        : start < end ? was.items.slice(was.rows[start].from, was.rows[end - 1].to) : [];
       const keep = new Set<number>();
-      for (const item of shown) {
+      for (const item of renderedRef.current) {
         const index = indexOf.get(item.photoId);
         if (index !== undefined) keep.add(index);
       }
@@ -247,6 +248,10 @@ export function useWindowedItems(
     }
     return start < end ? items.slice(rows[start].from, rows[end - 1].to) : [];
   }, [enabled, model, win]);
+
+  useLayoutEffect(() => {
+    renderedRef.current = visible;
+  }, [visible]);
 
   return { visible };
 }

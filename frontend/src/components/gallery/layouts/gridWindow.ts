@@ -30,13 +30,28 @@ interface GridGeometry {
   ratio: number;
 }
 
+/**
+ * A tile's laid-out height. Not getBoundingClientRect: that includes
+ * transforms, and a template may scale a hovered card (Liquid Glass does),
+ * which would then size every row that is not mounted.
+ */
+function layoutHeight(tile: Element): number {
+  const style = getComputedStyle(tile);
+  const height = parseFloat(style.height);
+  if (!(height > 0)) return 0;
+  if (style.boxSizing === 'border-box') return height;
+  return height
+    + (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
+    + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+}
+
 function readGeometry(container: HTMLElement, previousRatio: number | undefined): GridGeometry | null {
   const style = getComputedStyle(container);
   // Resolved track sizes, e.g. "280px 280px 280px"; "none" when it is not a grid.
   const tracks = (style.gridTemplateColumns || '').split(/\s+/).filter(Boolean).map(parseFloat);
   if (tracks.length === 0 || tracks.some((track) => !(track > 0))) return null;
   const tile = Array.from(container.children).find((child) => child.hasAttribute(GRID_TILE_ATTR));
-  const height = tile ? tile.getBoundingClientRect().height : 0;
+  const height = tile ? layoutHeight(tile) : 0;
   const ratio = height > 0 ? height / tracks[0] : previousRatio;
   if (!ratio) return null;
   const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
@@ -106,15 +121,18 @@ export function useGridWindow<P extends { id: number }>(
 
   const windowed = enabled && Boolean(geometry);
 
+  // Laid out whenever the grid is known, windowing on or off: when a growing
+  // list crosses the threshold, the window then starts from every tile that
+  // was mounted instead of from none, and nothing in view remounts.
   const items = useMemo((): JustifiedLayoutItem[] => {
-    if (!windowed || !geometry) return [];
+    if (!geometry) return [];
     const height = geometry.track * geometry.ratio;
     const pitch = height + geometry.rowGap;
     return photos.map((photo, i) => {
       const row = Math.floor(i / geometry.columns);
       return { photoId: photo.id, x: 0, y: geometry.paddingTop + row * pitch, width: geometry.track, height, rowIndex: row };
     });
-  }, [windowed, geometry, photos]);
+  }, [geometry, photos]);
 
   const { visible } = useWindowedItems(containerRef, items, geometry?.width ?? 0, windowed);
 

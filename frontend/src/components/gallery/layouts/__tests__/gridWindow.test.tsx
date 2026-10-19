@@ -3,7 +3,8 @@
  *
  * jsdom has no layout: the grid's resolved tracks, gap and padding are stood
  * up through getComputedStyle on `.photo-grid`, a tile's height through
- * getBoundingClientRect, and the scroll position is whatever `gridTop` says.
+ * getComputedStyle on the tile, and the scroll position is whatever `gridTop`
+ * says.
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -56,6 +57,8 @@ const PITCH = TILE + GAP;
 let gridTop = 0;
 let columns = 4;
 let gridPadding = 0;
+/** A transform on the tiles, which getBoundingClientRect includes. */
+let tileScale = 1;
 
 const tiles = () => screen.queryAllByTestId('tile');
 const tileIds = () => tiles().map((tile) => Number(tile.dataset.photo));
@@ -72,6 +75,7 @@ beforeEach(() => {
   gridTop = 0;
   columns = 4;
   gridPadding = 0;
+  tileScale = 1;
   Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
     configurable: true,
@@ -80,6 +84,10 @@ beforeEach(() => {
   const computed = window.getComputedStyle.bind(window);
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
     const style = computed(element, pseudo);
+    if ((element as HTMLElement).hasAttribute('data-grid-tile')) {
+      const tile: Record<string, string> = { height: `${TILE}px`, boxSizing: 'border-box' };
+      return new Proxy(style, { get: (target, key) => (key in tile ? tile[key as string] : Reflect.get(target, key)) });
+    }
     if (!String((element as HTMLElement).className).includes('photo-grid')) return style;
     const overrides: Record<string, string> = {
       gridTemplateColumns: Array.from({ length: columns }, () => `${TILE}px`).join(' '),
@@ -93,7 +101,7 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     const isGrid = String(this.className).includes('photo-grid');
     const top = isGrid ? gridTop : 0;
-    const height = this.hasAttribute('data-grid-tile') ? TILE : 0;
+    const height = this.hasAttribute('data-grid-tile') ? TILE * tileScale : 0;
     return { top, bottom: top + height, left: 0, right: 0, width: TILE, height, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
   });
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 0; });
@@ -168,6 +176,22 @@ describe('Grid layout windowing', () => {
     const ids = tileIds();
     expect((ids[0] - 1) % 3).toBe(0);
     expect(ids).toContain(100 * 3 + 1);
+  });
+
+  it('sizes the rows by the tile as laid out, not as a hover transform scales it', () => {
+    tileScale = 1.02;
+    render(<GridGalleryLayout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-100 * PITCH);
+    const { rows, height } = laidOutHeight(grid(), 2000);
+    expect(height).toBeCloseTo(rows * PITCH - GAP, 5);
+  });
+
+  it('keeps the mounted tiles when a growing gallery crosses the threshold', () => {
+    const { rerender } = render(<GridGalleryLayout {...layoutProps(makePhotos(WINDOW_MIN_PHOTOS - 1))} />);
+    const first = tiles()[0];
+    rerender(<GridGalleryLayout {...layoutProps(makePhotos(WINDOW_MIN_PHOTOS))} />);
+    expect(tiles()[0]).toBe(first);
+    expect(tiles().length).toBeLessThan(WINDOW_MIN_PHOTOS);
   });
 
   it('mounts every tile when the container is not a measurable grid', () => {
