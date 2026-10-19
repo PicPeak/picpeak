@@ -47,9 +47,15 @@ function layoutHeight(tile: Element): number {
 
 function readGeometry(container: HTMLElement, previousRatio: number | undefined): GridGeometry | null {
   const style = getComputedStyle(container);
+  // A template may turn the grid into flex or columns; a leftover
+  // `grid-template-columns` then still reads as tracks.
+  if (style.display !== 'grid' && style.display !== 'inline-grid') return null;
   // Resolved track sizes, e.g. "280px 280px 280px"; "none" when it is not a grid.
   const tracks = (style.gridTemplateColumns || '').split(/\s+/).filter(Boolean).map(parseFloat);
   if (tracks.length === 0 || tracks.some((track) => !(track > 0))) return null;
+  // Rows are sized from one square-ish tile per column width; columns of
+  // different widths give rows of different heights, so mount everything.
+  if (tracks.some((track) => Math.abs(track - tracks[0]) >= 0.5)) return null;
   const tile = Array.from(container.children).find((child) => child.hasAttribute(GRID_TILE_ATTR));
   const height = tile ? layoutHeight(tile) : 0;
   const ratio = height > 0 ? height / tracks[0] : previousRatio;

@@ -59,6 +59,8 @@ let columns = 4;
 let gridPadding = 0;
 /** A transform on the tiles, which getBoundingClientRect includes. */
 let tileScale = 1;
+let gridDisplay = 'grid';
+let tracks: string | null = null;
 
 const tiles = () => screen.queryAllByTestId('tile');
 const tileIds = () => tiles().map((tile) => Number(tile.dataset.photo));
@@ -76,6 +78,8 @@ beforeEach(() => {
   columns = 4;
   gridPadding = 0;
   tileScale = 1;
+  gridDisplay = 'grid';
+  tracks = null;
   Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
     configurable: true,
@@ -90,7 +94,8 @@ beforeEach(() => {
     }
     if (!String((element as HTMLElement).className).includes('photo-grid')) return style;
     const overrides: Record<string, string> = {
-      gridTemplateColumns: Array.from({ length: columns }, () => `${TILE}px`).join(' '),
+      display: gridDisplay,
+      gridTemplateColumns: tracks ?? Array.from({ length: columns }, () => `${TILE}px`).join(' '),
       rowGap: `${GAP}px`,
       paddingTop: `${gridPadding}px`,
       paddingLeft: `${gridPadding}px`,
@@ -213,6 +218,19 @@ describe('Grid layout windowing', () => {
     rerender(<GridGalleryLayout {...layoutProps(sorted)} />);
     expect(heights.length).toBeGreaterThan(0);
     for (const height of heights) expect(height).toBeCloseTo(Math.ceil(2000 / columns) * PITCH - GAP, 5);
+  });
+
+  it('mounts every tile when a template makes the container flex, tracks left over', () => {
+    gridDisplay = 'flex';
+    render(<GridGalleryLayout {...layoutProps(makePhotos(300))} />);
+    expect(tiles()).toHaveLength(300);
+    expect(spacers()).toHaveLength(0);
+  });
+
+  it('mounts every tile when the columns differ in width', () => {
+    tracks = `${TILE}px ${2 * TILE}px`;
+    render(<GridGalleryLayout {...layoutProps(makePhotos(300))} />);
+    expect(tiles()).toHaveLength(300);
   });
 
   it('mounts every tile when the container is not a measurable grid', () => {
