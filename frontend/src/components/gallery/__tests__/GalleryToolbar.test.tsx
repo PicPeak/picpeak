@@ -4,7 +4,7 @@
  * selection mode is on or anything is selected.
  */
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', async () => {
@@ -390,6 +390,35 @@ describe('GalleryToolbar', () => {
       const rows = Array.from(screen.getByTestId('gallery-selection-bar').children).filter((el) => el.tagName === 'DIV');
       expect(rows.length).toBeGreaterThanOrEqual(2);
       rows.slice(0, 2).forEach((row) => expect(row.className).toContain('flex-wrap'));
+    });
+
+    it('holds the phone layout while a sheet is open across a breakpoint change', () => {
+      let listener: () => void = () => {};
+      let phone = true;
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        get matches() { return query === '(max-width: 639px)' && phone; },
+        media: query,
+        addEventListener: (_type: string, cb: () => void) => { listener = cb; },
+        removeEventListener: () => {},
+      }));
+      render(
+        <GalleryToolbar
+          search={search}
+          filters={{ activeCount: 0, render: () => <p>panel body</p> }}
+          selection={selection({ isSelectionMode: true, selectedCount: 1 })}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'gallery.filters' }));
+      expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toHaveAttribute('aria-modal', 'true');
+      phone = false;
+      act(() => listener());
+      // Still the sheet, and still the bottom bar.
+      expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toHaveAttribute('aria-modal', 'true');
+      expect(screen.getByTestId('gallery-selection-bar')).toBeInTheDocument();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByTestId('gallery-selection-bar')).toBeNull();
+      expect(screen.getByTestId('gallery-toolbar')).toHaveAttribute('data-mode', 'selection');
     });
 
     it('has no bottom bar while nothing is selected', () => {

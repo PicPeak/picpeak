@@ -43,6 +43,32 @@ const openSheet = () => {
 };
 
 describe('GalleryBottomSheet', () => {
+  it('keeps Tab inside when the focused control has been disabled', () => {
+    const Busy: React.FC = () => {
+      const [busy, setBusy] = React.useState(false);
+      return (
+        <>
+          <GalleryBottomSheet open onClose={() => {}} title="Rate">
+            <button type="button" disabled={busy} onClick={() => setBusy(true)}>star</button>
+            <button type="button" disabled={busy}>clear</button>
+          </GalleryBottomSheet>
+          <button type="button">behind</button>
+        </>
+      );
+    };
+    render(<Busy />);
+    const star = screen.getByRole('button', { name: 'star' });
+    star.focus();
+    fireEvent.click(star);
+    expect(star).toBeDisabled();
+    expect(star).toHaveFocus();
+    const dialog = screen.getByRole('dialog', { name: 'Rate' });
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    document.activeElement!.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
   it('is a modal dialog that takes focus and locks the page scroll', () => {
     render(<Harness />);
     openSheet();

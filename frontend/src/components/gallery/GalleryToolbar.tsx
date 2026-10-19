@@ -167,7 +167,15 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   const popoverRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const popoverId = useId();
-  const isPhone = useIsPhone();
+  // Held while a popover or sheet is open: crossing the breakpoint then (a
+  // phone turned sideways) would swap one for the other, unmounting the
+  // focused control, the sheet's return target and a half-filled rating
+  // identity dialog with it. The layout follows once it is closed.
+  const livePhone = useIsPhone();
+  const [isPhone, setIsPhone] = useState(livePhone);
+  useEffect(() => {
+    if (!popover) setIsPhone(livePhone);
+  }, [livePhone, popover]);
 
   const selecting = !!selection && (selection.isSelectionMode || selection.selectedCount > 0);
   const trayShown = selecting && !!selection?.tray && selection.tray.photos.length > 0;
