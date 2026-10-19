@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SortAsc, SortDesc } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../common';
@@ -28,6 +28,27 @@ export const GallerySortMenu: React.FC<GallerySortMenuProps> = ({
 }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  // A press outside (the toolbar's Filters among them) and Escape close the
+  // menu, so it never stays open over the filter panel.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
   // The gallery.sortBy* strings are whole phrases ("Nach Datum sortieren"),
   // so they are used as they are rather than glued to "Sortieren nach".
   const sortButtonLabel =
@@ -46,8 +67,9 @@ export const GallerySortMenu: React.FC<GallerySortMenuProps> = ({
   ];
 
   return (
-    <div className={`relative ${className}`}>
+    <div ref={rootRef} className={`relative ${className}`}>
       <Button
+        ref={buttonRef}
         variant="outline"
         size="md"
         onClick={() => setOpen(!open)}

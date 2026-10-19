@@ -148,6 +148,31 @@ describe('GalleryToolbar', () => {
     expect(screen.getByRole('button', { name: 'gallery.selectPhotos' })).toHaveFocus();
   });
 
+  it('closes the sort menu when the filter panel opens, and on Escape', () => {
+    render(
+      <GalleryToolbar
+        search={search}
+        sort={sort}
+        filters={{ activeCount: 0, render: () => <p>panel body</p> }}
+        selection={selection()}
+      />,
+    );
+    const sortButton = screen.getByRole('button', { name: 'gallery.sortByDate' });
+    fireEvent.click(sortButton);
+    expect(screen.getByRole('button', { name: 'photoSort.dateTaken' })).toBeInTheDocument();
+    const filterButton = screen.getByRole('button', { name: 'gallery.filters' });
+    fireEvent.pointerDown(filterButton);
+    fireEvent.click(filterButton);
+    expect(screen.queryByRole('button', { name: 'photoSort.dateTaken' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(sortButton);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('button', { name: 'photoSort.dateTaken' })).toBeNull();
+    expect(sortButton).toHaveFocus();
+  });
+
   it('closes the filter panel on a press outside it', () => {
     render(
       <div>
