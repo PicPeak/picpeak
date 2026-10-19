@@ -146,6 +146,10 @@ async function replacementVideoPoster(tempPath, newFilename) {
     metadata = await extractVideoMetadata(tempPath).catch(() => null);
     thumbnailPath = await require('./imageProcessor').generateVideoPlaceholder(newFilename);
   }
+  // The placeholder returns null when storage refuses it too. Fail here,
+  // before the old original and poster are deleted, rather than publish a
+  // video row the grid would load as its own tile.
+  if (!thumbnailPath) throw new Error('No poster could be stored for the replacement video');
   return {
     thumbnailPath,
     width: metadata?.width ?? null,

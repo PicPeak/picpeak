@@ -568,7 +568,9 @@ async function handleV1PhotoUpload(req, res) {
       }
       // A video in a photo's place (or the reverse) changes what the row is,
       // not just its file; the plugin sends the id of whatever it uploaded.
-      if (isVideo(target) !== videoUpload) {
+      // isVideo is falsy, not false, for an image with no mime_type (a restored
+      // legacy archive), so compare booleans.
+      if (Boolean(isVideo(target)) !== videoUpload) {
         await fs.unlink(tempPath).catch(() => {});
         tempPath = null;
         return res.status(400).json({

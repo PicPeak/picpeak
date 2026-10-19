@@ -613,6 +613,27 @@ test('v1 replaces a video only with a video and an image only with an image', as
   expect(await storage.exists(recut.thumbnail_path)).toBe(true);
   expect(await db('photos')).toHaveLength(2);
 });
+test('v1 replaces an image whose row carries no mime_type, as a restored archive leaves it', async () => {
+  const photo = await attachV1(v1Upload(), jpeg, 'camera.jpg'); expect(photo.status).toBe(201);
+  await db('photos').where({ id: photo.body.id }).update({ mime_type: null });
+  const res = await attachV1(v1Upload().field('replaces_photo_id', String(photo.body.id)), jpeg, 'edited.jpg');
+  expect(res.status).toBe(200); expect(res.body.photo).toMatchObject({ id: photo.body.id, original_filename: 'edited.jpg' });
+});
+test('v1 keeps the old video when no poster can be stored for its replacement', async () => {
+  const video = await attachV1Video(v1Upload()); expect(video.status).toBe(201);
+  storage.putFromFile.mockRestore();
+  const actualPutFromFile = storage.putFromFile.bind(storage);
+  const refuseThumbnails = actual => async (key, ...rest) => {
+    if (String(key).startsWith('thumbnails/')) throw Object.assign(new Error('thumbnail EACCES'), { code: 'EACCES' });
+    return actual(key, ...rest);
+  };
+  jest.spyOn(storage, 'putFromFile').mockImplementation(refuseThumbnails(actualPutFromFile));
+  jest.spyOn(storage, 'put').mockImplementation(refuseThumbnails(storage.put.bind(storage)));
+  const res = await attachV1Video(v1Upload().field('replaces_photo_id', String(video.body.id)), admissionVideo(), 'recut.mp4');
+  expect(res.status).toBe(500);
+  expect(await db('photos').where({ id: video.body.id }).first()).toMatchObject({ original_filename: 'clip.mp4', path: video.body.path });
+  expect(await storage.exists('events/active/' + video.body.path)).toBe(true);
+});
 test('a typed session token cannot enter the v1 adapter or create a private reservation', async () => {
   const res = await request(app).post(`/api/v1/events/${eventId}/photos`).set('Authorization', `Bearer ${token}`).attach('photo', jpeg, 'wrong-auth.jpg');
   expect(res.status).toBe(401);
