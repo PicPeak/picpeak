@@ -668,6 +668,15 @@ test('v1 replaces an image whose row carries no mime_type, as a restored archive
   const res = await attachV1(v1Upload().field('replaces_photo_id', String(photo.body.id)), jpeg, 'edited.jpg');
   expect(res.status).toBe(200); expect(res.body.photo).toMatchObject({ id: photo.body.id, original_filename: 'edited.jpg' });
 });
+test('a replaced video that gets the placeholder tile carries the note the admin grid shows', async () => {
+  const video = await attachV1Video(v1Upload()); expect(video.status).toBe(201);
+  // The one-frame fixture gives ffmpeg no frame to seek to, so the poster is the placeholder.
+  const res = await attachV1Video(v1Upload().field('replaces_photo_id', String(video.body.id)), admissionVideo(), 'recut.mp4');
+  expect(res.status).toBe(200);
+  const recut = await db('photos').where({ id: video.body.id }).first();
+  expect(recut.processing_error).toMatch(/^No poster frame/);
+  expect(await storage.exists(recut.thumbnail_path)).toBe(true);
+});
 test('v1 keeps the old video when no poster can be stored for its replacement', async () => {
   const video = await attachV1Video(v1Upload()); expect(video.status).toBe(201);
   storage.putFromFile.mockRestore();

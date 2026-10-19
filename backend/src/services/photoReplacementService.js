@@ -16,7 +16,7 @@ const {
   generateThumbnail, extractCaptureDate, withProcessableImage,
   deleteThumbnailTiers, deletePreviewTiers,
 } = require('./imageProcessor');
-const { processUploadedVideo, extractVideoMetadata } = require('./videoProcessor');
+const { processUploadedVideo, extractVideoMetadata, posterFrameError } = require('./videoProcessor');
 const { generatePhotoFilename } = require('../utils/filenameSanitizer');
 const watermarkService = require('./watermarkService');
 const { getStorage } = require('./storage');
@@ -208,14 +208,19 @@ async function replacementVideoPoster(tempPath, newFilename, thumbMeta) {
   const thumbnailKey = path.posix.join('thumbnails', `thumb_${newFilename.replace(/\.[^.]+$/, '.jpg')}`);
   let metadata = null;
   let thumbnailPath = null;
+  // A placeholder tile carries its note, as on ingest, so the admin grid
+  // offers the poster retry; a real frame clears the old video's note.
+  let posterError = null;
   try {
     const result = await processUploadedVideo(tempPath, thumbnailKey);
     metadata = result.metadata;
     thumbnailPath = result.thumbnailKey;
     thumbMeta.thumbHash = result.thumbHash;
+    if (result.placeholder) posterError = posterFrameError(result.thumbnailError);
   } catch (error) {
     if (isResourceError(error)) throw error;
     logger.warn('Video processing failed for a replacement, using the placeholder', { error: error.message });
+    posterError = posterFrameError(error.message);
     metadata = await extractVideoMetadata(tempPath).catch(() => null);
     thumbnailPath = await require('./imageProcessor').generateVideoPlaceholder(newFilename);
   }
@@ -231,6 +236,7 @@ async function replacementVideoPoster(tempPath, newFilename, thumbMeta) {
       duration: metadata?.duration ?? null,
       video_codec: metadata?.videoCodec ?? null,
       audio_codec: metadata?.audioCodec ?? null,
+      processing_error: posterError,
     },
   };
 }
