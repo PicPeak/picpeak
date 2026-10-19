@@ -2,7 +2,8 @@
  * Duplicating a gallery carries its Live Slideshow style (issue 2189): play
  * order, timing, transition, colour filter and the watermark/QR modes. The
  * category filter follows the clone of its category (or stays on a global
- * one); the share token does not travel, the copy gets its own link.
+ * one); the share token does not travel, the copy gets its own link. The
+ * guest-upload default category is mapped the same way.
  */
 process.env.JWT_SECRET = 'duplicate-slideshow-secret-at-least-32-characters';
 process.env.NODE_ENV = 'test';
@@ -119,5 +120,30 @@ describe('POST /:id/duplicate — Live Slideshow style', () => {
     const res = await duplicate(source);
     const copy = await db('events').where({ id: res.body.id }).first();
     expect(copy.show_category_id).toBeNull();
+  });
+});
+
+describe('POST /:id/duplicate — guest-upload default category', () => {
+  it('points the upload default at the clone of an event category', async () => {
+    const source = await insertEvent();
+    const categoryId = await insertCategory({ event_id: source, is_global: 0, name: 'Guests' });
+    await db('events').where({ id: source }).update({ upload_category_id: categoryId });
+
+    const res = await duplicate(source);
+    expect(res.status).toBe(200);
+
+    const clone = await db('photo_categories').where({ event_id: res.body.id, name: 'Guests' }).first();
+    const copy = await db('events').where({ id: res.body.id }).first();
+    expect(Number(copy.upload_category_id)).toBe(Number(clone.id));
+  });
+
+  it('keeps a global upload default and drops a foreign one', async () => {
+    const globalId = await insertCategory({ event_id: null, is_global: 1 });
+    const kept = await duplicate(await insertEvent({ upload_category_id: globalId }));
+    expect(Number((await db('events').where({ id: kept.body.id }).first()).upload_category_id)).toBe(globalId);
+
+    const foreignId = await insertCategory({ event_id: await insertEvent(), is_global: 0 });
+    const dropped = await duplicate(await insertEvent({ upload_category_id: foreignId }));
+    expect((await db('events').where({ id: dropped.body.id }).first()).upload_category_id).toBeNull();
   });
 });

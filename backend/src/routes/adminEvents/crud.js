@@ -967,7 +967,8 @@ module.exports = (router) => {
       // The Live Slideshow style is gallery configuration too (issue 2189).
       // Its columns come from four migrations (138/139/158/163), so copy the
       // ones this schema has. The share token stays behind: a copy gets its
-      // own link. show_category_id is mapped after the categories are cloned.
+      // own link. show_category_id is mapped after the categories are cloned,
+      // with upload_category_id.
       const eventColumns = await columnNamesCached('events');
       const slideshowStyle = Object.fromEntries(
         ['show_interval_ms', 'show_transition', 'show_transition_ms', 'show_watermark', 'show_qr', 'show_colorfilter', 'show_order']
@@ -1005,7 +1006,6 @@ module.exports = (router) => {
         updated_at: new Date().toISOString(),
         created_by: req.admin.id,
         allow_user_uploads: source.allow_user_uploads,
-        upload_category_id: source.upload_category_id,
         moderate_guest_uploads: formatBoolean(parseBooleanInput(source.moderate_guest_uploads, false)),
         guest_upload_max_edge: source.guest_upload_max_edge || null,
         // Uploader names are part of the gallery's configuration (#1561).
@@ -1133,21 +1133,25 @@ module.exports = (router) => {
         }
       }
 
-      // The slideshow category filter follows the clone of its category; a
-      // global category applies to the copy as it is. Anything else would
-      // point the copy at the source gallery's category, so it shows all.
-      if (eventColumns.has('show_category_id') && source.show_category_id) {
-        const sourceCategoryId = Number(source.show_category_id);
-        let showCategoryId = newIdByOld.get(sourceCategoryId) ?? null;
-        if (showCategoryId === null) {
-          const globalCategory = await db('photo_categories')
-            .where({ id: sourceCategoryId, is_global: formatBoolean(true) })
-            .first('id');
-          if (globalCategory) showCategoryId = sourceCategoryId;
-        }
-        if (showCategoryId !== null) {
-          await db('events').where({ id: newEventId }).update({ show_category_id: showCategoryId });
-        }
+      // The guest-upload default and the slideshow category filter (issue
+      // 2189) follow the clone of their category; a global category applies
+      // to the copy as it is. Anything else would point the copy at the
+      // source gallery's category, so it is left empty.
+      const copiedCategoryId = async (sourceCategoryId) => {
+        if (!sourceCategoryId) return null;
+        const sourceId = Number(sourceCategoryId);
+        if (newIdByOld.has(sourceId)) return newIdByOld.get(sourceId);
+        const globalCategory = await db('photo_categories')
+          .where({ id: sourceId, is_global: formatBoolean(true) })
+          .first('id');
+        return globalCategory ? sourceId : null;
+      };
+      const categoryFields = { upload_category_id: await copiedCategoryId(source.upload_category_id) };
+      if (eventColumns.has('show_category_id')) {
+        categoryFields.show_category_id = await copiedCategoryId(source.show_category_id);
+      }
+      if (Object.values(categoryFields).some((value) => value !== null)) {
+        await db('events').where({ id: newEventId }).update(categoryFields);
       }
 
       await logActivity('event_duplicated',
