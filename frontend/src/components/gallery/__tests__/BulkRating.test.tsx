@@ -273,6 +273,23 @@ describe('BulkRating', () => {
     }
   });
 
+  it('keeps a run that is still out guarded when the control is closed and reopened', async () => {
+    let answer: (value: ReturnType<typeof ok>) => void = () => {};
+    submit.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    seedCache([makePhoto(1)]);
+    const first = renderControl([1]);
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    first.unmount();
+    renderControl([1]);
+    expect(screen.getByRole('button', { name: 'Rate 2 stars' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 2 stars' }));
+    expect(submit).toHaveBeenCalledTimes(1);
+    answer(ok([1], 4));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rate 2 stars' })).not.toBeDisabled());
+    expect(cached()[0].my_rating).toBe(4);
+  });
+
   it('asks for name and email first when the gallery requires them', async () => {
     seedCache([makePhoto(1)]);
     submit.mockResolvedValue(ok([1], 4));

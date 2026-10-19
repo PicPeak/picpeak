@@ -385,6 +385,13 @@ describe('GalleryToolbar', () => {
       expect(document.documentElement.style.getPropertyValue('--gallery-bottom-bar')).toBe('');
     });
 
+    it('lets both bottom bar rows wrap on a narrow screen', () => {
+      render(<GalleryToolbar search={search} selection={selection({ isSelectionMode: true, selectedCount: 1 })} />);
+      const rows = Array.from(screen.getByTestId('gallery-selection-bar').children).filter((el) => el.tagName === 'DIV');
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+      rows.slice(0, 2).forEach((row) => expect(row.className).toContain('flex-wrap'));
+    });
+
     it('has no bottom bar while nothing is selected', () => {
       render(<GalleryToolbar search={search} selection={selection()} />);
       expect(screen.queryByTestId('gallery-selection-bar')).toBeNull();

@@ -394,7 +394,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   ) : null;
 
   const selectAllButtons = selection ? (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1 flex-wrap">
       <Button
         variant="ghost"
         size="sm"
@@ -449,12 +449,13 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
       className="gallery-selection-bar fixed inset-x-0 bottom-0 z-40 bg-surface border-t border-border-token shadow-[0_-4px_12px_rgba(0,0,0,0.08)] px-4 pt-2"
       style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)' }}
     >
-      <div className="flex items-center gap-2">
+      {/* Both rows wrap: a long locale must not push actions off a narrow screen. */}
+      <div className="flex items-center gap-x-2 gap-y-1 flex-wrap">
         {cancelButton}
         {selectedCountLabel}
         <div className="ml-auto">{selectAllButtons}</div>
       </div>
-      <div className="flex items-center gap-2 mt-2">
+      <div className="flex items-center gap-2 mt-2 flex-wrap">
         {rateShown && (
           <Button
             variant="outline"
