@@ -431,6 +431,7 @@
     "filterByMinRating": "Ma note : {{min}} étoiles ou plus",
     "folders": "Dossiers",
     "openFolder": "Ouvrir le dossier {{name}}",
+    "imageUnavailable": "Image indisponible",
     "folderPhotoCount": "{{count}} photos",
     "backToGallery": "Toutes les photos",
     "downloadFolder": "Télécharger le dossier ({{count}})",

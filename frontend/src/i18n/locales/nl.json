@@ -424,6 +424,7 @@
     "filterByMinRating": "Mijn beoordeling: {{min}} sterren of meer",
     "folders": "Mappen",
     "openFolder": "Map {{name}} openen",
+    "imageUnavailable": "Afbeelding niet beschikbaar",
     "folderPhotoCount": "{{count}} foto's",
     "backToGallery": "Alle foto's",
     "downloadFolder": "Map downloaden ({{count}})",

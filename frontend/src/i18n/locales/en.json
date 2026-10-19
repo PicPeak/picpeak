@@ -1557,6 +1557,7 @@
     "filterByMinRating": "My rating: {{min}} stars or more",
     "folders": "Folders",
     "openFolder": "Open folder {{name}}",
+    "imageUnavailable": "Image unavailable",
     "folderPhotoCount": "{{count}} photos",
     "backToGallery": "All photos",
     "downloadFolder": "Download folder ({{count}})",

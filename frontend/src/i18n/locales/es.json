@@ -402,6 +402,7 @@
     "filterByMinRating": "Mi valoración: {{min}} estrellas o más",
     "folders": "Carpetas",
     "openFolder": "Abrir carpeta {{name}}",
+    "imageUnavailable": "Imagen no disponible",
     "folderPhotoCount": "{{count}} fotos",
     "backToGallery": "Todas las fotos",
     "downloadFolder": "Descargar carpeta ({{count}})",

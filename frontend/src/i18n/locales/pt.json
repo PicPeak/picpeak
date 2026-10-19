@@ -531,6 +531,7 @@
     "filterByMinRating": "Minha avaliação: {{min}} estrelas ou mais",
     "folders": "Pastas",
     "openFolder": "Abrir pasta {{name}}",
+    "imageUnavailable": "Imagem indisponível",
     "folderPhotoCount": "{{count}} fotos",
     "backToGallery": "Todas as fotos",
     "downloadFolder": "Baixar pasta ({{count}})",

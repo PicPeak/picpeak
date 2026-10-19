@@ -458,6 +458,7 @@
     "filterByMinRating": "Моя оценка: {{min}} звёзд и больше",
     "folders": "Папки",
     "openFolder": "Открыть папку {{name}}",
+    "imageUnavailable": "Изображение недоступно",
     "folderPhotoCount": "{{count}} фото",
     "backToGallery": "Все фото",
     "downloadFolder": "Скачать папку ({{count}})",

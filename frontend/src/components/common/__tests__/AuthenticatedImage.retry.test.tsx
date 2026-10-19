@@ -563,4 +563,78 @@ describe('AuthenticatedImage retry', () => {
     await advance(2000); await flush();
     expect(fetchMock).toHaveBeenCalledTimes(6);
   });
+
+  // Issue 1733, E9: grid tiles take a smaller budget and want to know when
+  // the image has been given up on, to show their placeholder.
+  describe('maxRetries and onUnavailable', () => {
+    it('stops after maxRetries and only then reports the image unavailable', async () => {
+      const fetchMock = vi.fn().mockImplementation(status(503));
+      vi.stubGlobal('fetch', fetchMock);
+      const onUnavailable = vi.fn();
+
+      render(<AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" maxRetries={2} onUnavailable={onUnavailable} />);
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(onUnavailable).not.toHaveBeenCalledWith(true);
+
+      await advance(2000); await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(onUnavailable).not.toHaveBeenCalledWith(true);
+
+      await advance(4000); await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(onUnavailable).toHaveBeenLastCalledWith(true);
+
+      await advance(60_000); await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it('reports a final 404 unavailable at once, without a retry', async () => {
+      const fetchMock = vi.fn().mockImplementation(status(404));
+      vi.stubGlobal('fetch', fetchMock);
+      const onUnavailable = vi.fn();
+
+      render(<AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" maxRetries={2} onUnavailable={onUnavailable} />);
+      await flush();
+      expect(onUnavailable).toHaveBeenLastCalledWith(true);
+      await advance(60_000); await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('never reports unavailable when a retry recovers', async () => {
+      const fetchMock = vi.fn().mockImplementationOnce(status(503)).mockImplementation(ok);
+      vi.stubGlobal('fetch', fetchMock);
+      const onUnavailable = vi.fn();
+
+      const { container } = render(<AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" maxRetries={2} onUnavailable={onUnavailable} />);
+      await flush();
+      await advance(2000); await flush();
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock');
+      expect(onUnavailable).not.toHaveBeenCalledWith(true);
+    });
+
+    it('takes the unavailable state back when src changes', async () => {
+      const fetchMock = vi.fn().mockImplementationOnce(status(404)).mockImplementation(ok);
+      vi.stubGlobal('fetch', fetchMock);
+      const onUnavailable = vi.fn();
+
+      const { rerender } = render(<AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" onUnavailable={onUnavailable} />);
+      await flush();
+      expect(onUnavailable).toHaveBeenLastCalledWith(true);
+
+      rerender(<AuthenticatedImage src="/api/gallery/demo/thumbnail/2" alt="t" onUnavailable={onUnavailable} />);
+      await flush();
+      expect(onUnavailable).toHaveBeenLastCalledWith(false);
+    });
+
+    it('is not unavailable while a fallback is on screen', async () => {
+      const fetchMock = vi.fn().mockImplementation(status(404));
+      vi.stubGlobal('fetch', fetchMock);
+      const onUnavailable = vi.fn();
+
+      render(<AuthenticatedImage src="/api/gallery/demo/photo/1" fallbackSrc="/api/gallery/demo/thumbnail/1" alt="t" onUnavailable={onUnavailable} />);
+      await flush();
+      expect(onUnavailable).not.toHaveBeenCalledWith(true);
+    });
+  });
 });

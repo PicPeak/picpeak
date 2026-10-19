@@ -2148,6 +2148,7 @@
     "filterByMinRating": "Meine Bewertung: mindestens {{min}} Sterne",
     "folders": "Ordner",
     "openFolder": "Ordner {{name}} öffnen",
+    "imageUnavailable": "Bild nicht verfügbar",
     "folderPhotoCount": "{{count}} Fotos",
     "backToGallery": "Alle Fotos",
     "downloadFolder": "Ordner herunterladen ({{count}})",
