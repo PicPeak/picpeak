@@ -19,6 +19,8 @@ interface PhotoFavoritesProps {
   onFavoriteChange?: (favorited: boolean) => void;
   /** The server accepted the toggle. */
   onSaved?: (photoId: string) => void;
+  /** The server accepted the toggle; unlike onSaved, keeps the list refresh. */
+  onAccepted?: (photoId: string) => void;
   /** 'toolbar': a round button for the lightbox's black bar (issue 1733). */
   variant?: 'panel' | 'toolbar';
 }
@@ -32,6 +34,7 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
   requireNameEmail = false,
   onFavoriteChange,
   onSaved,
+  onAccepted,
   variant = 'panel'
 }) => {
   const { t } = useTranslation();
@@ -64,6 +67,7 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
     onSuccess: (_data, variables) => {
       const savedPhotoId = variables.photoId;
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, savedPhotoId] });
+      onAccepted?.(savedPhotoId);
       // The parent refreshes this photo's row; without one, the whole list.
       if (onSaved) onSaved(savedPhotoId);
       else queryClient.invalidateQueries({ queryKey: ['gallery-photos', gallerySlug] });

@@ -113,8 +113,10 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
     return () => setSending(false);
   }, [setSending, sending]);
 
-  // A drawing is made for a comment: the form opens with it.
-  const drawingNow = !!annotation?.drawing;
+  // A drawing is made for a comment: the form opens with it. With a
+  // finished one too: Annotate opens the panel, and a drawing done before
+  // this form mounted (the panel loads its settings first) still needs it.
+  const drawingNow = !!annotation?.drawing || !!annotation?.draft;
   useEffect(() => {
     if (drawingNow) setShowCommentForm(true);
   }, [drawingNow]);

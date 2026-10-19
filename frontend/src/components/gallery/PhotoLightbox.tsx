@@ -578,6 +578,21 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     return () => { mounted = false; };
   }, [slug, currentPhoto?.id, currentPhoto?.my_rating, feedbackSettings?.feedback_enabled, scrubbing]);
 
+  // The bar's favourite after a save, from the server: the click may have
+  // come before this photo's feedback loaded, and then toggled a favourite
+  // the bar did not know of. Dropped for another photo or a newer toggle.
+  const reloadFavorite = async (savedPhotoId: string) => {
+    const favoriteSeq = favoriteToggleSeqRef.current;
+    try {
+      const data = await feedbackService.getPhotoFeedback(slug, savedPhotoId);
+      if (favoriteSeq !== favoriteToggleSeqRef.current || String(feedbackPhotoIdRef.current) !== savedPhotoId) return;
+      setMyFavorited(!!data.my_feedback.favorited);
+      setFavoriteCount(Number(data.summary?.favorite_count) || 0);
+    } catch {
+      // The optimistic state stays.
+    }
+  };
+
   // Said out loud, as the grid's like button does (PhotoLikes): a 429 was
   // only logged, so to the guest the heart did nothing (issue 1891).
   const showLikeError = (err: unknown) => {
@@ -1396,6 +1411,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                     setMyFavorited(favorited);
                     setFavoriteCount((c) => Math.max(0, c + (favorited ? 1 : -1)));
                   }}
+                  onAccepted={reloadFavorite}
                   onSaved={onFeedbackChange ? (savedPhotoId) => onFeedbackChange(Number(savedPhotoId)) : undefined}
                 />
               </div>

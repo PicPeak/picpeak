@@ -202,6 +202,9 @@ describe('PhotoLightbox — Select / Annotate bar (issue 1733, E1)', () => {
   });
 
   it('saves a favourite from the bar', async () => {
+    vi.mocked(feedbackService.getPhotoFeedback)
+      .mockResolvedValueOnce({ feedback: [], my_feedback: {}, summary: {} } as never)
+      .mockResolvedValue({ feedback: [], my_feedback: { favorited: true }, summary: { favorite_count: 1 } } as never);
     vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
     open({ ...SETTINGS, allow_favorites: true });
     fireEvent.click(await screen.findByRole('button', { name: 'Add to favorites' }));
@@ -211,7 +214,9 @@ describe('PhotoLightbox — Select / Annotate bar (issue 1733, E1)', () => {
 
   it('keeps a favourite made before the photo\'s feedback loaded', async () => {
     let answer!: (value: unknown) => void;
-    vi.mocked(feedbackService.getPhotoFeedback).mockImplementation(() => new Promise((resolve) => { answer = resolve; }) as never);
+    vi.mocked(feedbackService.getPhotoFeedback)
+      .mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }) as never)
+      .mockResolvedValue({ feedback: [], my_feedback: { favorited: true }, summary: { favorite_count: 1 } } as never);
     vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
     open({ ...SETTINGS, allow_favorites: true });
     fireEvent.click(await screen.findByRole('button', { name: 'Add to favorites' }));
@@ -220,5 +225,42 @@ describe('PhotoLightbox — Select / Annotate bar (issue 1733, E1)', () => {
     // The load that was out before the click says: not a favourite.
     await act(async () => { answer({ feedback: [], my_feedback: { favorited: false }, summary: { favorite_count: 0 } }); });
     expect(screen.getByRole('button', { name: 'Remove from favorites' })).toBeTruthy();
+  });
+
+  it('shows what the server saved when the click came before the photo\'s feedback', async () => {
+    // Already a favourite, but the bar does not know yet: the click removes it.
+    let answer!: (value: unknown) => void;
+    vi.mocked(feedbackService.getPhotoFeedback)
+      .mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }) as never)
+      .mockResolvedValue({ feedback: [], my_feedback: { favorited: false }, summary: { favorite_count: 0 } } as never);
+    vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
+    open({ ...SETTINGS, allow_favorites: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to favorites' }));
+
+    await act(async () => { answer({ feedback: [], my_feedback: { favorited: true }, summary: { favorite_count: 1 } }); });
+    expect(await screen.findByRole('button', { name: 'Add to favorites' })).toBeTruthy();
+  });
+
+  it('opens the comment form for a drawing finished before the panel had loaded', async () => {
+    let settle!: (value: unknown) => void;
+    vi.mocked(feedbackService.getGalleryFeedbackSettings)
+      .mockResolvedValueOnce(SETTINGS as never)
+      .mockImplementationOnce(() => new Promise((resolve) => { settle = resolve; }) as never);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PhotoLightbox photos={photos} initialIndex={0} onClose={onClose} slug="g" feedbackEnabled />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole('radiogroup', { name: 'Mode' });
+
+    fireEvent.click(radio('Annotate'));
+    drag(screen.getByTestId('annotation-overlay'));
+    fireEvent.click(within(tools()!).getByRole('button', { name: 'Done' }));
+    expect(screen.queryByPlaceholderText('Write a comment...')).toBeNull();
+
+    await act(async () => { settle(SETTINGS); });
+    expect(await screen.findByPlaceholderText('Write a comment...')).toBeTruthy();
+    expect(screen.getByText('Drawing attached')).toBeTruthy();
   });
 });
