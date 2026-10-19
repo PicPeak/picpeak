@@ -15,8 +15,14 @@
  *
  * Storage can be missing or throw (private mode, blocked site data); the
  * choice then lives for the page only.
+ *
+ * Because the choice follows the viewer from gallery to gallery, it only
+ * applies where the page also offers the switch to change it back: the page
+ * that renders one says so through `GridDensityOffered`. Anywhere else (a
+ * gallery whose admin hid the filter bar, the admin preview) the layouts keep
+ * the theme's own size.
  */
-import { useSyncExternalStore } from 'react';
+import { createContext, useContext, useSyncExternalStore } from 'react';
 
 export type GridDensity = 'compact' | 'default' | 'large';
 
@@ -78,9 +84,21 @@ export function setGridDensity(density: GridDensity): void {
   subscribers.forEach((notify) => notify());
 }
 
-/** The viewer's density. Re-renders the caller when it changes. */
-export function useGridDensity(): GridDensity {
+/** True where the page renders a density switch the viewer can reach. */
+export const GridDensityOffered = createContext(false);
+
+/** The viewer's stored choice, for the switch itself. Re-renders on change. */
+export function useChosenGridDensity(): GridDensity {
   return useSyncExternalStore(subscribe, getSnapshot, () => 'default' as GridDensity);
+}
+
+/**
+ * The density a layout applies: the viewer's choice where the page offers
+ * the switch, the theme default otherwise. Re-renders the caller on change.
+ */
+export function useGridDensity(): GridDensity {
+  const chosen = useChosenGridDensity();
+  return useContext(GridDensityOffered) ? chosen : 'default';
 }
 
 /** Test hook: forget the in-memory value so the next read hits storage. */

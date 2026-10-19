@@ -6,7 +6,7 @@ import {
   GRID_DENSITIES,
   layoutHasDensity,
   setGridDensity,
-  useGridDensity,
+  useChosenGridDensity,
   type GridDensity,
 } from './gridDensity';
 
@@ -22,7 +22,7 @@ const ICONS: Record<GridDensity, React.ComponentType<{ className?: string }>> = 
  */
 export const GridDensityControl: React.FC<{ layout?: string }> = ({ layout }) => {
   const { t } = useTranslation();
-  const density = useGridDensity();
+  const density = useChosenGridDensity();
   if (!layoutHasDensity(layout)) return null;
 
   return (

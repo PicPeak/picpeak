@@ -15,6 +15,7 @@ import { TimelineGalleryLayout } from '../TimelineGalleryLayout';
 import { GridDensityControl } from '../../GridDensityControl';
 import {
   GRID_DENSITY_STORAGE_KEY,
+  GridDensityOffered,
   resetGridDensityForTests,
   setGridDensity,
 } from '../../gridDensity';
@@ -70,9 +71,15 @@ const props = {
   feedbackEnabled: false,
 } as never;
 
-function mount(ui: React.ReactElement) {
+// `offered`: the page renders the switch, as GalleryView does with either
+// control style.
+function mount(ui: React.ReactElement, offered = true) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <GridDensityOffered.Provider value={offered}>{ui}</GridDensityOffered.Provider>
+    </QueryClientProvider>,
+  );
 }
 
 const classesOf = (el: Element | null) => (el?.className || '').toString().split(/\s+/).filter(Boolean);
@@ -154,6 +161,14 @@ describe('GridDensityControl', () => {
     resetGridDensityForTests();
     const again = mount(<GridGalleryLayout {...props} />);
     expect(classesOf(again.container.querySelector('.photo-grid'))).toContain('lg:grid-cols-4');
+  });
+
+  it('keeps the theme size where the page offers no switch to change it back', () => {
+    window.localStorage.setItem(GRID_DENSITY_STORAGE_KEY, 'compact');
+    const { container } = mount(<GridGalleryLayout {...props} />, false);
+    expect(classesOf(container.querySelector('.photo-grid'))).toContain('lg:grid-cols-4');
+    act(() => setGridDensity('large'));
+    expect(classesOf(container.querySelector('.photo-grid'))).toContain('lg:grid-cols-4');
   });
 
   it('still switches for the page when storage throws', () => {

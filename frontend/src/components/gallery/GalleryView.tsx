@@ -60,6 +60,7 @@ import { GalleryLayout } from './GalleryLayout';
 import { GallerySidebar } from './GallerySidebar';
 import { PhotoFilterBar } from './PhotoFilterBar';
 import { GridDensityControl } from './GridDensityControl';
+import { GridDensityOffered } from './gridDensity';
 import { UserPhotoUpload } from './UserPhotoUpload';
 import { CreditFilterChips } from './CreditFilterChips';
 import { TagFilterChips, tagChipsFor } from './TagFilterChips';
@@ -1447,6 +1448,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // the feedback chips to act on, and showing them reintroduces exactly the
     // empty filter row discussion #317 complained about.
     && scopedPhotos.length > 0;
+  // The viewer's saved tile size (issue 1733, E4) applies only where one of
+  // the two control styles puts the switch on screen to change it back.
+  const densityOffered = filterBarShown || showSidebar;
 
   // Reveal mode (#838): the server returned the event shell with no photos —
   // render the upload-only view for EVERY layout. Enforcement is server-side
@@ -1868,6 +1872,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
     <DownloadQuotaProvider slug={slug} event={data?.event}>
       <GalleryTileBadgesProvider value={tileBadges}>
+      <GridDensityOffered.Provider value={densityOffered}>
       <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
       <GuestRecoveryModal />
       {/* Sidebar for non-grid layouts */}
@@ -2375,6 +2380,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
+      </GridDensityOffered.Provider>
       </GalleryTileBadgesProvider>
     </DownloadQuotaProvider>
     </GuestIdentityProvider>
