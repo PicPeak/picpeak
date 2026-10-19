@@ -1571,7 +1571,8 @@
     },
     "neutralLabel": {
       "numbered": "Fotografija {{position}} od {{total}}",
-      "plain": "Fotografija"
+      "plain": "Fotografija",
+      "selected": "Izbrana fotografija {{position}} od {{total}}"
     }
   },
   "categories": {

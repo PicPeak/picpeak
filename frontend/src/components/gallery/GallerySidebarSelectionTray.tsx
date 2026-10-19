@@ -26,8 +26,17 @@ interface GallerySidebarSelectionTrayProps {
   slug?: string;
 }
 
-const TrayRow: React.FC<{ photo: TrayPhoto; onRemove: (photoId: number, button: HTMLButtonElement) => void; slug?: string }> = ({
+const TrayRow: React.FC<{
+  photo: TrayPhoto;
+  /** The row's place in the tray, to tell apart photos a filter hides. */
+  position: number;
+  count: number;
+  onRemove: (photoId: number, button: HTMLButtonElement) => void;
+  slug?: string;
+}> = ({
   photo,
+  position,
+  count,
   onRemove,
   slug,
 }) => {
@@ -36,7 +45,12 @@ const TrayRow: React.FC<{ photo: TrayPhoto; onRemove: (photoId: number, button: 
   // selection of several hundred photos costs a handful of requests.
   const { ref, inView } = useInView({ triggerOnce: true, rootMargin: '100px' });
   // Numbered against the gallery's list under neutral labels (issue 1733, E6).
-  const name = usePhotoLabels().of(photo, photoDisplayFilename(photo));
+  // A selected photo a search or filter hides has no number there, so it is
+  // numbered by its place in the tray instead: every row keeps a distinct name.
+  const photoLabels = usePhotoLabels();
+  const name = photoLabels.neutral && !photoLabels.has(photo)
+    ? t('gallery.neutralLabel.selected', 'Selected photo {{position}} of {{total}}', { position: position + 1, total: count })
+    : photoLabels.of(photo, photoDisplayFilename(photo));
   return (
     <li ref={ref} className="flex items-center gap-2 h-12">
       <div className="w-10 h-10 shrink-0 rounded overflow-hidden bg-black/10">
@@ -120,8 +134,8 @@ export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayPr
         // Five and a half rows: the cut-off row is what says the list scrolls
         // where the scrollbar is an overlay (macOS, phones).
         <ul id={listId} ref={listRef} className="mt-3 max-h-[17.5rem] overflow-y-auto space-y-1">
-          {photos.map((photo) => (
-            <TrayRow key={photo.id} photo={photo} onRemove={handleRemove} slug={slug} />
+          {photos.map((photo, index) => (
+            <TrayRow key={photo.id} photo={photo} position={index} count={photos.length} onRemove={handleRemove} slug={slug} />
           ))}
         </ul>
       )}

@@ -575,7 +575,8 @@
     },
     "neutralLabel": {
       "numbered": "Foto {{position}} van {{total}}",
-      "plain": "Foto"
+      "plain": "Foto",
+      "selected": "Geselecteerde foto {{position}} van {{total}}"
     }
   },
   "categories": {

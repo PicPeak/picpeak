@@ -134,4 +134,19 @@ describe('neutral photo labels in the selection tray', () => {
     expect(screen.getByText('Photo 3 of 3')).toBeInTheDocument();
     expect(screen.queryByText('IMG_473.jpg')).toBeNull();
   });
+
+  it('keeps selected photos a filter hides apart by their place in the tray', () => {
+    const hidden = [photo(7), photo(8)];
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <PhotoLabelsProvider neutral photos={photos}>
+          <GallerySidebarSelectionTray photos={[photos[0], ...hidden]} onRemove={() => {}} />
+        </PhotoLabelsProvider>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText('Photo 1 of 3')).toBeInTheDocument();
+    expect(screen.getByText('Selected photo 2 of 3')).toBeInTheDocument();
+    expect(screen.getByText('Selected photo 3 of 3')).toBeInTheDocument();
+    expect(screen.queryByText('IMG_477.jpg')).toBeNull();
+  });
 });

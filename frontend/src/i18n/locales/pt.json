@@ -691,7 +691,8 @@
     },
     "neutralLabel": {
       "numbered": "Foto {{position}} de {{total}}",
-      "plain": "Foto"
+      "plain": "Foto",
+      "selected": "Foto selecionada {{position}} de {{total}}"
     }
   },
   "categories": {

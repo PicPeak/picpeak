@@ -585,7 +585,8 @@
     },
     "neutralLabel": {
       "numbered": "Photo {{position}} sur {{total}}",
-      "plain": "Photo"
+      "plain": "Photo",
+      "selected": "Photo sélectionnée {{position}} sur {{total}}"
     }
   },
   "categories": {

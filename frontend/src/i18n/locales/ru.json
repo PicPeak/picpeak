@@ -615,7 +615,8 @@
     },
     "neutralLabel": {
       "numbered": "Фото {{position}} из {{total}}",
-      "plain": "Фото"
+      "plain": "Фото",
+      "selected": "Выбранное фото {{position}} из {{total}}"
     }
   },
   "categories": {

@@ -55,6 +55,8 @@ export interface PhotoLabels {
    * list (the hero) gets the label without a number.
    */
   of: (photo: Pick<Photo, 'id'>, fallback: string) => string;
+  /** Whether the photo is in the numbered list (false with the switch off). */
+  has: (photo: Pick<Photo, 'id'>) => boolean;
 }
 
 export function usePhotoLabels(): PhotoLabels {
@@ -71,6 +73,7 @@ export function usePhotoLabels(): PhotoLabels {
         const index = positions.get(photo.id);
         return index === undefined ? t('gallery.neutralLabel.plain', 'Photo') : at(index, total);
       },
+      has: (photo) => positions.has(photo.id),
     };
   }, [neutral, positions, total, t]);
 }
