@@ -3374,6 +3374,7 @@
     "rateStar_one": "Noter {{count}} étoile",
     "rateStar_other": "Noter {{count}} étoiles",
     "removeRating": "Retirer la note",
+    "ratePhoto": "Noter la photo",
     "rateSelected": "Noter la sélection",
     "bulkRatingPartial": "{{rated}} photos sur {{total}} ont été notées",
     "ratingLimitReached": "Limite de notes atteinte. Réessayez plus tard.",

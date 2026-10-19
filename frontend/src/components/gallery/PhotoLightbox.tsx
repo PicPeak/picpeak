@@ -1444,7 +1444,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
             {/* Inline Rating */}
             {feedbackEnabled && feedbackSettings?.allow_ratings && (
-              <div className="flex items-center gap-1 ml-1" aria-label="Rate photo" {...feedbackHold}>
+              <div className="flex items-center gap-1 ml-1" aria-label={t('feedback.ratePhoto', 'Rate photo')} {...feedbackHold}>
                 {[1,2,3,4,5].map((i) => (
                   <button
                     key={i}

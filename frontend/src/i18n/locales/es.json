@@ -3103,6 +3103,7 @@
     "bulkRatingPartial": "Se valoraron {{rated}} de {{total}} fotos",
     "ratingLimitReached": "Límite de valoraciones alcanzado. Inténtalo de nuevo más tarde.",
     "ratePhoto": "Valorar esta foto",
+    "ratingError": "No se pudo enviar la valoración",
     "yourRating": "Tu valoración",
     "averageRating": "Valoración media",
     "totalRatings": "valoraciones",

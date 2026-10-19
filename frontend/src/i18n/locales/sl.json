@@ -5769,6 +5769,7 @@
     "rateStar_one": "Oceni z {{count}} zvezdico",
     "rateStar_other": "Oceni z {{count}} zvezdicami",
     "removeRating": "Odstrani oceno",
+    "ratePhoto": "Oceni fotografijo",
     "rateSelected": "Oceni izbrane",
     "bulkRatingPartial": "Ocenjenih fotografij: {{rated}} od {{total}}",
     "ratingLimitReached": "Omejitev ocen je dosežena. Poskusite znova pozneje.",

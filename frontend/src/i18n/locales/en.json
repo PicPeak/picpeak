@@ -6534,6 +6534,7 @@
     "rateStar_one": "Rate {{count}} star",
     "rateStar_other": "Rate {{count}} stars",
     "removeRating": "Remove rating",
+    "ratePhoto": "Rate photo",
     "rateSelected": "Rate selected",
     "bulkRatingPartial": "{{rated}} of {{total}} photos were rated",
     "ratingLimitReached": "Rating limit reached. Try again later.",

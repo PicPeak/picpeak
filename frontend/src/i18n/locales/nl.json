@@ -3318,6 +3318,7 @@
     "rateStar_one": "{{count}} ster beoordelen",
     "rateStar_other": "{{count}} sterren beoordelen",
     "removeRating": "Beoordeling verwijderen",
+    "ratePhoto": "Foto beoordelen",
     "rateSelected": "Selectie beoordelen",
     "bulkRatingPartial": "{{rated}} van {{total}} foto's zijn beoordeeld",
     "ratingLimitReached": "Limiet voor beoordelingen bereikt. Probeer het later opnieuw.",

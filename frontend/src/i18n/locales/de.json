@@ -6479,6 +6479,7 @@
     "rateStar_one": "{{count}} Stern bewerten",
     "rateStar_other": "{{count}} Sterne bewerten",
     "removeRating": "Bewertung entfernen",
+    "ratePhoto": "Foto bewerten",
     "rateSelected": "Auswahl bewerten",
     "bulkRatingPartial": "{{rated}} von {{total}} Fotos wurden bewertet",
     "ratingLimitReached": "Bewertungslimit erreicht. Bitte versuchen Sie es später erneut.",

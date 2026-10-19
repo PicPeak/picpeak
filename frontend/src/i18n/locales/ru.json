@@ -3446,6 +3446,7 @@
     "rateStar_one": "Оценить {{count}} звезду",
     "rateStar_other": "Оценить {{count}} звёзд",
     "removeRating": "Убрать оценку",
+    "ratePhoto": "Оценить фото",
     "rateSelected": "Оценить выбранные",
     "bulkRatingPartial": "Оценено фото: {{rated}} из {{total}}",
     "ratingLimitReached": "Достигнут лимит оценок. Повторите попытку позже.",
