@@ -15,6 +15,7 @@ const {
   generateThumbnail, extractCaptureDate, withProcessableImage,
   deleteThumbnailTiers, deletePreviewTiers,
 } = require('./imageProcessor');
+const { processUploadedVideo, extractVideoMetadata } = require('./videoProcessor');
 const { generatePhotoFilename } = require('../utils/filenameSanitizer');
 const watermarkGeneratorService = require('./watermarkGeneratorService');
 const { getStorage } = require('./storage');
@@ -126,6 +127,42 @@ async function findReplacementCandidate(eventId, originalFilename, opts = {}) {
 }
 
 /**
+ * Poster frame and metadata for a replacement video, the way photoProcessor
+ * makes them on ingest. processUploadedVideo already falls back to the static
+ * placeholder when ffmpeg yields no frame, so the row never ends up with no
+ * thumbnail at all.
+ */
+async function replacementVideoPoster(tempPath, newFilename) {
+  const thumbnailKey = path.posix.join('thumbnails', `thumb_${newFilename.replace(/\.[^.]+$/, '.jpg')}`);
+  let metadata = null;
+  let thumbnailPath = null;
+  try {
+    const result = await processUploadedVideo(tempPath, thumbnailKey);
+    metadata = result.metadata;
+    thumbnailPath = result.thumbnailKey;
+  } catch (error) {
+    if (isResourceError(error)) throw error;
+    logger.warn('Video processing failed for a replacement, using the placeholder', { error: error.message });
+    metadata = await extractVideoMetadata(tempPath).catch(() => null);
+    thumbnailPath = await require('./imageProcessor').generateVideoPlaceholder(newFilename);
+  }
+  // The placeholder returns null when storage refuses it too. Fail here,
+  // before the old original and poster are deleted, rather than publish a
+  // video row the grid would load as its own tile.
+  if (!thumbnailPath) throw new Error('No poster could be stored for the replacement video');
+  return {
+    thumbnailPath,
+    width: metadata?.width ?? null,
+    height: metadata?.height ?? null,
+    videoColumns: {
+      duration: metadata?.duration ?? null,
+      video_codec: metadata?.videoCodec ?? null,
+      audio_codec: metadata?.audioCodec ?? null,
+    },
+  };
+}
+
+/**
  * Replace an existing photo's file while preserving its DB identity.
  *
  * @param {Object} existingPhoto - The current photo DB row
@@ -164,26 +201,34 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     let width = null;
     let height = null;
     let thumbnailPath = null;
-    // Detect/name by the unique stored filename (newFilename), not the
-    // client-supplied original, so RAW derivative keys can't collide.
-    const proc = await withProcessableImage(newFileTempPath, newFilename);
-    try {
+    let videoColumns = {};
+    if (mimeType?.startsWith('video/')) {
+      // A video gets its poster frame and metadata from ffmpeg, as on ingest
+      // (photoProcessor). sharp cannot read one, and a video left with no
+      // thumbnail makes the grid fetch the whole original as its tile.
+      ({ thumbnailPath, width, height, videoColumns } = await replacementVideoPoster(newFileTempPath, newFilename));
+    } else {
+      // Detect/name by the unique stored filename (newFilename), not the
+      // client-supplied original, so RAW derivative keys can't collide.
+      const proc = await withProcessableImage(newFileTempPath, newFilename);
       try {
-        const metadata = await sharp(proc.path).metadata();
-        // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
-        ({ width, height } = require('./imageProcessor').orientedDimensions(metadata));
-      } catch (error) {
-        if (isResourceError(error)) throw error;
-        // Non-image or corrupt
+        try {
+          const metadata = await sharp(proc.path).metadata();
+          // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
+          ({ width, height } = require('./imageProcessor').orientedDimensions(metadata));
+        } catch (error) {
+          if (isResourceError(error)) throw error;
+          // Non-image or corrupt
+        }
+        try {
+          thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
+        } catch (error) {
+          if (isResourceError(error)) throw error;
+          logger.warn('Failed to generate thumbnail for replaced photo', { photoId: existingPhoto.id });
+        }
+      } finally {
+        await proc.cleanup();
       }
-      try {
-        thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
-      } catch (error) {
-        if (isResourceError(error)) throw error;
-        logger.warn('Failed to generate thumbnail for replaced photo', { photoId: existingPhoto.id });
-      }
-    } finally {
-      await proc.cleanup();
     }
 
     if (uploadReservation) object = await uploadQuota.prepareObject(uploadReservation, finalKey, stats.size);
@@ -245,6 +290,11 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       captured_at: capturedAt,
       mime_type: mimeType,
       media_type: mimeType?.startsWith('video/') ? 'video' : 'image',
+      // The new clip's length and codecs; an image keeps none.
+      duration: null,
+      video_codec: null,
+      audio_codec: null,
+      ...videoColumns,
       // The new file starts its own attempts: a worker still busy with the
       // old one loses its claim and can publish nothing.
       processing_attempt_id: null,

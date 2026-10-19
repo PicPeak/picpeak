@@ -99,6 +99,9 @@ jest.mock('multer', () => {
 jest.mock('../../../services/uploadSettings', () => ({
   getMaxFileSizeBytes: jest.fn().mockResolvedValue(50 * 1024 * 1024),
   DEFAULT_MAX_FILE_SIZE_MB: 50,
+  getMaxVideoSizeBytes: jest.fn().mockResolvedValue(500 * 1024 * 1024),
+  DEFAULT_MAX_VIDEO_SIZE_MB: 500,
+  getAllowedMimeTypes: jest.fn().mockResolvedValue(['image/jpeg', 'image/png', 'image/webp']),
 }));
 
 // This is a handler-only unit test with sequenced DB builders and fake

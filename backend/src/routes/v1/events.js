@@ -39,12 +39,14 @@ const { formatBoolean } = require('../../utils/dbCompat');
 
 const { isValidEventType } = require('../../services/eventTypeService');
 const { replacePhoto } = require('../../services/photoReplacementService');
-const { getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB } = require('../../services/uploadSettings');
+const { getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB, getMaxVideoSizeBytes, DEFAULT_MAX_VIDEO_SIZE_MB, getAllowedMimeTypes } = require('../../services/uploadSettings');
+const { isVideoMimeType } = require('../../services/videoProcessor');
+const { isVideo } = require('../../services/downloadRendition');
 const { withPublicUpload } = require('../../middleware/publicUploadStream');
 const { createUploadFileGuard } = require('../../utils/uploadAdmissionType');
 const uploadQuota = require('../../services/publicUploadQuota');
 const { getStorage } = require('../../services/storage');
-const { validateFileContent, normalizeUploadMimeType, ALLOWED_MEDIA_TYPES } = require('../../utils/fileSecurityUtils');
+const { validateFileContent, validateFileType, normalizeUploadMimeType, ALLOWED_MEDIA_TYPES } = require('../../utils/fileSecurityUtils');
 const { validateUploadedFiles } = require('../../middleware/uploadValidation');
 const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
@@ -66,11 +68,16 @@ const buildPhotoUpload = (maxFileSizeBytes, { storage, streamHandler, rejectBody
   // Only category_id and replaces_photo_id are consumed by this endpoint.
   limits: { fileSize: maxFileSizeBytes, files: 1, fields: 2, fieldSize: 1024,
     parts: 3, headerPairs: 2000, fieldArrayIndexLimit: 0 },
-  fileFilter: (_req, file, cb) => {
-    // Preserve v1's image-only contract without the UI extension allow-list.
+  fileFilter: (req, file, cb) => {
+    // Preserve v1's image contract without the UI extension allow-list.
+    // A video takes the UI's gate instead (Lightroom plugin issue 8): only a
+    // type the admin enabled in general_allowed_file_types, extension matching.
     if (/^image\//.test(file.mimetype)) cb(null, true);
+    else if (isVideoMimeType(file.mimetype) && validateFileType(file.originalname, file.mimetype, req.allowedMimeTypes)) cb(null, true);
     else {
-      const error = new Error('Only image uploads are accepted on this endpoint');
+      const error = isVideoMimeType(file.mimetype)
+        ? Object.assign(new Error('This file type is not enabled on this server'), { status: 400, code: 'UPLOAD_TYPE_REJECTED' })
+        : new Error('Only image uploads are accepted on this endpoint');
       rejectBody(error); cb(error);
     }
   },
@@ -346,7 +353,15 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requirePermissi
  * /events/{id}/photos:
  *   post:
  *     tags: [Photos]
- *     summary: Upload a single photo to an event
+ *     summary: Upload a single photo or video to an event
+ *     description: |
+ *       Any image/* type is accepted, up to the per-file photo cap
+ *       (general_max_file_size_mb). A video (mp4/m4v, webm, mov, avi) is
+ *       accepted only when its extension is enabled in the allowed file types
+ *       setting (general_allowed_file_types), up to the video cap
+ *       (general_max_video_size_mb). A video is stored right away and its
+ *       poster frame is made in the background, so its thumbnail_path is
+ *       null in the response.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -361,7 +376,13 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requirePermissi
  *             type: object
  *             required: [photo]
  *             properties:
- *               photo: { type: string, format: binary }
+ *               photo: { type: string, format: binary, description: "The image or video file." }
+ *               replaces_photo_id:
+ *                 type: integer
+ *                 description: |
+ *                   Optional. Replaces the file of this photo of the event,
+ *                   keeping its id. A video replaces only a video and an
+ *                   image only an image.
  *               category_id:
  *                 type: integer
  *                 description: |
@@ -383,7 +404,8 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requirePermissi
  *                 thumbnail_path: { type: string, nullable: true }
  *                 size_bytes: { type: integer }
  *                 category_id: { type: integer, nullable: true }
- *       400: { description: No file or invalid type }
+ *                 media_type: { type: string, enum: [image, video] }
+ *       400: { description: "No file, an invalid or disabled type, a file over its cap, or a replacement by another media type" }
  *       404: { description: Event not found, or replaces_photo_id not in this event }
  */
 router.post(
@@ -402,17 +424,25 @@ router.post(
     let maxFileSizeBytes;
     try { maxFileSizeBytes = await getMaxFileSizeBytes(); }
     catch { maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024; }
+    let maxVideoSizeBytes;
+    try { maxVideoSizeBytes = await getMaxVideoSizeBytes(); }
+    catch { maxVideoSizeBytes = DEFAULT_MAX_VIDEO_SIZE_MB * 1024 * 1024; }
+    // The type is not known when multer is built: it takes the larger cap and
+    // the file guard holds each file to its own, as the admin upload does.
+    const maxUploadBytes = Math.max(maxFileSizeBytes, maxVideoSizeBytes);
+    // Read by the file filter; falls back to the defaults itself.
+    req.allowedMimeTypes = await getAllowedMimeTypes();
     await withPublicUpload(req, res, {
-      eventId, mode: 'admin', accountId: req.admin.id, maxFiles: 1, maxFileBytes: maxFileSizeBytes, fileField: 'photo',
+      eventId, mode: 'admin', accountId: req.admin.id, maxFiles: 1, maxFileBytes: maxUploadBytes, fileField: 'photo',
       fileExtension: file => {
         const extension = path.extname(file.originalname).toLowerCase();
         return /^\.[a-z0-9]{1,10}$/i.test(extension) ? extension : '';
       },
-      fileGuard: file => createUploadFileGuard(file, maxFileSizeBytes, maxFileSizeBytes),
+      fileGuard: file => createUploadFileGuard(file, maxFileSizeBytes, maxVideoSizeBytes),
       formatError: err => ({ status: 400, body: { error: err.code === 'LIMIT_FILE_SIZE'
-        ? `File too large. Maximum size is ${Math.floor(maxFileSizeBytes / (1024 * 1024))} MB per file.`
+        ? `File too large. Maximum size is ${Math.floor(maxUploadBytes / (1024 * 1024))} MB per file.`
         : err instanceof multer.MulterError ? `Upload error: ${err.message}` : 'Only image uploads are accepted on this endpoint' } }),
-    }, options => buildPhotoUpload(maxFileSizeBytes, options),
+    }, options => buildPhotoUpload(maxUploadBytes, options),
     async (_session, reply) => handleV1PhotoUpload(req, reply));
   }
 );
@@ -445,8 +475,10 @@ async function handleV1PhotoUpload(req, res) {
     // must match the declared type, and an image must decode. The declared
     // image/* type says nothing about the file. v1 takes any image/* type
     // (TIFF, AVIF, ...); one the signature table does not know has to be an
-    // image Sharp can read instead.
+    // image Sharp can read instead. A video passed the file filter only as a
+    // type the table knows, so it gets the signature check and no decode.
     const declaredType = normalizeUploadMimeType(req.file.originalname, req.file.mimetype);
+    const videoUpload = isVideoMimeType(declaredType);
     const contentMatches = ALLOWED_MEDIA_TYPES[declaredType]
       ? await validateFileContent(tempPath, declaredType)
       : await readsAsImage(tempPath);
@@ -534,6 +566,17 @@ async function handleV1PhotoUpload(req, res) {
           error: `No photo ${replacesId} in event ${event.id}`,
         });
       }
+      // A video in a photo's place (or the reverse) changes what the row is,
+      // not just its file; the plugin sends the id of whatever it uploaded.
+      // isVideo is falsy, not false, for an image with no mime_type (a restored
+      // legacy archive), so compare booleans.
+      if (Boolean(isVideo(target)) !== videoUpload) {
+        await fs.unlink(tempPath).catch(() => {});
+        tempPath = null;
+        return res.status(400).json({
+          error: videoUpload ? 'A video can only replace a video' : 'An image can only replace an image',
+        });
+      }
 
       const result = await replacePhoto(target, tempPath, {
         originalFilename: req.file.originalname,
@@ -595,22 +638,27 @@ async function handleV1PhotoUpload(req, res) {
     // Read sharp metadata + generate thumbnail FROM the local temp file
     // before uploading the original through the storage backend. (Same
     // ordering as adminPhotos.js so sharp/ffmpeg always have a real fs path.)
+    // A video skips all of it: its row is queued like an admin upload's, and
+    // the background worker (photoProcessor.processPhoto) makes the poster
+    // and reads the metadata.
     let width = null;
     let height = null;
-    try {
-      const meta = await sharp(tempPath).metadata();
-      // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
-      ({ width, height } = require('../../services/imageProcessor').orientedDimensions(meta));
-    } catch (error) {
-      if (require('../../services/imageResourcePolicy').isResourceError(error)) throw error;
-    }
-
     let thumbRel = null;
-    try {
-      thumbRel = await generateThumbnail(tempPath);
-    } catch (err) {
-      logger.warn('v1 thumbnail generation failed', { err: err.message });
-      if (require('../../services/imageResourcePolicy').isResourceError(err)) throw err;
+    if (!videoUpload) {
+      try {
+        const meta = await sharp(tempPath).metadata();
+        // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
+        ({ width, height } = require('../../services/imageProcessor').orientedDimensions(meta));
+      } catch (error) {
+        if (require('../../services/imageResourcePolicy').isResourceError(error)) throw error;
+      }
+
+      try {
+        thumbRel = await generateThumbnail(tempPath);
+      } catch (err) {
+        logger.warn('v1 thumbnail generation failed', { err: err.message });
+        if (require('../../services/imageResourcePolicy').isResourceError(err)) throw err;
+      }
     }
 
     // Upload the original via the storage backend (local fs OR S3),
@@ -639,8 +687,9 @@ async function handleV1PhotoUpload(req, res) {
       size_bytes: stat.size,
       width,
       height,
-      media_type: 'image',
+      media_type: videoUpload ? 'video' : 'image',
       mime_type: req.file.mimetype,
+      ...(videoUpload ? { processing_status: 'pending' } : {}),
       uploaded_at: new Date().toISOString()
     };
     const id = await uploadQuota.commitObject(object, 'photo', async conn => {
@@ -653,14 +702,17 @@ async function handleV1PhotoUpload(req, res) {
     });
 
     // Webhook (#327): one event per uploaded photo so receivers get a
-    // 1:1 stream they can react to.
-    try {
-      const webhookService = require('../../services/webhookService');
-      await webhookService.fire('photo.uploaded', {
-        event: { id: event.id, slug: event.slug, event_name: event.event_name },
-        photo: { id, filename: finalName, original_filename: req.file.originalname, size_bytes: stat.size, width, height },
-      });
-    } catch (e) { /* non-fatal */ }
+    // 1:1 stream they can react to. A video's fires from the worker once it
+    // is processed, as for an admin upload.
+    if (!videoUpload) {
+      try {
+        const webhookService = require('../../services/webhookService');
+        await webhookService.fire('photo.uploaded', {
+          event: { id: event.id, slug: event.slug, event_name: event.event_name },
+          photo: { id, filename: finalName, original_filename: req.file.originalname, size_bytes: stat.size, width, height },
+        });
+      } catch (e) { /* non-fatal */ }
+    }
 
     res.status(201).json({
       id,
@@ -668,7 +720,8 @@ async function handleV1PhotoUpload(req, res) {
       path: relPath,
       thumbnail_path: thumbRel,
       size_bytes: stat.size,
-      category_id: categoryId
+      category_id: categoryId,
+      media_type: videoUpload ? 'video' : 'image'
     });
   } catch (error) {
     if (object) {
