@@ -73,6 +73,10 @@ export const TileImage: React.FC<TileImageProps> = ({
   const placeholder = useMemo(() => thumbHashToDataUrl(thumbHash), [thumbHash]);
   // The image's own corner rounding, where the tile does not clip.
   const rounding = className?.match(/(?:^|\s)(rounded(?:-[\w[\].]+)*)/)?.[1] ?? '';
+  // The layouts' "hidden from guests" dimming, which the opaque unavailable
+  // tile would otherwise cover. Only that class: other opacity on the image
+  // (a fade-in from opacity-0) is not the tile's.
+  const dimming = className?.match(/(?:^|\s)(!?opacity-40)(?=\s|$)/)?.[1] ?? '';
 
   return (
     <>
@@ -89,7 +93,7 @@ export const TileImage: React.FC<TileImageProps> = ({
             ? { 'aria-hidden': true }
             : { role: 'img', 'aria-label': t('gallery.imageUnavailable', 'Image unavailable') })}
           data-testid="tile-unavailable"
-          className={`absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2 bg-elevated text-muted-theme pointer-events-none ${rounding}`}
+          className={`absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2 bg-elevated text-muted-theme pointer-events-none ${rounding} ${dimming}`}
         >
           <ImageIcon className="w-6 h-6 opacity-60" strokeWidth={1.5} aria-hidden="true" />
           {!compactUnavailable && (

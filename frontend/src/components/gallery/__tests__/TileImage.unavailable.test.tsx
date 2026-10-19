@@ -124,4 +124,25 @@ describe('TileImage unavailable', () => {
     expect(unavailable).toHaveAttribute('aria-hidden', 'true');
     expect(unavailable).not.toHaveAttribute('role');
   });
+
+  // The client's "hidden from guests" dimming is on the image's class; the
+  // opaque tile over it would otherwise hide which failed photos are hidden.
+  it('keeps the image\'s hidden-from-guests dimming', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(status(404)));
+
+    const dimmed = render(tile({ className: 'w-full h-full object-cover opacity-40' }));
+    await flush();
+    expect(screen.getByTestId('tile-unavailable').className.split(' ')).toContain('opacity-40');
+    dimmed.unmount();
+
+    const important = render(tile({ className: 'w-full h-full object-cover !opacity-40' }));
+    await flush();
+    expect(screen.getByTestId('tile-unavailable').className.split(' ')).toContain('!opacity-40');
+    important.unmount();
+
+    // Only that class: a layout fading its image in (opacity-0) is not copied.
+    render(tile({ className: 'w-full h-full object-cover opacity-0' }));
+    await flush();
+    expect(screen.getByTestId('tile-unavailable').className).not.toMatch(/opacity-0/);
+  });
 });
