@@ -513,6 +513,10 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       cancelled = true;
       attemptsRef.current += 1;
+      // In the same render as the spent attempt: otherwise the last retry
+      // reads as given up (the previous error, no fetch yet) for one commit
+      // before the fetch effect marks it in flight.
+      setFetching(true);
       setRetryNonce((n) => n + 1);
     };
 

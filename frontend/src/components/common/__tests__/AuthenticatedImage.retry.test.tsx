@@ -613,6 +613,23 @@ describe('AuthenticatedImage retry', () => {
       expect(onUnavailable).not.toHaveBeenCalledWith(true);
     });
 
+    it('does not report unavailable as the last retry starts, only if it fails', async () => {
+      const fetchMock = vi.fn()
+        .mockImplementationOnce(status(503))
+        .mockImplementationOnce(status(503))
+        .mockImplementation(ok);
+      vi.stubGlobal('fetch', fetchMock);
+      const onUnavailable = vi.fn();
+
+      const { container } = render(<AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" maxRetries={2} onUnavailable={onUnavailable} />);
+      await flush();
+      await advance(2000); await flush();
+      await advance(4000); await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock');
+      expect(onUnavailable).not.toHaveBeenCalledWith(true);
+    });
+
     it('takes the unavailable state back when src changes', async () => {
       const fetchMock = vi.fn().mockImplementationOnce(status(404)).mockImplementation(ok);
       vi.stubGlobal('fetch', fetchMock);
