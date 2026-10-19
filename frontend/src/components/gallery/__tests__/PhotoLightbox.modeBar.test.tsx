@@ -13,7 +13,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { Photo } from '../../../types';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (k: string, d?: unknown) => (typeof d === 'string' ? d : k), i18n: { language: 'en' } }),
+  useTranslation: () => ({
+    t: (k: string, d?: unknown, o?: { count?: number }) => (typeof d === 'string' ? d.replace('{{count}}', String(o?.count ?? '{{count}}')) : k),
+    i18n: { language: 'en' },
+  }),
 }));
 vi.mock('../../../hooks/useDevToolsProtection', () => ({ useDevToolsProtection: () => undefined }));
 vi.mock('../../../hooks/useGallery', () => ({ useSavePhotoToDevice: () => ({ mutate: vi.fn(), isPending: false }) }));
@@ -192,10 +195,9 @@ describe('PhotoLightbox — Select / Annotate bar (issue 1733, E1)', () => {
     // The bar's buttons.
     expect(screen.getAllByRole('button', { name: 'Add to favorites' })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: 'Like photo' })).toHaveLength(1);
-    expect(screen.getByRole('button', { name: 'Rate 3 stars' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Rate 3 stars' })).toHaveLength(1);
     // Not the panel's copies.
     expect(screen.queryByRole('button', { name: 'Like' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Rate {{count}} stars' })).toBeNull();
     // The form points at the mode switch instead of carrying its own button.
     expect(screen.queryByRole('button', { name: 'Draw on photo' })).toBeNull();
     expect(screen.getByText('To draw on the photo, switch to Annotate.')).toBeTruthy();
@@ -286,5 +288,20 @@ describe('PhotoLightbox — Select / Annotate bar (issue 1733, E1)', () => {
     await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalledTimes(4));
     await act(async () => { stale({ feedback: [], my_feedback: {}, summary: {} }); });
     expect(await screen.findByRole('button', { name: 'Remove from favorites' })).toBeTruthy();
+  });
+
+  // The bar's stars are the lightbox's only rating control now.
+  it('says so when a rating from the bar is refused, and sends one at a time', async () => {
+    const { toast } = await import('react-toastify');
+    let refuse!: (err: unknown) => void;
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((_, reject) => { refuse = reject; }) as never);
+    open({ ...SETTINGS, allow_ratings: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'Rate 4 stars' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 2 stars' }));
+    expect(feedbackService.submitFeedback).toHaveBeenCalledTimes(1);
+
+    await act(async () => { refuse({ response: { status: 500 } }); });
+    expect(toast.error).toHaveBeenCalledWith('Failed to submit rating');
+    expect(screen.queryByRole('button', { name: 'Remove rating' })).toBeNull();
   });
 });

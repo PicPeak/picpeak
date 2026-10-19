@@ -662,7 +662,25 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     }
   };
 
+  // The bar's stars are the only rating control in the lightbox (issue 1733:
+  // the panel's PhotoRating left), so they say a refused rating out loud as
+  // it did, and send one rating at a time.
+  const showRatingError = (err: unknown) => {
+    if (!handleLimitError(err)) toast.error(t('feedback.ratingError', 'Failed to submit rating'));
+  };
+  const ratingPendingRef = useRef(false);
+
   const submitRating = async (value: number) => {
+    if (ratingPendingRef.current) return;
+    ratingPendingRef.current = true;
+    try {
+      await sendRating(value);
+    } finally {
+      ratingPendingRef.current = false;
+    }
+  };
+
+  const sendRating = async (value: number) => {
     // Guest identity mode.
     if (isGuestMode && guestIdentity) {
       try {
@@ -683,8 +701,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         } catch {}
         if (onFeedbackChange) onFeedbackChange();
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('Rating submit failed', err);
+        showRatingError(err);
       }
       return;
     }
@@ -696,12 +713,17 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       setShowIdentityModal(true);
       return;
     }
-    await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
-      feedback_type: 'rating',
-      rating: value,
-      guest_name: savedIdentity?.name,
-      guest_email: savedIdentity?.email,
-    });
+    try {
+      await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
+        feedback_type: 'rating',
+        rating: value,
+        guest_name: savedIdentity?.name,
+        guest_email: savedIdentity?.email,
+      });
+    } catch (err) {
+      showRatingError(err);
+      return;
+    }
     setMyRating(value);
     // Refresh current summary to reflect average and totals
     try {
@@ -1430,8 +1452,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                     // 0 tells the backend to delete the guest's rating.
                     onClick={() => submitRating(i === myRating ? 0 : i)}
                     className="p-1"
-                    aria-label={i === myRating ? 'Remove rating' : `Rate ${i} star${i>1?'s':''}`}
-                    title={i === myRating ? 'Remove rating' : `Rate ${i}`}
+                    aria-label={i === myRating
+                      ? t('feedback.removeRating', 'Remove rating')
+                      : t('feedback.rateStar', 'Rate {{count}} stars', { count: i })}
+                    title={i === myRating
+                      ? t('feedback.removeRating', 'Remove rating')
+                      : t('feedback.rateStar', 'Rate {{count}} stars', { count: i })}
                   >
                     <Star className={`w-5 h-5 ${myRating >= i ? 'text-rating fill-rating' : 'text-white/70'}`} />
                   </button>
@@ -1821,21 +1847,29 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           } else if (pendingAction?.type === 'rating' && typeof pendingAction.rating === 'number') {
             // Explicit number check above: a pending rating of 0 (= clear
             // my rating, #884) must still be submitted.
-            await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
-              feedback_type: 'rating',
-              rating: pendingAction.rating,
-              guest_name: name,
-              guest_email: email,
-            });
-            setMyRating(pendingAction.rating);
-            // Refresh the visible average/count — parity with the direct
-            // submit paths, and required for a clear (#884) so the old
-            // average doesn't linger until the photo is reopened.
+            let saved = true;
             try {
-              const fresh = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
-              setAvgRating(Number(fresh.summary?.average_rating) || 0);
-              setTotalRatings(Number(fresh.summary?.total_ratings) || 0);
-            } catch {}
+              await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
+                feedback_type: 'rating',
+                rating: pendingAction.rating,
+                guest_name: name,
+                guest_email: email,
+              });
+            } catch (err) {
+              saved = false;
+              showRatingError(err);
+            }
+            if (saved) {
+              setMyRating(pendingAction.rating);
+              // Refresh the visible average/count — parity with the direct
+              // submit paths, and required for a clear (#884) so the old
+              // average doesn't linger until the photo is reopened.
+              try {
+                const fresh = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
+                setAvgRating(Number(fresh.summary?.average_rating) || 0);
+                setTotalRatings(Number(fresh.summary?.total_ratings) || 0);
+              } catch {}
+            }
           } else if (pendingAction?.type === 'color_label' && pendingAction.color) {
             try {
               await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
