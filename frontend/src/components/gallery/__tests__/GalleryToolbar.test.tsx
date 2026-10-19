@@ -376,6 +376,15 @@ describe('GalleryToolbar', () => {
       expect(download).toHaveBeenCalledTimes(1);
     });
 
+    it('publishes its height for the floating pills, and withdraws it when it goes', () => {
+      const { unmount } = render(
+        <GalleryToolbar search={search} selection={selection({ isSelectionMode: true, selectedCount: 1 })} />,
+      );
+      expect(document.documentElement.style.getPropertyValue('--gallery-bottom-bar')).toMatch(/px$/);
+      unmount();
+      expect(document.documentElement.style.getPropertyValue('--gallery-bottom-bar')).toBe('');
+    });
+
     it('has no bottom bar while nothing is selected', () => {
       render(<GalleryToolbar search={search} selection={selection()} />);
       expect(screen.queryByTestId('gallery-selection-bar')).toBeNull();

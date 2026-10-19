@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 export function NewPhotosPill({ count, onClick }: { count: number; onClick: () => void }) {
   const { t } = useTranslation();
   return count > 0 ? (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40" role="status">
+    <div style={{ bottom: 'calc(1rem + var(--gallery-bottom-bar, 0px))' }} className="fixed left-1/2 -translate-x-1/2 z-40" role="status">
       <button
         type="button"
         onClick={onClick}

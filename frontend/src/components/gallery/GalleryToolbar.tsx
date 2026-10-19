@@ -107,20 +107,29 @@ function useHeight(ref: React.RefObject<HTMLElement>): number {
 }
 
 // While the phone's bottom bar is up, the page gets that much room at its
-// end, so the last row of photos and the footer can scroll clear of it.
+// end, so the last row of photos and the footer can scroll clear of it. The
+// height is also published as --gallery-bottom-bar, which the floating pills
+// (new photos, upload processing) sit above.
+const BOTTOM_BAR_VAR = '--gallery-bottom-bar';
 function useBottomBarRoom(ref: React.RefObject<HTMLElement>, active: boolean): void {
   useEffect(() => {
     const bar = ref.current;
     if (!active || !bar) return;
     const body = document.body;
+    const root = document.documentElement;
     const original = body.style.paddingBottom;
-    const update = () => { body.style.paddingBottom = `${Math.round(bar.getBoundingClientRect().height)}px`; };
+    const update = () => {
+      const height = `${Math.round(bar.getBoundingClientRect().height)}px`;
+      body.style.paddingBottom = height;
+      root.style.setProperty(BOTTOM_BAR_VAR, height);
+    };
     update();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
     observer?.observe(bar);
     return () => {
       observer?.disconnect();
       body.style.paddingBottom = original;
+      root.style.removeProperty(BOTTOM_BAR_VAR);
     };
   }, [ref, active]);
 }
