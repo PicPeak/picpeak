@@ -180,6 +180,14 @@ describe('PhotoCard tier sizing', () => {
     act(() => setGridDensity('default'));
   });
 
+  it('takes the target width when a card first loads during a width transition', () => {
+    // A lazy Masonry rows card that enters the load band mid-transition after
+    // a tile-size change: the element still measures the old width.
+    stubTileWidth(96);
+    renderCard({ style: { width: 390, height: 100 } });
+    expect(screen.getByTestId('tile')).toHaveAttribute('src', '/api/gallery/x/thumbnail/7?w=900');
+  });
+
   it('leaves videos on the canonical thumbnail', () => {
     // A video's thumbnail is a poster frame, so the tier route would hand the
     // video file itself to Sharp.

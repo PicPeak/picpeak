@@ -272,21 +272,23 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     if (releases) keepBandRef(node);
   }, [loadBandRef, keepBandRef, lazy, releases]);
 
+  // A layout that hands the card its px width (Masonry rows, Flickr) also
+  // animates it (transition-all), so that target is read rather than where a
+  // running transition happens to be — after the viewer's tile-size change
+  // (issue 1733, E4), say, while the card comes into the load band.
+  const targetWidth = typeof style?.width === 'number' ? style.width : null;
   useLayoutEffect(() => {
     if (!inView || tile) return;
     // 0 means not laid out (a hidden tab, say), not a 0px tile — null falls
     // back to the viewport estimate rather than pinning the smallest tier.
-    setTile({ width: containerRef.current?.offsetWidth || null });
-  }, [inView, tile]);
+    setTile({ width: targetWidth || containerRef.current?.offsetWidth || null });
+  }, [inView, tile, targetWidth]);
 
   // The viewer's tile size (issue 1733, E4) resizes mounted tiles in place.
   // A tile that grew is measured again so it moves up a tier; one that shrank
   // keeps the larger file it already has rather than fetching a smaller one.
-  // A layout that hands the card its px width (Masonry rows, Flickr) also
-  // animates it, so that target is read rather than the transition's start.
   const density = useGridDensity();
   const measuredDensity = useRef(density);
-  const targetWidth = typeof style?.width === 'number' ? style.width : null;
   useLayoutEffect(() => {
     if (measuredDensity.current === density) return;
     measuredDensity.current = density;
