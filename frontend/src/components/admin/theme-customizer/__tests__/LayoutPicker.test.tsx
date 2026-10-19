@@ -145,8 +145,10 @@ describe('GalleryLayoutCard — layout pickers', () => {
     renderCard({ galleryLayout: 'masonry', gallerySettings: { masonryMode: 'justified' } });
     group = screen.getByRole('radiogroup', { name: 'Layout Mode' });
     expect(within(group).getByRole('radio', { name: 'Rows' }).getAttribute('aria-checked')).toBe('true');
-    // Row height still applies to it.
+    // The Rows settings apply to it, as they do to a stored rows.
     expect(screen.getByText('Target Row Height')).toBeTruthy();
+    expect(screen.getByText('Last Row Alignment')).toBeTruthy();
+    expect(screen.queryByText('Thumbnail Scale')).toBeNull();
   });
 
   it('does not show the masonry modes for another layout', () => {

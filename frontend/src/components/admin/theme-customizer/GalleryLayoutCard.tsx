@@ -32,7 +32,8 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
   const layoutHeadingId = useId();
   const masonryModeLabelId = useId();
   // A stored 'justified' renders as rows (MasonryGalleryLayout), so the
-  // picker shows it as Rows; the stored value stays until the admin picks.
+  // picker and the settings below treat it as Rows; the stored value stays
+  // until the admin picks.
   const storedMasonryMode = localTheme.gallerySettings?.masonryMode || 'columns';
   const masonryMode: MasonryPickerMode = storedMasonryMode === 'justified' ? 'rows' : storedMasonryMode;
 
@@ -256,7 +257,7 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
               </div>
 
               {/* Thumbnail scale - only for columns mode */}
-              {(!localTheme.gallerySettings?.masonryMode || localTheme.gallerySettings?.masonryMode === 'columns') && (
+              {masonryMode === 'columns' && (
                 <div>
                   <label className="block text-sm font-medium text-body mb-2">
                     {t('branding.thumbnailScale', 'Thumbnail Scale')}
@@ -279,7 +280,7 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
               )}
 
               {/* Row-specific settings - show for all row-based modes */}
-              {['rows', 'flickr', 'justified'].includes(localTheme.gallerySettings?.masonryMode || '') && (
+              {(masonryMode === 'rows' || masonryMode === 'flickr') && (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-body mb-2">
@@ -296,23 +297,21 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
                       {t('branding.targetRowHeightHint', 'Height in pixels (150-400). Photos will scale to fit rows.')}
                     </p>
                   </div>
-                  {/* Last row behavior - only for rows and flickr modes */}
-                  {['rows', 'flickr'].includes(localTheme.gallerySettings?.masonryMode || '') && (
-                    <div>
-                      <label className="block text-sm font-medium text-body mb-2">
-                        {t('branding.lastRowBehavior', 'Last Row Alignment')}
-                      </label>
-                      <select
-                        value={localTheme.gallerySettings?.masonryLastRowBehavior || 'left'}
-                        onChange={(e) => updateGallerySettings('masonryLastRowBehavior', e.target.value)}
-                        className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
-                      >
-                        <option value="left">{t('branding.lastRowOptions.left', 'Left aligned')}</option>
-                        <option value="center">{t('branding.lastRowOptions.center', 'Centered')}</option>
-                        <option value="justify">{t('branding.lastRowOptions.justify', 'Justified (stretch)')}</option>
-                      </select>
-                    </div>
-                  )}
+                  {/* Last row behavior */}
+                  <div>
+                    <label className="block text-sm font-medium text-body mb-2">
+                      {t('branding.lastRowBehavior', 'Last Row Alignment')}
+                    </label>
+                    <select
+                      value={localTheme.gallerySettings?.masonryLastRowBehavior || 'left'}
+                      onChange={(e) => updateGallerySettings('masonryLastRowBehavior', e.target.value)}
+                      className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
+                    >
+                      <option value="left">{t('branding.lastRowOptions.left', 'Left aligned')}</option>
+                      <option value="center">{t('branding.lastRowOptions.center', 'Centered')}</option>
+                      <option value="justify">{t('branding.lastRowOptions.justify', 'Justified (stretch)')}</option>
+                    </select>
+                  </div>
                 </>
               )}
             </>
