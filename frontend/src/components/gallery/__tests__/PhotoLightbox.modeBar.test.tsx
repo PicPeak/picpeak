@@ -208,4 +208,17 @@ describe('PhotoLightbox — Select / Annotate bar (issue 1733, E1)', () => {
     await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalledWith('g', '1', expect.objectContaining({ feedback_type: 'favorite' })));
     expect(await screen.findByRole('button', { name: 'Remove from favorites' })).toBeTruthy();
   });
+
+  it('keeps a favourite made before the photo\'s feedback loaded', async () => {
+    let answer!: (value: unknown) => void;
+    vi.mocked(feedbackService.getPhotoFeedback).mockImplementation(() => new Promise((resolve) => { answer = resolve; }) as never);
+    vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true } as never);
+    open({ ...SETTINGS, allow_favorites: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to favorites' }));
+    await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalled());
+
+    // The load that was out before the click says: not a favourite.
+    await act(async () => { answer({ feedback: [], my_feedback: { favorited: false }, summary: { favorite_count: 0 } }); });
+    expect(screen.getByRole('button', { name: 'Remove from favorites' })).toBeTruthy();
+  });
 });

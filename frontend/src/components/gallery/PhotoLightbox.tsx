@@ -182,6 +182,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const [myLiked, setMyLiked] = useState<boolean>(false);
   const [myFavorited, setMyFavorited] = useState<boolean>(false);
   const [favoriteCount, setFavoriteCount] = useState<number>(0);
+  // Bumped by every favourite toggle in the bar: a feedback load that was
+  // already out then carries the state from before it, and leaves the
+  // favourite alone.
+  const favoriteToggleSeqRef = useRef(0);
   const [myRating, setMyRating] = useState<number>(0);
   const [myColorLabel, setMyColorLabel] = useState<ColorLabel | null>(null);
   const [colorLabelCounts, setColorLabelCounts] = useState<Partial<Record<ColorLabel, number>>>({});
@@ -551,11 +555,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       try {
         // Not for the photos a scrub passes over, only the one it lands on.
         if (scrubbing || !feedbackSettings?.feedback_enabled || !currentPhoto) return;
+        const favoriteSeq = favoriteToggleSeqRef.current;
         const data = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
         if (!mounted) return;
         setMyLiked(!!data.my_feedback.liked);
-        setMyFavorited(!!data.my_feedback.favorited);
-        setFavoriteCount(Number(data.summary?.favorite_count) || 0);
+        if (favoriteSeq === favoriteToggleSeqRef.current) {
+          setMyFavorited(!!data.my_feedback.favorited);
+          setFavoriteCount(Number(data.summary?.favorite_count) || 0);
+        }
         setMyRating(data.my_feedback.rating || 0);
         setMyColorLabel((data.my_feedback.color_label as ColorLabel) || null);
         setColorLabelCounts(data.color_labels || {});
@@ -1385,6 +1392,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   isEnabled
                   requireNameEmail={!!feedbackSettings?.require_name_email}
                   onFavoriteChange={(favorited) => {
+                    favoriteToggleSeqRef.current += 1;
                     setMyFavorited(favorited);
                     setFavoriteCount((c) => Math.max(0, c + (favorited ? 1 : -1)));
                   }}
