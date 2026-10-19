@@ -964,6 +964,16 @@ module.exports = (router) => {
 
       const customerColumnsAvailable = await hasCustomerContactColumns();
       const calendarColumnsExist = await hasColumnCached('events', 'is_full_day');
+      // The Live Slideshow style is gallery configuration too (issue 2189).
+      // Its columns come from four migrations (138/139/158/163), so copy the
+      // ones this schema has. The share token stays behind: a copy gets its
+      // own link. show_category_id is mapped after the categories are cloned.
+      const eventColumns = await columnNamesCached('events');
+      const slideshowStyle = Object.fromEntries(
+        ['show_interval_ms', 'show_transition', 'show_transition_ms', 'show_watermark', 'show_qr', 'show_colorfilter', 'show_order']
+          .filter((column) => eventColumns.has(column))
+          .map((column) => [column, source[column]])
+      );
 
       // Build the insert row. Copy behaviour + branding fields from source;
       // leave per-gallery secrets / state / photos blank.
@@ -1055,6 +1065,7 @@ module.exports = (router) => {
         // carry over — admin re-decides per gallery.
         client_access_enabled: formatBoolean(false),
         og_image_share_enabled: formatBoolean(false),
+        ...slideshowStyle,
       }).returning('id');
 
       const newEventId = insertResult[0]?.id || insertResult[0];
@@ -1093,6 +1104,7 @@ module.exports = (router) => {
       // Copy per-event photo categories (global categories are not duplicated —
       // they apply to every event already). Mapping by name; photo_categories
       // has no foreign key into photos here so we just clone the rows.
+      const newIdByOld = new Map();
       if (await db.schema.hasTable('photo_categories')) {
         const sourceCategories = await db('photo_categories')
           .where({ event_id: id })
@@ -1100,7 +1112,6 @@ module.exports = (router) => {
           .select('id', 'name', 'slug', 'is_global', 'is_folder', 'parent_id', 'source_path');
         // Parents before children so each clone can point at its parent's
         // clone (issue 1786: nested folders keep their tree).
-        const newIdByOld = new Map();
         const pending = [...sourceCategories];
         while (pending.length > 0) {
           const index = pending.findIndex((c) => !c.parent_id || newIdByOld.has(Number(c.parent_id))
@@ -1119,6 +1130,23 @@ module.exports = (router) => {
             source_path: c.source_path || null,
           }).returning('id');
           newIdByOld.set(Number(c.id), Number(inserted[0]?.id ?? inserted[0]));
+        }
+      }
+
+      // The slideshow category filter follows the clone of its category; a
+      // global category applies to the copy as it is. Anything else would
+      // point the copy at the source gallery's category, so it shows all.
+      if (eventColumns.has('show_category_id') && source.show_category_id) {
+        const sourceCategoryId = Number(source.show_category_id);
+        let showCategoryId = newIdByOld.get(sourceCategoryId) ?? null;
+        if (showCategoryId === null) {
+          const globalCategory = await db('photo_categories')
+            .where({ id: sourceCategoryId, is_global: formatBoolean(true) })
+            .first('id');
+          if (globalCategory) showCategoryId = sourceCategoryId;
+        }
+        if (showCategoryId !== null) {
+          await db('events').where({ id: newEventId }).update({ show_category_id: showCategoryId });
         }
       }
 
