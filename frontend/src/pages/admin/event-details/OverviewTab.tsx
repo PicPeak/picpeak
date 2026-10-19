@@ -142,6 +142,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             Gated behind the `slideshow` feature flag. */}
         {flags.slideshow && (
         <SlideshowSettingsCard
+          // One form per gallery: moving to another event (a cached one keeps
+          // this tree mounted) must not carry unsaved edits into it.
+          key={event.id}
           eventId={event.id}
           slug={event.slug}
           isArchived={event.is_archived}
@@ -153,6 +156,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             show_watermark: event.show_watermark,
             show_qr: event.show_qr,
             show_colorfilter: event.show_colorfilter,
+            show_order: event.show_order,
+            show_category_id: event.show_category_id,
           }}
           onChanged={() => refetchEvent()}
         />

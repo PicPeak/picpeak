@@ -15,7 +15,7 @@
  * PATCH /api/admin/events/:id/slideshow; link actions through
  * POST .../slideshow/{generate,disable}.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
@@ -70,6 +70,23 @@ export const SlideshowSettingsCard: React.FC<SlideshowSettingsCardProps> = ({
 
   const [token, setToken] = useState<string | null>(initial.show_share_token ?? null);
   const [style, setStyle] = useState<SlideshowStyle>(() => styleFromInitial(initial));
+  // The style as the server last sent it. A refetch (another admin, another
+  // tab) replaces the form only while it holds no unsaved edits; otherwise
+  // the next save would write the stale values back over theirs.
+  const [serverStyle, setServerStyle] = useState<SlideshowStyle>(() => styleFromInitial(initial));
+  const incomingStyle = styleFromInitial(initial);
+  const incomingKey = JSON.stringify(incomingStyle);
+  useEffect(() => {
+    if (incomingKey === JSON.stringify(serverStyle)) return;
+    setStyle((current) => (JSON.stringify(current) === JSON.stringify(serverStyle) ? incomingStyle : current));
+    setServerStyle(incomingStyle);
+    // incomingStyle is rebuilt every render; its key is the dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingKey]);
+  // The link is an action, not a draft: it always follows the server.
+  useEffect(() => {
+    setToken(initial.show_share_token ?? null);
+  }, [initial.show_share_token]);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
