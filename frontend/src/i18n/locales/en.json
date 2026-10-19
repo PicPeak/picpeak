@@ -1509,6 +1509,19 @@
     "favoriteSelectedError": "Some favourites could not be saved",
     "chooseResolution": "Choose a download size",
     "resolutionUpTo": "up to {{width}} × {{height}} px",
+    "downloadMenu": {
+      "original": "Original",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "{{size}} in total",
+      "watermarked": "Every size carries the photographer's watermark, the original too.",
+      "noOriginal": "The original files are not offered in this gallery. The largest size is up to {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Full quality, as the photographer delivered it — best for printing.",
+        "print": "High resolution — for prints and large screens.",
+        "screen": "Web size — for screens, sharing and social media.",
+        "small": "Smallest file — quick to send in messages."
+      }
+    },
     "prepareDownload": "Prepare download",
     "preparingDownload": "Preparing your download…",
     "preparingHint": "Resizing photos — this can take a moment for large galleries.",

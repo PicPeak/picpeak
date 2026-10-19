@@ -205,25 +205,31 @@ export const galleryService = {
   //
   // `onProgress` (issue 2043) is called as the bytes of a fetched photo
   // arrive, so the caller can tell a slow download from a hung one.
-  async savePhotoToDevice(slug: string, photoId: number, filename: string, onProgress?: () => void): Promise<void> {
-    return withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename, onProgress));
+  //
+  // `resolution` is a size the guest picked from the download menu (issue
+  // 1733, E2); omitted, the server hands out the gallery's standard size.
+  async savePhotoToDevice(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string): Promise<void> {
+    return withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename, onProgress, resolution));
   },
 
-  async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string, onProgress?: () => void): Promise<void> {
+  async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string): Promise<void> {
     if (!isIOS() && !isGalleryLimited(slug)) {
       this.triggerDirectDownload(
-        withAdminPreview(api.getUri({ url: `/gallery/${slug}/download/${photoId}` })),
+        withAdminPreview(api.getUri({
+          url: `/gallery/${slug}/download/${photoId}`,
+          ...(resolution ? { params: { resolution } } : {}),
+        })),
         filename,
       );
       return;
     }
     if (!isIOS()) {
-      const direct = await this.fetchPhotoBlob(slug, photoId, onProgress);
+      const direct = await this.fetchPhotoBlob(slug, photoId, onProgress, resolution);
       this.triggerBrowserDownload(direct.blob, direct.serverFilename || filename);
       return;
     }
 
-    const fetched = await this.fetchPhotoBlob(slug, photoId, onProgress);
+    const fetched = await this.fetchPhotoBlob(slug, photoId, onProgress, resolution);
     const resolvedFilename = fetched.serverFilename || filename;
 
     // canShare() returns false on browsers without Web Share file
@@ -264,6 +270,7 @@ export const galleryService = {
     slug: string,
     photoId: number,
     onProgress?: () => void,
+    resolution?: string,
   ): Promise<{ blob: Blob; serverFilename: string | null }> {
     const progress = onProgress ? { onDownloadProgress: () => onProgress() } : {};
     const readResponse = (response: AxiosResponse<Blob>) => {
@@ -278,6 +285,7 @@ export const galleryService = {
     try {
       const response = await api.get<Blob>(`/gallery/${slug}/download/${photoId}`, {
         responseType: 'blob',
+        ...(resolution ? { params: { resolution } } : {}),
         ...progress,
       });
       return readResponse(response);
@@ -325,9 +333,9 @@ export const galleryService = {
   // Download single photo — kept as the canonical name for the existing
   // grid + lightbox-action callers that haven't been migrated to the
   // share-aware savePhotoToDevice path yet.
-  async downloadPhoto(slug: string, photoId: number, filename: string, onProgress?: () => void): Promise<void> {
+  async downloadPhoto(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string): Promise<void> {
     return withDownloadLimit(slug, async () => {
-      const fetched = await this.fetchPhotoBlob(slug, photoId, onProgress);
+      const fetched = await this.fetchPhotoBlob(slug, photoId, onProgress, resolution);
       this.triggerBrowserDownload(fetched.blob, fetched.serverFilename || filename);
     });
   },

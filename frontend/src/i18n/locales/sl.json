@@ -1364,6 +1364,19 @@
     "downloadSelected_other": "Prenesi {{count}} fotografij",
     "chooseResolution": "Izberite velikost prenosa",
     "resolutionUpTo": "do {{width}} × {{height}} px",
+    "downloadMenu": {
+      "original": "Izvirnik",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "skupaj {{size}}",
+      "watermarked": "Vse velikosti nosijo fotografov vodni žig, tudi izvirnik.",
+      "noOriginal": "Izvirne datoteke v tej galeriji niso na voljo. Največja velikost je do {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Polna kakovost, kot jo je predal fotograf — najboljše za tisk.",
+        "print": "Visoka ločljivost — za tisk in velike zaslone.",
+        "screen": "Spletna velikost — za zaslone, deljenje in družbena omrežja.",
+        "small": "Najmanjša datoteka — hitro pošiljanje v sporočilih."
+      }
+    },
     "prepareDownload": "Pripravi prenos",
     "preparingDownload": "Priprava prenosa…",
     "preparingHint": "Spreminjanje velikosti fotografij — pri velikih galerijah lahko traja nekaj časa.",

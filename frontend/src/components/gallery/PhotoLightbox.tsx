@@ -20,6 +20,7 @@ import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { VideoPlayer } from './VideoPlayer';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
+import { useDownloadChoice } from '../../contexts/DownloadChoiceContext';
 import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableMessage } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 import { lockBodyScroll } from '../../utils/scrollLock';
@@ -314,6 +315,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // Download limit (issue 1560): the button stays, disabled with the reason,
   // once nothing is left — except for photos already downloaded, which are free.
   const downloadQuota = useDownloadQuota();
+  const downloadChoice = useDownloadChoice();
   const withinDownloadLimit = !currentPhoto || downloadQuota.canDownload(currentPhoto);
   // Issue 2043: shown while the photo on screen is being prepared.
   const downloadPending = usePhotoDownloadPending(currentPhoto?.id);
@@ -772,11 +774,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       showDownloadLimitReached({ remaining: 0 });
       return;
     }
-    downloadPhotoMutation.mutate({
+    // The download menu (issue 1733, E2): a size first, where there is a choice.
+    const photo = currentPhoto;
+    downloadChoice.choose(photo, (resolution) => downloadPhotoMutation.mutate({
       slug,
-      photoId: currentPhoto.id,
-      filename: currentPhoto.filename,
-    });
+      photoId: photo.id,
+      filename: photo.filename,
+      resolution,
+    }));
   };
   downloadRef.current = handleDownload;
 

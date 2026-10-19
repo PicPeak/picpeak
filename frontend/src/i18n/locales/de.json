@@ -2100,6 +2100,19 @@
     "photosCount_other": "{{count}} Fotos",
     "chooseResolution": "Downloadgröße wählen",
     "resolutionUpTo": "bis zu {{width}} × {{height}} px",
+    "downloadMenu": {
+      "original": "Original",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "{{size}} insgesamt",
+      "watermarked": "Jede Größe trägt das Wasserzeichen des Fotografen, auch das Original.",
+      "noOriginal": "Die Originaldateien werden in dieser Galerie nicht angeboten. Die größte Größe reicht bis {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Volle Qualität, so wie vom Fotografen geliefert – am besten für Abzüge.",
+        "print": "Hohe Auflösung – für Abzüge und große Bildschirme.",
+        "screen": "Webgröße – für Bildschirme, zum Teilen und für soziale Medien.",
+        "small": "Kleinste Datei – schnell per Messenger verschickt."
+      }
+    },
     "prepareDownload": "Download vorbereiten",
     "preparingDownload": "Download wird vorbereitet…",
     "preparingHint": "Fotos werden verkleinert — bei großen Galerien kann das einen Moment dauern.",

@@ -572,6 +572,19 @@
       "like": "Leuk",
       "unlike": "Niet meer leuk",
       "selectPhoto": "{{name}} selecteren"
+    },
+    "downloadMenu": {
+      "original": "Origineel",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "{{size}} in totaal",
+      "watermarked": "Elk formaat draagt het watermerk van de fotograaf, ook het origineel.",
+      "noOriginal": "De originele bestanden worden in deze galerij niet aangeboden. Het grootste formaat is tot {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Volledige kwaliteit, zoals de fotograaf het heeft geleverd — het best voor afdrukken.",
+        "print": "Hoge resolutie — voor afdrukken en grote schermen.",
+        "screen": "Webformaat — voor schermen, delen en sociale media.",
+        "small": "Kleinste bestand — snel te versturen in berichten."
+      }
     }
   },
   "categories": {

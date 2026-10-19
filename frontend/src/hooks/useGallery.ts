@@ -51,7 +51,8 @@ export const useGalleryStats = (slug: string, enabled: boolean = true) => {
   });
 };
 
-type PhotoDownload = { slug: string; photoId: number; filename: string };
+// `resolution`: a size picked from the download menu (issue 1733, E2).
+type PhotoDownload = { slug: string; photoId: number; filename: string; resolution?: string };
 
 // Issue 2043: one download per photo at a time. `mutate` marks the photo
 // busy before the request starts (so a second tap in the same moment is
@@ -78,7 +79,7 @@ const useSinglePhotoDownload = (
 
 export const useDownloadPhoto = () => {
   return useSinglePhotoDownload(
-    ({ slug, photoId, filename }, onProgress) => galleryService.downloadPhoto(slug, photoId, filename, onProgress),
+    ({ slug, photoId, filename, resolution }, onProgress) => galleryService.downloadPhoto(slug, photoId, filename, onProgress, resolution),
     {
       onSuccess: () => {
         toast.success('Photo downloaded successfully');
@@ -106,7 +107,7 @@ export const useDownloadPhoto = () => {
 // is its own affordance.
 export const useSavePhotoToDevice = () => {
   return useSinglePhotoDownload(
-    ({ slug, photoId, filename }, onProgress) => galleryService.savePhotoToDevice(slug, photoId, filename, onProgress),
+    ({ slug, photoId, filename, resolution }, onProgress) => galleryService.savePhotoToDevice(slug, photoId, filename, onProgress, resolution),
     {
       onError: (error) => {
         if (isDownloadLimitError(error)) return;

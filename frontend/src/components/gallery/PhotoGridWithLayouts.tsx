@@ -15,6 +15,7 @@ import { analyticsService } from '../../services/analytics.service';
 import { hasVideoItems, selectLabel } from '../../utils/mediaCounts';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
+import { useDownloadChoice } from '../../contexts/DownloadChoiceContext';
 import { isDownloadLimitError, isSelectionTooLargeError, showDownloadLimitReached, type QuotaPhoto } from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import { BulkRating } from './BulkRating';
@@ -312,6 +313,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
 
   // Download limit (issue 1560).
   const downloadQuota = useDownloadQuota();
+  const downloadChoice = useDownloadChoice();
   // Priced by id, not by what is on screen: the selection can hold photos a
   // search hides, and the download sends them all. Without the container's
   // lookup, an id this list lacks counts as a new download.
@@ -335,14 +337,19 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
       showDownloadLimitReached({ remaining: 0 });
       return;
     }
-    
-    // Track individual photo download
-    analyticsService.trackDownload(photo.id, slug, false);
-    
-    downloadPhotoMutation.mutate({
-      slug,
-      photoId: photo.id,
-      filename: photo.filename,
+
+    // The download menu (issue 1733, E2) asks for a size first where the
+    // gallery offers one.
+    downloadChoice.choose(photo, (resolution) => {
+      // Track individual photo download
+      analyticsService.trackDownload(photo.id, slug, false);
+
+      downloadPhotoMutation.mutate({
+        slug,
+        photoId: photo.id,
+        filename: photo.filename,
+        resolution,
+      });
     });
   };
 

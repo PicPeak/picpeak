@@ -52,6 +52,7 @@ import {
   type LightboxPhotoChangeReason,
 } from './photoLink';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
+import { PhotoDownloadChoiceProvider } from './PhotoDownloadChoiceProvider';
 import { clearDownloadJobParam, readDownloadJobParam } from './downloadJobLink';
 import { CopyFilenamesDialog } from './CopyFilenamesDialog';
 import { ExpirationBanner } from './ExpirationBanner';
@@ -1076,6 +1077,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const downloadChoices = data?.event?.download_resolution?.picker_enabled
     ? (data.event.download_resolution.choices || [])
     : [];
+  // The single-photo download menu (issue 1733, E2) and what every size
+  // menu says about the watermark.
+  const downloadChoiceProps = {
+    slug,
+    choices: downloadChoices,
+    watermarked: data?.event?.download_resolution?.watermarked === true,
+  };
 
   // Download limit (issue 1560). Checked before any request so the guest sees
   // why at once; the server enforces it regardless.
@@ -1452,6 +1460,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // (the photo endpoints refuse plain guests); this is the friendly face.
   if (hiddenUntilReveal) {
     return (
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryLayout
         event={{
           ...event,
@@ -1530,6 +1539,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
+      </PhotoDownloadChoiceProvider>
     );
   }
 
@@ -1640,6 +1650,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // in guest identity mode was never asked for a name and got a 401.
       <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <DownloadQuotaProvider slug={slug} event={data?.event}>
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryTileBadgesProvider value={tileBadges}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
         <GuestRecoveryModal />
@@ -1858,6 +1869,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryTileBadgesProvider>
+      </PhotoDownloadChoiceProvider>
       </DownloadQuotaProvider>
       </GuestIdentityProvider>
     );
@@ -1866,6 +1878,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   return (
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
     <DownloadQuotaProvider slug={slug} event={data?.event}>
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryTileBadgesProvider value={tileBadges}>
       <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
       <GuestRecoveryModal />
@@ -2374,6 +2387,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
       </GalleryLayout>
       </GalleryTileBadgesProvider>
+      </PhotoDownloadChoiceProvider>
     </DownloadQuotaProvider>
     </GuestIdentityProvider>
   );

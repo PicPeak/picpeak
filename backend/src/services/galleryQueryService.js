@@ -607,6 +607,12 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         standard: downloadPolicy.standard,
         picker_enabled: downloadPolicy.pickerEnabled && !downloadPreviewOnly,
         choices: downloadPolicy.pickerEnabled && !downloadPreviewOnly ? downloadPolicy.choices : [],
+        // Whether downloads carry a watermark, by the rule the download
+        // routes apply (resolveWatermarkSettings): the global branding
+        // watermark or this gallery's own flag. `watermark_downloads` below
+        // is the flag alone, so the download menu (issue 1733, E2) reads
+        // this to say what the guest actually gets.
+        watermarked: !!watermarkSettings?.enabled || parseBooleanInput(event.watermark_downloads, false),
       },
       // Reveal mode (#838): armed flag lets an open VISIBLE gallery keep
       // polling so a re-hide propagates without a manual reload.

@@ -554,6 +554,19 @@
       "like": "Me gusta",
       "unlike": "Quitar me gusta",
       "selectPhoto": "Seleccionar {{name}}"
+    },
+    "downloadMenu": {
+      "original": "Original",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "{{size}} en total",
+      "watermarked": "Todos los tamaños llevan la marca de agua del fotógrafo, también el original.",
+      "noOriginal": "Esta galería no ofrece los archivos originales. El tamaño más grande es de hasta {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Calidad completa, tal como la entregó el fotógrafo: ideal para imprimir.",
+        "print": "Alta resolución: para impresiones y pantallas grandes.",
+        "screen": "Tamaño web: para pantallas, compartir y redes sociales.",
+        "small": "Archivo más pequeño: rápido de enviar por mensaje."
+      }
     }
   },
   "categories": {

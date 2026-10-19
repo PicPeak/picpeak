@@ -37,6 +37,7 @@ import { galleryService, splitIntoArchives } from '../../../services/gallery.ser
 import { analyticsService } from '../../../services/analytics.service';
 import { useDownloadPhoto } from '../../../hooks/useGallery';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
+import { useDownloadChoice } from '../../../contexts/DownloadChoiceContext';
 import { DownloadQuotaNotice } from '../DownloadQuotaNotice';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/downloadLimit';
 import { toast } from 'react-toastify';
@@ -594,6 +595,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
 
   // Download limit (issue 1560).
   const downloadQuota = useDownloadQuota();
+  const downloadChoice = useDownloadChoice();
   // The whole selection, photos a search hides included: they are sent too.
   const selectedPhotoList = useMemo(
     () => selectionQuotaPhotos ?? photos.filter((photo) => selectedPhotos.has(photo.id)),
@@ -685,14 +687,18 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       return;
     }
     if (photo) {
-      analyticsService.trackDownload(photo.id, slug, false);
-      downloadPhotoMutation.mutate({
-        slug,
-        photoId: photo.id,
-        filename: photo.filename,
+      // The download menu (issue 1733, E2): a size first, where there is a choice.
+      downloadChoice.choose(photo, (resolution) => {
+        analyticsService.trackDownload(photo.id, slug, false);
+        downloadPhotoMutation.mutate({
+          slug,
+          photoId: photo.id,
+          filename: photo.filename,
+          resolution,
+        });
       });
     }
-  }, [allowDownloads, filteredPhotos, slug, downloadPhotoMutation, downloadQuota]);
+  }, [allowDownloads, filteredPhotos, slug, downloadPhotoMutation, downloadQuota, downloadChoice]);
 
   // Long form on purpose (the hero's look), in the gallery's language rather
   // than always US English. parseISO: a bare yyyy-MM-dd read by `new Date`

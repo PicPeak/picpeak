@@ -446,6 +446,19 @@
     "downloadSelected_other": "Baixar {{count}} fotos",
     "chooseResolution": "Escolha o tamanho do download",
     "resolutionUpTo": "até {{width}} × {{height}} px",
+    "downloadMenu": {
+      "original": "Original",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "{{size}} no total",
+      "watermarked": "Todos os tamanhos têm a marca de água do fotógrafo, incluindo o original.",
+      "noOriginal": "Esta galeria não disponibiliza os ficheiros originais. O maior tamanho vai até {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Qualidade máxima, tal como o fotógrafo a entregou — ideal para imprimir.",
+        "print": "Alta resolução — para impressões e ecrãs grandes.",
+        "screen": "Tamanho web — para ecrãs, partilhar e redes sociais.",
+        "small": "Ficheiro mais pequeno — rápido de enviar por mensagem."
+      }
+    },
     "prepareDownload": "Preparar download",
     "preparingDownload": "Preparando seu download…",
     "preparingHint": "Redimensionando as fotos — em galerias grandes, isso pode levar alguns instantes.",

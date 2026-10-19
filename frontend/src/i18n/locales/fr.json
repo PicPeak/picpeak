@@ -582,6 +582,19 @@
       "like": "J’aime",
       "unlike": "Retirer le j’aime",
       "selectPhoto": "Sélectionner {{name}}"
+    },
+    "downloadMenu": {
+      "original": "Original",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "{{size}} au total",
+      "watermarked": "Toutes les tailles portent le filigrane du photographe, l'original aussi.",
+      "noOriginal": "Les fichiers originaux ne sont pas proposés dans cette galerie. La plus grande taille va jusqu'à {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Qualité maximale, tel que livré par le photographe — idéal pour l'impression.",
+        "print": "Haute résolution — pour les tirages et les grands écrans.",
+        "screen": "Taille web — pour les écrans, le partage et les réseaux sociaux.",
+        "small": "Fichier le plus léger — rapide à envoyer par message."
+      }
     }
   },
   "categories": {
