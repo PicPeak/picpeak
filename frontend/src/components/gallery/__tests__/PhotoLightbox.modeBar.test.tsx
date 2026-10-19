@@ -40,7 +40,10 @@ vi.mock('../../common', () => ({
   ),
 }));
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
-vi.mock('../FeedbackIdentityModal', () => ({ FeedbackIdentityModal: () => null }));
+vi.mock('../FeedbackIdentityModal', () => ({
+  FeedbackIdentityModal: ({ isOpen, onSubmit }: { isOpen: boolean; onSubmit: (name: string, email: string) => void }) =>
+    isOpen ? <button type="button" onClick={() => onSubmit('Ann', 'ann@example.test')}>Send identity</button> : null,
+}));
 
 import { PhotoLightbox } from '../PhotoLightbox';
 
@@ -314,5 +317,17 @@ describe('PhotoLightbox — Select / Annotate bar (issue 1733, E1)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Rate 3 stars' }));
     expect(feedbackService.submitFeedback).toHaveBeenCalledTimes(2);
     expect(feedbackService.submitFeedback).toHaveBeenLastCalledWith('g', '2', expect.objectContaining({ rating: 3 }));
+  });
+
+  it('holds a second star while the rating sent from the name/email dialog is out', async () => {
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise(() => {}) as never);
+    open({ ...SETTINGS, allow_ratings: true, require_name_email: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'Rate 4 stars' }));
+    const send = await screen.findByRole('button', { name: 'Send identity' });
+    await act(async () => { fireEvent.click(send); });
+    expect(feedbackService.submitFeedback).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 2 stars' }));
+    expect(feedbackService.submitFeedback).toHaveBeenCalledTimes(1);
   });
 });

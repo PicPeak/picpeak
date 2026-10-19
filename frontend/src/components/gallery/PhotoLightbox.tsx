@@ -1849,9 +1849,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           } else if (pendingAction?.type === 'rating' && typeof pendingAction.rating === 'number') {
             // Explicit number check above: a pending rating of 0 (= clear
             // my rating, #884) must still be submitted.
+            // Held like a direct rating: a star clicked meanwhile is ignored.
+            const ratedPhotoId = currentPhoto.id;
+            ratingPendingRef.current.add(ratedPhotoId);
             let saved = true;
             try {
-              await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
+              await feedbackService.submitFeedback(slug, String(ratedPhotoId), {
                 feedback_type: 'rating',
                 rating: pendingAction.rating,
                 guest_name: name,
@@ -1860,6 +1863,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             } catch (err) {
               saved = false;
               showRatingError(err);
+            } finally {
+              ratingPendingRef.current.delete(ratedPhotoId);
             }
             if (saved) {
               setMyRating(pendingAction.rating);
@@ -1890,10 +1895,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           if (onFeedbackChange) onFeedbackChange(pendingAction?.type === 'like' ? currentPhoto.id : undefined);
           setPendingAction(null);
         }}
+        // In the guest's language, as the panel's controls had it.
         feedbackType={
-          pendingAction?.type === 'rating' ? 'rating'
-            : pendingAction?.type === 'color_label' ? 'color label'
-              : 'like'
+          pendingAction?.type === 'rating' ? t('feedback.rating', 'rating')
+            : pendingAction?.type === 'color_label' ? t('feedback.colorLabel', 'color label')
+              : t('feedback.like', 'like')
         }
       />
       {/* Per-guest cap modal (#655). Single instance fires for any of the
