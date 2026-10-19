@@ -16,11 +16,22 @@ interface PhotoDownloadChoiceProviderProps {
 }
 
 /**
+ * Where the menu mounts. Not in the app root: the Premium lightbox (YARL)
+ * makes every other child of body inert while open. And inside the
+ * fullscreen element when there is one: YARL's fullscreen button fullscreens
+ * its own container, and nothing outside it is drawn.
+ */
+const menuHost = (): Element => {
+  const doc = document as Document & { webkitFullscreenElement?: Element | null };
+  return document.fullscreenElement || doc.webkitFullscreenElement || document.body;
+};
+
+/**
  * Download menu for one photo (issue 1733, E2). Every single-photo download
  * button — tile, lightbox, Premium lightbox — goes through `choose`, so a
  * gallery that lets guests pick a size asks here, once, in the same dialog
  * "download all" and a selection use. With nothing to choose (no picker, a
- * single size, or a video, which always ships as uploaded) it downloads
+ * single size, or a video or camera RAW, which always ship as uploaded) it downloads
  * straight away, as before.
  */
 export const PhotoDownloadChoiceProvider: React.FC<PhotoDownloadChoiceProviderProps> = ({
@@ -29,7 +40,7 @@ export const PhotoDownloadChoiceProvider: React.FC<PhotoDownloadChoiceProviderPr
   watermarked,
   children,
 }) => {
-  const [pending, setPending] = useState<{ photo: Photo; start: StartPhotoDownload } | null>(null);
+  const [pending, setPending] = useState<{ photo: Photo; start: StartPhotoDownload; host: Element } | null>(null);
   const hasChoice = choices.length > 1;
 
   const choose = useCallback((photo: Photo, start: StartPhotoDownload) => {
@@ -37,7 +48,7 @@ export const PhotoDownloadChoiceProvider: React.FC<PhotoDownloadChoiceProviderPr
       start();
       return;
     }
-    setPending({ photo, start });
+    setPending({ photo, start, host: menuHost() });
   }, [hasChoice]);
 
   const value = useMemo<DownloadChoiceValue>(() => ({ watermarked, choose }), [watermarked, choose]);
@@ -45,8 +56,7 @@ export const PhotoDownloadChoiceProvider: React.FC<PhotoDownloadChoiceProviderPr
   return (
     <DownloadChoiceContext.Provider value={value}>
       {children}
-      {/* On body: the Premium lightbox (YARL) makes every other child of
-          body inert while open, the app root included. */}
+      {/* Not in the app root: see menuHost. */}
       {pending && createPortal(
         <DownloadResolutionModal
           slug={slug}
@@ -56,7 +66,7 @@ export const PhotoDownloadChoiceProvider: React.FC<PhotoDownloadChoiceProviderPr
           onPick={(resolution) => pending.start(resolution)}
           onClose={() => setPending(null)}
         />,
-        document.body,
+        pending.host,
       )}
     </DownloadChoiceContext.Provider>
   );

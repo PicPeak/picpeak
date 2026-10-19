@@ -99,4 +99,19 @@ describe('PhotoDownloadChoiceProvider', () => {
     expect(container.contains(dialog)).toBe(false);
     expect(document.body.contains(dialog)).toBe(true);
   });
+
+  it('opens inside the fullscreen element, the only thing drawn while the Premium lightbox is fullscreen', async () => {
+    const user = userEvent.setup();
+    const fullscreen = document.createElement('div');
+    document.body.appendChild(fullscreen);
+    Object.defineProperty(document, 'fullscreenElement', { value: fullscreen, configurable: true });
+    try {
+      renderWith([ORIGINAL, MEDIUM], photo, vi.fn());
+      await user.click(screen.getByRole('button', { name: 'download a.jpg' }));
+      expect(fullscreen.contains(screen.getByRole('dialog'))).toBe(true);
+    } finally {
+      Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+      fullscreen.remove();
+    }
+  });
 });
