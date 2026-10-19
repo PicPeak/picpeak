@@ -581,8 +581,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // The bar's favourite after a save, from the server: the click may have
   // come before this photo's feedback loaded, and then toggled a favourite
   // the bar did not know of. Dropped for another photo or a newer toggle.
+  // A load already out for this photo may predate the save: it is dropped
+  // (the sequence moves on), this one takes its place.
   const reloadFavorite = async (savedPhotoId: string) => {
-    const favoriteSeq = favoriteToggleSeqRef.current;
+    if (String(feedbackPhotoIdRef.current) !== savedPhotoId) return;
+    const favoriteSeq = ++favoriteToggleSeqRef.current;
     try {
       const data = await feedbackService.getPhotoFeedback(slug, savedPhotoId);
       if (favoriteSeq !== favoriteToggleSeqRef.current || String(feedbackPhotoIdRef.current) !== savedPhotoId) return;

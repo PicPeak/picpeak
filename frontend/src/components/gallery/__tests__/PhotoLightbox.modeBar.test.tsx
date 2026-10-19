@@ -263,4 +263,28 @@ describe('PhotoLightbox — Select / Annotate bar (issue 1733, E1)', () => {
     expect(await screen.findByPlaceholderText('Write a comment...')).toBeTruthy();
     expect(screen.getByText('Drawing attached')).toBeTruthy();
   });
+
+  it('keeps the saved favourite over a load that went out while it was being saved', async () => {
+    let save!: (value: unknown) => void;
+    vi.mocked(feedbackService.submitFeedback).mockImplementation(() => new Promise((resolve) => { save = resolve; }) as never);
+    open({ ...SETTINGS, allow_favorites: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to favorites' }));
+    await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalled());
+
+    // Away and back while the save is out: that load reads the old state, late.
+    let stale!: (value: unknown) => void;
+    vi.mocked(feedbackService.getPhotoFeedback)
+      .mockResolvedValueOnce({ feedback: [], my_feedback: {}, summary: {} } as never)
+      .mockImplementationOnce(() => new Promise((resolve) => { stale = resolve; }) as never)
+      .mockResolvedValue({ feedback: [], my_feedback: { favorited: true }, summary: { favorite_count: 1 } } as never);
+    key('ArrowRight');
+    await waitFor(() => expect(screen.getByText('2 / 3')).toBeTruthy());
+    key('ArrowLeft');
+    await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalledTimes(3));
+
+    await act(async () => { save({ success: true }); });
+    await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalledTimes(4));
+    await act(async () => { stale({ feedback: [], my_feedback: {}, summary: {} }); });
+    expect(await screen.findByRole('button', { name: 'Remove from favorites' })).toBeTruthy();
+  });
 });
