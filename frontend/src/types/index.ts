@@ -92,6 +92,9 @@ export interface Event {
   // QR overlay MODE (#837) — same tri-state semantics as show_watermark.
   show_qr?: boolean | null;
   show_colorfilter?: 'none' | 'bw' | 'sepia' | 'warm' | 'cool' | 'vignette';
+  // Play order + category filter (migration 158, #202). NULL category = all photos.
+  show_order?: 'chronological' | 'random';
+  show_category_id?: number | null;
   // Default photo sort order
   default_photo_sort?: string;
   // Pre-event reminder override (migration 143)
