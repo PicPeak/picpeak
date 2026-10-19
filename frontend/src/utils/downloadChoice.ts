@@ -21,19 +21,22 @@ export function downloadChoiceKind(choice: Pick<DownloadResolutionChoice, 'id' |
   return 'small';
 }
 
-// Camera RAW formats, as backend/src/utils/rawFormats.js lists them (a test
-// keeps the two in step). The download route ships these as stored
-// (downloadRendition.shipsAsStored): no size but the uploaded file exists.
-const CAMERA_RAW_EXTENSIONS = new Set([
+// Formats the download route hands out at the uploaded size whatever was
+// picked. Camera RAW, as backend/src/utils/rawFormats.js lists it (a test
+// keeps the two in step), ships as stored (downloadRendition.shipsAsStored).
+// HEIC/HEIF, and AVIF, which sharp reads as HEIF, come back from
+// resizeToBox unresized because sharp cannot encode them.
+const UPLOADED_SIZE_EXTENSIONS = new Set([
   'dng', 'cr2', 'cr3', 'nef', 'nrw', 'arw', 'sr2', 'srf',
   'raf', 'rw2', 'orf', 'pef', 'srw', 'raw', '3fr', 'dcr', 'kdc',
+  'heic', 'heif', 'avif',
 ]);
 
-/** Whether the download route hands this photo out as stored, by the name it checks. */
-export function isCameraRawPhoto(photo: { original_filename?: string | null; filename?: string | null }): boolean {
+/** Whether the download route hands this photo out at its uploaded size, by its file name. */
+export function downloadsAtUploadedSize(photo: { original_filename?: string | null; filename?: string | null }): boolean {
   const name = photo.original_filename || photo.filename || '';
   const dot = name.lastIndexOf('.');
-  return dot >= 0 && CAMERA_RAW_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+  return dot >= 0 && UPLOADED_SIZE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
 }
 
 /** Sum of the stored file sizes, or null when any of them is unknown. */

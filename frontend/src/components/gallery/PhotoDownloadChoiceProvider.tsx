@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import type { DownloadResolutionChoice, Photo } from '../../types';
 import { DownloadChoiceContext, type DownloadChoiceValue, type StartPhotoDownload } from '../../contexts/DownloadChoiceContext';
 import { isVideoItem } from '../../utils/mediaCounts';
-import { isCameraRawPhoto } from '../../utils/downloadChoice';
+import { downloadsAtUploadedSize } from '../../utils/downloadChoice';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
 
 interface PhotoDownloadChoiceProviderProps {
@@ -31,8 +31,8 @@ const menuHost = (): Element => {
  * button — tile, lightbox, Premium lightbox — goes through `choose`, so a
  * gallery that lets guests pick a size asks here, once, in the same dialog
  * "download all" and a selection use. With nothing to choose (no picker, a
- * single size, or a video or camera RAW, which always ship as uploaded) it downloads
- * straight away, as before.
+ * single size, or a video, camera RAW or HEIC/AVIF photo, which always ship
+ * at the uploaded size) it downloads straight away, as before.
  */
 export const PhotoDownloadChoiceProvider: React.FC<PhotoDownloadChoiceProviderProps> = ({
   slug,
@@ -44,7 +44,7 @@ export const PhotoDownloadChoiceProvider: React.FC<PhotoDownloadChoiceProviderPr
   const hasChoice = choices.length > 1;
 
   const choose = useCallback((photo: Photo, start: StartPhotoDownload) => {
-    if (!hasChoice || isVideoItem(photo) || isCameraRawPhoto(photo)) {
+    if (!hasChoice || isVideoItem(photo) || downloadsAtUploadedSize(photo)) {
       start();
       return;
     }

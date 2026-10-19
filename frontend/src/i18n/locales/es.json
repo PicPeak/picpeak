@@ -555,6 +555,7 @@
       "unlike": "Quitar me gusta",
       "selectPhoto": "Seleccionar {{name}}"
     },
+    "downloadNow": "Descargar",
     "downloadMenu": {
       "original": "Original",
       "pixels": "{{width}} × {{height}} px",

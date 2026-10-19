@@ -613,6 +613,7 @@
       "unlike": "Снять отметку",
       "selectPhoto": "Выбрать {{name}}"
     },
+    "downloadNow": "Скачать",
     "downloadMenu": {
       "original": "Оригинал",
       "pixels": "{{width}} × {{height}} px",
