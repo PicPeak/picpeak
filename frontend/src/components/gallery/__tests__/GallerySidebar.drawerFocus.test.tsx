@@ -72,7 +72,8 @@ describe('GallerySidebar drawer focus on a phone', () => {
     await user.keyboard('{Enter}');
 
     const close = screen.getByRole('button', { name: 'common.close' });
-    const last = screen.getByRole('button', { name: 'Sort descending' });
+    // The tile-size switch (issue 1733, E4) is the drawer's last section.
+    const last = screen.getByRole('button', { name: 'gallery.density.large' });
     last.focus();
     await user.tab();
     expect(close).toHaveFocus();

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
-import { X, Download, Filter, FolderTree, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera, ClipboardList } from 'lucide-react';
+import { X, Download, Filter, FolderTree, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera, ClipboardList, Grid2x2 } from 'lucide-react';
 import { Button } from '../common';
 import { useEscapeClose } from '../common/useEscapeClose';
 import { PhotoCategory, type Photo } from '../../types';
@@ -17,6 +17,8 @@ import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import { BulkRating } from './BulkRating';
 import { GallerySidebarFolderTree, type SidebarFolderTreeProps } from './GallerySidebarFolderTree';
 import { GallerySidebarSelectionTray } from './GallerySidebarSelectionTray';
+import { GridDensityControl } from './GridDensityControl';
+import { layoutHasDensity } from './gridDensity';
 import { lockBodyScroll } from '../../utils/scrollLock';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 
@@ -683,6 +685,18 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                   </Button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Tile size (issue 1733, E4): the saved choice applies to every
+              tile layout, so a sidebar gallery has to offer it too. */}
+          {layoutHasDensity(galleryLayout) && (
+            <div className="gallery-sidebar-section gallery-sidebar-density p-4">
+              <h3 className="gallery-sidebar-section-title text-sm font-semibold text-muted-theme mb-3 flex items-center gap-2">
+                <Grid2x2 className="w-4 h-4" />
+                {t('gallery.density.label', 'Tile size')}
+              </h3>
+              <GridDensityControl layout={galleryLayout} />
             </div>
           )}
         </div>
