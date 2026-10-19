@@ -4508,17 +4508,17 @@
       "month": "Monat"
     },
     "masonryMode": "Layout-Modus",
-    "masonryModeOptions": {
-      "columns": "Spalten (Pinterest-Stil)",
-      "rows": "Zeilen (Eigenes Layout)",
-      "flickr": "Flickr (Bewährtes Layout)",
-      "justified": "Google Fotos (Knuth-Plass Algorithmus)"
+    "masonryModeNames": {
+      "columns": "Spalten",
+      "rows": "Zeilen",
+      "flickr": "Flickr-Zeilen",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Pinterest-ähnliche vertikale Spalten mit variierenden Höhen",
-      "rows": "Eigenes zeilenbasiertes Layout",
-      "flickr": "Flickrs Open-Source Justified-Layout Algorithmus",
-      "justified": "Google Fotos-ähnliche Zeilen mit Knuth-Plass Algorithmus für optimale Umbrüche"
+    "masonryModeDescriptions": {
+      "columns": "Spalten mit unterschiedlichen Höhen, wie bei Pinterest",
+      "rows": "Gleich hohe Zeilen, Fotos behalten ihr Format",
+      "flickr": "Bündige Zeilen, jede Zeile mit eigener Höhe",
+      "quilted": "Quadratische Felder, breite und hohe Fotos belegen zwei"
     },
     "targetRowHeight": "Ziel-Zeilenhöhe",
     "targetRowHeightHint": "Höhe in Pixeln (150-400). Fotos werden skaliert, um in Zeilen zu passen.",
@@ -4682,6 +4682,16 @@
     "noTemplateDescription": "Nur Theme-Einstellungen ohne CSS-Vorlage verwenden",
     "templateSlot": "Slot {{slot}}",
     "eventCustomCSS": "Veranstaltungsspezifisches benutzerdefiniertes CSS",
+    "layoutNames": {
+      "grid": "Raster",
+      "masonry": "Masonry",
+      "carousel": "Karussell",
+      "timeline": "Zeitleiste",
+      "mosaic": "Mosaik",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Klassisches Raster mit einheitlichen Fotogrößen",
       "masonry": "Pinterest-Stil mit variablen Höhen",

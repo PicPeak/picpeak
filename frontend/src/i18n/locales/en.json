@@ -3990,17 +3990,17 @@
       "month": "Month"
     },
     "masonryMode": "Layout Mode",
-    "masonryModeOptions": {
-      "columns": "Columns (Pinterest-style)",
-      "rows": "Rows (Custom justified)",
-      "flickr": "Flickr (Battle-tested justified)",
-      "justified": "Google Photos (Knuth-Plass algorithm)"
+    "masonryModeNames": {
+      "columns": "Columns",
+      "rows": "Rows",
+      "flickr": "Flickr rows",
+      "quilted": "Quilted"
     },
-    "masonryModeHint": {
-      "columns": "Pinterest-style vertical columns with varied heights",
-      "rows": "Custom row-based justified layout",
-      "flickr": "Flickr's open-source justified layout algorithm",
-      "justified": "Google Photos-style rows using Knuth-Plass algorithm for optimal breaks"
+    "masonryModeDescriptions": {
+      "columns": "Columns of varied heights, Pinterest-style",
+      "rows": "Rows of even height, photos keep their shape",
+      "flickr": "Justified rows, each row its own height",
+      "quilted": "Square cells, wide and tall photos span two"
     },
     "targetRowHeight": "Target Row Height",
     "targetRowHeightHint": "Height in pixels (150-400). Photos will scale to fit rows.",
@@ -4164,6 +4164,16 @@
     "noTemplateDescription": "Use only theme settings without a CSS template",
     "templateSlot": "Slot {{slot}}",
     "eventCustomCSS": "Event-specific Custom CSS",
+    "layoutNames": {
+      "grid": "Grid",
+      "masonry": "Masonry",
+      "carousel": "Carousel",
+      "timeline": "Timeline",
+      "mosaic": "Mosaic",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Classic grid layout with consistent photo sizes",
       "masonry": "Pinterest-style layout with varied heights",

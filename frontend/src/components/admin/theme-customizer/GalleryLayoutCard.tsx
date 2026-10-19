@@ -1,9 +1,10 @@
-import React from 'react';
-import { Layout, Check, AlertTriangle } from 'lucide-react';
+import React, { useId } from 'react';
+import { Layout, AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Card, Input, Switch } from '../../common';
-import { ThemeConfig, GalleryLayoutType, STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
-import { layoutIcons } from './icons';
+import { ThemeConfig, STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
+import { LayoutPicker } from './LayoutPicker';
+import { masonryModeWireframes, useGalleryLayoutOptions, type MasonryPickerMode } from './layoutWireframes';
 
 interface GalleryLayoutCardProps {
   localTheme: ThemeConfig;
@@ -27,45 +28,26 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
   minRecommendedThumbnailSize
 }) => {
   const { t } = useTranslation();
+  const layoutOptions = useGalleryLayoutOptions();
+  const layoutHeadingId = useId();
+  const masonryModeLabelId = useId();
+  // A stored 'justified' renders as rows (MasonryGalleryLayout), so the
+  // picker shows it as Rows; the stored value stays until the admin picks.
+  const storedMasonryMode = localTheme.gallerySettings?.masonryMode || 'columns';
+  const masonryMode: MasonryPickerMode = storedMasonryMode === 'justified' ? 'rows' : storedMasonryMode;
 
   return (
     <Card className="p-6">
-      <h3 className="text-lg font-semibold text-heading mb-4 flex items-center gap-2">
+      <h3 id={layoutHeadingId} className="text-lg font-semibold text-heading mb-4 flex items-center gap-2">
         <Layout className="w-5 h-5" />
         {t('branding.galleryLayout')}
       </h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {(Object.keys(layoutIcons) as GalleryLayoutType[]).map((layout) => (
-          <button
-            type="button"
-            key={layout}
-            onClick={() => handleChange('galleryLayout', layout)}
-            className={`relative p-4 rounded-lg border-2 transition-all ${
-              localTheme.galleryLayout === layout
-                ? 'tile-selected'
-                : 'border-line hover:border-line-strong'
-            }`}
-          >
-            <div className="flex flex-col items-center text-center">
-              <div className="mb-2 text-body">
-                {layoutIcons[layout]}
-              </div>
-              <span className="font-medium text-sm capitalize text-heading">
-                {layout}
-                {(layout === 'gallery-premium' || layout === 'gallery-story') && (
-                  <span className="ml-1 text-xs text-warning-text">(Beta)</span>
-                )}
-              </span>
-              <span className="text-xs text-soft mt-1">
-                {t(`branding.layoutDescriptions.${layout}`)}
-              </span>
-            </div>
-            {localTheme.galleryLayout === layout && (
-              <Check className="absolute top-2 right-2 w-4 h-4 text-accent-dark" />
-            )}
-          </button>
-        ))}
-      </div>
+      <LayoutPicker
+        aria-labelledby={layoutHeadingId}
+        options={layoutOptions}
+        value={localTheme.galleryLayout}
+        onChange={(layout) => handleChange('galleryLayout', layout)}
+      />
 
       {/* Warning: Beta theme with low thumbnail resolution */}
       {isBetaLayout && isThumbnailTooSmall && (
@@ -257,28 +239,20 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
           {localTheme.galleryLayout === 'masonry' && (
             <>
               <div>
-                <label className="block text-sm font-medium text-body mb-2">
+                <span id={masonryModeLabelId} className="block text-sm font-medium text-body mb-2">
                   {t('branding.masonryMode', 'Layout Mode')}
-                </label>
-                <select
-                  value={localTheme.gallerySettings?.masonryMode || 'columns'}
-                  onChange={(e) => updateGallerySettings('masonryMode', e.target.value)}
-                  className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
-                >
-                  <option value="columns">{t('branding.masonryModeOptions.columns', 'Columns (Pinterest-style)')}</option>
-                  <option value="rows">{t('branding.masonryModeOptions.rows', 'Rows (Custom justified)')}</option>
-                  <option value="flickr">{t('branding.masonryModeOptions.flickr', 'Flickr (Battle-tested justified)')}</option>
-                  <option value="justified">{t('branding.masonryModeOptions.justified', 'Google Photos (Knuth-Plass algorithm)')}</option>
-                </select>
-                <p className="text-xs text-muted mt-1">
-                  {localTheme.gallerySettings?.masonryMode === 'columns'
-                    ? t('branding.masonryModeHint.columns', 'Pinterest-style vertical columns with varied heights')
-                    : localTheme.gallerySettings?.masonryMode === 'flickr'
-                    ? t('branding.masonryModeHint.flickr', 'Flickr\'s open-source justified layout algorithm')
-                    : localTheme.gallerySettings?.masonryMode === 'justified'
-                    ? t('branding.masonryModeHint.justified', 'Google Photos-style rows using Knuth-Plass algorithm for optimal breaks')
-                    : t('branding.masonryModeHint.rows', 'Custom row-based justified layout')}
-                </p>
+                </span>
+                <LayoutPicker
+                  aria-labelledby={masonryModeLabelId}
+                  options={(Object.keys(masonryModeWireframes) as MasonryPickerMode[]).map((mode) => ({
+                    value: mode,
+                    label: t(`branding.masonryModeNames.${mode}`),
+                    description: t(`branding.masonryModeDescriptions.${mode}`),
+                    wireframe: masonryModeWireframes[mode],
+                  }))}
+                  value={masonryMode}
+                  onChange={(mode) => updateGallerySettings('masonryMode', mode)}
+                />
               </div>
 
               {/* Thumbnail scale - only for columns mode */}

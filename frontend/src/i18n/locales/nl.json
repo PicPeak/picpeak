@@ -1831,17 +1831,17 @@
       "month": "Maand"
     },
     "masonryMode": "Lay-outmodus",
-    "masonryModeOptions": {
-      "columns": "Kolommen (Pinterest-stijl)",
-      "rows": "Rijen (Aangepast gerechtvaardigd)",
-      "flickr": "Flickr (Beproefde justified lay-out)",
-      "justified": "Google Photos (Knuth-Plass-algoritme)"
+    "masonryModeNames": {
+      "columns": "Kolommen",
+      "rows": "Rijen",
+      "flickr": "Flickr-rijen",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Pinterest-achtige verticale kolommen met variabele hoogtes",
-      "rows": "Aangepaste rijgebaseerde justified lay-out",
-      "flickr": "Flickrs open-source justified lay-outalgoritme",
-      "justified": "Google Photos-achtige rijen met Knuth-Plass-algoritme voor optimale onderbrekingen"
+    "masonryModeDescriptions": {
+      "columns": "Kolommen met wisselende hoogtes, Pinterest-stijl",
+      "rows": "Rijen van gelijke hoogte, foto's behouden hun vorm",
+      "flickr": "Uitgevulde rijen, elke rij met een eigen hoogte",
+      "quilted": "Vierkante vakken, brede en hoge foto's beslaan er twee"
     },
     "targetRowHeight": "Doelrijhoogte",
     "targetRowHeightHint": "Hoogte in pixels (150-400). Foto's worden geschaald om in rijen te passen.",
@@ -1991,6 +1991,16 @@
     "noTemplateDescription": "Alleen thema-instellingen gebruiken zonder CSS-sjabloon",
     "templateSlot": "Slot {{slot}}",
     "eventCustomCSS": "Evenement-specifieke aangepaste CSS",
+    "layoutNames": {
+      "grid": "Raster",
+      "masonry": "Masonry",
+      "carousel": "Carrousel",
+      "timeline": "Tijdlijn",
+      "mosaic": "Mozaïek",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Klassieke rasterindeling met uniforme fotogroottes",
       "masonry": "Pinterest-stijl indeling met variabele hoogtes",

@@ -1899,17 +1899,17 @@
       "month": "Месяц"
     },
     "masonryMode": "Режим макета",
-    "masonryModeOptions": {
-      "columns": "Колонки (Pinterest-стиль)",
-      "rows": "Строки (пользовательский justified)",
-      "flickr": "Flickr (проверенный justified)",
-      "justified": "Google Photos (алгоритм Knuth-Plass)"
+    "masonryModeNames": {
+      "columns": "Колонки",
+      "rows": "Ряды",
+      "flickr": "Ряды Flickr",
+      "quilted": "Пэчворк"
     },
-    "masonryModeHint": {
-      "columns": "Pinterest-стиль с вертикальными колонками переменной высоты",
-      "rows": "Пользовательский строчный justified-макет",
-      "flickr": "Алгоритм justified-макета с открытым исходным кодом от Flickr",
-      "justified": "Строки в стиле Google Photos с использованием алгоритма Knuth-Plass для оптимальных переносов"
+    "masonryModeDescriptions": {
+      "columns": "Колонки разной высоты, как в Pinterest",
+      "rows": "Ряды одной высоты, фото сохраняют пропорции",
+      "flickr": "Выровненные ряды, у каждого своя высота",
+      "quilted": "Квадратные ячейки, широкие и высокие фото занимают две"
     },
     "targetRowHeight": "Целевая высота строки",
     "targetRowHeightHint": "Высота в пикселях (150–400). Фото будут масштабироваться для заполнения строк.",
@@ -2059,6 +2059,16 @@
     "noTemplateDescription": "Использовать только настройки темы без CSS-шаблона",
     "templateSlot": "Слот {{slot}}",
     "eventCustomCSS": "Пользовательский CSS для события",
+    "layoutNames": {
+      "grid": "Сетка",
+      "masonry": "Masonry",
+      "carousel": "Карусель",
+      "timeline": "Хронология",
+      "mosaic": "Мозаика",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Бета",
     "layoutDescriptions": {
       "grid": "Классическая сетка с одинаковыми размерами фото",
       "masonry": "Макет в стиле Pinterest с разной высотой",
