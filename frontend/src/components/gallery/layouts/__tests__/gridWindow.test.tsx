@@ -194,6 +194,27 @@ describe('Grid layout windowing', () => {
     expect(tiles().length).toBeLessThan(WINDOW_MIN_PHOTOS);
   });
 
+  it('keeps the grid height in the render between a sort and its new window', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<GridGalleryLayout {...layoutProps(photos)} />);
+    scrollGridTo(-100 * PITCH);
+    // Every grid read, i.e. every layout the browser would do, sees the full height.
+    const heights: number[] = [];
+    const rect = HTMLElement.prototype.getBoundingClientRect;
+    vi.mocked(rect).mockImplementation(function (this: HTMLElement) {
+      if (String(this.className).includes('photo-grid')) heights.push(laidOutHeight(this, 2000).height);
+      const isGrid = String(this.className).includes('photo-grid');
+      const top = isGrid ? gridTop : 0;
+      const height = this.hasAttribute('data-grid-tile') ? TILE : 0;
+      return { top, bottom: top + height, left: 0, right: 0, width: TILE, height, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+    });
+    // Even ids first: the photos on screen now sit in two runs a thousand photos apart.
+    const sorted = [...photos.filter((p) => p.id % 2 === 0), ...photos.filter((p) => p.id % 2 === 1)];
+    rerender(<GridGalleryLayout {...layoutProps(sorted)} />);
+    expect(heights.length).toBeGreaterThan(0);
+    for (const height of heights) expect(height).toBeCloseTo(Math.ceil(2000 / columns) * PITCH - GAP, 5);
+  });
+
   it('mounts every tile when the container is not a measurable grid', () => {
     vi.mocked(window.getComputedStyle).mockImplementation(() => ({ gridTemplateColumns: 'none' }) as CSSStyleDeclaration);
     render(<GridGalleryLayout {...layoutProps(makePhotos(300))} />);

@@ -150,16 +150,20 @@ export function useGridWindow<P extends { id: number }>(
       return index === undefined ? [] : [{ photo: photos[index], index }];
     });
 
-    const pitch = geometry.track * geometry.ratio + geometry.rowGap;
-    const rows = Math.ceil(photos.length / geometry.columns);
-    if (visible.length === 0) return { tiles, before: Math.max(0, rows * pitch - geometry.rowGap), after: 0 };
+    const gap = geometry.rowGap;
+    const pitch = geometry.track * geometry.ratio + gap;
+    const total = Math.ceil(photos.length / geometry.columns) * pitch - gap;
+    if (tiles.length === 0) return { tiles, before: Math.max(0, total), after: 0 };
     // A spacer is a grid row of its own and brings a gap with it.
     const first = visible[0].rowIndex;
-    const last = visible[visible.length - 1].rowIndex;
-    return {
-      tiles,
-      before: first > 0 ? first * pitch - geometry.rowGap : 0,
-      after: last < rows - 1 ? (rows - 1 - last) * pitch - geometry.rowGap : 0,
-    };
+    const before = first > 0 ? first * pitch - gap : 0;
+    // The rest of the height, from the rows the tiles fill. Not from the last
+    // tile's row: for the one unpainted render after a sort, the window keeps
+    // the photos that were on screen, which may now sit rows apart, and the
+    // grid packs them together. The grid must keep its height even then, or
+    // the layout read in that render clamps the scroll position.
+    const mounted = Math.ceil(tiles.length / geometry.columns) * pitch - gap;
+    const rest = total - (before > 0 ? before + gap : 0) - mounted - gap;
+    return { tiles, before, after: rest > 0.5 ? rest : 0 };
   }, [enabled, geometry, photos, visible]);
 }
