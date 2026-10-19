@@ -99,12 +99,17 @@ export interface WindowedItems {
  * of whatever now sits at the old pixel offset. A plain scroll adjustment by
  * the browser cannot do this: the rows are re-packed, so the photo moves by
  * a different amount than its neighbours.
+ *
+ * `rowHeight` is the target row height they were laid out for. A change to it
+ * (the viewer's tile size, issue 1733 E4) re-packs the rows at the same width
+ * and is restored the same way.
  */
 export function useWindowedItems(
   containerRef: RefObject<HTMLElement | null>,
   items: JustifiedLayoutItem[],
   width: number,
   enabled: boolean,
+  rowHeight = 0,
 ): WindowedItems {
   const model = useMemo(() => {
     const rows = enabled ? buildRows(items) : [];
@@ -124,6 +129,7 @@ export function useWindowedItems(
   const modelRef = useRef(model);
   const anchorRef = useRef<ScrollAnchor | null>(null);
   const widthRef = useRef(width);
+  const rowHeightRef = useRef(rowHeight);
 
   // The grid's position is read from the DOM on every pass, never cached: a
   // header, folder bar or notice that grows above the grid moves it.
@@ -186,19 +192,21 @@ export function useWindowedItems(
     // else in the list, or gone. A cache patch leaves it where it was.
     const rearranged = anchor !== null
       && model.indexOf.get(anchor.photoId) !== previous.indexOf.get(anchor.photoId);
-    const resized = widthRef.current !== width && widthRef.current > 0;
+    const resized = (widthRef.current !== width && widthRef.current > 0)
+      || rowHeightRef.current !== rowHeight;
     widthRef.current = width;
+    rowHeightRef.current = rowHeight;
     if (resized && !rearranged && container && anchor && index !== undefined) {
       const row = model.rows[index];
       const viewTop = -container.getBoundingClientRect().top;
       const delta = row.top + anchor.ratio * (row.bottom - row.top) - viewTop;
       if (Math.abs(delta) >= 1) window.scrollBy(0, delta);
     } else {
-      // Same width, or nothing to restore to.
+      // Same geometry, or nothing to restore to.
       markAnchor(rearranged);
     }
     measure();
-  }, [model, width, measure, markAnchor, containerRef]);
+  }, [model, width, rowHeight, measure, markAnchor, containerRef]);
 
   useEffect(() => {
     if (!enabled) return;

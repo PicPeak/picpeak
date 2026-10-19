@@ -370,6 +370,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     rowsLayout.items,
     containerWidth,
     mode === 'rows' && photos.length >= WINDOW_MIN_PHOTOS,
+    targetRowHeight,
   );
 
   // Calculate Flickr justified layout
