@@ -61,6 +61,8 @@ let gridPadding = 0;
 let tileScale = 1;
 let gridDisplay = 'grid';
 let tracks: string | null = null;
+let autoRows = 'auto';
+let tileMargin = 0;
 
 const tiles = () => screen.queryAllByTestId('tile');
 const tileIds = () => tiles().map((tile) => Number(tile.dataset.photo));
@@ -80,6 +82,8 @@ beforeEach(() => {
   tileScale = 1;
   gridDisplay = 'grid';
   tracks = null;
+  autoRows = 'auto';
+  tileMargin = 0;
   Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
     configurable: true,
@@ -89,12 +93,17 @@ beforeEach(() => {
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
     const style = computed(element, pseudo);
     if ((element as HTMLElement).hasAttribute('data-grid-tile')) {
-      const tile: Record<string, string> = { height: `${TILE}px`, boxSizing: 'border-box' };
+      const tile: Record<string, string> = {
+        height: `${TILE - 2 * tileMargin}px`, boxSizing: 'border-box', marginTop: `${tileMargin}px`, marginBottom: `${tileMargin}px`,
+      };
       return new Proxy(style, { get: (target, key) => (key in tile ? tile[key as string] : Reflect.get(target, key)) });
     }
     if (!String((element as HTMLElement).className).includes('photo-grid')) return style;
     const overrides: Record<string, string> = {
       display: gridDisplay,
+      gridAutoRows: autoRows,
+      // What a browser resolves it to: the rows the grid has.
+      gridTemplateRows: '300px 300px',
       gridTemplateColumns: tracks ?? Array.from({ length: columns }, () => `${TILE}px`).join(' '),
       rowGap: `${GAP}px`,
       paddingTop: `${gridPadding}px`,
@@ -227,6 +236,20 @@ describe('Grid layout windowing', () => {
     expect(spacers()).toHaveLength(0);
   });
 
+  it('counts a tile margin into the row height', () => {
+    tileMargin = 10;
+    render(<GridGalleryLayout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-100 * PITCH);
+    const [before] = spacers();
+    expect(parseFloat(before.style.height)).toBeCloseTo(((tileIds()[0] - 1) / columns) * PITCH - GAP, 5);
+  });
+
+  it('mounts every tile when a template sizes the rows itself', () => {
+    autoRows = '200px';
+    render(<GridGalleryLayout {...layoutProps(makePhotos(300))} />);
+    expect(tiles()).toHaveLength(300);
+  });
+
   it('mounts every tile when the columns differ in width', () => {
     tracks = `${TILE}px ${2 * TILE}px`;
     render(<GridGalleryLayout {...layoutProps(makePhotos(300))} />);
@@ -254,6 +277,15 @@ describe('Timeline layout windowing', () => {
       const { rows, height } = laidOutHeight(container, 1000);
       expect(height).toBeCloseTo(rows * PITCH - GAP, 5);
     }
+  });
+
+  it('leaves small date groups alone in a large gallery', () => {
+    // 300 days of one photo each: no group gets a window and its listeners.
+    const addEventListener = vi.spyOn(window, 'addEventListener');
+    const photos = makePhotos(300, (i) => new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10));
+    render(<TimelineGalleryLayout {...layoutProps(photos)} />);
+    expect(tiles()).toHaveLength(300);
+    expect(addEventListener.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(0);
   });
 
   it('mounts every tile below the threshold', () => {

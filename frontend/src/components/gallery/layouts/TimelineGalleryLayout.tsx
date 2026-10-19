@@ -12,7 +12,7 @@ import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import { toDisplayDate, useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { WINDOW_MIN_PHOTOS } from './rowWindow';
-import { GRID_TILE_ATTR, useGridWindow } from './gridWindow';
+import { GRID_TILE_ATTR, TIMELINE_GROUP_WINDOW_MIN_PHOTOS, useGridWindow } from './gridWindow';
 
 const GRID_TILE_PROPS = { [GRID_TILE_ATTR]: '' } as React.HTMLAttributes<HTMLDivElement>;
 
@@ -156,7 +156,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
             {/* Photos grid for this date */}
             <TimelineGroupGrid
               photos={group.photos}
-              windowed={photos.length >= WINDOW_MIN_PHOTOS}
+              windowed={photos.length >= WINDOW_MIN_PHOTOS && group.photos.length >= TIMELINE_GROUP_WINDOW_MIN_PHOTOS}
               renderTile={(photo) => {
                 const actualIndex = photoIndexById.get(photo.id) ?? -1;
                 return (

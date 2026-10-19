@@ -18,6 +18,14 @@ import { useWindowedItems } from './rowWindow';
 /** Set on each tile, a direct child of the grid, so the grid can measure one. */
 export const GRID_TILE_ATTR = 'data-grid-tile';
 
+/**
+ * A date group with fewer photos stays fully mounted. Its rows span only a
+ * few viewports, so windowing would save little, and every windowed group
+ * runs its own scroll listener: a timeline of hundreds of small days would
+ * pay for hundreds of them on every scroll.
+ */
+export const TIMELINE_GROUP_WINDOW_MIN_PHOTOS = 50;
+
 interface GridGeometry {
   columns: number;
   /** Column width in px. */
@@ -31,18 +39,21 @@ interface GridGeometry {
 }
 
 /**
- * A tile's laid-out height. Not getBoundingClientRect: that includes
- * transforms, and a template may scale a hovered card (Liquid Glass does),
- * which would then size every row that is not mounted.
+ * The height a tile takes in its row, margins included (a template may give
+ * `.photo-card` one, and on Timeline the card is the tile). Not
+ * getBoundingClientRect: that includes transforms, and a template may scale
+ * a hovered card (Liquid Glass does), which would then size every row that
+ * is not mounted.
  */
 function layoutHeight(tile: Element): number {
   const style = getComputedStyle(tile);
+  const px = (value: string) => parseFloat(value) || 0;
   const height = parseFloat(style.height);
   if (!(height > 0)) return 0;
-  if (style.boxSizing === 'border-box') return height;
-  return height
-    + (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
-    + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+  const box = style.boxSizing === 'border-box'
+    ? height
+    : height + px(style.paddingTop) + px(style.paddingBottom) + px(style.borderTopWidth) + px(style.borderBottomWidth);
+  return box + px(style.marginTop) + px(style.marginBottom);
 }
 
 function readGeometry(container: HTMLElement, previousRatio: number | undefined): GridGeometry | null {
@@ -56,6 +67,10 @@ function readGeometry(container: HTMLElement, previousRatio: number | undefined)
   // Rows are sized from one square-ish tile per column width; columns of
   // different widths give rows of different heights, so mount everything.
   if (tracks.some((track) => Math.abs(track - tracks[0]) >= 0.5)) return null;
+  // Rows a template sizes itself would not grow to a spacer's height. Only
+  // `grid-auto-rows` can say so: `grid-template-rows` resolves to the rows
+  // the grid has, for every grid.
+  if ((style.gridAutoRows || 'auto') !== 'auto') return null;
   const tile = Array.from(container.children).find((child) => child.hasAttribute(GRID_TILE_ATTR));
   const height = tile ? layoutHeight(tile) : 0;
   const ratio = height > 0 ? height / tracks[0] : previousRatio;
