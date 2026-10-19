@@ -6,7 +6,7 @@
  * getComputedStyle on the tile, and the scroll position is whatever `gridTop`
  * says.
  */
-import React from 'react';
+import React, { Suspense, startTransition } from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 
@@ -65,6 +65,8 @@ let autoRows = 'auto';
 let tileMargin = 0;
 /** The grid's rows as a browser resolves them; '' is none (jsdom). */
 let gridRows = '';
+/** Every ResizeObserver callback, to fire as a resize would. */
+let resizeCallbacks: Array<() => void> = [];
 
 const tiles = () => screen.queryAllByTestId('tile');
 const tileIds = () => tiles().map((tile) => Number(tile.dataset.photo));
@@ -122,7 +124,9 @@ beforeEach(() => {
   });
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 0; });
   vi.stubGlobal('cancelAnimationFrame', () => {});
+  resizeCallbacks = [];
   vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => void) { resizeCallbacks.push(callback); }
     observe() {}
     unobserve() {}
     disconnect() {}
@@ -274,6 +278,26 @@ describe('Grid layout windowing', () => {
     scrollGridTo(-100 * PITCH);
     expect(tiles()).toHaveLength(2000);
     expect(spacers()).toHaveLength(0);
+  });
+
+  it('does not check the spacers of a render React did not commit', () => {
+    const photos = makePhotos(2000);
+    const never = new Promise<never>(() => {});
+    let suspend = false;
+    const Gate = () => { if (suspend) throw never; return null; };
+    const App = ({ list }: { list: Photo[] }) => (
+      <Suspense fallback={null}><GridGalleryLayout {...layoutProps(list)} /><Gate /></Suspense>
+    );
+    const { rerender } = render(<App list={photos} />);
+    scrollGridTo(-100 * PITCH);
+    const [before, after] = spacers().map((spacer) => spacer.style.height);
+    gridRows = `${before} ${TILE}px ${after}`;
+    // A transition that suspends: the grid renders 1000 photos, the DOM keeps 2000.
+    suspend = true;
+    act(() => { startTransition(() => { rerender(<App list={photos.slice(0, 1000)} />); }); });
+    act(() => { resizeCallbacks.forEach((callback) => callback()); });
+    expect(spacers().map((spacer) => spacer.style.height)).toEqual([before, after]);
+    expect(tiles().length).toBeLessThan(200);
   });
 
   it('mounts every tile when the columns differ in width', () => {

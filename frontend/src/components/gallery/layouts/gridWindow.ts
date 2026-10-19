@@ -120,7 +120,9 @@ export function useGridWindow<P extends { id: number }>(
   // tile is mounted from then on.
   const [unsupported, setUnsupported] = useState(false);
   const enabled = requested && !unsupported;
-  // The spacers of the last render, which the commit after it laid out.
+  // The spacers of the last commit. Published by a layout effect, not during
+  // render: a render React does not commit (a transition, a suspended
+  // update) must not be checked against the DOM of the one before it.
   const spacedRef = useRef({ before: 0, after: 0 });
 
   // Measured on every commit even while windowing is off, so the grid is
@@ -134,12 +136,15 @@ export function useGridWindow<P extends { id: number }>(
     if (!sameGeometry(previous, next)) {
       geometryRef.current = next;
       setGeometry(next);
-      return;
     }
-    // Each spacer must be the only thing in its row, and that row as tall
-    // as the spacer. The resolved `grid-template-rows` lists every row.
+  }, [containerRef]);
+
+  // Each spacer must be the only thing in its row, and that row as tall as
+  // the spacer. The resolved `grid-template-rows` lists every row.
+  const checkSpacers = useCallback(() => {
+    const container = containerRef.current;
     const { before, after } = spacedRef.current;
-    if (!next || (before === 0 && after === 0)) return;
+    if (!container || (before === 0 && after === 0)) return;
     const rows = (getComputedStyle(container).gridTemplateRows || '').split(/\s+/).filter(Boolean).map(parseFloat);
     if (rows.length === 0 || rows.some((row) => !(row >= 0))) return;
     const off = (row: number, height: number) => height > 0 && Math.abs(row - height) >= 1;
@@ -152,10 +157,13 @@ export function useGridWindow<P extends { id: number }>(
   useEffect(() => {
     const container = containerRef.current;
     if (!enabled || !container) return;
-    const observer = new ResizeObserver(() => measure());
+    const observer = new ResizeObserver(() => {
+      measure();
+      checkSpacers();
+    });
     observer.observe(container);
     return () => observer.disconnect();
-  }, [enabled, containerRef, measure]);
+  }, [enabled, containerRef, measure, checkSpacers]);
 
   const windowed = enabled && Boolean(geometry);
 
@@ -204,6 +212,11 @@ export function useGridWindow<P extends { id: number }>(
     const rest = total - (before > 0 ? before + gap : 0) - mounted - gap;
     return { tiles, before, after: rest > 0.5 ? rest : 0 };
   }, [enabled, geometry, photos, visible]);
-  spacedRef.current = { before: result.before, after: result.after };
+
+  useLayoutEffect(() => {
+    spacedRef.current = { before: result.before, after: result.after };
+    checkSpacers();
+  });
+
   return result;
 }
