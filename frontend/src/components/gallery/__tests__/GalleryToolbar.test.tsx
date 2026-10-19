@@ -212,6 +212,34 @@ describe('GalleryToolbar', () => {
     expect(filterButton).toHaveFocus();
   });
 
+  it('leaves an Escape inside something else, like the lightbox, alone', () => {
+    render(
+      <div>
+        <GalleryToolbar
+          search={search}
+          sort={sort}
+          filters={{ activeCount: 0, render: () => <p>panel body</p> }}
+          selection={selection()}
+        />
+        <textarea aria-label="comment" />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.filters' }));
+    const field = screen.getByRole('textbox', { name: 'comment' });
+    field.focus();
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toBeInTheDocument();
+    expect(field).toHaveFocus();
+  });
+
+  it('lets the sort menu scroll within the room under its button', () => {
+    render(<GalleryToolbar search={search} sort={sort} selection={selection()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.sortByDate' }));
+    const menu = screen.getByRole('button', { name: 'photoSort.dateTaken' }).parentElement!;
+    expect(menu.className).toContain('overflow-y-auto');
+    expect(menu.style.maxHeight).toMatch(/px$/);
+  });
+
   it('closes the filter panel on a press outside it', () => {
     render(
       <div>

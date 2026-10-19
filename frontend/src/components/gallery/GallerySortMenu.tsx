@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SortAsc, SortDesc } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../common';
@@ -33,6 +33,15 @@ export const GallerySortMenu: React.FC<GallerySortMenuProps> = ({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  // The menu hangs from a sticky bar, so the page cannot scroll it into
+  // view: on a short screen (a phone sideways) it scrolls within the room
+  // left under the button instead.
+  const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) return;
+    const bottom = buttonRef.current.getBoundingClientRect().bottom;
+    setMaxHeight(Math.max(160, Math.floor(window.innerHeight - bottom - 16)));
+  }, [open]);
   // A press or focus outside (the toolbar's Filters among them) and Escape
   // close the menu, so it never stays open over the filter panel.
   useEffect(() => {
@@ -42,6 +51,11 @@ export const GallerySortMenu: React.FC<GallerySortMenuProps> = ({
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // Only an Escape meant for the menu or its toolbar, not one inside a
+      // dialog above them.
+      const active = document.activeElement;
+      const scope = rootRef.current?.closest('.gallery-toolbar') ?? rootRef.current;
+      if (active && active !== document.body && !scope?.contains(active)) return;
       setOpen(false);
       buttonRef.current?.focus();
     };
@@ -95,7 +109,10 @@ export const GallerySortMenu: React.FC<GallerySortMenuProps> = ({
       </Button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-48 bg-surface rounded-lg shadow-lg border border-border-token py-1 z-10">
+        <div
+          className="absolute right-0 mt-2 w-48 overflow-y-auto bg-surface rounded-lg shadow-lg border border-border-token py-1 z-10"
+          style={{ maxHeight }}
+        >
           {options.map((option) => (
             <button
               key={option.value}

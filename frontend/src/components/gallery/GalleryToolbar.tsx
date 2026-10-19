@@ -64,6 +64,12 @@ export interface GalleryToolbarProps {
 
 type Popover = 'filters' | 'tray' | null;
 
+// Focus in the bar or its popover, or nowhere in particular.
+function focusIsOurs(root: HTMLElement | null): boolean {
+  const active = document.activeElement;
+  return !active || active === document.body || !!root?.contains(active);
+}
+
 // The gallery header is sticky at the top too (GalleryLayout); the toolbar
 // sticks right under it, and under the notch where there is no header.
 function useHeaderOffset(ref: React.RefObject<HTMLElement>): number {
@@ -172,6 +178,9 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
     const trigger = openPopover === 'filters' ? filterButtonRef : trayButtonRef;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // Escape inside something else (the lightbox opened by keyboard over
+      // the open panel, a field it keeps Escape for) is not for the panel.
+      if (!focusIsOurs(rootRef.current)) return;
       e.preventDefault();
       setPopover(null);
       trigger.current?.focus();
