@@ -612,6 +612,25 @@
       "like": "Нравится",
       "unlike": "Снять отметку",
       "selectPhoto": "Выбрать {{name}}"
+    },
+    "filterPanel": {
+      "selectMatches_one": "Выбрать {{count}} фото",
+      "selectMatches_few": "Выбрать {{count}} фото",
+      "selectMatches_many": "Выбрать {{count}} фото",
+      "selectMatches_other": "Выбрать {{count}} фото",
+      "selectMatchesMedia_one": "Выбрать {{count}} элемент",
+      "selectMatchesMedia_few": "Выбрать {{count}} элемента",
+      "selectMatchesMedia_many": "Выбрать {{count}} элементов",
+      "selectMatchesMedia_other": "Выбрать {{count}} элемента",
+      "clear": "Сбросить фильтры",
+      "activeCount_one": "активен: {{count}}",
+      "activeCount_few": "активно: {{count}}",
+      "activeCount_many": "активно: {{count}}",
+      "activeCount_other": "активно: {{count}}"
+    },
+    "toolbar": {
+      "browse": "Инструменты галереи",
+      "selection": "Выбор"
     }
   },
   "categories": {

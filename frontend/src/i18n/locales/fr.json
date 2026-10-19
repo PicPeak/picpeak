@@ -582,6 +582,22 @@
       "like": "J’aime",
       "unlike": "Retirer le j’aime",
       "selectPhoto": "Sélectionner {{name}}"
+    },
+    "filterPanel": {
+      "selectMatches_one": "Sélectionner {{count}} photo",
+      "selectMatches_many": "Sélectionner ces {{count}} photos",
+      "selectMatches_other": "Sélectionner ces {{count}} photos",
+      "selectMatchesMedia_one": "Sélectionner {{count}} élément",
+      "selectMatchesMedia_many": "Sélectionner ces {{count}} éléments",
+      "selectMatchesMedia_other": "Sélectionner ces {{count}} éléments",
+      "clear": "Effacer les filtres",
+      "activeCount_one": "{{count}} actif",
+      "activeCount_many": "{{count}} actifs",
+      "activeCount_other": "{{count}} actifs"
+    },
+    "toolbar": {
+      "browse": "Outils de la galerie",
+      "selection": "Sélection"
     }
   },
   "categories": {

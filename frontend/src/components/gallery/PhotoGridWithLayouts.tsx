@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { GalleryEmptyMessage } from './GalleryEmptyMessage';
-import { ClipboardList, Package } from 'lucide-react';
 import { toast as toastify } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 
@@ -9,15 +8,11 @@ import { useDownloadPhoto } from '../../hooks/useGallery';
 import { isPhotoDownloadPending } from '../../hooks/usePhotoDownloadPending';
 import { PhotoLightbox } from './PhotoLightbox';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
-import { Button } from '../common';
 import { galleryService } from '../../services/gallery.service';
 import { analyticsService } from '../../services/analytics.service';
-import { hasVideoItems, selectLabel } from '../../utils/mediaCounts';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, isSelectionTooLargeError, showDownloadLimitReached, type QuotaPhoto } from '../../utils/downloadLimit';
-import { DownloadQuotaNotice } from './DownloadQuotaNotice';
-import { BulkRating } from './BulkRating';
 import type { LightboxPhotoChangeHandler } from './photoLink';
 
 // Import all layouts
@@ -44,7 +39,6 @@ interface PhotoGridWithLayoutsProps {
   selectedPhotos?: Set<number>;
   onSelectionChange?: (photos: Set<number>) => void;
   onToggleSelectionMode?: () => void;
-  showSelectionControls?: boolean;
   eventName?: string;
   eventLogo?: string | null;
   eventDate?: string | null;
@@ -109,7 +103,8 @@ interface PhotoGridWithLayoutsProps {
   eventPhotoCount?: number;
   onDownloadEverything?: () => void;
   // Copyable filename list (issue 1733, A3d): the selection, or the viewer's
-  // favourites when nothing is selected. Hidden at zero.
+  // favourites when nothing is selected. Hidden at zero. The full-page
+  // layouts render the button; the others get it from the gallery toolbar.
   onCopyFilenames?: () => void;
   copyFilenamesCount?: number;
   /** Premium / Story nav heart — see BaseGalleryLayoutProps. */
@@ -160,7 +155,6 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   enableDevtoolsProtection = false,
   onSelectionChange,
   onToggleSelectionMode: parentToggleSelectionMode,
-  showSelectionControls = true,
   eventName,
   eventLogo,
   eventDate,
@@ -416,22 +410,6 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
       return (
         <div className="text-center py-12">
           <GalleryEmptyMessage filtered={emptyIsFiltered} />
-          {/* The filename list is event-wide (issue 1733, A3d): a search or
-              feedback filter that leaves no photo on screen must not take the
-              favourites' list with it. */}
-          {onCopyFilenames && copyFilenamesCount > 0 && (
-            <div className="mt-4 flex justify-center">
-              <Button
-                variant="outline"
-                size="sm"
-                leftIcon={<ClipboardList className="w-4 h-4" />}
-                onClick={onCopyFilenames}
-                className="text-xs sm:text-sm"
-              >
-                {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
-              </Button>
-            </div>
-          )}
         </div>
       );
     }
@@ -545,20 +523,6 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   // Gallery Premium and Gallery Story layouts have their own integrated hero/header
   const isFullPageLayout = galleryLayout === 'gallery-premium' || galleryLayout === 'gallery-story';
 
-  // Filename list (issue 1733, A3d). Outside selection mode it lists the
-  // viewer's favourites, inside it the selection — the count says which.
-  const copyFilenamesButton = onCopyFilenames && copyFilenamesCount > 0 ? (
-    <Button
-      variant="outline"
-      size="sm"
-      leftIcon={<ClipboardList className="w-4 h-4" />}
-      onClick={onCopyFilenames}
-      className="text-xs sm:text-sm"
-    >
-      {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
-    </Button>
-  ) : null;
-
   return (
     <>
       {/* Hero Header - shown when headerStyle is 'hero' (skip for full-page layouts with integrated hero) */}
@@ -585,86 +549,6 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
       {!isFullPageLayout && welcomeMessage && (
         <div className="mb-6 px-4 py-3 rounded-lg bg-card-theme/50 border border-border-theme text-center">
           <p className="text-sm text-muted-theme whitespace-pre-line">{welcomeMessage}</p>
-        </div>
-      )}
-
-      {/* The filename list is still reachable where the selection toolbar is
-          not (a carousel, or a single visible photo): the favourites that
-          feed it do not depend on either. Full-page layouts get the button
-          from GalleryView's own band. */}
-      {showSelectionControls && !isFullPageLayout && !(photos.length > 1 && galleryLayout !== 'carousel') && copyFilenamesButton && (
-        <div className="mb-4 flex items-center gap-2">{copyFilenamesButton}</div>
-      )}
-
-      {/* Selection Mode Controls - Not shown for carousel, full-page layouts, or when controls are hidden */}
-      {showSelectionControls && photos.length > 1 && galleryLayout !== 'carousel' && !isFullPageLayout && (
-        <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={toggleSelectionMode}
-              title={t('gallery.selectPhotosHint')}
-              className="text-xs sm:text-sm"
-            >
-              {isSelectionMode ? t('gallery.cancelSelection') : selectLabel(t, hasVideoItems(photos))}
-            </Button>
-            {!isSelectionMode && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  toggleSelectionMode();
-                  selectAll();
-                }}
-                className="text-xs sm:text-sm"
-              >
-                {t('gallery.selectAll')}
-              </Button>
-            )}
-            {!isSelectionMode && copyFilenamesButton}
-          </div>
-          
-          {isSelectionMode && (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
-              <span className="text-xs sm:text-sm text-muted-theme">
-                {t('gallery.photosSelected', { count: selectedPhotos.size })}
-              </span>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Button variant="ghost" size="sm" onClick={selectAll} className="text-xs sm:text-sm">
-                  {t('gallery.selectAll')}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={deselectAll} className="text-xs sm:text-sm">
-                  {t('gallery.deselectAll')}
-                </Button>
-                {selectedPhotos.size > 0 && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    leftIcon={<Package className="w-4 h-4" />}
-                    onClick={handleDownloadSelected}
-                    disabled={!downloadQuota.allows(selectedPhotoList)}
-                    className="text-xs sm:text-sm"
-                  >
-                    <span className="hidden sm:inline">{t('gallery.downloadSelected', { count: selectedPhotos.size })}</span>
-                    <span className="sm:hidden">{t('common.download')} ({selectedPhotos.size})</span>
-                  </Button>
-                )}
-                {copyFilenamesButton}
-                {/* Rate the selection (issue 1733) */}
-                {feedbackEnabled && feedbackOptions?.allowRatings && selectedPhotos.size > 0 && (
-                  <BulkRating
-                    slug={slug}
-                    photoIds={Array.from(selectedPhotos)}
-                    requireNameEmail={feedbackOptions.requireNameEmail}
-                  />
-                )}
-              </div>
-              {allowDownloads && selectedPhotos.size > 0 && (
-                <DownloadQuotaNotice photos={selectedPhotoList} className="text-xs sm:text-sm" />
-              )}
-            </div>
-          )}
         </div>
       )}
 

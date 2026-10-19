@@ -2302,6 +2302,19 @@
       "like": "Gefällt mir",
       "unlike": "Gefällt mir zurücknehmen",
       "selectPhoto": "{{name}} auswählen"
+    },
+    "filterPanel": {
+      "selectMatches_one": "Dieses Foto auswählen",
+      "selectMatches_other": "Diese {{count}} Fotos auswählen",
+      "selectMatchesMedia_one": "Dieses Medium auswählen",
+      "selectMatchesMedia_other": "Diese {{count}} Medien auswählen",
+      "clear": "Filter zurücksetzen",
+      "activeCount_one": "{{count}} aktiv",
+      "activeCount_other": "{{count}} aktiv"
+    },
+    "toolbar": {
+      "browse": "Galeriewerkzeuge",
+      "selection": "Auswahl"
     }
   },
   "categories": {

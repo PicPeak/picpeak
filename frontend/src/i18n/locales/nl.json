@@ -572,6 +572,19 @@
       "like": "Leuk",
       "unlike": "Niet meer leuk",
       "selectPhoto": "{{name}} selecteren"
+    },
+    "filterPanel": {
+      "selectMatches_one": "Deze foto selecteren",
+      "selectMatches_other": "Deze {{count}} foto's selecteren",
+      "selectMatchesMedia_one": "Dit item selecteren",
+      "selectMatchesMedia_other": "Deze {{count}} items selecteren",
+      "clear": "Filters wissen",
+      "activeCount_one": "{{count}} actief",
+      "activeCount_other": "{{count}} actief"
+    },
+    "toolbar": {
+      "browse": "Galerijtools",
+      "selection": "Selectie"
     }
   },
   "categories": {

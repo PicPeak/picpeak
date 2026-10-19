@@ -1,5 +1,7 @@
 /**
- * Selection download in the grid toolbar, at the download limit (issue 1560).
+ * Selection download through a layout's own control (Story, Premium), at the
+ * download limit (issue 1560). The classic layouts' toolbar moved into the
+ * gallery toolbar (issue 1733, E8); this path is what the layouts call.
  * A search hides photos without unselecting them and the request sends the
  * whole selection, so the pre-check has to price the whole selection too;
  * and a refusal from the server keeps the selection for the guest to trim.
@@ -56,10 +58,14 @@ vi.mock('../DownloadResolutionModal', () => ({
 vi.mock('../BulkRating', () => ({ BulkRating: () => null }));
 vi.mock('../HeroHeader', () => ({ HeroHeader: () => null }));
 vi.mock('../PhotoLightbox', () => ({ PhotoLightbox: () => null }));
-// Stands in for a layout's own Download All, which opens the picker by ids.
+// Stands in for a layout's own Download All, which opens the picker by ids,
+// and its Download selected.
 vi.mock('../layouts', () => ({
-  GridGalleryLayout: ({ onPickResolution }: { onPickResolution: (ids: number[]) => void }) => (
-    <button data-testid="layout-download-all" onClick={() => onPickResolution([10, 12])} />
+  GridGalleryLayout: ({ onPickResolution, onDownloadSelected }: { onPickResolution: (ids: number[]) => void; onDownloadSelected: () => void }) => (
+    <>
+      <button data-testid="layout-download-all" onClick={() => onPickResolution([10, 12])} />
+      <button data-testid="layout-download-selected" onClick={() => onDownloadSelected()} />
+    </>
   ),
 }));
 
@@ -85,7 +91,7 @@ const mount = (onSelectionChange: ReturnType<typeof vi.fn>, onToggleSelectionMod
   // The grid clears the selection on a category change, mount included.
   onSelectionChange.mockClear();
 };
-const downloadButton = () => screen.getByText('gallery.downloadSelected').closest('button') as HTMLButtonElement;
+const downloadButton = () => screen.getByTestId('layout-download-selected');
 
 beforeEach(() => {
   quota.remaining = 1;
@@ -97,8 +103,8 @@ describe('PhotoGridWithLayouts — selection download at the download limit', ()
   it('prices the whole selection, photos the search hides included', () => {
     const onSelectionChange = vi.fn();
     mount(onSelectionChange, vi.fn());
-    expect(downloadButton()).toBeDisabled();
     fireEvent.click(downloadButton());
+    expect(mocks.showDownloadLimitReached).toHaveBeenCalledWith({ remaining: 1 });
     expect(mocks.downloadSelectedPhotos).not.toHaveBeenCalled();
     expect(onSelectionChange).not.toHaveBeenCalled();
   });

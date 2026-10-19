@@ -1568,6 +1568,25 @@
       "like": "Všeček",
       "unlike": "Odstrani všeček",
       "selectPhoto": "Izberi {{name}}"
+    },
+    "filterPanel": {
+      "selectMatches_one": "Izberi {{count}} fotografijo",
+      "selectMatches_two": "Izberi {{count}} fotografiji",
+      "selectMatches_few": "Izberi {{count}} fotografije",
+      "selectMatches_other": "Izberi {{count}} fotografij",
+      "selectMatchesMedia_one": "Izberi {{count}} element",
+      "selectMatchesMedia_two": "Izberi {{count}} elementa",
+      "selectMatchesMedia_few": "Izberi {{count}} elemente",
+      "selectMatchesMedia_other": "Izberi {{count}} elementov",
+      "clear": "Počisti filtre",
+      "activeCount_one": "{{count}} aktiven",
+      "activeCount_two": "{{count}} aktivna",
+      "activeCount_few": "{{count}} aktivni",
+      "activeCount_other": "{{count}} aktivnih"
+    },
+    "toolbar": {
+      "browse": "Orodja galerije",
+      "selection": "Izbira"
     }
   },
   "categories": {

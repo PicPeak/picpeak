@@ -554,6 +554,22 @@
       "like": "Me gusta",
       "unlike": "Quitar me gusta",
       "selectPhoto": "Seleccionar {{name}}"
+    },
+    "filterPanel": {
+      "selectMatches_one": "Seleccionar esta foto",
+      "selectMatches_many": "Seleccionar estas {{count}} fotos",
+      "selectMatches_other": "Seleccionar estas {{count}} fotos",
+      "selectMatchesMedia_one": "Seleccionar este elemento",
+      "selectMatchesMedia_many": "Seleccionar estos {{count}} elementos",
+      "selectMatchesMedia_other": "Seleccionar estos {{count}} elementos",
+      "clear": "Borrar filtros",
+      "activeCount_one": "{{count}} activo",
+      "activeCount_many": "{{count}} activos",
+      "activeCount_other": "{{count}} activos"
+    },
+    "toolbar": {
+      "browse": "Herramientas de la galería",
+      "selection": "Selección"
     }
   },
   "categories": {
