@@ -167,15 +167,17 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   const popoverRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const popoverId = useId();
-  // Held while a popover or sheet is open: crossing the breakpoint then (a
-  // phone turned sideways) would swap one for the other, unmounting the
-  // focused control, the sheet's return target and a half-filled rating
-  // identity dialog with it. The layout follows once it is closed.
+  // Held while a popover, a sheet or the rating's name-and-email dialog is
+  // open: crossing the breakpoint then (a phone turned sideways) would swap
+  // the inline rating for the sheet one or a popover for a sheet, unmounting
+  // the focused control, the sheet's return target and a half-filled
+  // identity dialog with them. The layout follows once they are closed.
   const livePhone = useIsPhone();
   const [isPhone, setIsPhone] = useState(livePhone);
+  const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
   useEffect(() => {
-    if (!popover) setIsPhone(livePhone);
-  }, [livePhone, popover]);
+    if (!popover && !ratingDialogOpen) setIsPhone(livePhone);
+  }, [livePhone, popover, ratingDialogOpen]);
 
   const selecting = !!selection && (selection.isSelectionMode || selection.selectedCount > 0);
   const trayShown = selecting && !!selection?.tray && selection.tray.photos.length > 0;
@@ -436,7 +438,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
         {selectAllButtons}
         <div className="flex items-center gap-2 flex-wrap ml-auto">
           {filterButton}
-          {rateShown && selection.bulkRating && <BulkRating {...selection.bulkRating} />}
+          {rateShown && selection.bulkRating && <BulkRating {...selection.bulkRating} onDialogChange={setRatingDialogOpen} />}
           {copyButton}
           {trayButton(false)}
           {downloadButton(false)}
@@ -504,7 +506,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
         />
       )
       : openPopover === 'rate' && selection?.bulkRating
-        ? <BulkRating {...selection.bulkRating} />
+        ? <BulkRating {...selection.bulkRating} onDialogChange={setRatingDialogOpen} />
         : null;
 
   return (

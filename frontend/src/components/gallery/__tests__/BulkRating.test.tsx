@@ -290,6 +290,19 @@ describe('BulkRating', () => {
     expect(cached()[0].my_rating).toBe(4);
   });
 
+  it('tells its host while the name-and-email dialog is open', async () => {
+    seedCache([makePhoto(1)]);
+    const onDialogChange = vi.fn();
+    renderControl([1], { requireNameEmail: true, onDialogChange });
+    expect(onDialogChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    await screen.findByRole('dialog');
+    expect(onDialogChange).toHaveBeenLastCalledWith(true);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onDialogChange).toHaveBeenLastCalledWith(false);
+  });
+
   it('asks for name and email first when the gallery requires them', async () => {
     seedCache([makePhoto(1)]);
     submit.mockResolvedValue(ok([1], 4));

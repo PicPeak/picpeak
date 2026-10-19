@@ -22,7 +22,13 @@ vi.mock('react-i18next', async () => {
   };
 });
 vi.mock('../BulkRating', () => ({
-  BulkRating: ({ photoIds }: { photoIds: number[] }) => <div data-testid="bulk-rating">{photoIds.join(',')}</div>,
+  BulkRating: ({ photoIds, onDialogChange }: { photoIds: number[]; onDialogChange?: (open: boolean) => void }) => (
+    <div data-testid="bulk-rating">
+      {photoIds.join(',')}
+      <button type="button" onClick={() => onDialogChange?.(true)}>identity open</button>
+      <button type="button" onClick={() => onDialogChange?.(false)}>identity closed</button>
+    </div>
+  ),
 }));
 vi.mock('../DownloadQuotaNotice', () => ({ DownloadQuotaNotice: () => null }));
 vi.mock('../GallerySidebarSelectionTray', () => ({
@@ -419,6 +425,30 @@ describe('GalleryToolbar', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(screen.queryByTestId('gallery-selection-bar')).toBeNull();
       expect(screen.getByTestId('gallery-toolbar')).toHaveAttribute('data-mode', 'selection');
+    });
+
+    it('holds the desktop layout while the inline rating asks for name and email', () => {
+      let listener: () => void = () => {};
+      let phone = false;
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        get matches() { return query === '(max-width: 639px)' && phone; },
+        media: query,
+        addEventListener: (_type: string, cb: () => void) => { listener = cb; },
+        removeEventListener: () => {},
+      }));
+      render(
+        <GalleryToolbar
+          search={search}
+          selection={selection({ isSelectionMode: true, selectedCount: 2, bulkRating: { slug: 's', photoIds: [1, 2] } })}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'identity open' }));
+      phone = true;
+      act(() => listener());
+      expect(screen.getByTestId('gallery-toolbar')).toHaveAttribute('data-mode', 'selection');
+      expect(screen.queryByTestId('gallery-selection-bar')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'identity closed' }));
+      expect(screen.getByTestId('gallery-selection-bar')).toBeInTheDocument();
     });
 
     it('has no bottom bar while nothing is selected', () => {

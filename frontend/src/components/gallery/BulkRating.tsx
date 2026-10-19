@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Star, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,8 @@ interface BulkRatingProps {
   /** The selection. */
   photoIds: number[];
   requireNameEmail?: boolean;
+  /** Told when the name-and-email dialog opens and closes. */
+  onDialogChange?: (open: boolean) => void;
   className?: string;
 }
 
@@ -31,12 +33,20 @@ type RatedRow = { average_rating?: number; total_ratings?: number };
  * selection is often most of the gallery, and the list is not refetched for
  * it. The X clears the rating of every selected photo (#884).
  */
-export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireNameEmail = false, className = '' }) => {
+export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireNameEmail = false, onDialogChange, className = '' }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const guestIdentity = useGuestIdentityOptional();
   const [pendingRating, setPendingRating] = useState<number | null>(null);
   const [identity, setIdentity] = useState<{ name: string; email: string } | null>(null);
+  const onDialogChangeRef = useRef(onDialogChange);
+  onDialogChangeRef.current = onDialogChange;
+  const dialogOpen = pendingRating !== null;
+  useEffect(() => {
+    if (!dialogOpen) return;
+    onDialogChangeRef.current?.(true);
+    return () => onDialogChangeRef.current?.(false);
+  }, [dialogOpen]);
 
   // Keyed, so the guard outlives this control: on a phone it sits in a sheet
   // that can be closed and reopened while a run is still out, and a fresh
