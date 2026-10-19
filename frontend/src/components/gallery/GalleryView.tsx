@@ -2151,9 +2151,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             // gives up, so it opens even where there is nothing else to filter.
             filters={filterBarShown && (hasPanelFilters || isSelectionMode || selectedPhotos.size > 0) ? {
               activeCount: activePanelFilterCount,
-              render: (close, selecting) => (
+              render: (close, withSearch) => (
                 <GalleryFilterPanel
-                  search={selecting ? { value: searchTerm, onChange: setSearchTerm } : undefined}
+                  search={withSearch ? { value: searchTerm, onChange: setSearchTerm } : undefined}
                   feedback={feedbackEnabled ? { activeFilters, onFilterChange: handleFilterChange } : undefined}
                   colorLabels={feedbackEnabled && feedbackSettings?.allow_color_labels ? {
                     activeColors: activeColorFilters,

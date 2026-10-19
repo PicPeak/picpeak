@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
@@ -329,5 +329,102 @@ describe('GalleryToolbar', () => {
   it('has no Select button where picking is not offered', () => {
     render(<GalleryToolbar search={search} selection={selection({ available: false })} />);
     expect(screen.queryByRole('button', { name: 'gallery.selectPhotos' })).toBeNull();
+  });
+
+  describe('on a phone (E5)', () => {
+    beforeEach(() => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query === '(max-width: 639px)',
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }));
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('keeps browsing in the top bar and puts the batch actions in a bottom bar', () => {
+      const download = vi.fn();
+      render(
+        <GalleryToolbar
+          search={search}
+          sort={sort}
+          selection={selection({
+            isSelectionMode: true,
+            selectedCount: 3,
+            download: { onClick: download },
+            tray: { photos: [{ id: 1 }, { id: 2 }, { id: 3 }] as never, onRemove: vi.fn() },
+          })}
+          copyFilenames={{ count: 3, onClick: vi.fn() }}
+        />,
+      );
+      // The search stays up top; the Select button goes, selection is on.
+      expect(screen.getByRole('textbox', { name: 'gallery.searchPhotos' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'gallery.selectPhotos' })).toBeNull();
+
+      const bar = screen.getByTestId('gallery-selection-bar');
+      expect(bar).toHaveAttribute('role', 'toolbar');
+      expect(bar.style.paddingBottom).toContain('safe-area-inset-bottom');
+      // Rendered at the end of the page, not inside the sticky top bar.
+      expect(screen.getByTestId('gallery-toolbar').contains(bar)).toBe(false);
+      expect(bar).toHaveTextContent('gallery.photosSelected:3');
+      // One copy of each action, in the bottom bar.
+      expect(screen.getAllByRole('button', { name: 'gallery.copyFilenames.button (3)' })).toHaveLength(1);
+      expect(bar.contains(screen.getByRole('button', { name: 'gallery.copyFilenames.button (3)' }))).toBe(true);
+      fireEvent.click(screen.getAllByText('common.download (3)')[0]);
+      expect(download).toHaveBeenCalledTimes(1);
+    });
+
+    it('has no bottom bar while nothing is selected', () => {
+      render(<GalleryToolbar search={search} selection={selection()} />);
+      expect(screen.queryByTestId('gallery-selection-bar')).toBeNull();
+    });
+
+    it('opens the filter panel as a bottom sheet and hands focus back on Escape', () => {
+      render(
+        <GalleryToolbar
+          search={search}
+          filters={{ activeCount: 0, render: (_close, withSearch) => <p>panel body {String(withSearch)}</p> }}
+          selection={selection()}
+        />,
+      );
+      const button = screen.getByRole('button', { name: 'gallery.filters' });
+      button.focus();
+      fireEvent.click(button);
+      const sheet = screen.getByRole('dialog', { name: 'gallery.filters' });
+      expect(sheet).toHaveAttribute('aria-modal', 'true');
+      // The top bar keeps its search on a phone, so the panel does not repeat it.
+      expect(sheet).toHaveTextContent('panel body false');
+      expect(screen.getByTestId('gallery-toolbar').contains(sheet)).toBe(false);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(button).toHaveFocus();
+    });
+
+    it('rates the selection from a sheet', () => {
+      render(
+        <GalleryToolbar
+          selection={selection({ isSelectionMode: true, selectedCount: 2, bulkRating: { slug: 'g', photoIds: [4, 5] } })}
+        />,
+      );
+      expect(screen.queryByTestId('bulk-rating')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'feedback.rateSelected' }));
+      expect(screen.getByRole('dialog', { name: 'feedback.rateSelected' })).toContainElement(screen.getByTestId('bulk-rating'));
+    });
+
+    it('opens the selection list as a sheet', () => {
+      render(
+        <GalleryToolbar
+          selection={selection({
+            isSelectionMode: true,
+            selectedCount: 1,
+            tray: { photos: [{ id: 9 }] as never, onRemove: vi.fn() },
+          })}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'gallery.selectionTray.title:1' }));
+      expect(screen.getByRole('dialog', { name: 'gallery.selectionTray.title:1' })).toContainElement(screen.getByTestId('tray'));
+    });
   });
 });

@@ -23,6 +23,11 @@ interface GallerySidebarSelectionTrayProps {
   /** Called after a keyboard removal emptied the tray, to give focus a home. */
   onEmptied?: () => void;
   slug?: string;
+  /**
+   * False where the list sits in a popover or sheet with its own title (the
+   * gallery toolbar, issue 1733 E5): no foldable title and no section frame.
+   */
+  foldable?: boolean;
 }
 
 const TrayRow: React.FC<{ photo: TrayPhoto; onRemove: (photoId: number, button: HTMLButtonElement) => void; slug?: string }> = ({
@@ -62,7 +67,7 @@ const TrayRow: React.FC<{ photo: TrayPhoto; onRemove: (photoId: number, button: 
   );
 };
 
-export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayProps> = ({ photos, onRemove, onEmptied, slug }) => {
+export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayProps> = ({ photos, onRemove, onEmptied, slug, foldable = true }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(true);
   const listId = useId();
@@ -102,6 +107,17 @@ export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayPr
       ?.focus();
   }, [photos, onEmptied]);
   if (photos.length === 0) return null;
+  const list = (
+    // In the sidebar, five and a half rows: the cut-off row is what says the
+    // list scrolls where the scrollbar is an overlay (macOS, phones). A sheet
+    // or popover scrolls the list itself.
+    <ul id={listId} ref={listRef} className={`${foldable ? 'mt-3 max-h-[17.5rem] overflow-y-auto' : ''} space-y-1`}>
+      {photos.map((photo) => (
+        <TrayRow key={photo.id} photo={photo} onRemove={handleRemove} slug={slug} />
+      ))}
+    </ul>
+  );
+  if (!foldable) return list;
   return (
     <div className="gallery-sidebar-section gallery-sidebar-selection p-4 border-b border-border-token">
       <button
@@ -114,15 +130,7 @@ export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayPr
         {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         {t('gallery.selectionTray.title', 'Selected ({{count}})', { count: photos.length })}
       </button>
-      {open && (
-        // Five and a half rows: the cut-off row is what says the list scrolls
-        // where the scrollbar is an overlay (macOS, phones).
-        <ul id={listId} ref={listRef} className="mt-3 max-h-[17.5rem] overflow-y-auto space-y-1">
-          {photos.map((photo) => (
-            <TrayRow key={photo.id} photo={photo} onRemove={handleRemove} slug={slug} />
-          ))}
-        </ul>
-      )}
+      {open && list}
     </div>
   );
 };

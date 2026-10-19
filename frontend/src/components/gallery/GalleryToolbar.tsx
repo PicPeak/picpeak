@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { CheckSquare, ClipboardList, Filter, ListChecks, Package, Search, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { CheckSquare, ClipboardList, Filter, ListChecks, Package, Search, Star, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../common';
 import type { Photo } from '../../types';
@@ -9,6 +10,8 @@ import { BulkRating } from './BulkRating';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import { GallerySidebarSelectionTray } from './GallerySidebarSelectionTray';
 import { GallerySortMenu, type GallerySortBy } from './GallerySortMenu';
+import { GalleryBottomSheet } from './GalleryBottomSheet';
+import { useIsPhone } from './hooks/useIsPhone';
 
 type TrayPhoto = Pick<Photo, 'id' | 'filename' | 'original_filename' | 'thumbnail_url' | 'url'>;
 
@@ -48,10 +51,10 @@ export interface GalleryToolbarProps {
   };
   /**
    * The filter panel (issue 1733, E7); `close` hides it again. It opens from
-   * both faces: while selecting, the search box is gone from the bar, so the
-   * panel carries it then (`selecting`).
+   * both faces: while the bar shows the selection face, its search box is
+   * gone, so the panel carries it then (`withSearch`).
    */
-  filters?: { activeCount: number; render: (close: () => void, selecting: boolean) => React.ReactNode };
+  filters?: { activeCount: number; render: (close: () => void, withSearch: boolean) => React.ReactNode };
   /** View controls (grid density and the like) sit between sort and select. */
   viewControls?: React.ReactNode;
   /** Filename list (A3d): the selection, or the favourites outside it. */
@@ -62,7 +65,7 @@ export interface GalleryToolbarProps {
   className?: string;
 }
 
-type Popover = 'filters' | 'tray' | null;
+type Popover = 'filters' | 'tray' | 'rate' | null;
 
 // Focus in the bar or its popover, or nowhere in particular.
 function focusIsOurs(root: HTMLElement | null): boolean {
@@ -103,12 +106,35 @@ function useHeight(ref: React.RefObject<HTMLElement>): number {
   return height;
 }
 
+// While the phone's bottom bar is up, the page gets that much room at its
+// end, so the last row of photos and the footer can scroll clear of it.
+function useBottomBarRoom(ref: React.RefObject<HTMLElement>, active: boolean): void {
+  useEffect(() => {
+    const bar = ref.current;
+    if (!active || !bar) return;
+    const body = document.body;
+    const original = body.style.paddingBottom;
+    const update = () => { body.style.paddingBottom = `${Math.round(bar.getBoundingClientRect().height)}px`; };
+    update();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(bar);
+    return () => {
+      observer?.disconnect();
+      body.style.paddingBottom = original;
+    };
+  }, [ref, active]);
+}
+
 /**
  * The gallery toolbar (issue 1733, E8). It stays on screen while the guest
  * scrolls, and it is one bar with two faces: browse actions (search, filters,
  * sort, select) while nothing is selected, the batch actions for the
  * selection ("N selected", select all, rate, copy filenames, the list,
  * download) as soon as selection mode is on or anything is selected.
+ *
+ * On a phone (E5) the top bar keeps browsing and the batch actions sit in a
+ * bar at the bottom of the screen, in thumb reach; the filter panel, the
+ * selection list and the rating open as bottom sheets.
  */
 export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   search,
@@ -130,15 +156,24 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   const selectButtonRef = useRef<HTMLButtonElement>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
   const popoverId = useId();
+  const isPhone = useIsPhone();
 
   const selecting = !!selection && (selection.isSelectionMode || selection.selectedCount > 0);
   const trayShown = selecting && !!selection?.tray && selection.tray.photos.length > 0;
+  const rateShown = selecting && !!selection?.bulkRating && selection.selectedCount > 0;
+  // The top bar's face: on a phone it keeps browsing while the bottom bar
+  // carries the selection.
+  const selectionFace = selecting && !isPhone;
+  const bottomBarShown = selecting && isPhone;
+  useBottomBarRoom(bottomBarRef, bottomBarShown);
 
-  // The list belongs to the selection face; a swap back to browsing closes it.
+  // The list and the rating belong to the selection; ending it closes them.
   const openPopover: Popover = popover === 'filters' && filters
     ? 'filters'
-    : popover === 'tray' && trayShown ? 'tray' : null;
+    : popover === 'tray' && trayShown ? 'tray'
+    : popover === 'rate' && rateShown && isPhone ? 'rate' : null;
 
   // A popover whose content went away (the last photo taken off the list, the
   // filters withdrawn) is closed for good, so it does not pop back open by
@@ -172,9 +207,9 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   }, [selecting]);
 
   // Escape and a press outside close the popover; Escape hands focus back to
-  // the button that opened it.
+  // the button that opened it. A sheet does all of that itself.
   useEffect(() => {
-    if (!openPopover) return;
+    if (!openPopover || isPhone) return;
     const trigger = openPopover === 'filters' ? filterButtonRef : trayButtonRef;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -196,7 +231,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('pointerdown', onPointerDown);
     };
-  }, [openPopover]);
+  }, [openPopover, isPhone]);
 
   const close = () => setPopover(null);
   const toggle = (which: Exclude<Popover, null>) => setPopover((current) => (current === which ? null : which));
@@ -204,13 +239,16 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   // Icon and count only where the bar is short of room: on a phone, and in
   // the selection face below 2xl, which carries the most actions. The icon
   // goes in as a child, not as leftIcon, so an icon-only button stays centred.
-  const compact = selecting ? 'text-xs sm:text-sm' : 'text-sm md:text-base px-2.5 md:px-4';
+  // The copy button joins the batch actions while selecting: in the top bar's
+  // selection face, or in the phone's bottom bar.
+  const compactFor = (inSelection: boolean) => (inSelection ? 'text-xs sm:text-sm' : 'text-sm md:text-base px-2.5 md:px-4');
+  const compact = compactFor(selectionFace);
   const copyButton = copyFilenames && copyFilenames.count > 0 ? (
     <Button
       variant="outline"
       size={selecting ? 'sm' : 'md'}
       onClick={copyFilenames.onClick}
-      className={`${compact} whitespace-nowrap gap-1.5`}
+      className={`${compactFor(selecting)} whitespace-nowrap gap-1.5`}
       aria-label={`${t('gallery.copyFilenames.button', 'Copy filenames')} (${copyFilenames.count})`}
       title={t('gallery.copyFilenames.button', 'Copy filenames')}
     >
@@ -224,7 +262,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
     <Button
       ref={filterButtonRef}
       variant={filters.activeCount > 0 ? 'primary' : 'outline'}
-      size={selecting ? 'sm' : 'md'}
+      size={selectionFace ? 'sm' : 'md'}
       onClick={() => toggle('filters')}
       aria-expanded={openPopover === 'filters'}
       aria-controls={openPopover === 'filters' ? popoverId : undefined}
@@ -274,8 +312,9 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
           {photoCount} {t('common.media', 'media')}
         </p>
       )}
-      {copyButton}
-      {selection?.available && (
+      {/* On a phone the bottom bar has its own while selecting. */}
+      {!bottomBarShown && copyButton}
+      {selection?.available && !selecting && (
         <Button
           ref={selectButtonRef}
           variant="outline"
@@ -292,84 +331,163 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
     </div>
   );
 
+  const trayButton = (phone: boolean) => trayShown && selection ? (
+    <Button
+      ref={trayButtonRef}
+      variant="outline"
+      size="sm"
+      onClick={() => toggle('tray')}
+      aria-expanded={openPopover === 'tray'}
+      aria-controls={openPopover === 'tray' && !phone ? popoverId : undefined}
+      aria-label={t('gallery.selectionTray.title', 'Selected ({{count}})', { count: selection.selectedCount })}
+      className="text-xs sm:text-sm whitespace-nowrap gap-1.5"
+    >
+      <ListChecks className="w-4 h-4 shrink-0" aria-hidden="true" />
+      {phone
+        ? <span>({selection.selectedCount})</span>
+        : <span>{t('gallery.selectionTray.title', 'Selected ({{count}})', { count: selection.selectedCount })}</span>}
+    </Button>
+  ) : null;
+
+  const downloadButton = (phone: boolean) => selection?.download && selection.selectedCount > 0 ? (
+    <Button
+      variant="primary"
+      size="sm"
+      leftIcon={<Package className="w-4 h-4" />}
+      onClick={selection.download.onClick}
+      disabled={selection.download.disabled}
+      isLoading={selection.download.isLoading}
+      focusableWhileLoading
+      className={`text-xs sm:text-sm whitespace-nowrap ${phone ? 'flex-1' : ''}`}
+    >
+      <span className="hidden xl:inline">{t('gallery.downloadSelected', { count: selection.selectedCount })}</span>
+      <span className="xl:hidden">{t('common.download')} ({selection.selectedCount})</span>
+    </Button>
+  ) : null;
+
+  const cancelButton = selection ? (
+    <Button
+      ref={cancelButtonRef}
+      variant="ghost"
+      size="icon-sm"
+      onClick={selection.onCancel}
+      aria-label={t('gallery.cancelSelection')}
+      title={t('gallery.cancelSelection')}
+    >
+      <X className="w-4 h-4" />
+    </Button>
+  ) : null;
+
+  const selectedCountLabel = selection ? (
+    <span className="text-sm font-medium text-theme whitespace-nowrap" aria-live="polite">
+      {t('gallery.photosSelected', { count: selection.selectedCount })}
+    </span>
+  ) : null;
+
+  const selectAllButtons = selection ? (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={selection.onSelectAll}
+        disabled={selection.visibleCount === 0}
+        className="text-xs sm:text-sm"
+      >
+        {t('gallery.selectAll')} ({selection.visibleCount})
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={selection.onDeselectAll}
+        disabled={selection.selectedCount === 0}
+        className="text-xs sm:text-sm"
+      >
+        {t('gallery.deselectAll')}
+      </Button>
+    </div>
+  ) : null;
+
+  const quotaNotice = selection?.download?.quotaPhotos && selection.selectedCount > 0 ? (
+    <DownloadQuotaNotice photos={selection.download.quotaPhotos} className="text-xs sm:text-sm" />
+  ) : null;
+
   const selectionRow = selection && (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2 flex-wrap" role="toolbar" aria-label={t('gallery.toolbar.selection', 'Selection')}>
-        <Button
-          ref={cancelButtonRef}
-          variant="ghost"
-          size="icon-sm"
-          onClick={selection.onCancel}
-          aria-label={t('gallery.cancelSelection')}
-          title={t('gallery.cancelSelection')}
-        >
-          <X className="w-4 h-4" />
-        </Button>
-        <span className="text-sm font-medium text-theme whitespace-nowrap" aria-live="polite">
-          {t('gallery.photosSelected', { count: selection.selectedCount })}
-        </span>
-        <div className="flex items-center gap-1 flex-wrap">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={selection.onSelectAll}
-            disabled={selection.visibleCount === 0}
-            className="text-xs sm:text-sm"
-          >
-            {t('gallery.selectAll')} ({selection.visibleCount})
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={selection.onDeselectAll}
-            disabled={selection.selectedCount === 0}
-            className="text-xs sm:text-sm"
-          >
-            {t('gallery.deselectAll')}
-          </Button>
-        </div>
+        {cancelButton}
+        {selectedCountLabel}
+        {selectAllButtons}
         <div className="flex items-center gap-2 flex-wrap ml-auto">
           {filterButton}
-          {selection.bulkRating && selection.selectedCount > 0 && (
-            <BulkRating {...selection.bulkRating} />
-          )}
+          {rateShown && selection.bulkRating && <BulkRating {...selection.bulkRating} />}
           {copyButton}
-          {trayShown && (
-            <Button
-              ref={trayButtonRef}
-              variant="outline"
-              size="sm"
-              leftIcon={<ListChecks className="w-4 h-4" />}
-              onClick={() => toggle('tray')}
-              aria-expanded={openPopover === 'tray'}
-              aria-controls={openPopover === 'tray' ? popoverId : undefined}
-              className="text-xs sm:text-sm whitespace-nowrap"
-            >
-              {t('gallery.selectionTray.title', 'Selected ({{count}})', { count: selection.selectedCount })}
-            </Button>
-          )}
-          {selection.download && selection.selectedCount > 0 && (
-            <Button
-              variant="primary"
-              size="sm"
-              leftIcon={<Package className="w-4 h-4" />}
-              onClick={selection.download.onClick}
-              disabled={selection.download.disabled}
-              isLoading={selection.download.isLoading}
-              focusableWhileLoading
-              className="text-xs sm:text-sm whitespace-nowrap"
-            >
-              <span className="hidden xl:inline">{t('gallery.downloadSelected', { count: selection.selectedCount })}</span>
-              <span className="xl:hidden">{t('common.download')} ({selection.selectedCount})</span>
-            </Button>
-          )}
+          {trayButton(false)}
+          {downloadButton(false)}
         </div>
       </div>
-      {selection.download?.quotaPhotos && selection.selectedCount > 0 && (
-        <DownloadQuotaNotice photos={selection.download.quotaPhotos} className="text-xs sm:text-sm" />
-      )}
+      {quotaNotice}
     </div>
   );
+
+  // The phone's selection bar (E5): fixed to the bottom edge, above the home
+  // indicator. Two rows: what is selected, then what to do with it.
+  const bottomBar = bottomBarShown && selection ? createPortal(
+    <div
+      ref={bottomBarRef}
+      data-testid="gallery-selection-bar"
+      role="toolbar"
+      aria-label={t('gallery.toolbar.selection', 'Selection')}
+      className="gallery-selection-bar fixed inset-x-0 bottom-0 z-40 bg-surface border-t border-border-token shadow-[0_-4px_12px_rgba(0,0,0,0.08)] px-4 pt-2"
+      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)' }}
+    >
+      <div className="flex items-center gap-2">
+        {cancelButton}
+        {selectedCountLabel}
+        <div className="ml-auto">{selectAllButtons}</div>
+      </div>
+      <div className="flex items-center gap-2 mt-2">
+        {rateShown && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => toggle('rate')}
+            aria-expanded={openPopover === 'rate'}
+            aria-label={t('feedback.rateSelected', 'Rate selected')}
+            className="text-xs gap-1.5"
+          >
+            <Star className="w-4 h-4 shrink-0" aria-hidden="true" />
+          </Button>
+        )}
+        {copyButton}
+        {trayButton(true)}
+        {downloadButton(true)}
+      </div>
+      {quotaNotice && <div className="mt-1">{quotaNotice}</div>}
+    </div>,
+    document.body,
+  ) : null;
+
+  const surfaceTitle = openPopover === 'filters'
+    ? t('gallery.filters', 'Filters')
+    : openPopover === 'rate'
+      ? t('feedback.rateSelected', 'Rate selected')
+      : t('gallery.selectionTray.title', 'Selected ({{count}})', { count: selection?.selectedCount ?? 0 });
+
+  const surfaceContent = openPopover === 'filters'
+    ? filters?.render(close, selectionFace)
+    : openPopover === 'tray' && selection?.tray
+      ? (
+        <GallerySidebarSelectionTray
+          photos={selection.tray.photos}
+          onRemove={selection.tray.onRemove}
+          slug={selection.tray.slug}
+          onEmptied={close}
+          foldable={false}
+        />
+      )
+      : openPopover === 'rate' && selection?.bulkRating
+        ? <BulkRating {...selection.bulkRating} />
+        : null;
 
   return (
     <div
@@ -384,51 +502,44 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
         overflowAnchor: 'none',
       }}
     >
-      {selecting ? selectionRow : browseRow}
+      {selectionFace ? selectionRow : browseRow}
 
-      {openPopover && (
+      {openPopover && !isPhone && (
         <div
           ref={popoverRef}
           id={popoverId}
           role="dialog"
-          aria-label={openPopover === 'filters'
-            ? t('gallery.filters', 'Filters')
-            : t('gallery.selectionTray.title', 'Selected ({{count}})', { count: selection?.selectedCount ?? 0 })}
+          aria-label={surfaceTitle}
           // Within the screen once the bar has stuck under the header, however
           // tall the bar has grown; the class is the fallback without dvh.
           style={{ maxHeight: `min(70vh, calc(100dvh - max(env(safe-area-inset-top, 0px), ${headerOffset}px) - ${barHeight}px - 1rem))` }}
-          className={`absolute right-4 sm:right-6 lg:right-8 top-full mt-1 w-[min(32rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-lg border border-border-token bg-surface shadow-lg ${
-            openPopover === 'filters' ? 'p-4' : ''
-          }`}
+          className="absolute right-4 sm:right-6 lg:right-8 top-full mt-1 w-[min(32rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-lg border border-border-token bg-surface shadow-lg p-4"
         >
-          <button
-            type="button"
-            onClick={() => {
-              close();
-              (openPopover === 'filters' ? filterButtonRef : trayButtonRef).current?.focus();
-            }}
-            aria-label={t('common.close', 'Close')}
-            className="absolute top-3 right-3 z-10 p-1 rounded text-muted-theme hover-surface"
-          >
-            <X className="w-4 h-4" />
-          </button>
-          {openPopover === 'filters' && (
-            <>
-              <h2 className="text-sm font-semibold text-theme mb-3 pr-8">{t('gallery.filters', 'Filters')}</h2>
-              {filters?.render(close, selecting)}
-            </>
-          )}
-          {/* The list brings its own title, which also folds it. */}
-          {openPopover === 'tray' && selection?.tray && (
-            <GallerySidebarSelectionTray
-              photos={selection.tray.photos}
-              onRemove={selection.tray.onRemove}
-              slug={selection.tray.slug}
-              onEmptied={close}
-            />
-          )}
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h2 className="text-sm font-semibold text-theme">{surfaceTitle}</h2>
+            <button
+              type="button"
+              onClick={() => {
+                close();
+                (openPopover === 'filters' ? filterButtonRef : trayButtonRef).current?.focus();
+              }}
+              aria-label={t('common.close', 'Close')}
+              className="p-1 rounded text-muted-theme hover-surface"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {surfaceContent}
         </div>
       )}
+
+      {isPhone && (
+        <GalleryBottomSheet open={!!openPopover} onClose={close} title={surfaceTitle}>
+          {surfaceContent}
+        </GalleryBottomSheet>
+      )}
+
+      {bottomBar}
     </div>
   );
 };
