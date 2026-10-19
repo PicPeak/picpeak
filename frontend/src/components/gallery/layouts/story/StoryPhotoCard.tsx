@@ -7,6 +7,7 @@ import { ClientVisibilityToggle, isHiddenFromGuests } from '../../ClientVisibili
 import type { Photo } from '../../../../types';
 import { lightboxImageUrl } from '../../imageTiers';
 import { TileImage } from '../../TileImage';
+import { usePhotoLabels } from '../../PhotoLabels';
 
 interface StoryPhotoCardProps {
   photo: Photo;
@@ -79,11 +80,14 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   const cardRef = useRef<HTMLDivElement>(null);
   const isNearViewport = useInView(cardRef, { once: true, margin: '200px' });
 
+  // Under neutral photo labels (issue 1733, E6) the caption, alt text and
+  // checkbox name read "Photo 12 of 84" instead of a filename.
+  const photoLabels = usePhotoLabels();
   const captionText = caption === 'none'
     ? null
-    : caption === 'original'
+    : photoLabels.of(photo, caption === 'original'
       ? (photo.original_filename || photo.filename)
-      : photo.filename;
+      : photo.filename);
 
   return (
     <motion.div
@@ -150,7 +154,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           // photo. Previews use fit:'inside' and are the whole frame, so the
           // card looks exactly as it did while no longer pulling an original.
           src={lightboxImageUrl(photo)}
-          alt={photo.filename}
+          alt={photoLabels.of(photo, photo.filename)}
           onLoad={() => setIsLoaded(true)}
           className={`w-full h-full object-cover transition-all duration-700 ease-out will-change-transform ${
             !isLoaded ? 'opacity-0 scale-110' : 'opacity-100 scale-100'
@@ -186,7 +190,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           type="button"
           role="checkbox"
           aria-checked={isSelected}
-          aria-label={photo.original_filename || photo.filename}
+          aria-label={photoLabels.of(photo, photo.original_filename || photo.filename)}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();

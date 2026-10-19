@@ -486,6 +486,19 @@ export const GuestsSection: React.FC<FieldsProps & {
         </label>
         <p className="text-xs text-muted mt-1 ml-6">{t('events.showExifToGuestsHelp')}</p>
       </div>
+      {/* Neutral photo labels instead of filenames (issue 1733, E6). */}
+      <div>
+        <label className="flex items-center">
+          <input
+            type="checkbox"
+            checked={f.neutral_photo_labels}
+            onChange={(e) => set({ neutral_photo_labels: e.target.checked })}
+            className={checkboxClass}
+          />
+          <span className="ml-2 text-sm text-body">{t('events.neutralPhotoLabels')}</span>
+        </label>
+        <p className="text-xs text-muted mt-1 ml-6">{t('events.neutralPhotoLabelsHelp')}</p>
+      </div>
       {feedback && (
         <div className="pt-4 border-t border-line">
           <h4 className="text-sm font-semibold text-heading mb-3">{t('feedback.settings.title', 'Guest Feedback Settings')}</h4>

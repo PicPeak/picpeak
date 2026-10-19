@@ -688,6 +688,10 @@
       "like": "Gostar",
       "unlike": "Remover gosto",
       "selectPhoto": "Selecionar {{name}}"
+    },
+    "neutralLabel": {
+      "numbered": "Foto {{position}} de {{total}}",
+      "plain": "Foto"
     }
   },
   "categories": {
@@ -1210,6 +1214,8 @@
     },
     "showExifToGuests": "Mostrar os dados da câmera aos convidados",
     "showExifToGuestsHelp": "Câmera, lente, distância focal, abertura, velocidade do obturador e ISO aparecem abaixo da foto na visualização em tela cheia. A localização e os números de série nunca são armazenados nem exibidos.",
+    "neutralPhotoLabels": "Mostrar um rótulo neutro em vez dos nomes de arquivo",
+    "neutralPhotoLabelsHelp": "Os convidados veem “Foto 12 de 84” em vez do nome de arquivo da câmera na visualização em tela cheia, nas legendas das miniaturas e no texto para leitores de tela. Os downloads mantêm os nomes de arquivo, e a lista “Copiar nomes de arquivo” não é oferecida aos convidados. A área de administração sempre mostra os nomes de arquivo.",
     "welcomeEditor": {
       "lineBreaksPreserved": "As quebras de linha são mantidas nos e-mails",
       "tip": "Dica: prima Enter para criar uma nova linha. Cada linha aparecerá como um parágrafo separado nos e-mails.",

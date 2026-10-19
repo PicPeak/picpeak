@@ -582,6 +582,10 @@
       "like": "J’aime",
       "unlike": "Retirer le j’aime",
       "selectPhoto": "Sélectionner {{name}}"
+    },
+    "neutralLabel": {
+      "numbered": "Photo {{position}} sur {{total}}",
+      "plain": "Photo"
     }
   },
   "categories": {
@@ -1096,6 +1100,8 @@
     },
     "showExifToGuests": "Afficher les données de prise de vue aux invités",
     "showExifToGuestsHelp": "L'appareil, l'objectif, la focale, l'ouverture, la vitesse d'obturation et la sensibilité ISO apparaissent sous la photo en plein écran. La position et les numéros de série ne sont jamais enregistrés ni affichés.",
+    "neutralPhotoLabels": "Afficher un libellé neutre au lieu des noms de fichier",
+    "neutralPhotoLabelsHelp": "Les invités voient « Photo 12 sur 84 » au lieu du nom de fichier de l’appareil dans la vue plein écran, dans les légendes des vignettes et dans le texte des lecteurs d’écran. Les téléchargements gardent leurs noms de fichier, et la liste « Copier les noms de fichiers » n’est pas proposée aux invités. L’administration affiche toujours les noms de fichier.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Les sauts de ligne sont conservés dans les e-mails",
       "tip": "Astuce : appuyez sur Entrée pour créer une nouvelle ligne. Chaque ligne apparaîtra comme un paragraphe distinct dans les e-mails.",

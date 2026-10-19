@@ -23,6 +23,8 @@ export type EditFormState = {
   live_refresh: boolean;
   // Camera details in the guest lightbox (issue 1733, D1)
   show_exif_to_guests: boolean;
+  // Neutral photo labels for guests (issue 1733, E6)
+  neutral_photo_labels: boolean;
   hero_photo_id: number | null;
   customer_name: string;
   customer_email: string;

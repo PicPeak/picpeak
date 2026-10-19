@@ -572,6 +572,10 @@
       "like": "Leuk",
       "unlike": "Niet meer leuk",
       "selectPhoto": "{{name}} selecteren"
+    },
+    "neutralLabel": {
+      "numbered": "Foto {{position}} van {{total}}",
+      "plain": "Foto"
     }
   },
   "categories": {
@@ -1082,6 +1086,8 @@
     },
     "showExifToGuests": "Cameragegevens aan gasten tonen",
     "showExifToGuestsHelp": "Camera, objectief, brandpuntsafstand, diafragma, sluitertijd en ISO verschijnen onder de foto in de volledige weergave. Locatie en serienummers worden nooit opgeslagen of getoond.",
+    "neutralPhotoLabels": "Neutraal label tonen in plaats van bestandsnamen",
+    "neutralPhotoLabelsHelp": "Gasten zien “Foto 12 van 84” in plaats van de bestandsnaam van de camera in de volledige weergave, in bijschriften en in tekst voor schermlezers. Downloads houden hun bestandsnamen, en de lijst ‘Bestandsnamen kopiëren’ wordt gasten niet aangeboden. In het beheer staan altijd de bestandsnamen.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Regeleinden blijven behouden in e-mails",
       "tip": "Tip: druk op Enter voor een nieuwe regel. Elke regel verschijnt in e-mails als een aparte alinea.",

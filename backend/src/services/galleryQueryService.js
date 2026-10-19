@@ -648,6 +648,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // Mirror of the admin-side toggle so the lightbox can decide
       // whether to surface original camera filenames (#508).
       use_original_filenames: useOriginalFilenames,
+      // Neutral photo labels (issue 1733, E6): guests see "Photo 12 of 84"
+      // instead of a filename. Display only — `filename` stays in the photo
+      // list below, because downloads are still named by it.
+      neutral_photo_labels: parseBooleanInput(event.neutral_photo_labels, false),
       // "People in this gallery" (#1074). False whenever the global flag
       // is off, detection is off for this event, or the photographer chose
       // to keep the strip to themselves — the frontend renders no face UI

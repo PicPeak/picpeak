@@ -2302,6 +2302,10 @@
       "like": "Gefällt mir",
       "unlike": "Gefällt mir zurücknehmen",
       "selectPhoto": "{{name}} auswählen"
+    },
+    "neutralLabel": {
+      "numbered": "Foto {{position}} von {{total}}",
+      "plain": "Foto"
     }
   },
   "categories": {
@@ -3101,6 +3105,8 @@
     },
     "showExifToGuests": "Kameradaten den Gästen anzeigen",
     "showExifToGuestsHelp": "Kamera, Objektiv, Brennweite, Blende, Belichtungszeit und ISO erscheinen in der Vollbildansicht unter dem Foto. Standort und Seriennummern werden nie gespeichert oder angezeigt.",
+    "neutralPhotoLabels": "Neutrale Bezeichnung statt Dateinamen anzeigen",
+    "neutralPhotoLabelsHelp": "Gäste sehen „Foto 12 von 84“ statt des Kamera-Dateinamens in der Vollbildansicht, in Bildunterschriften und in Screenreader-Texten. Downloads behalten ihre Dateinamen, und die Liste „Dateinamen kopieren“ wird Gästen nicht angeboten. Im Adminbereich stehen immer die Dateinamen.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Zeilenumbrüche bleiben in E-Mails erhalten",
       "tip": "Tipp: Mit der Eingabetaste beginnst du eine neue Zeile. Jede Zeile erscheint in E-Mails als eigener Absatz.",

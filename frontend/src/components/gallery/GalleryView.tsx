@@ -23,6 +23,7 @@ import { GalleryBreadcrumb } from './GalleryBreadcrumb';
 import { GalleryViewSwitch } from './GalleryViewSwitch';
 import { GalleryDeliveryBanner } from './GalleryDeliveryBanner';
 import { GalleryTileBadgesProvider, type GalleryTileBadgesValue } from './GalleryTileBadges';
+import { PhotoLabelsProvider } from './PhotoLabels';
 import {
   findFolderByKey,
   filterCategories,
@@ -318,7 +319,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const useCanvasRendering = data?.event?.use_canvas_rendering === true;
   // #508 — surface original camera filenames in the lightbox when the
   // admin has flipped the same toggle that drives original-name downloads.
-  const showOriginalFilename = data?.event?.use_original_filenames === true;
+  // Neutral photo labels (issue 1733, E6): "Photo 12 of 84" in place of the
+  // filename. It wins over the original-filename toggle above for display;
+  // downloads are named by that toggle as before.
+  const neutralPhotoLabels = data?.event?.neutral_photo_labels === true;
+  const showOriginalFilename = !neutralPhotoLabels && data?.event?.use_original_filenames === true;
 
   // DevTools protection - enabled by individual setting OR legacy protection level
   const devToolsEnabled = enableDevtoolsProtection || protectionLevel === 'enhanced' || protectionLevel === 'maximum';
@@ -1114,8 +1119,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Premium and Story have no `favorite` control: their Favourites toggle
   // writes `like` feedback and seeds from `is_liked`, so there a like is the
   // favourite (see isFilenameListFavourite, and `favouritesAreLikes` above).
+  //
+  // Empty under neutral photo labels (issue 1733, E6): the list is nothing but
+  // the camera names that setting keeps off screen, and every "Copy filenames"
+  // button is gated on its length.
   const copyFilenames = useMemo(() => photosForFilenameList(
-    data?.photos || [],
+    neutralPhotoLabels ? [] : data?.photos || [],
     selectedPhotos,
     (photo) => isFilenameListFavourite(photo, {
       likeBacked: favouritesAreLikes,
@@ -1130,7 +1139,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       settingsResolved: feedbackSettings?.identity_mode !== undefined,
     }),
     isSelectionMode,
-  ), [data?.photos, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes, feedbackSettings]);
+  ), [data?.photos, neutralPhotoLabels, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes, feedbackSettings]);
 
   const handleDownloadAll = () => {
     // Prevent downloads if gallery is expired or downloads disabled
@@ -1641,6 +1650,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <DownloadQuotaProvider slug={slug} event={data?.event}>
       <GalleryTileBadgesProvider value={tileBadges}>
+      <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
         <GuestRecoveryModal />
         {/* #1160: these layouts return early and render edge-to-edge, but they
@@ -1857,6 +1867,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onClose={() => setShowCopyFilenames(false)}
           />
         )}
+      </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
       </DownloadQuotaProvider>
       </GuestIdentityProvider>
@@ -1867,6 +1878,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
     <DownloadQuotaProvider slug={slug} event={data?.event}>
       <GalleryTileBadgesProvider value={tileBadges}>
+      <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
       <GuestRecoveryModal />
       {/* Sidebar for non-grid layouts */}
@@ -2373,6 +2385,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
+      </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
     </DownloadQuotaProvider>
     </GuestIdentityProvider>

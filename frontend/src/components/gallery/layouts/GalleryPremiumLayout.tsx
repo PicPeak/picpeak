@@ -26,6 +26,7 @@ import type { Photo } from '../../../types';
 import { Button, PoweredBy } from '../../common';
 import { thumbnailUrlForTile } from '../imageTiers';
 import { TileImage } from '../TileImage';
+import { PhotoLabelsProvider, usePhotoLabels } from '../PhotoLabels';
 import { feedbackService } from '../../../services/feedback.service';
 import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
@@ -109,6 +110,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   const tieredSrc = (!isVideo && photo.thumbnail_url
     ? thumbnailUrlForTile(photo.thumbnail_url, photo, width)
     : null) || photo.thumbnail_url || photo.url;
+  const photoLabels = usePhotoLabels();
 
   const likeCount = photo.like_count ?? 0;
   const averageRating = photo.average_rating ?? 0;
@@ -131,7 +133,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         // the card is in view.
         thumbHash={inView ? photo.thumb_hash : null}
         src={tieredSrc}
-        alt={photo.filename}
+        alt={photoLabels.of(photo, photo.filename)}
         // No inline height: the card now has a definite one, so the
         // stylesheet's `.gallery-premium-photo-card img { height: 100% }` can
         // finally apply and object-fit: cover crops a square rendition INTO
@@ -289,6 +291,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   void _onOpenPhotoWithFeedback;
   void _onDownload;
   const { t, i18n } = useTranslation();
+  const photoLabels = usePhotoLabels();
   const downloadPhotoMutation = useDownloadPhoto();
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   // The delivered preview can be smaller than the original. Keep Zoom's
@@ -436,9 +439,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }, [filteredPhotos]);
 
   // Lightbox slides. `title` powers the Captions plugin — only emitted
-  // when the admin has flipped the original-filenames toggle (#508).
+  // when the admin has flipped the original-filenames toggle (#508), or as
+  // "Photo 12 of 84" under neutral photo labels (issue 1733, E6).
   const slides = useMemo(() => {
-    return filteredPhotos.map(photo => ({
+    return filteredPhotos.map((photo, index) => ({
       // Display source, not the original (#1166). This layout returns early
       // from PhotoGridWithLayouts and never renders PhotoLightbox, so it needs
       // its own call — without it a premium gallery keeps pulling
@@ -453,14 +457,16 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       // against photo.url. src is a derivative now, so that lookup would find
       // nothing and Download would silently do nothing (#1166 review).
       photoId: photo.id,
-      alt: photo.filename,
+      alt: photoLabels.neutral ? photoLabels.at(index, filteredPhotos.length) : photo.filename,
       width: imageDimensions[lightboxImageUrl(photo)]?.width || photo.width || 1200,
       height: imageDimensions[lightboxImageUrl(photo)]?.height || photo.height || 800,
       thumbnail: photo.thumbnail_url || undefined,
       download: allowDownloads ? photo.url : undefined,
-      title: showOriginalFilename
-        ? (photo.original_filename || photo.filename)
-        : undefined,
+      title: photoLabels.neutral
+        ? photoLabels.at(index, filteredPhotos.length)
+        : showOriginalFilename
+          ? (photo.original_filename || photo.filename)
+          : undefined,
       // Photo credit (#1561), same wording as PhotoLightbox. Only present
       // when the gallery shows names to this viewer.
       // Camera details (issue 1733, D1) on a second line; the caption
@@ -474,8 +480,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         exifLine(photo.exif),
       ].filter(Boolean).join('\n') || undefined,
     }));
-  }, [filteredPhotos, allowDownloads, showOriginalFilename, imageDimensions, t]);
-  const showCaptions = showOriginalFilename || slides.some((slide) => !!slide.description);
+  }, [filteredPhotos, allowDownloads, showOriginalFilename, photoLabels, imageDimensions, t]);
+  const showCaptions = showOriginalFilename || photoLabels.neutral || slides.some((slide) => !!slide.description);
 
   // Toggle — server /feedback like is a toggle (#590) — and remember the
   // state asked for until a payload confirms it.
@@ -746,9 +752,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }
 
   return (
-    // #1275 — the stylesheet keys its touch rules off this rather than a
-    // primary-pointer media query, so the checkbox and like button follow the
-    // input actually in use on a device that has both.
+    // Tiles are numbered against the list this layout's lightbox steps
+    // through, which a category filter narrows (issue 1733, E6).
+    <PhotoLabelsProvider photos={filteredPhotos}>
+    {/* #1275 — the stylesheet keys its touch rules off this rather than a
+        primary-pointer media query, so the checkbox and like button follow
+        the input actually in use on a device that has both. */}
     <div className="gallery-premium-layout" data-input-mode={inputMode}>
       {/* Hero Section */}
       <div className="gallery-premium-hero">
@@ -1041,5 +1050,6 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         feedbackType="like"
       />
     </div>
+    </PhotoLabelsProvider>
   );
 };

@@ -1711,6 +1711,10 @@
       "like": "Like",
       "unlike": "Unlike",
       "selectPhoto": "Select {{name}}"
+    },
+    "neutralLabel": {
+      "numbered": "Photo {{position}} of {{total}}",
+      "plain": "Photo"
     }
   },
   "categories": {
@@ -2510,6 +2514,8 @@
     },
     "showExifToGuests": "Show camera details to guests",
     "showExifToGuestsHelp": "Camera, lens, focal length, aperture, shutter speed and ISO appear below the photo in the full-screen view. Location and serial numbers are never stored or shown.",
+    "neutralPhotoLabels": "Show a neutral label instead of filenames",
+    "neutralPhotoLabelsHelp": "Guests see “Photo 12 of 84” instead of the camera filename in the full-screen view, on tile captions and in screen-reader text. Downloads keep their filenames, and the Copy filenames list is not offered to guests. The admin view always shows filenames.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Line breaks will be preserved in emails",
       "tip": "Tip: Press Enter to create a new line. Each line will appear as a separate paragraph in emails.",

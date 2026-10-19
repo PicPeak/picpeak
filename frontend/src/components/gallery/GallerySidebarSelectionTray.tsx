@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { AuthenticatedImage } from '../common';
 import type { Photo } from '../../types';
 import { photoDisplayFilename } from '../../utils/photoFilename';
+import { usePhotoLabels } from './PhotoLabels';
 
 /**
  * The current selection as a list (issue 1733, backlog item A3e): one row per
@@ -34,7 +35,8 @@ const TrayRow: React.FC<{ photo: TrayPhoto; onRemove: (photoId: number, button: 
   // A thumbnail is requested only once its row scrolls into the tray, so a
   // selection of several hundred photos costs a handful of requests.
   const { ref, inView } = useInView({ triggerOnce: true, rootMargin: '100px' });
-  const name = photoDisplayFilename(photo);
+  // Numbered against the gallery's list under neutral labels (issue 1733, E6).
+  const name = usePhotoLabels().of(photo, photoDisplayFilename(photo));
   return (
     <li ref={ref} className="flex items-center gap-2 h-12">
       <div className="w-10 h-10 shrink-0 rounded overflow-hidden bg-black/10">

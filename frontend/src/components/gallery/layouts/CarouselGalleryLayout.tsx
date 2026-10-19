@@ -7,6 +7,7 @@ import { AuthenticatedImage, Button } from '../../common';
 import { ColorLabelBadge } from '../ColorLabelBadge';
 import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import { useGalleryTileBadges } from '../GalleryTileBadges';
+import { usePhotoLabels } from '../PhotoLabels';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
@@ -30,6 +31,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   onToggleVisibility,
 }) => {
   const { t } = useTranslation();
+  const photoLabels = usePhotoLabels();
   const { theme } = useTheme();
   const { currentPhoto, currentIndex, setCurrentIndex } = usePhotoSelection(photos);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -116,7 +118,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
             its poster instead. */}
         <AuthenticatedImage
           src={currentPhoto.media_type === 'video' && currentPhoto.thumbnail_url ? currentPhoto.thumbnail_url : currentPhoto.url}
-          alt={currentPhoto.filename}
+          alt={photoLabels.of(currentPhoto, currentPhoto.filename)}
           // Dimmed when the client hid it from guests, as in Grid (issue 1992).
           className={`w-full h-full object-contain${isClient && onToggleVisibility && isHiddenFromGuests(currentPhoto) ? ' opacity-40' : ''}`}
           isGallery={true}
@@ -328,7 +330,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               >
                 <AuthenticatedImage
                   src={photo.thumbnail_url || photo.url}
-                  alt={photo.filename}
+                  alt={photoLabels.of(photo, photo.filename)}
                   // Hidden from guests: dimmed here too, not only on the stage
                   // (issue 1992). On the image, so hover's opacity-100 on the
                   // button does not undo it.

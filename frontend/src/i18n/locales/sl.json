@@ -1568,6 +1568,10 @@
       "like": "Všeček",
       "unlike": "Odstrani všeček",
       "selectPhoto": "Izberi {{name}}"
+    },
+    "neutralLabel": {
+      "numbered": "Fotografija {{position}} od {{total}}",
+      "plain": "Fotografija"
     }
   },
   "categories": {
@@ -2242,6 +2246,8 @@
     },
     "showExifToGuests": "Pokaži podatke o fotoaparatu gostom",
     "showExifToGuestsHelp": "Fotoaparat, objektiv, goriščna razdalja, zaslonka, čas osvetlitve in ISO so prikazani pod fotografijo v celozaslonskem pogledu. Lokacija in serijske številke se nikoli ne shranijo in ne prikažejo.",
+    "neutralPhotoLabels": "Namesto imen datotek prikaži nevtralno oznako",
+    "neutralPhotoLabelsHelp": "Gostje namesto imena datoteke iz fotoaparata vidijo „Fotografija 12 od 84“ v celozaslonskem pogledu, v napisih na sličicah in v besedilu za bralnike zaslona. Prenosi ohranijo svoja imena datotek, seznam „Kopiraj imena datotek“ pa gostom ni na voljo. V skrbniškem pogledu so imena datotek vedno prikazana.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Prelomi vrstic se ohranijo v e-poštnih sporočilih",
       "tip": "Namig: pritisnite Enter za novo vrstico. Vsaka vrstica bo v e-poštnih sporočilih ločen odstavek.",

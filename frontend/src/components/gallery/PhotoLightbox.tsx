@@ -25,6 +25,7 @@ import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 import { lockBodyScroll } from '../../utils/scrollLock';
 import { pushDialogLayer } from '../common/Modal';
 import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
+import { usePhotoLabels } from './PhotoLabels';
 import { useLightboxScrub } from './hooks/useLightboxScrub';
 import { exifLine } from '../../utils/photoExif';
 import { useLightboxAnnotation } from './annotation/useLightboxAnnotation';
@@ -295,6 +296,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   }, [onPreviewLoad, handlePreviewLoaded]);
 
   const { t } = useTranslation();
+  // Neutral photo labels (issue 1733, E6): numbered against this lightbox's
+  // own list, which is the list the counter counts.
+  const photoLabels = usePhotoLabels();
+  const slideAlt = (photo: Photo) => photoLabels.neutral
+    ? photoLabels.at(photos.findIndex((p) => p.id === photo.id), photos.length)
+    : photo.filename;
 
   const exifText = exifLine(currentPhoto?.exif);
 
@@ -1160,19 +1167,21 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           currentIndex={currentIndex}
           onSelect={goToIndex}
           slug={slug}
-          showFilenames={showOriginalFilename}
+          showFilenames={showOriginalFilename && !photoLabels.neutral}
         />
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2 flex-wrap">
           <div className="text-white min-w-0">
             <p className="text-sm opacity-75">
-              {currentIndex + 1} / {photos.length}
+              {photoLabels.neutral
+                ? photoLabels.at(currentIndex, photos.length)
+                : `${currentIndex + 1} / ${photos.length}`}
             </p>
             {/* #508 — original camera filename next to the counter when
                 the admin has flipped the matching toggle. Falls back to
                 the storage filename only if `original_filename` is null
                 (pre-migration-062 uploads). truncate + max-w keep long
                 names from pushing the action row to another line. */}
-            {showOriginalFilename && (currentPhoto.original_filename || currentPhoto.filename) && (
+            {showOriginalFilename && !photoLabels.neutral && (currentPhoto.original_filename || currentPhoto.filename) && (
               <p
                 className="text-xs opacity-60 truncate max-w-[14rem] sm:max-w-md mt-0.5"
                 title={currentPhoto.original_filename || currentPhoto.filename}
@@ -1459,7 +1468,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 {photo.media_type === 'video' && photo.thumbnail_url ? (
                   <img
                     src={photo.thumbnail_url}
-                    alt={photo.filename}
+                    alt={slideAlt(photo)}
                     className="max-w-full max-h-full object-contain select-none pointer-events-none"
                     draggable={false}
                   />
@@ -1475,7 +1484,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                     // when the toggle is off, when the photo is a
                     // video, or briefly while lazy generation runs.
                     src={lightboxImageUrl(photo)}
-                    alt={photo.filename}
+                    alt={slideAlt(photo)}
                     fallbackSrc={photo.thumbnail_url || undefined}
                     className="max-w-full max-h-full object-contain select-none pointer-events-none"
                     draggable={false}
@@ -1515,7 +1524,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 // Same preview-prefer-with-fallback logic as the
                 // off-screen tile above (#492).
                 src={lightboxImageUrl(photo)}
-                alt={photo.filename}
+                alt={slideAlt(photo)}
                 fallbackSrc={photo.thumbnail_url || undefined}
                 className="max-w-full max-h-full object-contain select-none"
                 // Invisible under the painted original, still laid out and
