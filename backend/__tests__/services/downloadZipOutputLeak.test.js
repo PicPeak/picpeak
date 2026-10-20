@@ -60,7 +60,7 @@ const mockStorage = {
   kind: () => 's3',
   get: jest.fn(async (key) => {
     opened.count += 1;
-    if (onOpen.fn) onOpen.fn(opened.count);
+    if (onOpen.fn) await onOpen.fn(opened.count);
     return new StoredObject(key, key === failingKey.value ? 1 : 0, objectChunks.value);
   }),
   getToFile: jest.fn(async () => undefined),
@@ -255,5 +255,102 @@ describe('pre-zip build releases its tmp zip', () => {
     expect(fs.existsSync(path.dirname(outputs[0].file))).toBe(false);
     const row = await db('events').where({ id: eventId }).first();
     expect(row.download_zip_path).toBe(CACHE_KEY);
+  });
+
+  it('keeps the directory of a running build out of the stale-directory sweep', async () => {
+    // A private tmp root, so the sweep cannot touch builds of other test files
+    // running in parallel workers.
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-sweep-live-'));
+    jest.spyOn(os, 'tmpdir').mockReturnValue(tmpRoot);
+    let sweptMidBuild;
+    let dirMidBuild;
+    onOpen.fn = async (count) => {
+      if (count !== 2) return;
+      // minAgeMs 0: only the live-directory registry stands between the sweep
+      // and the build's tmp directory.
+      sweptMidBuild = await downloadZipService.sweepStaleBuildDirs({ minAgeMs: 0 });
+      dirMidBuild = fs.existsSync(path.dirname(outputs[0].file));
+    };
+    objectChunks.value = 8;
+
+    try {
+      const result = await downloadZipService.generateZip(eventId);
+
+      expect(result.success).toBe(true);
+      expect(sweptMidBuild).toBe(0);
+      expect(dirMidBuild).toBe(true);
+      expect(downloadZipService.liveTmpDirs.size).toBe(0);
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('sweepStaleBuildDirs', () => {
+  let tmpRoot;
+
+  // `fileAgeMs` defaults to the directory's: an abandoned build leaves both
+  // untouched, while a running one keeps rewriting the file.
+  const makeDir = (name, ageMs, fileAgeMs = ageMs) => {
+    const dir = path.join(tmpRoot, name);
+    fs.mkdirSync(dir);
+    const file = path.join(dir, 'abc-all.zip');
+    fs.writeFileSync(file, 'partial');
+    const fileWhen = new Date(Date.now() - fileAgeMs);
+    fs.utimesSync(file, fileWhen, fileWhen);
+    const when = new Date(Date.now() - ageMs);
+    fs.utimesSync(dir, when, when);
+    return dir;
+  };
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-sweep-'));
+    jest.spyOn(os, 'tmpdir').mockReturnValue(tmpRoot);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    downloadZipService.liveTmpDirs.clear();
+  });
+
+  it('removes build directories left behind by an interrupted process', async () => {
+    const stale = makeDir('picpeak-zipbuild-stale', 60 * 60 * 1000);
+    const fresh = makeDir('picpeak-zipbuild-fresh', 1000);
+    const unrelated = makeDir('some-other-tool', 60 * 60 * 1000);
+
+    const removed = await downloadZipService.sweepStaleBuildDirs({ minAgeMs: 10 * 60 * 1000 });
+
+    expect(removed).toBe(1);
+    expect(fs.existsSync(stale)).toBe(false);
+    expect(fs.existsSync(fresh)).toBe(true);
+    expect(fs.existsSync(unrelated)).toBe(true);
+  });
+
+  it('leaves a directory whose zip is still being written, by this or another process', async () => {
+    // The directory itself stopped changing when the zip was created; the
+    // file inside keeps getting newer mtimes as bytes are written.
+    const writing = makeDir('picpeak-zipbuild-writing', 60 * 60 * 1000, 1000);
+
+    const removed = await downloadZipService.sweepStaleBuildDirs({ minAgeMs: 10 * 60 * 1000 });
+
+    expect(removed).toBe(0);
+    expect(fs.existsSync(writing)).toBe(true);
+  });
+
+  it('leaves the directory of a build that is still running', async () => {
+    const running = makeDir('picpeak-zipbuild-running', 60 * 60 * 1000);
+    downloadZipService.liveTmpDirs.add(running);
+
+    const removed = await downloadZipService.sweepStaleBuildDirs({ minAgeMs: 10 * 60 * 1000 });
+
+    expect(removed).toBe(0);
+    expect(fs.existsSync(running)).toBe(true);
+  });
+
+  it('does not throw when the tmp directory cannot be read', async () => {
+    os.tmpdir.mockReturnValue(path.join(tmpRoot, 'does-not-exist'));
+
+    await expect(downloadZipService.sweepStaleBuildDirs()).resolves.toBe(0);
   });
 });
