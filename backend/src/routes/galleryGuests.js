@@ -437,6 +437,17 @@ router.post('/:slug/guest/redeem', verifyGalleryAccess, async (req, res) => {
       };
       const body = { error: result.error };
       if (result.guestId != null) body.guest_id = Number(result.guestId);
+      // A spent invite is how a guest whose device lost its identity comes
+      // back, and the email code is their only way in from there. Say whether
+      // that way exists, so the client offers it only when a code can arrive
+      // (issue 2209). A yes/no, never the address: whoever holds the link
+      // learns nothing about the guest they could not already act on.
+      if (result.error === 'already_redeemed' && result.guestId != null) {
+        const invited = await db('gallery_guests')
+          .where({ id: result.guestId, event_id: event.id, is_deleted: false })
+          .first('email');
+        body.recoverable = Boolean(invited?.email);
+      }
       return res.status(statusMap[result.error] || 400).json(body);
     }
 
