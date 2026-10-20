@@ -5,6 +5,25 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.177.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.176.3-beta.0...v3.177.0-beta.0) (2026-10-20)
+
+
+### Features
+
+* **admin:** pick the gallery layout from wireframe tiles ([#2199](https://github.com/PicPeak/picpeak/issues/2199)) ([7775fdb](https://github.com/PicPeak/picpeak/commit/7775fdb6d81c714d448b935b24497349f9aeed19))
+* **gallery:** bottom action bar and bottom sheets for the toolbar on phones ([#2205](https://github.com/PicPeak/picpeak/issues/2205)) ([c28a0f2](https://github.com/PicPeak/picpeak/commit/c28a0f2a110c953da43eeb771fe04364422b07d8))
+* **gallery:** let the viewer choose the tile size, remembered per browser ([#2198](https://github.com/PicPeak/picpeak/issues/2198)) ([fbc1334](https://github.com/PicPeak/picpeak/commit/fbc1334260847421283b3c089aa6081e85da415b))
+* **gallery:** neutral photo label instead of the filename for guests ([#2203](https://github.com/PicPeak/picpeak/issues/2203)) ([885b929](https://github.com/PicPeak/picpeak/commit/885b9296fdd3e9e5f269fb9b78d56b1b8b14efc4))
+* **gallery:** plain-language download size menu, also for single photos ([#2202](https://github.com/PicPeak/picpeak/issues/2202)) ([4a86d0c](https://github.com/PicPeak/picpeak/commit/4a86d0c19687b9e2139eaf3c258ae2256baeca09))
+* **gallery:** Select / Annotate mode switch in the lightbox bar ([#2201](https://github.com/PicPeak/picpeak/issues/2201)) ([587c161](https://github.com/PicPeak/picpeak/commit/587c1617a4c76aab3059ab1245c5bb1ae71a4ec5))
+* **gallery:** settle a failed thumbnail on a neutral unavailable tile ([#2200](https://github.com/PicPeak/picpeak/issues/2200)) ([27055fb](https://github.com/PicPeak/picpeak/commit/27055fb38c8e16b3bf81bcbab52fa0d3885d9d98))
+* **gallery:** sticky toolbar that swaps to batch actions, filter panel ending in "select these N" ([#2204](https://github.com/PicPeak/picpeak/issues/2204)) ([6059159](https://github.com/PicPeak/picpeak/commit/60591593f6fbcb393e40e54a93b8d5ad5da455b2))
+
+
+### Performance Improvements
+
+* **gallery:** window the Grid and Timeline layouts in large galleries ([#2197](https://github.com/PicPeak/picpeak/issues/2197)) ([8a34e39](https://github.com/PicPeak/picpeak/commit/8a34e394cc226c7aee86dc724cbd7d09b8a91c3a))
+
 ## [3.176.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.176.2-beta.0...v3.176.3-beta.0) (2026-10-20)
 
 
