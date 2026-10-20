@@ -30,6 +30,27 @@ const logger = require('../utils/logger');
 
 const DEBOUNCE_MS = 5000;
 
+// Prefix of the per-build tmp directory, and how long an unowned one must sit
+// untouched before the startup sweep treats it as the remains of an
+// interrupted build. Generous on purpose: a build in another process sharing
+// this tmp dir (PM2 cluster mode) is invisible to liveTmpDirs, and while it
+// uploads the finished zip nothing in its directory changes.
+const BUILD_DIR_PREFIX = 'picpeak-zipbuild-';
+const STALE_BUILD_DIR_AGE_MS = 60 * 60 * 1000;
+
+// Newest modification time of a directory and of what is in it. A build that
+// is still writing its zip keeps the file's mtime moving, which the
+// directory's own mtime does not.
+async function newestMtimeMs(dir) {
+  let newest = (await fsp.stat(dir)).mtimeMs;
+  for (const name of await fsp.readdir(dir)) {
+    try {
+      newest = Math.max(newest, (await fsp.stat(path.join(dir, name))).mtimeMs);
+    } catch (_) { /* removed while we looked */ }
+  }
+  return newest;
+}
+
 // How many storage reads may be open at once while the archive is built.
 // archiver drains its queue one entry at a time, so a stream appended ahead of
 // its turn just parks an S3 socket with a full receive buffer. The SDK agent
@@ -60,7 +81,46 @@ class DownloadZipService {
     this.pendingCleanups = new Map(); // eventId -> invalidate()'s cleanup, until it settles
     this.regenActive = 0;             // background rebuilds running right now
     this.regenWaiters = [];           // resolvers parked waiting for a slot
+    this.liveTmpDirs = new Set();     // tmp build dirs owned by a running build
     this.stopped = false;
+  }
+
+  /**
+   * Remove tmp build directories that no running build owns.
+   *
+   * A build the process died in the middle of (container restart, VM reboot,
+   * OOM kill) never reaches its `finally`, so its partial zip stays in the tmp
+   * dir for good — on Docker that is the container's writable layer, which
+   * nothing else cleans. Meant to run once at startup. Directories of builds
+   * in this process are skipped, as is any directory (or file in it) modified
+   * within `minAgeMs`, which may belong to a build in another process.
+   * Returns how many directories were removed.
+   */
+  async sweepStaleBuildDirs({ minAgeMs = STALE_BUILD_DIR_AGE_MS } = {}) {
+    const root = os.tmpdir();
+    let entries;
+    try {
+      entries = await fsp.readdir(root, { withFileTypes: true });
+    } catch (err) {
+      logger.warn('downloadZipService.sweepStaleBuildDirs: cannot read tmp dir', { dir: root, error: err.message });
+      return 0;
+    }
+
+    let removed = 0;
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.startsWith(BUILD_DIR_PREFIX)) continue;
+      const dir = path.join(root, entry.name);
+      if (this.liveTmpDirs.has(dir)) continue;
+      try {
+        if (Date.now() - await newestMtimeMs(dir) < minAgeMs) continue;
+        await fsp.rm(dir, { recursive: true, force: true });
+        removed += 1;
+        logger.info('Removed stale pre-zip build directory', { dir });
+      } catch (err) {
+        logger.warn('downloadZipService.sweepStaleBuildDirs: could not remove directory', { dir, error: err.message });
+      }
+    }
+    return removed;
   }
 
   /**
@@ -196,6 +256,9 @@ class DownloadZipService {
   async _build(eventId, version) {
     const storage = getStorage();
     let tmpDir;
+    // The tmp zip being written. Kept out here so `finally` can close it: an
+    // archive that was aborted never does (see the comment there).
+    let output = null;
 
     // Storage reads appended to the archive but not yet drained. A failed or
     // invalidated build must destroy them: archiver's own abort() leaves the
@@ -268,7 +331,8 @@ class DownloadZipService {
 
       const finalKey = this.getCacheKey(event.slug);
 
-      tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-zipbuild-'));
+      tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), BUILD_DIR_PREFIX));
+      this.liveTmpDirs.add(tmpDir);
       const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}-all.zip`);
 
       // #493: resolve display filenames (with collision suffix) before the
@@ -282,7 +346,7 @@ class DownloadZipService {
 
       // Build zip — level 0 (store only) since photos are already compressed
       await new Promise((resolve, reject) => {
-        const output = fs.createWriteStream(tmpPath);
+        output = fs.createWriteStream(tmpPath);
         const archive = archiver('zip', { zlib: { level: 0 } });
 
         failBuild = (err) => {
@@ -295,6 +359,9 @@ class DownloadZipService {
         };
 
         output.on('close', resolve);
+        // A write error (ENOSPC on the tmp file) is also followed by 'close';
+        // failing first keeps that from reading as a finished zip.
+        output.on('error', failBuild);
         archive.on('error', failBuild);
         archive.pipe(output);
 
@@ -423,8 +490,16 @@ class DownloadZipService {
         stream.destroy();
       }
       openReads.clear();
+      // archiver only closes `output` once its active queue entry finishes,
+      // and an entry whose source was destroyed above never does. A cancelled
+      // or failed build would then unlink the partial zip but keep it open, and
+      // its disk blocks stay allocated until the process exits — a bulk upload
+      // cancels one build per batch, so that adds up to tens of GB. After a
+      // successful build the stream has already closed and this does nothing.
+      if (output && !output.destroyed) output.destroy();
       if (tmpDir) {
         await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+        this.liveTmpDirs.delete(tmpDir);
       }
     }
   }
