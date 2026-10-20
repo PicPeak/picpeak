@@ -11,6 +11,7 @@ import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import type { GalleryLayoutSettings } from '../../../types/theme.types';
 import { useLazyBands } from './lazyBands';
+import { densityColumnDelta, useGridDensity, type GridDensity } from '../gridDensity';
 import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { GRID_TILE_ATTR, useGridWindow } from './gridWindow';
 
@@ -226,15 +227,17 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
 /**
  * The grid's columns and gaps from the theme. Shared with the delivery
  * placeholders (issue 1562), which have to line up with the real tiles above
- * them. The grid-cols classes are safelisted in tailwind.config.
+ * them. The grid-cols classes are safelisted in tailwind.config, up to 12 —
+ * hence the cap once the viewer's density (issue 1733, E4) adds a column.
  */
-export function gridGeometryClass(gallerySettings: GalleryLayoutSettings): string {
+export function gridGeometryClass(gallerySettings: GalleryLayoutSettings, density: GridDensity = 'default'): string {
   const columns = gallerySettings.gridColumns || { mobile: 2, tablet: 3, desktop: 4 };
   const spacing = gallerySettings.spacing || 'normal';
   const scale = gallerySettings.thumbnailScale || 'md';
 
   const scaleOffsets: Record<string, number> = { xs: 3, sm: 1, md: 0, lg: -1, xl: -2 };
-  const applyScale = (cols: number) => Math.max(1, cols + (scaleOffsets[scale] ?? 0));
+  const delta = densityColumnDelta(density);
+  const applyScale = (cols: number) => Math.min(12, Math.max(1, cols + (scaleOffsets[scale] ?? 0) + delta));
   const spacingClass = spacing === 'tight' ? 'gap-2' : spacing === 'relaxed' ? 'gap-6' : 'gap-4';
 
   return `grid ${spacingClass}
@@ -264,6 +267,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const { theme } = useTheme();
   const gallerySettings = theme.gallerySettings || {};
   const animation = gallerySettings.photoAnimation || 'fade';
+  const density = useGridDensity();
 
   const [showIdentityModal, setShowIdentityModal] = React.useState(false);
   const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
@@ -278,7 +282,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   }, [photos]);
   const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
 
-  const gridClass = `photo-grid ${gridGeometryClass(gallerySettings)}`;
+  const gridClass = `photo-grid ${gridGeometryClass(gallerySettings, density)}`;
 
   // A large gallery mounts only the rows near the viewport (issue 2193).
   const gridRef = React.useRef<HTMLDivElement>(null);

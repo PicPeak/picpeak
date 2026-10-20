@@ -273,6 +273,49 @@ describe('BulkRating', () => {
     }
   });
 
+  it('keeps a run that is still out guarded when the control is closed and reopened', async () => {
+    let answer: (value: ReturnType<typeof ok>) => void = () => {};
+    submit.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    seedCache([makePhoto(1)]);
+    const first = renderControl([1]);
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    first.unmount();
+    renderControl([1]);
+    expect(screen.getByRole('button', { name: 'Rate 2 stars' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 2 stars' }));
+    expect(submit).toHaveBeenCalledTimes(1);
+    answer(ok([1], 4));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rate 2 stars' })).not.toBeDisabled());
+    expect(cached()[0].my_rating).toBe(4);
+  });
+
+  it('tells its host while the name-and-email dialog is open', async () => {
+    seedCache([makePhoto(1)]);
+    const onDialogChange = vi.fn();
+    renderControl([1], { requireNameEmail: true, onDialogChange });
+    expect(onDialogChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    await screen.findByRole('dialog');
+    expect(onDialogChange).toHaveBeenLastCalledWith(true);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onDialogChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('rates under the name and email its host kept, without asking again', async () => {
+    seedCache([makePhoto(1)]);
+    submit.mockResolvedValue(ok([1], 4));
+    renderControl([1], {
+      requireNameEmail: true,
+      identity: { name: 'Ann', email: 'ann@example.com' },
+      onIdentityChange: vi.fn(),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(SLUG, [1], 4, { guest_name: 'Ann', guest_email: 'ann@example.com' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('asks for name and email first when the gallery requires them', async () => {
     seedCache([makePhoto(1)]);
     submit.mockResolvedValue(ok([1], 4));

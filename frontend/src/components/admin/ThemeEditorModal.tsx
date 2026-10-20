@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Save, RotateCcw, Grid3X3, Layers, Play, Clock, LayoutGrid, Check, Columns, Film } from 'lucide-react';
+import React, { useState, useEffect, useId } from 'react';
+import { Save, RotateCcw } from 'lucide-react';
 import { Button, Modal } from '../common';
 import { ThemeCustomizerEnhanced } from './ThemeCustomizerEnhanced';
 import { GalleryPreview } from './GalleryPreview';
+import { LayoutPicker } from './theme-customizer/LayoutPicker';
+import { useGalleryLayoutOptions } from './theme-customizer/layoutWireframes';
 import { ThemeConfig, GALLERY_THEME_PRESETS, GalleryLayoutType } from '../../types/theme.types';
 import { cssTemplatesService, type EnabledTemplate } from '../../services/cssTemplates.service';
 import { useTranslation } from 'react-i18next';
@@ -16,16 +18,6 @@ interface ThemeEditorModalProps {
   eventName: string;
 }
 
-const layoutIcons: Record<GalleryLayoutType, React.ReactNode> = {
-  grid: <Grid3X3 className="w-4 h-4" />,
-  masonry: <Layers className="w-4 h-4" />,
-  carousel: <Play className="w-4 h-4" />,
-  timeline: <Clock className="w-4 h-4" />,
-  mosaic: <LayoutGrid className="w-4 h-4" />,
-  'gallery-premium': <Columns className="w-4 h-4" />,
-  'gallery-story': <Film className="w-4 h-4" />
-};
-
 export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
   isOpen,
   onClose,
@@ -38,6 +30,8 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
   const [theme, setTheme] = useState<ThemeConfig>(GALLERY_THEME_PRESETS.default.config);
   const [presetName, setPresetName] = useState<string>('default');
   const [previewLayout, setPreviewLayout] = useState<GalleryLayoutType | undefined>(undefined);
+  const layoutOptions = useGalleryLayoutOptions();
+  const previewLayoutHeadingId = useId();
   const [cssTemplates, setCssTemplates] = useState<EnabledTemplate[]>([]);
   const [cssTemplateId, setCssTemplateId] = useState<number | null>(currentCssTemplateId ?? null);
 
@@ -166,37 +160,16 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
           <div className="space-y-4">
             {/* Grid Style Selector */}
             <div>
-              <h3 className="text-sm font-medium text-body mb-3">
+              <h3 id={previewLayoutHeadingId} className="text-sm font-medium text-body mb-3">
                 {t('branding.previewLayout')}
               </h3>
-              <div className="grid grid-cols-3 gap-2">
-                {(Object.keys(layoutIcons) as GalleryLayoutType[]).map((layout) => (
-                  <button
-                    key={layout}
-                    onClick={() => setPreviewLayout(layout)}
-                    className={`relative p-3 rounded-lg border-2 transition-all ${
-                      (previewLayout || theme.galleryLayout || 'grid') === layout
-                        ? 'tile-selected'
-                        : 'border-line hover:border-line-strong bg-shell'
-                    }`}
-                  >
-                    <div className="flex flex-col items-center gap-1">
-                      <div className="text-body">
-                        {layoutIcons[layout]}
-                      </div>
-                      <span className="text-xs capitalize">
-                        {layout}
-                        {(layout === 'gallery-premium' || layout === 'gallery-story') && (
-                          <span className="ml-0.5 text-warning-text">(Beta)</span>
-                        )}
-                      </span>
-                    </div>
-                    {(previewLayout || theme.galleryLayout || 'grid') === layout && (
-                      <Check className="absolute top-1 right-1 w-3 h-3 text-accent" />
-                    )}
-                  </button>
-                ))}
-              </div>
+              <LayoutPicker
+                compact
+                aria-labelledby={previewLayoutHeadingId}
+                options={layoutOptions}
+                value={previewLayout || theme.galleryLayout || 'grid'}
+                onChange={setPreviewLayout}
+              />
             </div>
             
             {/* Gallery Preview */}

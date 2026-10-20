@@ -1,9 +1,10 @@
 /**
- * The filename list (issue 1733, A3d) is event-wide: when a search or feedback
- * filter leaves no photo on screen, the classic grid's empty state must still
- * offer the Copy filenames action instead of returning before it.
+ * The classic grid's empty state: which message it shows. The filename list
+ * (issue 1733, A3d) is event-wide and stays reachable when a search or filter
+ * leaves no photo on screen, from the gallery toolbar above the grid (issue
+ * 1733, E8), so the empty state no longer carries its own copy of it.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -44,18 +45,8 @@ const renderGrid = (props: Partial<React.ComponentProps<typeof PhotoGridWithLayo
 };
 
 describe('PhotoGridWithLayouts empty state — filename list', () => {
-  it('keeps the Copy filenames action next to the empty message', () => {
-    const onCopyFilenames = vi.fn();
-    renderGrid({ onCopyFilenames, copyFilenamesCount: 4, emptyIsFiltered: true });
-
-    expect(screen.getByText('No photos match your search or filters.')).toBeInTheDocument();
-    const button = screen.getByRole('button', { name: /Copy filenames \(4\)/ });
-    fireEvent.click(button);
-    expect(onCopyFilenames).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows no action when there is nothing to copy', () => {
-    renderGrid({ onCopyFilenames: vi.fn(), copyFilenamesCount: 0 });
+  it('leaves the Copy filenames action to the gallery toolbar', () => {
+    renderGrid({ onCopyFilenames: vi.fn(), copyFilenamesCount: 4 });
     expect(screen.getByText('There are no photos here yet.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Copy filenames/ })).not.toBeInTheDocument();
   });

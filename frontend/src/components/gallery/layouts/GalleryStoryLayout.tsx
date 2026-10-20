@@ -22,6 +22,7 @@ import {
   StoryScrollToTop
 } from './story';
 import { PhotoLightbox } from '../PhotoLightbox';
+import { PhotoLabelsProvider } from '../PhotoLabels';
 import { FeedbackIdentityModal } from '../FeedbackIdentityModal';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
 import { feedbackLockKind } from '../../../utils/feedbackLock';
@@ -517,6 +518,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }
 
   return (
+    // Numbered against the list this layout's lightbox steps through, which
+    // its own search narrows (issue 1733, E6).
+    <PhotoLabelsProvider photos={visiblePhotos}>
     <div className="gallery-story-layout" data-input-mode={inputMode}>
       <StoryScrollToTop />
 
@@ -833,5 +837,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         feedbackType="like"
       />
     </div>
+    </PhotoLabelsProvider>
   );
 };

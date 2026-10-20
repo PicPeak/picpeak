@@ -14,6 +14,7 @@ import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { useLazyBands } from './lazyBands';
 import { useWindowedItems, WINDOW_MIN_PHOTOS } from './rowWindow';
+import { densityColumnDelta, densitySizeFactor, useGridDensity } from '../gridDensity';
 
 // Count-style feedback indicators shared by all masonry modes (top-left).
 // `withTitles` matches the columns-mode markup, which carries title attributes.
@@ -288,12 +289,17 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // 'justified' is the picker's "Google Photos" option: the same justified rows.
   const storedMode = gallerySettings.masonryMode || 'columns';
   const mode = storedMode === 'justified' ? 'rows' : storedMode;
-  const targetRowHeight = gallerySettings.masonryRowHeight || 250;
+  // The viewer's density (issue 1733, E4): a column more or less in columns
+  // mode, a shorter or taller row (or quilted cell) in the others.
+  const density = useGridDensity();
+  const sizeFactor = densitySizeFactor(density);
+  const targetRowHeight = Math.round((gallerySettings.masonryRowHeight || 250) * sizeFactor);
+  const quiltedCell = Math.round(200 * sizeFactor);
   const lastRowBehavior = gallerySettings.masonryLastRowBehavior || 'left';
   const scale = gallerySettings.thumbnailScale || 'md';
 
   const scaleOffsets: Record<string, number> = { xs: 3, sm: 1, md: 0, lg: -1, xl: -2 };
-  const applyScale = (cols: number) => Math.max(1, cols + (scaleOffsets[scale] ?? 0));
+  const applyScale = (cols: number) => Math.max(1, cols + (scaleOffsets[scale] ?? 0) + densityColumnDelta(density));
 
   // Apply scale to columns only in columns mode
   const scaledColumns = mode === 'columns' ? applyScale(columns) : columns;
@@ -364,6 +370,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     rowsLayout.items,
     containerWidth,
     mode === 'rows' && photos.length >= WINDOW_MIN_PHOTOS,
+    targetRowHeight,
   );
 
   // Calculate Flickr justified layout
@@ -617,8 +624,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
         className="photo-grid"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-          gridAutoRows: '200px',
+          gridTemplateColumns: `repeat(auto-fill, minmax(${quiltedCell}px, 1fr))`,
+          gridAutoRows: `${quiltedCell}px`,
           gap: `${gutter}px`,
           gridAutoFlow: 'dense', // Fill gaps automatically
         }}
@@ -637,7 +644,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               onDownload={(e) => onDownload(photo, e)}
               onToggleSelect={() => onPhotoSelect && onPhotoSelect(photo.id)}
               className={`photo-card group cursor-pointer relative overflow-hidden rounded-lg bg-elevated ${spanClasses}`}
-              // Issue 1733: the grid's 200px rows and the span classes size
+              // Issue 1733: the grid's fixed-height rows and the span classes size
               // the cell, not the image, so the box survives both a skipped
               // tile and a released one. No intrinsic size, as in Grid.
               style={{ contentVisibility: 'auto' }}

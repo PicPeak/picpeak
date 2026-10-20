@@ -15,7 +15,7 @@ let photos: PhotosResult;
 // Hooks hand back the same objects on every render, as the real ones do;
 // fresh ones each time would re-run the view's effects without end.
 const stable = vi.hoisted(() => ({
-  auth: { logout: () => {}, isClient: false, viaCustomer: false },
+  auth: { logout: () => {}, endSession: () => {}, isClient: false, viaCustomer: false },
   theme: { setTheme: () => {}, theme: { galleryLayout: 'gallery-premium' } as { galleryLayout: string } },
   download: { mutate: () => {}, isPending: false },
   settings: { data: {} },

@@ -1237,6 +1237,12 @@
     "contactOrganizer": "Če potrebujete dostop do teh fotografij, se obrnite na organizatorja dogodka.",
     "searchPhotos": "Iskanje fotografij po imenu datoteke...",
     "sortByDate": "Razvrsti po datumu",
+    "density": {
+      "label": "Velikost ploščic",
+      "compact": "Manjše ploščice",
+      "default": "Običajna velikost",
+      "large": "Večje ploščice"
+    },
     "sortByName": "Razvrsti po imenu",
     "sortBySize": "Razvrsti po velikosti",
     "allPhotos": "Vse fotografije",
@@ -1327,6 +1333,7 @@
       "back": "Nazaj",
       "title": "Obnovite svoje izbire",
       "emailStepDescription": "Vnesite e-poštni naslov, ki ste ga uporabili prej. Poslali vam bomo 6-mestno potrditveno kodo.",
+      "spentInviteDescription": "Ta povezava za povabilo je že bila uporabljena, zato vas ne more znova prijaviti. Vnesite e-poštni naslov, na katerega je bila poslana, in poslali vam bomo 6-mestno kodo, s katero se vrnete k svojemu izboru.",
       "codeStepDescription": "Vnesite 6-mestno kodo, ki smo jo poslali na vaš e-poštni naslov.",
       "emailLabel": "E-pošta",
       "sendCode": "Pošlji kodo",
@@ -1364,6 +1371,19 @@
     "downloadSelected_other": "Prenesi {{count}} fotografij",
     "chooseResolution": "Izberite velikost prenosa",
     "resolutionUpTo": "do {{width}} × {{height}} px",
+    "downloadMenu": {
+      "original": "Izvirnik",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "skupaj {{size}}",
+      "watermarked": "Vse velikosti nosijo fotografov vodni žig, tudi izvirnik.",
+      "noOriginal": "Izvirne datoteke v tej galeriji niso na voljo. Največja velikost je do {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Polna kakovost, kot jo je predal fotograf — najboljše za tisk.",
+        "print": "Visoka ločljivost — za tisk in velike zaslone.",
+        "screen": "Spletna velikost — za zaslone, deljenje in družbena omrežja.",
+        "small": "Najmanjša datoteka — hitro pošiljanje v sporočilih."
+      }
+    },
     "prepareDownload": "Pripravi prenos",
     "preparingDownload": "Priprava prenosa…",
     "preparingHint": "Spreminjanje velikosti fotografij — pri velikih galerijah lahko traja nekaj časa.",
@@ -1408,6 +1428,7 @@
     "filterByMinRating": "Moja ocena: {{min}} zvezdic ali več",
     "folders": "Mape",
     "openFolder": "Odpri mapo {{name}}",
+    "imageUnavailable": "Slika ni na voljo",
     "folderPhotoCount": "{{count}} fotografij",
     "backToGallery": "Vse fotografije",
     "downloadFolder": "Prenesi mapo ({{count}})",
@@ -1568,6 +1589,30 @@
       "like": "Všeček",
       "unlike": "Odstrani všeček",
       "selectPhoto": "Izberi {{name}}"
+    },
+    "neutralLabel": {
+      "numbered": "Fotografija {{position}} od {{total}}",
+      "plain": "Fotografija",
+      "selected": "Izbrana fotografija {{position}} od {{total}}"
+    },
+    "filterPanel": {
+      "selectMatches_one": "Izberi {{count}} fotografijo",
+      "selectMatches_two": "Izberi {{count}} fotografiji",
+      "selectMatches_few": "Izberi {{count}} fotografije",
+      "selectMatches_other": "Izberi {{count}} fotografij",
+      "selectMatchesMedia_one": "Izberi {{count}} element",
+      "selectMatchesMedia_two": "Izberi {{count}} elementa",
+      "selectMatchesMedia_few": "Izberi {{count}} elemente",
+      "selectMatchesMedia_other": "Izberi {{count}} elementov",
+      "clear": "Počisti filtre",
+      "activeCount_one": "{{count}} aktiven",
+      "activeCount_two": "{{count}} aktivna",
+      "activeCount_few": "{{count}} aktivni",
+      "activeCount_other": "{{count}} aktivnih"
+    },
+    "toolbar": {
+      "browse": "Orodja galerije",
+      "selection": "Izbira"
     }
   },
   "categories": {
@@ -2242,6 +2287,8 @@
     },
     "showExifToGuests": "Pokaži podatke o fotoaparatu gostom",
     "showExifToGuestsHelp": "Fotoaparat, objektiv, goriščna razdalja, zaslonka, čas osvetlitve in ISO so prikazani pod fotografijo v celozaslonskem pogledu. Lokacija in serijske številke se nikoli ne shranijo in ne prikažejo.",
+    "neutralPhotoLabels": "Namesto imen datotek prikaži nevtralno oznako",
+    "neutralPhotoLabelsHelp": "Gostje namesto imena datoteke iz fotoaparata vidijo „Fotografija 12 od 84“ v celozaslonskem pogledu, v napisih na sličicah in v besedilu za bralnike zaslona. Prenosi ohranijo svoja imena datotek, seznam „Kopiraj imena datotek“ pa gostom ni na voljo. V skrbniškem pogledu so imena datotek vedno prikazana.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Prelomi vrstic se ohranijo v e-poštnih sporočilih",
       "tip": "Namig: pritisnite Enter za novo vrstico. Vsaka vrstica bo v e-poštnih sporočilih ločen odstavek.",
@@ -3432,17 +3479,17 @@
       "month": "Mesec"
     },
     "masonryMode": "Način postavitve",
-    "masonryModeOptions": {
-      "columns": "Stolpci (v slogu Pinterest)",
-      "rows": "Vrstice (lastna poravnana postavitev)",
-      "flickr": "Flickr (preizkušena poravnana postavitev)",
-      "justified": "Google Photos (algoritem Knuth-Plass)"
+    "masonryModeNames": {
+      "columns": "Stolpci",
+      "rows": "Vrstice",
+      "flickr": "Vrstice Flickr",
+      "quilted": "Krpanka"
     },
-    "masonryModeHint": {
-      "columns": "Navpični stolpci v slogu Pinterest z različnimi višinami",
-      "rows": "Lastna vrstična poravnana postavitev",
-      "flickr": "Flickrov odprtokodni algoritem poravnane postavitve",
-      "justified": "Vrstice v slogu Google Photos z algoritmom Knuth-Plass za optimalne prelome"
+    "masonryModeDescriptions": {
+      "columns": "Stolpci različnih višin, v slogu Pinterest",
+      "rows": "Vrstice enake višine, fotografije ohranijo razmerje",
+      "flickr": "Poravnane vrstice, vsaka s svojo višino",
+      "quilted": "Kvadratna polja, široke in visoke fotografije zasedejo dve"
     },
     "targetRowHeight": "Ciljna višina vrstice",
     "targetRowHeightHint": "Višina v slikovnih pikah (150-400). Fotografije se prilagodijo vrsticam.",
@@ -3594,6 +3641,16 @@
     "noTemplateDescription": "Uporabi samo nastavitve teme brez CSS predloge",
     "templateSlot": "Reža {{slot}}",
     "eventCustomCSS": "CSS po meri za dogodek",
+    "layoutNames": {
+      "grid": "Mreža",
+      "masonry": "Masonry",
+      "carousel": "Vrtiljak",
+      "timeline": "Časovnica",
+      "mosaic": "Mozaik",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Klasična mrežna postavitev z enakimi velikostmi fotografij",
       "masonry": "Postavitev v slogu Pinterest z različnimi višinami",
@@ -5769,6 +5826,7 @@
     "rateStar_one": "Oceni z {{count}} zvezdico",
     "rateStar_other": "Oceni z {{count}} zvezdicami",
     "removeRating": "Odstrani oceno",
+    "ratePhoto": "Oceni fotografijo",
     "rateSelected": "Oceni izbrane",
     "bulkRatingPartial": "Ocenjenih fotografij: {{rated}} od {{total}}",
     "ratingLimitReached": "Omejitev ocen je dosežena. Poskusite znova pozneje.",
@@ -5851,8 +5909,10 @@
       "reopenError": "Oddaje ni bilo mogoče znova odpreti"
     },
     "annotation": {
-      "draw": "Riši na fotografijo",
-      "edit": "Uredi risbo",
+      "modeLabel": "Način",
+      "modeSelect": "Izbira",
+      "modeAnnotate": "Označevanje",
+      "hint": "Za risanje na fotografijo preklopite na Označevanje.",
       "remove": "Odstrani risbo",
       "attached": "Risba priložena",
       "inProgress": "Dokončajte risbo na fotografiji in nato pošljite komentar.",

@@ -8,6 +8,7 @@ import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityT
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { useLazyBands } from './lazyBands';
+import { densityColumnDelta, useGridDensity } from '../gridDensity';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import { toDisplayDate, useLocalizedDate } from '../../../hooks/useLocalizedDate';
@@ -22,13 +23,15 @@ const GRID_TILE_PROPS = { [GRID_TILE_ATTR]: '' } as React.HTMLAttributes<HTMLDiv
  */
 const TimelineGroupGrid: React.FC<{
   photos: Photo[];
+  /** The grid's classes, its columns moved by the viewer's density. */
+  className: string;
   windowed: boolean;
   renderTile: (photo: Photo) => React.ReactNode;
-}> = ({ photos, windowed, renderTile }) => {
+}> = ({ photos, className, windowed, renderTile }) => {
   const gridRef = useRef<HTMLDivElement>(null);
   const { tiles, before, after } = useGridWindow(gridRef, photos, windowed);
   return (
-    <div ref={gridRef} className="photo-grid lg:ml-24 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+    <div ref={gridRef} className={className}>
       {before > 0 && <div aria-hidden="true" style={{ gridColumn: '1 / -1', height: before }} />}
       {tiles.map(({ photo }) => renderTile(photo))}
       {after > 0 && <div aria-hidden="true" style={{ gridColumn: '1 / -1', height: after }} />}
@@ -54,6 +57,10 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const bands = useLazyBands();
   const { theme } = useTheme();
   const { formatTime: fmtTime } = useLocalizedDate();
+  // The timeline's fixed 2/3/4 columns, moved by the viewer's density (issue
+  // 1733, E4). The grid-cols classes are safelisted in tailwind.config.
+  const delta = densityColumnDelta(useGridDensity());
+  const cols = (base: number) => Math.max(1, base + delta);
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
   // Seed from server is_liked on first non-empty payload (#590 follow-up).
   // Mount-only so refetches don't clobber in-session optimistic toggles.
@@ -156,6 +163,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
             {/* Photos grid for this date */}
             <TimelineGroupGrid
               photos={group.photos}
+              className={`photo-grid lg:ml-24 grid grid-cols-${cols(2)} sm:grid-cols-${cols(3)} lg:grid-cols-${cols(4)} gap-4`}
               windowed={photos.length >= WINDOW_MIN_PHOTOS && group.photos.length >= TIMELINE_GROUP_WINDOW_MIN_PHOTOS}
               renderTile={(photo) => {
                 const actualIndex = photoIndexById.get(photo.id) ?? -1;

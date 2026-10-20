@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { AuthenticatedImage } from '../common';
 import type { Photo } from '../../types';
 import { photoDisplayFilename } from '../../utils/photoFilename';
+import { usePhotoLabels } from './PhotoLabels';
 
 /**
  * The current selection as a list (issue 1733, backlog item A3e): one row per
@@ -23,10 +24,24 @@ interface GallerySidebarSelectionTrayProps {
   /** Called after a keyboard removal emptied the tray, to give focus a home. */
   onEmptied?: () => void;
   slug?: string;
+  /**
+   * False where the list sits in a popover or sheet with its own title (the
+   * gallery toolbar, issue 1733 E5): no foldable title and no section frame.
+   */
+  foldable?: boolean;
 }
 
-const TrayRow: React.FC<{ photo: TrayPhoto; onRemove: (photoId: number, button: HTMLButtonElement) => void; slug?: string }> = ({
+const TrayRow: React.FC<{
+  photo: TrayPhoto;
+  /** The row's place in the tray, to tell apart photos a filter hides. */
+  position: number;
+  count: number;
+  onRemove: (photoId: number, button: HTMLButtonElement) => void;
+  slug?: string;
+}> = ({
   photo,
+  position,
+  count,
   onRemove,
   slug,
 }) => {
@@ -34,7 +49,13 @@ const TrayRow: React.FC<{ photo: TrayPhoto; onRemove: (photoId: number, button: 
   // A thumbnail is requested only once its row scrolls into the tray, so a
   // selection of several hundred photos costs a handful of requests.
   const { ref, inView } = useInView({ triggerOnce: true, rootMargin: '100px' });
-  const name = photoDisplayFilename(photo);
+  // Numbered against the gallery's list under neutral labels (issue 1733, E6).
+  // A selected photo a search or filter hides has no number there, so it is
+  // numbered by its place in the tray instead: every row keeps a distinct name.
+  const photoLabels = usePhotoLabels();
+  const name = photoLabels.neutral && !photoLabels.has(photo)
+    ? t('gallery.neutralLabel.selected', 'Selected photo {{position}} of {{total}}', { position: position + 1, total: count })
+    : photoLabels.of(photo, photoDisplayFilename(photo));
   return (
     <li ref={ref} className="flex items-center gap-2 h-12">
       <div className="w-10 h-10 shrink-0 rounded overflow-hidden bg-black/10">
@@ -62,7 +83,7 @@ const TrayRow: React.FC<{ photo: TrayPhoto; onRemove: (photoId: number, button: 
   );
 };
 
-export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayProps> = ({ photos, onRemove, onEmptied, slug }) => {
+export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayProps> = ({ photos, onRemove, onEmptied, slug, foldable = true }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(true);
   const listId = useId();
@@ -102,6 +123,17 @@ export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayPr
       ?.focus();
   }, [photos, onEmptied]);
   if (photos.length === 0) return null;
+  const list = (
+    // In the sidebar, five and a half rows: the cut-off row is what says the
+    // list scrolls where the scrollbar is an overlay (macOS, phones). A sheet
+    // or popover scrolls the list itself.
+    <ul id={listId} ref={listRef} className={`${foldable ? 'mt-3 max-h-[17.5rem] overflow-y-auto' : ''} space-y-1`}>
+      {photos.map((photo, index) => (
+        <TrayRow key={photo.id} photo={photo} position={index} count={photos.length} onRemove={handleRemove} slug={slug} />
+      ))}
+    </ul>
+  );
+  if (!foldable) return list;
   return (
     <div className="gallery-sidebar-section gallery-sidebar-selection p-4 border-b border-border-token">
       <button
@@ -114,15 +146,7 @@ export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayPr
         {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         {t('gallery.selectionTray.title', 'Selected ({{count}})', { count: photos.length })}
       </button>
-      {open && (
-        // Five and a half rows: the cut-off row is what says the list scrolls
-        // where the scrollbar is an overlay (macOS, phones).
-        <ul id={listId} ref={listRef} className="mt-3 max-h-[17.5rem] overflow-y-auto space-y-1">
-          {photos.map((photo) => (
-            <TrayRow key={photo.id} photo={photo} onRemove={handleRemove} slug={slug} />
-          ))}
-        </ul>
-      )}
+      {open && list}
     </div>
   );
 };

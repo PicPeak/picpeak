@@ -91,6 +91,7 @@ interface UpdateEventData {
   show_credits_to_guests?: boolean;
   live_refresh?: boolean;
   show_exif_to_guests?: boolean;
+  neutral_photo_labels?: boolean;
   // Reveal mode (#838)
   reveal_mode?: boolean;
   reveal_at?: string | null;

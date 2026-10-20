@@ -1960,6 +1960,12 @@
     "contactOrganizer": "Bitte kontaktieren Sie den Veranstalter, wenn Sie Zugriff auf diese Fotos benötigen.",
     "searchPhotos": "Fotos nach Dateiname suchen...",
     "sortByDate": "Nach Datum sortieren",
+    "density": {
+      "label": "Kachelgröße",
+      "compact": "Kleinere Kacheln",
+      "default": "Standardgröße",
+      "large": "Größere Kacheln"
+    },
     "sortByName": "Nach Name sortieren",
     "sortBySize": "Nach Größe sortieren",
     "allPhotos": "Alle Fotos",
@@ -2065,6 +2071,7 @@
       "back": "Zurück",
       "title": "Ihre Auswahl wiederherstellen",
       "emailStepDescription": "Geben Sie die E-Mail-Adresse ein, die Sie zuvor verwendet haben. Wir senden Ihnen einen 6-stelligen Bestätigungscode.",
+      "spentInviteDescription": "Dieser Einladungslink wurde bereits verwendet und kann dich nicht erneut anmelden. Gib die E-Mail-Adresse ein, an die er geschickt wurde, und wir senden dir einen 6-stelligen Code, mit dem du zu deiner Auswahl zurückkommst.",
       "codeStepDescription": "Geben Sie den 6-stelligen Code ein, den wir an Ihre E-Mail-Adresse gesendet haben.",
       "emailLabel": "E-Mail",
       "sendCode": "Code senden",
@@ -2100,6 +2107,19 @@
     "photosCount_other": "{{count}} Fotos",
     "chooseResolution": "Downloadgröße wählen",
     "resolutionUpTo": "bis zu {{width}} × {{height}} px",
+    "downloadMenu": {
+      "original": "Original",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "{{size}} insgesamt",
+      "watermarked": "Jede Größe trägt das Wasserzeichen des Fotografen, auch das Original.",
+      "noOriginal": "Die Originaldateien werden in dieser Galerie nicht angeboten. Die größte Größe reicht bis {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Volle Qualität, so wie vom Fotografen geliefert – am besten für Abzüge.",
+        "print": "Hohe Auflösung – für Abzüge und große Bildschirme.",
+        "screen": "Webgröße – für Bildschirme, zum Teilen und für soziale Medien.",
+        "small": "Kleinste Datei – schnell per Messenger verschickt."
+      }
+    },
     "prepareDownload": "Download vorbereiten",
     "preparingDownload": "Download wird vorbereitet…",
     "preparingHint": "Fotos werden verkleinert — bei großen Galerien kann das einen Moment dauern.",
@@ -2148,6 +2168,7 @@
     "filterByMinRating": "Meine Bewertung: mindestens {{min}} Sterne",
     "folders": "Ordner",
     "openFolder": "Ordner {{name}} öffnen",
+    "imageUnavailable": "Bild nicht verfügbar",
     "folderPhotoCount": "{{count}} Fotos",
     "backToGallery": "Alle Fotos",
     "downloadFolder": "Ordner herunterladen ({{count}})",
@@ -2302,6 +2323,24 @@
       "like": "Gefällt mir",
       "unlike": "Gefällt mir zurücknehmen",
       "selectPhoto": "{{name}} auswählen"
+    },
+    "neutralLabel": {
+      "numbered": "Foto {{position}} von {{total}}",
+      "plain": "Foto",
+      "selected": "Ausgewähltes Foto {{position}} von {{total}}"
+    },
+    "filterPanel": {
+      "selectMatches_one": "Dieses Foto auswählen",
+      "selectMatches_other": "Diese {{count}} Fotos auswählen",
+      "selectMatchesMedia_one": "Dieses Medium auswählen",
+      "selectMatchesMedia_other": "Diese {{count}} Medien auswählen",
+      "clear": "Filter zurücksetzen",
+      "activeCount_one": "{{count}} aktiv",
+      "activeCount_other": "{{count}} aktiv"
+    },
+    "toolbar": {
+      "browse": "Galeriewerkzeuge",
+      "selection": "Auswahl"
     }
   },
   "categories": {
@@ -3101,6 +3140,8 @@
     },
     "showExifToGuests": "Kameradaten den Gästen anzeigen",
     "showExifToGuestsHelp": "Kamera, Objektiv, Brennweite, Blende, Belichtungszeit und ISO erscheinen in der Vollbildansicht unter dem Foto. Standort und Seriennummern werden nie gespeichert oder angezeigt.",
+    "neutralPhotoLabels": "Neutrale Bezeichnung statt Dateinamen anzeigen",
+    "neutralPhotoLabelsHelp": "Gäste sehen „Foto 12 von 84“ statt des Kamera-Dateinamens in der Vollbildansicht, in Bildunterschriften und in Screenreader-Texten. Downloads behalten ihre Dateinamen, und die Liste „Dateinamen kopieren“ wird Gästen nicht angeboten. Im Adminbereich stehen immer die Dateinamen.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Zeilenumbrüche bleiben in E-Mails erhalten",
       "tip": "Tipp: Mit der Eingabetaste beginnst du eine neue Zeile. Jede Zeile erscheint in E-Mails als eigener Absatz.",
@@ -4508,17 +4549,17 @@
       "month": "Monat"
     },
     "masonryMode": "Layout-Modus",
-    "masonryModeOptions": {
-      "columns": "Spalten (Pinterest-Stil)",
-      "rows": "Zeilen (Eigenes Layout)",
-      "flickr": "Flickr (Bewährtes Layout)",
-      "justified": "Google Fotos (Knuth-Plass Algorithmus)"
+    "masonryModeNames": {
+      "columns": "Spalten",
+      "rows": "Zeilen",
+      "flickr": "Flickr-Zeilen",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Pinterest-ähnliche vertikale Spalten mit variierenden Höhen",
-      "rows": "Eigenes zeilenbasiertes Layout",
-      "flickr": "Flickrs Open-Source Justified-Layout Algorithmus",
-      "justified": "Google Fotos-ähnliche Zeilen mit Knuth-Plass Algorithmus für optimale Umbrüche"
+    "masonryModeDescriptions": {
+      "columns": "Spalten mit unterschiedlichen Höhen, wie bei Pinterest",
+      "rows": "Gleich hohe Zeilen, Fotos behalten ihr Format",
+      "flickr": "Bündige Zeilen, jede Zeile mit eigener Höhe",
+      "quilted": "Quadratische Felder, breite und hohe Fotos belegen zwei"
     },
     "targetRowHeight": "Ziel-Zeilenhöhe",
     "targetRowHeightHint": "Höhe in Pixeln (150-400). Fotos werden skaliert, um in Zeilen zu passen.",
@@ -4682,6 +4723,16 @@
     "noTemplateDescription": "Nur Theme-Einstellungen ohne CSS-Vorlage verwenden",
     "templateSlot": "Slot {{slot}}",
     "eventCustomCSS": "Veranstaltungsspezifisches benutzerdefiniertes CSS",
+    "layoutNames": {
+      "grid": "Raster",
+      "masonry": "Masonry",
+      "carousel": "Karussell",
+      "timeline": "Zeitleiste",
+      "mosaic": "Mosaik",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Klassisches Raster mit einheitlichen Fotogrößen",
       "masonry": "Pinterest-Stil mit variablen Höhen",
@@ -6479,6 +6530,7 @@
     "rateStar_one": "{{count}} Stern bewerten",
     "rateStar_other": "{{count}} Sterne bewerten",
     "removeRating": "Bewertung entfernen",
+    "ratePhoto": "Foto bewerten",
     "rateSelected": "Auswahl bewerten",
     "bulkRatingPartial": "{{rated}} von {{total}} Fotos wurden bewertet",
     "ratingLimitReached": "Bewertungslimit erreicht. Bitte versuchen Sie es später erneut.",
@@ -6565,8 +6617,10 @@
       "reopenError": "Einreichung konnte nicht wieder geöffnet werden"
     },
     "annotation": {
-      "draw": "Auf Foto zeichnen",
-      "edit": "Zeichnung bearbeiten",
+      "modeLabel": "Modus",
+      "modeSelect": "Auswählen",
+      "modeAnnotate": "Zeichnen",
+      "hint": "Um auf das Foto zu zeichnen, wechsle zu „Zeichnen“.",
       "remove": "Zeichnung entfernen",
       "attached": "Zeichnung angehängt",
       "inProgress": "Schließe die Zeichnung auf dem Foto ab und sende dann deinen Kommentar.",

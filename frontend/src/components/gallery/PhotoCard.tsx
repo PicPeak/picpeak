@@ -12,11 +12,13 @@ import { feedbackLockKind } from '../../utils/feedbackLock';
 import { ColorLabelBadge } from './ColorLabelBadge';
 import { TileRating } from './TileRating';
 import { FirstLookBadge, FolderHintPill } from './GalleryTileBadges';
+import { usePhotoLabels } from './PhotoLabels';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { downloadLimitReachedMessage } from '../../utils/downloadLimit';
 import { useInputMode } from '../../hooks/useInputMode';
 import { usePhotoDownloadPending, preparingDownloadMessage } from '../../hooks/usePhotoDownloadPending';
+import { useGridDensity } from './gridDensity';
 import type { Photo } from '../../types';
 
 export /** Action buttons (36px) + gap + rating pill (28px); below this the row would overlap the buttons. */
@@ -271,12 +273,30 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     if (releases) keepBandRef(node);
   }, [loadBandRef, keepBandRef, lazy, releases]);
 
+  // A layout that hands the card its px width (Masonry rows, Flickr) also
+  // animates it (transition-all), so that target is read rather than where a
+  // running transition happens to be — after the viewer's tile-size change
+  // (issue 1733, E4), say, while the card comes into the load band.
+  const targetWidth = typeof style?.width === 'number' ? style.width : null;
   useLayoutEffect(() => {
     if (!inView || tile) return;
     // 0 means not laid out (a hidden tab, say), not a 0px tile — null falls
     // back to the viewport estimate rather than pinning the smallest tier.
-    setTile({ width: containerRef.current?.offsetWidth || null });
-  }, [inView, tile]);
+    setTile({ width: targetWidth || containerRef.current?.offsetWidth || null });
+  }, [inView, tile, targetWidth]);
+
+  // The viewer's tile size (issue 1733, E4) resizes mounted tiles in place.
+  // A tile that grew is measured again so it moves up a tier; one that shrank
+  // keeps the larger file it already has rather than fetching a smaller one.
+  const density = useGridDensity();
+  const measuredDensity = useRef(density);
+  useLayoutEffect(() => {
+    if (measuredDensity.current === density) return;
+    measuredDensity.current = density;
+    if (!tile?.width) return;
+    const width = targetWidth ?? (containerRef.current?.offsetWidth || 0);
+    if (width > tile.width) setTile({ width });
+  }, [density, tile, targetWidth]);
 
   const showFeedbackActions = feedbackEnabled && Boolean(feedbackOptions);
 
@@ -495,6 +515,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const tileSrc = !isVideo && photo.thumbnail_url && imageProps.src === photo.thumbnail_url
     ? (thumbnailUrlForTile(photo.thumbnail_url, photo, tile?.width) ?? imageProps.src)
     : imageProps.src;
+  // Neutral photo labels (issue 1733, E6) replace the filename the layouts
+  // pass as alt text, and the name in the checkbox's label.
+  const photoLabels = usePhotoLabels();
+  const tileAlt = typeof imageProps.alt === 'string' ? photoLabels.of(photo, imageProps.alt) : imageProps.alt;
 
   return (
     <div
@@ -509,7 +533,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* Inside the mounted branch on purpose: the blurred placeholder
               (issue 1733) is decoded only for tiles that are mounted, and
               goes with them when the release band lets a tile go. */}
-          <TileImage {...imageProps} src={tileSrc} thumbHash={photo.thumb_hash} />
+          <TileImage {...imageProps} src={tileSrc} alt={tileAlt} thumbHash={photo.thumb_hash} />
 
           {/* The guest's own colour label (#1044) — visible without hovering
               or opening anything, which is the point: the client watches
@@ -645,7 +669,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* Selection Checkbox (visible on hover or when selected) */}
           <button
             type="button"
-            aria-label={t('gallery.tile.selectPhoto', 'Select {{name}}', { name: photo.filename })}
+            aria-label={t('gallery.tile.selectPhoto', 'Select {{name}}', { name: photoLabels.of(photo, photo.filename) })}
             role="checkbox"
             aria-checked={isSelected}
             data-testid={checkboxTestId ? `gallery-photo-checkbox-${photo.id}` : undefined}

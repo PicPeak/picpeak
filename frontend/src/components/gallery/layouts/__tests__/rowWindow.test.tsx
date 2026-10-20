@@ -11,6 +11,7 @@ import { render, screen, act } from '@testing-library/react';
 
 import { MasonryGalleryLayout } from '../MasonryGalleryLayout';
 import { buildRows, visibleRowRange, WINDOW_MIN_PHOTOS, type RowBox } from '../rowWindow';
+import { GridDensityOffered, resetGridDensityForTests, setGridDensity } from '../../gridDensity';
 import { calculateJustifiedLayout, createJustifiedPhotos } from '../../../../utils/justifiedLayoutCalculator';
 import type { Photo } from '../../../../types';
 
@@ -258,6 +259,31 @@ describe.each([
     resizeTo(1200);
     expect(gridTop).toBeCloseTo(-start, 3);
     expect(ratioOf(find(anchorId))).toBeCloseTo(ratio, 5);
+  });
+
+  it('keeps the viewer on the same photo when the viewer changes the tile size', () => {
+    window.localStorage.clear();
+    resetGridDensityForTests();
+    render(
+      <GridDensityOffered.Provider value>
+        <Layout {...layoutProps(makePhotos(2000))} />
+      </GridDensityOffered.Provider>,
+    );
+    scrollGridTo(-40000);
+    const ratioOf = (tile: HTMLElement) =>
+      (-gridTop - parseFloat(tile.style.top)) / parseFloat(tile.style.height);
+    const find = (id: number) => tiles().find((tile) => Number(tile.dataset.photo) === id)!;
+
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    scrollGridTo(-(parseFloat(anchorTile.style.top) + parseFloat(anchorTile.style.height) * 0.4));
+    const ratio = ratioOf(find(anchorId));
+
+    // Shorter rows at the same width: the photo moves up, and the page with it.
+    act(() => setGridDensity('compact'));
+    expect(window.scrollBy).toHaveBeenCalledTimes(1);
+    expect(ratioOf(find(anchorId))).toBeCloseTo(ratio, 5);
+    act(() => setGridDensity('default'));
   });
 
   it('anchors on what is at the top after content above the grid moved without a scroll', () => {

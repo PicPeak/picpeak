@@ -304,6 +304,12 @@
     "contactOrganizer": "Contacta con el organizador del evento si necesitas acceso a estas fotos.",
     "searchPhotos": "Buscar fotos por nombre de archivo...",
     "sortByDate": "Ordenar por fecha",
+    "density": {
+      "label": "Tamaño de las miniaturas",
+      "compact": "Miniaturas más pequeñas",
+      "default": "Tamaño estándar",
+      "large": "Miniaturas más grandes"
+    },
     "sortByName": "Ordenar por nombre",
     "sortBySize": "Ordenar por tamaño",
     "allPhotos": "Todas las fotos",
@@ -402,6 +408,7 @@
     "filterByMinRating": "Mi valoración: {{min}} estrellas o más",
     "folders": "Carpetas",
     "openFolder": "Abrir carpeta {{name}}",
+    "imageUnavailable": "Imagen no disponible",
     "folderPhotoCount": "{{count}} fotos",
     "backToGallery": "Todas las fotos",
     "downloadFolder": "Descargar carpeta ({{count}})",
@@ -554,6 +561,41 @@
       "like": "Me gusta",
       "unlike": "Quitar me gusta",
       "selectPhoto": "Seleccionar {{name}}"
+    },
+    "downloadNow": "Descargar",
+    "downloadMenu": {
+      "original": "Original",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "{{size}} en total",
+      "watermarked": "Todos los tamaños llevan la marca de agua del fotógrafo, también el original.",
+      "noOriginal": "Esta galería no ofrece los archivos originales. El tamaño más grande es de hasta {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Calidad completa, tal como la entregó el fotógrafo: ideal para imprimir.",
+        "print": "Alta resolución: para impresiones y pantallas grandes.",
+        "screen": "Tamaño web: para pantallas, compartir y redes sociales.",
+        "small": "Archivo más pequeño: rápido de enviar por mensaje."
+      }
+    },
+    "neutralLabel": {
+      "numbered": "Foto {{position}} de {{total}}",
+      "plain": "Foto",
+      "selected": "Foto seleccionada {{position}} de {{total}}"
+    },
+    "filterPanel": {
+      "selectMatches_one": "Seleccionar esta foto",
+      "selectMatches_many": "Seleccionar estas {{count}} fotos",
+      "selectMatches_other": "Seleccionar estas {{count}} fotos",
+      "selectMatchesMedia_one": "Seleccionar este elemento",
+      "selectMatchesMedia_many": "Seleccionar estos {{count}} elementos",
+      "selectMatchesMedia_other": "Seleccionar estos {{count}} elementos",
+      "clear": "Borrar filtros",
+      "activeCount_one": "{{count}} activo",
+      "activeCount_many": "{{count}} activos",
+      "activeCount_other": "{{count}} activos"
+    },
+    "toolbar": {
+      "browse": "Herramientas de la galería",
+      "selection": "Selección"
     }
   },
   "categories": {
@@ -1103,6 +1145,8 @@
     },
     "showExifToGuests": "Mostrar los datos de cámara a los invitados",
     "showExifToGuestsHelp": "La cámara, el objetivo, la distancia focal, la apertura, la velocidad de obturación y el ISO aparecen bajo la foto en la vista a pantalla completa. La ubicación y los números de serie nunca se guardan ni se muestran.",
+    "neutralPhotoLabels": "Mostrar una etiqueta neutra en lugar de los nombres de archivo",
+    "neutralPhotoLabelsHelp": "Los invitados ven «Foto 12 de 84» en lugar del nombre de archivo de la cámara en la vista a pantalla completa, en los pies de foto y en el texto para lectores de pantalla. Las descargas conservan sus nombres de archivo y la lista «Copiar nombres de archivo» no se ofrece a los invitados. La vista de administración siempre muestra los nombres de archivo.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Los saltos de línea se conservan en los correos",
       "tip": "Consejo: pulsa Intro para crear una nueva línea. Cada línea aparecerá como un párrafo independiente en los correos.",
@@ -1714,6 +1758,16 @@
     "eventThemesInfo": "Puedes sobrescribir estos ajustes globales para eventos individuales al crearlos o editarlos.",
     "themePresets": "Preajustes de tema",
     "galleryLayout": "Diseño de galería",
+    "layoutNames": {
+      "grid": "Cuadrícula",
+      "masonry": "Masonry",
+      "carousel": "Carrusel",
+      "timeline": "Cronología",
+      "mosaic": "Mosaico",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Diseño en cuadrícula clásico con tamaños uniformes",
       "masonry": "Estilo Pinterest con alturas variables",
@@ -1752,17 +1806,17 @@
       "month": "Mes"
     },
     "masonryMode": "Modo de layout",
-    "masonryModeOptions": {
-      "columns": "Columnas (estilo Pinterest)",
-      "rows": "Filas (justificado personalizado)",
-      "flickr": "Flickr (justificado probado)",
-      "justified": "Google Photos (algoritmo Knuth-Plass)"
+    "masonryModeNames": {
+      "columns": "Columnas",
+      "rows": "Filas",
+      "flickr": "Filas Flickr",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Columnas verticales estilo Pinterest con alturas variables",
-      "rows": "Diseño justificado basado en filas",
-      "flickr": "Algoritmo justificado de Flickr",
-      "justified": "Filas estilo Google Photos usando Knuth-Plass para cortes óptimos"
+    "masonryModeDescriptions": {
+      "columns": "Columnas de alturas variables, estilo Pinterest",
+      "rows": "Filas de igual altura, las fotos mantienen su formato",
+      "flickr": "Filas justificadas, cada una con su propia altura",
+      "quilted": "Celdas cuadradas, las fotos anchas y altas ocupan dos"
     },
     "targetRowHeight": "Altura objetivo de fila",
     "targetRowHeightHint": "Altura en píxeles (150-400). Las fotos se escalarán para ajustar las filas.",
@@ -3103,6 +3157,7 @@
     "bulkRatingPartial": "Se valoraron {{rated}} de {{total}} fotos",
     "ratingLimitReached": "Límite de valoraciones alcanzado. Inténtalo de nuevo más tarde.",
     "ratePhoto": "Valorar esta foto",
+    "ratingError": "No se pudo enviar la valoración",
     "yourRating": "Tu valoración",
     "averageRating": "Valoración media",
     "totalRatings": "valoraciones",
@@ -3199,8 +3254,10 @@
       "reopenError": "No se pudo reabrir el envío"
     },
     "annotation": {
-      "draw": "Dibujar en la foto",
-      "edit": "Editar dibujo",
+      "modeLabel": "Modo",
+      "modeSelect": "Seleccionar",
+      "modeAnnotate": "Anotar",
+      "hint": "Para dibujar en la foto, cambia a Anotar.",
       "remove": "Quitar dibujo",
       "attached": "Dibujo adjunto",
       "inProgress": "Termina el dibujo en la foto y después envía tu comentario.",

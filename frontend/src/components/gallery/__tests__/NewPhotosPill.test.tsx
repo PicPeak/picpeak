@@ -21,4 +21,9 @@ describe('NewPhotosPill', () => {
     fireEvent.click(screen.getByRole('button', { name: '4 new photos' }));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
+
+  it('sits above the phone selection bar', () => {
+    render(<NewPhotosPill count={2} onClick={() => {}} />);
+    expect(screen.getByRole('status').style.bottom).toContain('var(--gallery-bottom-bar');
+  });
 });
