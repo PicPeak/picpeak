@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.176.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.176.1-beta.0...v3.176.2-beta.0) (2026-10-20)
+
+
+### Bug Fixes
+
+* **downloads:** close the partial zip when a pre-zip build is cancelled ([#2206](https://github.com/PicPeak/picpeak/issues/2206)) ([01ab0d3](https://github.com/PicPeak/picpeak/commit/01ab0d3eec4fbc044a4004ba0bca1c5eecc455ed))
+
 ## [3.176.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.176.0-beta.0...v3.176.1-beta.0) (2026-10-19)
 
 
