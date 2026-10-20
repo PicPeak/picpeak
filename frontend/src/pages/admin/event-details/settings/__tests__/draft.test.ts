@@ -68,6 +68,16 @@ describe('event settings draft', () => {
     expect(eventUpdatePayload({ ...base, moderate_guest_uploads: true }, base, t)).toEqual({ moderate_guest_uploads: true });
   });
 
+  it('reads and sends the neutral photo label switch, in the guests section (issue 1733, E6)', () => {
+    const base = eventFieldsFromEvent({ ...EVENT, neutral_photo_labels: 0 } as unknown as Event, branding);
+    expect(base.neutral_photo_labels).toBe(false);
+    expect(eventFieldsFromEvent({ ...EVENT, neutral_photo_labels: 1 } as unknown as Event, branding).neutral_photo_labels).toBe(true);
+    const next = { ...base, neutral_photo_labels: true };
+    expect(eventUpdatePayload(next, base, t)).toEqual({ neutral_photo_labels: true });
+    const draft: EventSettingsDraft = { event: next, feedback: null, downloads: null, slideshow: null };
+    expect([...dirtySections(draft, { ...draft, event: base })]).toEqual(['guests']);
+  });
+
   it('switching custom styling off keeps the stored theme untouched', () => {
     const on = eventFieldsFromEvent({ ...EVENT, custom_theme_enabled: true } as Event, branding);
     const payload = eventUpdatePayload({ ...on, custom_theme_enabled: false }, on, t);

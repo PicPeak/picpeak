@@ -10,7 +10,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import type { Photo } from '../../../types';
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string, d?: unknown) => (typeof d === 'string' ? d : k) }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (k: string, d?: unknown, o?: { count?: number }) => (typeof d === 'string' ? d.replace('{{count}}', String(o?.count ?? '{{count}}')) : k),
+  }),
+}));
 vi.mock('../../../hooks/useDevToolsProtection', () => ({ useDevToolsProtection: () => undefined }));
 vi.mock('../../../hooks/useGallery', () => ({ useSavePhotoToDevice: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock('../../../hooks/useFeedbackLimitModal', () => ({ useFeedbackLimitModal: () => ({ modal: null, handleError: () => false }) }));
@@ -48,14 +52,14 @@ describe('PhotoLightbox — my_rating seed follows the list row', () => {
       .mockResolvedValueOnce({ feedback: [], my_feedback: { rating: 0 }, summary: {} } as never)
       .mockResolvedValue({ feedback: [], my_feedback: { rating: 4 }, summary: {} } as never);
     const { rerender } = render(ui(photo(null)));
-    await waitFor(() => expect(screen.getByTitle('Rate 4')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTitle('Rate 4 stars')).toBeInTheDocument());
     expect(screen.queryByTitle('Remove rating')).toBeNull();
 
     rerender(ui(photo(4)));
 
     await waitFor(() => expect(screen.getByTitle('Remove rating')).toBeInTheDocument());
     expect(screen.getByTitle('Remove rating')).toHaveAttribute('aria-label', 'Remove rating');
-    expect(screen.queryByTitle('Rate 4')).toBeNull();
+    expect(screen.queryByTitle('Rate 4 stars')).toBeNull();
   });
 
   it('drops a per-photo GET from before the rating whole — stars and summary — and shows the fresh one', async () => {
@@ -82,7 +86,7 @@ describe('PhotoLightbox — my_rating seed follows the list row', () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(screen.getByTitle('Remove rating')).toBeInTheDocument();
-    expect(screen.queryByTitle('Rate 4')).toBeNull();
+    expect(screen.queryByTitle('Rate 4 stars')).toBeNull();
     expect(screen.getByText('4.0 (1)')).toBeInTheDocument();
     expect(screen.queryByText('0.0 (0)')).toBeNull();
   });

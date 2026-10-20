@@ -34,9 +34,9 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
   const [shown, setShown] = useState<{ commentId: number; annotation: PhotoAnnotation } | null>(null);
   const [tool, setTool] = useState<AnnotationTool>('free');
   const [color, setColor] = useState(0);
-  // Height of the drawing toolbar while it is up (0 otherwise): the lightbox
-  // keeps the photo above it, however many rows it wraps to.
-  const [toolbarHeight, setToolbarHeight] = useState(0);
+  // A comment is on its way (reported by the comment form). Its success
+  // clears the form and the drawing, so no new drawing starts meanwhile.
+  const [sending, setSending] = useState(false);
 
   // A drawing belongs to one photo: another photo drops all of it.
   useEffect(() => {
@@ -57,12 +57,12 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
   }, [panelOpen]);
 
   const startDrawing = useCallback(() => {
-    if (!canDraw) return;
+    if (!canDraw || sending) return;
     setShown(null);
     setStrokes(draft?.strokes ?? []);
     setDrawing(true);
     onStart();
-  }, [canDraw, draft, onStart]);
+  }, [canDraw, sending, draft, onStart]);
 
   /** Leave the mode, keeping whatever was attached before it was entered. */
   const cancel = useCallback(() => setDrawing(false), []);
@@ -105,13 +105,13 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     canDraw,
     drawing,
     draft,
-    startDrawing,
     discard,
     discardSent,
+    setSending,
     shownCommentId: shown?.commentId ?? null,
     toggleShown,
     hideShown,
-  }), [canDraw, drawing, draft, startDrawing, discard, discardSent, shown, toggleShown, hideShown]);
+  }), [canDraw, drawing, draft, discard, discardSent, shown, toggleShown, hideShown]);
 
   // What lies on the photo: the strokes in progress, else the drawing picked
   // from the comment list, else the one waiting on the comment form.
@@ -120,7 +120,10 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     : shown?.annotation ?? draft;
 
   return {
+    /** Drawing can start now: a still picture, and no comment on its way. */
+    canStart: canDraw && !sending,
     drawing,
+    startDrawing,
     cancel,
     done,
     strokes,
@@ -133,8 +136,6 @@ export function useLightboxAnnotation({ photoId, canDraw, panelOpen, onStart, on
     color,
     setColor,
     visible,
-    toolbarHeight,
-    setToolbarHeight,
     context,
   };
 }
