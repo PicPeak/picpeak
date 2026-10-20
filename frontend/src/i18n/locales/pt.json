@@ -493,6 +493,7 @@
       "back": "Voltar",
       "title": "Recuperar suas seleções",
       "emailStepDescription": "Informe o e-mail que você usou antes. Vamos enviar um código de verificação de 6 dígitos.",
+      "spentInviteDescription": "Este link de convite já foi usado e não pode identificar você novamente. Digite o e-mail para o qual ele foi enviado e enviaremos um código de 6 dígitos para você voltar à sua seleção.",
       "codeStepDescription": "Digite o código de 6 dígitos que enviamos para seu e-mail.",
       "emailLabel": "E-mail",
       "sendCode": "Enviar código",
@@ -531,6 +532,7 @@
     "filterByMinRating": "Minha avaliação: {{min}} estrelas ou mais",
     "folders": "Pastas",
     "openFolder": "Abrir pasta {{name}}",
+    "imageUnavailable": "Imagem indisponível",
     "folderPhotoCount": "{{count}} fotos",
     "backToGallery": "Todas as fotos",
     "downloadFolder": "Baixar pasta ({{count}})",
@@ -1960,17 +1962,17 @@
       "month": "Mês"
     },
     "masonryMode": "Modo de Layout",
-    "masonryModeOptions": {
-      "columns": "Colunas (Estilo Pinterest)",
-      "rows": "Linhas (Justificado customizado)",
-      "flickr": "Flickr (Justificado clássico)",
-      "justified": "Google Photos (Algoritmo Knuth-Plass)"
+    "masonryModeNames": {
+      "columns": "Colunas",
+      "rows": "Linhas",
+      "flickr": "Linhas Flickr",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Colunas verticais com alturas variadas",
-      "rows": "Layout justificado baseado em linhas",
-      "flickr": "Algoritmo de layout justificado do Flickr",
-      "justified": "Linhas estilo Google Photos para quebras ideais"
+    "masonryModeDescriptions": {
+      "columns": "Colunas de alturas variadas, estilo Pinterest",
+      "rows": "Linhas da mesma altura, as fotos mantêm o formato",
+      "flickr": "Linhas justificadas, cada uma com a sua altura",
+      "quilted": "Células quadradas, fotos largas e altas ocupam duas"
     },
     "targetRowHeight": "Altura Alvo da Linha",
     "targetRowHeightHint": "Altura em pixels (150-400). As fotos escalam para caber.",
@@ -2120,6 +2122,16 @@
     "noTemplateDescription": "Usar apenas as definições de tema sem modelo CSS",
     "templateSlot": "Posição {{slot}}",
     "eventCustomCSS": "CSS personalizado por evento",
+    "layoutNames": {
+      "grid": "Grelha",
+      "masonry": "Masonry",
+      "carousel": "Carrossel",
+      "timeline": "Cronologia",
+      "mosaic": "Mosaico",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Grelha clássica com tamanhos de foto uniformes",
       "masonry": "Estilo Pinterest com alturas variadas",

@@ -1327,6 +1327,7 @@
       "back": "Nazaj",
       "title": "Obnovite svoje izbire",
       "emailStepDescription": "Vnesite e-poštni naslov, ki ste ga uporabili prej. Poslali vam bomo 6-mestno potrditveno kodo.",
+      "spentInviteDescription": "Ta povezava za povabilo je že bila uporabljena, zato vas ne more znova prijaviti. Vnesite e-poštni naslov, na katerega je bila poslana, in poslali vam bomo 6-mestno kodo, s katero se vrnete k svojemu izboru.",
       "codeStepDescription": "Vnesite 6-mestno kodo, ki smo jo poslali na vaš e-poštni naslov.",
       "emailLabel": "E-pošta",
       "sendCode": "Pošlji kodo",
@@ -1408,6 +1409,7 @@
     "filterByMinRating": "Moja ocena: {{min}} zvezdic ali več",
     "folders": "Mape",
     "openFolder": "Odpri mapo {{name}}",
+    "imageUnavailable": "Slika ni na voljo",
     "folderPhotoCount": "{{count}} fotografij",
     "backToGallery": "Vse fotografije",
     "downloadFolder": "Prenesi mapo ({{count}})",
@@ -3432,17 +3434,17 @@
       "month": "Mesec"
     },
     "masonryMode": "Način postavitve",
-    "masonryModeOptions": {
-      "columns": "Stolpci (v slogu Pinterest)",
-      "rows": "Vrstice (lastna poravnana postavitev)",
-      "flickr": "Flickr (preizkušena poravnana postavitev)",
-      "justified": "Google Photos (algoritem Knuth-Plass)"
+    "masonryModeNames": {
+      "columns": "Stolpci",
+      "rows": "Vrstice",
+      "flickr": "Vrstice Flickr",
+      "quilted": "Krpanka"
     },
-    "masonryModeHint": {
-      "columns": "Navpični stolpci v slogu Pinterest z različnimi višinami",
-      "rows": "Lastna vrstična poravnana postavitev",
-      "flickr": "Flickrov odprtokodni algoritem poravnane postavitve",
-      "justified": "Vrstice v slogu Google Photos z algoritmom Knuth-Plass za optimalne prelome"
+    "masonryModeDescriptions": {
+      "columns": "Stolpci različnih višin, v slogu Pinterest",
+      "rows": "Vrstice enake višine, fotografije ohranijo razmerje",
+      "flickr": "Poravnane vrstice, vsaka s svojo višino",
+      "quilted": "Kvadratna polja, široke in visoke fotografije zasedejo dve"
     },
     "targetRowHeight": "Ciljna višina vrstice",
     "targetRowHeightHint": "Višina v slikovnih pikah (150-400). Fotografije se prilagodijo vrsticam.",
@@ -3594,6 +3596,16 @@
     "noTemplateDescription": "Uporabi samo nastavitve teme brez CSS predloge",
     "templateSlot": "Reža {{slot}}",
     "eventCustomCSS": "CSS po meri za dogodek",
+    "layoutNames": {
+      "grid": "Mreža",
+      "masonry": "Masonry",
+      "carousel": "Vrtiljak",
+      "timeline": "Časovnica",
+      "mosaic": "Mozaik",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Klasična mrežna postavitev z enakimi velikostmi fotografij",
       "masonry": "Postavitev v slogu Pinterest z različnimi višinami",

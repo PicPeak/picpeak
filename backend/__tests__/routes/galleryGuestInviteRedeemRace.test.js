@@ -154,7 +154,29 @@ describe('guest invite redemption race', () => {
 
     expect(afterInviteSelect).toBeNull();
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: 'already_redeemed', guest_id: guestId });
+    expect(res.body).toEqual({ error: 'already_redeemed', guest_id: guestId, recoverable: false });
     expect(res.body.token).toBeUndefined();
+  });
+
+  // Issue 2209: the spent link is how a guest whose device lost its identity
+  // comes back. The client offers the email code only when one can arrive.
+  it('says whether the spent invite\'s guest can recover by email, without the address', async () => {
+    await mintInvite('invite-spent-noemail-000000000');
+    expect((await redeem('invite-spent-noemail-000000000')).status).toBe(200);
+    const noEmail = await redeem('invite-spent-noemail-000000000');
+    expect(noEmail.status).toBe(409);
+    expect(noEmail.body).toEqual({ error: 'already_redeemed', guest_id: guestId, recoverable: false });
+
+    await db('gallery_guests').where({ id: guestId }).update({ email: 'invited@example.com' });
+    try {
+      await mintInvite('invite-spent-email-00000000000');
+      expect((await redeem('invite-spent-email-00000000000')).status).toBe(200);
+      const withEmail = await redeem('invite-spent-email-00000000000');
+      expect(withEmail.status).toBe(409);
+      expect(withEmail.body).toEqual({ error: 'already_redeemed', guest_id: guestId, recoverable: true });
+      expect(JSON.stringify(withEmail.body)).not.toContain('invited@example.com');
+    } finally {
+      await db('gallery_guests').where({ id: guestId }).update({ email: null });
+    }
   });
 });

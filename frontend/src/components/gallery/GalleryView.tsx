@@ -148,7 +148,7 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
 export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
   const { t } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
-  const { logout, isClient, viaCustomer } = useGalleryAuth();
+  const { logout, endSession, isClient, viaCustomer } = useGalleryAuth();
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
@@ -1408,8 +1408,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
 
     if (is401Error) {
-      // Authentication failed - logout and let the parent component handle re-authentication
-      logout();
+      // Authentication failed - end the session and let the parent component
+      // handle re-authentication. Not logout(): that also drops the guest
+      // identity, which outlives this session by design (issue 2209).
+      endSession();
       return null;
     }
 

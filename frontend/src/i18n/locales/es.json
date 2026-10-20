@@ -402,6 +402,7 @@
     "filterByMinRating": "Mi valoración: {{min}} estrellas o más",
     "folders": "Carpetas",
     "openFolder": "Abrir carpeta {{name}}",
+    "imageUnavailable": "Imagen no disponible",
     "folderPhotoCount": "{{count}} fotos",
     "backToGallery": "Todas las fotos",
     "downloadFolder": "Descargar carpeta ({{count}})",
@@ -1714,6 +1715,16 @@
     "eventThemesInfo": "Puedes sobrescribir estos ajustes globales para eventos individuales al crearlos o editarlos.",
     "themePresets": "Preajustes de tema",
     "galleryLayout": "Diseño de galería",
+    "layoutNames": {
+      "grid": "Cuadrícula",
+      "masonry": "Masonry",
+      "carousel": "Carrusel",
+      "timeline": "Cronología",
+      "mosaic": "Mosaico",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Diseño en cuadrícula clásico con tamaños uniformes",
       "masonry": "Estilo Pinterest con alturas variables",
@@ -1752,17 +1763,17 @@
       "month": "Mes"
     },
     "masonryMode": "Modo de layout",
-    "masonryModeOptions": {
-      "columns": "Columnas (estilo Pinterest)",
-      "rows": "Filas (justificado personalizado)",
-      "flickr": "Flickr (justificado probado)",
-      "justified": "Google Photos (algoritmo Knuth-Plass)"
+    "masonryModeNames": {
+      "columns": "Columnas",
+      "rows": "Filas",
+      "flickr": "Filas Flickr",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Columnas verticales estilo Pinterest con alturas variables",
-      "rows": "Diseño justificado basado en filas",
-      "flickr": "Algoritmo justificado de Flickr",
-      "justified": "Filas estilo Google Photos usando Knuth-Plass para cortes óptimos"
+    "masonryModeDescriptions": {
+      "columns": "Columnas de alturas variables, estilo Pinterest",
+      "rows": "Filas de igual altura, las fotos mantienen su formato",
+      "flickr": "Filas justificadas, cada una con su propia altura",
+      "quilted": "Celdas cuadradas, las fotos anchas y altas ocupan dos"
     },
     "targetRowHeight": "Altura objetivo de fila",
     "targetRowHeightHint": "Altura en píxeles (150-400). Las fotos se escalarán para ajustar las filas.",

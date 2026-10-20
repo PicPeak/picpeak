@@ -388,6 +388,7 @@
       "back": "Terug",
       "title": "Uw selecties herstellen",
       "emailStepDescription": "Voer het e-mailadres in dat u eerder heeft gebruikt. We sturen een 6-cijferige verificatiecode.",
+      "spentInviteDescription": "Deze uitnodigingslink is al gebruikt en kan je niet opnieuw aanmelden. Vul het e-mailadres in waarnaar hij is gestuurd, dan sturen we je een 6-cijferige code om terug te gaan naar je selectie.",
       "codeStepDescription": "Voer de 6-cijferige code in die we naar uw e-mail hebben gestuurd.",
       "emailLabel": "E-mail",
       "sendCode": "Code verzenden",
@@ -424,6 +425,7 @@
     "filterByMinRating": "Mijn beoordeling: {{min}} sterren of meer",
     "folders": "Mappen",
     "openFolder": "Map {{name}} openen",
+    "imageUnavailable": "Afbeelding niet beschikbaar",
     "folderPhotoCount": "{{count}} foto's",
     "backToGallery": "Alle foto's",
     "downloadFolder": "Map downloaden ({{count}})",
@@ -1831,17 +1833,17 @@
       "month": "Maand"
     },
     "masonryMode": "Lay-outmodus",
-    "masonryModeOptions": {
-      "columns": "Kolommen (Pinterest-stijl)",
-      "rows": "Rijen (Aangepast gerechtvaardigd)",
-      "flickr": "Flickr (Beproefde justified lay-out)",
-      "justified": "Google Photos (Knuth-Plass-algoritme)"
+    "masonryModeNames": {
+      "columns": "Kolommen",
+      "rows": "Rijen",
+      "flickr": "Flickr-rijen",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Pinterest-achtige verticale kolommen met variabele hoogtes",
-      "rows": "Aangepaste rijgebaseerde justified lay-out",
-      "flickr": "Flickrs open-source justified lay-outalgoritme",
-      "justified": "Google Photos-achtige rijen met Knuth-Plass-algoritme voor optimale onderbrekingen"
+    "masonryModeDescriptions": {
+      "columns": "Kolommen met wisselende hoogtes, Pinterest-stijl",
+      "rows": "Rijen van gelijke hoogte, foto's behouden hun vorm",
+      "flickr": "Uitgevulde rijen, elke rij met een eigen hoogte",
+      "quilted": "Vierkante vakken, brede en hoge foto's beslaan er twee"
     },
     "targetRowHeight": "Doelrijhoogte",
     "targetRowHeightHint": "Hoogte in pixels (150-400). Foto's worden geschaald om in rijen te passen.",
@@ -1991,6 +1993,16 @@
     "noTemplateDescription": "Alleen thema-instellingen gebruiken zonder CSS-sjabloon",
     "templateSlot": "Slot {{slot}}",
     "eventCustomCSS": "Evenement-specifieke aangepaste CSS",
+    "layoutNames": {
+      "grid": "Raster",
+      "masonry": "Masonry",
+      "carousel": "Carrousel",
+      "timeline": "Tijdlijn",
+      "mosaic": "Mozaïek",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Klassieke rasterindeling met uniforme fotogroottes",
       "masonry": "Pinterest-stijl indeling met variabele hoogtes",
