@@ -55,6 +55,8 @@ export interface Event {
   live_refresh?: boolean | number;
   // Camera details in the guest lightbox (issue 1733, D1).
   show_exif_to_guests?: boolean | number;
+  // "Photo 12 of 84" instead of the filename for guests (issue 1733, E6).
+  neutral_photo_labels?: boolean | number;
   // Reveal mode (#838)
   reveal_mode?: boolean;
   reveal_at?: string | null;
@@ -420,6 +422,8 @@ export interface GalleryData {
       standard: string;
       picker_enabled: boolean;
       choices: DownloadResolutionChoice[];
+      /** Downloads carry a watermark (global branding or the gallery's own flag). */
+      watermarked?: boolean;
     };
     welcome_message?: string;
     color_theme?: string;
@@ -470,6 +474,9 @@ export interface GalleryData {
     // When true, the lightbox surfaces each photo's `original_filename`
     // alongside the position counter (#508).
     use_original_filenames?: boolean;
+    // Neutral photo labels (issue 1733, E6): guests see "Photo 12 of 84"
+    // instead of a filename. Display only; downloads keep their names.
+    neutral_photo_labels?: boolean;
     // "People in this gallery" (#1074). False whenever the global `faces`
     // flag is off, detection is off for this event, or the photographer
     // chose to keep the people strip to themselves. The whole face UI hangs

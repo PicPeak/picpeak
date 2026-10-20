@@ -6,14 +6,21 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 
 import { GalleryStoryLayout } from '../GalleryStoryLayout';
+import { PhotoLabelsProvider } from '../../PhotoLabels';
 import type { Photo } from '../../../../types';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : key),
+    t: (key: string, fallback?: unknown) => (typeof fallback === 'string'
+      ? fallback
+      // The options form, as the neutral label uses it: interpolated.
+      : typeof fallback === 'object' && fallback && 'defaultValue' in fallback
+        ? String((fallback as { defaultValue: string }).defaultValue)
+          .replace(/{{(\w+)}}/g, (_, name: string) => String((fallback as Record<string, unknown>)[name]))
+        : key),
   }),
 }));
 
@@ -122,6 +129,26 @@ describe('GalleryStoryLayout filename caption', () => {
   it('shows the original filename when the gallery uses original filenames', () => {
     const { container } = render(<GalleryStoryLayout {...props} storyShowFilenames showOriginalFilename />);
     expect(captions(container)).toEqual(['DSC_1.jpg', 'DSC_2.jpg', 'DSC_3.jpg', 'DSC_4.jpg', 'DSC_5.jpg']);
+  });
+
+  it('shows the neutral label instead under neutral photo labels (issue 1733, E6)', () => {
+    const { container } = render(
+      <PhotoLabelsProvider neutral photos={photos}>
+        <GalleryStoryLayout {...props} storyShowFilenames showOriginalFilename />
+      </PhotoLabelsProvider>,
+    );
+    expect(captions(container)).toEqual(['Photo 1 of 5', 'Photo 2 of 5', 'Photo 3 of 5', 'Photo 4 of 5', 'Photo 5 of 5']);
+    expect(container.innerHTML).not.toMatch(/DSC_|stored-/);
+  });
+
+  it('numbers against the photos its search leaves (issue 1733, E6)', () => {
+    const { container } = render(
+      <PhotoLabelsProvider neutral photos={photos}>
+        <GalleryStoryLayout {...props} storyShowFilenames />
+      </PhotoLabelsProvider>,
+    );
+    fireEvent.change(container.querySelector('.story-nav-search input')!, { target: { value: 'Party' } });
+    expect(captions(container)).toEqual(['Photo 1 of 2', 'Photo 2 of 2']);
   });
 
   it('original filenames alone do not turn the caption on', () => {

@@ -27,7 +27,19 @@ vi.mock('../../common', () => ({ Button: ({ children, leftIcon: _icon, ...rest }
 vi.mock('../DownloadQuotaNotice', () => ({ DownloadQuotaNotice: () => null }));
 vi.mock('../DownloadResolutionModal', () => ({ DownloadResolutionModal: () => null }));
 vi.mock('../HeroHeader', () => ({ HeroHeader: () => null }));
-vi.mock('../layouts', () => ({ GridGalleryLayout: () => null }));
+// A layout's own Select all and Download selected (Story, Premium): the
+// classic layouts' toolbar moved into the gallery toolbar (issue 1733, E8).
+vi.mock('../layouts', () => ({
+  GridGalleryLayout: ({ onSelectMany, onDownloadSelected, isSelectionMode }: {
+    onSelectMany: (ids: number[]) => void; onDownloadSelected: () => void; isSelectionMode: boolean;
+  }) => (
+    <>
+      <button onClick={() => onSelectMany([10, 11, 12])}>select all</button>
+      <button onClick={() => onDownloadSelected()}>download selected</button>
+      {isSelectionMode && <span>selecting</span>}
+    </>
+  ),
+}));
 
 import { toast } from 'react-toastify';
 import { PhotoGridWithLayouts } from '../PhotoGridWithLayouts';
@@ -36,8 +48,8 @@ const photos = [10, 11, 12].map((id) => ({ id, filename: `${id}.jpg` } as Photo)
 
 async function selectAllAndDownload() {
   render(<PhotoGridWithLayouts photos={photos} slug="g" />);
-  fireEvent.click(screen.getByText('gallery.selectAll'));
-  fireEvent.click(screen.getByText('gallery.downloadSelected'));
+  fireEvent.click(screen.getByText('select all'));
+  fireEvent.click(screen.getByText('download selected'));
   await waitFor(() => expect(service.downloadSelectedPhotos).toHaveBeenCalledWith('g', [10, 11, 12]));
 }
 
@@ -50,9 +62,8 @@ describe('PhotoGridWithLayouts — selection over the download cap', () => {
   it('keeps the selection when the server refuses it as too large', async () => {
     service.downloadSelectedPhotos.mockRejectedValue(new SelectionTooLargeError(500));
     await selectAllAndDownload();
-    // Still in selection mode with the download button there to retry.
-    await waitFor(() => expect(screen.getByText('gallery.cancelSelection')).toBeTruthy());
-    expect(screen.getByText('gallery.downloadSelected')).toBeTruthy();
+    // Still in selection mode, to retry or trim.
+    await waitFor(() => expect(screen.getByText('selecting')).toBeTruthy());
     // The wrapper already said why; no generic "download failed" on top.
     expect(toast.error).not.toHaveBeenCalled();
   });
@@ -61,6 +72,6 @@ describe('PhotoGridWithLayouts — selection over the download cap', () => {
     service.downloadSelectedPhotos.mockRejectedValue(new DownloadLimitError({ remaining: 0 }));
     await selectAllAndDownload();
     await waitFor(() => expect(service.downloadSelectedPhotos).toHaveBeenCalled());
-    expect(screen.getByText('gallery.cancelSelection')).toBeTruthy();
+    expect(screen.getByText('selecting')).toBeTruthy();
   });
 });

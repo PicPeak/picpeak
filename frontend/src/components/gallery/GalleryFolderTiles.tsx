@@ -10,7 +10,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Folder } from 'lucide-react';
 
-import { AuthenticatedImage } from '../common';
+import { TileImage } from './TileImage';
 import { folderKey, type FolderTile } from './folders';
 
 interface GalleryFolderTilesProps {
@@ -85,7 +85,8 @@ export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({
           >
             <div className="aspect-[4/3] relative" style={{ backgroundColor: 'var(--color-background)' }}>
               {coverPhoto?.thumbnail_url ? (
-                <AuthenticatedImage
+                // TileImage for the unavailable tile (issue 1733, E9).
+                <TileImage
                   src={coverPhoto.thumbnail_url}
                   alt=""
                   className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"

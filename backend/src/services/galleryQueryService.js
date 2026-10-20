@@ -607,6 +607,12 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         standard: downloadPolicy.standard,
         picker_enabled: downloadPolicy.pickerEnabled && !downloadPreviewOnly,
         choices: downloadPolicy.pickerEnabled && !downloadPreviewOnly ? downloadPolicy.choices : [],
+        // Whether downloads carry a watermark, by the rule the download
+        // routes apply (resolveWatermarkSettings): the global branding
+        // watermark or this gallery's own flag. `watermark_downloads` below
+        // is the flag alone, so the download menu (issue 1733, E2) reads
+        // this to say what the guest actually gets.
+        watermarked: !!watermarkSettings?.enabled || parseBooleanInput(event.watermark_downloads, false),
       },
       // Reveal mode (#838): armed flag lets an open VISIBLE gallery keep
       // polling so a re-hide propagates without a manual reload.
@@ -648,6 +654,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // Mirror of the admin-side toggle so the lightbox can decide
       // whether to surface original camera filenames (#508).
       use_original_filenames: useOriginalFilenames,
+      // Neutral photo labels (issue 1733, E6): guests see "Photo 12 of 84"
+      // instead of a filename. Display only — `filename` stays in the photo
+      // list below, because downloads are still named by it.
+      neutral_photo_labels: parseBooleanInput(event.neutral_photo_labels, false),
       // "People in this gallery" (#1074). False whenever the global flag
       // is off, detection is off for this event, or the photographer chose
       // to keep the strip to themselves — the frontend renders no face UI

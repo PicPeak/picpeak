@@ -397,6 +397,7 @@
       "back": "Retour",
       "title": "Récupérer vos sélections",
       "emailStepDescription": "Entrez l'e-mail que vous avez utilisé précédemment. Nous allons vous envoyer un code de vérification à 6 chiffres.",
+      "spentInviteDescription": "Ce lien d'invitation a déjà été utilisé et ne peut plus vous connecter. Saisissez l'adresse e-mail à laquelle il a été envoyé et nous vous enverrons un code à 6 chiffres pour retrouver votre sélection.",
       "codeStepDescription": "Entrez le code à 6 chiffres que nous vous avons envoyé par e-mail.",
       "emailLabel": "E-mail",
       "sendCode": "Envoyer le code",
@@ -437,6 +438,7 @@
     "filterByMinRating": "Ma note : {{min}} étoiles ou plus",
     "folders": "Dossiers",
     "openFolder": "Ouvrir le dossier {{name}}",
+    "imageUnavailable": "Image indisponible",
     "folderPhotoCount": "{{count}} photos",
     "backToGallery": "Toutes les photos",
     "downloadFolder": "Télécharger le dossier ({{count}})",
@@ -588,6 +590,41 @@
       "like": "J’aime",
       "unlike": "Retirer le j’aime",
       "selectPhoto": "Sélectionner {{name}}"
+    },
+    "downloadNow": "Télécharger",
+    "downloadMenu": {
+      "original": "Original",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "{{size}} au total",
+      "watermarked": "Toutes les tailles portent le filigrane du photographe, l'original aussi.",
+      "noOriginal": "Les fichiers originaux ne sont pas proposés dans cette galerie. La plus grande taille va jusqu'à {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Qualité maximale, tel que livré par le photographe — idéal pour l'impression.",
+        "print": "Haute résolution — pour les tirages et les grands écrans.",
+        "screen": "Taille web — pour les écrans, le partage et les réseaux sociaux.",
+        "small": "Fichier le plus léger — rapide à envoyer par message."
+      }
+    },
+    "neutralLabel": {
+      "numbered": "Photo {{position}} sur {{total}}",
+      "plain": "Photo",
+      "selected": "Photo sélectionnée {{position}} sur {{total}}"
+    },
+    "filterPanel": {
+      "selectMatches_one": "Sélectionner {{count}} photo",
+      "selectMatches_many": "Sélectionner ces {{count}} photos",
+      "selectMatches_other": "Sélectionner ces {{count}} photos",
+      "selectMatchesMedia_one": "Sélectionner {{count}} élément",
+      "selectMatchesMedia_many": "Sélectionner ces {{count}} éléments",
+      "selectMatchesMedia_other": "Sélectionner ces {{count}} éléments",
+      "clear": "Effacer les filtres",
+      "activeCount_one": "{{count}} actif",
+      "activeCount_many": "{{count}} actifs",
+      "activeCount_other": "{{count}} actifs"
+    },
+    "toolbar": {
+      "browse": "Outils de la galerie",
+      "selection": "Sélection"
     }
   },
   "categories": {
@@ -1102,6 +1139,8 @@
     },
     "showExifToGuests": "Afficher les données de prise de vue aux invités",
     "showExifToGuestsHelp": "L'appareil, l'objectif, la focale, l'ouverture, la vitesse d'obturation et la sensibilité ISO apparaissent sous la photo en plein écran. La position et les numéros de série ne sont jamais enregistrés ni affichés.",
+    "neutralPhotoLabels": "Afficher un libellé neutre au lieu des noms de fichier",
+    "neutralPhotoLabelsHelp": "Les invités voient « Photo 12 sur 84 » au lieu du nom de fichier de l’appareil dans la vue plein écran, dans les légendes des vignettes et dans le texte des lecteurs d’écran. Les téléchargements gardent leurs noms de fichier, et la liste « Copier les noms de fichiers » n’est pas proposée aux invités. L’administration affiche toujours les noms de fichier.",
     "welcomeEditor": {
       "lineBreaksPreserved": "Les sauts de ligne sont conservés dans les e-mails",
       "tip": "Astuce : appuyez sur Entrée pour créer une nouvelle ligne. Chaque ligne apparaîtra comme un paragraphe distinct dans les e-mails.",
@@ -1880,17 +1919,17 @@
       "month": "Mois"
     },
     "masonryMode": "Mode de disposition",
-    "masonryModeOptions": {
-      "columns": "Colonnes (style Pinterest)",
-      "rows": "Lignes (justifié personnalisé)",
-      "flickr": "Flickr (justifié éprouvé)",
-      "justified": "Google Photos (algorithme Knuth-Plass)"
+    "masonryModeNames": {
+      "columns": "Colonnes",
+      "rows": "Rangées",
+      "flickr": "Rangées Flickr",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Colonnes verticales de style Pinterest avec hauteurs variables",
-      "rows": "Disposition justifiée basée sur des lignes personnalisées",
-      "flickr": "Algorithme de disposition justifiée open-source de Flickr",
-      "justified": "Lignes de style Google Photos utilisant l'algorithme Knuth-Plass pour des ruptures optimales"
+    "masonryModeDescriptions": {
+      "columns": "Colonnes de hauteurs variables, style Pinterest",
+      "rows": "Rangées de même hauteur, les photos gardent leur format",
+      "flickr": "Rangées justifiées, chacune avec sa propre hauteur",
+      "quilted": "Cases carrées, les photos larges et hautes en occupent deux"
     },
     "targetRowHeight": "Hauteur de ligne cible",
     "targetRowHeightHint": "Hauteur en pixels (150-400). Les photos s'adapteront pour remplir les lignes.",
@@ -2040,6 +2079,16 @@
     "noTemplateDescription": "Utiliser uniquement les paramètres de thème sans modèle CSS",
     "templateSlot": "Emplacement {{slot}}",
     "eventCustomCSS": "CSS personnalisé spécifique à l'événement",
+    "layoutNames": {
+      "grid": "Grille",
+      "masonry": "Masonry",
+      "carousel": "Carrousel",
+      "timeline": "Chronologie",
+      "mosaic": "Mosaïque",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Bêta",
     "layoutDescriptions": {
       "grid": "Disposition en grille classique avec des tailles de photos cohérentes",
       "masonry": "Disposition de style Pinterest avec des hauteurs variables",
@@ -3380,6 +3429,7 @@
     "rateStar_one": "Noter {{count}} étoile",
     "rateStar_other": "Noter {{count}} étoiles",
     "removeRating": "Retirer la note",
+    "ratePhoto": "Noter la photo",
     "rateSelected": "Noter la sélection",
     "bulkRatingPartial": "{{rated}} photos sur {{total}} ont été notées",
     "ratingLimitReached": "Limite de notes atteinte. Réessayez plus tard.",
@@ -3451,8 +3501,10 @@
       "reopenError": "Impossible de rouvrir l’envoi"
     },
     "annotation": {
-      "draw": "Dessiner sur la photo",
-      "edit": "Modifier le dessin",
+      "modeLabel": "Mode",
+      "modeSelect": "Sélection",
+      "modeAnnotate": "Annoter",
+      "hint": "Pour dessiner sur la photo, passez en mode Annoter.",
       "remove": "Retirer le dessin",
       "attached": "Dessin joint",
       "inProgress": "Terminez le dessin sur la photo, puis envoyez votre commentaire.",

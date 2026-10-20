@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { GalleryLayout, PhotoFilterBar } from '../../components/gallery';
+import { GalleryLayout, GalleryToolbar, GalleryCategoryChips } from '../../components/gallery';
 import { Camera } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { photoMatchesFilenameSearch, photoNameCompare } from '../../utils/photoFilename';
@@ -34,7 +34,7 @@ export const PreviewPage: React.FC = () => {
   const [brandingSettings, setBrandingSettings] = useState<any>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  // Mirrors PhotoFilterBar's sort union. 'capture_date' falls through to the
+  // Mirrors GallerySortMenu's sort union. 'capture_date' falls through to the
   // upload-date branch below — the mock photos carry no EXIF capture date.
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'size' | 'rating' | 'capture_date'>('date');
 
@@ -129,17 +129,18 @@ export const PreviewPage: React.FC = () => {
           <p className="text-muted-theme">{t('gallery.preview.description', 'This is how your galleries will look with the current theme settings.')}</p>
         </div>
 
-        {/* Filters */}
-        <PhotoFilterBar
+        {/* The gallery toolbar and categories, as a gallery shows them */}
+        <GalleryToolbar
+          search={{ value: searchTerm, onChange: setSearchTerm }}
+          sort={{ sortBy, onSortChange: setSortBy }}
+          photoCount={filteredPhotos.length}
+        />
+        <GalleryCategoryChips
+          className="mt-4"
           categories={mockCategories}
           photos={mockPhotos}
           selectedCategoryId={selectedCategoryId}
           onCategoryChange={setSelectedCategoryId}
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          sortBy={sortBy}
-          onSortChange={(sort) => setSortBy(sort)}
-          photoCount={filteredPhotos.length}
         />
 
         {/* Photo Grid */}

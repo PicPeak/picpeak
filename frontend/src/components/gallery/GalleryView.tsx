@@ -23,6 +23,7 @@ import { GalleryBreadcrumb } from './GalleryBreadcrumb';
 import { GalleryViewSwitch } from './GalleryViewSwitch';
 import { GalleryDeliveryBanner } from './GalleryDeliveryBanner';
 import { GalleryTileBadgesProvider, type GalleryTileBadgesValue } from './GalleryTileBadges';
+import { PhotoLabelsProvider } from './PhotoLabels';
 import {
   findFolderByKey,
   filterCategories,
@@ -52,18 +53,20 @@ import {
   type LightboxPhotoChangeReason,
 } from './photoLink';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
+import { PhotoDownloadChoiceProvider } from './PhotoDownloadChoiceProvider';
 import { clearDownloadJobParam, readDownloadJobParam } from './downloadJobLink';
 import { CopyFilenamesDialog } from './CopyFilenamesDialog';
 import { ExpirationBanner } from './ExpirationBanner';
 import { CountdownTimer } from './CountdownTimer';
 import { GalleryLayout } from './GalleryLayout';
 import { GallerySidebar } from './GallerySidebar';
-import { PhotoFilterBar } from './PhotoFilterBar';
+import { GalleryToolbar } from './GalleryToolbar';
+import { GalleryFilterPanel } from './GalleryFilterPanel';
+import { GalleryCategoryChips } from './GalleryCategoryChips';
 import { GridDensityControl } from './GridDensityControl';
 import { GridDensityOffered, layoutHasDensity } from './gridDensity';
 import { UserPhotoUpload } from './UserPhotoUpload';
-import { CreditFilterChips } from './CreditFilterChips';
-import { TagFilterChips, tagChipsFor } from './TagFilterChips';
+import { tagChipsFor } from './TagFilterChips';
 import { creditGroups, uploaderRequiresEmail } from '../../utils/photoCredits';
 import { hasVideoItems } from '../../utils/mediaCounts';
 import { isFilenameListFavourite, photosForFilenameList } from '../../utils/photoFilename';
@@ -74,7 +77,7 @@ import { PeopleSheet } from './PeopleSheet';
 import { GuestIdentityProvider } from '../../contexts/GuestIdentityContext';
 import { SelectionSubmitBar, selectionStateKey, useSelectionPickRefresh } from './SelectionSubmitBar';
 import { DownloadQuotaProvider, buildDownloadQuotaValue } from '../../contexts/DownloadQuotaContext';
-import { isDownloadLimitError, quotaFromEvent, showDownloadLimitReached, type QuotaPhoto } from '../../utils/downloadLimit';
+import { isDownloadLimitError, isSelectionTooLargeError, quotaFromEvent, showDownloadLimitReached, type QuotaPhoto } from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
@@ -150,7 +153,7 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
 export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
   const { t } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
-  const { logout, isClient, viaCustomer } = useGalleryAuth();
+  const { logout, endSession, isClient, viaCustomer } = useGalleryAuth();
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
@@ -320,7 +323,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const useCanvasRendering = data?.event?.use_canvas_rendering === true;
   // #508 — surface original camera filenames in the lightbox when the
   // admin has flipped the same toggle that drives original-name downloads.
-  const showOriginalFilename = data?.event?.use_original_filenames === true;
+  // Neutral photo labels (issue 1733, E6): "Photo 12 of 84" in place of the
+  // filename. It wins over the original-filename toggle above for display;
+  // downloads are named by that toggle as before.
+  const neutralPhotoLabels = data?.event?.neutral_photo_labels === true;
+  const showOriginalFilename = !neutralPhotoLabels && data?.event?.use_original_filenames === true;
 
   // DevTools protection - enabled by individual setting OR legacy protection level
   const devToolsEnabled = enableDevtoolsProtection || protectionLevel === 'enhanced' || protectionLevel === 'maximum';
@@ -1053,6 +1060,31 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const deselectAll = useCallback(() => {
     setSelectedPhotos(new Set());
   }, [setSelectedPhotos]);
+  // The filter panel's last step (issue 1733, E7): exactly what the filters
+  // leave on screen, with the toolbar switched to its batch actions.
+  const selectFiltered = useCallback(() => {
+    selectAllVisible();
+    setIsSelectionMode(true);
+  }, [selectAllVisible, setIsSelectionMode]);
+  // The toolbar's X: selection mode off and the selection gone with it, or
+  // the toolbar, which swaps on a non-empty selection, would stay swapped.
+  const cancelSelection = useCallback(() => {
+    setSelectedPhotos(new Set());
+    setIsSelectionMode(false);
+  }, [setSelectedPhotos, setIsSelectionMode]);
+  // The filters that live in the toolbar's filter panel; categories, search
+  // and people have their own controls on the page.
+  const activePanelFilterCount = activeFilters.length + activeColorFilters.length
+    + (minRating !== null ? 1 : 0) + (mediaFilter !== 'all' ? 1 : 0)
+    + (selectedCreditKey !== null ? 1 : 0) + selectedTagKeys.length;
+  const clearPanelFilters = () => {
+    setActiveFilters([]);
+    setActiveColorFilters([]);
+    setMinRating(null);
+    setMediaFilter('all');
+    setSelectedCreditKey(null);
+    setSelectedTagKeys([]);
+  };
   // Selection tray in the sidebar (issue 1733, A3e).
   const deselectPhoto = useCallback((photoId: number) => {
     setSelectedPhotos((previous) => {
@@ -1078,6 +1110,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const downloadChoices = data?.event?.download_resolution?.picker_enabled
     ? (data.event.download_resolution.choices || [])
     : [];
+  // The single-photo download menu (issue 1733, E2) and what every size
+  // menu says about the watermark.
+  const downloadChoiceProps = {
+    slug,
+    choices: downloadChoices,
+    watermarked: data?.event?.download_resolution?.watermarked === true,
+  };
 
   // Download limit (issue 1560). Checked before any request so the guest sees
   // why at once; the server enforces it regardless.
@@ -1101,6 +1140,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     () => Array.from(selectedPhotos).flatMap((id) => photosById.get(id) ?? []),
     [selectedPhotos, photosById]
   );
+  // The whole selection, priced by id for the toolbar's download (issue 1560).
+  const selectedQuotaPhotos = useMemo(
+    () => photosForIds(Array.from(selectedPhotos)),
+    [photosForIds, selectedPhotos]
+  );
   const refuseOverQuota = (photos: QuotaPhoto[]): boolean => {
     if (downloadQuota.allows(photos)) return false;
     showDownloadLimitReached({ remaining: downloadQuota.remaining ?? 0 });
@@ -1116,8 +1160,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Premium and Story have no `favorite` control: their Favourites toggle
   // writes `like` feedback and seeds from `is_liked`, so there a like is the
   // favourite (see isFilenameListFavourite, and `favouritesAreLikes` above).
+  //
+  // Empty under neutral photo labels (issue 1733, E6): the list is nothing but
+  // the camera names that setting keeps off screen, and every "Copy filenames"
+  // button is gated on its length.
   const copyFilenames = useMemo(() => photosForFilenameList(
-    data?.photos || [],
+    neutralPhotoLabels ? [] : data?.photos || [],
     selectedPhotos,
     (photo) => isFilenameListFavourite(photo, {
       likeBacked: favouritesAreLikes,
@@ -1132,7 +1180,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       settingsResolved: feedbackSettings?.identity_mode !== undefined,
     }),
     isSelectionMode,
-  ), [data?.photos, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes, feedbackSettings]);
+  ), [data?.photos, neutralPhotoLabels, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes, feedbackSettings]);
 
   const handleDownloadAll = () => {
     // Prevent downloads if gallery is expired or downloads disabled
@@ -1196,7 +1244,15 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // The whole selection (issue 1972), as the picker branch above hands over:
       // a search or filter applied after selecting hides photos, it does not
       // unselect them.
-      if (downloadQuota.limited || downloadQuota.previewOnly) {
+      //
+      // The gallery toolbar (every controls style but the sidebar) has always
+      // handed the selection over as one zip as well, and still does (issue
+      // 1733, E8); only the sidebar fetches photo by photo.
+      const asToolbarZip = theme.controlsStyle !== 'sidebar';
+      if (asToolbarZip || downloadQuota.limited || downloadQuota.previewOnly) {
+        if (asToolbarZip && !downloadQuota.limited && !downloadQuota.previewOnly) {
+          toast.info(t('gallery.downloading', { count: selectedPhotoList.length }));
+        }
         try {
           await galleryService.downloadSelectedPhotos(
             slug,
@@ -1205,8 +1261,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             () => keepSelectedRunAlive(runId),
           );
         } catch (error) {
-          if (!isDownloadLimitError(error)) throw error;
-          return;
+          // A refusal keeps the selection, to trim it to what is left; so does
+          // a selection over the server's per-download cap, which the service
+          // has already explained.
+          if (isDownloadLimitError(error)) return;
+          if (!asToolbarZip) throw error;
+          if (isSelectionTooLargeError(error)) return;
+          toast.error(t('gallery.downloadError'));
         }
       } else {
         for (const photo of selectedPhotoList) {
@@ -1410,8 +1471,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
 
     if (is401Error) {
-      // Authentication failed - logout and let the parent component handle re-authentication
-      logout();
+      // Authentication failed - end the session and let the parent component
+      // handle re-authentication. Not logout(): that also drops the guest
+      // identity, which outlives this session by design (issue 2209).
+      endSession();
       return null;
     }
 
@@ -1448,16 +1511,26 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // the feedback chips to act on, and showing them reintroduces exactly the
     // empty filter row discussion #317 complained about.
     && scopedPhotos.length > 0;
-  // The viewer's saved tile size (issue 1733, E4) applies only where one of
-  // the two control styles puts the switch on screen to change it back. A
-  // Carousel gets no switch, so its delivery placeholders keep the theme size.
-  const densityOffered = (filterBarShown || showSidebar) && layoutHasDensity(theme.galleryLayout);
+  // Picking photos one by one (issue 1733, E8): not in a carousel, and not for
+  // a single photo, as the grid's own toolbar had it.
+  const selectionAvailable = filteredPhotos.length > 1 && theme.galleryLayout !== 'carousel';
+  // The sidebar carries every one of these controls itself.
+  const toolbarShown = !showSidebar
+    && (filterBarShown || selectionAvailable || isSelectionMode || selectedPhotos.size > 0 || copyFilenames.photos.length > 0);
+  const creditPanelShown = creditsVisible && creditGroups(scopedPhotos).length > 0;
+  const hasPanelFilters = feedbackEnabled || showMediaFilter || creditPanelShown || tagChips.length > 0;
+  // The viewer's saved tile size (issue 1733, E4) applies only where a
+  // control puts the switch on screen to change it back: the toolbar or the
+  // sidebar. A Carousel gets no switch, so its delivery placeholders keep the
+  // theme size.
+  const densityOffered = (toolbarShown || showSidebar) && layoutHasDensity(theme.galleryLayout);
 
   // Reveal mode (#838): the server returned the event shell with no photos —
   // render the upload-only view for EVERY layout. Enforcement is server-side
   // (the photo endpoints refuse plain guests); this is the friendly face.
   if (hiddenUntilReveal) {
     return (
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryLayout
         event={{
           ...event,
@@ -1536,6 +1609,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
+      </PhotoDownloadChoiceProvider>
     );
   }
 
@@ -1646,7 +1720,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // in guest identity mode was never asked for a name and got a 401.
       <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <DownloadQuotaProvider slug={slug} event={data?.event}>
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryTileBadgesProvider value={tileBadges}>
+      <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
         <GuestRecoveryModal />
         {/* #1160: these layouts return early and render edge-to-edge, but they
@@ -1783,7 +1859,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onSelectionChange={setSelectedPhotos}
           photosForIds={photosForIds}
           onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
-          showSelectionControls={false}
           eventName={event.event_name}
           eventLogo={data?.event?.hero_logo_url || brandingSettings?.logo_url}
           eventDate={event.event_date}
@@ -1863,7 +1938,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onClose={() => setShowCopyFilenames(false)}
           />
         )}
+      </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
+      </PhotoDownloadChoiceProvider>
       </DownloadQuotaProvider>
       </GuestIdentityProvider>
     );
@@ -1872,7 +1949,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   return (
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
     <DownloadQuotaProvider slug={slug} event={data?.event}>
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryTileBadgesProvider value={tileBadges}>
+      <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GridDensityOffered.Provider value={densityOffered}>
       <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
       <GuestRecoveryModal />
@@ -2092,62 +2171,94 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           </div>
         )}
 
-        {/* Search and Filters - Only for grid layout, when admin enables the
-            filter bar globally, and when the gallery actually has photos
-            (avoids the empty "Search photos by filename" row in the screenshot
-            from discussion #317). */}
-        {filterBarShown ? (
-          <div className="mt-6">
-            <PhotoFilterBar
-              // Folders are navigation, not a filter (#1160) — they get tiles.
-              // Since issue 1786 a photo's folder and its filter category are
-              // separate fields, so the chips work inside a folder and in "All
-              // photos" too.
-              categories={filterCategories(data.categories)}
-              // Scoped, so a chip can't advertise a count the grid won't produce.
-              photos={scopedPhotos}
-              selectedCategoryId={selectedCategoryId}
-              onCategoryChange={setSelectedCategoryId}
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            sortDesc={sortDesc}
-            onSortDescChange={setSortDesc}
-            photoCount={filteredPhotos.length}
-            // Feedback filter props
-            feedbackEnabled={feedbackEnabled}
-            activeFilters={activeFilters}
-            onFilterChange={handleFilterChange}
-            mediaFilter={mediaFilter}
-            onMediaFilterChange={setMediaFilter}
-            showMediaFilter={showMediaFilter}
-            colorLabelsEnabled={!!feedbackSettings?.allow_color_labels}
-            activeColorFilters={activeColorFilters}
-            onColorFilterChange={handleColorFilterToggle}
-            colorLabelCounts={colorLabelCounts}
-            ratingsEnabled={!!feedbackSettings?.allow_ratings}
-            minRating={minRating}
-            onMinRatingChange={setMinRating}
-            minRatingCounts={minRatingCounts}
-            viewControl={<GridDensityControl layout={theme.galleryLayout} />}
-          />
-          {creditsVisible && (
-            <CreditFilterChips
-              className="mt-3"
-              photos={scopedPhotos}
-              selectedKey={selectedCreditKey}
-              onChange={setSelectedCreditKey}
-            />
-          )}
-          <TagFilterChips
+        {/* The gallery toolbar (issue 1733, E8): search, filters, sort and
+            Select while browsing, the batch actions once anything is
+            selected. Sticky, so both stay one tap away down the grid. Search,
+            sort and filters only when the admin enables the filter bar and
+            the gallery actually has photos (avoids the empty "Search photos
+            by filename" row from discussion #317). */}
+        {toolbarShown ? (
+          <GalleryToolbar
             className="mt-3"
-            tags={tagChips}
-            selectedKeys={selectedTagKeys}
-            onToggle={toggleTag}
+            search={filterBarShown ? { value: searchTerm, onChange: setSearchTerm } : undefined}
+            sort={filterBarShown ? { sortBy, onSortChange: setSortBy, sortDesc, onSortDescChange: setSortDesc } : undefined}
+            // While selecting, the panel also carries the search box the bar
+            // gives up, so it opens even where there is nothing else to filter.
+            filters={filterBarShown && (hasPanelFilters || isSelectionMode || selectedPhotos.size > 0) ? {
+              activeCount: activePanelFilterCount,
+              render: (close, withSearch) => (
+                <GalleryFilterPanel
+                  search={withSearch ? { value: searchTerm, onChange: setSearchTerm } : undefined}
+                  feedback={feedbackEnabled ? { activeFilters, onFilterChange: handleFilterChange } : undefined}
+                  colorLabels={feedbackEnabled && feedbackSettings?.allow_color_labels ? {
+                    activeColors: activeColorFilters,
+                    onToggle: handleColorFilterToggle,
+                    counts: colorLabelCounts,
+                  } : undefined}
+                  minRating={feedbackEnabled && feedbackSettings?.allow_ratings ? {
+                    value: minRating,
+                    onChange: setMinRating,
+                    counts: minRatingCounts,
+                  } : undefined}
+                  media={showMediaFilter ? { value: mediaFilter, onChange: setMediaFilter } : undefined}
+                  // Scoped, so a chip can't advertise a count the grid won't produce.
+                  credits={creditPanelShown ? { photos: scopedPhotos, selectedKey: selectedCreditKey, onChange: setSelectedCreditKey } : undefined}
+                  tags={tagChips.length > 0 ? { tags: tagChips, selectedKeys: selectedTagKeys, onToggle: toggleTag } : undefined}
+                  matchCount={filteredPhotos.length}
+                  hasVideos={hasVideoItems(filteredPhotos)}
+                  filtersActive={activePanelFilterCount > 0}
+                  onClearFilters={clearPanelFilters}
+                  onSelectMatches={selectionAvailable ? () => {
+                    selectFiltered();
+                    close();
+                  } : undefined}
+                />
+              ),
+            } : undefined}
+            viewControls={<GridDensityControl layout={theme.galleryLayout} />}
+            photoCount={filterBarShown ? filteredPhotos.length : undefined}
+            copyFilenames={{ count: copyFilenames.photos.length, onClick: () => setShowCopyFilenames(true) }}
+            selection={{
+              available: selectionAvailable,
+              hasVideos: hasVideoItems(filteredPhotos),
+              isSelectionMode,
+              selectedCount: selectedPhotos.size,
+              visibleCount: filteredPhotos.length,
+              onStart: () => setIsSelectionMode(true),
+              onCancel: cancelSelection,
+              onSelectAll: selectAllVisible,
+              onDeselectAll: deselectAll,
+              download: allowDownloads ? {
+                onClick: handleDownloadSelected,
+                disabled: !downloadQuota.allows(selectedQuotaPhotos),
+                isLoading: downloadingSelected,
+                quotaPhotos: selectedQuotaPhotos,
+              } : undefined,
+              bulkRating: feedbackEnabled && feedbackSettings?.allow_ratings ? {
+                slug,
+                photoIds: Array.from(selectedPhotos),
+                requireNameEmail: !!feedbackSettings?.require_name_email,
+              } : undefined,
+              tray: { photos: selectedPhotoList, onRemove: deselectPhoto, slug },
+            }}
           />
-        </div>
-      ) : null}
+        ) : null}
+
+        {/* Categories stay on the page, under the toolbar: they are how a
+            guest finds "the ceremony". Folders are navigation, not a filter
+            (#1160) — they get tiles. Since issue 1786 a photo's folder and its
+            filter category are separate fields, so the chips work inside a
+            folder and in "All photos" too. */}
+        {filterBarShown && (
+          <GalleryCategoryChips
+            className="mt-4"
+            categories={filterCategories(data.categories)}
+            photos={scopedPhotos}
+            selectedCategoryId={selectedCategoryId}
+            onCategoryChange={setSelectedCategoryId}
+            hasVideos={showMediaFilter}
+          />
+        )}
 
         {/* People in this gallery (#1074). Sits between the filter bar and
             the grid. Renders nothing at all unless the photographer enabled
@@ -2256,7 +2367,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             bar, double the wrapper margin (mt-12) so the hero's decorative
             `-mt-6` bleed leaves a visible gap instead of gluing the filter
             bar to the hero image (issue #624). */}
-        <div className={filterBarShown && isHeroHeader ? "mt-12" : "mt-6"}>
+        <div className={toolbarShown && isHeroHeader ? "mt-12" : "mt-6"}>
           {/* Download limit (issue 1560): the guest's counter. */}
           {allowDownloads && (downloadQuota.limited || downloadQuota.previewOnly) && (
             <div className="mb-4">
@@ -2298,7 +2409,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onSelectionChange={setSelectedPhotos}
             photosForIds={photosForIds}
             onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
-            showSelectionControls={!showSidebar}
             eventName={event.event_name}
             eventLogo={data?.event?.hero_logo_url || brandingSettings?.logo_url}
             eventDate={event.event_date}
@@ -2382,7 +2492,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
       </GalleryLayout>
       </GridDensityOffered.Provider>
+      </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
+      </PhotoDownloadChoiceProvider>
     </DownloadQuotaProvider>
     </GuestIdentityProvider>
   );

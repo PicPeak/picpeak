@@ -14,6 +14,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Photo } from '../../types';
 import { AuthenticatedImage } from '../common';
+import { usePhotoLabels } from './PhotoLabels';
 
 /** Thumbnails mounted on each side of the open photo. */
 export const FILM_STRIP_REACH = 10;
@@ -164,6 +165,7 @@ export const LightboxScrubStandIn: React.FC<{ photos: Photo[]; currentIndex: num
   currentIndex,
   slug,
 }) => {
+  const photoLabels = usePhotoLabels();
   const first = Math.max(0, currentIndex - STAND_IN_REACH);
   return (
     <div className="absolute inset-0" data-testid="lightbox-scrub-stand-in">
@@ -179,7 +181,7 @@ export const LightboxScrubStandIn: React.FC<{ photos: Photo[]; currentIndex: num
             // the request is queued, so one loaded ahead keeps its tier.
             queuePriority={first + offset === currentIndex ? 'high' : 'prefetch'}
             src={photo.thumbnail_url}
-            alt={photo.filename}
+            alt={photoLabels.neutral ? photoLabels.at(first + offset, photos.length) : photo.filename}
             className="h-full w-full object-contain select-none pointer-events-none"
             style={{ backgroundColor: 'transparent' }}
             draggable={false}

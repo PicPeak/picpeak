@@ -7,7 +7,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { PhotoFilterBar } from '../PhotoFilterBar';
+import { GallerySortMenu } from '../GallerySortMenu';
 
 const DE: Record<string, string> = {
   'common.sortBy': 'Sortieren nach',
@@ -27,23 +27,9 @@ vi.mock('react-i18next', async () => {
   };
 });
 
-const baseProps = {
-  categories: [] as Array<{ id: number; name: string; slug: string }>,
-  photos: [] as never[],
-  selectedCategoryId: null,
-  onCategoryChange: vi.fn(),
-  searchTerm: '',
-  onSearchChange: vi.fn(),
-  onSortChange: vi.fn(),
-  photoCount: 0,
-  feedbackEnabled: false,
-  activeFilters: [],
-  onFilterChange: vi.fn(),
-};
-
-describe('PhotoFilterBar sort button name (issue 2074)', () => {
+describe('GallerySortMenu sort button name (issue 2074)', () => {
   it('names the button with the phrase once, with no doubled "sort by"', () => {
-    render(<PhotoFilterBar {...baseProps} sortBy="date" />);
+    render(<GallerySortMenu sortBy="date" onSortChange={vi.fn()} />);
     const button = screen.getByRole('button', { name: 'Nach Datum sortieren' });
     expect(button).toHaveAttribute('aria-label', 'Nach Datum sortieren');
     expect(button.textContent).toBe('Nach Datum sortieren');
@@ -51,7 +37,7 @@ describe('PhotoFilterBar sort button name (issue 2074)', () => {
   });
 
   it('follows the applied sort', () => {
-    render(<PhotoFilterBar {...baseProps} sortBy="name" />);
+    render(<GallerySortMenu sortBy="name" onSortChange={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Nach Name sortieren' })).toBeInTheDocument();
   });
 });

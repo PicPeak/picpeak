@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Star, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { BULK_RATING_MAX_PHOTOS, feedbackService } from '../../services/feedback.service';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
@@ -15,6 +15,14 @@ interface BulkRatingProps {
   /** The selection. */
   photoIds: number[];
   requireNameEmail?: boolean;
+  /** Told when the name-and-email dialog opens and closes. */
+  onDialogChange?: (open: boolean) => void;
+  /**
+   * The name and email once given, held by a host that outlives this control
+   * (the phone's rating sheet unmounts it on close). Kept locally without one.
+   */
+  identity?: { name: string; email: string } | null;
+  onIdentityChange?: (identity: { name: string; email: string }) => void;
   className?: string;
 }
 
@@ -31,14 +39,39 @@ type RatedRow = { average_rating?: number; total_ratings?: number };
  * selection is often most of the gallery, and the list is not refetched for
  * it. The X clears the rating of every selected photo (#884).
  */
-export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireNameEmail = false, className = '' }) => {
+export const BulkRating: React.FC<BulkRatingProps> = ({
+  slug,
+  photoIds,
+  requireNameEmail = false,
+  onDialogChange,
+  identity: hostIdentity,
+  onIdentityChange,
+  className = '',
+}) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const guestIdentity = useGuestIdentityOptional();
   const [pendingRating, setPendingRating] = useState<number | null>(null);
-  const [identity, setIdentity] = useState<{ name: string; email: string } | null>(null);
+  const [ownIdentity, setOwnIdentity] = useState<{ name: string; email: string } | null>(null);
+  const identity = onIdentityChange ? hostIdentity ?? null : ownIdentity;
+  const setIdentity = onIdentityChange ?? setOwnIdentity;
+  const onDialogChangeRef = useRef(onDialogChange);
+  onDialogChangeRef.current = onDialogChange;
+  const dialogOpen = pendingRating !== null;
+  useEffect(() => {
+    if (!dialogOpen) return;
+    onDialogChangeRef.current?.(true);
+    return () => onDialogChangeRef.current?.(false);
+  }, [dialogOpen]);
+
+  // Keyed, so the guard outlives this control: on a phone it sits in a sheet
+  // that can be closed and reopened while a run is still out, and a fresh
+  // control must not start a second run over the same selection.
+  const mutationKey = ['bulk-rating', slug];
+  const busy = useIsMutating({ mutationKey }) > 0;
 
   const mutation = useMutation({
+    mutationKey,
     mutationFn: async (data: Submission) => {
       // The server caps a request; a larger selection goes in several. One
       // the rating budget refuses ends the run, and what the earlier ones
@@ -132,7 +165,7 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
     mutation.mutate({ ...data, photoIds, guestId: getGuestIdentity(slug)?.id ?? null });
 
   const rate = async (rating: number) => {
-    if (mutation.isPending || photoIds.length === 0) return;
+    if (busy || photoIds.length === 0) return;
     if (guestIdentity?.identityMode === 'guest') {
       const identityBefore = guestIdentity.identity?.id ?? null;
       let ensured;
@@ -162,7 +195,7 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
             key={star}
             type="button"
             className="p-1 disabled:opacity-50 text-muted-theme hover:text-rating"
-            disabled={mutation.isPending}
+            disabled={busy}
             onClick={() => void rate(star)}
             aria-label={t('feedback.rateStar', 'Rate {{count}} stars', { count: star })}
           >
@@ -172,7 +205,7 @@ export const BulkRating: React.FC<BulkRatingProps> = ({ slug, photoIds, requireN
         <button
           type="button"
           className="p-1 disabled:opacity-50 text-muted-theme hover:text-theme"
-          disabled={mutation.isPending}
+          disabled={busy}
           onClick={() => void rate(0)}
           aria-label={t('feedback.removeRating', 'Remove rating')}
           title={t('feedback.removeRating', 'Remove rating')}

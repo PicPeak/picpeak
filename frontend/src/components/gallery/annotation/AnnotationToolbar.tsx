@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, MoveUpRight, Pencil, Trash2, Undo2, X } from 'lucide-react';
 import { ANNOTATION_MAX_STROKES, ANNOTATION_PALETTE } from '../../../utils/photoAnnotation';
@@ -6,44 +6,25 @@ import type { LightboxAnnotation } from './useLightboxAnnotation';
 
 interface AnnotationToolbarProps {
   annotation: LightboxAnnotation;
-  style?: React.CSSProperties;
 }
 
 const buttonClass = 'p-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 const toolClass = (active: boolean) => `${buttonClass} ${active ? 'bg-white text-black' : 'bg-white/10 hover:bg-white/20 text-white'}`;
 
 /**
- * The drawing controls (issue 1733). Laid over the lightbox's own bottom
- * toolbar while annotate mode is on: zoom, download and the proofing buttons
- * are suspended then, and the photo itself stays free to draw on.
+ * The drawing controls (issue 1733): the lightbox bar's Annotate mode. They
+ * take the place of zoom, download and the proofing buttons, which are
+ * suspended while the photo is being drawn on.
  */
-export const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({ annotation, style }) => {
+export const AnnotationToolbar: React.FC<AnnotationToolbarProps> = ({ annotation }) => {
   const { t } = useTranslation();
   const empty = annotation.strokes.length === 0;
 
-  // Report the height so the photo area can end above the toolbar: on a
-  // phone it wraps to more rows than the toolbar it covers.
-  const ref = useRef<HTMLDivElement>(null);
-  const { setToolbarHeight } = annotation;
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    setToolbarHeight(el.offsetHeight);
-    const observer = new ResizeObserver(() => setToolbarHeight(el.offsetHeight));
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-      setToolbarHeight(0);
-    };
-  }, [setToolbarHeight]);
-
   return (
     <div
-      ref={ref}
       role="toolbar"
       aria-label={t('feedback.annotation.toolbar', 'Drawing tools')}
-      className="absolute bottom-0 left-0 bg-black px-3 pt-3 sm:px-4 z-30 flex items-center justify-center gap-x-3 gap-y-2 flex-wrap"
-      style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))', ...style }}
+      className="ml-auto flex items-center justify-end gap-x-3 gap-y-2 flex-wrap"
     >
       <div className="flex items-center gap-1">
         <button

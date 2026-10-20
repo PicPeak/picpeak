@@ -1,7 +1,7 @@
 /**
  * The viewer's saved tile size (issue 1733, E4) follows them from gallery to
  * gallery, so the view only lets the layouts apply it where a switch to change
- * it back is on screen: the filter bar or the sidebar, for a tile layout.
+ * it back is on screen: the toolbar or the sidebar, for a tile layout.
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -57,7 +57,7 @@ vi.mock('../GalleryLayout', () => ({
   GalleryLayout: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock('../GallerySidebar', () => ({ GallerySidebar: () => null }));
-vi.mock('../PhotoFilterBar', () => ({ PhotoFilterBar: () => null }));
+vi.mock('../GalleryToolbar', () => ({ GalleryToolbar: () => null }));
 // The grid stands in for every consumer of the density: what it sees is what
 // the layouts and the delivery placeholders under the view see.
 vi.mock('../PhotoGridWithLayouts', () => ({
@@ -82,12 +82,12 @@ const photo = (id: number) => ({
   uploaded_at: '2026-09-19T10:00:00Z',
 });
 
-function show(theme: Record<string, unknown>, settings: Record<string, unknown> = {}) {
+function show(theme: Record<string, unknown>, settings: Record<string, unknown> = {}, ids: number[] = [7, 8]) {
   stable.theme.theme = theme;
   stable.settings.data = settings;
   captured.offered = null;
   stable.photos = {
-    data: { event: { ...event, allow_downloads: true }, categories: [], photos: [photo(7), photo(8)] },
+    data: { event: { ...event, allow_downloads: true }, categories: [], photos: ids.map(photo) },
     isLoading: false,
     error: null,
     refetch: vi.fn(),
@@ -107,14 +107,21 @@ afterEach(() => {
 });
 
 describe('GalleryView: where the saved tile size applies', () => {
-  it('applies it under the filter bar and under the sidebar', () => {
+  it('applies it under the toolbar and under the sidebar', () => {
     expect(show({})).toBe(true);
     cleanup();
     expect(show({ controlsStyle: 'sidebar', galleryLayout: 'masonry' })).toBe(true);
   });
 
-  it('keeps the theme size when the admin hid the filter bar', () => {
-    expect(show({}, { gallery_show_filter_bar: false })).toBe(false);
+  // The toolbar also stands for Select, so it (and the switch in it) stays
+  // when the admin hides the filter bar, as long as there is more than one
+  // photo to select.
+  it('applies it under the toolbar the filter bar setting leaves for Select', () => {
+    expect(show({}, { gallery_show_filter_bar: false })).toBe(true);
+  });
+
+  it('keeps the theme size when no toolbar shows', () => {
+    expect(show({}, { gallery_show_filter_bar: false }, [7])).toBe(false);
   });
 
   it('keeps the theme size for a carousel, which has no switch', () => {
