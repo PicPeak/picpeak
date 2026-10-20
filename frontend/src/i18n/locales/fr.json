@@ -297,6 +297,7 @@
       "back": "Retour",
       "title": "Récupérer vos sélections",
       "emailStepDescription": "Entrez l'e-mail que vous avez utilisé précédemment. Nous allons vous envoyer un code de vérification à 6 chiffres.",
+      "spentInviteDescription": "Ce lien d'invitation a déjà été utilisé et ne peut plus vous connecter. Saisissez l'adresse e-mail à laquelle il a été envoyé et nous vous enverrons un code à 6 chiffres pour retrouver votre sélection.",
       "codeStepDescription": "Entrez le code à 6 chiffres que nous vous avons envoyé par e-mail.",
       "emailLabel": "E-mail",
       "sendCode": "Envoyer le code",

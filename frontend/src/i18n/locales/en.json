@@ -1230,6 +1230,7 @@
       "back": "Back",
       "title": "Recover your picks",
       "emailStepDescription": "Enter the email you used before. We will send a 6-digit verification code.",
+      "spentInviteDescription": "This invite link has already been used, so it cannot sign you in again. Enter the email it was sent to and we will send a 6-digit code to get you back to your picks.",
       "codeStepDescription": "Enter the 6-digit code we sent to your email.",
       "emailLabel": "Email",
       "sendCode": "Send code",
