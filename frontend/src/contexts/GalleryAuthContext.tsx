@@ -46,6 +46,11 @@ interface GalleryAuthContextType {
   login: (slug: string, password?: string, recaptchaToken?: string | null) => Promise<void>;
   clientLogin: (slug: string, password: string, token: string) => Promise<void>;
   logout: () => void;
+  /**
+   * End a gallery session the server has rejected (expired, password
+   * changed). Unlike logout() it keeps the guest identity on this device.
+   */
+  endSession: () => void;
   isLoading: boolean;
   error: string | null;
 }
@@ -363,7 +368,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
     }
   };
 
-  const logout = () => {
+  const closeSession = (keepGuestIdentity: boolean) => {
     const currentSlug = routeInfo.slug;
     if (currentSlug) {
       sessionStorage.removeItem(`gallery_event_${currentSlug}`);
@@ -374,7 +379,13 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       // next person who enters the shared gallery password by this guest's
       // name — with "forget me", which erases THIS guest's selections
       // server-side, one click away. Local only; the server row is untouched.
-      clearGuestIdentity(currentSlug);
+      //
+      // A session the server rejected is no such signal: the gallery token
+      // lasts 24h in sessionStorage, the identity 30 days in localStorage, and
+      // clearing it here left a returning guest unidentified, with their
+      // single-use invite already spent (issue 2209). Closing the tab keeps
+      // the identity too, so this is no weaker than that.
+      if (!keepGuestIdentity) clearGuestIdentity(currentSlug);
     }
     authService.galleryLogout(currentSlug || undefined);
     setIsAuthenticated(false);
@@ -383,6 +394,8 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
     setViaCustomer(false);
     clearActiveGallerySlug();
   };
+  const logout = () => closeSession(false);
+  const endSession = () => closeSession(true);
 
   return (
     <GalleryAuthContext.Provider
@@ -395,6 +408,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         login,
         clientLogin: clientLoginFn,
         logout,
+        endSession,
         isLoading,
         error: routeError ?? error,
       }}

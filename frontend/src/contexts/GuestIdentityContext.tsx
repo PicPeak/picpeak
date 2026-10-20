@@ -17,6 +17,12 @@ interface GuestIdentityContextValue {
   isRequired: boolean;            // true when mode='guest' AND no identity yet
   promptOpen: boolean;
   recoveryOpen: boolean;
+  /**
+   * Why recovery opened on its own: 'spent-invite' when the visitor came
+   * through an invite link that is already used and this device has no
+   * identity for its guest (issue 2209). null when the visitor opened it.
+   */
+  recoveryReason: 'spent-invite' | null;
   openPrompt: () => void;
   closePrompt: () => void;
   openRecovery: () => void;
@@ -60,6 +66,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   const [identity, setIdentity] = useState<GuestIdentity | null>(() => getGuestIdentity(slug));
   const [promptOpen, setPromptOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryReason, setRecoveryReason] = useState<'spent-invite' | null>(null);
 
   // Pending promise resolvers for ensureIdentity() calls waiting on prompt.
   const pendingResolvers = useRef<Array<(identity: GuestIdentity) => void>>([]);
@@ -197,14 +204,25 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
         // who they are instead of having their likes filed under the previous
         // person. A response without guest_id (older backend) keeps today's
         // behaviour.
-        const status = (error as { response?: { status?: number; data?: { guest_id?: unknown } } })
-          .response;
+        const status = (error as {
+          response?: { status?: number; data?: { guest_id?: unknown; recoverable?: unknown } };
+        }).response;
         const invitedGuestId = status?.data?.guest_id;
         if ((status?.status === 409 || status?.status === 410) && typeof invitedGuestId === 'number') {
           const stored = getGuestIdentity(slug);
           if (stored && stored.id !== invitedGuestId) {
             clearGuestIdentity(slug);
             setIdentity(null);
+          }
+          // The guest came back through their own spent link, but this device
+          // no longer holds who they are. Left alone they browse unidentified
+          // and read their empty favourites as lost (issue 2209). The link
+          // cannot sign them in again, being single use, so offer the email
+          // code instead, which the server says only when one can arrive.
+          if (status.status === 409 && status.data?.recoverable === true
+            && (!stored || stored.id !== invitedGuestId)) {
+            setRecoveryReason('spent-invite');
+            setRecoveryOpen(true);
           }
         }
         // Otherwise fail silently; the visitor falls back to the normal prompt.
@@ -225,8 +243,14 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     pendingRejecters.current = [];
   }, []);
 
-  const openRecovery = useCallback(() => setRecoveryOpen(true), []);
-  const closeRecovery = useCallback(() => setRecoveryOpen(false), []);
+  const openRecovery = useCallback(() => {
+    setRecoveryReason(null);
+    setRecoveryOpen(true);
+  }, []);
+  const closeRecovery = useCallback(() => {
+    setRecoveryOpen(false);
+    setRecoveryReason(null);
+  }, []);
 
   const register = useCallback(
     async (name: string, email?: string): Promise<GuestIdentity> => {
@@ -324,6 +348,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       isRequired,
       promptOpen,
       recoveryOpen,
+      recoveryReason,
       openPrompt,
       closePrompt,
       openRecovery,
@@ -342,6 +367,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       isRequired,
       promptOpen,
       recoveryOpen,
+      recoveryReason,
       openPrompt,
       closePrompt,
       openRecovery,

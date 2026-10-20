@@ -308,6 +308,7 @@
       "back": "Voltar",
       "title": "Recuperar as suas seleções",
       "emailStepDescription": "Introduza o e-mail que utilizou anteriormente. Enviaremos um código de verificação de 6 dígitos.",
+      "spentInviteDescription": "Este link de convite já foi usado e não pode identificar você novamente. Digite o e-mail para o qual ele foi enviado e enviaremos um código de 6 dígitos para você voltar à sua seleção.",
       "codeStepDescription": "Introduza o código de 6 dígitos que enviámos para o seu e-mail.",
       "emailLabel": "E-mail",
       "sendCode": "Enviar código",

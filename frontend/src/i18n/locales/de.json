@@ -1811,6 +1811,7 @@
       "back": "Zurück",
       "title": "Ihre Auswahl wiederherstellen",
       "emailStepDescription": "Geben Sie die E-Mail-Adresse ein, die Sie zuvor verwendet haben. Wir senden Ihnen einen 6-stelligen Bestätigungscode.",
+      "spentInviteDescription": "Dieser Einladungslink wurde bereits verwendet und kann dich nicht erneut anmelden. Gib die E-Mail-Adresse ein, an die er geschickt wurde, und wir senden dir einen 6-stelligen Code, mit dem du zu deiner Auswahl zurückkommst.",
       "codeStepDescription": "Geben Sie den 6-stelligen Code ein, den wir an Ihre E-Mail-Adresse gesendet haben.",
       "emailLabel": "E-Mail",
       "sendCode": "Code senden",

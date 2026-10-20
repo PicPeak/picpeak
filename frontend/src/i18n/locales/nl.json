@@ -301,6 +301,7 @@
       "back": "Terug",
       "title": "Uw selecties herstellen",
       "emailStepDescription": "Voer het e-mailadres in dat u eerder heeft gebruikt. We sturen een 6-cijferige verificatiecode.",
+      "spentInviteDescription": "Deze uitnodigingslink is al gebruikt en kan je niet opnieuw aanmelden. Vul het e-mailadres in waarnaar hij is gestuurd, dan sturen we je een 6-cijferige code om terug te gaan naar je selectie.",
       "codeStepDescription": "Voer de 6-cijferige code in die we naar uw e-mail hebben gestuurd.",
       "emailLabel": "E-mail",
       "sendCode": "Code verzenden",
