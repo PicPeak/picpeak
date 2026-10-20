@@ -23,6 +23,7 @@ import { GalleryBreadcrumb } from './GalleryBreadcrumb';
 import { GalleryViewSwitch } from './GalleryViewSwitch';
 import { GalleryDeliveryBanner } from './GalleryDeliveryBanner';
 import { GalleryTileBadgesProvider, type GalleryTileBadgesValue } from './GalleryTileBadges';
+import { PhotoLabelsProvider } from './PhotoLabels';
 import {
   findFolderByKey,
   filterCategories,
@@ -52,6 +53,7 @@ import {
   type LightboxPhotoChangeReason,
 } from './photoLink';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
+import { PhotoDownloadChoiceProvider } from './PhotoDownloadChoiceProvider';
 import { clearDownloadJobParam, readDownloadJobParam } from './downloadJobLink';
 import { CopyFilenamesDialog } from './CopyFilenamesDialog';
 import { ExpirationBanner } from './ExpirationBanner';
@@ -149,7 +151,7 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
 export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
   const { t } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
-  const { logout, isClient, viaCustomer } = useGalleryAuth();
+  const { logout, endSession, isClient, viaCustomer } = useGalleryAuth();
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
@@ -319,7 +321,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const useCanvasRendering = data?.event?.use_canvas_rendering === true;
   // #508 — surface original camera filenames in the lightbox when the
   // admin has flipped the same toggle that drives original-name downloads.
-  const showOriginalFilename = data?.event?.use_original_filenames === true;
+  // Neutral photo labels (issue 1733, E6): "Photo 12 of 84" in place of the
+  // filename. It wins over the original-filename toggle above for display;
+  // downloads are named by that toggle as before.
+  const neutralPhotoLabels = data?.event?.neutral_photo_labels === true;
+  const showOriginalFilename = !neutralPhotoLabels && data?.event?.use_original_filenames === true;
 
   // DevTools protection - enabled by individual setting OR legacy protection level
   const devToolsEnabled = enableDevtoolsProtection || protectionLevel === 'enhanced' || protectionLevel === 'maximum';
@@ -1102,6 +1108,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const downloadChoices = data?.event?.download_resolution?.picker_enabled
     ? (data.event.download_resolution.choices || [])
     : [];
+  // The single-photo download menu (issue 1733, E2) and what every size
+  // menu says about the watermark.
+  const downloadChoiceProps = {
+    slug,
+    choices: downloadChoices,
+    watermarked: data?.event?.download_resolution?.watermarked === true,
+  };
 
   // Download limit (issue 1560). Checked before any request so the guest sees
   // why at once; the server enforces it regardless.
@@ -1145,8 +1158,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Premium and Story have no `favorite` control: their Favourites toggle
   // writes `like` feedback and seeds from `is_liked`, so there a like is the
   // favourite (see isFilenameListFavourite, and `favouritesAreLikes` above).
+  //
+  // Empty under neutral photo labels (issue 1733, E6): the list is nothing but
+  // the camera names that setting keeps off screen, and every "Copy filenames"
+  // button is gated on its length.
   const copyFilenames = useMemo(() => photosForFilenameList(
-    data?.photos || [],
+    neutralPhotoLabels ? [] : data?.photos || [],
     selectedPhotos,
     (photo) => isFilenameListFavourite(photo, {
       likeBacked: favouritesAreLikes,
@@ -1161,7 +1178,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       settingsResolved: feedbackSettings?.identity_mode !== undefined,
     }),
     isSelectionMode,
-  ), [data?.photos, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes, feedbackSettings]);
+  ), [data?.photos, neutralPhotoLabels, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes, feedbackSettings]);
 
   const handleDownloadAll = () => {
     // Prevent downloads if gallery is expired or downloads disabled
@@ -1452,8 +1469,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
 
     if (is401Error) {
-      // Authentication failed - logout and let the parent component handle re-authentication
-      logout();
+      // Authentication failed - end the session and let the parent component
+      // handle re-authentication. Not logout(): that also drops the guest
+      // identity, which outlives this session by design (issue 2209).
+      endSession();
       return null;
     }
 
@@ -1504,6 +1523,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // (the photo endpoints refuse plain guests); this is the friendly face.
   if (hiddenUntilReveal) {
     return (
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryLayout
         event={{
           ...event,
@@ -1582,6 +1602,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
+      </PhotoDownloadChoiceProvider>
     );
   }
 
@@ -1692,7 +1713,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // in guest identity mode was never asked for a name and got a 401.
       <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <DownloadQuotaProvider slug={slug} event={data?.event}>
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryTileBadgesProvider value={tileBadges}>
+      <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
         <GuestRecoveryModal />
         {/* #1160: these layouts return early and render edge-to-edge, but they
@@ -1908,7 +1931,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onClose={() => setShowCopyFilenames(false)}
           />
         )}
+      </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
+      </PhotoDownloadChoiceProvider>
       </DownloadQuotaProvider>
       </GuestIdentityProvider>
     );
@@ -1917,7 +1942,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   return (
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
     <DownloadQuotaProvider slug={slug} event={data?.event}>
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryTileBadgesProvider value={tileBadges}>
+      <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
       <GuestRecoveryModal />
       {/* Sidebar for non-grid layouts */}
@@ -2455,7 +2482,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
+      </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
+      </PhotoDownloadChoiceProvider>
     </DownloadQuotaProvider>
     </GuestIdentityProvider>
   );

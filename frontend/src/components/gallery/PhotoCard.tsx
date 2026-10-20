@@ -12,6 +12,7 @@ import { feedbackLockKind } from '../../utils/feedbackLock';
 import { ColorLabelBadge } from './ColorLabelBadge';
 import { TileRating } from './TileRating';
 import { FirstLookBadge, FolderHintPill } from './GalleryTileBadges';
+import { usePhotoLabels } from './PhotoLabels';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { downloadLimitReachedMessage } from '../../utils/downloadLimit';
@@ -495,6 +496,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const tileSrc = !isVideo && photo.thumbnail_url && imageProps.src === photo.thumbnail_url
     ? (thumbnailUrlForTile(photo.thumbnail_url, photo, tile?.width) ?? imageProps.src)
     : imageProps.src;
+  // Neutral photo labels (issue 1733, E6) replace the filename the layouts
+  // pass as alt text, and the name in the checkbox's label.
+  const photoLabels = usePhotoLabels();
+  const tileAlt = typeof imageProps.alt === 'string' ? photoLabels.of(photo, imageProps.alt) : imageProps.alt;
 
   return (
     <div
@@ -509,7 +514,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* Inside the mounted branch on purpose: the blurred placeholder
               (issue 1733) is decoded only for tiles that are mounted, and
               goes with them when the release band lets a tile go. */}
-          <TileImage {...imageProps} src={tileSrc} thumbHash={photo.thumb_hash} />
+          <TileImage {...imageProps} src={tileSrc} alt={tileAlt} thumbHash={photo.thumb_hash} />
 
           {/* The guest's own colour label (#1044) — visible without hovering
               or opening anything, which is the point: the client watches
@@ -645,7 +650,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* Selection Checkbox (visible on hover or when selected) */}
           <button
             type="button"
-            aria-label={t('gallery.tile.selectPhoto', 'Select {{name}}', { name: photo.filename })}
+            aria-label={t('gallery.tile.selectPhoto', 'Select {{name}}', { name: photoLabels.of(photo, photo.filename) })}
             role="checkbox"
             aria-checked={isSelected}
             data-testid={checkboxTestId ? `gallery-photo-checkbox-${photo.id}` : undefined}

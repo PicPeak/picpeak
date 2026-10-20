@@ -8,6 +8,7 @@ import { AuthenticatedImage } from '../common';
 import { HeroDivider } from './HeroDivider';
 import { buildResourceUrl } from '../../utils/url';
 import type { Photo } from '../../types';
+import { usePhotoLabels } from './PhotoLabels';
 import type { HeroDividerStyle } from '../../types/theme.types';
 
 interface HeroHeaderProps {
@@ -45,6 +46,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   heroImageAnchor = 'center'
 }) => {
   const { t } = useTranslation();
+  const photoLabels = usePhotoLabels();
   const { format, formatExpiry } = useLocalizedDate();
   const { theme } = useTheme();
   const gallerySettings = theme.gallerySettings || {};
@@ -143,7 +145,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
         <AuthenticatedImage
           src={heroPhoto.hero_url || heroPhoto.url}
           fallbackSrc={heroPhoto.url}
-          alt={heroPhoto.filename}
+          alt={photoLabels.of(heroPhoto, heroPhoto.filename)}
           className="w-full h-full object-cover"
           style={{ objectPosition: heroImageAnchor }}
           isGallery={true}

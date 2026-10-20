@@ -108,7 +108,7 @@ describe('Single-photo download button while the download is prepared (issue 204
     fireEvent.click(downloadButton());
     await new Promise((r) => setTimeout(r, 0));
     expect(svc.downloadPhoto).toHaveBeenCalledTimes(1);
-    expect(svc.downloadPhoto).toHaveBeenCalledWith('g', photo.id, 'IMG_0001.jpg', expect.any(Function));
+    expect(svc.downloadPhoto).toHaveBeenCalledWith('g', photo.id, 'IMG_0001.jpg', expect.any(Function), undefined);
     expect(svc.trackDownload).toHaveBeenCalledTimes(1);
 
     pending.resolve();

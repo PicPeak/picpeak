@@ -1012,6 +1012,8 @@ module.exports = (router) => {
         guest_name_mode: source.guest_name_mode || 'off',
         show_credits_to_guests: formatBoolean(parseBooleanInput(source.show_credits_to_guests, false)),
         show_exif_to_guests: formatBoolean(parseBooleanInput(source.show_exif_to_guests, false)),
+        // How guests see photo names is display configuration (issue 1733, E6).
+        neutral_photo_labels: formatBoolean(parseBooleanInput(source.neutral_photo_labels, false)),
         // Folder structure is configuration (issue 1786); the delivery state
         // of the source (issue 1562) is not — a copy starts complete.
         folder_structure: formatBoolean(parseBooleanInput(source.folder_structure, false)),
@@ -1216,6 +1218,8 @@ module.exports = (router) => {
     body('live_refresh').optional().isBoolean(),
     // Camera details in the guest lightbox (issue 1733, D1).
     body('show_exif_to_guests').optional().isBoolean(),
+    // "Photo 12 of 84" instead of filenames for guests (issue 1733, E6).
+    body('neutral_photo_labels').optional().isBoolean(),
     // Reveal mode (#838): hide the gallery from guests until reveal.
     body('reveal_mode').optional().isBoolean(),
     body('reveal_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
@@ -2009,6 +2013,9 @@ module.exports = (router) => {
       }
       if (Object.prototype.hasOwnProperty.call(updates, 'show_exif_to_guests')) {
         updates.show_exif_to_guests = formatBoolean(parseBooleanInput(updates.show_exif_to_guests, false));
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'neutral_photo_labels')) {
+        updates.neutral_photo_labels = formatBoolean(parseBooleanInput(updates.neutral_photo_labels, false));
       }
 
       // Reveal mode (#838). Turning the toggle ON from off clears
