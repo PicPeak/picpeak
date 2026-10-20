@@ -12,11 +12,12 @@ import { useGalleryDialog } from './hooks/useGalleryDialog';
  *   1) Enter email → server sends a 6-digit code.
  *   2) Enter code → server returns a guest token, identity restored.
  *
- * Opens when the user clicks "I've been here before" in the name prompt.
+ * Opens when the user clicks "I've been here before" in the name prompt, or on
+ * its own when the visitor came through a spent invite link (issue 2209).
  */
 export const GuestRecoveryModal: React.FC = () => {
   const { t } = useTranslation();
-  const { recoveryOpen, closeRecovery, recoverRequest, recoverVerify, openPrompt } =
+  const { recoveryOpen, recoveryReason, closeRecovery, recoverRequest, recoverVerify, openPrompt } =
     useGuestIdentity();
 
   const [step, setStep] = useState<'email' | 'code'>('email');
@@ -121,7 +122,12 @@ export const GuestRecoveryModal: React.FC = () => {
           {t('gallery.guestRecovery.title', 'Recover your picks')}
         </h2>
         <p className="text-sm text-muted-theme mb-4">
-          {step === 'email'
+          {step === 'email' && recoveryReason === 'spent-invite'
+            ? t(
+                'gallery.guestRecovery.spentInviteDescription',
+                'This invite link has already been used, so it cannot sign you in again. Enter the email it was sent to and we will send a 6-digit code to get you back to your picks.'
+              )
+            : step === 'email'
             ? t(
                 'gallery.guestRecovery.emailStepDescription',
                 'Enter the email you used before. We will send a 6-digit verification code.'
