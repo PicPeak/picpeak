@@ -16,7 +16,7 @@ let photos: PhotosResult;
 // Hooks hand back the same objects on every render, as the real ones do;
 // fresh ones each time would re-run the view's effects without end.
 const stable = vi.hoisted(() => ({
-  auth: { logout: () => {}, isClient: false, viaCustomer: false },
+  auth: { logout: vi.fn(), endSession: vi.fn(), isClient: false, viaCustomer: false },
   theme: { setTheme: () => {}, theme: {} },
   download: { mutate: () => {}, isPending: false },
   settings: { data: {} },
@@ -99,6 +99,16 @@ describe('GalleryView after a failed refetch', () => {
     show(httpError(status));
     expect(screen.getByText('gallery.failedToLoad')).toBeInTheDocument();
     expect(screen.queryByTestId('photo-grid')).toBeNull();
+  });
+
+  // Issue 2209: a rejected session is not the visitor leaving the device, so
+  // it must not take the guest identity with it the way logout() does.
+  it('ends a rejected session (401) without logging the guest out', () => {
+    stable.auth.logout.mockClear();
+    stable.auth.endSession.mockClear();
+    show(httpError(401));
+    expect(stable.auth.endSession).toHaveBeenCalled();
+    expect(stable.auth.logout).not.toHaveBeenCalled();
   });
 
   it('keeps the grid on a transient failure (500)', () => {
