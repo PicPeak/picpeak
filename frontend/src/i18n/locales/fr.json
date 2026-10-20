@@ -391,6 +391,7 @@
       "back": "Retour",
       "title": "Récupérer vos sélections",
       "emailStepDescription": "Entrez l'e-mail que vous avez utilisé précédemment. Nous allons vous envoyer un code de vérification à 6 chiffres.",
+      "spentInviteDescription": "Ce lien d'invitation a déjà été utilisé et ne peut plus vous connecter. Saisissez l'adresse e-mail à laquelle il a été envoyé et nous vous enverrons un code à 6 chiffres pour retrouver votre sélection.",
       "codeStepDescription": "Entrez le code à 6 chiffres que nous vous avons envoyé par e-mail.",
       "emailLabel": "E-mail",
       "sendCode": "Envoyer le code",
@@ -431,6 +432,7 @@
     "filterByMinRating": "Ma note : {{min}} étoiles ou plus",
     "folders": "Dossiers",
     "openFolder": "Ouvrir le dossier {{name}}",
+    "imageUnavailable": "Image indisponible",
     "folderPhotoCount": "{{count}} photos",
     "backToGallery": "Toutes les photos",
     "downloadFolder": "Télécharger le dossier ({{count}})",
@@ -1888,17 +1890,17 @@
       "month": "Mois"
     },
     "masonryMode": "Mode de disposition",
-    "masonryModeOptions": {
-      "columns": "Colonnes (style Pinterest)",
-      "rows": "Lignes (justifié personnalisé)",
-      "flickr": "Flickr (justifié éprouvé)",
-      "justified": "Google Photos (algorithme Knuth-Plass)"
+    "masonryModeNames": {
+      "columns": "Colonnes",
+      "rows": "Rangées",
+      "flickr": "Rangées Flickr",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Colonnes verticales de style Pinterest avec hauteurs variables",
-      "rows": "Disposition justifiée basée sur des lignes personnalisées",
-      "flickr": "Algorithme de disposition justifiée open-source de Flickr",
-      "justified": "Lignes de style Google Photos utilisant l'algorithme Knuth-Plass pour des ruptures optimales"
+    "masonryModeDescriptions": {
+      "columns": "Colonnes de hauteurs variables, style Pinterest",
+      "rows": "Rangées de même hauteur, les photos gardent leur format",
+      "flickr": "Rangées justifiées, chacune avec sa propre hauteur",
+      "quilted": "Cases carrées, les photos larges et hautes en occupent deux"
     },
     "targetRowHeight": "Hauteur de ligne cible",
     "targetRowHeightHint": "Hauteur en pixels (150-400). Les photos s'adapteront pour remplir les lignes.",
@@ -2048,6 +2050,16 @@
     "noTemplateDescription": "Utiliser uniquement les paramètres de thème sans modèle CSS",
     "templateSlot": "Emplacement {{slot}}",
     "eventCustomCSS": "CSS personnalisé spécifique à l'événement",
+    "layoutNames": {
+      "grid": "Grille",
+      "masonry": "Masonry",
+      "carousel": "Carrousel",
+      "timeline": "Chronologie",
+      "mosaic": "Mosaïque",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Bêta",
     "layoutDescriptions": {
       "grid": "Disposition en grille classique avec des tailles de photos cohérentes",
       "masonry": "Disposition de style Pinterest avec des hauteurs variables",
@@ -3388,6 +3400,7 @@
     "rateStar_one": "Noter {{count}} étoile",
     "rateStar_other": "Noter {{count}} étoiles",
     "removeRating": "Retirer la note",
+    "ratePhoto": "Noter la photo",
     "rateSelected": "Noter la sélection",
     "bulkRatingPartial": "{{rated}} photos sur {{total}} ont été notées",
     "ratingLimitReached": "Limite de notes atteinte. Réessayez plus tard.",
@@ -3459,8 +3472,10 @@
       "reopenError": "Impossible de rouvrir l’envoi"
     },
     "annotation": {
-      "draw": "Dessiner sur la photo",
-      "edit": "Modifier le dessin",
+      "modeLabel": "Mode",
+      "modeSelect": "Sélection",
+      "modeAnnotate": "Annoter",
+      "hint": "Pour dessiner sur la photo, passez en mode Annoter.",
       "remove": "Retirer le dessin",
       "attached": "Dessin joint",
       "inProgress": "Terminez le dessin sur la photo, puis envoyez votre commentaire.",

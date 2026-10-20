@@ -1461,6 +1461,7 @@
       "back": "Back",
       "title": "Recover your picks",
       "emailStepDescription": "Enter the email you used before. We will send a 6-digit verification code.",
+      "spentInviteDescription": "This invite link has already been used, so it cannot sign you in again. Enter the email it was sent to and we will send a 6-digit code to get you back to your picks.",
       "codeStepDescription": "Enter the 6-digit code we sent to your email.",
       "emailLabel": "Email",
       "sendCode": "Send code",
@@ -1570,6 +1571,7 @@
     "filterByMinRating": "My rating: {{min}} stars or more",
     "folders": "Folders",
     "openFolder": "Open folder {{name}}",
+    "imageUnavailable": "Image unavailable",
     "folderPhotoCount": "{{count}} photos",
     "backToGallery": "All photos",
     "downloadFolder": "Download folder ({{count}})",
@@ -4003,17 +4005,17 @@
       "month": "Month"
     },
     "masonryMode": "Layout Mode",
-    "masonryModeOptions": {
-      "columns": "Columns (Pinterest-style)",
-      "rows": "Rows (Custom justified)",
-      "flickr": "Flickr (Battle-tested justified)",
-      "justified": "Google Photos (Knuth-Plass algorithm)"
+    "masonryModeNames": {
+      "columns": "Columns",
+      "rows": "Rows",
+      "flickr": "Flickr rows",
+      "quilted": "Quilted"
     },
-    "masonryModeHint": {
-      "columns": "Pinterest-style vertical columns with varied heights",
-      "rows": "Custom row-based justified layout",
-      "flickr": "Flickr's open-source justified layout algorithm",
-      "justified": "Google Photos-style rows using Knuth-Plass algorithm for optimal breaks"
+    "masonryModeDescriptions": {
+      "columns": "Columns of varied heights, Pinterest-style",
+      "rows": "Rows of even height, photos keep their shape",
+      "flickr": "Justified rows, each row its own height",
+      "quilted": "Square cells, wide and tall photos span two"
     },
     "targetRowHeight": "Target Row Height",
     "targetRowHeightHint": "Height in pixels (150-400). Photos will scale to fit rows.",
@@ -4177,6 +4179,16 @@
     "noTemplateDescription": "Use only theme settings without a CSS template",
     "templateSlot": "Slot {{slot}}",
     "eventCustomCSS": "Event-specific Custom CSS",
+    "layoutNames": {
+      "grid": "Grid",
+      "masonry": "Masonry",
+      "carousel": "Carousel",
+      "timeline": "Timeline",
+      "mosaic": "Mosaic",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Classic grid layout with consistent photo sizes",
       "masonry": "Pinterest-style layout with varied heights",
@@ -6547,6 +6559,7 @@
     "rateStar_one": "Rate {{count}} star",
     "rateStar_other": "Rate {{count}} stars",
     "removeRating": "Remove rating",
+    "ratePhoto": "Rate photo",
     "rateSelected": "Rate selected",
     "bulkRatingPartial": "{{rated}} of {{total}} photos were rated",
     "ratingLimitReached": "Rating limit reached. Try again later.",
@@ -6633,8 +6646,10 @@
       "reopenError": "Failed to reopen the submission"
     },
     "annotation": {
-      "draw": "Draw on photo",
-      "edit": "Edit drawing",
+      "modeLabel": "Mode",
+      "modeSelect": "Select",
+      "modeAnnotate": "Annotate",
+      "hint": "To draw on the photo, switch to Annotate.",
       "remove": "Remove drawing",
       "attached": "Drawing attached",
       "inProgress": "Finish the drawing on the photo, then send your comment.",

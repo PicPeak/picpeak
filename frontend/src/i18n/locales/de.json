@@ -2065,6 +2065,7 @@
       "back": "Zurück",
       "title": "Ihre Auswahl wiederherstellen",
       "emailStepDescription": "Geben Sie die E-Mail-Adresse ein, die Sie zuvor verwendet haben. Wir senden Ihnen einen 6-stelligen Bestätigungscode.",
+      "spentInviteDescription": "Dieser Einladungslink wurde bereits verwendet und kann dich nicht erneut anmelden. Gib die E-Mail-Adresse ein, an die er geschickt wurde, und wir senden dir einen 6-stelligen Code, mit dem du zu deiner Auswahl zurückkommst.",
       "codeStepDescription": "Geben Sie den 6-stelligen Code ein, den wir an Ihre E-Mail-Adresse gesendet haben.",
       "emailLabel": "E-Mail",
       "sendCode": "Code senden",
@@ -2161,6 +2162,7 @@
     "filterByMinRating": "Meine Bewertung: mindestens {{min}} Sterne",
     "folders": "Ordner",
     "openFolder": "Ordner {{name}} öffnen",
+    "imageUnavailable": "Bild nicht verfügbar",
     "folderPhotoCount": "{{count}} Fotos",
     "backToGallery": "Alle Fotos",
     "downloadFolder": "Ordner herunterladen ({{count}})",
@@ -4521,17 +4523,17 @@
       "month": "Monat"
     },
     "masonryMode": "Layout-Modus",
-    "masonryModeOptions": {
-      "columns": "Spalten (Pinterest-Stil)",
-      "rows": "Zeilen (Eigenes Layout)",
-      "flickr": "Flickr (Bewährtes Layout)",
-      "justified": "Google Fotos (Knuth-Plass Algorithmus)"
+    "masonryModeNames": {
+      "columns": "Spalten",
+      "rows": "Zeilen",
+      "flickr": "Flickr-Zeilen",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Pinterest-ähnliche vertikale Spalten mit variierenden Höhen",
-      "rows": "Eigenes zeilenbasiertes Layout",
-      "flickr": "Flickrs Open-Source Justified-Layout Algorithmus",
-      "justified": "Google Fotos-ähnliche Zeilen mit Knuth-Plass Algorithmus für optimale Umbrüche"
+    "masonryModeDescriptions": {
+      "columns": "Spalten mit unterschiedlichen Höhen, wie bei Pinterest",
+      "rows": "Gleich hohe Zeilen, Fotos behalten ihr Format",
+      "flickr": "Bündige Zeilen, jede Zeile mit eigener Höhe",
+      "quilted": "Quadratische Felder, breite und hohe Fotos belegen zwei"
     },
     "targetRowHeight": "Ziel-Zeilenhöhe",
     "targetRowHeightHint": "Höhe in Pixeln (150-400). Fotos werden skaliert, um in Zeilen zu passen.",
@@ -4695,6 +4697,16 @@
     "noTemplateDescription": "Nur Theme-Einstellungen ohne CSS-Vorlage verwenden",
     "templateSlot": "Slot {{slot}}",
     "eventCustomCSS": "Veranstaltungsspezifisches benutzerdefiniertes CSS",
+    "layoutNames": {
+      "grid": "Raster",
+      "masonry": "Masonry",
+      "carousel": "Karussell",
+      "timeline": "Zeitleiste",
+      "mosaic": "Mosaik",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Klassisches Raster mit einheitlichen Fotogrößen",
       "masonry": "Pinterest-Stil mit variablen Höhen",
@@ -6492,6 +6504,7 @@
     "rateStar_one": "{{count}} Stern bewerten",
     "rateStar_other": "{{count}} Sterne bewerten",
     "removeRating": "Bewertung entfernen",
+    "ratePhoto": "Foto bewerten",
     "rateSelected": "Auswahl bewerten",
     "bulkRatingPartial": "{{rated}} von {{total}} Fotos wurden bewertet",
     "ratingLimitReached": "Bewertungslimit erreicht. Bitte versuchen Sie es später erneut.",
@@ -6578,8 +6591,10 @@
       "reopenError": "Einreichung konnte nicht wieder geöffnet werden"
     },
     "annotation": {
-      "draw": "Auf Foto zeichnen",
-      "edit": "Zeichnung bearbeiten",
+      "modeLabel": "Modus",
+      "modeSelect": "Auswählen",
+      "modeAnnotate": "Zeichnen",
+      "hint": "Um auf das Foto zu zeichnen, wechsle zu „Zeichnen“.",
       "remove": "Zeichnung entfernen",
       "attached": "Zeichnung angehängt",
       "inProgress": "Schließe die Zeichnung auf dem Foto ab und sende dann deinen Kommentar.",

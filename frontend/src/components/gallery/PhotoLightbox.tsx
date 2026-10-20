@@ -32,6 +32,8 @@ import { useLightboxAnnotation } from './annotation/useLightboxAnnotation';
 import { CommentAnnotationContext } from './annotation/CommentAnnotationContext';
 import { ImageAnnotationOverlay } from './annotation/ImageAnnotationOverlay';
 import { AnnotationToolbar } from './annotation/AnnotationToolbar';
+import { LightboxModeSwitch, type LightboxMode } from './annotation/LightboxModeSwitch';
+import { PhotoFavorites } from './PhotoFavorites';
 
 interface PhotoLightboxProps {
   photos: Photo[];
@@ -125,8 +127,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const [feedbackSettings, setFeedbackSettings] = useState<{
     feedback_enabled?: boolean;
     allow_likes?: boolean;
+    allow_favorites?: boolean;
     allow_ratings?: boolean;
     allow_comments?: boolean;
+    allow_annotations?: boolean;
     allow_reactions?: boolean;
     allow_color_labels?: boolean;
     allow_decisions?: boolean;
@@ -152,7 +156,37 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const annotating = annotation.drawing;
   const annotationRef = useRef(annotation);
   annotationRef.current = annotation;
+  // The bar's two modes (issue 1733): Select (the proofing actions) and,
+  // where the event takes drawings with comments, Annotate. A drawing goes
+  // with a comment, so Annotate opens the panel that holds the form.
+  const annotateOffered = !!feedbackEnabled && !!feedbackSettings?.feedback_enabled
+    && !!feedbackSettings?.allow_comments && !!feedbackSettings?.allow_annotations;
+  const mode: LightboxMode = annotating ? 'annotate' : 'select';
+  const setMode = (next: LightboxMode) => {
+    if (next === 'select') {
+      if (annotating) annotation.cancel();
+    } else if (!annotating) {
+      setShowFeedback(true);
+      annotation.startDrawing();
+    }
+  };
+  // Done, Cancel and Escape unmount the drawing tools: a focus left on one
+  // of them goes back to the mode switch instead of the page behind.
+  const modeSelectRef = useRef<HTMLButtonElement>(null);
+  const wasAnnotatingRef = useRef(false);
+  useEffect(() => {
+    if (wasAnnotatingRef.current && !annotating && (!document.activeElement || document.activeElement === document.body)) {
+      modeSelectRef.current?.focus();
+    }
+    wasAnnotatingRef.current = annotating;
+  }, [annotating]);
   const [myLiked, setMyLiked] = useState<boolean>(false);
+  const [myFavorited, setMyFavorited] = useState<boolean>(false);
+  const [favoriteCount, setFavoriteCount] = useState<number>(0);
+  // Bumped by every favourite toggle in the bar: a feedback load that was
+  // already out then carries the state from before it, and leaves the
+  // favourite alone.
+  const favoriteToggleSeqRef = useRef(0);
   const [myRating, setMyRating] = useState<number>(0);
   const [myColorLabel, setMyColorLabel] = useState<ColorLabel | null>(null);
   const [colorLabelCounts, setColorLabelCounts] = useState<Partial<Record<ColorLabel, number>>>({});
@@ -523,9 +557,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       try {
         // Not for the photos a scrub passes over, only the one it lands on.
         if (scrubbing || !feedbackSettings?.feedback_enabled || !currentPhoto) return;
+        const favoriteSeq = favoriteToggleSeqRef.current;
         const data = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
         if (!mounted) return;
         setMyLiked(!!data.my_feedback.liked);
+        if (favoriteSeq === favoriteToggleSeqRef.current) {
+          setMyFavorited(!!data.my_feedback.favorited);
+          setFavoriteCount(Number(data.summary?.favorite_count) || 0);
+        }
         setMyRating(data.my_feedback.rating || 0);
         setMyColorLabel((data.my_feedback.color_label as ColorLabel) || null);
         setColorLabelCounts(data.color_labels || {});
@@ -540,6 +579,24 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     })();
     return () => { mounted = false; };
   }, [slug, currentPhoto?.id, currentPhoto?.my_rating, feedbackSettings?.feedback_enabled, scrubbing]);
+
+  // The bar's favourite after a save, from the server: the click may have
+  // come before this photo's feedback loaded, and then toggled a favourite
+  // the bar did not know of. Dropped for another photo or a newer toggle.
+  // A load already out for this photo may predate the save: it is dropped
+  // (the sequence moves on), this one takes its place.
+  const reloadFavorite = async (savedPhotoId: string) => {
+    if (String(feedbackPhotoIdRef.current) !== savedPhotoId) return;
+    const favoriteSeq = ++favoriteToggleSeqRef.current;
+    try {
+      const data = await feedbackService.getPhotoFeedback(slug, savedPhotoId);
+      if (favoriteSeq !== favoriteToggleSeqRef.current || String(feedbackPhotoIdRef.current) !== savedPhotoId) return;
+      setMyFavorited(!!data.my_feedback.favorited);
+      setFavoriteCount(Number(data.summary?.favorite_count) || 0);
+    } catch {
+      // The optimistic state stays.
+    }
+  };
 
   // Said out loud, as the grid's like button does (PhotoLikes): a 429 was
   // only logged, so to the guest the heart did nothing (issue 1891).
@@ -607,7 +664,27 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     }
   };
 
+  // The bar's stars are the only rating control in the lightbox (issue 1733:
+  // the panel's PhotoRating left), so they say a refused rating out loud as
+  // it did, and send one rating at a time per photo (another photo's rating,
+  // in a quick proofing pass, goes out alongside).
+  const showRatingError = (err: unknown) => {
+    if (!handleLimitError(err)) toast.error(t('feedback.ratingError', 'Failed to submit rating'));
+  };
+  const ratingPendingRef = useRef(new Set<number>());
+
   const submitRating = async (value: number) => {
+    const photoId = currentPhoto.id;
+    if (ratingPendingRef.current.has(photoId)) return;
+    ratingPendingRef.current.add(photoId);
+    try {
+      await sendRating(value);
+    } finally {
+      ratingPendingRef.current.delete(photoId);
+    }
+  };
+
+  const sendRating = async (value: number) => {
     // Guest identity mode.
     if (isGuestMode && guestIdentity) {
       try {
@@ -628,8 +705,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         } catch {}
         if (onFeedbackChange) onFeedbackChange();
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('Rating submit failed', err);
+        showRatingError(err);
       }
       return;
     }
@@ -641,12 +717,17 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       setShowIdentityModal(true);
       return;
     }
-    await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
-      feedback_type: 'rating',
-      rating: value,
-      guest_name: savedIdentity?.name,
-      guest_email: savedIdentity?.email,
-    });
+    try {
+      await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
+        feedback_type: 'rating',
+        rating: value,
+        guest_name: savedIdentity?.name,
+        guest_email: savedIdentity?.email,
+      });
+    } catch (err) {
+      showRatingError(err);
+      return;
+    }
     setMyRating(value);
     // Refresh current summary to reflect average and totals
     try {
@@ -1152,23 +1233,25 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         style={{
           right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
           paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
-          // The drawing toolbar lies over this one while annotating (issue
-          // 1733). Covered is not enough: Tab would still reach Download, Like
-          // and the feedback toggle, and the last one throws the drawing
-          // away. Hidden this way it leaves the tab order but keeps its
-          // height, which the photo area and the drawing toolbar build on.
-          visibility: annotating ? 'hidden' : undefined,
+          // A phone held sideways puts the notch at one end of the bar.
+          paddingLeft: `max(${isSmallScreen ? '0.75rem' : '1rem'}, env(safe-area-inset-left))`,
+          paddingRight: `max(${isSmallScreen ? '0.75rem' : '1rem'}, env(safe-area-inset-right))`,
         }}
       >
-        <LightboxFilmStrip
-          photos={photos}
-          currentIndex={currentIndex}
-          onSelect={goToIndex}
-          slug={slug}
-          showFilenames={showOriginalFilename}
-        />
+        {/* Annotate mode (issue 1733) suspends navigation: the strip and the
+            people chips leave the tab order, but keep their height, so the
+            photo being drawn on does not move. */}
+        <div style={annotating ? { visibility: 'hidden' } : undefined}>
+          <LightboxFilmStrip
+            photos={photos}
+            currentIndex={currentIndex}
+            onSelect={goToIndex}
+            slug={slug}
+            showFilenames={showOriginalFilename}
+          />
+        </div>
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-white min-w-0">
+          <div className="text-white min-w-0" style={annotating ? { visibility: 'hidden' } : undefined}>
             <p className="text-sm opacity-75">
               {currentIndex + 1} / {photos.length}
             </p>
@@ -1247,7 +1330,18 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-end">
+          {annotateOffered && (
+            <LightboxModeSwitch
+              ref={modeSelectRef}
+              mode={mode}
+              onChange={setMode}
+              annotateDisabled={!annotation.canStart}
+            />
+          )}
+
+          {/* Select mode. Out of the way, not unmounted, while drawing: the
+              colour and decision controls keep their state. */}
+          <div className="ml-auto flex items-center gap-1 sm:gap-2 flex-wrap justify-end" style={annotating ? { display: 'none' } : undefined}>
             <button
               onClick={handleZoomOut}
               disabled={zoom <= 1}
@@ -1331,9 +1425,33 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               </div>
             )}
 
+            {/* Favourite (issue 1733): here with the other proofing actions,
+                no longer in the feedback panel, which a gallery without
+                comments or reactions never offered to open. */}
+            {feedbackEnabled && feedbackSettings?.allow_favorites && (
+              <div className="flex items-center" {...feedbackHold}>
+                <PhotoFavorites
+                  variant="toolbar"
+                  photoId={String(currentPhoto.id)}
+                  gallerySlug={slug}
+                  isFavorited={myFavorited}
+                  favoriteCount={feedbackSettings?.show_feedback_to_guests ? favoriteCount : 0}
+                  isEnabled
+                  requireNameEmail={!!feedbackSettings?.require_name_email}
+                  onFavoriteChange={(favorited) => {
+                    favoriteToggleSeqRef.current += 1;
+                    setMyFavorited(favorited);
+                    setFavoriteCount((c) => Math.max(0, c + (favorited ? 1 : -1)));
+                  }}
+                  onAccepted={reloadFavorite}
+                  onSaved={onFeedbackChange ? (savedPhotoId) => onFeedbackChange(Number(savedPhotoId)) : undefined}
+                />
+              </div>
+            )}
+
             {/* Inline Rating */}
             {feedbackEnabled && feedbackSettings?.allow_ratings && (
-              <div className="flex items-center gap-1 ml-1" aria-label="Rate photo" {...feedbackHold}>
+              <div className="flex items-center gap-1 ml-1" aria-label={t('feedback.ratePhoto', 'Rate photo')} {...feedbackHold}>
                 {[1,2,3,4,5].map((i) => (
                   <button
                     key={i}
@@ -1341,8 +1459,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                     // 0 tells the backend to delete the guest's rating.
                     onClick={() => submitRating(i === myRating ? 0 : i)}
                     className="p-1"
-                    aria-label={i === myRating ? 'Remove rating' : `Rate ${i} star${i>1?'s':''}`}
-                    title={i === myRating ? 'Remove rating' : `Rate ${i}`}
+                    aria-label={i === myRating
+                      ? t('feedback.removeRating', 'Remove rating')
+                      : t('feedback.rateStar', 'Rate {{count}} stars', { count: i })}
+                    title={i === myRating
+                      ? t('feedback.removeRating', 'Remove rating')
+                      : t('feedback.rateStar', 'Rate {{count}} stars', { count: i })}
                   >
                     <Star className={`w-5 h-5 ${myRating >= i ? 'text-rating fill-rating' : 'text-white/70'}`} />
                   </button>
@@ -1417,6 +1539,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               </button>
             )}
           </div>
+
+          {/* Annotate mode: the drawing tools in place of the actions above. */}
+          {annotating && <AnnotationToolbar annotation={annotation} />}
         </div>
       </div>
 
@@ -1592,8 +1717,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
               // Stop above the opaque toolbar so it never masks the
               // photo (#888).
-              // The drawing toolbar (issue 1733) can be taller.
-              bottom: `${Math.max(toolbarHeight, annotation.toolbarHeight)}px`,
+              bottom: `${toolbarHeight}px`,
               // Tell the browser we handle horizontal gestures ourselves so
               // it doesn't fight us with edge-swipe back navigation, native
               // pinch-zoom, etc. Videos keep default touch behaviour.
@@ -1666,20 +1790,16 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       })()}
 
       {/* Feedback Panel */}
-      {/* Drawing controls (issue 1733), over the toolbar while annotating. */}
-      {annotating && (
-        <AnnotationToolbar
-          annotation={annotation}
-          style={{ right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0, minHeight: toolbarHeight }}
-        />
-      )}
-
       {showFeedback && (
         <div
           className="absolute right-0 top-0 bottom-0 w-full sm:w-[26rem] bg-surface text-theme shadow-xl z-20 overflow-y-auto flex flex-col border-l border-border-token"
-          // On a phone the panel covers the photo: out of the way while
-          // drawing, but still mounted so the comment being written is kept.
-          style={annotating && isSmallScreen ? { display: 'none' } : undefined}
+          style={isSmallScreen ? {
+            // On a phone the panel covers the photo but not the bar (issue
+            // 1733), so the mode switch stays under the thumb. Out of the way
+            // while drawing, but still mounted so the comment is kept.
+            bottom: `${toolbarHeight}px`,
+            display: annotating ? 'none' : undefined,
+          } : undefined}
         >
           <div className="sticky top-0 bg-surface border-b border-border-token px-4 py-3 flex items-center justify-between">
             <h3 className="font-semibold text-theme">{t('feedback.panelTitle', 'Photo feedback')}</h3>
@@ -1698,6 +1818,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 photoId={String(feedbackPhotoIdRef.current ?? currentPhoto.id)}
                 gallerySlug={slug}
                 showComments={true}
+                // Rating, like and favourite are in the bar (issue 1733).
+                proofingInToolbar
                 className="space-y-4"
                 // Only when someone above refreshes the row; otherwise the
                 // panel's buttons invalidate the list themselves.
@@ -1732,21 +1854,34 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           } else if (pendingAction?.type === 'rating' && typeof pendingAction.rating === 'number') {
             // Explicit number check above: a pending rating of 0 (= clear
             // my rating, #884) must still be submitted.
-            await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
-              feedback_type: 'rating',
-              rating: pendingAction.rating,
-              guest_name: name,
-              guest_email: email,
-            });
-            setMyRating(pendingAction.rating);
-            // Refresh the visible average/count — parity with the direct
-            // submit paths, and required for a clear (#884) so the old
-            // average doesn't linger until the photo is reopened.
+            // Held like a direct rating: a star clicked meanwhile is ignored.
+            const ratedPhotoId = currentPhoto.id;
+            ratingPendingRef.current.add(ratedPhotoId);
+            let saved = true;
             try {
-              const fresh = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
-              setAvgRating(Number(fresh.summary?.average_rating) || 0);
-              setTotalRatings(Number(fresh.summary?.total_ratings) || 0);
-            } catch {}
+              await feedbackService.submitFeedback(slug, String(ratedPhotoId), {
+                feedback_type: 'rating',
+                rating: pendingAction.rating,
+                guest_name: name,
+                guest_email: email,
+              });
+            } catch (err) {
+              saved = false;
+              showRatingError(err);
+            } finally {
+              ratingPendingRef.current.delete(ratedPhotoId);
+            }
+            if (saved) {
+              setMyRating(pendingAction.rating);
+              // Refresh the visible average/count — parity with the direct
+              // submit paths, and required for a clear (#884) so the old
+              // average doesn't linger until the photo is reopened.
+              try {
+                const fresh = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
+                setAvgRating(Number(fresh.summary?.average_rating) || 0);
+                setTotalRatings(Number(fresh.summary?.total_ratings) || 0);
+              } catch {}
+            }
           } else if (pendingAction?.type === 'color_label' && pendingAction.color) {
             try {
               await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
@@ -1765,10 +1900,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           if (onFeedbackChange) onFeedbackChange(pendingAction?.type === 'like' ? currentPhoto.id : undefined);
           setPendingAction(null);
         }}
+        // In the guest's language, as the panel's controls had it.
         feedbackType={
-          pendingAction?.type === 'rating' ? 'rating'
-            : pendingAction?.type === 'color_label' ? 'color label'
-              : 'like'
+          pendingAction?.type === 'rating' ? t('feedback.rating', 'rating')
+            : pendingAction?.type === 'color_label' ? t('feedback.colorLabel', 'color label')
+              : t('feedback.like', 'like')
         }
       />
       {/* Per-guest cap modal (#655). Single instance fires for any of the

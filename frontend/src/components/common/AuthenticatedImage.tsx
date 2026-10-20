@@ -34,6 +34,18 @@ interface AuthenticatedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImage
    *   'normal'   grid thumbnails
    */
   queuePriority?: 'high' | 'prefetch' | 'normal';
+  /**
+   * Retries before giving up, in place of the default three. Grid tiles ask
+   * for two (issue 1733, E9) so a thumbnail that will not come settles on
+   * its placeholder within seconds rather than a quarter of a minute.
+   */
+  maxRetries?: number;
+  /**
+   * Told whether the image has been given up on: every retry spent and no
+   * fallback to show, so what is on screen is the empty box for good. Fired
+   * when it changes and when the callback is first handed over.
+   */
+  onUnavailable?: (unavailable: boolean) => void;
 }
 
 /**
@@ -111,6 +123,8 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   onLoad,
   onFallbackChange,
   queuePriority = 'normal',
+  maxRetries = MAX_RETRIES,
+  onUnavailable,
   ...props
 }) => {
 
@@ -147,6 +161,10 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // fresh budget without an extra effect run to reset it.
   const [retryNonce, setRetryNonce] = useState(0);
   const attemptsRef = useRef(0);
+  // Read where the budget is spent, which includes a callback that must stay
+  // stable (backToStandIn).
+  const maxRetriesRef = useRef(maxRetries);
+  maxRetriesRef.current = maxRetries;
   // Cooldown the server asked for on the last failure (#1287). The backoff
   // alone would spend all three retries inside a 15-minute rate-limit window
   // and leave the tile blank after the limit had actually lifted.
@@ -195,7 +213,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     swappedInUrlRef.current = null;
     // The bytes that would not decode are of no further use.
     URL.revokeObjectURL(url);
-    attemptsRef.current = MAX_RETRIES;
+    attemptsRef.current = maxRetriesRef.current;
     setStandIn(true);
     setImageSrc(kept);
     setCanvasFailed(false);
@@ -376,7 +394,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         // retries per tile against an expired token would be ~200 requests
         // that cannot succeed.
         if (err instanceof HttpError && isFinalStatus(err.status)) {
-          attemptsRef.current = MAX_RETRIES;
+          attemptsRef.current = maxRetriesRef.current;
         }
         retryAfterRef.current = err instanceof HttpError ? err.retryAfterMs : 0;
         setIsLoading(false);
@@ -451,7 +469,17 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // stands in, or when both fetches were rejected. A fallback shown because
   // a 200 would not decode is final, as before.
   const retryable = (standIn || (error && (!fallbackSrc || fetchFailedRef.current)))
-    && !fetching && attemptsRef.current < MAX_RETRIES;
+    && !fetching && attemptsRef.current < maxRetries;
+  // Given up (issue 1733, E9): the box stays empty and nothing will ask
+  // again until `src` changes or the tile is remounted. With a fallback the
+  // fallback is what is on screen, so that is not this state.
+  const unavailable = error && !fallbackSrc && !fetching && attemptsRef.current >= maxRetries;
+  const onUnavailableRef = useRef(onUnavailable);
+  onUnavailableRef.current = onUnavailable;
+  const reportsUnavailable = !!onUnavailable;
+  useEffect(() => {
+    if (reportsUnavailable) onUnavailableRef.current?.(unavailable);
+  }, [unavailable, reportsUnavailable]);
   // After every render, because which element is in the document is decided
   // by the render itself. Set only when it changed: an unchanged value still
   // costs a render, on every tile of a grid where nothing failed. A
@@ -485,6 +513,10 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       cancelled = true;
       attemptsRef.current += 1;
+      // In the same render as the spent attempt: otherwise the last retry
+      // reads as given up (the previous error, no fetch yet) for one commit
+      // before the fetch effect marks it in flight.
+      setFetching(true);
       setRetryNonce((n) => n + 1);
     };
 
