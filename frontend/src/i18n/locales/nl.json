@@ -388,6 +388,7 @@
       "back": "Terug",
       "title": "Uw selecties herstellen",
       "emailStepDescription": "Voer het e-mailadres in dat u eerder heeft gebruikt. We sturen een 6-cijferige verificatiecode.",
+      "spentInviteDescription": "Deze uitnodigingslink is al gebruikt en kan je niet opnieuw aanmelden. Vul het e-mailadres in waarnaar hij is gestuurd, dan sturen we je een 6-cijferige code om terug te gaan naar je selectie.",
       "codeStepDescription": "Voer de 6-cijferige code in die we naar uw e-mail hebben gestuurd.",
       "emailLabel": "E-mail",
       "sendCode": "Code verzenden",
@@ -424,6 +425,7 @@
     "filterByMinRating": "Mijn beoordeling: {{min}} sterren of meer",
     "folders": "Mappen",
     "openFolder": "Map {{name}} openen",
+    "imageUnavailable": "Afbeelding niet beschikbaar",
     "folderPhotoCount": "{{count}} foto's",
     "backToGallery": "Alle foto's",
     "downloadFolder": "Map downloaden ({{count}})",
@@ -572,6 +574,20 @@
       "like": "Leuk",
       "unlike": "Niet meer leuk",
       "selectPhoto": "{{name}} selecteren"
+    },
+    "downloadNow": "Downloaden",
+    "downloadMenu": {
+      "original": "Origineel",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "{{size}} in totaal",
+      "watermarked": "Elk formaat draagt het watermerk van de fotograaf, ook het origineel.",
+      "noOriginal": "De originele bestanden worden in deze galerij niet aangeboden. Het grootste formaat is tot {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Volledige kwaliteit, zoals de fotograaf het heeft geleverd — het best voor afdrukken.",
+        "print": "Hoge resolutie — voor afdrukken en grote schermen.",
+        "screen": "Webformaat — voor schermen, delen en sociale media.",
+        "small": "Kleinste bestand — snel te versturen in berichten."
+      }
     },
     "neutralLabel": {
       "numbered": "Foto {{position}} van {{total}}",
@@ -1838,17 +1854,17 @@
       "month": "Maand"
     },
     "masonryMode": "Lay-outmodus",
-    "masonryModeOptions": {
-      "columns": "Kolommen (Pinterest-stijl)",
-      "rows": "Rijen (Aangepast gerechtvaardigd)",
-      "flickr": "Flickr (Beproefde justified lay-out)",
-      "justified": "Google Photos (Knuth-Plass-algoritme)"
+    "masonryModeNames": {
+      "columns": "Kolommen",
+      "rows": "Rijen",
+      "flickr": "Flickr-rijen",
+      "quilted": "Patchwork"
     },
-    "masonryModeHint": {
-      "columns": "Pinterest-achtige verticale kolommen met variabele hoogtes",
-      "rows": "Aangepaste rijgebaseerde justified lay-out",
-      "flickr": "Flickrs open-source justified lay-outalgoritme",
-      "justified": "Google Photos-achtige rijen met Knuth-Plass-algoritme voor optimale onderbrekingen"
+    "masonryModeDescriptions": {
+      "columns": "Kolommen met wisselende hoogtes, Pinterest-stijl",
+      "rows": "Rijen van gelijke hoogte, foto's behouden hun vorm",
+      "flickr": "Uitgevulde rijen, elke rij met een eigen hoogte",
+      "quilted": "Vierkante vakken, brede en hoge foto's beslaan er twee"
     },
     "targetRowHeight": "Doelrijhoogte",
     "targetRowHeightHint": "Hoogte in pixels (150-400). Foto's worden geschaald om in rijen te passen.",
@@ -1998,6 +2014,16 @@
     "noTemplateDescription": "Alleen thema-instellingen gebruiken zonder CSS-sjabloon",
     "templateSlot": "Slot {{slot}}",
     "eventCustomCSS": "Evenement-specifieke aangepaste CSS",
+    "layoutNames": {
+      "grid": "Raster",
+      "masonry": "Masonry",
+      "carousel": "Carrousel",
+      "timeline": "Tijdlijn",
+      "mosaic": "Mozaïek",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Beta",
     "layoutDescriptions": {
       "grid": "Klassieke rasterindeling met uniforme fotogroottes",
       "masonry": "Pinterest-stijl indeling met variabele hoogtes",
@@ -3325,6 +3351,7 @@
     "rateStar_one": "{{count}} ster beoordelen",
     "rateStar_other": "{{count}} sterren beoordelen",
     "removeRating": "Beoordeling verwijderen",
+    "ratePhoto": "Foto beoordelen",
     "rateSelected": "Selectie beoordelen",
     "bulkRatingPartial": "{{rated}} van {{total}} foto's zijn beoordeeld",
     "ratingLimitReached": "Limiet voor beoordelingen bereikt. Probeer het later opnieuw.",
@@ -3396,8 +3423,10 @@
       "reopenError": "Inzending kon niet worden heropend"
     },
     "annotation": {
-      "draw": "Op foto tekenen",
-      "edit": "Tekening bewerken",
+      "modeLabel": "Modus",
+      "modeSelect": "Selecteren",
+      "modeAnnotate": "Aantekenen",
+      "hint": "Schakel naar Aantekenen om op de foto te tekenen.",
       "remove": "Tekening verwijderen",
       "attached": "Tekening toegevoegd",
       "inProgress": "Maak de tekening op de foto af en verstuur daarna je opmerking.",

@@ -13,7 +13,6 @@ export interface CommentAnnotationContextValue {
   drawing: boolean;
   /** The finished drawing waiting to be sent with the comment. */
   draft: PhotoAnnotation | null;
-  startDrawing: () => void;
   /** Leave drawing mode and drop the draft. */
   discard: () => void;
   /**
@@ -21,6 +20,11 @@ export interface CommentAnnotationContextValue {
    * has moved on to another drawing since.
    */
   discardSent: (sent: PhotoAnnotation | undefined) => void;
+  /**
+   * The form reports a comment on its way: the lightbox's Annotate mode
+   * stays shut until it is stored or refused.
+   */
+  setSending: (sending: boolean) => void;
   /** Which comment's drawing is on the photo, if any. */
   shownCommentId: number | null;
   toggleShown: (commentId: number, annotation: PhotoAnnotation) => void;

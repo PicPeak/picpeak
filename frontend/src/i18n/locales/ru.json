@@ -420,6 +420,7 @@
       "back": "Назад",
       "title": "Восстановить выборки",
       "emailStepDescription": "Введите адрес электронной почты, который вы использовали ранее. Мы отправим 6-значный код подтверждения.",
+      "spentInviteDescription": "Эта ссылка-приглашение уже использована и не может снова вас идентифицировать. Введите адрес электронной почты, на который она была отправлена, и мы пришлём 6-значный код, чтобы вернуть ваш выбор.",
       "codeStepDescription": "Введите 6-значный код, отправленный на ваш адрес электронной почты.",
       "emailLabel": "Электронная почта",
       "sendCode": "Отправить код",
@@ -458,6 +459,7 @@
     "filterByMinRating": "Моя оценка: {{min}} звёзд и больше",
     "folders": "Папки",
     "openFolder": "Открыть папку {{name}}",
+    "imageUnavailable": "Изображение недоступно",
     "folderPhotoCount": "{{count}} фото",
     "backToGallery": "Все фото",
     "downloadFolder": "Скачать папку ({{count}})",
@@ -612,6 +614,20 @@
       "like": "Нравится",
       "unlike": "Снять отметку",
       "selectPhoto": "Выбрать {{name}}"
+    },
+    "downloadNow": "Скачать",
+    "downloadMenu": {
+      "original": "Оригинал",
+      "pixels": "{{width}} × {{height}} px",
+      "totalSize": "всего {{size}}",
+      "watermarked": "Все размеры содержат водяной знак фотографа, включая оригинал.",
+      "noOriginal": "Оригинальные файлы в этой галерее недоступны. Самый большой размер — до {{width}} × {{height}} px.",
+      "hint": {
+        "original": "Полное качество, как передал фотограф, — лучше всего для печати.",
+        "print": "Высокое разрешение — для печати и больших экранов.",
+        "screen": "Размер для сети — для экранов, обмена и соцсетей.",
+        "small": "Самый маленький файл — быстро отправить в мессенджере."
+      }
     },
     "neutralLabel": {
       "numbered": "Фото {{position}} из {{total}}",
@@ -1906,17 +1922,17 @@
       "month": "Месяц"
     },
     "masonryMode": "Режим макета",
-    "masonryModeOptions": {
-      "columns": "Колонки (Pinterest-стиль)",
-      "rows": "Строки (пользовательский justified)",
-      "flickr": "Flickr (проверенный justified)",
-      "justified": "Google Photos (алгоритм Knuth-Plass)"
+    "masonryModeNames": {
+      "columns": "Колонки",
+      "rows": "Ряды",
+      "flickr": "Ряды Flickr",
+      "quilted": "Пэчворк"
     },
-    "masonryModeHint": {
-      "columns": "Pinterest-стиль с вертикальными колонками переменной высоты",
-      "rows": "Пользовательский строчный justified-макет",
-      "flickr": "Алгоритм justified-макета с открытым исходным кодом от Flickr",
-      "justified": "Строки в стиле Google Photos с использованием алгоритма Knuth-Plass для оптимальных переносов"
+    "masonryModeDescriptions": {
+      "columns": "Колонки разной высоты, как в Pinterest",
+      "rows": "Ряды одной высоты, фото сохраняют пропорции",
+      "flickr": "Выровненные ряды, у каждого своя высота",
+      "quilted": "Квадратные ячейки, широкие и высокие фото занимают две"
     },
     "targetRowHeight": "Целевая высота строки",
     "targetRowHeightHint": "Высота в пикселях (150–400). Фото будут масштабироваться для заполнения строк.",
@@ -2066,6 +2082,16 @@
     "noTemplateDescription": "Использовать только настройки темы без CSS-шаблона",
     "templateSlot": "Слот {{slot}}",
     "eventCustomCSS": "Пользовательский CSS для события",
+    "layoutNames": {
+      "grid": "Сетка",
+      "masonry": "Masonry",
+      "carousel": "Карусель",
+      "timeline": "Хронология",
+      "mosaic": "Мозаика",
+      "gallery-premium": "Premium",
+      "gallery-story": "Story"
+    },
+    "layoutBetaTag": "Бета",
     "layoutDescriptions": {
       "grid": "Классическая сетка с одинаковыми размерами фото",
       "masonry": "Макет в стиле Pinterest с разной высотой",
@@ -3453,6 +3479,7 @@
     "rateStar_one": "Оценить {{count}} звезду",
     "rateStar_other": "Оценить {{count}} звёзд",
     "removeRating": "Убрать оценку",
+    "ratePhoto": "Оценить фото",
     "rateSelected": "Оценить выбранные",
     "bulkRatingPartial": "Оценено фото: {{rated}} из {{total}}",
     "ratingLimitReached": "Достигнут лимит оценок. Повторите попытку позже.",
@@ -3528,8 +3555,10 @@
       "reopenError": "Не удалось снова открыть отправку"
     },
     "annotation": {
-      "draw": "Рисовать на фото",
-      "edit": "Изменить рисунок",
+      "modeLabel": "Режим",
+      "modeSelect": "Выбор",
+      "modeAnnotate": "Пометки",
+      "hint": "Чтобы рисовать на фото, переключитесь в режим «Пометки».",
       "remove": "Удалить рисунок",
       "attached": "Рисунок прикреплён",
       "inProgress": "Завершите рисунок на фото, затем отправьте комментарий.",

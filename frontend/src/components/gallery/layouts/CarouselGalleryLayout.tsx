@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Download, Maximize2, Play, Pause, Heart, Mes
 import { useTheme } from '../../../contexts/ThemeContext';
 import { AuthenticatedImage, Button } from '../../common';
 import { ColorLabelBadge } from '../ColorLabelBadge';
+import { TileImage } from '../TileImage';
 import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import { useGalleryTileBadges } from '../GalleryTileBadges';
 import { usePhotoLabels } from '../PhotoLabels';
@@ -328,7 +329,10 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     : 'opacity-70 hover:opacity-100'
                 }`}
               >
-                <AuthenticatedImage
+                {/* TileImage for the unavailable tile (issue 1733, E9); icon
+                    only, the caption does not fit 80px. */}
+                <TileImage
+                  compactUnavailable
                   src={photo.thumbnail_url || photo.url}
                   alt={photoLabels.of(photo, photo.filename)}
                   // Hidden from guests: dimmed here too, not only on the stage

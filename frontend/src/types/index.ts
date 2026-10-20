@@ -422,6 +422,8 @@ export interface GalleryData {
       standard: string;
       picker_enabled: boolean;
       choices: DownloadResolutionChoice[];
+      /** Downloads carry a watermark (global branding or the gallery's own flag). */
+      watermarked?: boolean;
     };
     welcome_message?: string;
     color_theme?: string;

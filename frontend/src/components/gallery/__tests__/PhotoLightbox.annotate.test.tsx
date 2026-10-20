@@ -77,12 +77,12 @@ afterAll(() => {
 
 const onClose = vi.fn();
 let queryClient: QueryClient;
-function open(settings: Record<string, unknown> = SETTINGS) {
+function open(settings: Record<string, unknown> = SETTINGS, { panel = true } = {}) {
   vi.mocked(feedbackService.getGalleryFeedbackSettings).mockResolvedValue(settings as never);
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <PhotoLightbox photos={photos} initialIndex={0} onClose={onClose} slug="g" feedbackEnabled initialShowFeedback />
+      <PhotoLightbox photos={photos} initialIndex={0} onClose={onClose} slug="g" feedbackEnabled initialShowFeedback={panel} />
     </QueryClientProvider>,
   );
 }
@@ -90,9 +90,12 @@ function open(settings: Record<string, unknown> = SETTINGS) {
 const key = (k: string) => act(() => { fireEvent.keyDown(document, { key: k }); });
 const counter = (n: number) => screen.getByText(`${n} / 3`);
 
+// The bar's mode switch (item E1): drawing starts from there.
+const annotateMode = () => screen.findByRole('radio', { name: 'Annotate' });
+const annotateDisabled = () => (screen.getByRole('radio', { name: 'Annotate' }) as HTMLButtonElement).disabled;
+
 async function startDrawing() {
-  fireEvent.click(await screen.findByRole('button', { name: 'Add Comment' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Draw on photo' }));
+  fireEvent.click(await annotateMode());
   return screen.findByRole('toolbar', { name: 'Drawing tools' });
 }
 
@@ -120,7 +123,9 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
   it('offers no drawing while the gallery has it switched off', async () => {
     open({ ...SETTINGS, allow_annotations: false });
     fireEvent.click(await screen.findByRole('button', { name: 'Add Comment' }));
-    expect(screen.queryByRole('button', { name: 'Draw on photo' })).toBeNull();
+    // No mode switch at all: with one mode there is nothing to switch.
+    expect(screen.queryByRole('radiogroup', { name: 'Mode' })).toBeNull();
+    expect(screen.queryByText('To draw on the photo, switch to Annotate.')).toBeNull();
   });
 
   // The thumbnail standing in for a picture that did not load can be a
@@ -128,15 +133,15 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
   it('offers no drawing on a photo that shows its fallback thumbnail', async () => {
     fallbackAlts.add('1.jpg');
     open();
-    fireEvent.click(await screen.findByRole('button', { name: 'Add Comment' }));
-    expect(screen.queryByRole('button', { name: 'Draw on photo' })).toBeNull();
+    await annotateMode();
+    await waitFor(() => expect(annotateDisabled()).toBe(true));
 
     // The next photo loaded, and it was already mounted as a neighbour.
     key('ArrowRight');
     expect(counter(2)).toBeTruthy();
-    expect(await screen.findByRole('button', { name: 'Draw on photo' })).toBeTruthy();
+    await waitFor(() => expect(annotateDisabled()).toBe(false));
     key('ArrowLeft');
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Draw on photo' })).toBeNull());
+    await waitFor(() => expect(annotateDisabled()).toBe(true));
   });
 
   it('suspends the navigation and zoom keys, and Escape leaves the mode, not the lightbox', async () => {
@@ -168,7 +173,7 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('takes the covered toolbar out of reach while drawing', async () => {
+  it('takes the Select actions out of reach while drawing', async () => {
     open();
     // Present before: the role query only finds what a keyboard can reach.
     const toggle = await screen.findByRole('button', { name: 'Toggle feedback' });
@@ -176,7 +181,8 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
 
     expect(screen.queryByRole('button', { name: 'Toggle feedback' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Zoom in' })).toBeNull();
-    // Out of the tab order, not unmounted: its height still holds the layout.
+    // Out of the tab order, not unmounted: the colour and decision controls
+    // keep their state.
     expect(toggle.isConnected).toBe(true);
     expect(within(drawingTools).getByRole('button', { name: 'Done' })).toBeTruthy();
 
@@ -215,8 +221,7 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     expect(screen.queryByText('Drawing attached')).toBeNull();
     expect(screen.queryByTestId('annotation-overlay')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Draw on photo' }));
-    toolbar = await screen.findByRole('toolbar', { name: 'Drawing tools' });
+    toolbar = await startDrawing();
     fireEvent.click(within(toolbar).getByRole('button', { name: 'Arrow' }));
     drag(overlay(), [0, 0], [400, 200]);
     fireEvent.click(within(toolbar).getByRole('button', { name: 'Done' }));
@@ -268,16 +273,14 @@ describe('PhotoLightbox — annotate mode (issue 1733)', () => {
     fireEvent.change(screen.getByPlaceholderText('Write a comment...'), { target: { value: 'First' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
     await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalledTimes(1));
-    const draw = () => screen.getByRole('button', { name: 'Draw on photo' }) as HTMLButtonElement;
-    expect(draw().disabled).toBe(true);
+    expect(annotateDisabled()).toBe(true);
 
     key('ArrowRight');
     expect(counter(2)).toBeTruthy();
-    expect(draw().disabled).toBe(true);
+    expect(annotateDisabled()).toBe(true);
 
     await act(async () => { finish({ success: true }); });
-    fireEvent.click(await screen.findByRole('button', { name: 'Add Comment' }));
-    expect(draw().disabled).toBe(false);
+    expect(annotateDisabled()).toBe(false);
   });
 
   // Closing the panel unmounts the form, but its request and that request's
