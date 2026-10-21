@@ -1,0 +1,332 @@
+'use strict';
+const crypto = require('crypto');
+const V = require('./validation');
+const {
+  AppError,
+  ConflictError,
+  NotFoundError,
+  ForbiddenError,
+} = require('../../utils/errors');
+/** Database/storage injection keeps the domain portable and contract-testable. */
+function createService({ db, storage, sharp }) {
+  const timestamp = () => new Date().toISOString();
+  async function catalogue() {
+    const row = await db('album_product_catalogue').where({ id: 1 }).first();
+    return {
+      revision: row?.revision || 0,
+      products: V.parse(row?.products || '[]'),
+    };
+  }
+  async function saveCatalogue(input) {
+    if (!input || typeof input !== 'object')
+      throw new AppError('Invalid catalogue', 400);
+    const products = V.products(input.products);
+    V.revision(input.revision);
+    const imageIds = [
+      ...new Set(
+        products.flatMap((p) =>
+          [...p.models, ...p.colours].map((o) => o.imageId).filter(Boolean),
+        ),
+      ),
+    ];
+    const images = imageIds.length
+      ? await db('album_product_images').whereIn('id', imageIds)
+      : [];
+    if (images.length !== imageIds.length)
+      throw new AppError('An option image is unavailable', 400);
+    for (const image of images)
+      if (!(await storage.stat(image.storage_key)))
+        throw new ConflictError('An option image is missing; upload it again');
+    await db.transaction(async (tx) => {
+      // Older portable backups predate this singleton. Recreate the empty seed.
+      await tx('album_product_catalogue').insert({ id: 1, revision: 0, products: '[]', updated_at: timestamp() }).onConflict('id').ignore();
+      const row = await tx('album_product_catalogue')
+        .where({ id: 1 })
+        .forUpdate()
+        .first();
+      if (row.revision !== input.revision)
+        throw new ConflictError(
+          'The catalogue changed in another window; reload before saving',
+        );
+      await tx('album_product_catalogue')
+        .where({ id: 1 })
+        .update({
+          revision: row.revision + 1,
+          products: JSON.stringify(products),
+          updated_at: timestamp(),
+        });
+    });
+    return catalogue();
+  }
+  async function uploadImage(bytes, adminId) {
+    if (
+      !Buffer.isBuffer(bytes) ||
+      bytes.length > 6 * 1024 * 1024 ||
+      !bytes
+        .subarray(0, 8)
+        .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    )
+      throw new AppError('Upload a PNG image up to 6 MB', 400);
+    const metadata = await sharp(bytes).metadata();
+    if (
+      metadata.format !== 'png' ||
+      !metadata.width ||
+      !metadata.height ||
+      metadata.width * metadata.height > 16e6 ||
+      (metadata.pages || 1) > 1
+    )
+      throw new AppError('Use a single PNG image up to 16 megapixels', 400);
+    const image = await sharp(bytes)
+      .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+      .png()
+      .toBuffer();
+    const dimensions = await sharp(image).metadata(),
+      id = crypto.randomUUID(),
+      key = `album-products/${id}.png`;
+    await storage.put(key, image, {
+      contentType: 'image/png',
+      cacheControl: 'private, no-store',
+    });
+    try {
+      await db('album_product_images').insert({
+        id,
+        storage_key: key,
+        sha256: V.hash(image),
+        width: dimensions.width,
+        height: dimensions.height,
+        created_by: adminId,
+        created_at: timestamp(),
+      });
+    } catch (error) {
+      await storage.delete(key).catch(() => {});
+      throw error;
+    }
+    return { id, width: dimensions.width, height: dimensions.height };
+  }
+  async function image(id) {
+    const row = await db('album_product_images')
+      .where({ id: V.uuid(id) })
+      .first();
+    if (!row) throw new NotFoundError('Image');
+    return row;
+  }
+  function shape(row) {
+    return {
+      id: row.id,
+      productId: row.product_id,
+      enabled: row.enabled === true || row.enabled === 1,
+      revision: row.revision,
+      status: row.status,
+      selection: V.parse(row.selection),
+      updatedAt: row.updated_at,
+    };
+  }
+  async function offers(eventId) {
+    return (
+      await db('event_album_products')
+        .where({ event_id: eventId })
+        .orderBy('created_at')
+    ).map(shape);
+  }
+  async function offer(eventId, id, tx = db) {
+    const row = await tx('event_album_products')
+      .where({ event_id: eventId, id: V.uuid(id) })
+      .first();
+    if (!row) throw new NotFoundError('Product offer');
+    return row;
+  }
+  async function assign(eventId, productId) {
+    const { products } = await catalogue(),
+      product = products.find((p) => p.id === productId && p.active);
+    if (!product) throw new AppError('Choose an active product', 400);
+    const id = crypto.randomUUID();
+    await db('event_album_products')
+      .insert({
+        id,
+        event_id: eventId,
+        product_id: product.id,
+        enabled: true,
+        revision: 1,
+        status: 'draft',
+        created_at: timestamp(),
+        updated_at: timestamp(),
+      })
+      .onConflict(['event_id', 'product_id'])
+      .ignore();
+    return shape(
+      await db('event_album_products')
+        .where({ event_id: eventId, product_id: product.id })
+        .first(),
+    );
+  }
+  async function clientOffers(eventId) {
+    const { products } = await catalogue(),
+      rows = await offers(eventId);
+    return rows
+      .filter((row) => row.enabled)
+      .map((row) => {
+        const product = products.find(
+          (p) => p.id === row.productId && p.active,
+        );
+        return {
+          ...row,
+          product: product
+            ? {
+              ...product,
+              version: V.hash(product),
+              models: product.models.filter((o) => o.active),
+              colours: product.colours.filter((o) => o.active),
+            }
+            : null,
+        };
+      });
+  }
+  async function history(eventId, id) {
+    await offer(eventId, id);
+    return (
+      await db('album_product_choice_history')
+        .where({ offer_id: id })
+        .orderBy('revision', 'desc')
+        .limit(100)
+    ).map((row) => ({ ...row, selection: V.parse(row.selection) }));
+  }
+  async function record(tx, row, actor, input) {
+    await tx('album_product_choice_history').insert({
+      id: crypto.randomUUID(),
+      offer_id: row.id,
+      revision: row.revision,
+      mutation_id: V.uuid(input.mutationId),
+      status: row.status,
+      selection: row.selection,
+      actor_type: actor.type,
+      actor_id: actor.id == null ? null : String(actor.id),
+      actor_name: actor.name || null,
+      created_at: timestamp(),
+    });
+  }
+  async function mutate(event, input, actor, { admin = false } = {}) {
+    V.revision(input.revision);
+    V.uuid(input.mutationId);
+    return db.transaction(async (tx) => {
+      // Catalogue precedes offer in the shared lock order for writes.
+      const catalog = await tx('album_product_catalogue')
+        .where({ id: 1 })
+        .forUpdate()
+        .first();
+      const current = await tx('event_album_products')
+        .where({ event_id: event.id, id: V.uuid(input.id) })
+        .forUpdate()
+        .first();
+      if (!current) throw new NotFoundError('Product offer');
+      const replay = await tx('album_product_choice_history')
+        .where({ offer_id: current.id, mutation_id: input.mutationId })
+        .first();
+      if (replay) {
+        if (
+          replay.actor_type !== actor.type ||
+          replay.actor_id !== String(actor.id ?? '')
+        )
+          throw new ConflictError('This request identifier was already used');
+        return shape(current);
+      }
+      if (current.revision !== input.revision)
+        throw new ConflictError(
+          'This choice changed in another window; reload before saving',
+        );
+      const product = V.parse(catalog.products).find(
+        (p) => p.id === current.product_id,
+      );
+      const update = {
+        revision: current.revision + 1,
+        updated_at: timestamp(),
+      };
+      if (admin) {
+        if (typeof input.enabled === 'boolean') update.enabled = input.enabled;
+        else if (input.action === 'unlock' && current.status === 'locked')
+          update.status = 'submitted';
+        else if (
+          input.action === 'lock' &&
+          current.status === 'submitted' &&
+          current.selection
+        ) {
+          const snapshot = V.parse(current.selection);
+          V.selection(product, {
+            productVersion: snapshot.productVersion,
+            modelId: snapshot.model.id,
+            colourId: snapshot.colour.id,
+          });
+          update.status = 'locked';
+        } else throw new AppError('This choice cannot move to that state', 409);
+      } else {
+        if (!current.enabled || current.status === 'locked')
+          throw new ForbiddenError('This choice is locked or unavailable');
+        const selected = V.selection(product, input);
+        update.selection = JSON.stringify(selected);
+        update.status = input.submit === true ? 'submitted' : 'draft';
+      }
+      if (
+        Object.entries(update).every(
+          ([key, value]) =>
+            ['revision', 'updated_at'].includes(key) || current[key] === value,
+        )
+      )
+        return shape(current);
+      const next = { ...current, ...update };
+      await tx('event_album_products').where({ id: current.id }).update(update);
+      await record(tx, next, actor, input);
+      if (!admin && update.status === 'submitted') {
+        // Native bell/audit entry in the same transaction: a replay cannot notify twice.
+        await tx('activity_logs').insert({
+          event_id: event.id,
+          activity_type: 'album_product_submitted',
+          actor_type: actor.type,
+          actor_id: String(actor.id || ''),
+          actor_name: actor.name || null,
+          metadata: JSON.stringify({
+            eventName: event.event_name,
+            productName: product.name,
+            modelName: V.parse(update.selection).model.name,
+            colourName: V.parse(update.selection).colour.name,
+          }),
+          created_at: timestamp(),
+        });
+      }
+      return shape(next);
+    });
+  }
+  async function clientImage(eventId, id) {
+    V.uuid(id);
+    const rows = await clientOffers(eventId);
+    const allowed = rows.some((row) =>
+      [
+        ...(row.product?.models || []),
+        ...(row.product?.colours || []),
+        row.selection?.model,
+        row.selection?.colour,
+      ].some((o) => o?.imageId === id),
+    );
+    if (!allowed) throw new NotFoundError('Image');
+    return image(id);
+  }
+  return {
+    catalogue,
+    saveCatalogue,
+    uploadImage,
+    image,
+    offers,
+    offer,
+    assign,
+    clientOffers,
+    history,
+    mutate,
+    clientImage,
+  };
+}
+function application() {
+  return createService({
+    db: require('../../database/db').db,
+    storage: require('../storage').getStorage(),
+    sharp: require('../isolatedSharp'),
+  });
+}
+module.exports = { createService, application };

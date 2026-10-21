@@ -1,3 +1,4 @@
+import { AlbumProductCataloguePage } from '../../features/album-products/CataloguePage';
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -215,7 +216,7 @@ export const SettingsPage: React.FC = () => {
   // header (FeaturesTab has its own icon+title+description block), skip
   // the Settings shell's section heading so the layout doesn't double
   // up.
-  const TABS_WITH_OWN_HEADER: TabType[] = ['features', 'email', 'branding', 'eventTypes', 'backup', 'cms', 'contracts', 'users'];
+  const TABS_WITH_OWN_HEADER: TabType[] = ['albumProducts','features', 'email', 'branding', 'eventTypes', 'backup', 'cms', 'contracts', 'users'];
   const showSectionHeading = !TABS_WITH_OWN_HEADER.includes(activeTab);
 
   return (
@@ -225,6 +226,7 @@ export const SettingsPage: React.FC = () => {
             <SectionPageHeader icon={activeItem.icon} title={activeItem.label} description={activeItem.description} feature={TAB_FEATURE[activeTab]} />
           )}
 
+          {activeTab === 'albumProducts' && <AlbumProductCataloguePage />}
           {activeTab === 'features' && <FeaturesTab />}
 
           {activeTab === 'general' && (

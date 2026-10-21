@@ -66,7 +66,7 @@ function archiveLimitError(message, statusCode) {
 // was not produced by PicPeak and is refused before any live state changes:
 // the import copies files/ into STORAGE_PATH as-is, and some of that tree is
 // served publicly (fonts/, uploads/logos, uploads/favicons).
-const IMPORT_FILE_ROOTS = ['business-docs', 'uploads', 'transfers', 'events/active', 'events/archived',
+const IMPORT_FILE_ROOTS = ['album-products', 'business-docs', 'uploads', 'transfers', 'events/active', 'events/archived',
   'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];
 // The storage subtrees (inside the roots above) that the app serves as
 // static web content, without authentication:
@@ -453,6 +453,7 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
 // these columns, so the whole import is refused rather than the row skipped:
 // a backup that was tampered with is not one to restore in part.
 const CONTAINED_PATH_COLUMNS = {
+  album_product_images: ['storage_key'],
   events: ['archive_path'],
   photos: ['path', 'thumbnail_path', 'watermark_path', 'external_relpath'],
 };

@@ -24,6 +24,7 @@ const logger = require('../utils/logger');
 // Canonical flag list. Keep in sync with frontend
 // `FeatureKey` union in frontend/src/contexts/FeatureFlagsContext.tsx.
 const KNOWN_FLAGS = [
+  'albumProducts',
   'galleries',
   'reminderEmails',
   // Incoming mail (migration 128) — IMAP polling of a dedicated mailbox into
@@ -130,6 +131,7 @@ const KNOWN_FLAGS = [
 // Spec defaults for any flag missing from the DB (e.g. a row added by a
 // new release that hasn't run its migration yet on this instance).
 const DEFAULT_FLAGS = {
+  albumProducts: false,
   galleries: true,
   incomingMail: false,
   // F.3 — reminderEmails is a placeholder card in the Features tab
