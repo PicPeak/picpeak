@@ -14,10 +14,17 @@ name: Cut Stable Release (daily batch)
 #   github-actions[bot] (GITHUB_TOKEN, a valid distinct reviewer), enable
 #   auto-merge as the PAT so the merge attributes to a real identity and
 #   triggers the tag-cutting run. --auto waits for green checks.
+# - Stable dismisses stale reviews. A stable merge after the daily approval
+#   makes release-please push to the release PR, which dismisses the
+#   approval: auto-merge stays on but waits for a review that never comes
+#   (3.135.0 hung for two days). The hourly run re-approves a release PR
+#   the daily run already set to auto-merge, and touches nothing else.
 
 on:
   schedule:
     - cron: '0 18 * * *'
+    # Re-approve only; keep in sync with REAPPROVE_SCHEDULE below.
+    - cron: '40 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -35,6 +42,8 @@ jobs:
           # No checkout — set the repo explicitly so gh works without a
           # git remote (same pattern as whatsnew, 2a5f0a8).
           GH_REPO: ${{ github.repository }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          REAPPROVE_SCHEDULE: '40 * * * *'
         run: |
           if [ -z "$RELEASE_PAT" ]; then
             echo "RELEASE_PLEASE_TOKEN not set — skipping (manual review required)."
@@ -54,6 +63,20 @@ jobs:
             --jq '[.[] | select(.isCrossRepository == false)] | .[0].number // empty')
           if [ -z "$pr" ]; then
             echo "No open same-repo stable release PR — nothing to cut today."
+            exit 0
+          fi
+          if [ "$EVENT_SCHEDULE" = "$REAPPROVE_SCHEDULE" ]; then
+            # Hourly run: never starts a cut. Only a PR the daily run (or a
+            # maintainer) set to auto-merge whose approval a later push
+            # dismissed gets approved again.
+            read -r automerge decision < <(gh pr view "$pr" --json autoMergeRequest,reviewDecision \
+              --jq '[(.autoMergeRequest != null), (.reviewDecision // "NONE")] | @tsv')
+            if [ "$automerge" != "true" ] || [ "$decision" = "APPROVED" ]; then
+              echo "Stable release PR #$pr needs no re-approval (auto-merge=$automerge, review=$decision)."
+              exit 0
+            fi
+            gh pr review "$pr" --approve --body "Automated re-approval — a push after the daily approval dismissed it."
+            echo "Re-approved stable release PR #$pr; auto-merge merges it when checks are green."
             exit 0
           fi
           # Approve is tolerant — a pre-existing approval already satisfies
