@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.1](https://github.com/PicPeak/picpeak/compare/v3.135.0...v3.135.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **archive:** cancel the gallery's download jobs that are still in flight ([#2218](https://github.com/PicPeak/picpeak/issues/2218)) ([c91afe5](https://github.com/PicPeak/picpeak/commit/c91afe5cf5631d14b0275dfe744aa3866dd79f8a))
+
 ## [3.135.0](https://github.com/PicPeak/picpeak/compare/v3.134.8...v3.135.0) (2026-10-20)
 
 
