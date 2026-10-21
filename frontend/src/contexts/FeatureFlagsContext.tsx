@@ -10,6 +10,7 @@ export type { FeatureKey, FeatureFlags };
 // server doesn't return (e.g. a brand-new flag added in a release that
 // hasn't run its migration yet on this instance).
 export const DEFAULT_FLAGS: FeatureFlags = {
+  albumProducts: false,
   galleries: true,
   // F.3 — these three are placeholders. The UI cards are locked
   // (lockedReason: NOT_YET_AVAILABLE) because the underlying flows

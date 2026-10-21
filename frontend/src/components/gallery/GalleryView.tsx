@@ -1,3 +1,4 @@
+import { GalleryProductPanel } from '../../features/album-products/GalleryProductPanel';
 import { useGalleryFiltering, resolveMediaType } from './hooks/useGalleryFiltering';
 import { useGalleryUpload } from './hooks/useGalleryUpload';
 import { useLiveRefresh } from './hooks/useLiveRefresh';
@@ -1725,6 +1726,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
         <GuestRecoveryModal />
+      {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
         {/* #1160: these layouts return early and render edge-to-edge, but they
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
@@ -1955,6 +1957,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <GridDensityOffered.Provider value={densityOffered}>
       <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
       <GuestRecoveryModal />
+      {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
       {/* Sidebar for non-grid layouts */}
       {showSidebar ? (
         <GallerySidebar

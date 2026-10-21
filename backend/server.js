@@ -976,6 +976,7 @@ app.use('/api/admin/pdf-themes', require('./src/routes/adminPdfThemes'));
 app.use('/api/admin/quotes',     require('./src/routes/adminQuotes'));
 // Quote catalogue + templates (#1451). Own prefix so its collection paths
 // never collide with /api/admin/quotes/:id.
+app.use('/api/admin/album-products', require('./src/routes/adminAlbumProducts'));
 app.use('/api/admin/quote-catalog', require('./src/routes/adminQuoteCatalog'));
 app.use('/api/admin/invoices',   require('./src/routes/adminInvoices'));
 app.use('/api/admin/contracts',  require('./src/routes/adminContracts'));

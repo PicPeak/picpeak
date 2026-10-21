@@ -64,7 +64,7 @@ const EXCLUDED_TABLES = new Set([
 ]);
 
 // Storage subdirs holding non-recalculable blobs — always included.
-const DOC_DIRS = ['business-docs', 'uploads', 'transfers'];
+const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products'];
 // Original gallery photos — only when includePhotos is true (large; otherwise
 // the admin re-uploads originals per gallery and previews are re-rendered).
 const PHOTO_DIRS = ['events/active', 'events/archived', 'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];

@@ -306,6 +306,7 @@ async function getCoverageReport() {
   // belt-and-suspenders fallback.
   const fallback = configuredRows === null;
   const effectiveRows = configuredRows || [
+    { path: 'album-products', include_in_default: true, feature_flag: null, display_order: 110, description: 'Private product option images' },
     { path: 'events/active',    include_in_default: true,  feature_flag: null,                       display_order: 10, description: 'Legacy fallback (backup_paths missing)' },
     { path: 'events/archived',  include_in_default: true,  feature_flag: 'backup_include_archived', display_order: 20, description: 'Legacy fallback (backup_paths missing)' },
     { path: 'thumbnails',       include_in_default: true,  feature_flag: null,                       display_order: 30, description: 'Legacy fallback (backup_paths missing)' },

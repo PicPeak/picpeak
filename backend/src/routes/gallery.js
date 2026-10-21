@@ -3,6 +3,7 @@ const router = require('express').Router();
 router.use(require('./gallery/metadata'));
 router.use(require('./gallery/slideshow'));
 router.use(require('./gallery/photos'));
+router.use(require('./gallery/albumProducts'));
 router.use(require('./gallery/downloads'));
 router.use(require('./gallery/media'));
 router.use(require('./gallery/stats'));
