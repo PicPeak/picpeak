@@ -216,6 +216,14 @@ async function archiveEvent(event) {
       });
     } catch (e) { /* non-fatal */ }
 
+    // A download job still queued or building would finish after the delete
+    // below and upload its zip into the archived gallery's folder: fail it,
+    // the next request builds a new one. Ready jobs stay as they are, since
+    // their zips are in the archive and come back with a restore.
+    await require('./downloadJobService').cancelForEvent(
+      event.id, 'The gallery was archived, please request the download again'
+    );
+
     // Delete the originals from storage.
     for (const entry of photoEntries) {
       await storage.delete(entry.key).catch((err) =>
