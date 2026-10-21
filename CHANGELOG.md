@@ -5,6 +5,22 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.0](https://github.com/PicPeak/picpeak/compare/v3.134.8...v3.135.0) (2026-10-20)
+
+
+### Features
+
+* **api:** accept video uploads on the v1 photo endpoint ([#2185](https://github.com/PicPeak/picpeak/issues/2185)) ([fa022e3](https://github.com/PicPeak/picpeak/commit/fa022e3b79d33c2dfb635d69ae1d66dd68358551))
+
+
+### Bug Fixes
+
+* **downloads:** close the partial zip when a pre-zip build is cancelled ([#2208](https://github.com/PicPeak/picpeak/issues/2208)) ([9ee3960](https://github.com/PicPeak/picpeak/commit/9ee3960c54cdb2790c4b2b92d5abd2c30fbb56e8))
+* **downloads:** send the real content type for backups, renditions and proofs ([#2181](https://github.com/PicPeak/picpeak/issues/2181)) ([e67596d](https://github.com/PicPeak/picpeak/commit/e67596d44a067a842f6a5d947e6d7ba108803453))
+* **events:** carry the Live Slideshow style and category references over when duplicating a gallery ([#2191](https://github.com/PicPeak/picpeak/issues/2191)) ([f2e34c3](https://github.com/PicPeak/picpeak/commit/f2e34c3ab46d6e384926b3bb257329801b90da8e))
+* **gallery:** keep a returning guest identified, and offer recovery on a spent invite ([#2211](https://github.com/PicPeak/picpeak/issues/2211)) ([e3163d3](https://github.com/PicPeak/picpeak/commit/e3163d33f5ba8ff057317f0811bf6e15df7ad5cb))
+* **slideshow:** show the stored play order and category filter after a reload ([#2188](https://github.com/PicPeak/picpeak/issues/2188)) ([8f57861](https://github.com/PicPeak/picpeak/commit/8f57861d64395c859e71f6445be5d1bbaee95881))
+
 ## [3.134.8](https://github.com/PicPeak/picpeak/compare/v3.134.7...v3.134.8) (2026-10-18)
 
 
