@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.2](https://github.com/PicPeak/picpeak/compare/v3.135.1...v3.135.2) (2026-10-22)
+
+
+### Bug Fixes
+
+* **security:** update sanitize-html to 2.18.0 and follow-redirects to 1.16.1 ([#2226](https://github.com/PicPeak/picpeak/issues/2226)) ([f08c3bd](https://github.com/PicPeak/picpeak/commit/f08c3bd74d36f8d4d0ca71de9ca959b054f594b2))
+* **security:** update sanitize-html to 2.18.1 ([#2230](https://github.com/PicPeak/picpeak/issues/2230)) ([7eadac7](https://github.com/PicPeak/picpeak/commit/7eadac7a1cc564b947a0b263302420a89e36985c))
+
 ## [3.135.1](https://github.com/PicPeak/picpeak/compare/v3.135.0...v3.135.1) (2026-10-21)
 
 
