@@ -63,7 +63,7 @@
     "postcss": "8.5.23",
     "qrcode": "^1.5.4",
     "react-i18next": "^15.6.0",
-    "sanitize-html": "2.18.0",
+    "sanitize-html": "2.18.1",
     "sharp": "0.35.5",
     "sqlite3": "^5.1.6",
     "swagger-jsdoc": "^6.2.8",
