@@ -271,6 +271,7 @@ function transformLineItemPreset(p) {
     vatCode: p.vat_code || null,
     priceMode: p.price_mode || 'fixed',
     pinnedRateMinor: p.pinned_rate_minor == null ? null : Number(p.pinned_rate_minor),
+    productId: p.product_id || null, productSurcharges: p.product_surcharges ? JSON.parse(p.product_surcharges) : [],
   };
 }
 
@@ -829,6 +830,7 @@ router.post(
       currency: req.body.currency,
       quantity_default: req.body.quantityDefault,
       display_order: req.body.displayOrder,
+      product_id: req.body.productId, product_surcharges: req.body.productSurcharges,
       ...presetCatalogueFields(req.body),
     });
     return successResponse(res, { preset: transformLineItemPreset(row) }, 201);
@@ -860,6 +862,7 @@ router.put(
       quantity_default: req.body.quantityDefault,
       display_order: req.body.displayOrder,
       is_active: req.body.isActive,
+      product_id: req.body.productId, product_surcharges: req.body.productSurcharges,
       ...presetCatalogueFields(req.body),
     });
     return successResponse(res, { preset: transformLineItemPreset(row) });

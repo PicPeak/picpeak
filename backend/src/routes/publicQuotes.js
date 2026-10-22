@@ -105,6 +105,22 @@ router.get(
   }),
 );
 
+router.get('/:token/product-images/:imageId', previewLimiter, [tokenParam()], handleAsync(async (req, res) => {
+  validateRequest(req); const tokenRow = await loadActionToken(req, res, { tableName: TABLE, token: req.params.token }); if (!tokenRow) return undefined;
+  if (!verification.hasValidGrant(req, KIND, tokenRow, req.params.token)) return sendVerificationRequired(res);
+  const image = await require('../services/albumProducts/crm').quoteImage(require('../database/db').db, tokenRow.quote_id, req.params.imageId);
+  res.set('Cache-Control', 'private, no-store').type('png');
+  return require('../utils/streamResponse').pipeStreamToResponse(await require('../services/storage').getStorage().get(image.storage_key), res, { context: 'quote product image' });
+}));
+
+router.post('/:token/totals', previewLimiter, [tokenParam(), body('selectedOptional').isArray({ max: 200 }), body('configurations').optional().isArray({ max: 200 })], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const tokenRow = await loadActionToken(req, res, { tableName: TABLE, token: req.params.token });
+  if (!tokenRow) return undefined;
+  if (!verification.hasValidGrant(req, KIND, tokenRow, req.params.token)) return sendVerificationRequired(res);
+  return successResponse(res, await quoteService.previewOptionalSelection(tokenRow.quote_id, req.body.selectedOptional, req.body.configurations));
+}));
+
 router.post(
   '/:token/respond',
   respondLimiter,
@@ -116,6 +132,7 @@ router.post(
     body('tosAccepted').optional().isBoolean(),
     // Optional add-ons (#1451): the chosen positions and the total the page
     // showed. The service recomputes and refuses a mismatch.
+    body('configurations').optional().isArray({ max: 200 }),
     body('selectedOptional').optional().isArray({ max: 200 }),
     body('selectedOptional.*').isInt({ min: 1 }).toInt(),
     body('expectedTotalMinor').optional().isInt().toInt(),
@@ -137,6 +154,7 @@ router.post(
         action: req.body.action,
         ip: clientIpForAudit(req),
         tosAccepted: req.body.tosAccepted === true,
+        configurations: req.body.configurations,
         selectedOptional: req.body.selectedOptional,
         expectedTotalMinor: req.body.expectedTotalMinor,
         customerMessage: req.body.customerMessage,

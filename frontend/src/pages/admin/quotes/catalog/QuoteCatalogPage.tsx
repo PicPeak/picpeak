@@ -1,3 +1,4 @@
+import { CrmProductFields, type Surcharge } from '../../../../features/album-products/CrmProductFields';
 /**
  * Quote catalogue & templates (#1451). Five tabs:
  *   Services     — the catalogue items (the existing line-item presets)
@@ -85,6 +86,7 @@ const RowActions: React.FC<{ active: boolean; onEdit: () => void; onArchive: () 
 // ---------------------------------------------------------------------
 
 interface ServiceForm {
+  productId?: string | null; productSurcharges?: Surcharge[];
   id?: number;
   name: string;
   description: string;
@@ -116,6 +118,7 @@ const ServicesTab: React.FC = () => {
 
   const edit = (p: LineItemPreset) => setForm({
     id: p.id,
+    productId: p.productId, productSurcharges: p.productSurcharges,
     name: p.name,
     description: p.description || '',
     unitPrice: Number(p.unitPriceMinor || 0) / 100,
@@ -132,6 +135,7 @@ const ServicesTab: React.FC = () => {
     if (!form || !form.name.trim()) return;
     const rateBased = form.priceMode !== 'fixed';
     const payload = {
+      productId: form.productId || null, productSurcharges: form.productSurcharges || [],
       name: form.name.trim(),
       description: form.description,
       unitPriceMinor: rateBased ? 0 : toMinor(form.unitPrice),
@@ -207,6 +211,7 @@ const ServicesTab: React.FC = () => {
                 <option value="day">{t('quotes.catalog.priceMode.day', 'Per day (rate)')}</option>
               </select>
             </div>
+            {form.priceMode === 'fixed' && <CrmProductFields productId={form.productId || null} surcharges={form.productSurcharges || []} onChange={(productId, productSurcharges) => setForm({ ...form, productId, productSurcharges })} />}
             {form.priceMode === 'fixed' ? (
               <div>
                 <label htmlFor="service-unit-price" className={labelCls}>{t('quotes.catalog.field.unitPrice', 'Unit price')}</label>

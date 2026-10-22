@@ -26,7 +26,7 @@ describe('album products native access boundary', () => {
     await assignAdminRole(db, outsider, 'admin');
     // A gallery-scoped role without the cross-gallery grants.
     const roleId = idOf(await db('roles').insert({ name: 'album_editor_own', display_name: 'Album editor' }).returning('id'));
-    for (const p of await db('permissions').whereIn('name', ['products.view', 'products.manage', 'albums.edit', 'events.view', 'photos.view']))
+    for (const p of await db('permissions').whereIn('name', ['products.view', 'products.manage', 'products.configure', 'events.view', 'photos.view']))
       await db('role_permissions').insert({ role_id: roleId, permission_id: p.id });
     await db('admin_users').whereIn('id', [owner, outsider]).update({ role_id: roleId });
     const addEvent = async (slug, adminId) => idOf(await db('events').insert({ slug, event_name: slug, event_type: 'wedding', event_date: '2026-10-01',

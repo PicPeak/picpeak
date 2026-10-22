@@ -1,6 +1,7 @@
 'use strict';
 const crypto = require('crypto');
 const V = require('./validation');
+const G = require('./library');
 const {
   formatBoolean,
   parseBoolean: normalizeBoolean,
@@ -19,19 +20,33 @@ function createService({ db, storage, sharp }) {
     return {
       revision: row?.revision || 0,
       products: V.parse(row?.products || '[]'),
+      library: V.parse(row?.library || '[]'),
+      types: V.parse(row?.types || '[]'),
     };
   }
   async function saveCatalogue(input) {
     if (!input || typeof input !== 'object')
       throw new AppError('Invalid catalogue', 400);
     const products = V.products(input.products);
+    const previous = await catalogue();
+    const library = G.cleanLibrary(input.library ?? previous.library);
+    const types = G.cleanTypes(input.types ?? previous.types, library);
+    for (const p of products)
+      if (p.typeId && !types.some((t) => t.id === p.typeId))
+        throw new AppError('Unknown product type', 400);
     V.revision(input.revision);
     const imageIds = [
-      ...new Set(
-        products.flatMap((p) =>
-          [...p.models, ...p.colours].map((o) => o.imageId).filter(Boolean),
+      ...new Set([
+        ...library
+          .flatMap((g) => g.options)
+          .map((o) => o.imageId)
+          .filter(Boolean),
+        ...products.flatMap((p) =>
+          [...(p.models || []), ...(p.colours || [])]
+            .map((o) => o.imageId)
+            .filter(Boolean),
         ),
-      ),
+      ]),
     ];
     const images = imageIds.length
       ? await db('album_product_images').whereIn('id', imageIds)
@@ -60,6 +75,8 @@ function createService({ db, storage, sharp }) {
         .update({
           revision: row.revision + 1,
           products: JSON.stringify(products),
+          library: JSON.stringify(library),
+          types: JSON.stringify(types),
           updated_at: timestamp(),
         });
     });
@@ -166,8 +183,13 @@ function createService({ db, storage, sharp }) {
         .first(),
     );
   }
+  function selectionCurrent(product, snapshot) {
+    if (!snapshot || !product) return false;
+    try { const next = V.selection(product, product.attributes ? { productVersion: product.version, values: G.valuesOf(snapshot) } : { productVersion: V.hash(product), modelId: snapshot.model.id, colourId: snapshot.colour.id }); return V.hash(next.attributes || { model: next.model, colour: next.colour }) === V.hash(snapshot.attributes || { model: snapshot.model, colour: snapshot.colour }); } catch (_) { return false; }
+  }
   async function clientOffers(eventId) {
-    const { products } = await catalogue(),
+    const catalog = await catalogue(),
+      products = catalog.products.map((p) => G.resolve(p, catalog)),
       rows = await offers(eventId);
     return rows
       .filter((row) => row.enabled)
@@ -177,13 +199,14 @@ function createService({ db, storage, sharp }) {
         );
         return {
           ...row,
+          needsReview: row.status === 'submitted' && !selectionCurrent(product, row.selection),
           product: product
-            ? {
-                ...product,
-                version: V.hash(product),
-                models: product.models.filter((o) => o.active),
-                colours: product.colours.filter((o) => o.active),
-              }
+            ? product.attributes ? product : {
+              ...product,
+              version: V.hash(product),
+              models: product.models.filter((o) => o.active),
+              colours: product.colours.filter((o) => o.active),
+            }
             : null,
         };
       });
@@ -240,8 +263,9 @@ function createService({ db, storage, sharp }) {
         throw new ConflictError(
           'This choice changed in another window; reload before saving',
         );
-      const product = V.parse(catalog.products).find(
-        (p) => p.id === current.product_id,
+      const product = G.resolve(
+        V.parse(catalog.products).find((p) => p.id === current.product_id),
+        { library: V.parse(catalog.library), types: V.parse(catalog.types) },
       );
       const update = {
         revision: current.revision + 1,
@@ -258,15 +282,22 @@ function createService({ db, storage, sharp }) {
           current.selection
         ) {
           const snapshot = V.parse(current.selection);
-          const checked = V.selection(product, {
-            productVersion: V.hash(product),
-            modelId: snapshot.model.id,
-            colourId: snapshot.colour.id,
-          });
-          if (
-            V.hash({ model: checked.model, colour: checked.colour }) !==
-            V.hash({ model: snapshot.model, colour: snapshot.colour })
-          )
+          const checked = V.selection(
+            product,
+            product.attributes
+              ? {
+                productVersion: product.version,
+                values: G.valuesOf(snapshot),
+              }
+              : {
+                productVersion: V.hash(product),
+                modelId: snapshot.model.id,
+                colourId: snapshot.colour.id,
+              },
+          );
+          const chosen = (s) =>
+            s.attributes || { model: s.model, colour: s.colour };
+          if (V.hash(chosen(checked)) !== V.hash(chosen(snapshot)))
             throw new ConflictError(
               'The selected options changed; ask the client to review them',
             );
@@ -303,8 +334,7 @@ function createService({ db, storage, sharp }) {
           {
             eventName: event.event_name,
             productName: product.name,
-            modelName: V.parse(update.selection).model.name,
-            colourName: V.parse(update.selection).colour.name,
+            choice: G.summary(V.parse(update.selection)),
           },
           event.id,
           actor,
@@ -319,6 +349,8 @@ function createService({ db, storage, sharp }) {
     const rows = await clientOffers(eventId);
     const allowed = rows.some((row) =>
       [
+        ...(row.product?.attributes?.flatMap((a) => a.options) || []),
+        ...(row.selection?.attributes?.flatMap((a) => a.options) || []),
         ...(row.product?.models || []),
         ...(row.product?.colours || []),
         row.selection?.model,

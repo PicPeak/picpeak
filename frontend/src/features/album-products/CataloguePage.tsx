@@ -1,7 +1,8 @@
+import { LibraryEditor } from './LibraryEditor';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Button, Card } from '../../components/common';
+import { Button, Card, Input, Switch, Loading } from '../../components/common';
 import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import {
@@ -38,7 +39,7 @@ function ProductEditor({
   ) =>
     onChange((current) => ({
       ...current,
-      [group]: current[group].map((o) =>
+      [group]: (current[group] || []).map((o) =>
         o.id === id ? { ...o, ...patch } : o,
       ),
     }));
@@ -113,7 +114,7 @@ function ProductEditor({
                   : t('albumProducts.colours', 'Colours')}
               </legend>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {product[group].map((option) => (
+                {(product[group] || []).map((option) => (
                   <div
                     className="border border-line rounded-lg p-3 space-y-3"
                     key={option.id}
@@ -162,7 +163,7 @@ function ProductEditor({
                             'Available for models (none selected means all)',
                           )}
                         </legend>
-                        {product.models.map((model) => (
+                        {(product.models || []).map((model) => (
                           <label key={model.id} className="flex gap-2 text-sm">
                             <input
                               type="checkbox"
@@ -190,12 +191,12 @@ function ProductEditor({
                       onClick={() =>
                         onChange((current) => ({
                           ...current,
-                          [group]: current[group].filter(
+                          [group]: (current[group] || []).filter(
                             (o) => o.id !== option.id,
                           ),
                           ...(group === 'models'
                             ? {
-                                colours: current.colours.map((c) => ({
+                                colours: (current.colours || []).map((c) => ({
                                   ...c,
                                   modelIds: c.modelIds?.filter(
                                     (id) => id !== option.id,
@@ -214,13 +215,13 @@ function ProductEditor({
               <Button
                 variant="secondary"
                 disabled={
-                  product[group].length >= (group === 'models' ? 20 : 30)
+                  (product[group] || []).length >= (group === 'models' ? 20 : 30)
                 }
                 onClick={() =>
                   onChange((current) => ({
                     ...current,
                     [group]: [
-                      ...current[group],
+                      ...(current[group] || []),
                       {
                         ...newOption(),
                         ...(group === 'colours' ? { modelIds: [] } : {}),
@@ -242,7 +243,7 @@ function ProductEditor({
             )}
           </p>
           {error && (
-            <p role="alert" className="text-danger">
+            <p role="alert" className="text-danger-text">
               {error}
             </p>
           )}
@@ -298,53 +299,150 @@ export function AlbumProductCataloguePage() {
       setBusy(false);
     }
   };
-  if (!hasPermission('products.manage'))
-    return (
-      <p>
-        {t(
-          'albumProducts.manageRequired',
-          'Catalogue management permission is required.',
-        )}
-      </p>
-    );
+  const canManage = hasPermission('products.manage');
+  if (!draft && !error) return <Loading />;
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-body">
-          {t('albumProducts.catalogue', 'Album product catalogue')}
-        </h1>
-        <p className="text-muted mt-2">
-          {t(
-            'albumProducts.catalogueIntro',
-            'Maintain the models and colours your clients can choose. Assign products from a gallery’s Overview. Prices are agreed separately.',
-          )}
-        </p>
-      </header>
-      <fieldset disabled={busy} className="space-y-6">
-        {draft?.products.map((product) => (
-          <ProductEditor
-            key={product.id}
-            product={product}
-            onBusy={(delta) => setUploads((count) => count + delta)}
-            onChange={(update) =>
-              setDraft((current) =>
-                current
-                  ? {
-                      ...current,
-                      products: current.products.map((p) =>
-                        p.id === product.id ? update(p) : p,
-                      ),
-                    }
-                  : current,
-              )
+      <p className="text-muted">
+        {t(
+          'products.catalogueHelp',
+          'Share product choices between galleries and CRM quotes. Manage prices and surcharges in the CRM catalogue.',
+        )}
+      </p>
+      <fieldset disabled={busy || !canManage} className="space-y-6">
+        {draft && (
+          <LibraryEditor
+            catalogue={draft}
+            update={(fn) =>
+              setDraft((current) => (current ? fn(current) : current))
             }
+            onBusy={(delta) => setUploads((n) => n + delta)}
           />
-        ))}
+        )}
+        <h2 className="text-lg font-semibold">
+          {t('products.products', 'Products')}
+        </h2>
+        {draft?.products.length === 0 && (
+          <p className="text-muted">
+            {t(
+              'products.empty',
+              'Create a product type, then add a product to offer in galleries or quotes.',
+            )}
+          </p>
+        )}
+        {draft?.products.map((product) =>
+          product.typeId ? (
+            <Card key={product.id} className="p-4 space-y-3">
+              <Input
+                label={t('albumProducts.productName', 'Product name')}
+                value={product.name}
+                onChange={(e) =>
+                  setDraft((c) =>
+                    c
+                      ? {
+                          ...c,
+                          products: c.products.map((p) =>
+                            p.id === product.id
+                              ? { ...p, name: e.target.value }
+                              : p,
+                          ),
+                        }
+                      : c,
+                  )
+                }
+              />
+              <Input
+                label={t('common.description', 'Description')}
+                value={product.description}
+                onChange={(e) =>
+                  setDraft((c) =>
+                    c
+                      ? {
+                          ...c,
+                          products: c.products.map((p) =>
+                            p.id === product.id
+                              ? { ...p, description: e.target.value }
+                              : p,
+                          ),
+                        }
+                      : c,
+                  )
+                }
+              />
+              <label className="block text-sm">
+                {t('products.typeName', 'Product type name')}
+                <select
+                  className="input"
+                  value={product.typeId}
+                  onChange={(e) =>
+                    setDraft((c) =>
+                      c
+                        ? {
+                            ...c,
+                            products: c.products.map((p) =>
+                              p.id === product.id
+                                ? { ...p, typeId: e.target.value }
+                                : p,
+                            ),
+                          }
+                        : c,
+                    )
+                  }
+                >
+                  {draft.types?.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Switch
+                label={t('albumProducts.active', 'Active')}
+                checked={product.active}
+                onChange={(active) =>
+                  setDraft((c) =>
+                    c
+                      ? {
+                          ...c,
+                          products: c.products.map((p) =>
+                            p.id === product.id ? { ...p, active } : p,
+                          ),
+                        }
+                      : c,
+                  )
+                }
+              />
+            </Card>
+          ) : (
+            <ProductEditor
+              key={product.id}
+              product={product}
+              onBusy={(delta) => setUploads((count) => count + delta)}
+              onChange={(update) =>
+                setDraft((current) =>
+                  current
+                    ? {
+                        ...current,
+                        products: current.products.map((p) =>
+                          p.id === product.id ? update(p) : p,
+                        ),
+                      }
+                    : current,
+                )
+              }
+            />
+          ),
+        )}
       </fieldset>
-      {draft && (
+      {draft && canManage && (
         <Button
           variant="secondary"
-          disabled={busy || uploads > 0 || draft.products.length >= 20}
+          disabled={
+            busy ||
+            uploads > 0 ||
+            draft.products.length >= 20 ||
+            !draft.types?.length
+          }
           onClick={() =>
             setDraft({
               ...draft,
@@ -352,9 +450,10 @@ export function AlbumProductCataloguePage() {
                 ...draft.products,
                 {
                   id: crypto.randomUUID(),
-                  name: '',
+                  name: t('products.newProduct', 'New product'),
                   description: '',
                   active: false,
+                  typeId: draft.types?.[0]?.id,
                   models: [],
                   colours: [],
                 },
@@ -366,7 +465,7 @@ export function AlbumProductCataloguePage() {
         </Button>
       )}
       {error && (
-        <div role="alert" className="text-danger">
+        <div role="alert" className="text-danger-text">
           {error}{' '}
           <Button
             variant="secondary"
@@ -387,7 +486,7 @@ export function AlbumProductCataloguePage() {
         onDiscard={() => {
           if (!uploads) setDraft(saved);
         }}
-        canSave={!!draft && uploads === 0}
+        canSave={canManage && !!draft && uploads === 0}
       />
     </div>
   );

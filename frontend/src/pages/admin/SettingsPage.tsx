@@ -63,6 +63,7 @@ import type { FeatureKey } from '../../services/featureFlags.service';
 
 // Settings tabs that are a feature's own page carry its state label.
 const TAB_FEATURE: Partial<Record<string, FeatureKey>> = {
+  albumProducts: 'albumProducts',
   slideshow: 'slideshow',
   transfers: 'transfers',
   whatsapp: 'whatsapp',
@@ -216,7 +217,7 @@ export const SettingsPage: React.FC = () => {
   // header (FeaturesTab has its own icon+title+description block), skip
   // the Settings shell's section heading so the layout doesn't double
   // up.
-  const TABS_WITH_OWN_HEADER: TabType[] = ['albumProducts','features', 'email', 'branding', 'eventTypes', 'backup', 'cms', 'contracts', 'users'];
+  const TABS_WITH_OWN_HEADER: TabType[] = ['features', 'email', 'branding', 'eventTypes', 'backup', 'cms', 'contracts', 'users'];
   const showSectionHeading = !TABS_WITH_OWN_HEADER.includes(activeTab);
 
   return (

@@ -1059,6 +1059,23 @@ router.get('/quotes/:id', customerAuth, async (req, res) => {
   }
 });
 
+router.get('/quotes/:id/product-images/:imageId', customerAuth, async (req, res) => {
+  try { const quote = await ownedDocument(req, res, QUOTE); if (!quote) return;
+    const image = await require('../services/albumProducts/crm').quoteImage(require('../database/db').db, quote.id, req.params.imageId);
+    res.set('Cache-Control', 'private, no-store').type('png');
+    return require('../utils/streamResponse').pipeStreamToResponse(await require('../services/storage').getStorage().get(image.storage_key), res, { context: 'portal quote product image' });
+  } catch (error) { if (sendServiceRefusal(res, error)) return; errorResponse(res, error, 500, 'Failed to load product image'); }
+});
+
+router.post('/quotes/:id/totals', customerAuth, [body('selectedOptional').isArray({ max: 200 }), body('configurations').optional().isArray({ max: 200 })], async (req, res) => {
+  try {
+    if (sendValidationErrors(req, res)) return;
+    const quote = await ownedDocument(req, res, QUOTE); if (!quote) return;
+    const totals = await require('../services/quoteService').previewOptionalSelection(quote.id, req.body.selectedOptional, req.body.configurations);
+    return res.json(totals);
+  } catch (error) { if (sendServiceRefusal(res, error)) return; errorResponse(res, error, 500, 'Failed to calculate product choices'); }
+});
+
 router.post(
   '/quotes/:id/respond',
   customerAuth,
@@ -1068,6 +1085,8 @@ router.post(
     // The total the page showed. A quote offering add-ons is accepted with
     // its stored choice, and the service refuses a stale total.
     body('expectedTotalMinor').optional({ nullable: true }).isInt({ min: 0 }).toInt(),
+    body('configurations').optional().isArray({ max: 200 }),
+    body('selectedOptional').optional().isArray({ max: 200 }),
   ],
   async (req, res) => {
     try {
@@ -1085,6 +1104,8 @@ router.post(
         ip: clientIpForAudit(req),
         tosAccepted: req.body.tosAccepted === true,
         expectedTotalMinor: req.body.expectedTotalMinor,
+        configurations: req.body.configurations,
+        selectedOptional: req.body.selectedOptional,
         actor: portalActor(req),
       });
       res.json({ status: result.status, lockedAt: result.lockedAt });

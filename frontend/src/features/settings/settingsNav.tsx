@@ -137,7 +137,7 @@ export function settingsTabHref(tab: SettingsTab): string {
 // Settings via the broadened sidebar gate and sees only the tabs whose specific
 // permission it holds. Backend routes enforce the same perms regardless of UI.
 export const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, string[]> = {
-  albumProducts: ['products.manage'],
+  albumProducts: ['products.view'],
   usage:            ['settings.edit'],
   features:          ['settings.view', 'settings.features'],
   general:           ['settings.view', 'settings.domains'],
@@ -244,7 +244,7 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
     {
       label: t('settings.groups.general', 'General'),
       items: [
-        ...(flags.albumProducts ? [{key:'albumProducts' as const,label:t('albumProducts.catalogue','Album product catalogue'),icon:ImageIcon}] : []),
+        ...(flags.albumProducts ? [{key:'albumProducts' as const,label:t('albumProducts.catalogue','Product catalogue'),icon:ImageIcon}] : []),
         { key: 'features',   label: t('settings.features.title',   'Features'),       icon: ToggleRight },
         { key: 'general',    label: t('settings.general.title'),                       icon: Sliders },
         { key: 'events',     label: t('settings.events.title',     'Event Creation'),  icon: CalendarPlus },

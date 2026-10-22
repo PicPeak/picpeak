@@ -1,3 +1,4 @@
+import type { ProductConfiguration, PublicSelectionTotals } from './quotes.service';
 /**
  * Customer-side API client (#354).
  *
@@ -490,16 +491,19 @@ export const customerService = {
     return data.data || data;
   },
 
+  async quoteTotals(id: number, selectedOptional: number[], configurations?: ProductConfiguration[]): Promise<PublicSelectionTotals> { const { data } = await api.post(`/customer/quotes/${id}/totals`, { selectedOptional, configurations }); return data.data || data; },
+  async quoteProductImage(id: number, imageId: string): Promise<Blob> { const { data } = await api.get(`/customer/quotes/${id}/product-images/${imageId}`, { responseType: 'blob' }); return data; },
   async respondToQuote(
     id: number,
     action: 'accept' | 'decline',
     // `expectedTotalMinor` is the total the page showed. A quote that offers
     // add-ons is accepted with its stored choice, and the server refuses a
     // total that no longer matches.
-    options: { tosAccepted?: boolean; expectedTotalMinor?: number } = {},
+    options: { tosAccepted?: boolean; expectedTotalMinor?: number; selectedOptional?: number[]; configurations?: ProductConfiguration[]; customerMessage?: string } = {},
   ): Promise<{ status: QuoteStatus; lockedAt: string }> {
     const { data } = await api.post(`/customer/quotes/${id}/respond`, {
       action,
+      selectedOptional: options.selectedOptional, configurations: options.configurations,
       tosAccepted: options.tosAccepted,
       ...(options.expectedTotalMinor == null ? {} : { expectedTotalMinor: options.expectedTotalMinor }),
     });
