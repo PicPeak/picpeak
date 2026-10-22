@@ -1,6 +1,6 @@
 # Shared gallery and CRM product direction
 
-Status: proposed to the maintainer on 22 October 2026; confirmation pending. The business owner has authorised CRM integration now and wants to start using PicPeak CRM. First review milestone: fix the blockers and agree the shared design. No production activation is part of this contribution.
+Status: proposed to the maintainer on 22 October 2026; confirmation pending. CRM integration is in scope. First review milestone: fix the blockers and agree the shared design. No production activation is part of this contribution.
 
 - One editable option/image library, including structured width × height + mm/cm/in size presets and basic colours.
 - Admin-defined product types declare required, optional and multiple-choice attributes. Products reuse those definitions. Optional extras can depend on other choices; cycles and invalid combinations are rejected.
@@ -12,4 +12,4 @@ Status: proposed to the maintainer on 22 October 2026; confirmation pending. The
 
 Discussion: https://github.com/PicPeak/picpeak/pull/2222#issuecomment-6335000437
 
-The broader implementation is isolated on `codex/shared-product-configurator-crm`, outside the blocker PR revision while these boundaries are discussed. Album layout editing, proof comments/proposals, exact-proof approval and production interior export remain a separate roadmap. The existing Saal thank-you-card template is still a placeholder and paid card sales remain gated on an authorised design and physical acceptance.
+The broader implementation is isolated on `codex/shared-product-configurator-crm`, outside the blocker PR revision while these boundaries are discussed. Album layout editing, proof comments/proposals, exact-proof approval and production interior export remain a separate roadmap.
