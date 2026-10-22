@@ -212,6 +212,10 @@
         "whatsapp"
       ],
       "reason": "Configured integration plus manual test only; no phone numbers, tokens or automatic delivery."
+    },
+    "albumProducts": {
+      "signals": [],
+      "reason": "Private product catalogue and images are excluded from usage telemetry."
     }
   },
   "reviewed_picpeak_base": "a5ff9264 (3.124.1-beta.0)",
@@ -1653,7 +1657,9 @@
       "decision": "excluded",
       "signals": [],
       "reason": "Read-only bundled maintenance UI and assets never inspect business data or start product-usage middleware, callbacks, counters or report triggers.",
-      "route_signatures": ["GET *"]
+      "route_signatures": [
+        "GET *"
+      ]
     },
     "publicFonts.js": {
       "decision": "excluded",
@@ -1926,6 +1932,27 @@
         "POST /session/decline",
         "POST /session/upload-signed-pdf"
       ]
+    },
+    "adminAlbumProducts.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Product catalogue and client choices contain private images and client audit labels; no product content, selections or client activity are collected.",
+      "route_signatures": [
+        "GET /catalogue",
+        "PUT /catalogue",
+        "POST /images",
+        "GET /images/:imageId"
+      ]
+    },
+    "gallery/albumProducts.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Product catalogue and client choices contain private images and client audit labels; no product content, selections or client activity are collected.",
+      "route_signatures": [
+        "GET /:slug/album-products",
+        "GET /:slug/album-products/images/:imageId",
+        "PUT /:slug/album-products/:id"
+      ]
     }
   },
   "feature_flags": {
@@ -2095,6 +2122,10 @@
         "workflow_automation_enabled"
       ],
       "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "albumProducts": {
+      "signals": [],
+      "reason": "Experimental product configuration is excluded from usage signals; no private product choices or audit labels are observed."
     }
   },
   "excluded_runtime": [

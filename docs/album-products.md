@@ -24,7 +24,7 @@ Choices store immutable model/colour names and image references. Removing or ren
 
 Images use the normal storage adapter (local filesystem or S3-compatible storage), generated keys under `album-products/`, and authenticated API delivery with `private, no-store`. Uploads accept actual non-animated PNGs up to 6 MB/16 megapixels and re-encode a bounded, metadata-free rendition. No supplier URLs, filesystem paths or storage credentials reach clients.
 
-The native backup-path registry, S3 required-key inventory and `.picpeak` export/import roots include these images. Database tables participate in standard database backups. Feature disabling does not delete history or withdraw backups. Gallery deletion cascades choices/history; gallery expiry, archive and session revocation use existing gallery lifecycle enforcement. Historical and unassigned product images are retained deliberately in this first experimental slice; automatic garbage collection is not introduced here.
+The native backup-path registry, S3 required-key inventory and `.picpeak` export/import roots include these images. Database tables participate in standard database backups. Feature disabling does not delete history or withdraw backups. Native gallery deletion explicitly removes choice history and offers on both engines (SQLite runs with foreign-key cascades disabled); gallery expiry, archive and session revocation use existing gallery lifecycle enforcement. Historical and unassigned product images are retained deliberately in this first experimental slice; automatic garbage collection is not introduced here.
 
 ## Proposed defaults for issue #1924
 
@@ -33,3 +33,12 @@ The issue leaves placement, pricing and locking open. This draft proposes galler
 ## Validation
 
 Focused tests cover SQLite and optional Postgres domain contracts, actual local storage/PNG processing, native authentication and event scoping, gallery expiry/revocation, stale revisions/catalogue changes, retry notification deduplication, locked snapshots, asynchronous catalogue uploads and client recovery. All fixtures are synthetic. No supplier design or client photo is bundled.
+
+
+## Review milestone (22 October 2026)
+
+This branch fixes the four blocking findings before widening the model. Migration **316_product_configurator.js** creates four tables plus the disabled `albumProducts` flag and used permissions (`products.view`, `products.manage`, `albums.edit`, category `albums`). The canonical image backup path is seeded only by migration 109; 316 rollback removes that path. No `albums.view` or `albums.export` grants are seeded.
+
+The client entry is a collapsed details panel inside standard gallery content; full-page layouts place it after their photo content so it does not precede or overlap the gallery navigation. Guests and normal guest-password sessions cannot configure products: primary-client/PIN or assigned portal access is required. Draft → submitted → locked is explicit; a submitted choice cannot silently revert to draft. Description-only edits do not prevent locking, whereas changed/retired chosen options require review.
+
+Shared direction proposed to the maintainer: one generic option/image library, structured size presets, admin-defined attributes and dependent add-ons, a shared picker, CRM-owned prices and surcharges, offered definitions copied into quotes, and immutable selection/price snapshots on acceptance carried into contracts and invoices. Standalone gallery configuration remains available without CRM. See [the design discussion](https://github.com/PicPeak/picpeak/pull/2222#issuecomment-6335000437). Maintainer confirmation is pending; the broader CRM draft is kept separate from this blocker milestone.
