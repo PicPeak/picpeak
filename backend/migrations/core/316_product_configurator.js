@@ -72,17 +72,6 @@ exports.up = async function (db) {
       t.timestamp('created_at').notNullable();
     });
   }
-  if (await db.schema.hasTable('backup_paths'))
-    await db('backup_paths')
-      .insert({
-        path: 'album-products',
-        include_in_default: true,
-        feature_flag: null,
-        display_order: 110,
-        description: 'Private product option images and historical choices',
-      })
-      .onConflict('path')
-      .ignore();
   if (await db.schema.hasTable('feature_flags'))
     await db('feature_flags')
       .insert({ key: 'albumProducts', value: false })
@@ -92,9 +81,7 @@ exports.up = async function (db) {
     for (const [name, label] of [
       ['products.view', 'View album products'],
       ['products.manage', 'Manage album catalogue'],
-      ['albums.view', 'View albums'],
       ['albums.edit', 'Edit and publish albums'],
-      ['albums.export', 'Export approved albums'],
     ]) {
       await db('permissions')
         .insert({
@@ -106,10 +93,10 @@ exports.up = async function (db) {
         .onConflict('name')
         .ignore();
       const permission = await db('permissions').where({ name }).first();
-      for (const role of await db('roles').whereIn('name', [
-        'super_admin',
-        'admin',
-      ]))
+      for (const role of (await db.schema.hasTable('roles')) &&
+      (await db.schema.hasTable('role_permissions'))
+        ? await db('roles').whereIn('name', ['super_admin', 'admin'])
+        : [])
         await db('role_permissions')
           .insert({ role_id: role.id, permission_id: permission.id })
           .onConflict(['role_id', 'permission_id'])
@@ -127,5 +114,7 @@ exports.down = async function (db) {
     await db.schema.dropTableIfExists(table);
   if (await db.schema.hasTable('feature_flags'))
     await db('feature_flags').where({ key: 'albumProducts' }).del();
+  if (await db.schema.hasTable('backup_paths'))
+    await db('backup_paths').where({ path: 'album-products' }).del();
   // Keep granted permission definitions: a rolled-back feature has no routes.
 };

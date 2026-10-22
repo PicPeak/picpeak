@@ -14,7 +14,7 @@ export function ProductImage({
   const { t } = useTranslation();
   const background = slug
     ? 'bg-surface text-text-secondary'
-    : 'bg-panel-subtle text-muted';
+    : 'bg-inset text-muted';
   const [src, setSrc] = useState(''),
     [failed, setFailed] = useState(false);
   useEffect(() => {
