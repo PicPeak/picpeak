@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const sanitizeHtml = require('sanitize-html');
+const { NON_TEXT_TAGS } = require('../utils/sanitizeHtmlOptions');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { sanitizeCss, sanitizeCssColor } = require('../utils/cssSanitizer');
@@ -188,6 +189,7 @@ async function fetchBrandingContext() {
 function sanitizeHtmlPayload(html) {
   const sanitized = sanitizeHtml(html || '', {
     allowedTags: ALLOWED_HTML_TAGS,
+    nonTextTags: NON_TEXT_TAGS,
     allowedAttributes: {
       '*': COMMON_ATTRIBUTES,
       a: ['href', 'target', 'rel', ...COMMON_ATTRIBUTES],
