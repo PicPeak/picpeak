@@ -83,9 +83,9 @@ describe('native album product catalogue and choices', () => {
     product = V.products([product])[0];
     await service.saveCatalogue({ revision: 0, products: [product] });
   });
-  const choose = (offer, extra = {}) =>
+  const choose = (offer, extra = {}, targetEvent = event) =>
     service.mutate(
-      event,
+      targetEvent,
       {
         id: offer.id,
         revision: offer.revision,
@@ -265,6 +265,30 @@ describe('native album product catalogue and choices', () => {
       statusCode: 404,
     });
     await expect(choose(hidden)).rejects.toMatchObject({ statusCode: 403 });
+  });
+  test('archived gallery deletion erases choice PII without removing another gallery history', async () => {
+    const helpers = require('./helpers/crmDb');
+    await helpers.assignAdminRole(db, 1);
+    require('../../src/middleware/permissions').clearPermissionCache();
+    await db('events').insert({ id: 3, slug: 'archived-product-test', event_name: 'Synthetic archived gallery',
+      event_date: '2026-10-01', event_type: 'wedding', host_email: 'client@example.com',
+      admin_email: 'studio@example.com', password_hash: 'x', share_link: '/gallery/archived-product-test',
+      share_token: uuid(), is_archived: true, is_active: false, archived_at: new Date().toISOString(), created_by: 1 });
+    const gone = await service.assign(3, product.id), kept = await service.assign(2, product.id);
+    await choose(gone, {}, { ...event, id: 3 });
+    await choose(kept, {}, { ...event, id: 2 });
+    if (db.client.config.client !== 'pg') {
+      await db.raw('PRAGMA foreign_keys = OFF');
+      expect((await db.raw('PRAGMA foreign_keys'))[0].foreign_keys).toBe(0);
+    }
+    const app = helpers.buildRouteApp('/api/admin/archives', require('../../src/routes/adminArchives'));
+    const response = await require('supertest')(app).delete('/api/admin/archives/3')
+      .set('Authorization', `Bearer ${helpers.mintAdminToken(1)}`);
+    expect(response.status).toBe(200);
+    expect(await db('events').where({ id: 3 }).first()).toBeUndefined();
+    expect(await db('event_album_products').where({ event_id: 3 })).toEqual([]);
+    expect(await db('album_product_choice_history').where({ offer_id: gone.id })).toEqual([]);
+    expect(await service.history(2, kept.id)).toHaveLength(1);
   });
   test('native gallery deletion erases choice PII with SQLite foreign keys disabled', async () => {
     const gone = await service.assign(1, product.id),

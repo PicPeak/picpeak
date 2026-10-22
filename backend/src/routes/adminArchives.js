@@ -1007,6 +1007,15 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       if (hasSelectionSubmissions) {
         await trx('selection_submissions').where('event_id', req.params.id).del();
       }
+      // SQLite does not enable FK cascades: erase client names/session
+      // digests on this deletion path too, with history before its offers.
+      if (await trx.schema.hasTable('event_album_products')) {
+        if (await trx.schema.hasTable('album_product_choice_history')) {
+          await trx('album_product_choice_history')
+            .whereIn('offer_id', trx('event_album_products').where('event_id', req.params.id).select('id')).del();
+        }
+        await trx('event_album_products').where('event_id', req.params.id).del();
+      }
       await trx('photos').where('event_id', req.params.id).del();
       // Scene tags (issue 1733) stay with an archived gallery's photo rows.
       // After the photos: a tagging worker locks the photo row first, and
