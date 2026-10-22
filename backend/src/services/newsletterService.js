@@ -21,6 +21,7 @@
 
 const crypto = require('crypto');
 const sanitizeHtml = require('sanitize-html');
+const { NON_TEXT_TAGS } = require('../utils/sanitizeHtmlOptions');
 
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
@@ -122,6 +123,7 @@ function sanitizeCampaignBody(html) {
   return sanitizeHtml(input, {
     allowedTags: CAMPAIGN_ALLOWED_TAGS,
     allowedAttributes: CAMPAIGN_ALLOWED_ATTRIBUTES,
+    nonTextTags: NON_TEXT_TAGS,
     // `cid:` is kept for parity with the manual composer (inline attachments).
     // `data:` is NOT allowed — a data: image is how an HTML-ish payload gets
     // smuggled past a tag allowlist in the clients that render it.

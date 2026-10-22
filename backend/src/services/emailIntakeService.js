@@ -16,6 +16,7 @@ const logger = require('../utils/logger');
 const expenseService = require('./expenseService');
 const mailRetention = require('./mailRetentionService');
 const sanitizeHtml = require('sanitize-html');
+const { NON_TEXT_TAGS } = require('../utils/sanitizeHtmlOptions');
 const { formatBoolean } = require('../utils/dbCompat');
 const { isMaskedOrBlank, sameImapTarget, PasswordRequiredError } = require('../utils/mailCredentialTarget');
 const { mailSocketOptions, smtpConnectionOptions } = require('../utils/mailConnection');
@@ -273,6 +274,7 @@ function sanitizeBody(html) {
         '*': ['style'],
       },
       allowedSchemes: ['http', 'https', 'mailto', 'cid'],
+      nonTextTags: NON_TEXT_TAGS,
     });
   } catch (_) {
     return null;
@@ -520,4 +522,4 @@ const mailPoller = require('./scheduledTask').scheduledTask(pollOnce, { interval
 function startIncomingMailPoller() { mailPoller.start(); }
 const stopIncomingMailPoller = () => mailPoller.stop();
 
-module.exports = { stopIncomingMailPoller, pollOnce, startIncomingMailPoller, listFolders, testConnection, roundTripTest, _internal: { getImapConfig, isEnabled, saveAttachment } };
+module.exports = { stopIncomingMailPoller, pollOnce, startIncomingMailPoller, listFolders, testConnection, roundTripTest, _internal: { getImapConfig, isEnabled, saveAttachment, sanitizeBody } };
