@@ -21,7 +21,7 @@ export type QuoteSort =
 
 export interface QuoteLineItem {
   cataloguePresetId?: number | null;
-  configurationDefinition?: ConfigurationDefinition | null; configurationSnapshot?: Choice | null;
+  configurationDefinition?: ConfigurationDefinition | null; configurationSnapshot?: Choice | null; configurationBaseDetails?: string | null; configurationLocked?: boolean;
   id?: number;
   position: number;
   quantity: number;
@@ -489,7 +489,7 @@ export interface PublicQuoteView {
   responseLockedAt: string | null;
   canRespond: boolean;
   lineItems: Array<{
-    configurationDefinition?: ConfigurationDefinition | null; configurationSnapshot?: Choice | null;
+    configurationDefinition?: ConfigurationDefinition | null; configurationSnapshot?: Choice | null; configurationBaseDetails?: string | null; configurationLocked?: boolean;
     position: number;
     quantity: number;
     description: string;

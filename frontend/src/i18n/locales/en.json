@@ -11337,6 +11337,24 @@
       "choice": "Add options library",
       "size": "Add sizes library",
       "colour": "Add colours library"
-    }
+    },
+    "prefillLoadError": "Unable to load product choices. Save and reload the quote to try again.",
+    "quoteConfiguration": "Product choices and client lock",
+    "lockQuoteConfiguration": "Lock this agreed specification for the client",
+    "prefillHelp": "A locked specification must be complete. Leave it unlocked to let the client finish or change the choices. Prices are recalculated when you save.",
+    "informationalPrice": "Indicative base price; the studio confirms the final price when locking your choice.",
+    "crmPriceSource": "CRM catalogue price source",
+    "choosePriceSource": "Choose a price source before locking",
+    "showGalleryPrices": "Show indicative prices to the client",
+    "billToCustomer": "Bill to customer",
+    "chooseCustomer": "Choose an assigned customer",
+    "billedOnInvoice": "Billed on invoice #{{id}}",
+    "openBillable": "Open product item",
+    "billOpenProducts": "Create invoice for open product items",
+    "customerItems": "Product items",
+    "customerItemsHelp": "Locked gallery choices are ready to bill here, including after the gallery is deleted. Each specification and its price stay frozen.",
+    "noProductItems": "No product items yet.",
+    "lockBillingHelp": "Locking freezes the current CRM price and creates a billable item. An eligible unissued project invoice receives a separate product line.",
+    "lockAndBill": "Lock choice and add to billing"
   }
 }

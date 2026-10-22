@@ -656,7 +656,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                         <tr key={`configuration-${li.position}`}>
                           <td></td>
                           <td colSpan={4} className="py-4">
-                            {canChoose ? (
+                            {canChoose && !li.configurationLocked ? (
                               <ConfigurationPicker
                                 product={li.configurationDefinition.product}
                                 values={

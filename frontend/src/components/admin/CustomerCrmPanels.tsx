@@ -12,6 +12,7 @@
  * know about CRM types; the panels handle their own data fetching.
  */
 import React, { useState } from 'react';
+import { CustomerProductItems } from '../../features/album-products/CustomerProductItems';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -62,6 +63,7 @@ export const CustomerCrmPanels: React.FC<Props> = ({ customerAccountId }) => {
       {flags.quotes && <QuotesPanel customerAccountId={customerAccountId} />}
       {flags.contracts && <ContractsPanel customerAccountId={customerAccountId} />}
       {flags.bills && <InvoicesPanel customerAccountId={customerAccountId} />}
+      <CustomerProductItems customerAccountId={customerAccountId} />
       {flags.incomingInvoices && <RebillsPanel customerAccountId={customerAccountId} />}
     </>
   );

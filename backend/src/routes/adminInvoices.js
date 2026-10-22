@@ -751,6 +751,14 @@ router.put(
     const payload = mapPayloadToService(req.body);
 
     const history = { actor: req.admin.id, source: 'invoice.update' };
+    // Configured lines carry an agreed specification and, for gallery items,
+    // an explicit source-to-invoice-line billing stamp. The editor replaces
+    // line IDs wholesale; use the correction workflow rather than destroying
+    // that frozen record (also on SQLite with FK enforcement disabled).
+    if ((Array.isArray(payload.lineItems) || payload.vatRate !== undefined || payload.vatCode !== undefined)
+        && await db('invoice_line_items').where({ invoice_id: id }).whereNotNull('configuration_snapshot').first()) {
+      return res.status(409).json({ error: 'This invoice contains frozen product specifications. Cancel and reissue it through the invoice correction workflow before changing its financial lines.', code: 'PRODUCT_SPECIFICATION_FROZEN' });
+    }
 
     // Recompute totals if line items are present.
     let updates = { updated_at: new Date() };

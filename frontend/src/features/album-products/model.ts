@@ -57,13 +57,28 @@ export interface Choice {
     id: string;
     name: string;
     addOn: boolean;
-    options: Pick<Option, 'id' | 'name' | 'imageId' | 'width' | 'height' | 'unit'>[];
+    options: Pick<
+      Option,
+      'id' | 'name' | 'imageId' | 'width' | 'height' | 'unit'
+    >[];
   }[];
   product: { id: string; name: string };
   model?: Pick<Option, 'id' | 'name' | 'imageId'>;
   colour?: Pick<Option, 'id' | 'name' | 'imageId'>;
 }
 export interface Offer {
+  customerId?: number | null;
+  cataloguePresetId?: number | null;
+  showPrices?: boolean;
+  pricing?: {
+    currency: string;
+    baseUnitPriceMinor: number;
+    surcharges: {
+      attributeId: string;
+      optionId: string;
+      amountMinor: number;
+    }[];
+  } | null;
   id: string;
   productId: string;
   enabled: boolean;
@@ -111,7 +126,13 @@ export const albumProducts = {
   update: (
     eventId: number,
     offer: Offer,
-    update: { enabled?: boolean; action?: 'lock' | 'unlock' },
+    update: {
+      enabled?: boolean;
+      action?: 'lock' | 'unlock';
+      cataloguePresetId?: number | null;
+      showPrices?: boolean;
+      customerId?: number | null;
+    },
   ) =>
     api
       .put<Offer>(

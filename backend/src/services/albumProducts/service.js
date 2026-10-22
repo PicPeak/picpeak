@@ -139,6 +139,9 @@ function createService({ db, storage, sharp }) {
       id: row.id,
       productId: row.product_id,
       enabled: row.enabled === true || row.enabled === 1,
+      cataloguePresetId: row.catalogue_preset_id || null,
+      customerId: row.billing_customer_id || null,
+      showPrices: normalizeBoolean(row.show_prices),
       revision: row.revision,
       status: row.status,
       selection: V.parse(row.selection),
@@ -185,13 +188,48 @@ function createService({ db, storage, sharp }) {
   }
   function selectionCurrent(product, snapshot) {
     if (!snapshot || !product) return false;
-    try { const next = V.selection(product, product.attributes ? { productVersion: product.version, values: G.valuesOf(snapshot) } : { productVersion: V.hash(product), modelId: snapshot.model.id, colourId: snapshot.colour.id }); return V.hash(next.attributes || { model: next.model, colour: next.colour }) === V.hash(snapshot.attributes || { model: snapshot.model, colour: snapshot.colour }); } catch (_) { return false; }
+    try {
+      const next = V.selection(
+        product,
+        product.attributes
+          ? { productVersion: product.version, values: G.valuesOf(snapshot) }
+          : {
+              productVersion: V.hash(product),
+              modelId: snapshot.model.id,
+              colourId: snapshot.colour.id,
+            },
+      );
+      return (
+        V.hash(
+          next.attributes || { model: next.model, colour: next.colour },
+        ) ===
+        V.hash(
+          snapshot.attributes || {
+            model: snapshot.model,
+            colour: snapshot.colour,
+          },
+        )
+      );
+    } catch (_) {
+      return false;
+    }
   }
   async function clientOffers(eventId) {
     const catalog = await catalogue(),
       products = catalog.products.map((p) => G.resolve(p, catalog)),
       rows = await offers(eventId);
-    return rows
+    const priced = await Promise.all(
+      rows.map(async (row) => ({
+        ...row,
+        pricing: await require('./billing').information(db, {
+          ...row,
+          product_id: row.productId,
+          catalogue_preset_id: row.cataloguePresetId,
+          show_prices: row.showPrices,
+        }),
+      })),
+    );
+    return priced
       .filter((row) => row.enabled)
       .map((row) => {
         const product = products.find(
@@ -199,14 +237,18 @@ function createService({ db, storage, sharp }) {
         );
         return {
           ...row,
-          needsReview: row.status === 'submitted' && !selectionCurrent(product, row.selection),
+          needsReview:
+            row.status === 'submitted' &&
+            !selectionCurrent(product, row.selection),
           product: product
-            ? product.attributes ? product : {
-              ...product,
-              version: V.hash(product),
-              models: product.models.filter((o) => o.active),
-              colours: product.colours.filter((o) => o.active),
-            }
+            ? product.attributes
+              ? product
+              : {
+                  ...product,
+                  version: V.hash(product),
+                  models: product.models.filter((o) => o.active),
+                  colours: product.colours.filter((o) => o.active),
+                }
             : null,
         };
       });
@@ -272,7 +314,65 @@ function createService({ db, storage, sharp }) {
         updated_at: timestamp(),
       };
       if (admin) {
-        if (typeof input.enabled === 'boolean')
+        if (
+          input.cataloguePresetId !== undefined ||
+          input.showPrices !== undefined ||
+          input.customerId !== undefined
+        ) {
+          if (current.status === 'locked')
+            throw new ConflictError(
+              'Unlock the choice before changing its pricing settings',
+            );
+          if (!(await require('./billing').enabled(tx)))
+            throw new ForbiddenError('CRM billing is disabled');
+          if (input.customerId !== undefined) {
+            if (
+              input.customerId !== null &&
+              (!Number.isSafeInteger(input.customerId) ||
+                !(await tx('event_customer_assignments')
+                  .where({
+                    event_id: event.id,
+                    customer_account_id: input.customerId,
+                  })
+                  .first()))
+            )
+              throw new AppError(
+                'Choose a customer assigned to this gallery',
+                400,
+              );
+            update.billing_customer_id = input.customerId;
+          }
+          if (input.cataloguePresetId !== undefined) {
+            if (
+              input.cataloguePresetId !== null &&
+              (!Number.isSafeInteger(input.cataloguePresetId) ||
+                input.cataloguePresetId < 1)
+            )
+              throw new AppError('Invalid catalogue item', 400);
+            const preset =
+              input.cataloguePresetId &&
+              (await tx('quote_line_item_presets')
+                .where({
+                  id: input.cataloguePresetId,
+                  product_id: current.product_id,
+                })
+                .first());
+            if (
+              input.cataloguePresetId &&
+              (!preset || !normalizeBoolean(preset.is_active))
+            )
+              throw new AppError(
+                'Choose an active catalogue item for this product',
+                400,
+              );
+            update.catalogue_preset_id = input.cataloguePresetId;
+          }
+          if (input.showPrices !== undefined) {
+            if (typeof input.showPrices !== 'boolean')
+              throw new AppError('Invalid price display setting', 400);
+            update.show_prices = formatBoolean(input.showPrices);
+          }
+        } else if (typeof input.enabled === 'boolean')
           update.enabled = formatBoolean(input.enabled);
         else if (input.action === 'unlock' && current.status === 'locked')
           update.status = 'submitted';
@@ -286,14 +386,14 @@ function createService({ db, storage, sharp }) {
             product,
             product.attributes
               ? {
-                productVersion: product.version,
-                values: G.valuesOf(snapshot),
-              }
+                  productVersion: product.version,
+                  values: G.valuesOf(snapshot),
+                }
               : {
-                productVersion: V.hash(product),
-                modelId: snapshot.model.id,
-                colourId: snapshot.colour.id,
-              },
+                  productVersion: V.hash(product),
+                  modelId: snapshot.model.id,
+                  colourId: snapshot.colour.id,
+                },
           );
           const chosen = (s) =>
             s.attributes || { model: s.model, colour: s.colour };
@@ -310,7 +410,9 @@ function createService({ db, storage, sharp }) {
           throw new ConflictError(
             'A submitted choice must be resubmitted, not saved as a draft',
           );
-        const selected = V.selection(product, input);
+        const selected = product?.attributes
+          ? G.selection(product, input, { complete: input.submit === true })
+          : V.selection(product, input);
         update.selection = JSON.stringify(selected);
         update.status = input.submit === true ? 'submitted' : 'draft';
       }
@@ -318,13 +420,17 @@ function createService({ db, storage, sharp }) {
         Object.entries(update).every(
           ([key, value]) =>
             ['revision', 'updated_at'].includes(key) ||
-            (key === 'enabled'
+            (['enabled', 'show_prices'].includes(key)
               ? normalizeBoolean(current[key]) === normalizeBoolean(value)
               : current[key] === value),
         )
       )
         return shape(current);
       const next = { ...current, ...update };
+      if (admin && update.status === 'locked')
+        await require('./billing').lock(tx, next, event.id, actor.id);
+      if (admin && update.status === 'submitted' && current.status === 'locked')
+        await require('./billing').unlock(tx, current);
       await tx('event_album_products').where({ id: current.id }).update(update);
       await record(tx, next, actor, input);
       if (!admin && update.status === 'submitted') {

@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { formatMoneyMinor } from '../../utils/money';
 import { ProductImage } from './ProductImage';
 import type { Attribute, Choice, Product } from './model';
 export type ConfigurationValues = Record<string, string[]>;
@@ -52,7 +53,7 @@ export function ConfigurationPicker({
   surcharges?: { attributeId: string; optionId: string; amountMinor: number }[];
   currency?: string;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const attributes = product.attributes || [];
   return (
     <div className="space-y-5">
@@ -120,11 +121,7 @@ export function ConfigurationPicker({
                         )}
                         {cost > 0 && currency && (
                           <span className="block text-sm">
-                            +
-                            {new Intl.NumberFormat(i18n.language, {
-                              style: 'currency',
-                              currency,
-                            }).format(cost / 100)}
+                            +{formatMoneyMinor(cost, currency)}
                           </span>
                         )}
                       </span>

@@ -1559,6 +1559,8 @@
         "POST /contracts/:id/sign",
         "POST /contracts/:id/upload-signed-pdf",
         "GET /quotes/:id",
+        "GET /quotes/:id/product-images/:imageId",
+        "POST /quotes/:id/totals",
         "POST /quotes/:id/respond",
         "GET /dashboard",
         "GET /events/:slug/overview",
@@ -1694,6 +1696,8 @@
       "route_signatures": [
         "GET /:token",
         "GET /:token/totals",
+        "GET /:token/product-images/:imageId",
+        "POST /:token/totals",
         "POST /:token/respond"
       ]
     },
@@ -1939,6 +1943,8 @@
       "reason": "Product catalogue and client choices contain private images and client audit labels; no product content, selections or client activity are collected.",
       "route_signatures": [
         "GET /catalogue",
+        "GET /customers/:customerId/billing",
+        "POST /customers/:customerId/billing",
         "PUT /catalogue",
         "POST /images",
         "GET /images/:imageId"

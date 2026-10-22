@@ -307,6 +307,7 @@ async function createInvoice(payload, adminId, trx = db) {
   }
 
   try { await logActivity('invoice_created', { invoiceId, invoiceNumber }, payload.eventId || null, adminActivityActor(adminId), trx); } catch (_) { /* non-fatal */ }
+  await require('../albumProducts/retention').retain(trx, 'invoice', invoiceId, items);
   return { invoiceIds: [invoiceId] };
 }
 

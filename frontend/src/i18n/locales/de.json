@@ -11303,6 +11303,24 @@
       "choice": "Optionen-Bibliothek hinzufügen",
       "size": "Größen-Bibliothek hinzufügen",
       "colour": "Farben-Bibliothek hinzufügen"
-    }
+    },
+    "prefillLoadError": "Die Produktauswahl konnte nicht geladen werden. Speichere das Angebot und lade es erneut.",
+    "quoteConfiguration": "Produktauswahl und Kundensperre",
+    "lockQuoteConfiguration": "Diese vereinbarte Ausführung für den Kunden sperren",
+    "prefillHelp": "Eine gesperrte Ausführung muss vollständig sein. Ohne Sperre kann der Kunde die Auswahl ergänzen oder ändern. Preise werden beim Speichern neu berechnet.",
+    "informationalPrice": "Unverbindlicher Grundpreis. Das Studio bestätigt den endgültigen Preis beim Sperren deiner Auswahl.",
+    "crmPriceSource": "Preisartikel aus dem CRM-Katalog",
+    "choosePriceSource": "Vor dem Sperren einen Preisartikel wählen",
+    "showGalleryPrices": "Dem Kunden unverbindliche Preise anzeigen",
+    "billToCustomer": "Rechnungsempfänger",
+    "chooseCustomer": "Einen zugewiesenen Kunden wählen",
+    "billedOnInvoice": "Auf Rechnung #{{id}} abgerechnet",
+    "openBillable": "Offener Produktposten",
+    "billOpenProducts": "Rechnung für offene Produktposten erstellen",
+    "customerItems": "Produktposten",
+    "customerItemsHelp": "Gesperrte Galerieauswahlen können hier abgerechnet werden, auch nach dem Löschen der Galerie. Ausführung und Preis bleiben unverändert gespeichert.",
+    "noProductItems": "Noch keine Produktposten vorhanden.",
+    "lockBillingHelp": "Beim Sperren wird der aktuelle CRM-Preis festgeschrieben und ein abrechenbarer Posten erstellt. Eine passende, noch nicht ausgestellte Projektrechnung erhält eine eigene Produktposition.",
+    "lockAndBill": "Auswahl sperren und zur Abrechnung hinzufügen"
   }
 }
