@@ -592,6 +592,7 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], 
  * function used to contain.
  */
 const LEGACY_BACKUP_PATHS = [
+  { path: 'album-products', include_in_default: true, feature_flag: null },
   { path: 'events/active',    feature_flag: null },
   { path: 'events/archived',  feature_flag: 'backup_include_archived' },
   { path: 'thumbnails',       feature_flag: null },

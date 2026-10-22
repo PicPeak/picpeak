@@ -1,3 +1,4 @@
+import { GalleryProductPanel } from '../../features/album-products/GalleryProductPanel';
 import { useGalleryFiltering, resolveMediaType } from './hooks/useGalleryFiltering';
 import { useGalleryUpload } from './hooks/useGalleryUpload';
 import { useLiveRefresh } from './hooks/useLiveRefresh';
@@ -1930,6 +1931,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
 
+        {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
+
         {/* Filename list for a RAW editor search (issue 1733, A3d). */}
         {showCopyFilenames && (
           <CopyFilenamesDialog
@@ -2118,6 +2121,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           return items.length > 0 ? <>{items}</> : null;
         })()}
       >
+        {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
         {/* Expiration Banner */}
         {showUrgentWarning && event.expires_at && (
           <ExpirationBanner daysRemaining={daysUntilExpiration} expiresAt={event.expires_at} />

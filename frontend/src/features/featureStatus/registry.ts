@@ -30,6 +30,7 @@ export const NEW_FOR_DAYS = 30;
 export const FEATURE_STATUS: Record<FeatureKey | PortalFeatureKey, FeatureStatusEntry> = {
   // Core
   galleries: { maturity: 'stable' },
+  albumProducts: { maturity: 'experimental' },
   slideshow: { maturity: 'beta' },
   transfers: { maturity: 'beta' },
   faces: { maturity: 'beta' },

@@ -44,6 +44,7 @@ import { usePermissions } from '../../contexts/PermissionsContext';
 // in `useSettingsNavGroups` below and in the switch at the bottom of
 // SettingsPage.
 export type SettingsTab =
+  | 'albumProducts'
   | 'usage'
   | 'features'
   | 'general'
@@ -104,7 +105,7 @@ export interface SettingsNavGroup {
 }
 
 export const ALL_SETTINGS_TABS: SettingsTab[] = [
-  'usage',
+  'usage', 'albumProducts',
   'features', 'general', 'events', 'eventTypes',
   'users',
   'branding', 'categories', 'thumbnails', 'downloads', 'styling', 'cms',
@@ -136,6 +137,7 @@ export function settingsTabHref(tab: SettingsTab): string {
 // Settings via the broadened sidebar gate and sees only the tabs whose specific
 // permission it holds. Backend routes enforce the same perms regardless of UI.
 export const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, string[]> = {
+  albumProducts: ['products.view'],
   usage:            ['settings.edit'],
   features:          ['settings.view', 'settings.features'],
   general:           ['settings.view', 'settings.domains'],
@@ -217,6 +219,7 @@ type Flags = ReturnType<typeof useFeatureFlags>['flags'];
 // is off, so admins don't navigate to a tab for a feature they can't use.
 export function settingsTabGatedOff(flags: Flags): Partial<Record<SettingsTab, boolean>> {
   return {
+    albumProducts: !flags.albumProducts,
     crm: !(flags.quotes || flags.bills || flags.contracts || flags.documents),
     contracts: !flags.contracts,
     accounting: !flags.accounting,
@@ -241,6 +244,7 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
     {
       label: t('settings.groups.general', 'General'),
       items: [
+        ...(flags.albumProducts ? [{key:'albumProducts' as const,label:t('albumProducts.catalogue','Product catalogue'),icon:ImageIcon}] : []),
         { key: 'features',   label: t('settings.features.title',   'Features'),       icon: ToggleRight },
         { key: 'general',    label: t('settings.general.title'),                       icon: Sliders },
         { key: 'events',     label: t('settings.events.title',     'Event Creation'),  icon: CalendarPlus },

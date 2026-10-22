@@ -1,3 +1,4 @@
+import { AlbumProductCataloguePage } from '../../features/album-products/CataloguePage';
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
@@ -62,6 +63,7 @@ import type { FeatureKey } from '../../services/featureFlags.service';
 
 // Settings tabs that are a feature's own page carry its state label.
 const TAB_FEATURE: Partial<Record<string, FeatureKey>> = {
+  albumProducts: 'albumProducts',
   slideshow: 'slideshow',
   transfers: 'transfers',
   whatsapp: 'whatsapp',
@@ -225,6 +227,7 @@ export const SettingsPage: React.FC = () => {
             <SectionPageHeader icon={activeItem.icon} title={activeItem.label} description={activeItem.description} feature={TAB_FEATURE[activeTab]} />
           )}
 
+          {activeTab === 'albumProducts' && <AlbumProductCataloguePage />}
           {activeTab === 'features' && <FeaturesTab />}
 
           {activeTab === 'general' && (

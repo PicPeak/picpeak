@@ -1,3 +1,4 @@
+import { EventProductsCard } from '../../../features/album-products/EventProductsCard';
 /**
  * Overview: what the gallery is and how to reach it, plus the one-click
  * actions for helping a client. Nothing here is a setting — those live in the
@@ -235,6 +236,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         )}
 
         <ClientAccessCard event={event} refetchEvent={refetchEvent} />
+        <EventProductsCard eventId={event.id} />
 
         {!archived && feedbackSettings?.feedback_enabled && (
           <div className="space-y-2">

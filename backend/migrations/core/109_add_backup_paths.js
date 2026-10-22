@@ -51,6 +51,7 @@
  */
 
 const DEFAULT_PATHS = [
+  { path: 'album-products', include_in_default: true, feature_flag: null, display_order: 110, description: 'Private product option images and historical choices' },
   {
     path: 'events/active',
     include_in_default: true,

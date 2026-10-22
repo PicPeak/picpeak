@@ -176,6 +176,8 @@ export const FeaturesTab: React.FC = () => {
             onToggle={(next) => setFlag('transfers', next)}
           />
 
+          <FeatureCard icon={Images} title={t('albumProducts.featureTitle','Album product choices')} description={t('albumProducts.featureDescription','Let gallery clients choose an album model and colour from your image catalogue. No price or payment changes.')} feature="albumProducts" sidebarHidden sidebarHiddenLabel={settingsOnlyLabel} enabled={staged.albumProducts} onToggle={next=>setFlag('albumProducts',next)} configureHref={settingsTabLink('albumProducts','albumProducts')} configureLabel={configureLabel}/>
+
           {/* Face recognition (#1074). Requires the optional picpeak-ml
               sidecar container — with the flag on but no sidecar running,
               photos simply stay queued and nothing breaks. Two deliberate

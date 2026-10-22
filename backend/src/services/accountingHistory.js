@@ -64,6 +64,7 @@ const AUDITED_TABLES = {
       'no_admin_emails',
     ],
   },
+  product_billable_items: { entity: 'product_item', document: (row) => ['customer', row.customer_account_id] },
   customer_hour_entries: { entity: 'hour_entry', document: (row) => ['customer', row.customer_account_id] },
 };
 

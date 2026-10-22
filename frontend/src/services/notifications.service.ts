@@ -75,6 +75,8 @@ export const notificationsService = {
           count: notification.metadata.count || 0,
           eventName: notification.eventName
         });
+      case 'album_product_submitted':
+        return t('admin.notificationMessages.productChoiceSubmitted', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName, choice: notification.metadata.choice });
       case 'photo_deleted':
         return t('admin.notificationMessages.photoDeleted', { eventName: notification.eventName });
       case 'photos_bulk_deleted':

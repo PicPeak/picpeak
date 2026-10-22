@@ -11,7 +11,7 @@ module.exports = {
   business_bank_accounts: [nullRef('quotes', 'business_bank_account_id'), nullRef('invoices', 'business_bank_account_id')],
   events: [
     nullRef('quotes', 'converted_event_id'), nullRef('contracts', 'converted_event_id'),
-    nullRef('invoices', 'event_id'),
+    nullRef('invoices', 'event_id'), nullRef('product_billable_items', 'event_id'),
   ],
   admin_users: [
     ...['quotes', 'contracts', 'invoices', 'customer_accounts'].map((table) => nullRef(table, 'created_by_admin_id')),
@@ -45,7 +45,7 @@ module.exports = {
   inbound_documents: [nullRef('expenses', 'inbound_document_id'), nullRef('inbound_documents', 'duplicate_of_id')],
   projects: [
     nullRef('quotes', 'project_id'), nullRef('contracts', 'project_id'),
-    nullRef('invoices', 'project_id'), nullRef('customer_hour_entries', 'project_id'),
+    nullRef('invoices', 'project_id'), nullRef('product_billable_items', 'project_id'), nullRef('customer_hour_entries', 'project_id'),
   ],
   customer_accounts: [cascade('customer_hour_entries', 'customer_account_id')],
   ledger_accounts: [nullRef('vat_codes', 'account_id'), nullRef('expense_categories', 'ledger_account_id')],
