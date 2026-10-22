@@ -879,6 +879,7 @@ router.post('/send', adminAuth, messagingGate, requirePermission('email.send'), 
     if (!subject) return res.status(400).json({ error: 'A subject is required.' });
 
     const sanitizeHtml = require('sanitize-html');
+    const { NON_TEXT_TAGS } = require('../utils/sanitizeHtmlOptions');
     // Match the stricter inbound sanitizeBody allowlist: no <style> tag, no
     // data: scheme — inline style/class attributes are enough for composed mail.
     const html = sanitizeHtml(String(b.html || ''), {
@@ -889,6 +890,7 @@ router.post('/send', adminAuth, messagingGate, requirePermission('email.send'), 
         '*': ['style', 'class'],
       },
       allowedSchemes: ['http', 'https', 'mailto', 'cid'],
+      nonTextTags: NON_TEXT_TAGS,
     });
     const cc = b.cc ? String(b.cc).trim() : null;
     const accountKey = b.accountKey ? String(b.accountKey) : undefined;
