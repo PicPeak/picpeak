@@ -1,3 +1,7 @@
+import type { Product, Choice } from '../features/album-products/model';
+import type { ConfigurationValues } from '../features/album-products/ConfigurationPicker';
+export interface ProductConfiguration { position: number; definitionVersion: string; values: ConfigurationValues }
+export interface ConfigurationDefinition { schemaVersion: number; version: string; product: Product; baseUnitPriceMinor: number; surcharges: { attributeId: string; optionId: string; amountMinor: number }[] }
 /**
  * Admin → Quotes API client. Hits /api/admin/quotes/* (admin auth) and
  * /api/public/quotes/:token for the customer-facing accept/decline page.
@@ -16,6 +20,8 @@ export type QuoteSort =
   | 'value_asc' | 'value_desc';
 
 export interface QuoteLineItem {
+  cataloguePresetId?: number | null;
+  configurationDefinition?: ConfigurationDefinition | null; configurationSnapshot?: Choice | null;
   id?: number;
   position: number;
   quantity: number;
@@ -221,6 +227,7 @@ export interface PaymentTimingTemplate {
 }
 
 export interface LineItemPreset {
+  productId?: string | null; productSurcharges?: { attributeId: string; optionId: string; amountMinor: number }[];
   id: number;
   name: string;
   description: string;
@@ -482,6 +489,7 @@ export interface PublicQuoteView {
   responseLockedAt: string | null;
   canRespond: boolean;
   lineItems: Array<{
+    configurationDefinition?: ConfigurationDefinition | null; configurationSnapshot?: Choice | null;
     position: number;
     quantity: number;
     description: string;
@@ -563,11 +571,8 @@ export const publicQuotesService = {
     return data.data || data;
   },
   /** Totals for a choice of optional add-ons (positions), computed server-side. */
-  async totals(token: string, selected: number[], grant?: string | null): Promise<PublicSelectionTotals> {
-    const { data } = await api.get(`/public/quotes/${token}/totals`, {
-      params: selected.length ? { selected: selected.join(',') } : {},
-      headers: documentAccessHeaders(grant),
-    });
+  async totals(token: string, selected: number[], grant?: string | null, configurations?: ProductConfiguration[]): Promise<PublicSelectionTotals> {
+    const { data } = configurations ? await api.post(`/public/quotes/${token}/totals`, { selectedOptional: selected, configurations }, { headers: documentAccessHeaders(grant) }) : await api.get(`/public/quotes/${token}/totals`, { params: selected.length ? { selected: selected.join(',') } : {}, headers: documentAccessHeaders(grant) });
     return data.data || data;
   },
   async respond(
@@ -575,6 +580,7 @@ export const publicQuotesService = {
     action: 'accept' | 'decline',
     options: {
       tosAccepted?: boolean;
+      configurations?: ProductConfiguration[];
       selectedOptional?: number[];
       expectedTotalMinor?: number;
       /** A message to the business with the acceptance (max 2000 chars). */
@@ -585,6 +591,7 @@ export const publicQuotesService = {
     const { data } = await api.post(`/public/quotes/${token}/respond`, {
       action,
       tosAccepted: options.tosAccepted,
+      configurations: options.configurations,
       selectedOptional: options.selectedOptional,
       expectedTotalMinor: options.expectedTotalMinor,
       customerMessage: options.customerMessage,

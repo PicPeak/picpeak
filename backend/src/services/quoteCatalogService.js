@@ -68,6 +68,7 @@ async function loadPackageItems(packageIds) {
       'pi.id', 'pi.package_id', 'pi.preset_id', 'pi.quantity', 'pi.bound_to', 'pi.position',
       'p.name as preset_name', 'p.details_text', 'p.unit_price_minor', 'p.unit', 'p.price_mode',
       'p.pinned_rate_minor', 'p.quantity_default', 'p.is_active as preset_is_active',
+      'p.product_id', 'p.product_surcharges',
     );
   const byPackage = new Map();
   for (const row of rows) {
@@ -339,7 +340,7 @@ function promotionSnapshot(promotion) {
  * @returns {Promise<Array<object>>} new line items; the wire-only
  *   `promotion_id` is removed
  */
-async function prepareQuoteLineItems(items, { customerId, currency, hours, days } = {}) {
+async function prepareQuoteLineItems(items, { customerId, currency, hours, days, quoteId } = {}) {
   if (!Array.isArray(items) || items.length === 0) return [];
 
   const needsRates = items.some((li) => li.rate_source === 'auto');
@@ -353,7 +354,7 @@ async function prepareQuoteLineItems(items, { customerId, currency, hours, days 
     : [];
   const promotionsById = new Map(promotions.map((p) => [ensureInt(p.id), p]));
 
-  return items.map((li) => {
+  return Promise.all(items.map(async (li) => {
     const { promotion_id: promotionId, ...out } = li;
 
     if (out.bound_to === 'hours' && hours != null && hours !== '') out.quantity = ensureNumber(hours, out.quantity);
@@ -385,8 +386,8 @@ async function prepareQuoteLineItems(items, { customerId, currency, hours, days 
       out.promotion_snapshot = promotionSnapshot(promotion);
       if (!out.description) out.description = promotion.name;
     }
-    return out;
-  });
+    return require('./albumProducts/crm').prepareLine(db, out, { quoteId, currency });
+  }));
 }
 
 module.exports = {

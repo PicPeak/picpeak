@@ -56,6 +56,14 @@ function products(value) {
   return value.map((p) => {
     if (!p || typeof p !== 'object' || Array.isArray(p))
       fail('Invalid product');
+    if (p.typeId)
+      return {
+        id: identify(p.id),
+        name: text(p.name, 100, true),
+        description: text(p.description || '', 1000),
+        active: p.active === true,
+        typeId: uuid(p.typeId),
+      };
     const out = {
       id: identify(p.id),
       name: text(p.name, 100, true),
@@ -121,6 +129,8 @@ function products(value) {
   });
 }
 function selection(product, input) {
+  if (product?.attributes)
+    return require('./library').selection(product, input);
   if (!product?.active) fail('This product is unavailable');
   if (input.productVersion !== hash(product))
     fail('The product options changed; review them before saving');

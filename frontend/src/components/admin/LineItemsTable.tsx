@@ -45,6 +45,7 @@ import {
 } from '../../utils/lineItemTotals';
 
 export interface EditableLineItem {
+  cataloguePresetId?: number | null;
   id?: number;
   /** Stable unique identifier used to link sub-items to parents. */
   position: number;
@@ -88,6 +89,7 @@ export interface PackageForInsert {
   name: string;
   description?: string | null;
   items: Array<{
+    presetId?: number;
     presetName?: string;
     detailsText?: string | null;
     quantity: number | null;
@@ -215,6 +217,7 @@ export const LineItemsTable: React.FC<Props> = ({
     const pos = nextFreshPosition(items);
     const row = preset
       ? {
+        cataloguePresetId: mode === 'quote' ? preset.id : undefined,
         ...lineFromCatalogue({
           name: preset.name,
           unitPriceMinor: preset.unitPriceMinor,
@@ -238,7 +241,7 @@ export const LineItemsTable: React.FC<Props> = ({
    */
   const insertPackage = (pkg: PackageForInsert) => {
     const parentPos = nextFreshPosition(items);
-    const itemLines = pkg.items.map((it, i) => lineFromCatalogue({
+    const itemLines = pkg.items.map((it, i) => ({ ...lineFromCatalogue({
       name: it.presetName || '',
       unitPriceMinor: it.unitPriceMinor,
       unit: it.unit,
@@ -247,7 +250,7 @@ export const LineItemsTable: React.FC<Props> = ({
       quantity: it.quantity ?? (Number(it.quantityDefault) || 1),
       detailsText: it.detailsText,
       boundTo: it.boundTo,
-    }, parentPos + 1 + i, parentPos, mode));
+    }, parentPos + 1 + i, parentPos, mode), cataloguePresetId: mode === 'quote' ? it.presetId : undefined }));
     if (itemLines.length === 0) return;
     let rows: EditableLineItem[];
     if (itemLines.length === 1) {
@@ -869,6 +872,7 @@ export const LineItemsTable: React.FC<Props> = ({
 
 /** Map an API line item (minor units) to the editor's shape (major units). */
 export function toEditableLineItem(li: {
+  cataloguePresetId?: number | null;
   id?: number; position: number; quantity: number | string; description: string; unitPriceMinor?: number | null;
   discountPercent?: number | null; parentPosition?: number | null; detailsText?: string | null;
   lineKind?: LineKind; unit?: LineUnit | null; isOptional?: boolean; selected?: boolean;
@@ -877,6 +881,7 @@ export function toEditableLineItem(li: {
 }): EditableLineItem {
   return {
     id: li.id,
+    cataloguePresetId: li.cataloguePresetId,
     position: li.position,
     quantity: Number(li.quantity),
     description: li.description,
@@ -903,6 +908,7 @@ export function toEditableLineItem(li: {
 export function toPayloadLineItem(li: EditableLineItem) {
   const freshPromotion = li.lineKind === 'discount' && li.promotionId && !li.id;
   return {
+    id: li.id, cataloguePresetId: li.cataloguePresetId,
     position: li.position,
     quantity: li.quantity,
     description: li.description,

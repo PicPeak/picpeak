@@ -203,3 +203,18 @@ it('leaves the unit price empty on a package line that is the sum of its items',
   const album = screen.getByText('Album').closest('tr') as HTMLElement;
   expect(within(album).getAllByRole('cell')[3].textContent).toMatch(/390\.00/);
 });
+
+it('configures an included product, confirms server totals and sends the exact selection on acceptance', async () => {
+  const product = { id: 'print', name: 'Print', active: true, description: '', attributes: [{ id: 'size', name: 'Size', required: true, multiple: false, addOn: false, dependsOn: [], options: [{ id: 'large', name: 'Large print', active: true, imageId: null }] }] };
+  get.mockResolvedValue({ quote: { ...quote, lineItems: [line(1, 'Print', 10000, { configurationDefinition: { version: 'definition-1', product, baseUnitPriceMinor: 10000, surcharges: [] } })], totalAmountMinor: 10000 } });
+  totals.mockImplementation(async (_token: string, selected: number[], _grant: unknown, configurations: { values: Record<string, string[]> }[]) => {
+    if (!configurations?.[0]?.values.size?.length) throw new Error('Choose Size');
+    return { selectedOptional: selected, totalAmountMinor: 10000, netAmountMinor: 10000, vatAmountMinor: 0, shippingAmountMinor: 0, lines: [] };
+  });
+  const user = userEvent.setup(); renderPage();
+  const option = await screen.findByLabelText('Large print');
+  await user.click(option);
+  await waitFor(() => expect(screen.getByRole('button', { name: /Accept/ })).toBeEnabled());
+  await user.click(screen.getByRole('button', { name: /Accept/ }));
+  await waitFor(() => expect(respond).toHaveBeenCalledWith('abc', 'accept', expect.objectContaining({ expectedTotalMinor: 10000, configurations: [{ position: 1, definitionVersion: 'definition-1', values: { size: ['large'] } }] }), null));
+});

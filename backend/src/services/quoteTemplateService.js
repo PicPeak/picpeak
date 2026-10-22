@@ -279,6 +279,7 @@ function presetLine(preset, quantity, boundTo) {
   const line = {
     ...blankLine(),
     description: preset.name,
+    cataloguePresetId: preset.id || preset.preset_id,
     quantity: quantity == null ? ensureNumber(preset.quantity_default, 1) : ensureNumber(quantity, 1),
     unit: preset.unit || (rateBased ? priceMode : null),
     priceMode: rateBased ? priceMode : null,
@@ -418,6 +419,14 @@ async function publishTemplate(id, adminId) {
     eventType: template.event_type || null,
   };
 
+  for (const line of snapshot.lines) {
+    for (const item of [line, ...(line.children || [])]) {
+      if (!item.cataloguePresetId) continue;
+      const prepared = await require('./albumProducts/crm').prepareLine(db, { catalogue_preset_id: item.cataloguePresetId, details_text: item.detailsText || null }, { currency: snapshot.currency });
+      if (prepared.configuration_definition) { item.configurationDefinition = prepared.configuration_definition; item.configurationBaseDetails = prepared.configuration_base_details; }
+    }
+  }
+
   let version;
   try {
     version = await db.transaction(async (trx) => {
@@ -466,6 +475,8 @@ function toServiceLine(line, { position, parentPosition = null }) {
     parent_position: parentPosition,
     quantity: line.quantity ?? 1,
     description: line.description,
+    catalogue_preset_id: line.cataloguePresetId || null,
+    ...(line.configurationDefinition ? { configuration_definition: line.configurationDefinition, configuration_base_details: line.configurationBaseDetails || null } : {}),
     unit_price_minor: ensureInt(line.unitPriceMinor),
     discount_percent: ensureNumber(line.discountPercent, 0),
     details_text: line.detailsText || null,

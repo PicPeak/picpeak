@@ -847,7 +847,9 @@
     "previousMonth": "Vorheriger Monat",
     "nextMonth": "Nächster Monat",
     "today": "Heute",
-    "chooseDate": "Datum wählen"
+    "chooseDate": "Datum wählen",
+    "name": "Name",
+    "description": "Beschreibung"
   },
   "upload": {
     "duplicates": {
@@ -5303,7 +5305,8 @@
       "photosRestored_one": "{{count}} Foto aus dem Papierkorb von \"{{eventName}}\" wiederhergestellt",
       "photosRestored_other": "{{count}} Fotos aus dem Papierkorb von \"{{eventName}}\" wiederhergestellt",
       "photosTrashPurged_one": "{{count}} Foto endgültig aus dem Papierkorb von \"{{eventName}}\" gelöscht",
-      "photosTrashPurged_other": "{{count}} Fotos endgültig aus dem Papierkorb von \"{{eventName}}\" gelöscht"
+      "photosTrashPurged_other": "{{count}} Fotos endgültig aus dem Papierkorb von \"{{eventName}}\" gelöscht",
+      "productChoiceSubmitted": "{{eventName}}: {{productName}} eingereicht — {{choice}}"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -11215,12 +11218,12 @@
     "addColour": "Farbe hinzufügen",
     "imageRights": "Laden Sie nur Bilder hoch, die Sie Ihren Kunden zeigen dürfen. Produktbilder bleiben mit früheren Auswahlen gespeichert.",
     "manageRequired": "Die Berechtigung zur Katalogverwaltung ist erforderlich.",
-    "catalogue": "Album-Produktkatalog",
+    "catalogue": "Produktkatalog",
     "catalogueIntro": "Verwalten Sie Modelle und Farben für Ihre Kunden. Produkte werden in der Galerieübersicht zugewiesen. Preise werden separat vereinbart.",
     "addProduct": "Produkt hinzufügen",
     "reload": "Gespeicherten Katalog neu laden",
     "openGalleries": "Galerien öffnen",
-    "galleryTitle": "Albumkonfiguration",
+    "galleryTitle": "Produktkonfiguration",
     "galleryHelp": "Bieten Sie dem Kunden dieser Galerie ein Produkt an. Gäste können die Konfiguration nicht ändern. Bestätigte Auswahlen können gesperrt werden.",
     "archived": "Archiviertes Produkt",
     "noChoice": "Noch keine Auswahl",
@@ -11245,9 +11248,61 @@
     "submit": "Auswahl einreichen",
     "unavailable": "Das Studio aktualisiert dieses Angebot. Ihre gespeicherte Auswahl bleibt erhalten.",
     "reloadChoices": "Aktuelle Auswahl neu laden",
-    "loadFailed": "Die Albumauswahl ist vorübergehend nicht verfügbar.",
-    "title": "Ihre Albumauswahl",
+    "loadFailed": "Die Produktauswahl ist vorübergehend nicht verfügbar.",
+    "title": "Deine Produktauswahl",
     "imageUnavailable": "Bild nicht verfügbar",
-    "noImage": "Kein Bild"
+    "noImage": "Kein Bild",
+    "featureTitle": "Produktkonfigurator",
+    "featureDescription": "Gemeinsame Produktoptionen für Galerien und CRM-Angebote."
+  },
+  "products": {
+    "required": "Erforderlich",
+    "optional": "Optional",
+    "multiple": "Mehrfachauswahl",
+    "addOn": "Zusatzoption",
+    "clearChoice": "Auswahl aufheben",
+    "clientTitle": "Deine Produktauswahl",
+    "optionLibrary": "Gemeinsame Optionsbibliothek",
+    "libraryHelp": "Werte und Bilder einmal pflegen und in Produkttypen wiederverwenden. Deaktivierte Optionen werden nicht mehr angeboten; gespeicherte Vereinbarungen behalten ihre Kopie.",
+    "libraryName": "Name der Bibliothek",
+    "optionName": "Name der Option",
+    "width": "Breite",
+    "height": "Höhe",
+    "unit": "Einheit",
+    "newOption": "Neue Option",
+    "addOption": "Option hinzufügen",
+    "types": "Produkttypen",
+    "typeName": "Name des Produkttyps",
+    "attributeName": "Name des Merkmals",
+    "allowedOptions": "Erlaubte Optionen",
+    "dependsOn": "Nur verfügbar mit",
+    "removeDependency": "Abhängigkeit entfernen",
+    "addDependency": "Abhängigkeit hinzufügen",
+    "chooseAttribute": "Merkmal wählen",
+    "removeAttribute": "Merkmal entfernen",
+    "addAttribute": "Merkmal aus Bibliothek hinzufügen",
+    "chooseLibrary": "Bibliothek wählen",
+    "newType": "Neuer Produkttyp",
+    "addType": "Produkttyp hinzufügen",
+    "catalogueHelp": "Produktauswahl in Galerien und CRM-Angeboten gemeinsam nutzen. Preise und Aufschläge im CRM-Katalog verwalten.",
+    "products": "Produkte",
+    "empty": "Erstelle einen Produkttyp und füge dann ein Produkt für Galerien oder Angebote hinzu.",
+    "newProduct": "Neues Produkt",
+    "configurableProduct": "Konfigurierbares Produkt",
+    "noConfiguration": "Keine Konfiguration",
+    "optionSurcharges": "Optionsaufschläge (zusätzlich zum Grundpreis pro Stück)",
+    "completeChoices": "Vervollständige die Produktauswahl, um den Gesamtbetrag zu bestätigen.",
+    "portalPointer": "Öffne eine Galerie, um die vom Studio angebotene Produktauswahl anzusehen.",
+    "needsReview": "Deine gewählten Optionen haben sich geändert. Bitte prüfe deine Auswahl und sende sie erneut.",
+    "newLibrary": {
+      "choice": "Optionen",
+      "size": "Größen",
+      "colour": "Farben"
+    },
+    "addLibrary": {
+      "choice": "Optionen-Bibliothek hinzufügen",
+      "size": "Größen-Bibliothek hinzufügen",
+      "colour": "Farben-Bibliothek hinzufügen"
+    }
   }
 }

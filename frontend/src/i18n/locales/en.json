@@ -847,7 +847,9 @@
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
     "today": "Today",
-    "chooseDate": "Choose date"
+    "chooseDate": "Choose date",
+    "name": "Name",
+    "description": "Description"
   },
   "upload": {
     "duplicates": {
@@ -4783,7 +4785,8 @@
       "photosRestored_one": "{{count}} photo restored from the trash of \"{{eventName}}\"",
       "photosRestored_other": "{{count}} photos restored from the trash of \"{{eventName}}\"",
       "photosTrashPurged_one": "{{count}} photo deleted permanently from the trash of \"{{eventName}}\"",
-      "photosTrashPurged_other": "{{count}} photos deleted permanently from the trash of \"{{eventName}}\""
+      "photosTrashPurged_other": "{{count}} photos deleted permanently from the trash of \"{{eventName}}\"",
+      "productChoiceSubmitted": "{{eventName}}: {{productName}} submitted — {{choice}}"
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
@@ -11249,12 +11252,12 @@
     "addColour": "Add colour",
     "imageRights": "Only upload images you have permission to show to your clients. Product images are retained with previous choices.",
     "manageRequired": "Catalogue management permission is required.",
-    "catalogue": "Album product catalogue",
+    "catalogue": "Product catalogue",
     "catalogueIntro": "Maintain the models and colours your clients can choose. Assign products from a gallery’s Overview. Prices are agreed separately.",
     "addProduct": "Add product",
     "reload": "Reload saved catalogue",
     "openGalleries": "Open galleries",
-    "galleryTitle": "Album configuration",
+    "galleryTitle": "Product configuration",
     "galleryHelp": "Offer a product to the gallery’s client. Guests cannot change the configuration. Lock a submitted choice when it is confirmed.",
     "archived": "Archived product",
     "noChoice": "No choice yet",
@@ -11279,9 +11282,61 @@
     "submit": "Submit choice",
     "unavailable": "The studio is updating this offer. Your saved choice remains on record.",
     "reloadChoices": "Reload current choices",
-    "loadFailed": "Album choices are temporarily unavailable.",
-    "title": "Your album choices",
+    "loadFailed": "Product choices are temporarily unavailable.",
+    "title": "Your product choices",
     "imageUnavailable": "Image unavailable",
-    "noImage": "No image"
+    "noImage": "No image",
+    "featureTitle": "Product configurator",
+    "featureDescription": "Shared product options for galleries and CRM quotes."
+  },
+  "products": {
+    "required": "Required",
+    "optional": "Optional",
+    "multiple": "Choose any",
+    "addOn": "Optional extra",
+    "clearChoice": "Clear choice",
+    "clientTitle": "Your product choices",
+    "optionLibrary": "Shared option library",
+    "libraryHelp": "Maintain values and images once. Product types reuse them. Deactivate an option to stop offering it; saved agreements keep their copy.",
+    "libraryName": "Library name",
+    "optionName": "Option name",
+    "width": "Width",
+    "height": "Height",
+    "unit": "Unit",
+    "newOption": "New option",
+    "addOption": "Add option",
+    "types": "Product types",
+    "typeName": "Product type name",
+    "attributeName": "Attribute name",
+    "allowedOptions": "Allowed options",
+    "dependsOn": "Only available with",
+    "removeDependency": "Remove dependency",
+    "addDependency": "Add dependency",
+    "chooseAttribute": "Choose attribute",
+    "removeAttribute": "Remove attribute",
+    "addAttribute": "Add attribute from library",
+    "chooseLibrary": "Choose library",
+    "newType": "New product type",
+    "addType": "Add product type",
+    "catalogueHelp": "Share product choices between galleries and CRM quotes. Manage prices and surcharges in the CRM catalogue.",
+    "products": "Products",
+    "empty": "Create a product type, then add a product to offer in galleries or quotes.",
+    "newProduct": "New product",
+    "configurableProduct": "Configurable product",
+    "noConfiguration": "No configuration",
+    "optionSurcharges": "Option surcharges (added to the base unit price)",
+    "completeChoices": "Complete the product choices to confirm your total.",
+    "portalPointer": "Open a gallery to view any product choices your studio has offered.",
+    "needsReview": "Your selected options changed. Please review and submit your choice again.",
+    "newLibrary": {
+      "choice": "Options",
+      "size": "Sizes",
+      "colour": "Colours"
+    },
+    "addLibrary": {
+      "choice": "Add options library",
+      "size": "Add sizes library",
+      "colour": "Add colours library"
+    }
   }
 }

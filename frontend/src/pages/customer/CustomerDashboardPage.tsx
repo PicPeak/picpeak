@@ -313,6 +313,7 @@ export const CustomerDashboardPage: React.FC = () => {
       ) : (
         <>
           <NeedsAction items={data.needsAction} />
+          <p className="text-sm text-muted-theme mb-4">{t('products.portalPointer', 'Open a gallery to view any product choices your studio has offered.')}</p>
           <Recent items={data.recent ?? []} />
 
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">

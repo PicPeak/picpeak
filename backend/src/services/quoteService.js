@@ -703,6 +703,7 @@ async function updateQuote(id, payload, adminId) {
 
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
   const preparedLineItems = await prepareQuoteLineItems(payload.lineItems, {
+    quoteId: id,
     customerId: existing.customer_account_id,
     currency: existing.currency,
     hours: Object.prototype.hasOwnProperty.call(payload, 'hours') ? payload.hours : existing.hours,
@@ -1335,8 +1336,9 @@ function applyOptionalSelection(lineItems, selectedPositions) {
 }
 
 /** Totals for an add-on choice — the same computeTotals a save runs. */
-async function totalsForSelection(quote, lineItems, selectedPositions) {
-  const { chosen, lines } = applyOptionalSelection(lineItems, selectedPositions);
+async function totalsForSelection(quote, lineItems, selectedPositions, configurations, complete = true) {
+  const { chosen, lines: optionalLines } = applyOptionalSelection(lineItems, selectedPositions);
+  const lines = require('./albumProducts/crm').configureLines(optionalLines, configurations, { complete });
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
   const totals = computeTotals(lines, quote.vat_rate, quote.shipping_amount_minor, { roundTotal });
   // Same rule as create and update: a quote is an offer, never a credit
@@ -1356,11 +1358,11 @@ async function totalsForSelection(quote, lineItems, selectedPositions) {
  * Live totals for the public quote page while the customer ticks add-ons.
  * Read-only: the same calculation runs again, authoritatively, on accept.
  */
-async function previewOptionalSelection(quoteId, selectedPositions) {
+async function previewOptionalSelection(quoteId, selectedPositions, configurations) {
   const quote = await db('quotes').where({ id: quoteId }).first();
   if (!quote) throw new AppError('Quote not found', 404);
   const lineItems = await loadQuoteLinesWithParentPosition(quoteId);
-  const { chosen, totals } = await totalsForSelection(quote, lineItems, selectedPositions);
+  const { chosen, totals } = await totalsForSelection(quote, lineItems, selectedPositions, configurations);
   return {
     selectedOptional: chosen,
     netAmountMinor: totals.netAmountMinor,
@@ -1371,6 +1373,8 @@ async function previewOptionalSelection(quoteId, selectedPositions) {
     lines: totals.lineItems.map((li) => ({
       position: ensureInt(li.position),
       lineTotalMinor: ensureInt(li.line_total_minor),
+      unitPriceMinor: ensureInt(li.unit_price_minor),
+      configurationSnapshot: storedJson(li.configuration_snapshot, null),
     })),
   };
 }
@@ -1441,6 +1445,7 @@ async function writeAcceptedSelection(
     .where('li.quote_id', quote.id)
     .orderBy('li.position', 'asc')
     .select('li.*', 'parent.position as parent_position');
+  await require('./albumProducts/crm').writeSnapshots(trx, quote.id, totals.lineItems, record);
   const offered = new Set(offeredOptionalPositions(lineItems));
   const chosenSet = new Set(chosen);
   const on = [];
@@ -1596,15 +1601,16 @@ async function emailAddOnChange(quoteId, change) {
  * again with another choice changes it (#1451): recordResponse has already
  * refused a closed response window, so only the window allows it.
  */
-async function resolveCustomerSelection(quote, { selectedOptional, expectedTotalMinor }) {
+async function resolveCustomerSelection(quote, { selectedOptional, expectedTotalMinor, configurations }) {
   const lineItems = await loadQuoteLinesWithParentPosition(quote.id);
-  if (offeredOptionalPositions(lineItems).length === 0) return null;
+  const configurable = lineItems.some(li => li.configuration_definition);
+  if (offeredOptionalPositions(lineItems).length === 0 && !configurable) return null;
   const current = currentOptionalSelection(lineItems);
   const asked = Array.isArray(selectedOptional)
     ? [...new Set(selectedOptional.map(ensureInt))].sort((a, b) => a - b)
     : null;
-  if (quote.selection_accepted_at && (!asked || asked.join(',') === current.join(','))) return null;
-  const selection = await totalsForSelection(quote, lineItems, asked || current);
+  if (!configurable && quote.selection_accepted_at && (!asked || asked.join(',') === current.join(','))) return null;
+  const selection = await totalsForSelection(quote, lineItems, asked || current, configurations);
   if (expectedTotalMinor == null) {
     throw new AppError('Confirm the total before accepting', 400, 'TOTAL_REQUIRED');
   }
@@ -1737,7 +1743,7 @@ const QUOTE_LINK_ACTOR = { type: 'public', id: null, name: 'quote-link' };
  * portal passes the signed-in customer; the public link leaves the default.
  */
 async function recordResponse({
-  token, action, ip, tosAccepted, selectedOptional, expectedTotalMinor, customerMessage,
+  token, action, ip, tosAccepted, selectedOptional, expectedTotalMinor, customerMessage, configurations,
   actor = QUOTE_LINK_ACTOR,
 }) {
   if (!['accept', 'decline'].includes(action)) {
@@ -1818,7 +1824,7 @@ async function recordResponse({
   const history = { actor, source: 'quote.respond' };
   // Optional add-ons (#1451 phase 2), checked before anything is written.
   const selection = isAccept
-    ? await resolveCustomerSelection(quote, { selectedOptional, expectedTotalMinor })
+    ? await resolveCustomerSelection(quote, { selectedOptional, expectedTotalMinor, configurations })
     : null;
 
   await db.transaction(async (trx) => {
@@ -1919,24 +1925,14 @@ async function adminAcceptQuote(id, adminId) {
   const responseLockedAt = new Date(now.getTime() + windowMinutes * 60 * 1000);
 
   const history = { actor: adminId, source: 'quote.accept.admin' };
-  await auditedUpdate(db, 'quotes', { id }, {
-    status: 'accepted',
-    responded_at: stamp(now),
-    response_locked_at: stamp(responseLockedAt),
-    accepted_at: stamp(now),
-    // accept_on_behalf flag intentionally NOT stored as a separate
-    // column — the audit log entry below captures who accepted and
-    // when, which is the legally relevant breadcrumb.
-    updated_at: now,
-  }, history);
-
-  // Record which add-ons the acceptance covers (#1451 phase 2): the choice
-  // as the admin set it in the editor.
   const acceptedLines = await loadQuoteLinesWithParentPosition(id);
-  if (offeredOptionalPositions(acceptedLines).length > 0) {
-    const selection = await totalsForSelection(quote, acceptedLines, currentOptionalSelection(acceptedLines));
-    await db.transaction((trx) => writeAcceptedSelection(trx, quote, acceptedLines, selection, 'admin', now));
-  }
+  const hasChoices = offeredOptionalPositions(acceptedLines).length > 0 || acceptedLines.some(li => li.configuration_definition);
+  const selection = hasChoices ? await totalsForSelection(quote, acceptedLines, currentOptionalSelection(acceptedLines)) : null;
+  await db.transaction(async trx => {
+    const applied = await auditedUpdate(trx, 'quotes', { id, status: quote.status }, { status: 'accepted', responded_at: stamp(now), response_locked_at: stamp(responseLockedAt), accepted_at: stamp(now), updated_at: now }, history);
+    if (!applied) throw new AppError('The quote changed; reload it', 409, 'QUOTE_CHANGED');
+    if (selection) await writeAcceptedSelection(trx, quote, acceptedLines, selection, 'admin', now, { history });
+  });
 
   try {
     await logActivity('quote_accepted_by_admin', { quoteId: id }, null, adminActivityActor(adminId));
@@ -2617,6 +2613,7 @@ async function recalculateRates(id, adminId) {
     rate_source: li.rate_source === 'customer' || li.rate_source === 'default' ? 'auto' : li.rate_source,
     bound_to: li.bound_to,
     promotion_snapshot: li.promotion_snapshot,
+    ...extendedLineColumns(li),
   }));
   await updateQuote(id, { lineItems }, adminId);
 }
@@ -2665,6 +2662,7 @@ async function duplicateQuote(id, adminId, { replacesQuoteId = null, dealUuid = 
       rate_source: li.rate_source,
       bound_to: li.bound_to,
       promotion_snapshot: li.promotion_snapshot,
+      ...extendedLineColumns(li),
     })),
     // Set only by reissueQuote: the reissued quote keeps the deal.
     replacesQuoteId,
@@ -2706,6 +2704,7 @@ function presetCatalogueColumns(payload) {
 
 async function createLineItemPreset(payload) {
   const row = {
+    ...await require('./albumProducts/crm').presetColumns(db, payload),
     name: payload.name,
     description: payload.description || '',
     unit_price_minor: ensureInt(payload.unit_price_minor),
@@ -2736,7 +2735,7 @@ async function updateLineItemPreset(id, payload) {
       updates[col] = col === 'is_active' ? formatBoolean(Boolean(payload[api])) : payload[api];
     }
   }
-  Object.assign(updates, presetCatalogueColumns(payload));
+  Object.assign(updates, presetCatalogueColumns(payload), await require('./albumProducts/crm').presetColumns(db, payload, await db('quote_line_item_presets').where({ id }).first()));
   await db('quote_line_item_presets').where({ id }).update(updates);
   return await db('quote_line_item_presets').where({ id }).first();
 }

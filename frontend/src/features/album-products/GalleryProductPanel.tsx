@@ -1,3 +1,9 @@
+import {
+  ConfigurationPicker,
+  ChoiceSummary,
+  choiceValues,
+  pruneValues,
+} from './ConfigurationPicker';
 import { Button, Input } from '../../components/common';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,8 +21,9 @@ function ProductChoice({
 }) {
   const { t } = useTranslation();
   const [offer, setOffer] = useState(initial),
-    [model, setModel] = useState(initial.selection?.model.id || ''),
-    [colour, setColour] = useState(initial.selection?.colour.id || ''),
+    [values, setValues] = useState(initial.product?.attributes ? pruneValues(initial.product.attributes, choiceValues(initial.selection)) : choiceValues(initial.selection)),
+    [model, setModel] = useState(initial.selection?.model?.id || ''),
+    [colour, setColour] = useState(initial.selection?.colour?.id || ''),
     [name, setName] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
@@ -29,6 +36,7 @@ function ProductChoice({
     const payload = {
         revision: offer.revision,
         productVersion: product?.version,
+        values,
         modelId: model,
         colourId: colour,
         name,
@@ -59,7 +67,7 @@ function ProductChoice({
       {offer.selection && (
         <p role="status">
           {t('albumProducts.savedChoice', 'Saved choice')}:{' '}
-          {offer.selection.model.name} · {offer.selection.colour.name} —{' '}
+          <ChoiceSummary choice={offer.selection} /> —{' '}
           {offer.status === 'locked'
             ? t('albumProducts.locked', 'Locked by the studio')
             : offer.status === 'submitted'
@@ -67,6 +75,7 @@ function ProductChoice({
               : t('albumProducts.draft', 'Draft')}
         </p>
       )}
+      {offer.needsReview && <p role="status">{t('products.needsReview', 'Your selected options changed. Please review and submit your choice again.')}</p>}
       {locked && (
         <>
           <p>
@@ -75,96 +84,125 @@ function ProductChoice({
               'Contact the studio if you need to change this choice.',
             )}
           </p>
-          <div className="grid grid-cols-2 gap-4 max-w-md">
-            <ProductImage
-              slug={slug}
-              imageId={offer.selection?.model.imageId || null}
-              alt={offer.selection?.model.name || ''}
-            />
-            <ProductImage
-              slug={slug}
-              imageId={offer.selection?.colour.imageId || null}
-              alt={offer.selection?.colour.name || ''}
-            />
-          </div>
+          {offer.selection?.attributes ? (
+            <div className="grid grid-cols-2 gap-4 max-w-md">
+              {offer.selection.attributes
+                .flatMap((a) => a.options)
+                .filter((o) => o.imageId)
+                .map((o) => (
+                  <ProductImage
+                    key={o.id}
+                    slug={slug}
+                    imageId={o.imageId}
+                    alt={o.name}
+                  />
+                ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 max-w-md">
+              <ProductImage
+                slug={slug}
+                imageId={offer.selection?.model?.imageId || null}
+                alt={offer.selection?.model?.name || ''}
+              />
+              <ProductImage
+                slug={slug}
+                imageId={offer.selection?.colour?.imageId || null}
+                alt={offer.selection?.colour?.name || ''}
+              />
+            </div>
+          )}
         </>
       )}
       {!locked && product && (
         <>
-          <fieldset disabled={busy} className="space-y-3">
-            <legend className="font-semibold">
-              {t('albumProducts.chooseModel', 'Choose a model')}
-            </legend>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {product.models.map((option) => (
-                <label
-                  key={option.id}
-                  className={`block border border-border-token rounded-lg p-2 cursor-pointer min-w-0 ${model === option.id ? 'tile-selected' : ''}`}
-                >
-                  <ProductImage
-                    slug={slug}
-                    imageId={option.imageId}
-                    alt={option.name}
-                  />
-                  <span className="flex items-center gap-2 mt-2">
-                    <input
-                      type="radio"
-                      aria-label={option.name}
-                      name={`model-${offer.id}`}
-                      value={option.id}
-                      checked={model === option.id}
-                      onChange={() => {
-                        setModel(option.id);
-                        const selected = product.colours.find(
-                          (o) => o.id === colour,
-                        );
-                        if (
-                          selected?.modelIds?.length &&
-                          !selected.modelIds.includes(option.id)
-                        )
-                          setColour('');
-                      }}
-                    />
-                    {option.name}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <fieldset disabled={busy || !model} className="space-y-3">
-            <legend className="font-semibold">
-              {t('albumProducts.chooseColour', 'Choose a colour')}
-            </legend>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {product.colours
-                .filter(
-                  (o) => !o.modelIds?.length || o.modelIds.includes(model),
-                )
-                .map((option) => (
-                  <label
-                    key={option.id}
-                    className={`block border border-border-token rounded-lg p-2 cursor-pointer min-w-0 ${colour === option.id ? 'tile-selected' : ''}`}
-                  >
-                    <ProductImage
-                      slug={slug}
-                      imageId={option.imageId}
-                      alt={option.name}
-                    />
-                    <span className="flex items-center gap-2 mt-2">
-                      <input
-                        type="radio"
-                        aria-label={option.name}
-                        name={`colour-${offer.id}`}
-                        value={option.id}
-                        checked={colour === option.id}
-                        onChange={() => setColour(option.id)}
+          {product.attributes ? (
+            <ConfigurationPicker
+              product={product}
+              values={values}
+              onChange={setValues}
+              disabled={busy}
+              slug={slug}
+            />
+          ) : (
+            <>
+              {' '}
+              <fieldset disabled={busy} className="space-y-3">
+                <legend className="font-semibold">
+                  {t('albumProducts.chooseModel', 'Choose a model')}
+                </legend>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {(product.models || []).map((option) => (
+                    <label
+                      key={option.id}
+                      className={`block border border-border-token rounded-lg p-2 cursor-pointer min-w-0 ${model === option.id ? 'tile-selected' : ''}`}
+                    >
+                      <ProductImage
+                        slug={slug}
+                        imageId={option.imageId}
+                        alt={option.name}
                       />
-                      {option.name}
-                    </span>
-                  </label>
-                ))}
-            </div>
-          </fieldset>
+                      <span className="flex items-center gap-2 mt-2">
+                        <input
+                          type="radio"
+                          aria-label={option.name}
+                          name={`model-${offer.id}`}
+                          value={option.id}
+                          checked={model === option.id}
+                          onChange={() => {
+                            setModel(option.id);
+                            const selected = product.colours?.find(
+                              (o) => o.id === colour,
+                            );
+                            if (
+                              selected?.modelIds?.length &&
+                              !selected.modelIds.includes(option.id)
+                            )
+                              setColour('');
+                          }}
+                        />
+                        {option.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <fieldset disabled={busy || !model} className="space-y-3">
+                <legend className="font-semibold">
+                  {t('albumProducts.chooseColour', 'Choose a colour')}
+                </legend>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {(product.colours || [])
+                    .filter(
+                      (o) => !o.modelIds?.length || o.modelIds.includes(model),
+                    )
+                    .map((option) => (
+                      <label
+                        key={option.id}
+                        className={`block border border-border-token rounded-lg p-2 cursor-pointer min-w-0 ${colour === option.id ? 'tile-selected' : ''}`}
+                      >
+                        <ProductImage
+                          slug={slug}
+                          imageId={option.imageId}
+                          alt={option.name}
+                        />
+                        <span className="flex items-center gap-2 mt-2">
+                          <input
+                            type="radio"
+                            aria-label={option.name}
+                            name={`colour-${offer.id}`}
+                            value={option.id}
+                            checked={colour === option.id}
+                            onChange={() => setColour(option.id)}
+                          />
+                          {option.name}
+                        </span>
+                      </label>
+                    ))}
+                </div>
+              </fieldset>
+            </>
+          )}
           <Input
             themed
             label={t('albumProducts.yourName', 'Your name')}
@@ -194,7 +232,11 @@ function ProductChoice({
               {t('albumProducts.saveDraft', 'Save draft')}
             </Button>
             <Button
-              disabled={busy || !name.trim() || !model || !colour}
+              disabled={
+                busy ||
+                !name.trim() ||
+                (!product.attributes && (!model || !colour))
+              }
               onClick={() => submit(true)}
             >
               {busy
@@ -243,7 +285,7 @@ export function GalleryProductPanel({ slug }: { slug: string }) {
           setError(
             t(
               'albumProducts.loadFailed',
-              'Album choices are temporarily unavailable.',
+              'Product choices are temporarily unavailable.',
             ),
           );
       });
@@ -254,11 +296,11 @@ export function GalleryProductPanel({ slug }: { slug: string }) {
   if (!offers.length && !error) return null;
   return (
     <details
-      aria-label={t('albumProducts.title', 'Your album choices')}
+      aria-label={t('products.clientTitle', 'Your product choices')}
       className="max-w-7xl mx-auto px-4 py-6 space-y-4 text-text-primary bg-background"
     >
       <summary className="cursor-pointer text-lg font-semibold">
-        {t('albumProducts.title', 'Your album choices')}
+        {t('products.clientTitle', 'Your product choices')}
       </summary>
       {offers.map((offer) => (
         <ProductChoice

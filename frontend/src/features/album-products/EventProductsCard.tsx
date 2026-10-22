@@ -1,45 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { ChoiceSummary } from './ConfigurationPicker';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Button, Card } from '../../components/common';
+import { Button, Card, Badge, Loading } from '../../components/common';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
-import {
-  albumProducts,
-  errorMessage,
-  type Catalogue,
-  type Offer,
-} from './model';
+import { albumProducts, errorMessage, type Offer } from './model';
 function EventProducts({ eventId }: { eventId: number }) {
   const { t } = useTranslation(),
     { hasPermission } = usePermissions();
-  const [catalogue, setCatalogue] = useState<Catalogue | null>(null),
-    [offers, setOffers] = useState<Offer[]>([]),
-    [selected, setSelected] = useState(''),
+  const [selected, setSelected] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
-  const load = () =>
-    albumProducts.event(eventId).then((data) => {
-      setCatalogue(data.catalogue);
-      setOffers(data.offers);
-    });
-  useEffect(() => {
-    let active = true;
-    albumProducts
-      .event(eventId)
-      .then((data) => {
-        if (active) {
-          setCatalogue(data.catalogue);
-          setOffers(data.offers);
-        }
-      })
-      .catch((e) => {
-        if (active) setError(errorMessage(e));
-      });
-    return () => {
-      active = false;
-    };
-  }, [eventId]);
+  const query = useQuery({
+    queryKey: ['gallery-products', eventId],
+    queryFn: () => albumProducts.event(eventId),
+  });
+  const catalogue = query.data?.catalogue,
+    offers = query.data?.offers || [];
+  const load = async () => {
+    await query.refetch();
+  };
   const change = async (offer: Offer, action: 'lock' | 'unlock' | 'toggle') => {
     setBusy(true);
     setError('');
@@ -69,10 +51,11 @@ function EventProducts({ eventId }: { eventId: number }) {
       setBusy(false);
     }
   };
+  if (query.isLoading) return <Loading />;
   return (
     <Card className="p-6 space-y-4">
       <h3 className="text-lg font-semibold">
-        {t('albumProducts.galleryTitle', 'Album configuration')}
+        {t('albumProducts.galleryTitle', 'Product configuration')}
       </h3>
       <p className="text-sm text-muted">
         {t(
@@ -91,18 +74,20 @@ function EventProducts({ eventId }: { eventId: number }) {
               t('albumProducts.archived', 'Archived product')}
           </strong>
           <p>
-            {offer.selection
-              ? `${offer.selection.model.name} · ${offer.selection.colour.name}`
-              : t('albumProducts.noChoice', 'No choice yet')}
+            {offer.selection ? (
+              <ChoiceSummary choice={offer.selection} />
+            ) : (
+              t('albumProducts.noChoice', 'No choice yet')
+            )}
           </p>
-          <p className="text-sm text-muted">
+          <Badge tone={offer.status === 'locked' ? 'success' : 'neutral'}>
             {offer.status === 'locked'
               ? t('albumProducts.locked', 'Locked by the studio')
               : offer.status === 'submitted'
                 ? t('albumProducts.submitted', 'Submitted')
                 : t('albumProducts.draft', 'Draft')}
-          </p>
-          {hasPermission('albums.edit') && (
+          </Badge>
+          {hasPermission('products.configure') && (
             <div className="flex gap-3 flex-wrap">
               <Button
                 variant="secondary"
@@ -131,7 +116,7 @@ function EventProducts({ eventId }: { eventId: number }) {
           )}
         </div>
       ))}
-      {hasPermission('albums.edit') && (
+      {hasPermission('products.configure') && (
         <div className="flex gap-3 flex-wrap">
           <label className="flex-1">
             {t('albumProducts.offerProduct', 'Offer a product')}
@@ -167,14 +152,14 @@ function EventProducts({ eventId }: { eventId: number }) {
           {t('albumProducts.manageCatalogue', 'Manage catalogue')}
         </Link>
       )}
-      {error && (
-        <p role="alert" className="text-danger">
-          {error}{' '}
+      {(error || query.isError) && (
+        <p role="alert" className="text-danger-text">
+          {error || errorMessage(query.error)}{' '}
           <button
             className="underline"
             onClick={() => load().catch((e) => setError(errorMessage(e)))}
           >
-            {t('common.retry', 'Try again')}
+            {t('common.retry', 'Retry')}
           </button>
         </p>
       )}

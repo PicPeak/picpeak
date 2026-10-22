@@ -82,7 +82,7 @@ events.get(
 );
 events.post(
   '/offers',
-  requirePermission('albums.edit'),
+  requirePermission('products.configure'),
   body('productId').isUUID(),
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -112,7 +112,7 @@ events.get(
 );
 events.put(
   '/offers/:id',
-  requirePermission('albums.edit'),
+  requirePermission('products.configure'),
   param('id').isUUID(),
   body('revision').custom((value) => Number.isSafeInteger(value) && value >= 1),
   body('mutationId').isUUID(),

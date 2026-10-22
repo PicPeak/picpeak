@@ -220,6 +220,7 @@ function snapshotLineItem(li) {
     line_total_minor: ensureInt(li.line_total_minor),
     is_optional: li.is_optional === true || li.is_optional === 1 || li.is_optional === '1',
     promotion_snapshot: li.promotion_snapshot == null ? null : String(li.promotion_snapshot),
+    ...(li.configuration_snapshot ? { configuration_snapshot: typeof li.configuration_snapshot === 'string' ? li.configuration_snapshot : JSON.stringify(li.configuration_snapshot) } : {}),
   };
 }
 

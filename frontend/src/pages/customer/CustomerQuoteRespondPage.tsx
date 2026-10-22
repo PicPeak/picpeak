@@ -22,16 +22,23 @@ export const CustomerQuoteRespondPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const quoteId = Number(id);
 
-  const adapter = useMemo<QuoteDocumentAdapter>(() => ({
-    queryKey: ['customer-quote', quoteId],
-    // The portal's flag also knows whether a usable response link is left;
-    // the shared view's own flag only looks at the quote status.
-    load: async () => {
-      const { quote, canRespond } = await customerService.getQuote(quoteId);
-      return { quote: { ...quote, canRespond } };
-    },
-    respond: (action, options) => customerService.respondToQuote(quoteId, action, options),
-  }), [quoteId]);
+  const adapter = useMemo<QuoteDocumentAdapter>(
+    () => ({
+      queryKey: ['customer-quote', quoteId],
+      // The portal's flag also knows whether a usable response link is left;
+      // the shared view's own flag only looks at the quote status.
+      load: async () => {
+        const { quote, canRespond } = await customerService.getQuote(quoteId);
+        return { quote: { ...quote, canRespond } };
+      },
+      totals: (selected, configurations) =>
+        customerService.quoteTotals(quoteId, selected, configurations),
+      imageLoader: (id) => customerService.quoteProductImage(quoteId, id),
+      respond: (action, options) =>
+        customerService.respondToQuote(quoteId, action, options),
+    }),
+    [quoteId],
+  );
 
   return (
     <div>

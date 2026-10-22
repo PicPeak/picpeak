@@ -6,10 +6,12 @@ export function ProductImage({
   imageId,
   alt,
   slug,
+  imageLoader,
 }: {
   imageId: string | null;
   alt: string;
   slug?: string;
+  imageLoader?: (id: string) => Promise<Blob>;
 }) {
   const { t } = useTranslation();
   const background = slug
@@ -26,8 +28,10 @@ export function ProductImage({
     const path = slug
       ? `/gallery/${slug}/album-products/images/${imageId}`
       : `/admin/album-products/images/${imageId}`;
-    api
-      .get<Blob>(path, { responseType: 'blob' })
+    (imageLoader
+      ? imageLoader(imageId).then((data) => ({ data }))
+      : api.get<Blob>(path, { responseType: 'blob' })
+    )
       .then((r) => {
         url = URL.createObjectURL(r.data);
         if (active) setSrc(url);
@@ -40,7 +44,7 @@ export function ProductImage({
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [imageId, slug]);
+  }, [imageId, slug, imageLoader]);
   return src && !failed ? (
     <img
       className={`w-full aspect-square object-contain rounded ${background}`}
