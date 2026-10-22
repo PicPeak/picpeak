@@ -384,6 +384,7 @@ export function LibraryEditor({
                 <select
                   className="input"
                   value=""
+                  disabled={a.dependsOn.length > 0}
                   onChange={(e) => {
                     const parent = type.attributes.find(
                       (p) => p.id === e.target.value,

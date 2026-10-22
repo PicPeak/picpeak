@@ -174,10 +174,14 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
   // Conditional on the status read above: when another process sent this
   // scheduled invoice in the meantime, the row is no longer 'scheduled',
   // nothing updates and no second email is queued.
-  const claimed = await auditedUpdate(db, 'invoices', { id, status: invoice.status }, {
+  // A gallery lock may append a product while the PDF is being rendered.
+  // The revision guards even zero-priced products without raw CRM queries.
+  const claimed = await auditedUpdate(db, 'invoices', { id, status: invoice.status, ...(invoice.product_items_revision == null ? {} : { product_items_revision: invoice.product_items_revision }) }, {
     status: newStatus, sent_at: new Date(), pdf_path: storedPath, updated_at: new Date(),
   }, { actor: adminId, source: 'invoice.send' });
   if (!claimed) {
+    const current = await db('invoices').where({ id }).first('status');
+    if (current?.status === 'scheduled') throw new AppError('Invoice items changed while preparing the PDF. Review the updated invoice and send it again.', 409, 'INVOICE_CHANGED_DURING_SEND');
     logger.warn(`sendInvoice: ${invoice.invoice_number} was sent by another caller — not sending again`);
     return { sent: false, alreadySent: true };
   }

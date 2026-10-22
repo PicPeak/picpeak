@@ -78,7 +78,7 @@ function cleanTypes(value = [], library) {
         required: a.required === true,
         multiple: a.multiple === true,
         addOn: a.addOn === true,
-        dependsOn: list(a.dependsOn || [], 10).map((d) => ({
+        dependsOn: list(a.dependsOn || [], 1).map((d) => ({
           attributeId: V.uuid(d.attributeId),
           optionIds: unique(list(d.optionIds, 100).map(V.uuid)),
         })),
@@ -135,7 +135,7 @@ function resolve(product, catalogue) {
   result.version = V.hash(result);
   return result;
 }
-function selection(product, input) {
+function selection(product, input, { complete = true } = {}) {
   if (!product?.active) fail('This product is unavailable');
   if (input.productVersion !== product.version)
     fail('The product options changed; review them before saving');
@@ -177,7 +177,7 @@ function selection(product, input) {
       if (chosen.length) fail('This option depends on another choice');
       continue;
     }
-    if (a.required && !chosen.length) fail(`Choose ${a.name}`);
+    if (complete && a.required && !chosen.length) fail(`Choose ${a.name}`);
     if (chosen.length)
       attributes.push({
         id: a.id,
@@ -207,11 +207,11 @@ const valuesOf = (snapshot) =>
 const summary = (snapshot) =>
   snapshot?.attributes
     ? snapshot.attributes
-      .map((a) => `${a.name}: ${a.options.map((o) => o.name).join(', ')}`)
-      .join(' · ')
+        .map((a) => `${a.name}: ${a.options.map((o) => o.name).join(', ')}`)
+        .join(' · ')
     : [snapshot?.model?.name, snapshot?.colour?.name]
-      .filter(Boolean)
-      .join(' · ');
+        .filter(Boolean)
+        .join(' · ');
 function presetId(label) {
   const hex = V.hash(label);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;

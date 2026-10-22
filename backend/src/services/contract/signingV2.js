@@ -457,6 +457,8 @@ async function completeSend(contractId, {
     }
     // The text the rendered PDF shows, frozen with it (see sending.js).
     if (freeze) {
+      const content = JSON.parse(freeze.renderedContent);
+      await require('../albumProducts/retention').retain(trx, 'contract', contractId, content?.quote?.lineItems || []);
       for (const inc of freeze.inclusions) {
         await auditedUpdate(trx, 'contract_block_inclusions', { id: inc.id },
           { ...inc.columns, updated_at: now }, history);

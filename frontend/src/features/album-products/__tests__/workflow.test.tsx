@@ -67,4 +67,16 @@ describe('catalogue editing and client workflow', () => {
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Submit choice' })).not.toBeInTheDocument();
   });
+  it('saves a generic partial draft without sending empty legacy model and colour fields', async () => {
+    const generic: Product = { ...product, models: undefined, colours: undefined, attributes: [{ id: 'size', name: 'Size', groupId: 'sizes', optionIds: ['large'], required: true, multiple: false, addOn: false, dependsOn: [], options: [{ id: 'large', name: 'Large print', active: true, imageId: null }] }] };
+    vi.mocked(albumProducts.client).mockResolvedValue([{ ...offer, product: generic }]);
+    vi.mocked(api.put).mockResolvedValue({ data: { ...offer, revision: 2, status: 'draft' } });
+    render(<GalleryProductPanel slug="synthetic" />);
+    fireEvent.change(await screen.findByLabelText('Your name'), { target: { value: 'Synthetic Client' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(api.put).toHaveBeenCalled());
+    const payload = vi.mocked(api.put).mock.calls[0][1] as Record<string, unknown>;
+    expect(payload).toHaveProperty('values'); expect(payload.submit).toBe(false);
+    expect(payload).not.toHaveProperty('modelId'); expect(payload).not.toHaveProperty('colourId');
+  });
 });

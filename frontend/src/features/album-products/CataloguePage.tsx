@@ -215,7 +215,8 @@ function ProductEditor({
               <Button
                 variant="secondary"
                 disabled={
-                  (product[group] || []).length >= (group === 'models' ? 20 : 30)
+                  (product[group] || []).length >=
+                  (group === 'models' ? 20 : 30)
                 }
                 onClick={() =>
                   onChange((current) => ({

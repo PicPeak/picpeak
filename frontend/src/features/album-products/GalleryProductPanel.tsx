@@ -4,6 +4,7 @@ import {
   choiceValues,
   pruneValues,
 } from './ConfigurationPicker';
+import { formatMoneyMinor } from '../../utils/money';
 import { Button, Input } from '../../components/common';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -21,7 +22,14 @@ function ProductChoice({
 }) {
   const { t } = useTranslation();
   const [offer, setOffer] = useState(initial),
-    [values, setValues] = useState(initial.product?.attributes ? pruneValues(initial.product.attributes, choiceValues(initial.selection)) : choiceValues(initial.selection)),
+    [values, setValues] = useState(
+      initial.product?.attributes
+        ? pruneValues(
+            initial.product.attributes,
+            choiceValues(initial.selection),
+          )
+        : choiceValues(initial.selection),
+    ),
     [model, setModel] = useState(initial.selection?.model?.id || ''),
     [colour, setColour] = useState(initial.selection?.colour?.id || ''),
     [name, setName] = useState(''),
@@ -36,9 +44,9 @@ function ProductChoice({
     const payload = {
         revision: offer.revision,
         productVersion: product?.version,
-        values,
-        modelId: model,
-        colourId: colour,
+        ...(product?.attributes
+          ? { values }
+          : { modelId: model, colourId: colour }),
         name,
         submit: commit,
       },
@@ -50,7 +58,12 @@ function ProductChoice({
         `/gallery/${slug}/album-products/${offer.id}`,
         { ...payload, mutationId: attempt.current.id },
       );
-      setOffer({ ...result.data, product });
+      setOffer((current) => ({
+        ...current,
+        ...result.data,
+        product,
+        needsReview: false,
+      }));
       attempt.current = null;
     } catch (e) {
       setError(errorMessage(e));
@@ -75,7 +88,14 @@ function ProductChoice({
               : t('albumProducts.draft', 'Draft')}
         </p>
       )}
-      {offer.needsReview && <p role="status">{t('products.needsReview', 'Your selected options changed. Please review and submit your choice again.')}</p>}
+      {offer.needsReview && (
+        <p role="status">
+          {t(
+            'products.needsReview',
+            'Your selected options changed. Please review and submit your choice again.',
+          )}
+        </p>
+      )}
       {locked && (
         <>
           <p>
@@ -117,13 +137,29 @@ function ProductChoice({
       {!locked && product && (
         <>
           {product.attributes ? (
-            <ConfigurationPicker
-              product={product}
-              values={values}
-              onChange={setValues}
-              disabled={busy}
-              slug={slug}
-            />
+            <div className="space-y-3">
+              {offer.pricing && (
+                <p className="text-sm">
+                  {t(
+                    'products.informationalPrice',
+                    'Indicative base price; the studio confirms the final price when locking your choice.',
+                  )}{' '}
+                  {formatMoneyMinor(
+                    offer.pricing.baseUnitPriceMinor,
+                    offer.pricing.currency,
+                  )}
+                </p>
+              )}
+              <ConfigurationPicker
+                product={product}
+                values={values}
+                onChange={setValues}
+                disabled={busy}
+                slug={slug}
+                surcharges={offer.pricing?.surcharges}
+                currency={offer.pricing?.currency}
+              />
+            </div>
           ) : (
             <>
               {' '}
@@ -224,8 +260,7 @@ function ProductChoice({
                 busy ||
                 offer.status === 'submitted' ||
                 !name.trim() ||
-                !model ||
-                !colour
+                (!product.attributes && (!model || !colour))
               }
               onClick={() => submit(false)}
             >

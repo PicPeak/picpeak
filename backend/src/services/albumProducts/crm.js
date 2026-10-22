@@ -31,8 +31,11 @@ function surcharges(value, product) {
   });
 }
 async function catalogueProduct(db, id) {
-  const flag = await db('feature_flags').where({ key: 'albumProducts' }).first();
-  if (!isTruthyFlag(flag?.value)) throw new AppError('Product configuration is disabled', 403);
+  const flag = await db('feature_flags')
+    .where({ key: 'albumProducts' })
+    .first();
+  if (!isTruthyFlag(flag?.value))
+    throw new AppError('Product configuration is disabled', 403);
   const catalog = await db('album_product_catalogue').where({ id: 1 }).first();
   const product = G.resolve(
     parse(catalog?.products || '[]').find((p) => p.id === id),
@@ -69,8 +72,40 @@ async function presetColumns(db, payload, existing = {}) {
   };
 }
 async function prepareLine(db, line, { quoteId, currency } = {}) {
+  const finish = (prepared) => {
+    const {
+      configuration_values: values,
+      configuration_source_line_id: source,
+      ...out
+    } = prepared;
+    if (!out.configuration_definition) return out;
+    if (
+      line.configuration_locked !== undefined &&
+      typeof line.configuration_locked !== 'boolean' &&
+      ![0, 1].includes(line.configuration_locked)
+    )
+      throw new AppError('Invalid configuration lock', 400);
+    out.configuration_locked =
+      line.configuration_locked === undefined
+        ? isTruthyFlag(out.configuration_locked)
+        : isTruthyFlag(line.configuration_locked);
+    const definition = parse(out.configuration_definition);
+    return configureLines(
+      [out],
+      values === undefined
+        ? []
+        : [
+            {
+              position: Number(out.position),
+              definitionVersion: definition.version,
+              values,
+            },
+          ],
+      { complete: out.configuration_locked, authoring: true },
+    )[0];
+  };
   // Definitions already produced inside the service (reissue/template paths).
-  if (line.configuration_definition) return line;
+  if (line.configuration_definition) return finish(line);
   const out = { ...line };
   delete out.configuration_source_line_id;
   if (line.configuration_source_line_id && quoteId) {
@@ -80,22 +115,31 @@ async function prepareLine(db, line, { quoteId, currency } = {}) {
     if (!source)
       throw new AppError('The source quote line changed; reload it', 409);
     if (source.configuration_definition)
-      return {
+      return finish({
         ...out,
         catalogue_preset_id: source.catalogue_preset_id,
         configuration_definition: source.configuration_definition,
         configuration_snapshot: source.configuration_snapshot,
-        configuration_base_details: source.configuration_base_details,
-      };
+        configuration_base_details:
+          line.details_text === undefined ||
+          line.details_text === source.details_text
+            ? source.configuration_base_details
+            : line.details_text || null,
+        configuration_locked: source.configuration_locked,
+      });
   }
-  if (!line.catalogue_preset_id) return out;
-  if (line.line_kind && line.line_kind !== 'item') throw new AppError('A configured product must be a regular quote item', 400);
+  if (!line.catalogue_preset_id) return finish(out);
+  if (line.line_kind && line.line_kind !== 'item')
+    throw new AppError(
+      'A configured product must be a regular quote item',
+      400,
+    );
   const preset = await db('quote_line_item_presets')
     .where({ id: line.catalogue_preset_id })
     .first();
   if (!preset || !isTruthyFlag(preset.is_active))
     throw new AppError('The catalogue item is unavailable', 400);
-  if (!preset.product_id) return out;
+  if (!preset.product_id) return finish(out);
   if (currency && preset.currency !== currency)
     throw new AppError('Product and quote currencies must match', 400);
   const product = await catalogueProduct(db, preset.product_id);
@@ -106,15 +150,19 @@ async function prepareLine(db, line, { quoteId, currency } = {}) {
     surcharges: surcharges(parse(preset.product_surcharges) || [], product),
   };
   definition.version = V.hash(definition);
-  return {
+  return finish({
     ...out,
     unit_price_minor: definition.baseUnitPriceMinor,
     configuration_definition: JSON.stringify(definition),
     configuration_snapshot: null,
     configuration_base_details: out.details_text || null,
-  };
+  });
 }
-function configureLines(lines, configurations = [], { complete = true } = {}) {
+function configureLines(
+  lines,
+  configurations = [],
+  { complete = true, authoring = false } = {},
+) {
   if (!Array.isArray(configurations) || configurations.length > 200)
     throw new AppError('Invalid configurations', 400);
   const entries = new Map();
@@ -134,9 +182,12 @@ function configureLines(lines, configurations = [], { complete = true } = {}) {
     const parent = line.parent_line_item_id
       ? topById.get(line.parent_line_item_id)
       : lines.find(
-        (li) => Number(li.position) === Number(line.parent_position),
-      );
-    if (isUnselectedOptional(line) || (parent && isUnselectedOptional(parent)))
+          (li) => Number(li.position) === Number(line.parent_position),
+        );
+    if (
+      !authoring &&
+      (isUnselectedOptional(line) || (parent && isUnselectedOptional(parent)))
+    )
       return {
         ...line,
         unit_price_minor: definition.baseUnitPriceMinor,
@@ -153,10 +204,25 @@ function configureLines(lines, configurations = [], { complete = true } = {}) {
         409,
         'CONFIGURATION_CHANGED',
       );
-    const snapshot = V.selection(definition.product, {
-      productVersion: definition.product.version,
-      values: request ? request.values : G.valuesOf(previous),
-    });
+    const values = request ? request.values : G.valuesOf(previous);
+    const snapshot = G.selection(
+      definition.product,
+      {
+        productVersion: definition.product.version,
+        values,
+      },
+      { complete },
+    );
+    if (
+      !authoring &&
+      isTruthyFlag(line.configuration_locked) &&
+      V.hash(snapshot.attributes) !== V.hash(previous?.attributes)
+    )
+      throw new AppError(
+        'This product specification is locked by the studio',
+        409,
+        'CONFIGURATION_LOCKED',
+      );
     const breakdown = definition.surcharges.filter((s) =>
       snapshot.attributes.some(
         (a) =>
@@ -216,6 +282,7 @@ async function writeSnapshots(tx, quoteId, configuredLines, history) {
       history,
     );
   }
+  await require('./retention').retain(tx, 'quote', quoteId, configuredLines);
 }
 async function quoteImage(db, quoteId, imageId) {
   V.uuid(imageId);

@@ -1,44 +1,44 @@
-# Album product choices (experimental, #1924)
+# Product configuration
 
-The **Album products** feature flag is off by default. It offers a gallery's primary client a photographed model/colour catalogue, records the choice and notifies the photographer in the native activity bell. It does not alter quotes, calculate prices, accept payment or place supplier orders.
+An experimental shared product configurator for gallery clients and CRM quotes. The `albumProducts` feature flag defaults off. The agreed scope is documented in [the direction](product-configurator-direction.md) and [CRM implementation notes](product-configurator-crm-draft.md).
 
-## Photographer workflow
+## Set up the catalogue
 
-1. Enable Album products in Settings → Features.
-2. In Settings → Album products, add a product, models and colours. Upload a PNG you have permission to display for each active option. Restrict colours to particular models if needed. Save the catalogue using the shared save bar.
-3. In a gallery's Overview → Album configuration, assign an active product.
-4. The client chooses a model and compatible colour within their gallery, enters their name and saves a draft or submits the choice.
-5. Review the choice in the gallery's Overview and lock it when confirmed. Unlock explicitly if further changes are agreed. Hiding an offer immediately removes its client image and mutation access.
+1. Enable product configuration in Settings → Features.
+2. Maintain reusable option groups in the product catalogue: sizes, colours, covers, frames, papers or other choices. Size options store width, height and mm/cm/in. Upload a PNG you have permission to display for active options; the same image can be reused.
+3. Define a product type with required, optional or multiple-choice attributes. An attribute can have one prerequisite choice, such as a mat available only with a frame. Cycles and invalid references are refused.
+4. Add an active product using that type and save with the shared settings save bar. Existing model/colour products remain readable during the transition.
+5. When using CRM, attach the shared product to a fixed-price catalogue item. Set its currency, base price, option surcharges and an active output VAT code. These are commercial catalogue prices, independent of the shared option library.
 
-A primary-client gallery credential or assigned customer-portal session is required. Public visitors, guests and slideshow sessions cannot read or change choices. An admin preview is read-only. The entered client name is an audit label, not a verified signature.
+## Gallery workflow
 
-## Permissions and change handling
+1. In the gallery Overview → Product configuration, assign an active product.
+2. With CRM billing enabled, link the CRM price item. Assign the gallery to a customer first; choose the billing recipient explicitly if multiple customers are assigned. The gallery price-display toggle defaults off. Displayed prices are indicative; the binding price is copied at lock time.
+3. The client opens the compact product entry inside their gallery, chooses options, enters their name and saves a partial draft or submits a complete choice. Dependencies hide unavailable extras. A submitted choice must be resubmitted rather than silently returned to draft.
+4. Review and lock the choice. Without CRM this confirms the specification only. With CRM billing enabled it creates an audited open customer/project product item at the current catalogue price. Exactly one compatible unissued, unarmed project invoice receives its own frozen product line automatically. Otherwise the item stays open.
+5. Bill open product items from the gallery or the customer's Product items panel. This creates a separate product-only invoice; it does not amend an issued invoice or resend an accepted quote. The customer panel retains open items after gallery deletion. Items with different currencies or VAT codes are billed separately.
+6. Unlocking removes an unbilled item. A billed choice requires the normal invoice cancellation/Storno correction first; a live replacement invoice also prevents silent changes. Hiding an offer immediately withdraws client image and mutation access.
 
-`products.view` reads the catalogue and gallery choices; `products.manage` edits the global catalogue and uploads images. `albums.edit` assigns offers and locks/unlocks them. Existing event ownership/assignment checks apply to all gallery-specific admin routes. The global catalogue is intentionally shared between catalogue managers; it is not scoped to individual galleries.
+A primary-client/PIN gallery credential or assigned customer-portal session is required. Guests and slideshow sessions cannot read or change choices; admin previews are read-only. The entered name is an audit label. Financial controls require gallery ownership and native billing permissions; assigning a teammate to a gallery does not grant financial access.
 
-Catalogue saves and choice changes require an expected revision. A stale editor receives a conflict and retains their draft to review before reloading. Client mutations have retry identifiers; a lost response can be retried without duplicate history or notifications. A product fingerprint prevents submitting or locking options that changed since they were displayed. Unrelated products can change independently.
+## Quote workflow
 
-Choices store immutable model/colour names and image references. Removing or renaming options never rewrites previous choices. Locked choices remain visible after catalogue retirement. A submitted choice whose catalogue changed must be reviewed/resubmitted before it can be locked. History is available to authorised photographers through `GET /api/admin/album-products/events/:eventId/offers/:id/history`.
+Add the configurable catalogue item directly, through a package, or through a published quote template. The quote copies the offered definition and prices when authored. The photographer may pre-fill choices or lock a complete agreed specification. Clients can finish or change unlocked choices, including an optional product they book on the quote page; locked specifications are read-only.
 
-## Storage, backup and lifecycle
+Verified public quote pages and the authenticated customer portal use the same picker. The server recomputes quantities, surcharges, discounts and totals and checks the total confirmed by the customer. Acceptance freezes option IDs, labels, dimensions, images and the price breakdown. Contract and invoice lines carry the frozen specification. Existing response-window and conversion locks continue to apply. Surcharges follow the native VAT treatment of the configured line's full unit price, without a separate surcharge tax rate.
 
-Images use the normal storage adapter (local filesystem or S3-compatible storage), generated keys under `album-products/`, and authenticated API delivery with `private, no-store`. Uploads accept actual non-animated PNGs up to 6 MB/16 megapixels and re-encode a bounded, metadata-free rendition. No supplier URLs, filesystem paths or storage credentials reach clients.
+## Storage and recovery
 
-The native backup-path registry, S3 required-key inventory and `.picpeak` export/import roots include these images. Database tables participate in standard database backups. Feature disabling does not delete history or withdraw backups. Native gallery deletion explicitly removes choice history and offers on both engines (SQLite runs with foreign-key cascades disabled); gallery expiry, archive and session revocation use existing gallery lifecycle enforcement. Historical and unassigned product images are retained deliberately in this first experimental slice; automatic garbage collection is not introduced here.
+Images use the normal local/S3-compatible storage adapter, generated `album-products/` keys and authenticated delivery with `private, no-store`. Actual non-animated PNG uploads are limited to 6 MB and 16 megapixels, then re-encoded to remove metadata. No supplier URLs, filesystem paths or storage credentials reach clients.
 
-## Proposed defaults for issue #1924
+Database backups, the native backup-path registry, required-key recovery inventory and portable `.picpeak` transfers include these image rows and objects. Images referenced by accepted quotes, contracts, invoices and billed items are pinned independently of the catalogue. PostgreSQL and SQLite deletion guards protect them even when SQLite foreign keys are disabled. Automatic image garbage collection is not introduced.
 
-The issue leaves placement, pricing and locking open. This draft proposes gallery-based configuration, one model and one compatible colour per assigned product, prices agreed independently, and explicit photographer locking. It keeps configuration separate from the quote catalogue because a quote's historical financial contents must not change when product options change. Quote/portal presentation and generic attribute groups remain maintainer decisions.
+Both native and archived gallery deletion remove client choice history and offers explicitly, including names and session digests. Audited product billing records survive with their event link cleared; financial evidence and image pins remain retained. Expiry, archive and session revocation use the existing gallery lifecycle checks.
 
-## Validation
+Revision checks prevent stale saves; request retry IDs prevent duplicate submissions, notifications and billable items. The invoice product revision also prevents an outdated PDF being sent if a product was appended during rendering. Failures preserve the client's unsaved form and offer a reload/retry action.
 
-Focused tests cover SQLite and optional Postgres domain contracts, actual local storage/PNG processing, native authentication and event scoping, gallery expiry/revocation, stale revisions/catalogue changes, retry notification deduplication, locked snapshots, asynchronous catalogue uploads and client recovery. All fixtures are synthetic. No supplier design or client photo is bundled.
+## Migration and validation
 
+Migration 316 introduces the original catalogue/choice storage and disabled feature flag. Migration 317 adds generic library and CRM snapshots and renames `albums.edit` to `products.configure` while preserving grants. Migration 318 adds quote locks, gallery price settings, audited billable items, retained image references and the invoice revision guard. `products.view`, `products.manage` and `products.configure` remain separate permissions; billing retains native customer/invoice permissions.
 
-## Review milestone (22 October 2026)
-
-This branch fixes the four blocking findings before widening the model. Migration **316_product_configurator.js** creates four tables plus the disabled `albumProducts` flag and used permissions (`products.view`, `products.manage`, `albums.edit`, category `albums`). The canonical image backup path is seeded only by migration 109; 316 rollback removes that path. No `albums.view` or `albums.export` grants are seeded.
-
-The client entry is a collapsed details panel inside standard gallery content; full-page layouts place it after their photo content so it does not precede or overlap the gallery navigation. Guests and normal guest-password sessions cannot configure products: primary-client/PIN or assigned portal access is required. Draft → submitted → locked is explicit; a submitted choice cannot silently revert to draft. Description-only edits do not prevent locking, whereas changed/retired chosen options require review.
-
-Shared direction proposed to the maintainer: one generic option/image library, structured size presets, admin-defined attributes and dependent add-ons, a shared picker, CRM-owned prices and surcharges, offered definitions copied into quotes, and immutable selection/price snapshots on acceptance carried into contracts and invoices. Standalone gallery configuration remains available without CRM. See [the design discussion](https://github.com/PicPeak/picpeak/pull/2222#issuecomment-6335000437). Maintainer confirmation is pending; the broader CRM draft is kept separate from this blocker milestone.
+Regression tests use real core migrations on SQLite and PostgreSQL 15, synthetic PNGs, native HTTP authentication, quote arithmetic, document snapshots and invoice correction workflows. The PR description records current counts and remaining upstream validation limitations. No real client photos, supplier designs, studio prices, payment collection or supplier ordering are included.

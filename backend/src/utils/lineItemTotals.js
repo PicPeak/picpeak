@@ -218,6 +218,7 @@ function extendedLineColumns(li, { invoice = false } = {}) {
     bound_to: li.bound_to || null,
     promotion_snapshot: snapshot ? JSON.stringify(snapshot) : null,
     ...(li.catalogue_preset_id == null ? {} : { catalogue_preset_id: li.catalogue_preset_id }),
+    ...(li.configuration_definition == null ? {} : { configuration_locked: formatBoolean(isTruthyFlag(li.configuration_locked)) }),
     ...(li.configuration_definition == null ? {} : { configuration_definition: typeof li.configuration_definition === 'string' ? li.configuration_definition : JSON.stringify(li.configuration_definition), configuration_snapshot: li.configuration_snapshot == null ? null : typeof li.configuration_snapshot === 'string' ? li.configuration_snapshot : JSON.stringify(li.configuration_snapshot), configuration_base_details: li.configuration_base_details || null }),
   };
 }
@@ -227,6 +228,8 @@ function lineItemFieldsFromApi(li) {
   const out = {};
   if (li.cataloguePresetId != null) out.catalogue_preset_id = ensureInt(li.cataloguePresetId);
   if (li.id != null) out.configuration_source_line_id = ensureInt(li.id);
+  if (li.configurationValues !== undefined) out.configuration_values = li.configurationValues;
+  if (li.configurationLocked !== undefined) out.configuration_locked = li.configurationLocked;
   if (li.lineKind !== undefined) out.line_kind = li.lineKind || 'item';
   if (li.unit !== undefined) out.unit = li.unit || null;
   if (li.isOptional !== undefined) out.is_optional = Boolean(li.isOptional);
@@ -248,6 +251,8 @@ function lineItemFieldsToApi(li) {
     cataloguePresetId: li.catalogue_preset_id || null,
     configurationDefinition: parsePromotionSnapshot(li.configuration_definition),
     configurationSnapshot: parsePromotionSnapshot(li.configuration_snapshot),
+    configurationBaseDetails: li.configuration_base_details || null,
+    configurationLocked: isTruthyFlag(li.configuration_locked),
     lineKind: li.line_kind || 'item',
     unit: li.unit || null,
     isOptional: isTruthyFlag(li.is_optional),
