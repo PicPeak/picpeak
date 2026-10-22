@@ -49,6 +49,9 @@ Get PicPeak running in under 5 minutes:
 
 ```bash
 # Clone the repository
+
+[![GetMerged Scorecard](https://getmerged.abhishekco.de/api/badge/PicPeak/picpeak)](https://getmerged.abhishekco.de/PicPeak/picpeak)
+
 git clone https://github.com/PicPeak/picpeak.git
 cd picpeak
 
