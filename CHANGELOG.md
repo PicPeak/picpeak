@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.178.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.177.2-beta.0...v3.178.0-beta.0) (2026-10-22)
+
+
+### Features
+
+* **projects:** new inquiry, and a project page that runs the job ([#2216](https://github.com/PicPeak/picpeak/issues/2216)) ([f54cecd](https://github.com/PicPeak/picpeak/commit/f54cecd9bda8a50c45704d1519d7d32ca9f73216))
+
 ## [3.177.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.177.1-beta.0...v3.177.2-beta.0) (2026-10-21)
 
 
