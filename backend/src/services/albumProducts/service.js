@@ -2,6 +2,10 @@
 const crypto = require('crypto');
 const V = require('./validation');
 const {
+  formatBoolean,
+  parseBoolean: normalizeBoolean,
+} = require('../../utils/dbCompat');
+const {
   AppError,
   ConflictError,
   NotFoundError,
@@ -39,7 +43,10 @@ function createService({ db, storage, sharp }) {
         throw new ConflictError('An option image is missing; upload it again');
     await db.transaction(async (tx) => {
       // Older portable backups predate this singleton. Recreate the empty seed.
-      await tx('album_product_catalogue').insert({ id: 1, revision: 0, products: '[]', updated_at: timestamp() }).onConflict('id').ignore();
+      await tx('album_product_catalogue')
+        .insert({ id: 1, revision: 0, products: '[]', updated_at: timestamp() })
+        .onConflict('id')
+        .ignore();
       const row = await tx('album_product_catalogue')
         .where({ id: 1 })
         .forUpdate()
@@ -172,11 +179,11 @@ function createService({ db, storage, sharp }) {
           ...row,
           product: product
             ? {
-              ...product,
-              version: V.hash(product),
-              models: product.models.filter((o) => o.active),
-              colours: product.colours.filter((o) => o.active),
-            }
+                ...product,
+                version: V.hash(product),
+                models: product.models.filter((o) => o.active),
+                colours: product.colours.filter((o) => o.active),
+              }
             : null,
         };
       });
@@ -241,7 +248,8 @@ function createService({ db, storage, sharp }) {
         updated_at: timestamp(),
       };
       if (admin) {
-        if (typeof input.enabled === 'boolean') update.enabled = input.enabled;
+        if (typeof input.enabled === 'boolean')
+          update.enabled = formatBoolean(input.enabled);
         else if (input.action === 'unlock' && current.status === 'locked')
           update.status = 'submitted';
         else if (
@@ -250,16 +258,27 @@ function createService({ db, storage, sharp }) {
           current.selection
         ) {
           const snapshot = V.parse(current.selection);
-          V.selection(product, {
-            productVersion: snapshot.productVersion,
+          const checked = V.selection(product, {
+            productVersion: V.hash(product),
             modelId: snapshot.model.id,
             colourId: snapshot.colour.id,
           });
+          if (
+            V.hash({ model: checked.model, colour: checked.colour }) !==
+            V.hash({ model: snapshot.model, colour: snapshot.colour })
+          )
+            throw new ConflictError(
+              'The selected options changed; ask the client to review them',
+            );
           update.status = 'locked';
         } else throw new AppError('This choice cannot move to that state', 409);
       } else {
         if (!current.enabled || current.status === 'locked')
           throw new ForbiddenError('This choice is locked or unavailable');
+        if (current.status === 'submitted' && input.submit !== true)
+          throw new ConflictError(
+            'A submitted choice must be resubmitted, not saved as a draft',
+          );
         const selected = V.selection(product, input);
         update.selection = JSON.stringify(selected);
         update.status = input.submit === true ? 'submitted' : 'draft';
@@ -267,7 +286,10 @@ function createService({ db, storage, sharp }) {
       if (
         Object.entries(update).every(
           ([key, value]) =>
-            ['revision', 'updated_at'].includes(key) || current[key] === value,
+            ['revision', 'updated_at'].includes(key) ||
+            (key === 'enabled'
+              ? normalizeBoolean(current[key]) === normalizeBoolean(value)
+              : current[key] === value),
         )
       )
         return shape(current);
@@ -276,20 +298,18 @@ function createService({ db, storage, sharp }) {
       await record(tx, next, actor, input);
       if (!admin && update.status === 'submitted') {
         // Native bell/audit entry in the same transaction: a replay cannot notify twice.
-        await tx('activity_logs').insert({
-          event_id: event.id,
-          activity_type: 'album_product_submitted',
-          actor_type: actor.type,
-          actor_id: String(actor.id || ''),
-          actor_name: actor.name || null,
-          metadata: JSON.stringify({
+        await require('../../database/db').logActivity(
+          'album_product_submitted',
+          {
             eventName: event.event_name,
             productName: product.name,
             modelName: V.parse(update.selection).model.name,
             colourName: V.parse(update.selection).colour.name,
-          }),
-          created_at: timestamp(),
-        });
+          },
+          event.id,
+          actor,
+          tx,
+        );
       }
       return shape(next);
     });

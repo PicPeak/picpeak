@@ -1,3 +1,4 @@
+import { Button, Input } from '../../components/common';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../config/api';
@@ -98,7 +99,7 @@ function ProductChoice({
               {product.models.map((option) => (
                 <label
                   key={option.id}
-                  className="block border rounded p-2 cursor-pointer min-w-0"
+                  className={`block border border-border-token rounded-lg p-2 cursor-pointer min-w-0 ${model === option.id ? 'tile-selected' : ''}`}
                 >
                   <ProductImage
                     slug={slug}
@@ -142,7 +143,7 @@ function ProductChoice({
                 .map((option) => (
                   <label
                     key={option.id}
-                    className="block border rounded p-2 cursor-pointer min-w-0"
+                    className={`block border border-border-token rounded-lg p-2 cursor-pointer min-w-0 ${colour === option.id ? 'tile-selected' : ''}`}
                   >
                     <ProductImage
                       slug={slug}
@@ -152,7 +153,7 @@ function ProductChoice({
                     <span className="flex items-center gap-2 mt-2">
                       <input
                         type="radio"
-                      aria-label={option.name}
+                        aria-label={option.name}
                         name={`colour-${offer.id}`}
                         value={option.id}
                         checked={colour === option.id}
@@ -164,16 +165,14 @@ function ProductChoice({
                 ))}
             </div>
           </fieldset>
-          <label className="block">
-            {t('albumProducts.yourName', 'Your name')}
-            <input
-              className="input w-full max-w-sm block"
-              maxLength={100}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={busy}
-            />
-          </label>
+          <Input
+            themed
+            label={t('albumProducts.yourName', 'Your name')}
+            maxLength={100}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={busy}
+          />
           <p className="text-sm">
             {t(
               'albumProducts.noCharge',
@@ -181,22 +180,27 @@ function ProductChoice({
             )}
           </p>
           <div className="flex gap-3 flex-wrap">
-            <button
-              className="btn btn-secondary min-h-11"
-              disabled={busy || !name.trim() || !model || !colour}
+            <Button
+              variant="secondary"
+              disabled={
+                busy ||
+                offer.status === 'submitted' ||
+                !name.trim() ||
+                !model ||
+                !colour
+              }
               onClick={() => submit(false)}
             >
               {t('albumProducts.saveDraft', 'Save draft')}
-            </button>
-            <button
-              className="btn btn-primary min-h-11"
+            </Button>
+            <Button
               disabled={busy || !name.trim() || !model || !colour}
               onClick={() => submit(true)}
             >
               {busy
                 ? t('common.saving', 'Saving…')
                 : t('albumProducts.submit', 'Submit choice')}
-            </button>
+            </Button>
           </div>
         </>
       )}
@@ -249,13 +253,13 @@ export function GalleryProductPanel({ slug }: { slug: string }) {
   }, [slug, reload, t]);
   if (!offers.length && !error) return null;
   return (
-    <section
+    <details
       aria-label={t('albumProducts.title', 'Your album choices')}
       className="max-w-7xl mx-auto px-4 py-6 space-y-4 text-text-primary bg-background"
     >
-      <h2 className="text-2xl font-semibold">
+      <summary className="cursor-pointer text-lg font-semibold">
         {t('albumProducts.title', 'Your album choices')}
-      </h2>
+      </summary>
       {offers.map((offer) => (
         <ProductChoice
           key={`${offer.id}-${reload}`}
@@ -272,6 +276,6 @@ export function GalleryProductPanel({ slug }: { slug: string }) {
           </button>
         </p>
       )}
-    </section>
+    </details>
   );
 }

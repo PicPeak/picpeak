@@ -263,6 +263,14 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
       await trx('selection_submissions').where('event_id', eventId).del();
     }
 
+    // Choices contain client names and session digests; SQLite FK cascades are off.
+    if (await trx.schema.hasTable('event_album_products')) {
+      if (await trx.schema.hasTable('album_product_choice_history')) {
+        await trx('album_product_choice_history').whereIn('offer_id', trx('event_album_products').where({ event_id: eventId }).select('id')).del();
+      }
+      await trx('event_album_products').where({ event_id: eventId }).del();
+    }
+
     await trx('photos').where('event_id', eventId).del();
     // Scene tags (issue 1733): the same inert-cascade reason. After the
     // photos, not with the face data above: a tagging worker locks the photo
