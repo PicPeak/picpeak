@@ -51,6 +51,7 @@ describe('isScannerProbePath', () => {
     '/customer',
     '/setup',
     '/impressum',
+    '/agb',
     '/datenschutz',
     '/quote/tok_123',
     '/contract/tok_123',

@@ -406,6 +406,13 @@ export const GalleryPage: React.FC = () => {
               </Link>
               <span className="text-xs text-muted-theme">|</span>
               <Link 
+                to="/agb" 
+                className="text-xs text-muted-theme hover:text-theme transition-colors"
+              >
+                {t('legal.agb')}
+              </Link>
+              <span className="text-xs text-muted-theme">|</span>
+              <Link 
                 to="/datenschutz" 
                 className="text-xs text-muted-theme hover:text-theme transition-colors"
               >
@@ -647,6 +654,13 @@ export const GalleryPage: React.FC = () => {
                 className="text-xs text-muted-theme hover:text-theme transition-colors"
               >
                 {t('legal.impressum')}
+              </Link>
+              <span className="text-xs text-muted-theme">|</span>
+              <Link 
+                to="/agb" 
+                className="text-xs text-muted-theme hover:text-theme transition-colors"
+              >
+                {t('legal.agb')}
               </Link>
               <span className="text-xs text-muted-theme">|</span>
               <Link 

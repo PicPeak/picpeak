@@ -172,6 +172,13 @@ export const LegalPage: React.FC = () => {
             </Link>
             <span className="text-muted-theme">•</span>
             <Link
+              to="/agb"
+              className="text-muted-theme hover:text-theme"
+            >
+              {t('legal.agb', 'Terms & Conditions')}
+            </Link>
+            <span className="text-muted-theme">•</span>
+            <Link
               to="/datenschutz"
               className="text-muted-theme hover:text-theme"
             >

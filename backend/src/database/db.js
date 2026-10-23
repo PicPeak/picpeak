@@ -632,6 +632,14 @@ async function ensureGlobalCategories() {
       content_de: '<h2>Datenschutzerklärung</h2><p>Bitte bearbeiten Sie diesen Inhalt im Admin-Panel.</p>',
       updated_at: new Date(),
     },
+    {
+      slug: 'agb',
+      title_en: 'Terms & Conditions',
+      title_de: 'AGB',
+      content_en: '<h2>Terms & Conditions</h2><p>Please edit this content in the admin panel.</p>',
+      content_de: '<h2>AGB</h2><p>Bitte bearbeiten Sie diesen Inhalt im Admin-Panel.</p>',
+      updated_at: new Date(),
+    },
     // Customisable error pages — issue #324. Generic copy by default;
     // admins can edit text + logo per page in the CMS Pages tab.
     {

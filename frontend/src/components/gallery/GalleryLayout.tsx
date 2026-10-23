@@ -163,6 +163,12 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
+  const { data: agbPage } = useQuery<PublicCMSPage>({
+    queryKey: ['public-cms', 'agb'],
+    queryFn: () => cmsService.getPublicPage('agb'),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
 
   // Determine header style - use prop first (from event data), then theme, then fall back to 'standard'
   const headerStyle: HeaderStyleType = headerStyleProp || theme.headerStyle || 'standard';
@@ -327,8 +333,9 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
   // When BOTH are hidden we still render the surrounding row only if
   // there's a guest "Forget me" button or socials to show.
   const showImpressum = impressumPage?.show_in_footer !== false;
+  const showAgb = agbPage?.show_in_footer !== false;
   const showDatenschutz = datenschutzPage?.show_in_footer !== false;
-  const hasLegalLinks = showImpressum || showDatenschutz;
+  const hasLegalLinks = showImpressum || showAgb || showDatenschutz;
   const hasFooterRow = hasLegalLinks || socialLinks.length > 0 || !!guestIdentity?.identity;
 
   return (
@@ -798,7 +805,29 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                   </Link>
                 )
               )}
-              {showImpressum && showDatenschutz && (
+              {showImpressum && (showAgb || showDatenschutz) && (
+                <span className="text-xs text-muted-theme">|</span>
+              )}
+              {showAgb && (
+                agbPage?.use_external_url && agbPage.external_url ? (
+                  <a
+                    href={agbPage.external_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-theme hover:text-theme transition-colors"
+                  >
+                    {t('legal.agb')}
+                  </a>
+                ) : (
+                  <Link
+                    to="/agb"
+                    className="text-xs text-muted-theme hover:text-theme transition-colors"
+                  >
+                    {t('legal.agb')}
+                  </Link>
+                )
+              )}
+              {showAgb && showDatenschutz && (
                 <span className="text-xs text-muted-theme">|</span>
               )}
               {showDatenschutz && (
