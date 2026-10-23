@@ -298,6 +298,13 @@ app.options('/api/*', cors(corsOptions));
 // PicPeak credentials, or forwards arbitrary upstream responses.
 app.use('/api/analytics/tracker', require('./src/routes/analyticsTrackerProxy'));
 
+// Photo sales: the Snipcart order webhook verifies its HMAC
+// over the RAW request bytes, so it must be mounted ahead of the global JSON
+// body parsers (which would otherwise consume the stream and re-serialise the
+// body in a byte layout that never matches the signature). Unmatched gallery
+// paths fall through to the regular gallery router below unchanged.
+app.use('/api/gallery', require('./src/routes/gallery/snipcartWebhook'));
+
 // Health check endpoint. Public, so it answers only `status` (see
 // src/services/healthCheck.js).
 //
@@ -1525,6 +1532,13 @@ async function startServerInternal() {
     // lazy means they don't pay for a module graph they never use.
     require('./src/services/faceQueue').start();
 
+    // Photo sales: priced galleries whose promo-code
+    // discount is missing (e.g. the Snipcart secret key was added after the
+    // gallery was saved) get one sync attempt per server start. Fire and
+    // forget, delayed so the HTTP stack is up.
+    setTimeout(() => {
+      require('./src/modules/photoSales/promoDiscount').startupSync().catch(() => {});
+    }, 5000);
     // Scene tagging (issue 1733). Same shape: idle until the `autoTagging`
     // feature flag is on, and it never contacts the sidecar before that.
     require('./src/services/tagQueue').start();

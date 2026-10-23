@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Download, Maximize2, Check, MessageSquare, Heart, Loader2 } from 'lucide-react';
+import { Download, Maximize2, Check, MessageSquare, Heart, Loader2, ShoppingCart } from 'lucide-react';
 import { useInView } from 'react-intersection-observer';
 import { AuthenticatedImage } from '../common';
 import { thumbnailUrlForTile } from './imageTiers';
@@ -19,6 +19,9 @@ import { downloadLimitReachedMessage } from '../../utils/downloadLimit';
 import { useInputMode } from '../../hooks/useInputMode';
 import { usePhotoDownloadPending, preparingDownloadMessage } from '../../hooks/usePhotoDownloadPending';
 import { useGridDensity } from './gridDensity';
+import { PhotoPurchaseBadge } from '../../features/photo-sales/PhotoPurchaseBadge';
+import { usePhotoSales } from '../../features/photo-sales/PhotoSalesContext';
+import { effectivePhotoPrice, snipcartItemProps } from '../../features/photo-sales/photoSales';
 import type { Photo } from '../../types';
 
 export /** Action buttons (36px) + gap + rating pill (28px); below this the row would overlap the buttons. */
@@ -151,6 +154,20 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   topLeftExtras,
 }) => {
   const guestIdentity = useGuestIdentityOptional();
+  // Photo sales: in a priced gallery every photo is
+  // delivered through the checkout (the first N of the ORDER are free), so
+  // the direct download button is hidden and the price chip is the single
+  // entry point into the cart.
+  const photoSales = usePhotoSales();
+  const hideDownloadBySales = photoSales.checkoutReady;
+  const cartItemProps = photoSales.checkoutReady
+    ? snipcartItemProps({
+      slug: photoSales.slug,
+      priceCheckUrl: photoSales.priceCheckUrl,
+      price: effectivePhotoPrice(photoSales.price, photo.photo_price),
+      photo,
+    })
+    : null;
   // Download limit (issue 1560): shown as unavailable once nothing is left.
   // aria-disabled rather than disabled, so the click still reaches the
   // handler (which explains the refusal) instead of falling through to the
@@ -369,6 +386,12 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const actionIconClass = actionVariant === 'dark' ? 'w-5 h-5 text-white' : 'w-5 h-5 text-neutral-800';
 
   const handlePhotoClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Photo sales: cart controls let the click bubble to
+    // Snipcart's document-level delegation; the tile must ignore those
+    // clicks instead of opening the lightbox.
+    if ((e.target as HTMLElement | null)?.closest?.('.snipcart-add-item, .snipcart-checkout')) {
+      return;
+    }
     if (isTouchDevice && !overlayVisible && !isSelectionMode) {
       e.preventDefault();
       e.stopPropagation();
@@ -572,6 +595,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
 
           {beforeOverlay}
 
+          {/* Photo sales: always-visible price chip; one
+              tap puts the photo into the Snipcart cart. */}
+          <PhotoPurchaseBadge photo={photo} />
+
           {/* Hover Overlay */}
           <div className={overlayClassName}>
             {!isSelectionMode && (
@@ -588,7 +615,19 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                 >
                   <Maximize2 className={actionIconClass} />
                 </button>
-                {allowDownloads && (
+                {/* Photo sales: in a priced gallery the
+                    hover action is the cart, not a download. */}
+                {cartItemProps && (
+                  <button
+                    type={buttonType}
+                    className={`snipcart-add-item ${actionButtonClass}`}
+                    aria-label={t('photoSales.addToCart', 'Add photo to cart')}
+                    {...cartItemProps}
+                  >
+                    <ShoppingCart className={actionIconClass} />
+                  </button>
+                )}
+                {allowDownloads && !hideDownloadBySales && (
                   <button
                     type={buttonType}
                     className={actionButtonClass}

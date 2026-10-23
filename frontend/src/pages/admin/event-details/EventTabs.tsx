@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Image, Settings } from 'lucide-react';
+import { Image, Settings, ShoppingBag } from 'lucide-react';
 import type { Event } from '../../../types';
 import type { EventDetailsTab } from './types';
 import { Tabs, type TabItem } from '../../../components/common';
@@ -32,6 +32,10 @@ export const EventTabs: React.FC<EventTabsProps> = ({
       count: event.photo_count,
     },
     ...(showGuestsTab ? [{ id: 'guests' as const, label: t('admin.events.tabs.guestsFeedback', 'Guests & Feedback') }] : []),
+    ...(event.is_priced
+      // Photo sales: orders overview for priced galleries.
+      ? [{ id: 'orders' as const, icon: <ShoppingBag />, label: t('admin.events.tabs.orders', 'Orders') }]
+      : []),
     {
       id: 'settings',
       icon: <Settings />,
