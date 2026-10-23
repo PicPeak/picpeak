@@ -140,6 +140,10 @@ export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback
             {lang === 'de' ? 'Impressum' : 'Legal Notice'}
           </Link>
           <span style={{ color: 'var(--color-surface-border)' }}>•</span>
+          <Link to="/agb" className="hover:underline">
+            {lang === 'de' ? 'AGB' : 'Terms & Conditions'}
+          </Link>
+          <span style={{ color: 'var(--color-surface-border)' }}>•</span>
           <Link to="/datenschutz" className="hover:underline">
             {lang === 'de' ? 'Datenschutz' : 'Privacy Policy'}
           </Link>

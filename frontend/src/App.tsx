@@ -536,6 +536,7 @@ const router = createBrowserRouter(
     {/* Public legal pages */}
     <Route path="/impressum" element={<LegalPage />} />
     <Route path="/datenschutz" element={<LegalPage />} />
+    <Route path="/agb" element={<LegalPage />} />
     <Route path="/:slug" element={<LegalPage />} />
 
     {/* Default redirect */}

@@ -5440,6 +5440,7 @@
   },
   "legal": {
     "impressum": "Legal Notice",
+    "agb": "Terms & Conditions",
     "datenschutz": "Privacy Policy",
     "notFoundTitle": "Page not found",
     "notFoundBody": "The page you are looking for does not exist.",

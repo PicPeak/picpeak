@@ -148,6 +148,7 @@ const DEFAULT_PUBLIC_SITE_HTML = `
     </div>
     <div class="footer-links">
       <a href="/datenschutz">Privacy Policy</a>
+      <a href="/agb">AGB</a>
       <a href="/impressum">Impressum</a>
       <a href="mailto:{{support_email}}">Support</a>
     </div>
