@@ -212,6 +212,12 @@
         "whatsapp"
       ],
       "reason": "Configured integration plus manual test only; no phone numbers, tokens or automatic delivery."
+    },
+    "watermark": {
+      "signals": [
+        "gallery_watermarks"
+      ],
+      "reason": "Watermark logo upload/removal and default watermark behavior settings only; no image contents or applied-watermark usage data."
     }
   },
   "reviewed_picpeak_base": "a5ff9264 (3.124.1-beta.0)",
@@ -1286,6 +1292,7 @@
         "POST /logo",
         "DELETE /logo",
         "POST /branding/watermark-logo",
+        "DELETE /branding/watermark-logo",
         "PUT /theme",
         "PUT /general",
         "PUT /security",
@@ -1653,7 +1660,9 @@
       "decision": "excluded",
       "signals": [],
       "reason": "Read-only bundled maintenance UI and assets never inspect business data or start product-usage middleware, callbacks, counters or report triggers.",
-      "route_signatures": ["GET *"]
+      "route_signatures": [
+        "GET *"
+      ]
     },
     "publicFonts.js": {
       "decision": "excluded",
@@ -1925,6 +1934,41 @@
         "POST /session/details",
         "POST /session/decline",
         "POST /session/upload-signed-pdf"
+      ]
+    },
+    "adminEvents/photoOrders.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Photo-sales surface (Snipcart extension): public/customer checkout and webhook endpoints without product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:id/photo-orders",
+        "POST /:id/photo-orders/:orderId/resend-email"
+      ]
+    },
+    "gallery/purchasedDownloads.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Photo-sales surface (Snipcart extension): public/customer checkout and webhook endpoints without product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /purchased-downloads/:accessToken",
+        "GET /purchased-downloads/:accessToken/photos/:photoId"
+      ]
+    },
+    "gallery/snipcart.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Photo-sales surface (Snipcart extension): public/customer checkout and webhook endpoints without product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:slug/price-check"
+      ]
+    },
+    "gallery/snipcartWebhook.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Photo-sales surface (Snipcart extension): public/customer checkout and webhook endpoints without product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "POST /snipcart-webhook",
+        "POST /:slug/snipcart-webhook"
       ]
     }
   },

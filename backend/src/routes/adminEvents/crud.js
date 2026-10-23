@@ -187,6 +187,10 @@ module.exports = (router) => {
     body('allow_downloads').optional().isBoolean(),
     body('disable_right_click').optional().isBoolean(),
     body('enable_devtools_protection').optional().isBoolean(),
+    body('is_priced').optional().isBoolean(),
+    body('free_photo_count').optional().isInt({ min: 0, max: 2147483647 }).toInt(),
+    body('photo_price').optional({ nullable: true, checkFalsy: true }).isDecimal({ decimal_digits: '2', force_decimal: false }).toFloat(),
+    body('purchase_access_days').optional().isInt({ min: 1, max: 2147483647 }).toInt(),
     // Image security. PUT /:id has validated these all along; create
     // accepted none of them, so a value sent here used to be dropped on the
     // floor and the column default applied instead (#1296).
@@ -281,6 +285,21 @@ module.exports = (router) => {
         actor: req.admin,
         frontendUrl: await getAbsoluteFrontendUrl(req, { override: process.env.APP_URL }),
       });
+
+      // Photo sales: priced galleries get their one-time
+      // promo code and the backing Snipcart discount right at creation.
+      try {
+        const promoService = require('../../modules/photoSales/promoDiscount');
+        if (created && created.id) {
+          const fresh = await db('events').where({ id: created.id }).first(
+            'id', 'event_name', 'is_priced', 'free_photo_count', 'photo_price', 'promo_code', 'snipcart_discount_id'
+          );
+          if (fresh) promoService.ensurePromoForEvent(fresh).catch(() => {});
+        }
+      } catch (promoErr) {
+        logger.warn('Promo code setup failed on event create', { error: promoErr.message });
+      }
+
       res.json(created);
     } catch (error) {
       if (error.isOperational) return res.status(error.statusCode).json(error.responseBody || { error: error.message, code: error.code });
@@ -1261,6 +1280,10 @@ module.exports = (router) => {
       return !isNaN(num) && Number.isInteger(num);
     }).withMessage('hero_photo_id must be an integer or null'),
     body('allow_downloads').optional().isBoolean(),
+    body('is_priced').optional().isBoolean(),
+    body('free_photo_count').optional({ nullable: true }).isInt({ min: 0, max: 2147483647 }).toInt(),
+    body('photo_price').optional({ nullable: true, checkFalsy: true }).isDecimal({ decimal_digits: '2', force_decimal: false }).toFloat(),
+    body('purchase_access_days').optional({ nullable: true }).isInt({ min: 1, max: 2147483647 }).toInt(),
     // Download limit (issue 1560). null clears it; the column is a signed
     // 32-bit int like photo_cap.
     body('download_limit').optional({ nullable: true }).isInt({ min: 1, max: 2147483647 }).toInt(),
@@ -2203,7 +2226,10 @@ module.exports = (router) => {
 
       // Invalidate download zip if watermark settings changed
       const changeKeys = Object.keys(req.body);
-      if (changeKeys.includes('watermark_downloads') || changeKeys.includes('watermark_text')) {
+      // Photo sales: is_priced too — a zip prebuilt before the
+      // gallery was priced holds clean originals.
+      if (changeKeys.includes('watermark_downloads') || changeKeys.includes('watermark_text')
+          || changeKeys.includes('is_priced')) {
         downloadZipService.invalidate(parseInt(id));
       }
       // The gallery's stored watermarks (the gallery view) draw its text too.
@@ -2211,6 +2237,31 @@ module.exports = (router) => {
           && String(updates.watermark_text ?? '').trim() !== String(event.watermark_text ?? '').trim()) {
         require('../../services/watermarkGeneratorService').regenerateForEvent(parseInt(id))
           .catch((err) => logger.error('Gallery watermark regeneration failed', { eventId: id, error: err.message }));
+      }
+
+      // Photo sales: when a gallery becomes priced (or its
+      // watermark inputs change), pre-generate the watermarked lightbox
+      // previews in the background so no visitor waits for them.
+      const salesKeys = ['is_priced', 'watermark_text', 'free_photo_count', 'photo_price'];
+      if (salesKeys.some((key) => changeKeys.includes(key))) {
+        const wasPriced = parseBooleanInput(event.is_priced, false);
+        const nowPriced = Object.prototype.hasOwnProperty.call(updates, 'is_priced')
+          ? parseBooleanInput(updates.is_priced, false)
+          : wasPriced;
+        if (nowPriced) {
+          require('../../modules/photoSales/salesRenditions')
+            .queueForEvent(parseInt(id, 10))
+            .catch(() => {});
+        }
+        // One-time promo code + Snipcart discount follow the pricing fields.
+        try {
+          const fresh = await db('events').where({ id }).first(
+            'id', 'event_name', 'is_priced', 'free_photo_count', 'photo_price', 'promo_code', 'snipcart_discount_id'
+          );
+          if (fresh) require('../../modules/photoSales/promoDiscount').ensurePromoForEvent(fresh).catch(() => {});
+        } catch (promoErr) {
+          logger.warn('Promo code setup failed on event update', { error: promoErr.message });
+        }
       }
 
       if (teamError) {

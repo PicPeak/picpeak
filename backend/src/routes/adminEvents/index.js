@@ -19,5 +19,6 @@ require('./logo')(router);
 require('./qr')(router);
 require('./faces')(router);
 require('./tags')(router);
+require('./photoOrders')(router);
 
 module.exports = router;

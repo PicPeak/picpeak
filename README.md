@@ -190,6 +190,10 @@ Unlike expensive SaaS solutions, PicPeak gives you:
 
 ## 📖 Documentation
 
+### Photo sales (Snipcart, optional)
+
+A gallery can be switched to **priced**: guests see every photo with a tiled watermark, buy the ones they want through a [Snipcart](https://snipcart.com) checkout, and get a personal download link for the clean originals by email. The first order can take a configurable number of photos free with a one-time promo code. Without the Snipcart keys nothing changes. Setup, pricing rules and the security model are in **[docs/PHOTO_SALES.md](docs/PHOTO_SALES.md)**.
+
 ### Standard backup authenticity and recovery
 
 Standard JSON/YAML backups use a v3 canonical HMAC-SHA256 manifest. The signature

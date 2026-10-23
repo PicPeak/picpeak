@@ -931,6 +931,22 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
     // Prepare update data
     const updateData = {};
 
+    // Photo sales: per-photo price override for priced
+    // galleries. null/empty clears the override and falls back to the
+    // gallery default; an explicit value replaces it.
+    if (Object.prototype.hasOwnProperty.call(req.body, 'photo_price')) {
+      const raw = req.body.photo_price;
+      if (raw === null || raw === '' || raw === undefined) {
+        updateData.photo_price = null;
+      } else {
+        const price = Number(raw);
+        if (!Number.isFinite(price) || price < 0) {
+          return res.status(400).json({ error: 'photo_price must be a non-negative number' });
+        }
+        updateData.photo_price = Math.round(price * 100) / 100;
+      }
+    }
+
     // Handle visibility update (#172)
     if (visibility !== undefined) {
       if (['visible', 'hidden'].includes(visibility)) {

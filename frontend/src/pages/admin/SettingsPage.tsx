@@ -27,6 +27,7 @@ import {
 } from '../../features/settings';
 import { EmailConfigPage } from './EmailConfigPage';
 import { BrandingPage } from './BrandingPage';
+import { WatermarkTab } from '../../features/settings/tabs/WatermarkTab';
 import { EventTypesPage } from './EventTypesPage';
 import { SlideshowSettingsPage } from './SlideshowSettingsPage';
 import { BackupManagement } from './BackupManagement';
@@ -258,6 +259,7 @@ export const SettingsPage: React.FC = () => {
           {activeTab === 'eventTypes' && <EventTypesPage />}
           {activeTab === 'slideshow' && <SlideshowSettingsPage />}
           {activeTab === 'branding' && <BrandingPage />}
+          {activeTab === 'watermark' && <WatermarkTab />}
           {activeTab === 'cms' && <CMSPage />}
           {activeTab === 'email' && <EmailConfigPage />}
           {activeTab === 'backup' && <BackupManagement />}

@@ -83,6 +83,15 @@ export interface Event {
   delivery_completed_at?: string | null;
   // Download protection fields
   allow_downloads?: boolean;
+  is_priced?: boolean;
+  free_photo_count?: number;
+  photo_price?: number | null;
+  purchase_access_days?: number;
+  // One-time promo code for the first order's free quota (backend
+  // galleryQueryService). Only advertised while the Snipcart discount
+  // exists (promo_discount_ready).
+  promo_code?: string | null;
+  promo_discount_ready?: boolean;
   protection_level?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   disable_right_click?: boolean;
   watermark_downloads?: boolean;
@@ -175,6 +184,10 @@ export interface GalleryInfo {
   color_theme?: string;
   default_photo_sort?: string;
   allow_downloads?: boolean;
+  is_priced?: boolean;
+  free_photo_count?: number;
+  photo_price?: number | null;
+  purchase_access_days?: number;
   allow_user_uploads?: boolean;
   // Resolved server-side (#894): false only when the admin hid the logo
   // on this gallery's password page.
@@ -278,6 +291,9 @@ export interface Photo {
   // Download limit (issue 1560): this gallery already downloaded the photo,
   // so downloading it again is free. Always false on an unlimited gallery.
   download_granted?: boolean;
+  // Photo sales: per-photo price override for priced
+  // galleries (null = gallery default).
+  photo_price?: number | null;
   // People detected in this photo (#1074). Always present when the feature
   // is on for the event — an empty array means "scanned, nobody found",
   // which is different from the feature being off (see

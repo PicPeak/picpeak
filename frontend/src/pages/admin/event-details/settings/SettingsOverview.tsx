@@ -9,9 +9,10 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle, Bell, ChevronRight, Download, FolderOpen, FolderTree, Lock, MonitorPlay,
-  Palette, ScanFace, SlidersHorizontal, Tags, Users, type LucideIcon,
+  Palette, ScanFace, SlidersHorizontal, Tags, Users, ShoppingCart, type LucideIcon,
 } from 'lucide-react';
 import type { Event } from '../../../../types';
+import { formatPhotoPrice } from '../../../../features/photo-sales/photoSales';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
 import type { EventSettingsDraft, SettingsSectionKey } from './draft';
 import { safeParseDate } from '../utils';
@@ -21,6 +22,7 @@ export const SECTION_ICON: Record<SettingsSectionKey, LucideIcon> = {
   appearance: Palette,
   access: Lock,
   downloads: Download,
+  pricing: ShoppingCart,
   guests: Users,
   slideshow: MonitorPlay,
   source: FolderOpen,
@@ -34,7 +36,7 @@ export const SECTION_ICON: Record<SettingsSectionKey, LucideIcon> = {
 /** Most used first; the danger zone is not in a group, it closes the list. */
 export const SECTION_GROUPS: Array<{ key: string; label: string; sections: SettingsSectionKey[] }> = [
   { key: 'basics', label: 'Basics', sections: ['general', 'appearance'] },
-  { key: 'access', label: 'Access & downloads', sections: ['access', 'downloads'] },
+  { key: 'access', label: 'Access & downloads', sections: ['access', 'downloads', 'pricing'] },
   { key: 'guests', label: 'Guests', sections: ['guests', 'slideshow'] },
   { key: 'photos', label: 'Photos & automation', sections: ['source', 'delivery', 'reminder', 'faces', 'tags'] },
 ];
@@ -101,6 +103,15 @@ export function useSectionSummaries(
         ...(f.allow_downloads && f.watermark_downloads ? [{ text: s('watermarked', 'watermarked') }] : []),
         ...(f.allow_downloads && f.download_limit > 0 ? [{ text: s('downloadLimit', 'limit {{count}}', { count: f.download_limit }) }] : []),
       ],
+    },
+    pricing: {
+      parts: f.is_priced
+        ? [
+            { text: s('pricedOn', 'Sales on'), tone: 'strong' as const },
+            { text: s('pricePerPhoto', '{{price}} per photo', { price: formatPhotoPrice(Number(f.photo_price) || 0) }) },
+            ...(f.free_photo_count > 0 ? [{ text: s('freePhotos', '{{count}} free', { count: f.free_photo_count }) }] : []),
+          ]
+        : [{ text: s('pricedOff', 'Not for sale'), tone: 'off' as const }],
     },
     guests: {
       parts: [
