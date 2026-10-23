@@ -88,6 +88,10 @@ interface FormData {
   photo_cap: number;
   // Download limit (issue 1560). 0 = unlimited.
   download_limit: number;
+  is_priced: boolean;
+  free_photo_count: number;
+  photo_price: number;
+  purchase_access_days: number;
   feedback_settings: {
     feedback_enabled: boolean;
     allow_ratings: boolean;
@@ -183,6 +187,10 @@ export const CreateEventPage: React.FC = () => {
     import_now: true,
     photo_cap: 0,
     download_limit: 0,
+    is_priced: false,
+    free_photo_count: 0,
+    photo_price: 0,
+    purchase_access_days: 30,
     feedback_settings: {
       feedback_enabled: false,
       allow_ratings: true,
@@ -655,6 +663,10 @@ export const CreateEventPage: React.FC = () => {
       show_credits_to_guests: formData.show_credits_to_guests,
       photo_cap: formData.photo_cap > 0 ? formData.photo_cap : null,
       download_limit: formData.download_limit > 0 ? formData.download_limit : null,
+      is_priced: formData.is_priced,
+      free_photo_count: formData.is_priced ? Math.max(0, Number(formData.free_photo_count || 0)) : 0,
+      photo_price: formData.is_priced ? Number(formData.photo_price || 0) : null,
+      purchase_access_days: formData.is_priced ? Math.max(1, Number(formData.purchase_access_days || 30)) : 30,
       feedback_enabled: feedbackSettings.feedback_enabled,
       allow_ratings: feedbackSettings.allow_ratings,
       allow_likes: feedbackSettings.allow_likes,
@@ -846,8 +858,57 @@ export const CreateEventPage: React.FC = () => {
           </div>
         </Card>
 
-        {/* Photo source: upload, or an external folder imported right away,
+        <Card>
+          <div className="p-6 space-y-6">
+            <h2 className="text-lg font-semibold text-heading flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              {t('photoSales.sectionTitle', 'Photo sales')}
+            </h2>
+
+            <label className="inline-flex items-center gap-3 text-sm font-medium text-body">
+              <input
+                type="checkbox"
+                checked={formData.is_priced}
+                onChange={(e) => setFormData(prev => ({ ...prev, is_priced: e.target.checked }))}
+                className="rounded border-line-strong"
+              />
+              {t('photoSales.pricedGallery', 'Priced gallery')}
+            </label>
+
+            {formData.is_priced && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Input
+                  label={t('photoSales.freePhotos', 'Free photos')}
+                  type="number"
+                  min={0}
+                  value={formData.free_photo_count}
+                  onChange={(e) => setFormData(prev => ({ ...prev, free_photo_count: Math.max(0, Number(e.target.value || 0)) }))}
+                />
+                <Input
+                  label={t('photoSales.pricePerPhoto', 'Price per extra photo')}
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={formData.photo_price}
+                  onChange={(e) => setFormData(prev => ({ ...prev, photo_price: Number(e.target.value || 0) }))}
+                />
+                <Input
+                  label={t('photoSales.accessDays', 'Access days')}
+                  type="number"
+                  min={1}
+                  value={formData.purchase_access_days}
+                  onChange={(e) => setFormData(prev => ({ ...prev, purchase_access_days: Math.max(1, Number(e.target.value || 30)) }))}
+                />
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Theme Selection */}
+
+{/* Photo source: upload, or an external folder imported right away,
             so a gallery is ready from this form alone. */}
+
         <Card>
           <div className="p-6 space-y-4">
             <h2 className="text-lg font-semibold text-heading flex items-center gap-2">

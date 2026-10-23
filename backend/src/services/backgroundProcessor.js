@@ -126,6 +126,23 @@ async function workerLoop(workerIdx) {
 
     try {
       await mediaAttempts.execute(claimed, 'photo', () => processPhoto(claimed.id));
+      // Photo sales: a photo that finished processing in a
+      // priced gallery gets its watermarked lightbox preview pre-generated
+      // right away, so no visitor has to wait for it later.
+      try {
+        const processed = await db('photos').where({ id: claimed.id }).first('event_id');
+        if (processed) {
+          const priced = await db('events').where({ id: processed.event_id }).first('is_priced');
+          if (priced && (priced.is_priced === true || priced.is_priced === 1)) {
+            require('../modules/photoSales/salesRenditions')
+              .generateSalesPreviewForPhoto(claimed.id)
+              .catch(() => {});
+          }
+        }
+      } catch (salesErr) {
+        // Pre-generation is an optimisation — never fail photo processing.
+        logger.warn(`backgroundProcessor[${workerIdx}]: sales preview queue failed for photo ${claimed.id}: ${salesErr.message}`);
+      }
     } catch (err) {
       // Every write below is fenced on this worker's own attempt: a row that
       // was replaced, retried or recovered meanwhile keeps its new state.

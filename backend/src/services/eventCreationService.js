@@ -77,6 +77,10 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     allow_downloads = true,
     disable_right_click = false,
     enable_devtools_protection: enableDevtoolsProtectionInput,
+    is_priced = false,
+    free_photo_count = 0,
+    photo_price = null,
+    purchase_access_days = 30,
     watermark_downloads = false,
     watermark_text = null,
     require_password: requirePasswordInput,
@@ -498,6 +502,10 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     allow_downloads: formatBoolean(allow_downloads !== undefined ? allow_downloads : true),
     disable_right_click: formatBoolean(disable_right_click !== undefined ? disable_right_click : false),
     enable_devtools_protection: formatBoolean(effectiveEnableDevtoolsProtection),
+    is_priced: formatBoolean(is_priced !== undefined ? is_priced : false),
+    free_photo_count: Number.isFinite(Number(free_photo_count)) ? Math.max(0, Number(free_photo_count)) : 0,
+    photo_price: photo_price !== undefined && photo_price !== null && photo_price !== '' ? Number(photo_price) : null,
+    purchase_access_days: Number.isFinite(Number(purchase_access_days)) ? Math.max(1, Number(purchase_access_days)) : 30,
     // Request value, else the global default, else the column default —
     // a key absent here is one the database fills in (#1296).
     ...imageSecurityColumns,

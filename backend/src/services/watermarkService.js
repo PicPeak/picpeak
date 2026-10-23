@@ -314,11 +314,23 @@ class WatermarkService {
       // outright — applyWatermark then catches its own error and silently
       // returns the unwatermarked original. Whether it lands on a whole pixel
       // was previously luck; nothing guaranteed it.
-      let watermarkedImage = image.composite([{
-        input: watermarkBuffer,
-        top: Math.max(0, Math.floor(position.top)),
-        left: Math.max(0, Math.floor(position.left))
-      }]);
+      let watermarkedImage;
+      // Photo sales: tiled mode repeats the mark across the
+      // whole image (strong protection for paid photos before checkout).
+      // Without the option the single-position composite below is used, so
+      // non-priced galleries render byte-identically to upstream PicPeak.
+      if (settings.tiled) {
+        watermarkedImage = image.composite([{
+          input: watermarkBuffer,
+          tile: true,
+        }]);
+      } else {
+        watermarkedImage = image.composite([{
+          input: watermarkBuffer,
+          top: Math.max(0, Math.floor(position.top)),
+          left: Math.max(0, Math.floor(position.left))
+        }]);
+      }
 
       // A DOWNLOAD keeps the photo's EXIF, XMP and IPTC (issue 1649) — same
       // reasoning as resizeToBox: the credit travels with the file the guest

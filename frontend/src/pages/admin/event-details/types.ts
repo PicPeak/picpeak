@@ -1,8 +1,9 @@
 import type { GuestNameMode } from '../../../types';
 
 // 'guests' is "Guests & Feedback". Categories live in the Photos tab; an old
-// ?tab=categories link opens Photos with the categories panel.
-export type EventDetailsTab = 'overview' | 'photos' | 'guests' | 'settings';
+// ?tab=categories link opens Photos with the categories panel. 'orders' is
+// the photo-sales purchase overview for priced galleries.
+export type EventDetailsTab = 'overview' | 'photos' | 'guests' | 'orders' | 'settings';
 
 export type EditFormState = {
   welcome_message: string;
@@ -58,6 +59,11 @@ export type EditFormState = {
   download_limit: number;
   // Default photo sort
   default_photo_sort: string;
+  // Photo sales pricing for paid galleries.
+  is_priced: boolean;
+  free_photo_count: number;
+  photo_price: number;
+  purchase_access_days: number;
   // Per-event promotional override (#440). Three-way mode:
   //   inherit → use the global branding_promo_markdown
   //   custom  → render this event's promo_markdown

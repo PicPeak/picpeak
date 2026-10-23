@@ -1709,6 +1709,36 @@ router.post('/branding/watermark-logo', adminAuth, requirePermission('settings.e
   }
 });
 
+// Photo sales: remove the watermark logo from the new
+// Settings → Watermark tab (same permission model as the upload route).
+router.delete('/branding/watermark-logo', adminAuth, requirePermission('settings.edit'), async (req, res) => {
+  try {
+    const setting = await db('app_settings')
+      .where('setting_key', 'branding_watermark_logo_path')
+      .first();
+
+    if (setting && setting.setting_value) {
+      let oldPath = setting.setting_value;
+      try { oldPath = JSON.parse(oldPath); } catch (_) { /* raw value */ }
+      if (oldPath && typeof oldPath === 'string') {
+        try { await fs.unlink(oldPath); } catch (error) {
+          logger.warn('Failed to delete old watermark logo file:', error);
+        }
+      }
+    }
+
+    await db('app_settings')
+      .whereIn('setting_key', ['branding_watermark_logo_path', 'branding_watermark_logo_url'])
+      .del();
+
+    watermarkService.clearCache();
+    capabilityEvidence(res, 'branding_editing');
+    res.json({ message: 'Watermark logo removed' });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to remove watermark logo');
+  }
+});
+
 // Update theme settings
 router.put('/theme', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {

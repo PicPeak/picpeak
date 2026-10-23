@@ -26,6 +26,7 @@ export type SettingsSectionKey =
   | 'general'
   | 'access'
   | 'downloads'
+  | 'pricing'
   | 'guests'
   | 'appearance'
   | 'source'
@@ -201,6 +202,11 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     photo_cap: event.photo_cap || 0,
     download_limit: event.download_limit || 0,
     default_photo_sort: event.default_photo_sort || 'upload_date_desc',
+    // Photo sales pricing for paid galleries.
+    is_priced: truthy(event.is_priced),
+    free_photo_count: Number(event.free_photo_count ?? 0),
+    photo_price: Number(event.photo_price ?? 0),
+    purchase_access_days: Number(event.purchase_access_days ?? 30),
     promo_mode: extra.promo_mode || 'inherit',
     info_mode: extra.info_mode || 'inherit',
     promo_markdown: extra.promo_markdown || '',
@@ -259,6 +265,10 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   photo_cap: 'downloads',
   download_limit: 'downloads',
   default_photo_sort: 'downloads',
+  is_priced: 'pricing',
+  free_photo_count: 'pricing',
+  photo_price: 'pricing',
+  purchase_access_days: 'pricing',
   protection_level: 'downloads',
   disable_right_click: 'downloads',
   allow_downloads: 'downloads',
@@ -432,6 +442,10 @@ function requestFields(f: EventFields): Record<string, unknown> {
     photo_cap: f.photo_cap > 0 ? f.photo_cap : null,
     download_limit: f.download_limit > 0 ? f.download_limit : null,
     default_photo_sort: f.default_photo_sort,
+    is_priced: f.is_priced,
+    free_photo_count: f.free_photo_count > 0 ? f.free_photo_count : null,
+    photo_price: f.photo_price > 0 ? f.photo_price : null,
+    purchase_access_days: f.purchase_access_days,
     hero_photo_id: f.hero_photo_id,
     og_image_share_enabled: f.og_image_share_enabled,
     hero_image_anchor: f.hero_image_anchor,

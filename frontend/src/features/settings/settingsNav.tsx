@@ -18,6 +18,7 @@ import {
   Webhook,
   Mail,
   Palette,
+  Droplets,
   FileText,
   HardDrive,
   Briefcase,
@@ -51,6 +52,8 @@ export type SettingsTab =
   | 'events'
   | 'eventTypes'
   | 'branding'
+  // Photo sales: dedicated watermark configuration tab.
+  | 'watermark'
   | 'categories'
   | 'thumbnails'
   | 'downloads'
@@ -108,7 +111,7 @@ export const ALL_SETTINGS_TABS: SettingsTab[] = [
   'usage', 'albumProducts',
   'features', 'general', 'events', 'eventTypes',
   'users',
-  'branding', 'categories', 'thumbnails', 'downloads', 'styling', 'cms',
+  'branding', 'watermark', 'categories', 'thumbnails', 'downloads', 'styling', 'cms',
   'email', 'moderation', 'transfers',
   'security', 'sso', 'imageSecurity', 'seo',
   'apiTokens', 'webhooks',
@@ -144,6 +147,7 @@ export const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, string[]> = {
   events:            ['settings.view'],
   eventTypes:        ['settings.view', 'event_types.view', 'event_types.manage'],
   branding:          ['settings.view', 'branding.view', 'branding.edit'],
+  watermark:         ['settings.view', 'branding.edit'],
   categories:        ['settings.view'],
   thumbnails:        ['settings.view'],
   downloads:         ['settings.view'],
@@ -267,6 +271,7 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
       label: t('settings.groups.appearance', 'Content & Appearance'),
       items: [
         { key: 'branding',   label: t('settings.branding.title',   'Branding'),    icon: Palette },
+        { key: 'watermark',  label: t('settings.watermark.title',  'Watermark'),   icon: Droplets },
         { key: 'categories', label: t('settings.categories.title'),                 icon: Tags },
         { key: 'thumbnails', label: t('settings.thumbnails.title', 'Thumbnails'),  icon: ImageIcon },
         { key: 'downloads',  label: t('settings.downloads.title',  'Download resolutions'), icon: DownloadIcon },

@@ -85,13 +85,15 @@ import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { beginPhotoDownload, endPhotoDownload, touchPhotoDownload, PHOTO_DOWNLOAD_STALE_MS } from '../../hooks/usePhotoDownloadPending';
-import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle } from 'lucide-react';
+import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle, ShoppingCart, Ticket } from 'lucide-react';
 import { galleryService, splitIntoArchives } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
 import { useGalleryCustomCss } from '../../hooks/useGalleryCustomCss';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { buildPhotoSalesConfig } from '../../features/photo-sales/photoSales';
+import { PhotoSalesProvider } from '../../features/photo-sales/PhotoSalesContext';
 import type { Photo } from '../../types';
 import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -160,6 +162,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
+  // Photo sales: copy-to-clipboard feedback for the
+  // one-time promo code banner.
+  const [promoCodeCopied, setPromoCodeCopied] = useState(false);
   // Open folder (#1160), mirrored to `?folder=<slug>` so it is linkable and the
   // browser back button walks out of it. Seeded from the URL on first render.
   const [openFolderSlug, setOpenFolderSlug] = useState<string | null>(() => readFolderParam());
@@ -413,6 +418,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   }, []);
 
   const { data: settingsData } = usePublicSettings();
+
+  // Photo sales: priced galleries get the Snipcart bootstrap
+  // and buy buttons; non-priced galleries never load any of it.
+  const photoSalesValue = useMemo(() => buildPhotoSalesConfig({
+    slug,
+    event: (data?.event as unknown) as Parameters<typeof buildPhotoSalesConfig>[0]['event'],
+    apiKey: (settingsData as { snipcart_api_key?: string | null } | undefined)?.snipcart_api_key ?? null,
+  }), [slug, data?.event, settingsData]);
 
   // Fetch feedback settings
   const { data: feedbackSettings } = useQuery({
@@ -1099,7 +1112,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   }, [setSelectedPhotos]);
 
   // Check if downloads are allowed (both event setting and not expired)
-  const allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
+  let allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
+
+  // Photo sales: a priced gallery delivers everything
+  // through the checkout: every download affordance (header, sidebar,
+  // tiles, lightbox, layout nav) is switched off and a Snipcart cart
+  // button takes the header slot instead.
+  const salesCheckoutReady = photoSalesValue.enabled && !!photoSalesValue.apiKey;
+  if (salesCheckoutReady && allowDownloads) allowDownloads = false;
 
   // Guest uploads: the refetched /photos payload decides once it is here. The
   // `event` prop is the snapshot the page loaded with, so OR-ing it in kept the
@@ -1754,6 +1774,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
         <GuestRecoveryModal />
+        <PhotoSalesProvider
+          value={{
+            ...photoSalesValue,
+            photos: (data?.photos || []) as Array<{ id: number; uploaded_at?: string | null }>,
+            checkoutReady: photoSalesValue.enabled && !!photoSalesValue.apiKey,
+          }}
+        >
+
         {/* #1160: these layouts return early and render edge-to-edge, but they
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
@@ -1962,6 +1990,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             }}
           />
         )}
+        </PhotoSalesProvider>
 
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
 
@@ -1988,6 +2017,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GridDensityOffered.Provider value={densityOffered}>
+      <PhotoSalesProvider
+        value={{
+          ...photoSalesValue,
+          photos: (data?.photos || []) as Array<{ id: number; uploaded_at?: string | null }>,
+          checkoutReady: photoSalesValue.enabled && !!photoSalesValue.apiKey,
+        }}
+      >
+
       <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
       <GuestRecoveryModal />
       {/* Sidebar for non-grid layouts */}
@@ -2128,7 +2165,26 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         headerExtra={(() => {
           const items = [];
           if (!showSidebar && clientAccessControl) items.push(<React.Fragment key="client-access">{clientAccessControl}</React.Fragment>);
-          
+
+          // Photo sales: cart button with live item count;
+          // Snipcart fills .snipcart-items-count and .snipcart-checkout
+          // opens the cart.
+          if (salesCheckoutReady) {
+            items.push(
+              <button
+                key="cart"
+                type="button"
+                className="snipcart-checkout gallery-btn inline-flex items-center gap-2 px-3 sm:px-4 h-9 rounded-lg text-sm font-medium transition-opacity hover:opacity-90"
+                style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-accent-fg, #ffffff)' }}
+                aria-label={t('photoSales.cart', 'Shopping cart')}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                <span className="hidden sm:inline">{t('photoSales.cart', 'Cart')}</span>
+                <span className="snipcart-items-count inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-white/25 text-xs font-semibold" />
+              </button>
+            );
+          }
+
           if (daysUntilExpiration !== null && daysUntilExpiration <= 1 && daysUntilExpiration > 0 && event.expires_at) {
             items.push(
               <CountdownTimer key="countdown" expiresAt={event.expires_at} className="mr-2" />
@@ -2414,6 +2470,48 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             </div>
           )}
           {folderNav}
+          {/* Photo sales: one-time promo code: the free quota
+              of the FIRST order is redeemed by entering the code at checkout
+              (Snipcart discount, single use, synced by the backend). */}
+          {(() => {
+            const salesEvent = data?.event as { promo_code?: string | null; promo_discount_ready?: boolean } | undefined;
+            const promoCode = salesEvent?.promo_code || null;
+            if (!salesCheckoutReady || photoSalesValue.freeCount <= 0 || !salesEvent?.promo_discount_ready || !promoCode) {
+              return null;
+            }
+            return (
+              <div
+                className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2.5"
+                role="status"
+                data-testid="photo-sales-promo-code"
+              >
+                <Ticket className="w-4 h-4 shrink-0 text-accent" aria-hidden="true" />
+                <span className="text-sm" style={{ color: 'var(--color-muted-text, #6b7280)' }}>
+                  {t('photoSales.promoCodeNotice', 'Promo code for your {{count}} free photos: {{code}} — enter it at checkout.', {
+                    count: photoSalesValue.freeCount,
+                    code: promoCode,
+                  })}
+                </span>
+                <code className="rounded bg-white/60 dark:bg-black/30 px-2 py-0.5 text-sm font-bold tracking-wider text-accent">
+                  {promoCode}
+                </code>
+                <button
+                  type="button"
+                  className="rounded-md border border-accent/50 px-2 py-1 text-xs font-medium text-accent hover:bg-accent/10"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(promoCode).then(() => {
+                      setPromoCodeCopied(true);
+                      window.setTimeout(() => setPromoCodeCopied(false), 2000);
+                    }).catch(() => {});
+                  }}
+                >
+                  {promoCodeCopied
+                    ? t('photoSales.promoCodeCopied', 'Copied!')
+                    : t('photoSales.promoCodeCopy', 'Copy')}
+                </button>
+              </div>
+            );
+          })()}
           {/* A gallery whose photos ALL live in folders has an empty root grid,
               and PhotoGridWithLayouts unconditionally renders "no photos found"
               — directly under the tiles that prove otherwise. Skip the grid when
@@ -2530,6 +2628,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
+      </PhotoSalesProvider>
       </GridDensityOffered.Provider>
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>

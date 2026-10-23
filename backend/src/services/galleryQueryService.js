@@ -20,6 +20,24 @@ const { heroAnchorQuery } = require('../utils/heroAnchor');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
+
+// Photo sales: the free quota is a one-time giveaway per
+// gallery: true until the gallery's promo code has been redeemed once (a
+// buyer who forgets the code does not burn the quota — only actual promo use
+// does, matching the single-use Snipcart discount).
+async function freeQuotaAvailable(event) {
+  try {
+    if (!parseBooleanInput(event.is_priced, false)) return false;
+    const prior = await db('photo_purchase_orders')
+      .where({ gallery_id: event.id, promo_used: true })
+      .first('id');
+    return !prior;
+  } catch {
+    // Display-only: the webhook re-checks authoritatively at order time.
+    return true;
+  }
+}
+
 const { guestUploadMaxEdgeOf } = require('./guestUploadDownscale');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const {
@@ -638,6 +656,18 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       hero_divider_style: theme.hero_divider_style,
       hero_image_anchor: event.hero_image_anchor || 'center',
       default_photo_sort: event.default_photo_sort || 'upload_date_desc',
+      // Photo sales: priced-gallery settings drive the
+      // Snipcart buttons and the free quota in the gallery UI.
+      is_priced: parseBooleanInput(event.is_priced, false),
+      free_photo_count: Number(event.free_photo_count ?? 0),
+      photo_price: event.photo_price != null ? Number(event.photo_price) : null,
+      purchase_access_days: Number(event.purchase_access_days ?? 30),
+      // The free quota applies ONCE per gallery via a one-time promo code
+      // (Snipcart discount). Exposed only while the discount actually exists
+      // in the store, so the UI never advertises a dead code.
+      free_quota_available: await freeQuotaAvailable(event),
+      promo_code: event.promo_code || null,
+      promo_discount_ready: !!(event.promo_code && event.snipcart_discount_id),
       // Promo banner override (#440). GalleryView has always read
       // promo_mode from THIS payload, but it was never sent — so every
       // per-event promo override silently resolved to 'inherit' and a
@@ -790,6 +820,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // Download limit (issue 1560): already granted, so downloading it
         // again costs nothing.
         download_granted: grantedIds.has(Number(photo.id)),
+        // Photo sales: per-photo price override (null =
+        // gallery default) for the Snipcart buy button.
+        photo_price: photo.photo_price != null ? Number(photo.photo_price) : null,
         size: photo.size_bytes,
         // toIso: on SQLite installs rows written with a raw Date (e.g.
         // the pre-fix archive-restore path) hold epoch numbers — the
