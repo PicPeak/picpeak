@@ -18,18 +18,26 @@ name: Cut Stable Release (daily batch)
 #   makes release-please push to the release PR, which dismisses the
 #   approval: auto-merge stays on but waits for a review that never comes
 #   (3.135.0 hung for two days). The hourly run re-approves a release PR
-#   the daily run already set to auto-merge, and touches nothing else.
+#   the daily run already set to auto-merge.
+# - A required check that failed or was cancelled on the release PR's head
+#   blocks auto-merge just as silently, and nothing reruns it until the next
+#   push (3.135.2 hung for two days on a backend job a stalled apt mirror ran
+#   into its timeout). The hourly run reruns each such run ONCE (attempt 1
+#   only), for a PR already set to auto-merge, so a real failure still shows
+#   after the second attempt.
 
 on:
   schedule:
     - cron: '0 18 * * *'
-    # Re-approve only; keep in sync with REAPPROVE_SCHEDULE below.
+    # Re-approve and rerun only; keep in sync with REAPPROVE_SCHEDULE below.
     - cron: '40 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
+  # The hourly run reruns a failed check run on the release PR.
+  actions: write
 
 jobs:
   merge-stable-release-pr:
@@ -67,16 +75,26 @@ jobs:
           fi
           if [ "$EVENT_SCHEDULE" = "$REAPPROVE_SCHEDULE" ]; then
             # Hourly run: never starts a cut. Only a PR the daily run (or a
-            # maintainer) set to auto-merge whose approval a later push
-            # dismissed gets approved again.
-            read -r automerge decision < <(gh pr view "$pr" --json autoMergeRequest,reviewDecision \
-              --jq '[(.autoMergeRequest != null), (.reviewDecision // "NONE")] | @tsv')
-            if [ "$automerge" != "true" ] || [ "$decision" = "APPROVED" ]; then
-              echo "Stable release PR #$pr needs no re-approval (auto-merge=$automerge, review=$decision)."
+            # maintainer) set to auto-merge is touched: its dismissed
+            # approval is given again, and a check run that failed or was
+            # cancelled on its head is rerun once.
+            read -r automerge decision head < <(gh pr view "$pr" --json autoMergeRequest,reviewDecision,headRefOid \
+              --jq '[(.autoMergeRequest != null), (.reviewDecision // "NONE"), .headRefOid] | @tsv')
+            if [ "$automerge" != "true" ]; then
+              echo "Stable release PR #$pr is not set to auto-merge — no cut started, nothing to do."
               exit 0
             fi
-            gh pr review "$pr" --approve --body "Automated re-approval — a push after the daily approval dismissed it."
-            echo "Re-approved stable release PR #$pr; auto-merge merges it when checks are green."
+            if [ "$decision" != "APPROVED" ]; then
+              gh pr review "$pr" --approve --body "Automated re-approval — a push after the daily approval dismissed it."
+              echo "Re-approved stable release PR #$pr."
+            fi
+            # First attempts only: a run that fails again on its rerun is a
+            # real failure and stays for a maintainer.
+            for run in $(gh run list --commit "$head" --event pull_request --limit 50 \
+                --json databaseId,status,conclusion,attempt \
+                --jq '.[] | select(.status == "completed" and .attempt == 1 and (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")) | .databaseId'); do
+              gh run rerun "$run" --failed && echo "Reran the failed jobs of run $run on stable release PR #$pr."
+            done
             exit 0
           fi
           # Approve is tolerant — a pre-existing approval already satisfies
