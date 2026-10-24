@@ -885,9 +885,13 @@ async function dealProjectElsewhere(dealUuid, projectId, conn = db) {
  * the whole deal, so this is the document itself or any record of its deal
  * (dealProjectElsewhere), including an invoice tied to another project.
  */
-async function documentAttachMoves(doc, projectId) {
+async function documentAttachMoves(doc, projectId, dealCache = null) {
   if (doc.project_id != null && Number(doc.project_id) !== Number(projectId)) return true;
-  return !!(doc.deal_uuid && await dealProjectElsewhere(doc.deal_uuid, projectId));
+  if (!doc.deal_uuid) return false;
+  if (dealCache?.has(doc.deal_uuid)) return dealCache.get(doc.deal_uuid);
+  const elsewhere = !!(await dealProjectElsewhere(doc.deal_uuid, projectId));
+  dealCache?.set(doc.deal_uuid, elsewhere);
+  return elsewhere;
 }
 
 /**
@@ -901,8 +905,10 @@ async function attachMovesFor(admin, rows, projectId) {
   const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
   const { ownsProject } = require('../middleware/ownership');
   if (!(await isFeatureEnabled('projects')) || !(await ownsProject(admin, projectId))) return null;
+  // A deal's lineage is read once, however many listed rows share it.
+  const dealCache = new Map();
   const moves = [];
-  for (const row of rows) moves.push(await documentAttachMoves(row, projectId));
+  for (const row of rows) moves.push(await documentAttachMoves(row, projectId, dealCache));
   return moves;
 }
 
