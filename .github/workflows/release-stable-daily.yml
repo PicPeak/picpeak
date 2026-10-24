@@ -89,13 +89,23 @@ jobs:
               echo "Re-approved stable release PR #$pr."
             fi
             # First attempts only: a run that fails again on its rerun is a
-            # real failure and stays for a maintainer.
-            for run in $(gh run list --commit "$head" --event pull_request --limit 50 \
-                --json databaseId,status,conclusion,attempt \
-                --jq '.[] | select(.status == "completed" and .attempt == 1 and (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")) | .databaseId'); do
-              gh run rerun "$run" --failed && echo "Reran the failed jobs of run $run on stable release PR #$pr."
+            # real failure and stays for a maintainer. Both calls fail the
+            # job when GitHub refuses them: `set -e` does not reach a `for`
+            # list or the left side of `&&`, so a broken recovery would
+            # otherwise report success while the release stays blocked.
+            runs=$(gh run list --commit "$head" --event pull_request --limit 50 \
+              --json databaseId,status,conclusion,attempt \
+              --jq '.[] | select(.status == "completed" and .attempt == 1 and (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")) | .databaseId')
+            failed=0
+            for run in $runs; do
+              if gh run rerun "$run" --failed; then
+                echo "Reran the failed jobs of run $run on stable release PR #$pr."
+              else
+                echo "::error::Could not rerun run $run on stable release PR #$pr."
+                failed=1
+              fi
             done
-            exit 0
+            exit "$failed"
           fi
           # Approve is tolerant — a pre-existing approval already satisfies
           # branch protection and re-approving can return non-zero.
