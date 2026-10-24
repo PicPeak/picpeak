@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { X, Image as ImageIcon, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, AuthenticatedImage, Modal } from '../common';
 import { AdminPhoto } from '../../services/photos.service';
+import { photoDisplayFilename } from '../../utils/photoFilename';
+
+// Match the admin photo list: digit runs compare as numbers, not text.
+const naturalFilenameOrder = new Intl.Collator('en', { numeric: true });
 
 interface HeroPhotoSelectorProps {
   photos: AdminPhoto[];
@@ -20,6 +24,12 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedPhotoId, setSelectedPhotoId] = useState<number | null>(currentHeroPhotoId || null);
+
+  // The Photos tab supplies its current sort order. Give the picker its own
+  // order without mutating that shared array (or its cached query result).
+  const sortedPhotos = useMemo(() => [...photos].sort((a, b) =>
+    naturalFilenameOrder.compare(photoDisplayFilename(a), photoDisplayFilename(b)) || a.id - b.id
+  ), [photos]);
 
   const currentHeroPhoto = photos.find(p => p.id === currentHeroPhotoId);
 
@@ -44,7 +54,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
           <div className="relative w-full h-48 rounded-lg overflow-hidden bg-inset">
             <AuthenticatedImage
               src={currentHeroPhoto.thumbnail_url || currentHeroPhoto.url}
-              alt={currentHeroPhoto.filename}
+              alt={photoDisplayFilename(currentHeroPhoto)}
               className="w-full h-full object-cover"
             />
           </div>
@@ -68,7 +78,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
         <div className="relative w-full h-48 rounded-lg overflow-hidden bg-inset mb-2">
           <AuthenticatedImage
             src={currentHeroPhoto.thumbnail_url || currentHeroPhoto.url}
-            alt={currentHeroPhoto.filename}
+            alt={photoDisplayFilename(currentHeroPhoto)}
             className="w-full h-full object-cover"
           />
           <div className="absolute top-2 right-2 flex gap-2">
@@ -125,7 +135,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
           </p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {photos.map((photo) => (
+            {sortedPhotos.map((photo) => (
               <div
                 key={photo.id}
                 onClick={() => handleSelect(photo.id)}
@@ -138,7 +148,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
                 <div className="aspect-square bg-inset">
                   <AuthenticatedImage
                     src={photo.thumbnail_url || photo.url}
-                    alt={photo.filename}
+                    alt={photoDisplayFilename(photo)}
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -148,7 +158,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
                   </div>
                 )}
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
-                  <p className="text-white text-xs truncate">{photo.filename}</p>
+                  <p className="text-white text-xs truncate">{photoDisplayFilename(photo)}</p>
                 </div>
               </div>
             ))}
