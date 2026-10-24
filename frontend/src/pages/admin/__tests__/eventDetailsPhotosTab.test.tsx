@@ -10,6 +10,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -45,6 +46,7 @@ vi.mock('../../../services/events.service', () => ({
 }));
 
 const getEventPhotos = vi.fn();
+const deletePhotos = vi.fn();
 vi.mock('../../../services/photos.service', () => ({
   CREDIT_FILTER_NONE: '__none__',
   photosService: {
@@ -52,7 +54,19 @@ vi.mock('../../../services/photos.service', () => ({
     getFilterSummary: vi.fn().mockResolvedValue({}),
     getExportFormats: vi.fn().mockResolvedValue([]),
     getPhotoCredits: vi.fn().mockResolvedValue({ credits: [], none: 0 }),
+    getModerationCounts: vi.fn().mockResolvedValue({ pending: 0, rejected: 0 }),
+    getTrash: vi.fn().mockResolvedValue({ items: [], retention_days: 30 }),
+    formatBytes: () => '100 B',
+    deletePhotos: (...args: unknown[]) => deletePhotos(...args),
   },
+}));
+
+vi.mock('../../../components/common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../components/common')>()),
+  useConfirm: () => async () => true,
+}));
+vi.mock('../../../components/admin/AdminAuthenticatedImage', () => ({
+  AdminAuthenticatedImage: ({ alt }: { alt: string }) => <img alt={alt} />,
 }));
 
 vi.mock('../../../services/feedback.service', () => ({
@@ -124,6 +138,7 @@ describe('EventDetailsPage photos tab', () => {
     vi.clearAllMocks();
     getEvent.mockResolvedValue(EVENT);
     getEventPhotos.mockResolvedValue([]);
+    deletePhotos.mockResolvedValue({ trashed: 2, deleted: 0, failed: [], retention_days: 30 });
   });
 
   it('honours a ?tab=photos deep link instead of landing on Overview', async () => {
@@ -155,4 +170,54 @@ describe('EventDetailsPage photos tab', () => {
     expect(screen.getByRole('button', { name: 'common.retry' })).toBeInTheDocument();
     expect(screen.queryByText('No media uploaded yet')).not.toBeInTheDocument();
   });
+  it('clears the entire selection on visibility changes, including cached views, then bulk-deletes only hidden picks', async () => {
+    const photos = [1, 2, 3].map((id) => ({
+      id, filename: `IMG_${id}.jpg`, path: `/photos/${id}.jpg`, url: `/photos/${id}.jpg`, thumbnail_url: `/thumb/${id}.jpg`,
+      type: 'individual', category_id: null, category_name: null, category_slug: null,
+      size: 100, uploaded_at: '2026-10-01T00:00:00Z', visibility: id === 1 ? 'visible' : 'hidden',
+    }));
+    getEventPhotos.mockImplementation(async (_id: number, filters?: { visibility?: string }) =>
+      photos.filter((p) => !filters?.visibility || p.visibility === filters.visibility));
+    renderPage('/admin/events/1?tab=photos');
+    await userEvent.click(await screen.findByTestId('admin-photo-checkbox-1'));
+    expect(screen.getByRole('button', { name: 'Delete Selected' })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Photo visibility' }), 'hidden');
+    expect(await screen.findByTestId('admin-photo-checkbox-2')).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByTestId('admin-photo-checkbox-1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete Selected' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('admin-photo-checkbox-2'));
+
+    // Both views are cached now: changing the filter must still reset the grid.
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Photo visibility' }), 'all');
+    expect(await screen.findByTestId('admin-photo-checkbox-2')).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByRole('button', { name: 'Delete Selected' })).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Photo visibility' }), 'hidden');
+    await userEvent.click(await screen.findByTestId('admin-photo-checkbox-2'));
+    await userEvent.click(screen.getByTestId('admin-photo-checkbox-3'));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Selected' }));
+    await waitFor(() => expect(deletePhotos).toHaveBeenCalledWith(1, [2, 3]));
+  });
+
+  it.each(['visible', 'hidden'])('combines %s visibility with existing filters and sorting, then clears back to All Photos', async (visibility) => {
+    renderPage('/admin/events/1?tab=photos');
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Photo visibility' }), visibility);
+    await userEvent.type(screen.getByPlaceholderText('Search by filename...'), 'IMG');
+    const category = screen.getByRole('option', { name: 'Uncategorized' }).parentElement as HTMLSelectElement;
+    await userEvent.selectOptions(category, 'uncategorized');
+    const sort = screen.getByRole('option', { name: 'Sort by Name' }).parentElement as HTMLSelectElement;
+    await userEvent.selectOptions(sort, 'name');
+    const filters = { search: 'IMG', category_id: 'uncategorized', sort: 'name', order: 'desc' };
+    await waitFor(() => expect(getEventPhotos).toHaveBeenLastCalledWith(1, expect.objectContaining({ ...filters, visibility })));
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Photo visibility' }), 'all');
+    await waitFor(() => expect(getEventPhotos).toHaveBeenLastCalledWith(1, expect.objectContaining({ ...filters, visibility: undefined })));
+  });
+
+  it('explains an empty visibility-filter result without saying the gallery has no uploads', async () => {
+    renderPage('/admin/events/1?tab=photos');
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Photo visibility' }), 'hidden');
+    expect(await screen.findByText('No photos match the selected visibility and filters.')).toBeInTheDocument();
+    expect(screen.queryByText('No media uploaded yet')).not.toBeInTheDocument();
+  });
+
 });

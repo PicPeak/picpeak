@@ -1,8 +1,8 @@
 import React from 'react';
-import { Search, Filter, SortAsc, SortDesc, UserRound } from 'lucide-react';
+import { Search, Filter, SortAsc, SortDesc, UserRound, Eye } from 'lucide-react';
 import { Input } from '../common';
 import { useTranslation } from 'react-i18next';
-import type { PhotoSortKey } from '../../services/photos.service';
+import type { PhotoSortKey, PhotoVisibility } from '../../services/photos.service';
 
 interface PhotoFiltersProps {
   categories: Array<{ id: number | string; name: string; slug: string }>;
@@ -16,6 +16,8 @@ interface PhotoFiltersProps {
   mediaType?: 'all' | 'photo' | 'video';
   onMediaTypeChange?: (mediaType: 'all' | 'photo' | 'video') => void;
   showMediaFilter?: boolean;
+  visibility?: 'all' | PhotoVisibility;
+  onVisibilityChange?: (visibility: 'all' | PhotoVisibility) => void;
   // Credit filter (#1561). Rendered only when the event has at least one
   // credited photo. `creditNoneValue` is the backend's "no credit" token.
   credits?: Array<{ name: string; count: number }>;
@@ -37,6 +39,8 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
   mediaType = 'all',
   onMediaTypeChange,
   showMediaFilter = false,
+  visibility = 'all',
+  onVisibilityChange,
   credits = [],
   creditNoneCount = 0,
   creditNoneValue = '__none__',
@@ -50,7 +54,7 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
 
   return (
     <div className="bg-panel border border-line rounded-lg p-4 mb-6">
-      <div className="flex flex-col lg:flex-row gap-4">
+      <div className="flex flex-col lg:flex-row lg:flex-wrap gap-4">
         {/* Search */}
         <div className="flex-1">
           <Input
@@ -89,6 +93,22 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
             ))}
           </select>
         </div>
+
+        {onVisibilityChange && (
+          <div className="flex items-center gap-2">
+            <Eye className="w-5 h-5 text-faint" aria-hidden="true" />
+            <select
+              value={visibility}
+              onChange={(e) => onVisibilityChange(e.target.value as 'all' | PhotoVisibility)}
+              aria-label={t('admin.photos.visibility.filterLabel', 'Photo visibility')}
+              className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent-dark"
+            >
+              <option value="all">{t('gallery.allPhotos', 'All Photos')}</option>
+              <option value="visible">{t('admin.photos.visibility.visible', 'Visible Photos')}</option>
+              <option value="hidden">{t('admin.photos.visibility.hidden', 'Hidden Photos')}</option>
+            </select>
+          </div>
+        )}
 
         {/* Kept while a name is selected: clearing the last credited name
             empties the list, and the filter would stay on with no way out. */}

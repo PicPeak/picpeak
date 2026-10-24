@@ -256,6 +256,13 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           media_type: mediaType === 'all' ? undefined : mediaType
         }))}
         showMediaFilter={showMediaFilter}
+        visibility={photoFilters.visibility ?? 'all'}
+        onVisibilityChange={(visibility) => {
+          const next = visibility === 'all' ? undefined : visibility;
+          if (next === photoFilters.visibility) return;
+          setSelectedPhotoIds([]);
+          setPhotoFilters(prev => ({ ...prev, visibility: next }));
+        }}
         credits={creditSummary?.credits}
         creditNoneCount={creditSummary?.none}
         creditNoneValue={CREDIT_FILTER_NONE}
@@ -364,8 +371,15 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
             </div>
           </div>
         </Card>
+      ) : photos.length === 0 && photoFilters.visibility ? (
+        <Card padding="lg">
+          <p className="text-center text-muted">{t('admin.photos.visibility.none', 'No photos match the selected visibility and filters.')}</p>
+        </Card>
       ) : (
         <AdminPhotoGrid
+          // Start a fresh selection on visibility changes, even for cached
+          // lists. Bulk actions must never carry picks from the previous view.
+          key={photoFilters.visibility ?? 'all'}
           photos={photos}
           eventId={parseInt(id!)}
           onPhotoClick={(photo, index) => setSelectedPhoto({ photo, index })}

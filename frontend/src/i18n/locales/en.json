@@ -4838,6 +4838,12 @@
         "likes": "Likes",
         "credit": "Credit"
       },
+      "visibility": {
+        "none": "No photos match the selected visibility and filters.",
+        "filterLabel": "Photo visibility",
+        "visible": "Visible Photos",
+        "hidden": "Hidden Photos"
+      },
       "sort": {
         "ratingHighest": "Best rated first",
         "ratingLowest": "Lowest rated first",
