@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.179.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.178.2-beta.0...v3.179.0-beta.0) (2026-10-24)
+
+
+### Features
+
+* sort admin photos by likes, favorites and downloads ([#2235](https://github.com/PicPeak/picpeak/issues/2235)) ([96f71ed](https://github.com/PicPeak/picpeak/commit/96f71edb1f6f9107c770a7580172fb86c800ffa1))
+
+
+### Bug Fixes
+
+* naturally sort hero photo picker by display filename ([#2234](https://github.com/PicPeak/picpeak/issues/2234)) ([67b5ff7](https://github.com/PicPeak/picpeak/commit/67b5ff715dc631c50fcd0aa48f9c8782cf695af0))
+
 ## [3.178.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.178.1-beta.0...v3.178.2-beta.0) (2026-10-22)
 
 
