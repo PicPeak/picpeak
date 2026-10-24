@@ -162,6 +162,56 @@ describe('admin photo list sorting (issue 1739)', () => {
     expect(await names('sort=rating&order=desc')).toEqual(['five.jpg', 'three.jpg', 'unrated.jpg']);
   });
 
+  describe.each([
+    ['likes', 'like_count'],
+    ['favorites', 'favorite_count'],
+    ['downloads', 'download_count'],
+  ])('by %s (issue 2196)', (sort, column) => {
+    it('sorts both directions, treats missing counts as zero, and breaks ties by id', async () => {
+      await addPhoto('two.jpg', { [column]: 2 });
+      await addPhoto('nine-first.jpg', { [column]: 9 });
+      await addPhoto('missing.jpg', { [column]: null });
+      await addPhoto('nine-second.jpg', { [column]: 9 });
+      await addPhoto('zero.jpg', { [column]: 0 });
+
+      expect(await names(`sort=${sort}&order=desc`)).toEqual([
+        'nine-second.jpg', 'nine-first.jpg', 'two.jpg', 'zero.jpg', 'missing.jpg',
+      ]);
+      expect(await names(`sort=${sort}&order=asc`)).toEqual([
+        'missing.jpg', 'zero.jpg', 'two.jpg', 'nine-first.jpg', 'nine-second.jpg',
+      ]);
+    });
+
+    it('combines the sort with search, category and feedback filters while excluding trashed photos', async () => {
+      const [row] = await db('photo_categories').insert({ event_id: eventId, name: sort, slug: sort }).returning('id');
+      const categoryId = row.id ?? row;
+      const fields = { category_id: categoryId, average_rating: 4 };
+      await addPhoto('keep-low.jpg', { ...fields, [column]: 2 });
+      await addPhoto('keep-high.jpg', { ...fields, [column]: 9 });
+      await addPhoto('keep-other-category.jpg', { average_rating: 4, [column]: 100 });
+      await addPhoto('skip-search.jpg', { ...fields, [column]: 100 });
+      await addPhoto('keep-low-rated.jpg', { ...fields, average_rating: 1, [column]: 100 });
+      await addPhoto('keep-trash.jpg', { ...fields, [column]: 100, deleted_at: new Date().toISOString() });
+
+      const filters = `category_id=${categoryId}&search=keep&min_rating=3&sort=${sort}`;
+      expect(await names(`${filters}&order=desc`)).toEqual(['keep-high.jpg', 'keep-low.jpg']);
+      expect(await names(`${filters}&order=asc`)).toEqual(['keep-low.jpg', 'keep-high.jpg']);
+    });
+
+    it('orders the entire gallery before the UI receives it', async () => {
+      const rows = Array.from({ length: 275 }, (_, i) => ({
+        event_id: eventId, filename: `batch-${i}.jpg`, path: `${SLUG}/batch-${i}.jpg`,
+        type: 'individual', [column]: i,
+      }));
+      await db.batchInsert('photos', rows, 100);
+      const result = await list(`sort=${sort}&order=desc`);
+      expect(result).toHaveLength(275);
+      expect(result[0].filename).toBe('batch-274.jpg');
+      expect(result[result.length - 1].filename).toBe('batch-0.jpg');
+      expect(result.map((p) => p[column])).toEqual(Array.from({ length: 275 }, (_, i) => 274 - i));
+    });
+  });
+
   it('breaks ties on id, so rows written in the same second keep one order', async () => {
     const ids = [];
     for (const name of ['c.jpg', 'a.jpg', 'b.jpg']) ids.push(await addPhoto(name));

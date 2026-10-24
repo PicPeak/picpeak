@@ -10,6 +10,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -124,6 +125,21 @@ describe('EventDetailsPage photos tab', () => {
     vi.clearAllMocks();
     getEvent.mockResolvedValue(EVENT);
     getEventPhotos.mockResolvedValue([]);
+  });
+
+  it.each(['likes', 'favorites', 'downloads'])('requests %s sorting in both directions without losing active filters', async (sort) => {
+    renderPage('/admin/events/1?tab=photos');
+    await userEvent.type(await screen.findByPlaceholderText('Search by filename...'), 'IMG');
+    const categoryOption = screen.getByRole('option', { name: 'Uncategorized' });
+    await userEvent.selectOptions(categoryOption.parentElement as HTMLSelectElement, 'uncategorized');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Sort photos' }), sort);
+    await waitFor(() => expect(getEventPhotos).toHaveBeenLastCalledWith(1, expect.objectContaining({
+      search: 'IMG', category_id: 'uncategorized', sort, order: 'desc',
+    })));
+    await userEvent.click(screen.getByRole('button', { name: 'Sort ascending' }));
+    await waitFor(() => expect(getEventPhotos).toHaveBeenLastCalledWith(1, expect.objectContaining({
+      search: 'IMG', category_id: 'uncategorized', sort, order: 'asc',
+    })));
   });
 
   it('honours a ?tab=photos deep link instead of landing on Overview', async () => {
