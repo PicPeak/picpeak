@@ -1537,6 +1537,16 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       query = query.whereNotNull('photos.unavailable_reason');
     }
 
+    // Match the gallery's visibility semantics: legacy NULL rows are visible.
+    // This only narrows the admin list; it never changes access permissions.
+    if (req.query.visibility === 'hidden') {
+      query = query.where('photos.visibility', 'hidden');
+    } else if (req.query.visibility === 'visible') {
+      query = query.where(function () {
+        this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
+      });
+    }
+
     // Filter by category_id
     if (category_id !== undefined && category_id !== '' && category_id !== '0') {
       if (category_id === 'individual' || category_id === 'collage') {

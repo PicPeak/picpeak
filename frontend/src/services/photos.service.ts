@@ -3,6 +3,8 @@ import type { PhotoExif } from '../types';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
 import { uploadMultipartBudget } from '../utils/uploadMultipartBudget';
 
+export type PhotoVisibility = 'visible' | 'hidden';
+
 export interface AdminPhoto {
   id: number;
   filename: string;
@@ -18,6 +20,7 @@ export interface AdminPhoto {
   category_slug: string | null;
   size: number;
   uploaded_at: string;
+  visibility?: PhotoVisibility;
   media_type?: 'photo' | 'video';
   mime_type?: string | null;
   // Browser-playable copy of a video (issue 1430, item 8); null until the
@@ -145,6 +148,7 @@ export interface PhotoFilters {
   folder_id?: PhotoFolderFilter;
   type?: string;
   media_type?: 'photo' | 'video';
+  visibility?: PhotoVisibility;
   search?: string;
   sort?: PhotoSortKey;
   order?: 'asc' | 'desc';
@@ -230,6 +234,7 @@ class PhotosService {
       if (filters.folder_id !== undefined) params.append('folder_id', String(filters.folder_id));
       if (filters.type) params.append('type', filters.type);
       if (filters.media_type) params.append('media_type', filters.media_type);
+      if (filters.visibility) params.append('visibility', filters.visibility);
       if (filters.search) params.append('search', filters.search);
       if (filters.sort) params.append('sort', filters.sort);
       if (filters.order) params.append('order', filters.order);
