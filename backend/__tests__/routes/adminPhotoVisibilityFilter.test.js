@@ -66,6 +66,29 @@ it('returns only hidden photos when Hidden Photos is selected', async () => {
   expect(photos.every((p) => p.visibility === 'hidden')).toBe(true);
 });
 
+it.each(['pending', 'rejected'])('keeps %s uploads out of Hidden Photos and available in the review filter', async (status) => {
+  const reviewId = await addPhoto(`${status}.jpg`, 'hidden', { moderation_status: status });
+  expect((await list()).map((p) => p.id)).toContain(reviewId);
+  expect((await list({ visibility: 'hidden' })).map((p) => p.id)).toEqual([otherHiddenId, hiddenId]);
+  expect((await list({ moderation: status })).map((p) => p.id)).toEqual([reviewId]);
+  expect((await list({ visibility: 'all', moderation: status })).map((p) => p.id)).toEqual([reviewId]);
+  expect(await list({ visibility: 'visible', moderation: status })).toEqual([]);
+});
+
+it.each([
+  'visibility=unknown',
+  'visibility=',
+  'visibility=Hidden',
+  'visibility=1',
+  'visibility=hidden&visibility=visible',
+  'visibility[]=hidden',
+  'visibility[value]=hidden',
+])('rejects an invalid visibility query: %s', async (query) => {
+  const res = await auth(request(app).get(`/api/admin/photos/${eventId}/photos?${query}`));
+  expect(res.status).toBe(400);
+  expect(res.body).toMatchObject({ code: 'INVALID_VISIBILITY_FILTER' });
+});
+
 it('includes photos with the default visibility in Visible Photos', async () => {
   const photos = await list({ visibility: 'visible' });
   expect(photos.map((p) => p.id)).toEqual([defaultId, visibleId]);
@@ -98,13 +121,19 @@ it('filters the full gallery on the server', async () => {
   expect(photos[94].filename).toBe('batch-282.jpg');
 });
 
-it('bulk-deletes the filtered hidden photos while leaving visible photos alone', async () => {
+it('bulk-deletes the filtered hidden photos while leaving visible photos and uploads under review alone', async () => {
+  const pendingId = await addPhoto('pending.jpg', 'hidden', { moderation_status: 'pending' });
+  const rejectedId = await addPhoto('rejected.jpg', 'hidden', { moderation_status: 'rejected' });
   const ids = (await list({ visibility: 'hidden' })).map((p) => p.id);
   const response = await auth(request(app).post(`/api/admin/photos/${eventId}/photos/bulk-delete`)).send({ photoIds: ids });
   expect(response.status).toBe(200);
   expect(response.body).toMatchObject({ trashed: 2, deleted: 0, failed: [] });
   expect(await list({ visibility: 'hidden' })).toEqual([]);
-  expect((await list()).map((p) => p.id)).toEqual([defaultId, visibleId]);
+  expect((await list()).map((p) => p.id)).toEqual([rejectedId, pendingId, defaultId, visibleId]);
+  expect((await list({ moderation: 'pending' })).map((p) => p.id)).toEqual([pendingId]);
+  expect((await list({ moderation: 'rejected' })).map((p) => p.id)).toEqual([rejectedId]);
+  expect((await db('photos').whereIn('id', [pendingId, rejectedId]).select('deleted_at')))
+    .toEqual([{ deleted_at: null }, { deleted_at: null }]);
 });
 
 it('does not grant delete permissions to an admin who can only view photos', async () => {

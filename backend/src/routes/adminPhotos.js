@@ -1514,6 +1514,13 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
   try {
     const { eventId } = req.params;
     const { category_id, type, media_type, search, sort = 'date', has_likes, has_favorites, has_comments, min_rating, color_label, credit } = req.query;
+    const { visibility } = req.query;
+    if (visibility !== undefined && (typeof visibility !== 'string' || !['all', 'visible', 'hidden'].includes(visibility))) {
+      return res.status(400).json({
+        error: 'visibility must be one of: all, visible, hidden',
+        code: 'INVALID_VISIBILITY_FILTER',
+      });
+    }
     const order = ['asc', 'desc'].includes(req.query.order) ? req.query.order : 'desc';
     const logic = req.query.logic === 'OR' ? 'OR' : 'AND';
 
@@ -1539,9 +1546,11 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
 
     // Match the gallery's visibility semantics: legacy NULL rows are visible.
     // This only narrows the admin list; it never changes access permissions.
-    if (req.query.visibility === 'hidden') {
-      query = query.where('photos.visibility', 'hidden');
-    } else if (req.query.visibility === 'visible') {
+    if (visibility === 'hidden') {
+      // Pending/rejected uploads are hidden for moderation, not by a client.
+      // Keep them in their review workflow, out of "select hidden and delete".
+      query = query.where('photos.visibility', 'hidden').whereNull('photos.moderation_status');
+    } else if (visibility === 'visible') {
       query = query.where(function () {
         this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
       });
