@@ -1176,7 +1176,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                         <Eye className="w-3.5 h-3.5" />
                         {viewCount}
                       </span>
-                      <span className="inline-flex items-center gap-1" title={t('admin.photos.columns.downloads', 'Downloads')}>
+                      <span className="inline-flex items-center gap-1" title={t('admin.photos.columns.downloadsHint', 'Downloads (a zip counts once for every photo in it)')}>
                         <Download className="w-3.5 h-3.5" />
                         {downloadCount}
                       </span>

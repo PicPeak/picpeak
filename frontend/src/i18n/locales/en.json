@@ -4838,6 +4838,7 @@
         "actions": "Actions",
         "views": "Views",
         "downloads": "Downloads",
+        "downloadsHint": "Downloads (a zip counts once for every photo in it)",
         "likes": "Likes",
         "credit": "Credit"
       },

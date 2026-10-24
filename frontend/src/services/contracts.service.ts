@@ -285,6 +285,9 @@ export interface ContractSummary {
   customerAccountId: number;
   /** Migration 121 — Project Overview link (null when unlinked). */
   projectId: number | null;
+  /** With `attachTo`: attaching it to that project takes something out of
+   *  another one (it, or a record of its deal, is in another project). */
+  attachMoves?: boolean;
   customer: {
     email: string | null;
     displayName: string | null;
@@ -447,6 +450,8 @@ export const contractsService = {
     sort?: ContractSort;
     page?: number;
     pageSize?: number;
+    /** Adds `attachMoves` for this project to each row (the project page's add window). */
+    attachTo?: number;
   } = {}): Promise<ContractListResponse> {
     const { data } = await api.get('/admin/contracts', {
       params: { ...params, status: params.status?.join(',') },

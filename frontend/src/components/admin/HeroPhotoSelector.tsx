@@ -5,7 +5,10 @@ import { Button, AuthenticatedImage, Modal } from '../common';
 import { AdminPhoto } from '../../services/photos.service';
 import { photoDisplayFilename } from '../../utils/photoFilename';
 
-// Match the admin photo list: digit runs compare as numbers, not text.
+// Match the admin photo list: digit runs compare as numbers, not text. The
+// same collator as the server's name sort (NATURAL_NAME_ORDER in
+// adminPhotos.js), so the picker and the Photos tab never disagree;
+// photoNameCompare() takes the UI locale instead.
 const naturalFilenameOrder = new Intl.Collator('en', { numeric: true });
 
 interface HeroPhotoSelectorProps {

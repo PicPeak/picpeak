@@ -283,6 +283,17 @@ async function ownedProjectIds(admin) {
 }
 
 /**
+ * Whether `admin` may work on project `projectId`: the check
+ * requireProjectOwnership runs, for a project id that arrives in a query or
+ * body rather than in :id.
+ */
+async function ownsProject(admin, projectId) {
+  const sub = ownedProjectsSubquery(admin);
+  if (sub === null) return true;
+  return !!(await sub.clone().where('projects.id', Number(projectId)).first());
+}
+
+/**
  * Middleware enforcing ownedProjectIds() on a :id project route. 404 (not 403)
  * on a foreign project so the endpoint isn't an existence oracle — same
  * posture filterOwnedEventIds takes for foreign-vs-missing ids.
@@ -322,5 +333,6 @@ module.exports = {
   EVENT_BEARER_SECRET_COLUMNS,
   ownedProjectIds,
   ownedProjectsSubquery,
+  ownsProject,
   requireProjectOwnership,
 };

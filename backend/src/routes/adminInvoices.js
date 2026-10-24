@@ -38,7 +38,7 @@ const accountingHistory = require('../services/accountingHistory');
 const expenseService = require('../services/expenseService');
 const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { db } = require('../database/db');
-const { canLinkCrmToEvent } = require('../middleware/ownership');
+const { canLinkCrmToEvent, ownsProject } = require('../middleware/ownership');
 const { ensureEventMatchesCustomer } = require('../services/invoice/helpers');
 const { hasColumnCached } = require('../utils/schemaCache');
 
@@ -391,6 +391,8 @@ router.get(
     query('pageSize').optional({ values: 'falsy' }).isInt({ min: 1, max: 100 }),
     // The project page's add window: whether each invoice may join this
     // project (projectService.invoiceAttachRefusal, the attach's own rule).
+    // Answered only for a project the caller may work on: the rule reads
+    // other projects unscoped.
     query('attachTo').optional({ values: 'falsy' }).isInt({ min: 1 }),
   ],
   handleAsync(async (req, res) => {
@@ -415,7 +417,7 @@ router.get(
     });
     let invoices = rows.map(transformInvoice);
     const attachTo = req.query.attachTo ? parseInt(req.query.attachTo, 10) : null;
-    if (attachTo && await isFeatureEnabled('projects')) {
+    if (attachTo && await isFeatureEnabled('projects') && await ownsProject(req.admin, attachTo)) {
       const { invoiceAttachRefusal } = require('../services/projectService');
       const refusals = [];
       for (const row of rows) refusals.push(await invoiceAttachRefusal(row, attachTo));

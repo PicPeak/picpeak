@@ -5356,6 +5356,7 @@
         "actions": "Aktionen",
         "views": "Aufrufe",
         "downloads": "Downloads",
+        "downloadsHint": "Downloads (ein Zip zählt für jedes enthaltene Foto einmal)",
         "likes": "Likes",
         "credit": "Urheber"
       },

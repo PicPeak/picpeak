@@ -4,6 +4,10 @@
  * for DecimalInput). Shared by "Neue Anfrage" and the project Overview, so
  * both build the request the same way, and the Overview sends only what
  * changed (UX.md › Saving).
+ *
+ * `budgetMinor` follows the app's `*_minor` convention (the major amount
+ * times 100, as for invoices and hourly rates), whatever the currency, so
+ * the `/ 100` and `* 100` below round-trip for every currency.
  */
 import type { ProjectFlow, ProjectInquiryFields, ProjectSummary, ProjectWritePayload, InquirySource } from '../../../services/projects.service';
 

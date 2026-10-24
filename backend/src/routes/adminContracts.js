@@ -342,6 +342,9 @@ router.get(
     query('sort').optional().isIn(['newest', 'oldest', 'issue_asc', 'issue_desc', 'customer_asc', 'customer_desc']),
     query('page').optional().isInt({ min: 1 }),
     query('pageSize').optional().isInt({ min: 1, max: 200 }),
+    // The project page's add window: whether attaching each contract takes
+    // anything out of another project (projectService.attachMovesFor).
+    query('attachTo').optional({ values: 'falsy' }).isInt({ min: 1 }),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -363,10 +366,13 @@ router.get(
     // (1 of 2)" label (#1446) — derived here, never stored as a status.
     const progress = await require('../services/contract/signers')
       .customerSignerProgress(result.rows.map((row) => row.id));
+    const moves = await require('../services/projectService')
+      .attachMovesFor(req.admin, result.rows, req.query.attachTo ? parseInt(req.query.attachTo, 10) : null);
     return successResponse(res, {
-      contracts: result.rows.map((row) => ({
+      contracts: result.rows.map((row, i) => ({
         ...transformContract(row),
         signerProgress: progress.get(Number(row.id)) || null,
+        ...(moves ? { attachMoves: moves[i] } : {}),
       })),
       total: result.total,
       page: result.page,

@@ -24,7 +24,7 @@ interface Candidate {
   id: number;
   title: string;
   date: string | null;
-  /** Another project holds it; attaching moves it here. */
+  /** It, or a record of its deal, is in another project; attaching moves it here. */
   elsewhere: boolean;
   /** Another project holds it and it cannot move (an invoice). */
   locked?: boolean;
@@ -79,18 +79,20 @@ export const AttachDocumentDialog: React.FC<Props> = ({ kind, data, onClose }) =
     queryFn: async (): Promise<Candidate[]> => {
       // A search term looks everywhere; none lists this customer's documents.
       const scope = q ? { q } : { customerAccountId };
+      // Attaching a quote or contract moves its whole deal, so the server
+      // says whether anything of it sits in another project (attachMoves).
       if (kind === 'quote') {
-        const res = await quotesService.list({ ...scope, pageSize: 20 });
+        const res = await quotesService.list({ ...scope, pageSize: 20, attachTo: projectId });
         return res.quotes.map((x) => ({
           id: x.id, title: x.quoteNumber, date: x.issueDate ?? null,
-          elsewhere: x.projectId != null && x.projectId !== projectId,
+          elsewhere: x.attachMoves ?? (x.projectId != null && x.projectId !== projectId),
         }));
       }
       if (kind === 'contract') {
-        const res = await contractsService.list({ ...scope, pageSize: 20 });
+        const res = await contractsService.list({ ...scope, pageSize: 20, attachTo: projectId });
         return res.contracts.map((x) => ({
           id: x.id, title: x.contractNumber, date: x.issueDate ?? null,
-          elsewhere: x.projectId != null && x.projectId !== projectId,
+          elsewhere: x.attachMoves ?? (x.projectId != null && x.projectId !== projectId),
         }));
       }
       if (kind === 'invoice') {

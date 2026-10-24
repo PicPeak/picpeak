@@ -123,7 +123,7 @@ describe('project inquiry flow', () => {
     otherCustomerId = idOf(await db('customer_accounts').insert({
       email: 'other@example.com', display_name: 'Other', is_active: 1, created_at: new Date(),
     }).returning('id'));
-    for (const key of ['projects', 'bills']) {
+    for (const key of ['projects', 'bills', 'quotes', 'contracts']) {
       await db('feature_flags').insert({ key, value: 1 }).onConflict('key').merge({ value: 1 });
     }
 
@@ -136,6 +136,8 @@ describe('project inquiry flow', () => {
     app.use(express.json());
     app.use('/api/admin/projects', require('../../src/routes/adminProjects'));
     app.use('/api/admin/invoices', require('../../src/routes/adminInvoices'));
+    app.use('/api/admin/quotes', require('../../src/routes/adminQuotes'));
+    app.use('/api/admin/contracts', require('../../src/routes/adminContracts'));
     // As in the app, so a refusal carries its code.
     app.use(require('../../src/middleware/errorHandler').errorHandler);
   }, 120000);
@@ -718,6 +720,53 @@ describe('project inquiry flow', () => {
       await db('feature_flags').where({ key: 'projects' }).update({ value: 1 });
       invalidateFeatureFlagCache();
     }
+  });
+
+  // Issue 2224, item 1: attaching a quote or contract moves its whole deal,
+  // so the add window has to know when that takes something from another project.
+  it('says in the quote and contract lists when attaching one moves something out of another project', async () => {
+    const a = await createInquiry();
+    const b = await createInquiry();
+    const dealUuid = crypto.randomUUID();
+    await mkInvoice({ projectId: b.id, dealUuid });
+    const quoteQ = await mkQuote({ dealUuid });
+    const freeQ = await mkQuote({ dealUuid: crypto.randomUUID() });
+    const contractC = idOf(await db('contracts').insert({
+      contract_number: `C-MOVES-${a.id}`, customer_account_id: customerId, status: 'sent', deal_uuid: dealUuid,
+      issue_date: '2027-02-01', created_at: new Date().toISOString(),
+    }).returning('id'));
+    const quoteRow = async (url, id) => { const { body } = await get(url); return (body.data || body).quotes.find((q) => q.id === id); };
+    const contractRow = async (url) => { const { body } = await get(url); return (body.data || body).contracts.find((c) => c.id === contractC); };
+
+    // The quote itself is free, but its deal's invoice is in B.
+    expect((await quoteRow(`/api/admin/quotes?attachTo=${a.id}&pageSize=100`, quoteQ)).attachMoves).toBe(true);
+    expect((await quoteRow(`/api/admin/quotes?attachTo=${b.id}&pageSize=100`, quoteQ)).attachMoves).toBe(false);
+    expect((await quoteRow(`/api/admin/quotes?attachTo=${a.id}&pageSize=100`, freeQ)).attachMoves).toBe(false);
+    expect((await quoteRow('/api/admin/quotes?pageSize=100', quoteQ)).attachMoves).toBeUndefined();
+    expect((await contractRow(`/api/admin/contracts?attachTo=${a.id}&pageSize=100`)).attachMoves).toBe(true);
+    expect((await contractRow(`/api/admin/contracts?attachTo=${b.id}&pageSize=100`)).attachMoves).toBe(false);
+  });
+
+  // Issue 2224, item 2: the attach rules read other projects unscoped, so
+  // they answer only for a project the caller may work on.
+  it('answers attachTo only for a project the caller may work on', async () => {
+    const other = await mkAdmin(`flow-admin-${crypto.randomUUID().slice(0, 8)}`, 'admin');
+    const foreign = await createInquiry();
+    const own = idOf(await db('projects').insert({
+      name: 'Admin own', status: 'inquiry', created_by: other.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).returning('id'));
+    const dealUuid = crypto.randomUUID();
+    await mkQuote({ projectId: foreign.id, dealUuid });
+    const invoiceI = await mkInvoice({ dealUuid });
+    await db('invoices').where({ id: invoiceI }).update({ created_by_admin_id: other.id });
+    const rowFor = async (projectId) => {
+      const { body } = await get(`/api/admin/invoices?attachTo=${projectId}&pageSize=100`, other.token);
+      return (body.data || body).invoices?.find((i) => i.id === invoiceI);
+    };
+    // Its own project: the attach rule answers (the deal sits in another project).
+    expect((await rowFor(own)).attachRefusal).toBe('PROJECT_DEAL_ELSEWHERE');
+    // Another admin's project: nothing about it.
+    expect((await rowFor(foreign.id)).attachRefusal).toBeUndefined();
   });
 
   // Review round 1, concern 1: one deal, one project.
