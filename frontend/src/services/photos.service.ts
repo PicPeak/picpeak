@@ -131,7 +131,7 @@ export interface PhotoCreditSummary {
 }
 
 /** Sort keys of the admin photo list. `date` is the upload date. */
-export type PhotoSortKey = 'date' | 'name' | 'size' | 'rating' | 'capture_date';
+export type PhotoSortKey = 'date' | 'name' | 'size' | 'rating' | 'capture_date' | 'likes' | 'favorites' | 'downloads';
 
 /**
  * Folder filter of the admin photo list (issue 1786): `root` = photos in no

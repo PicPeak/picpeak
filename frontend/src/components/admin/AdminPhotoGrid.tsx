@@ -138,6 +138,14 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     { value: 'rating:desc', label: t('admin.photos.sort.ratingHighest', 'Best rated first') },
     { value: 'rating:asc', label: t('admin.photos.sort.ratingLowest', 'Lowest rated first') },
   ];
+  const ENGAGEMENT_SORT: ColumnMenuOption[] = [
+    { value: 'likes:desc', label: t('admin.photos.sort.likesMost', 'Most liked') },
+    { value: 'likes:asc', label: t('admin.photos.sort.likesFewest', 'Least liked') },
+    { value: 'favorites:desc', label: t('admin.photos.sort.favoritesMost', 'Most favorited') },
+    { value: 'favorites:asc', label: t('admin.photos.sort.favoritesFewest', 'Least favorited') },
+    { value: 'downloads:desc', label: t('admin.photos.sort.downloadsMost', 'Most downloaded') },
+    { value: 'downloads:asc', label: t('admin.photos.sort.downloadsFewest', 'Least downloaded') },
+  ];
   const SIZE_SORT: ColumnMenuOption[] = [
     { value: 'size:desc', label: t('admin.photos.sort.sizeLargest', 'Largest first') },
     { value: 'size:asc', label: t('admin.photos.sort.sizeSmallest', 'Smallest first') },
@@ -992,7 +1000,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
               {listHeader(t('admin.photos.columns.category', 'Category'), 'hidden lg:table-cell px-3 py-2', 'left')}
               {listHeader(t('admin.photos.columns.credit'), 'hidden lg:table-cell px-3 py-2', 'left')}
               {listHeader(t('admin.photos.columns.uploaded', 'Uploaded'), 'hidden md:table-cell px-3 py-2', 'left', UPLOADED_SORT, t('gallery.sortByDate', 'Sort by Date'))}
-              {listHeader(t('admin.photos.columns.engagement', 'Engagement'), 'hidden xl:table-cell px-3 py-2', 'right')}
+              {listHeader(t('admin.photos.columns.engagement', 'Engagement'), 'hidden xl:table-cell px-3 py-2', 'right', ENGAGEMENT_SORT, t('admin.photos.sort.engagement', 'Sort by Engagement'))}
               {listHeader(t('admin.photos.columns.feedback', 'Feedback'), 'hidden sm:table-cell px-3 py-2', 'right', RATING_SORT, t('gallery.sortByRating', 'Sort by Rating'))}
               {listHeader(t('admin.photos.columns.size', 'Size'), 'px-3 py-2', 'right', SIZE_SORT, t('gallery.sortBySize', 'Sort by Size'))}
               {listHeader(t('admin.photos.columns.actions', 'Actions'), 'w-px px-3 py-2', 'right')}

@@ -139,6 +139,7 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
         <div className="flex items-center gap-2">
           <select
             value={sortBy}
+            aria-label={t('admin.photos.sort.label', 'Sort photos')}
             onChange={(e) => onSortChange(e.target.value as PhotoSortKey, sortOrder)}
             className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent-dark"
           >
@@ -147,6 +148,9 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
             <option value="name">{t('gallery.sortByName', 'Sort by Name')}</option>
             <option value="size">{t('gallery.sortBySize', 'Sort by Size')}</option>
             <option value="rating">{t('gallery.sortByRating', 'Sort by Rating')}</option>
+            <option value="likes">{t('gallery.sortByLikes', 'Sort by Likes')}</option>
+            <option value="favorites">{t('gallery.sortByFavorites', 'Sort by Favorites')}</option>
+            <option value="downloads">{t('gallery.sortByDownloads', 'Sort by Downloads')}</option>
           </select>
           
           <button

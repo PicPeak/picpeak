@@ -1705,6 +1705,12 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     } else if (sort === 'rating') {
       // The filter bar has always offered this and the route never read it.
       query = query.orderByRaw(`COALESCE(photos.average_rating, 0) ${order}`);
+    } else if (sort === 'likes') {
+      query = query.orderByRaw(`COALESCE(photos.like_count, 0) ${order}`);
+    } else if (sort === 'favorites') {
+      query = query.orderByRaw(`COALESCE(photos.favorite_count, 0) ${order}`);
+    } else if (sort === 'downloads') {
+      query = query.orderByRaw(`COALESCE(photos.download_count, 0) ${order}`);
     } else if (sort !== 'name') {
       query = query.orderBy('photos.uploaded_at', order);
     }

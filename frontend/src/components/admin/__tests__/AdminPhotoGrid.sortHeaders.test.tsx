@@ -11,7 +11,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ComponentProps, ReactNode } from 'react';
 
 import { AdminPhotoGrid } from '../AdminPhotoGrid';
-import type { AdminPhoto } from '../../../services/photos.service';
+import type { AdminPhoto, PhotoSortKey } from '../../../services/photos.service';
 
 // Delete and archive ask through the app's confirm dialog; these cases never
 // reach one, so a provider-free stub keeps the render self-contained.
@@ -73,6 +73,23 @@ describe('AdminPhotoGrid list sort headers', () => {
     localStorage.setItem('picpeak.adminPhotos.view', 'list');
   });
 
+  it.each([
+    ['likes', 'desc', 'Most liked'], ['likes', 'asc', 'Least liked'],
+    ['favorites', 'desc', 'Most favorited'], ['favorites', 'asc', 'Least favorited'],
+    ['downloads', 'desc', 'Most downloaded'], ['downloads', 'asc', 'Least downloaded'],
+  ] as const)('reports and marks the %s:%s engagement sort', async (sortBy, sortOrder, label) => {
+    const onSortChange = vi.fn();
+    renderList({ sortBy: sortBy as PhotoSortKey, sortOrder, onSortChange });
+    await userEvent.click(screen.getByRole('button', { name: 'Engagement' }));
+    const option = screen.getByRole('menuitemradio', { name: label });
+    expect(option).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(option);
+    expect(onSortChange).toHaveBeenLastCalledWith(sortBy, sortOrder);
+    expect(screen.getByRole('columnheader', { name: 'Engagement' })).toHaveAttribute(
+      'aria-sort', sortOrder === 'asc' ? 'ascending' : 'descending',
+    );
+  });
+
   it('reports the picked sort and order to the parent', async () => {
     const user = userEvent.setup();
     const onSortChange = vi.fn();
@@ -115,7 +132,7 @@ describe('AdminPhotoGrid list sort headers', () => {
     renderList({ sortBy: 'date', sortOrder: 'desc', onSortChange: vi.fn() });
     const header = screen.getAllByRole('row')[0];
     expect(within(header).getAllByRole('button').map((b) => b.textContent))
-      .toEqual(['Photo', 'Uploaded', 'Feedback', 'Size']);
+      .toEqual(['Photo', 'Uploaded', 'Engagement', 'Feedback', 'Size']);
   });
 
   it('keeps plain headers when the parent passes no sort handler', () => {
