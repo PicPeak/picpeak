@@ -79,9 +79,14 @@ jobs:
 
       - name: Build the optional media process guard and install the media tools
         working-directory: ./backend
+        # Normally about 30 s. A stalled apt mirror once sat here silently
+        # for 35 minutes, the job hit its cap during Jest and the check read
+        # "cancelled" (stable release PR 3.135.2). Bounded on the step, and
+        # apt retries and times out instead of waiting on a dead socket.
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential ffmpeg libimage-exiftool-perl sqlite3
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y build-essential ffmpeg libimage-exiftool-perl sqlite3
           npm run build:native
 
       - name: Run Jest suite
