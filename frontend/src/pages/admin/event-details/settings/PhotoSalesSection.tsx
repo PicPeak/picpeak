@@ -13,12 +13,17 @@ import { Euro } from 'lucide-react';
 import { Input } from '../../../../components/common';
 import { inputClass, labelClass, SectionCard } from './sections';
 import type { EventFields } from './draft';
+import { PhotoSalesStoreNotice } from '../../../../features/photo-sales/PhotoSalesStoreNotice';
+import { usePhotoOrders } from '../../../../features/photo-sales/usePhotoOrders';
 
 export const PhotoSalesSection: React.FC<{
   f: EventFields;
   set: (patch: Partial<EventFields>) => void;
-}> = ({ f, set }) => {
+  eventId: number;
+}> = ({ f, set, eventId }) => {
   const { t } = useTranslation();
+  // The store check rides on the orders query (shared with the Orders tab).
+  const { data: orders } = usePhotoOrders(eventId, f.is_priced);
   return (
     <SectionCard
       title={t('photoSales.sectionTitle', 'Photo sales')}
@@ -36,6 +41,8 @@ export const PhotoSalesSection: React.FC<{
         />
         {t('photoSales.pricedGallery', 'Priced gallery')}
       </label>
+
+      {f.is_priced && <PhotoSalesStoreNotice store={orders?.store} />}
 
       {f.is_priced && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

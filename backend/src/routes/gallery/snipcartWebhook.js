@@ -1,102 +1,148 @@
 /**
- * Photo sales — Snipcart order.completed webhook.
+ * Photo sales — Snipcart order webhooks.
  *
- * Mounted in server.js AHEAD of the global JSON body parsers so the raw
- * body stays available (the optional legacy HMAC fallback needs the exact
- * bytes, and parsing early never hurts).
+ * Mounted in server.js AHEAD of the global JSON body parsers (the
+ * development HMAC needs the exact bytes) and ahead of the global API rate
+ * limiter, so it carries its own limiter.
  *
  * Authentication is Snipcart v3's official mechanism: the
  * X-Snipcart-RequestToken header, verified against Snipcart's
- * /api/requestvalidation/{token} endpoint with the SECRET key (valid one
- * minute, single use). There is no separate webhook HMAC secret in v3;
- * SNIPCART_WEBHOOK_SECRET is kept only as an optional legacy fallback.
+ * /api/requestvalidation/{token} endpoint with the SECRET key. The order is
+ * then fetched from Snipcart's API with the same key, and THAT order — not
+ * the webhook body — is the source of truth for the total, the currency, the
+ * payment status and the cart lines. SNIPCART_WEBHOOK_SECRET (a static HMAC
+ * over the body, used by scripts/simulate-snipcart-webhook.js) is honoured
+ * outside production only; the body is then trusted as the order.
  *
- * Idempotent by Snipcart order id — a redelivered webhook answers 200 with
- * { duplicate: true } and creates nothing.
+ * Every order event reconciles one order with what Snipcart says about it:
+ *
+ *   - paid (Paid / PaidDeferred) and not yet granted → audit, then grant;
+ *   - refunded, charged back, cancelled, failed or expired → revoke;
+ *   - anything else (Deferred, Pending, Authorized …) → wait for the next
+ *     order.paymentStatus.changed.
+ *
+ * The audit refuses an order whose gallery is not on sale, whose lines are
+ * not signed sellable photos of that gallery, whose currency is not the
+ * sales currency, or whose charged total differs from the total recomputed
+ * from the database. A refused order is refunded and stored with the refund
+ * outcome so the admin sees it.
+ *
+ * Idempotent by Snipcart order id: an order already stored is never granted
+ * twice (UNIQUE order_id).
  */
 
 const express = require('express');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 const { db } = require('../../database/db');
-const { livePhotos } = require('../../utils/photoVisibility');
 const { errorResponse } = require('../../utils/routeHelpers');
+const { rateLimitKey } = require('../../utils/rateLimitKey');
 const { queueEmail } = require('../../services/emailProcessor');
 const { createPurchaseAccessToken, buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const logger = require('../../utils/logger');
 const { allocateFreeLines } = require('../../modules/photoSales/priceRules');
+const { isDiscountId } = require('../../modules/photoSales/promoDiscount');
+const {
+  SALES_CURRENCY, ON_SALE_COLUMNS, isGalleryOnSale, sellablePhotos, verifyPhotoSale, saleSignatureFromUrl,
+} = require('../../modules/photoSales/sellable');
 
 const router = express.Router();
 
+const SNIPCART_API = 'https://app.snipcart.com/api';
+const PAID_STATUSES = new Set(['Paid', 'PaidDeferred']);
+const REVOKING_PAYMENT_STATUSES = new Set(['Refunded', 'ChargedBack', 'Cancelled', 'Failed', 'Expired']);
+const ORDER_EVENTS = new Set([
+  'order.completed', 'order.paymentStatus.changed', 'order.status.changed', 'order.refund.created',
+]);
+
+// Every unauthenticated POST costs an outbound call to Snipcart, and this
+// router sits ahead of the global API limiter.
+const webhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: rateLimitKey,
+});
+
+function snipcartAuthHeader() {
+  const secret = (process.env.SNIPCART_SECRET_API_KEY || '').trim();
+  return secret ? `Basic ${Buffer.from(`${secret}:`).toString('base64')}` : null;
+}
+
 /**
- * Refund an order through the Snipcart API (secret key). Used when the
- * DB-backed audit finds the charged amount doesn't match the per-order free
- * allocation — a tampered cart must not yield photos, and an honest buyer
- * must not lose money.
+ * Refund an order through the Snipcart API (secret key). Returns
+ * 'refunded' or 'refund_failed' — the outcome is stored on the order row.
  */
 async function refundSnipcartOrder(orderToken, amount, comment) {
+  const auth = snipcartAuthHeader();
+  if (!auth || !orderToken || !Number.isFinite(amount) || amount <= 0) return 'refund_failed';
   try {
-    const secret = (process.env.SNIPCART_SECRET_API_KEY || '').trim();
-    if (!secret || !orderToken || !Number.isFinite(amount) || amount <= 0) return false;
-    const auth = Buffer.from(`${secret}:`).toString('base64');
-    const response = await fetch(
-      `https://payment.snipcart.com/api/orders/${encodeURIComponent(orderToken)}/refunds`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({ amount, comment }),
-      }
-    );
+    const response = await fetch(`${SNIPCART_API}/orders/${encodeURIComponent(orderToken)}/refunds`, {
+      method: 'POST',
+      headers: { Authorization: auth, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ amount, comment, notifyCustomer: true }),
+    });
     if (!response.ok) {
-      logger.warn(`Snipcart refund failed for order ${orderToken}: HTTP ${response.status}`);
+      logger.error(`Snipcart refund failed for order ${orderToken}: HTTP ${response.status}`);
+      return 'refund_failed';
     }
-    return response.ok;
+    return 'refunded';
   } catch (error) {
-    logger.warn(`Snipcart refund error for order ${orderToken}: ${error.message}`);
-    return false;
+    logger.error(`Snipcart refund error for order ${orderToken}: ${error.message}`);
+    return 'refund_failed';
   }
+}
+
+/** The order as Snipcart's API knows it, or null when it cannot be read. */
+async function fetchSnipcartOrder(orderToken) {
+  const auth = snipcartAuthHeader();
+  if (!auth || !orderToken) return null;
+  try {
+    const response = await fetch(`${SNIPCART_API}/orders/${encodeURIComponent(orderToken)}`, {
+      headers: { Authorization: auth, Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      logger.warn(`Snipcart order ${orderToken} could not be fetched: HTTP ${response.status}`);
+      return null;
+    }
+    return await response.json();
+  } catch (error) {
+    logger.warn(`Snipcart order ${orderToken} could not be fetched: ${error.message}`);
+    return null;
+  }
+}
+
+function photoIdOfItem(item) {
+  const candidates = [
+    item?.customFields?.photoId,
+    item?.custom_fields?.photoId,
+  ];
+  for (const field of Array.isArray(item?.customFields) ? item.customFields : []) {
+    if (String(field?.name || '').toLowerCase() === 'photoid') candidates.push(field?.value);
+  }
+  const fromUrl = String(item?.url || '').match(/[?&]photoId=(\d+)/);
+  if (fromUrl) candidates.push(fromUrl[1]);
+  for (const candidate of candidates) {
+    const num = Number(candidate);
+    if (Number.isInteger(num) && num > 0) return num;
+  }
+  return null;
 }
 
 /**
- * Photo ids in the order's line order (deduplicated, first occurrence wins
- * the position). The free allocation runs against THIS order, not against
- * item ids — same rule as the client-side cart allocation.
+ * Development-only HMAC over the raw body (scripts/simulate-snipcart-
+ * webhook.js). Never accepted in production: it has no timestamp and no
+ * replay protection.
  */
-function orderedPhotoIds(items) {
-  const ids = [];
-  for (const item of Array.isArray(items) ? items : []) {
-    const candidates = [
-      item?.photoId,
-      item?.photo_id,
-      item?.customFields?.photoId,
-      item?.customFields?.photo_id,
-      item?.custom_fields?.photoId,
-      item?.custom_fields?.photo_id,
-    ];
-    const fieldList = Array.isArray(item?.customFields) ? item.customFields : [];
-    for (const field of fieldList) {
-      if (String(field?.name || '').toLowerCase() === 'photoid') {
-        candidates.push(field?.value);
-      }
-    }
-    for (const candidate of candidates) {
-      const num = Number(candidate);
-      if (Number.isFinite(num) && num > 0 && !ids.includes(num)) ids.push(num);
-    }
-  }
-  return ids;
-}
-
-function verifySnipcartSignature(rawBody, signature) {
+function verifyDevelopmentSignature(rawBody, signature) {
+  if (process.env.NODE_ENV === 'production') return false;
   const secret = (process.env.SNIPCART_WEBHOOK_SECRET || '').trim();
   if (!secret || !signature) return false;
 
   const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-  const candidate = signature.replace(/^hmac_/, '').trim();
+  const candidate = String(signature).replace(/^hmac_/, '').trim();
   if (!candidate || expected.length !== candidate.length) return false;
 
   try {
@@ -109,17 +155,15 @@ function verifySnipcartSignature(rawBody, signature) {
 /**
  * Snipcart v3's official webhook authentication: every request carries an
  * X-Snipcart-RequestToken that is verified against Snipcart's API with the
- * SECRET key (valid for one minute, usable once). There is NO per-webhook
- * HMAC secret in v3.
+ * SECRET key (valid for one minute, usable once).
  */
 async function verifySnipcartRequestToken(token) {
-  const secret = (process.env.SNIPCART_SECRET_API_KEY || '').trim();
-  if (!secret || !token) return false;
+  const auth = snipcartAuthHeader();
+  if (!auth || !token) return false;
   try {
-    const auth = Buffer.from(`${secret}:`).toString('base64');
     const response = await fetch(
-      `https://app.snipcart.com/api/requestvalidation/${encodeURIComponent(String(token))}`,
-      { headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' } }
+      `${SNIPCART_API}/requestvalidation/${encodeURIComponent(String(token))}`,
+      { headers: { Authorization: auth, Accept: 'application/json' } }
     );
     return response.ok;
   } catch (error) {
@@ -131,31 +175,212 @@ async function verifySnipcartRequestToken(token) {
 /**
  * Gallery slug derived from the order itself: every cart line carries a
  * data-item-url pointing at /api/gallery/<slug>/price-check?photoId=… — so
- * ONE static webhook URL can serve every gallery without a per-slug
- * dashboard entry.
+ * ONE static webhook URL serves every gallery. All lines must name the same
+ * gallery; a mixed cart answers null.
  */
 function gallerySlugFromOrderItems(items) {
+  const slugs = new Set();
   for (const item of Array.isArray(items) ? items : []) {
-    const url = String(item?.url || '');
-    const match = url.match(/\/api\/gallery\/([^/?]+)\/(?:price-check|photo|preview)/);
-    if (match) {
-      try { return decodeURIComponent(match[1]); } catch { return match[1]; }
-    }
+    const match = String(item?.url || '').match(/\/api\/gallery\/([^/?]+)\/price-check/);
+    if (!match) return null;
+    try { slugs.add(decodeURIComponent(match[1])); } catch { slugs.add(match[1]); }
   }
-  return null;
+  return slugs.size === 1 ? [...slugs][0] : null;
+}
+
+function orderTokenOf(payload) {
+  const content = payload?.content || {};
+  return content?.token || content?.orderToken || payload?.orderToken || content?.order?.token || null;
+}
+
+/** The body's order, for the development signature path only. */
+function orderFromBody(payload) {
+  const content = payload?.content || {};
+  return content?.order || (content?.token ? content : null);
+}
+
+function centsOf(amount) {
+  const value = Number(amount);
+  return Number.isFinite(value) ? Math.round(value * 100) : NaN;
+}
+
+/** Revoke a granted order: the link and every purchase row stop working. */
+async function revokeOrder(orderToken, status) {
+  const order = await db('photo_purchase_orders').where({ order_id: String(orderToken) }).first('id', 'status');
+  if (!order || order.status !== 'completed') return false;
+  const now = new Date().toISOString();
+  await db.transaction(async (trx) => {
+    await trx('photo_purchase_orders').where({ id: order.id }).update({ status, updated_at: now });
+    await trx('photo_purchases').where({ order_id: String(orderToken) }).update({ expires_at: now, updated_at: now });
+  });
+  logger.info(`Snipcart order ${orderToken} revoked (${status})`);
+  return true;
+}
+
+/**
+ * Refuse a paid order: refund it and, when its gallery is known, store it
+ * with the refund outcome and no purchase rows.
+ */
+async function rejectOrder(order, gallery, reason) {
+  const orderToken = String(order.token);
+  const chargedCents = centsOf(order.total);
+  logger.error(`Snipcart order ${orderToken} refused: ${reason}. Refunding.`);
+  const outcome = Number.isFinite(chargedCents) && chargedCents > 0
+    ? await refundSnipcartOrder(orderToken, chargedCents / 100, `Photo sales: ${reason} — refunded automatically`)
+    : 'refunded';
+  if (!gallery) {
+    logger.error(`Snipcart order ${orderToken} has no known gallery; refund outcome: ${outcome}`);
+    return;
+  }
+  await db('photo_purchase_orders').insert({
+    order_id: orderToken,
+    gallery_id: gallery.id,
+    buyer_email: order.email || '',
+    total_cents: Number.isFinite(chargedCents) ? Math.max(0, chargedCents) : 0,
+    currency: String(order.currency || '').toUpperCase().slice(0, 8),
+    status: outcome,
+    purchased_at: new Date().toISOString(),
+    expires_at: null,
+    // Never handed out: the column is NOT NULL UNIQUE, and no purchase row
+    // carries it, so it grants nothing.
+    access_token: createPurchaseAccessToken(),
+    email_sent: false,
+    promo_used: false,
+  });
+}
+
+/** Audit a paid order against the database, then grant or refuse it. */
+async function grantOrder(order) {
+  const orderToken = String(order.token);
+  const items = Array.isArray(order.items) ? order.items : [];
+
+  const gallerySlug = gallerySlugFromOrderItems(items);
+  const gallery = gallerySlug
+    ? await db('events')
+      .where({ slug: gallerySlug })
+      .first(...ON_SALE_COLUMNS, 'event_name', 'photo_price', 'purchase_access_days', 'free_photo_count', 'promo_code', 'snipcart_discount_id')
+    : null;
+  if (!gallery) return rejectOrder(order, null, 'the cart does not name one priced gallery');
+  if (!isGalleryOnSale(gallery)) return rejectOrder(order, gallery, 'the gallery is not on sale');
+
+  const currency = String(order.currency || '').toUpperCase();
+  if (currency !== SALES_CURRENCY) {
+    return rejectOrder(order, gallery, `currency ${currency || 'unknown'} is not ${SALES_CURRENCY}`);
+  }
+
+  // Every line must be one signed, sellable photo of this gallery, once.
+  const photoIds = [];
+  for (const item of items) {
+    const photoId = photoIdOfItem(item);
+    if (!photoId || photoIds.includes(photoId) || Number(item?.quantity ?? 1) !== 1
+        || !verifyPhotoSale(photoId, saleSignatureFromUrl(item?.url))) {
+      return rejectOrder(order, gallery, 'a cart line is not a signed photo of this gallery');
+    }
+    photoIds.push(photoId);
+  }
+  if (!photoIds.length) return rejectOrder(order, gallery, 'the cart holds no photos');
+  const sellableRows = await sellablePhotos(db, gallery.id)
+    .whereIn('photos.id', photoIds)
+    .select('photos.id', 'photos.photo_price');
+  const byId = new Map(sellableRows.map((row) => [Number(row.id), row]));
+  if (photoIds.some((id) => !byId.has(id))) {
+    return rejectOrder(order, gallery, 'a photo in the cart is not for sale');
+  }
+
+  // Per-order gross recomputed from the database: every photo carries its
+  // effective price (override or gallery default). The free quota is the
+  // one-time promo-code discount, verified below.
+  const allocation = allocateFreeLines(
+    { ...gallery, free_photo_count: 0 },
+    photoIds.map((id) => ({ photoId: id, photo_price: byId.get(id).photo_price }))
+  );
+  const grossCents = allocation.reduce((sum, line) => sum + line.amountCents, 0);
+
+  // One-time promo code: honoured exactly once per gallery — on the FIRST
+  // order that actually applies it (the Snipcart discount is single-use).
+  const priorPromoUse = await db('photo_purchase_orders')
+    .where({ gallery_id: gallery.id, promo_used: true })
+    .first('id');
+  const discountCodes = (Array.isArray(order.discounts) ? order.discounts : [])
+    .map((d) => String(d?.code || ''))
+    .filter(Boolean);
+  const codeApplied = !!(gallery.promo_code && discountCodes.includes(gallery.promo_code));
+  const codeHonored = codeApplied && !priorPromoUse && isDiscountId(gallery.snipcart_discount_id);
+  const freeValueCents = codeHonored
+    ? Math.round(Math.max(0, Number(gallery.free_photo_count || 0)) * Number(gallery.photo_price || 0) * 100)
+    : 0;
+  const expectedTotalCents = Math.max(0, grossCents - freeValueCents);
+
+  // Prices are tax-inclusive (docs/PHOTO_SALES.md), so the charged total is
+  // the item total minus the discount. Anything else was re-priced or taxed
+  // on top, and is refunded.
+  const chargedTotalCents = centsOf(order.total);
+  if (!Number.isFinite(chargedTotalCents) || Math.abs(chargedTotalCents - expectedTotalCents) > 1) {
+    return rejectOrder(
+      order,
+      gallery,
+      `charged ${chargedTotalCents}c, expected ${expectedTotalCents}c`
+    );
+  }
+
+  const buyerEmail = order.email || order.user?.email || order.billingAddress?.email || '';
+  const purchasedAt = new Date().toISOString();
+  const days = Number(gallery.purchase_access_days || 30);
+  const expiresAt = new Date(Date.now() + (Number.isFinite(days) ? days : 30) * 24 * 60 * 60 * 1000).toISOString();
+  const accessToken = createPurchaseAccessToken();
+
+  await db.transaction(async (trx) => {
+    await trx('photo_purchase_orders').insert({
+      order_id: orderToken,
+      gallery_id: gallery.id,
+      buyer_email: buyerEmail,
+      total_cents: chargedTotalCents,
+      currency: SALES_CURRENCY,
+      status: 'completed',
+      purchased_at: purchasedAt,
+      expires_at: expiresAt,
+      access_token: accessToken,
+      email_sent: false,
+      promo_used: codeHonored,
+    });
+    await trx('photo_purchases').insert(allocation.map((line) => ({
+      order_id: orderToken,
+      gallery_id: gallery.id,
+      photo_id: Number(line.photoId),
+      buyer_email: buyerEmail,
+      purchased_at: purchasedAt,
+      expires_at: expiresAt,
+      access_token: accessToken,
+      currency: SALES_CURRENCY,
+      amount_cents: line.amountCents,
+    })));
+  });
+
+  if (buyerEmail) {
+    await queueEmail(null, buyerEmail, 'photo_purchase_access', {
+      buyer_email: buyerEmail,
+      gallery_name: gallery.event_name || gallerySlug,
+      access_link: buildPurchasedDownloadUrl({ baseUrl: await getFrontendBaseUrl(), accessToken }),
+      purchased_at: purchasedAt,
+      expires_at: expiresAt,
+      download_count: photoIds.length,
+      photo_count: photoIds.length,
+    });
+    await db('photo_purchase_orders').where({ order_id: orderToken }).update({ email_sent: true });
+  }
+
+  logger.info(`Snipcart order ${orderToken} granted: gallery ${gallerySlug}, ${photoIds.length} photo(s), ${chargedTotalCents}c`);
+  return undefined;
 }
 
 async function handleWebhook(req, res) {
   try {
-    const signature = req.headers['x-snipcart-signature'] || req.headers['X-Snipcart-Signature'];
-    const requestToken = req.headers['x-snipcart-requesttoken'] || req.headers['X-Snipcart-RequestToken'];
+    const requestToken = req.headers['x-snipcart-requesttoken'];
     const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ''));
 
-    // Official v3 verification: request token checked against Snipcart's API.
-    // Optional legacy fallback: HMAC when SNIPCART_WEBHOOK_SECRET is set.
     const tokenValid = await verifySnipcartRequestToken(requestToken);
-    const signatureValid = verifySnipcartSignature(rawBody, String(signature || ''));
-    if (!tokenValid && !signatureValid) {
+    const developmentSigned = !tokenValid && verifyDevelopmentSignature(rawBody, req.headers['x-snipcart-signature']);
+    if (!tokenValid && !developmentSigned) {
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
@@ -166,169 +391,49 @@ async function handleWebhook(req, res) {
       return res.status(400).json({ error: 'Invalid JSON body' });
     }
 
-    const eventName = payload?.eventName || payload?.event_name;
-    if (eventName !== 'order.completed') {
-      return res.status(200).json({ ok: true, ignored: true });
+    const eventName = payload?.eventName;
+    if (!ORDER_EVENTS.has(eventName)) return res.status(200).json({ ok: true });
+
+    const orderToken = orderTokenOf(payload);
+    if (!orderToken) {
+      logger.warn(`Snipcart webhook ${eventName}: missing order token`);
+      return res.status(400).json({ error: 'Missing order token' });
     }
 
-    // Snipcart v3 puts the FULL Order object directly in `content` — there is
-    // no `content.order` wrapper. Keep the v2 flat shapes as fallbacks so
-    // nothing depends on the webhook version.
-    const content = payload?.content || {};
-    const order = content?.order
-      || (content?.token ? content : null)
-      || payload?.data?.order
-      || payload?.order
-      || {};
-    const orderId = order?.token || order?.id || payload?.id;
-    if (!orderId) {
-      logger.warn(`Snipcart webhook ${eventName}: missing order id in payload`);
-      return res.status(400).json({ error: 'Missing order id' });
+    // The order as Snipcart's API knows it. A failed fetch answers 502 so
+    // Snipcart delivers the webhook again.
+    const order = tokenValid ? await fetchSnipcartOrder(orderToken) : orderFromBody(payload);
+    if (!order && eventName === 'order.refund.created' && developmentSigned) {
+      await revokeOrder(orderToken, 'refunded');
+      return res.status(200).json({ ok: true });
+    }
+    if (!order) return res.status(502).json({ error: 'Order could not be read from Snipcart' });
+    order.token = order.token || orderToken;
+
+    if (REVOKING_PAYMENT_STATUSES.has(order.paymentStatus) || order.status === 'Cancelled') {
+      const status = order.paymentStatus === 'ChargedBack' ? 'charged_back'
+        : order.paymentStatus === 'Refunded' ? 'refunded' : 'cancelled';
+      await revokeOrder(orderToken, status);
+      return res.status(200).json({ ok: true });
+    }
+    if (!PAID_STATUSES.has(order.paymentStatus)) {
+      logger.info(`Snipcart order ${orderToken}: payment ${order.paymentStatus || 'unknown'}, not granted yet`);
+      return res.status(200).json({ ok: true });
     }
 
-    const exists = await db('photo_purchase_orders').where({ order_id: String(orderId) }).first('id');
-    if (exists) {
-      return res.status(200).json({ ok: true, duplicate: true });
-    }
-
-    const buyerEmail = order?.email || order?.customer?.email || order?.billingAddress?.email || '';
-    const gallerySlug = req.params?.slug || gallerySlugFromOrderItems(order?.items);
-    if (!gallerySlug) {
-      logger.warn(`Snipcart webhook ${eventName}: cannot determine gallery for order ${orderId}`);
-      return res.status(400).json({ error: 'Cannot determine gallery from order' });
-    }
-    const gallery = await db('events')
-      .where({ slug: gallerySlug })
-      .first('id', 'event_name', 'photo_price', 'purchase_access_days', 'free_photo_count', 'is_priced', 'promo_code', 'snipcart_discount_id');
-    if (!gallery || gallery.is_priced !== true && gallery.is_priced !== 1 && gallery.is_priced !== '1') {
-      return res.status(404).json({ error: 'Gallery not found or not priced' });
-    }
-
-    const orderedIds = orderedPhotoIds(order?.items || []);
-    if (!orderedIds.length) {
-      logger.warn(`Snipcart webhook ${eventName}: order ${orderId} has no purchased photo ids`);
-      return res.status(400).json({ error: 'No purchased photo ids supplied' });
-    }
-
-    // Only photos that actually belong to THIS gallery become purchase rows;
-    // anything else in the payload is dropped rather than stored under a
-    // mismatched gallery.
-    const ownedRows = await livePhotos(db)
-      .where({ event_id: gallery.id })
-      .whereIn('id', orderedIds)
-      .select('id', 'photo_price');
-    const ownedById = new Map(ownedRows.map((row) => [Number(row.id), row]));
-    const orderedOwned = orderedIds.filter((id) => ownedById.has(id));
-    if (!orderedOwned.length) {
-      logger.warn(`Snipcart webhook ${eventName}: order ${orderId} has no photos belonging to gallery ${gallerySlug}`);
-      return res.status(400).json({ error: 'No purchased photos belong to this gallery' });
-    }
-
-    // Per-order gross recomputed from the database: every photo carries its
-    // effective price (override or gallery default). The free quota is NOT
-    // per-line — it is the one-time promo-code discount, verified below.
-    const allocation = allocateFreeLines(
-      { ...gallery, free_photo_count: 0 },
-      orderedOwned.map((id) => ({ photoId: id, photo_price: ownedById.get(id)?.photo_price }))
-    );
-    const grossCents = allocation.reduce((sum, line) => sum + line.amountCents, 0);
-
-    // One-time promo code: honoured exactly once per gallery — on the FIRST
-    // order that actually applies it. The Snipcart discount is single-use
-    // (maxNumberOfUsages=1), so a buyer who forgets the code on the first
-    // order does not burn the quota for everyone else.
-    const priorPromoUse = await db('photo_purchase_orders')
-      .where({ gallery_id: gallery.id, promo_used: true })
-      .first('id');
-    const discountCodes = (Array.isArray(order?.discounts) ? order.discounts : [])
-      .map((d) => String(d?.code || ''))
-      .filter(Boolean);
-    const codeApplied = !!(gallery.promo_code && discountCodes.includes(gallery.promo_code));
-    const codeHonored = codeApplied && !priorPromoUse && !!gallery.snipcart_discount_id;
-    const freeValueCents = codeHonored
-      ? Math.round(Math.max(0, Number(gallery.free_photo_count || 0)) * Number(gallery.photo_price || 0) * 100)
-      : 0;
-    const expectedTotalCents = Math.max(0, grossCents - freeValueCents);
-
-    // What Snipcart actually charged. Prefer the order total, fall back to
-    // summing the line totals when the payload shape doesn't carry it.
-    const orderTotal = Number(order?.total ?? order?.totals?.total ?? order?.summary?.total);
-    const linesTotalCents = (Array.isArray(order?.items) ? order.items : []).reduce(
-      (sum, item) => sum + Math.round(Number(item?.totalPrice ?? Number(item?.price ?? 0) * Number(item?.quantity ?? 1)) * 100),
-      0
-    );
-    const chargedTotalCents = Number.isFinite(orderTotal) ? Math.round(orderTotal * 100) : linesTotalCents;
-
-    // Audit: a cart that was re-priced outside the client-side allocation
-    // (dev tools) pays the wrong amount. Refund it and deliver nothing.
-    if (Math.abs(chargedTotalCents - expectedTotalCents) > 1) {
-      logger.error(
-        `Snipcart order ${orderId} amount mismatch: charged ${chargedTotalCents}c, expected ${expectedTotalCents}c (gallery ${gallery.id}). Refunding.`
-      );
-      await refundSnipcartOrder(orderId, chargedTotalCents / 100, 'Photo sales price mismatch — refunded automatically');
-      return res.status(200).json({ ok: true, mismatch: true, refunded: true });
-    }
-
-    const purchasedAt = new Date().toISOString();
-    const days = Number(gallery.purchase_access_days || 30);
-    const expiresAt = new Date(Date.now() + (Number.isFinite(days) ? days : 30) * 24 * 60 * 60 * 1000).toISOString();
-    const accessToken = createPurchaseAccessToken();
-
-    await db.transaction(async (trx) => {
-      await trx('photo_purchase_orders').insert({
-        order_id: String(orderId),
-        gallery_id: gallery.id,
-        buyer_email: buyerEmail,
-        total_cents: Math.max(0, chargedTotalCents || 0),
-        currency: order?.currency || 'EUR',
-        status: 'completed',
-        purchased_at: purchasedAt,
-        expires_at: expiresAt,
-        access_token: accessToken,
-        email_sent: false,
-        promo_used: codeHonored,
-      });
-
-      // Per-order allocation: the first N lines record a 0 amount; the
-      // lines beyond the free mark carry the gallery price.
-      const rows = [];
-      for (const line of allocation) {
-        if (line.photoId === null) continue;
-        rows.push({
-          order_id: String(orderId),
-          gallery_id: gallery.id,
-          photo_id: Number(line.photoId),
-          buyer_email: buyerEmail,
-          purchased_at: purchasedAt,
-          expires_at: expiresAt,
-          access_token: accessToken,
-          currency: order?.currency || 'EUR',
-          amount_cents: line.amountCents,
-        });
+    const stored = await db('photo_purchase_orders').where({ order_id: String(orderToken) }).first('id');
+    if (!stored) {
+      try {
+        await grantOrder(order);
+      } catch (error) {
+        // A redelivery racing the first delivery loses on UNIQUE order_id.
+        const raced = await db('photo_purchase_orders').where({ order_id: String(orderToken) }).first('id');
+        if (!raced) throw error;
       }
-
-      if (rows.length) await trx('photo_purchases').insert(rows);
-    });
-
-    const purchaseLink = buildPurchasedDownloadUrl({
-      baseUrl: await getFrontendBaseUrl(),
-      accessToken,
-    });
-    if (buyerEmail) {
-      await queueEmail(null, buyerEmail, 'photo_purchase_access', {
-        buyer_email: buyerEmail,
-        gallery_name: gallery.event_name || gallerySlug,
-        access_link: purchaseLink,
-        purchased_at: purchasedAt,
-        expires_at: expiresAt,
-        download_count: orderedOwned.length,
-        photo_count: orderedOwned.length,
-      });
-      await db('photo_purchase_orders').where({ order_id: String(orderId) }).update({ email_sent: true });
     }
-
-    logger.info(`Snipcart order ${orderId} processed: gallery ${gallerySlug}, ${orderedOwned.length} photo(s), ${chargedTotalCents}c, email ${buyerEmail || 'n/a'}`);
-    return res.status(200).json({ ok: true, order_id: String(orderId), access_token: accessToken });
+    // The body never carries the access token: Snipcart keeps webhook
+    // responses in its dashboard logs.
+    return res.status(200).json({ ok: true });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to process Snipcart order');
   }
@@ -336,8 +441,8 @@ async function handleWebhook(req, res) {
 
 // Photo sales: ONE static dashboard entry serves every gallery —
 // the slug-less route derives the gallery from the order's item URLs. The
-// per-slug path stays for compatibility with already-configured URLs.
-router.post('/snipcart-webhook', express.raw({ type: '*/*', limit: '2mb' }), handleWebhook);
-router.post('/:slug/snipcart-webhook', express.raw({ type: '*/*', limit: '2mb' }), handleWebhook);
+// per-slug path stays for already-configured URLs and is handled the same.
+router.post('/snipcart-webhook', webhookLimiter, express.raw({ type: '*/*', limit: '2mb' }), handleWebhook);
+router.post('/:slug/snipcart-webhook', webhookLimiter, express.raw({ type: '*/*', limit: '2mb' }), handleWebhook);
 
 module.exports = router;

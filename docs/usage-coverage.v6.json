@@ -1985,9 +1985,10 @@
     "adminEvents/photoOrders.js": {
       "decision": "excluded",
       "signals": [],
-      "reason": "Photo-sales surface (Snipcart extension): public/customer checkout and webhook endpoints without product-usage middleware, callbacks, counters or report triggers.",
+      "reason": "Photo-sales admin order list, purchase-link lookup and access-email resend for one gallery; no product-usage middleware, callbacks, counters or report triggers.",
       "route_signatures": [
         "GET /:id/photo-orders",
+        "POST /:id/photo-orders/:orderId/access-link",
         "POST /:id/photo-orders/:orderId/resend-email"
       ]
     },

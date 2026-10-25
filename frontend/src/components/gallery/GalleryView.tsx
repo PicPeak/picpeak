@@ -85,7 +85,7 @@ import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { beginPhotoDownload, endPhotoDownload, touchPhotoDownload, PHOTO_DOWNLOAD_STALE_MS } from '../../hooks/usePhotoDownloadPending';
-import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle, ShoppingCart, Ticket } from 'lucide-react';
+import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ClipboardList, AlertCircle } from 'lucide-react';
 import { galleryService, splitIntoArchives } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
@@ -94,6 +94,8 @@ import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { buildPhotoSalesConfig } from '../../features/photo-sales/photoSales';
 import { PhotoSalesProvider } from '../../features/photo-sales/PhotoSalesContext';
+import { PhotoSalesCartButton } from '../../features/photo-sales/PhotoSalesCartButton';
+import { PhotoSalesPromoBanner } from '../../features/photo-sales/PhotoSalesPromoBanner';
 import type { Photo } from '../../types';
 import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -162,9 +164,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
-  // Photo sales: copy-to-clipboard feedback for the
-  // one-time promo code banner.
-  const [promoCodeCopied, setPromoCodeCopied] = useState(false);
   // Open folder (#1160), mirrored to `?folder=<slug>` so it is linkable and the
   // browser back button walks out of it. Seeded from the URL on first render.
   const [openFolderSlug, setOpenFolderSlug] = useState<string | null>(() => readFolderParam());
@@ -2166,23 +2165,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           const items = [];
           if (!showSidebar && clientAccessControl) items.push(<React.Fragment key="client-access">{clientAccessControl}</React.Fragment>);
 
-          // Photo sales: cart button with live item count;
-          // Snipcart fills .snipcart-items-count and .snipcart-checkout
-          // opens the cart.
+          // Photo sales: the cart takes the header's download slot.
           if (salesCheckoutReady) {
-            items.push(
-              <button
-                key="cart"
-                type="button"
-                className="snipcart-checkout gallery-btn inline-flex items-center gap-2 px-3 sm:px-4 h-9 rounded-lg text-sm font-medium transition-opacity hover:opacity-90"
-                style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-accent-fg, #ffffff)' }}
-                aria-label={t('photoSales.cart', 'Shopping cart')}
-              >
-                <ShoppingCart className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('photoSales.cart', 'Cart')}</span>
-                <span className="snipcart-items-count inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-white/25 text-xs font-semibold" />
-              </button>
-            );
+            items.push(<PhotoSalesCartButton key="cart" />);
           }
 
           if (daysUntilExpiration !== null && daysUntilExpiration <= 1 && daysUntilExpiration > 0 && event.expires_at) {
@@ -2470,48 +2455,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             </div>
           )}
           {folderNav}
-          {/* Photo sales: one-time promo code: the free quota
-              of the FIRST order is redeemed by entering the code at checkout
-              (Snipcart discount, single use, synced by the backend). */}
-          {(() => {
-            const salesEvent = data?.event as { promo_code?: string | null; promo_discount_ready?: boolean } | undefined;
-            const promoCode = salesEvent?.promo_code || null;
-            if (!salesCheckoutReady || photoSalesValue.freeCount <= 0 || !salesEvent?.promo_discount_ready || !promoCode) {
-              return null;
-            }
-            return (
-              <div
-                className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2.5"
-                role="status"
-                data-testid="photo-sales-promo-code"
-              >
-                <Ticket className="w-4 h-4 shrink-0 text-accent" aria-hidden="true" />
-                <span className="text-sm" style={{ color: 'var(--color-muted-text, #6b7280)' }}>
-                  {t('photoSales.promoCodeNotice', 'Promo code for your {{count}} free photos: {{code}} — enter it at checkout.', {
-                    count: photoSalesValue.freeCount,
-                    code: promoCode,
-                  })}
-                </span>
-                <code className="rounded bg-white/60 dark:bg-black/30 px-2 py-0.5 text-sm font-bold tracking-wider text-accent">
-                  {promoCode}
-                </code>
-                <button
-                  type="button"
-                  className="rounded-md border border-accent/50 px-2 py-1 text-xs font-medium text-accent hover:bg-accent/10"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(promoCode).then(() => {
-                      setPromoCodeCopied(true);
-                      window.setTimeout(() => setPromoCodeCopied(false), 2000);
-                    }).catch(() => {});
-                  }}
-                >
-                  {promoCodeCopied
-                    ? t('photoSales.promoCodeCopied', 'Copied!')
-                    : t('photoSales.promoCodeCopy', 'Copy')}
-                </button>
-              </div>
-            );
-          })()}
+          {/* Photo sales: one-time promo code for the first order's free photos. */}
+          <PhotoSalesPromoBanner
+            promoCode={(data?.event as { promo_code?: string | null } | undefined)?.promo_code}
+            discountReady={(data?.event as { promo_discount_ready?: boolean } | undefined)?.promo_discount_ready}
+          />
           {/* A gallery whose photos ALL live in folders has an empty root grid,
               and PhotoGridWithLayouts unconditionally renders "no photos found"
               — directly under the tiles that prove otherwise. Skip the grid when

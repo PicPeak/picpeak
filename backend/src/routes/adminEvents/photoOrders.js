@@ -54,9 +54,38 @@ module.exports = (router) => {
         summaries.push(summarisePurchaseOrder(order, rows));
       }
 
-      res.json({ orders: summaries });
+      res.json({
+        orders: summaries,
+        // Whether this install can sell at all: without the public key the
+        // gallery shows no cart, without the secret key every webhook is
+        // refused and no order is ever granted.
+        store: {
+          checkout_configured: !!(process.env.SNIPCART_API_KEY || '').trim(),
+          webhook_configured: !!(process.env.SNIPCART_SECRET_API_KEY || '').trim(),
+        },
+      });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to load photo orders');
+    }
+  });
+
+  // The buyer's purchase link, for the owner only: a role that may read
+  // every event's orders does not get foreign download links.
+  router.post('/:id/photo-orders/:orderId/access-link', adminAuth, requirePermission('events.edit'), requireEventOwnership, async (req, res) => {
+    try {
+      const event = await loadOwnedEvent(req);
+      if (!event) return res.status(404).json({ error: 'Event not found' });
+
+      const order = await db('photo_purchase_orders')
+        .where({ gallery_id: event.id, order_id: String(req.params.orderId), status: 'completed' })
+        .first('access_token');
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      res.json({
+        access_link: buildPurchasedDownloadUrl({ baseUrl: await getFrontendBaseUrl(), accessToken: order.access_token }),
+      });
+    } catch (error) {
+      errorResponse(res, error, 500, 'Failed to load the purchase link');
     }
   });
 
@@ -68,7 +97,7 @@ module.exports = (router) => {
       if (!event) return res.status(404).json({ error: 'Event not found' });
 
       const order = await db('photo_purchase_orders')
-        .where({ gallery_id: event.id, order_id: String(req.params.orderId) })
+        .where({ gallery_id: event.id, order_id: String(req.params.orderId), status: 'completed' })
         .first();
       if (!order) return res.status(404).json({ error: 'Order not found' });
 
@@ -92,7 +121,7 @@ module.exports = (router) => {
         buyer_email: order.buyer_email,
       }, event.id, { type: 'admin', id: req.admin.id, name: req.admin.username });
 
-      res.json({ ok: true, access_link: accessLink });
+      res.json({ ok: true });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to resend purchase email');
     }

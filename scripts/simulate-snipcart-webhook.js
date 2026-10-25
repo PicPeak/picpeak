@@ -5,15 +5,24 @@
  * Snipcart's servers cannot reach localhost, so this script replays the exact
  * call they would make — raw JSON body, `x-snipcart-signature` HMAC header —
  * against your running backend. It exercises the full photo-sales chain:
- * signature check, idempotency, photo_purchase_orders / photo_purchases rows
- * and the purchase-access email.
+ * signature check, the order audit, idempotency, photo_purchase_orders /
+ * photo_purchases rows and the purchase-access email.
+ *
+ * The HMAC header is accepted only when the backend does NOT run with
+ * NODE_ENV=production; a production backend authenticates Snipcart's request
+ * token and reads the order from Snipcart's API instead.
+ *
+ * --total must be what the order costs (sum of the photo prices, minus the
+ * promo code if you pass --promo); any other amount is refused and refunded.
  *
  * Usage (from the repo root, backend running):
  *   node scripts/simulate-snipcart-webhook.js <gallery-slug> <photoId> [photoId...] \
- *     [--email buyer@example.com] [--total 9.5] [--token test-order-1]
+ *     [--email=buyer@example.com] [--total=9.5] [--token=test-order-1] [--promo=FOTO-XXXX-XXXX]
  *
  * Env (optional, root .env is read automatically):
  *   SNIPCART_WEBHOOK_SECRET  the same secret as in .env
+ *   JWT_SECRET               the backend's, to sign the cart lines like the
+ *                            gallery does
  *   BACKEND_URL              default http://localhost:3001/api
  *
  * The access link for the created order shows up under
@@ -44,11 +53,13 @@ const photoIds = [];
 let email = 'buyer@example.com';
 let total = 0;
 let orderToken = `test-order-${Date.now()}`;
+let promo = null;
 
 for (const arg of rest) {
   if (arg.startsWith('--email=')) email = arg.slice('--email='.length);
   else if (arg.startsWith('--total=')) total = Number(arg.slice('--total='.length)) || 0;
   else if (arg.startsWith('--token=')) orderToken = arg.slice('--token='.length);
+  else if (arg.startsWith('--promo=')) promo = arg.slice('--promo='.length);
   else if (!arg.startsWith('--')) photoIds.push(Number(arg));
 }
 
@@ -63,32 +74,44 @@ if (!secret) {
   process.exit(1);
 }
 
+const jwtSecret = (process.env.JWT_SECRET || '').trim();
+if (!jwtSecret) {
+  console.error('JWT_SECRET is not set — the cart lines are signed with the backend\'s JWT_SECRET.');
+  process.exit(1);
+}
+// Same signature the gallery hands out as sale_token
+// (backend/src/modules/photoSales/sellable.js).
+const saleToken = (id) => crypto.createHmac('sha256', jwtSecret)
+  .update(`photo-sale:${id}`).digest('hex').slice(0, 32);
+
+const backendUrl = (process.env.BACKEND_URL || 'http://localhost:3001/api').replace(/\/$/, '');
+
 const payload = {
   eventName: 'order.completed',
   mode: 'Test',
   createdOn: new Date().toISOString(),
   content: {
-    order: {
-      token: orderToken,
-      email,
-      total,
-      currency: 'eur',
-      items: photoIds.map((id) => ({
-        id: `photo-${id}`,
-        name: `Photo ${id}`,
-        price: 0,
-        quantity: 1,
-        customFields: [{ name: 'photoId', value: String(id) }],
-      })),
-    },
+    token: orderToken,
+    email,
+    total,
+    currency: 'eur',
+    paymentStatus: 'Paid',
+    status: 'Processed',
+    discounts: promo ? [{ code: promo }] : [],
+    items: photoIds.map((id) => ({
+      id: `${slug}-photo-${id}`,
+      name: `Photo ${id}`,
+      quantity: 1,
+      url: `${backendUrl}/gallery/${encodeURIComponent(slug)}/price-check?photoId=${id}&sig=${saleToken(id)}`,
+      customFields: [{ name: 'photoId', value: String(id) }],
+    })),
   },
 };
 
 const rawBody = JSON.stringify(payload);
 const signature = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
 
-const backendUrl = (process.env.BACKEND_URL || 'http://localhost:3001/api').replace(/\/$/, '');
-const url = `${backendUrl}/gallery/${encodeURIComponent(slug)}/snipcart-webhook`;
+const url = `${backendUrl}/gallery/snipcart-webhook`;
 
 (async () => {
   console.log(`POST ${url}`);
@@ -110,8 +133,8 @@ const url = `${backendUrl}/gallery/${encodeURIComponent(slug)}/snipcart-webhook`
   console.log(body);
 
   if (response.status === 200) {
-    console.log('\nDone. The order is now listed under Admin → Event → Orders,');
-    console.log('where you can copy the purchased-downloads access link.');
+    console.log('\nDone. The order is now listed under Admin → Event → Orders: granted, or');
+    console.log('refused and marked refunded / refund failed when the audit did not pass.');
     console.log('(A buyer email is only delivered when SMTP is configured.)');
   } else {
     console.log('\nCheck the backend logs for details.');

@@ -298,11 +298,11 @@ app.options('/api/*', cors(corsOptions));
 // PicPeak credentials, or forwards arbitrary upstream responses.
 app.use('/api/analytics/tracker', require('./src/routes/analyticsTrackerProxy'));
 
-// Photo sales: the Snipcart order webhook verifies its HMAC
-// over the RAW request bytes, so it must be mounted ahead of the global JSON
-// body parsers (which would otherwise consume the stream and re-serialise the
-// body in a byte layout that never matches the signature). Unmatched gallery
-// paths fall through to the regular gallery router below unchanged.
+// Photo sales: the Snipcart order webhook reads the RAW request bytes (the
+// development HMAC is computed over them), so it is mounted ahead of the
+// global JSON body parsers. That also puts it ahead of the API rate limiter,
+// so the router carries its own. Unmatched gallery paths fall through to the
+// regular gallery router below unchanged.
 app.use('/api/gallery', require('./src/routes/gallery/snipcartWebhook'));
 
 // Health check endpoint. Public, so it answers only `status` (see

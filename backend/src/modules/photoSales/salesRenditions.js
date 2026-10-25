@@ -29,7 +29,7 @@ const generateLimit = pLimit(2);
 
 function salesSettingsFingerprint(settings) {
   const material = [
-    settings.tiled === true ? 'tiled' : 'single',
+    settings.tiled === true ? 'tiled-v2' : 'single',
     settings.position,
     settings.opacity,
     settings.size,
@@ -112,8 +112,10 @@ async function generateSalesPreviewForPhoto(photoId) {
       if (!previewPath) return { success: false, error: 'Preview unavailable' };
 
       const watermarkService = require('../../services/watermarkService');
+      // failClosed: a failed composite must throw, never persist the clean
+      // preview under the current fingerprint for every later guest.
       const buffer = await withLocalCopy(previewPath, (localPath) =>
-        watermarkService.applyWatermark(localPath, settings)
+        watermarkService.applyWatermark(localPath, settings, { failClosed: true })
       );
 
       const fingerprint = salesSettingsFingerprint(settings);

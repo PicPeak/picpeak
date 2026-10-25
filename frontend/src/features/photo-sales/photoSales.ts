@@ -18,6 +18,9 @@ export interface PhotoSalesPhoto {
   id: number;
   uploaded_at?: string | null;
   photo_price?: number | null;
+  /** The server's proof that this viewer may buy the photo; null for a photo
+   *  that is not for sale (a video, a client-only photo). */
+  sale_token?: string | null;
 }
 
 /**
@@ -103,9 +106,14 @@ export function effectivePhotoPrice(
 }
 
 /**
- * The data-item-* attributes Snipcart needs on an add-to-cart control. Every
- * buy button (tile chip, hover icon, lightbox) must carry the SAME item id
- * per photo so Snipcart increments one line instead of stacking duplicates.
+ * The data-item-* attributes Snipcart needs on an add-to-cart control, or
+ * null when the photo is not for sale (no sale_token). Every buy button (tile
+ * chip, hover icon, lightbox) must carry the SAME item id per photo so
+ * Snipcart increments one line instead of stacking duplicates.
+ *
+ * The item URL carries the photo's sale token: Snipcart's price check and
+ * the order webhook accept only signed lines, so a cart cannot be filled with
+ * photos of a gallery its buyer never logged into.
  *
  * Cart presentation: the photo thumbnail replaces the bare name, the photoId
  * custom field travels hidden (it is still sent with the order for the
@@ -120,13 +128,15 @@ export function snipcartItemProps(args: {
     filename?: string;
     original_filename?: string | null;
     thumbnail_url?: string | null;
+    sale_token?: string | null;
   };
-}): Record<string, string | number> {
+}): Record<string, string | number> | null {
   const { slug, priceCheckUrl, price, photo } = args;
+  if (!photo.sale_token) return null;
   const props: Record<string, string | number> = {
     'data-item-id': `${slug}-photo-${photo.id}`,
     'data-item-price': price,
-    'data-item-url': `${priceCheckUrl}${priceCheckUrl.includes('?') ? '&' : '?'}photoId=${photo.id}`,
+    'data-item-url': `${priceCheckUrl}${priceCheckUrl.includes('?') ? '&' : '?'}photoId=${photo.id}&sig=${encodeURIComponent(photo.sale_token)}`,
     'data-item-name': photo.original_filename || photo.filename || `Photo ${photo.id}`,
     'data-item-description': `${slug} — photo ${photo.id}`,
     // Digital goods: photos are delivered through our purchased-downloads

@@ -27,9 +27,11 @@ describe('photo sales admin order summaries', () => {
       total_cents: 3400,
       currency: 'EUR',
       expires_at: '2026-01-10T00:00:00.000Z',
-      access_token: 'token-123',
+      status: 'completed',
       remaining_days: expect.any(Number),
     });
     expect(summary.remaining_days).toBeGreaterThanOrEqual(0);
+    // The buyer's link is never listed: only the owner fetches it.
+    expect(summary).not.toHaveProperty('access_token');
   });
 });

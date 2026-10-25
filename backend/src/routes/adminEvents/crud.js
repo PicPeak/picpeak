@@ -189,7 +189,7 @@ module.exports = (router) => {
     body('enable_devtools_protection').optional().isBoolean(),
     body('is_priced').optional().isBoolean(),
     body('free_photo_count').optional().isInt({ min: 0, max: 2147483647 }).toInt(),
-    body('photo_price').optional({ nullable: true, checkFalsy: true }).isDecimal({ decimal_digits: '2', force_decimal: false }).toFloat(),
+    body('photo_price').optional({ nullable: true, checkFalsy: true }).isDecimal({ decimal_digits: '0,2', force_decimal: false }).toFloat(),
     body('purchase_access_days').optional().isInt({ min: 1, max: 2147483647 }).toInt(),
     // Image security. PUT /:id has validated these all along; create
     // accepted none of them, so a value sent here used to be dropped on the
@@ -1284,7 +1284,7 @@ module.exports = (router) => {
     body('allow_downloads').optional().isBoolean(),
     body('is_priced').optional().isBoolean(),
     body('free_photo_count').optional({ nullable: true }).isInt({ min: 0, max: 2147483647 }).toInt(),
-    body('photo_price').optional({ nullable: true, checkFalsy: true }).isDecimal({ decimal_digits: '2', force_decimal: false }).toFloat(),
+    body('photo_price').optional({ nullable: true, checkFalsy: true }).isDecimal({ decimal_digits: '0,2', force_decimal: false }).toFloat(),
     body('purchase_access_days').optional({ nullable: true }).isInt({ min: 1, max: 2147483647 }).toInt(),
     // Download limit (issue 1560). null clears it; the column is a signed
     // 32-bit int like photo_cap.

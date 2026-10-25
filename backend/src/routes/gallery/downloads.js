@@ -951,15 +951,15 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         if (isGalleryPriced(req.event) && !isVideo(photo)) {
           photoSettings = await resolveForcedWatermarkSettingsForPhoto(req.event, photo);
           const paidPreview = await renderPreviewForDownload(photo, photoSettings);
-          if (paidPreview) {
-            archive.append(paidPreview.buffer, {
-              name: previewDownloadName(archiveName, paidPreview.extension),
-              photoId: photo.id,
-            });
-            appendedIds.push(photo.id);
-            releaseAll.appended(photo.id);
-            continue;
-          }
+          // No preview means no photo: the original must never stand in.
+          if (!paidPreview) throw new Error('No sales preview of this photo');
+          archive.append(paidPreview.buffer, {
+            name: previewDownloadName(archiveName, paidPreview.extension),
+            photoId: photo.id,
+          });
+          appendedIds.push(photo.id);
+          releaseAll.appended(photo.id);
+          continue;
         }
 
         // Resize to the gallery's standard resolution (#858) and/or watermark.
@@ -1187,15 +1187,15 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         if (isGalleryPriced(req.event) && !isVideo(photo)) {
           selectedPhotoSettings = await resolveForcedWatermarkSettingsForPhoto(req.event, photo);
           const paidPreview = await renderPreviewForDownload(photo, selectedPhotoSettings);
-          if (paidPreview) {
-            archive.append(paidPreview.buffer, {
-              name: previewDownloadName(name, paidPreview.extension),
-              photoId: photo.id,
-            });
-            appendedIds.push(photo.id);
-            releaseSelected.appended(photo.id);
-            continue;
-          }
+          // No preview means no photo: the original must never stand in.
+          if (!paidPreview) throw new Error('No sales preview of this photo');
+          archive.append(paidPreview.buffer, {
+            name: previewDownloadName(name, paidPreview.extension),
+            photoId: photo.id,
+          });
+          appendedIds.push(photo.id);
+          releaseSelected.appended(photo.id);
+          continue;
         }
 
         // Resize (#858) and/or watermark. renderPhotoForDownload returns null

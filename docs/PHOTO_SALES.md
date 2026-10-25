@@ -23,11 +23,14 @@ free quota is redeemed, how the system stays secure, and how to operate it.
   shown at the top of the gallery. The buyer enters it at checkout; it is a
   real Snipcart discount (fixed amount = `free_photo_count × photo_price`,
   `maxNumberOfUsages: 1`).
-- **After purchase**: `order.completed` webhook records the order and sends
-  the buyer an access link (`/purchased-downloads/:accessToken`), valid for
-  `purchase_access_days` days, unlimited downloads, no one-time consumption.
-- **Admin**: per-event "Orders" tab (buyer, photos, amount, remaining access,
-  resend-link).
+- **After purchase**: once Snipcart reports the order paid, the webhook
+  records it and sends the buyer an access link
+  (`/purchased-downloads/:accessToken`), valid for `purchase_access_days`
+  days, unlimited downloads, no one-time consumption. A refund, chargeback or
+  cancellation reported later revokes the link.
+- **Admin**: per-event "Orders" tab (buyer, status, photos, amount, remaining
+  access, copy/resend link). The tab and the gallery's Photo sales settings
+  warn when the server is missing a Snipcart key.
 
 ## Setup
 
@@ -36,16 +39,21 @@ free quota is redeemed, how the system stays secure, and how to operate it.
 ```env
 SNIPCART_API_KEY=<public key from Snipcart dashboard>
 SNIPCART_SECRET_API_KEY=<secret key from Snipcart dashboard>
-# SNIPCART_WEBHOOK_SECRET is NOT needed (legacy HMAC fallback only).
+# SNIPCART_WEBHOOK_SECRET: development only (scripts/simulate-snipcart-webhook.js).
+# Ignored when NODE_ENV=production.
 ```
 
 `SNIPCART_API_KEY` is public by design (shipped to the gallery UI).
 `SNIPCART_SECRET_API_KEY` never leaves the backend. It is used for:
 
 1. **Webhook verification** — Snipcart v3's official request-token handshake.
-2. **Promo-code discounts** — creating/updating the one-time discount when a
+2. **Reading the order** — every webhook re-reads its order from
+   `GET https://app.snipcart.com/api/orders/{token}`; that order, not the
+   webhook body, decides the total, currency, payment status and lines.
+3. **Promo-code discounts** — creating/updating the one-time discount when a
    gallery is saved, plus a sync sweep at server start.
-3. **Automatic refunds** — when the DB audit rejects a tampered order.
+4. **Automatic refunds** — `POST https://app.snipcart.com/api/orders/{token}/refunds`
+   when the audit refuses an order.
 
 ### Snipcart dashboard
 
@@ -57,12 +65,19 @@ SNIPCART_SECRET_API_KEY=<secret key from Snipcart dashboard>
 
    The gallery is derived from the order's items — no per-gallery entry is
    ever needed. (Snipcart offers no API to manage webhooks, which is why the
-   endpoint is deliberately static.)
-2. **Shipping**: nothing to configure — every photo item is flagged
+   endpoint is deliberately static.) The endpoint acts on
+   `order.completed`, `order.paymentStatus.changed`, `order.status.changed`
+   and `order.refund.created`; Snipcart sends all of them to this one URL.
+2. **Currency**: EUR only. An order in any other currency is refunded, so do
+   not enable a second currency in the store.
+3. **Taxes**: photo prices are gross prices. Configure the store with taxes
+   included in prices (or no taxes). A tax added on top changes the total,
+   and the audit refunds every such order.
+4. **Shipping**: nothing to configure — every photo item is flagged
    `shippable: false` (digital goods delivered through the purchased-
    downloads page), so Snipcart removes all shipping options from the cart
    automatically. There is no "digital delivery" menu in the dashboard.
-3. **Domains & URLs**: set the store's default website domain to the public
+5. **Domains & URLs**: set the store's default website domain to the public
    origin visitors use (e.g. `https://your-domain.example.com`). Order
    validation resolves item URLs against it and only crawls hosts matching
    the default domain or the allowed domains — without it the checkout fails
@@ -72,8 +87,9 @@ SNIPCART_SECRET_API_KEY=<secret key from Snipcart dashboard>
 ## Pricing & the free quota
 
 - Every cart line carries the photo's base price (`photo_price`, or the
-  per-photo override). Prices are re-derived from the database at checkout —
-  never trusted from the client.
+  per-photo override). Snipcart's price check reads that price from the
+  database before payment, and the webhook recomputes the order total from
+  the database after it — the client's price is never trusted.
 - The free quota is **one-time per gallery**: the first order that applies
   the promo code redeems it. A buyer who forgets the code does not use it up.
   Snipcart enforces `maxNumberOfUsages: 1`; the webhook additionally checks
@@ -89,26 +105,33 @@ SNIPCART_SECRET_API_KEY=<secret key from Snipcart dashboard>
 
 | Surface | Protection |
 | --- | --- |
-| Webhook authenticity | `X-Snipcart-RequestToken` verified against `https://app.snipcart.com/api/requestvalidation/{token}` with the secret key (valid 1 min, single use). Optional legacy HMAC fallback via `SNIPCART_WEBHOOK_SECRET`. |
-| Webhook idempotency | Keyed on the Snipcart order id — redeliveries answer `200 { duplicate: true }` and create nothing. |
-| Price integrity | The `order.completed` handler recomputes the expected total entirely from the DB (photo prices, promo code, prior orders). On mismatch it refunds the order automatically and grants **no** downloads. |
-| Snipcart item validation | `GET /api/gallery/:slug/price-check?photoId=…` answers `{ valid: true }` only for photos that exist in a priced gallery. It cannot see the cart (Snipcart crawls per item), which is why the authoritative check lives in the webhook audit. |
-| Originals | Served only with a valid purchase access token (`photo_purchases` + `expires_at`). Tokens are random, non-guessable and never consumed; access simply expires. |
+| Webhook authenticity | `X-Snipcart-RequestToken` verified against `https://app.snipcart.com/api/requestvalidation/{token}` with the secret key (valid 1 min, single use). The development HMAC (`SNIPCART_WEBHOOK_SECRET`) is refused when `NODE_ENV=production`. Its own rate limit (60/min per IP), since it sits ahead of the global API limiter. |
+| Source of truth | The order is re-read from Snipcart's API with the secret key; the webhook body is only a trigger. A failed read answers 502 so Snipcart retries. |
+| Payment status | Granted only when Snipcart reports `Paid` / `PaidDeferred`; a `Deferred` order waits for `order.paymentStatus.changed`. `Refunded`, `ChargedBack`, `Cancelled`, `Failed`, `Expired` or a cancelled order revoke a granted one (order status and every purchase row). |
+| Webhook idempotency | Keyed on the Snipcart order id (UNIQUE) — redeliveries create nothing. The response is `{ ok: true }` only: no token lands in Snipcart's webhook logs. |
+| What can be sold | Only a gallery that is priced, active, not archived, not a draft and not expired; only photos an ordinary guest sees (visible, not under review, processed), no videos. Same rule in the price check, the webhook and the purchase link (`modules/photoSales/sellable.js`). |
+| Gallery password | Each cart line's URL carries a sale signature (HMAC of the photo id with `JWT_SECRET`) that the gallery hands out only with its photo list, i.e. after the gallery's access check. Knowing a slug and guessing photo ids is not enough to buy. |
+| Price integrity | The price check answers Snipcart's crawler with the database price (`{ id, price }`), so a re-priced cart line fails before payment. The webhook recomputes the total from the DB (photo prices, promo code, prior orders) and compares currency and amount. A refused order is refunded and stored with the refund outcome (`refunded` / `refund_failed`) for the admin; it grants **no** downloads. |
+| Originals | Served only with a valid purchase access token for a `completed` order (`photo_purchases` + `expires_at`), from a gallery that is still active. Tokens are random, non-guessable and never consumed; access expires or is revoked. Admins copy a buyer's link through an owner-only route; the order list never carries it. |
+| Snipcart script | Loaded with Subresource Integrity (pinned `v3.4.0` hashes in `PhotoSalesContext.tsx`). |
+| CSP | Snipcart's needs (`'unsafe-eval'`, its CDN, API and payment frame) are granted on gallery pages only (`location @gallery_spa` in `frontend/nginx.conf`); the admin app and every other page keep the strict policy. |
 | Pre-purchase views/downloads | All photos of a priced gallery are served watermarked (tiled) and low-resolution only. Guest download paths are locked to the watermarked rendition; a priced gallery never serves a prebuilt archive, and download jobs built before pricing are not reused. |
 | Promo code | Crypto-random, single-use (Snipcart side), hidden until the discount is synced, and re-verified server-side at order time. |
 | Admin routes | Orders list requires `events.view`; resending requires `events.edit` + event ownership; per-photo price edits require `photos.edit` + ownership. |
 | Secrets | The secret key is never logged, never exposed in payloads, and only used for server-to-server calls. |
 
-**Known limitation (by design):** because Snipcart's validation crawl is
-per-item and cart-blind, a determined attacker could tamper with cart prices
-in their own browser and pay the wrong amount. The webhook audit catches this:
-the order is automatically refunded and no download access is granted. The
-attacker cannot obtain unpaid originals this way.
+**Defence in depth:** a cart re-priced in the browser fails Snipcart's own
+validation against the price check. If an order still arrives with the wrong
+amount (a promo misuse, a tax added on top), the webhook audit refunds it and
+grants nothing. A refund Snipcart refuses shows as "Refund failed" in the
+Orders tab — refund that order by hand in the Snipcart dashboard.
 
 ## Architecture
 
-- `backend/src/modules/photoSales/` — pricing rules, purchase access, admin
-  summaries, watermark preview pre-generation, promo-code/discount sync.
+- `backend/src/modules/photoSales/` — pricing rules, what is sellable and
+  the sale signature (`sellable.js`), purchase access, admin summaries,
+  watermark preview pre-generation, promo-code/discount sync (creation is
+  claimed in the database, so concurrent replicas create one discount).
 - `backend/src/routes/gallery/snipcart.js` — item validation crawl endpoint.
 - `backend/src/routes/gallery/snipcartWebhook.js` — raw-body webhook mounted
   ahead of the JSON parsers in `server.js` (token verification, audit,
@@ -124,11 +147,15 @@ attacker cannot obtain unpaid originals this way.
 
 ### Watermark pre-generation
 
-Watermarked lightbox previews are rendered in the background (not on first
+The forced mark is a spaced diagonal pattern (`watermarkService.salesTile`,
+about three marks across the image). Watermarked lightbox previews are
+rendered in the background (not on first
 view): after each upload finishes processing in a priced gallery, and when a
 gallery is switched to priced. Files live in `storage/watermarks_sales/`
 (`photos.photo_sales_preview_key/path`, migration 317) and are re-rendered
-automatically when the mark settings change.
+automatically when the mark settings change. A preview whose mark fails is
+never stored, and a photo without a sales preview is left out of a priced
+gallery's archives instead of falling back to the original.
 
 ### Migrations
 
@@ -139,7 +166,10 @@ cache, orders and purchases) · `318` buyer email template.
 
 - **Regenerate watermark previews / promo discount**: re-save the event in the
   admin editor, or restart the backend (startup sync covers missing discounts).
-- **Resend a buyer's link**: Event → Orders → "Resend link".
+- **Resend a buyer's link**: Event → Orders → "Resend link" (paid orders
+  with access left).
+- **Local testing**: `node scripts/simulate-snipcart-webhook.js <slug> <photoId>… --total=<amount>`
+  against a backend NOT running with `NODE_ENV=production`.
 - **Test purchase**: Snipcart test card `4242 4242 4242 4242`.
 - **Troubleshooting**:
   - Checkout refuses items → the price-check URL must be reachable from

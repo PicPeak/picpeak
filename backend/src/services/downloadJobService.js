@@ -375,6 +375,8 @@ class DownloadJobService {
               if (isGalleryPriced(event) && !isVideo(photo)) {
                 photoSettings = await resolveForcedWatermarkSettingsForPhoto(event, photo);
                 previewEntry = await renderPreviewForDownload(photo, photoSettings);
+                // No preview means no photo: the original must never stand in.
+                if (!previewEntry) throw new Error('No sales preview of this photo');
               }
               if (previewEntry) {
                 archive.append(previewEntry.buffer, { name: previewDownloadName(name, previewEntry.extension) });

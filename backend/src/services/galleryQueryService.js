@@ -39,6 +39,8 @@ async function freeQuotaAvailable(event) {
 }
 
 const { guestUploadMaxEdgeOf } = require('./guestUploadDownscale');
+const { isPhotoSellable, signPhotoSale } = require('../modules/photoSales/sellable');
+const { isDiscountId } = require('../modules/photoSales/promoDiscount');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const {
   galleryFullResolutionDenial, isRemuxWebKey, MAXIMUM_PROTECTION_CAP, capsFullSizeView,
@@ -667,7 +669,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // in the store, so the UI never advertises a dead code.
       free_quota_available: await freeQuotaAvailable(event),
       promo_code: event.promo_code || null,
-      promo_discount_ready: !!(event.promo_code && event.snipcart_discount_id),
+      promo_discount_ready: !!event.promo_code && isDiscountId(event.snipcart_discount_id),
       // Promo banner override (#440). GalleryView has always read
       // promo_mode from THIS payload, but it was never sent — so every
       // per-event promo override silently resolved to 'inherit' and a
@@ -823,6 +825,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // Photo sales: per-photo price override (null =
         // gallery default) for the Snipcart buy button.
         photo_price: photo.photo_price != null ? Number(photo.photo_price) : null,
+        // Photo sales: the cart line's proof that its buyer passed this
+        // gallery's access check (modules/photoSales/sellable.js). Only
+        // sellable photos get one: no client-only photo, no video.
+        sale_token: parseBooleanInput(event.is_priced, false) && isPhotoSellable(photo) ? signPhotoSale(photo.id) : null,
         size: photo.size_bytes,
         // toIso: on SQLite installs rows written with a raw Date (e.g.
         // the pre-fix archive-restore path) hold epoch numbers — the

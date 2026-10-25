@@ -14,6 +14,7 @@ interface PurchasedPhoto {
 interface PurchasedAccessPayload {
   order_id: string;
   gallery_slug: string | null;
+  gallery_name?: string | null;
   buyer_email: string;
   expires_at: string | null;
   photos: PurchasedPhoto[];
@@ -35,7 +36,7 @@ type LoadState =
  */
 export const PurchasedDownloadsPage: React.FC = () => {
   const { accessToken } = useParams<{ accessToken: string }>();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
 
   useEffect(() => {
@@ -61,52 +62,30 @@ export const PurchasedDownloadsPage: React.FC = () => {
 
   if (state.status === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-900">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Loading size="lg" text={t('photoSales.loadingDownloads', 'Loading your downloads…')} />
       </div>
     );
   }
 
-  if (state.status === 'expired') {
+  if (state.status !== 'ready') {
+    const [title, help] = state.status === 'expired'
+      ? [
+        t('photoSales.accessExpired', 'Access expired'),
+        t('photoSales.accessExpiredHelp', 'Your access period for these photos has ended. Please contact your photographer if you need them again.'),
+      ]
+      : state.status === 'not-found'
+        ? [
+          t('photoSales.linkNotFound', 'Download link not found'),
+          t('photoSales.linkNotFoundHelp', 'This link does not match any purchase. Please check the email you received or contact your photographer.'),
+        ]
+        : [t('photoSales.loadError', 'Something went wrong'), state.message];
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-900 px-4">
-        <div className="max-w-md w-full bg-white dark:bg-neutral-800 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-700 p-8 text-center">
-          <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-4" />
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-            {t('photoSales.accessExpired', 'Access expired')}
-          </h1>
-          <p className="mt-3 text-sm text-neutral-600 dark:text-neutral-400">
-            {t('photoSales.accessExpiredHelp', 'Your access period for these photos has ended. Please contact your photographer if you need them again.')}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (state.status === 'not-found') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-900 px-4">
-        <div className="max-w-md w-full bg-white dark:bg-neutral-800 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-700 p-8 text-center">
-          <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-4" />
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-            {t('photoSales.linkNotFound', 'Download link not found')}
-          </h1>
-          <p className="mt-3 text-sm text-neutral-600 dark:text-neutral-400">
-            {t('photoSales.linkNotFoundHelp', 'This link does not match any purchase. Please check the email you received or contact your photographer.')}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (state.status === 'error') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-900 px-4">
-        <div className="max-w-md w-full bg-white dark:bg-neutral-800 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-700 p-8 text-center">
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-            {t('photoSales.loadError', 'Something went wrong')}
-          </h1>
-          <p className="mt-3 text-sm text-neutral-600 dark:text-neutral-400">{state.message}</p>
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <div className="max-w-md w-full bg-surface rounded-xl shadow-sm border border-surface p-8 text-center">
+          <AlertTriangle className="w-10 h-10 text-warning mx-auto mb-4" aria-hidden="true" />
+          <h1 className="text-xl font-semibold text-theme">{title}</h1>
+          <p className="mt-3 text-sm text-muted-theme">{help}</p>
         </div>
       </div>
     );
@@ -114,50 +93,56 @@ export const PurchasedDownloadsPage: React.FC = () => {
 
   const { data } = state;
   const expiresDate = data.expires_at
-    ? new Date(data.expires_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+    ? new Date(data.expires_at).toLocaleDateString(i18n.language, { year: 'numeric', month: 'long', day: 'numeric' })
     : null;
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 py-12 px-4">
+    <div className="min-h-screen bg-background py-10 sm:py-16 px-4">
       <div className="max-w-2xl mx-auto">
-        <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-700 p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-11 h-11 rounded-full bg-accent/15 flex items-center justify-center">
-              <ShoppingBag className="w-6 h-6 text-accent" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-                {t('photoSales.yourDownloads', 'Your purchased photos')}
-              </h1>
-              {expiresDate && (
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                  {t('photoSales.accessUntil', 'Access valid until')} {expiresDate}
+        <div className="bg-surface rounded-2xl shadow-sm border border-surface overflow-hidden">
+          <div className="px-6 sm:px-8 pt-8 pb-6 border-b border-surface">
+            <div className="flex items-start gap-4">
+              <div className="photo-sales-promo-icon w-12 h-12 shrink-0 rounded-full flex items-center justify-center" aria-hidden="true">
+                <ShoppingBag className="w-6 h-6" />
+              </div>
+              <div className="min-w-0">
+                {data.gallery_name && (
+                  <p className="text-sm font-medium text-accent truncate">{data.gallery_name}</p>
+                )}
+                <h1 className="text-xl sm:text-2xl font-semibold text-theme">
+                  {t('photoSales.yourDownloads', 'Your purchased photos')}
+                </h1>
+                <p className="mt-1 text-sm text-muted-theme">
+                  {t('photoSales.photoCount', '{{count}} photos', { count: data.photos.length })}
+                  {expiresDate && <> · {t('photoSales.accessUntil', 'Access valid until')} {expiresDate}</>}
                 </p>
-              )}
+              </div>
             </div>
           </div>
 
           {data.photos.length === 0 ? (
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            <p className="px-6 sm:px-8 py-6 text-sm text-muted-theme">
               {t('photoSales.noPhotos', 'No photos found for this purchase.')}
             </p>
           ) : (
-            <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+            <ul className="divide-y divide-[color:var(--color-surface-border)]">
               {data.photos.map((photo) => (
-                <li key={photo.id} className="py-3 flex items-center justify-between gap-4">
-                  <span className="text-sm font-medium text-neutral-800 dark:text-neutral-200 break-all">
+                <li key={photo.id} className="px-6 sm:px-8 py-3.5 flex items-center justify-between gap-4">
+                  <span className="text-sm font-medium text-theme break-all">
                     {photo.filename || `Photo ${photo.id}`}
                   </span>
                   {photo.photo_url ? (
                     <a
                       href={photo.photo_url}
-                      className="inline-flex items-center gap-2 shrink-0 px-3 py-1.5 text-sm font-medium text-accent border border-accent rounded-lg hover:bg-accent/10 transition-colors"
+                      aria-label={`${t('photoSales.download', 'Download')} ${photo.filename || ''}`.trim()}
+                      className="inline-flex items-center gap-2 shrink-0 h-9 px-3.5 text-sm font-medium rounded-lg transition-opacity hover:opacity-90"
+                      style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-accent-fg, #ffffff)' }}
                     >
-                      <Download className="w-4 h-4" />
-                      {t('photoSales.download', 'Download')}
+                      <Download className="w-4 h-4" aria-hidden="true" />
+                      <span className="hidden sm:inline">{t('photoSales.download', 'Download')}</span>
                     </a>
                   ) : (
-                    <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">
+                    <span className="text-xs text-muted-theme shrink-0">
                       {t('photoSales.unavailable', 'Unavailable')}
                     </span>
                   )}
@@ -166,6 +151,9 @@ export const PurchasedDownloadsPage: React.FC = () => {
             </ul>
           )}
         </div>
+        <p className="mt-4 text-center text-xs text-muted-theme">
+          {t('photoSales.downloadHint', 'The files are the originals, without watermark. Keep them safe: this link stops working when your access ends.')}
+        </p>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const { db } = require('../../database/db');
-const { livePhotos } = require('../../utils/photoVisibility');
+const { sellablePhotos } = require('../../modules/photoSales/sellable');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { verifyPurchaseAccess, buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
@@ -14,13 +14,33 @@ const logger = require('../../utils/logger');
 
 const router = express.Router();
 
+const isTrue = (value) => value === true || value === 1 || value === '1';
+
+/**
+ * A granted order (not refunded, charged back or cancelled — the webhook
+ * revokes those) whose access has not expired.
+ */
+function isOrderActive(order) {
+  return !!order && order.status === 'completed' && verifyPurchaseAccess(order);
+}
+
+/**
+ * The gallery of an order while the photographer still offers it: an
+ * inactive or archived gallery takes its purchase links down with it. Its
+ * own expiry does not — the buyer paid for purchase_access_days.
+ */
+async function orderGallery(order) {
+  const gallery = await db('events').where({ id: order.gallery_id }).first();
+  return gallery && isTrue(gallery.is_active) && !isTrue(gallery.is_archived) ? gallery : null;
+}
+
 /**
  * The order behind a purchase link and that photo's purchase row, both
  * unexpired. Null when the link does not grant the photo.
  */
 async function activePurchase(accessToken, photoId) {
   const order = await db('photo_purchase_orders').where({ access_token: accessToken }).first();
-  if (!order || !verifyPurchaseAccess(order)) return null;
+  if (!isOrderActive(order)) return null;
   const row = await db('photo_purchases')
     .where({ order_id: order.order_id, access_token: accessToken, photo_id: photoId })
     .first('id', 'photo_id', 'expires_at');
@@ -38,13 +58,14 @@ router.get('/purchased-downloads/:accessToken', async (req, res) => {
       return res.status(404).json({ error: 'Purchase link not found' });
     }
 
-    if (!verifyPurchaseAccess(order)) {
+    if (!isOrderActive(order)) {
       return res.status(403).json({ error: 'Access expired' });
     }
 
-    const gallery = await db('events')
-      .where({ id: order.gallery_id })
-      .first('id', 'slug', 'event_name');
+    const gallery = await orderGallery(order);
+    if (!gallery) {
+      return res.status(404).json({ error: 'Gallery not available' });
+    }
 
     const accessRows = await db('photo_purchases')
       .where({ order_id: order.order_id, access_token: accessToken })
@@ -56,10 +77,9 @@ router.get('/purchased-downloads/:accessToken', async (req, res) => {
     }
 
     const photoIds = activeRows.map((row) => row.photo_id);
-    const photos = await livePhotos(db)
-      .whereIn('id', photoIds)
-      .where('event_id', order.gallery_id)
-      .select('*');
+    const photos = await sellablePhotos(db, order.gallery_id)
+      .whereIn('photos.id', photoIds)
+      .select('photos.*');
 
     const byId = new Map(photos.map((photo) => [Number(photo.id), photo]));
     const validPhotos = photoIds
@@ -71,6 +91,7 @@ router.get('/purchased-downloads/:accessToken', async (req, res) => {
       order_id: order.order_id,
       gallery_id: order.gallery_id,
       gallery_slug: gallery?.slug || null,
+      gallery_name: gallery?.event_name || null,
       buyer_email: order.buyer_email,
       expires_at: order.expires_at,
       photo_ids: validPhotos.map((photo) => Number(photo.id)),
@@ -90,7 +111,8 @@ router.get('/purchased-downloads/:accessToken', async (req, res) => {
 
 // The original of one bought photo. Authorized by the purchase link only (no
 // gallery session): the order and the photo's purchase row must both be
-// unexpired, and the photo must still be a live photo of the order's gallery.
+// unexpired, and the photo must still be a sellable photo of the order's
+// gallery.
 router.get('/purchased-downloads/:accessToken/photos/:photoId', async (req, res) => {
   try {
     const photoId = Number(req.params.photoId);
@@ -102,9 +124,9 @@ router.get('/purchased-downloads/:accessToken/photos/:photoId', async (req, res)
       return res.status(403).json({ error: 'This purchase link does not include this photo or has expired' });
     }
 
-    const event = await db('events').where({ id: purchase.order.gallery_id }).first();
+    const event = await orderGallery(purchase.order);
     const photo = event
-      ? await livePhotos(db).where({ id: photoId, event_id: event.id }).first()
+      ? await sellablePhotos(db, event.id).where('photos.id', photoId).first('photos.*')
       : null;
     if (!photo) return res.status(404).json({ error: 'Photo not found' });
 

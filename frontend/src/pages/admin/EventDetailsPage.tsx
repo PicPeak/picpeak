@@ -461,7 +461,7 @@ export const EventDetailsPage: React.FC = () => {
 
           {/* Photo sales: purchase orders for priced galleries. */}
           {activeTab === 'orders' && !!event.is_priced && (
-            <OrdersTab eventId={event.id} baseUrl={window.location.origin} />
+            <OrdersTab eventId={event.id} />
           )}
 
           {activeTab === 'settings' && (

@@ -206,7 +206,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
           />
         );
       case 'pricing':
-        return <PhotoSalesSection f={draft.event} set={set} />;
+        return <PhotoSalesSection f={draft.event} set={set} eventId={event.id} />;
       case 'guests':
         return (
           <GuestsSection

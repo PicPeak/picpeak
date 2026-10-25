@@ -299,6 +299,9 @@ export interface Photo {
   // Photo sales: per-photo price override for priced
   // galleries (null = gallery default).
   photo_price?: number | null;
+  // Photo sales: signs the cart line (backend modules/photoSales/sellable.js);
+  // null when the photo is not for sale.
+  sale_token?: string | null;
   // People detected in this photo (#1074). Always present when the feature
   // is on for the event — an empty array means "scanned, nobody found",
   // which is different from the feature being off (see

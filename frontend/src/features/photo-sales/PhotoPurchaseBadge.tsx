@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ShoppingCart } from 'lucide-react';
+import { Check, ShoppingCart } from 'lucide-react';
 import { usePhotoSales } from './PhotoSalesContext';
 import { effectivePhotoPrice, formatPhotoPrice, snipcartItemProps } from './photoSales';
 
@@ -11,6 +11,7 @@ interface PurchaseBadgePhoto {
   uploaded_at?: string | null;
   photo_price?: number | null;
   thumbnail_url?: string | null;
+  sale_token?: string | null;
   type?: string;
   media_type?: string;
 }
@@ -18,19 +19,10 @@ interface PurchaseBadgePhoto {
 /**
  * Photo sales — always-visible price chip on gallery tiles.
  *
- * One tap adds the photo to the Snipcart cart: paid photos show their
- * effective price (per-photo override or gallery default), free-tier photos
- * show "Free" and add a 0.00 item. Snipcart re-validates every item against
- * the DB-backed price-check URL, so the chip can never be re-priced by the
- * client.
- */
-/**
- * Photo sales — always-visible price chip on gallery tiles.
- *
- * One tap adds the photo to the Snipcart cart at its base price (gallery
- * price or per-photo override). The first N photos of the ORDER are free —
- * the cart re-prices its lines live (cartAllocation) and the server audits
- * the total at order.completed.
+ * One tap adds the photo to the Snipcart cart at its price (gallery price or
+ * per-photo override); a photo already in the cart reads "In cart" and opens
+ * the cart instead. A dark translucent pill, so it reads on light and dark
+ * photos alike. Photos that are not for sale (no sale_token) get no chip.
  */
 export const PhotoPurchaseBadge: React.FC<{ photo: PurchaseBadgePhoto }> = ({ photo }) => {
   const { t } = useTranslation();
@@ -47,17 +39,22 @@ export const PhotoPurchaseBadge: React.FC<{ photo: PurchaseBadgePhoto }> = ({ ph
     price,
     photo,
   });
+  if (!itemProps) return null;
+  const inCart = photoSales.cartItemIds.has(String(itemProps['data-item-id']));
 
   return (
     <button
       type="button"
-      className="snipcart-add-item absolute bottom-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold text-white bg-accent/95 hover:bg-accent shadow-md backdrop-blur-sm pointer-events-auto transition-colors"
-      aria-label={t('photoSales.addToCartPrice', 'Add photo to cart for {{price}}', { price: priceLabel })}
-      title={t('photoSales.buyTitle', 'Buy this photo in full quality, without watermark')}
-      {...itemProps}
+      className={`${inCart ? 'snipcart-checkout' : 'snipcart-add-item'} photo-sales-chip absolute bottom-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full py-1 pl-2 pr-2.5 text-xs font-semibold pointer-events-auto`}
+      aria-label={inCart
+        ? t('photoSales.inCartOpen', 'In your cart — open the cart')
+        : t('photoSales.addToCartPrice', 'Add photo to cart for {{price}}', { price: priceLabel })}
+      title={inCart ? undefined : t('photoSales.buyTitle', 'Buy this photo in full quality, without watermark')}
+      data-in-cart={inCart ? 'true' : undefined}
+      {...(inCart ? {} : itemProps)}
     >
-      <ShoppingCart className="w-3.5 h-3.5" />
-      {priceLabel}
+      {inCart ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <ShoppingCart className="w-3.5 h-3.5" aria-hidden="true" />}
+      {inCart ? t('photoSales.inCart', 'In cart') : priceLabel}
     </button>
   );
 };

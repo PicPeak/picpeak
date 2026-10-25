@@ -993,7 +993,13 @@ router.get('/:slug/hero/:photoId',
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
       // The mark is part of the bytes: a changed gallery text must not 304.
-      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      let watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      // Photo sales: this route renders any photo id at 1920px, so a priced
+      // gallery forces the mark here exactly as on /photo, /preview and
+      // /thumbnail.
+      if (isGalleryPriced(req.event)) {
+        watermarkSettings = await resolvePhotoSalesWatermarkSettings(req.event, photo);
+      }
       const watermarkHash = watermarkSettings?.enabled ? `-wm${watermarkService.versionTag(watermarkSettings)}` : '';
       const etag = `"hero-${photoId}-${mtimeMs}${watermarkHash}"`;
       if (req.headers['if-none-match'] === etag) {

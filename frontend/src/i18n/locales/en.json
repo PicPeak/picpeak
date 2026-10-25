@@ -2356,7 +2356,8 @@
         "slideshow": "A fullscreen link for projectors at live events.",
         "source": "Where the photos of this gallery come from.",
         "delivery": "Nested folders from uploads, and delivering a first look before the full gallery.",
-        "tags": "Tag photos by scene so guests can filter the gallery."
+        "tags": "Tag photos by scene so guests can filter the gallery.",
+        "pricing": "Sell individual photo downloads: price, free quota and access window."
       },
       "access": "Access",
       "appearance": "Appearance",
@@ -2445,7 +2446,8 @@
       "delivery": "Folders & delivery",
       "passwordOwnerOnly": "Only the gallery owner can change the password or turn it off.",
       "recipientsOwnerOnly": "Only the gallery owner can change who receives the gallery email.",
-      "tags": "Tags"
+      "tags": "Tags",
+      "pricing": "Photo sales"
     },
     "folders": {
       "sectionTitle": "Folders",
@@ -7120,7 +7122,7 @@
     "dateTaken": "Date Taken"
   },
   "photoSales": {
-    "cart": "Shopping cart",
+    "cart": "Cart",
     "addToCart": "Add photo to cart",
     "addToCartPrice": "Add photo to cart for {{price}}",
     "addFreeToCart": "Free photo — add to cart",
@@ -7167,7 +7169,32 @@
     "accessUntil": "Access valid until",
     "noPhotos": "No photos found for this purchase.",
     "download": "Download",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "inCart": "In cart",
+    "inCartOpen": "In your cart — open the cart",
+    "addToCartShort": "Add to cart",
+    "promoHint": "Enter the code at checkout. It works once per gallery.",
+    "promoCodeCopyLabel": "Copy promo code {{code}}",
+    "status": "Status",
+    "statusPaid": "Paid",
+    "statusExpired": "Access ended",
+    "statusRefunded": "Refunded",
+    "statusRefundFailed": "Refund failed",
+    "statusChargedBack": "Charged back",
+    "statusCancelled": "Cancelled",
+    "storeNotConfigured": "Photo sales are not set up on this server",
+    "storeNoWebhook": "Guests can fill a cart, but paid orders are never delivered until {{keys}} is set.",
+    "storeNoCheckout": "Guests see watermarked previews and cannot buy until {{keys}} is set.",
+    "downloadHint": "The files are the originals, without watermark. Keep them safe: this link stops working when your access ends.",
+    "cartWithCount_one": "Cart, {{count}} photo",
+    "cartWithCount_other": "Cart, {{count}} photos",
+    "promoTitle_one": "{{count}} photo free with your first order",
+    "promoTitle_other": "{{count}} photos free with your first order",
+    "ordersSummary_one": "{{count}} paid order · {{revenue}} revenue",
+    "ordersSummary_other": "{{count}} paid orders · {{revenue}} revenue",
+    "photoCount_one": "{{count}} photo",
+    "photoCount_other": "{{count}} photos",
+    "sectionDescription": "Sell individual photo downloads: the first free photos are granted through a one-time promo code shown on the gallery."
   },
   "photos": {
     "moveToCategory_one": "Move {{count}} photos to category",

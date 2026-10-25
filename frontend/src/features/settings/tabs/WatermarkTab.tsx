@@ -154,7 +154,7 @@ export const WatermarkTab: React.FC = () => {
                   {t('settings.watermark.noLogo', 'No logo — the text below is used instead.')}
                 </span>
               )}
-              <label className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-accent border border-accent rounded-lg hover:bg-accent/10 cursor-pointer">
+              <label className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-accent border border-accent rounded-lg hover:bg-hover cursor-pointer">
                 <Upload className="w-4 h-4" />
                 {uploading ? t('common.loading', 'Uploading…') : t('settings.watermark.uploadLogo', 'Upload logo')}
                 <input
@@ -193,8 +193,8 @@ export const WatermarkTab: React.FC = () => {
                   onClick={() => patch({ watermark_position: position })}
                   className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                     (settings.watermark_position || 'bottom-right') === position
-                      ? 'border-accent bg-accent/10 text-accent'
-                      : 'border-line-strong text-soft hover:border-neutral-400'
+                      ? 'border-accent bg-accent-soft text-on-accent-soft'
+                      : 'border-line-strong text-soft hover:bg-hover'
                   }`}
                 >
                   {t(`settings.watermark.position_${position.replace('-', '_')}`, position)}

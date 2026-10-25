@@ -13,7 +13,10 @@ function summarisePurchaseOrder(order, rows = []) {
     currency: String(order?.currency || 'EUR'),
     purchased_at: order?.purchased_at || null,
     expires_at: order?.expires_at || null,
-    access_token: order?.access_token || null,
+    // Granted, or what became of it: refunded, refund_failed, charged_back,
+    // cancelled. The access token itself is never listed — the owner fetches
+    // the link through POST …/access-link.
+    status: String(order?.status || 'completed'),
     photo_count: photos.length,
     remaining_ms: remainingMs,
     remaining_days: remainingMs > 0 ? Math.ceil(remainingMs / (24 * 60 * 60 * 1000)) : 0,

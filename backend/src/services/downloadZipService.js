@@ -412,12 +412,12 @@ class DownloadZipService {
               if (isGalleryPriced(event) && !isVideo(photo)) {
                 photoSettings = await resolveForcedWatermarkSettingsForPhoto(event, photo);
                 const preview = await renderPreviewForDownload(photo, photoSettings);
-                if (preview) {
-                  archive.append(preview.buffer, {
-                    name: previewDownloadName(archiveName, preview.extension),
-                  });
-                  continue;
-                }
+                // No preview means no photo: the original must never stand in.
+                if (!preview) throw new Error('No sales preview of this photo');
+                archive.append(preview.buffer, {
+                  name: previewDownloadName(archiveName, preview.extension),
+                });
+                continue;
               }
               rendered = await renderPhotoForDownload(event, photo, standardBox, photoSettings);
             } catch (err) {
