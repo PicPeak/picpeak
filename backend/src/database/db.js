@@ -615,6 +615,9 @@ async function ensureGlobalCategories() {
 
   const cmsPages = await db('cms_pages').select('slug');
   const existingSlugs = cmsPages.map((page) => page.slug);
+  // show_in_footer comes from migration 089, which a fresh database runs
+  // after this seed; migration 316 hides the AGB row in that case.
+  const hasShowInFooter = await db.schema.hasColumn('cms_pages', 'show_in_footer');
   const defaultPages = [
     {
       slug: 'impressum',
@@ -638,6 +641,8 @@ async function ensureGlobalCategories() {
       title_de: 'AGB',
       content_en: '<h2>Terms & Conditions</h2><p>Please edit this content in the admin panel.</p>',
       content_de: '<h2>AGB</h2><p>Bitte bearbeiten Sie diesen Inhalt im Admin-Panel.</p>',
+      // Opt-in: hidden until the operator has written it (see migration 316).
+      ...(hasShowInFooter ? { show_in_footer: false } : {}),
       updated_at: new Date(),
     },
     // Customisable error pages — issue #324. Generic copy by default;

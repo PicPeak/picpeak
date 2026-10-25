@@ -18,6 +18,7 @@ let auth = {
   login,
 };
 
+vi.mock('../../hooks/useShowAgbLink', () => ({ useShowAgbLink: () => false }));
 vi.mock('../../contexts', () => ({
   useGalleryAuth: () => auth,
   useTheme: () => ({ setTheme: vi.fn() }),

@@ -333,7 +333,8 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
   // When BOTH are hidden we still render the surrounding row only if
   // there's a guest "Forget me" button or socials to show.
   const showImpressum = impressumPage?.show_in_footer !== false;
-  const showAgb = agbPage?.show_in_footer !== false;
+  // AGB is opt-in (see useShowAgbLink): shown only once switched on.
+  const showAgb = agbPage?.show_in_footer === true;
   const showDatenschutz = datenschutzPage?.show_in_footer !== false;
   const hasLegalLinks = showImpressum || showAgb || showDatenschutz;
   const hasFooterRow = hasLegalLinks || socialLinks.length > 0 || !!guestIdentity?.identity;

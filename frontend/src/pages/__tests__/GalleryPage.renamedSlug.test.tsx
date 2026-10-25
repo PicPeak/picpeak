@@ -12,6 +12,7 @@ const OLD_SLUG = 'wedding-old-name-2026-06-05';
 const NEW_SLUG = 'wedding-new-name-2026-06-05';
 const TOKEN = 'a'.repeat(32);
 
+vi.mock('../../hooks/useShowAgbLink', () => ({ useShowAgbLink: () => false }));
 vi.mock('../../contexts', () => ({
   useGalleryAuth: () => ({ isAuthenticated: true, isLoading: false, event: { id: 5, event_name: 'New Name' }, login: vi.fn() }),
   useTheme: () => ({ setTheme: vi.fn() }),

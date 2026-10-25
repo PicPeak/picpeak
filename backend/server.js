@@ -386,7 +386,7 @@ function renderBrandHeader(branding) {
 </header>`;
 }
 
-function renderBrandFooter(branding) {
+function renderBrandFooter(branding, { showAgb = false } = {}) {
   const displayName = escapeHtml(branding.companyName || 'PicPeak');
   const footerNote = branding.footerText
     ? `<p>${escapeHtml(branding.footerText)}</p>`
@@ -399,7 +399,7 @@ function renderBrandFooter(branding) {
 
   const legalLinks = `
     <a href="/datenschutz">Privacy Policy</a>
-    <a href="/agb">AGB</a>
+    ${showAgb ? '<a href="/agb">Terms &amp; Conditions</a>' : ''}
     <a href="/impressum">Impressum</a>
     ${supportLink}
   `;
@@ -450,7 +450,7 @@ const PUBLIC_SITE_FONT_FACES = `
 function buildPublicSiteDocument(payload) {
   const inlineStyles = composeInlineStyles(payload);
   const header = renderBrandHeader(payload.branding);
-  const footer = renderBrandFooter(payload.branding);
+  const footer = renderBrandFooter(payload.branding, { showAgb: payload.showAgb === true });
   const seoMeta = payload.seoSettings ? buildSeoMetaTags(payload.seoSettings) : '';
 
   return `<!DOCTYPE html>
@@ -501,6 +501,13 @@ async function handlePublicSiteRequest(req, res, next) {
         seoSettings[row.setting_key] = val;
       }
       payload.seoSettings = seoSettings;
+    } catch {}
+
+    // The AGB link is opt-in (migration 316): only once the admin switched
+    // the page on in CMS Pages.
+    try {
+      const agb = await db('cms_pages').where('slug', 'agb').first('show_in_footer');
+      payload.showAgb = !!agb && (agb.show_in_footer === true || agb.show_in_footer === 1);
     } catch {}
 
     const document = buildPublicSiteDocument(payload);
