@@ -6,6 +6,7 @@
  * render on the new route reads `isLoading: true`.
  */
 import React, { useEffect } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
@@ -53,9 +54,9 @@ describe('GalleryAuthProvider — loading across a gallery-to-gallery navigation
   it('never reports a settled session on the new gallery before its probe answers', async () => {
     render(
       <MemoryRouter initialEntries={['/gallery/first-gallery']}>
-        <GalleryAuthProvider>
+        <QueryClientProvider client={new QueryClient()}><GalleryAuthProvider>
           <Probe />
-        </GalleryAuthProvider>
+        </GalleryAuthProvider></QueryClientProvider>
       </MemoryRouter>
     );
 

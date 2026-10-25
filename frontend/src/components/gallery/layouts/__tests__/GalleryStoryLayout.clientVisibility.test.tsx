@@ -47,7 +47,8 @@ vi.mock('swiper/modules', () => ({ FreeMode: {}, Mousewheel: {} }));
 vi.mock('swiper/css', () => ({}));
 vi.mock('swiper/css/free-mode', () => ({}));
 
-vi.mock('../../../common', () => ({
+vi.mock('../../../common', async () => ({
+  Button: (await vi.importActual<typeof import('../../../common/Button')>('../../../common/Button')).Button,
   AuthenticatedImage: ({ src, alt }: { src: string; alt?: string }) => <img src={src} alt={alt} />,
   PoweredBy: () => null,
 }));
@@ -129,6 +130,20 @@ const cardLink = (container: HTMLElement, id: number) =>
   container.querySelector(`a[data-photo-id="${id}"]`) as HTMLAnchorElement;
 
 afterEach(() => cleanup());
+
+it.each([false, true])('offers management navigation with an empty=%s photo list', (empty) => {
+  const manage = vi.fn();
+  render(<GalleryStoryLayout {...baseProps} isClient={false} onManageGallery={manage} {...(empty ? { photos: [] } : {})} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Manage Gallery' }));
+  expect(manage).toHaveBeenCalledOnce();
+});
+
+it('labels an existing client’s management action as a return to the gallery', () => {
+  const manage = vi.fn();
+  render(<GalleryStoryLayout {...baseProps} isClient onManageGallery={manage} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Return to gallery' }));
+  expect(manage).toHaveBeenCalledOnce();
+});
 
 describe.each(['fixed', 'natural'] as const)('GalleryStoryLayout (%s grid): client visibility toggle (issue 1992)', (storyGridMode) => {
   it('renders the toggle on every card, grid and carousel scenes alike', () => {

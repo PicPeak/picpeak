@@ -2344,7 +2344,8 @@
     "toolbar": {
       "browse": "Galeriewerkzeuge",
       "selection": "Auswahl"
-    }
+    },
+    "settings": "Galerie-Einstellungen"
   },
   "categories": {
     "title": "Fotokategorien",
@@ -6822,7 +6823,14 @@
     "regenerateToken": "Link neu generieren",
     "tokenRegenerated": "Kundenzugangs-Link neu generiert",
     "hiddenFromGuests": "Für Gäste ausgeblendet",
-    "visibleToGuests": "Für Gäste sichtbar"
+    "visibleToGuests": "Für Gäste sichtbar",
+    "manageGallery": "Galerie verwalten",
+    "returnToGallery": "Zurück zur Galerie",
+    "returnFailed": "Die Rückkehr zur Galerie ist fehlgeschlagen. Bitte versuche es erneut.",
+    "pinEntryToggle": "PIN-Eingabe in der regulären Galerie erlauben",
+    "pinEntryDescription": "Besucher, die diese Galerie öffnen können, können mit der Kunden-PIN die Sichtbarkeit der Fotos verwalten. Der private Kundenlink bleibt ebenfalls verfügbar.",
+    "entryUnavailable": "Die PIN-Eingabe ist für diese Galerie nicht mehr verfügbar.",
+    "sessionExpired": "Deine Galeriesitzung ist abgelaufen. Öffne die Galerie erneut und versuche es noch einmal."
   },
   "setup": {
     "title": "Willkommen bei PicPeak",

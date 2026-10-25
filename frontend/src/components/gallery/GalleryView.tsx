@@ -60,6 +60,7 @@ import { ExpirationBanner } from './ExpirationBanner';
 import { CountdownTimer } from './CountdownTimer';
 import { GalleryLayout } from './GalleryLayout';
 import { GallerySidebar } from './GallerySidebar';
+import { GalleryClientAccessDialog } from './GalleryClientAccessDialog';
 import { GalleryToolbar } from './GalleryToolbar';
 import { GalleryFilterPanel } from './GalleryFilterPanel';
 import { GalleryCategoryChips } from './GalleryCategoryChips';
@@ -153,7 +154,8 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
 export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
   const { t } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
-  const { logout, endSession, isClient, viaCustomer } = useGalleryAuth();
+  const { logout, endSession, isClient, viaCustomer, enterClientMode, leaveClientMode, isSwitchingClientMode } = useGalleryAuth();
+  const accessScope = isClient ? 'client' : viaCustomer ? 'customer' : 'guest';
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
@@ -189,6 +191,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const [brandingSettings, setBrandingSettings] = useState<any>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showClientAccess, setShowClientAccess] = useState(false);
   const sidebarToggleRef = useRef<HTMLButtonElement>(null);
   const [feedbackEnabled, setFeedbackEnabled] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -274,7 +277,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   
   // Fetch photos WITHOUT filter (always get all photos, filter on frontend)
   // This ensures counts are always calculated from the full dataset
-  const { data, isLoading, error, refetch } = useGalleryPhotos(slug, 'all', guestId);
+  const { data, isLoading, error, refetch } = useGalleryPhotos(slug, 'all', guestId, !isSwitchingClientMode, accessScope);
   const handleFeedbackChange = useFeedbackChange(slug, refetch, { patchRows: !isClient });
   const { isSelectionMode, setIsSelectionMode, selectedPhotos, setSelectedPhotos } = useGallerySelection(data?.photos);
   
@@ -448,7 +451,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Automatic scene tags (issue 1733), from the same payload.
   const tagsEnabled = data?.event?.tags_enabled === true;
   const { data: peopleData } = useQuery({
-    queryKey: ['gallery-people', slug],
+    queryKey: ['gallery-people', slug, accessScope],
     queryFn: () => galleryService.getPeople(slug),
     enabled: peopleEnabled,
     refetchInterval: (query) => (query.state.data?.scan?.in_progress ? 5000 : false),
@@ -1447,7 +1450,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
   }, [showUrgentWarning, daysUntilExpiration, slug]);
 
-  if (isLoading) {
+  if (isLoading || (isSwitchingClientMode && !showClientAccess)) {
     return <GallerySkeleton />;
   }
 
@@ -1497,6 +1500,29 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     );
   }
 
+  const adminPreview = new URLSearchParams(window.location.search).get('admin_preview') === '1';
+  const onManageGallery = !adminPreview && (isClient || data.event.client_pin_entry_available) ? async () => {
+    if (isClient) {
+      try { await leaveClientMode(slug); }
+      catch { toast.error(t('clientAccess.returnFailed', 'Could not return to the gallery. Please try again.')); }
+    } else {
+      setSidebarOpen(false);
+      setShowClientAccess(true);
+    }
+  } : undefined;
+  const clientAccessControl = onManageGallery ? (
+    <Button variant="outline" size="sm" leftIcon={<Shield className="w-4 h-4" />} className="gallery-btn"
+      onClick={onManageGallery} disabled={isSwitchingClientMode}>
+      {isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
+    </Button>
+  ) : null;
+  const clientAccessDialog = showClientAccess ? (
+    <GalleryClientAccessDialog onClose={() => setShowClientAccess(false)} onSubmit={async (pin) => {
+      await enterClientMode(slug, pin);
+      setShowClientAccess(false);
+    }} />
+  ) : null;
+
   // Determine controls style (sidebar vs classic inline filter bar).
   // Decoupled from layout — only an explicit controlsStyle === 'sidebar' on
   // the theme renders the sidebar. Default (unset or 'classic') is the inline
@@ -1545,7 +1571,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           info_markdown: (data?.event as { info_markdown?: string | null })?.info_markdown,
         }}
         brandingSettings={brandingSettings}
+        headerExtra={clientAccessControl}
       >
+        {clientAccessDialog}
         <div className="max-w-xl mx-auto text-center py-16 px-4">
           <div className="mx-auto mb-5 w-16 h-16 rounded-full bg-surface flex items-center justify-center">
             <EyeOff className="w-8 h-8 text-muted-theme" />
@@ -1882,6 +1910,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // render the button on the callback being present rather than on a
           // showLogout flag, so withholding it is how the gate reaches them.
           onLogout={showLogoutControl ? logout : undefined}
+          onManageGallery={onManageGallery}
+          clientModeBusy={isSwitchingClientMode}
           // Client access (issue 1992): the full-page layouts render the eye
           // toggle too, so they need the same props as the standard branch.
           isClient={isClient}
@@ -1896,6 +1926,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           }
           showOriginalFilename={showOriginalFilename}
         />
+
+        {clientAccessDialog}
 
         {/* Upload Modal for full-page layouts */}
         {showUploadModal && allowUploads && (
@@ -1961,6 +1993,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(!sidebarOpen)}
           returnFocusRef={sidebarToggleRef}
+          clientAccessControl={clientAccessControl}
           categories={filterCategories(data?.categories).filter(cat => photoCounts[cat.id] > 0)}
           selectedCategoryId={selectedCategoryId}
           onCategoryChange={setSelectedCategoryId}
@@ -2091,6 +2124,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         onHeaderDownload={handleDownloadAll}
         headerExtra={(() => {
           const items = [];
+          if (!showSidebar && clientAccessControl) items.push(<React.Fragment key="client-access">{clientAccessControl}</React.Fragment>);
           
           if (daysUntilExpiration !== null && daysUntilExpiration <= 1 && daysUntilExpiration > 0 && event.expires_at) {
             items.push(
@@ -2118,6 +2152,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           return items.length > 0 ? <>{items}</> : null;
         })()}
       >
+        {clientAccessDialog}
         {/* Expiration Banner */}
         {showUrgentWarning && event.expires_at && (
           <ExpirationBanner daysRemaining={daysUntilExpiration} expiresAt={event.expires_at} />

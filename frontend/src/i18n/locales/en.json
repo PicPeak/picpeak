@@ -1753,7 +1753,8 @@
     "toolbar": {
       "browse": "Gallery tools",
       "selection": "Selection"
-    }
+    },
+    "settings": "Gallery Settings"
   },
   "categories": {
     "title": "Photo Categories",
@@ -7038,7 +7039,14 @@
     "regenerateToken": "Regenerate link",
     "tokenRegenerated": "Client access link regenerated",
     "hiddenFromGuests": "Hidden from guests",
-    "visibleToGuests": "Visible to guests"
+    "visibleToGuests": "Visible to guests",
+    "manageGallery": "Manage Gallery",
+    "returnToGallery": "Return to gallery",
+    "returnFailed": "Could not return to the gallery. Please try again.",
+    "pinEntryToggle": "Allow PIN entry from the regular gallery",
+    "pinEntryDescription": "Visitors who can open this gallery can enter the client PIN to manage photo visibility. The private client link also remains available.",
+    "entryUnavailable": "PIN entry is no longer available for this gallery.",
+    "sessionExpired": "Your gallery session has ended. Reopen the gallery and try again."
   },
   "export": {
     "button": "Export",

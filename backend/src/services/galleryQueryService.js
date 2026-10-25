@@ -577,6 +577,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       id: event.id,
       event_name: event.event_name,
       event_type: event.event_type,
+      // Capability only: the private client link and PIN hash stay server-side.
+      client_pin_entry_available: !adminPreview && accessLevel !== 'slideshow' && parseBooleanInput(event.client_access_enabled, false)
+        && parseBooleanInput(event.client_pin_entry_enabled, false) && !!event.client_password_hash,
       // Calendar date, like /info and the login responses: GalleryAuthContext
       // refreshes its cached event from this payload, so a pg Date here
       // would reintroduce the previous-day shift west of UTC.

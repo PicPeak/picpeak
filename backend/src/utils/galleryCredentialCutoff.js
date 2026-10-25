@@ -8,7 +8,7 @@
  * Slideshow sessions come from the slideshow link: the session carries a digest
  * of the link it was opened with, and rotating or disabling the link ends every
  * session opened with the old one. Portal sessions (`via: 'customer'`) are bound
- * to the customer account, so they are not cut off here.
+ * to the customer account; only an elevated portal client's PIN is checked here.
  */
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
@@ -59,7 +59,9 @@ function slideshowCredentialClaim(event) {
 }
 
 function assertGalleryCredentialCurrent(event, session) {
-  if (!event || !session || session.via === 'customer') return;
+  // Portal guests use their account credential; an elevated portal client
+  // additionally depends on the client PIN and must honor its cutoff.
+  if (!event || !session || (session.via === 'customer' && session.accessLevel !== 'client')) return;
   if (session.accessLevel === 'slideshow') {
     // A session without the claim predates it. It lives 12 hours at most and
     // is left to expire rather than blanking every running projector at the

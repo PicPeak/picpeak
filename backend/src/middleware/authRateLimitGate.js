@@ -56,6 +56,7 @@ const CREDENTIAL_ENDPOINTS = [
   { method: 'POST', path: /^\/api\/auth\/gallery\/verify\/?$/i },
   { method: 'POST', path: /^\/api\/auth\/gallery\/share-login\/?$/i },
   { method: 'POST', path: /^\/api\/auth\/gallery\/[^/]+\/client-login\/?$/i },
+  { method: 'POST', path: /^\/api\/auth\/gallery\/[^/]+\/client-elevate\/?$/i },
   // First-run bootstrap: both of these take the setup token.
   { method: 'POST', path: /^\/api\/setup\/verify-token\/?$/i },
   { method: 'POST', path: /^\/api\/setup\/admin\/?$/i },

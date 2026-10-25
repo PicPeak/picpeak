@@ -84,6 +84,16 @@ export const authService = {
     return normalizeGalleryResponse(response.data);
   },
 
+  async enterClientMode(slug: string, password: string): Promise<GalleryAuthResponse> {
+    const response = await api.post<GalleryAuthResponse>(`/auth/gallery/${slug}/client-elevate`, { password });
+    return normalizeGalleryResponse(response.data);
+  },
+
+  async leaveClientMode(slug: string): Promise<GalleryAuthResponse> {
+    const response = await api.post<GalleryAuthResponse>(`/auth/gallery/${slug}/client-downgrade`, {});
+    return normalizeGalleryResponse(response.data);
+  },
+
   async galleryLogout(slug?: string | null) {
     try {
       await api.post('/auth/gallery/logout', { slug });

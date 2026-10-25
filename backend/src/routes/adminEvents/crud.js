@@ -221,6 +221,7 @@ module.exports = (router) => {
     body('hero_image_anchor').optional().custom(validateHeroImageAnchor),
     // Client access settings (#172)
     body('client_access_enabled').optional().isBoolean(),
+    body('client_pin_entry_enabled').optional().isBoolean(),
     body('client_password').optional().custom(validateClientPassword),
     body('default_photo_sort').optional().isIn([
       'upload_date_desc', 'upload_date_asc',
@@ -1066,6 +1067,7 @@ module.exports = (router) => {
         // Client-access secrets and the OG-share opt-in deliberately do NOT
         // carry over — admin re-decides per gallery.
         client_access_enabled: formatBoolean(false),
+        client_pin_entry_enabled: formatBoolean(false),
         og_image_share_enabled: formatBoolean(false),
         ...slideshowStyle,
       }).returning('id');
@@ -1300,6 +1302,7 @@ module.exports = (router) => {
     body('hero_image_anchor').optional().custom(validateHeroImageAnchor),
     // Client access settings (#172)
     body('client_access_enabled').optional().isBoolean(),
+    body('client_pin_entry_enabled').optional().isBoolean(),
     body('client_password').optional().custom(validateClientPassword),
     body('regenerate_client_token').optional().isBoolean(),
     body('default_photo_sort').optional().isIn([
@@ -1400,16 +1403,20 @@ module.exports = (router) => {
       const touchesCredentials = setsPassword(req.body.password)
         || setsPassword(req.body.client_password)
         || parseBooleanInput(req.body.regenerate_client_token, false)
-        || Object.prototype.hasOwnProperty.call(req.body, 'require_password');
+        || Object.prototype.hasOwnProperty.call(req.body, 'require_password')
+        || Object.prototype.hasOwnProperty.call(req.body, 'client_pin_entry_enabled');
       if (touchesCredentials) {
-        const stored = await db('events').where('id', id).first('id', 'created_by', 'require_password');
+        const stored = await db('events').where('id', id).first('id', 'created_by', 'require_password',
+          ...(Object.prototype.hasOwnProperty.call(req.body, 'client_pin_entry_enabled') ? ['client_pin_entry_enabled'] : []));
         if (!stored) return res.status(404).json({ error: 'Event not found' });
         const togglesProtection = Object.prototype.hasOwnProperty.call(req.body, 'require_password')
           && parseBooleanInput(req.body.require_password, true) !== parseBooleanInput(stored.require_password, true);
         const changesCredentials = setsPassword(req.body.password) || setsPassword(req.body.client_password)
-          || parseBooleanInput(req.body.regenerate_client_token, false) || togglesProtection;
+          || parseBooleanInput(req.body.regenerate_client_token, false) || togglesProtection
+          || (Object.prototype.hasOwnProperty.call(req.body, 'client_pin_entry_enabled')
+            && parseBooleanInput(req.body.client_pin_entry_enabled, false) !== parseBooleanInput(stored.client_pin_entry_enabled, false));
         if (changesCredentials && !ownsEvent(req.admin, stored)) {
-          return res.status(403).json({ error: 'Only the gallery owner can change its password', code: 'EVENT_OWNER_REQUIRED' });
+          return res.status(403).json({ error: 'Only the gallery owner can change gallery access', code: 'EVENT_OWNER_REQUIRED' });
         }
       }
 
@@ -2083,6 +2090,9 @@ module.exports = (router) => {
       }
 
       // Handle client access fields (#172)
+      if (Object.prototype.hasOwnProperty.call(updates, 'client_pin_entry_enabled')) {
+        updates.client_pin_entry_enabled = formatBoolean(parseBooleanInput(updates.client_pin_entry_enabled, false));
+      }
       if (Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled')) {
         updates.client_access_enabled = formatBoolean(updates.client_access_enabled);
         if (!parseBooleanInput(updates.client_access_enabled, false) && parseBooleanInput(event.client_access_enabled, false)) {

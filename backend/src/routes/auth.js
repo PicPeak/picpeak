@@ -754,6 +754,10 @@ router.post('/gallery/verify', [
   }
 });
 
+// Session-based PIN entry is separate: private client links still require both
+// the current link token and PIN below.
+router.use('/gallery', require('./galleryClientAccess'));
+
 // Client access login (PIN-based)
 router.post('/gallery/:slug/client-login', [
   body('password').notEmpty().isString()

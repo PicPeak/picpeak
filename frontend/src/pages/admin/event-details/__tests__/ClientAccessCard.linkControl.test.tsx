@@ -62,4 +62,18 @@ describe('ClientAccessCard link control', () => {
 
     expect(screen.queryByRole('button', { name: 'clientAccess.regenerateToken' })).toBeNull();
   });
+
+  it('defaults regular-gallery PIN entry off and saves an explicit owner opt-in', async () => {
+    const refetchEvent = renderCard({ client_pin_entry_enabled: false });
+    const toggle = screen.getByRole('checkbox', { name: /clientAccess.pinEntryToggle/ });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(mocks.updateEvent).toHaveBeenCalledWith(9, { client_pin_entry_enabled: true }));
+    await waitFor(() => expect(refetchEvent).toHaveBeenCalled());
+  });
+
+  it('does not offer the PIN-entry setting to a team member', () => {
+    renderCard({ can_manage_assignments: false });
+    expect(screen.queryByRole('checkbox', { name: /clientAccess.pinEntryToggle/ })).not.toBeInTheDocument();
+  });
 });

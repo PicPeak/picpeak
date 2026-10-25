@@ -65,6 +65,26 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
         {/* !! — SQLite integer boolean; bare 0 renders as literal "0" */}
         {!!event?.client_access_enabled && (
           <>
+            {ownsEvent && (
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1 w-4 h-4 text-accent border border-line-strong rounded"
+                  checked={!!event.client_pin_entry_enabled}
+                  disabled={event.is_archived}
+                  onChange={async (e) => {
+                    try {
+                      await eventsService.updateEvent(event.id, { client_pin_entry_enabled: e.target.checked });
+                      refetchEvent();
+                    } catch { toast.error(t('common.error')); }
+                  }}
+                />
+                <span>
+                  <span className="text-sm font-medium text-body">{t('clientAccess.pinEntryToggle', 'Allow PIN entry from the regular gallery')}</span>
+                  <span className="block text-xs text-muted mt-1">{t('clientAccess.pinEntryDescription', 'Visitors who can open this gallery can enter the client PIN to manage photo visibility. The private client link also remains available.')}</span>
+                </span>
+              </label>
+            )}
             {/* Set/Change PIN */}
             {ownsEvent && (
             <div className="flex items-end gap-2">

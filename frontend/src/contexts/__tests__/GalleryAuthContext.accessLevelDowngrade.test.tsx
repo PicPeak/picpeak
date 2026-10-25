@@ -4,6 +4,7 @@
  * cookie). The server's view wins in both directions.
  */
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -47,9 +48,9 @@ describe('GalleryAuthProvider — access level from the server', () => {
     sessionStorage.setItem(`gallery_access_level_${SLUG}`, 'client');
     render(
       <MemoryRouter initialEntries={[`/gallery/${SLUG}`]}>
-        <GalleryAuthProvider>
+        <QueryClientProvider client={new QueryClient()}><GalleryAuthProvider>
           <Probe />
-        </GalleryAuthProvider>
+        </GalleryAuthProvider></QueryClientProvider>
       </MemoryRouter>,
     );
     await waitFor(() => expect(state).toMatchObject({ isAuthenticated: true, isLoading: false }));

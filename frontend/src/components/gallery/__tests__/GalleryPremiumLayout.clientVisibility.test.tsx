@@ -59,6 +59,20 @@ const mount = (extra: Record<string, unknown>) => render(
 
 afterEach(() => cleanup());
 
+it.each([false, true])('offers management navigation with an empty=%s photo list', (empty) => {
+  const manage = vi.fn();
+  mount({ onManageGallery: manage, ...(empty ? { photos: [] } : {}) });
+  fireEvent.click(screen.getByRole('button', { name: 'Manage Gallery' }));
+  expect(manage).toHaveBeenCalledOnce();
+});
+
+it('labels an existing client’s management action as a return to the gallery', () => {
+  const manage = vi.fn();
+  mount({ isClient: true, onManageGallery: manage });
+  fireEvent.click(screen.getByRole('button', { name: 'Return to gallery' }));
+  expect(manage).toHaveBeenCalledOnce();
+});
+
 describe('Gallery Premium — client visibility toggle (issue 1992)', () => {
   it('renders the toggle per card beside the checkbox, with the hidden state', () => {
     mount({ isClient: true, onToggleVisibility: vi.fn() });

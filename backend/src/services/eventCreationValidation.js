@@ -35,7 +35,7 @@ const schema = Joi.object({
     'disable_right_click', 'watermark_downloads', 'enable_devtools_protection', 'use_canvas_rendering',
     'feedback_enabled', 'allow_ratings', 'allow_likes', 'allow_comments', 'allow_favorites',
     'allow_reactions', 'allow_color_labels', 'allow_decisions', 'allow_selection_submit', 'allow_annotations', 'require_name_email', 'moderate_comments',
-    'show_feedback_to_guests', 'client_access_enabled', 'og_image_share_enabled', 'show_credits_to_guests',
+    'show_feedback_to_guests', 'client_access_enabled', 'client_pin_entry_enabled', 'og_image_share_enabled', 'show_credits_to_guests',
     'custom_theme_enabled', 'external_watch', 'import_now', 'review_contributor_uploads']
     .map(key => [key, Joi.boolean().truthy(1, '1').falsy(0, '0')])),
   hero_logo_visible: Joi.boolean().truthy(1, '1').falsy(0, '0').allow(null),

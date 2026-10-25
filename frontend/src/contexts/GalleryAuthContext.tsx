@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../config/api';
 import { authService, galleryService } from '../services';
 import { cleanupOldGalleryAuth } from '../utils/cleanupGalleryAuth';
@@ -46,6 +47,9 @@ interface GalleryAuthContextType {
   viaCustomer: boolean;
   login: (slug: string, password?: string, recaptchaToken?: string | null) => Promise<void>;
   clientLogin: (slug: string, password: string, token: string) => Promise<void>;
+  enterClientMode: (slug: string, password: string) => Promise<void>;
+  leaveClientMode: (slug: string) => Promise<void>;
+  isSwitchingClientMode: boolean;
   logout: () => void;
   /**
    * End a gallery session the server has rejected (expired, password
@@ -71,14 +75,19 @@ interface GalleryAuthProviderProps {
 }
 
 export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ children }) => {
+  const queryClient = useQueryClient();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [event, setEvent] = useState<GalleryEvent | null>(null);
   const [accessLevel, setAccessLevel] = useState<GalleryAccessLevel>('guest');
   const [viaCustomer, setViaCustomer] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSwitchingClientMode, setIsSwitchingClientMode] = useState(false);
+  const switchingClientMode = useRef(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const location = useLocation();
+  const currentPath = useRef(location.pathname);
+  currentPath.current = location.pathname;
   const [routeInfo, setRouteInfo] = useState<{ slug: string | null; token?: string; identifier: string | null; ready: boolean }>({
     slug: null,
     token: undefined,
@@ -390,6 +399,42 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
     }
   };
 
+  const changeClientMode = async (slug: string, password?: string) => {
+    if (switchingClientMode.current) return;
+    switchingClientMode.current = true;
+    setIsSwitchingClientMode(true);
+    try {
+      const pathAtStart = currentPath.current;
+      const response = password === undefined
+        ? await authService.leaveClientMode(slug)
+        : await authService.enterClientMode(slug, password);
+      // A response from a gallery the visitor has left must not replace the
+      // newly opened gallery's session or token.
+      if (currentPath.current !== pathAtStart) return;
+      // Cancellation stops a late client response from repopulating the guest
+      // cache. Both roles get a fresh view after a visibility-management visit.
+      const predicate = (query: { queryKey: readonly unknown[] }) => query.queryKey[1] === slug
+        && (String(query.queryKey[0]).startsWith('gallery-') || query.queryKey[0] === 'my-feedback');
+      await queryClient.cancelQueries({ predicate });
+      queryClient.removeQueries({ predicate });
+      storeGalleryToken(slug, response.token);
+      setActiveGallerySlug(slug);
+      const normalizedEvent = normalizeEvent(response.event);
+      setEvent(normalizedEvent);
+      sessionStorage.setItem(`gallery_event_${slug}`, JSON.stringify(normalizedEvent));
+      const nextLevel = response.accessLevel || 'guest';
+      setAccessLevel(nextLevel);
+      setViaCustomer(response.viaCustomer === true);
+      if (nextLevel === 'client') sessionStorage.setItem(`gallery_access_level_${slug}`, 'client');
+      else sessionStorage.removeItem(`gallery_access_level_${slug}`);
+      setError(null);
+      setIsAuthenticated(true);
+    } finally {
+      switchingClientMode.current = false;
+      setIsSwitchingClientMode(false);
+    }
+  };
+
   const closeSession = (keepGuestIdentity: boolean) => {
     const currentSlug = routeInfo.slug;
     if (currentSlug) {
@@ -429,6 +474,9 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         viaCustomer,
         login,
         clientLogin: clientLoginFn,
+        enterClientMode: (slug, password) => changeClientMode(slug, password),
+        leaveClientMode: (slug) => changeClientMode(slug),
+        isSwitchingClientMode,
         logout,
         endSession,
         // Derived during render, not only set from an effect: on a move from

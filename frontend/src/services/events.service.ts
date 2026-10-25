@@ -80,6 +80,7 @@ interface UpdateEventData {
   // PIN is hashed server-side; `regenerate_client_token` mints a fresh
   // share token. Validated in adminEvents/crud.js on the update route.
   client_access_enabled?: boolean;
+  client_pin_entry_enabled?: boolean;
   client_password?: string;
   regenerate_client_token?: boolean;
   welcome_message?: string;

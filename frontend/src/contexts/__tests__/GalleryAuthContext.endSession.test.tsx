@@ -7,6 +7,7 @@
  * the visitor's own logout() drops it.
  */
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -46,7 +47,7 @@ const mountAuthenticated = async () => {
   storeGuestIdentity(SLUG, { id: 5, name: 'Invited' } as never, guestToken);
   render(
     <MemoryRouter initialEntries={[`/gallery/${SLUG}`]}>
-      <GalleryAuthProvider><Probe /></GalleryAuthProvider>
+      <QueryClientProvider client={new QueryClient()}><GalleryAuthProvider><Probe /></GalleryAuthProvider></QueryClientProvider>
     </MemoryRouter>,
   );
   await waitFor(() => expect(auth?.isAuthenticated).toBe(true));
