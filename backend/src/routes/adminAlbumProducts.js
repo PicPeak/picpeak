@@ -210,15 +210,14 @@ events.put(
       req.body.showPrices !== undefined ||
       req.body.customerId !== undefined
     ) {
-      billing
-        .enabled(db)
-        .then((on) => {
-          if (!on) return next();
-          requireEventOwner(req, res, (err) =>
-            err ? next(err) : requirePermission('bills.manage')(req, res, next),
-          );
-        })
-        .catch(next);
+      // Old open items still exist after billing is disabled, so ownership
+      // must guard unlock (and financial settings) independently of the flag.
+      requireEventOwner(req, res, (err) => {
+        if (err) return next(err);
+        billing.enabled(db)
+          .then((on) => on ? requirePermission('bills.manage')(req, res, next) : next())
+          .catch(next);
+      });
     } else next();
   },
   handleAsync(async (req, res) => {

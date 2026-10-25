@@ -79,15 +79,15 @@ exports.up = async function (db) {
       .ignore();
   if (await db.schema.hasTable('permissions')) {
     for (const [name, label] of [
-      ['products.view', 'View album products'],
-      ['products.manage', 'Manage album catalogue'],
-      ['albums.edit', 'Edit and publish albums'],
+      ['products.view', 'View products'],
+      ['products.manage', 'Manage product catalogue'],
+      ['products.configure', 'Assign and confirm product choices'],
     ]) {
       await db('permissions')
         .insert({
           name,
           display_name: label,
-          category: 'albums',
+          category: 'products',
           description: label,
         })
         .onConflict('name')

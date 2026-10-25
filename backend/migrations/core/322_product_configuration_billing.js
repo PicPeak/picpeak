@@ -1,21 +1,27 @@
 'use strict';
+async function addColumn(db, table, column, build) {
+  if (await db.schema.hasTable(table) && !(await db.schema.hasColumn(table, column)))
+    await db.schema.alterTable(table, build);
+}
+async function dropColumn(db, table, column) {
+  if (await db.schema.hasTable(table) && await db.schema.hasColumn(table, column))
+    await db.schema.alterTable(table, (t) => t.dropColumn(column));
+}
 exports.up = async (db) => {
-  await db.schema.alterTable('invoices', (t) =>
+  await addColumn(db, 'invoices', 'product_items_revision', (t) =>
     t.integer('product_items_revision').notNullable().defaultTo(0),
   );
   for (const table of ['quote_line_items', 'invoice_line_items']) {
-    await db.schema.alterTable(table, (t) => {
+    await addColumn(db, table, 'configuration_locked', (t) => {
       t.boolean('configuration_locked').notNullable().defaultTo(false);
     });
   }
-  await db.schema.alterTable('event_album_products', (t) => {
-    t.integer('catalogue_preset_id');
-    t.integer('billing_customer_id');
-    t.boolean('show_prices').notNullable().defaultTo(false);
-  });
+  await addColumn(db, 'event_album_products', 'catalogue_preset_id', (t) => t.integer('catalogue_preset_id'));
+  await addColumn(db, 'event_album_products', 'billing_customer_id', (t) => t.integer('billing_customer_id'));
+  await addColumn(db, 'event_album_products', 'show_prices', (t) => t.boolean('show_prices').notNullable().defaultTo(false));
   // Financial snapshots deliberately outlive gallery deletion. The source UUID
   // is not an FK to a gallery offer, which is erased with its client history.
-  await db.schema.createTable('product_billable_items', (t) => {
+  if (!(await db.schema.hasTable('product_billable_items'))) await db.schema.createTable('product_billable_items', (t) => {
     t.increments('id').primary();
     t.string('offer_id', 36).notNullable();
     t.integer('offer_revision').notNullable();
@@ -50,7 +56,7 @@ exports.up = async (db) => {
     t.index(['customer_account_id', 'invoice_id']);
     t.index(['event_id']);
   });
-  await db.schema.createTable('product_configuration_image_references', (t) => {
+  if (!(await db.schema.hasTable('product_configuration_image_references'))) await db.schema.createTable('product_configuration_image_references', (t) => {
     t.string('image_id', 36)
       .notNullable()
       .references('id')
@@ -63,15 +69,17 @@ exports.up = async (db) => {
   // SQLite FK cascades may be disabled. Enforce retention independently, so a
   // later unused-image cleanup cannot accidentally erase financial evidence.
   if (db.client.config.client === 'pg') {
-    await db.raw(`CREATE FUNCTION protect_product_configuration_image() RETURNS trigger AS $$ BEGIN
+    await db.raw(`CREATE OR REPLACE FUNCTION protect_product_configuration_image() RETURNS trigger AS $$ BEGIN
       IF EXISTS (SELECT 1 FROM product_configuration_image_references WHERE image_id = OLD.id) THEN
         RAISE EXCEPTION 'Image belongs to a frozen product specification';
       END IF; RETURN OLD; END; $$ LANGUAGE plpgsql`);
-    await db.raw(
+    const trigger = await db.raw('SELECT 1 FROM pg_trigger WHERE tgname = ? AND tgrelid = to_regclass(?) AND NOT tgisinternal',
+      ['protect_product_configuration_image', 'album_product_images']);
+    if (!trigger.rows.length) await db.raw(
       'CREATE TRIGGER protect_product_configuration_image BEFORE DELETE ON album_product_images FOR EACH ROW EXECUTE FUNCTION protect_product_configuration_image()',
     );
   } else {
-    await db.raw(`CREATE TRIGGER protect_product_configuration_image BEFORE DELETE ON album_product_images
+    await db.raw(`CREATE TRIGGER IF NOT EXISTS protect_product_configuration_image BEFORE DELETE ON album_product_images
       WHEN EXISTS (SELECT 1 FROM product_configuration_image_references WHERE image_id = OLD.id)
       BEGIN SELECT RAISE(ABORT, 'Image belongs to a frozen product specification'); END`);
   }
@@ -99,9 +107,7 @@ exports.up = async (db) => {
   }
 };
 exports.down = async (db) => {
-  await db.schema.alterTable('invoices', (t) =>
-    t.dropColumn('product_items_revision'),
-  );
+  await dropColumn(db, 'invoices', 'product_items_revision');
   if (db.client.config.client === 'pg') {
     await db.raw(
       'DROP TRIGGER IF EXISTS protect_product_configuration_image ON album_product_images',
@@ -113,13 +119,8 @@ exports.down = async (db) => {
     await db.raw('DROP TRIGGER IF EXISTS protect_product_configuration_image');
   await db.schema.dropTableIfExists('product_configuration_image_references');
   await db.schema.dropTableIfExists('product_billable_items');
-  await db.schema.alterTable('event_album_products', (t) => {
-    t.dropColumn('catalogue_preset_id');
-    t.dropColumn('billing_customer_id');
-    t.dropColumn('show_prices');
-  });
+  for (const column of ['catalogue_preset_id', 'billing_customer_id', 'show_prices'])
+    await dropColumn(db, 'event_album_products', column);
   for (const table of ['quote_line_items', 'invoice_line_items'])
-    await db.schema.alterTable(table, (t) =>
-      t.dropColumn('configuration_locked'),
-    );
+    await dropColumn(db, table, 'configuration_locked');
 };

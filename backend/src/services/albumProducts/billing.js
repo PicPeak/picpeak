@@ -243,8 +243,7 @@ async function append(tx, invoice, items, adminId) {
     .where({ invoice_id: invoice.id })
     .max('position as position')
     .first();
-  let position = Number(last?.position || 0),
-    net = Number(invoice.net_amount_minor);
+  let position = Number(last?.position || 0);
   for (const item of items) {
     const line = V.parse(item.line_item);
     const total = Number(line.unit_price_minor);
@@ -265,30 +264,44 @@ async function append(tx, invoice, items, adminId) {
       history,
     );
     const id = inserted[0]?.id ?? inserted[0];
-    await auditedUpdate(
+    const stamped = await auditedUpdate(
       tx,
       'product_billable_items',
       (q) => q.where({ id: item.id }).whereNull('invoice_id'),
       { invoice_id: invoice.id, invoice_line_item_id: id },
       history,
     );
+    if (stamped !== 1)
+      throw new AppError('The product item changed; reload before billing', 409, 'PRODUCT_ITEM_CHANGED');
     await retain(tx, 'billable', item.id, [line]);
     await retain(tx, 'invoice', invoice.id, [line]);
-    net += total;
   }
-  const vat = Math.round((net * Number(invoice.vat_rate)) / 100);
+  const stored = await tx('invoice_line_items as li')
+    .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
+    .where('li.invoice_id', invoice.id)
+    .orderBy('li.position')
+    .select('li.*', 'parent.position as parent_position');
+  const roundTotal = (await require('../../utils/appSettings').getAppSetting('crm_invoice_round_total', false, tx)) === true;
+  const totals = require('../quoteService')._internal.computeTotals(
+    stored, invoice.vat_rate, invoice.shipping_amount_minor, { roundTotal },
+  );
+  for (const line of totals.lineItems) {
+    const previous = stored.find((row) => row.id === line.id);
+    if (Number(previous.line_total_minor) !== line.line_total_minor || Number(previous.unit_price_minor) !== Number(line.unit_price_minor))
+      await auditedUpdate(tx, 'invoice_line_items', { id: line.id, invoice_id: invoice.id },
+        { line_total_minor: line.line_total_minor, unit_price_minor: line.unit_price_minor }, history);
+  }
   const changed = await auditedUpdate(
     tx,
     'invoices',
     { id: invoice.id, status: 'scheduled' },
     {
-      net_amount_minor: net,
+      net_amount_minor: totals.netAmountMinor,
       product_items_revision: Number(invoice.product_items_revision || 0) + 1,
-      vat_amount_minor: vat,
-      total_amount_minor:
-        net + vat + Number(invoice.shipping_amount_minor || 0),
+      vat_amount_minor: totals.vatAmountMinor,
+      total_amount_minor: totals.totalAmountMinor,
       pdf_path: null,
-      updated_at: new Date(),
+      updated_at: new Date().toISOString(),
     },
     history,
   );
@@ -405,13 +418,15 @@ async function billEvent(
         .where({ invoice_id: id })
         .orderBy('position');
       for (let n = 0; n < items.length; n++) {
-        await auditedUpdate(
+        const stamped = await auditedUpdate(
           tx,
           'product_billable_items',
           (q) => q.where({ id: items[n].id }).whereNull('invoice_id'),
           { invoice_id: id, invoice_line_item_id: lines[n].id },
           { actor: adminId, source: 'product.bill' },
         );
+        if (stamped !== 1)
+          throw new AppError('The product item changed; reload before billing', 409, 'PRODUCT_ITEM_CHANGED');
         await retain(tx, 'billable', items[n].id, [lineItems[n]]);
       }
     }

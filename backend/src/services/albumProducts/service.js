@@ -148,6 +148,12 @@ function createService({ db, storage, sharp }) {
       updatedAt: row.updated_at,
     };
   }
+  function clientShape(row) {
+    const result = { ...row };
+    delete result.customerId;
+    delete result.cataloguePresetId;
+    return result;
+  }
   async function offers(eventId) {
     return (
       await db('event_album_products')
@@ -194,10 +200,10 @@ function createService({ db, storage, sharp }) {
         product.attributes
           ? { productVersion: product.version, values: G.valuesOf(snapshot) }
           : {
-              productVersion: V.hash(product),
-              modelId: snapshot.model.id,
-              colourId: snapshot.colour.id,
-            },
+            productVersion: V.hash(product),
+            modelId: snapshot.model.id,
+            colourId: snapshot.colour.id,
+          },
       );
       return (
         V.hash(
@@ -236,7 +242,7 @@ function createService({ db, storage, sharp }) {
           (p) => p.id === row.productId && p.active,
         );
         return {
-          ...row,
+          ...clientShape(row),
           needsReview:
             row.status === 'submitted' &&
             !selectionCurrent(product, row.selection),
@@ -244,11 +250,11 @@ function createService({ db, storage, sharp }) {
             ? product.attributes
               ? product
               : {
-                  ...product,
-                  version: V.hash(product),
-                  models: product.models.filter((o) => o.active),
-                  colours: product.colours.filter((o) => o.active),
-                }
+                ...product,
+                version: V.hash(product),
+                models: product.models.filter((o) => o.active),
+                colours: product.colours.filter((o) => o.active),
+              }
             : null,
         };
       });
@@ -299,7 +305,7 @@ function createService({ db, storage, sharp }) {
           replay.actor_id !== String(actor.id ?? '')
         )
           throw new ConflictError('This request identifier was already used');
-        return shape(current);
+        return admin ? shape(current) : clientShape(shape(current));
       }
       if (current.revision !== input.revision)
         throw new ConflictError(
@@ -386,14 +392,14 @@ function createService({ db, storage, sharp }) {
             product,
             product.attributes
               ? {
-                  productVersion: product.version,
-                  values: G.valuesOf(snapshot),
-                }
+                productVersion: product.version,
+                values: G.valuesOf(snapshot),
+              }
               : {
-                  productVersion: V.hash(product),
-                  modelId: snapshot.model.id,
-                  colourId: snapshot.colour.id,
-                },
+                productVersion: V.hash(product),
+                modelId: snapshot.model.id,
+                colourId: snapshot.colour.id,
+              },
           );
           const chosen = (s) =>
             s.attributes || { model: s.model, colour: s.colour };
@@ -425,7 +431,7 @@ function createService({ db, storage, sharp }) {
               : current[key] === value),
         )
       )
-        return shape(current);
+        return admin ? shape(current) : clientShape(shape(current));
       const next = { ...current, ...update };
       if (admin && update.status === 'locked')
         await require('./billing').lock(tx, next, event.id, actor.id);
@@ -447,7 +453,7 @@ function createService({ db, storage, sharp }) {
           tx,
         );
       }
-      return shape(next);
+      return admin ? shape(next) : clientShape(shape(next));
     });
   }
   async function clientImage(eventId, id) {

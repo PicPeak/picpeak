@@ -113,7 +113,7 @@ router.get('/:token/product-images/:imageId', previewLimiter, [tokenParam()], ha
   return require('../utils/streamResponse').pipeStreamToResponse(await require('../services/storage').getStorage().get(image.storage_key), res, { context: 'quote product image' });
 }));
 
-router.post('/:token/totals', previewLimiter, [tokenParam(), body('selectedOptional').isArray({ max: 200 }), body('configurations').optional().isArray({ max: 200 })], handleAsync(async (req, res) => {
+router.post('/:token/totals', previewLimiter, [tokenParam(), body('selectedOptional').isArray({ max: 200 }), body('configurations').optional().isArray({ max: 200 }), body('configurations.*').isObject()], handleAsync(async (req, res) => {
   validateRequest(req);
   const tokenRow = await loadActionToken(req, res, { tableName: TABLE, token: req.params.token });
   if (!tokenRow) return undefined;
@@ -132,7 +132,7 @@ router.post(
     body('tosAccepted').optional().isBoolean(),
     // Optional add-ons (#1451): the chosen positions and the total the page
     // showed. The service recomputes and refuses a mismatch.
-    body('configurations').optional().isArray({ max: 200 }),
+    body('configurations').optional().isArray({ max: 200 }), body('configurations.*').isObject(),
     body('selectedOptional').optional().isArray({ max: 200 }),
     body('selectedOptional.*').isInt({ min: 1 }).toInt(),
     body('expectedTotalMinor').optional().isInt().toInt(),

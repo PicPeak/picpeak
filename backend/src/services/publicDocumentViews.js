@@ -145,6 +145,7 @@ function publicQuoteView(quote, lineItems, customer, profile, tosRequired, tosTe
       new Date(quote.response_locked_at).getTime() > Date.now()
     )),
     lineItems: lineItems.map((li) => ({
+      configurationLocked: isTruthyFlag(li.configuration_locked),
       configurationDefinition: li.configuration_definition ? JSON.parse(li.configuration_definition) : null,
       configurationSnapshot: li.configuration_snapshot ? JSON.parse(li.configuration_snapshot) : null,
       position: li.position,

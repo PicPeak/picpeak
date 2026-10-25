@@ -49,17 +49,23 @@ async function catalogueProduct(db, id) {
   return product;
 }
 async function presetColumns(db, payload, existing = {}) {
+  const id =
+    payload.product_id === undefined ? existing.product_id : payload.product_id;
+  if (id && (payload.price_mode ?? existing.price_mode ?? 'fixed') !== 'fixed')
+    throw new AppError('Configurable products need a fixed base price', 400);
   if (
     payload.product_id === undefined &&
     payload.product_surcharges === undefined
   )
     return {};
-  const id =
-    payload.product_id === undefined ? existing.product_id : payload.product_id;
   if (!id) return { product_id: null, product_surcharges: null };
+  // An ordinary edit must not re-activate/re-validate a saved association.
+  // Changing the link or its option prices still requires a current product.
+  if (id === existing.product_id &&
+    (payload.product_surcharges === undefined ||
+      V.hash(parse(payload.product_surcharges) || []) === V.hash(parse(existing.product_surcharges) || [])))
+    return {};
   V.uuid(id);
-  if ((payload.price_mode ?? existing.price_mode ?? 'fixed') !== 'fixed')
-    throw new AppError('Configurable products need a fixed base price', 400);
   const product = await catalogueProduct(db, id);
   return {
     product_id: id,
@@ -95,12 +101,12 @@ async function prepareLine(db, line, { quoteId, currency } = {}) {
       values === undefined
         ? []
         : [
-            {
-              position: Number(out.position),
-              definitionVersion: definition.version,
-              values,
-            },
-          ],
+          {
+            position: Number(out.position),
+            definitionVersion: definition.version,
+            values,
+          },
+        ],
       { complete: out.configuration_locked, authoring: true },
     )[0];
   };
@@ -137,9 +143,11 @@ async function prepareLine(db, line, { quoteId, currency } = {}) {
   const preset = await db('quote_line_item_presets')
     .where({ id: line.catalogue_preset_id })
     .first();
-  if (!preset || !isTruthyFlag(preset.is_active))
+  if (!preset)
     throw new AppError('The catalogue item is unavailable', 400);
   if (!preset.product_id) return finish(out);
+  if (!isTruthyFlag(preset.is_active))
+    throw new AppError('The catalogue item is unavailable', 400);
   if (currency && preset.currency !== currency)
     throw new AppError('Product and quote currencies must match', 400);
   const product = await catalogueProduct(db, preset.product_id);
@@ -167,6 +175,8 @@ function configureLines(
     throw new AppError('Invalid configurations', 400);
   const entries = new Map();
   for (const c of configurations) {
+    if (!c || typeof c !== 'object' || Array.isArray(c))
+      throw new AppError('Invalid configuration', 400);
     if (!Number.isSafeInteger(c.position) || entries.has(c.position))
       throw new AppError('Invalid configuration position', 400);
     const line = lines.find(
@@ -182,8 +192,8 @@ function configureLines(
     const parent = line.parent_line_item_id
       ? topById.get(line.parent_line_item_id)
       : lines.find(
-          (li) => Number(li.position) === Number(line.parent_position),
-        );
+        (li) => Number(li.position) === Number(line.parent_position),
+      );
     if (
       !authoring &&
       (isUnselectedOptional(line) || (parent && isUnselectedOptional(parent)))
@@ -258,8 +268,14 @@ async function writeSnapshots(tx, quoteId, configuredLines, history) {
     .where({ quote_id: quoteId })
     .orderBy('position');
   for (const line of configuredLines) {
-    if (!line.configuration_definition) continue;
     const current = stored.find((li) => li.id === line.id);
+    if (!line.configuration_definition) {
+      // A priced configured child also changes its package header's amount.
+      if (current && Number(current.line_total_minor) !== Number(line.line_total_minor))
+        await auditedUpdate(tx, 'quote_line_items', { quote_id: quoteId, id: line.id },
+          { line_total_minor: line.line_total_minor }, history);
+      continue;
+    }
     if (
       !current ||
       current.configuration_definition !== line.configuration_definition

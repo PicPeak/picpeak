@@ -1947,7 +1947,13 @@
         "POST /customers/:customerId/billing",
         "PUT /catalogue",
         "POST /images",
-        "GET /images/:imageId"
+        "GET /images/:imageId",
+        "GET /",
+        "GET /billing",
+        "POST /billing",
+        "POST /offers",
+        "GET /offers/:id/history",
+        "PUT /offers/:id"
       ]
     },
     "gallery/albumProducts.js": {

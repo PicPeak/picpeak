@@ -279,7 +279,7 @@ function presetLine(preset, quantity, boundTo) {
   const line = {
     ...blankLine(),
     description: preset.name,
-    cataloguePresetId: preset.id || preset.preset_id,
+    cataloguePresetId: preset.preset_id || preset.id,
     quantity: quantity == null ? ensureNumber(preset.quantity_default, 1) : ensureNumber(quantity, 1),
     unit: preset.unit || (rateBased ? priceMode : null),
     priceMode: rateBased ? priceMode : null,

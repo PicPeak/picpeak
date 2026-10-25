@@ -17,7 +17,7 @@ Status: shared design agreed with Luca-Timo on 22 October 2026. This implementat
 
 ## Schema and integration
 
-Migration 317 adds the generic library and quote/invoice configuration fields without rewriting published migration 316, and preserves role grants while renaming the configurator permission to products.configure. Migration 318 adds quote locks, gallery pricing links, audited billable items, retained-image references and an invoice product revision for safe sending. The experimental albumProducts flag remains off by default.
+Migrations 320–322 are additive and unreleased. Migration 320 introduces the catalogue/choices, disabled feature flag and final product permission names. Migration 321 adds the generic library and quote/invoice configuration fields. Migration 322 adds quote locks, gallery pricing links, audited product billable items, retained-image references and an invoice product revision for safe sending. The experimental albumProducts flag remains off by default.
 
 No payment collection, supplier ordering, supplier artwork or studio-specific prices are introduced. Existing prototype model/colour records remain readable. Album layout editing, proof comments/proposals, exact-proof approval and production interior export remain a separate roadmap.
 

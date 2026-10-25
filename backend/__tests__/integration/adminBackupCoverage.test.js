@@ -86,7 +86,7 @@ describe('GET /api/admin/system-health/backup-coverage', () => {
     await db('app_settings').where('setting_type', 'backup').del().catch(() => {});
   });
 
-  it('returns the canonical 10 paths + database block on a fresh install', async () => {
+  it('returns the canonical paths + database block on a fresh install', async () => {
     const res = await request(app).get('/api/admin/system-health/backup-coverage');
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('report');
@@ -103,6 +103,7 @@ describe('GET /api/admin/system-health/backup-coverage', () => {
       'videos',
       'transfers',
       'watermarks',
+      'album-products',
     ]);
 
     // Default mode is inline — no inline_dump setting present means
@@ -111,7 +112,7 @@ describe('GET /api/admin/system-health/backup-coverage', () => {
     expect(report.database.ok).toBe(true);
 
     expect(report.summary).toMatchObject({
-      configuredCount: 10,
+      configuredCount: 11,
       tableMissingFallbackInUse: false,
     });
   });

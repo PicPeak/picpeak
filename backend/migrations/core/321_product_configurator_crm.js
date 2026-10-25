@@ -27,24 +27,6 @@ exports.up = async (db) => {
         require('../../src/services/albumProducts/library').presets(),
       ),
     });
-  if (await db.schema.hasTable('permissions')) {
-    const old = await db('permissions').where({ name: 'albums.edit' }).first();
-    if (
-      old &&
-      !(await db('permissions').where({ name: 'products.configure' }).first())
-    )
-      await db('permissions')
-        .where({ id: old.id })
-        .update({
-          name: 'products.configure',
-          display_name: 'Assign and confirm product choices',
-          category: 'products',
-          description: 'Assign and confirm product choices',
-        });
-    await db('permissions')
-      .whereIn('name', ['products.view', 'products.manage'])
-      .update({ category: 'products' });
-  }
   await addColumn(db, 'quote_line_item_presets', 'product_id', (t) =>
     t.string('product_id', 36),
   );
@@ -69,18 +51,6 @@ exports.up = async (db) => {
 exports.down = async (db) => {
   await dropColumn(db, 'album_product_catalogue', 'types');
   await dropColumn(db, 'album_product_catalogue', 'library');
-  if (await db.schema.hasTable('permissions')) {
-    await db('permissions')
-      .where({ name: 'products.configure' })
-      .update({
-        name: 'albums.edit',
-        category: 'albums',
-        display_name: 'Edit and publish albums',
-      });
-    await db('permissions')
-      .whereIn('name', ['products.view', 'products.manage'])
-      .update({ category: 'albums' });
-  }
   for (const table of ['quote_line_items', 'invoice_line_items'])
     for (const column of [
       'catalogue_preset_id',

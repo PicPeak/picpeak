@@ -207,11 +207,11 @@ const valuesOf = (snapshot) =>
 const summary = (snapshot) =>
   snapshot?.attributes
     ? snapshot.attributes
-        .map((a) => `${a.name}: ${a.options.map((o) => o.name).join(', ')}`)
-        .join(' · ')
+      .map((a) => `${a.name}: ${a.options.map((o) => o.name).join(', ')}`)
+      .join(' · ')
     : [snapshot?.model?.name, snapshot?.colour?.name]
-        .filter(Boolean)
-        .join(' · ');
+      .filter(Boolean)
+      .join(' · ');
 function presetId(label) {
   const hex = V.hash(label);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;

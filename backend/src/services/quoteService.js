@@ -1619,6 +1619,14 @@ async function resolveCustomerSelection(quote, { selectedOptional, expectedTotal
     err.totalAmountMinor = selection.totals.totalAmountMinor;
     throw err;
   }
+  if (quote.selection_accepted_at && selection.chosen.join(',') === current.join(',') &&
+    selection.totals.lineItems.every((line) => {
+      const previous = lineItems.find((row) => row.id === line.id);
+      return require('util').isDeepStrictEqual(
+        storedJson(previous?.configuration_snapshot, null),
+        storedJson(line.configuration_snapshot, null),
+      );
+    })) return null;
   return { lineItems, ...selection, previousChosen: quote.selection_accepted_at ? current : null };
 }
 

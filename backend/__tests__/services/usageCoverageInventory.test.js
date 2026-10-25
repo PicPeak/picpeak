@@ -17,7 +17,10 @@ test('every route family and literal route declaration has an explicit privacy d
       if (entry.isDirectory()) walk(file);
       else if (entry.name.endsWith('.js')) {
         const source = fs.readFileSync(file, 'utf8');
-        actual[path.relative(root, file)] = [...source.matchAll(/router\.(get|post|put|patch|delete)\(\s*(['"])([^'"]+)\2/g)]
+        // Include named subrouters as well as routers passed into modules.
+        const names = new Set(['router', ...[...source.matchAll(/\b(?:const|let|var)\s+(\w+)\s*=\s*(?:express\.|require\(['"]express['"]\)\.)?Router\s*\(/g)].map((m) => m[1])]);
+        const routes = new RegExp(`\\b(?:${[...names].join('|')})\\.(get|post|put|patch|delete)\\(\\s*(['"])([^'"]+)\\2`, 'g');
+        actual[path.relative(root, file)] = [...source.matchAll(routes)]
           .map((m) => `${m[1].toUpperCase()} ${m[3]}`);
       }
     }

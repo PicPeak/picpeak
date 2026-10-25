@@ -25,13 +25,15 @@ A primary-client/PIN gallery credential or assigned customer-portal session is r
 
 Add the configurable catalogue item directly, through a package, or through a published quote template. The quote copies the offered definition and prices when authored. The photographer may pre-fill choices or lock a complete agreed specification. Clients can finish or change unlocked choices, including an optional product they book on the quote page; locked specifications are read-only.
 
+Editing an existing catalogue item's ordinary details does not revalidate an unchanged product association. Existing quote definitions remain editable if the feature or live product is disabled. Attaching a different product, changing its option surcharges or authoring a new configurable definition still requires the configurator and an active product; linked catalogue items continue to require fixed pricing.
+
 Verified public quote pages and the authenticated customer portal use the same picker. The server recomputes quantities, surcharges, discounts and totals and checks the total confirmed by the customer. Acceptance freezes option IDs, labels, dimensions, images and the price breakdown. Contract and invoice lines carry the frozen specification. Existing response-window and conversion locks continue to apply. Surcharges follow the native VAT treatment of the configured line's full unit price, without a separate surcharge tax rate.
 
 ## Storage and recovery
 
 Images use the normal local/S3-compatible storage adapter, generated `album-products/` keys and authenticated delivery with `private, no-store`. Actual non-animated PNG uploads are limited to 6 MB and 16 megapixels, then re-encoded to remove metadata. No supplier URLs, filesystem paths or storage credentials reach clients.
 
-Database backups, the native backup-path registry, required-key recovery inventory and portable `.picpeak` transfers include these image rows and objects. Images referenced by accepted quotes, contracts, invoices and billed items are pinned independently of the catalogue. PostgreSQL and SQLite deletion guards protect them even when SQLite foreign keys are disabled. Automatic image garbage collection is not introduced.
+Database backups, the native backup-path registry, required-key recovery inventory and portable `.picpeak` transfers include these image rows and objects. Images referenced by accepted quotes, contracts, invoices and billed items are pinned independently of the catalogue. PostgreSQL and SQLite deletion guards protect them even when SQLite foreign keys are disabled. Automatic image garbage collection is not introduced. Images offered in existing public or portal quotes remain available when the configurator flag is switched off; the normal document verification and customer ownership checks still apply.
 
 Both native and archived gallery deletion remove client choice history and offers explicitly, including names and session digests. Audited product billing records survive with their event link cleared; financial evidence and image pins remain retained. Expiry, archive and session revocation use the existing gallery lifecycle checks.
 
@@ -39,6 +41,6 @@ Revision checks prevent stale saves; request retry IDs prevent duplicate submiss
 
 ## Migration and validation
 
-Migration 316 introduces the original catalogue/choice storage and disabled feature flag. Migration 317 adds generic library and CRM snapshots and renames `albums.edit` to `products.configure` while preserving grants. Migration 318 adds quote locks, gallery price settings, audited billable items, retained image references and the invoice revision guard. `products.view`, `products.manage` and `products.configure` remain separate permissions; billing retains native customer/invoice permissions.
+Migration 320 introduces the catalogue/choice storage, disabled feature flag and final product permissions. Migration 321 adds the generic library and CRM snapshots. Migration 322 adds quote locks, gallery price settings, audited billable items, retained image references and the invoice revision guard. `products.view`, `products.manage` and `products.configure` remain separate permissions; billing retains native customer/invoice permissions.
 
 Regression tests use real core migrations on SQLite and PostgreSQL 15, synthetic PNGs, native HTTP authentication, quote arithmetic, document snapshots and invoice correction workflows. The PR description records current counts and remaining upstream validation limitations. No real client photos, supplier designs, studio prices, payment collection or supplier ordering are included.

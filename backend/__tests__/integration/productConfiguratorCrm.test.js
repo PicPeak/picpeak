@@ -119,6 +119,10 @@ beforeAll(async () => {
     require('../../src/routes/publicQuotes'),
   );
 }, 180000);
+beforeEach(async () => {
+  await db('feature_flags').where({ key: 'bills' }).update({ value: false });
+  require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+});
 afterAll(async () => {
   process.chdir(previousCwd);
   if (cleanup) await cleanup();
@@ -222,6 +226,273 @@ const accept = (f, total, selected = [2], configurations = f.configurations) =>
       expectedTotalMinor: total,
       configurations,
     });
+
+test('archived ordinary catalogue items remain usable on existing quotes with configuration disabled', async () => {
+  const preset = await quotes.createLineItemPreset({ name: 'Ordinary photography', currency: 'EUR', unit_price_minor: 12000 });
+  const templates = require('../../src/services/quoteTemplateService');
+  const templateId = await templates.createTemplate({ name: 'Ordinary item', currency: 'EUR',
+    draft: { sections: [{ type: 'item', presetId: preset.id }] } }, adminId);
+  await templates.publishTemplate(templateId, adminId);
+  await quotes.deleteLineItemPreset(preset.id);
+  await db('feature_flags').where({ key: 'albumProducts' }).update({ value: false });
+  try {
+    const quoteId = await quotes.createQuote({ customerAccountId: customerId, currency: 'EUR', vatRate: 0,
+      lineItems: [{ position: 1, quantity: 1, description: 'Saved ordinary item', unit_price_minor: 12000, catalogue_preset_id: preset.id }] }, adminId);
+    const saved = await quotes.getQuoteById(quoteId);
+    expect(Number(saved.quote.total_amount_minor)).toBe(12000);
+    expect(saved.lineItems[0].configuration_definition).toBeNull();
+    await quotes.updateQuote(quoteId, { lineItems: saved.lineItems }, adminId);
+    const created = await templates.createQuoteFromTemplate(templateId, { customerAccountId: customerId }, adminId);
+    const fromTemplate = await quotes.getQuoteById(created.quoteId);
+    expect(fromTemplate.lineItems[0].configuration_definition).toBeNull();
+    expect(Number(fromTemplate.lineItems[0].unit_price_minor)).toBe(12000);
+  } finally {
+    await db('feature_flags').where({ key: 'albumProducts' }).update({ value: true });
+  }
+});
+
+test('unchanged product links remain editable when configuration is disabled, but new links do not', async () => {
+  const f = await fixture();
+  await db('feature_flags').where({ key: 'albumProducts' }).update({ value: false });
+  try {
+    const row = await db('quote_line_item_presets').where({ id: f.preset.id }).first();
+    await quotes.updateLineItemPreset(row.id, { name: 'Updated ordinary details', product_id: row.product_id,
+      product_surcharges: parsed(row.product_surcharges) });
+    expect((await db('quote_line_item_presets').where({ id: row.id }).first()).name).toBe('Updated ordinary details');
+    await expect(quotes.updateLineItemPreset(row.id, { price_mode: 'hour' })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(quotes.createLineItemPreset({ name: 'New product', currency: 'EUR', unit_price_minor: 100,
+      product_id: product.id })).rejects.toMatchObject({ statusCode: 403 });
+  } finally {
+    await db('feature_flags').where({ key: 'albumProducts' }).update({ value: true });
+  }
+});
+
+test('saving an existing configurable draft preserves its definition after the feature and product are disabled', async () => {
+  const f = await fixture();
+  await db('quotes').where({ id: f.quoteId }).update({ status: 'draft', sent_at: null });
+  const before = await quotes.getQuoteById(f.quoteId);
+  const original = await products.catalogue();
+  const changed = structuredClone(original);
+  changed.products.find((p) => p.id === product.id).active = false;
+  await products.saveCatalogue(changed);
+  await db('feature_flags').where({ key: 'albumProducts' }).update({ value: false });
+  try {
+    await quotes.updateQuote(f.quoteId, { lineItems: before.lineItems.map((line) => ({
+      ...line, configuration_definition: undefined, configuration_snapshot: undefined,
+      configuration_source_line_id: line.id,
+    })) }, adminId);
+    const after = await quotes.getQuoteById(f.quoteId);
+    expect(parsed(after.lineItems.find((line) => line.configuration_definition).configuration_definition)).toEqual(f.definition);
+  } finally {
+    await db('feature_flags').where({ key: 'albumProducts' }).update({ value: true });
+    await products.saveCatalogue({ ...original, revision: (await products.catalogue()).revision });
+  }
+});
+
+test.each(['product', 'option'])('unchanged product pricing remains editable after its %s is deactivated', async (kind) => {
+  const f = await fixture();
+  const original = await products.catalogue();
+  const changed = structuredClone(original);
+  if (kind === 'product') changed.products.find((p) => p.id === product.id).active = false;
+  else changed.library.find((g) => g.id === size.groupId).options[0].active = false;
+  await products.saveCatalogue(changed);
+  try {
+    const row = await db('quote_line_item_presets').where({ id: f.preset.id }).first();
+    await quotes.updateLineItemPreset(row.id, { description: 'Keep editing existing records', product_id: row.product_id,
+      product_surcharges: parsed(row.product_surcharges) });
+    expect((await db('quote_line_item_presets').where({ id: row.id }).first()).description).toBe('Keep editing existing records');
+  } finally {
+    await products.saveCatalogue({ ...original, revision: (await products.catalogue()).revision });
+  }
+});
+
+test('repeated acceptance of identical product choices creates no extra PDF, mail or selection change', async () => {
+  const f = await fixture();
+  const pdf = jest.spyOn(require('../../src/services/pdfService'), 'renderQuoteToBuffer');
+  const input = { token: f.token, action: 'accept', expectedTotalMinor: 75000, selectedOptional: [2], configurations: f.configurations };
+  try {
+    await quotes.recordResponse(input);
+    const before = await db('quotes').where({ id: f.quoteId }).first();
+    const [{ count }] = await db('email_queue').count({ count: '*' });
+    const renders = pdf.mock.calls.length;
+    await quotes.recordResponse(input);
+    const after = await db('quotes').where({ id: f.quoteId }).first();
+    expect(after.pdf_path).toBe(before.pdf_path);
+    expect(after.selection_changes).toBe(before.selection_changes);
+    expect((await db('email_queue').count({ count: '*' }))[0].count).toBe(count);
+    expect(pdf).toHaveBeenCalledTimes(renders);
+  } finally { pdf.mockRestore(); }
+});
+
+test('configured package amounts persist to quote rows, the accepted PDF and the contract snapshot', async () => {
+  const f = await fixture({ parent: true });
+  const pdf = jest.spyOn(require('../../src/services/pdfService'), 'renderQuoteToBuffer');
+  try {
+    await quotes.recordResponse({ token: f.token, action: 'accept', expectedTotalMinor: 75000,
+      selectedOptional: [2], configurations: f.configurations });
+    const saved = await quotes.getQuoteById(f.quoteId);
+    expect(Number(saved.lineItems.find((li) => Number(li.position) === 2).line_total_minor)).toBe(25000);
+    const context = pdf.mock.calls.at(-1)[0];
+    expect(Number(context.lineItems.find((li) => li.description === 'Print package').lineTotalMinor)).toBe(25000);
+    const contracts = require('../../src/services/contractService');
+    const { contractId } = await contracts.createFromQuote(f.quoteId, adminId);
+    await contracts.sendContract(contractId, adminId);
+    const snapshot = parsed((await db('contracts').where({ id: contractId }).first()).rendered_content);
+    expect(Number(snapshot.quote.lineItems.find((li) => Number(li.position) === 2).line_total_minor)).toBe(25000);
+  } finally { pdf.mockRestore(); }
+});
+
+test('public and portal quote projections expose the studio lock as a boolean', async () => {
+  const f = await fixture();
+  await db('quote_line_items').where({ id: f.line.id }).update({ configuration_locked: true });
+  const view = await require('../../src/services/publicDocumentViews').buildQuoteView(f.quoteId);
+  expect(view.lineItems.find((li) => Number(li.position) === 2).configurationLocked).toBe(true);
+  const response = await request(app).get(`/api/public/quotes/${f.token}`).set('X-Document-Access', f.grant);
+  expect(response.status).toBe(200);
+  expect(response.body.quote.lineItems.find((li) => Number(li.position) === 2).configurationLocked).toBe(true);
+  await require('../../src/utils/appSettings').upsertAppSetting('customer_feature_quotes_enabled', 'true', 'customer');
+  const portal = buildRouteApp('/api/customer', require('../../src/routes/customer'));
+  const token = require('jsonwebtoken').sign({ type: 'customer', customerId, jti: uuid() }, process.env.JWT_SECRET,
+    { issuer: 'picpeak-auth', expiresIn: '1h' });
+  const customerView = await request(portal).get(`/api/customer/quotes/${f.quoteId}`).set('Cookie', `customer_token=${token}`);
+  expect(customerView.status).toBe(200);
+  expect(customerView.body.quote.lineItems.find((li) => Number(li.position) === 2).configurationLocked).toBe(true);
+});
+
+test('malformed configuration elements are refused with 400 by the domain and HTTP paths', async () => {
+  const f = await fixture();
+  for (const entry of [null, [], 'invalid', 7]) {
+    expect(() => require('../../src/services/albumProducts/crm').configureLines([f.line], [entry])).toThrow('Invalid configuration');
+  }
+  const response = await totals(f, [2], [null]);
+  expect(response.status).toBe(400);
+  expect((await request(app).post(`/api/public/quotes/${f.token}/respond`).set('X-Document-Access', f.grant)
+    .send({ action: 'accept', selectedOptional: [2], configurations: [null], expectedTotalMinor: 75000 })).status).toBe(400);
+  const portal = buildRouteApp('/api/customer', require('../../src/routes/customer'));
+  const token = require('jsonwebtoken').sign({ type: 'customer', customerId, jti: uuid() }, process.env.JWT_SECRET,
+    { issuer: 'picpeak-auth', expiresIn: '1h' });
+  for (const action of ['totals', 'respond'])
+    expect((await request(portal).post(`/api/customer/quotes/${f.quoteId}/${action}`).set('Cookie', `customer_token=${token}`)
+      .send({ action: 'accept', selectedOptional: [2], configurations: [null], expectedTotalMinor: 75000 })).status).toBe(400);
+});
+
+test('existing quote images remain verified and scoped with the configurator switched off', async () => {
+  const f = await fixture();
+  await db('feature_flags').where({ key: 'albumProducts' }).update({ value: false });
+  require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+  try {
+    const endpoint = `/api/public/quotes/${f.token}/product-images/${image.id}`;
+    expect((await request(app).get(endpoint)).status).not.toBe(200);
+    expect((await request(app).get(endpoint).set('X-Document-Access', f.grant)).status).toBe(200);
+    const portal = buildRouteApp('/api/customer', require('../../src/routes/customer'));
+    const token = require('jsonwebtoken').sign({ type: 'customer', customerId, jti: uuid() }, process.env.JWT_SECRET,
+      { issuer: 'picpeak-auth', expiresIn: '1h' });
+    expect((await request(portal).get(`/api/customer/quotes/${f.quoteId}/product-images/${image.id}`)
+      .set('Cookie', `customer_token=${token}`)).status).toBe(200);
+  } finally {
+    await db('feature_flags').where({ key: 'albumProducts' }).update({ value: true });
+    require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+  }
+});
+test('gallery client reads and writes never expose internal billing associations', async () => {
+  const f = await billableFixture();
+  const adminOffer = (await products.offers(f.event.id))[0];
+  expect(adminOffer.cataloguePresetId).toBe(f.preset.id);
+  const gallery = buildRouteApp('/api/gallery', require('../../src/routes/gallery/albumProducts'));
+  const token = require('jsonwebtoken').sign({ type: 'gallery', eventId: f.event.id, accessLevel: 'client', jti: uuid() },
+    process.env.JWT_SECRET, { issuer: 'picpeak-auth', expiresIn: '1h' });
+  const endpoint = `/api/gallery/${f.event.slug}/album-products`;
+  const response = await request(gallery).get(endpoint).set('Authorization', `Bearer ${token}`);
+  expect(response.status).toBe(200);
+  expect(response.body.offers[0]).not.toHaveProperty('cataloguePresetId');
+  expect(response.body.offers[0]).not.toHaveProperty('customerId');
+  const saved = await request(gallery).put(`${endpoint}/${f.offer.id}`).set('Authorization', `Bearer ${token}`)
+    .send({ revision: f.offer.revision, mutationId: uuid(), name: 'Synthetic client', submit: true,
+      productVersion: response.body.offers[0].product.version, values: f.configurations[0].values });
+  expect(saved.status).toBe(200);
+  expect(saved.body).not.toHaveProperty('cataloguePresetId');
+  expect(saved.body).not.toHaveProperty('customerId');
+});
+
+test('an assigned product administrator cannot unlock open financial items with billing switched off', async () => {
+  const f = await billableFixture();
+  await f.change('lock');
+  const [{ id: roleId }] = await db('roles').insert({ name: `assigned-${uuid()}`, display_name: 'Assigned product editor' }).returning('id');
+  for (const permission of await db('permissions').whereIn('name', ['products.view', 'products.configure']))
+    await db('role_permissions').insert({ role_id: roleId, permission_id: permission.id });
+  const [{ id: assignedId }] = await db('admin_users').insert({ username: `assigned-${uuid()}`, email: `${uuid()}@example.test`,
+    password_hash: 'x', role_id: roleId, must_change_password: false }).returning('id');
+  await db('event_admin_assignments').insert({ event_id: f.event.id, admin_user_id: assignedId });
+  require('../../src/middleware/permissions').clearPermissionCache();
+  const admin = buildRouteApp('/api/admin/album-products', require('../../src/routes/adminAlbumProducts'));
+  const { mintAdminToken } = require('./helpers/crmDb');
+  const endpoint = `/api/admin/album-products/events/${f.event.id}`;
+  const token = mintAdminToken(assignedId);
+  expect((await request(admin).get(endpoint).set('Authorization', `Bearer ${token}`)).status).toBe(200);
+  await db('feature_flags').where({ key: 'bills' }).update({ value: false });
+  require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+  try {
+    const response = await request(admin).put(`${endpoint}/offers/${f.offer.id}`).set('Authorization', `Bearer ${token}`)
+      .send({ revision: f.offer.revision, mutationId: uuid(), action: 'unlock' });
+    expect(response.status).toBe(403);
+    expect(await db('product_billable_items').where({ offer_id: f.offer.id })).toHaveLength(1);
+    const owner = await request(admin).put(`${endpoint}/offers/${f.offer.id}`).set('Authorization', `Bearer ${mintAdminToken(adminId)}`)
+      .send({ revision: f.offer.revision, mutationId: uuid(), action: 'unlock' });
+    expect(owner.status).toBe(200);
+    expect(await db('product_billable_items').where({ offer_id: f.offer.id })).toHaveLength(0);
+  } finally {
+    await db('feature_flags').where({ key: 'bills' }).update({ value: true });
+    require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+  }
+});
+
+test('appending products recalculates percentage discounts, sub-cent rounding, VAT and shipping', async () => {
+  const f = await billableFixture({ project: true });
+  const settings = require('../../src/utils/appSettings');
+  await settings.upsertAppSetting('crm_invoice_round_total', 'true', 'crm');
+  try {
+    const { invoiceIds: [invoiceId] } = await require('../../src/services/invoiceService').createInvoice({
+      customerAccountId: customerId, projectId: f.event.project_id, eventId: f.event.id, currency: 'EUR',
+      vatCode: f.vat.code, vatRate: Number(f.vat.rate), shippingAmountMinor: 99,
+      lineItems: [1, 2].map((position) => ({ position, quantity: 1.4, description: 'Fractional item', unit_price_minor: 1 }))
+        .concat([{ position: 3, quantity: 1, description: 'Ten percent discount', unit_price_minor: 0, line_kind: 'discount',
+          promotion_snapshot: { id: uuid(), name: 'Promotion', type: 'percent', percent: 10 } }]),
+    }, adminId);
+    await f.change('lock');
+    const invoice = await db('invoices').where({ id: invoiceId }).first();
+    const discount = await db('invoice_line_items').where({ invoice_id: invoiceId, line_kind: 'discount' }).first();
+    expect(Number(discount.line_total_minor)).toBe(-1250);
+    expect(Number(invoice.net_amount_minor)).toBe(11253);
+    expect(Number(invoice.total_amount_minor)).toBe(11253 + Math.round(11253 * Number(f.vat.rate) / 100) + 99);
+  } finally { await settings.upsertAppSetting('crm_invoice_round_total', 'false', 'crm'); }
+});
+
+test.each(['append', 'new invoice'])('a refused billable-item stamp rolls back %s, lines and audit writes', async (mode) => {
+  const f = await billableFixture({ project: mode === 'append' });
+  const invoices = require('../../src/services/invoiceService');
+  let invoiceId;
+  if (mode === 'append') ({ invoiceIds: [invoiceId] } = await invoices.createInvoice({ customerAccountId: customerId,
+    projectId: f.event.project_id, eventId: f.event.id, currency: 'EUR', vatCode: f.vat.code, vatRate: Number(f.vat.rate),
+    lineItems: [{ position: 1, quantity: 1, description: 'Existing line', unit_price_minor: 100 }] }, adminId));
+  else await f.change('lock');
+  const before = (await db('invoices').count({ n: '*' }))[0].n;
+  const pg = db.client.config.client === 'pg';
+  if (pg) {
+    await db.raw('CREATE FUNCTION review_refuse_product_stamp() RETURNS trigger AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql');
+    await db.raw('CREATE TRIGGER review_refuse_product_stamp BEFORE UPDATE OF invoice_id ON product_billable_items FOR EACH ROW EXECUTE FUNCTION review_refuse_product_stamp()');
+  } else await db.raw("CREATE TRIGGER review_refuse_product_stamp BEFORE UPDATE OF invoice_id ON product_billable_items BEGIN SELECT RAISE(IGNORE); END");
+  try {
+    const action = mode === 'append' ? f.change('lock') : require('../../src/services/albumProducts/billing').billEvent(db, f.event.id, adminId);
+    await expect(action).rejects.toMatchObject({ statusCode: 409, code: 'PRODUCT_ITEM_CHANGED' });
+    expect((await db('invoices').count({ n: '*' }))[0].n).toBe(before);
+    if (invoiceId) expect(await db('invoice_line_items').where({ invoice_id: invoiceId })).toHaveLength(1);
+    else expect((await db('product_billable_items').where({ offer_id: f.offer.id }).first()).invoice_id).toBeNull();
+  } finally {
+    await db.raw(`DROP TRIGGER review_refuse_product_stamp${pg ? ' ON product_billable_items' : ''}`);
+    if (pg) await db.raw('DROP FUNCTION review_refuse_product_stamp()');
+  }
+});
+
 test('generic sizes, required and multi-select attributes and dependencies are validated', () => {
   const resolved = G.resolve(product, catalog);
   const values = {
