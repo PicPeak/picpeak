@@ -135,7 +135,7 @@ export const GeneralSection: React.FC<FieldsProps & {
             </div>
             <PasswordGenerator
               eventName={event?.event_name}
-              eventDate={event?.event_date}
+              eventDate={event?.event_date ?? undefined}
               eventType={event?.event_type}
               onPasswordGenerated={(password) => {
                 set({ new_password: password, confirm_new_password: password });

@@ -13,6 +13,8 @@ export interface AssignedAdmin {
 
 export interface Event {
   id: number;
+  /** CRM project attached to the gallery, when present in the admin response. */
+  project_id?: number | null;
   slug: string;
   event_type: string;
   event_name: string;

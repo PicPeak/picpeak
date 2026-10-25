@@ -13,9 +13,19 @@ const WAITING_HINT_AFTER_MS = 2 * 60 * 1000;
 // TimeoutStartSec. A remembered request older than that, with no run and no
 // job to show for it, is from a session that never came back for the result.
 const STALE_AFTER_MS = 45 * 60 * 1000;
-const TERMINAL_STATES = new Set(['succeeded', 'up_to_date', 'refused', 'failed', 'rolled_back']);
+const TERMINAL_STATES = ['succeeded', 'up_to_date', 'refused', 'failed', 'rolled_back'] as const;
 // Reasons the panel only explains: the manual steps stay the way to update.
-const NOTE_REASONS = new Set(['no_agent', 'unsupported_contract', 'request_dir_not_writable']);
+const NOTE_REASONS = ['no_agent', 'unsupported_contract', 'request_dir_not_writable'] as const;
+
+/** Narrows the status to the states that have a result headline. */
+function isTerminalState(state: SelfUpdateAgentStatus['state']): state is typeof TERMINAL_STATES[number] {
+  return TERMINAL_STATES.some((terminal) => terminal === state);
+}
+
+/** Narrows the reason to the cases that have a setup note. */
+function isNoteReason(reason: SelfUpdateStatus['reason']): reason is typeof NOTE_REASONS[number] {
+  return NOTE_REASONS.some((note) => note === reason);
+}
 
 function readRequestedAt(): string | null {
   try {
@@ -67,7 +77,7 @@ export function useSelfUpdateActive(enabled = true): boolean {
   // The server's "off" wins over a remembered request: the panel drops that
   // request itself, but sessionStorage does not re-render this hook.
   if (!data.enabled) return false;
-  return requested || !(data.reason && NOTE_REASONS.has(data.reason));
+  return requested || !isNoteReason(data.reason);
 }
 
 /** The manual steps, folded away while the one-click path is the way to update. */
@@ -105,7 +115,7 @@ export const SelfUpdatePanel: React.FC = () => {
     refetchInterval: (query) => {
       if (!requestedAt) return false;
       const run = agentRunFor(query.state.data, requestedAt);
-      return run && run.state && TERMINAL_STATES.has(run.state) ? false : 2000;
+      return run && isTerminalState(run.state) ? false : 2000;
     },
   });
 
@@ -254,7 +264,7 @@ export const SelfUpdatePanel: React.FC = () => {
       );
     }
 
-    if (run?.state && TERMINAL_STATES.has(run.state)) {
+    if (run && isTerminalState(run.state)) {
       const ok = run.state === 'succeeded' || run.state === 'up_to_date';
       const headline = {
         succeeded: t('admin.updates.selfUpdate.result.succeeded', 'PicPeak was updated.'),
@@ -315,7 +325,7 @@ export const SelfUpdatePanel: React.FC = () => {
 
   if (!data?.enabled) return null;
 
-  if (data.reason && NOTE_REASONS.has(data.reason)) {
+  if (isNoteReason(data.reason)) {
     const note = {
       no_agent: t('admin.updates.selfUpdate.noAgent', 'In-app updates are enabled, but the updater is not installed or not reachable. Use the commands below, or set it up as described in docs/self-update.md.'),
       unsupported_contract: t('admin.updates.selfUpdate.unsupportedContract', 'The installed updater does not match this version of PicPeak. Refresh it with picpeak-setup.sh --update, or update the updater container.'),

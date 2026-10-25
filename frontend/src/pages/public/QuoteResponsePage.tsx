@@ -392,10 +392,11 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                   const rows: React.ReactNode[] = [];
                   // A package whose price is the sum of its sub-items has no
                   // unit price of its own — the same rule as the PDF.
-                  const parents = new Set<string>();
+                  // Public quote lines refer to parents by position; internal
+                  // line IDs are not exposed in the public response.
+                  const parents = new Set<number>();
                   for (const item of quote.lineItems) {
-                    if (item.parentLineItemId != null) parents.add(`id:${item.parentLineItemId}`);
-                    if (item.parentPosition != null) parents.add(`pos:${item.parentPosition}`);
+                    if (item.parentPosition != null) parents.add(item.parentPosition);
                   }
                   for (const li of quote.lineItems) {
                     const isSub = li.parentLineItemId != null || li.parentPosition != null;
@@ -404,7 +405,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                     if (!isSub) topCount += 1;
                     const priceless = isSub && (!li.unitPriceMinor || Number(li.unitPriceMinor) === 0);
                     const packageSum = !isSub && !Number(li.unitPriceMinor)
-                      && (parents.has(`id:${li.id}`) || parents.has(`pos:${li.position}`));
+                      && parents.has(li.position);
                     const unitLabel = li.unit ? t(`crm.lineItems.unitShort.${li.unit}`, li.unit) : '';
                     const quantityText = isDiscount
                       ? ''

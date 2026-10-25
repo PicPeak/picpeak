@@ -76,10 +76,14 @@ describe('SelfUpdatePanel', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('explains a missing updater instead of offering the button', async () => {
-    getStatus.mockResolvedValue(status({ available: false, reason: 'no_agent', agent: null }));
+  it.each([
+    ['no_agent', 'noAgent'],
+    ['unsupported_contract', 'unsupportedContract'],
+    ['request_dir_not_writable', 'requestDirNotWritable'],
+  ])('explains %s instead of offering the button', async (reason, message) => {
+    getStatus.mockResolvedValue(status({ available: false, reason, agent: null }));
     renderPanel();
-    expect(await screen.findByText('admin.updates.selfUpdate.noAgent')).toBeInTheDocument();
+    expect(await screen.findByText(`admin.updates.selfUpdate.${message}`)).toBeInTheDocument();
     expect(screen.queryByText('admin.updates.selfUpdate.submit')).not.toBeInTheDocument();
   });
 
@@ -160,6 +164,24 @@ describe('SelfUpdatePanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'common.close' }));
     expect(window.sessionStorage.getItem('picpeak.selfUpdate.requestedAt')).toBeNull();
+  });
+
+  it.each([
+    ['succeeded', 'succeeded'],
+    ['up_to_date', 'upToDate'],
+    ['refused', 'refused'],
+    ['failed', 'failed'],
+    ['rolled_back', 'rolledBack'],
+  ])('shows the %s result instead of continuing to wait', async (state, message) => {
+    window.sessionStorage.setItem('picpeak.selfUpdate.requestedAt', STARTED);
+    getStatus.mockResolvedValue(status({
+      agent: { contract: 1, state, started_at: SAME_SECOND },
+    }));
+    renderPanel();
+    expect(await screen.findByText(`admin.updates.selfUpdate.result.${message}`)).toBeInTheDocument();
+    expect(screen.queryByText('admin.updates.selfUpdate.phase.waiting')).not.toBeInTheDocument();
+    const action = state === 'succeeded' ? 'admin.updates.selfUpdate.reload' : 'common.close';
+    expect(screen.getByRole('button', { name: action })).toBeInTheDocument();
   });
 
   it('reports a failed backup and that nothing was requested', async () => {
