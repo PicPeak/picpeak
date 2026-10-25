@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { hashKey, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ClipboardCheck, Folders, FolderTree, Trash2, Upload } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Badge, Button, Card, Loading } from '../../../components/common';
@@ -61,7 +61,22 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
   const [showPhotoUpload, setShowPhotoUpload] = useState(false);
   const [showCategories, setShowCategories] = useState(initialCategoriesOpen);
   const [selectedPhoto, setSelectedPhoto] = useState<{ photo: AdminPhoto; index: number } | null>(null);
-  const [selectedPhotoIds, setSelectedPhotoIds] = useState<number[]>([]);
+  // A selection belongs to one event and filter view. Sorting only changes
+  // the order, so it does not start a new selection.
+  const selectionScope = hashKey([id,
+    { ...photoFilters, sort: undefined, order: undefined },
+    { ...feedbackFilters, sort: undefined, order: undefined },
+  ]);
+  const [selection, setSelection] = useState<{ scope: string; ids: number[] }>({ scope: selectionScope, ids: [] });
+  const presentPhotoIds = useMemo(() => new Set(photos.map((photo) => photo.id)), [photos]);
+  const selectedPhotoIds = selection.scope !== selectionScope || photosError
+    ? []
+    : photosLoading ? selection.ids : selection.ids.filter((photoId) => presentPhotoIds.has(photoId));
+  // Reset before rendering children, so Export cannot receive old IDs while a
+  // new filter loads. Refetches also forget photos that have left the list.
+  if (selection.scope !== selectionScope || selectedPhotoIds.length !== selection.ids.length) {
+    setSelection({ scope: selectionScope, ids: selectedPhotoIds });
+  }
 
   // Names on this event's photos, for the credit filter (#1561). Credit
   // edits, uploads, imports and deletions invalidate
@@ -260,7 +275,6 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
         onVisibilityChange={(visibility) => {
           const next = visibility === 'all' ? undefined : visibility;
           if (next === photoFilters.visibility) return;
-          setSelectedPhotoIds([]);
           setPhotoFilters(prev => ({ ...prev, visibility: next }));
         }}
         credits={creditSummary?.credits}
@@ -377,14 +391,15 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
         </Card>
       ) : (
         <AdminPhotoGrid
-          // Start a fresh selection on visibility changes, even for cached
-          // lists. Bulk actions must never carry picks from the previous view.
-          key={photoFilters.visibility ?? 'all'}
+          // Reset the range anchor and selection mode for every filter view,
+          // including cached lists. Selection itself is shared with Export.
+          key={selectionScope}
           photos={photos}
           eventId={parseInt(id!)}
           onPhotoClick={(photo, index) => setSelectedPhoto({ photo, index })}
           onPhotosDeleted={refreshAfterPhotoChange}
-          onSelectionChange={setSelectedPhotoIds}
+          selectedPhotoIds={selectedPhotoIds}
+          onSelectionChange={(ids) => setSelection({ scope: selectionScope, ids })}
           categories={filterCategories}
           folders={folders}
           sortBy={photoFilters.sort ?? 'date'}

@@ -9,7 +9,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -47,6 +47,7 @@ vi.mock('../../../services/events.service', () => ({
 
 const getEventPhotos = vi.fn();
 const deletePhotos = vi.fn();
+const exportPhotosAsText = vi.fn();
 vi.mock('../../../services/photos.service', () => ({
   CREDIT_FILTER_NONE: '__none__',
   photosService: {
@@ -58,6 +59,7 @@ vi.mock('../../../services/photos.service', () => ({
     getTrash: vi.fn().mockResolvedValue({ items: [], retention_days: 30 }),
     formatBytes: () => '100 B',
     deletePhotos: (...args: unknown[]) => deletePhotos(...args),
+    exportPhotosAsText: (...args: unknown[]) => exportPhotosAsText(...args),
   },
 }));
 
@@ -117,7 +119,7 @@ const EVENT = {
 
 function renderPage(entry: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const view = render(
     <QueryClientProvider client={qc}>
       <ConfirmDialogProvider>
         <UnsavedChangesProvider>
@@ -131,6 +133,7 @@ function renderPage(entry: string) {
       </ConfirmDialogProvider>
     </QueryClientProvider>
   );
+  return { ...view, client: qc };
 }
 
 describe('EventDetailsPage photos tab', () => {
@@ -139,6 +142,7 @@ describe('EventDetailsPage photos tab', () => {
     getEvent.mockResolvedValue(EVENT);
     getEventPhotos.mockResolvedValue([]);
     deletePhotos.mockResolvedValue({ trashed: 2, deleted: 0, failed: [], retention_days: 30 });
+    exportPhotosAsText.mockResolvedValue({ content: 'IMG_2', filename: 'photos.txt' });
   });
 
   it.each(['likes', 'favorites', 'downloads'])('requests %s sorting in both directions without losing active filters', async (sort) => {
@@ -233,6 +237,123 @@ describe('EventDetailsPage photos tab', () => {
     await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Photo visibility' }), 'hidden');
     expect(await screen.findByText('No photos match the selected visibility and filters.')).toBeInTheDocument();
     expect(screen.queryByText('No media uploaded yet')).not.toBeInTheDocument();
+  });
+
+  it('clears the export selection as soon as a new search starts loading', async () => {
+    const photo = {
+      id: 1, filename: 'IMG_1.jpg', url: '/1.jpg', thumbnail_url: '/thumb/1.jpg',
+      type: 'individual', size: 100, uploaded_at: '2026-10-01T00:00:00Z',
+    };
+    let finishSearch!: (photos: unknown[]) => void;
+    const pendingSearch = new Promise<unknown[]>((resolve) => { finishSearch = resolve; });
+    getEventPhotos.mockImplementation(async (_id: number, filters?: { search?: string }) =>
+      filters?.search ? pendingSearch : [photo]);
+    renderPage('/admin/events/1?tab=photos');
+    await userEvent.click(await screen.findByTestId('admin-photo-checkbox-1'));
+    expect(screen.getByRole('button', { name: 'Export 1' })).toBeEnabled();
+
+    await userEvent.type(screen.getByPlaceholderText('Search by filename...'), 'x');
+    expect(screen.getByText('events.loadingPhotos')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
+    finishSearch([]);
+    expect(await screen.findByText('No media uploaded yet')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
+    expect(exportPhotosAsText).not.toHaveBeenCalled();
+  });
+
+  it('clears all picks on a cached search and bulk-deletes only newly selected photos', async () => {
+    const photos = [1, 2].map((id) => ({
+      id, filename: `IMG_${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/thumb/${id}.jpg`,
+      type: 'individual', size: 100, uploaded_at: '2026-10-01T00:00:00Z',
+    }));
+    getEventPhotos.mockImplementation(async (_id: number, filters?: { search?: string }) =>
+      filters?.search ? [photos[1]] : photos);
+    renderPage('/admin/events/1?tab=photos');
+    const search = await screen.findByPlaceholderText('Search by filename...');
+    await userEvent.type(search, 'two');
+    await waitFor(() => expect(screen.queryByTestId('admin-photo-checkbox-1')).not.toBeInTheDocument());
+    await userEvent.clear(search);
+    await userEvent.click(await screen.findByTestId('admin-photo-checkbox-1'));
+    await userEvent.click(screen.getByTestId('admin-photo-checkbox-2'));
+
+    await userEvent.type(search, 'two');
+    expect(await screen.findByTestId('admin-photo-checkbox-2')).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByTestId('admin-photo-checkbox-1')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete Selected' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
+
+    await userEvent.click(screen.getByTestId('admin-photo-checkbox-2'));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Selected' }));
+    await waitFor(() => expect(deletePhotos).toHaveBeenCalledExactlyOnceWith(1, [2]));
+    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
+  });
+
+  it.each(['category', 'feedback'])('drops stale export IDs when the %s filter changes', async (filter) => {
+    const photos = [1, 2].map((id) => ({
+      id, filename: `IMG_${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/thumb/${id}.jpg`,
+      type: 'individual', size: 100, uploaded_at: '2026-10-01T00:00:00Z',
+    }));
+    getEventPhotos.mockImplementation(async (_id: number, filters?: { category_id?: string; hasLikes?: boolean }) =>
+      filters?.category_id || filters?.hasLikes ? [photos[1]] : photos);
+    renderPage('/admin/events/1?tab=photos');
+    await userEvent.click(await screen.findByTestId('admin-photo-checkbox-1'));
+    if (filter === 'category') {
+      const category = screen.getByRole('option', { name: 'Uncategorized' }).parentElement as HTMLSelectElement;
+      await userEvent.selectOptions(category, 'uncategorized');
+    } else {
+      await userEvent.click(screen.getByRole('checkbox', { name: /Has likes/ }));
+    }
+    await screen.findByTestId('admin-photo-checkbox-2');
+    expect(screen.queryByTestId('admin-photo-checkbox-1')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeInTheDocument();
+    await userEvent.click(await screen.findByTestId('admin-photo-checkbox-2'));
+    await userEvent.click(screen.getByRole('button', { name: 'Export 1' }));
+    await userEvent.click(screen.getByRole('button', { name: /Filename List \(TXT\)/ }));
+    await waitFor(() => expect(exportPhotosAsText).toHaveBeenCalledExactlyOnceWith(1,
+      expect.objectContaining({ photo_ids: [2] })));
+  });
+
+  it('keeps grid and export selections together through uncached and cached sorting', async () => {
+    const photos = [1, 2].map((id) => ({
+      id, filename: `IMG_${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/thumb/${id}.jpg`,
+      type: 'individual', size: 100, uploaded_at: '2026-10-01T00:00:00Z',
+    }));
+    getEventPhotos.mockImplementation(async (_id: number, filters?: { sort?: string }) =>
+      filters?.sort === 'name' ? [...photos].reverse() : photos);
+    renderPage('/admin/events/1?tab=photos');
+    await userEvent.click(await screen.findByTestId('admin-photo-checkbox-1'));
+    const sort = screen.getByRole('combobox', { name: 'Sort photos' });
+    for (const value of ['name', 'date', 'name']) {
+      await userEvent.selectOptions(sort, value);
+      expect(await screen.findByTestId('admin-photo-checkbox-1')).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByTestId('admin-photo-checkbox-2')).toHaveAttribute('aria-checked', 'false');
+      expect(screen.getByRole('button', { name: 'Export 1' })).toBeEnabled();
+    }
+    await userEvent.click(screen.getByRole('button', { name: 'Sort ascending' }));
+    expect(await screen.findByTestId('admin-photo-checkbox-1')).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'Export 1' }));
+    await userEvent.click(screen.getByRole('button', { name: /Filename List \(TXT\)/ }));
+    await waitFor(() => expect(exportPhotosAsText).toHaveBeenCalledExactlyOnceWith(1,
+      expect.objectContaining({ photo_ids: [1] })));
+  });
+
+  it('forgets photos removed by a refetch without dropping the remaining selection', async () => {
+    const photos = [1, 2].map((id) => ({
+      id, filename: `IMG_${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/thumb/${id}.jpg`,
+      type: 'individual', size: 100, uploaded_at: '2026-10-01T00:00:00Z',
+    }));
+    getEventPhotos.mockResolvedValue(photos);
+    const { client } = renderPage('/admin/events/1?tab=photos');
+    await userEvent.click(await screen.findByTestId('admin-photo-checkbox-1'));
+    await userEvent.click(screen.getByTestId('admin-photo-checkbox-2'));
+    getEventPhotos.mockResolvedValue([photos[1]]);
+    await act(async () => { await client.refetchQueries({ queryKey: ['admin-event-photos', '1'] }); });
+    await waitFor(() => expect(screen.queryByTestId('admin-photo-checkbox-1')).not.toBeInTheDocument());
+    expect(screen.getByTestId('admin-photo-checkbox-2')).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'Export 1' }));
+    await userEvent.click(screen.getByRole('button', { name: /Filename List \(TXT\)/ }));
+    await waitFor(() => expect(exportPhotosAsText).toHaveBeenCalledExactlyOnceWith(1,
+      expect.objectContaining({ photo_ids: [2] })));
   });
 
 });
