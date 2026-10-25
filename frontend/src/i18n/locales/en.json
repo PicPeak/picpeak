@@ -11344,6 +11344,7 @@
     "noConfiguration": "No configuration",
     "optionSurcharges": "Option surcharges (added to the base unit price)",
     "completeChoices": "Complete the product choices to confirm your total.",
+    "addOnConfigurationHelp": "Choose the specification for this new booking. Prices are recalculated when you save.",
     "portalPointer": "Open a gallery to view any product choices your studio has offered.",
     "needsReview": "Your selected options changed. Please review and submit your choice again.",
     "newLibrary": {

@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { useId } from 'react';
 import { formatMoneyMinor } from '../../utils/money';
 import { ProductImage } from './ProductImage';
 import type { Attribute, Choice, Product } from './model';
@@ -54,6 +55,7 @@ export function ConfigurationPicker({
   currency?: string;
 }) {
   const { t } = useTranslation();
+  const pickerId = useId();
   const attributes = product.attributes || [];
   return (
     <div className="space-y-5">
@@ -93,7 +95,7 @@ export function ConfigurationPicker({
                     <span className="flex items-start gap-2 mt-2">
                       <input
                         type={a.multiple ? 'checkbox' : 'radio'}
-                        name={`${product.id}-${a.id}`}
+                        name={`${pickerId}-${product.id}-${a.id}`}
                         checked={selected}
                         aria-label={option.name}
                         onChange={() => {

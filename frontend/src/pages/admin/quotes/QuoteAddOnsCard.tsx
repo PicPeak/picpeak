@@ -12,7 +12,8 @@ import { toast } from 'react-toastify';
 import { Button, Card, useConfirm } from '../../../components/common';
 import { AddOnBookButton, AddOnBookingState } from '../../../components/common/AddOnBookButton';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
-import { quotesService, type QuoteDetail, type QuoteLineItem } from '../../../services/quotes.service';
+import { quotesService, type QuoteDetail, type QuoteLineItem, type ProductConfiguration } from '../../../services/quotes.service';
+import { ConfigurationPicker, ChoiceSummary, attributeEnabled, choiceValues, type ConfigurationValues } from '../../../features/album-products/ConfigurationPicker';
 import { formatMoneyMinor } from '../../../utils/money';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 
@@ -61,19 +62,35 @@ export const QuoteAddOnsCard: React.FC<{ quote: QuoteDetail; lineItems: QuoteLin
   // quote changes underneath (a save, or the customer accepting again), the
   // stale draft is dropped instead of overwriting the new booking.
   const serverBooked = sorted(rows.filter((r) => r.booked).map((r) => r.position));
-  const serverKey = serverBooked.join(',');
-  const [draft, setDraft] = useState<{ base: string; positions: number[] } | null>(null);
+  const serverKey = JSON.stringify([serverBooked, lineItems.map((line) =>
+    [line.id, line.configurationDefinition, line.configurationSnapshot])]);
+  const [draft, setDraft] = useState<{
+    base: string; positions: number[]; values: Record<number, ConfigurationValues>;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
-  const activeDraft = draft && draft.base === serverKey ? draft.positions : null;
-  const chosen = new Set(activeDraft ?? serverBooked);
-  const dirty = activeDraft !== null && activeDraft.join(',') !== serverKey;
+  const activeDraft = draft && draft.base === serverKey ? draft : null;
+  const chosen = new Set(activeDraft?.positions ?? serverBooked);
+  const dirty = activeDraft !== null && activeDraft.positions.join(',') !== serverBooked.join(',');
+  const topPosition = (line: QuoteLineItem) => line.parentPosition
+    ?? lineItems.find((parent) => parent.id === line.parentLineItemId)?.position ?? line.position;
+  const configurationLines = lineItems.filter((line) => line.configurationDefinition
+    && rows.some((row) => row.position === topPosition(line)));
+  const newLines = configurationLines.filter((line) => chosen.has(topPosition(line))
+    && !serverBooked.includes(topPosition(line)));
+  const valuesFor = (line: QuoteLineItem) => activeDraft?.values[line.position] ?? choiceValues(line.configurationSnapshot);
+  const incomplete = newLines.some((line) => {
+    const attributes = line.configurationDefinition!.product.attributes || [];
+    const values = valuesFor(line);
+    return attributes.some((attribute) => attribute.required && attributeEnabled(attribute, attributes, values)
+      && !(values[attribute.id]?.length));
+  });
 
   if (!quote.optionalSelection && !editable) return null;
 
   const toggle = (position: number) => {
     const next = new Set(chosen);
     if (next.has(position)) next.delete(position); else next.add(position);
-    setDraft({ base: serverKey, positions: sorted(next) });
+    setDraft({ base: serverKey, positions: sorted(next), values: activeDraft?.values || {} });
   };
 
   const handleSave = async () => {
@@ -83,7 +100,12 @@ export const QuoteAddOnsCard: React.FC<{ quote: QuoteDetail; lineItems: QuoteLin
     }))) return;
     setSaving(true);
     try {
-      const result = await quotesService.changeAddOns(quote.id, sorted(chosen));
+      const configurations: ProductConfiguration[] = newLines.filter((line) => !line.configurationLocked).map((line) => ({
+        position: line.position, definitionVersion: line.configurationDefinition!.version, values: valuesFor(line),
+      }));
+      const result = configurations.length
+        ? await quotesService.changeAddOns(quote.id, sorted(chosen), configurations)
+        : await quotesService.changeAddOns(quote.id, sorted(chosen));
       toast.success(result.changed
         ? t('quotes.addOns.savedToast', 'Add-ons updated. The customer has been emailed the updated quote.')
         : t('quotes.addOns.unchangedToast', 'The add-ons were already booked like this.'));
@@ -150,6 +172,22 @@ export const QuoteAddOnsCard: React.FC<{ quote: QuoteDetail; lineItems: QuoteLin
                   </span>
                 )}
               </div>
+              {booked && configurationLines.filter((line) => topPosition(line) === row.position).map((line) => (
+                <div key={line.id} className="mt-3 rounded-lg border border-border-token p-3 space-y-3">
+                  <p className="font-medium text-heading">{line.description}</p>
+                  {editable && !row.booked && !line.configurationLocked ? (
+                    <PermissionGate permission="quotes.manage">
+                      <p className="text-xs text-muted">{t('products.addOnConfigurationHelp', 'Choose the specification for this new booking. Prices are recalculated when you save.')}</p>
+                      <fieldset disabled={saving}>
+                        <ConfigurationPicker product={line.configurationDefinition!.product} values={valuesFor(line)}
+                          currency={quote.currency} surcharges={line.configurationDefinition!.surcharges}
+                          onChange={(values) => setDraft({ base: serverKey, positions: sorted(chosen),
+                            values: { ...activeDraft?.values, [line.position]: values } })} />
+                      </fieldset>
+                    </PermissionGate>
+                  ) : line.configurationSnapshot ? <ChoiceSummary choice={line.configurationSnapshot} /> : null}
+                </div>
+              ))}
               {row.detailsText && (
                 <p className={`mt-0.5 text-xs italic whitespace-pre-line text-muted ${dim}`}>
                   {row.detailsText}
@@ -177,8 +215,9 @@ export const QuoteAddOnsCard: React.FC<{ quote: QuoteDetail; lineItems: QuoteLin
       </ul>
       {editable && (
         <PermissionGate permission="quotes.manage">
-          <div className="flex justify-end mt-3">
-            <Button size="sm" onClick={handleSave} disabled={!dirty || saving}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end mt-3">
+            {incomplete && <p className="text-sm text-muted">{t('products.completeChoices', 'Complete the product choices to confirm your total.')}</p>}
+            <Button size="sm" onClick={handleSave} disabled={!dirty || saving || incomplete}>
               {t('quotes.addOns.save', 'Save add-on changes')}
             </Button>
           </div>

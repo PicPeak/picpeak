@@ -367,8 +367,10 @@ export const quotesService = {
 
   /** Change the add-ons of an accepted quote (#1451): the top-level positions
    *  to have booked. The server stores a new PDF and emails the customer. */
-  async changeAddOns(id: number, selectedOptional: number[]): Promise<QuoteAddOnsChangeResult> {
-    const { data } = await api.post(`/admin/quotes/${id}/add-ons`, { selectedOptional });
+  async changeAddOns(id: number, selectedOptional: number[], configurations?: ProductConfiguration[]): Promise<QuoteAddOnsChangeResult> {
+    const { data } = await api.post(`/admin/quotes/${id}/add-ons`, {
+      selectedOptional, ...(configurations ? { configurations } : {}),
+    });
     return data.data || data;
   },
 

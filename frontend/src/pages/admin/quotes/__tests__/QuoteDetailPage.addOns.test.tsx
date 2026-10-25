@@ -252,3 +252,59 @@ it('keeps the add-ons read-only once the quote is converted', async () => {
   expect(within(addOnRow(card, 'Album')).getByText('Not booked')).toBeInTheDocument();
   expect(within(addOnRow(card, 'Drone')).getByText('Booked')).toBeInTheDocument();
 });
+
+const productDefinition = {
+  schemaVersion: 1, version: 'offered-price-version', baseUnitPriceMinor: 30000, surcharges: [],
+  product: { id: 'print', name: 'Print', active: true, attributes: [{
+    id: 'size', name: 'Size', groupId: 'sizes', optionIds: ['large'], required: true, multiple: false,
+    addOn: false, dependsOn: [], options: [{ id: 'large', name: 'Large print', active: true, imageId: null }],
+  }] },
+};
+
+it.each([false, true])('configures a newly booked product before saving (package: %s)', async (packageChild) => {
+  const user = userEvent.setup();
+  get.mockResolvedValue({ quote, lineItems: [lineItems[0],
+    { ...lineItems[1], ...(!packageChild ? { configurationDefinition: productDefinition } : {}) }, lineItems[2],
+    ...(packageChild ? [line(14, 4, 'Print in package', 30000, {
+      parentPosition: 2, parentLineItemId: 12, isOptional: true, selected: false, configurationDefinition: productDefinition,
+    })] : []),
+  ] });
+  renderPage();
+  const card = await findAddOnsCard();
+  await user.click(within(addOnRow(card, 'Album')).getByRole('button', { name: 'Book' }));
+  const save = within(card).getByRole('button', { name: 'Save add-on changes' });
+  expect(save).toBeDisabled();
+  await user.click(within(card).getByRole('radio', { name: 'Large print' }));
+  expect(save).toBeEnabled();
+  await user.click(save);
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save add-on changes' }));
+  await waitFor(() => expect(changeAddOns).toHaveBeenCalledWith(7, [2, 3], [{
+    position: packageChild ? 4 : 2, definitionVersion: 'offered-price-version', values: { size: ['large'] },
+  }]));
+});
+
+it('keeps independently booked instances of the same product in separate radio groups', async () => {
+  const user = userEvent.setup();
+  get.mockResolvedValue({ quote: { ...quote, optionalSelection: { ...quote.optionalSelection, selectedOptional: [] } },
+    lineItems: [lineItems[0], ...lineItems.slice(1).map((row) => ({ ...row, selected: false, configurationDefinition: productDefinition }))] });
+  renderPage();
+  const card = await findAddOnsCard();
+  for (const description of ['Album', 'Drone'])
+    await user.click(within(addOnRow(card, description)).getByRole('button', { name: 'Book' }));
+  const options = within(card).getAllByRole('radio', { name: 'Large print' });
+  await user.click(options[0]);
+  await user.click(options[1]);
+  expect(options[0]).toBeChecked();
+  expect(options[1]).toBeChecked();
+});
+
+it('shows an existing accepted specification read-only in the amendment screen', async () => {
+  get.mockResolvedValue({ quote, lineItems: [lineItems[0], lineItems[1], {
+    ...lineItems[2], configurationDefinition: productDefinition,
+    configurationSnapshot: { schemaVersion: 2, attributes: [{ id: 'size', name: 'Size', options: [{ id: 'large', name: 'Large print' }] }] },
+  }] });
+  renderPage();
+  const card = await findAddOnsCard();
+  expect(within(card).getByText('Size: Large print')).toBeInTheDocument();
+  expect(within(card).queryByRole('radio')).not.toBeInTheDocument();
+});

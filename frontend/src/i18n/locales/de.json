@@ -11310,6 +11310,7 @@
     "noConfiguration": "Keine Konfiguration",
     "optionSurcharges": "Optionsaufschläge (zusätzlich zum Grundpreis pro Stück)",
     "completeChoices": "Vervollständige die Produktauswahl, um den Gesamtbetrag zu bestätigen.",
+    "addOnConfigurationHelp": "Wähle die Spezifikation für diese neue Buchung. Die Preise werden beim Speichern neu berechnet.",
     "portalPointer": "Öffne eine Galerie, um die vom Studio angebotene Produktauswahl anzusehen.",
     "needsReview": "Deine gewählten Optionen haben sich geändert. Bitte prüfe deine Auswahl und sende sie erneut.",
     "newLibrary": {

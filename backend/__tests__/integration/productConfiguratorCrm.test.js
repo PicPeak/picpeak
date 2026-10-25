@@ -324,6 +324,88 @@ test('repeated acceptance of identical product choices creates no extra PDF, mai
   } finally { pdf.mockRestore(); }
 });
 
+test.each([false, true])('an admin can configure a new accepted-quote add-on (package: %s) with the normal history, PDF and customer email', async (parent) => {
+  const f = await fixture({ parent });
+  await quotes.recordResponse({ token: f.token, action: 'accept', expectedTotalMinor: 50000, selectedOptional: [], configurations: [] });
+  const before = (await quotes.getQuoteById(f.quoteId)).quote;
+  const pdf = jest.spyOn(require('../../src/services/pdfService'), 'renderQuoteToBuffer');
+  const email = jest.spyOn(require('../../src/services/emailProcessor'), 'queueEmail');
+  const admin = buildRouteApp('/api/admin/quotes', require('../../src/routes/adminQuotes'));
+  const token = require('./helpers/crmDb').mintAdminToken(adminId);
+  const change = (configurations) => request(admin).post(`/api/admin/quotes/${f.quoteId}/add-ons`)
+    .set('Authorization', `Bearer ${token}`).send({ selectedOptional: [2], configurations });
+  try {
+    expect((await change([null])).status).toBe(400);
+    expect((await change([{ ...f.configurations[0], values: {} }])).status).toBe(400);
+    expect((await change([{ ...f.configurations[0], definitionVersion: 'stale' }])).status).toBe(409);
+    expect(Number((await quotes.getQuoteById(f.quoteId)).quote.total_amount_minor)).toBe(50000);
+    const saved = await change(f.configurations);
+    expect(saved.status).toBe(200);
+    const data = await quotes.getQuoteById(f.quoteId);
+    expect(Number(data.quote.total_amount_minor)).toBe(75000);
+    expect(data.quote.selection_accepted_at).toEqual(before.selection_accepted_at);
+    expect(parsed(data.quote.selection_changes)).toEqual([expect.objectContaining({
+      by: 'admin', adminId, booked: [parent ? 'Print package' : 'Print'], removed: [], totalAfterMinor: 75000,
+    })]);
+    expect(parsed(data.lineItems.find((line) => line.configuration_definition).configuration_snapshot).pricing.unitPriceMinor).toBe(12500);
+    expect(pdf).toHaveBeenCalledTimes(1);
+    expect(email.mock.calls.filter((args) => args[2] === 'quote_addons_updated')).toHaveLength(1);
+    // An identical retry keeps the accepted version/history/mail unchanged.
+    expect((await change(f.configurations)).status).toBe(200);
+    expect(pdf).toHaveBeenCalledTimes(1);
+    expect(email.mock.calls.filter((args) => args[2] === 'quote_addons_updated')).toHaveLength(1);
+    const different = structuredClone(f.configurations);
+    different[0].values[size.id] = [size.optionIds[1]];
+    const frozen = await change(different);
+    expect(frozen.status).toBe(409);
+    expect(frozen.body.code).toBe('CONFIGURATION_FROZEN');
+  } finally { pdf.mockRestore(); email.mockRestore(); }
+});
+
+test('an unbooked studio-locked add-on retains its agreed specification for a later admin booking', async () => {
+  const f = await fixture();
+  await db('quotes').where({ id: f.quoteId }).update({ status: 'draft', sent_at: null });
+  const data = await quotes.getQuoteById(f.quoteId);
+  await quotes.updateQuote(f.quoteId, { lineItems: data.lineItems.map((line) => ({ ...line,
+    ...(line.configuration_definition ? { configuration_values: f.configurations[0].values, configuration_locked: true } : {}),
+  })) }, adminId);
+  await quotes.adminAcceptQuote(f.quoteId, adminId);
+  const accepted = await quotes.getQuoteById(f.quoteId);
+  expect(parsed(accepted.lineItems.find((line) => line.configuration_definition).configuration_snapshot).pricing.unitPriceMinor).toBe(12500);
+  const result = await quotes.adminChangeAddOns(f.quoteId, { selectedOptional: [2] }, adminId);
+  expect(result).toMatchObject({ changed: true, totalAmountMinor: 75000 });
+});
+
+test.each(['customer', 'admin'])('concurrent identical %s amendments create one history entry, PDF and email', async (actor) => {
+  const f = await fixture();
+  await db('business_profile').where({ id: 1 }).update({ email: 'studio@example.test' });
+  const base = { token: f.token, action: 'accept', expectedTotalMinor: 75000, selectedOptional: [2], configurations: f.configurations };
+  await quotes.recordResponse(actor === 'customer' ? base : { ...base, expectedTotalMinor: 50000, selectedOptional: [], configurations: [] });
+  const configurations = structuredClone(f.configurations);
+  configurations[0].values[size.id] = [size.optionIds[1]];
+  const pdf = jest.spyOn(require('../../src/services/pdfService'), 'renderQuoteToBuffer');
+  const email = jest.spyOn(require('../../src/services/emailProcessor'), 'queueEmail');
+  // Both requests finish their reads before either starts its write. This
+  // deterministically exercises the race rather than relying on scheduling.
+  const transaction = db.client.transaction.bind(db.client);
+  let arrivals = 0, release;
+  const ready = new Promise((resolve) => { release = resolve; });
+  const gate = jest.spyOn(db.client, 'transaction').mockImplementation(async (...args) => {
+    if (arrivals < 2) { if (++arrivals === 2) release(); await ready; }
+    return transaction(...args);
+  });
+  const change = () => actor === 'customer' ? quotes.recordResponse({ ...base, configurations })
+    : quotes.adminChangeAddOns(f.quoteId, { selectedOptional: [2], configurations }, adminId);
+  try {
+    await Promise.all([change(), change()]);
+    const result = await quotes.getQuoteById(f.quoteId);
+    expect(parsed(result.quote.selection_changes)).toHaveLength(1);
+    expect(pdf).toHaveBeenCalledTimes(1);
+    const template = actor === 'customer' ? 'quote_accepted_admin' : 'quote_addons_updated';
+    expect(email.mock.calls.filter((args) => args[2] === template)).toHaveLength(1);
+  } finally { gate.mockRestore(); pdf.mockRestore(); email.mockRestore(); }
+});
+
 test('configured package amounts persist to quote rows, the accepted PDF and the contract snapshot', async () => {
   const f = await fixture({ parent: true });
   const pdf = jest.spyOn(require('../../src/services/pdfService'), 'renderQuoteToBuffer');
@@ -718,6 +800,8 @@ test('templates and CRM packages reuse the same configurable preset, without cop
   );
   const templateId = template;
   await templates.publishTemplate(templateId, adminId);
+  await quotes.updateLineItemPreset(f.preset.id, { unit_price_minor: 17000,
+    product_surcharges: [{ attributeId: frame.id, optionId: frame.optionIds[0], amountMinor: 5000 }] });
   const created = await templates.createQuoteFromTemplate(
     templateId,
     { customerAccountId: customerId },
@@ -733,6 +817,15 @@ test('templates and CRM packages reuse the same configurable preset, without cop
         .configuration_definition,
     ).product.id,
   ).toBe(product.id);
+  const definition = parsed(quote.lineItems.find((li) => li.configuration_definition).configuration_definition);
+  expect(definition.baseUnitPriceMinor).toBe(10000);
+  expect(definition.surcharges.find((row) => row.attributeId === frame.id).amountMinor).toBe(2000);
+  await templates.publishTemplate(templateId, adminId);
+  const updated = await templates.createQuoteFromTemplate(templateId, { customerAccountId: customerId }, adminId);
+  const next = await quotes.getQuoteById(updated.quoteId);
+  const refreshed = parsed(next.lineItems.find((li) => li.configuration_definition).configuration_definition);
+  expect(refreshed.baseUnitPriceMinor).toBe(17000);
+  expect(refreshed.surcharges[0].amountMinor).toBe(5000);
 });
 
 test('the gallery stores the same generic choice and only chosen-option changes require review', async () => {

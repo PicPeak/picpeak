@@ -200,9 +200,11 @@ function configureLines(
     )
       return {
         ...line,
-        unit_price_minor: definition.baseUnitPriceMinor,
-        configuration_snapshot: null,
-        details_text: line.configuration_base_details || null,
+        // An unbooked, locked offer still carries the studio's agreed spec.
+        // Keep it available if the customer/admin books that add-on later.
+        unit_price_minor: isTruthyFlag(line.configuration_locked) ? line.unit_price_minor : definition.baseUnitPriceMinor,
+        configuration_snapshot: isTruthyFlag(line.configuration_locked) ? line.configuration_snapshot : null,
+        details_text: isTruthyFlag(line.configuration_locked) ? line.details_text : line.configuration_base_details || null,
       };
     const request = entries.get(Number(line.position));
     const previous = parse(line.configuration_snapshot);

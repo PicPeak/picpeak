@@ -602,11 +602,15 @@ router.post(
     param('id').isInt({ min: 1 }),
     body('selectedOptional').isArray({ max: 200 }),
     body('selectedOptional.*').isInt({ min: 1 }).toInt(),
+    body('configurations').optional().isArray({ max: 200 }),
+    body('configurations.*').isObject(),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
     const id = parseInt(req.params.id, 10);
-    const result = await quoteService.adminChangeAddOns(id, { selectedOptional: req.body.selectedOptional }, req.admin.id);
+    const result = await quoteService.adminChangeAddOns(id, {
+      selectedOptional: req.body.selectedOptional, configurations: req.body.configurations,
+    }, req.admin.id);
     const data = await quoteService.getQuoteById(id);
     return successResponse(res, {
       ...result,

@@ -1445,6 +1445,14 @@ async function writeAcceptedSelection(
     .where('li.quote_id', quote.id)
     .orderBy('li.position', 'asc')
     .select('li.*', 'parent.position as parent_position');
+  // Another identical submission may have committed after this request read
+  // the offer. Check again under the quote lock before adding history or PDFs.
+  if (current.selection_accepted_at && currentOptionalSelection(locked).join(',') === chosen.join(',') &&
+    ensureInt(current.total_amount_minor) === totals.totalAmountMinor && totals.lineItems.every((line) => {
+    const previous = locked.find((row) => row.id === line.id);
+    return previous && require('util').isDeepStrictEqual(storedJson(previous.configuration_snapshot, null),
+      storedJson(line.configuration_snapshot, null));
+  })) return false;
   await require('./albumProducts/crm').writeSnapshots(trx, quote.id, totals.lineItems, record);
   const offered = new Set(offeredOptionalPositions(lineItems));
   const chosenSet = new Set(chosen);
@@ -1491,6 +1499,7 @@ async function writeAcceptedSelection(
     } : {}),
     pdf_path: null,
   }, record);
+  return true;
 }
 
 // Each version of the accepted quote keeps its own file (#1451): the first
@@ -1834,6 +1843,7 @@ async function recordResponse({
   const selection = isAccept
     ? await resolveCustomerSelection(quote, { selectedOptional, expectedTotalMinor, configurations })
     : null;
+  let selectionChanged = false;
 
   await db.transaction(async (trx) => {
     const updates = {
@@ -1864,7 +1874,7 @@ async function recordResponse({
       throw new AppError('This quote changed while you were answering it. Reload the page.', 409, 'QUOTE_CHANGED');
     }
     if (selection) {
-      await writeAcceptedSelection(trx, quote, selection.lineItems, selection, 'customer', now,
+      selectionChanged = await writeAcceptedSelection(trx, quote, selection.lineItems, selection, 'customer', now,
         { previousChosen: selection.previousChosen, history });
     }
     await trx('quote_action_tokens').where({ id: tokenRow.id }).update({
@@ -1874,13 +1884,13 @@ async function recordResponse({
     });
   });
 
-  if (selection) await storeAcceptedQuotePdf(quote.id);
+  if (selectionChanged) await storeAcceptedQuotePdf(quote.id);
   // The business hears about an acceptance once, and again only when the
   // add-on choice actually changed. Inside the response window the customer
   // can accept, decline and accept again, and each of those used to send
   // another "quote accepted" mail saying the same thing.
   if (isAccept) {
-    await notifyBusinessOfAcceptance(quote.id, { onlyOnce: !(selection && Array.isArray(selection.previousChosen)) });
+    await notifyBusinessOfAcceptance(quote.id, { onlyOnce: !(selectionChanged && Array.isArray(selection.previousChosen)) });
   }
 
   try {
@@ -2033,7 +2043,7 @@ async function assertQuoteNotConverted(quote, message) {
  * belongs on that document. Recorded in the change history and the activity
  * log, re-rendered, and the customer is always emailed the updated quote.
  */
-async function adminChangeAddOns(id, { selectedOptional }, adminId) {
+async function adminChangeAddOns(id, { selectedOptional, configurations }, adminId) {
   const quote = await db('quotes').where({ id }).first();
   if (!quote) throw new AppError('Quote not found', 404);
   await assertQuoteNotConverted(quote);
@@ -2045,13 +2055,28 @@ async function adminChangeAddOns(id, { selectedOptional }, adminId) {
     throw new AppError('This quote has no add-ons', 400, 'NO_ADD_ONS');
   }
   const current = currentOptionalSelection(lineItems);
-  const selection = await totalsForSelection(quote, lineItems, selectedOptional || []);
+  const selection = await totalsForSelection(quote, lineItems, selectedOptional || [], configurations);
+  // This amendment books/removes offered add-ons. Specifications that remain
+  // booked belong to the accepted document and cannot be rewritten here.
+  const currentSet = new Set(current);
+  const chosenSet = new Set(selection.chosen);
+  const offered = new Set(offeredOptionalPositions(lineItems));
+  for (const line of selection.totals.lineItems) {
+    if (!line.configuration_definition) continue;
+    const top = topPositionOf(line);
+    if (offered.has(top) && (!currentSet.has(top) || !chosenSet.has(top))) continue;
+    const previous = lineItems.find((row) => row.id === line.id);
+    if (!require('util').isDeepStrictEqual(storedJson(previous.configuration_snapshot, null),
+      storedJson(line.configuration_snapshot, null)))
+      throw new AppError('Reissue the quote to change an already accepted product specification', 409, 'CONFIGURATION_FROZEN');
+  }
   if (selection.chosen.join(',') === current.join(',')) {
     return { changed: false, totalAmountMinor: ensureInt(quote.total_amount_minor) };
   }
   const now = new Date();
-  await db.transaction((trx) => writeAcceptedSelection(trx, quote, lineItems, selection, 'admin', now,
+  const changed = await db.transaction((trx) => writeAcceptedSelection(trx, quote, lineItems, selection, 'admin', now,
     { previousChosen: current, adminId }));
+  if (!changed) return { changed: false, totalAmountMinor: selection.totals.totalAmountMinor };
   await storeAcceptedQuotePdf(id);
   const change = selectionChange(lineItems, current, selection.chosen, quote.total_amount_minor, selection.totals, 'admin', adminId, now);
   try {
