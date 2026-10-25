@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.180.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.180.0-beta.0...v3.180.1-beta.0) (2026-10-25)
+
+
+### Bug Fixes
+
+* **ci:** bound the media-tools step and rerun a failed check on the stable release PR ([#2239](https://github.com/PicPeak/picpeak/issues/2239)) ([ada30f7](https://github.com/PicPeak/picpeak/commit/ada30f7716c22b7fdb8a461bcf8dd3c1610ca524))
+* **projects:** flag a quote or contract whose deal is in another project, and answer attachTo only for own projects ([#2238](https://github.com/PicPeak/picpeak/issues/2238)) ([8cdc816](https://github.com/PicPeak/picpeak/commit/8cdc816cd32256795309c84a7d86eea48aa66bac))
+
 ## [3.180.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.179.0-beta.0...v3.180.0-beta.0) (2026-10-24)
 
 
