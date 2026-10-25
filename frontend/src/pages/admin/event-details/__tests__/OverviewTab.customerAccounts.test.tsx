@@ -33,6 +33,7 @@ vi.mock('../ClientAccessCard', () => ({ ClientAccessCard: () => null }));
 vi.mock('../PhotoStatisticsCard', () => ({ PhotoStatisticsCard: () => null }));
 vi.mock('../ArchiveStatusCard', () => ({ ArchiveStatusCard: () => null }));
 vi.mock('../DownloadLimitUsage', () => ({ DownloadLimitUsage: () => null }));
+vi.mock('../../../../features/album-products/EventProductsCard', () => ({ EventProductsCard: () => null }));
 vi.mock('../../../../components/admin/ShortUrlsCard', () => ({ ShortUrlsCard: () => null }));
 vi.mock('../../../../components/admin', () => ({ FeedbackModerationPanel: () => null }));
 

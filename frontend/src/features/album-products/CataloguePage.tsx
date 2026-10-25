@@ -2,7 +2,7 @@ import { LibraryEditor } from './LibraryEditor';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { Button, Card, Input, Switch, Loading } from '../../components/common';
+import { Button, Card, Input, Switch, Loading, Notice } from '../../components/common';
 import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import {
@@ -23,10 +23,12 @@ function ProductEditor({
   product,
   onChange,
   onBusy,
+  readOnly = false,
 }: {
   product: Product;
   onChange: (update: (current: Product) => Product) => void;
   onBusy: (delta: number) => void;
+  readOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false),
@@ -64,33 +66,24 @@ function ProductEditor({
   };
   return (
     <Card className="p-5 space-y-4">
-      <div className="flex items-center gap-3">
-        <input
-          aria-label={t('albumProducts.productName', 'Product name')}
-          className="input flex-1"
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+        <Input
+          label={t('albumProducts.productName', 'Product name')}
           maxLength={100}
           value={product.name}
           onChange={(e) =>
             onChange((current) => ({ ...current, name: e.target.value }))
           }
         />
-        <label className="flex gap-2">
-          <input
-            type="checkbox"
-            checked={product.active}
-            onChange={(e) =>
-              onChange((current) => ({ ...current, active: e.target.checked }))
-            }
-          />
-          {t('albumProducts.active', 'Active')}
-        </label>
-        <Button variant="secondary" onClick={() => setOpen(!open)}>
+        <Switch label={t('albumProducts.active', 'Active')} checked={product.active}
+          onChange={(active) => onChange((current) => ({ ...current, active }))} />
+        {!readOnly && <Button variant="secondary" onClick={() => setOpen(!open)}>
           {open
             ? t('common.close', 'Close')
             : t('albumProducts.editOptions', 'Edit options')}
-        </Button>
+        </Button>}
       </div>
-      {open && (
+      {(open || readOnly) && (
         <>
           <label className="block">
             {t('common.description', 'Description')}
@@ -120,27 +113,16 @@ function ProductEditor({
                     key={option.id}
                   >
                     <ProductImage imageId={option.imageId} alt={option.name} />
-                    <label className="block">
-                      {t('common.name', 'Name')}
-                      <input
-                        className="input w-full"
-                        maxLength={100}
-                        value={option.name}
-                        onChange={(e) =>
-                          change(group, option.id, { name: e.target.value })
-                        }
-                      />
-                    </label>
-                    <label className="flex gap-2">
-                      <input
-                        type="checkbox"
-                        checked={option.active}
-                        onChange={(e) =>
-                          change(group, option.id, { active: e.target.checked })
-                        }
-                      />
-                      {t('albumProducts.active', 'Active')}
-                    </label>
+                    <Input
+                      label={t('common.name', 'Name')}
+                      maxLength={100}
+                      value={option.name}
+                      onChange={(e) =>
+                        change(group, option.id, { name: e.target.value })
+                      }
+                    />
+                    <Switch label={t('albumProducts.active', 'Active')} checked={option.active}
+                      onChange={(active) => change(group, option.id, { active })} />
                     <label className="block text-sm">
                       {t(
                         'albumProducts.optionImage',
@@ -310,6 +292,7 @@ export function AlbumProductCataloguePage() {
           'Share product choices between galleries and CRM quotes. Manage prices and surcharges in the CRM catalogue.',
         )}
       </p>
+      {!canManage && <Notice>{t('events.settingsTab.readOnly', 'You can see these settings but not change them.')}</Notice>}
       <fieldset disabled={busy || !canManage} className="space-y-6">
         {draft && (
           <LibraryEditor
@@ -418,6 +401,7 @@ export function AlbumProductCataloguePage() {
             <ProductEditor
               key={product.id}
               product={product}
+              readOnly={!canManage}
               onBusy={(delta) => setUploads((count) => count + delta)}
               onChange={(update) =>
                 setDraft((current) =>
@@ -480,7 +464,7 @@ export function AlbumProductCataloguePage() {
       <Link to="/admin/events" className="text-accent underline">
         {t('albumProducts.openGalleries', 'Open galleries')}
       </Link>
-      <SettingsSaveBar
+      {canManage && <SettingsSaveBar
         isDirty={JSON.stringify(saved) !== JSON.stringify(draft)}
         isSaving={busy}
         onSave={save}
@@ -488,7 +472,7 @@ export function AlbumProductCataloguePage() {
           if (!uploads) setDraft(saved);
         }}
         canSave={canManage && !!draft && uploads === 0}
-      />
+      />}
     </div>
   );
 }

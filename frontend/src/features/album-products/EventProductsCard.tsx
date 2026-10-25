@@ -9,7 +9,7 @@ import { usePermissions } from '../../contexts/PermissionsContext';
 import { albumProducts, errorMessage, type Offer } from './model';
 import { api } from '../../config/api';
 import { formatMoneyMinor } from '../../utils/money';
-function EventProducts({ eventId }: { eventId: number }) {
+function EventProducts({ eventId, ownsEvent }: { eventId: number; ownsEvent: boolean }) {
   const { t } = useTranslation(),
     { hasPermission } = usePermissions();
   const [selected, setSelected] = useState(''),
@@ -21,8 +21,9 @@ function EventProducts({ eventId }: { eventId: number }) {
   });
   const catalogue = query.data?.catalogue,
     offers = query.data?.offers || [];
-  const crmEnabled =
-    useFeatureEnabled('bills') && hasPermission('bills.manage');
+  const billingEnabled = useFeatureEnabled('bills');
+  const crmEnabled = billingEnabled && ownsEvent && hasPermission('bills.manage');
+  const canConfirm = ownsEvent && (!billingEnabled || hasPermission('bills.manage'));
   const billing = useQuery({
     queryKey: ['gallery-product-billing', eventId],
     enabled: crmEnabled,
@@ -136,7 +137,7 @@ function EventProducts({ eventId }: { eventId: number }) {
       )}
       {offers.map((offer) => (
         <div
-          className="rounded border border-line p-3 space-y-2"
+          className="rounded-lg border border-line p-3 space-y-2"
           key={offer.id}
         >
           <strong>
@@ -263,7 +264,7 @@ function EventProducts({ eventId }: { eventId: number }) {
                   ? t('albumProducts.hide', 'Hide offer')
                   : t('albumProducts.show', 'Show offer')}
               </Button>
-              {offer.status === 'submitted' && (
+              {canConfirm && offer.status === 'submitted' && (
                 <Button disabled={busy} onClick={() => change(offer, 'lock')}>
                   {crmEnabled
                     ? t(
@@ -273,7 +274,7 @@ function EventProducts({ eventId }: { eventId: number }) {
                     : t('albumProducts.lock', 'Lock choice')}
                 </Button>
               )}
-              {offer.status === 'locked' && (
+              {canConfirm && offer.status === 'locked' && (
                 <Button
                   variant="secondary"
                   disabled={busy}
@@ -351,18 +352,17 @@ function EventProducts({ eventId }: { eventId: number }) {
       {(error || query.isError) && (
         <p role="alert" className="text-danger-text">
           {error || errorMessage(query.error)}{' '}
-          <button
-            className="underline"
+          <Button variant="ghost" size="sm"
             onClick={() => load().catch((e) => setError(errorMessage(e)))}
           >
             {t('common.retry', 'Retry')}
-          </button>
+          </Button>
         </p>
       )}
     </Card>
   );
 }
-export function EventProductsCard(props: { eventId: number }) {
+export function EventProductsCard(props: { eventId: number; ownsEvent: boolean }) {
   const enabled = useFeatureEnabled('albumProducts'),
     { hasPermission } = usePermissions();
   return enabled && hasPermission('products.view') ? (

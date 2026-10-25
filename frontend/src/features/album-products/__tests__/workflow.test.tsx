@@ -6,7 +6,8 @@ import { GalleryProductPanel } from '../GalleryProductPanel';
 import { albumProducts, type Product, type Offer } from '../model';
 import { api } from '../../../config/api';
 vi.mock('react-i18next', async importOriginal => ({ ...await importOriginal<typeof import('react-i18next')>(), useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }) }));
-vi.mock('../../../contexts/PermissionsContext', () => ({ usePermissions: () => ({ hasPermission: () => true }) }));
+const permissions = vi.hoisted(() => ({ manage: true }));
+vi.mock('../../../contexts/PermissionsContext', () => ({ usePermissions: () => ({ hasPermission: (permission: string) => permission !== 'products.manage' || permissions.manage }) }));
 vi.mock('../../../components/admin/SettingsSaveBar', () => ({ SettingsSaveBar: ({ onSave, canSave }: { onSave: () => void; canSave: boolean }) => <button onClick={onSave} disabled={!canSave}>Save catalogue</button> }));
 vi.mock('../ProductImage', () => ({ ProductImage: ({ alt }: { alt: string }) => <span>{`Image: ${alt}`}</span> }));
 vi.mock('../../../config/api', () => ({ api: { put: vi.fn() } }));
@@ -14,7 +15,7 @@ vi.mock('../model', async (importOriginal) => ({ ...await importOriginal<typeof 
 const ids = ['10000000-0000-4000-a000-000000000001','10000000-0000-4000-a000-000000000002','10000000-0000-4000-a000-000000000003'];
 const product: Product = { id: ids[0], name: 'Album', description: '', active: true, version: 'a'.repeat(64), models: [{ id: ids[1], name: 'Square', imageId: null, active: true }], colours: [{ id: ids[2], name: 'Blue', imageId: null, active: true, modelIds: [] }] };
 const offer: Offer = { id: '10000000-0000-4000-a000-000000000004', productId: product.id, revision: 1, status: 'draft', enabled: true, selection: null, product, updatedAt: '' };
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); permissions.manage = true; });
 describe('catalogue editing and client workflow', () => {
   it('an upload finishing preserves edits made meanwhile and blocks save until complete', async () => {
     const catalogue = { revision: 1, products: [structuredClone(product)] };
@@ -78,5 +79,18 @@ describe('catalogue editing and client workflow', () => {
     const payload = vi.mocked(api.put).mock.calls[0][1] as Record<string, unknown>;
     expect(payload).toHaveProperty('values'); expect(payload.submit).toBe(false);
     expect(payload).not.toHaveProperty('modelId'); expect(payload).not.toHaveProperty('colourId');
+  });
+  it('shows the catalogue read-only to viewers without management permission', async () => {
+    permissions.manage = false;
+    vi.mocked(albumProducts.catalogue).mockResolvedValue({ revision: 1, products: [structuredClone(product)] });
+    render(<MemoryRouter><AlbumProductCataloguePage /></MemoryRouter>);
+    expect(await screen.findByLabelText('Product name')).toBeDisabled();
+    for (const control of screen.getAllByRole('switch', { name: 'Active' })) expect(control).toBeDisabled();
+    expect(screen.getByDisplayValue('Square')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Edit options' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save catalogue' })).not.toBeInTheDocument();
+    expect(screen.getByText('You can see these settings but not change them.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add product' })).not.toBeInTheDocument();
+    expect(albumProducts.save).not.toHaveBeenCalled();
   });
 });

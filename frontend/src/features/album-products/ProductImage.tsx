@@ -47,7 +47,7 @@ export function ProductImage({
   }, [imageId, slug, imageLoader]);
   return src && !failed ? (
     <img
-      className={`w-full aspect-square object-contain rounded ${background}`}
+      className={`w-full aspect-square object-contain rounded-lg ${background}`}
       src={src}
       alt={alt}
       loading="lazy"
@@ -55,7 +55,7 @@ export function ProductImage({
     />
   ) : (
     <span
-      className={`flex aspect-square items-center justify-center rounded text-sm ${background}`}
+      className={`flex aspect-square items-center justify-center rounded-lg text-sm ${background}`}
     >
       {failed
         ? t('albumProducts.imageUnavailable', 'Image unavailable')
