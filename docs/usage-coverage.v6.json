@@ -1586,6 +1586,15 @@
       "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
       "route_signatures": []
     },
+    "galleryClientAccess.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Gallery PIN authentication and session role changes are excluded: no product-usage middleware, callbacks, counters or report triggers; PINs, tokens and visitor activity are never reported.",
+      "route_signatures": [
+        "POST /:slug/client-elevate",
+        "POST /:slug/client-downgrade"
+      ]
+    },
     "galleryFeedback.js": {
       "decision": "excluded",
       "signals": [],
