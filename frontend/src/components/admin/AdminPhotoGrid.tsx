@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { radioGroupKeyDown } from '../../utils/ariaKeyboard';
 import { Check, ClipboardCheck, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, FolderInput, Cog, AlertTriangle, RefreshCw, FileX, LayoutGrid, List, UserRound, X, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.service';
@@ -80,7 +80,10 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   // The same test the tiles below use to tell a video from a photo.
   const videoCount = photos.filter(isVideoItem).length;
   const [localSelectedPhotos, setLocalSelectedPhotos] = useState<Set<number>>(new Set());
-  const selectedPhotos = selectedPhotoIds === undefined ? localSelectedPhotos : new Set(selectedPhotoIds);
+  const selectedPhotos = useMemo(
+    () => selectedPhotoIds === undefined ? localSelectedPhotos : new Set(selectedPhotoIds),
+    [selectedPhotoIds, localSelectedPhotos],
+  );
   const setSelectedPhotos = (next: Set<number>) => {
     if (selectedPhotoIds === undefined) setLocalSelectedPhotos(next);
     onSelectionChange?.(Array.from(next));

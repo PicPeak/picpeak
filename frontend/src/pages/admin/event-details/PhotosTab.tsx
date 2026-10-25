@@ -69,11 +69,13 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
   ]);
   const [selection, setSelection] = useState<{ scope: string; ids: number[] }>({ scope: selectionScope, ids: [] });
   const presentPhotoIds = useMemo(() => new Set(photos.map((photo) => photo.id)), [photos]);
+  // Errors, including failed background refetches, clear selection along with the grid.
   const selectedPhotoIds = selection.scope !== selectionScope || photosError
     ? []
     : photosLoading ? selection.ids : selection.ids.filter((photoId) => presentPhotoIds.has(photoId));
   // Reset before rendering children, so Export cannot receive old IDs while a
   // new filter loads. Refetches also forget photos that have left the list.
+  // This stops after one update: the scope and selected-ID count then match.
   if (selection.scope !== selectionScope || selectedPhotoIds.length !== selection.ids.length) {
     setSelection({ scope: selectionScope, ids: selectedPhotoIds });
   }

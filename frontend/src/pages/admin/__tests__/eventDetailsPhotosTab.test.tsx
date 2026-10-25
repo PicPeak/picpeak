@@ -356,4 +356,27 @@ describe('EventDetailsPage photos tab', () => {
       expect.objectContaining({ photo_ids: [2] })));
   });
 
+  it('clears selection after a failed background refetch and does not restore it on recovery', async () => {
+    const photo = {
+      id: 1, filename: 'IMG_1.jpg', url: '/1.jpg', thumbnail_url: '/thumb/1.jpg',
+      type: 'individual', size: 100, uploaded_at: '2026-10-01T00:00:00Z',
+    };
+    getEventPhotos.mockResolvedValue([photo]);
+    const { client } = renderPage('/admin/events/1?tab=photos');
+    await userEvent.click(await screen.findByTestId('admin-photo-checkbox-1'));
+    expect(screen.getByRole('button', { name: 'Export 1' })).toBeEnabled();
+
+    getEventPhotos.mockRejectedValue(new Error('Network Error'));
+    await act(async () => { await client.refetchQueries({ queryKey: ['admin-event-photos', '1'] }); });
+    expect(await screen.findByText('gallery.failedToLoad')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Delete Selected' })).not.toBeInTheDocument();
+
+    getEventPhotos.mockResolvedValue([photo]);
+    await userEvent.click(screen.getByRole('button', { name: 'common.retry' }));
+    expect(await screen.findByTestId('admin-photo-checkbox-1')).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Delete Selected' })).not.toBeInTheDocument();
+  });
+
 });
