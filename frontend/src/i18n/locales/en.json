@@ -1753,8 +1753,7 @@
     "toolbar": {
       "browse": "Gallery tools",
       "selection": "Selection"
-    },
-    "settings": "Gallery Settings"
+    }
   },
   "categories": {
     "title": "Photo Categories",
