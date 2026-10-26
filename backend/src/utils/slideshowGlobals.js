@@ -10,6 +10,7 @@
  * stays effectively instant, and steady-state polls drop to ~0 settings reads.
  */
 const { getAppSetting } = require('./appSettings');
+const { DEFAULT_SLIDESHOW_FIT, normalizeSlideshowFit } = require('../services/eventSettings');
 
 const TTL_MS = 5000;
 let cache = null; // { at, val }
@@ -29,7 +30,9 @@ async function getSlideshowGlobals() {
     getAppSetting('slideshow_watermark_opacity', 60),
     getAppSetting('slideshow_watermark_style', 'white'),
     getAppSetting('slideshow_watermark_size', 12),
-    getAppSetting('slideshow_fit', 'cover'),
+    // Issue 2261: an install that never chose a fit gets 'auto', so portrait
+    // photos are no longer cropped by default. A saved 'cover' stays 'cover'.
+    getAppSetting('slideshow_fit', DEFAULT_SLIDESHOW_FIT),
     getAppSetting('branding_logo_url', null),
     getAppSetting('branding_logo_url_dark', null),
     getAppSetting('branding_favicon_url', null),
@@ -47,7 +50,7 @@ async function getSlideshowGlobals() {
     watermark_opacity: opacity ?? 60,
     watermark_style: style || 'white',
     watermark_size: size ?? 12,
-    fit: fit === 'contain' ? 'contain' : 'cover',
+    fit: normalizeSlideshowFit(fit),
     branding_logo_url: logo || null,
     branding_logo_url_dark: logoDark || null,
     branding_favicon_url: favicon || null,

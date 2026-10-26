@@ -15,6 +15,7 @@ const { handleAsync } = require('../../utils/routeHelpers');
 const { NotFoundError } = require('../../utils/errors');
 const { setGalleryAuthCookies } = require('../../utils/tokenUtils');
 const { getSlideshowGlobals } = require('../../utils/slideshowGlobals');
+const { normalizeSlideshowFit } = require('../../services/eventSettings');
 const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
 const { slideshowCredentialClaim } = require('../../utils/galleryCredentialCutoff');
 
@@ -127,7 +128,8 @@ async function slideshowSettings(event, req) {
     // Play order (#202): 'chronological' | 'random'. The client shuffles when
     // 'random' so live-appended uploads keep working.
     order: event.show_order || 'chronological',
-    fit: g.fit,
+    // Issue 2261: per-event override; NULL (or anything unknown) inherits.
+    fit: normalizeSlideshowFit(event.show_fit, g.fit),
     watermark,
     qr,
   };

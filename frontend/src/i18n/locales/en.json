@@ -6992,13 +6992,15 @@
       "off": "Off"
     },
     "globalTitle": "Global slideshow settings",
-    "globalDescription": "Defaults for every slideshow. Events can override the watermark on or off.",
+    "globalDescription": "Defaults for every slideshow. Events can override the image fit, the watermark and the QR code.",
     "fitLabel": "Image fit",
     "fit": {
+      "auto": "Automatic (whole portrait photos, fill with landscape)",
       "cover": "Fill screen (crop)",
       "contain": "Black bars (no crop)"
     },
-    "fitHint": "\"Fill\" crops to fill the screen; \"Black bars\" shows the whole photo — better for portrait images.",
+    "fitInherit": "Use global default (Settings → Slideshow)",
+    "fitHint": "\"Automatic\" shows a photo whole when it does not match the screen's orientation, such as a portrait photo on a projector, and fills the screen otherwise. \"Fill\" always crops to fill the screen; \"Black bars\" always shows the whole photo.",
     "presetTitle": "Default style for new slideshows",
     "presetHint": "Applied to events created from now on; each event can still override it.",
     "defaultsSaved": "Slideshow defaults saved",

@@ -13,7 +13,7 @@ const { parseBooleanInput } = require('../../utils/parsers');
 const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
 const { requireFeatureFlag } = require('../../middleware/requireFeatureFlag');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
-const { SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS, SLIDESHOW_ORDERS } = require('./helpers');
+const { SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS, SLIDESHOW_ORDERS, SLIDESHOW_FITS } = require('./helpers');
 
 // The watermark LOOK (source/position/opacity/style/size) is global-only
 // (app_settings, Settings → Slideshow); events only carry the show_watermark
@@ -106,6 +106,7 @@ module.exports = (router) => {
     body('show_qr').optional({ nullable: true }),
     body('show_colorfilter').optional().isIn(SLIDESHOW_COLORFILTERS),
     body('show_order').optional().isIn(SLIDESHOW_ORDERS),
+    body('show_fit').optional({ nullable: true }).isIn(SLIDESHOW_FITS),
     body('show_category_id').optional({ nullable: true }).isInt({ min: 1 })
   ], async (req, res) => {
     try {
@@ -138,6 +139,8 @@ module.exports = (router) => {
       }
       if (req.body.show_colorfilter !== undefined) updates.show_colorfilter = req.body.show_colorfilter;
       if (req.body.show_order !== undefined) updates.show_order = req.body.show_order;
+      // Image fit (issue 2261): explicit null = inherit the global default.
+      if (req.body.show_fit !== undefined) updates.show_fit = req.body.show_fit;
       // Category filter (#202). null clears it (all photos). A non-null id must
       // belong to this event or be a global category — otherwise ignore it so a
       // stale/foreign id can't leak another event's category selection.
@@ -168,6 +171,7 @@ module.exports = (router) => {
         show_qr: 'show_qr' in updates ? updates.show_qr : (event.show_qr ?? null),
         show_colorfilter: updates.show_colorfilter ?? event.show_colorfilter ?? 'none',
         show_order: updates.show_order ?? event.show_order ?? 'chronological',
+        show_fit: 'show_fit' in updates ? updates.show_fit : (event.show_fit ?? null),
         show_category_id: 'show_category_id' in updates ? updates.show_category_id : (event.show_category_id ?? null)
       });
     } catch (error) {

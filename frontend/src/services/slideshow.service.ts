@@ -3,9 +3,22 @@ import { api } from '../config/api';
 export type SlideshowTransition = 'crossfade' | 'cut' | 'slide' | 'kenburns' | 'dipwhite' | 'dipblack';
 export type SlideshowColorFilter = 'none' | 'bw' | 'sepia' | 'warm' | 'cool' | 'vignette';
 // How each slide fills the screen: 'cover' = fill, crop to aspect; 'contain' =
-// whole image with black bars (no crop — best for mixed portrait/landscape).
-export type SlideshowFit = 'cover' | 'contain';
-export const SLIDESHOW_FITS: SlideshowFit[] = ['cover', 'contain'];
+// whole image with black bars (no crop); 'auto' (issue 2261, the default) =
+// whole image when its orientation differs from the screen's (a portrait photo
+// on a projector), fill otherwise.
+export type SlideshowFit = 'auto' | 'contain' | 'cover';
+export const SLIDESHOW_FITS: SlideshowFit[] = ['auto', 'contain', 'cover'];
+// Per-event fit: 'inherit' = follow Settings → Slideshow.
+export type SlideshowFitMode = 'inherit' | SlideshowFit;
+export const SLIDESHOW_FIT_MODES: SlideshowFitMode[] = ['inherit', ...SLIDESHOW_FITS];
+// i18n fallbacks shared by the global and the per-event fit pickers.
+export const SLIDESHOW_FIT_LABELS: Record<SlideshowFit, string> = {
+  auto: 'Automatic (whole portrait photos, fill with landscape)',
+  contain: 'Black bars (no crop)',
+  cover: 'Fill screen (crop)',
+};
+export const SLIDESHOW_FIT_HINT =
+  '"Automatic" shows a photo whole when it does not match the screen\'s orientation, such as a portrait photo on a projector, and fills the screen otherwise. "Fill" always crops to fill the screen; "Black bars" always shows the whole photo.';
 // Which logo the watermark overlays. The first three are branding assets the
 // admin uploads in Settings → Branding; 'event' is the event's own hero logo.
 export type SlideshowWatermarkSource = 'logo' | 'logo_dark' | 'favicon' | 'event';
@@ -45,6 +58,8 @@ export interface SlideshowStyle {
   // Play order + optional category filter (#202). category_id null = all photos.
   order: SlideshowOrder;
   category_id: number | null;
+  // Image fit override (issue 2261).
+  fit: SlideshowFitMode;
 }
 
 export const DEFAULT_SLIDESHOW_STYLE: SlideshowStyle = {
@@ -56,6 +71,7 @@ export const DEFAULT_SLIDESHOW_STYLE: SlideshowStyle = {
   colorfilter: 'none',
   order: 'chronological',
   category_id: null,
+  fit: 'inherit',
 };
 
 // Global slideshow defaults (admin Settings → Slideshow). The single source of

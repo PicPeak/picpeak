@@ -380,6 +380,13 @@ const SLIDESHOW_COLORFILTERS = ['none', 'bw', 'sepia', 'warm', 'cool', 'vignette
 // Allowed slideshow play orders (#202). 'chronological' = upload order,
 // 'random' = client-side shuffle.
 const SLIDESHOW_ORDERS = ['chronological', 'random'];
+// How slides fill the screen (issue 2261). 'auto' shows a photo whole when its
+// orientation differs from the screen's (portrait on a projector) and fills
+// the screen otherwise; 'contain' never crops; 'cover' always fills.
+const SLIDESHOW_FITS = ['auto', 'contain', 'cover'];
+const DEFAULT_SLIDESHOW_FIT = 'auto';
+const normalizeSlideshowFit = (value, fallback = DEFAULT_SLIDESHOW_FIT) =>
+  (SLIDESHOW_FITS.includes(value) ? value : fallback);
 module.exports = {
   RECOVERABLE_PASSWORD_COLUMNS,
   validateHeroImageAnchor,
@@ -398,6 +405,9 @@ module.exports = {
   mapEventForApi,
   hasCustomerContactColumns,
   SLIDESHOW_ORDERS,
+  SLIDESHOW_FITS,
+  DEFAULT_SLIDESHOW_FIT,
+  normalizeSlideshowFit,
   SLIDESHOW_TRANSITIONS,
   SLIDESHOW_COLORFILTERS,
 };

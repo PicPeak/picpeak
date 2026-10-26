@@ -965,13 +965,13 @@ module.exports = (router) => {
       const customerColumnsAvailable = await hasCustomerContactColumns();
       const calendarColumnsExist = await hasColumnCached('events', 'is_full_day');
       // The Live Slideshow style is gallery configuration too (issue 2189).
-      // Its columns come from four migrations (138/139/158/163), so copy the
+      // Its columns come from five migrations (138/139/158/163/323), so copy the
       // ones this schema has. The share token stays behind: a copy gets its
       // own link. show_category_id is mapped after the categories are cloned,
       // with upload_category_id.
       const eventColumns = await columnNamesCached('events');
       const slideshowStyle = Object.fromEntries(
-        ['show_interval_ms', 'show_transition', 'show_transition_ms', 'show_watermark', 'show_qr', 'show_colorfilter', 'show_order']
+        ['show_interval_ms', 'show_transition', 'show_transition_ms', 'show_watermark', 'show_qr', 'show_colorfilter', 'show_order', 'show_fit']
           .filter((column) => eventColumns.has(column))
           .map((column) => [column, source[column]])
       );

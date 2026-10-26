@@ -6776,13 +6776,15 @@
       "off": "Aus"
     },
     "globalTitle": "Globale Diashow-Einstellungen",
-    "globalDescription": "Vorgaben für jede Diashow. Events können das Wasserzeichen überschreiben (an/aus).",
+    "globalDescription": "Vorgaben für jede Diashow. Events können Bildanpassung, Wasserzeichen und QR-Code überschreiben.",
     "fitLabel": "Bildanpassung",
     "fit": {
+      "auto": "Automatisch (Hochformat vollständig, Querformat füllend)",
       "cover": "Bildschirm füllen (beschneiden)",
       "contain": "Schwarze Balken (kein Beschnitt)"
     },
-    "fitHint": "„Füllen“ beschneidet das Bild zum Ausfüllen; „Schwarze Balken“ zeigt das ganze Foto – besser für Hochformat.",
+    "fitInherit": "Globale Vorgabe verwenden (Einstellungen → Diashow)",
+    "fitHint": "„Automatisch“ zeigt ein Foto vollständig, wenn seine Ausrichtung nicht zum Bildschirm passt, etwa ein Hochformat auf dem Beamer, und füllt sonst den Bildschirm. „Füllen“ beschneidet immer; „Schwarze Balken“ zeigt immer das ganze Foto.",
     "presetTitle": "Standard-Stil für neue Diashows",
     "presetHint": "Gilt für ab jetzt erstellte Events; jedes Event kann ihn weiterhin überschreiben.",
     "defaultsSaved": "Diashow-Vorgaben gespeichert",

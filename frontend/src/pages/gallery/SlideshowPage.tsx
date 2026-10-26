@@ -14,7 +14,7 @@ const DEFAULT_SETTINGS: SlideshowSettings = {
   transition_ms: 800,
   colorfilter: 'none',
   order: 'chronological',
-  fit: 'cover',
+  fit: 'auto',
   watermark: null,
   qr: null,
 };
@@ -74,6 +74,22 @@ function watermarkCorner(position: string): React.CSSProperties {
 
 type Phase = 'splash' | 'running' | 'ended';
 
+type Size = { width: number; height: number };
+
+/**
+ * CSS object-fit for one slide (issue 2261). 'auto' fills the screen only
+ * when the photo's orientation matches the screen's, so a landscape photo
+ * fills a projector while a portrait (or square) photo is shown whole with
+ * bars instead of losing its top and bottom. A photo whose size is not
+ * known yet is shown whole, never cropped.
+ */
+export function slideObjectFit(fit: SlideshowSettings['fit'], photo: Size | null, screen: Size): 'cover' | 'contain' {
+  if (fit === 'cover') return 'cover';
+  if (fit !== 'auto') return 'contain';
+  if (!photo || photo.width <= 0 || photo.height <= 0 || photo.width === photo.height) return 'contain';
+  return (photo.width > photo.height) === (screen.width >= screen.height) ? 'cover' : 'contain';
+}
+
 // Fisher–Yates shuffle for the 'random' play order (#202). Used once on the
 // initial photo set; live-appended uploads keep landing at the end.
 function shuffle<T>(arr: T[]): T[] {
@@ -103,6 +119,10 @@ export function SlideshowPage() {
   const [cursorHidden, setCursorHidden] = useState(false);
   // Bumped on each dip transition to re-trigger the white/black flash overlay.
   const [flash, setFlash] = useState(0);
+  // Natural size of each slide image, by src, for the 'auto' fit. It is known
+  // before a slide is shown: the image loads in the hidden buffer first.
+  const [naturalSizes, setNaturalSizes] = useState<Record<string, Size>>({});
+  const [screen, setScreen] = useState<Size>(() => ({ width: window.innerWidth, height: window.innerHeight }));
 
   // Refs so timers/pollers read the latest value without re-subscribing.
   const photosRef = useRef<Photo[]>(photos);
@@ -276,6 +296,13 @@ export function SlideshowPage() {
     }
   }, [phase, photos, buffers, preloadDecode]);
 
+  // ----- Track the screen's orientation for the 'auto' fit. -----
+  useEffect(() => {
+    const onResize = () => setScreen({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   // ----- Auto-hide the cursor after inactivity. -----
   useEffect(() => {
     if (phase !== 'running') return;
@@ -314,16 +341,18 @@ export function SlideshowPage() {
     return base;
   };
 
-  const imgStyle = (buf: 0 | 1): React.CSSProperties => {
+  const imgStyle = (buf: 0 | 1, photo: Photo, src: string): React.CSSProperties => {
     const isActive = active === buf;
+    const known = naturalSizes[src]
+      ?? (photo.width && photo.height ? { width: photo.width, height: photo.height } : null);
     const style: React.CSSProperties = {
       // Pin to the full viewport (maxWidth/maxHeight alone left the <img> at the
       // photo's intrinsic ≤1920px size, so it never scaled up to the projector).
       // `fit` decides the rest: 'cover' fills + crops, 'contain' letterboxes the
-      // whole image with black bars (no crop — kinder to portrait photos).
+      // whole image with black bars (no crop), 'auto' picks per photo.
       width: '100%',
       height: '100%',
-      objectFit: settings.fit === 'contain' ? 'contain' : 'cover',
+      objectFit: slideObjectFit(settings.fit, known, screen),
       filter: imageFilter(settings.colorfilter),
     };
     if (settings.transition === 'kenburns' && isActive) {
@@ -336,9 +365,17 @@ export function SlideshowPage() {
     const idx = buffers[buf];
     const photo = photos[idx];
     if (!photo) return null;
+    const src = photoSrc(photo);
+    const onLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+      const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
+      if (!width || !height) return;
+      setNaturalSizes((prev) => (prev[src]?.width === width && prev[src]?.height === height
+        ? prev
+        : { ...prev, [src]: { width, height } }));
+    };
     return (
       <div style={bufferStyle(buf)}>
-        <img src={photoSrc(photo)} alt="" style={imgStyle(buf)} draggable={false} />
+        <img src={src} alt="" style={imgStyle(buf, photo, src)} onLoad={onLoad} draggable={false} />
       </div>
     );
   };

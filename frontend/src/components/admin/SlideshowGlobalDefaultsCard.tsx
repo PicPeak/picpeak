@@ -18,6 +18,8 @@ import {
   SLIDESHOW_WATERMARK_POSITIONS,
   SLIDESHOW_WATERMARK_STYLES,
   SLIDESHOW_FITS,
+  SLIDESHOW_FIT_LABELS,
+  SLIDESHOW_FIT_HINT,
   SLIDESHOW_TRANSITIONS,
   SLIDESHOW_COLORFILTERS,
   type SlideshowGlobalDefaults,
@@ -28,7 +30,8 @@ import { WatermarkSourcePicker } from './WatermarkSourcePicker';
 // defaults so the controls don't flicker on load (backend is the source of
 // truth — these are just the pre-fetch placeholder).
 const DEFAULTS: SlideshowGlobalDefaults = {
-  slideshow_fit: 'cover',
+  // Issue 2261: matches the backend default for an install that never chose.
+  slideshow_fit: 'auto',
   slideshow_interval_ms: 5000,
   slideshow_transition: 'crossfade',
   slideshow_transition_ms: 800,
@@ -106,7 +109,7 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
         {t('slideshow.globalTitle', 'Global slideshow settings')}
       </h2>
       <p className="text-xs text-muted mb-4">
-        {t('slideshow.globalDescription', 'Defaults for every slideshow. Events can override the watermark on or off.')}
+        {t('slideshow.globalDescription', 'Defaults for every slideshow. Events can override the image fit, the watermark and the QR code.')}
       </p>
 
       <div className="space-y-4">
@@ -120,12 +123,12 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
           >
             {SLIDESHOW_FITS.map((f) => (
               <option key={f} value={f}>
-                {t(`slideshow.fit.${f}`, f === 'contain' ? 'Black bars (no crop)' : 'Fill screen (crop)')}
+                {t(`slideshow.fit.${f}`, SLIDESHOW_FIT_LABELS[f])}
               </option>
             ))}
           </select>
           <p className="text-xs text-muted mt-1">
-            {t('slideshow.fitHint', '"Fill" crops to fill the screen; "Black bars" shows the whole photo — better for portrait images.')}
+            {t('slideshow.fitHint', SLIDESHOW_FIT_HINT)}
           </p>
         </div>
 

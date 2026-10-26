@@ -328,6 +328,7 @@ export const eventsService = {
       show_qr?: boolean | null;
       show_colorfilter?: string;
       show_order?: string;
+      show_fit?: 'auto' | 'contain' | 'cover' | null;
       show_category_id?: number | null;
     }
   ): Promise<Record<string, unknown>> {

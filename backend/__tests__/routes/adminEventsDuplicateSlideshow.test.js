@@ -68,6 +68,7 @@ describe('POST /:id/duplicate — Live Slideshow style', () => {
       show_share_token: 'a'.repeat(64),
       show_interval_ms: 9000, show_transition: 'kenburns', show_transition_ms: 1500,
       show_watermark: 1, show_qr: 0, show_colorfilter: 'sepia', show_order: 'random',
+      show_fit: 'contain',
     });
     const res = await duplicate(source);
     expect(res.status).toBe(200);
@@ -75,19 +76,20 @@ describe('POST /:id/duplicate — Live Slideshow style', () => {
     const copy = await db('events').where({ id: res.body.id }).first();
     expect(copy).toMatchObject({
       show_interval_ms: 9000, show_transition: 'kenburns', show_transition_ms: 1500,
-      show_colorfilter: 'sepia', show_order: 'random',
+      show_colorfilter: 'sepia', show_order: 'random', show_fit: 'contain',
     });
     expect(Boolean(copy.show_watermark)).toBe(true);
     expect(Boolean(copy.show_qr)).toBe(false);
     expect(copy.show_share_token).toBeNull();
   });
 
-  it('keeps inherit (NULL) watermark and QR modes as inherit', async () => {
-    const source = await insertEvent({ show_watermark: null, show_qr: null });
+  it('keeps inherit (NULL) watermark, QR and fit modes as inherit', async () => {
+    const source = await insertEvent({ show_watermark: null, show_qr: null, show_fit: null });
     const res = await duplicate(source);
     const copy = await db('events').where({ id: res.body.id }).first();
     expect(copy.show_watermark).toBeNull();
     expect(copy.show_qr).toBeNull();
+    expect(copy.show_fit).toBeNull();
   });
 
   it('points the category filter at the clone of an event category', async () => {

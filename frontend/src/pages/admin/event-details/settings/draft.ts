@@ -14,7 +14,7 @@
  */
 import type { AssignedAdmin, Event } from '../../../../types';
 import type { FeedbackSettings } from '../../../../services/feedback.service';
-import { DEFAULT_SLIDESHOW_STYLE, type SlideshowStyle } from '../../../../services/slideshow.service';
+import { DEFAULT_SLIDESHOW_STYLE, SLIDESHOW_FITS, type SlideshowStyle } from '../../../../services/slideshow.service';
 import { GALLERY_THEME_PRESETS, type ThemeConfig } from '../../../../types/theme.types';
 import { normalizeRequirePassword } from '../../../../utils/accessControl';
 import { expiryDay } from '../../../../utils/expiryDay';
@@ -238,6 +238,7 @@ export function slideshowFromEvent(event: Event): SlideshowStyle {
     colorfilter: (event.show_colorfilter as SlideshowStyle['colorfilter']) ?? DEFAULT_SLIDESHOW_STYLE.colorfilter,
     order: (e.show_order as SlideshowStyle['order']) ?? DEFAULT_SLIDESHOW_STYLE.order,
     category_id: e.show_category_id ?? null,
+    fit: event.show_fit && SLIDESHOW_FITS.includes(event.show_fit) ? event.show_fit : 'inherit',
   };
 }
 
@@ -552,5 +553,6 @@ export function slideshowPayload(s: SlideshowStyle) {
     show_colorfilter: s.colorfilter,
     show_order: s.order,
     show_category_id: s.category_id,
+    show_fit: s.fit === 'inherit' ? null : s.fit,
   };
 }

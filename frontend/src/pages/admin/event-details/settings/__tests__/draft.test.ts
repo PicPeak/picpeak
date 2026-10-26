@@ -8,6 +8,7 @@ import {
   rebaseDraft,
   resetSection,
   slideshowFromEvent,
+  slideshowPayload,
   usesCustomTheme,
   type EventSettingsDraft,
 } from '../draft';
@@ -270,5 +271,17 @@ describe('event settings draft', () => {
   it('does not ask galleries whose password an admin typed', () => {
     const base = eventFieldsFromEvent({ ...EVENT, customer_email: null } as unknown as Event, branding);
     expect(eventUpdatePayload({ ...base, customer_email: 'client@example.com' }, base, t)).toMatchObject({ customer_email: 'client@example.com' });
+  });
+
+  // Issue 2261: per-event image fit, null = inherit Settings → Slideshow.
+  it('maps the slideshow image fit both ways, treating null and unknown values as inherit', () => {
+    expect(slideshowFromEvent({ ...EVENT, show_fit: null } as Event).fit).toBe('inherit');
+    expect(slideshowFromEvent({ ...EVENT, show_fit: 'banana' } as unknown as Event).fit).toBe('inherit');
+    for (const fit of ['auto', 'contain', 'cover'] as const) {
+      const style = slideshowFromEvent({ ...EVENT, show_fit: fit } as Event);
+      expect(style.fit).toBe(fit);
+      expect(slideshowPayload(style).show_fit).toBe(fit);
+    }
+    expect(slideshowPayload(slideshowFromEvent(EVENT)).show_fit).toBeNull();
   });
 });

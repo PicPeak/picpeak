@@ -154,6 +154,8 @@ export interface Event {
   show_watermark?: boolean | null;
   // QR overlay MODE (#837) — same tri-state semantics as show_watermark.
   show_qr?: boolean | null;
+  // Image fit override (issue 2261); null = inherit the global default.
+  show_fit?: 'auto' | 'contain' | 'cover' | null;
   show_colorfilter?: 'none' | 'bw' | 'sepia' | 'warm' | 'cool' | 'vignette';
   // Default photo sort order
   default_photo_sort?: string;

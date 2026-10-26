@@ -156,6 +156,37 @@ describe('admin Live Slideshow endpoints', () => {
       expect(row.show_watermark == null).toBe(true);
     });
 
+    // Issue 2261: the image fit is set per event, null = inherit the global.
+    it.each(['auto', 'contain', 'cover'])('persists show_fit=%s and echoes it', async (fit) => {
+      const id = await insertEvent(db, adminId);
+      const res = await auth(request(app).patch(`/api/admin/events/${id}/slideshow`)).send({ show_fit: fit });
+      expect(res.status).toBe(200);
+      expect(res.body.show_fit).toBe(fit);
+      expect((await db('events').where({ id }).first()).show_fit).toBe(fit);
+    });
+
+    it('show_fit=null sets the column to NULL (inherit global)', async () => {
+      const id = await insertEvent(db, adminId, { show_fit: 'contain' });
+      const res = await auth(request(app).patch(`/api/admin/events/${id}/slideshow`)).send({ show_fit: null });
+      expect(res.status).toBe(200);
+      expect(res.body.show_fit).toBeNull();
+      expect((await db('events').where({ id }).first()).show_fit).toBeNull();
+    });
+
+    it('leaves show_fit untouched when the PATCH omits it', async () => {
+      const id = await insertEvent(db, adminId, { show_fit: 'cover' });
+      const res = await auth(request(app).patch(`/api/admin/events/${id}/slideshow`)).send({ show_interval_ms: 7000 });
+      expect(res.status).toBe(200);
+      expect(res.body.show_fit).toBe('cover');
+      expect((await db('events').where({ id }).first()).show_fit).toBe('cover');
+    });
+
+    it('400 on an invalid show_fit', async () => {
+      const id = await insertEvent(db, adminId);
+      const res = await auth(request(app).patch(`/api/admin/events/${id}/slideshow`)).send({ show_fit: 'stretch' });
+      expect(res.status).toBe(400);
+    });
+
     it('400 on an invalid transition', async () => {
       const id = await insertEvent(db, adminId);
       const res = await auth(request(app).patch(`/api/admin/events/${id}/slideshow`)).send({ show_transition: 'wormhole' });
@@ -191,13 +222,19 @@ describe('admin Live Slideshow endpoints', () => {
       expect(await getSetting('slideshow_watermark_size')).toBe(40);
     });
 
+    it('persists the new auto fit', async () => {
+      const res = await auth(request(app).put('/api/admin/settings/slideshow')).send({ slideshow_fit: 'auto' });
+      expect(res.status).toBe(200);
+      expect(await getSetting('slideshow_fit')).toBe('auto');
+    });
+
     it('coerces an invalid fit / transition to the safe default', async () => {
       const res = await auth(request(app).put('/api/admin/settings/slideshow')).send({
         slideshow_fit: 'banana',
         slideshow_transition: 'wormhole',
       });
       expect(res.status).toBe(200);
-      expect(await getSetting('slideshow_fit')).toBe('cover');
+      expect(await getSetting('slideshow_fit')).toBe('auto');
       expect(await getSetting('slideshow_transition')).toBe('crossfade');
     });
   });
