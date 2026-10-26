@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.185.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.184.0-beta.0...v3.185.0-beta.0) (2026-10-26)
+
+
+### Features
+
+* **video:** let admins choose a video's preview image ([#2269](https://github.com/PicPeak/picpeak/issues/2269)) ([aa9988f](https://github.com/PicPeak/picpeak/commit/aa9988f85cd74a566ef517961c3c63657c4f355e))
+
 ## [3.184.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.183.0-beta.0...v3.184.0-beta.0) (2026-10-26)
 
 
