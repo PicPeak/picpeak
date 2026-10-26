@@ -303,12 +303,12 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
       aria-expanded={openPopover === 'filters'}
       aria-controls={openPopover === 'filters' ? popoverId : undefined}
       aria-label={filters.activeCount > 0
-        ? `${t('gallery.settings', 'Gallery options')}, ${t('gallery.filterPanel.activeCount', { count: filters.activeCount })}`
-        : t('gallery.settings', 'Gallery options')}
+        ? `${t('gallery.filters', 'Filters')}, ${t('gallery.filterPanel.activeCount', { count: filters.activeCount })}`
+        : t('gallery.filters', 'Filters')}
       className={`${compact} whitespace-nowrap gap-1.5`}
     >
       <Filter className="w-4 h-4 shrink-0" aria-hidden="true" />
-      <span className="hidden md:inline">{t('gallery.settings', 'Gallery options')}</span>
+      <span className="hidden md:inline">{t('gallery.filters', 'Filters')}</span>
       {filters.activeCount > 0 && <span>({filters.activeCount})</span>}
     </Button>
   ) : null;
@@ -505,7 +505,7 @@ export const GalleryToolbar: React.FC<GalleryToolbarProps> = ({
   ) : null;
 
   const surfaceTitle = openPopover === 'filters'
-    ? t('gallery.settings', 'Gallery options')
+    ? t('gallery.filters', 'Filters')
     : openPopover === 'rate'
       ? t('feedback.rateSelected', 'Rate selected')
       : t('gallery.selectionTray.title', 'Selected ({{count}})', { count: selection?.selectedCount ?? 0 });

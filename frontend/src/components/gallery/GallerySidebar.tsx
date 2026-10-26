@@ -276,7 +276,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
       >
         {/* Header */}
         <div className="gallery-sidebar-header flex items-center justify-between p-4 border-b border-border-token">
-          <h2 className="gallery-sidebar-title text-lg font-semibold text-theme">{t('gallery.settings', 'Gallery options')}</h2>
+          <h2 className="gallery-sidebar-title text-lg font-semibold text-theme">{t('gallery.settings', 'Gallery Settings')}</h2>
           <button
             ref={closeButtonRef}
             onClick={onClose}
