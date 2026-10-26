@@ -974,7 +974,11 @@ const queuedVideoThumbnails = new Set();
 // try is a full source copy and an ffmpeg run, and the cause (a missing or
 // unreadable source) rarely clears within minutes.
 const VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS = 10 * 60 * 1000;
-const failedVideoThumbnails = new Map(); // photo id -> time of the failure
+// A refusal for capacity (a full media queue or staging area) is not a
+// verdict on the video: it is tried again after this, within the time the
+// image client keeps asking for a pending poster.
+const VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS = 30 * 1000;
+const failedVideoThumbnails = new Map(); // photo id -> when it may be tried again
 // Builds at once, source copy included: a gallery of videos with no posters
 // answers every tile at once, and each build may copy up to 512 MB off S3.
 // The rest wait their turn; past the backlog a tile queues nothing and its
@@ -988,12 +992,12 @@ const waitingVideoThumbnails = [];
 function queueVideoThumbnail(photo, options = {}, { build = ensureThumbnail, now = Date.now } = {}) {
   const id = Number(photo.id);
   if (queuedVideoThumbnails.has(id)) return false;
-  const failedAt = failedVideoThumbnails.get(id);
-  if (failedAt !== undefined && now() - failedAt < VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS) return false;
+  const retryAt = failedVideoThumbnails.get(id);
+  if (retryAt !== undefined && now() < retryAt) return false;
   const atCapacity = runningVideoThumbnails >= VIDEO_THUMBNAIL_CONCURRENCY;
   if (atCapacity && waitingVideoThumbnails.length >= VIDEO_THUMBNAIL_BACKLOG) return false;
   queuedVideoThumbnails.add(id);
-  const settle = (key) => {
+  const settle = (key, error) => {
     queuedVideoThumbnails.delete(id);
     runningVideoThumbnails -= 1;
     const next = waitingVideoThumbnails.shift();
@@ -1006,14 +1010,17 @@ function queueVideoThumbnail(photo, options = {}, { build = ensureThumbnail, now
     // the failures of one cooldown window.
     const at = now();
     for (const [other, time] of failedVideoThumbnails) {
-      if (at - time >= VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS) failedVideoThumbnails.delete(other);
+      if (at >= time) failedVideoThumbnails.delete(other);
     }
-    failedVideoThumbnails.set(id, at);
+    const transient = error && require('./imageResourcePolicy').isTransient(error);
+    failedVideoThumbnails.set(id, at + (transient ? VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS : VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS));
   };
   const start = () => {
     runningVideoThumbnails += 1;
     // defer() logs a failure itself.
-    require('./activeApplicationWork').defer('video poster', () => build(photo, options)).then(settle, () => settle(null));
+    require('./activeApplicationWork').defer('video poster', () => build(photo, options)).then(
+      (key) => settle(key), (error) => settle(null, error)
+    );
   };
   if (atCapacity) waitingVideoThumbnails.push(start);
   else start();
@@ -2409,6 +2416,7 @@ module.exports = {
   ensureThumbnail,
   queueVideoThumbnail,
   VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS,
+  VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS,
   VIDEO_THUMBNAIL_CONCURRENCY,
   videoPlaceholderImage,
   generateVideoPlaceholder,

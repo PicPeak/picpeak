@@ -7,7 +7,9 @@
 jest.mock('../../src/database/db', () => ({ db: jest.fn(() => { throw new Error('no db in this test'); }) }));
 jest.mock('../../src/utils/logger', () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 
-const { queueVideoThumbnail, VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS, VIDEO_THUMBNAIL_CONCURRENCY } = require('../../src/services/imageProcessor');
+const {
+  queueVideoThumbnail, VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS, VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS, VIDEO_THUMBNAIL_CONCURRENCY,
+} = require('../../src/services/imageProcessor');
 
 // defer() runs the build on setImmediate; this lets it and its settle finish.
 const flush = () => new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
@@ -76,6 +78,20 @@ describe('queueVideoThumbnail failure cooldown', () => {
       await flush();
     }
     expect(build).toHaveBeenCalledTimes(photos.length);
+  });
+
+  it('tries again soon after a refusal for capacity, which says nothing about the video', async () => {
+    const photo = { id: nextId++ };
+    const full = Object.assign(new Error('Media input staging capacity is full'), { code: 'MEDIA_QUEUE_FULL' });
+    const build = jest.fn().mockRejectedValueOnce(full).mockResolvedValue('thumbnails/thumb_clip.jpg');
+
+    queueVideoThumbnail(photo, {}, { build, now });
+    await flush();
+    expect(queueVideoThumbnail(photo, {}, { build, now })).toBe(false);
+    clock += VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS;
+    expect(queueVideoThumbnail(photo, {}, { build, now })).toBe(true);
+    await flush();
+    expect(build).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the cooldown per photo', async () => {
