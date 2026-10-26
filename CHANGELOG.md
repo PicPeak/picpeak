@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.183.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.182.0-beta.0...v3.183.0-beta.0) (2026-10-26)
+
+
+### Features
+
+* **gallery:** sell photos from priced galleries through Snipcart ([#2233](https://github.com/PicPeak/picpeak/issues/2233)) ([661a82e](https://github.com/PicPeak/picpeak/commit/661a82e1aae6805d3597dac8bb97f50139be3be5))
+* **legal:** add an AGB page next to Impressum and Datenschutz ([#2232](https://github.com/PicPeak/picpeak/issues/2232)) ([63cca01](https://github.com/PicPeak/picpeak/commit/63cca01479686ef58c742ae023d924b74a1eaf43))
+
 ## [3.182.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.181.0-beta.0...v3.182.0-beta.0) (2026-10-26)
 
 
