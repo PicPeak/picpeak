@@ -208,12 +208,19 @@ export const galleryService = {
   //
   // `resolution` is a size the guest picked from the download menu (issue
   // 1733, E2); omitted, the server hands out the gallery's standard size.
-  async savePhotoToDevice(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string): Promise<void> {
-    return withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename, onProgress, resolution));
+  //
+  // `isVideo` (issue 2263): a video navigates straight at the download URL on
+  // iOS too. Buffering a whole video through fetch kept the spinner up for
+  // the full transfer, and by the time it arrived the share sheet's
+  // user-gesture window had usually expired, so Safari fell back to its
+  // "Download / View" sheet anyway. The direct download lands it in Files.
+  // A limited gallery still fetches, for the reason above.
+  async savePhotoToDevice(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string, isVideo = false): Promise<void> {
+    return withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename, onProgress, resolution, isVideo));
   },
 
-  async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string): Promise<void> {
-    if (!isIOS() && !isGalleryLimited(slug)) {
+  async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string, isVideo = false): Promise<void> {
+    if ((!isIOS() || isVideo) && !isGalleryLimited(slug)) {
       this.triggerDirectDownload(
         withAdminPreview(api.getUri({
           url: `/gallery/${slug}/download/${photoId}`,

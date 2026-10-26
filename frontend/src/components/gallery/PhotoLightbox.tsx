@@ -71,6 +71,11 @@ interface PhotoLightboxProps {
 // Finger travel before a single-finger touch starts moving the carousel.
 const SWIPE_SLOP_PX = 8;
 
+// How far above the media stage's midpoint a video's nav arrows end (issue
+// 2263): VideoPlayer's control bar (~84px: p-4, progress bar, button row),
+// the 40px arrow and an 8px gap.
+const VIDEO_NAV_LIFT_PX = 132;
+
 const touchSpan = (touches: React.TouchList) => Math.hypot(
   touches[1].clientX - touches[0].clientX,
   touches[1].clientY - touches[0].clientY
@@ -869,6 +874,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       photoId: photo.id,
       filename: photo.filename,
       resolution,
+      isVideo: photo.media_type === 'video',
     }));
   };
   downloadRef.current = handleDownload;
@@ -1185,6 +1191,21 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const desktopFeedbackWidth = 416; // 26rem; keep in sync with panel width
   const isDesktopFeedback = showFeedback && !isSmallScreen;
 
+  // Issue 2263: centred on the screen, the arrows landed on a video's own
+  // control bar (on a portrait iPhone the Next arrow covered the fullscreen
+  // button). The video is centred in the media stage above the toolbar, so its
+  // bar ends at or below the stage's midpoint whatever the aspect ratio; the
+  // arrows sit VIDEO_NAV_LIFT_PX above that midpoint (bar + arrow + gap), and
+  // never higher than just below the close button.
+  const navArrowPlacement = currentPhoto.media_type === 'video'
+    ? {
+        className: '',
+        style: {
+          top: `max(calc(max(1rem, env(safe-area-inset-top)) + 3.5rem), calc((100% - ${toolbarHeight}px) / 2 - ${VIDEO_NAV_LIFT_PX}px))`,
+        },
+      }
+    : { className: 'top-1/2 -translate-y-1/2', style: {} };
+
   return (
     // pan-x pan-y: the feedback panel still scrolls, native pinch-zoom and
     // double-tap zoom are off for the whole lightbox.
@@ -1210,8 +1231,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       <button
         onClick={goToPrevious}
         hidden={annotating}
-        className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-20"
+        className={`absolute left-4 ${navArrowPlacement.className} p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-20`}
         aria-label="Previous photo"
+        style={navArrowPlacement.style}
       >
         <ChevronLeft className="w-6 h-6 text-white" />
       </button>
@@ -1220,9 +1242,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         <button
           onClick={goToNext}
           hidden={annotating}
-          className="absolute top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-30"
+          className={`absolute ${navArrowPlacement.className} p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-30`}
           aria-label="Next photo"
-          style={{ right: isDesktopFeedback ? `${desktopFeedbackWidth + 16}px` : '1rem' }}
+          style={{ ...navArrowPlacement.style, right: isDesktopFeedback ? `${desktopFeedbackWidth + 16}px` : '1rem' }}
         >
           <ChevronRight className="w-6 h-6 text-white" />
         </button>
