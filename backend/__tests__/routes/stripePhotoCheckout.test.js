@@ -386,4 +386,13 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     expect(body.line_items[0].price_data.product_data.description).toMatch(/Download bis .* UTC/);
   });
 
+  test('no-payment-required never unlocks a quote that requires payment', async () => {
+    const order = await orderFor(await create());
+    const session = await pay(order, { payment_status: 'no_payment_required', payment_intent: null });
+    session.amount_total = 0;
+    await webhook('checkout.session.completed', session);
+    expect((await readOrder(order)).status).toBe('cancelled');
+    expect(Number((await db('photo_purchases').count('* as n').first()).n)).toBe(0);
+  });
+
 });

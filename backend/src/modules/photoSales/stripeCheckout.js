@@ -260,11 +260,12 @@ async function reconcileSession(order, session, { failed = false, client = strip
   if (REFUSING.includes(order.status)) return refusePaidOrder(order, client);
   const paid = session.status === 'complete' && (
     (session.payment_status === 'paid' && payment?.status === 'succeeded')
-    || session.payment_status === 'no_payment_required'
+    || (session.payment_status === 'no_payment_required' && quote.totalCents === 0 && session.amount_total === 0)
   );
   if (paid && ['expired', 'failed', 'cancelled'].includes(order.status)) return refusePaidOrder(order, client);
   if (!OPEN.includes(order.status) && order.status !== 'completed') return;
   if (!paid) {
+    if (session.status === 'complete' && session.payment_status === 'no_payment_required') return refusePaidOrder(order, client);
     if (session.status === 'expired' || (failed && session.status === 'complete' && payment?.status !== 'processing')) {
       return revoke(order, session.status === 'expired' ? 'expired' : 'failed', { releasePromo: !order.promo_used });
     }
