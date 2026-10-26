@@ -972,6 +972,14 @@ const queuedVideoThumbnails = new Set();
 // unreadable source) rarely clears within minutes.
 const VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS = 10 * 60 * 1000;
 const failedVideoThumbnails = new Map(); // photo id -> time of the failure
+// Builds at once, source copy included: a gallery of videos with no posters
+// answers every tile at once, and each build may copy up to 512 MB off S3.
+// The rest wait their turn; past the backlog a tile queues nothing and its
+// next request asks again.
+const VIDEO_THUMBNAIL_CONCURRENCY = 2;
+const VIDEO_THUMBNAIL_BACKLOG = 200;
+let runningVideoThumbnails = 0;
+const waitingVideoThumbnails = [];
 
 // `build` and `now` are seams for tests.
 function queueVideoThumbnail(photo, options = {}, { build = ensureThumbnail, now = Date.now } = {}) {
@@ -979,9 +987,14 @@ function queueVideoThumbnail(photo, options = {}, { build = ensureThumbnail, now
   if (queuedVideoThumbnails.has(id)) return false;
   const failedAt = failedVideoThumbnails.get(id);
   if (failedAt !== undefined && now() - failedAt < VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS) return false;
+  const atCapacity = runningVideoThumbnails >= VIDEO_THUMBNAIL_CONCURRENCY;
+  if (atCapacity && waitingVideoThumbnails.length >= VIDEO_THUMBNAIL_BACKLOG) return false;
   queuedVideoThumbnails.add(id);
   const settle = (key) => {
     queuedVideoThumbnails.delete(id);
+    runningVideoThumbnails -= 1;
+    const next = waitingVideoThumbnails.shift();
+    if (next) next();
     if (key) {
       failedVideoThumbnails.delete(id);
       return;
@@ -994,8 +1007,13 @@ function queueVideoThumbnail(photo, options = {}, { build = ensureThumbnail, now
     }
     failedVideoThumbnails.set(id, at);
   };
-  // defer() logs a failure itself.
-  require('./activeApplicationWork').defer('video poster', () => build(photo, options)).then(settle, () => settle(null));
+  const start = () => {
+    runningVideoThumbnails += 1;
+    // defer() logs a failure itself.
+    require('./activeApplicationWork').defer('video poster', () => build(photo, options)).then(settle, () => settle(null));
+  };
+  if (atCapacity) waitingVideoThumbnails.push(start);
+  else start();
   return true;
 }
 
@@ -2387,6 +2405,7 @@ module.exports = {
   ensureThumbnail,
   queueVideoThumbnail,
   VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS,
+  VIDEO_THUMBNAIL_CONCURRENCY,
   videoPlaceholderImage,
   generateVideoPlaceholder,
   generateHeroImage,

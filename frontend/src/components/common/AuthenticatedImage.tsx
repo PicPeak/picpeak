@@ -274,7 +274,8 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       setStandIn(false);
       fetchFailedRef.current = false;
     }
-    const quietRetry = sameImage && Boolean(fallbackSrc) && (standInUrlRef.current !== null || fetchFailedRef.current);
+    const quietRetry = sameImage
+      && (standInUrlRef.current !== null || (Boolean(fallbackSrc) && fetchFailedRef.current));
 
     // Determine which token to use based on context
     if (!src) {
@@ -305,7 +306,10 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       return getActiveGallerySlug() || inferGallerySlugFromLocation();
     };
 
-    const fetchWithAuth = async (rawUrl: string | undefined | null): Promise<string> => {
+    // `pendingMs` is set when the server answered with a stand-in it is still
+    // replacing (X-Poster-Pending: a video poster queued for a rebuild): the
+    // bytes go on screen and the same URL is asked again after Retry-After.
+    const fetchWithAuth = async (rawUrl: string | undefined | null): Promise<{ url: string; pendingMs: number | null }> => {
       if (!rawUrl) {
         throw new Error('No URL provided');
       }
@@ -341,7 +345,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       // the image bytes are still streaming on that connection — the cap
       // would bound header round-trips and nothing else, which is not the
       // workload that stalls a large gallery.
-      const blob = await withImageFetchSlot(async () => {
+      const { blob, pendingMs } = await withImageFetchSlot(async () => {
         const response = await fetch(fullImageUrl, {
           credentials: 'include',
           headers: Object.keys(headers).length ? headers : undefined,
@@ -356,7 +360,11 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
           );
         }
 
-        return await response.blob();
+        const pending = response.headers?.get?.('X-Poster-Pending') === '1';
+        return {
+          blob: await response.blob(),
+          pendingMs: pending ? parseRetryAfter(response.headers?.get?.('Retry-After') ?? null) : null,
+        };
       }, { priority: queuePriorityRef.current });
       const objectUrl = URL.createObjectURL(blob);
       // The effect may have been torn down while this was in flight. Revoke
@@ -366,12 +374,27 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         throw new Error('aborted');
       }
       objectUrls.push(objectUrl);
-      return objectUrl;
+      return { url: objectUrl, pendingMs };
     };
 
     const fetchImage = async () => {
       try {
-        const primaryUrl = await fetchWithAuth(src);
+        const { url: primaryUrl, pendingMs } = await fetchWithAuth(src);
+        if (!aborted && pendingMs !== null) {
+          // Shown as a stand-in for `src` itself, so the retry below asks
+          // again; it replaces any earlier stand-in.
+          objectUrls.splice(objectUrls.indexOf(primaryUrl), 1);
+          dropStandIn();
+          standInUrlRef.current = primaryUrl;
+          retryAfterRef.current = pendingMs;
+          fetchFailedRef.current = false;
+          setStandIn(true);
+          setImageSrc(primaryUrl);
+          setShowsFallback(false);
+          setError(false);
+          setIsLoading(false);
+          return;
+        }
         if (!aborted) {
           setImageSrc(primaryUrl);
           setShowsFallback(false);
@@ -402,7 +425,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         if (standInUrlRef.current) return;
         if (fallbackSrc && fallbackSrc !== src) {
           try {
-            const fallbackUrl = await fetchWithAuth(fallbackSrc);
+            const { url: fallbackUrl } = await fetchWithAuth(fallbackSrc);
             if (!aborted) {
               // Out of this run's list: it has to outlive the run's cleanup
               // for as long as it stands in (dropStandIn revokes it).

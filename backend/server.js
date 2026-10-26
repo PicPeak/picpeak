@@ -272,7 +272,7 @@ const corsOptions = {
   //
   // X-Request-Id carries the correlation id (middleware/requestId.js) that an
   // admin can quote from an error message.
-  exposedHeaders: ['Content-Disposition', 'Retry-After', 'X-Request-Id'],
+  exposedHeaders: ['Content-Disposition', 'Retry-After', 'X-Request-Id', 'X-Poster-Pending'],
 };
 
 // Only attach CORS to API endpoints, not static assets

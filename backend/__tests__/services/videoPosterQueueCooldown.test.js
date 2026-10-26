@@ -7,7 +7,7 @@
 jest.mock('../../src/database/db', () => ({ db: jest.fn(() => { throw new Error('no db in this test'); }) }));
 jest.mock('../../src/utils/logger', () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 
-const { queueVideoThumbnail, VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS } = require('../../src/services/imageProcessor');
+const { queueVideoThumbnail, VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS, VIDEO_THUMBNAIL_CONCURRENCY } = require('../../src/services/imageProcessor');
 
 // defer() runs the build on setImmediate; this lets it and its settle finish.
 const flush = () => new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
@@ -56,6 +56,26 @@ describe('queueVideoThumbnail failure cooldown', () => {
     expect(queueVideoThumbnail(photo, {}, { build, now })).toBe(true);
     await flush();
     expect(build).toHaveBeenCalledTimes(3);
+  });
+
+  it('runs at most VIDEO_THUMBNAIL_CONCURRENCY builds at once, the rest in turn', async () => {
+    const releases = [];
+    const build = jest.fn(() => new Promise((resolve) => releases.push(() => resolve('thumbnails/thumb.jpg'))));
+    const photos = Array.from({ length: VIDEO_THUMBNAIL_CONCURRENCY + 2 }, () => ({ id: nextId++ }));
+
+    for (const photo of photos) expect(queueVideoThumbnail(photo, {}, { build, now })).toBe(true);
+    await flush();
+    expect(build).toHaveBeenCalledTimes(VIDEO_THUMBNAIL_CONCURRENCY);
+
+    releases.shift()();
+    await flush();
+    expect(build).toHaveBeenCalledTimes(VIDEO_THUMBNAIL_CONCURRENCY + 1);
+
+    while (releases.length) {
+      releases.shift()();
+      await flush();
+    }
+    expect(build).toHaveBeenCalledTimes(photos.length);
   });
 
   it('keeps the cooldown per photo', async () => {

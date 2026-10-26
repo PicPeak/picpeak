@@ -101,6 +101,9 @@ describe('gallery thumbnail route for a video without a poster', () => {
         expect(res.status).toBe(200);
         expect(res.headers['content-type']).toBe('image/jpeg');
         expect(res.headers['cache-control']).toBe('no-store');
+        // The image client keeps these bytes on screen and asks again.
+        expect(res.headers['x-poster-pending']).toBe('1');
+        expect(res.headers['retry-after']).toBe('10');
         expect(res.headers.etag).toBeUndefined();
         // A JPEG, not a JSON error.
         expect(Buffer.from(res.body).subarray(0, 2).toString('hex')).toBe('ffd8');
@@ -142,6 +145,7 @@ describe('gallery thumbnail route for a video without a poster', () => {
     expect(res.status).toBe(200);
     expect(res.headers['cache-control']).toBe('private, max-age=1800');
     expect(res.headers.etag).toMatch(/^"thumb-/);
+    expect(res.headers['x-poster-pending']).toBeUndefined();
     expect(storage.get).toHaveBeenCalledWith('thumbnails/thumb_clip.jpg');
     expect(storage.getToFile).not.toHaveBeenCalled();
   });

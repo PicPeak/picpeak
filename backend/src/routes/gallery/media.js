@@ -801,6 +801,11 @@ router.get('/:slug/thumbnail/:photoId',
           res.set({
             'Content-Type': 'image/jpeg',
             'Cache-Control': 'no-store',
+            // The image client shows these bytes and asks again after
+            // Retry-After: the tile's URL never changes, so without the
+            // signal it kept the placeholder until the gallery was reloaded.
+            'X-Poster-Pending': '1',
+            'Retry-After': '10',
             'Cross-Origin-Resource-Policy': 'cross-origin',
             'X-Content-Type-Options': 'nosniff',
             'Content-Length': placeholder.length,
