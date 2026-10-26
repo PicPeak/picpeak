@@ -24,7 +24,9 @@ name: Cut Stable Release (daily batch)
 #   push (3.135.2 hung for two days on a backend job a stalled apt mirror ran
 #   into its timeout). The hourly run reruns each such run ONCE (attempt 1
 #   only), for a PR already set to auto-merge, so a real failure still shows
-#   after the second attempt.
+#   after the second attempt. A second attempt is rerun once more only when
+#   the media tools install was the one step that failed (3.135.3 hung on a
+#   flaky Jest run and then a trickling apt mirror), never for a test.
 
 on:
   schedule:
@@ -77,7 +79,7 @@ jobs:
             # Hourly run: never starts a cut. Only a PR the daily run (or a
             # maintainer) set to auto-merge is touched: its dismissed
             # approval is given again, and a check run that failed or was
-            # cancelled on its head is rerun once.
+            # cancelled on its head is rerun once (twice for the apt step).
             read -r automerge decision head < <(gh pr view "$pr" --json autoMergeRequest,reviewDecision,headRefOid \
               --jq '[(.autoMergeRequest != null), (.reviewDecision // "NONE"), .headRefOid] | @tsv')
             if [ "$automerge" != "true" ]; then
@@ -88,23 +90,35 @@ jobs:
               gh pr review "$pr" --approve --body "Automated re-approval — a push after the daily approval dismissed it."
               echo "Re-approved stable release PR #$pr."
             fi
-            # First attempts only: a run that fails again on its rerun is a
-            # real failure and stays for a maintainer. Both calls fail the
-            # job when GitHub refuses them: `set -e` does not reach a `for`
-            # list or the left side of `&&`, so a broken recovery would
-            # otherwise report success while the release stays blocked.
+            # First attempts, plus second attempts whose only failed step is
+            # the media tools install (an apt mirror, not the code): a run
+            # that fails again otherwise is a real failure and stays for a
+            # maintainer. The rerun fails the job when GitHub refuses it:
+            # `set -e` does not reach the left side of `&&` or an `if`
+            # condition, so a broken recovery would otherwise report success
+            # while the release stays blocked.
             runs=$(gh run list --commit "$head" --event pull_request --limit 50 \
               --json databaseId,status,conclusion,attempt \
-              --jq '.[] | select(.status == "completed" and .attempt == 1 and (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")) | .databaseId')
+              --jq '.[] | select(.status == "completed" and .attempt <= 2 and (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")) | "\(.databaseId) \(.attempt)"')
             failed=0
-            for run in $runs; do
+            while read -r run attempt; do
+              [ -n "$run" ] || continue
+              if [ "$attempt" = 2 ]; then
+                # The jobs endpoint lists the latest attempt by default.
+                steps=$(gh api "repos/$GH_REPO/actions/runs/$run/jobs" \
+                  --jq '[.jobs[].steps[]? | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | .name] | unique | .[]')
+                if [ "$steps" != "Build the optional media process guard and install the media tools" ]; then
+                  echo "Run $run failed again on its rerun — left for a maintainer."
+                  continue
+                fi
+              fi
               if gh run rerun "$run" --failed; then
-                echo "Reran the failed jobs of run $run on stable release PR #$pr."
+                echo "Reran the failed jobs of run $run (attempt $attempt) on stable release PR #$pr."
               else
                 echo "::error::Could not rerun run $run on stable release PR #$pr."
                 failed=1
               fi
-            done
+            done <<< "$runs"
             exit "$failed"
           fi
           # Approve is tolerant — a pre-existing approval already satisfies
