@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useQuery, useMutation, type UseMutationOptions } from '@tanstack/react-query';
 import { galleryService } from '../services';
 import { toast } from 'react-toastify';
-import { isDownloadLimitError } from '../utils/downloadLimit';
+import { isDownloadLimitError, isGalleryLimited } from '../utils/downloadLimit';
 import { renamedGallerySlug } from './useFollowGalleryRename';
 import { beginPhotoDownload, endPhotoDownload, touchPhotoDownload } from './usePhotoDownloadPending';
 
@@ -83,7 +83,11 @@ export const useDownloadPhoto = () => {
   return useSinglePhotoDownload(
     ({ slug, photoId, filename, resolution, isVideo }, onProgress) => galleryService.downloadPhoto(slug, photoId, filename, onProgress, resolution, isVideo),
     {
-      onSuccess: () => {
+      onSuccess: (_data, { slug, isVideo }) => {
+        // A video in a gallery without a limit downloads directly (issue
+        // 2263): the call returns before any byte arrives, and the browser's
+        // own download UI reports it.
+        if (isVideo && !isGalleryLimited(slug)) return;
         toast.success('Photo downloaded successfully');
       },
       onError: (error) => {
