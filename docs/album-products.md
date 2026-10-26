@@ -21,11 +21,15 @@ An experimental shared product configurator for gallery clients and CRM quotes. 
 
 A primary-client/PIN gallery credential or assigned customer-portal session is required. Guests and slideshow sessions cannot read or change choices; admin previews are read-only. The entered name is an audit label. Financial controls require gallery ownership and native billing permissions; assigning a teammate to a gallery does not grant financial access.
 
+Appending gallery products to an unissued invoice recalculates its percentage promotion lines with the native total helper, so those promotions also discount the appended products. Initial quote-to-invoice conversion retains the recorded promotion amounts; the recalculation happens when products are appended. Review the resulting invoice total before issuing it.
+
 ## Quote workflow
 
 Add the configurable catalogue item directly, through a package, or through a published quote template. The quote copies the offered definition and prices when authored. The photographer may pre-fill choices or lock a complete agreed specification. Clients can finish or change unlocked choices, including an optional product they book on the quote page; locked specifications are read-only.
 
 Published template versions freeze the product definition, base price and option surcharges at publication. New quotes created from that version keep those prices even after the live catalogue changes; publish a new template version to offer updated prices.
+
+An authored ordinary line stays ordinary, with its saved price, if its catalogue item is later linked to a configurable product, archived or disabled. Published templates likewise freeze the absence of configuration, including package children. Publish a new template version or add a new catalogue line to offer the newly linked product; saving an existing quote never upgrades it silently.
 
 Before conversion to a contract, event or invoice, an admin can book a previously unbooked configurable product in the accepted quote's add-on amendment screen. The shared picker collects the new specification, including configured package children. Saving recomputes prices from the offered definition, records the change, retains another accepted PDF and emails the updated quote to the customer. Existing accepted specifications stay read-only here, and studio-locked prefilled offers keep their agreed specification even while unbooked. Changing an already accepted specification requires reissuing the quote.
 

@@ -110,8 +110,9 @@ async function prepareLine(db, line, { quoteId, currency } = {}) {
       { complete: out.configuration_locked, authoring: true },
     )[0];
   };
-  // Definitions already produced inside the service (reissue/template paths).
-  if (line.configuration_definition) return finish(line);
+  // Service-owned snapshots freeze the absence of configuration too. A null
+  // template definition is a plain offered line, not a fresh catalogue lookup.
+  if (line.configuration_definition !== undefined) return finish(line);
   const out = { ...line };
   delete out.configuration_source_line_id;
   if (line.configuration_source_line_id && quoteId) {
@@ -133,6 +134,8 @@ async function prepareLine(db, line, { quoteId, currency } = {}) {
             : line.details_text || null,
         configuration_locked: source.configuration_locked,
       });
+    // Linking a product later must not upgrade or reprice an authored plain line.
+    return finish(out);
   }
   if (!line.catalogue_preset_id) return finish(out);
   if (line.line_kind && line.line_kind !== 'item')

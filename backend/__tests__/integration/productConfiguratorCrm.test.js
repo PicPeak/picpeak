@@ -152,15 +152,15 @@ async function fixture({ optional = true, parent = false } = {}) {
     },
     ...(parent
       ? [
-          {
-            position: 2,
-            quantity: 1,
-            description: 'Print package',
-            unit_price_minor: 0,
-            is_optional: optional,
-            selected: !optional,
-          },
-        ]
+        {
+          position: 2,
+          quantity: 1,
+          description: 'Print package',
+          unit_price_minor: 0,
+          is_optional: optional,
+          selected: !optional,
+        },
+      ]
       : []),
     {
       position: parent ? 3 : 2,
@@ -248,6 +248,77 @@ test('archived ordinary catalogue items remain usable on existing quotes with co
     expect(Number(fromTemplate.lineItems[0].unit_price_minor)).toBe(12000);
   } finally {
     await db('feature_flags').where({ key: 'albumProducts' }).update({ value: true });
+  }
+});
+
+test.each(['active', 'archived', 'disabled'])('an existing plain line keeps its manual price after its preset becomes configurable (%s)', async (state) => {
+  const preset = await quotes.createLineItemPreset({ name: 'Ordinary album', currency: 'EUR', unit_price_minor: 12000 });
+  const quoteId = await quotes.createQuote({ customerAccountId: customerId, currency: 'EUR', vatRate: 0,
+    lineItems: [{ position: 1, quantity: 1, description: 'Agreed album', unit_price_minor: 8700, catalogue_preset_id: preset.id }] }, adminId);
+  const before = await quotes.getQuoteById(quoteId);
+  await quotes.updateLineItemPreset(preset.id, { product_id: product.id, unit_price_minor: 45000 });
+  if (state === 'archived') await quotes.deleteLineItemPreset(preset.id);
+  if (state === 'disabled') await db('feature_flags').where({ key: 'albumProducts' }).update({ value: false });
+  try {
+    await quotes.updateQuote(quoteId, { lineItems: before.lineItems.map((line) => ({
+      ...line, quantity: 2, configuration_definition: undefined, configuration_snapshot: undefined,
+      configuration_source_line_id: line.id,
+    })) }, adminId);
+    const after = await quotes.getQuoteById(quoteId);
+    expect(after.lineItems[0].configuration_definition).toBeNull();
+    expect(Number(after.lineItems[0].catalogue_preset_id)).toBe(Number(preset.id));
+    expect(Number(after.lineItems[0].unit_price_minor)).toBe(8700);
+    expect(Number(after.quote.total_amount_minor)).toBe(17400);
+  } finally {
+    await db('feature_flags').where({ key: 'albumProducts' }).update({ value: true });
+  }
+});
+
+test.each(['direct', 'package'].flatMap((kind) => ['active', 'archived', 'disabled'].map((state) => [kind, state])))('a published plain %s template preserves its definition and price after linking its preset (%s)', async (kind, state) => {
+  const preset = await quotes.createLineItemPreset({ name: 'Published ordinary album', currency: 'EUR', unit_price_minor: 12000 });
+  const templates = require('../../src/services/quoteTemplateService');
+  let section = { type: 'item', presetId: preset.id };
+  if (kind === 'package') {
+    const packages = require('../../src/services/quoteCatalogService');
+    const pkg = await packages.savePackage(null, { name: 'Ordinary package', currency: 'EUR',
+      items: [{ preset_id: preset.id, quantity: 1 }] });
+    section = { type: 'package', packageId: pkg.id };
+  }
+  const templateId = await templates.createTemplate({ name: 'Frozen plain offer', currency: 'EUR',
+    draft: { vatRate: 0, sections: [section] } }, adminId);
+  await templates.publishTemplate(templateId, adminId);
+  await quotes.updateLineItemPreset(preset.id, { product_id: product.id, unit_price_minor: 45000 });
+  if (state === 'archived') await quotes.deleteLineItemPreset(preset.id);
+  if (state === 'disabled') await db('feature_flags').where({ key: 'albumProducts' }).update({ value: false });
+  try {
+    const created = await templates.createQuoteFromTemplate(templateId, { customerAccountId: customerId }, adminId);
+    const saved = await quotes.getQuoteById(created.quoteId);
+    const item = saved.lineItems.find((line) => Number(line.catalogue_preset_id) === Number(preset.id));
+    expect(item.configuration_definition).toBeNull();
+    expect(Number(item.unit_price_minor)).toBe(12000);
+    expect(Number(saved.quote.total_amount_minor)).toBe(12000);
+  } finally {
+    await db('feature_flags').where({ key: 'albumProducts' }).update({ value: true });
+  }
+});
+
+test('new catalogue lines and republished plain templates adopt the current product definition and price', async () => {
+  const preset = await quotes.createLineItemPreset({ name: 'Newly configurable album', currency: 'EUR', unit_price_minor: 12000 });
+  const templates = require('../../src/services/quoteTemplateService');
+  const templateId = await templates.createTemplate({ name: 'Republished offer', currency: 'EUR',
+    draft: { sections: [{ type: 'item', presetId: preset.id }] } }, adminId);
+  await templates.publishTemplate(templateId, adminId);
+  await quotes.updateLineItemPreset(preset.id, { product_id: product.id, unit_price_minor: 45000 });
+  const freshId = await quotes.createQuote({ customerAccountId: customerId, currency: 'EUR', vatRate: 0,
+    lineItems: [{ position: 1, quantity: 1, description: 'Fresh catalogue item', unit_price_minor: 1, catalogue_preset_id: preset.id }] }, adminId);
+  await templates.publishTemplate(templateId, adminId);
+  const fromTemplate = await templates.createQuoteFromTemplate(templateId, { customerAccountId: customerId }, adminId);
+  for (const id of [freshId, fromTemplate.quoteId]) {
+    const saved = await quotes.getQuoteById(id);
+    const definition = parsed(saved.lineItems[0].configuration_definition);
+    expect(definition.product.id).toBe(product.id);
+    expect(definition.baseUnitPriceMinor).toBe(45000);
+    expect(Number(saved.lineItems[0].unit_price_minor)).toBe(45000);
   }
 });
 
@@ -562,7 +633,7 @@ test.each(['append', 'new invoice'])('a refused billable-item stamp rolls back %
   if (pg) {
     await db.raw('CREATE FUNCTION review_refuse_product_stamp() RETURNS trigger AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql');
     await db.raw('CREATE TRIGGER review_refuse_product_stamp BEFORE UPDATE OF invoice_id ON product_billable_items FOR EACH ROW EXECUTE FUNCTION review_refuse_product_stamp()');
-  } else await db.raw("CREATE TRIGGER review_refuse_product_stamp BEFORE UPDATE OF invoice_id ON product_billable_items BEGIN SELECT RAISE(IGNORE); END");
+  } else await db.raw('CREATE TRIGGER review_refuse_product_stamp BEFORE UPDATE OF invoice_id ON product_billable_items BEGIN SELECT RAISE(IGNORE); END');
   try {
     const action = mode === 'append' ? f.change('lock') : require('../../src/services/albumProducts/billing').billEvent(db, f.event.id, adminId);
     await expect(action).rejects.toMatchObject({ statusCode: 409, code: 'PRODUCT_ITEM_CHANGED' });

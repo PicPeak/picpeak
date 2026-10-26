@@ -476,7 +476,10 @@ function toServiceLine(line, { position, parentPosition = null }) {
     quantity: line.quantity ?? 1,
     description: line.description,
     catalogue_preset_id: line.cataloguePresetId || null,
-    ...(line.configurationDefinition ? { configuration_definition: line.configurationDefinition, configuration_base_details: line.configurationBaseDetails || null } : {}),
+    // A published plain line freezes that absence; only republishing consults
+    // today's catalogue to introduce a product definition and its current price.
+    configuration_definition: line.configurationDefinition || null,
+    configuration_base_details: line.configurationBaseDetails || null,
     unit_price_minor: ensureInt(line.unitPriceMinor),
     discount_percent: ensureNumber(line.discountPercent, 0),
     details_text: line.detailsText || null,
