@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallba
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
-import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock, Loader2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock, Loader2, ShoppingCart, Check } from 'lucide-react';
 import type { Photo, GalleryPerson } from '../../types';
 import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { isPhotoDownloadPending, usePhotoDownloadPending } from '../../hooks/usePhotoDownloadPending';
@@ -23,6 +23,8 @@ import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { useDownloadChoice } from '../../contexts/DownloadChoiceContext';
 import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableMessage } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
+import { usePhotoSales } from '../../features/photo-sales/PhotoSalesContext';
+import { effectivePhotoPrice, formatPhotoPrice, snipcartItemProps } from '../../features/photo-sales/photoSales';
 import { lockBodyScroll } from '../../utils/scrollLock';
 import { pushDialogLayer } from '../common/Modal';
 import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
@@ -100,6 +102,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const photoSales = usePhotoSales();
   // Pinch baseline lives in a ref so a burst of touchmoves within one
   // render frame chains off the previous step, not off stale state.
   // isPinching is state because it gates the image's transform transition.
@@ -353,6 +356,18 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // Defaults true for uncategorised photos and pre-migration-135 categories.
   const photoAllowsDownload =
     allowDownloads && currentPhoto?.category_allow_downloads !== false;
+  // Photo sales: every photo of a priced gallery is
+  // delivered through the checkout; the direct download button is hidden.
+  const downloadLockedBySales = photoSales.checkoutReady && currentPhoto != null;
+  const lightboxCartProps = photoSales.checkoutReady && currentPhoto
+    ? snipcartItemProps({
+      slug: photoSales.slug,
+      priceCheckUrl: photoSales.priceCheckUrl,
+      price: effectivePhotoPrice(photoSales.price, currentPhoto.photo_price),
+      description: photoSales.itemDescription,
+      photo: currentPhoto,
+    })
+    : null;
   // Download limit (issue 1560): the button stays, disabled with the reason,
   // once nothing is left — except for photos already downloaded, which are free.
   const downloadQuota = useDownloadQuota();
@@ -1387,7 +1402,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
             <div className="w-px h-6 bg-white/20 mx-2" />
             
-            {photoAllowsDownload && (
+            {photoAllowsDownload && !downloadLockedBySales && (
               <button
                 onClick={handleDownload}
                 // aria-disabled, not disabled: the click still reaches the
@@ -1408,6 +1423,39 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   : <Download className="w-5 h-5 text-white" />}
               </button>
             )}
+
+            {/* Photo sales: the photo's price as the lightbox's main action.
+                A photo already in the cart opens the cart instead. */}
+            {lightboxCartProps && (() => {
+              const inCart = photoSales.cartItemIds.has(String(lightboxCartProps['data-item-id']));
+              const priceLabel = formatPhotoPrice(
+                effectivePhotoPrice(photoSales.price, currentPhoto?.photo_price),
+                photoSales.currency || 'EUR'
+              );
+              return (
+                <button
+                  type="button"
+                  className={`${inCart ? 'snipcart-checkout' : 'snipcart-add-item'} inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-semibold shadow-sm transition-opacity hover:opacity-90`}
+                  style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-accent-fg, #ffffff)' }}
+                  aria-label={inCart
+                    ? t('photoSales.inCartOpen', 'In your cart — open the cart')
+                    : t('photoSales.addToCartPrice', 'Add photo to cart for {{price}}', { price: priceLabel })}
+                  title={inCart ? undefined : t('photoSales.buyTitle', 'Buy this photo in full quality, without watermark')}
+                  {...(inCart ? {} : lightboxCartProps)}
+                >
+                  {inCart ? <Check className="w-4 h-4" aria-hidden="true" /> : <ShoppingCart className="w-4 h-4" aria-hidden="true" />}
+                  {inCart ? (
+                    <span>{t('photoSales.inCart', 'In cart')}</span>
+                  ) : (
+                    <>
+                      <span className="hidden sm:inline">{t('photoSales.addToCartShort', 'Add to cart')}</span>
+                      <span className="hidden sm:inline opacity-60" aria-hidden="true">·</span>
+                      <span className="tabular-nums">{priceLabel}</span>
+                    </>
+                  )}
+                </button>
+              );
+            })()}
 
             {/* Inline Like */}
             {feedbackEnabled && feedbackSettings?.allow_likes && (

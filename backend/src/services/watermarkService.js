@@ -29,6 +29,10 @@ const TEXT_TAG = /_t[0-9a-f]{8}$/;
 // A media attempt's id, which ends an attempt's file name (watermarkKey).
 const ATTEMPT_ID = /_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Bump when the tiled photo-sales pattern (salesTile) changes, so persisted
+// sales previews and cached URLs are re-rendered.
+const SALES_TILE_VERSION = 2;
+
 class WatermarkService {
   constructor() {
     this.cache = new Map();
@@ -101,7 +105,9 @@ class WatermarkService {
    * browser does not keep showing the old mark.
    */
   versionTag(settings) {
-    const base = `${settings.opacity}${settings.position}${settings.size}`;
+    // The tiled (photo sales) pattern changes the bytes on its own, so its
+    // URLs and ETags must not match a single-position mark's.
+    const base = `${settings.opacity}${settings.position}${settings.size}${settings.tiled ? `T${SALES_TILE_VERSION}` : ''}`;
     return settings.text ? `${base}t${textHash(settings.text)}` : base;
   }
 
@@ -154,6 +160,43 @@ class WatermarkService {
     }
 
     return { left: Math.max(0, left), top: Math.max(0, top) };
+  }
+
+  /**
+   * Photo sales: the repeating tile of the tiled mark. A third of the image
+   * wide, so a 1920px preview carries about nine marks rather than a wall of
+   * text: the text runs diagonally in white with a dark outline (legible on
+   * light and dark photos, no box behind it); a logo sits centred with
+   * transparent space around it. Never larger than the image (sharp refuses
+   * a tile that is).
+   */
+  async salesTile(metadata, label, logoBuffer, logoMetadata, settings) {
+    const width = Math.max(48, Math.min(metadata.width, Math.round(metadata.width / 3)));
+    const height = Math.max(32, Math.min(metadata.height, Math.round(width * 0.62)));
+    const transparent = { r: 0, g: 0, b: 0, alpha: 0 };
+    if (logoBuffer && logoMetadata) {
+      const fit = await sharp(logoBuffer)
+        .resize(Math.max(1, Math.floor(width * 0.6)), Math.max(1, Math.floor(height * 0.6)), { fit: 'inside' })
+        .toBuffer({ resolveWithObject: true });
+      const left = Math.floor((width - fit.info.width) / 2);
+      const top = Math.floor((height - fit.info.height) / 2);
+      return sharp(fit.data)
+        .extend({ top, left, bottom: height - fit.info.height - top, right: width - fit.info.width - left, background: transparent })
+        .png()
+        .toBuffer();
+    }
+    const text = String(label || '');
+    const fontSize = Math.max(10, Math.min(Math.floor(width / 9), Math.floor((width * 1.1) / Math.max(1, text.length * 0.6))));
+    const opacity = Math.min(1, Math.max(0.15, Number(settings.opacity || 40) / 100));
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle"
+        transform="rotate(-24 ${width / 2} ${height / 2})"
+        font-family="Arial, Helvetica, sans-serif" font-weight="600" font-size="${fontSize}"
+        fill="#ffffff" fill-opacity="${opacity}"
+        stroke="#000000" stroke-opacity="${(opacity * 0.45).toFixed(2)}" stroke-width="${Math.max(1, fontSize / 18).toFixed(1)}"
+        paint-order="stroke">${escapeXml(text)}</text>
+    </svg>`;
+    return Buffer.from(svg);
   }
 
   /**
@@ -314,11 +357,23 @@ class WatermarkService {
       // outright — applyWatermark then catches its own error and silently
       // returns the unwatermarked original. Whether it lands on a whole pixel
       // was previously luck; nothing guaranteed it.
-      let watermarkedImage = image.composite([{
-        input: watermarkBuffer,
-        top: Math.max(0, Math.floor(position.top)),
-        left: Math.max(0, Math.floor(position.left))
-      }]);
+      let watermarkedImage;
+      // Photo sales: tiled mode repeats the mark across the
+      // whole image (strong protection for paid photos before checkout).
+      // Without the option the single-position composite below is used, so
+      // non-priced galleries render byte-identically to upstream PicPeak.
+      if (settings.tiled) {
+        watermarkedImage = image.composite([{
+          input: await this.salesTile(metadata, label, settings.logoPath ? watermarkBuffer : null, watermarkMetadata, settings),
+          tile: true,
+        }]);
+      } else {
+        watermarkedImage = image.composite([{
+          input: watermarkBuffer,
+          top: Math.max(0, Math.floor(position.top)),
+          left: Math.max(0, Math.floor(position.left))
+        }]);
+      }
 
       // A DOWNLOAD keeps the photo's EXIF, XMP and IPTC (issue 1649) — same
       // reasoning as resizeToBox: the credit travels with the file the guest

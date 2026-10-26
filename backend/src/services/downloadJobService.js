@@ -32,7 +32,8 @@ const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
-const { renderPhotoForDownload, resolveWatermarkSettings } = require('./downloadRendition');
+const { renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, resolveWatermarkSettings, isVideo } = require('./downloadRendition');
+const { isGalleryPriced, resolveForcedWatermarkSettingsForPhoto } = require('../modules/photoSales/priceRules');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { parseResolution, getDownloadGlobals } = require('../utils/downloadResolutions');
 const { isGalleryAvailable, isGalleryExpired } = require('../utils/galleryLifecycle');
@@ -101,7 +102,7 @@ class DownloadJobService {
    * id. Hashing the resolved id set also stops a stale archive being reused
    * after photos are added, removed or hidden.
    */
-  dedupKey(eventId, resolution, resolvedPhotoIds, watermark, visibilityScope) {
+  dedupKey(eventId, resolution, resolvedPhotoIds, watermark, visibilityScope, priced = false) {
     const ids = [...resolvedPhotoIds].map(Number).sort((a, b) => a - b).join(',');
     // The full watermark SETTINGS, not just the on/off flag: an admin who
     // edits the watermark text or logo while it stays enabled would otherwise
@@ -109,8 +110,12 @@ class DownloadJobService {
     const wm = watermark
       ? crypto.createHash('sha256').update(JSON.stringify(watermark)).digest('hex').slice(0, 16)
       : 'raw';
+    // Photo sales: a priced gallery packages previews, so a job
+    // built before pricing (clean originals) must not match. Unpriced keys
+    // stay byte-identical to upstream.
+    const sales = priced ? '|priced' : '';
     return crypto.createHash('sha256')
-      .update(`${eventId}|${resolution}|${visibilityScope}|${ids}|${wm}`)
+      .update(`${eventId}|${resolution}|${visibilityScope}|${ids}|${wm}${sales}`)
       .digest('hex')
       .slice(0, 64);
   }
@@ -174,7 +179,7 @@ class DownloadJobService {
     }
 
     const scope = visibilityScope(accessLevel);
-    const dedupKey = this.dedupKey(event.id, resolution, resolvedIds, watermark, scope);
+    const dedupKey = this.dedupKey(event.id, resolution, resolvedIds, watermark, scope, isGalleryPriced(event));
 
     const existing = await this.findReusable(event.id, dedupKey);
     if (existing) return existing;
@@ -264,7 +269,7 @@ class DownloadJobService {
     // that changes the archive changes the key.
     const watermark = await resolveWatermarkSettings(event);
     const expected = this.dedupKey(
-      job.event_id, job.resolution, ids, watermark, visibilityScope(accessLevel)
+      job.event_id, job.resolution, ids, watermark, visibilityScope(accessLevel), isGalleryPriced(event)
     );
     return expected === job.dedup_key;
   }
@@ -361,16 +366,32 @@ class DownloadJobService {
             const photo = photos[i];
             const name = entryNames[i] || `photo-${photo.id}.jpg`;
             try {
-              const rendered = await renderPhotoForDownload(event, photo, box, watermarkSettings);
-              if (rendered) {
-                archive.append(rendered, { name });
+              // Photo sales: before the checkout every
+              // photo of a priced gallery is packaged as the watermarked
+              // low-quality preview; free photos and non-priced galleries
+              // keep the historical build unchanged. Videos stay untouched.
+              let photoSettings = watermarkSettings;
+              let previewEntry = null;
+              if (isGalleryPriced(event) && !isVideo(photo)) {
+                photoSettings = await resolveForcedWatermarkSettingsForPhoto(event, photo);
+                previewEntry = await renderPreviewForDownload(photo, photoSettings);
+                // No preview means no photo: the original must never stand in.
+                if (!previewEntry) throw new Error('No sales preview of this photo');
+              }
+              if (previewEntry) {
+                archive.append(previewEntry.buffer, { name: previewDownloadName(name, previewEntry.extension) });
               } else {
-                const key = resolvePhotoStorageKey(event, photo);
-                if (key) {
-                  if (!await guard.acquire()) break;
-                  archive.append(guard.track(await storage.get(key)), { name });
+                const rendered = await renderPhotoForDownload(event, photo, box, photoSettings);
+                if (rendered) {
+                  archive.append(rendered, { name });
                 } else {
-                  archive.file(resolvePhotoFilePath(event, photo), { name });
+                  const key = resolvePhotoStorageKey(event, photo);
+                  if (key) {
+                    if (!await guard.acquire()) break;
+                    archive.append(guard.track(await storage.get(key)), { name });
+                  } else {
+                    archive.file(resolvePhotoFilePath(event, photo), { name });
+                  }
                 }
               }
               appended += 1;

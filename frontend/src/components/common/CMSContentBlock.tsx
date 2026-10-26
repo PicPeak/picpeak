@@ -8,6 +8,7 @@ import { Loading } from './Loading';
 import { PoweredBy } from './PoweredBy';
 import { cmsService } from '../../services/cms.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
+import { useShowAgbLink } from '../../hooks/useShowAgbLink';
 import { buildResourceUrl } from '../../utils/url';
 import '../../styles/prose-overrides.css';
 
@@ -33,6 +34,7 @@ const ALLOWED_ATTR = ['href', 'target', 'rel', 'class', 'style', 'src', 'alt', '
  */
 export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback }) => {
   const { i18n } = useTranslation();
+  const showAgb = useShowAgbLink();
 
   const { data: settings } = usePublicSettings();
 
@@ -140,6 +142,14 @@ export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback
             {lang === 'de' ? 'Impressum' : 'Legal Notice'}
           </Link>
           <span style={{ color: 'var(--color-surface-border)' }}>•</span>
+          {showAgb && (
+            <>
+              <Link to="/agb" className="hover:underline">
+                {lang === 'de' ? 'AGB' : 'Terms & Conditions'}
+              </Link>
+              <span style={{ color: 'var(--color-surface-border)' }}>•</span>
+            </>
+          )}
           <Link to="/datenschutz" className="hover:underline">
             {lang === 'de' ? 'Datenschutz' : 'Privacy Policy'}
           </Link>

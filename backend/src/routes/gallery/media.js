@@ -57,6 +57,12 @@ async function sniffStoredImageType(storage, key) {
   }
 }
 
+// Photo sales: priced galleries force the existing
+// watermark pipeline for paid photos and keep unpaid guests on the
+// low-quality preview tier; valid purchase tokens see the original.
+const { isGalleryPriced, shouldForceWatermarkForPhoto, resolvePhotoSalesWatermarkSettings } = require('../../modules/photoSales/priceRules');
+const { findValidPhotoPurchaseAccess } = require('../../modules/photoSales/purchaseAccess');
+
 /**
  * Download limit (issue 1560): a video without a web copy has no preview
  * tier, so playing it streams the original, and on a limited gallery that
@@ -240,6 +246,32 @@ router.get('/:slug/photo/:photoId',
       // refusal of the grant itself stops it.
       if (isVideo && grantDenial(req, photo)) {
         return res.status(403).json(originalDenial);
+      }
+
+      // Photo sales: a paid photo (outside the free quota)
+      // is only ever shown as the low-quality preview rendition to viewers
+      // without a valid purchase access token. With a valid token the
+      // original is served unwatermarked below. There is no client-side
+      // escape hatch: a failed preview render answers 404 in
+      // fallBackToOriginal, so no redirect loop exists to break.
+      let purchasedViewer = false;
+      if (!isVideo && !req.isAdminPreview && await shouldForceWatermarkForPhoto(req.event, photo)) {
+        const accessToken = req.query?.access_token || req.query?.accessToken || null;
+        if (accessToken) {
+          purchasedViewer = !!findValidPhotoPurchaseAccess({
+            galleryId: req.event.id,
+            photoId: photo.id,
+            accessToken,
+            rows: await db('photo_purchases')
+              .where({ access_token: accessToken, gallery_id: req.event.id, photo_id: photo.id })
+              .select('id', 'gallery_id', 'photo_id', 'access_token', 'expires_at'),
+          });
+        }
+        if (!purchasedViewer) {
+          const queryAt = req.originalUrl.indexOf('?');
+          const query = queryAt === -1 ? '' : req.originalUrl.slice(queryAt);
+          return res.redirect(`/api/gallery/${req.params.slug}/preview/${photoId}${query}`);
+        }
       }
 
       // Resolve where to read the photo bytes from. For external/reference
@@ -439,6 +471,14 @@ router.get('/:slug/photo/:photoId',
       if (eventOnlyWatermark) {
         watermarkSettings = { ...watermarkSettings, enabled: true };
         if (!watermarkService.watermarkLabel(watermarkSettings)) watermarkSettings.text = 'Protected';
+      }
+      // Photo sales: purchased viewers get the original
+      // unwatermarked; a priced gallery forces the tiled mark (only the admin
+      // preview reaches here unpurchased — guests were sent to /preview).
+      if (purchasedViewer) {
+        watermarkSettings = null;
+      } else if (isGalleryPriced(req.event)) {
+        watermarkSettings = await resolvePhotoSalesWatermarkSettings(req.event, photo);
       }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
@@ -829,7 +869,12 @@ router.get('/:slug/thumbnail/:photoId',
       );
 
       // Check if watermarks are enabled and apply to thumbnail
-      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      let watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      // Photo sales: priced galleries keep the forced mark
+      // on every tier, independent of the global setting.
+      if (isGalleryPriced(req.event)) {
+        watermarkSettings = await resolvePhotoSalesWatermarkSettings(req.event, photo);
+      }
 
       // ETag uses storage stat mtime + photo id + watermark hash.
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
@@ -948,7 +993,13 @@ router.get('/:slug/hero/:photoId',
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
       // The mark is part of the bytes: a changed gallery text must not 304.
-      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      let watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      // Photo sales: this route renders any photo id at 1920px, so a priced
+      // gallery forces the mark here exactly as on /photo, /preview and
+      // /thumbnail.
+      if (isGalleryPriced(req.event)) {
+        watermarkSettings = await resolvePhotoSalesWatermarkSettings(req.event, photo);
+      }
       const watermarkHash = watermarkSettings?.enabled ? `-wm${watermarkService.versionTag(watermarkSettings)}` : '';
       const etag = `"hero-${photoId}-${mtimeMs}${watermarkHash}"`;
       if (req.headers['if-none-match'] === etag) {
@@ -1025,7 +1076,11 @@ function answerStorageUnavailable(res) {
 // Nor for a slideshow session, which /photo refuses (denySlideshowToken).
 async function fallBackToOriginal(req, res, photo) {
   if (!photo?.event_id) photo = await livePhotos(db).where({ id: req.params.photoId, event_id: req.event.id }).first();
-  if (!photo || await originalAssetDenial(req, photo, { display: true })) {
+  // Photo sales: in a priced gallery the preview IS the product
+  // gate — falling back to the original would hand it out, so a failed
+  // preview render answers 404 like a withheld original does.
+  if (!photo || await originalAssetDenial(req, photo, { display: true })
+      || (req.event && !req.isAdminPreview && await shouldForceWatermarkForPhoto(req.event, photo))) {
     res.removeHeader('ETag');
     res.removeHeader('Content-Type');
     res.removeHeader('Content-Length');
@@ -1105,7 +1160,12 @@ router.get('/:slug/preview/:photoId',
       }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
-      const watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      let watermarkSettings = await watermarkService.getWatermarkSettingsForEvent(req.event);
+      // Photo sales: priced galleries keep the forced mark
+      // on every tier, independent of the global setting.
+      if (isGalleryPriced(req.event)) {
+        watermarkSettings = await resolvePhotoSalesWatermarkSettings(req.event, photo);
+      }
       const watermarkHash = watermarkSettings?.enabled
         ? `-wm${watermarkService.versionTag(watermarkSettings)}`
         : '-nowm';
@@ -1138,11 +1198,36 @@ router.get('/:slug/preview/:photoId',
         'ETag': etag,
       });
 
+      // Photo sales: paid photos stream their persisted
+      // watermarked preview (rendered in the background on the first
+      // request) instead of re-compositing with sharp every time. Only the
+      // canonical 1920 rendition is persisted; responsive ?w= tiers and the
+      // maximum-protection cap keep the on-the-fly path.
+      if (!capped && watermarkSettings && watermarkSettings.enabled && watermarkSettings.tiled && !tierWidth) {
+        const salesRenditions = require('../../modules/photoSales/salesRenditions');
+        const persistedSalesPreview = await salesRenditions.findPersistedSalesPreview(req.event, photo, watermarkSettings);
+        if (persistedSalesPreview) {
+          const salesStat = await storage.stat(persistedSalesPreview);
+          if (salesStat) {
+            res.setHeader('Content-Length', salesStat.size);
+            const salesStream = await storage.get(persistedSalesPreview);
+            return pipeStreamToResponse(salesStream, res, { context: `sales preview for photo ${photo.id}` });
+          }
+        }
+      }
+
       if (capped) {
         const view = await capPreviewRendition(previewPath, watermarkSettings);
         res.set({ 'Content-Type': view.contentType, 'Content-Length': view.buffer.length });
         res.send(view.buffer);
       } else if (watermarkSettings && watermarkSettings.enabled) {
+        // Photo sales: queue the background render so the
+        // next viewer gets the persisted file instead.
+        if (watermarkSettings.tiled && !tierWidth) {
+          require('../../modules/photoSales/salesRenditions')
+            .generateSalesPreviewForPhoto(photo.id)
+            .catch(() => {});
+        }
         // No Content-Type override here. applyWatermark PRESERVES the source
         // format (watermarkService.js: png -> png, webp -> webp, else jpeg),
         // and its input is this preview — so the output format matches the key

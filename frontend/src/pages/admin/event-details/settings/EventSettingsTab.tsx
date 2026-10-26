@@ -31,6 +31,7 @@ import type { EventFields, SettingsSectionKey } from './draft';
 import type { EventSettingsDraftApi } from './useEventSettingsDraft';
 import { AccessSection, GeneralSection, GuestsSection, ReminderSection, SectionCard, SourceSection } from './sections';
 import { DownloadsSection } from './DownloadsSection';
+import { PhotoSalesSection } from './PhotoSalesSection';
 import { AppearanceSection } from './AppearanceSection';
 import { SlideshowSection } from './SlideshowSection';
 import { DeliverySection } from './DeliverySection';
@@ -95,6 +96,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
     { key: 'general', label: t('events.settingsTab.general', 'General'), show: true },
     { key: 'access', label: t('events.settingsTab.access', 'Access'), show: true },
     { key: 'downloads', label: t('events.settingsTab.downloads', 'Downloads'), show: true },
+    { key: 'pricing', label: t('events.settingsTab.pricing', 'Photo sales'), show: true },
     { key: 'guests', label: t('events.settingsTab.guests', 'Guest interaction'), show: true },
     { key: 'appearance', label: t('events.settingsTab.appearance', 'Appearance'), show: true },
     { key: 'source', label: t('events.settingsTab.source', 'Photo source'), show: true },
@@ -180,6 +182,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
     slideshow: t('events.settingsTab.about.slideshow', 'A fullscreen link for projectors at live events.'),
     source: t('events.settingsTab.about.source', 'Where the photos of this gallery come from.'),
     delivery: t('events.settingsTab.about.delivery', 'Nested folders from uploads, and delivering a first look before the full gallery.'),
+    pricing: t('events.settingsTab.about.pricing', 'Sell individual photo downloads: price, free quota and access window.'),
     reminder: t('events.settingsTab.about.reminder', 'The reminder email to the customer before the event.'),
     faces: t('events.settingsTab.about.faces', 'Find and group the people in the photos.'),
     tags: t('events.settingsTab.about.tags', 'Tag photos by scene so guests can filter the gallery.'),
@@ -202,6 +205,8 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
             downloadsData={downloadsData}
           />
         );
+      case 'pricing':
+        return <PhotoSalesSection f={draft.event} set={set} eventId={event.id} />;
       case 'guests':
         return (
           <GuestsSection

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ clientLogin: vi.fn() }));
 
+vi.mock('../../hooks/useShowAgbLink', () => ({ useShowAgbLink: () => false }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
   initReactI18next: { type: '3rdParty', init: () => {} },

@@ -1,6 +1,6 @@
 import { usePhotoSelection } from '../../hooks/usePhotoSelection';
 import React, { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, ThumbsUp, ThumbsDown, Pencil } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -22,6 +22,7 @@ import { exifLine } from '../../utils/photoExif';
 import { useMutationWithToast, useModal } from '../../hooks';
 import { deleteOneConfirm, deletedMessage } from './photoDeleteCopy';
 import { isImeComposing } from '../../utils/imeComposition';
+import { formatPhotoPrice } from '../../features/photo-sales/photoSales';
 
 type AdminFeedbackResponse = {
   feedback: PhotoFeedback[];
@@ -37,6 +38,9 @@ interface AdminPhotoViewerProps {
   categories: Array<{ id: number; name: string; slug: string }>;
   /** Days a deleted photo stays in the trash (issue 1733); 0 or unknown: deleting is final. */
   trashRetentionDays?: number;
+  // Photo sales: per-photo price override editor, shown
+  // only for priced galleries.
+  photoPricing?: { isPriced: boolean; defaultPrice: number };
 }
 
 export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = (props) => {
@@ -52,8 +56,36 @@ type ViewerContentProps = AdminPhotoViewerProps & {
 };
 
 const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
-  photos, eventId, onClose, onPhotoDeleted, categories, trashRetentionDays, currentPhoto, currentIndex, setCurrentIndex
+  photos, eventId, onClose, onPhotoDeleted, categories, trashRetentionDays, currentPhoto, currentIndex, setCurrentIndex,
+  photoPricing,
 }) => {
+  // Photo sales: per-photo price override state. Held
+  // locally so the sidebar answers at once; the grid refreshes through the
+  // same onPhotoDeleted callback the category edit uses.
+  const [priceOverrides, setPriceOverrides] = useState<Record<number, number | null>>({});
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [priceDraft, setPriceDraft] = useState('');
+  const [savingPrice, setSavingPrice] = useState(false);
+  const effectivePrice = Object.prototype.hasOwnProperty.call(priceOverrides, currentPhoto.id)
+    ? priceOverrides[currentPhoto.id]
+    : (currentPhoto.photo_price ?? null);
+  useEffect(() => { setEditingPrice(false); }, [currentPhoto.id]);
+
+  const savePrice = async (value: number | null) => {
+    setSavingPrice(true);
+    try {
+      const result = await photosService.updatePhotoPrice(eventId, currentPhoto.id, value);
+      setPriceOverrides((prev) => ({ ...prev, [currentPhoto.id]: result.photo_price ?? null }));
+      setEditingPrice(false);
+      toast.success(t('photoSales.photoPriceSaved', 'Photo price updated'));
+      queryClient.invalidateQueries({ queryKey: ['admin-event-photos', String(eventId)] });
+      onPhotoDeleted();
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || t('common.error'));
+    } finally {
+      setSavingPrice(false);
+    }
+  };
   const [isDeleting, setIsDeleting] = useState(false);
   const { t } = useTranslation();
   const confirm = useConfirm();
@@ -436,6 +468,84 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
               </div>
             )}
           </div>
+
+          {/* Photo sales: per-photo price override. Hidden
+              unless the gallery is priced; null means "gallery default". */}
+          {photoPricing?.isPriced && (
+            <div className="mb-6" data-testid="admin-viewer-price">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-neutral-400 text-sm flex items-center gap-1">
+                  <Euro className="w-4 h-4" />
+                  {t('photoSales.photoPrice', 'Photo price')}
+                </span>
+                {!editingPrice && (
+                  <div className="flex items-center gap-3">
+                    {effectivePrice !== null && (
+                      <button
+                        onClick={() => savePrice(null)}
+                        disabled={savingPrice}
+                        className="text-xs text-neutral-400 hover:text-white"
+                        title={t('photoSales.photoPriceReset', 'Reset to the gallery default price')}
+                      >
+                        {t('photoSales.photoPriceReset', 'Reset')}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setPriceDraft(effectivePrice !== null ? String(effectivePrice) : String(photoPricing.defaultPrice || 0));
+                        setEditingPrice(true);
+                      }}
+                      className="text-xs text-accent hover:text-accent-dark"
+                    >
+                      {t('photoSales.changePrice', 'Change')}
+                    </button>
+                  </div>
+                )}
+              </div>
+              {editingPrice ? (
+                <form
+                  className="space-y-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const value = Number(priceDraft);
+                    if (Number.isFinite(value) && value >= 0) savePrice(Math.round(value * 100) / 100);
+                    else toast.error(t('photoSales.photoPriceInvalid', 'Enter a valid price'));
+                  }}
+                >
+                  <input
+                    value={priceDraft}
+                    onChange={(e) => setPriceDraft(e.target.value)}
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    autoFocus
+                    aria-label={t('photoSales.photoPrice', 'Photo price')}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-neutral-800 border border-neutral-700 text-white focus:ring-2 focus:ring-accent"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" size="sm" type="button" onClick={() => setEditingPrice(false)} disabled={savingPrice}>
+                      {t('common.cancel')}
+                    </Button>
+                    <Button variant="primary" size="sm" type="submit" disabled={savingPrice} isLoading={savingPrice}>
+                      {t('common.save')}
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <p className="text-white">
+                  {effectivePrice !== null
+                    ? `${formatPhotoPrice(effectivePrice, 'EUR')}`
+                    : (
+                      <span className="text-neutral-500">
+                        {t('photoSales.photoPriceDefault', 'Gallery default: {{price}}', {
+                          price: formatPhotoPrice(photoPricing.defaultPrice || 0, 'EUR'),
+                        })}
+                      </span>
+                    )}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Credit (#1561) */}
           <div className="mb-6" data-testid="admin-viewer-credit">

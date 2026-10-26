@@ -57,6 +57,9 @@ export interface AdminPhoto {
   credit_name?: string | null;
   credit_source?: 'guest' | 'exif' | 'manual' | 'account' | null;
   uploaded_by?: 'admin' | 'guest';
+  // Photo sales: per-photo price override (null = gallery
+  // default) for priced galleries.
+  photo_price?: number | null;
   // Camera details (issue 1733, D1); null when the photo carries none.
   exif?: PhotoExif | null;
   // Folders (issue 1786): the folder the photo lives in (null = gallery
@@ -335,6 +338,12 @@ class PhotosService {
 
   async updatePhotoCategory(eventId: number, photoId: number, categoryId: number | string | null): Promise<AdminPhoto> {
     const response = await api.patch(`/admin/events/${eventId}/photos/${photoId}`, { category_id: categoryId });
+    return response.data.photo;
+  }
+
+  // Photo sales: per-photo price override (null = gallery default).
+  async updatePhotoPrice(eventId: number, photoId: number, photoPrice: number | null): Promise<AdminPhoto> {
+    const response = await api.patch(`/admin/events/${eventId}/photos/${photoId}`, { photo_price: photoPrice });
     return response.data.photo;
   }
 

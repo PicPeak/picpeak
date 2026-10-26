@@ -115,6 +115,10 @@ const EVENT = {
   is_archived: false,
   photo_count: 3,
   source_mode: 'managed',
+  is_priced: true,
+  free_photo_count: 2,
+  photo_price: 9.5,
+  purchase_access_days: 14,
 };
 
 function renderPage(entry: string) {
@@ -379,4 +383,19 @@ describe('EventDetailsPage photos tab', () => {
     expect(screen.queryByRole('button', { name: 'Delete Selected' })).not.toBeInTheDocument();
   });
 
+
+  it('shows the priced-gallery editing fields for existing paid galleries', async () => {
+    renderPage('/admin/events/1?tab=settings');
+
+    // The pricing editor lives in the Settings tab as its own section.
+    const section = await screen.findByRole('button', { name: /Photo sales/ });
+    section.click();
+
+    await waitFor(() => {
+      expect(screen.getByText('Priced gallery')).toBeInTheDocument();
+      expect(screen.getByLabelText('Free photos')).toHaveValue(2);
+      expect(screen.getByLabelText(/Price per extra photo/)).toHaveValue(9.5);
+      expect(screen.getByLabelText('Access days')).toHaveValue(14);
+    });
+  });
 });

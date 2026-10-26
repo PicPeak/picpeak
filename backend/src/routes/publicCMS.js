@@ -1,6 +1,7 @@
 const express = require('express');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
+const { parseBoolean } = require('../utils/dbCompat');
 const router = express.Router();
 
 // Get public CMS page
@@ -37,8 +38,9 @@ router.get('/pages/:slug', async (req, res) => {
       // Footer visibility (#441). Default true for legacy rows; admins
       // can hide a CMS page from the gallery footer when their
       // jurisdiction doesn't require it (e.g. impressum / datenschutz
-      // outside DE/AT).
-      show_in_footer: page.show_in_footer !== false,
+      // outside DE/AT). SQLite returns the flag as 0/1, so normalise it
+      // rather than comparing against false.
+      show_in_footer: page.show_in_footer == null ? true : parseBoolean(page.show_in_footer),
       updated_at: page.updated_at
     });
   } catch (error) {

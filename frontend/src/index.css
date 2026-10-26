@@ -762,3 +762,58 @@
     font-size: max(16px, 1em, 1rem);
   }
 }
+
+/* Photo sales: Snipcart's default theme layers its modal at
+   z-index 20, BELOW PicPeak's sticky gallery header (z-40) and lightbox
+   (z-50), which made the cart's close / continue-shopping controls
+   unclickable at checkout. The #snipcart root is portaled to <body>, so
+   lifting the modal here puts the whole cart above all gallery chrome. */
+#snipcart .snipcart-modal,
+#snipcart .snipcart-modal__container {
+  z-index: 2147483647;
+}
+
+/* Photo sales: the tile price chip sits on the photo itself, so it carries
+   its own dark backing to stay legible on light and dark pictures. In the
+   cart it takes the gallery accent. */
+.photo-sales-chip {
+  color: #fff;
+  background-color: rgb(0 0 0 / 0.62);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14), 0 1px 3px rgb(0 0 0 / 0.25);
+  backdrop-filter: blur(6px);
+  transition: background-color 150ms ease;
+}
+.photo-sales-chip:hover { background-color: rgb(0 0 0 / 0.78); }
+.photo-sales-chip[data-in-cart] {
+  color: var(--color-accent-fg, #fff);
+  background-color: var(--color-accent);
+}
+.photo-sales-chip[data-in-cart]:hover {
+  background-color: color-mix(in srgb, var(--color-accent) 85%, #000);
+}
+
+/* Header cart count: a light chip on the accent button. */
+.photo-sales-cart-count {
+  color: var(--color-accent);
+  background-color: var(--color-accent-fg, #fff);
+}
+
+/* The one-time promo code above the grid: a quiet card tinted with the
+   accent, the code as the one control. */
+.photo-sales-promo {
+  background-color: color-mix(in srgb, var(--color-accent) 7%, var(--color-surface, #fff));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+.photo-sales-promo-icon {
+  color: var(--color-accent);
+  background-color: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+.photo-sales-promo-code {
+  color: var(--color-accent);
+  background-color: var(--color-surface, #fff);
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 55%, transparent);
+  transition: background-color 150ms ease;
+}
+.photo-sales-promo-code:hover {
+  background-color: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface, #fff));
+}

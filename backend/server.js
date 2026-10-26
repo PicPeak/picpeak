@@ -68,6 +68,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const cors = require('cors');
 const path = require('path');
+const { withPhotoSalesSources } = require('./src/modules/photoSales/galleryCsp');
 const { initializeDatabase, db, enableApplicationWorkOwnership } = require('./src/database/db');
 const applicationWork = require('./src/services/activeApplicationWork');
 const restoreCoordinator = require('./src/services/portableRestoreCoordinator');
@@ -298,6 +299,13 @@ app.options('/api/*', cors(corsOptions));
 // PicPeak credentials, or forwards arbitrary upstream responses.
 app.use('/api/analytics/tracker', require('./src/routes/analyticsTrackerProxy'));
 
+// Photo sales: the Snipcart order webhook reads the RAW request bytes (the
+// development HMAC is computed over them), so it is mounted ahead of the
+// global JSON body parsers. That also puts it ahead of the API rate limiter,
+// so the router carries its own. Unmatched gallery paths fall through to the
+// regular gallery router below unchanged.
+app.use('/api/gallery', require('./src/routes/gallery/snipcartWebhook'));
+
 // Health check endpoint. Public, so it answers only `status` (see
 // src/services/healthCheck.js).
 //
@@ -386,7 +394,7 @@ function renderBrandHeader(branding) {
 </header>`;
 }
 
-function renderBrandFooter(branding) {
+function renderBrandFooter(branding, { showAgb = false } = {}) {
   const displayName = escapeHtml(branding.companyName || 'PicPeak');
   const footerNote = branding.footerText
     ? `<p>${escapeHtml(branding.footerText)}</p>`
@@ -399,6 +407,7 @@ function renderBrandFooter(branding) {
 
   const legalLinks = `
     <a href="/datenschutz">Privacy Policy</a>
+    ${showAgb ? '<a href="/agb">Terms &amp; Conditions</a>' : ''}
     <a href="/impressum">Impressum</a>
     ${supportLink}
   `;
@@ -449,7 +458,7 @@ const PUBLIC_SITE_FONT_FACES = `
 function buildPublicSiteDocument(payload) {
   const inlineStyles = composeInlineStyles(payload);
   const header = renderBrandHeader(payload.branding);
-  const footer = renderBrandFooter(payload.branding);
+  const footer = renderBrandFooter(payload.branding, { showAgb: payload.showAgb === true });
   const seoMeta = payload.seoSettings ? buildSeoMetaTags(payload.seoSettings) : '';
 
   return `<!DOCTYPE html>
@@ -500,6 +509,13 @@ async function handlePublicSiteRequest(req, res, next) {
         seoSettings[row.setting_key] = val;
       }
       payload.seoSettings = seoSettings;
+    } catch {}
+
+    // The AGB link is opt-in (migration 316): only once the admin switched
+    // the page on in CMS Pages.
+    try {
+      const agb = await db('cms_pages').where('slug', 'agb').first('show_in_footer');
+      payload.showAgb = !!agb && (agb.show_in_footer === true || agb.show_in_footer === 1);
     } catch {}
 
     const document = buildPublicSiteDocument(payload);
@@ -1119,8 +1135,14 @@ try {
       }
       return next();
     };
-    app.get('/gallery/:slug/:token?', ogIntercept, (req, res) => sendSpa(res));
-    app.get('/gallery/:slug/show/:token', ogIntercept, (req, res) => sendSpa(res));
+    // Gallery pages get the CSP photo sales needs (Snipcart's cart), like
+    // nginx's `location @gallery_spa`; every other page keeps the site policy.
+    const galleryCsp = helmet.contentSecurityPolicy({
+      useDefaults: false,
+      directives: withPhotoSalesSources(cspDirectives),
+    });
+    app.get('/gallery/:slug/:token?', ogIntercept, galleryCsp, (req, res) => sendSpa(res));
+    app.get('/gallery/:slug/show/:token', ogIntercept, galleryCsp, (req, res) => sendSpa(res));
     // PicTransfer links (single-container deploys without nginx).
     const transferOgIntercept = (kind) => {
       const handler = handleTransferOgRequest(kind);
@@ -1526,6 +1548,13 @@ async function startServerInternal() {
     // lazy means they don't pay for a module graph they never use.
     require('./src/services/faceQueue').start();
 
+    // Photo sales: priced galleries whose promo-code
+    // discount is missing (e.g. the Snipcart secret key was added after the
+    // gallery was saved) get one sync attempt per server start. Fire and
+    // forget, delayed so the HTTP stack is up.
+    setTimeout(() => {
+      require('./src/modules/photoSales/promoDiscount').startupSync().catch(() => {});
+    }, 5000);
     // Scene tagging (issue 1733). Same shape: idle until the `autoTagging`
     // feature flag is on, and it never contacts the sidecar before that.
     require('./src/services/tagQueue').start();

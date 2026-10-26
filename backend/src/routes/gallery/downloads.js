@@ -31,10 +31,12 @@ const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../../services
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const downloadZipService = require('../../services/downloadZipService');
+const { findValidPhotoPurchaseAccess } = require('../../modules/photoSales/purchaseAccess');
+const { isGalleryPriced, resolveForcedWatermarkSettingsForPhoto } = require('../../modules/photoSales/priceRules');
 const folderTree = require('../../services/folderTreeService');
 const {
   renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, renderedDownloadType,
-  resolveWatermarkSettings,
+  resolveWatermarkSettings, resolveWatermarkSettingsForPhoto, isVideo,
 } = require('../../services/downloadRendition');
 const downloadJobService = require('../../services/downloadJobService');
 const downloadJobNotifier = require('../../services/downloadJobNotifier');
@@ -196,6 +198,18 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     const photoDenial = await originalAssetDenial(req, photo);
     if (photoDenial) return res.status(403).json(photoDenial);
 
+    const accessToken = req.query?.access_token || req.query?.accessToken || null;
+    const purchasedAccess = accessToken
+      ? findValidPhotoPurchaseAccess({
+        galleryId: req.event.id,
+        photoId: photo.id,
+        accessToken,
+        rows: await db('photo_purchases')
+          .where({ access_token: accessToken, gallery_id: req.event.id, photo_id: photo.id })
+          .select('id', 'gallery_id', 'photo_id', 'access_token', 'expires_at'),
+      })
+      : null;
+
     // Download resolution (#858). Resolved BEFORE the counters below: a
     // rejected resolution must not inflate download stats, which a guest
     // could otherwise do by replaying ?resolution=bogus.
@@ -211,8 +225,16 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     // Download limit (issue 1560): a share-link guest of a limited gallery
     // gets the preview-size copy and never draws on the quota; a video has
     // none, so it is refused.
-    if (await isPreviewOnly(req)) {
-      const preview = await renderPreviewForDownload(photo, await resolveWatermarkSettings(req.event));
+    // Photo sales: in a priced gallery NO original leaves
+    // the server before the checkout: the free tier is only downloadable
+    // through the cart, so without a valid purchase access every photo
+    // (free and paid) ships as the watermarked low-quality preview.
+    const photoSalesLocked = purchasedAccess ? false : (isGalleryPriced(req.event) && !isVideo);
+    if (await isPreviewOnly(req) || photoSalesLocked) {
+      const previewSettings = photoSalesLocked
+        ? await resolveForcedWatermarkSettingsForPhoto(req.event, photo)
+        : await resolveWatermarkSettingsForPhoto(req.event, photo);
+      const preview = await renderPreviewForDownload(photo, previewSettings);
       if (!preview) {
         return isVideo
           ? res.status(403).json(clientOnlyError())
@@ -250,7 +272,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       // be read without fetching them. A watermark or resize changes the
       // length, and the only way to learn the new one is to do the work this
       // branch exists to avoid — HEAD is allowed to omit it.
-      const headWatermark = await resolveWatermarkSettings(req.event);
+      const headWatermark = await resolveWatermarkSettingsForPhoto(req.event, photo);
       if (!box && !headWatermark) {
         try {
           const headKey = resolvePhotoStorageKey(req.event, photo);
@@ -319,7 +341,13 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     // It returns null when the photo needs no transformation at all, which is
     // the default gallery's common case and lets us ship the stored bytes
     // without buffering a full-size original into memory.
-    const effectiveSettings = await resolveWatermarkSettings(req.event);
+    // Photo sales: per-photo settings: a purchased photo
+    // ships as the untouched original (effectiveSettings null), a paid
+    // photo without purchase was already handled by the preview branch
+    // above, and free photos keep the original global-OR-event rule.
+    const effectiveSettings = purchasedAccess
+      ? null
+      : await resolveWatermarkSettingsForPhoto(req.event, photo);
 
     let rendered;
     try {
@@ -706,7 +734,11 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       .whereNot('processing_status', 'complete')
       .first('id')
       .then(Boolean);
+    // Photo sales: a priced gallery always streams, so the
+    // per-photo preview gate below applies on every request instead of
+    // trusting whatever a cached archive was built from.
     const streamOnly = isClient || eventHasHidden || eventHasDownloadRestrictedPhotos || eventHasUnprocessed
+      || isGalleryPriced(req.event)
       || !!(await currentDownloadLimit(req.event));
     let zipInfo = streamOnly
       ? null
@@ -911,12 +943,31 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           continue;
         }
 
+        // Photo sales: before the checkout every photo of
+        // a priced gallery ships only as the watermarked low-quality
+        // preview; free photos and non-priced galleries keep this path
+        // byte-identical. Videos have no preview tier and stay untouched.
+        let photoSettings = effectiveSettings;
+        if (isGalleryPriced(req.event) && !isVideo(photo)) {
+          photoSettings = await resolveForcedWatermarkSettingsForPhoto(req.event, photo);
+          const paidPreview = await renderPreviewForDownload(photo, photoSettings);
+          // No preview means no photo: the original must never stand in.
+          if (!paidPreview) throw new Error('No sales preview of this photo');
+          archive.append(paidPreview.buffer, {
+            name: previewDownloadName(archiveName, paidPreview.extension),
+            photoId: photo.id,
+          });
+          appendedIds.push(photo.id);
+          releaseAll.appended(photo.id);
+          continue;
+        }
+
         // Resize to the gallery's standard resolution (#858) and/or watermark.
         // This branch runs whenever the cached zip isn't usable — the first
         // download after an invalidation, PIN clients, and galleries with
         // hidden photos all land here, so skipping the cap would leak
         // full-resolution files for exactly those cases.
-        const rendered = await renderPhotoForDownload(req.event, photo, bulkBox, effectiveSettings);
+        const rendered = await renderPhotoForDownload(req.event, photo, bulkBox, photoSettings);
         // photoId rides along to archiver's 'entry' event (releaseUnshipped).
         if (rendered) {
           archive.append(rendered, { name: archiveName, photoId: photo.id });
@@ -1129,10 +1180,28 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           continue;
         }
 
+        // Photo sales: same per-photo rule as download-all:
+        // before the checkout every photo of a priced gallery ships only as
+        // the watermarked low-quality preview.
+        let selectedPhotoSettings = effectiveSettings;
+        if (isGalleryPriced(req.event) && !isVideo(photo)) {
+          selectedPhotoSettings = await resolveForcedWatermarkSettingsForPhoto(req.event, photo);
+          const paidPreview = await renderPreviewForDownload(photo, selectedPhotoSettings);
+          // No preview means no photo: the original must never stand in.
+          if (!paidPreview) throw new Error('No sales preview of this photo');
+          archive.append(paidPreview.buffer, {
+            name: previewDownloadName(name, paidPreview.extension),
+            photoId: photo.id,
+          });
+          appendedIds.push(photo.id);
+          releaseSelected.appended(photo.id);
+          continue;
+        }
+
         // Resize (#858) and/or watermark. renderPhotoForDownload returns null
         // when neither applies, so the untransformed case still streams from
         // storage rather than buffering the whole photo.
-        const rendered = await renderPhotoForDownload(req.event, photo, selectedBox, effectiveSettings);
+        const rendered = await renderPhotoForDownload(req.event, photo, selectedBox, selectedPhotoSettings);
         if (rendered) {
           archive.append(rendered, { name, photoId: photo.id });
         } else if (storageKey) {

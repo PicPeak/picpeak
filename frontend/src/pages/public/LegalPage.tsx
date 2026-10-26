@@ -8,6 +8,7 @@ import { Loading, Card } from '../../components/common';
 import { cmsService } from '../../services/cms.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
+import { useShowAgbLink } from '../../hooks/useShowAgbLink';
 import '../../styles/prose-overrides.css';
 
 // Force rel="noopener noreferrer" on target="_blank" anchors in CMS-authored
@@ -37,6 +38,7 @@ const sanitizeExternalUrl = (url: string): string | null => {
 export const LegalPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const { t, i18n } = useTranslation();
+  const showAgb = useShowAgbLink();
   // Branding's palette in charge: Card and Loading follow it.
   usePublicDarkMode();
   const navigate = useNavigate();
@@ -171,6 +173,17 @@ export const LegalPage: React.FC = () => {
               {t('legal.impressum', 'Legal Notice')}
             </Link>
             <span className="text-muted-theme">•</span>
+            {showAgb && (
+              <>
+                <Link
+                  to="/agb"
+                  className="text-muted-theme hover:text-theme"
+                >
+                  {t('legal.agb', 'Terms & Conditions')}
+                </Link>
+                <span className="text-muted-theme">•</span>
+              </>
+            )}
             <Link
               to="/datenschutz"
               className="text-muted-theme hover:text-theme"

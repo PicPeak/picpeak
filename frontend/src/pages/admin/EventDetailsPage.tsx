@@ -24,13 +24,14 @@ import { EventTabs } from './event-details/EventTabs';
 import { OverviewTab, eventNotice, useAccountReach } from './event-details/OverviewTab';
 import { formatNameList } from '../../utils/galleryRecipients';
 import { PhotosTab } from './event-details/PhotosTab';
+import { OrdersTab } from './event-details/OrdersTab';
 import { EventSettingsTab } from './event-details/settings/EventSettingsTab';
 import { useEventSettingsDraft } from './event-details/settings/useEventSettingsDraft';
 import type { SettingsSectionKey } from './event-details/settings/draft';
 import { EventFeedbackPanel } from './EventFeedbackPage';
 
-const ALL_TAB_KEYS: EventDetailsTab[] = ['overview', 'photos', 'guests', 'settings'];
-const SECTION_KEYS: SettingsSectionKey[] = ['general', 'access', 'downloads', 'guests', 'appearance', 'source', 'delivery', 'reminder', 'slideshow', 'faces', 'tags', 'danger'];
+const ALL_TAB_KEYS: EventDetailsTab[] = ['overview', 'photos', 'guests', 'orders', 'settings'];
+const SECTION_KEYS: SettingsSectionKey[] = ['general', 'access', 'downloads', 'pricing', 'guests', 'appearance', 'source', 'delivery', 'reminder', 'slideshow', 'faces', 'tags', 'danger'];
 
 function isValidTab(value: string | null): value is EventDetailsTab {
   return value !== null && (ALL_TAB_KEYS as string[]).includes(value);
@@ -165,6 +166,14 @@ export const EventDetailsPage: React.FC = () => {
     if (feedbackSettingsLoading || eventLoading) return;
     if (activeTab === 'guests' && !showGuestsTab) setActiveTab('overview');
   }, [feedbackSettingsLoading, eventLoading, showGuestsTab, activeTab]);
+
+  // Photo sales: Orders only exists for priced galleries.
+  useEffect(() => {
+    if (eventLoading) return;
+    if (activeTab === 'orders' && !event?.is_priced) {
+      setActiveTab('overview');
+    }
+  }, [eventLoading, event?.is_priced, activeTab]);
 
   // Merge feedback filters into the photo query so the grid follows them.
   const combinedPhotoFilters: PhotoFilterParams = useMemo(() => ({
@@ -448,6 +457,11 @@ export const EventDetailsPage: React.FC = () => {
               {hasGuests && <AdminGuestsList eventId={parseInt(id!)} eventName={event.event_name} />}
               {eventFeedbackSettings?.feedback_enabled && <EventFeedbackPanel eventId={id!} />}
             </div>
+          )}
+
+          {/* Photo sales: purchase orders for priced galleries. */}
+          {activeTab === 'orders' && !!event.is_priced && (
+            <OrdersTab eventId={event.id} />
           )}
 
           {activeTab === 'settings' && (

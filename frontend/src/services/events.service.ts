@@ -104,6 +104,10 @@ interface UpdateEventData {
   external_watch?: boolean;
   photo_cap?: number | null;
   download_limit?: number | null;
+  is_priced?: boolean;
+  free_photo_count?: number;
+  photo_price?: number | null;
+  purchase_access_days?: number;
   default_photo_sort?: string;
   videos_first?: boolean;
   // Per-event opt-in for hero photo as social-share preview (#474).

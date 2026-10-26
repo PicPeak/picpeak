@@ -424,6 +424,12 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
             setSelectedPhoto(null);
           }}
           categories={filterCategories}
+          // Photo sales: per-photo price editor for priced
+          // galleries (override of the gallery default).
+          photoPricing={{
+            isPriced: !!event.is_priced,
+            defaultPrice: Number(event.photo_price ?? 0),
+          }}
           trashRetentionDays={trash?.retention_days}
         />
       )}

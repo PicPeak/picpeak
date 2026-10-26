@@ -93,6 +93,10 @@ import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
 import { useGalleryCustomCss } from '../../hooks/useGalleryCustomCss';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { buildPhotoSalesConfig } from '../../features/photo-sales/photoSales';
+import { PhotoSalesProvider } from '../../features/photo-sales/PhotoSalesContext';
+import { PhotoSalesCartButton } from '../../features/photo-sales/PhotoSalesCartButton';
+import { PhotoSalesPromoBanner } from '../../features/photo-sales/PhotoSalesPromoBanner';
 import type { Photo } from '../../types';
 import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -416,6 +420,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   }, []);
 
   const { data: settingsData } = usePublicSettings();
+
+  // Photo sales: priced galleries get the Snipcart bootstrap
+  // and buy buttons; non-priced galleries never load any of it.
+  const photoSalesValue = useMemo(() => buildPhotoSalesConfig({
+    slug,
+    event: (data?.event as unknown) as Parameters<typeof buildPhotoSalesConfig>[0]['event'],
+    apiKey: (settingsData as { snipcart_api_key?: string | null } | undefined)?.snipcart_api_key ?? null,
+  }), [slug, data?.event, settingsData]);
 
   // Fetch feedback settings
   const { data: feedbackSettings } = useQuery({
@@ -1116,7 +1128,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   }, [setSelectedPhotos]);
 
   // Check if downloads are allowed (both event setting and not expired)
-  const allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
+  let allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
+
+  // Photo sales: a priced gallery delivers everything
+  // through the checkout: every download affordance (header, sidebar,
+  // tiles, lightbox, layout nav) is switched off and a Snipcart cart
+  // button takes the header slot instead.
+  const salesCheckoutReady = photoSalesValue.enabled && !!photoSalesValue.apiKey;
+  if (salesCheckoutReady && allowDownloads) allowDownloads = false;
 
   // Guest uploads: the refetched /photos payload decides once it is here. The
   // `event` prop is the snapshot the page loaded with, so OR-ing it in kept the
@@ -1771,6 +1790,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
         <GuestRecoveryModal />
+        <PhotoSalesProvider
+          value={{
+            ...photoSalesValue,
+            photos: (data?.photos || []) as Array<{ id: number; uploaded_at?: string | null }>,
+            checkoutReady: photoSalesValue.enabled && !!photoSalesValue.apiKey,
+          }}
+        >
+
         {/* #1160: these layouts return early and render edge-to-edge, but they
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
@@ -1980,6 +2007,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             }}
           />
         )}
+        </PhotoSalesProvider>
 
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
 
@@ -2006,6 +2034,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GridDensityOffered.Provider value={densityOffered}>
+      <PhotoSalesProvider
+        value={{
+          ...photoSalesValue,
+          photos: (data?.photos || []) as Array<{ id: number; uploaded_at?: string | null }>,
+          checkoutReady: photoSalesValue.enabled && !!photoSalesValue.apiKey,
+        }}
+      >
+
       <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
       <GuestRecoveryModal />
       {/* Sidebar for non-grid layouts */}
@@ -2146,7 +2182,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         headerExtra={(() => {
           const items = [];
           if (!showSidebar && clientAccessControl) items.push(<React.Fragment key="client-access">{clientAccessControl}</React.Fragment>);
-          
+
+          // Photo sales: the cart takes the header's download slot.
+          if (salesCheckoutReady) {
+            items.push(<PhotoSalesCartButton key="cart" />);
+          }
+
           if (daysUntilExpiration !== null && daysUntilExpiration <= 1 && daysUntilExpiration > 0 && event.expires_at) {
             items.push(
               <CountdownTimer key="countdown" expiresAt={event.expires_at} className="mr-2" />
@@ -2432,6 +2473,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             </div>
           )}
           {folderNav}
+          {/* Photo sales: one-time promo code for the first order's free photos. */}
+          <PhotoSalesPromoBanner
+            promoCode={(data?.event as { promo_code?: string | null } | undefined)?.promo_code}
+            discountReady={(data?.event as { promo_discount_ready?: boolean } | undefined)?.promo_discount_ready}
+          />
           {/* A gallery whose photos ALL live in folders has an empty root grid,
               and PhotoGridWithLayouts unconditionally renders "no photos found"
               — directly under the tiles that prove otherwise. Skip the grid when
@@ -2549,6 +2595,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
+      </PhotoSalesProvider>
       </GridDensityOffered.Provider>
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>

@@ -170,6 +170,10 @@ router.get('/:slug/info', async (req, res) => {
         'share_link',
         'share_token',
         'allow_downloads',
+        'is_priced',
+        'free_photo_count',
+        'photo_price',
+        'purchase_access_days',
         'allow_user_uploads',
         'reveal_mode',
         'reveal_at',
@@ -262,6 +266,10 @@ router.get('/:slug/info', async (req, res) => {
       requires_password: requiresPassword,
       color_theme: theme.color_theme,
       allow_downloads: !(event.allow_downloads === false || event.allow_downloads === 0 || event.allow_downloads === '0'),
+      is_priced: event.is_priced === true || event.is_priced === 1 || event.is_priced === '1',
+      free_photo_count: Number(event.free_photo_count || 0),
+      photo_price: event.photo_price != null ? Number(event.photo_price) : null,
+      purchase_access_days: Number(event.purchase_access_days || 30),
       allow_user_uploads: event.allow_user_uploads === true || event.allow_user_uploads === 1 || event.allow_user_uploads === '1',
       // Reveal mode (#838): effective hidden state (computed, time-exact) so
       // the landing page can hint at the reveal before login too.

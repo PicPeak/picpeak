@@ -9,6 +9,7 @@ import { useGalleryInfo } from '../hooks/useGallery';
 import { useFollowGalleryRename } from '../hooks/useFollowGalleryRename';
 import { usePublicSettings } from '../hooks/usePublicSettings';
 import { usePublicDarkMode } from '../hooks/usePublicDarkMode';
+import { useShowAgbLink } from '../hooks/useShowAgbLink';
 import { buildResourceUrl } from '../utils/url';
 
 export const ClientAccessPage: React.FC = () => {
@@ -17,6 +18,7 @@ export const ClientAccessPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { isAuthenticated, isClient, clientLogin, isLoading: authLoading } = useGalleryAuth();
   const { t } = useTranslation();
+  const showAgb = useShowAgbLink();
   const [pin, setPin] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -201,6 +203,17 @@ export const ClientAccessPage: React.FC = () => {
               {t('legal.impressum')}
             </Link>
             <span className="text-xs text-muted-theme">|</span>
+            {showAgb && (
+              <>
+                <Link
+                  to="/agb"
+                  className="text-xs text-muted-theme hover:text-theme transition-colors"
+                >
+                  {t('legal.agb')}
+                </Link>
+                <span className="text-xs text-muted-theme">|</span>
+              </>
+            )}
             <Link
               to="/datenschutz"
               className="text-xs text-muted-theme hover:text-theme transition-colors"
