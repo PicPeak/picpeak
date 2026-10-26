@@ -273,7 +273,7 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     expect(Number((await db('photo_purchases').count('* as n').first()).n)).toBe(1);
   });
 
-  test('one-time promo is reserved once, releases only after confirmed expiry, and supports a zero-total purchase', async () => {
+  test.each(['paid', 'no_payment_required'])('one-time promo releases only after expiry and supports a zero-total %s purchase', async (paymentStatus) => {
     await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE' });
     const first = await create({ promoCode: 'FOTO-ONCE' });
     const order = await orderFor(first);
@@ -283,8 +283,11 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     expect((await create({ promoCode: 'FOTO-ONCE' })).status).toBe(409);
     expect((await request(app).post(`/api/photo-checkout/${order.checkout_token}/cancel`).set('X-Photo-Checkout-Key', browserKey)).status).toBe(200);
     const second = await orderFor(await create({ promoCode: 'FOTO-ONCE' }));
-    const session = await pay(second, { payment_status: 'no_payment_required', payment_intent: null });
+    const session = await pay(second, { payment_status: paymentStatus, payment_intent: null });
     expect((await webhook('checkout.session.completed', session)).status).toBe(200);
+    expect((await webhook('checkout.session.completed', session)).status).toBe(200);
+    expect(Number((await db('photo_purchases').where({ order_id: second.order_id }).count('* as n').first()).n)).toBe(1);
+    expect(queueEmail).toHaveBeenCalledTimes(1);
     expect((await readOrder(second)).status).toBe('completed');
     expect((await readOrder(second)).promo_used).toBeTruthy();
     expect((await create({ promoCode: 'FOTO-ONCE' })).status).toBe(409);
@@ -386,9 +389,9 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     expect(body.line_items[0].price_data.product_data.description).toMatch(/Download bis .* UTC/);
   });
 
-  test('no-payment-required never unlocks a quote that requires payment', async () => {
+  test.each(['paid', 'no_payment_required'])('%s without a PaymentIntent never unlocks a quote that requires payment', async (paymentStatus) => {
     const order = await orderFor(await create());
-    const session = await pay(order, { payment_status: 'no_payment_required', payment_intent: null });
+    const session = await pay(order, { payment_status: paymentStatus, payment_intent: null });
     session.amount_total = 0;
     await webhook('checkout.session.completed', session);
     expect((await readOrder(order)).status).toBe('cancelled');
