@@ -949,7 +949,8 @@ async function ownDerivativeName(photo, name) {
 // publish over a regenerate that ran on new settings meanwhile.
 // `strictVideoFrame`: a video whose frame cannot be taken gets no poster at
 // all (null) rather than the placeholder over the one it has, for a repair
-// that must know whether it repaired anything.
+// that must know whether it repaired anything (the orientation backfill)
+// or an admin picking a frame (issue 2263, item 4).
 async function ensureThumbnail(photo, { force = false, boundVideoSource = true, checkSettings = !force, strictVideoFrame = false } = {}) {
   // Check if thumbnail exists and is valid (works for any source).
   if (!force && photo.thumbnail_path) {
@@ -1260,11 +1261,11 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
     : await ownDerivativeName(photo, sourceBasename));
   const thumbnailKey = path.posix.join('thumbnails', `thumb_${outputBasename.replace(/\.[^.]+$/, '.jpg')}`);
   // The frame the admin picked (issue 2263, item 4); null is the default.
-  // Read when the caller's row was selected without it, so every rebuild
-  // (regenerate, backfill, the queued gallery rebuild) keeps the pick.
-  const offsetSeconds = 'poster_offset_seconds' in photo
-    ? photo.poster_offset_seconds
-    : (await db('photos').where('id', photo.id).first('poster_offset_seconds'))?.poster_offset_seconds;
+  // Always read here, never taken from the caller's row: a regenerate sweep
+  // selects its rows up front, and a pick saved meanwhile must win. Rebuilds
+  // of one photo run one after the other (singleFlight), so the read inside
+  // this flight sees every pick saved before it.
+  const offsetSeconds = (await db('photos').where('id', photo.id).first('poster_offset_seconds'))?.poster_offset_seconds;
 
   // Resolves to { thumbnailKey, placeholder, thumbnailError } or null, so the
   // caller can write the processing note the way the upload paths do.

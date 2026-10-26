@@ -177,8 +177,6 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
         // ensureThumbnail keeps a complete video's poster note in step with
         // the frame it rebuilt (issue 1430); it needs the status to know.
         'processing_status',
-        // The frame an admin picked for a video's poster (issue 2263).
-        'poster_offset_seconds',
         // An external row's tier keys carry its size and mtime; selected
         // here so the helpers need not read them per photo.
         'source_origin', 'external_relpath', 'filename', 'size_bytes', 'source_mtime_ms', 'source_filename',

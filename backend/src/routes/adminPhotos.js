@@ -1574,14 +1574,16 @@ router.put('/:eventId/photos/:photoId/poster', adminAuth, requirePermission('pho
     const restore = () => livePhotos(db).where(fence).update({ poster_offset_seconds: photo.poster_offset_seconds ?? null });
     let key;
     try {
-      key = await ensureThumbnail(row, { force: true });
+      // Strict: a frame that cannot be taken leaves the current poster as
+      // it is, never the placeholder over it.
+      key = await ensureThumbnail(row, { force: true, strictVideoFrame: true });
     } catch (error) {
       await restore().catch(() => {});
       throw error;
     }
     if (!key) {
       await restore();
-      return res.status(500).json({ error: 'The preview image could not be rebuilt' });
+      return res.status(422).json({ error: 'No frame could be taken from the video at that point' });
     }
     // A key written under another name leaves the old poster behind; it is
     // dropped unless another row still names it.

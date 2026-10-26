@@ -764,6 +764,12 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // same-origin).
       const imgQuery = [wmVersion, adminPreview ? 'admin_preview=1' : ''].filter(Boolean).join('&');
       const wmQuery = imgQuery ? `?${imgQuery}` : '';
+      // The thumbnail route caches for half an hour and a rebuilt poster
+      // lands under the same key, so the frame an admin picked for a video
+      // (issue 2263, item 4) rides in the URL: a new pick is a new URL.
+      const posterQuery = isVideo && photo.poster_offset_seconds != null
+        ? `?${[imgQuery, `poster=${photo.poster_offset_seconds}`].filter(Boolean).join('&')}`
+        : wmQuery;
       // The hero crop follows the event's focal point (issue 1737) and the
       // hero route caches for an hour, so a non-centre anchor rides in the
       // URL: a changed anchor is a new URL, not a stale cached crop.
@@ -808,7 +814,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // which is both a broken tile and a full download of the file. Images
         // keep the old behaviour: for them the original is a usable fallback.
         thumbnail_url: (photo.thumbnail_path || isVideo)
-          ? `/api/gallery/${slug}/thumbnail/${photo.id}${wmQuery}`
+          ? `/api/gallery/${slug}/thumbnail/${photo.id}${posterQuery}`
           : null,
         // Hero-optimized image URL (1920x1080) for full-width hero sections
         hero_url: `/api/gallery/${slug}/hero/${photo.id}${heroQuery ? `?${heroQuery}` : ''}`,

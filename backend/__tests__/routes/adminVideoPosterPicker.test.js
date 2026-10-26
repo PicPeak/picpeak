@@ -172,6 +172,36 @@ describe('PUT poster', () => {
     expect(seeks()).toEqual(['9', '9']);
   });
 
+  it('takes the pick saved since a sweep read its row, not the row\'s stale one', async () => {
+    await db('photos').where({ id: videoId }).update({ poster_offset_seconds: 9 });
+    const { ensureThumbnail } = require('../../src/services/imageProcessor');
+    const stale = { ...(await db('photos').where({ id: videoId }).first()), poster_offset_seconds: 5 };
+
+    expect(await ensureThumbnail(stale, { force: true })).toBeTruthy();
+    expect(seeks()).toEqual(['9']);
+  });
+
+  it('keeps the current poster and pick when no frame can be taken', async () => {
+    expect((await pick(videoId, { offset_seconds: 5 })).status).toBe(200);
+    const before = await db('photos').where({ id: videoId }).first();
+    const posterFile = path.join(process.env.STORAGE_PATH, before.thumbnail_path);
+    const posterBytes = fs.readFileSync(posterFile);
+    mockRun.mockReset();
+    mockRun.mockImplementation(async (command) => {
+      if (command === 'ffmpeg') throw new Error('decoder failed');
+      return { stdout: Buffer.alloc(0) };
+    });
+
+    const res = await pick(videoId, { offset_seconds: 2 });
+    expect(res.status).toBe(422);
+    const after = await db('photos').where({ id: videoId }).first();
+    expect(after.poster_offset_seconds).toBe(5);
+    expect(after.thumbnail_path).toBe(before.thumbnail_path);
+    expect(after.processing_error).toBeNull();
+    // Not the placeholder over the frame it had.
+    expect(fs.readFileSync(posterFile).equals(posterBytes)).toBe(true);
+  });
+
   it('resets to the default frame with null', async () => {
     const res = await pick(videoId, { offset_seconds: null });
     expect(res.status).toBe(200);

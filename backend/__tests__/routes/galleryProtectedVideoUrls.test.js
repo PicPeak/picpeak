@@ -181,6 +181,16 @@ describe('videos stay playable under enhanced/maximum protection (#1370)', () =>
       expect(photo.thumbnail_url).toBe(`/api/gallery/${SLUG}/thumbnail/${videoId}`);
     });
 
+    test('carries the frame an admin picked, so a new pick is a new URL (issue 2263)', async () => {
+      await db('photos').where({ id: videoId }).update({ poster_offset_seconds: 4.5 });
+      try {
+        const photo = await photoPayload(videoId);
+        expect(photo.thumbnail_url).toBe(`/api/gallery/${SLUG}/thumbnail/${videoId}?poster=4.5`);
+      } finally {
+        await db('photos').where({ id: videoId }).update({ poster_offset_seconds: null });
+      }
+    });
+
     test('while a still image keeps falling back to its original', async () => {
       const photo = await photoPayload(imageId);
       expect(photo.thumbnail_url).toBeNull();
