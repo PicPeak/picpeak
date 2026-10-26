@@ -25,7 +25,7 @@ const ALL_ROWS = {
   'routes/adminEvents/helpers.js': [4, 'gallery deletion locks, then removes, every row and file, trashed ones included'],
   'routes/adminFolders.js': [2, 'folder structure is applied to trashed photos too, so a restore lands in the right folder'],
   'routes/adminImageSecurity.js': [1, 'access log listing is an audit trail and keeps the entries of trashed photos'],
-  'routes/adminPhotoDimensions.js': [19, 'repair backfills (dimensions, capture date, EXIF, orientation, credits, tile placeholders) and their progress counts run over every row'],
+  'routes/adminPhotoDimensions.js': [24, 'repair backfills (dimensions, capture date, EXIF, orientation including videos, credits, tile placeholders) and their progress counts run over every row'],
   'routes/adminPhotos.js': [2, 'filename counter for new uploads; filenames of the photos a restore request names'],
   'routes/adminSettings.js': [2, 'storage statistics'],
   'routes/adminSystem.js': [1, 'storage statistics'],
