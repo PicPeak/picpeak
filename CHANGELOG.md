@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.182.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.181.0-beta.0...v3.182.0-beta.0) (2026-10-26)
+
+
+### Features
+
+* shared product configurator for galleries and CRM ([#1924](https://github.com/PicPeak/picpeak/issues/1924)) ([#2222](https://github.com/PicPeak/picpeak/issues/2222)) ([a624aa2](https://github.com/PicPeak/picpeak/commit/a624aa229f3c61e06b7100c69056f38774259107))
+
 ## [3.181.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.180.4-beta.0...v3.181.0-beta.0) (2026-10-26)
 
 
