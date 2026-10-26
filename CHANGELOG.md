@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.181.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.180.4-beta.0...v3.181.0-beta.0) (2026-10-26)
+
+
+### Features
+
+* **gallery:** opt into client PIN entry ([#2249](https://github.com/PicPeak/picpeak/issues/2249)) ([1c92e8e](https://github.com/PicPeak/picpeak/commit/1c92e8e0c3336834ebde6cdede9ebdf2b0c0f56f))
+
+
+### Bug Fixes
+
+* **gallery:** fade the Story hero scrim out before its own edge ([#2260](https://github.com/PicPeak/picpeak/issues/2260)) ([7439a9c](https://github.com/PicPeak/picpeak/commit/7439a9ce1c3efe588675e29bd95a95aca030bf5d))
+* **slideshow:** stop cropping portrait photos and set the image fit per event ([#2262](https://github.com/PicPeak/picpeak/issues/2262)) ([3a6df69](https://github.com/PicPeak/picpeak/commit/3a6df694067a33a27ddac698247ec97bfc67111c))
+
 ## [3.180.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.180.3-beta.0...v3.180.4-beta.0) (2026-10-26)
 
 
