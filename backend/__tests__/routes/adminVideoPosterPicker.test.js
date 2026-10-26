@@ -257,6 +257,23 @@ describe('PUT poster', () => {
     expect((await tile('')).headers['cache-control']).toBe('no-store');
   });
 
+  it('leaves one poster behind two overlapping picks, not the one in between', async () => {
+    expect((await pick(videoId, { offset_seconds: 5 })).status).toBe(200);
+    const old = (await db('photos').where({ id: videoId }).first()).thumbnail_path;
+    const posters = () => new Set(fs.readdirSync(path.join(process.env.STORAGE_PATH, 'thumbnails')));
+    const before = posters();
+
+    const [first, second] = await Promise.all([pick(videoId, { offset_seconds: 3 }), pick(videoId, { offset_seconds: 7 })]);
+    expect([first.status, second.status]).toEqual([200, 200]);
+
+    const row = await db('photos').where({ id: videoId }).first();
+    const after = posters();
+    expect(after.has(path.basename(row.thumbnail_path))).toBe(true);
+    expect(after.has(path.basename(old))).toBe(false);
+    // Nothing else new: the poster of whichever pick ran first is gone too.
+    expect([...after].filter((name) => !before.has(name))).toEqual([path.basename(row.thumbnail_path)]);
+  });
+
   it('resets to the default frame with null', async () => {
     const res = await pick(videoId, { offset_seconds: null });
     expect(res.status).toBe(200);

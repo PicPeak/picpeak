@@ -263,6 +263,23 @@ describe('archive restore rebuilds the photo row faithfully', () => {
       .toEqual({ 'clip.mov': 'video', 'still.png': 'image' });
   });
 
+  it('restores the frame picked for a video\'s poster, and none for a photo (issue 2263)', async () => {
+    const archiveRelPath = await writeArchive('posterpick.zip', {
+      'individual/picked.mov': BYTES,
+      'individual/still.png': BYTES,
+      'photos_manifest.json': manifestOf([
+        { filename: 'picked.mov', type: 'individual', media_type: 'video', mime_type: 'video/quicktime', poster_offset_seconds: 4.5 },
+        { filename: 'still.png', type: 'individual', poster_offset_seconds: 3 },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'poster-pick-event');
+
+    await restore(eventId);
+
+    expect(await columnByFilename(eventId, 'poster_offset_seconds'))
+      .toEqual({ 'picked.mov': 4.5, 'still.png': null });
+  });
+
   it('restores a watcher-imported video as a video despite its stale media_type', async () => {
     // fileWatcher sets type='video' and a video/* mime but never media_type,
     // so its rows carry the 'image' column default. Readers know those clips

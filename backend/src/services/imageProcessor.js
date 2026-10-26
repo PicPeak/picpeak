@@ -1194,6 +1194,13 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   }
 
   if (newThumbnailPath) {
+    // A picked frame replaces whatever poster the row names at this point,
+    // read inside the flight: picks of one photo rebuild one after the
+    // other, so a snapshot taken before the rebuild would name a poster an
+    // earlier pick has already replaced, and leave that one behind.
+    const replaced = posterOffsetSeconds !== undefined && isVideoPhoto(photo)
+      ? (await db('photos').where('id', photo.id).first('thumbnail_path'))?.thumbnail_path
+      : null;
     if (!await publishPhotoDerivative(photo, newThumbnailPath, {
       thumbnail_path: newThumbnailPath,
       thumb_hash: meta.thumbHash || null,
@@ -1212,6 +1219,10 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
         : query.where('poster_offset_seconds', posterOffsetUsed);
     })) return null;
 
+    if (replaced && replaced !== newThumbnailPath
+      && !(await db('photos').where('thumbnail_path', replaced).first('id'))) {
+      await getStorage().delete(replaced).catch(() => {});
+    }
     logger.info(`Regenerated thumbnail for photo ${photo.id}`);
     return newThumbnailPath;
   }

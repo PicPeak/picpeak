@@ -1578,12 +1578,8 @@ router.put('/:eventId/photos/:photoId/poster', adminAuth, requirePermission('pho
     if (!key) {
       return res.status(422).json({ error: 'No frame could be taken from the video at that point' });
     }
-    // A key written under another name leaves the old poster behind; it is
-    // dropped unless another row still names it.
-    if (photo.thumbnail_path && photo.thumbnail_path !== key
-      && !(await db('photos').where('thumbnail_path', photo.thumbnail_path).first('id'))) {
-      await getStorage().delete(photo.thumbnail_path).catch(() => {});
-    }
+    // The poster it replaced was dropped inside the rebuild (ensureThumbnail
+    // with posterOffsetSeconds), unless another row still names it.
     await logActivity('photo_poster_updated', {
       photo_id: photo.id, offset_seconds: offset,
     }, photo.event_id, { type: 'admin', id: req.admin.id, name: req.admin.username });

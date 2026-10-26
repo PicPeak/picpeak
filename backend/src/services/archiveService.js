@@ -403,6 +403,9 @@ async function buildArchive(event, lease) {
           // Who uploaded it (issue 743), for the review badge; restored only
           // while that account still exists.
           'photos.uploaded_by_admin_id',
+          // The frame an admin picked for a video's poster (issue 2263),
+          // which the restored poster is rebuilt at.
+          'photos.poster_offset_seconds',
         );
       // The folder a photo lives in, as a path ("Saturday/Activity B"):
       // folder ids do not survive a restore into a fresh database, names do.
