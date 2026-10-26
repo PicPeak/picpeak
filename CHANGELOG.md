@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.180.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.180.2-beta.0...v3.180.3-beta.0) (2026-10-26)
+
+
+### Bug Fixes
+
+* keep admin photo selections within the current filter view ([#2247](https://github.com/PicPeak/picpeak/issues/2247)) ([ded370b](https://github.com/PicPeak/picpeak/commit/ded370b42449813f94a241aa8397081ed20b03d1))
+* restore the frontend TypeScript check ([#2246](https://github.com/PicPeak/picpeak/issues/2246)) ([63f5ae2](https://github.com/PicPeak/picpeak/commit/63f5ae2c632e2f99dd2bd44aef03229164a9ed9b))
+
 ## [3.180.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.180.1-beta.0...v3.180.2-beta.0) (2026-10-25)
 
 
