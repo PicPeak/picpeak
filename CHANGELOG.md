@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.184.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.183.0-beta.0...v3.184.0-beta.0) (2026-10-26)
+
+
+### Features
+
+* **gallery:** per-event "videos first" and pick up media that finishes processing ([#2267](https://github.com/PicPeak/picpeak/issues/2267)) ([d90eff7](https://github.com/PicPeak/picpeak/commit/d90eff77c4927ca7945508a74f0910ec08a21966))
+
+
+### Bug Fixes
+
+* **gallery:** keep lightbox arrows off the video controls, download videos directly ([#2266](https://github.com/PicPeak/picpeak/issues/2266)) ([7a432a3](https://github.com/PicPeak/picpeak/commit/7a432a301a2d7ad50ee2c485eaedcdd052136598))
+* **video:** store portrait clips upright, date them, keep posters in shape ([#2268](https://github.com/PicPeak/picpeak/issues/2268)) ([4f47e41](https://github.com/PicPeak/picpeak/commit/4f47e4109883893b28b43114f5705752ead285ad))
+
 ## [3.183.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.182.0-beta.0...v3.183.0-beta.0) (2026-10-26)
 
 
