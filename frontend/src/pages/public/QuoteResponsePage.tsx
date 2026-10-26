@@ -399,7 +399,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                     if (item.parentPosition != null) parents.add(item.parentPosition);
                   }
                   for (const li of quote.lineItems) {
-                    const isSub = li.parentLineItemId != null || li.parentPosition != null;
+                    const isSub = li.parentPosition != null;
                     // Discount lines (#1451) are numbered, but carry no quantity or unit price.
                     const isDiscount = li.lineKind === 'discount';
                     if (!isSub) topCount += 1;
