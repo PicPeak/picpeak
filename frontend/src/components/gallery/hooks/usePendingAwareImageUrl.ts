@@ -20,17 +20,20 @@ const MIN_POLL_DELAY_MS = 2000;
  * lightbox was reopened. This asks again on the same budget AuthenticatedImage
  * uses (MAX_PENDING_POLLS), only while the document is visible, and swaps in
  * the real poster when it comes. A final 4xx stops; a spent budget keeps the
- * stand-in. Undefined until the first answer; `src` itself when the first ask
- * fails, so the element tries as it did before.
+ * stand-in. `src` itself until the first answer, and when that ask fails, so
+ * the element loads it as it did before.
  */
 export function usePendingAwareImageUrl(
   src: string | null | undefined,
   { slug }: { slug?: string } = {},
 ): string | undefined {
-  const [url, setUrl] = useState<string | undefined>(undefined);
+  const [url, setUrl] = useState<string | undefined>(src || undefined);
 
   useEffect(() => {
-    setUrl(undefined);
+    // The URL itself until the fetch answers: the fetch can wait for a slot
+    // in the image queue, and a player with no poster and no media data
+    // (preload="none") is a black box meanwhile.
+    setUrl(src || undefined);
     if (!src) return undefined;
 
     let cancelled = false;
@@ -81,11 +84,8 @@ export function usePendingAwareImageUrl(
         if (pendingMs !== null) askAgain(pendingMs);
       } catch (error) {
         if (cancelled) return;
-        // Nothing fetched yet: hand the element the URL itself, as before.
-        if (!current) {
-          setUrl(src);
-          return;
-        }
+        // Nothing fetched yet: the element keeps the URL itself, as before.
+        if (!current) return;
         // Final for this URL: an expired token, a photo that is gone. The
         // stand-in stays.
         if (error instanceof HttpError && isFinalStatus(error.status)) return;

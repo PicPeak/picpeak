@@ -88,7 +88,13 @@ describe('usePendingAwareImageUrl (issue 2275)', () => {
     expect(result.current).toBe(`blob:${1 + MAX_PENDING_POLLS}`);
   });
 
-  it('hands over the URL itself when the first ask fails', async () => {
+  it('shows the URL itself while the fetch waits for a queue slot', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    const { result } = renderHook(() => usePendingAwareImageUrl('/api/gallery/demo/thumbnail/1'));
+    expect(result.current).toBe('/api/gallery/demo/thumbnail/1');
+  });
+
+  it('keeps the URL itself when the first ask fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.reject(new TypeError('Load failed'))));
     const { result } = renderHook(() => usePendingAwareImageUrl('/api/gallery/demo/thumbnail/1'));
     await flush();
