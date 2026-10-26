@@ -1099,7 +1099,10 @@ describe('Download limit (issue 1560)', () => {
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toContain('application/zip');
       expect(res.headers['content-length']).toBe(String('PK-head-probe'.length));
-      expect(res.headers['content-disposition']).toBe(`attachment; filename="${event.slug}-original.zip"`);
+      const disposition = res.headers['content-disposition'];
+      expect(disposition).toMatch(/^attachment; /);
+      expect(disposition).toContain(`filename="${event.slug}-original.zip"`);
+      expect(disposition).toContain(`filename*=UTF-8''${event.slug}-original.zip`);
       await settle();
       expect(await downloadCounts(photoIds)).toEqual([0, 0]);
       expect(await activityCount(event.id)).toBe(0);
