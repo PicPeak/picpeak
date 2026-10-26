@@ -34,10 +34,17 @@ describe.each(['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : [])])('
     await migration.up(db);
     await migration.up(db);
     expect(await db('photo_purchase_orders').first()).toMatchObject({ payment_provider: 'snipcart', promo_gallery_id: 1 });
+    await expect(db('photo_purchase_orders').insert({ order_id: 'duplicate-promo', gallery_id: 1, promo_gallery_id: 1 }))
+      .rejects.toThrow();
+    await db('events').where({ id: 1 }).del();
+    expect(await db('photo_purchase_orders').first()).toMatchObject({ order_id: 'historic-order', gallery_id: null, promo_gallery_id: null });
+  });
+
+  test('repairs a partially applied foreign-key change', async () => {
+    await db.schema.alterTable('photo_purchase_orders', (t) => t.dropForeign('gallery_id'));
+    await migration.up(db);
     await db('events').where({ id: 1 }).del();
     expect(await db('photo_purchase_orders').first()).toMatchObject({ order_id: 'historic-order', gallery_id: null });
-    await expect(db('photo_purchase_orders').insert({ order_id: 'duplicate-promo', gallery_id: null, promo_gallery_id: 1 }))
-      .rejects.toThrow();
   });
 
   test('down preserves old orders, and refuses to discard Stripe financial state', async () => {

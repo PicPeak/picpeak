@@ -14,7 +14,7 @@ exports.up = async function up(knex) {
     checkout_quote: (t) => t.text('checkout_quote').nullable(),
     // NULL for ordinary orders; UNIQUE reserves a gallery's promo across
     // pending Stripe checkouts and completed purchases from either provider.
-    promo_gallery_id: (t) => t.integer('promo_gallery_id').nullable().unique(),
+    promo_gallery_id: (t) => t.integer('promo_gallery_id').nullable().unique().references('events.id').onDelete('SET NULL'),
   };
   for (const [column, define] of Object.entries(fields)) {
     await addColumnIfNotExists(knex, 'photo_purchase_orders', column, define);
@@ -23,16 +23,16 @@ exports.up = async function up(knex) {
   // Keep paid/pending financial records when the gallery goes away. A
   // Stripe payment may arrive after deletion and still needs refunding.
   const sqlite = knex.client.config.client === 'sqlite3';
-  const oldForeignKey = sqlite
+  const foreignKey = sqlite
     ? (await knex.raw('PRAGMA foreign_key_list(photo_purchase_orders)'))
-      .some((fk) => fk.from === 'gallery_id' && fk.on_delete !== 'SET NULL')
-    : (await knex.raw(`SELECT 1 FROM information_schema.referential_constraints
+      .find((fk) => fk.from === 'gallery_id')
+    : (await knex.raw(`SELECT delete_rule AS on_delete FROM information_schema.referential_constraints
         WHERE constraint_schema = current_schema()
-        AND constraint_name = 'photo_purchase_orders_gallery_id_foreign'
-        AND delete_rule <> 'SET NULL'`)).rows.length > 0;
-  if (oldForeignKey) {
+        AND constraint_name = 'photo_purchase_orders_gallery_id_foreign'`)).rows[0];
+  const column = await knex('photo_purchase_orders').columnInfo('gallery_id');
+  if (!foreignKey || foreignKey.on_delete !== 'SET NULL' || !column.nullable) {
     await knex.schema.alterTable('photo_purchase_orders', (t) => {
-      t.dropForeign('gallery_id');
+      if (foreignKey) t.dropForeign('gallery_id');
       t.integer('gallery_id').nullable().alter();
       t.foreign('gallery_id').references('events.id').onDelete('SET NULL');
     });
