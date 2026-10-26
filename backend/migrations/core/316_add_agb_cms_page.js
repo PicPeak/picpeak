@@ -18,6 +18,7 @@ const PLACEHOLDER_EN = '<h2>Terms & Conditions</h2><p>Please edit this content i
 const PLACEHOLDER_DE = '<h2>AGB</h2><p>Bitte bearbeiten Sie diesen Inhalt im Admin-Panel.</p>';
 
 exports.up = async function up(knex) {
+  if (!(await knex.schema.hasTable('cms_pages'))) return;
   const existing = await knex('cms_pages').where('slug', 'agb').first();
   if (!existing) {
     await knex('cms_pages').insert({
@@ -37,5 +38,6 @@ exports.up = async function up(knex) {
 };
 
 exports.down = async function down(knex) {
+  if (!(await knex.schema.hasTable('cms_pages'))) return;
   await knex('cms_pages').where('slug', 'agb').del();
 };
