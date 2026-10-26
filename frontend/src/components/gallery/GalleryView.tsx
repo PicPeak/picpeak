@@ -1285,6 +1285,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           if (token === null) continue;
           keepSelectedRunAlive(runId);
           try {
+            // No isVideo here (issue 2263): a direct download returns at once,
+            // so the loop would fire every navigation back to back, which
+            // browsers block or cut down to the first. Fetching paces them.
             await galleryService.downloadPhoto(slug, photo.id, photo.filename, () => {
               touchPhotoDownload(photo.id, token);
               keepSelectedRunAlive(runId);

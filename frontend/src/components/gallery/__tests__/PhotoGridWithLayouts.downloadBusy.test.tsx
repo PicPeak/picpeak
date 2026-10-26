@@ -72,9 +72,9 @@ function deferred() {
 }
 
 let nextId = 100;
-function renderGrid() {
+function renderGrid(over: Partial<Photo> = {}) {
   // A fresh photo per test: the busy set is shared by the whole page.
-  const photo = { id: nextId++, filename: 'IMG_0001.jpg' } as Photo;
+  const photo = { id: nextId++, filename: 'IMG_0001.jpg', ...over } as Photo;
   render(
     <QueryClientProvider client={new QueryClient()}>
       <PhotoGridWithLayouts photos={[photo]} slug="g" />
@@ -108,7 +108,7 @@ describe('Single-photo download button while the download is prepared (issue 204
     fireEvent.click(downloadButton());
     await new Promise((r) => setTimeout(r, 0));
     expect(svc.downloadPhoto).toHaveBeenCalledTimes(1);
-    expect(svc.downloadPhoto).toHaveBeenCalledWith('g', photo.id, 'IMG_0001.jpg', expect.any(Function), undefined);
+    expect(svc.downloadPhoto).toHaveBeenCalledWith('g', photo.id, 'IMG_0001.jpg', expect.any(Function), undefined, false);
     expect(svc.trackDownload).toHaveBeenCalledTimes(1);
 
     pending.resolve();
@@ -145,5 +145,16 @@ describe('Single-photo download button while the download is prepared (issue 204
     svc.downloadPhoto.mockResolvedValue(undefined);
     fireEvent.click(downloadButton());
     await waitFor(() => expect(svc.downloadPhoto).toHaveBeenCalledTimes(2));
+  });
+
+  // Issue 2263: the tile tells the service a video is one, so it can be
+  // downloaded directly instead of fetched into memory first.
+  it('hands isVideo to the service for a video tile', async () => {
+    svc.downloadPhoto.mockResolvedValue(undefined);
+    const video = renderGrid({ filename: 'clip.mp4', media_type: 'video' });
+    fireEvent.click(screen.getByRole('button', { name: /Download/ }));
+    await waitFor(() => expect(svc.downloadPhoto).toHaveBeenCalledWith(
+      'g', video.id, 'clip.mp4', expect.any(Function), undefined, true,
+    ));
   });
 });

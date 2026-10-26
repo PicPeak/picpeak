@@ -84,6 +84,7 @@ export const PhotoGrid: React.FC<PhotoGridProps> = ({
       slug,
       photoId: photo.id,
       filename: photo.filename,
+      isVideo: photo.media_type === 'video',
     });
   };
 

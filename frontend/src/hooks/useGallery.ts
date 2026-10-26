@@ -53,7 +53,7 @@ export const useGalleryStats = (slug: string, enabled: boolean = true) => {
 };
 
 // `resolution`: a size picked from the download menu (issue 1733, E2).
-// `isVideo`: lets the save-aware path download a video directly (issue 2263).
+// `isVideo`: lets a video download directly (issue 2263).
 type PhotoDownload = { slug: string; photoId: number; filename: string; resolution?: string; isVideo?: boolean };
 
 // Issue 2043: one download per photo at a time. `mutate` marks the photo
@@ -81,7 +81,7 @@ const useSinglePhotoDownload = (
 
 export const useDownloadPhoto = () => {
   return useSinglePhotoDownload(
-    ({ slug, photoId, filename, resolution }, onProgress) => galleryService.downloadPhoto(slug, photoId, filename, onProgress, resolution),
+    ({ slug, photoId, filename, resolution, isVideo }, onProgress) => galleryService.downloadPhoto(slug, photoId, filename, onProgress, resolution, isVideo),
     {
       onSuccess: () => {
         toast.success('Photo downloaded successfully');

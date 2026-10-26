@@ -703,6 +703,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           photoId: photo.id,
           filename: photo.filename,
           resolution,
+          isVideo: isVideoPhoto(photo),
         });
       });
     }

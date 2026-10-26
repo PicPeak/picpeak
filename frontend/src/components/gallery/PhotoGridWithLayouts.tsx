@@ -347,6 +347,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
         photoId: photo.id,
         filename: photo.filename,
         resolution,
+        isVideo: photo.media_type === 'video',
       });
     });
   };
