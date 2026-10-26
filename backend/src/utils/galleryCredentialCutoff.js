@@ -8,13 +8,14 @@
  * Slideshow sessions come from the slideshow link: the session carries a digest
  * of the link it was opened with, and rotating or disabling the link ends every
  * session opened with the old one. Portal sessions (`via: 'customer'`) are bound
- * to the customer account, so they are not cut off here.
+ * to the customer account; only an elevated portal client's PIN is checked here.
  */
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { hasColumnCached } = require('./schemaCache');
 const { toTimestamp } = require('./dateNormalize');
 const { AppError } = require('./errors');
+const { parseBooleanInput } = require('./parsers');
 
 const COLUMN = { gallery: 'gallery_password_changed_at', client: 'client_password_changed_at' };
 
@@ -58,8 +59,21 @@ function slideshowCredentialClaim(event) {
   return { showLink: slideshowLinkDigest(event.show_share_token) };
 }
 
+// Binds only PIN-entry sessions to this enrollment. A fresh bcrypt hash on
+// re-enrollment prevents old elevated tokens reviving when the flag returns.
+function clientPinEntryClaim(event) {
+  return { clientPinEntry: crypto.createHash('sha256').update(event.client_password_hash).digest('hex') };
+}
+
 function assertGalleryCredentialCurrent(event, session) {
-  if (!event || !session || session.via === 'customer') return;
+  if (event && session?.clientPinEntry !== undefined &&
+    (session.accessLevel !== 'client' || !parseBooleanInput(event.client_access_enabled, false)
+      || !parseBooleanInput(event.client_pin_entry_enabled, false) || !event.client_password_hash
+      || session.clientPinEntry !== clientPinEntryClaim(event).clientPinEntry))
+    throw new AppError('Gallery PIN entry session ended', 401, 'CLIENT_PIN_ENTRY_ENDED');
+  // Portal guests use their account credential; an elevated portal client
+  // additionally depends on the client PIN and must honor its cutoff.
+  if (!event || !session || (session.via === 'customer' && session.accessLevel !== 'client')) return;
   if (session.accessLevel === 'slideshow') {
     // A session without the claim predates it. It lives 12 hours at most and
     // is left to expire rather than blanking every running projector at the
@@ -80,4 +94,4 @@ function assertGalleryCredentialCurrent(event, session) {
   }
 }
 
-module.exports = { credentialChangeColumns, sameAsStored, slideshowCredentialClaim, assertGalleryCredentialCurrent };
+module.exports = { credentialChangeColumns, sameAsStored, slideshowCredentialClaim, clientPinEntryClaim, assertGalleryCredentialCurrent };

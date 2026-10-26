@@ -1,8 +1,8 @@
 /**
  * <SlideshowStyleFields>
  *
- * Shared, controlled editor for a slideshow's visual style — transition,
- * timing, watermark and color filter. Used in two places:
+ * Shared, controlled editor for a slideshow's visual style — image fit,
+ * transition, timing, watermark and color filter. Used in two places:
  *   - SlideshowSettingsCard (per-event live settings)
  *   - EventTypeModal (per-event-type preset that new events inherit)
  *
@@ -16,6 +16,9 @@ import {
   SLIDESHOW_COLORFILTERS,
   SLIDESHOW_WATERMARK_MODES,
   SLIDESHOW_ORDERS,
+  SLIDESHOW_FIT_MODES,
+  SLIDESHOW_FIT_LABELS,
+  SLIDESHOW_FIT_HINT,
   type SlideshowStyle,
 } from '../../services/slideshow.service';
 import type { PhotoCategory } from '../../services/categories.service';
@@ -40,6 +43,27 @@ export const SlideshowStyleFields: React.FC<SlideshowStyleFieldsProps> = ({ valu
 
   return (
     <div className="space-y-4">
+      {/* Image fit (issue 2261) — first, because a cropped portrait photo is
+          the most visible thing to fix on a running show. */}
+      <div>
+        <label htmlFor="slideshow-fit" className={labelClass}>{t('slideshow.fitLabel', 'Image fit')}</label>
+        <select
+          id="slideshow-fit"
+          value={value.fit}
+          onChange={(e) => set({ fit: e.target.value as SlideshowStyle['fit'] })}
+          className={inputClass}
+        >
+          {SLIDESHOW_FIT_MODES.map((m) => (
+            <option key={m} value={m}>
+              {m === 'inherit'
+                ? t('slideshow.fitInherit', 'Use global default (Settings → Slideshow)')
+                : t(`slideshow.fit.${m}`, SLIDESHOW_FIT_LABELS[m])}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted mt-1">{t('slideshow.fitHint', SLIDESHOW_FIT_HINT)}</p>
+      </div>
+
       {/* Transition + timing */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>

@@ -27,7 +27,7 @@ export const GalleryPage: React.FC = () => {
   // isLoading is the session-restore probe. Public auto-login must wait for
   // it — otherwise an empty-password guest token can overwrite a real client
   // cookie while isAuthenticated is still false (fork survey A3 / #1563).
-  const { isAuthenticated, isLoading: isRestoringSession, login, event } = useGalleryAuth();
+  const { isAuthenticated, isLoading: isRestoringSession, login, event, isClient, viaCustomer } = useGalleryAuth();
   const { t, i18n } = useTranslation();
   const { formatExpiry } = useLocalizedDate();
   const { setTheme } = useTheme();
@@ -445,7 +445,8 @@ export const GalleryPage: React.FC = () => {
 
   // Show gallery view if authenticated
   if (isAuthenticated && event) {
-    return <GalleryView slug={gallerySlugForView} event={event} requiresPassword={requiresPassword} />;
+    return <GalleryView key={`${gallerySlugForView}:${isClient ? 'client' : viaCustomer ? 'customer' : 'guest'}`}
+      slug={gallerySlugForView} event={event} requiresPassword={requiresPassword} />;
   }
 
   // Public gallery: auto-login is in flight (or about to fire). Show the

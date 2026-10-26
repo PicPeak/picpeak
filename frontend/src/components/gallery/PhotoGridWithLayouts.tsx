@@ -77,6 +77,8 @@ interface PhotoGridWithLayoutsProps {
   welcomeMessage?: string;
   // Logout callback for full-page layouts
   onLogout?: () => void;
+  onManageGallery?: () => void;
+  clientModeBusy?: boolean;
   // Guest upload for full-page layouts (they have no gallery header)
   onUploadClick?: () => void;
   // Client visibility controls (#172)
@@ -168,6 +170,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   heroImageAnchor = 'center',
   welcomeMessage,
   onLogout,
+  onManageGallery,
+  clientModeBusy,
   onUploadClick,
   isClient = false,
   onToggleVisibility,
@@ -493,6 +497,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     heroLogoPosition,
     welcomeMessage,
     onLogout,
+    onManageGallery,
+    clientModeBusy,
     onUploadClick,
     isClient,
     onToggleVisibility,

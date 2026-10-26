@@ -120,6 +120,7 @@ interface GallerySidebarProps {
    * closes with focus inside, as the closed panel is inert (issue 1977).
    */
   returnFocusRef?: React.RefObject<HTMLElement>;
+  clientAccessControl?: React.ReactNode;
 }
 
 export const GallerySidebar: React.FC<GallerySidebarProps> = ({
@@ -186,6 +187,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   slug,
   folderTree,
   returnFocusRef,
+  clientAccessControl,
 }) => {
   const { t } = useTranslation();
   // On a phone the sidebar is a drawer; Escape closes it like any overlay.
@@ -700,6 +702,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
             </div>
           )}
         </div>
+        {clientAccessControl && <div className="gallery-sidebar-section p-4 border-t border-border-token">{clientAccessControl}</div>}
       </div>
 
     </>

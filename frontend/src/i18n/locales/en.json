@@ -4627,6 +4627,7 @@
       "brandingUpdated": "Branding settings updated",
       "generalSettingsUpdated": "General settings updated",
       "securitySettingsUpdated": "Security settings updated",
+      "galleryPinEntryPaused": "PIN entry paused after repeated failed attempts in {{eventName}}. Private client links remain available.",
       "themeUpdated": "Theme settings updated",
       "archiveDownloaded": "Archive downloaded for \"{{eventName}}\"",
       "archiveDeleted": "Archive deleted for \"{{eventName}}\"",
@@ -5041,6 +5042,7 @@
     "activities": {
       "event_created": "New event created: {{eventName}}",
       "gallery_opened": "Gallery “{{eventName}}” was opened",
+      "gallery_pin_entry_paused": "PIN entry paused after repeated incorrect attempts in {{eventName}}. Private client links remain available.",
       "gallery_downloaded": "Photos were downloaded from “{{eventName}}”",
       "photos_uploaded": "{{count}} photos uploaded to {{eventName}}",
       "media_uploaded": "{{media}} uploaded to {{eventName}}",
@@ -6996,13 +6998,15 @@
       "off": "Off"
     },
     "globalTitle": "Global slideshow settings",
-    "globalDescription": "Defaults for every slideshow. Events can override the watermark on or off.",
+    "globalDescription": "Defaults for every slideshow. Events can override the image fit, the watermark and the QR code.",
     "fitLabel": "Image fit",
     "fit": {
+      "auto": "Automatic (whole portrait photos, fill with landscape)",
       "cover": "Fill screen (crop)",
       "contain": "Black bars (no crop)"
     },
-    "fitHint": "\"Fill\" crops to fill the screen; \"Black bars\" shows the whole photo — better for portrait images.",
+    "fitInherit": "Use global default (Settings → Slideshow)",
+    "fitHint": "\"Automatic\" shows a photo whole when it does not match the screen's orientation, such as a portrait photo on a projector, and fills the screen otherwise. \"Fill\" always crops to fill the screen; \"Black bars\" always shows the whole photo.",
     "presetTitle": "Default style for new slideshows",
     "presetHint": "Applied to events created from now on; each event can still override it.",
     "defaultsSaved": "Slideshow defaults saved",
@@ -7042,7 +7046,23 @@
     "regenerateToken": "Regenerate link",
     "tokenRegenerated": "Client access link regenerated",
     "hiddenFromGuests": "Hidden from guests",
-    "visibleToGuests": "Visible to guests"
+    "visibleToGuests": "Visible to guests",
+    "manageGallery": "Manage Gallery",
+    "returnToGallery": "Return to gallery",
+    "returnFailed": "Could not return to the gallery. Please try again.",
+    "pinEntryToggle": "Allow PIN entry from the regular gallery",
+    "pinEntryDescription": "Visitors with the PIN receive full client access, including hidden photos, originals and reveal previews. Turning this off ends PIN-entry sessions; private-link access remains available.",
+    "pinEntryDialogDescription": "Enter your client PIN to open the client view, including hidden photos and client download options. Visibility changes affect what guests see.",
+    "pinEntryInvalidPin": "Invalid PIN. Please try again.",
+    "pinEntryLocked": "PIN entry is temporarily paused. Try again later or use your private client link.",
+    "pinEntryBusy": "PIN entry is busy. Please wait a moment and try again.",
+    "pinEntryFailed": "Client access could not be opened. Please try again.",
+    "pinEntryEnrollTitle": "Enable gallery PIN entry",
+    "pinEntryEnrollHelp": "Enter the existing PIN again or set a new one with at least 8 characters. On a public gallery, this PIN is the only secret protecting client access.",
+    "pinEntryPinHelper": "Gallery PIN entry requires at least 8 characters.",
+    "pinEntrySaveFailed": "PIN entry could not be enabled. Check that Client Access is still enabled, then try again.",
+    "entryUnavailable": "PIN entry is no longer available for this gallery.",
+    "sessionExpired": "Your gallery session has ended. Reopen the gallery and try again."
   },
   "export": {
     "button": "Export",

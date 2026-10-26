@@ -285,11 +285,25 @@
    is legible over light, dark and mixed images without covering the hero. */
 .story-hero-copy {
   position: relative;
+  /* Keeps the scrim's z-index: -1 behind the copy, not behind the hero. */
+  isolation: isolate;
   padding: 2.5rem 2rem;
-  border-radius: 1.5rem;
-  /* The ellipse reaches the box corners at 100%, so the fade ends late
-     enough that a three-line title on a phone still sits on darkened
-     pixels; the text shadow carries the last few percent. */
+}
+
+/* Issue 2254: the scrim used to be the copy box's own background, so it was
+   cut off where the box ended. Halfway along each side it was still about 15%
+   black there, which showed as a hard edge on detailed images. The same
+   gradient now sits on a layer 2rem larger than the box, and a mask fades
+   that layer out over its outer 4rem: from 2rem inside the box (the copy's
+   padding) to fully transparent 2rem outside it. The eased stops leave no
+   visible line. The hero's overflow: hidden clips whatever reaches past the
+   viewport, so nothing scrolls sideways. */
+.story-hero-copy::before {
+  content: '';
+  position: absolute;
+  inset: -2rem;
+  z-index: -1;
+  pointer-events: none;
   background: radial-gradient(
     ellipse at center,
     rgba(0, 0, 0, 0.55) 0%,
@@ -297,6 +311,63 @@
     rgba(0, 0, 0, 0.12) 80%,
     rgba(0, 0, 0, 0) 100%
   );
+  /* Both ramps multiply, so the corners round off softly as well. */
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      rgba(0, 0, 0, 0.16) 1rem,
+      rgba(0, 0, 0, 0.5) 2rem,
+      rgba(0, 0, 0, 0.84) 3rem,
+      #000 4rem,
+      #000 calc(100% - 4rem),
+      rgba(0, 0, 0, 0.84) calc(100% - 3rem),
+      rgba(0, 0, 0, 0.5) calc(100% - 2rem),
+      rgba(0, 0, 0, 0.16) calc(100% - 1rem),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      rgba(0, 0, 0, 0.16) 1rem,
+      rgba(0, 0, 0, 0.5) 2rem,
+      rgba(0, 0, 0, 0.84) 3rem,
+      #000 4rem,
+      #000 calc(100% - 4rem),
+      rgba(0, 0, 0, 0.84) calc(100% - 3rem),
+      rgba(0, 0, 0, 0.5) calc(100% - 2rem),
+      rgba(0, 0, 0, 0.16) calc(100% - 1rem),
+      transparent 100%
+    );
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      rgba(0, 0, 0, 0.16) 1rem,
+      rgba(0, 0, 0, 0.5) 2rem,
+      rgba(0, 0, 0, 0.84) 3rem,
+      #000 4rem,
+      #000 calc(100% - 4rem),
+      rgba(0, 0, 0, 0.84) calc(100% - 3rem),
+      rgba(0, 0, 0, 0.5) calc(100% - 2rem),
+      rgba(0, 0, 0, 0.16) calc(100% - 1rem),
+      transparent 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      rgba(0, 0, 0, 0.16) 1rem,
+      rgba(0, 0, 0, 0.5) 2rem,
+      rgba(0, 0, 0, 0.84) 3rem,
+      #000 4rem,
+      #000 calc(100% - 4rem),
+      rgba(0, 0, 0, 0.84) calc(100% - 3rem),
+      rgba(0, 0, 0, 0.5) calc(100% - 2rem),
+      rgba(0, 0, 0, 0.16) calc(100% - 1rem),
+      transparent 100%
+    );
+  mask-composite: intersect;
 }
 
 .story-hero-date {

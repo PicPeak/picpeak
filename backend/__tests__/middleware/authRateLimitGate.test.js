@@ -64,6 +64,7 @@ function mountRoutes(app) {
   app.post('/api/auth/gallery/verify', (req, res) => fail(res));
   app.post('/api/auth/gallery/share-login', (req, res) => fail(res));
   app.post('/api/auth/gallery/:slug/client-login', (req, res) => fail(res));
+  app.post('/api/auth/gallery/:slug/client-elevate', (req, res) => fail(res));
   app.post('/api/setup/verify-token', (req, res) => fail(res));
   app.post('/api/setup/admin', (req, res) => fail(res));
   app.post('/api/customer/auth/login', (req, res) => fail(res));
@@ -137,6 +138,7 @@ describe('authRateLimitGate — credential endpoints are limited', () => {
     ['/api/auth/gallery/verify'],
     ['/api/auth/gallery/share-login'],
     ['/api/auth/gallery/some-slug/client-login'],
+    ['/api/auth/gallery/some-slug/client-elevate'],
     ['/api/setup/verify-token'],
     ['/api/setup/admin'],
     ['/api/customer/auth/login'],

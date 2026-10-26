@@ -141,9 +141,9 @@ function clearCustomerAuthCookie(res) {
   res.clearCookie(CUSTOMER_COOKIE_NAME, buildClearCookieOptions());
 }
 
-function setGalleryAuthCookies(res, token, slug) {
+function setGalleryAuthCookies(res, token, slug, maxAgeMs = DEFAULT_MAX_AGE_MS) {
   if (!token) return;
-  const options = buildCookieOptionsWithExpiry(res);
+  const options = buildCookieOptionsWithExpiry(res, maxAgeMs);
   res.cookie(GALLERY_COOKIE_NAME, token, options);
   if (slug) {
     const cookieName = `${GALLERY_COOKIE_PREFIX}${sanitizeSlugForCookie(slug)}`;

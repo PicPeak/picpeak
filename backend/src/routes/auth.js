@@ -754,6 +754,10 @@ router.post('/gallery/verify', [
   }
 });
 
+// Session-based PIN entry is separate: private client links still require both
+// the current link token and PIN below.
+router.use('/gallery', require('./galleryClientAccess'));
+
 // Client access login (PIN-based)
 router.post('/gallery/:slug/client-login', [
   body('password').notEmpty().isString()
@@ -1040,6 +1044,7 @@ router.get('/session', async (req, res) => {
         // it does not look like one.
         accessLevel: decoded.type === 'gallery' ? (decoded.accessLevel || 'guest') : undefined,
         viaCustomer: decoded.type === 'gallery' ? decoded.via === 'customer' : undefined,
+        viaClientPin: decoded.type === 'gallery' ? Boolean(decoded.clientPinEntry) : undefined,
         // Full admin payload (or null) — lets the SPA hydrate its user
         // state after a redirect-established session (SSO, #798) where no
         // login JSON response ever reached it.

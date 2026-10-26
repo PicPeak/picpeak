@@ -109,6 +109,8 @@ export interface BaseGalleryLayoutProps {
   };
   // Logout callback for full-page layouts
   onLogout?: () => void;
+  onManageGallery?: () => void;
+  clientModeBusy?: boolean;
   // Guest upload for full-page layouts, which have no gallery header: opens
   // the container's upload dialog. Undefined when uploads are off.
   onUploadClick?: () => void;

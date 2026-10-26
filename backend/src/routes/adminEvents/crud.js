@@ -221,6 +221,7 @@ module.exports = (router) => {
     body('hero_image_anchor').optional().custom(validateHeroImageAnchor),
     // Client access settings (#172)
     body('client_access_enabled').optional().isBoolean(),
+    body('client_pin_entry_enabled').optional().isBoolean(),
     body('client_password').optional().custom(validateClientPassword),
     body('default_photo_sort').optional().isIn([
       'upload_date_desc', 'upload_date_asc',
@@ -965,13 +966,13 @@ module.exports = (router) => {
       const customerColumnsAvailable = await hasCustomerContactColumns();
       const calendarColumnsExist = await hasColumnCached('events', 'is_full_day');
       // The Live Slideshow style is gallery configuration too (issue 2189).
-      // Its columns come from four migrations (138/139/158/163), so copy the
+      // Its columns come from five migrations (138/139/158/163/323), so copy the
       // ones this schema has. The share token stays behind: a copy gets its
       // own link. show_category_id is mapped after the categories are cloned,
       // with upload_category_id.
       const eventColumns = await columnNamesCached('events');
       const slideshowStyle = Object.fromEntries(
-        ['show_interval_ms', 'show_transition', 'show_transition_ms', 'show_watermark', 'show_qr', 'show_colorfilter', 'show_order']
+        ['show_interval_ms', 'show_transition', 'show_transition_ms', 'show_watermark', 'show_qr', 'show_colorfilter', 'show_order', 'show_fit']
           .filter((column) => eventColumns.has(column))
           .map((column) => [column, source[column]])
       );
@@ -1066,6 +1067,7 @@ module.exports = (router) => {
         // Client-access secrets and the OG-share opt-in deliberately do NOT
         // carry over — admin re-decides per gallery.
         client_access_enabled: formatBoolean(false),
+        client_pin_entry_enabled: formatBoolean(false),
         og_image_share_enabled: formatBoolean(false),
         ...slideshowStyle,
       }).returning('id');
@@ -1300,6 +1302,7 @@ module.exports = (router) => {
     body('hero_image_anchor').optional().custom(validateHeroImageAnchor),
     // Client access settings (#172)
     body('client_access_enabled').optional().isBoolean(),
+    body('client_pin_entry_enabled').optional().isBoolean(),
     body('client_password').optional().custom(validateClientPassword),
     body('regenerate_client_token').optional().isBoolean(),
     body('default_photo_sort').optional().isIn([
@@ -1400,16 +1403,20 @@ module.exports = (router) => {
       const touchesCredentials = setsPassword(req.body.password)
         || setsPassword(req.body.client_password)
         || parseBooleanInput(req.body.regenerate_client_token, false)
-        || Object.prototype.hasOwnProperty.call(req.body, 'require_password');
+        || Object.prototype.hasOwnProperty.call(req.body, 'require_password')
+        || Object.prototype.hasOwnProperty.call(req.body, 'client_pin_entry_enabled');
       if (touchesCredentials) {
-        const stored = await db('events').where('id', id).first('id', 'created_by', 'require_password');
+        const stored = await db('events').where('id', id).first('id', 'created_by', 'require_password',
+          ...(Object.prototype.hasOwnProperty.call(req.body, 'client_pin_entry_enabled') ? ['client_pin_entry_enabled'] : []));
         if (!stored) return res.status(404).json({ error: 'Event not found' });
         const togglesProtection = Object.prototype.hasOwnProperty.call(req.body, 'require_password')
           && parseBooleanInput(req.body.require_password, true) !== parseBooleanInput(stored.require_password, true);
         const changesCredentials = setsPassword(req.body.password) || setsPassword(req.body.client_password)
-          || parseBooleanInput(req.body.regenerate_client_token, false) || togglesProtection;
+          || parseBooleanInput(req.body.regenerate_client_token, false) || togglesProtection
+          || (Object.prototype.hasOwnProperty.call(req.body, 'client_pin_entry_enabled')
+            && parseBooleanInput(req.body.client_pin_entry_enabled, false) !== parseBooleanInput(stored.client_pin_entry_enabled, false));
         if (changesCredentials && !ownsEvent(req.admin, stored)) {
-          return res.status(403).json({ error: 'Only the gallery owner can change its password', code: 'EVENT_OWNER_REQUIRED' });
+          return res.status(403).json({ error: 'Only the gallery owner can change gallery access', code: 'EVENT_OWNER_REQUIRED' });
         }
       }
 
@@ -1840,11 +1847,32 @@ module.exports = (router) => {
 
       const currentRequirePassword = parseBooleanInput(event.require_password, true);
 
+      const storedPinEntry = parseBooleanInput(event.client_access_enabled, false)
+        && parseBooleanInput(event.client_pin_entry_enabled, false);
+      const nextClientAccess = Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled')
+        ? parseBooleanInput(updates.client_access_enabled, false) : parseBooleanInput(event.client_access_enabled, false);
+      const requestedPinEntry = Object.prototype.hasOwnProperty.call(updates, 'client_pin_entry_enabled')
+        ? parseBooleanInput(updates.client_pin_entry_enabled, false) : storedPinEntry;
+      const nextPinEntry = nextClientAccess && requestedPinEntry;
+      if (!nextClientAccess && Object.prototype.hasOwnProperty.call(updates, 'client_pin_entry_enabled') && requestedPinEntry)
+        return res.status(400).json({ error: 'Enable Client Access before gallery PIN entry', code: 'CLIENT_ACCESS_REQUIRED' });
+      try {
+        require('../../services/galleryPinEntryService').validateEnrollment({ enabled: nextPinEntry,
+          clientAccessEnabled: nextClientAccess, wasEnabled: storedPinEntry, password: recoverable.clientPassword });
+      } catch (error) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
+      const enablingPinEntry = nextPinEntry && !storedPinEntry;
+      const touchesClientSecurity = Object.prototype.hasOwnProperty.call(updates, 'client_pin_entry_enabled')
+        || Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled') || Boolean(recoverable.clientPassword);
+
       // Resubmitting the current client password is not a change: keep the hash
       // and the client sessions opened with it.
       if (updates.client_password_hash) {
         if (await sameAsStored(recoverable.clientPassword, event.client_password_hash)) {
-          delete updates.client_password_hash;
+          // Re-enrollment always gets a fresh hash, even with the same PIN:
+          // old PIN-entry tokens must not revive when the opt-in returns.
+          if (!enablingPinEntry) delete updates.client_password_hash;
           keptClientHash = true;
         } else {
           credentialChanges.add('client');
@@ -2083,8 +2111,12 @@ module.exports = (router) => {
       }
 
       // Handle client access fields (#172)
+      if (Object.prototype.hasOwnProperty.call(updates, 'client_pin_entry_enabled')) {
+        updates.client_pin_entry_enabled = formatBoolean(nextPinEntry);
+      }
       if (Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled')) {
-        updates.client_access_enabled = formatBoolean(updates.client_access_enabled);
+        updates.client_access_enabled = formatBoolean(nextClientAccess);
+        if (!nextClientAccess || !storedPinEntry) updates.client_pin_entry_enabled = formatBoolean(nextPinEntry);
         if (!parseBooleanInput(updates.client_access_enabled, false) && parseBooleanInput(event.client_access_enabled, false)) {
           credentialChanges.add('client');
         }
@@ -2093,8 +2125,8 @@ module.exports = (router) => {
           updates.client_share_token = crypto.randomBytes(32).toString('hex');
         }
       }
-      // Client login needs the link token as well as the PIN, so a PIN never
-      // stays without one (older rows, or a PIN set on its own).
+      // Keep the private link available as an independent entry path,
+      // including when a gallery also opts into PIN-only entry.
       if ((updates.client_password_hash || event.client_password_hash)
         && !event.client_share_token && !updates.client_share_token) {
         updates.client_share_token = crypto.randomBytes(32).toString('hex');
@@ -2128,7 +2160,15 @@ module.exports = (router) => {
           let eventUpdate = db('events').where('id', id);
           if (keptGalleryHash) eventUpdate = eventUpdate.where('password_hash', event.password_hash);
           if (keptClientHash) eventUpdate = eventUpdate.where('client_password_hash', event.client_password_hash);
+          if (touchesClientSecurity) eventUpdate = eventUpdate.where({
+            client_access_enabled: event.client_access_enabled,
+            client_pin_entry_enabled: event.client_pin_entry_enabled,
+            client_password_hash: event.client_password_hash,
+          });
           const updated = await eventUpdate.update(updates);
+          if (!updated && touchesClientSecurity) return res.status(409).json({
+            error: 'Client access changed while saving. Reload and try again.', code: 'CLIENT_ACCESS_CHANGED',
+          });
           if (!updated && (keptGalleryHash || keptClientHash)) {
             // A password changed underneath: write the submitted ones as changes.
             if (keptGalleryHash) {

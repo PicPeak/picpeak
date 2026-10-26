@@ -121,7 +121,8 @@ describe('public Live Slideshow routes', () => {
         transition: 'kenburns',
         transition_ms: 1200,
         colorfilter: 'sepia',
-        fit: 'cover',
+        // Issue 2261: an install that never chose a fit defaults to 'auto'.
+        fit: 'auto',
         photo_count: 0,
         watermark: null,
       });
@@ -165,12 +166,42 @@ describe('public Live Slideshow routes', () => {
     });
   });
 
-  describe('slideshowSettings — image fit (global, live)', () => {
+  describe('slideshowSettings — image fit (global default + per-event override)', () => {
     it('reflects the global slideshow_fit setting', async () => {
       await insertEvent(db);
       await setSetting(db, 'slideshow_fit', 'contain');
       const res = await request(app).get(stateUrl());
       expect(res.status).toBe(200);
+      expect(res.body.fit).toBe('contain');
+    });
+
+    // Issue 2261: a saved global 'cover' keeps cropping; only installs that
+    // never chose get the new 'auto' default.
+    it('keeps an explicitly saved global cover', async () => {
+      await insertEvent(db);
+      await setSetting(db, 'slideshow_fit', 'cover');
+      const res = await request(app).get(stateUrl());
+      expect(res.body.fit).toBe('cover');
+    });
+
+    it('inherits the global fit when show_fit is NULL', async () => {
+      await insertEvent(db, { show_fit: null });
+      await setSetting(db, 'slideshow_fit', 'contain');
+      const res = await request(app).get(stateUrl());
+      expect(res.body.fit).toBe('contain');
+    });
+
+    it.each(['auto', 'contain', 'cover'])('per-event %s overrides the global fit', async (fit) => {
+      await insertEvent(db, { show_fit: fit });
+      await setSetting(db, 'slideshow_fit', fit === 'cover' ? 'contain' : 'cover');
+      const res = await request(app).get(stateUrl());
+      expect(res.body.fit).toBe(fit);
+    });
+
+    it('falls back to the global fit for an unknown stored value', async () => {
+      await insertEvent(db, { show_fit: 'banana' });
+      await setSetting(db, 'slideshow_fit', 'contain');
+      const res = await request(app).get(stateUrl());
       expect(res.body.fit).toBe('contain');
     });
   });

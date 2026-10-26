@@ -27,10 +27,11 @@ export const useGalleryPhotos = (
   slug: string,
   filter?: 'liked' | 'favorited' | 'commented' | 'rated' | 'all',
   guestId?: string,
-  enabled: boolean = true
+  enabled: boolean = true,
+  accessScope: string = 'guest'
 ) => {
   return useQuery({
-    queryKey: ['gallery-photos', slug, filter, guestId],
+    queryKey: ['gallery-photos', slug, filter, guestId, accessScope],
     // Pass guestId so backend can filter per-guest views when needed
     queryFn: ({ signal }) => galleryService.getGalleryPhotos(slug, filter, guestId, signal),
     enabled,

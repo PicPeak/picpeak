@@ -76,10 +76,34 @@ describe('Story hero title legibility (issue 1708)', () => {
   });
 
   it('puts a localised scrim behind the copy', () => {
-    const scrim = blocksFor('.story-hero-copy');
+    const scrim = blocksFor('.story-hero-copy::before');
     expect(scrim.length).toBe(1);
     expect(scrim[0]).toMatch(/radial-gradient/);
     expect(scrim[0]).toMatch(/rgba\(0,\s*0,\s*0,\s*0\.\d+\)/);
+  });
+
+  // Issue 2254: a scrim painted as the copy box's own background ended on
+  // that box, still partly dark halfway along each side, so its edge showed
+  // on detailed images. The pixel check is tests/e2e/story-hero-scrim.spec.ts.
+  it('feathers the scrim out past the copy box instead of cutting it off there', () => {
+    const copy = blocksFor('.story-hero-copy');
+    expect(copy.length).toBe(1);
+    expect(copy[0]).not.toMatch(/background/);
+    expect(copy[0]).toMatch(/isolation:\s*isolate/);
+
+    const scrim = blocksFor('.story-hero-copy::before')[0];
+    expect(scrim).toMatch(/inset:\s*-\d/);
+    expect(scrim).toMatch(/z-index:\s*-1/);
+    expect(scrim).toMatch(/pointer-events:\s*none/);
+    // Both edges of both axes fade to transparent, prefixed and unprefixed.
+    for (const prop of ['-webkit-mask-image', 'mask-image']) {
+      const value = scrim.match(new RegExp(`(?:^|[;\\s])${prop}:([^;]*);`))?.[1] ?? '';
+      expect(value, prop).toMatch(/to right[\s\S]*to bottom/);
+      expect(value.match(/transparent 0,/g), prop).toHaveLength(2);
+      expect(value.match(/transparent 100%/g), prop).toHaveLength(2);
+    }
+    expect(scrim).toMatch(/-webkit-mask-composite:\s*source-in/);
+    expect(scrim).toMatch(/(?:^|[;\s])mask-composite:\s*intersect/);
   });
 
   it.each(['light', 'dark'] as const)('renders the title inside the scrim over a %s hero photo', (tone) => {

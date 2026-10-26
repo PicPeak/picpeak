@@ -13,7 +13,7 @@ const sessions = require('./sessionAccessService');
 // parentIat/parentJti identify the portal session a gallery token was minted from.
 // showLink names the slideshow link a slideshow session was opened with.
 const CLAIMS = ['type', 'id', 'customerId', 'eventId', 'eventSlug', 'iat', 'exp', 'jti', 'via', 'accessLevel',
-  'parentIat', 'parentJti', 'showLink'];
+  'parentIat', 'parentJti', 'showLink', 'clientPinEntry'];
 
 class GalleryAccessService {
   grant(event, kind, decoded) {

@@ -8,6 +8,7 @@
  * over the cookie).
  */
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
@@ -65,9 +66,9 @@ describe('GalleryAuthProvider — session after a gallery rename', () => {
     storeGalleryToken(NEW_SLUG, 'stale-session');
     render(
       <MemoryRouter initialEntries={[`/gallery/${OLD_SLUG}`]}>
-        <GalleryAuthProvider>
+        <QueryClientProvider client={new QueryClient()}><GalleryAuthProvider>
           <Probe />
-        </GalleryAuthProvider>
+        </GalleryAuthProvider></QueryClientProvider>
       </MemoryRouter>,
     );
     await waitFor(() => expect(state).toEqual({ isAuthenticated: false, isLoading: false }));

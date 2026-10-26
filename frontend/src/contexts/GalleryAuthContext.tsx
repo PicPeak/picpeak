@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../config/api';
 import { authService, galleryService } from '../services';
 import { cleanupOldGalleryAuth } from '../utils/cleanupGalleryAuth';
@@ -44,8 +45,13 @@ interface GalleryAuthContextType {
   isClient: boolean;
   /** Session was minted by the customer portal — credentialed, bypasses reveal. */
   viaCustomer: boolean;
+  /** This session entered the client role from the regular gallery PIN form. */
+  viaClientPin: boolean;
   login: (slug: string, password?: string, recaptchaToken?: string | null) => Promise<void>;
   clientLogin: (slug: string, password: string, token: string) => Promise<void>;
+  enterClientMode: (slug: string, password: string) => Promise<void>;
+  leaveClientMode: (slug: string) => Promise<void>;
+  isSwitchingClientMode: boolean;
   logout: () => void;
   /**
    * End a gallery session the server has rejected (expired, password
@@ -71,14 +77,20 @@ interface GalleryAuthProviderProps {
 }
 
 export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ children }) => {
+  const queryClient = useQueryClient();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [event, setEvent] = useState<GalleryEvent | null>(null);
   const [accessLevel, setAccessLevel] = useState<GalleryAccessLevel>('guest');
   const [viaCustomer, setViaCustomer] = useState(false);
+  const [viaClientPin, setViaClientPin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSwitchingClientMode, setIsSwitchingClientMode] = useState(false);
+  const switchingClientMode = useRef(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const location = useLocation();
+  const currentPath = useRef(location.pathname);
+  currentPath.current = location.pathname;
   const [routeInfo, setRouteInfo] = useState<{ slug: string | null; token?: string; identifier: string | null; ready: boolean }>({
     slug: null,
     token: undefined,
@@ -225,7 +237,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         setIsLoading(true);
         const sessionResponse = await api.get<{
           valid: boolean; type: string; eventSlug?: string;
-          accessLevel?: GalleryAccessLevel; viaCustomer?: boolean; token?: string;
+          accessLevel?: GalleryAccessLevel; viaCustomer?: boolean; viaClientPin?: boolean; token?: string;
         }>(
           '/auth/session',
           { params: { slug: currentSlug } }
@@ -253,6 +265,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
             sessionStorage.removeItem(`gallery_access_level_${currentSlug}`);
           }
           setViaCustomer(Boolean(sessionResponse.data.viaCustomer));
+          setViaClientPin(sessionResponse.data.accessLevel === 'client' && sessionResponse.data.viaClientPin === true);
 
           // Always refresh from the server — the stored event from sessionStorage
           // is shown above as an instant placeholder for perceived perf, but it
@@ -344,6 +357,9 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       setError(null);
       setIsLoading(true);
       const response = await authService.verifyGalleryPassword(slug, password, recaptchaToken);
+      setViaClientPin(false);
+      setViaCustomer(false);
+      setAccessLevel('guest');
       // Store token and slug BEFORE setting authenticated state to avoid
       // race condition where photo queries fire before token is available
       if (response.token) {
@@ -370,6 +386,8 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       setError(null);
       setIsLoading(true);
       const response = await authService.clientLogin(slug, password, token);
+      setViaClientPin(false);
+      setViaCustomer(false);
       if (response.token) {
         storeGalleryToken(slug, response.token);
       }
@@ -387,6 +405,43 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       throw err;
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const changeClientMode = async (slug: string, password?: string) => {
+    if (switchingClientMode.current) return;
+    switchingClientMode.current = true;
+    setIsSwitchingClientMode(true);
+    try {
+      const pathAtStart = currentPath.current;
+      const response = password === undefined
+        ? await authService.leaveClientMode(slug)
+        : await authService.enterClientMode(slug, password);
+      // A response from a gallery the visitor has left must not replace the
+      // newly opened gallery's session or token.
+      if (currentPath.current !== pathAtStart) return;
+      // Cancellation stops a late client response from repopulating the guest
+      // cache. Both roles get a fresh view after a visibility-management visit.
+      const predicate = (query: { queryKey: readonly unknown[] }) => query.queryKey[1] === slug
+        && (String(query.queryKey[0]).startsWith('gallery-') || query.queryKey[0] === 'my-feedback');
+      await queryClient.cancelQueries({ predicate });
+      queryClient.removeQueries({ predicate });
+      storeGalleryToken(slug, response.token);
+      setActiveGallerySlug(slug);
+      const normalizedEvent = normalizeEvent(response.event);
+      setEvent(normalizedEvent);
+      sessionStorage.setItem(`gallery_event_${slug}`, JSON.stringify(normalizedEvent));
+      const nextLevel = response.accessLevel || 'guest';
+      setAccessLevel(nextLevel);
+      setViaCustomer(response.viaCustomer === true);
+      setViaClientPin(nextLevel === 'client' && response.viaClientPin === true);
+      if (nextLevel === 'client') sessionStorage.setItem(`gallery_access_level_${slug}`, 'client');
+      else sessionStorage.removeItem(`gallery_access_level_${slug}`);
+      setError(null);
+      setIsAuthenticated(true);
+    } finally {
+      switchingClientMode.current = false;
+      setIsSwitchingClientMode(false);
     }
   };
 
@@ -414,6 +469,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
     setEvent(null);
     setAccessLevel('guest');
     setViaCustomer(false);
+    setViaClientPin(false);
     clearActiveGallerySlug();
   };
   const logout = () => closeSession(false);
@@ -427,8 +483,12 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         accessLevel,
         isClient: accessLevel === 'client',
         viaCustomer,
+        viaClientPin,
         login,
         clientLogin: clientLoginFn,
+        enterClientMode: (slug, password) => changeClientMode(slug, password),
+        leaveClientMode: (slug) => changeClientMode(slug),
+        isSwitchingClientMode,
         logout,
         endSession,
         // Derived during render, not only set from an effect: on a move from

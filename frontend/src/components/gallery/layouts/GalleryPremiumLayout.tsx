@@ -16,7 +16,7 @@ import { FirstLookBadge } from '../GalleryTileBadges';
 import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut, Upload, ClipboardList } from 'lucide-react';
+import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut, Upload, ClipboardList, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { parseISO } from 'date-fns';
 import { useInView } from 'react-intersection-observer';
@@ -276,6 +276,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   feedbackOptions,
   heroPhotoOverride,
   onLogout,
+  onManageGallery,
+  clientModeBusy,
   onUploadClick,
   onCopyFilenames,
   copyFilenamesCount = 0,
@@ -722,6 +724,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
+        {onManageGallery && <Button variant="outline" className="mb-4" onClick={onManageGallery} disabled={clientModeBusy}
+          leftIcon={<Shield className="w-4 h-4" />}>
+          {isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
+        </Button>}
         {likedOnly
           ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
           : <GalleryEmptyMessage filtered={emptyIsFiltered} />}
@@ -898,6 +904,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                 onClick={handleDownloadAll}
               >
                 <DownloadIcon className="w-4 h-4" />
+              </button>
+            )}
+            {onManageGallery && (
+              <button className="gallery-premium-nav-btn" onClick={onManageGallery} disabled={clientModeBusy}
+                aria-label={isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
+                title={isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}>
+                <Shield size={20} />
               </button>
             )}
             {onLogout && (

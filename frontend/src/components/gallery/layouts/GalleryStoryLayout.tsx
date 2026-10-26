@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
-import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload } from 'lucide-react';
+import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../common';
 
@@ -109,6 +109,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   storyFooterTitle,
   storyFooterText,
   onLogout,
+  onManageGallery,
+  clientModeBusy,
   onUploadClick,
   showOriginalFilename = false,
 
@@ -482,6 +484,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
+        {onManageGallery && <Button variant="outline" className="mb-4" onClick={onManageGallery} disabled={clientModeBusy}
+          leftIcon={<Shield className="w-4 h-4" />}>
+          {isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
+        </Button>}
         {likedOnly
           ? <LikedOnlyEmptyMessage onShowAll={onToggleLikedOnly} />
           : <GalleryEmptyMessage filtered={emptyIsFiltered} />}
@@ -618,6 +624,13 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   {favorites.size > 9 ? '9+' : favorites.size}
                 </span>
               )}
+            </button>
+          )}
+          {onManageGallery && (
+            <button className="story-nav-btn" onClick={onManageGallery} disabled={clientModeBusy}
+              aria-label={isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}
+              title={isClient ? t('clientAccess.returnToGallery', 'Return to gallery') : t('clientAccess.manageGallery', 'Manage Gallery')}>
+              <Shield size={20} />
             </button>
           )}
           {onLogout && (

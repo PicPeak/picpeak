@@ -15,6 +15,7 @@ const { adminAuth } = require('../middleware/auth');
 const { getAuthCookieDomain } = require('../utils/tokenUtils');
 const { requirePermission, userHasAnyPermission, isSuperAdminUser } = require('../middleware/permissions');
 const { ForbiddenError } = require('../utils/errors');
+const { normalizeSlideshowFit } = require('../services/eventSettings');
 const { clearMaintenanceCache } = require('../middleware/maintenance');
 const { clearSettingsCache, initializeRateLimiters, RATE_LIMIT_DEFAULTS } = require('../services/rateLimitService');
 const { SETTING_KEY: GALLERY_PASSWORD_SETTING, purgeRecoverablePasswords, purgePlanForSettingWrite } = require('../utils/galleryPasswordVault');
@@ -605,7 +606,7 @@ router.put('/slideshow', adminAuth, requirePermission('settings.edit'), async (r
     const has = (k) => Object.prototype.hasOwnProperty.call(req.body, k);
 
     if (has('slideshow_fit')) {
-      push('slideshow_fit', req.body.slideshow_fit === 'contain' ? 'contain' : 'cover');
+      push('slideshow_fit', normalizeSlideshowFit(req.body.slideshow_fit));
     }
     // Picpeak-wide display preset (default style new events inherit).
     if (has('slideshow_interval_ms')) {

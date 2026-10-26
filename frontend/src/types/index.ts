@@ -123,6 +123,7 @@ export interface Event {
   is_draft?: boolean;
   // Client access (#172)
   client_access_enabled?: boolean;
+  client_pin_entry_enabled?: boolean;
   client_share_token?: string;
   // Set when the API withheld the gallery links because the admin sees this
   // event but cannot act on it (another owner's gallery).
@@ -154,6 +155,8 @@ export interface Event {
   show_watermark?: boolean | null;
   // QR overlay MODE (#837) — same tri-state semantics as show_watermark.
   show_qr?: boolean | null;
+  // Image fit override (issue 2261); null = inherit the global default.
+  show_fit?: 'auto' | 'contain' | 'cover' | null;
   show_colorfilter?: 'none' | 'bw' | 'sepia' | 'warm' | 'cool' | 'vignette';
   // Default photo sort order
   default_photo_sort?: string;
@@ -417,6 +420,8 @@ export interface GalleryData {
     id: number;
     event_name: string;
     event_type: string;
+    /** Server-derived capability; never contains the private client link or PIN. */
+    client_pin_entry_available?: boolean;
     event_date: string | null;
     // Download resolutions (#858). `choices` is empty when the picker is off,
     // so the UI never offers a size the server would reject.
@@ -588,6 +593,8 @@ export interface GalleryAuthResponse {
     download_limit?: number | null;
   };
   accessLevel?: GalleryAccessLevel;
+  viaCustomer?: boolean;
+  viaClientPin?: boolean;
 }
 
 // API Error type

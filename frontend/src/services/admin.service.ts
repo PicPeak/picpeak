@@ -217,6 +217,7 @@ export type ActivityType =
   | "api_photo_downloaded"
   | "api_photos_downloaded"
   | "api_photos_zip_downloaded"
+  | "gallery_pin_entry_paused"
   | "event_type_created"
   | "event_type_updated"
   | "event_type_deleted"
@@ -536,6 +537,7 @@ export const adminService = {
       'api_token_revoked': `API token revoked: ${md.name || ''}`,
       'api_photo_downloaded': `Original downloaded from ${activity.eventName || 'Unknown'} with API token #${md.token_id ?? ''}`,
       'api_photos_downloaded': `API token "${md.token_name || ''}" downloaded ${md.count || 0} originals from ${activity.eventName || 'Unknown'}`,
+      'gallery_pin_entry_paused': `PIN entry paused after repeated incorrect attempts in ${activity.eventName || 'Unknown'}. Private client links remain available.`,
       'api_photos_zip_downloaded': `API token "${md.token_name || ''}" downloaded a ZIP of ${md.photo_count || 0} originals from ${activity.eventName || 'Unknown'}`,
       'event_type_created': `Event type created: ${md.name || ''}`,
       'event_type_updated': `Event type updated: ${md.name || ''}`,

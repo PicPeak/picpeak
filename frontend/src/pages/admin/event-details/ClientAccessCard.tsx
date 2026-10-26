@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { Shield, Key, Copy, CheckCircle } from 'lucide-react';
 import type { Event } from '../../../types';
-import { Button, Card } from '../../../components/common';
+import { Button, Card, Input, Modal } from '../../../components/common';
 import { eventsService } from '../../../services/events.service';
 
 interface ClientAccessCardProps {
@@ -15,6 +15,10 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
   const { t } = useTranslation();
   const [copiedClientLink, setCopiedClientLink] = useState(false);
   const [clientPin, setClientPin] = useState('');
+  const [enrollOpen, setEnrollOpen] = useState(false);
+  const [enrollPin, setEnrollPin] = useState('');
+  const [pinEntrySaving, setPinEntrySaving] = useState(false);
+  const [enrollError, setEnrollError] = useState('');
   // The PIN and the client link are the owner's to change (issue 743); a
   // team member sees the link but not these controls. Missing = owner.
   const ownsEvent = event?.can_manage_assignments !== false;
@@ -65,6 +69,32 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
         {/* !! — SQLite integer boolean; bare 0 renders as literal "0" */}
         {!!event?.client_access_enabled && (
           <>
+            {ownsEvent && (
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1 w-4 h-4 text-accent border border-line-strong rounded focus:ring-accent"
+                  checked={!!event.client_pin_entry_enabled}
+                  disabled={event.is_archived || pinEntrySaving}
+                  onChange={async (e) => {
+                    if (e.target.checked) {
+                      setEnrollPin(''); setEnrollError(''); setEnrollOpen(true);
+                      return;
+                    }
+                    setPinEntrySaving(true);
+                    try {
+                      await eventsService.updateEvent(event.id, { client_pin_entry_enabled: false });
+                      await refetchEvent();
+                    } catch { toast.error(t('common.error')); }
+                    finally { setPinEntrySaving(false); }
+                  }}
+                />
+                <span>
+                  <span className="text-sm font-medium text-body">{t('clientAccess.pinEntryToggle', 'Allow PIN entry from the regular gallery')}</span>
+                  <span className="block text-xs text-muted mt-1">{t('clientAccess.pinEntryDescription', 'Visitors with the PIN receive full client access, including hidden photos, originals and reveal previews. Turning this off ends PIN-entry sessions; private-link access remains available.')}</span>
+                </span>
+              </label>
+            )}
             {/* Set/Change PIN */}
             {ownsEvent && (
             <div className="flex items-end gap-2">
@@ -76,7 +106,8 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                   type="text"
                   value={clientPin}
                   onChange={(e) => setClientPin(e.target.value)}
-                  minLength={6}
+                  minLength={event.client_pin_entry_enabled ? 8 : 6}
+                  maxLength={128}
                   placeholder={t('clientAccess.pinPlaceholder')}
                   aria-describedby="client-pin-helper"
                   className="w-full px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm"
@@ -84,7 +115,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                 {/* Not a form, so minLength alone never blocks the save; the
                     handler below checks the floor and this line names it. */}
                 <p id="client-pin-helper" className="mt-1 text-xs text-muted">
-                  {t('clientAccess.pinHelperText')}
+                  {event.client_pin_entry_enabled ? t('clientAccess.pinEntryPinHelper', 'Gallery PIN entry requires at least 8 characters.') : t('clientAccess.pinHelperText')}
                 </p>
               </div>
               <Button
@@ -93,8 +124,8 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                 leftIcon={<Key className="w-4 h-4" />}
                 onClick={async () => {
                   if (!clientPin.trim()) return;
-                  if (clientPin.length < 6) {
-                    toast.error(t('clientAccess.pinHelperText'));
+                  if (event.client_pin_entry_enabled ? Array.from(clientPin.trim()).length < 8 : clientPin.length < 6) {
+                    toast.error(event.client_pin_entry_enabled ? t('clientAccess.pinEntryPinHelper', 'Gallery PIN entry requires at least 8 characters.') : t('clientAccess.pinHelperText'));
                     return;
                   }
                   try {
@@ -106,7 +137,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                     toast.error(t('common.error'));
                   }
                 }}
-                disabled={!clientPin.trim() || clientPin.length < 6}
+                disabled={!clientPin.trim() || (event.client_pin_entry_enabled ? Array.from(clientPin.trim()).length < 8 : clientPin.length < 6)}
               >
                 {t('clientAccess.setPin')}
               </Button>
@@ -172,6 +203,33 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
           </>
         )}
       </div>
+      <Modal open={enrollOpen} onClose={() => { if (!pinEntrySaving) { setEnrollOpen(false); setEnrollPin(''); } }}
+        title={t('clientAccess.pinEntryEnrollTitle', 'Enable gallery PIN entry')} size="sm" closeOnBackdrop={false}>
+        <form className="space-y-4" onSubmit={async (e) => {
+          e.preventDefault();
+          if (pinEntrySaving || Array.from(enrollPin.trim()).length < 8) return;
+          setPinEntrySaving(true); setEnrollError('');
+          try {
+            await eventsService.updateEvent(event.id, { client_pin_entry_enabled: true, client_password: enrollPin });
+            await refetchEvent();
+            setEnrollOpen(false); setEnrollPin('');
+          } catch {
+            setEnrollError(t('clientAccess.pinEntrySaveFailed', 'PIN entry could not be enabled. Check that Client Access is still enabled, then try again.'));
+          } finally { setPinEntrySaving(false); }
+        }}>
+          <p className="text-sm text-body">{t('clientAccess.pinEntryDescription', 'Visitors with the PIN receive full client access, including hidden photos, originals and reveal previews. Turning this off ends PIN-entry sessions; private-link access remains available.')}</p>
+          <Input type="password" autoComplete="new-password" label={t('clientAccess.pinLabel')} value={enrollPin}
+            minLength={8} maxLength={128} required disabled={pinEntrySaving} onChange={(e) => setEnrollPin(e.target.value)} />
+          <p className="text-xs text-muted">{t('clientAccess.pinEntryEnrollHelp', 'Enter the existing PIN again or set a new one with at least 8 characters. On a public gallery, this PIN is the only secret protecting client access.')}</p>
+          {enrollError && <p role="alert" className="text-sm text-danger-text">{enrollError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" disabled={pinEntrySaving} onClick={() => { setEnrollOpen(false); setEnrollPin(''); }}>{t('common.cancel', 'Cancel')}</Button>
+            <Button type="submit" disabled={pinEntrySaving || Array.from(enrollPin.trim()).length < 8} isLoading={pinEntrySaving}>
+              {t('clientAccess.pinEntryEnrollTitle', 'Enable gallery PIN entry')}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </Card>
   );
 };

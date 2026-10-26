@@ -45,6 +45,10 @@ function creationError(body) {
  */
 async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) {
   const input = await validateCreationInput(data);
+  require('./galleryPinEntryService').validateEnrollment({
+    enabled: parseBooleanInput(input.client_pin_entry_enabled, false),
+    clientAccessEnabled: parseBooleanInput(input.client_access_enabled, false), password: input.client_password,
+  });
   if (source === 'v1') input.is_draft = false;
   if (!actor || !Number.isInteger(actor.id)) throw new AppError('Event owner required', 400, 'EVENT_OWNER_REQUIRED');
   // Get field requirements from settings
@@ -120,6 +124,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     download_limit: downloadLimitInput,
     // Client access settings (#172)
     client_access_enabled = false,
+    client_pin_entry_enabled = false,
     client_password = null,
     // Draft mode
     is_draft = source !== 'v1',
@@ -523,6 +528,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     default_photo_sort: default_photo_sort || 'upload_date_desc',
     // Client access (#172)
     client_access_enabled: formatBoolean(client_access_enabled),
+    client_pin_entry_enabled: formatBoolean(parseBooleanInput(client_pin_entry_enabled, false)),
     ...(client_access_enabled && client_password ? {
       client_password_hash: await bcrypt.hash(client_password, getBcryptRounds()),
       client_share_token: crypto.randomBytes(32).toString('hex')
