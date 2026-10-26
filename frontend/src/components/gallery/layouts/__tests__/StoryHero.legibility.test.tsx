@@ -76,10 +76,28 @@ describe('Story hero title legibility (issue 1708)', () => {
   });
 
   it('puts a localised scrim behind the copy', () => {
-    const scrim = blocksFor('.story-hero-copy');
+    const scrim = blocksFor('.story-hero-copy::before');
     expect(scrim.length).toBe(1);
     expect(scrim[0]).toMatch(/radial-gradient/);
     expect(scrim[0]).toMatch(/rgba\(0,\s*0,\s*0,\s*0\.\d+\)/);
+  });
+
+  // Issue 2254: a scrim painted as the copy box's own background ended on
+  // that box, still partly dark halfway along each side, so its rounded edge
+  // showed on detailed images. The pixel check is tests/e2e/story-hero-scrim.spec.ts.
+  it('fades the scrim out inside an oversized layer instead of on the copy box', () => {
+    const copy = blocksFor('.story-hero-copy');
+    expect(copy.length).toBe(1);
+    expect(copy[0]).not.toMatch(/background/);
+    expect(copy[0]).not.toMatch(/border-radius/);
+    expect(copy[0]).toMatch(/isolation:\s*isolate/);
+
+    const scrim = blocksFor('.story-hero-copy::before')[0];
+    expect(scrim).toMatch(/radial-gradient\(\s*closest-side/);
+    expect(scrim).toMatch(/rgba\(0,\s*0,\s*0,\s*0\)\s*100%/);
+    expect(scrim).toMatch(/inset:\s*-\d+%\s+-\d+%/);
+    expect(scrim).toMatch(/z-index:\s*-1/);
+    expect(scrim).toMatch(/pointer-events:\s*none/);
   });
 
   it.each(['light', 'dark'] as const)('renders the title inside the scrim over a %s hero photo', (tone) => {

@@ -285,16 +285,36 @@
    is legible over light, dark and mixed images without covering the hero. */
 .story-hero-copy {
   position: relative;
+  /* Keeps the scrim's z-index: -1 behind the copy, not behind the hero. */
+  isolation: isolate;
   padding: 2.5rem 2rem;
-  border-radius: 1.5rem;
-  /* The ellipse reaches the box corners at 100%, so the fade ends late
-     enough that a three-line title on a phone still sits on darkened
-     pixels; the text shadow carries the last few percent. */
+}
+
+/* Issue 2254: the scrim used to be the copy box's own background, sized to
+   the farthest corner. Halfway along each side it was still about 15% black
+   when the box ended, so the rounded box showed as an edge on detailed
+   images. It now lives on an oversized layer and is sized to its closest
+   side, so it is fully transparent before any edge of its own box, and the
+   eased stops leave no visible ring. The hero's overflow: hidden clips the
+   part beyond the viewport, so nothing scrolls sideways. At the copy box's
+   edges it is still darker than the old scrim was. */
+.story-hero-copy::before {
+  content: '';
+  position: absolute;
+  inset: -60% -40%;
+  z-index: -1;
+  pointer-events: none;
   background: radial-gradient(
-    ellipse at center,
+    closest-side,
     rgba(0, 0, 0, 0.55) 0%,
-    rgba(0, 0, 0, 0.35) 50%,
+    rgba(0, 0, 0, 0.52) 20%,
+    rgba(0, 0, 0, 0.46) 35%,
+    rgba(0, 0, 0, 0.37) 50%,
+    rgba(0, 0, 0, 0.29) 60%,
+    rgba(0, 0, 0, 0.2) 70%,
     rgba(0, 0, 0, 0.12) 80%,
+    rgba(0, 0, 0, 0.06) 88%,
+    rgba(0, 0, 0, 0.025) 94%,
     rgba(0, 0, 0, 0) 100%
   );
 }
