@@ -28,6 +28,7 @@ const { joinLivePhotos, livePhotos, wherePhotoLive, wherePhotoProcessed } = requ
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
+const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAppSetting } = require('../utils/appSettings');
 const { getStorage } = require('./storage');
@@ -403,6 +404,7 @@ async function getTransfer(id) {
       'photos.event_id',
       'events.event_name',
       'events.slug as event_slug',
+      ...ADMIN_THUMBNAIL_COLUMNS,
     );
 
   const uploads = await db('transfer_uploads')
@@ -451,8 +453,9 @@ async function getTransfer(id) {
       event_id: f.event_id,
       event_name: f.event_name,
       event_slug: f.event_slug,
-      // Admin picker previews thumbnails via the existing admin photo endpoint.
-      thumbnail_url: `/admin/photos/${f.event_id}/thumbnail/${f.photo_id}`,
+      // Admin picker previews thumbnails via the existing admin photo
+      // endpoint, versioned like the photo grid's (issue 2276).
+      thumbnail_url: adminThumbnailUrl(f.event_id, { ...f, id: f.photo_id }),
     })),
     uploads,
   };

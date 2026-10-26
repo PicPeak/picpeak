@@ -17,6 +17,7 @@ const {
 } = require('../utils/feedbackValidation');
 const { requireEventOwnership, canAccessEvent, scopeEventsQuery } = require('../middleware/ownership');
 const { withParsedAnnotation } = require('../utils/photoAnnotation');
+const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
 
 // Get event feedback settings
 router.get('/events/:eventId/feedback-settings',
@@ -101,7 +102,8 @@ router.get('/events/:eventId/feedback',
         .select(
           'photo_feedback.*',
           'photos.filename',
-          'photos.path'
+          'photos.path',
+          ...ADMIN_THUMBNAIL_COLUMNS
         );
       
       if (type) {
@@ -156,7 +158,12 @@ router.get('/events/:eventId/feedback',
       res.json({
         // photo_feedback.* carries the raw annotation text (issue 1733):
         // hand out the parsed structure only.
-        feedback: feedback.map(withParsedAnnotation),
+        // thumbnail_url is versioned like the photo grid's (issue 2276); the
+        // columns that version it stay out of the payload.
+        feedback: feedback.map(({ processing_error, poster_offset_seconds, ...row }) => ({
+          ...withParsedAnnotation(row),
+          thumbnail_url: adminThumbnailUrl(eventId, { id: row.photo_id, processing_error, poster_offset_seconds }),
+        })),
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),

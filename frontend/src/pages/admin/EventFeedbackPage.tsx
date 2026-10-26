@@ -248,7 +248,7 @@ export const EventFeedbackPanel: React.FC<{ eventId: string }> = ({ eventId }) =
                     {item.photo_id && (
                       <div className="w-16 h-16 overflow-hidden rounded">
                         <AdminAuthenticatedImage
-                          src={`/admin/photos/${id}/thumbnail/${item.photo_id}`}
+                          src={item.thumbnail_url || `/admin/photos/${id}/thumbnail/${item.photo_id}`}
                           alt={item.filename || 'Photo'}
                           className="w-16 h-16 object-cover rounded"
                         />

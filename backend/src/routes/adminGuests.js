@@ -15,6 +15,7 @@ const { errorResponse } = require('../utils/routeHelpers');
 const { ValidationError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
+const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -187,6 +188,7 @@ router.get(
           'photos.id',
           'photos.filename',
           'photos.original_filename',
+          ...ADMIN_THUMBNAIL_COLUMNS,
           db.raw('COUNT(DISTINCT photo_feedback.guest_id) AS picker_count')
         )
         .orderBy('picker_count', 'desc')
@@ -200,7 +202,7 @@ router.get(
             filename: p.filename,
             original_filename: p.original_filename,
             url: `/api/admin/photos/${eventId}/photo/${p.id}`,
-            thumbnail_url: `/api/admin/photos/${eventId}/thumbnail/${p.id}`,
+            thumbnail_url: `/api${adminThumbnailUrl(eventId, p)}`,
             picker_count: parseInt(p.picker_count, 10),
           })),
       });
@@ -472,7 +474,8 @@ router.get(
           'photos.id as photo_id',
           'photos.filename',
           'photos.original_filename',
-          'photos.type'
+          'photos.type',
+          ...ADMIN_THUMBNAIL_COLUMNS
         )
         .orderBy('photo_feedback.created_at', 'desc');
 
@@ -482,7 +485,7 @@ router.get(
         original_filename: row.original_filename,
         type: row.type,
         url: `/api/admin/photos/${eventId}/photo/${row.photo_id}`,
-        thumbnail_url: `/api/admin/photos/${eventId}/thumbnail/${row.photo_id}`,
+        thumbnail_url: `/api${adminThumbnailUrl(eventId, { ...row, id: row.photo_id })}`,
       });
 
       const selections = {

@@ -31,6 +31,7 @@ const {
   EXTENSION_TO_MIME
 } = require('../services/uploadSettings');
 const { resolvePhotoContentType } = require('../utils/photoContentType');
+const { adminThumbnailUrl, adminThumbnailVersion } = require('../utils/adminThumbnailUrl');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
 const { parseStoredExif } = require('../services/photoExif');
@@ -1465,22 +1466,6 @@ router.put('/:eventId/photos/:photoId/credit', adminAuth, requirePermission('pho
     errorResponse(res, error, 500, 'Failed to update photo credit');
   }
 });
-
-// The admin tile's URL. The route caches for an hour and a rebuilt poster
-// lands under the same key, so the URL changes with what changes the image:
-// the placeholder note (otherwise the browser kept the cached placeholder
-// after a successful Retry, issue 1430, item 6) and the frame an admin picked
-// (issue 2263, item 4).
-function adminThumbnailVersion(photo) {
-  return [
-    photo.processing_error ? 'note' : null,
-    photo.poster_offset_seconds != null ? `p${photo.poster_offset_seconds}` : null,
-  ].filter(Boolean).join('-');
-}
-function adminThumbnailUrl(eventId, photo) {
-  const version = adminThumbnailVersion(photo);
-  return `/admin/photos/${eventId}/thumbnail/${photo.id}${version ? `?v=${version}` : ''}`;
-}
 
 // The preview image of a video (issue 2263, item 4). Both routes refuse what
 // the poster rebuild could not serve: a row still processing, an image, and
