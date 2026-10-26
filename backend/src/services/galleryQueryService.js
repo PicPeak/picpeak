@@ -175,6 +175,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
 
   const limit = query.limit === undefined ? null : Math.min(250, Math.max(1, parseInt(query.limit, 10) || 100));
   const page = Math.max(1, parseInt(query.page, 10) || 1);
+  // Read before the list (issue 2263): media that finishes between the two
+  // reads is then in the list, or still reported as processing — never
+  // missing from the list while the flag says nothing is pending.
+  const mediaProcessing = await hasMediaProcessing({ event, accessLevel, hiddenForGuest });
   const countRow = hiddenForGuest ? { total: 0 } : await photosQuery.clone().clearSelect().clearOrder().count('photos.id as total').first();
   const total = Number(countRow.total);
   if (limit) photosQuery.limit(limit).offset((page - 1) * limit);
@@ -652,7 +656,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       live_refresh: parseBooleanInput(event.live_refresh, false),
       // Media this viewer will see once the worker finishes it (issue 2263):
       // the open gallery polls /photos/state until it has landed.
-      media_processing: await hasMediaProcessing({ event, accessLevel, hiddenForGuest }),
+      media_processing: mediaProcessing,
       // Videos ahead of photos (issue 2263); the client sorts the same way.
       videos_first: parseBooleanInput(event.videos_first, false),
       // Two-stage delivery (issue 1562): null for an ordinary gallery.
