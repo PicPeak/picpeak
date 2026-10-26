@@ -58,6 +58,8 @@ export type EditFormState = {
   download_limit: number;
   // Default photo sort
   default_photo_sort: string;
+  // Videos ahead of photos in the guest gallery (issue 2263).
+  videos_first: boolean;
   // Per-event promotional override (#440). Three-way mode:
   //   inherit → use the global branding_promo_markdown
   //   custom  → render this event's promo_markdown

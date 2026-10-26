@@ -7095,7 +7095,9 @@
     "captureDateOldest": "Date Taken (Oldest First)",
     "filenameAZ": "Filename (A-Z)",
     "filenameZA": "Filename (Z-A)",
-    "dateTaken": "Date Taken"
+    "dateTaken": "Date Taken",
+    "videosFirst": "Show videos first",
+    "videosFirstHelp": "Lists every video ahead of the photos. The sort above still applies within the videos and within the photos."
   },
   "photos": {
     "moveToCategory_one": "Move {{count}} photos to category",

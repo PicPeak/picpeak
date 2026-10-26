@@ -80,15 +80,33 @@ async function galleryListQuery({ event, query = {}, identity, accessLevel }) {
 }
 
 /**
+ * Issue 2263: whether this viewer's list is still waiting on media the worker
+ * has not finished (a video being transcoded, say). The list leaves such
+ * media out, so an open gallery polls /photos/state while this is true and
+ * reloads once it has landed. Same visibility rule as the list, so a hidden
+ * or held upload never shows up here. Not for the slideshow, which follows
+ * new uploads on its own poll.
+ */
+async function hasMediaProcessing({ event, accessLevel, hiddenForGuest }) {
+  if (hiddenForGuest || accessLevel === 'slideshow') return false;
+  const row = await applyPhotoVisibilityFilter(livePhotos(db)
+    .where('photos.event_id', event.id)
+    .whereIn('photos.processing_status', ['pending', 'processing']), accessLevel)
+    .first('photos.id');
+  return !!row;
+}
+
+/**
  * Live refresh (issue 1733, C5): how many photos the viewer's list holds and
  * the highest id among them. One aggregate over galleryListQuery, no rows.
+ * `processing` is hasMediaProcessing, when the caller has already read it.
  */
-async function getGalleryPhotoState({ event, query = {}, identity, accessLevel, hiddenForGuest }) {
-  if (hiddenForGuest) return { count: 0, max_id: null };
+async function getGalleryPhotoState({ event, query = {}, identity, accessLevel, hiddenForGuest, processing = false }) {
+  if (hiddenForGuest) return { count: 0, max_id: null, processing: false };
   const { photosQuery } = await galleryListQuery({ event, query, identity, accessLevel });
   const row = await photosQuery.clearSelect().count('photos.id as count').max('photos.id as max_id').first();
   // PostgreSQL hands count back as a string.
-  return { count: Number(row.count), max_id: row.max_id == null ? null : Number(row.max_id) };
+  return { count: Number(row.count), max_id: row.max_id == null ? null : Number(row.max_id), processing };
 }
 
 async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug }) {
@@ -126,6 +144,15 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   // symptom is a grid that reshuffles between page loads. id is insertion
   // order, so it also makes the fallback ordering meaningful rather than
   // arbitrary.
+  //
+  // Videos first (issue 2263, per event, off by default): every video ahead
+  // of every photo, the chosen sort inside each group, so the pages arrive
+  // in the order the gallery shows them. Same test as the frontend's
+  // resolveMediaType. Not for the slideshow, which has its own play order.
+  if (parseBooleanInput(event.videos_first, false) && accessLevel !== 'slideshow') {
+    photosQuery = photosQuery
+      .orderByRaw('CASE WHEN photos.media_type = \'video\' OR photos.mime_type LIKE \'video/%\' THEN 0 ELSE 1 END');
+  }
   if (sort === 'capture_date') {
     // Sort by capture date, falling back to uploaded_at if capture date is
     // null. The expression is engine-specific, see utils/captureDateSql.
@@ -623,6 +650,11 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // Live refresh (issue 1733, C5): the open gallery polls /photos/state
       // only when this is on.
       live_refresh: parseBooleanInput(event.live_refresh, false),
+      // Media this viewer will see once the worker finishes it (issue 2263):
+      // the open gallery polls /photos/state until it has landed.
+      media_processing: await hasMediaProcessing({ event, accessLevel, hiddenForGuest }),
+      // Videos ahead of photos (issue 2263); the client sorts the same way.
+      videos_first: parseBooleanInput(event.videos_first, false),
       // Two-stage delivery (issue 1562): null for an ordinary gallery.
       delivery: hiddenForGuest ? null : guestDeliveryPayload(event, total),
       disable_right_click: parseBooleanInput(event.disable_right_click, false),
@@ -876,4 +908,4 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     })
   };
 }
-module.exports = { getGalleryPhotos, getGalleryPhotoState };
+module.exports = { getGalleryPhotos, getGalleryPhotoState, hasMediaProcessing };

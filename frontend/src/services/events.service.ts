@@ -105,6 +105,7 @@ interface UpdateEventData {
   photo_cap?: number | null;
   download_limit?: number | null;
   default_photo_sort?: string;
+  videos_first?: boolean;
   // Per-event opt-in for hero photo as social-share preview (#474).
   og_image_share_enabled?: boolean;
   // Customer accounts (#354). Same semantics as on CreateEventData;

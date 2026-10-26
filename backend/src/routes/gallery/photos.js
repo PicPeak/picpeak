@@ -78,19 +78,27 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, scopeGuestToFeedb
  * and the highest id among them, so an open gallery can tell that photos
  * arrived without refetching the list. Same middleware and the same query as
  * the list (galleryListQuery), so a hidden, held or still-processing photo
- * never moves the numbers. 404 while the gallery has the option off. Not
- * logged as a view: it is a poll, not a visit.
+ * never moves the numbers. Also answers while media this viewer will see is
+ * still processing (issue 2263), so the gallery can pick it up once it lands;
+ * `processing` says whether that is still the case. 404 while the gallery has
+ * the option off and nothing is processing. Not logged as a view: it is a
+ * poll, not a visit.
  */
 router.get('/:slug/photos/state', verifyGalleryAccess, resolveGuest, scopeGuestToFeedback, noStoreCache, async (req, res) => {
   try {
-    if (!parseBooleanInput(req.event.live_refresh, false)) {
+    const galleryQueryService = require('../../services/galleryQueryService');
+    const hiddenForGuest = guestBlockedByReveal(req);
+    const processing = await galleryQueryService.hasMediaProcessing({
+      event: req.event, accessLevel: req.accessLevel, hiddenForGuest,
+    });
+    if (!processing && !parseBooleanInput(req.event.live_refresh, false)) {
       return res.status(404).json({ error: 'Live refresh is not enabled for this gallery' });
     }
     const guestIdentifier = await generateGuestIdentifier(req);
-    res.json(await require('../../services/galleryQueryService').getGalleryPhotoState({
+    res.json(await galleryQueryService.getGalleryPhotoState({
       event: req.event, query: req.query,
       identity: { guestId: req.guest?.id, guestIdentifier },
-      accessLevel: req.accessLevel, hiddenForGuest: guestBlockedByReveal(req),
+      accessLevel: req.accessLevel, hiddenForGuest, processing,
     }));
   } catch (error) { errorResponse(res, error, 500, 'Failed to fetch photo state'); }
 });

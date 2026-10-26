@@ -2,6 +2,7 @@ import { GalleryProductPanel } from '../../features/album-products/GalleryProduc
 import { useGalleryFiltering, resolveMediaType } from './hooks/useGalleryFiltering';
 import { useGalleryUpload } from './hooks/useGalleryUpload';
 import { useLiveRefresh } from './hooks/useLiveRefresh';
+import { useProcessingRefresh } from './hooks/useProcessingRefresh';
 import { useGallerySelection } from './hooks/useGallerySelection';
 import { useFeedbackChange } from './hooks/useFeedbackChange';
 import { UploadProcessingNotice } from './UploadProcessingNotice';
@@ -331,6 +332,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // filename. It wins over the original-filename toggle above for display;
   // downloads are named by that toggle as before.
   const neutralPhotoLabels = data?.event?.neutral_photo_labels === true;
+  // Videos ahead of photos (issue 2263), per gallery.
+  const videosFirst = data?.event?.videos_first === true;
   const showOriginalFilename = !neutralPhotoLabels && data?.event?.use_original_filenames === true;
 
   // DevTools protection - enabled by individual setting OR legacy protection level
@@ -465,12 +468,25 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     () => (data?.photos || []).reduce<number | null>((max, p) => (max === null || p.id > max ? p.id : max), null),
     [data?.photos],
   );
+  // Media still processing (issue 2263): the list leaves it out, so follow
+  // it until it lands and reload then. Stands down for the same reasons as
+  // live refresh, which in turn stands down while this runs (it reloads
+  // whatever arrived in the meantime too).
+  const followProcessing = data?.event?.media_processing === true && !hiddenUntilReveal && !revealArmed
+    && !uploadProcessing && !peopleData?.scan?.in_progress;
+  useProcessingRefresh({
+    slug,
+    enabled: followProcessing,
+    loadedCount: data?.photos?.length ?? 0,
+    loadedMaxId,
+    onLanded: () => { void refetch({ cancelRefetch: false }); },
+  });
   const newPhotoCount = useLiveRefresh({
     slug,
     // revealArmed too: the reveal poll above keeps refetching the list after
     // the reveal, for as long as the mode is on.
     enabled: data?.event?.live_refresh === true && !hiddenUntilReveal && !revealArmed && !uploadProcessing
-      && !peopleData?.scan?.in_progress,
+      && !peopleData?.scan?.in_progress && !followProcessing,
     loadedCount: data?.photos?.length ?? 0,
     loadedMaxId,
   });
@@ -929,6 +945,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // Only while tagging is on for the gallery: the chips hide with it.
     selectedTagKeys: tagsEnabled ? selectedTagKeys : undefined,
     likedIsOwn: favouritesAreLikes,
+    videosFirst,
   });
   // `scopedPhotos` is the same scope with every search and filter off: tells
   // "nothing matches" from "nothing here yet" when the grid comes out empty.
@@ -1838,6 +1855,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // the end of a smaller folder.
           key={gridKey}
           photos={filteredPhotos}
+          videosFirst={videosFirst}
           openPhotoId={linkedPhotoId}
           onLightboxPhotoChange={handleLightboxPhotoChange}
           // Banner only: these layouts tile photos in their own geometry, which
@@ -2421,6 +2439,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           <PhotoGridWithLayouts
             key={gridKey}
             photos={filteredPhotos}
+            videosFirst={videosFirst}
             afterGrid={showDeliveryBanner
               ? <GalleryDeliveryBanner delivery={delivery} className="mt-8" />
               : undefined}

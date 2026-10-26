@@ -7060,7 +7060,9 @@
     "captureDateOldest": "Aufnahmedatum (Älteste zuerst)",
     "filenameAZ": "Dateiname (A-Z)",
     "filenameZA": "Dateiname (Z-A)",
-    "dateTaken": "Aufnahmedatum"
+    "dateTaken": "Aufnahmedatum",
+    "videosFirst": "Videos zuerst anzeigen",
+    "videosFirstHelp": "Listet alle Videos vor den Fotos. Die Sortierung oben gilt weiterhin innerhalb der Videos und innerhalb der Fotos."
   },
   "photos": {
     "moveToCategory_one": "{{count}} Foto in Kategorie verschieben",

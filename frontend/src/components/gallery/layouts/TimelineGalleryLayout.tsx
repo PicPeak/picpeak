@@ -7,6 +7,7 @@ import { firstLookAboveChips } from '../GalleryTileBadges';
 import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityToggle';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+import { resolveMediaType } from '../hooks/useGalleryFiltering';
 import { useLazyBands } from './lazyBands';
 import { densityColumnDelta, useGridDensity } from '../gridDensity';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
@@ -41,6 +42,7 @@ const TimelineGroupGrid: React.FC<{
 
 export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   photos,
+  videosFirst = false,
   slug,
   onPhotoClick,
   onOpenPhotoWithFeedback,
@@ -120,15 +122,19 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       groups.get(groupKey)!.push(photo);
     });
     
-    // Convert to array and sort by date
+    // Convert to array and sort by date. The timeline is ordered by upload
+    // date whatever the gallery's sort; with videos first (issue 2263) the
+    // videos lead inside each date group, the groups stay chronological.
+    const videoRank = (photo: Photo) => (videosFirst && resolveMediaType(photo) === 'video' ? 0 : 1);
     return Array.from(groups.entries())
       .map(([date, photos]) => ({
         date,
         label: photos[0] ? format(parseUploadedAt(photos[0].uploaded_at), grouping === 'month' ? 'MMMM yyyy' : grouping === 'week' ? "'Week of' MMM d, yyyy" : 'EEEE, MMMM d, yyyy') : date,
-        photos: photos.sort((a, b) => parseUploadedAt(b.uploaded_at).getTime() - parseUploadedAt(a.uploaded_at).getTime())
+        photos: photos.sort((a, b) => (videoRank(a) - videoRank(b))
+          || (parseUploadedAt(b.uploaded_at).getTime() - parseUploadedAt(a.uploaded_at).getTime()))
       }))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [photos, grouping]);
+  }, [photos, grouping, videosFirst]);
 
   // Position of each photo in `photos`, which is what the lightbox indexes
   // by. Grouping reorders the tiles, and a `findIndex` per tile made every

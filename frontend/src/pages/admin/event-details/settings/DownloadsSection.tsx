@@ -99,6 +99,17 @@ export const DownloadsSection: React.FC<FieldsProps & {
               <option value="filename_asc">{t('photoSort.filenameAZ', 'Filename (A-Z)')}</option>
               <option value="filename_desc">{t('photoSort.filenameZA', 'Filename (Z-A)')}</option>
             </select>
+            {/* Videos ahead of photos, the sort above within each (issue 2263). */}
+            <label className="flex items-center mt-2">
+              <input
+                type="checkbox"
+                checked={f.videos_first}
+                onChange={(e) => set({ videos_first: e.target.checked })}
+                className={checkboxClass}
+              />
+              <span className="ml-2 text-sm text-body">{t('photoSort.videosFirst', 'Show videos first')}</span>
+            </label>
+            <p className="text-xs text-muted mt-1 ml-6">{t('photoSort.videosFirstHelp', 'Lists every video ahead of the photos. The sort above still applies within the videos and within the photos.')}</p>
           </div>
         </div>
       </SectionCard>

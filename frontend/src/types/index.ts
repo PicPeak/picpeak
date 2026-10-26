@@ -160,6 +160,8 @@ export interface Event {
   show_colorfilter?: 'none' | 'bw' | 'sepia' | 'warm' | 'cool' | 'vignette';
   // Default photo sort order
   default_photo_sort?: string;
+  // Videos ahead of photos in the guest gallery (issue 2263).
+  videos_first?: boolean | number;
   // Pre-event reminder override (migration 143)
   event_reminder_disabled?: boolean;
   event_reminder_offset_days?: number | null;
@@ -477,6 +479,10 @@ export interface GalleryData {
     default_photo_sort?: string;
     // Live refresh (issue 1733, C5): poll /photos/state for new photos.
     live_refresh?: boolean;
+    // Media this viewer will see once processing finishes (issue 2263).
+    media_processing?: boolean;
+    // Videos ahead of photos, the chosen sort within each (issue 2263).
+    videos_first?: boolean;
     // Mirror of admin's `general_use_original_filenames_for_downloads`.
     // When true, the lightbox surfaces each photo's `original_filename`
     // alongside the position counter (#508).

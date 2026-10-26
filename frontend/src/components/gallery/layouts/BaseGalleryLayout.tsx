@@ -6,6 +6,12 @@ import type { QuotaPhoto } from '../../../utils/downloadLimit';
 export interface BaseGalleryLayoutProps {
   photos: Photo[];
   /**
+   * Videos first (issue 2263): `photos` already arrives with every video
+   * ahead of the photos. Only a layout that re-sorts (the Timeline, inside
+   * each date group) has to read it.
+   */
+  videosFirst?: boolean;
+  /**
    * Link to a single photo (issue 1733). `openPhotoId` is the photo the URL
    * asks for (a deep link, or Back/Forward): a layout that mounts its own
    * lightbox opens it on that photo once it is in `photos`, and closes it on
