@@ -77,7 +77,7 @@ withFfmpeg('real video/RAW processing and execution fencing', () => {
     expect((await fs.stat(storage.resolveLocalPath(remuxKey))).size).toBeGreaterThan(0);
     // The fixture is shorter than the default one-second offset; its first frame is a real poster.
     const original = storage.resolveLocalPath(path.posix.join('events/active', complete.path));
-    await require('../../src/services/videoProcessor').generateVideoThumbnail(original, 'thumbnails/ordinary-real-poster.jpg', { timeOffset: '00:00:00' });
+    await require('../../src/services/videoProcessor').generateVideoThumbnail(original, 'thumbnails/ordinary-real-poster.jpg', { offsetSeconds: 0 });
     expect((await nativeSharp(storage.resolveLocalPath('thumbnails/ordinary-real-poster.jpg')).metadata()).format).toBe('jpeg');
     // A retry writes a new attempt-named poster and removes the one it replaces.
     await db('photos').where({ id: row.id }).update({ processing_status: 'pending', processing_attempts: 0 });
