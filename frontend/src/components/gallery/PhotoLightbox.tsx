@@ -30,6 +30,7 @@ import { pushDialogLayer } from '../common/Modal';
 import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
 import { usePhotoLabels } from './PhotoLabels';
 import { useLightboxScrub } from './hooks/useLightboxScrub';
+import { usePendingAwareImageUrl } from './hooks/usePendingAwareImageUrl';
 import { exifLine } from '../../utils/photoExif';
 import { useLightboxAnnotation } from './annotation/useLightboxAnnotation';
 import { CommentAnnotationContext } from './annotation/CommentAnnotationContext';
@@ -328,6 +329,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     containerRef: trackContainerRef,
   });
   const fullZoomLive = fullZoom.live;
+  // The player's poster follows one the server is still building (issue
+  // 2275): a plain poster URL kept the placeholder until a reopen.
+  const videoPoster = usePendingAwareImageUrl(
+    currentPhoto?.media_type === 'video' ? currentPhoto.thumbnail_url : null,
+    { slug },
+  );
   // One stable onLoad for the slide on screen (AuthenticatedImage re-runs its
   // load effect when the callback changes): the zoom measures the preview,
   // and the scrub's stand-in leaves once it is in.
@@ -1666,11 +1673,16 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             return (
               <div key={slideKey(photo, slot)} className="h-full flex items-center justify-center" style={{ flex: '0 0 33.3333%' }}>
                 {photo.media_type === 'video' && photo.thumbnail_url ? (
-                  <img
+                  // Through AuthenticatedImage, so a poster the server is
+                  // still building is asked for again (issue 2275).
+                  <AuthenticatedImage
+                    queuePriority="prefetch"
                     src={photo.thumbnail_url}
                     alt={slideAlt(photo)}
                     className="max-w-full max-h-full object-contain select-none pointer-events-none"
                     draggable={false}
+                    isGallery={true}
+                    slug={slug}
                   />
                 ) : (
                   <AuthenticatedImage
@@ -1829,7 +1841,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 <VideoPlayer
                   src={currentPhoto.url}
                   hlsSrc={currentPhoto.hls_url}
-                  poster={currentPhoto.thumbnail_url}
+                  poster={videoPoster}
                   className="max-w-full max-h-full"
                   controls={true}
                   autoPlay={false}
