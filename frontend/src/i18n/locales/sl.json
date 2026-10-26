@@ -1386,7 +1386,7 @@
     },
     "prepareDownload": "Pripravi prenos",
     "preparingDownload": "Priprava prenosa…",
-    "preparingHint": "Spreminjanje velikosti fotografij — pri velikih galerijah lahko traja nekaj časa.",
+    "preparingHint": "Priprava datotek — pri velikih galerijah lahko traja nekaj časa.",
     "preparingProgress": "Zapakiranih fotografij: {{count}}",
     "downloadReady": "Vaš prenos je pripravljen",
     "downloadNow": "Prenesi",

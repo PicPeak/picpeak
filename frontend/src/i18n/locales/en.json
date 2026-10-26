@@ -1536,7 +1536,7 @@
     },
     "prepareDownload": "Prepare download",
     "preparingDownload": "Preparing your download…",
-    "preparingHint": "Resizing photos — this can take a moment for large galleries.",
+    "preparingHint": "Preparing the files — this can take a moment for large galleries.",
     "preparingProgress": "{{count}} photos packaged",
     "downloadReady": "Your download is ready",
     "downloadNow": "Download",

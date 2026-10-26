@@ -467,7 +467,7 @@
     },
     "prepareDownload": "Preparar download",
     "preparingDownload": "Preparando seu download…",
-    "preparingHint": "Redimensionando as fotos — em galerias grandes, isso pode levar alguns instantes.",
+    "preparingHint": "Preparando os arquivos — em galerias grandes, isso pode levar alguns instantes.",
     "preparingProgress": "{{count}} fotos preparadas",
     "downloadReady": "Seu download está pronto",
     "downloadNow": "Baixar",

@@ -13,8 +13,10 @@ import type { Photo } from '../../../../types';
 const quota = vi.hoisted(() => ({ allows: true, remaining: 10 }));
 const mocks = vi.hoisted(() => ({
   showDownloadLimitReached: vi.fn(),
-  downloadSelectedPhotos: vi.fn().mockResolvedValue(undefined),
+  downloadPhotosInParts: vi.fn().mockResolvedValue(undefined),
 }));
+
+vi.mock('../../../../contexts/ArchiveDownloadContext', () => ({ useArchiveDownload: () => mocks }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -52,16 +54,6 @@ vi.mock('../../../../utils/downloadLimit', () => ({
 vi.mock('../../../../services/feedback.service', () => ({
   feedbackService: { submitFeedback: vi.fn().mockResolvedValue({}) },
 }));
-vi.mock('../../../../services/gallery.service', async () => {
-  const actual = await vi.importActual<typeof import('../../../../services/gallery.service')>('../../../../services/gallery.service');
-  return {
-    splitIntoArchives: actual.splitIntoArchives,
-    galleryService: {
-      downloadSelectedPhotos: mocks.downloadSelectedPhotos,
-      downloadPhotosInParts: actual.galleryService.downloadPhotosInParts,
-    },
-  };
-});
 vi.mock('../../../../services/analytics.service', () => ({
   analyticsService: { trackGalleryEvent: vi.fn() },
 }));
@@ -96,7 +88,7 @@ beforeEach(() => {
   quota.allows = true;
   quota.remaining = 10;
   mocks.showDownloadLimitReached.mockClear();
-  mocks.downloadSelectedPhotos.mockClear();
+  mocks.downloadPhotosInParts.mockClear();
 });
 
 describe('GalleryStoryLayout Download All in the nav (issue 1710)', () => {
@@ -121,7 +113,7 @@ describe('GalleryStoryLayout Download All in the nav (issue 1710)', () => {
     );
     fireEvent.click(navButton(container) as HTMLElement);
     expect(onDownloadEverything).toHaveBeenCalledTimes(1);
-    expect(mocks.downloadSelectedPhotos).not.toHaveBeenCalled();
+    expect(mocks.downloadPhotosInParts).not.toHaveBeenCalled();
   });
 
   it('hands off to the resolution picker when the gallery offers a choice', () => {
@@ -135,13 +127,13 @@ describe('GalleryStoryLayout Download All in the nav (issue 1710)', () => {
     );
     fireEvent.click(navButton(container) as HTMLElement);
     expect(onPickResolution).toHaveBeenCalledWith([1, 2, 3]);
-    expect(mocks.downloadSelectedPhotos).not.toHaveBeenCalled();
+    expect(mocks.downloadPhotosInParts).not.toHaveBeenCalled();
   });
 
   it('downloads the current scope when there is no picker and no whole-gallery path', async () => {
     const { container } = render(<GalleryStoryLayout {...baseProps} />);
     fireEvent.click(navButton(container) as HTMLElement);
-    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledWith('x', [1, 2, 3]));
+    await waitFor(() => expect(mocks.downloadPhotosInParts).toHaveBeenCalledWith('x', [1, 2, 3]));
   });
 
   // The server takes at most 500 ids per archive; past that the fallback used
@@ -152,10 +144,8 @@ describe('GalleryStoryLayout Download All in the nav (issue 1710)', () => {
   it('downloads more than 500 photos as several zips, none left out', async () => {
     const { container } = render(<GalleryStoryLayout {...baseProps} photos={manyPhotos(1001)} />);
     fireEvent.click(navButton(container) as HTMLElement);
-    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledTimes(3));
-    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(1, 'x', idsFrom(1, 500), { index: 1, total: 3 });
-    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(2, 'x', idsFrom(501, 1000), { index: 2, total: 3 });
-    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(3, 'x', [1001], { index: 3, total: 3 });
+    await waitFor(() => expect(mocks.downloadPhotosInParts).toHaveBeenCalledTimes(1));
+    expect(mocks.downloadPhotosInParts).toHaveBeenCalledWith('x', idsFrom(1, 1001));
   });
 
   it('skips the resolution picker past 500 photos, whose single archive would be cut short', async () => {
@@ -169,7 +159,7 @@ describe('GalleryStoryLayout Download All in the nav (issue 1710)', () => {
       />
     );
     fireEvent.click(navButton(container) as HTMLElement);
-    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.downloadPhotosInParts).toHaveBeenCalledTimes(1));
     expect(onPickResolution).not.toHaveBeenCalled();
   });
 
@@ -177,7 +167,7 @@ describe('GalleryStoryLayout Download All in the nav (issue 1710)', () => {
     const list = photos.map((photo) => ({ ...photo, category_allow_downloads: photo.id !== 2 }));
     const { container } = render(<GalleryStoryLayout {...baseProps} photos={list} />);
     fireEvent.click(navButton(container) as HTMLElement);
-    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledWith('x', [1, 3]));
+    await waitFor(() => expect(mocks.downloadPhotosInParts).toHaveBeenCalledWith('x', [1, 3]));
   });
 
   it('keeps going past a part that would hold only restricted photos', async () => {
@@ -186,9 +176,8 @@ describe('GalleryStoryLayout Download All in the nav (issue 1710)', () => {
     const list = manyPhotos(1001).map((photo) => ({ ...photo, category_allow_downloads: photo.id > 500 }));
     const { container } = render(<GalleryStoryLayout {...baseProps} photos={list} />);
     fireEvent.click(navButton(container) as HTMLElement);
-    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledTimes(2));
-    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(1, 'x', idsFrom(501, 1000), { index: 1, total: 2 });
-    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(2, 'x', [1001], { index: 2, total: 2 });
+    await waitFor(() => expect(mocks.downloadPhotosInParts).toHaveBeenCalledTimes(1));
+    expect(mocks.downloadPhotosInParts).toHaveBeenCalledWith('x', idsFrom(501, 1001));
   });
 
   it('is absent when nothing in scope can be downloaded and there is no whole-gallery path', () => {
@@ -204,7 +193,7 @@ describe('GalleryStoryLayout Download All in the nav (issue 1710)', () => {
     const { container } = render(<GalleryStoryLayout {...baseProps} />);
     fireEvent.click(navButton(container) as HTMLElement);
     expect(mocks.showDownloadLimitReached).toHaveBeenCalledWith({ remaining: 0 });
-    expect(mocks.downloadSelectedPhotos).not.toHaveBeenCalled();
+    expect(mocks.downloadPhotosInParts).not.toHaveBeenCalled();
   });
 
   it('is absent when downloads are not allowed', () => {

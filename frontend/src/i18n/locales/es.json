@@ -288,6 +288,7 @@
     "passwordHint": "La contraseña la proporcionó el organizador del evento. Contacta con ellos si no la tienes."
   },
   "gallery": {
+    "preparingHint": "Preparando los archivos — esto puede tardar un poco en galerías grandes.",
     "revealPendingTitle": "Las fotos siguen siendo una sorpresa",
     "revealPendingMessage": "El anfitrión revelará la galería más tarde — ¡vuelve pronto!",
     "revealScheduledFor": "Revelación programada para {{date}}",

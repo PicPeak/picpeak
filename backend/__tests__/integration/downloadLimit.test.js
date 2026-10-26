@@ -906,15 +906,18 @@ describe('Download limit (issue 1560)', () => {
       expect(await grantCount(event.id)).toBe(0);
     });
 
-    it('cannot start or collect a resolution job', async () => {
+    it('can prepare previews but cannot collect an original resolution job', async () => {
       const { event, photoIds, guestToken } = await makeEvent({ limit: 5, photos: 2 });
       await db('events').where({ id: event.id }).update({ download_resolution_picker_enabled: 1 });
       const created = await request(app)
         .post(`/api/gallery/${event.slug}/download-jobs`)
         .set('Authorization', `Bearer ${guestToken}`)
         .send({ resolution: 'original' });
-      expect(created.status).toBe(403);
-      expect(created.body).toMatchObject({ preview_only: true });
+      expect(created.status).toBe(202);
+      const jobs = require('../../src/services/downloadJobService');
+      const preview = await jobs.getStatus(created.body.token);
+      await jobs.liveBuilds.get(preview.id);
+      expect(preview.preview_only).toBeTruthy();
 
       const jobToken = 'c'.repeat(64);
       const zipKey = `download-jobs/${event.slug}-guest.zip`;

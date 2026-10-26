@@ -10,6 +10,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { differenceInDays, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { ArchiveDownloadProvider, useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
 import { toast } from 'react-toastify';
 
 import { Button } from '../common';
@@ -156,7 +157,16 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
   }
 };
 
-export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
+export const GalleryView: React.FC<GalleryViewProps> = (props) => {
+  const { isClient, viaCustomer } = useGalleryAuth();
+  const scope = isClient ? 'client' : viaCustomer ? 'customer' : 'guest';
+  return <ArchiveDownloadProvider scopeKey={`${props.slug}:${scope}`}>
+    <GalleryViewContent {...props} />
+  </ArchiveDownloadProvider>;
+};
+
+const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
+  const archives = useArchiveDownload();
   const { t } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
   const { logout, endSession, isClient, viaCustomer, viaClientPin, enterClientMode, leaveClientMode, isSwitchingClientMode } = useGalleryAuth();
@@ -1218,7 +1228,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       return;
     }
 
-    downloadAllMutation.mutate({ slug, zipReady: data?.event?.download_zip_ready });
+    downloadAllMutation.mutate({ slug, zipReady: data?.event?.download_zip_ready && !data?.event?.is_priced });
     
     // Track download all action
     analyticsService.trackGalleryEvent('bulk_download', {
@@ -1277,12 +1287,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           toast.info(t('gallery.downloading', { count: selectedPhotoList.length }));
         }
         try {
-          await galleryService.downloadSelectedPhotos(
+          const handedOff = await archives.downloadSelectedPhotos(
             slug,
             selectedPhotoList.map((p) => p.id),
             undefined,
             () => keepSelectedRunAlive(runId),
           );
+          if (!handedOff) return;
         } catch (error) {
           // A refusal keeps the selection, to trim it to what is left; so does
           // a selection over the server's per-download cap, which the service
@@ -1291,6 +1302,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           if (!asToolbarZip) throw error;
           if (isSelectionTooLargeError(error)) return;
           toast.error(t('gallery.downloadError'));
+          return;
         }
       } else {
         for (const photo of selectedPhotoList) {
@@ -1373,7 +1385,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       }));
     }
 
-    await galleryService.downloadPhotosInParts(slug, peopleDownloadableIds).catch((error) => {
+    await archives.downloadPhotosInParts(slug, peopleDownloadableIds).catch((error) => {
       // The limit refusal already told the guest why (issue 1560).
       if (!isDownloadLimitError(error)) throw error;
     });
@@ -1427,7 +1439,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       photo_count: folderDownloadIds.length,
     });
 
-    await galleryService.downloadSelectedPhotos(slug, folderDownloadIds).catch((error) => {
+    await archives.downloadSelectedPhotos(slug, folderDownloadIds).catch((error) => {
       // The limit refusal already told the guest why (issue 1560).
       if (!isDownloadLimitError(error)) throw error;
     });
@@ -1643,6 +1655,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             slug={slug}
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
+            zipReady={data?.event?.download_zip_ready && !data?.event?.is_priced}
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
@@ -1976,6 +1989,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             slug={slug}
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
+            zipReady={data?.event?.download_zip_ready && !data?.event?.is_priced}
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
@@ -2549,6 +2563,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             slug={slug}
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
+            zipReady={data?.event?.download_zip_ready && !data?.event?.is_priced}
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}

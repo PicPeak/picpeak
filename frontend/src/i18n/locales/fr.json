@@ -293,6 +293,7 @@
     "passwordHint": "Le mot de passe a été fourni par l'organisateur de l'événement. Contactez-le si vous ne l'avez pas."
   },
   "gallery": {
+    "preparingHint": "Préparation des fichiers — cela peut prendre un moment pour les grandes galeries.",
     "revealPendingTitle": "Les photos sont encore une surprise",
     "revealPendingMessage": "L'hôte dévoilera la galerie plus tard — revenez bientôt !",
     "revealScheduledFor": "Révélation prévue le {{date}}",
