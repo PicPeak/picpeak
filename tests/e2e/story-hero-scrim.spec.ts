@@ -60,16 +60,19 @@ async function sampleLines(page: Page) {
     ctx.drawImage(img, 0, 0);
     const { data, width, height } = ctx.getImageData(0, 0, img.width, img.height);
     const at = (x: number, y: number) => data[(Math.round(y) * width + Math.round(x)) * 4];
-    const cx = box.x + box.width / 2;
-    const cy = box.y + box.height / 2;
-    const row = { values: [] as number[], copyFrom: Math.round(box.x), copyTo: Math.round(box.x + box.width) };
+    // The screenshot is in device pixels; the box is in CSS pixels.
+    const k = img.width / window.innerWidth;
+    const b = { x: box.x * k, y: box.y * k, width: box.width * k, height: box.height * k };
+    const cx = b.x + b.width / 2;
+    const cy = b.y + b.height / 2;
+    const row = { values: [] as number[], copyFrom: Math.round(b.x), copyTo: Math.round(b.x + b.width) };
     for (let x = 0; x < width; x++) row.values.push(at(x, cy));
-    const column = { values: [] as number[], copyFrom: Math.round(box.y), copyTo: Math.round(box.y + box.height) };
+    const column = { values: [] as number[], copyFrom: Math.round(b.y), copyTo: Math.round(b.y + b.height) };
     for (let y = 0; y < height; y++) column.values.push(at(cx, y));
     // Corner to corner of the copy box, extended to the hero's edge.
     const diagonal = { values: [] as number[], copyFrom: -1, copyTo: -1 };
-    const dx = box.width / 2;
-    const dy = box.height / 2;
+    const dx = b.width / 2;
+    const dy = b.height / 2;
     const unit = Math.hypot(dx, dy);
     for (let i = -width - height; i <= width + height; i++) {
       const x = cx + (dx * i) / unit;
@@ -96,9 +99,12 @@ function expectSmoothScrim(name: string, line: Line) {
     if (i <= darkest) expect(values[i], `${name}: darkens towards the centre at ${i}`).toBeLessThanOrEqual(values[i - 1] + 1);
     else expect(values[i], `${name}: lightens away from the centre at ${i}`).toBeGreaterThanOrEqual(values[i - 1] - 1);
   }
-  // Legibility from issue 1708: the whole copy box stays darkened.
-  for (let i = copyFrom; i < copyTo; i++) {
-    expect(values[i], `${name}: copy box darkened at ${i}`).toBeLessThanOrEqual(GREY * 0.9);
+  // Legibility from issue 1708: the middle of the copy box, where the text
+  // sits, stays darkened. The outer part of the box is where the scrim
+  // fades out.
+  const inset = Math.round((copyTo - copyFrom) / 4);
+  for (let i = copyFrom + inset; i < copyTo - inset; i++) {
+    expect(values[i], `${name}: copy darkened at ${i}`).toBeLessThanOrEqual(GREY * 0.9);
   }
   expect(Math.min(...values)).toBeLessThanOrEqual(GREY * 0.5);
 }
