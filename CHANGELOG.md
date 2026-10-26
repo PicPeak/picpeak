@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.4](https://github.com/PicPeak/picpeak/compare/v3.135.3...v3.135.4) (2026-10-26)
+
+
+### Bug Fixes
+
+* **ci:** cache the media-tools apt packages ([#2257](https://github.com/PicPeak/picpeak/issues/2257)) ([a0a9ccf](https://github.com/PicPeak/picpeak/commit/a0a9ccf12fca171851361e1c7068b7f6029e39f2))
+
 ## [3.135.3](https://github.com/PicPeak/picpeak/compare/v3.135.2...v3.135.3) (2026-10-25)
 
 
