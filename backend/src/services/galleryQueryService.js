@@ -24,12 +24,13 @@ const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
 // Photo sales: the free quota is a one-time giveaway per
 // gallery: true until the gallery's promo code has been redeemed once (a
 // buyer who forgets the code does not burn the quota — only actual promo use
-// does, matching the single-use Snipcart discount).
+// does, matching the single-use gallery promo).
 async function freeQuotaAvailable(event) {
   try {
     if (!parseBooleanInput(event.is_priced, false)) return false;
     const prior = await db('photo_purchase_orders')
-      .where({ gallery_id: event.id, promo_used: true })
+      .where({ gallery_id: event.id })
+      .where((q) => q.where({ promo_used: true }).orWhere({ promo_gallery_id: event.id }))
       .first('id');
     return !prior;
   } catch {
@@ -40,7 +41,7 @@ async function freeQuotaAvailable(event) {
 
 const { guestUploadMaxEdgeOf } = require('./guestUploadDownscale');
 const { isPhotoSellable, signPhotoSale } = require('../modules/photoSales/sellable');
-const { isDiscountId } = require('../modules/photoSales/promoDiscount');
+const { stripeConfiguration } = require('../modules/photoSales/stripeClient');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, whereNotVideo } = require('../utils/photoVisibility');
 const {
   galleryFullResolutionDenial, isRemuxWebKey, MAXIMUM_PROTECTION_CAP, capsFullSizeView,
@@ -700,17 +701,17 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       hero_image_anchor: event.hero_image_anchor || 'center',
       default_photo_sort: event.default_photo_sort || 'upload_date_desc',
       // Photo sales: priced-gallery settings drive the
-      // Snipcart buttons and the free quota in the gallery UI.
+      // purchase buttons and the free quota in the gallery UI.
       is_priced: parseBooleanInput(event.is_priced, false),
       free_photo_count: Number(event.free_photo_count ?? 0),
       photo_price: event.photo_price != null ? Number(event.photo_price) : null,
       purchase_access_days: Number(event.purchase_access_days ?? 30),
       // The free quota applies ONCE per gallery via a one-time promo code
-      // (Snipcart discount). Exposed only while the discount actually exists
+      // (gallery promo). Exposed when checkout is configured
       // in the store, so the UI never advertises a dead code.
       free_quota_available: await freeQuotaAvailable(event),
       promo_code: event.promo_code || null,
-      promo_discount_ready: !!event.promo_code && isDiscountId(event.snipcart_discount_id),
+      promo_discount_ready: !!event.promo_code && stripeConfiguration().checkout_configured && stripeConfiguration().webhook_configured,
       // Promo banner override (#440). GalleryView has always read
       // promo_mode from THIS payload, but it was never sent — so every
       // per-event promo override silently resolved to 'inherit' and a
@@ -875,7 +876,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // again costs nothing.
         download_granted: grantedIds.has(Number(photo.id)),
         // Photo sales: per-photo price override (null =
-        // gallery default) for the Snipcart buy button.
+        // gallery default) for the purchase button.
         photo_price: photo.photo_price != null ? Number(photo.photo_price) : null,
         // Photo sales: the cart line's proof that its buyer passed this
         // gallery's access check (modules/photoSales/sellable.js). Only

@@ -87,11 +87,12 @@ export interface Event {
   allow_downloads?: boolean;
   is_priced?: boolean;
   free_photo_count?: number;
+  free_quota_available?: boolean;
   photo_price?: number | null;
   purchase_access_days?: number;
   // One-time promo code for the first order's free quota (backend
-  // galleryQueryService). Only advertised while the Snipcart discount
-  // exists (promo_discount_ready).
+  // galleryQueryService). Advertised when checkout is configured
+  // and the promo has not been redeemed.
   promo_code?: string | null;
   promo_discount_ready?: boolean;
   protection_level?: 'basic' | 'standard' | 'enhanced' | 'maximum';

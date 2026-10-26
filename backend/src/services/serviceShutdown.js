@@ -19,6 +19,7 @@ const resources = [
   ['./downloadJobCleanupService', 'stopDownloadJobCleanup', 'startDownloadJobCleanup'], ['./revealScheduler', 'stopRevealScheduler', 'startRevealScheduler'],
   ['./feedbackRateLimitCleanupService', 'stopFeedbackRateLimitCleanup', 'startFeedbackRateLimitCleanup'],
   ['./invoiceSchedulerService', 'stopInvoiceScheduler', 'startInvoiceScheduler'], ['./emailProcessor', 'stopEmailQueueProcessor', 'startEmailQueueProcessor'],
+  ['./photoCheckoutReconciler', 'stop', 'start'],
   ['./whatsappProcessor', 'stopWhatsAppQueueProcessor', 'startWhatsAppQueueProcessor'], ['./emailIntakeService', 'stopIncomingMailPoller', 'startIncomingMailPoller'],
   ['./webhookDeliveryWorker', 'stopWebhookDeliveryWorker', 'startWebhookDeliveryWorker'], ['./s3AutoImporter', 'stopS3AutoImporter', 'startS3AutoImporter'],
   ['./backupService', 'stopBackupService', 'startBackupService'], ['./databaseBackup', 'stopScheduledBackups', 'startScheduledBackups'],

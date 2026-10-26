@@ -15,6 +15,7 @@ const { buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchase
 const { summarisePurchaseOrder } = require('../../modules/photoSales/adminOrders');
 const { queueEmail } = require('../../services/emailProcessor');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
+const { stripeConfiguration } = require('../../modules/photoSales/stripeClient');
 
 async function loadOwnedEvent(req) {
   // Defence in depth — requireEventOwner already ran on write routes.
@@ -56,13 +57,9 @@ module.exports = (router) => {
 
       res.json({
         orders: summaries,
-        // Whether this install can sell at all: without the public key the
-        // gallery shows no cart, without the secret key every webhook is
-        // refused and no order is ever granted.
-        store: {
-          checkout_configured: !!(process.env.SNIPCART_API_KEY || '').trim(),
-          webhook_configured: !!(process.env.SNIPCART_SECRET_API_KEY || '').trim(),
-        },
+        // Presence only; this does not claim that credentials or webhook
+        // delivery have been verified with the provider.
+        store: { provider: 'stripe', ...stripeConfiguration() },
       });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to load photo orders');

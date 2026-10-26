@@ -16,11 +16,21 @@ interface OrdersTabProps {
   eventId: number;
 }
 
-/** Badge for an order: what Snipcart and the audit made of it. */
+/** Badge for an order: payment and delivery state. */
 function useOrderStatus() {
   const { t } = useTranslation();
   return (order: PhotoOrderSummary): { tone: BadgeTone; label: string } => {
     switch (order.status) {
+      case 'pending':
+      case 'creation_unknown':
+        return { tone: 'warning', label: t('photoSales.statusPending', 'Awaiting payment') };
+      case 'processing':
+        return { tone: 'warning', label: t('photoSales.statusProcessing', 'Payment processing') };
+      case 'refund_pending':
+        return { tone: 'warning', label: t('photoSales.statusRefundPending', 'Refund pending') };
+      case 'expired':
+      case 'failed':
+        return { tone: 'neutral', label: t('photoSales.statusUnpaid', 'Not paid') };
       case 'completed':
         return order.remaining_days > 0
           ? { tone: 'success', label: t('photoSales.statusPaid', 'Paid') }
@@ -31,8 +41,10 @@ function useOrderStatus() {
         return { tone: 'danger', label: t('photoSales.statusRefundFailed', 'Refund failed') };
       case 'charged_back':
         return { tone: 'danger', label: t('photoSales.statusChargedBack', 'Charged back') };
-      default:
+      case 'cancelled':
         return { tone: 'neutral', label: t('photoSales.statusCancelled', 'Cancelled') };
+      default:
+        return { tone: 'neutral', label: t('photoSales.statusUnknown', 'Unknown') };
     }
   };
 }
@@ -106,7 +118,7 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({ eventId }) => {
         <Card padding="md">
           <div className="flex items-center gap-3 text-soft">
             <ShoppingBag className="w-5 h-5 shrink-0" />
-            <p>{t('photoSales.noOrders', 'No purchases yet. Buyers get an order listed here as soon as a Snipcart checkout completes.')}</p>
+            <p>{t('photoSales.noOrders', 'No orders yet. Checkouts appear here when a buyer continues to payment.')}</p>
           </div>
         </Card>
       ) : (
@@ -136,7 +148,7 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({ eventId }) => {
                   const active = order.status === 'completed' && order.remaining_days > 0;
                   return (
                     <tr key={order.order_id} className="border-b border-line-faint last:border-0">
-                      <td className="py-3 pr-4 text-heading break-all">{order.buyer_email || '—'}</td>
+                      <td className="py-3 pr-4 text-heading break-all">{order.buyer_email || '—'}<span className="block text-xs text-muted">{order.payment_provider === 'stripe' ? 'Stripe' : 'Snipcart'}</span></td>
                       <td className="py-3 pr-4 whitespace-nowrap"><Badge tone={status.tone}>{status.label}</Badge></td>
                       <td className="py-3 pr-4 text-body text-right tabular-nums">{order.status === 'completed' ? order.photo_count : '—'}</td>
                       <td className="py-3 pr-4 text-body text-right tabular-nums whitespace-nowrap">

@@ -5,7 +5,7 @@
  * photo and the access window for purchased downloads. Saving is handled by
  * the shared settings draft (useEventSettingsDraft) — this component only
  * edits the draft. The backend re-generates the one-time promo code and the
- * Snipcart discount when these values change (adminEvents/crud.js).
+ * local promo code when these values change (adminEvents/crud.js).
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';

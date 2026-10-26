@@ -2,10 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../config/api';
 
 /** What became of an order: granted, or refused/revoked (see the webhook). */
-export type PhotoOrderStatus = 'completed' | 'refunded' | 'refund_failed' | 'charged_back' | 'cancelled';
+export type PhotoOrderStatus = 'pending' | 'creation_unknown' | 'processing' | 'completed' | 'refund_pending' | 'refunded' | 'refund_failed' | 'charged_back' | 'cancelled' | 'expired' | 'failed';
 
 export interface PhotoOrderSummary {
   order_id: string;
+  payment_provider: 'snipcart' | 'stripe';
   buyer_email: string;
   total_cents: number;
   currency: string;
@@ -18,8 +19,8 @@ export interface PhotoOrderSummary {
 
 export interface PhotoOrdersPayload {
   orders: PhotoOrderSummary[];
-  /** Whether this install can sell: public key (cart) and secret key (webhook). */
-  store?: { checkout_configured: boolean; webhook_configured: boolean };
+  /** Configuration presence, not a provider connectivity check. */
+  store?: { provider: 'stripe'; checkout_configured: boolean; webhook_configured: boolean; test_mode: boolean };
 }
 
 export const photoOrdersQueryKey = (eventId: number) => ['admin-event-photo-orders', eventId];

@@ -421,12 +421,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   const { data: settingsData } = usePublicSettings();
 
-  // Photo sales: priced galleries get the Snipcart bootstrap
+  // Photo sales: priced galleries get the PicPeak cart
   // and buy buttons; non-priced galleries never load any of it.
   const photoSalesValue = useMemo(() => buildPhotoSalesConfig({
     slug,
-    event: (data?.event as unknown) as Parameters<typeof buildPhotoSalesConfig>[0]['event'],
-    apiKey: (settingsData as { snipcart_api_key?: string | null } | undefined)?.snipcart_api_key ?? null,
+    event: data?.event,
+    checkoutConfigured: (settingsData as { photo_sales_checkout_configured?: boolean } | undefined)?.photo_sales_checkout_configured === true,
   }), [slug, data?.event, settingsData]);
 
   // Fetch feedback settings
@@ -1132,9 +1132,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   // Photo sales: a priced gallery delivers everything
   // through the checkout: every download affordance (header, sidebar,
-  // tiles, lightbox, layout nav) is switched off and a Snipcart cart
+  // tiles, lightbox, layout nav) is switched off and a purchase cart
   // button takes the header slot instead.
-  const salesCheckoutReady = photoSalesValue.enabled && !!photoSalesValue.apiKey;
+  const salesCheckoutReady = photoSalesValue.checkoutReady;
   if (salesCheckoutReady && allowDownloads) allowDownloads = false;
 
   // Guest uploads: the refetched /photos payload decides once it is here. The
@@ -1794,10 +1794,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
         <GuestRecoveryModal />
         <PhotoSalesProvider
+          photos={data?.photos}
           value={{
             ...photoSalesValue,
-            photos: (data?.photos || []) as Array<{ id: number; uploaded_at?: string | null }>,
-            checkoutReady: photoSalesValue.enabled && !!photoSalesValue.apiKey,
+            checkoutReady: photoSalesValue.checkoutReady,
           }}
         >
 
@@ -2038,10 +2038,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GridDensityOffered.Provider value={densityOffered}>
       <PhotoSalesProvider
+        photos={data?.photos}
         value={{
           ...photoSalesValue,
-          photos: (data?.photos || []) as Array<{ id: number; uploaded_at?: string | null }>,
-          checkoutReady: photoSalesValue.enabled && !!photoSalesValue.apiKey,
+          checkoutReady: photoSalesValue.checkoutReady,
         }}
       >
 

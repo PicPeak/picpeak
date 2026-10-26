@@ -283,10 +283,11 @@ router.get('/', async (req, res) => {
       seo_meta_noindex: settingsObject.seo_meta_noindex === true,
       seo_meta_nofollow: settingsObject.seo_meta_nofollow === true,
       seo_meta_noai: settingsObject.seo_meta_noai === true,
-      // Photo sales: Snipcart's PUBLIC API key. It is meant
-      // to ship to the browser; the webhook secret is never exposed. Null
-      // keeps the gallery-side purchase UI hidden when unconfigured.
-      snipcart_api_key: process.env.SNIPCART_API_KEY || null,
+      // A boolean is sufficient for hosted Checkout; no payment key reaches a browser.
+      photo_sales_checkout_configured: (() => {
+        const config = require('../modules/photoSales/stripeClient').stripeConfiguration();
+        return config.checkout_configured && config.webhook_configured;
+      })(),
     };
 
     res.json(publicSettings);

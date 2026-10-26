@@ -2019,6 +2019,31 @@
         "POST /snipcart-webhook",
         "POST /:slug/snipcart-webhook"
       ]
+    },
+    "gallery/stripeCheckout.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public payment and gallery purchase surface: financial state and buyer activity are excluded from product usage.",
+      "route_signatures": [
+        "POST /:slug/checkout"
+      ]
+    },
+    "photoCheckout.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public payment and gallery purchase surface: financial state and buyer activity are excluded from product usage.",
+      "route_signatures": [
+        "GET /:token",
+        "POST /:token/cancel"
+      ]
+    },
+    "stripeWebhook.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public payment and gallery purchase surface: financial state and buyer activity are excluded from product usage.",
+      "route_signatures": [
+        "POST /"
+      ]
     }
   },
   "feature_flags": {

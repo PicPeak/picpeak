@@ -8,6 +8,7 @@ function summarisePurchaseOrder(order, rows = []) {
 
   return {
     order_id: String(order?.order_id || ''),
+    payment_provider: order?.payment_provider || 'snipcart',
     buyer_email: String(order?.buyer_email || ''),
     total_cents: Number(order?.total_cents || 0),
     currency: String(order?.currency || 'EUR'),

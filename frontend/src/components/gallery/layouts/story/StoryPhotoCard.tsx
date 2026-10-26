@@ -1,3 +1,4 @@
+import { PhotoPurchaseBadge } from '../../../../features/photo-sales/PhotoPurchaseBadge';
 import React, { useRef, useState } from 'react';
 import { motion, useInView } from 'framer-motion';
 import { Heart, Check, Video } from 'lucide-react';
@@ -259,6 +260,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           <p>{captionText}</p>
         </div>
       )}
+      <PhotoPurchaseBadge photo={photo} className="left-auto right-3 bottom-3" />
     </motion.div>
   );
 };

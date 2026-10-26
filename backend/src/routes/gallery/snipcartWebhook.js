@@ -39,10 +39,9 @@ const rateLimit = require('express-rate-limit');
 const { db } = require('../../database/db');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { rateLimitKey } = require('../../utils/rateLimitKey');
-const { queueEmail } = require('../../services/emailProcessor');
-const { createPurchaseAccessToken, buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
-const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
+const { createPurchaseAccessToken } = require('../../modules/photoSales/purchaseAccess');
 const logger = require('../../utils/logger');
+const { purchaseExpiry, purchaseRows, sendPurchaseEmail } = require('../../modules/photoSales/fulfilment');
 const { allocateFreeLines } = require('../../modules/photoSales/priceRules');
 const { isDiscountId } = require('../../modules/photoSales/promoDiscount');
 const {
@@ -237,14 +236,9 @@ async function rejectOrder(order, gallery, reason) {
   const refund = () => refundSnipcartOrder(
     orderToken, chargedCents / 100, `Photo sales: ${reason} — refunded automatically`
   );
-  if (!gallery) {
-    // No gallery to store the order against (gallery_id is NOT NULL).
-    logger.error(`Snipcart order ${orderToken} has no known gallery; refund outcome: ${await refund()}`);
-    return;
-  }
   await db('photo_purchase_orders').insert({
     order_id: orderToken,
-    gallery_id: gallery.id,
+    gallery_id: gallery?.id || null,
     buyer_email: order.email || '',
     total_cents: Number.isFinite(chargedCents) ? Math.max(0, chargedCents) : 0,
     currency: String(order.currency || '').toUpperCase().slice(0, 8),
@@ -262,18 +256,6 @@ async function rejectOrder(order, gallery, reason) {
       .where({ order_id: orderToken })
       .update({ status: 'refunded', updated_at: new Date().toISOString() });
   }
-}
-
-/**
- * When a granted purchase stops: purchase_access_days from now, but never
- * after the gallery expires — expiry deactivates and archives the gallery,
- * which takes the originals (and every purchase link) down with it.
- */
-function purchaseExpiry(gallery) {
-  const days = Number(gallery.purchase_access_days || 30);
-  const accessEnd = Date.now() + (Number.isFinite(days) ? days : 30) * 24 * 60 * 60 * 1000;
-  const galleryEnd = gallery.expires_at ? new Date(gallery.expires_at).getTime() : NaN;
-  return new Date(Number.isFinite(galleryEnd) ? Math.min(accessEnd, galleryEnd) : accessEnd).toISOString();
 }
 
 /** Audit a paid order against the database, then grant or refuse it. */
@@ -326,7 +308,8 @@ async function grantOrder(order) {
   // One-time promo code: honoured exactly once per gallery — on the FIRST
   // order that actually applies it (the Snipcart discount is single-use).
   const priorPromoUse = await db('photo_purchase_orders')
-    .where({ gallery_id: gallery.id, promo_used: true })
+    .where({ gallery_id: gallery.id })
+    .where((q) => q.where({ promo_used: true }).orWhere({ promo_gallery_id: gallery.id }))
     .first('id');
   const discountCodes = (Array.isArray(order.discounts) ? order.discounts : [])
     .map((d) => String(d?.code || ''))
@@ -368,32 +351,18 @@ async function grantOrder(order) {
       access_token: accessToken,
       email_sent: false,
       promo_used: codeHonored,
+      promo_gallery_id: codeHonored ? gallery.id : null,
     });
-    await trx('photo_purchases').insert(allocation.map((line) => ({
-      order_id: orderToken,
-      gallery_id: gallery.id,
-      photo_id: Number(line.photoId),
-      buyer_email: buyerEmail,
-      purchased_at: purchasedAt,
-      expires_at: expiresAt,
-      access_token: accessToken,
-      currency: SALES_CURRENCY,
-      amount_cents: line.amountCents,
-    })));
+    await trx('photo_purchases').insert(purchaseRows({
+      orderId: orderToken, galleryId: gallery.id, buyerEmail, purchasedAt,
+      expiresAt, accessToken, currency: SALES_CURRENCY, lines: allocation,
+    }));
   });
 
-  if (buyerEmail) {
-    await queueEmail(null, buyerEmail, 'photo_purchase_access', {
-      buyer_email: buyerEmail,
-      gallery_name: gallery.event_name || gallerySlug,
-      access_link: buildPurchasedDownloadUrl({ baseUrl: await getFrontendBaseUrl(), accessToken }),
-      purchased_at: purchasedAt,
-      expires_at: expiresAt,
-      download_count: photoIds.length,
-      photo_count: photoIds.length,
-    });
-    await db('photo_purchase_orders').where({ order_id: orderToken }).update({ email_sent: true });
-  }
+  await sendPurchaseEmail(
+    await db('photo_purchase_orders').where({ order_id: orderToken }).first(),
+    gallery.event_name || gallerySlug, photoIds.length,
+  );
 
   logger.info(`Snipcart order ${orderToken} granted: gallery ${gallerySlug}, ${photoIds.length} photo(s), ${chargedTotalCents}c`);
   return undefined;
@@ -459,6 +428,12 @@ async function handleWebhook(req, res) {
         const raced = await db('photo_purchase_orders').where({ order_id: String(orderToken) }).first('id');
         if (!raced) throw error;
       }
+    }
+    const granted = await db('photo_purchase_orders').where({ order_id: String(orderToken), status: 'completed', email_sent: false }).first();
+    if (granted) {
+      const gallery = await db('events').where({ id: granted.gallery_id }).first('event_name', 'slug');
+      const count = await db('photo_purchases').where({ order_id: granted.order_id }).count('* as n').first();
+      await sendPurchaseEmail(granted, gallery?.event_name || gallery?.slug || '', Number(count.n));
     }
     // The body never carries the access token: Snipcart keeps webhook
     // responses in its dashboard logs.

@@ -288,7 +288,7 @@ module.exports = (router) => {
       });
 
       // Photo sales: priced galleries get their one-time
-      // promo code and the backing Snipcart discount right at creation.
+      // promo code at creation.
       try {
         const promoService = require('../../modules/photoSales/promoDiscount');
         if (created && created.id) {
@@ -2300,7 +2300,7 @@ module.exports = (router) => {
             .queueForEvent(parseInt(id, 10))
             .catch(() => {});
         }
-        // One-time promo code + Snipcart discount follow the pricing fields.
+        // The one-time promo code follows the pricing fields.
         try {
           const fresh = await db('events').where({ id }).first(
             'id', 'event_name', 'is_priced', 'free_photo_count', 'photo_price', 'promo_code', 'snipcart_discount_id'

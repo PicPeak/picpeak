@@ -1,170 +1,91 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
-import type { PhotoSalesPhoto } from './photoSales';
+import type { PhotoSalesConfig } from './photoSales';
+import { effectivePhotoPrice } from './photoSales';
+import { PhotoSalesCart } from './PhotoSalesCart';
 
-/**
- * Photo-sales context + Snipcart bootstrap.
- *
- * Mounted by GalleryView only for priced galleries. When the operator has
- * configured SNIPCART_API_KEY, the Snipcart v3 snippet is injected here —
- * nowhere else, so non-priced galleries never load it.
- *
- * The context also mirrors Snipcart's cart (item count and item ids) from its
- * store, so the header button shows a count only when there is one and a
- * photo already in the cart reads "In cart" instead of offering itself again.
- */
-
-export interface PhotoSalesContextValue {
-  enabled: boolean;
-  apiKey: string | null;
-  slug: string;
-  price: number;
-  currency: string;
-  priceCheckUrl: string;
-  /** Cart line description (PhotoSalesConfig.itemDescription). */
-  itemDescription: string;
-  freeCount: number;
-  photos: PhotoSalesPhoto[];
-  /** True when the checkout UI can actually be shown (priced + key set). */
-  checkoutReady: boolean;
+export interface PurchasePhoto {
+  id: number;
+  filename?: string;
+  original_filename?: string | null;
+  thumbnail_url?: string | null;
+  photo_price?: number | null;
+  sale_token?: string | null;
 }
 
-interface PhotoSalesCart {
-  /** Lines in the Snipcart cart; 0 until Snipcart is ready. */
+export interface CartPhoto { id: number; name: string; price: number; thumbnail?: string | null }
+
+interface PhotoSalesCartValue {
   cartCount: number;
-  /** data-item-id of every line in the cart. */
-  cartItemIds: ReadonlySet<string>;
+  cartItemIds: ReadonlySet<number>;
+  addToCart: (photo: PurchasePhoto) => void;
+  openCart: () => void;
 }
 
-const EMPTY_CART: PhotoSalesCart = { cartCount: 0, cartItemIds: new Set() };
-
-const PhotoSalesContext = createContext<PhotoSalesContextValue & PhotoSalesCart>({
-  enabled: false,
-  apiKey: null,
-  slug: '',
-  price: 0,
-  currency: 'EUR',
-  priceCheckUrl: '',
-  itemDescription: '',
-  freeCount: 0,
-  photos: [],
-  checkoutReady: false,
-  ...EMPTY_CART,
+const PhotoSalesContext = createContext<PhotoSalesConfig & PhotoSalesCartValue>({
+  enabled: false, checkoutReady: false, slug: '', price: 0, currency: 'EUR',
+  itemDescription: '', freeCount: 0, accessDays: 30, promoCode: null,
+  cartCount: 0, cartItemIds: new Set(), addToCart: () => {}, openCart: () => {},
 });
 
 export const usePhotoSales = () => useContext(PhotoSalesContext);
 
-interface PhotoSalesProviderProps {
-  value: PhotoSalesContextValue;
-  children: React.ReactNode;
+const storageKey = (slug: string) => `picpeak_photo_cart_${slug}`;
+
+function readCart(slug: string): CartPhoto[] {
+  try {
+    const saved: unknown = JSON.parse(sessionStorage.getItem(storageKey(slug)) || '[]');
+    if (!Array.isArray(saved)) return [];
+    const ids = new Set<number>();
+    return saved.filter((item): item is CartPhoto => {
+      if (!item || !Number.isSafeInteger(item.id) || item.id <= 0 || ids.has(item.id)
+          || typeof item.name !== 'string' || typeof item.price !== 'number' || !Number.isFinite(item.price) || item.price < 0) return false;
+      ids.add(item.id);
+      return true;
+    }).slice(0, 100).map(({ id, name, price }) => ({ id, name, price }));
+  } catch { return []; }
 }
 
-const SNIPCART_SCRIPT_ID = 'picpeak-snipcart-script';
-// Pinned with Subresource Integrity: the cart runs with full DOM access on a
-// gallery page (session tokens included), so a changed file must not load.
-// Bump the version and both hashes together.
-const SNIPCART_BASE = 'https://cdn.snipcart.com/themes/v3.4.0/default';
-const SNIPCART_JS_SRI = 'sha384-Ng5jyc+Z1tBbrYjy5X1LU8rD7tAA1u3XIH8a3JeP1v34DBBget/DUfzFMwxaIGjI';
-const SNIPCART_CSS_SRI = 'sha384-GcTP/2FrySWN/RIPE7xKE8PEK5oO8niC1UyC9x6MXj2UiaxSdUO+cLFm9qAOHjl/';
-
-// The slice of Snipcart v3's global this feature reads.
-interface SnipcartStoreState {
-  cart?: { items?: { count?: number; items?: Array<{ id?: string }> } };
-}
-interface SnipcartGlobal {
-  store?: {
-    getState: () => SnipcartStoreState;
-    subscribe: (listener: () => void) => () => void;
-  };
-}
-
-function readCart(state: SnipcartStoreState | undefined): PhotoSalesCart {
-  const items = state?.cart?.items?.items ?? [];
-  return {
-    cartCount: Number(state?.cart?.items?.count ?? items.length) || 0,
-    cartItemIds: new Set(items.map((item) => String(item?.id ?? ''))),
-  };
-}
-
-/** Snipcart's cart, live; empty until (and unless) Snipcart is ready. */
-function useSnipcartCart(active: boolean): PhotoSalesCart {
-  const [cart, setCart] = useState<PhotoSalesCart>(EMPTY_CART);
-
+export const PhotoSalesProvider: React.FC<{ value: PhotoSalesConfig; photos?: PurchasePhoto[]; children: React.ReactNode }> = ({ value, photos = [], children }) => {
+  const [scope, setScope] = useState(value.slug);
+  const [items, setItems] = useState<CartPhoto[]>(() => readCart(value.slug));
+  const [open, setOpen] = useState(false);
+  if (scope !== value.slug) {
+    // Converges after one render, so a new gallery never inherits a cart
+    // or an open checkout dialog from the previous gallery.
+    setScope(value.slug);
+    setItems(readCart(value.slug));
+    setOpen(false);
+  }
   useEffect(() => {
-    if (!active) return undefined;
-    let unsubscribe: (() => void) | undefined;
-    const attach = () => {
-      const store = (window as unknown as { Snipcart?: SnipcartGlobal }).Snipcart?.store;
-      if (!store || unsubscribe) return;
-      const update = () => setCart(readCart(store.getState()));
-      update();
-      unsubscribe = store.subscribe(update);
-    };
-    attach();
-    document.addEventListener('snipcart.ready', attach);
-    return () => {
-      document.removeEventListener('snipcart.ready', attach);
-      unsubscribe?.();
-    };
-  }, [active]);
-
-  return cart;
-}
-
-export const PhotoSalesProvider: React.FC<PhotoSalesProviderProps> = ({ value, children }) => {
-  const { checkoutReady, apiKey } = value;
-  const cart = useSnipcartCart(checkoutReady && !!apiKey);
-
-  useEffect(() => {
-    if (!checkoutReady || !apiKey) return undefined;
-    if (document.getElementById(SNIPCART_SCRIPT_ID)) return undefined;
-
-    const script = document.createElement('script');
-    script.id = SNIPCART_SCRIPT_ID;
-    script.src = `${SNIPCART_BASE}/snipcart.js`;
-    script.integrity = SNIPCART_JS_SRI;
-    script.crossOrigin = 'anonymous';
-    script.async = true;
-    document.head.appendChild(script);
-
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = `${SNIPCART_BASE}/snipcart.css`;
-    link.integrity = SNIPCART_CSS_SRI;
-    link.crossOrigin = 'anonymous';
-    document.head.appendChild(link);
-
-    return () => {
-      // Left in place for the life of the gallery visit: Snipcart keeps a
-      // global singleton and removing it mid-checkout would break the cart.
-    };
-  }, [checkoutReady, apiKey]);
-
-  // Photo sales: NO client-side cart re-pricing. Every line keeps
-  // its base price; the free quota is a ONE-TIME promo code (Snipcart
-  // discount) the buyer enters at checkout — created and verified
-  // server-side (modules/photoSales/promoDiscount.js + webhook audit).
-  const contextValue = useMemo(() => ({ ...value, ...cart }), [value, cart]);
-
+    try {
+      // No gallery JWTs, sale tokens, private image URLs or payment secrets
+      // in browser persistence. Displayed prices are rechecked server-side.
+      sessionStorage.setItem(storageKey(scope), JSON.stringify(items.map(({ id, name, price }) => ({ id, name, price }))));
+    } catch { /* The cart still works when browser storage is unavailable. */ }
+  }, [scope, items]);
+  const cartItemIds = useMemo(() => new Set(items.map((item) => item.id)), [items]);
+  const currentPhotos = useMemo(() => new Map(photos.map((photo) => [photo.id, photo])), [photos]);
+  // Restore private thumbnails from the authenticated response, never from
+  // browser persistence. Filters may hide a cart item without removing it.
+  const displayedItems = items.map((item) => {
+    const photo = currentPhotos.get(item.id);
+    return photo ? { ...item, thumbnail: photo.thumbnail_url, price: effectivePhotoPrice(value.price, photo.photo_price) } : item;
+  });
+  const addToCart = (photo: PurchasePhoto) => {
+    if (!value.checkoutReady || !photo.sale_token) return;
+    if (items.length >= 100) { setOpen(true); return; }
+    setItems((current) => current.some((item) => item.id === photo.id) || current.length >= 100 ? current : [...current, {
+      id: photo.id, name: photo.original_filename || photo.filename || `Photo ${photo.id}`,
+      price: effectivePhotoPrice(value.price, photo.photo_price), thumbnail: photo.thumbnail_url,
+    }]);
+  };
   return (
-    <PhotoSalesContext.Provider value={contextValue}>
-      {checkoutReady && apiKey && typeof document !== 'undefined' && createPortal(
-        // Snipcart mounts its cart UI into this hidden element. Portaled to
-        // <body> so no ancestor transform/stacking context can trap the
-        // fixed-position modal behind the gallery chrome (unclosable cart).
-        // add-product-behavior "none" keeps the cart closed when a photo is
-        // added — the header cart button (badge count) opens it instead.
-        <div
-          hidden
-          id="snipcart"
-          data-api-key={apiKey}
-          data-config-modal-style="side"
-          data-config-add-product-behavior="none"
-          data-currency="eur"
-        />,
-        document.body
-      )}
+    <PhotoSalesContext.Provider value={{ ...value, cartCount: items.length, cartItemIds, addToCart, openCart: () => setOpen(true) }}>
       {children}
+      {value.checkoutReady && <PhotoSalesCart
+        open={open} onClose={() => setOpen(false)} config={value} items={displayedItems}
+        onRemove={(id) => setItems((current) => current.filter((item) => item.id !== id))}
+      />}
     </PhotoSalesContext.Provider>
   );
 };

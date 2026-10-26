@@ -115,11 +115,10 @@ services:
       - EMAIL_WEBHOOK_URL=${EMAIL_WEBHOOK_URL:-}
       - EMAIL_WEBHOOK_SECRET=${EMAIL_WEBHOOK_SECRET:-}
       - EMAIL_WEBHOOK_ALLOW_PRIVATE_URLS=${EMAIL_WEBHOOK_ALLOW_PRIVATE_URLS:-false}
-      # Photo sales: Snipcart for priced galleries. The API
-      # key is the PUBLIC key and is served to the gallery UI; the webhook
-      # secret never leaves the backend. The SECRET key is only used to
-      # refund tampered orders the DB audit rejects at order.completed.
-      - SNIPCART_API_KEY=${SNIPCART_API_KEY:-}
+      # Stripe-hosted photo checkout. Both credentials remain server-side.
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      # Retained only for historical Snipcart orders and refunds.
       - SNIPCART_WEBHOOK_SECRET=${SNIPCART_WEBHOOK_SECRET:-}
       - SNIPCART_SECRET_API_KEY=${SNIPCART_SECRET_API_KEY:-}
       # Unset by default (#705): an injected value would always win over the
