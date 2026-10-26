@@ -464,6 +464,9 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
       height: m.height || null,
       // The poster note is written again with the new poster below.
       processing_error: null,
+      // A frame picked in the old version (issue 2263, item 4) says nothing
+      // about the new one, whose poster is taken at the default.
+      poster_offset_seconds: null,
       // The web copy and the ladder start over, as on a replacement: the
       // attempt ids go, so a transcode of the old bytes can publish nothing.
       // The web copy is queued while its setting is on, except in an

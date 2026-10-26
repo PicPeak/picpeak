@@ -205,6 +205,29 @@ describe('PUT poster', () => {
     expect(seeks()).toEqual(['5']);
   });
 
+  it('does not record a rebuild of a pick another replica changed meanwhile', async () => {
+    expect((await pick(videoId, { offset_seconds: 5 })).status).toBe(200);
+    const before = await db('photos').where({ id: videoId }).first();
+    const base = mockRun.getMockImplementation();
+    mockRun.mockImplementation(async (command, args) => {
+      // Another process saves a new pick while this one renders the old.
+      if (command === 'ffmpeg') await db('photos').where({ id: videoId }).update({ poster_offset_seconds: 9 });
+      return base(command, args);
+    });
+
+    const { ensureThumbnail } = require('../../src/services/imageProcessor');
+    const posters = () => fs.readdirSync(path.join(process.env.STORAGE_PATH, 'thumbnails')).sort();
+    const postersBefore = posters();
+    // Refused as a superseded rendition: the new file is dropped.
+    await expect(ensureThumbnail(before, { force: true })).rejects.toMatchObject({ code: 'MEDIA_SUPERSEDED' });
+    const after = await db('photos').where({ id: videoId }).first();
+    expect(after.poster_offset_seconds).toBe(9);
+    expect(after.thumbnail_path).toBe(before.thumbnail_path);
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, before.thumbnail_path))).toBe(true);
+    // The stale frame's file is not left behind.
+    expect(posters()).toEqual(postersBefore);
+  });
+
   it('keeps the current poster and pick when no frame can be taken', async () => {
     expect((await pick(videoId, { offset_seconds: 5 })).status).toBe(200);
     const before = await db('photos').where({ id: videoId }).first();

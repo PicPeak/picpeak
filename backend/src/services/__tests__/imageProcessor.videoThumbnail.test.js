@@ -23,7 +23,11 @@ jest.mock('../../database/db', () => {
       return { where: () => ({ first: () => Promise.resolve({ id: 7, slug: 'summer-wedding' }) }) };
     }
     if (table === 'photos') {
-      return { where: () => ({ first: async () => ({ id: 42 }), update: photosUpdate }) };
+      // whereNull/where: the poster publish also checks the frame pick.
+      const chain = { first: async () => ({ id: 42 }), update: photosUpdate };
+      chain.whereNull = () => chain;
+      chain.where = () => chain;
+      return { where: () => chain };
     }
     throw new Error(`unexpected table: ${table}`);
   });

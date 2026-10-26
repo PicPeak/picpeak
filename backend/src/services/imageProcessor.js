@@ -123,10 +123,11 @@ function derivativeBasename(name, { cache = false } = {}) {
 // True when the row took the derivative. Unscoped (an ordinary image), a
 // source replaced since `photo` was read makes it false: the rendition
 // describes the old file, so the caller treats it as nothing generated.
-async function publishPhotoDerivative(photo, key, values) {
+// `narrow` adds conditions to the source guard (a video poster's frame pick).
+async function publishPhotoDerivative(photo, key, values, narrow = (query) => query) {
   const scope = derivativeContext.getStore();
   if (!scope) {
-    if (await sourceGuard(photo).update(values) === 1) return true;
+    if (await narrow(sourceGuard(photo)).update(values) === 1) return true;
     // Unscoped keys derive from the source name, not from an attempt id, so
     // the key can still be a row's own: an event rename moves the original
     // and keeps the rendition. When in doubt, keep the file.
@@ -141,7 +142,7 @@ async function publishPhotoDerivative(photo, key, values) {
     return false;
   }
   // The guarded update is the source check; its refusal drops the file.
-  if (await sourceGuard(photo).update(values) !== 1) {
+  if (await narrow(sourceGuard(photo)).update(values) !== 1) {
     await getStorage().delete(key).catch(() => {});
     throw Object.assign(new Error('Media source was superseded'), { code: 'MEDIA_SUPERSEDED', status: 422 });
   }
@@ -1109,6 +1110,8 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // "Regenerate thumbnails" button rebuilt the frame and the tile kept the
   // stale warning and Retry (issue 1430, item 6).
   let posterNote;
+  // The frame pick a video poster was taken at, read inside the flight.
+  let posterOffsetUsed;
   // Receives the placeholder hash of whatever thumbnail gets written.
   const meta = {};
   if (isVideoPhoto(photo)) {
@@ -1122,6 +1125,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     const video = await regenerateVideoThumbnail(event, photo, isExternal, { boundSource: boundVideoSource, strict: strictVideoFrame, offsetSeconds: posterOffsetSeconds });
     newThumbnailPath = video?.thumbnailKey || null;
     meta.thumbHash = video?.thumbHash;
+    posterOffsetUsed = video?.offsetSeconds;
     if (video && photo.processing_status === 'complete') {
       const { posterFrameError } = require('./videoProcessor');
       posterNote = video.placeholder ? posterFrameError(video.thumbnailError) : null;
@@ -1197,6 +1201,15 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
       // A picked frame lands with its poster: listings never name a frame
       // (in the thumbnail URL) that the stored poster does not show yet.
       ...(isVideoPhoto(photo) && posterOffsetSeconds !== undefined ? { poster_offset_seconds: posterOffsetSeconds } : {}),
+    }, (query) => {
+      // A rebuild at the row's pick is recorded only while that is still the
+      // pick: singleFlight orders rebuilds within one process, not across
+      // replicas, and a pick saved elsewhere meanwhile must not be lost
+      // under a poster of the old frame.
+      if (posterOffsetSeconds !== undefined || posterOffsetUsed === undefined) return query;
+      return posterOffsetUsed == null
+        ? query.whereNull('poster_offset_seconds')
+        : query.where('poster_offset_seconds', posterOffsetUsed);
     })) return null;
 
     logger.info(`Regenerated thumbnail for photo ${photo.id}`);
@@ -1280,7 +1293,7 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   const generate = async (localPath) => {
     const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey, { offsetSeconds: offsetSeconds ?? null, strict }), thumbnailKey);
     if (!result?.thumbnailKey) return null;
-    return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null, thumbHash: result.thumbHash || null };
+    return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null, thumbHash: result.thumbHash || null, offsetSeconds: offsetSeconds ?? null };
   };
 
   try {
