@@ -3,6 +3,7 @@ const { db, withRetry } = require('../database/db');
 const logger = require('../utils/logger');
 const { normaliseDownloadLimit } = require('../services/downloadQuota');
 const { normalizeStatusColors } = require('../utils/statusColors');
+const { stripeConfiguration } = require('../modules/photoSales/stripeClient');
 const router = express.Router();
 
 // Get public settings (branding and theme)
@@ -86,6 +87,7 @@ router.get('/', async (req, res) => {
     });
 
     // Return only safe public settings
+    const checkout = await stripeConfiguration();
     const publicSettings = {
       branding_company_name: settingsObject.branding_company_name || '',
       branding_company_tagline: settingsObject.branding_company_tagline || '',
@@ -284,10 +286,7 @@ router.get('/', async (req, res) => {
       seo_meta_nofollow: settingsObject.seo_meta_nofollow === true,
       seo_meta_noai: settingsObject.seo_meta_noai === true,
       // A boolean is sufficient for hosted Checkout; no payment key reaches a browser.
-      photo_sales_checkout_configured: (() => {
-        const config = require('../modules/photoSales/stripeClient').stripeConfiguration();
-        return config.checkout_configured && config.webhook_configured;
-      })(),
+      photo_sales_checkout_configured: checkout.checkout_configured && checkout.webhook_configured,
     };
 
     res.json(publicSettings);

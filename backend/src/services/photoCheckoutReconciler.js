@@ -11,14 +11,14 @@ const logger = require('../utils/logger');
 // prevents long-running asynchronous payments from starving newer orders.
 let afterId = 0;
 async function reconcilePhotoCheckouts() {
-  const config = stripeConfiguration();
+  const config = await stripeConfiguration();
   if (!config.checkout_configured || !config.webhook_configured) return;
   const candidates = () => db('photo_purchase_orders').where({ payment_provider: 'stripe' })
     .where((q) => q.whereIn('status', [...OPEN, 'refund_pending', 'refund_failed'])
       .orWhere((q) => q.where({ status: 'completed', email_sent: false })));
   let orders = await candidates().where('id', '>', afterId).orderBy('id').limit(20);
   if (!orders.length) { afterId = 0; orders = await candidates().orderBy('id').limit(20); }
-  const client = stripeClient();
+  const client = await stripeClient();
   for (const order of orders) {
     afterId = order.id;
     const quote = quoteOf(order);

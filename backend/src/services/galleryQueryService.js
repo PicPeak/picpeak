@@ -628,6 +628,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   const showExif = parseBooleanInput(event.show_exif_to_guests, false);
 
   const theme = await publicThemeFields(event);
+  const checkout = event.promo_code ? await stripeConfiguration() : null;
   return {
     pagination: { page, limit: limit || total, total, has_more: !!limit && page * limit < total },
     event: {
@@ -711,7 +712,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // in the store, so the UI never advertises a dead code.
       free_quota_available: await freeQuotaAvailable(event),
       promo_code: event.promo_code || null,
-      promo_discount_ready: !!event.promo_code && stripeConfiguration().checkout_configured && stripeConfiguration().webhook_configured,
+      promo_discount_ready: !!(event.promo_code && checkout?.checkout_configured && checkout?.webhook_configured),
       // Promo banner override (#440). GalleryView has always read
       // promo_mode from THIS payload, but it was never sent — so every
       // per-event promo override silently resolved to 'inherit' and a

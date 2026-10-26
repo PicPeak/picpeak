@@ -29,6 +29,7 @@ import {
 import { EmailConfigPage } from './EmailConfigPage';
 import { BrandingPage } from './BrandingPage';
 import { WatermarkTab } from '../../features/settings/tabs/WatermarkTab';
+import { PaymentsTab } from '../../features/settings/tabs/PaymentsTab';
 import { EventTypesPage } from './EventTypesPage';
 import { SlideshowSettingsPage } from './SlideshowSettingsPage';
 import { BackupManagement } from './BackupManagement';
@@ -76,7 +77,7 @@ export const SettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { flags, isLoading: flagsLoading } = useFeatureFlags();
-  const { hasAnyPermission, isLoading: permissionsLoading } = usePermissions();
+  const { hasAnyPermission, isSuperAdmin, isLoading: permissionsLoading } = usePermissions();
   const visibleGroups = useSettingsNavGroups();
 
   // Read ?tab=… on mount; default to Features per the redesign.
@@ -188,14 +189,14 @@ export const SettingsPage: React.FC = () => {
     // never run again — leaving a deep-linked tab the role cannot see open
     // with nothing highlighted in the sidebar.
     if (flagsLoading || permissionsLoading) return;
-    if (hasAnyPermission(TAB_PERMISSIONS[activeTab] ?? ['settings.view'])) return;
+    if ((activeTab !== 'payments' || isSuperAdmin) && hasAnyPermission(TAB_PERMISSIONS[activeTab] ?? ['settings.view'])) return;
     const flagOff = settingsTabGatedOff(flags);
     const firstVisible = ALL_SETTINGS_TABS.find(
-      (k) => !flagOff[k] && hasAnyPermission(TAB_PERMISSIONS[k] ?? ['settings.view'])
+      (k) => !flagOff[k] && (k !== 'payments' || isSuperAdmin) && hasAnyPermission(TAB_PERMISSIONS[k] ?? ['settings.view'])
     );
     if (firstVisible && firstVisible !== activeTab) setActiveTab(firstVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flagsLoading, permissionsLoading, activeTab, flags.quotes, flags.bills, flags.contracts, flags.documents, flags.userManagement, flags.accounting, flags.whatsapp, flags.slideshow]);
+  }, [flagsLoading, permissionsLoading, isSuperAdmin, activeTab, flags.quotes, flags.bills, flags.contracts, flags.documents, flags.userManagement, flags.accounting, flags.whatsapp, flags.slideshow]);
 
   // Wait for the permissions context too: on a fresh/hard mount it starts out
   // empty, which filters every nav group down to nothing and left `activeItem`
@@ -296,6 +297,7 @@ export const SettingsPage: React.FC = () => {
           )}
 
           {activeTab === 'sso' && <SsoTab />}
+          {activeTab === 'payments' && isSuperAdmin && <PaymentsTab />}
 
           {activeTab === 'security' && (
             <SecurityTab

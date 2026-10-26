@@ -1,27 +1,16 @@
 'use strict';
 
-const Stripe = require('stripe');
+const { credentials, configurationOf, clientFor } = require('./paymentSettings');
 
-function stripeConfiguration() {
-  const key = (process.env.STRIPE_SECRET_KEY || '').trim();
-  const webhook = (process.env.STRIPE_WEBHOOK_SECRET || '').trim();
-  return {
-    checkout_configured: /^(rk|sk)_(test|live)_/.test(key),
-    webhook_configured: !!webhook,
-    test_mode: /^(rk|sk)_test_/.test(key),
-  };
+async function stripeConfiguration() {
+  return configurationOf(await credentials());
 }
 
-function stripeClient() {
-  const configuration = stripeConfiguration();
+async function stripeClient(value) {
+  value = value || await credentials();
+  const configuration = configurationOf(value);
   if (!configuration.checkout_configured) throw new Error('Stripe is not configured');
-  return new Stripe(process.env.STRIPE_SECRET_KEY.trim(), {
-    // Use the API version pinned by the installed SDK, rather than silently
-    // inheriting whichever version the merchant's account currently uses.
-    apiVersion: Stripe.API_VERSION,
-    maxNetworkRetries: 2,
-    timeout: 15000,
-  });
+  return clientFor(value.secretKey);
 }
 
 module.exports = { stripeClient, stripeConfiguration };

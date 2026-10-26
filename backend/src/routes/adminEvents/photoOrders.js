@@ -59,7 +59,7 @@ module.exports = (router) => {
         orders: summaries,
         // Presence only; this does not claim that credentials or webhook
         // delivery have been verified with the provider.
-        store: { provider: 'stripe', ...stripeConfiguration() },
+        store: { provider: 'stripe', ...await stripeConfiguration() },
       });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to load photo orders');

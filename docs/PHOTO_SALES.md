@@ -10,40 +10,56 @@ email. Ordinary galleries keep their existing download behaviour.
 1. Configure the public **Site URL** in Settings → General, or set `FRONTEND_URL`.
    Production checkout requires HTTPS. Payment redirects never use a request's
    Host header as their destination.
-2. Create credentials for the merchant's Stripe account. Start in a dedicated
-   [Stripe sandbox](https://docs.stripe.com/sandboxes), with test credentials.
-   Prefer a [restricted API key](https://docs.stripe.com/keys/restricted-api-keys)
-   with Checkout Sessions read/write, Payment Intents and Charges read, and
-   Refunds write. Allow Products/Prices write if required for inline checkout
-   prices. Confirm these permissions with a sandbox purchase and refund.
-3. Configure the backend environment (the standard and production Compose files
-   forward both values):
-
-   ```dotenv
-   STRIPE_SECRET_KEY=
-   STRIPE_WEBHOOK_SECRET=
-   ```
-
-   Neither value is served to browsers. Hosted Checkout needs no publishable key,
-   Stripe.js, embedded payment frame or extra gallery CSP sources.
-4. In Stripe, create a webhook endpoint at:
-   `https://your-public-api-host/api/photo-sales/stripe/webhook`.
-   Subscribe to `checkout.session.completed`,
-   `checkout.session.async_payment_succeeded`,
+2. As a **super admin**, open **Settings → Payments**. One Stripe account receives
+   photo payments from every gallery on the installation. Prices and promos
+   remain per gallery; payment credentials are installation-wide.
+3. Start in a dedicated [Stripe sandbox](https://docs.stripe.com/sandboxes).
+   Create a [restricted API key](https://docs.stripe.com/keys/restricted-api-keys)
+   with Account read, Checkout Sessions read/write, Payment Intents and Charges
+   read, and Refunds write. Allow Products/Prices write if required for inline
+   checkout prices. The setup page checks Account and Checkout Sessions read
+   access; it does not claim to verify write/refund permissions.
+4. In Stripe, create an event destination using the webhook URL and required
+   events shown on the Payments page. The path is
+   `/api/photo-sales/stripe/webhook`. If the API uses a separate public host,
+   use that host. Choose API version `2026-09-30.endive` and subscribe to
+   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
    `checkout.session.async_payment_failed`, `checkout.session.expired`,
    `charge.refunded`, `charge.dispute.created`, `charge.dispute.updated`,
    `charge.dispute.closed`, `refund.updated` and `refund.failed`.
-   Use the endpoint's signing secret for `STRIPE_WEBHOOK_SECRET` and match the
-   account and test/live mode of the API key. The SDK pins API version
-   `2026-09-30.endive`; use that version for the endpoint too.
-5. Enable payment methods in the Stripe Dashboard. PicPeak uses dynamic payment
-   methods and waits for delayed methods to confirm before releasing originals.
-6. Restart the backend. In a gallery's **Photo sales** settings, enable pricing,
-   set its default price, optional promo credit and access days. The Orders tab
-   shows missing configuration and test mode. These are configuration-presence
-   checks, not proof that Stripe credentials or webhook delivery work.
-7. Verify a sandbox purchase, cancellation, refund and buyer email before using
-   live credentials and the corresponding live webhook endpoint.
+5. Enter the API key and the destination's `whsec_` signing secret, then save.
+   Both must belong to the same account and test/live mode. The fields stay
+   blank after saving; blank inputs keep existing secrets. Secrets are encrypted
+   at rest, excluded from generic settings reads/writes, and never returned to
+   browsers. Changes take effect without restarting the backend.
+6. Enable payment methods in Stripe. PicPeak uses dynamic payment methods and
+   waits for delayed methods to confirm before releasing originals. In each
+   gallery's **Photo sales** settings, enable pricing and set its price, optional
+   promo credit and download-access duration.
+7. Verify a sandbox purchase, cancellation, refund and buyer email. **Check saved
+   API access** is a read-only probe that creates no payments. **Signed webhook
+   received** records a valid signature for the current credentials; it does not
+   prove order fulfilment. Resolve outstanding test checkouts before switching
+   to live keys and the matching live signing secret. Once live orders exist,
+   retain live access for refunds/disputes. Keys can be rotated for the same
+   account; moving financial history to another account requires a migration.
+
+### Server-managed credentials and encryption
+
+Existing `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` environment variables
+remain supported. If either is set, the pair takes precedence and the Payments
+page is read-only. Values from the environment and database are never mixed.
+Remove both variables and restart before managing credentials through Settings.
+Moving an existing setup into Settings verifies access to its existing sessions.
+Hosted Checkout needs no publishable key or browser payment SDK.
+
+Saved credentials use AES-256-GCM with a key derived from
+`PAYMENTS_ENCRYPTION_KEY`, or `JWT_SECRET` when the optional variable is unset,
+following the existing SSO/MFA secret-storage approach. Preserve that encryption
+material independently of database backups. Set a stable `PAYMENTS_ENCRYPTION_KEY`
+before the first save if JWT secrets will be rotated independently. Changing or
+losing the encryption key requires restoring it or re-entering both credentials
+for the same account; unreadable credentials leave checkout unavailable.
 
 Stripe processing fees and optional Stripe services still apply. Hosted Checkout
 is included with [standard Stripe Payments pricing](https://stripe.com/pricing).

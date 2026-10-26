@@ -8,6 +8,7 @@ const { purchaseExpiry, purchaseRows, sendPurchaseEmail } = require('./fulfilmen
 const { SALES_CURRENCY, isGalleryOnSale, sellablePhotos } = require('./sellable');
 const { effectivePhotoPrice } = require('./priceRules');
 const { stripeClient, stripeConfiguration } = require('./stripeClient');
+const { lock: lockPaymentSettings, credentials, configurationOf } = require('./paymentSettings');
 
 const OPEN = ['pending', 'creation_unknown', 'processing'];
 const REFUSING = ['refund_pending', 'refund_failed'];
@@ -45,7 +46,7 @@ function verifyCheckoutBrowser(order, key) {
 }
 
 async function reserveCheckout(gallery, body) {
-  const configuration = stripeConfiguration();
+  const configuration = await stripeConfiguration();
   if (!configuration.checkout_configured || !configuration.webhook_configured) {
     throw checkoutError('Photo purchases are not configured on this server.', 503, 'CHECKOUT_UNAVAILABLE');
   }
@@ -118,7 +119,14 @@ async function reserveCheckout(gallery, body) {
   try {
     // The unique nullable promo_gallery_id is the cross-process claim. The
     // existing Snipcart redemption is backfilled by migration 327.
-    const inserted = await db('photo_purchase_orders').insert(order).returning('id');
+    const inserted = await db.transaction(async (trx) => {
+      await lockPaymentSettings(trx);
+      const current = configurationOf(await credentials(trx));
+      if (!current.checkout_configured || !current.webhook_configured || current.test_mode !== configuration.test_mode) {
+        throw checkoutError('The payment configuration has changed. Please start again.', 409);
+      }
+      return trx('photo_purchase_orders').insert(order).returning('id');
+    });
     return { ...order, id: inserted[0]?.id ?? inserted[0] };
   } catch (error) {
     const raced = await db('photo_purchase_orders').where({ checkout_key: checkoutKey }).first();
@@ -131,10 +139,11 @@ async function reserveCheckout(gallery, body) {
 }
 
 async function checkoutSession(order, client = stripeClient()) {
+  client = await client;
   if (!OPEN.includes(order.status)) throw checkoutError('This checkout has ended. Please start again.', 409, 'CHECKOUT_ENDED');
   if (order.checkout_session_id) return client.checkout.sessions.retrieve(order.checkout_session_id);
   const quote = quoteOf(order);
-  if (stripeConfiguration().test_mode !== quote.testMode) throw checkoutError('The payment configuration has changed.', 409);
+  if ((await stripeConfiguration()).test_mode !== quote.testMode) throw checkoutError('The payment configuration has changed.', 409);
   if (Date.now() >= (quote.sessionExpiresAt - 30 * 60) * 1000) {
     // Resolve an ambiguous creation before releasing anything. Stripe's
     // idempotency cache has a retention limit, so do not recreate an old
@@ -234,6 +243,7 @@ async function refusePaidOrder(order, client) {
 }
 
 async function reconcileSession(order, session, { failed = false, client = stripeClient() } = {}) {
+  client = await client;
   const quote = quoteOf(order);
   if (session.metadata?.picpeak_order_id !== order.order_id || session.mode !== 'payment'
       || session.livemode !== !quote.testMode
@@ -307,6 +317,7 @@ async function reconcileSession(order, session, { failed = false, client = strip
 }
 
 async function reconcileWebhook(event, client = stripeClient()) {
+  client = await client;
   const object = event.data?.object;
   let order;
   let session;

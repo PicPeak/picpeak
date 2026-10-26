@@ -45,7 +45,7 @@ router.post('/:token/cancel', async (req, res) => {
     const order = await findCheckout(req);
     if (!order) return res.status(404).json({ error: 'Checkout not found' });
     if (OPEN.includes(order.status)) {
-      const client = stripeClient();
+      const client = await stripeClient();
       let session = await checkoutSession(order, client);
       if (session.status === 'open') {
         try { session = await client.checkout.sessions.expire(session.id); }

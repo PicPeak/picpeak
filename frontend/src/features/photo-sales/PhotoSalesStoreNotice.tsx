@@ -21,8 +21,8 @@ export const PhotoSalesStoreNotice: React.FC<{ store: PhotoOrdersPayload['store'
   return (
     <Notice tone="warning" title={t('photoSales.storeNotConfigured', 'Photo sales are not set up on this server')}>
       {store.checkout_configured
-        ? t('photoSales.storeNoWebhook', 'Purchases are unavailable until {{keys}} is set. Configure the Stripe webhook before accepting payments.', { keys: missing })
-        : t('photoSales.storeNoCheckout', 'Guests see watermarked previews and cannot buy until {{keys}} is set.', { keys: missing })}
+        ? t('photoSales.storeNoWebhook', 'Purchases are unavailable until a super admin completes the webhook setup in Settings → Payments, or the server operator configures {{keys}}.', { keys: missing })
+        : t('photoSales.storeNoCheckout', 'Guests see watermarked previews. A super admin can set up Stripe in Settings → Payments, or the server operator can configure {{keys}}.', { keys: missing })}
     </Notice>
   );
 };

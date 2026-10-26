@@ -118,6 +118,7 @@ services:
       # Stripe-hosted photo checkout. Both credentials remain server-side.
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - PAYMENTS_ENCRYPTION_KEY=${PAYMENTS_ENCRYPTION_KEY:-}
       # Retained only for historical Snipcart orders and refunds.
       - SNIPCART_WEBHOOK_SECRET=${SNIPCART_WEBHOOK_SECRET:-}
       - SNIPCART_SECRET_API_KEY=${SNIPCART_SECRET_API_KEY:-}

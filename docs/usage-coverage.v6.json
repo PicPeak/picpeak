@@ -1,5 +1,9 @@
 {
   "settings_tabs": {
+    "payments": {
+      "signals": [],
+      "reason": "Excluded: payment credentials, merchant identity and verification status are not product usage."
+    },
     "accounting": {
       "signals": [
         "accounting",
@@ -2036,6 +2040,12 @@
         "GET /:token",
         "POST /:token/cancel"
       ]
+    },
+    "adminPayments.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Installation payment credentials and provider probes are excluded from product usage.",
+      "route_signatures": ["GET /", "PUT /", "POST /test"]
     },
     "stripeWebhook.js": {
       "decision": "excluded",
