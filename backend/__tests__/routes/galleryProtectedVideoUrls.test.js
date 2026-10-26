@@ -186,6 +186,12 @@ describe('videos stay playable under enhanced/maximum protection (#1370)', () =>
       try {
         const photo = await photoPayload(videoId);
         expect(photo.thumbnail_url).toBe(`/api/gallery/${SLUG}/thumbnail/${videoId}?poster=4.5`);
+        // The hero of a video is its poster, so its URL names the pick too,
+        // and the hero route redirects to the versioned thumbnail.
+        expect(photo.hero_url).toMatch(new RegExp(`^/api/gallery/${SLUG}/hero/${videoId}\\?(.+&)?poster=4\\.5$`));
+        const hero = await request(app).get(photo.hero_url);
+        expect(hero.status).toBe(302);
+        expect(hero.headers.location).toBe(`/api/gallery/${SLUG}/thumbnail/${videoId}?poster=4.5`);
       } finally {
         await db('photos').where({ id: videoId }).update({ poster_offset_seconds: null });
       }

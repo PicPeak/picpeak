@@ -1471,11 +1471,14 @@ router.put('/:eventId/photos/:photoId/credit', adminAuth, requirePermission('pho
 // the placeholder note (otherwise the browser kept the cached placeholder
 // after a successful Retry, issue 1430, item 6) and the frame an admin picked
 // (issue 2263, item 4).
-function adminThumbnailUrl(eventId, photo) {
-  const version = [
+function adminThumbnailVersion(photo) {
+  return [
     photo.processing_error ? 'note' : null,
     photo.poster_offset_seconds != null ? `p${photo.poster_offset_seconds}` : null,
   ].filter(Boolean).join('-');
+}
+function adminThumbnailUrl(eventId, photo) {
+  const version = adminThumbnailVersion(photo);
   return `/admin/photos/${eventId}/thumbnail/${photo.id}${version ? `?v=${version}` : ''}`;
 }
 
@@ -2141,7 +2144,11 @@ router.get('/:eventId/thumbnail/:photoId', adminAuth, requirePermission('photos.
     // local stream fails in pipeStreamToResponse, both as a 404.
     const stream = await storage.get(thumbnailPath);
     res.setHeader('Content-Type', 'image/jpeg'); // Thumbnails are always JPEG
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    // A URL naming another version than the row's (a tab with an older list)
+    // gets the current image uncached: cached under that URL it would show
+    // when the version comes back, say on picking the earlier frame again.
+    const versionAsked = typeof req.query.v === 'string' ? req.query.v : '';
+    res.setHeader('Cache-Control', versionAsked === adminThumbnailVersion(photo) ? 'private, max-age=3600' : 'no-store');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Content-Length', stat.size);
     pipeStreamToResponse(stream, res, { context: `admin thumbnail for photo ${photoId}` });

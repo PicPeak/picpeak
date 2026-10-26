@@ -774,6 +774,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // hero route caches for an hour, so a non-centre anchor rides in the
       // URL: a changed anchor is a new URL, not a stale cached crop.
       const heroQuery = [imgQuery, heroAnchorQuery(event.hero_image_anchor)].filter(Boolean).join('&');
+      const heroPosterQuery = isVideo && photo.poster_offset_seconds != null
+        ? [heroQuery, `poster=${photo.poster_offset_seconds}`].filter(Boolean).join('&')
+        : heroQuery;
       // Maximum protection caps the photo and preview routes (issue 2152):
       // a capped copy gets its own URL, so a browser never shows a cached
       // uncapped image for it after a level change, or the other way round.
@@ -817,7 +820,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
           ? `/api/gallery/${slug}/thumbnail/${photo.id}${posterQuery}`
           : null,
         // Hero-optimized image URL (1920x1080) for full-width hero sections
-        hero_url: `/api/gallery/${slug}/hero/${photo.id}${heroQuery ? `?${heroQuery}` : ''}`,
+        // A video's hero is its poster (the hero route redirects there), so
+        // its URL names the frame pick too.
+        hero_url: `/api/gallery/${slug}/hero/${photo.id}${heroPosterQuery ? `?${heroPosterQuery}` : ''}`,
         // Lightbox preview URL (#492). Only emitted when the admin
         // has flipped lightbox_preview_enabled — the frontend
         // lightbox reads preview_url with a fallback to url so

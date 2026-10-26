@@ -249,6 +249,14 @@ describe('PUT poster', () => {
     expect(fs.readFileSync(posterFile).equals(posterBytes)).toBe(true);
   });
 
+  it('caches the admin tile only under the URL naming the current pick', async () => {
+    expect((await pick(videoId, { offset_seconds: 5 })).status).toBe(200);
+    const tile = (query) => auth(request(app).get(`/api/admin/photos/${eventId}/thumbnail/${videoId}${query}`));
+    expect((await tile('?v=p5')).headers['cache-control']).toBe('private, max-age=3600');
+    expect((await tile('?v=p9')).headers['cache-control']).toBe('no-store');
+    expect((await tile('')).headers['cache-control']).toBe('no-store');
+  });
+
   it('resets to the default frame with null', async () => {
     const res = await pick(videoId, { offset_seconds: null });
     expect(res.status).toBe(200);

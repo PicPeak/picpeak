@@ -149,4 +149,27 @@ describe('gallery thumbnail route for a video without a poster', () => {
     expect(storage.get).toHaveBeenCalledWith('thumbnails/thumb_clip.jpg');
     expect(storage.getToFile).not.toHaveBeenCalled();
   });
+
+  it('caches a picked poster only under the URL naming that pick', async () => {
+    await db('photos').where({ id: photoId }).update({ thumbnail_path: 'thumbnails/thumb_clip.jpg', poster_offset_seconds: 5 });
+    const bytes = Buffer.from('ffd8ffe0', 'hex');
+    storage = {
+      kind: () => 's3',
+      stat: jest.fn().mockResolvedValue({ size: bytes.length, mtime: new Date('2026-08-01T00:00:00Z') }),
+      get: jest.fn(async () => require('stream').Readable.from([bytes])),
+      getToFile: jest.fn(),
+      put: jest.fn(),
+      putFromFile: jest.fn(),
+      delete: jest.fn(),
+    };
+    setStorageForTesting(storage);
+    try {
+      expect((await get(`/thumbnail/${photoId}?poster=5`)).headers['cache-control']).toBe('private, max-age=1800');
+      // An older list's URL: the current frame, not kept under that URL.
+      expect((await get(`/thumbnail/${photoId}?poster=3`)).headers['cache-control']).toBe('no-store');
+      expect((await get(`/thumbnail/${photoId}`)).headers['cache-control']).toBe('no-store');
+    } finally {
+      await db('photos').where({ id: photoId }).update({ poster_offset_seconds: null });
+    }
+  });
 });

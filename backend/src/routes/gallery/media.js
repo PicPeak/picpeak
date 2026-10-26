@@ -17,6 +17,15 @@ const watermarkService = require('../../services/watermarkService');
 const watermarkGeneratorService = require('../../services/watermarkGeneratorService');
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
 const withPreview = (req, url) => (req.isAdminPreview ? `${url}${url.includes('?') ? '&' : '?'}admin_preview=1` : url);
+
+// Whether a video thumbnail request names another frame pick than the row
+// has (issue 2263, item 4): `poster` is the pick, absent for the default.
+function posterVersionStale(photo, asked) {
+  const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
+  if (!isVideo) return false;
+  const current = photo.poster_offset_seconds != null ? String(photo.poster_offset_seconds) : '';
+  return (typeof asked === 'string' ? asked : '') !== current;
+}
 const secureImageService = require('../../services/secureImageService');
 const logger = require('../../utils/logger');
 const { pipeStreamToResponse, answerVanished } = require('../../utils/streamResponse');
@@ -928,7 +937,11 @@ router.get('/:slug/thumbnail/:photoId',
       // Set appropriate headers with enhanced security
       res.set({
         'Content-Type': 'image/jpeg',
-        'Cache-Control': 'private, max-age=1800', // Reduced cache time
+        // A video's URL names its frame pick (galleryQueryService); one
+        // naming another pick than the row's (an older photo list) gets the
+        // current poster uncached, or that URL would show the wrong frame
+        // once the pick came back to it.
+        'Cache-Control': posterVersionStale(photo, req.query.poster) ? 'no-store' : 'private, max-age=1800', // Reduced cache time
         'Cross-Origin-Resource-Policy': 'cross-origin',
         'X-Content-Type-Options': 'nosniff',
         'X-Protected-Thumbnail': 'true',
@@ -985,7 +998,9 @@ router.get('/:slug/hero/:photoId',
       // would have spent one.
       const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
       if (isVideo) {
-        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/thumbnail/${photoId}`));
+        // With the frame an admin picked, as the gallery's thumbnail URL.
+        const poster = photo.poster_offset_seconds != null ? `?poster=${photo.poster_offset_seconds}` : '';
+        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/thumbnail/${photoId}${poster}`));
       }
 
       // The rendition follows the event's focal point and the response below
