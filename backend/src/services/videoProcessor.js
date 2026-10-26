@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { getStorage } = require('./storage');
 const attemptContext = require('./mediaAttemptContext');
+const { displayDimensions, videoCaptureDate } = require('../utils/videoProbe');
 
 // Use system ffmpeg/ffprobe (apk-installed in the Docker image, brew/apt on
 // dev hosts). The npm `@ffmpeg-installer/ffmpeg` binary is glibc-built and
@@ -34,13 +35,16 @@ async function extractVideoMetadata(videoPath) {
       // 0-second clip and "unknown" must stay distinguishable, since
       // downstream code treats `duration != null` as "trust this value".
       duration: metadata.format.duration != null ? Math.floor(metadata.format.duration) : null,
-      width: videoStream?.width || null,
-      height: videoStream?.height || null,
+      // As displayed, not as coded: a portrait phone clip is stored as
+      // landscape pixels plus a rotation (issue 2263).
+      ...displayDimensions(videoStream),
       videoCodec: videoStream?.codec_name || null,
       audioCodec: audioStream?.codec_name || null,
       size: metadata.format.size || 0,
       bitrate: metadata.format.bit_rate || null,
-      format: metadata.format.format_name || null
+      format: metadata.format.format_name || null,
+      // An ISO string, never a Date: written straight into photos.captured_at.
+      capturedAt: videoCaptureDate(metadata)?.toISOString() || null
     };
 
     return result;
@@ -48,6 +52,12 @@ async function extractVideoMetadata(videoPath) {
     logger.error('Error extracting video metadata', { error: error.message, videoPath });
     throw error;
   }
+}
+
+/** Fits the frame inside `WxH`, keeping its aspect ratio. */
+function posterScaleFilter(size) {
+  const [width, height] = size.split('x');
+  return `scale=w=${width}:h=${height}:force_original_aspect_ratio=decrease`;
 }
 
 /**
@@ -60,6 +70,10 @@ async function extractVideoMetadata(videoPath) {
  * @returns {Promise<string>} The thumbnail's relative storage key.
  */
 async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
+  // A bounding box, like the photo thumbnail's default 300x300 'inside' fit:
+  // the frame keeps its aspect ratio (it used to be squashed into a square,
+  // issue 2263). ffmpeg applies the rotation before the filter, so a
+  // portrait clip comes out portrait.
   const {
     timeOffset = '00:00:01',
     size = '300x300'
@@ -82,7 +96,7 @@ async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
       }
       await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
         ...mediaProcesses.inputOptions(details.format, details.policy.threads), '-ss', String(timeOffset), '-i', snapshot,
-        '-frames:v', '1', '-an', '-sn', '-dn', '-vf', `scale=${size.replace('x', ':')}`, '-pix_fmt', 'yuvj420p',
+        '-frames:v', '1', '-an', '-sn', '-dn', '-vf', posterScaleFilter(size), '-pix_fmt', 'yuvj420p',
         '-threads', '1', '-filter_threads', '1', tmpPath], {
         memoryBytes: details.policy.nativeBytes, wallMs: details.policy.thumbnailMs,
         cpuSeconds: Math.ceil(details.policy.thumbnailMs / 1000), fileBytes: 16 * 1024 * 1024,

@@ -240,6 +240,36 @@ describe('photoProcessor.processPhoto', () => {
 
     // Watermark queue is image-only.
     expect(watermarkService.generateForPhoto).not.toHaveBeenCalled();
+    // No date in this clip's container: nothing written.
+    expect(finalUpdate.data).not.toHaveProperty('captured_at');
+  });
+
+  it('writes a video\'s capture date from its container, and never over one already set (issue 2263)', async () => {
+    const row = {
+      id: 203, event_id: 9, filename: 'portrait.mov', mime_type: 'video/quicktime', media_type: 'video',
+      size_bytes: 1, captured_at: null,
+    };
+    dbModule.__setEvent({ id: 9, slug: 'wedding', event_name: 'Wedding' });
+    const result = {
+      thumbnailKey: 'thumbnails/thumb_portrait.jpg',
+      metadata: { duration: 3, videoCodec: 'hevc', width: 1080, height: 1920, capturedAt: '2025-06-15T12:30:00.000Z' },
+    };
+    const { processPhoto } = require('../../src/services/photoProcessor');
+
+    dbModule.__setPhoto(row);
+    videoProcessor.processUploadedVideo.mockResolvedValueOnce(result);
+    await processPhoto(203);
+    let finalUpdate = dbModule.__recorded().updateCalls.pop();
+    expect(finalUpdate.data.captured_at).toBe('2025-06-15T12:30:00.000Z');
+    expect(finalUpdate.data).toMatchObject({ width: 1080, height: 1920 });
+    // The EXIF reader is for images.
+    expect(imageProcessor.extractCaptureDate).not.toHaveBeenCalled();
+
+    dbModule.__setPhoto({ ...row, captured_at: '2024-01-01T00:00:00.000Z' });
+    videoProcessor.processUploadedVideo.mockResolvedValueOnce(result);
+    await processPhoto(203);
+    finalUpdate = dbModule.__recorded().updateCalls.pop();
+    expect(finalUpdate.data).not.toHaveProperty('captured_at');
   });
 
   it('records why a video completed on the placeholder tile (issue 1430, item 6)', async () => {

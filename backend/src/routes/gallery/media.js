@@ -778,20 +778,49 @@ router.get('/:slug/thumbnail/:photoId',
       // Responsive tier (#1095), whitelisted the same way the preview route's
       // is. Unrecognised or absent falls through to the canonical 300px
       // thumbnail, so existing clients are untouched.
-      const { THUMBNAIL_WIDTHS, normalizeTierWidth, ensureThumbnailAtWidth } =
-        require('../../services/imageProcessor');
+      const {
+        THUMBNAIL_WIDTHS, normalizeTierWidth, ensureThumbnailAtWidth,
+        isThumbnailValid, queueVideoThumbnail, videoPlaceholderImage,
+      } = require('../../services/imageProcessor');
       const thumbTier = normalizeTierWidth(req.query.w, THUMBNAIL_WIDTHS);
 
-      let thumbnailPath = thumbTier
-        ? (await ensureThumbnailAtWidth(photo, thumbTier)) || (await ensureThumbnail(photo))
-        : await ensureThumbnail(photo);
-      // A stored pointer outside the rendition namespace (a legacy
-      // `./thumbnails/...` or backslash shape) is rebuilt rather than served
-      // or left to 404 forever; the rebuild writes a canonical key. Checked
-      // against a concurrent settings change (issue 2140); the row keeps its
-      // pointer so a dropped render does not hand that pointer back.
-      if (thumbnailPath && !isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
-        thumbnailPath = await ensureThumbnail(photo, { force: true, checkSettings: true });
+      let thumbnailPath;
+      const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
+      if (isVideo) {
+        // A video's poster is never built on the request (issue 2263): on S3
+        // that copied up to 512 MB and ran ffmpeg for up to a minute while
+        // the tile waited. The rebuild is queued and the placeholder answers
+        // now, uncached, so the next request gets the real frame. Videos
+        // have no tiers, so the canonical poster serves every width.
+        const canonical = Boolean(photo.thumbnail_path)
+          && isPresentationRenditionKey(photo.thumbnail_path, 'thumbnail');
+        if (!canonical || !(await isThumbnailValid(photo.thumbnail_path))) {
+          // A legacy key is rebuilt forced, as below for a photo.
+          queueVideoThumbnail(photo, photo.thumbnail_path && !canonical ? { force: true, checkSettings: true } : {});
+          const placeholder = await videoPlaceholderImage();
+          res.set({
+            'Content-Type': 'image/jpeg',
+            'Cache-Control': 'no-store',
+            'Cross-Origin-Resource-Policy': 'cross-origin',
+            'X-Content-Type-Options': 'nosniff',
+            'Content-Length': placeholder.length,
+          });
+          // end(), not send(): no validator for bytes that stand in.
+          return res.status(200).end(placeholder);
+        }
+        thumbnailPath = photo.thumbnail_path;
+      } else {
+        thumbnailPath = thumbTier
+          ? (await ensureThumbnailAtWidth(photo, thumbTier)) || (await ensureThumbnail(photo))
+          : await ensureThumbnail(photo);
+        // A stored pointer outside the rendition namespace (a legacy
+        // `./thumbnails/...` or backslash shape) is rebuilt rather than served
+        // or left to 404 forever; the rebuild writes a canonical key. Checked
+        // against a concurrent settings change (issue 2140); the row keeps its
+        // pointer so a dropped render does not hand that pointer back.
+        if (thumbnailPath && !isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
+          thumbnailPath = await ensureThumbnail(photo, { force: true, checkSettings: true });
+        }
       }
 
       // What was actually resolved, not what was asked for. A tier request can

@@ -961,6 +961,33 @@ async function ensureThumbnail(photo, { force = false, boundVideoSource = true, 
   return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: checkSettings })), { force });
 }
 
+// Video posters rebuilt off the request path (issue 2263). Building one
+// copies the video off a remote backend and runs ffmpeg for up to a minute,
+// which the gallery's thumbnail request used to wait for; it now answers with
+// the placeholder and queues the build here, once per photo in this process
+// however many tiles ask meanwhile. ffmpeg's own limits still apply.
+const queuedVideoThumbnails = new Set();
+
+function queueVideoThumbnail(photo, options = {}) {
+  const id = Number(photo.id);
+  if (queuedVideoThumbnails.has(id)) return false;
+  queuedVideoThumbnails.add(id);
+  const done = () => { queuedVideoThumbnails.delete(id); };
+  // defer() logs a failure itself.
+  require('./activeApplicationWork').defer('video poster', () => ensureThumbnail(photo, options)).then(done, done);
+  return true;
+}
+
+// The placeholder those requests get, rendered once per process.
+let videoPlaceholderBytes = null;
+function videoPlaceholderImage() {
+  if (!videoPlaceholderBytes) {
+    videoPlaceholderBytes = renderVideoPlaceholder(DEFAULT_THUMBNAIL_WIDTH, DEFAULT_THUMBNAIL_HEIGHT, DEFAULT_THUMBNAIL_QUALITY);
+    videoPlaceholderBytes.catch(() => { videoPlaceholderBytes = null; });
+  }
+  return videoPlaceholderBytes;
+}
+
 async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
@@ -1209,6 +1236,31 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   }
 }
 
+/** The play-button tile as JPEG bytes, the stand-in for a missing poster frame. */
+async function renderVideoPlaceholder(width, height, quality) {
+  const svg = `
+    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0f172a" stop-opacity="0.9"/>
+          <stop offset="100%" stop-color="#1e293b" stop-opacity="0.9"/>
+        </linearGradient>
+      </defs>
+      <rect width="${width}" height="${height}" rx="18" fill="url(#grad)"/>
+      <circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) / 6}" fill="rgba(255,255,255,0.85)"/>
+      <polygon points="${width / 2 - 10},${height / 2 - 14} ${width / 2 - 10},${height / 2 + 14} ${width / 2 + 16},${height / 2}" fill="#0f172a"/>
+      <text x="50%" y="${height - 18}" font-family="Arial, sans-serif" font-size="16" fill="rgba(255,255,255,0.9)" text-anchor="middle">
+        VIDEO
+      </text>
+    </svg>
+  `;
+
+  return sharp(Buffer.from(svg))
+    .resize(width, height, { fit: 'cover' })
+    .jpeg({ quality })
+    .toBuffer();
+}
+
 async function generateVideoPlaceholder(originalFilename, options = {}) {
   const parsed = path.parse(originalFilename || '');
   const baseName = parsed.name || 'video';
@@ -1231,27 +1283,7 @@ async function generateVideoPlaceholder(originalFilename, options = {}) {
   }
 
   try {
-    const svg = `
-      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#0f172a" stop-opacity="0.9"/>
-            <stop offset="100%" stop-color="#1e293b" stop-opacity="0.9"/>
-          </linearGradient>
-        </defs>
-        <rect width="${width}" height="${height}" rx="18" fill="url(#grad)"/>
-        <circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) / 6}" fill="rgba(255,255,255,0.85)"/>
-        <polygon points="${width / 2 - 10},${height / 2 - 14} ${width / 2 - 10},${height / 2 + 14} ${width / 2 + 16},${height / 2}" fill="#0f172a"/>
-        <text x="50%" y="${height - 18}" font-family="Arial, sans-serif" font-size="16" fill="rgba(255,255,255,0.9)" text-anchor="middle">
-          VIDEO
-        </text>
-      </svg>
-    `;
-
-    const buffer = await sharp(Buffer.from(svg))
-      .resize(width, height, { fit: 'cover' })
-      .jpeg({ quality: settings.quality || DEFAULT_THUMBNAIL_QUALITY })
-      .toBuffer();
+    const buffer = await renderVideoPlaceholder(width, height, settings.quality || DEFAULT_THUMBNAIL_QUALITY);
 
     await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: 'image/jpeg' }), thumbnailRelKey);
 
@@ -2332,6 +2364,8 @@ module.exports = {
   generateThumbnail,
   isThumbnailValid,
   ensureThumbnail,
+  queueVideoThumbnail,
+  videoPlaceholderImage,
   generateVideoPlaceholder,
   generateHeroImage,
   isHeroValid,
