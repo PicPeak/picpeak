@@ -1566,30 +1566,20 @@ router.put('/:eventId/photos/:photoId/poster', adminAuth, requirePermission('pho
     const offset = raw === null ? null : Math.round(raw * 1000) / 1000;
 
     const fence = { id: photo.id, event_id: photo.event_id };
-    await livePhotos(db).where(fence).update({ poster_offset_seconds: offset });
-    const row = await livePhotos(db).where(fence).first();
-    if (!row) return res.status(404).json({ error: 'Photo not found' });
-    // A poster not rebuilt keeps the old pick, so the row never names a
-    // frame its poster does not show.
-    const restore = () => livePhotos(db).where(fence).update({ poster_offset_seconds: photo.poster_offset_seconds ?? null });
-    let key;
-    try {
-      // Strict: a frame that cannot be taken leaves the current poster as
-      // it is, never the placeholder over it.
-      key = await ensureThumbnail(row, { force: true, strictVideoFrame: true });
-    } catch (error) {
-      await restore().catch(() => {});
-      throw error;
-    }
+    // The pick is written with the poster it shows (ensureThumbnail), never
+    // ahead of it: a listing read during the rebuild would hand out the new
+    // thumbnail URL for the old frame, and a browser would cache that.
+    // Strict: a frame that cannot be taken leaves the current poster and
+    // pick as they are, never the placeholder over them.
+    const key = await ensureThumbnail(photo, { force: true, strictVideoFrame: true, posterOffsetSeconds: offset });
     if (!key) {
-      await restore();
       return res.status(422).json({ error: 'No frame could be taken from the video at that point' });
     }
     // A key written under another name leaves the old poster behind; it is
     // dropped unless another row still names it.
-    if (row.thumbnail_path && row.thumbnail_path !== key
-      && !(await db('photos').where('thumbnail_path', row.thumbnail_path).first('id'))) {
-      await getStorage().delete(row.thumbnail_path).catch(() => {});
+    if (photo.thumbnail_path && photo.thumbnail_path !== key
+      && !(await db('photos').where('thumbnail_path', photo.thumbnail_path).first('id'))) {
+      await getStorage().delete(photo.thumbnail_path).catch(() => {});
     }
     await logActivity('photo_poster_updated', {
       photo_id: photo.id, offset_seconds: offset,
@@ -1597,7 +1587,7 @@ router.put('/:eventId/photos/:photoId/poster', adminAuth, requirePermission('pho
     const updated = await livePhotos(db).where(fence).first();
     res.json({
       poster_offset_seconds: offset,
-      thumbnail_url: adminThumbnailUrl(req.params.eventId, updated || row),
+      thumbnail_url: adminThumbnailUrl(req.params.eventId, updated || { ...photo, poster_offset_seconds: offset }),
       thumb_hash: updated?.thumb_hash || null,
       processing_error: updated?.processing_error || null,
     });

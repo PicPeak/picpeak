@@ -143,6 +143,13 @@ async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
     if (!/^\d{1,4}x\d{1,4}$/.test(size) || size.split('x').some(value => Number(value) <= 0 || Number(value) > 4096)) throw new Error('Invalid video thumbnail size');
     await mediaProcesses.withSnapshot(videoPath, 'thumbnail', async (snapshot, details) => {
       const probed = await probePosterSource(snapshot, details);
+      const duration = Number(probed?.format?.duration);
+      // Strict, a frame an admin picked: one past the end is refused, not
+      // swapped for the middle frame under the offset that was asked for.
+      if (options.strict && offsetSeconds != null && Number.isFinite(duration) && duration > 0
+        && Number(offsetSeconds) >= duration) {
+        throw new Error(`${offsetSeconds} s lies past the end of the ${duration} s video`);
+      }
       await renderPosterFrame(snapshot, details, posterSeekSeconds(offsetSeconds, probed?.format?.duration), size, tmpPath);
     });
 

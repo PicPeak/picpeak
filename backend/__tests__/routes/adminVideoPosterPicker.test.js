@@ -181,6 +181,30 @@ describe('PUT poster', () => {
     expect(seeks()).toEqual(['9']);
   });
 
+  it('records the pick only with its poster, so no listing names the new frame early', async () => {
+    expect((await pick(videoId, { offset_seconds: 5 })).status).toBe(200);
+    const during = [];
+    const base = mockRun.getMockImplementation();
+    mockRun.mockImplementation(async (command, args) => {
+      if (command === 'ffmpeg') during.push((await db('photos').where({ id: videoId }).first()).poster_offset_seconds);
+      return base(command, args);
+    });
+
+    expect((await pick(videoId, { offset_seconds: 3 })).status).toBe(200);
+    expect(during).toEqual([5]);
+    expect((await db('photos').where({ id: videoId }).first()).poster_offset_seconds).toBe(3);
+  });
+
+  it('refuses a pick the clip turns out too short for, rather than storing it over the middle frame', async () => {
+    expect((await pick(videoId, { offset_seconds: 5 })).status).toBe(200);
+    mockClipLength = 10;
+    const res = await pick(videoId, { offset_seconds: 10.5 });
+    expect(res.status).toBe(422);
+    expect((await db('photos').where({ id: videoId }).first()).poster_offset_seconds).toBe(5);
+    // No frame was rendered at the middle in its place.
+    expect(seeks()).toEqual(['5']);
+  });
+
   it('keeps the current poster and pick when no frame can be taken', async () => {
     expect((await pick(videoId, { offset_seconds: 5 })).status).toBe(200);
     const before = await db('photos').where({ id: videoId }).first();

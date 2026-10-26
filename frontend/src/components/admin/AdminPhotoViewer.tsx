@@ -24,6 +24,7 @@ import { useMutationWithToast, useModal } from '../../hooks';
 import { deleteOneConfirm, deletedMessage } from './photoDeleteCopy';
 import { isImeComposing } from '../../utils/imeComposition';
 import { formatPhotoPrice } from '../../features/photo-sales/photoSales';
+import { usePermission } from '../../hooks/usePermission';
 
 type AdminFeedbackResponse = {
   feedback: PhotoFeedback[];
@@ -97,6 +98,8 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   const categoryMenuModal = useModal();
   const commentsModal = useModal();
   const posterModal = useModal();
+  // Picking a frame is photos.edit; a reader still sees which frame it is.
+  const canEditPhotos = usePermission('photos.edit');
   const queryClient = useQueryClient();
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   
@@ -627,25 +630,29 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                   <ImageIcon className="w-4 h-4" />
                   {t('admin.photos.poster.label')}
                 </span>
-                <button
-                  onClick={posterModal.open}
-                  className="text-xs text-accent hover:text-accent-dark"
-                >
-                  {t('admin.photos.poster.choose')}
-                </button>
+                {canEditPhotos && (
+                  <button
+                    onClick={posterModal.open}
+                    className="text-xs text-accent hover:text-accent-dark"
+                  >
+                    {t('admin.photos.poster.choose')}
+                  </button>
+                )}
               </div>
               <p className="text-white">
                 {currentPhoto.poster_offset_seconds == null
                   ? t('admin.photos.poster.isDefault')
                   : t('admin.photos.poster.isPicked', { time: formatPosterOffset(currentPhoto.poster_offset_seconds) })}
               </p>
-              <VideoPosterPicker
-                open={posterModal.isOpen}
-                onClose={posterModal.close}
-                eventId={eventId}
-                photoId={currentPhoto.id}
-                onChanged={handlePosterChanged}
-              />
+              {canEditPhotos && (
+                <VideoPosterPicker
+                  open={posterModal.isOpen}
+                  onClose={posterModal.close}
+                  eventId={eventId}
+                  photoId={currentPhoto.id}
+                  onChanged={handlePosterChanged}
+                />
+              )}
             </div>
           )}
 

@@ -23,6 +23,8 @@ vi.mock('../../common', async (importOriginal) => ({
   useConfirm: () => async () => true,
 }));
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: toastSuccess } }));
+let mockCanEdit = true;
+vi.mock('../../../hooks/usePermission', () => ({ usePermission: () => mockCanEdit }));
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
   return {
@@ -152,12 +154,22 @@ describe('AdminPhotoViewer preview image', () => {
     </QueryClientProvider>
   );
 
+  beforeEach(() => { mockCanEdit = true; });
+
   it('is offered for a video only', () => {
     const { unmount } = renderViewer(image);
     expect(screen.queryByText('admin.photos.poster.choose')).not.toBeInTheDocument();
     unmount();
     renderViewer(video);
     expect(screen.getByText('admin.photos.poster.isDefault')).toBeInTheDocument();
+    expect(screen.getByText('admin.photos.poster.choose')).toBeInTheDocument();
+  });
+
+  it('shows a reader without photos.edit the frame, not the picker', () => {
+    mockCanEdit = false;
+    renderViewer(video);
+    expect(screen.getByText('admin.photos.poster.isDefault')).toBeInTheDocument();
+    expect(screen.queryByText('admin.photos.poster.choose')).not.toBeInTheDocument();
   });
 
   it('refreshes the photo list after a pick, so the tile shows the new poster', async () => {
