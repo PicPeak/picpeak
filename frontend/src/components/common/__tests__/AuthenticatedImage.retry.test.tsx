@@ -593,6 +593,25 @@ describe('AuthenticatedImage retry', () => {
     expect(container.querySelector('img')).not.toBeNull();
   });
 
+  it('stops polling a pending poster once the server answers a final 4xx', async () => {
+    const pending = () => Promise.resolve({
+      ok: true,
+      blob: async () => new Blob(['p'], { type: 'image/jpeg' }),
+      headers: { get: (name: string) => (name === 'X-Poster-Pending' ? '1' : null) },
+    });
+    const fetchMock = vi.fn().mockImplementationOnce(pending).mockImplementation(status(403));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { container } = render(<AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" />);
+    await flush();
+    await advance(2000); await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 10; i++) { await advance(30_000); await flush(); }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // The placeholder it had stays on screen.
+    expect(container.querySelector('img')).not.toBeNull();
+  });
+
   it('a new src gets a fresh retry budget', async () => {
     const fetchMock = vi.fn().mockImplementation(loadFailed);
     vi.stubGlobal('fetch', fetchMock);

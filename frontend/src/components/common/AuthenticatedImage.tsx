@@ -433,6 +433,8 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         // that cannot succeed.
         if (err instanceof HttpError && isFinalStatus(err.status)) {
           attemptsRef.current = maxRetriesRef.current;
+          // Nor is a pending poster polled on past it.
+          pendingRef.current = false;
         }
         retryAfterRef.current = err instanceof HttpError ? err.retryAfterMs : 0;
         setIsLoading(false);
