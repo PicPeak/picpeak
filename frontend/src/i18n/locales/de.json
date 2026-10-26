@@ -4202,10 +4202,11 @@
     },
     "orientationBackfill": {
       "title": "Fotoausrichtung",
-      "description": "Liest die EXIF-Ausrichtung für Fotos neu ein, die vor der Drehungskorrektur importiert wurden, korrigiert ihre gespeicherten Maße und verwirft Thumbnails, Vorschauen und Hero-Bilder, die aus den ungedrehten Originalen erzeugt wurden. Es werden nur Fotos angefasst, deren Ausrichtung sich tatsächlich ändert.",
+      "description": "Liest die EXIF-Ausrichtung für Fotos neu ein, die vor der Drehungskorrektur importiert wurden, korrigiert ihre gespeicherten Maße und verwirft Thumbnails, Vorschauen und Hero-Bilder, die aus den ungedrehten Originalen erzeugt wurden. Es werden nur Fotos angefasst, deren Ausrichtung sich tatsächlich ändert. Auch Videos werden neu eingelesen: Ihre Maße werden aufrecht gespeichert, ein fehlendes Aufnahmedatum ergänzt und ein gestauchtes Vorschaubild neu erzeugt.",
       "button": "Fotoausrichtung korrigieren",
       "running": "Ausrichtung wird geprüft...",
       "resultSuccess": "Letzter Lauf: {{checked}} geprüft, {{corrected}} korrigiert, {{requeued}} erneut zur Gesichtserkennung eingereiht, {{failed}} nicht erreichbar",
+      "videoResult": "Videos: {{dated}} Aufnahmedatum/-daten ergänzt, {{posters}} Vorschaubild(er) neu erzeugt",
       "staleTiers": "{{count}} zwischengespeicherte Größe(n) konnten nicht gelöscht werden und liefern weiterhin die alte Ausrichtung — bitte erneut ausführen, sobald der Speicher beschreibbar ist.",
       "staleTiers_one": "{{count}} zwischengespeicherte Größe konnte nicht gelöscht werden und liefert weiterhin die alte Ausrichtung — bitte erneut ausführen, sobald der Speicher beschreibbar ist.",
       "staleTiers_other": "{{count}} zwischengespeicherte Größen konnten nicht gelöscht werden und liefern weiterhin die alte Ausrichtung — bitte erneut ausführen, sobald der Speicher beschreibbar ist."

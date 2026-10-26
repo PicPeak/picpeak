@@ -967,14 +967,35 @@ async function ensureThumbnail(photo, { force = false, boundVideoSource = true, 
 // the placeholder and queues the build here, once per photo in this process
 // however many tiles ask meanwhile. ffmpeg's own limits still apply.
 const queuedVideoThumbnails = new Set();
+// A rebuild that failed is not retried by the next tile for this long: each
+// try is a full source copy and an ffmpeg run, and the cause (a missing or
+// unreadable source) rarely clears within minutes.
+const VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS = 10 * 60 * 1000;
+const failedVideoThumbnails = new Map(); // photo id -> time of the failure
 
-function queueVideoThumbnail(photo, options = {}) {
+// `build` and `now` are seams for tests.
+function queueVideoThumbnail(photo, options = {}, { build = ensureThumbnail, now = Date.now } = {}) {
   const id = Number(photo.id);
   if (queuedVideoThumbnails.has(id)) return false;
+  const failedAt = failedVideoThumbnails.get(id);
+  if (failedAt !== undefined && now() - failedAt < VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS) return false;
   queuedVideoThumbnails.add(id);
-  const done = () => { queuedVideoThumbnails.delete(id); };
+  const settle = (key) => {
+    queuedVideoThumbnails.delete(id);
+    if (key) {
+      failedVideoThumbnails.delete(id);
+      return;
+    }
+    // Expired entries go as a new one comes in, so the map holds at most
+    // the failures of one cooldown window.
+    const at = now();
+    for (const [other, time] of failedVideoThumbnails) {
+      if (at - time >= VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS) failedVideoThumbnails.delete(other);
+    }
+    failedVideoThumbnails.set(id, at);
+  };
   // defer() logs a failure itself.
-  require('./activeApplicationWork').defer('video poster', () => ensureThumbnail(photo, options)).then(done, done);
+  require('./activeApplicationWork').defer('video poster', () => build(photo, options)).then(settle, () => settle(null));
   return true;
 }
 
@@ -2365,6 +2386,7 @@ module.exports = {
   isThumbnailValid,
   ensureThumbnail,
   queueVideoThumbnail,
+  VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS,
   videoPlaceholderImage,
   generateVideoPlaceholder,
   generateHeroImage,

@@ -3611,10 +3611,11 @@
     },
     "orientationBackfill": {
       "title": "Photo Orientation",
-      "description": "Re-read EXIF orientation for photos imported before rotation was applied, correct their stored dimensions, and clear the thumbnails, previews and hero images generated from the unrotated originals. Only photos whose orientation actually changed are touched.",
+      "description": "Re-read EXIF orientation for photos imported before rotation was applied, correct their stored dimensions, and clear the thumbnails, previews and hero images generated from the unrotated originals. Only photos whose orientation actually changed are touched. Videos are re-read too: their dimensions are stored upright, a missing capture date is filled in and a squashed poster frame is rebuilt.",
       "button": "Fix Photo Orientation",
       "running": "Checking orientation...",
       "resultSuccess": "Last run: {{checked}} checked, {{corrected}} corrected, {{requeued}} requeued for face scanning, {{failed}} unreachable",
+      "videoResult": "Videos: {{dated}} capture date(s) filled in, {{posters}} poster frame(s) rebuilt",
       "staleTiers": "{{count}} cached size(s) could not be deleted and will keep serving the old orientation — re-run once storage is writable.",
       "staleTiers_one": "{{count}} cached size(s) could not be deleted and will keep serving the old orientation — re-run once storage is writable.",
       "staleTiers_other": "{{count}} cached size(s) could not be deleted and will keep serving the old orientation — re-run once storage is writable."
