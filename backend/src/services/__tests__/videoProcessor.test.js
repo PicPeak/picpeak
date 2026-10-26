@@ -134,6 +134,24 @@ describe('processUploadedVideo degrades gracefully instead of rejecting the whol
     expect(result.thumbnailError).toBe('ffmpeg seek failed');
   });
 
+  it('in strict mode throws instead of writing the placeholder when no frame is taken', async () => {
+    ffmpeg.ffprobe = jest.fn((videoPath, cb) => {
+      cb(null, { streams: [{ codec_type: 'video', width: 1080, height: 1920, codec_name: 'h264' }], format: { duration: 5.4 } });
+    });
+    ffmpeg.mockImplementation(() => ({
+      screenshots() { return this; },
+      on(event, handler) {
+        if (event === 'error') setImmediate(() => handler(new Error('ffmpeg seek failed')));
+        return this;
+      }
+    }));
+
+    await expect(processUploadedVideo('/tmp/video.mp4', 'thumbnails/thumb_wedding_001.jpg', { strict: true }))
+      .rejects.toThrow('ffmpeg seek failed');
+    expect(generateVideoPlaceholder).not.toHaveBeenCalled();
+    expect(storage.putFromFile).not.toHaveBeenCalled();
+  });
+
   it('throws when metadata, thumbnail generation, AND the placeholder all fail, so the caller surfaces a retryable failure instead of completing with nothing to show (codex review)', async () => {
     ffmpeg.ffprobe = jest.fn((videoPath, cb) => cb(new Error('Invalid data found when processing input')));
     ffmpeg.mockImplementation(() => ({

@@ -699,8 +699,10 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           const row = await db('photos').where(fence).first();
           if (!row) return true;
           // Unbounded like the admin regenerate job: an admin asked, and
-          // this runs one video at a time.
-          const key = await ensureThumbnail(row, { force: true, boundVideoSource: false });
+          // this runs one video at a time. Strict: a frame that cannot be
+          // taken is a failed repair, retried on the next run, not the
+          // placeholder counted as a fixed poster.
+          const key = await ensureThumbnail(row, { force: true, boundVideoSource: false, strictVideoFrame: true });
           if (!key) return false;
           videoPosters++;
           // A video's poster key is attempt-scoped, so the rebuild wrote a

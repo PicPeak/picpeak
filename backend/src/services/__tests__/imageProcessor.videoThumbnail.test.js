@@ -82,7 +82,8 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
 
     expect(processUploadedVideo).toHaveBeenCalledWith(
       '/storage/events/active/summer-wedding/individual/clip.mp4',
-      expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/)
+      expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/),
+      { strict: false }
     );
     expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
     expect(db.photosUpdate).toHaveBeenCalledWith({ thumbnail_path: expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/), thumb_hash: null });
@@ -108,7 +109,8 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
     expect(resolvePhotoFilePath).toHaveBeenCalled();
     expect(processUploadedVideo).toHaveBeenCalledWith(
       '/mnt/nas/2026/clip.mp4',
-      expect.stringMatching(/^thumbnails\/thumb_ext44_clip_[a-f0-9-]{36}\.jpg$/)
+      expect.stringMatching(/^thumbnails\/thumb_ext44_clip_[a-f0-9-]{36}\.jpg$/),
+      { strict: false }
     );
     expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_ext44_clip_[a-f0-9-]{36}\.jpg$/));
   });
@@ -144,7 +146,7 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
     const result = await ensureThumbnail({ ...managedVideo, id: 48 });
 
     expect(storage.getToFile).toHaveBeenCalled();
-    expect(processUploadedVideo).toHaveBeenCalledWith(expect.any(String), expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
+    expect(processUploadedVideo).toHaveBeenCalledWith(expect.any(String), expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/), { strict: false });
     expect(storage.put).not.toHaveBeenCalled();
     expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
   });
@@ -158,7 +160,7 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
 
     expect(storage.stat).not.toHaveBeenCalled();
     expect(storage.getToFile).toHaveBeenCalled();
-    expect(processUploadedVideo).toHaveBeenCalledWith(expect.any(String), expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
+    expect(processUploadedVideo).toHaveBeenCalledWith(expect.any(String), expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/), { strict: false });
     expect(storage.put).not.toHaveBeenCalled();
     expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
   });

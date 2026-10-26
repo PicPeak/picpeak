@@ -115,7 +115,7 @@ describe('orientation backfill for videos (issue 2263)', () => {
     expect(row).toMatchObject({ width: 1080, height: 1920, thumbnail_path: 'thumbnails/thumb_rebuilt.jpg' });
     expect(new Date(row.captured_at).toISOString()).toBe('2025-06-15T12:30:00.000Z');
     expect(row.orientation_checked_at).toBeTruthy();
-    expect(ensureThumbnail).toHaveBeenCalledWith(expect.objectContaining({ id: photoId }), { force: true, boundVideoSource: false });
+    expect(ensureThumbnail).toHaveBeenCalledWith(expect.objectContaining({ id: photoId }), { force: true, boundVideoSource: false, strictVideoFrame: true });
     // The squashed poster is not left behind in storage.
     expect(await getStorage().exists(poster)).toBe(false);
     expect(done.body.lastResult).toMatchObject({ checked: 1, corrected: 1, videoDated: 1, videoPosters: 1, failed: 0 });

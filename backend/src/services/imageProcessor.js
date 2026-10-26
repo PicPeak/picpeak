@@ -947,7 +947,10 @@ async function ownDerivativeName(photo, name) {
 // `checkSettings` gives a forced render the settings check of a lazy one
 // (issue 2140): a request-path rebuild, unlike the regenerate sweep, must not
 // publish over a regenerate that ran on new settings meanwhile.
-async function ensureThumbnail(photo, { force = false, boundVideoSource = true, checkSettings = !force } = {}) {
+// `strictVideoFrame`: a video whose frame cannot be taken gets no poster at
+// all (null) rather than the placeholder over the one it has, for a repair
+// that must know whether it repaired anything.
+async function ensureThumbnail(photo, { force = false, boundVideoSource = true, checkSettings = !force, strictVideoFrame = false } = {}) {
   // Check if thumbnail exists and is valid (works for any source).
   if (!force && photo.thumbnail_path) {
     const isValid = await isThumbnailValid(photo.thumbnail_path);
@@ -958,7 +961,7 @@ async function ensureThumbnail(photo, { force = false, boundVideoSource = true, 
   }
 
   photo = await withSourceVersion(photo);
-  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: checkSettings })), { force });
+  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: checkSettings, strictVideoFrame })), { force });
 }
 
 // Video posters rebuilt off the request path (issue 2263). Building one
@@ -1027,7 +1030,7 @@ function videoPlaceholderImage() {
   return videoPlaceholderBytes;
 }
 
-async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false } = {}) {
+async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false, strictVideoFrame = false } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
   const event = await db('events').where('id', photo.event_id).first();
@@ -1094,7 +1097,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     // fall back to a placeholder, or with its rendition since lost — stayed
     // thumbnail-less forever, however many times it was viewed or the admin
     // pressed regenerate.
-    const video = await regenerateVideoThumbnail(event, photo, isExternal, { boundSource: boundVideoSource });
+    const video = await regenerateVideoThumbnail(event, photo, isExternal, { boundSource: boundVideoSource, strict: strictVideoFrame });
     newThumbnailPath = video?.thumbnailKey || null;
     meta.thumbHash = video?.thumbHash;
     if (video && photo.processing_status === 'complete') {
@@ -1183,7 +1186,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     const current = rewriteShared ? null : await sourceGuard(photo).first('thumbnail_path');
     if (current?.thumbnail_path && current.thumbnail_path !== photo.thumbnail_path
         && await isThumbnailValid(current.thumbnail_path)) return current.thumbnail_path;
-    return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true });
+    return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true, strictVideoFrame });
   }
 
   return null;
@@ -1217,7 +1220,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
  * video at a time, and bounded it could never give a large video whose
  * thumbnail is missing anything but the placeholder.
  */
-async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource = true } = {}) {
+async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource = true, strict = false } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
   const { processUploadedVideo } = require('./videoProcessor');
 
@@ -1232,7 +1235,7 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   // Resolves to { thumbnailKey, placeholder, thumbnailError } or null, so the
   // caller can write the processing note the way the upload paths do.
   const generate = async (localPath) => {
-    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey), thumbnailKey);
+    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey, { strict }), thumbnailKey);
     if (!result?.thumbnailKey) return null;
     return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null, thumbHash: result.thumbHash || null };
   };
@@ -1254,6 +1257,7 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
         : DEFAULT_VIDEO_THUMBNAIL_MAX_SOURCE_BYTES;
       const stat = await storage.stat(sourceKey);
       if (stat && stat.size > maxBytes) {
+        if (strict) return null;
         logger.warn(`Video ${photo.id} is ${stat.size} bytes, over the ${maxBytes} byte limit; using the placeholder`);
         // Same filename derivation and explicit dimensions as
         // processUploadedVideo's own fallback, so this lands under

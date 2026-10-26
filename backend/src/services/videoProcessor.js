@@ -231,6 +231,12 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
   // very same key as a real frame would (that is the point of the filename
   // derivation below), so the key alone cannot tell the two apart.
   let usedPlaceholder = false;
+  // Strict: no placeholder over the poster the video already has, for a
+  // caller that must know whether a frame was taken. generateVideoThumbnail
+  // writes only a real frame.
+  if (!generatedThumbnailKey && options.strict) {
+    throw new Error(thumbnailError || 'ffmpeg produced no poster frame');
+  }
   if (!generatedThumbnailKey) {
     try {
       const {

@@ -576,7 +576,7 @@ describe('AuthenticatedImage retry', () => {
     expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:3');
   });
 
-  it('stops asking for a pending poster once the retries are spent, keeping it on screen', async () => {
+  it('polls a pending poster on its own budget, past the failure retries, then keeps it on screen', async () => {
     const pending = () => Promise.resolve({
       ok: true,
       blob: async () => new Blob(['p'], { type: 'image/jpeg' }),
@@ -587,9 +587,9 @@ describe('AuthenticatedImage retry', () => {
 
     const { container } = render(<AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" maxRetries={2} />);
     await flush();
-    await advance(60_000); await flush();
-    await advance(60_000); await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    // No Retry-After: the backoff floor of 2 s per poll; twelve polls.
+    for (let i = 0; i < 20; i++) { await advance(10_000); await flush(); }
+    expect(fetchMock).toHaveBeenCalledTimes(13);
     expect(container.querySelector('img')).not.toBeNull();
   });
 

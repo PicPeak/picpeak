@@ -55,6 +55,13 @@ interface AuthenticatedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImage
  */
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 2000;
+/**
+ * Asks for a stand-in the server is still replacing (X-Poster-Pending), on a
+ * budget of their own: a queued video poster can take a minute or two behind
+ * other builds, longer than the failure retries last. At the server's 10 s
+ * Retry-After this is two minutes; after it the stand-in stays.
+ */
+const MAX_PENDING_POLLS = 12;
 
 /** A non-OK response, with its status so the retry can tell transient from final. */
 class HttpError extends Error {
@@ -161,6 +168,10 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // fresh budget without an extra effect run to reset it.
   const [retryNonce, setRetryNonce] = useState(0);
   const attemptsRef = useRef(0);
+  // The stand-in on screen is a pending answer for `src` (X-Poster-Pending),
+  // and how many times that has been asked again.
+  const pendingRef = useRef(false);
+  const pendingPollsRef = useRef(0);
   // Read where the budget is spent, which includes a callback that must stay
   // stable (backToStandIn).
   const maxRetriesRef = useRef(maxRetries);
@@ -197,6 +208,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     if (standInUrlRef.current) URL.revokeObjectURL(standInUrlRef.current);
     standInUrlRef.current = null;
     swappedInUrlRef.current = null;
+    pendingRef.current = false;
   }, []);
   useEffect(() => dropStandIn, [dropStandIn]);
   // A retried `src` that arrived is only known to be good once it decodes, so
@@ -263,6 +275,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     if (lastSrcRef.current !== src) {
       lastSrcRef.current = src;
       attemptsRef.current = 0;
+      pendingPollsRef.current = 0;
     }
     // A retry of the same image that has a fallback on screen keeps showing
     // it; anything else starts from the loading placeholder.
@@ -386,6 +399,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
           objectUrls.splice(objectUrls.indexOf(primaryUrl), 1);
           dropStandIn();
           standInUrlRef.current = primaryUrl;
+          pendingRef.current = true;
           retryAfterRef.current = pendingMs;
           fetchFailedRef.current = false;
           setStandIn(true);
@@ -396,6 +410,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
           return;
         }
         if (!aborted) {
+          pendingRef.current = false;
           setImageSrc(primaryUrl);
           setShowsFallback(false);
           setError(false);
@@ -491,8 +506,10 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   // With a fallback the retry is for `src` behind it: while the fallback
   // stands in, or when both fetches were rejected. A fallback shown because
   // a 200 would not decode is final, as before.
+  const polling = standIn && pendingRef.current;
   const retryable = (standIn || (error && (!fallbackSrc || fetchFailedRef.current)))
-    && !fetching && attemptsRef.current < maxRetries;
+    && !fetching
+    && (polling ? pendingPollsRef.current < MAX_PENDING_POLLS : attemptsRef.current < maxRetries);
   // Given up (issue 1733, E9): the box stays empty and nothing will ask
   // again until `src` changes or the tile is remounted. With a fallback the
   // fallback is what is on screen, so that is not this state.
@@ -535,7 +552,8 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       if (cancelled || !delayElapsed || !onScreen) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       cancelled = true;
-      attemptsRef.current += 1;
+      if (polling) pendingPollsRef.current += 1;
+      else attemptsRef.current += 1;
       // In the same render as the spent attempt: otherwise the last retry
       // reads as given up (the previous error, no fetch yet) for one commit
       // before the fetch effect marks it in flight.
@@ -564,7 +582,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       observer?.disconnect();
       document.removeEventListener('visibilitychange', retry);
     };
-  }, [retryable, retryEl]);
+  }, [retryable, retryEl, polling]);
 
   // Effect to draw to canvas when image is loaded and canvas rendering is enabled
   useEffect(() => {
