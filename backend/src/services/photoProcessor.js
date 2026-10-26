@@ -753,7 +753,8 @@ async function processPhoto(photoId) {
       // download for a broken tile (codex review of #845).
       let videoResult = null;
       try {
-        videoResult = await processUploadedVideo(localPath, videoThumbnailKey);
+        // A retried row keeps the frame an admin picked (issue 2263, item 4).
+        videoResult = await processUploadedVideo(localPath, videoThumbnailKey, { offsetSeconds: photo.poster_offset_seconds ?? null });
         if (videoResult.placeholder) posterError = posterFrameError(videoResult.thumbnailError);
       } catch (videoErr) {
         // "Not now" and a lost claim are not a verdict on the video.

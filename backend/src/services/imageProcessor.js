@@ -1239,6 +1239,15 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
  * video at a time, and bounded it could never give a large video whose
  * thumbnail is missing anything but the placeholder.
  */
+/** The largest remote video a poster frame is copied down for, in bytes. */
+function videoThumbnailMaxSourceBytes() {
+  // Read at call time, as restoreService reads RESTORE_MAX_DECOMPRESSED_BYTES.
+  const configured = Number(process.env.VIDEO_THUMBNAIL_MAX_SOURCE_BYTES);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_VIDEO_THUMBNAIL_MAX_SOURCE_BYTES;
+}
+
 async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource = true, strict = false } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
   const { processUploadedVideo } = require('./videoProcessor');
@@ -1250,11 +1259,17 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
     ? `ext${photo.id}_${versionTag(photo)}${sourceBasename}`
     : await ownDerivativeName(photo, sourceBasename));
   const thumbnailKey = path.posix.join('thumbnails', `thumb_${outputBasename.replace(/\.[^.]+$/, '.jpg')}`);
+  // The frame the admin picked (issue 2263, item 4); null is the default.
+  // Read when the caller's row was selected without it, so every rebuild
+  // (regenerate, backfill, the queued gallery rebuild) keeps the pick.
+  const offsetSeconds = 'poster_offset_seconds' in photo
+    ? photo.poster_offset_seconds
+    : (await db('photos').where('id', photo.id).first('poster_offset_seconds'))?.poster_offset_seconds;
 
   // Resolves to { thumbnailKey, placeholder, thumbnailError } or null, so the
   // caller can write the processing note the way the upload paths do.
   const generate = async (localPath) => {
-    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey, { strict }), thumbnailKey);
+    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey, { offsetSeconds: offsetSeconds ?? null, strict }), thumbnailKey);
     if (!result?.thumbnailKey) return null;
     return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null, thumbHash: result.thumbHash || null };
   };
@@ -1269,11 +1284,7 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
     const sourceKey = resolvePhotoStorageKey(event, photo);
     const storage = getStorage();
     if (boundSource && storage.kind() !== 'local') {
-      // Read at call time, as restoreService reads RESTORE_MAX_DECOMPRESSED_BYTES.
-      const configured = Number(process.env.VIDEO_THUMBNAIL_MAX_SOURCE_BYTES);
-      const maxBytes = Number.isFinite(configured) && configured > 0
-        ? configured
-        : DEFAULT_VIDEO_THUMBNAIL_MAX_SOURCE_BYTES;
+      const maxBytes = videoThumbnailMaxSourceBytes();
       const stat = await storage.stat(sourceKey);
       if (stat && stat.size > maxBytes) {
         if (strict) return null;
@@ -2429,6 +2440,7 @@ module.exports = {
   queueVideoThumbnail,
   stopVideoThumbnailQueue,
   startVideoThumbnailQueue,
+  videoThumbnailMaxSourceBytes,
   VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS,
   VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS,
   VIDEO_THUMBNAIL_CONCURRENCY,

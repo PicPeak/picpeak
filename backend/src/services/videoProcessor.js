@@ -60,13 +60,68 @@ function posterScaleFilter(size) {
   return `scale=w=${width}:h=${height}:force_original_aspect_ratio=decrease`;
 }
 
+// Where the poster frame is taken when nobody picked one (issue 2263, item 4):
+// one second in, past the black first frame many cameras write.
+const DEFAULT_POSTER_OFFSET_SECONDS = 1;
+
+/**
+ * The seek for a poster frame `offset` seconds in, kept inside a clip that
+ * lasts `duration` seconds (ffprobe's, unrounded). A seek at or past the end
+ * yields no frame at all, so a clip shorter than the default second used to
+ * get the placeholder tile; it gets its middle frame instead.
+ */
+function posterSeekSeconds(offset, duration) {
+  const wanted = offset != null && Number.isFinite(Number(offset)) && Number(offset) >= 0
+    ? Number(offset)
+    : DEFAULT_POSTER_OFFSET_SECONDS;
+  const length = Number(duration);
+  if (!Number.isFinite(length) || length <= 0 || wanted < length) return wanted;
+  return length / 2;
+}
+
+/**
+ * The three frames offered to the admin, at 10%, 50% and 90% of the clip,
+ * in seconds rounded to the millisecond. Without a duration: the first
+ * frame, the default one and 3 s in; one that lies past the end yields no
+ * frame and is left out.
+ */
+function posterCandidateOffsets(duration) {
+  const length = Number(duration);
+  if (!Number.isFinite(length) || length <= 0) return [0, DEFAULT_POSTER_OFFSET_SECONDS, 3];
+  return [0.1, 0.5, 0.9].map(share => Math.round(length * share * 1000) / 1000);
+}
+
+/** One poster frame of `snapshot` (inside withSnapshot) into `outputPath`. */
+async function renderPosterFrame(snapshot, details, seconds, size, outputPath) {
+  await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+    ...mediaProcesses.inputOptions(details.format, details.policy.threads), '-ss', String(seconds), '-i', snapshot,
+    '-frames:v', '1', '-an', '-sn', '-dn', '-vf', posterScaleFilter(size), '-pix_fmt', 'yuvj420p',
+    '-threads', '1', '-filter_threads', '1', outputPath], {
+    memoryBytes: details.policy.nativeBytes, wallMs: details.policy.thumbnailMs,
+    cpuSeconds: Math.ceil(details.policy.thumbnailMs / 1000), fileBytes: 16 * 1024 * 1024,
+  });
+}
+
+/** The probe of a snapshot, or null when ffprobe cannot describe it. */
+async function probePosterSource(snapshot, details) {
+  try { return await mediaProcesses.probeSnapshot(snapshot, details); }
+  catch (error) {
+    if (isResourceError(error)) throw error;
+    // Some legitimate phone exports can be decoded even when ffprobe
+    // cannot describe them. The native decoder remains hard-capped.
+    logger.warn('Video poster probe unavailable; using bounded decode', { error: error.message });
+    return null;
+  }
+}
+
 /**
  * Generate a video thumbnail and persist it via the storage backend.
  *
  * @param {string} videoPath - Local path to the video file (ffmpeg needs a real fs path).
  * @param {string} thumbnailKey - Relative storage key the thumbnail will be saved under
  *                                (e.g. "thumbnails/thumb_video.jpg").
- * @param {Object} options
+ * @param {Object} options - `offsetSeconds`: where the frame is taken (null or
+ *                           absent: the default frame); `size`: the box.
  * @returns {Promise<string>} The thumbnail's relative storage key.
  */
 async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
@@ -75,7 +130,7 @@ async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
   // issue 2263). ffmpeg applies the rotation before the filter, so a
   // portrait clip comes out portrait.
   const {
-    timeOffset = '00:00:01',
+    offsetSeconds = null,
     size = '300x300'
   } = options;
 
@@ -87,20 +142,8 @@ async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
   try {
     if (!/^\d{1,4}x\d{1,4}$/.test(size) || size.split('x').some(value => Number(value) <= 0 || Number(value) > 4096)) throw new Error('Invalid video thumbnail size');
     await mediaProcesses.withSnapshot(videoPath, 'thumbnail', async (snapshot, details) => {
-      try { await mediaProcesses.probeSnapshot(snapshot, details); }
-      catch (error) {
-        if (isResourceError(error)) throw error;
-        // Some legitimate phone exports can be decoded even when ffprobe
-        // cannot describe them. The native decoder remains hard-capped.
-        logger.warn('Video poster probe unavailable; using bounded decode', { error: error.message });
-      }
-      await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
-        ...mediaProcesses.inputOptions(details.format, details.policy.threads), '-ss', String(timeOffset), '-i', snapshot,
-        '-frames:v', '1', '-an', '-sn', '-dn', '-vf', posterScaleFilter(size), '-pix_fmt', 'yuvj420p',
-        '-threads', '1', '-filter_threads', '1', tmpPath], {
-        memoryBytes: details.policy.nativeBytes, wallMs: details.policy.thumbnailMs,
-        cpuSeconds: Math.ceil(details.policy.thumbnailMs / 1000), fileBytes: 16 * 1024 * 1024,
-      });
+      const probed = await probePosterSource(snapshot, details);
+      await renderPosterFrame(snapshot, details, posterSeekSeconds(offsetSeconds, probed?.format?.duration), size, tmpPath);
     });
 
     if (!fsSync.existsSync(tmpPath)) {
@@ -114,6 +157,42 @@ async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
     if (options.meta) options.meta.thumbHash = await require('./thumbHash').computeThumbHash(tmpPath);
     logger.info('Video thumbnail generated', { videoPath, thumbnailKey });
     return thumbnailKey;
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * The frames an admin picks the preview image from (issue 2263, item 4):
+ * small JPEGs, returned as bytes and never stored. One snapshot of the source
+ * and one probe serve all three; each frame is its own bounded ffmpeg run.
+ *
+ * @param {string} videoPath - Local path to the video file.
+ * @param {Object} options - `duration`: the row's, used when ffprobe has none.
+ * @returns {Promise<{duration: number|null, candidates: Array<{offsetSeconds: number, jpeg: Buffer}>}>}
+ */
+async function generatePosterCandidates(videoPath, { duration = null, size = '320x320' } = {}) {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-vidposter-'));
+  try {
+    return await mediaProcesses.withSnapshot(videoPath, 'thumbnail', async (snapshot, details) => {
+      const probed = await probePosterSource(snapshot, details);
+      const probedDuration = Number(probed?.format?.duration);
+      const length = Number.isFinite(probedDuration) && probedDuration > 0 ? probedDuration : (Number(duration) || null);
+      const candidates = [];
+      for (const [index, offset] of posterCandidateOffsets(length).entries()) {
+        const output = path.join(tmpDir, `candidate_${index}.jpg`);
+        try {
+          await renderPosterFrame(snapshot, details, offset, size, output);
+        } catch (error) {
+          if (isResourceError(error)) throw error;
+          logger.warn('Video poster candidate failed', { offset, error: error.message });
+          continue;
+        }
+        // A seek past the end exits cleanly and writes nothing.
+        if (fsSync.existsSync(output)) candidates.push({ offsetSeconds: offset, jpeg: await fs.readFile(output) });
+      }
+      return { duration: length, candidates };
+    });
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -308,13 +387,8 @@ function posterFrameError(reason) {
  * @param {number} timeInSeconds - Time in seconds to capture thumbnail
  * @returns {Promise<string>} - Path to thumbnail
  */
-async function getThumbnailAtTime(videoPath, outputPath, timeInSeconds = 1) {
-  const hours = Math.floor(timeInSeconds / 3600);
-  const minutes = Math.floor((timeInSeconds % 3600) / 60);
-  const seconds = Math.floor(timeInSeconds % 60);
-  const timeOffset = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-
-  return generateVideoThumbnail(videoPath, outputPath, { timeOffset });
+async function getThumbnailAtTime(videoPath, outputPath, timeInSeconds = DEFAULT_POSTER_OFFSET_SECONDS) {
+  return generateVideoThumbnail(videoPath, outputPath, { offsetSeconds: timeInSeconds });
 }
 
 /**
@@ -334,5 +408,9 @@ module.exports = {
   processUploadedVideo,
   posterFrameError,
   getThumbnailAtTime,
+  generatePosterCandidates,
+  posterCandidateOffsets,
+  posterSeekSeconds,
+  DEFAULT_POSTER_OFFSET_SECONDS,
   isVideoMimeType
 };

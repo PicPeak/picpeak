@@ -4918,6 +4918,23 @@
         "filterAll": "All names",
         "filterNone": "No name"
       },
+      "poster": {
+        "label": "Preview image",
+        "choose": "Choose preview image",
+        "title": "Choose the preview image",
+        "description": "The frame shown on the gallery tile before the video plays.",
+        "loading": "Taking frames from the video…",
+        "loadError": "The frames could not be taken from this video.",
+        "retry": "Try again",
+        "frameAt": "Frame at {{time}}",
+        "current": "Current",
+        "useDefault": "Use default",
+        "defaultHint": "The default is the frame {{time}} into the video.",
+        "isDefault": "Default frame",
+        "isPicked": "Frame at {{time}}",
+        "saved": "Preview image updated",
+        "saveError": "The preview image could not be updated"
+      },
       "approvedBy": "Approved: {{value}}",
       "rejectedBy": "Rejected: {{value}}",
       "deleteOneConfirm": "Delete \"{{name}}\"? The photo is removed from the gallery for good. This cannot be undone.",

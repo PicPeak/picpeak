@@ -75,6 +75,19 @@ export interface AdminPhoto {
   unavailable_reason?: 'source_missing' | null;
   // The admin account that ran the upload; null for imports and older rows.
   uploaded_by_admin?: { id: number; username: string | null } | null;
+  // A video's length in seconds, rounded down; null when unknown.
+  duration?: number | null;
+  // Seconds into a video its preview image is taken (issue 2263); null: the
+  // default frame.
+  poster_offset_seconds?: number | null;
+}
+
+/** Frames offered as a video's preview image, taken on request. */
+export interface PosterCandidates {
+  duration: number | null;
+  poster_offset_seconds: number | null;
+  default_offset_seconds: number;
+  candidates: Array<{ offset_seconds: number; image: string }>;
 }
 
 /** A photo a team member uploaded, waiting for the owner or turned down (issue 743). */
@@ -304,6 +317,21 @@ class PhotosService {
     creditName: string | null
   ): Promise<{ credit_name: string | null; credit_source: string }> {
     const response = await api.put(`/admin/photos/${eventId}/photos/${photoId}/credit`, { credit_name: creditName });
+    return response.data;
+  }
+
+  async getPosterCandidates(eventId: number, photoId: number): Promise<PosterCandidates> {
+    const response = await api.get(`/admin/photos/${eventId}/photos/${photoId}/poster-candidates`);
+    return response.data;
+  }
+
+  /** Keeps the frame `offsetSeconds` in as the preview image; null: the default frame. */
+  async setPosterOffset(
+    eventId: number,
+    photoId: number,
+    offsetSeconds: number | null
+  ): Promise<{ poster_offset_seconds: number | null; thumbnail_url: string }> {
+    const response = await api.put(`/admin/photos/${eventId}/photos/${photoId}/poster`, { offset_seconds: offsetSeconds });
     return response.data;
   }
 

@@ -1137,6 +1137,8 @@
         "POST /:eventId/photos/moderation",
         "GET /:eventId/photos/credits",
         "PUT /:eventId/photos/:photoId/credit",
+        "GET /:eventId/photos/:photoId/poster-candidates",
+        "PUT /:eventId/photos/:photoId/poster",
         "GET /:eventId/photos/:photoId/download",
         "GET /:eventId/photos",
         "GET /:eventId/photo/:photoId",

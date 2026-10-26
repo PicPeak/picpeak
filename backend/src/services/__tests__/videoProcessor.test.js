@@ -212,3 +212,76 @@ describe('portrait phone clips (issue 2263)', () => {
       .rejects.toThrow('Invalid video thumbnail size');
   });
 });
+
+describe('the preview image an admin picks (issue 2263, item 4)', () => {
+  const { posterCandidateOffsets, posterSeekSeconds, generateVideoThumbnail, generatePosterCandidates } = require('../videoProcessor');
+  const mediaProcesses = require('../mediaProcessService');
+  const seeks = run => run.mock.calls.map(([, args]) => args[args.indexOf('-ss') + 1]);
+  // ffmpeg as it behaves: a seek at or past the end writes no file.
+  const ffmpegFor = length => jest.spyOn(mediaProcesses, 'run').mockImplementation(async (_command, args) => {
+    if (Number(args[args.indexOf('-ss') + 1]) < length) require('fs').writeFileSync(args[args.length - 1], 'jpeg-bytes');
+    return { stdout: Buffer.alloc(0) };
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('offers frames at 10%, 50% and 90% of the clip', () => {
+    expect(posterCandidateOffsets(10)).toEqual([1, 5, 9]);
+    expect(posterCandidateOffsets(0.5)).toEqual([0.05, 0.25, 0.45]);
+    expect(posterCandidateOffsets(12.345)).toEqual([1.235, 6.173, 11.111]);
+  });
+
+  it('falls back to the first frame, the default one and 3 s in without a duration', () => {
+    expect(posterCandidateOffsets(null)).toEqual([0, 1, 3]);
+    expect(posterCandidateOffsets(0)).toEqual([0, 1, 3]);
+    expect(posterCandidateOffsets('n/a')).toEqual([0, 1, 3]);
+  });
+
+  it('seeks to the picked frame, the default 1 s without one, and stays inside a short clip', () => {
+    expect(posterSeekSeconds(4.5, 10)).toBe(4.5);
+    expect(posterSeekSeconds(null, 10)).toBe(1);
+    expect(posterSeekSeconds(undefined, undefined)).toBe(1);
+    expect(posterSeekSeconds(null, 0.5)).toBe(0.25);
+    expect(posterSeekSeconds(12, 10)).toBe(5);
+    expect(posterSeekSeconds(0, 10)).toBe(0);
+  });
+
+  it('gives a clip shorter than a second a real poster frame instead of none', async () => {
+    const run = ffmpegFor(0.5);
+    mediaProcesses.probeSnapshot.mockResolvedValueOnce({ format: { duration: '0.5' } });
+    getStorage.mockReturnValue({ putFromFile: jest.fn().mockResolvedValue(undefined) });
+
+    await expect(generateVideoThumbnail('/tmp/short.mp4', 'thumbnails/thumb_short.jpg')).resolves.toBe('thumbnails/thumb_short.jpg');
+    expect(seeks(run)).toEqual(['0.25']);
+  });
+
+  it('takes the poster at the stored offset', async () => {
+    const run = ffmpegFor(10);
+    mediaProcesses.probeSnapshot.mockResolvedValueOnce({ format: { duration: '10' } });
+    getStorage.mockReturnValue({ putFromFile: jest.fn().mockResolvedValue(undefined) });
+
+    await generateVideoThumbnail('/tmp/clip.mp4', 'thumbnails/thumb_clip.jpg', { offsetSeconds: 7.25 });
+    expect(seeks(run)).toEqual(['7.25']);
+  });
+
+  it('renders the three candidates from one snapshot as small JPEGs, and leaves out a frame past the end', async () => {
+    const snapshot = jest.spyOn(mediaProcesses, 'withSnapshot');
+    let run = ffmpegFor(10);
+    mediaProcesses.probeSnapshot.mockResolvedValueOnce({ format: { duration: '10' } });
+
+    const result = await generatePosterCandidates('/tmp/clip.mp4', { duration: 10 });
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    expect(result.duration).toBe(10);
+    expect(result.candidates.map(c => c.offsetSeconds)).toEqual([1, 5, 9]);
+    expect(result.candidates[0].jpeg.toString()).toBe('jpeg-bytes');
+    expect(run.mock.calls[0][1]).toContain('scale=w=320:h=320:force_original_aspect_ratio=decrease');
+
+    // No duration from ffprobe or the row: 3 s in lies past a 2 s clip.
+    jest.restoreAllMocks();
+    run = ffmpegFor(2);
+    mediaProcesses.probeSnapshot.mockRejectedValueOnce(new Error('moov atom not found'));
+    const unknown = await generatePosterCandidates('/tmp/clip.mp4', { duration: null });
+    expect(seeks(run)).toEqual(['0', '1', '3']);
+    expect(unknown.candidates.map(c => c.offsetSeconds)).toEqual([0, 1]);
+  });
+});

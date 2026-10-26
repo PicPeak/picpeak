@@ -335,13 +335,40 @@ describe('photoProcessor.processPhoto', () => {
     expect(imageProcessor.withLocalCopy).not.toHaveBeenCalled();
     expect(videoProcessor.processUploadedVideo).toHaveBeenCalledWith(
       '/mnt/media/shoot/clip.mp4',
-      'thumbnails/thumb_ext204_clip.jpg'
+      'thumbnails/thumb_ext204_clip.jpg',
+      { offsetSeconds: null }
     );
     const finalUpdate = dbModule.__recorded().updateCalls.pop();
     expect(finalUpdate.data.processing_status).toBe('complete');
     // The retry produced a real frame: the note is cleared.
     expect(finalUpdate.data.processing_error).toBeNull();
     expect(finalUpdate.data.thumbnail_path).toBe('thumbnails/thumb_ext204_clip.jpg');
+  });
+
+  it('takes a retried video poster at the frame an admin picked (issue 2263)', async () => {
+    dbModule.__setPhoto({
+      id: 205,
+      event_id: 9,
+      filename: 'clip.mp4',
+      external_relpath: 'shoot/clip.mp4',
+      source_origin: 'external',
+      mime_type: 'video/mp4',
+      media_type: 'video',
+      processing_status: 'processing',
+      poster_offset_seconds: 4.2,
+    });
+    dbModule.__setEvent({ id: 9, slug: 'wedding', event_name: 'Wedding', source_mode: 'reference' });
+    photoResolver.resolvePhotoStorageKey.mockReturnValueOnce(null);
+    videoProcessor.processUploadedVideo.mockResolvedValueOnce({
+      success: true, thumbnailKey: 'thumbnails/thumb_ext205_clip.jpg', placeholder: false, metadata: { duration: 9 },
+    });
+
+    const { processPhoto } = require('../../src/services/photoProcessor');
+    await processPhoto(205);
+
+    expect(videoProcessor.processUploadedVideo).toHaveBeenCalledWith(
+      expect.any(String), expect.any(String), { offsetSeconds: 4.2 }
+    );
   });
 
   it('keeps a video complete with a placeholder thumbnail when ffmpeg fails', async () => {

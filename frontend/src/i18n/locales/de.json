@@ -5436,6 +5436,23 @@
         "filterAll": "Alle Namen",
         "filterNone": "Kein Name"
       },
+      "poster": {
+        "label": "Vorschaubild",
+        "choose": "Vorschaubild wählen",
+        "title": "Vorschaubild wählen",
+        "description": "Das Bild, das die Galerie-Kachel zeigt, bevor das Video läuft.",
+        "loading": "Bilder werden aus dem Video geholt …",
+        "loadError": "Aus diesem Video konnten keine Bilder geholt werden.",
+        "retry": "Erneut versuchen",
+        "frameAt": "Bild bei {{time}}",
+        "current": "Aktuell",
+        "useDefault": "Standard verwenden",
+        "defaultHint": "Standard ist das Bild {{time}} nach Beginn des Videos.",
+        "isDefault": "Standardbild",
+        "isPicked": "Bild bei {{time}}",
+        "saved": "Vorschaubild aktualisiert",
+        "saveError": "Das Vorschaubild konnte nicht aktualisiert werden"
+      },
       "approvedBy": "Freigegeben: {{value}}",
       "rejectedBy": "Abgelehnt: {{value}}",
       "deleteOneConfirm": "„{{name}}“ löschen? Das Foto wird endgültig aus der Galerie entfernt. Das kann nicht rückgängig gemacht werden.",
