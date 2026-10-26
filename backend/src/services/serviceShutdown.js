@@ -24,6 +24,7 @@ const resources = [
   ['./backupService', 'stopBackupService', 'startBackupService'], ['./databaseBackup', 'stopScheduledBackups', 'startScheduledBackups'],
   ['./backgroundProcessor', 'stop', 'start'], ['./faceQueue', 'stop', 'start'], ['./tagQueue', 'stop', 'start'], ['./videoRenditionQueue', 'stop', 'start'], ['./videoHlsQueue', 'stop', 'start'], ['./renditionRefresh', 'stop', 'start'],
   ['./mediaProcessService', 'stop', 'start'], ['./nativeProcessRunner', 'stop', 'start'],
+  ['./imageProcessor', 'stopVideoThumbnailQueue', 'startVideoThumbnailQueue'],
   ['../utils/authSecurity', 'stopCleanupJob', 'initializeCleanupJob'], ['../utils/tokenRevocation', 'stopRevocationCleanup'],
   ['./publicUploadQuota', 'stopMaintenance', 'startMaintenance'],
 ];

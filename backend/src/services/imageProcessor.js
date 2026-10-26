@@ -986,12 +986,24 @@ const failedVideoThumbnails = new Map(); // photo id -> when it may be tried aga
 const VIDEO_THUMBNAIL_CONCURRENCY = 2;
 const VIDEO_THUMBNAIL_BACKLOG = 200;
 let runningVideoThumbnails = 0;
-const waitingVideoThumbnails = [];
+const waitingVideoThumbnails = []; // { id, start }
+// Stopped with the other services on shutdown: nothing waiting starts its
+// source copy any more, and a tile queues nothing new.
+let videoThumbnailQueueStopped = false;
+
+function stopVideoThumbnailQueue() {
+  videoThumbnailQueueStopped = true;
+  for (const { id } of waitingVideoThumbnails.splice(0)) queuedVideoThumbnails.delete(id);
+}
+
+function startVideoThumbnailQueue() {
+  videoThumbnailQueueStopped = false;
+}
 
 // `build` and `now` are seams for tests.
 function queueVideoThumbnail(photo, options = {}, { build = ensureThumbnail, now = Date.now } = {}) {
   const id = Number(photo.id);
-  if (queuedVideoThumbnails.has(id)) return false;
+  if (videoThumbnailQueueStopped || queuedVideoThumbnails.has(id)) return false;
   const retryAt = failedVideoThumbnails.get(id);
   if (retryAt !== undefined && now() < retryAt) return false;
   const atCapacity = runningVideoThumbnails >= VIDEO_THUMBNAIL_CONCURRENCY;
@@ -1000,8 +1012,8 @@ function queueVideoThumbnail(photo, options = {}, { build = ensureThumbnail, now
   const settle = (key, error) => {
     queuedVideoThumbnails.delete(id);
     runningVideoThumbnails -= 1;
-    const next = waitingVideoThumbnails.shift();
-    if (next) next();
+    const next = videoThumbnailQueueStopped ? null : waitingVideoThumbnails.shift();
+    if (next) next.start();
     if (key) {
       failedVideoThumbnails.delete(id);
       return;
@@ -1022,7 +1034,7 @@ function queueVideoThumbnail(photo, options = {}, { build = ensureThumbnail, now
       (key) => settle(key), (error) => settle(null, error)
     );
   };
-  if (atCapacity) waitingVideoThumbnails.push(start);
+  if (atCapacity) waitingVideoThumbnails.push({ id, start });
   else start();
   return true;
 }
@@ -2415,6 +2427,8 @@ module.exports = {
   isThumbnailValid,
   ensureThumbnail,
   queueVideoThumbnail,
+  stopVideoThumbnailQueue,
+  startVideoThumbnailQueue,
   VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS,
   VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS,
   VIDEO_THUMBNAIL_CONCURRENCY,

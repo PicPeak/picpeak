@@ -8,7 +8,7 @@ jest.mock('../../src/database/db', () => ({ db: jest.fn(() => { throw new Error(
 jest.mock('../../src/utils/logger', () => ({ debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 
 const {
-  queueVideoThumbnail, VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS, VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS, VIDEO_THUMBNAIL_CONCURRENCY,
+  queueVideoThumbnail, stopVideoThumbnailQueue, startVideoThumbnailQueue, VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS, VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS, VIDEO_THUMBNAIL_CONCURRENCY,
 } = require('../../src/services/imageProcessor');
 
 // defer() runs the build on setImmediate; this lets it and its settle finish.
@@ -92,6 +92,30 @@ describe('queueVideoThumbnail failure cooldown', () => {
     expect(queueVideoThumbnail(photo, {}, { build, now })).toBe(true);
     await flush();
     expect(build).toHaveBeenCalledTimes(2);
+  });
+
+  it('starts nothing waiting, and queues nothing new, once stopped for shutdown', async () => {
+    const releases = [];
+    const build = jest.fn(() => new Promise((resolve) => releases.push(() => resolve('thumbnails/thumb.jpg'))));
+    const photos = Array.from({ length: VIDEO_THUMBNAIL_CONCURRENCY + 1 }, () => ({ id: nextId++ }));
+    for (const photo of photos) queueVideoThumbnail(photo, {}, { build, now });
+    await flush();
+    expect(build).toHaveBeenCalledTimes(VIDEO_THUMBNAIL_CONCURRENCY);
+
+    stopVideoThumbnailQueue();
+    try {
+      expect(queueVideoThumbnail({ id: nextId++ }, {}, { build, now })).toBe(false);
+      // The running builds finish; the waiting one never starts.
+      while (releases.length) { releases.shift()(); await flush(); }
+      expect(build).toHaveBeenCalledTimes(VIDEO_THUMBNAIL_CONCURRENCY);
+    } finally {
+      startVideoThumbnailQueue();
+    }
+    // Back after a restart, the dropped one can be queued again.
+    expect(queueVideoThumbnail(photos[photos.length - 1], {}, { build, now })).toBe(true);
+    await flush();
+    releases.shift()();
+    await flush();
   });
 
   it('keeps the cooldown per photo', async () => {
