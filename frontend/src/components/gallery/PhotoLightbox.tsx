@@ -364,6 +364,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       slug: photoSales.slug,
       priceCheckUrl: photoSales.priceCheckUrl,
       price: effectivePhotoPrice(photoSales.price, currentPhoto.photo_price),
+      description: photoSales.itemDescription,
       photo: currentPhoto,
     })
     : null;

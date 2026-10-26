@@ -7186,6 +7186,7 @@
     "storeNoWebhook": "Guests can fill a cart, but paid orders are never delivered until {{keys}} is set.",
     "storeNoCheckout": "Guests see watermarked previews and cannot buy until {{keys}} is set.",
     "downloadHint": "The files are the originals, without watermark. Keep them safe: this link stops working when your access ends.",
+    "itemDescription": "Full quality, without watermark. Download until {{date}}.",
     "cartWithCount_one": "Cart, {{count}} photo",
     "cartWithCount_other": "Cart, {{count}} photos",
     "promoTitle_one": "{{count}} photo free with your first order",

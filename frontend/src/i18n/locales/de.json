@@ -7151,6 +7151,7 @@
     "storeNoWebhook": "Gäste können Fotos in den Warenkorb legen, bezahlte Bestellungen werden aber erst ausgeliefert, wenn {{keys}} gesetzt ist.",
     "storeNoCheckout": "Gäste sehen Vorschauen mit Wasserzeichen und können erst kaufen, wenn {{keys}} gesetzt ist.",
     "downloadHint": "Die Dateien sind die Originale ohne Wasserzeichen. Bitte speichern Sie sie: Der Link funktioniert nach Ablauf des Zugriffs nicht mehr.",
+    "itemDescription": "Volle Qualität, ohne Wasserzeichen. Download bis {{date}}.",
     "cartWithCount_one": "Warenkorb, {{count}} Foto",
     "cartWithCount_other": "Warenkorb, {{count}} Fotos",
     "promoTitle_one": "{{count}} Foto gratis bei Ihrer ersten Bestellung",

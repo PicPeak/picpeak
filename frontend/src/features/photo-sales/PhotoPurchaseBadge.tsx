@@ -37,6 +37,7 @@ export const PhotoPurchaseBadge: React.FC<{ photo: PurchaseBadgePhoto }> = ({ ph
     slug: photoSales.slug,
     priceCheckUrl: photoSales.priceCheckUrl,
     price,
+    description: photoSales.itemDescription,
     photo,
   });
   if (!itemProps) return null;

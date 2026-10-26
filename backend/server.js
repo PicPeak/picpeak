@@ -68,6 +68,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const cors = require('cors');
 const path = require('path');
+const { withPhotoSalesSources } = require('./src/modules/photoSales/galleryCsp');
 const { initializeDatabase, db, enableApplicationWorkOwnership } = require('./src/database/db');
 const applicationWork = require('./src/services/activeApplicationWork');
 const restoreCoordinator = require('./src/services/portableRestoreCoordinator');
@@ -1126,8 +1127,14 @@ try {
       }
       return next();
     };
-    app.get('/gallery/:slug/:token?', ogIntercept, (req, res) => sendSpa(res));
-    app.get('/gallery/:slug/show/:token', ogIntercept, (req, res) => sendSpa(res));
+    // Gallery pages get the CSP photo sales needs (Snipcart's cart), like
+    // nginx's `location @gallery_spa`; every other page keeps the site policy.
+    const galleryCsp = helmet.contentSecurityPolicy({
+      useDefaults: false,
+      directives: withPhotoSalesSources(cspDirectives),
+    });
+    app.get('/gallery/:slug/:token?', ogIntercept, galleryCsp, (req, res) => sendSpa(res));
+    app.get('/gallery/:slug/show/:token', ogIntercept, galleryCsp, (req, res) => sendSpa(res));
     // PicTransfer links (single-container deploys without nginx).
     const transferOgIntercept = (kind) => {
       const handler = handleTransferOgRequest(kind);

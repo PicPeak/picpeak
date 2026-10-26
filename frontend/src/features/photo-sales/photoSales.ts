@@ -39,6 +39,7 @@ export interface PhotoSalesEventInfo {
   free_photo_count?: number;
   photo_price?: number | null;
   purchase_access_days?: number;
+  expires_at?: string | null;
   /** True until the gallery's one-time promo code has been redeemed once —
    *  a buyer who forgets the code does not burn the quota. */
   free_quota_available?: boolean;
@@ -53,6 +54,19 @@ export interface PhotoSalesConfig {
   currency: string;
   priceCheckUrl: string;
   accessDays: number;
+  /** The cart line's description: what the buyer gets, and until when. */
+  itemDescription: string;
+}
+
+/**
+ * When a purchase made now stops downloading: purchase_access_days from now,
+ * but never after the gallery expires (the backend caps it the same way —
+ * an expired gallery is archived and takes the originals with it).
+ */
+export function purchaseAccessUntil(accessDays: number, galleryExpiresAt?: string | null, now = Date.now()): Date {
+  const accessEnd = now + accessDays * 24 * 60 * 60 * 1000;
+  const galleryEnd = galleryExpiresAt ? new Date(galleryExpiresAt).getTime() : NaN;
+  return new Date(Number.isFinite(galleryEnd) ? Math.min(accessEnd, galleryEnd) : accessEnd);
 }
 
 export function buildPhotoSalesConfig(args: {
@@ -66,6 +80,10 @@ export function buildPhotoSalesConfig(args: {
   // The free quota is a one-time giveaway per gallery: the promo code is
   // single-use and the server flips free_quota_available to false after it
   // has been redeemed once (an order without the code leaves the quota).
+  const accessDays = Math.max(1, Math.floor(Number(event?.purchase_access_days ?? 30)));
+  const accessUntil = purchaseAccessUntil(accessDays, event?.expires_at).toLocaleDateString(
+    typeof i18n?.language === 'string' && i18n.language.toLowerCase().startsWith('de') ? 'de-DE' : undefined
+  );
   const freeCount = event?.free_quota_available !== false
     ? Math.max(0, Math.floor(Number(event?.free_photo_count ?? 0)))
     : 0;
@@ -84,7 +102,11 @@ export function buildPhotoSalesConfig(args: {
     priceCheckUrl: typeof window !== 'undefined'
       ? `${window.location.origin}/api/gallery/${encodeURIComponent(slug)}/price-check`
       : `/api/gallery/${encodeURIComponent(slug)}/price-check`,
-    accessDays: Math.max(1, Math.floor(Number(event?.purchase_access_days ?? 30))),
+    accessDays,
+    itemDescription: i18n.t('photoSales.itemDescription', {
+      date: accessUntil,
+      defaultValue: 'Full quality, without watermark. Download until {{date}}.',
+    }),
   };
 }
 
@@ -123,6 +145,8 @@ export function snipcartItemProps(args: {
   slug: string;
   priceCheckUrl: string;
   price: number;
+  /** PhotoSalesConfig.itemDescription; shown on the cart line. */
+  description?: string;
   photo: {
     id: number;
     filename?: string;
@@ -131,14 +155,14 @@ export function snipcartItemProps(args: {
     sale_token?: string | null;
   };
 }): Record<string, string | number> | null {
-  const { slug, priceCheckUrl, price, photo } = args;
+  const { slug, priceCheckUrl, price, description, photo } = args;
   if (!photo.sale_token) return null;
   const props: Record<string, string | number> = {
     'data-item-id': `${slug}-photo-${photo.id}`,
     'data-item-price': price,
     'data-item-url': `${priceCheckUrl}${priceCheckUrl.includes('?') ? '&' : '?'}photoId=${photo.id}&sig=${encodeURIComponent(photo.sale_token)}`,
     'data-item-name': photo.original_filename || photo.filename || `Photo ${photo.id}`,
-    'data-item-description': `${slug} — photo ${photo.id}`,
+    'data-item-description': description || `${slug} — photo ${photo.id}`,
     // Digital goods: photos are delivered through our purchased-downloads
     // page, never shipped. Snipcart removes all shipping options from a cart
     // whose items are all non-shippable — no shipping config in the dashboard

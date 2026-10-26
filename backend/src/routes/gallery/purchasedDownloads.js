@@ -26,8 +26,8 @@ function isOrderActive(order) {
 
 /**
  * The gallery of an order while the photographer still offers it: an
- * inactive or archived gallery takes its purchase links down with it. Its
- * own expiry does not — the buyer paid for purchase_access_days.
+ * inactive or archived gallery takes its purchase links down with it. Expiry
+ * does both, so the webhook never sells access past the gallery's expiry.
  */
 async function orderGallery(order) {
   const gallery = await db('events').where({ id: order.gallery_id }).first();

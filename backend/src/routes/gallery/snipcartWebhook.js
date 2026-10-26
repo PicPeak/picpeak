@@ -17,7 +17,8 @@
  * Every order event reconciles one order with what Snipcart says about it:
  *
  *   - paid (Paid / PaidDeferred) and not yet granted → audit, then grant;
- *   - refunded, charged back, cancelled, failed or expired → revoke;
+ *   - refunded (even partly), charged back, cancelled, failed or expired →
+ *     revoke;
  *   - anything else (Deferred, Pending, Authorized …) → wait for the next
  *     order.paymentStatus.changed.
  *
@@ -25,7 +26,8 @@
  * not signed sellable photos of that gallery, whose currency is not the
  * sales currency, or whose charged total differs from the total recomputed
  * from the database. A refused order is refunded and stored with the refund
- * outcome so the admin sees it.
+ * outcome so the admin sees it. The row is claimed before the refund, so two
+ * concurrent deliveries of one refused order refund it once.
  *
  * Idempotent by Snipcart order id: an order already stored is never granted
  * twice (UNIQUE order_id).
@@ -60,7 +62,8 @@ const ORDER_EVENTS = new Set([
 // router sits ahead of the global API limiter.
 const webhookLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60,
+  // Snipcart delivers from a few IPs; a busy shop must not hit 429s.
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: rateLimitKey,
@@ -220,16 +223,23 @@ async function revokeOrder(orderToken, status) {
 /**
  * Refuse a paid order: refund it and, when its gallery is known, store it
  * with the refund outcome and no purchase rows.
+ *
+ * The row is claimed BEFORE the refund: a concurrent delivery of the same
+ * order loses on UNIQUE order_id and never reaches the refund. It reads
+ * refund_failed until Snipcart accepts the refund, so a total that cannot be
+ * refunded (missing, or nothing charged) or a crash in between leaves the
+ * order flagged for the admin, never reported as refunded.
  */
 async function rejectOrder(order, gallery, reason) {
   const orderToken = String(order.token);
   const chargedCents = centsOf(order.total);
   logger.error(`Snipcart order ${orderToken} refused: ${reason}. Refunding.`);
-  const outcome = Number.isFinite(chargedCents) && chargedCents > 0
-    ? await refundSnipcartOrder(orderToken, chargedCents / 100, `Photo sales: ${reason} — refunded automatically`)
-    : 'refunded';
+  const refund = () => refundSnipcartOrder(
+    orderToken, chargedCents / 100, `Photo sales: ${reason} — refunded automatically`
+  );
   if (!gallery) {
-    logger.error(`Snipcart order ${orderToken} has no known gallery; refund outcome: ${outcome}`);
+    // No gallery to store the order against (gallery_id is NOT NULL).
+    logger.error(`Snipcart order ${orderToken} has no known gallery; refund outcome: ${await refund()}`);
     return;
   }
   await db('photo_purchase_orders').insert({
@@ -238,7 +248,7 @@ async function rejectOrder(order, gallery, reason) {
     buyer_email: order.email || '',
     total_cents: Number.isFinite(chargedCents) ? Math.max(0, chargedCents) : 0,
     currency: String(order.currency || '').toUpperCase().slice(0, 8),
-    status: outcome,
+    status: 'refund_failed',
     purchased_at: new Date().toISOString(),
     expires_at: null,
     // Never handed out: the column is NOT NULL UNIQUE, and no purchase row
@@ -247,6 +257,23 @@ async function rejectOrder(order, gallery, reason) {
     email_sent: false,
     promo_used: false,
   });
+  if (await refund() === 'refunded') {
+    await db('photo_purchase_orders')
+      .where({ order_id: orderToken })
+      .update({ status: 'refunded', updated_at: new Date().toISOString() });
+  }
+}
+
+/**
+ * When a granted purchase stops: purchase_access_days from now, but never
+ * after the gallery expires — expiry deactivates and archives the gallery,
+ * which takes the originals (and every purchase link) down with it.
+ */
+function purchaseExpiry(gallery) {
+  const days = Number(gallery.purchase_access_days || 30);
+  const accessEnd = Date.now() + (Number.isFinite(days) ? days : 30) * 24 * 60 * 60 * 1000;
+  const galleryEnd = gallery.expires_at ? new Date(gallery.expires_at).getTime() : NaN;
+  return new Date(Number.isFinite(galleryEnd) ? Math.min(accessEnd, galleryEnd) : accessEnd).toISOString();
 }
 
 /** Audit a paid order against the database, then grant or refuse it. */
@@ -325,8 +352,7 @@ async function grantOrder(order) {
 
   const buyerEmail = order.email || order.user?.email || order.billingAddress?.email || '';
   const purchasedAt = new Date().toISOString();
-  const days = Number(gallery.purchase_access_days || 30);
-  const expiresAt = new Date(Date.now() + (Number.isFinite(days) ? days : 30) * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = purchaseExpiry(gallery);
   const accessToken = createPurchaseAccessToken();
 
   await db.transaction(async (trx) => {
@@ -410,9 +436,12 @@ async function handleWebhook(req, res) {
     if (!order) return res.status(502).json({ error: 'Order could not be read from Snipcart' });
     order.token = order.token || orderToken;
 
-    if (REVOKING_PAYMENT_STATUSES.has(order.paymentStatus) || order.status === 'Cancelled') {
+    // A partial refund leaves the payment status at Paid; any refunded
+    // amount revokes the order all the same.
+    const refunded = order.paymentStatus === 'Refunded' || Number(order.refundsAmount) > 0;
+    if (REVOKING_PAYMENT_STATUSES.has(order.paymentStatus) || order.status === 'Cancelled' || refunded) {
       const status = order.paymentStatus === 'ChargedBack' ? 'charged_back'
-        : order.paymentStatus === 'Refunded' ? 'refunded' : 'cancelled';
+        : refunded ? 'refunded' : 'cancelled';
       await revokeOrder(orderToken, status);
       return res.status(200).json({ ok: true });
     }
