@@ -154,7 +154,7 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
 export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
   const { t } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
-  const { logout, endSession, isClient, viaCustomer, enterClientMode, leaveClientMode, isSwitchingClientMode } = useGalleryAuth();
+  const { logout, endSession, isClient, viaCustomer, viaClientPin, enterClientMode, leaveClientMode, isSwitchingClientMode } = useGalleryAuth();
   const accessScope = isClient ? 'client' : viaCustomer ? 'customer' : 'guest';
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
@@ -1501,7 +1501,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   }
 
   const adminPreview = new URLSearchParams(window.location.search).get('admin_preview') === '1';
-  const onManageGallery = !adminPreview && (isClient || data.event.client_pin_entry_available) ? async () => {
+  const onManageGallery = !adminPreview && (viaClientPin || (!isClient && data.event.client_pin_entry_available)) ? async () => {
     if (isClient) {
       try { await leaveClientMode(slug); }
       catch { toast.error(t('clientAccess.returnFailed', 'Could not return to the gallery. Please try again.')); }

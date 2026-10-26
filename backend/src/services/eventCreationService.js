@@ -45,6 +45,10 @@ function creationError(body) {
  */
 async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) {
   const input = await validateCreationInput(data);
+  require('./galleryPinEntryService').validateEnrollment({
+    enabled: parseBooleanInput(input.client_pin_entry_enabled, false),
+    clientAccessEnabled: parseBooleanInput(input.client_access_enabled, false), password: input.client_password,
+  });
   if (source === 'v1') input.is_draft = false;
   if (!actor || !Number.isInteger(actor.id)) throw new AppError('Event owner required', 400, 'EVENT_OWNER_REQUIRED');
   // Get field requirements from settings

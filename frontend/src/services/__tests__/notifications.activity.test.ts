@@ -23,6 +23,18 @@ const base: Omit<Notification, 'type'> = {
 } as any;
 
 describe('client-activity notifications (#746)', () => {
+  it.each(['en', 'de'])('explains the PIN-entry security pause in the bell and feed (%s)', async (language) => {
+    await i18n.changeLanguage(language);
+    const msg = notificationsService.formatNotificationMessage({ ...base, type: 'gallery_pin_entry_paused' } as Notification);
+    expect(msg).toContain('Anna & Tom');
+    expect(msg).toMatch(/Private client links|Private Kundenlinks/);
+    expect(msg).not.toContain('{{');
+    expect(notificationsService.getNotificationStyle('gallery_pin_entry_paused').icon).toBe('Shield');
+    const feed = i18n.t('admin.activities.gallery_pin_entry_paused', { eventName: 'Anna & Tom' });
+    expect(feed).toContain('Anna & Tom');
+    expect(feed).not.toContain('{{');
+  });
+
   it.each(['gallery_opened', 'gallery_downloaded', 'photo_favorite'])(
     'formats %s via a real locale key (no generic fallback)',
     async (type) => {

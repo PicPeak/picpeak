@@ -120,11 +120,11 @@ describe('GalleryToolbar', () => {
         selection={selection()}
       />,
     );
-    const button = screen.getByRole('button', { name: 'gallery.filters' });
+    const button = screen.getByRole('button', { name: 'gallery.settings' });
     expect(button).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toHaveTextContent('panel body');
+    expect(screen.getByRole('dialog', { name: 'gallery.settings' })).toHaveTextContent('panel body');
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(button).toHaveFocus();
@@ -138,7 +138,7 @@ describe('GalleryToolbar', () => {
         selection={selection()}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'gallery.filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.settings' }));
     expect(screen.getByRole('dialog').getAttribute('style')).toContain('100dvh');
   });
 
@@ -166,11 +166,11 @@ describe('GalleryToolbar', () => {
     const sortButton = screen.getByRole('button', { name: 'gallery.sortByDate' });
     fireEvent.click(sortButton);
     expect(screen.getByRole('button', { name: 'photoSort.dateTaken' })).toBeInTheDocument();
-    const filterButton = screen.getByRole('button', { name: 'gallery.filters' });
+    const filterButton = screen.getByRole('button', { name: 'gallery.settings' });
     fireEvent.pointerDown(filterButton);
     fireEvent.click(filterButton);
     expect(screen.queryByRole('button', { name: 'photoSort.dateTaken' })).toBeNull();
-    expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'gallery.settings' })).toBeInTheDocument();
 
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(sortButton);
@@ -189,12 +189,12 @@ describe('GalleryToolbar', () => {
       />,
     );
     const sortButton = screen.getByRole('button', { name: 'gallery.sortByDate' });
-    const filterButton = screen.getByRole('button', { name: 'gallery.filters' });
+    const filterButton = screen.getByRole('button', { name: 'gallery.settings' });
     fireEvent.click(sortButton);
     filterButton.focus();
     fireEvent.click(filterButton);
     expect(screen.queryByRole('button', { name: 'photoSort.dateTaken' })).toBeNull();
-    expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'gallery.settings' })).toBeInTheDocument();
     sortButton.focus();
     fireEvent.click(sortButton);
     expect(screen.getByRole('button', { name: 'photoSort.dateTaken' })).toBeInTheDocument();
@@ -209,7 +209,7 @@ describe('GalleryToolbar', () => {
         selection={selection({ isSelectionMode: true, selectedCount: 2 })}
       />,
     );
-    const filterButton = screen.getByRole('button', { name: 'gallery.filters' });
+    const filterButton = screen.getByRole('button', { name: 'gallery.settings' });
     fireEvent.click(filterButton);
     const inside = screen.getByRole('button', { name: 'select these' });
     inside.focus();
@@ -230,11 +230,11 @@ describe('GalleryToolbar', () => {
         <textarea aria-label="comment" />
       </div>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'gallery.filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.settings' }));
     const field = screen.getByRole('textbox', { name: 'comment' });
     field.focus();
     fireEvent.keyDown(field, { key: 'Escape' });
-    expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'gallery.settings' })).toBeInTheDocument();
     expect(field).toHaveFocus();
   });
 
@@ -253,7 +253,7 @@ describe('GalleryToolbar', () => {
         <GalleryToolbar search={search} filters={{ activeCount: 0, render: () => <p>panel body</p> }} />
       </div>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'gallery.filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.settings' }));
     fireEvent.pointerDown(screen.getByText('panel body'));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     fireEvent.pointerDown(screen.getByText('outside'));
@@ -262,7 +262,7 @@ describe('GalleryToolbar', () => {
 
   it('names the active filter count on the filter button', () => {
     render(<GalleryToolbar search={search} filters={{ activeCount: 2, render: () => null }} />);
-    expect(screen.getByRole('button', { name: 'gallery.filters, gallery.filterPanel.activeCount:2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'gallery.settings, gallery.filterPanel.activeCount:2' })).toBeInTheDocument();
   });
 
   it('closes the filter panel when the panel selects, and the bar swaps', () => {
@@ -282,7 +282,7 @@ describe('GalleryToolbar', () => {
       );
     };
     render(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: 'gallery.filters, gallery.filterPanel.activeCount:1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.settings, gallery.filterPanel.activeCount:1' }));
     fireEvent.click(screen.getByRole('button', { name: 'select these' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByTestId('gallery-toolbar')).toHaveAttribute('data-mode', 'selection');
@@ -414,12 +414,12 @@ describe('GalleryToolbar', () => {
           selection={selection({ isSelectionMode: true, selectedCount: 1 })}
         />,
       );
-      fireEvent.click(screen.getByRole('button', { name: 'gallery.filters' }));
-      expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toHaveAttribute('aria-modal', 'true');
+      fireEvent.click(screen.getByRole('button', { name: 'gallery.settings' }));
+      expect(screen.getByRole('dialog', { name: 'gallery.settings' })).toHaveAttribute('aria-modal', 'true');
       phone = false;
       act(() => listener());
       // Still the sheet, and still the bottom bar.
-      expect(screen.getByRole('dialog', { name: 'gallery.filters' })).toHaveAttribute('aria-modal', 'true');
+      expect(screen.getByRole('dialog', { name: 'gallery.settings' })).toHaveAttribute('aria-modal', 'true');
       expect(screen.getByTestId('gallery-selection-bar')).toBeInTheDocument();
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.queryByRole('dialog')).toBeNull();
@@ -443,14 +443,14 @@ describe('GalleryToolbar', () => {
           selection={selection({ isSelectionMode: true, selectedCount: 1 })}
         />,
       );
-      const phoneButton = screen.getByRole('button', { name: 'gallery.filters' });
+      const phoneButton = screen.getByRole('button', { name: 'gallery.settings' });
       phoneButton.focus();
       fireEvent.click(phoneButton);
       phone = false;
       act(() => listener());
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.queryByTestId('gallery-selection-bar')).toBeNull();
-      expect(screen.getByRole('button', { name: 'gallery.filters' })).toHaveFocus();
+      expect(screen.getByRole('button', { name: 'gallery.settings' })).toHaveFocus();
     });
 
     it('holds the desktop layout while the inline rating asks for name and email', () => {
@@ -490,10 +490,10 @@ describe('GalleryToolbar', () => {
           selection={selection()}
         />,
       );
-      const button = screen.getByRole('button', { name: 'gallery.filters' });
+      const button = screen.getByRole('button', { name: 'gallery.settings' });
       button.focus();
       fireEvent.click(button);
-      const sheet = screen.getByRole('dialog', { name: 'gallery.filters' });
+      const sheet = screen.getByRole('dialog', { name: 'gallery.settings' });
       expect(sheet).toHaveAttribute('aria-modal', 'true');
       // The top bar keeps its search on a phone, so the panel does not repeat it.
       expect(sheet).toHaveTextContent('panel body false');

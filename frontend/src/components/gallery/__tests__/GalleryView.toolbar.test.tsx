@@ -148,7 +148,7 @@ describe('GalleryView toolbar (classic controls)', () => {
   it('selects exactly what the filters leave from the filter panel', async () => {
     show();
     // Feedback settings arrive asynchronously; the Filters button follows.
-    fireEvent.click(await screen.findByRole('button', { name: 'gallery.filters' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'gallery.settings' }));
     fireEvent.click(screen.getByRole('button', { name: 'feedback.likes' }));
     await waitFor(() => expect(captured.grid.photos.map((p) => p.id).sort()).toEqual([10, 7, 9].sort()));
     fireEvent.click(screen.getByRole('button', { name: 'gallery.filterPanel.selectMatches:3' }));
@@ -166,7 +166,7 @@ describe('GalleryView toolbar (classic controls)', () => {
       captured.grid.onSelectionChange(new Set([7, 8]));
     });
     // While selecting, the search sits in the filter panel.
-    fireEvent.click(screen.getByRole('button', { name: 'gallery.filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gallery.settings' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'gallery.searchPhotos' }), { target: { value: 'ceremony' } });
     await waitFor(() => expect(captured.grid.photos.map((p) => p.id)).toEqual([7]));
     expect(screen.getByText('gallery.photosSelected:2')).toBeInTheDocument();

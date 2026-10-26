@@ -1044,6 +1044,7 @@ router.get('/session', async (req, res) => {
         // it does not look like one.
         accessLevel: decoded.type === 'gallery' ? (decoded.accessLevel || 'guest') : undefined,
         viaCustomer: decoded.type === 'gallery' ? decoded.via === 'customer' : undefined,
+        viaClientPin: decoded.type === 'gallery' ? Boolean(decoded.clientPinEntry) : undefined,
         // Full admin payload (or null) — lets the SPA hydrate its user
         // state after a redirect-established session (SSO, #798) where no
         // login JSON response ever reached it.

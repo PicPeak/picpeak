@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GalleryAuthProvider, useGalleryAuth } from '../GalleryAuthContext';
 import { getGalleryToken } from '../../utils/galleryAuthStorage';
 import { getGuestIdentity, storeGuestIdentity } from '../../utils/guestIdentityStorage';
+import { api } from '../../config/api';
 
 const mocks = vi.hoisted(() => ({ enter: vi.fn(), leave: vi.fn() }));
 const SLUG = 'pin-gallery';
@@ -32,8 +33,20 @@ async function mount() {
 
 beforeEach(() => {
   vi.clearAllMocks(); sessionStorage.clear(); localStorage.clear();
-  mocks.enter.mockResolvedValue({ token: 'new-client-token', accessLevel: 'client', viaCustomer: false, event: { id: 9, event_name: 'PIN gallery' } });
+  mocks.enter.mockResolvedValue({ token: 'new-client-token', accessLevel: 'client', viaClientPin: true, viaCustomer: false, event: { id: 9, event_name: 'PIN gallery' } });
   mocks.leave.mockResolvedValue({ token: 'new-guest-token', accessLevel: 'guest', viaCustomer: false, event: { id: 9, event_name: 'PIN gallery' } });
+});
+
+it.each([
+  ['client', true, true],
+  ['client', false, false],
+  ['guest', true, false],
+])('restores %s PIN provenance (%s) only from the server session', async (accessLevel, viaClientPin, expected) => {
+  sessionStorage.setItem(`gallery_access_level_${SLUG}`, 'client');
+  vi.mocked(api.get).mockResolvedValueOnce({ data: { valid: true, type: 'gallery', eventSlug: SLUG, accessLevel, viaClientPin } } as never);
+  await mount();
+  expect(auth.isClient).toBe(accessLevel === 'client');
+  expect(auth.viaClientPin).toBe(expected);
 });
 
 it('replaces both local token and role, purges gallery caches, and keeps guest identity', async () => {
@@ -46,6 +59,7 @@ it('replaces both local token and role, purges gallery caches, and keeps guest i
   client.setQueryData(['gallery-photos', 'other-gallery'], ['other']);
   await act(async () => { await auth.enterClientMode(SLUG, 'pin'); });
   expect(auth.isClient).toBe(true);
+  expect(auth.viaClientPin).toBe(true);
   expect(getGalleryToken(SLUG)).toBe('new-client-token');
   expect(client.getQueryData(['gallery-photos', SLUG, 'all', 'id', 'guest'])).toBeUndefined();
   expect(client.getQueryData(['gallery-people', SLUG, 'client'])).toBeUndefined();
@@ -53,6 +67,7 @@ it('replaces both local token and role, purges gallery caches, and keeps guest i
   client.setQueryData(['gallery-photos', SLUG, 'all', 'id', 'client'], ['hidden-photo']);
   await act(async () => { await auth.leaveClientMode(SLUG); });
   expect(auth.isClient).toBe(false);
+  expect(auth.viaClientPin).toBe(false);
   expect(getGalleryToken(SLUG)).toBe('new-guest-token');
   expect(sessionStorage.getItem(`gallery_access_level_${SLUG}`)).toBeNull();
   expect(client.getQueryData(['gallery-photos', SLUG, 'all', 'id', 'client'])).toBeUndefined();

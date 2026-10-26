@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const { hasColumnCached } = require('./schemaCache');
 const { toTimestamp } = require('./dateNormalize');
 const { AppError } = require('./errors');
+const { parseBooleanInput } = require('./parsers');
 
 const COLUMN = { gallery: 'gallery_password_changed_at', client: 'client_password_changed_at' };
 
@@ -58,7 +59,18 @@ function slideshowCredentialClaim(event) {
   return { showLink: slideshowLinkDigest(event.show_share_token) };
 }
 
+// Binds only PIN-entry sessions to this enrollment. A fresh bcrypt hash on
+// re-enrollment prevents old elevated tokens reviving when the flag returns.
+function clientPinEntryClaim(event) {
+  return { clientPinEntry: crypto.createHash('sha256').update(event.client_password_hash).digest('hex') };
+}
+
 function assertGalleryCredentialCurrent(event, session) {
+  if (event && session?.clientPinEntry !== undefined &&
+    (session.accessLevel !== 'client' || !parseBooleanInput(event.client_access_enabled, false)
+      || !parseBooleanInput(event.client_pin_entry_enabled, false) || !event.client_password_hash
+      || session.clientPinEntry !== clientPinEntryClaim(event).clientPinEntry))
+    throw new AppError('Gallery PIN entry session ended', 401, 'CLIENT_PIN_ENTRY_ENDED');
   // Portal guests use their account credential; an elevated portal client
   // additionally depends on the client PIN and must honor its cutoff.
   if (!event || !session || (session.via === 'customer' && session.accessLevel !== 'client')) return;
@@ -82,4 +94,4 @@ function assertGalleryCredentialCurrent(event, session) {
   }
 }
 
-module.exports = { credentialChangeColumns, sameAsStored, slideshowCredentialClaim, assertGalleryCredentialCurrent };
+module.exports = { credentialChangeColumns, sameAsStored, slideshowCredentialClaim, clientPinEntryClaim, assertGalleryCredentialCurrent };

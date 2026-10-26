@@ -29,11 +29,12 @@ it('focuses the PIN, submits it without persisting it, and restores focus on clo
 });
 
 it.each([
-  [401, undefined, 'clientAccess.invalidPin'],
-  [423, undefined, 'auth.tooManyAttempts'],
+  [401, undefined, 'Invalid PIN. Please try again.'],
+  [423, undefined, 'PIN entry is temporarily paused. Try again later or use your private client link.'],
+  [429, undefined, 'PIN entry is busy. Please wait a moment and try again.'],
   [403, 'CLIENT_ACCESS_UNAVAILABLE', 'PIN entry is no longer available for this gallery.'],
   [401, 'TOKEN_REVOKED', 'Your gallery session has ended. Reopen the gallery and try again.'],
-  [503, undefined, 'clientAccess.loginFailed'],
+  [503, undefined, 'Client access could not be opened. Please try again.'],
 ])('handles HTTP %s (%s) without losing the dialog', async (status, code, message) => {
   const submit = vi.fn().mockRejectedValue({ response: { status, data: { code } } });
   render(<GalleryClientAccessDialog onClose={vi.fn()} onSubmit={submit} />);

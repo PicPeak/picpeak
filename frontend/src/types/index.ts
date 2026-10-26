@@ -590,6 +590,7 @@ export interface GalleryAuthResponse {
   };
   accessLevel?: GalleryAccessLevel;
   viaCustomer?: boolean;
+  viaClientPin?: boolean;
 }
 
 // API Error type

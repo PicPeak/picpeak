@@ -29,7 +29,7 @@ export const GalleryClientAccessDialog: React.FC<Props> = ({ onClose, onSubmit }
           <button type="button" onClick={onClose} disabled={pending} aria-label={t('common.close', 'Close')}
             className="text-muted-theme hover:text-theme disabled:opacity-50"><X className="w-5 h-5" /></button>
         </div>
-        <p className="text-sm text-muted-theme mb-4">{t('clientAccess.description')}</p>
+        <p className="text-sm text-muted-theme mb-4">{t('clientAccess.pinEntryDialogDescription', 'Enter your client PIN to open the client view, including hidden photos and client download options. Visibility changes affect what guests see.')}</p>
         <form className="space-y-4" onSubmit={async (e) => {
           e.preventDefault();
           if (submitting.current || !pin.trim()) return;
@@ -40,10 +40,12 @@ export const GalleryClientAccessDialog: React.FC<Props> = ({ onClose, onSubmit }
           catch (err: unknown) {
             const response = (err as { response?: { status?: number; data?: { code?: string } } }).response;
             const code = response?.data?.code;
-            setError(response?.status === 423 ? t('auth.tooManyAttempts')
+            setError(response?.status === 423 ? t('clientAccess.pinEntryLocked', 'PIN entry is temporarily paused. Try again later or use your private client link.')
+              : response?.status === 429 ? t('clientAccess.pinEntryBusy', 'PIN entry is busy. Please wait a moment and try again.')
               : code === 'CLIENT_ACCESS_UNAVAILABLE' ? t('clientAccess.entryUnavailable', 'PIN entry is no longer available for this gallery.')
               : response?.status === 401 && code ? t('clientAccess.sessionExpired', 'Your gallery session has ended. Reopen the gallery and try again.')
-              : response?.status === 401 ? t('clientAccess.invalidPin') : t('clientAccess.loginFailed'));
+              : response?.status === 401 ? t('clientAccess.pinEntryInvalidPin', 'Invalid PIN. Please try again.')
+              : t('clientAccess.pinEntryFailed', 'Client access could not be opened. Please try again.'));
           } finally { submitting.current = false; setPending(false); setPin(''); }
         }}>
           <Input ref={inputRef} themed type="password" label={t('clientAccess.pinLabel')}

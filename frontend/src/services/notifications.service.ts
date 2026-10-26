@@ -153,6 +153,8 @@ export const notificationsService = {
         return t('admin.notificationMessages.generalSettingsUpdated');
       case 'security_settings_updated':
         return t('admin.notificationMessages.securitySettingsUpdated');
+      case 'gallery_pin_entry_paused':
+        return t('admin.notificationMessages.galleryPinEntryPaused', { eventName: notification.eventName || '' });
       case 'admin_profile_updated':
         return t('admin.notificationMessages.adminProfileUpdated', {
           actorName: notification.actorName,
@@ -492,6 +494,8 @@ export const notificationsService = {
       // Client activity (#746) — guest actions surfaced to the photographer.
       case 'gallery_opened':
         return { icon: 'Eye', color: 'text-info-text' };
+      case 'gallery_pin_entry_paused':
+        return { icon: 'Shield', color: 'text-warning-text' };
       case 'gallery_downloaded':
         return { icon: 'Download', color: 'text-success-text' };
       case 'api_photo_downloaded':

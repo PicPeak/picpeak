@@ -15,7 +15,7 @@ let photos: PhotosResult;
 // Hooks hand back the same objects on every render, as the real ones do;
 // fresh ones each time would re-run the view's effects without end.
 const stable = vi.hoisted(() => ({
-  auth: { logout: () => {}, endSession: () => {}, isClient: false, viaCustomer: false,
+  auth: { logout: () => {}, endSession: () => {}, isClient: false, viaCustomer: false, viaClientPin: false,
     enterClientMode: vi.fn(), leaveClientMode: vi.fn() },
   theme: { setTheme: () => {}, theme: { galleryLayout: 'gallery-premium' } as { galleryLayout: string } },
   download: { mutate: () => {}, isPending: false },
@@ -116,6 +116,7 @@ describe.each(['grid', 'gallery-premium', 'gallery-story'])('gallery PIN entry o
   beforeEach(() => {
     stable.theme.theme = { galleryLayout: layout };
     stable.auth.isClient = false;
+    stable.auth.viaClientPin = false;
     stable.auth.enterClientMode.mockReset().mockResolvedValue(undefined);
     stable.auth.leaveClientMode.mockReset().mockResolvedValue(undefined);
   });
@@ -135,11 +136,19 @@ describe.each(['grid', 'gallery-premium', 'gallery-story'])('gallery PIN entry o
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
-  it('offers a real guest downgrade to an existing client', async () => {
+  it('offers a real guest downgrade to a PIN-entry client', async () => {
     stable.auth.isClient = true;
+    stable.auth.viaClientPin = true;
     show();
     fireEvent.click(screen.getByRole('button', { name: 'clientAccess.returnToGallery' }));
     await waitFor(() => expect(stable.auth.leaveClientMode).toHaveBeenCalledExactlyOnceWith('wedding'));
+  });
+
+  it('keeps a private-link client in client view without a misleading return action', () => {
+    stable.auth.isClient = true;
+    show(true);
+    expect(screen.queryByRole('button', { name: 'clientAccess.returnToGallery' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'clientAccess.manageGallery' })).not.toBeInTheDocument();
   });
 });
 

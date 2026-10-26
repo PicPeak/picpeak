@@ -45,6 +45,8 @@ interface GalleryAuthContextType {
   isClient: boolean;
   /** Session was minted by the customer portal — credentialed, bypasses reveal. */
   viaCustomer: boolean;
+  /** This session entered the client role from the regular gallery PIN form. */
+  viaClientPin: boolean;
   login: (slug: string, password?: string, recaptchaToken?: string | null) => Promise<void>;
   clientLogin: (slug: string, password: string, token: string) => Promise<void>;
   enterClientMode: (slug: string, password: string) => Promise<void>;
@@ -80,6 +82,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
   const [event, setEvent] = useState<GalleryEvent | null>(null);
   const [accessLevel, setAccessLevel] = useState<GalleryAccessLevel>('guest');
   const [viaCustomer, setViaCustomer] = useState(false);
+  const [viaClientPin, setViaClientPin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSwitchingClientMode, setIsSwitchingClientMode] = useState(false);
@@ -234,7 +237,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         setIsLoading(true);
         const sessionResponse = await api.get<{
           valid: boolean; type: string; eventSlug?: string;
-          accessLevel?: GalleryAccessLevel; viaCustomer?: boolean; token?: string;
+          accessLevel?: GalleryAccessLevel; viaCustomer?: boolean; viaClientPin?: boolean; token?: string;
         }>(
           '/auth/session',
           { params: { slug: currentSlug } }
@@ -262,6 +265,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
             sessionStorage.removeItem(`gallery_access_level_${currentSlug}`);
           }
           setViaCustomer(Boolean(sessionResponse.data.viaCustomer));
+          setViaClientPin(sessionResponse.data.accessLevel === 'client' && sessionResponse.data.viaClientPin === true);
 
           // Always refresh from the server — the stored event from sessionStorage
           // is shown above as an instant placeholder for perceived perf, but it
@@ -353,6 +357,9 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       setError(null);
       setIsLoading(true);
       const response = await authService.verifyGalleryPassword(slug, password, recaptchaToken);
+      setViaClientPin(false);
+      setViaCustomer(false);
+      setAccessLevel('guest');
       // Store token and slug BEFORE setting authenticated state to avoid
       // race condition where photo queries fire before token is available
       if (response.token) {
@@ -379,6 +386,8 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       setError(null);
       setIsLoading(true);
       const response = await authService.clientLogin(slug, password, token);
+      setViaClientPin(false);
+      setViaCustomer(false);
       if (response.token) {
         storeGalleryToken(slug, response.token);
       }
@@ -425,6 +434,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       const nextLevel = response.accessLevel || 'guest';
       setAccessLevel(nextLevel);
       setViaCustomer(response.viaCustomer === true);
+      setViaClientPin(nextLevel === 'client' && response.viaClientPin === true);
       if (nextLevel === 'client') sessionStorage.setItem(`gallery_access_level_${slug}`, 'client');
       else sessionStorage.removeItem(`gallery_access_level_${slug}`);
       setError(null);
@@ -459,6 +469,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
     setEvent(null);
     setAccessLevel('guest');
     setViaCustomer(false);
+    setViaClientPin(false);
     clearActiveGallerySlug();
   };
   const logout = () => closeSession(false);
@@ -472,6 +483,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         accessLevel,
         isClient: accessLevel === 'client',
         viaCustomer,
+        viaClientPin,
         login,
         clientLogin: clientLoginFn,
         enterClientMode: (slug, password) => changeClientMode(slug, password),

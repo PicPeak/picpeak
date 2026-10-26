@@ -1847,11 +1847,32 @@ module.exports = (router) => {
 
       const currentRequirePassword = parseBooleanInput(event.require_password, true);
 
+      const storedPinEntry = parseBooleanInput(event.client_access_enabled, false)
+        && parseBooleanInput(event.client_pin_entry_enabled, false);
+      const nextClientAccess = Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled')
+        ? parseBooleanInput(updates.client_access_enabled, false) : parseBooleanInput(event.client_access_enabled, false);
+      const requestedPinEntry = Object.prototype.hasOwnProperty.call(updates, 'client_pin_entry_enabled')
+        ? parseBooleanInput(updates.client_pin_entry_enabled, false) : storedPinEntry;
+      const nextPinEntry = nextClientAccess && requestedPinEntry;
+      if (!nextClientAccess && Object.prototype.hasOwnProperty.call(updates, 'client_pin_entry_enabled') && requestedPinEntry)
+        return res.status(400).json({ error: 'Enable Client Access before gallery PIN entry', code: 'CLIENT_ACCESS_REQUIRED' });
+      try {
+        require('../../services/galleryPinEntryService').validateEnrollment({ enabled: nextPinEntry,
+          clientAccessEnabled: nextClientAccess, wasEnabled: storedPinEntry, password: recoverable.clientPassword });
+      } catch (error) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
+      }
+      const enablingPinEntry = nextPinEntry && !storedPinEntry;
+      const touchesClientSecurity = Object.prototype.hasOwnProperty.call(updates, 'client_pin_entry_enabled')
+        || Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled') || Boolean(recoverable.clientPassword);
+
       // Resubmitting the current client password is not a change: keep the hash
       // and the client sessions opened with it.
       if (updates.client_password_hash) {
         if (await sameAsStored(recoverable.clientPassword, event.client_password_hash)) {
-          delete updates.client_password_hash;
+          // Re-enrollment always gets a fresh hash, even with the same PIN:
+          // old PIN-entry tokens must not revive when the opt-in returns.
+          if (!enablingPinEntry) delete updates.client_password_hash;
           keptClientHash = true;
         } else {
           credentialChanges.add('client');
@@ -2091,10 +2112,11 @@ module.exports = (router) => {
 
       // Handle client access fields (#172)
       if (Object.prototype.hasOwnProperty.call(updates, 'client_pin_entry_enabled')) {
-        updates.client_pin_entry_enabled = formatBoolean(parseBooleanInput(updates.client_pin_entry_enabled, false));
+        updates.client_pin_entry_enabled = formatBoolean(nextPinEntry);
       }
       if (Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled')) {
-        updates.client_access_enabled = formatBoolean(updates.client_access_enabled);
+        updates.client_access_enabled = formatBoolean(nextClientAccess);
+        if (!nextClientAccess || !storedPinEntry) updates.client_pin_entry_enabled = formatBoolean(nextPinEntry);
         if (!parseBooleanInput(updates.client_access_enabled, false) && parseBooleanInput(event.client_access_enabled, false)) {
           credentialChanges.add('client');
         }
@@ -2103,8 +2125,8 @@ module.exports = (router) => {
           updates.client_share_token = crypto.randomBytes(32).toString('hex');
         }
       }
-      // Client login needs the link token as well as the PIN, so a PIN never
-      // stays without one (older rows, or a PIN set on its own).
+      // Keep the private link available as an independent entry path,
+      // including when a gallery also opts into PIN-only entry.
       if ((updates.client_password_hash || event.client_password_hash)
         && !event.client_share_token && !updates.client_share_token) {
         updates.client_share_token = crypto.randomBytes(32).toString('hex');
@@ -2138,7 +2160,15 @@ module.exports = (router) => {
           let eventUpdate = db('events').where('id', id);
           if (keptGalleryHash) eventUpdate = eventUpdate.where('password_hash', event.password_hash);
           if (keptClientHash) eventUpdate = eventUpdate.where('client_password_hash', event.client_password_hash);
+          if (touchesClientSecurity) eventUpdate = eventUpdate.where({
+            client_access_enabled: event.client_access_enabled,
+            client_pin_entry_enabled: event.client_pin_entry_enabled,
+            client_password_hash: event.client_password_hash,
+          });
           const updated = await eventUpdate.update(updates);
+          if (!updated && touchesClientSecurity) return res.status(409).json({
+            error: 'Client access changed while saving. Reload and try again.', code: 'CLIENT_ACCESS_CHANGED',
+          });
           if (!updated && (keptGalleryHash || keptClientHash)) {
             // A password changed underneath: write the submitted ones as changes.
             if (keptGalleryHash) {

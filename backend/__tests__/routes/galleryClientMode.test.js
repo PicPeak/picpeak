@@ -16,8 +16,9 @@ const token = (claims = {}) => jwt.sign({
   type: 'gallery', eventId, eventSlug: slug, jti: crypto.randomUUID(),
   iat: Math.floor(Date.now() / 1000) - 60, ...claims,
 }, process.env.JWT_SECRET, { issuer: 'picpeak-auth', expiresIn: '1h' });
-const enter = (bearer, password = pin) => {
+const enter = (bearer, password = pin, ip) => {
   const req = request(app).post(`${path}/client-elevate`).send({ password });
+  if (ip) req.set('X-Forwarded-For', ip);
   return bearer ? req.set('Authorization', `Bearer ${bearer}`) : req;
 };
 const photos = (bearer) => request(app).get(`/api/gallery/${slug}/photos`).set('Authorization', `Bearer ${bearer}`);
@@ -41,15 +42,18 @@ beforeAll(async () => {
     { id: 719933, event_id: eventId, filename: 'pending.jpg', path: 'pending.jpg', type: 'individual', visibility: 'hidden', moderation_status: 'pending', size_bytes: 100 },
   ]);
   app = express(); app.use(express.json()); app.use(cookieParser());
+  app.set('trust proxy', 1);
   app.use('/api', require('../../src/middleware/csrf'));
   app.use('/api/auth', require('../../src/routes/auth'));
   app.use('/api/gallery', require('../../src/routes/gallery'));
   app.use('/api/admin/events', require('../../src/routes/adminEvents'));
+  app.use('/api/admin/notifications', require('../../src/routes/adminNotifications'));
 });
 
 beforeEach(async () => {
   await db('login_attempts').del();
   await db('revoked_tokens').del();
+  await db('activity_logs').where({ activity_type: 'gallery_pin_entry_paused', event_id: eventId }).del();
   await db('events').where({ id: eventId }).update({
     is_active: 1, is_archived: 0, is_draft: 0, require_password: 1, expires_at: null,
     client_access_enabled: 1, client_pin_entry_enabled: 1, client_password_hash: pinHash,
@@ -80,7 +84,7 @@ it('elevates the same-gallery guest without a private link, with bounded expiry 
   expect(res.headers['set-cookie'].join(';')).toMatch(/HttpOnly/);
   expect(JSON.stringify(res.body)).not.toContain(pinHash);
   expect(JSON.stringify(res.body)).not.toContain(privateLink);
-  expect((await photos(guest)).body.photos.map((p) => p.id)).toEqual([719931]);
+  expect((await photos(guest)).status).toBe(401);
   const clientPhotos = await photos(res.body.token);
   expect(clientPhotos.status).toBe(200);
   expect(clientPhotos.body.photos.map((p) => p.id).sort()).toEqual([719931, 719932]);
@@ -103,11 +107,107 @@ it('retains private-link-plus-PIN login even when gallery PIN entry is disabled'
   expect((await request(app).post(`${path}/client-login`).send({ password: pin, token: privateLink })).status).toBe(200);
 });
 
-it('shares the failed-PIN lockout with the existing private-link login', async () => {
-  for (let i = 0; i < 4; i += 1) expect((await enter(token(), 'wrong')).status).toBe(401);
-  expect((await request(app).post(`${path}/client-login`).send({ password: 'wrong', token: privateLink })).status).toBe(401);
+it('caps failed PIN guesses across rotating addresses without locking the private client link', async () => {
+  for (let i = 0; i < 5; i += 1) expect((await enter(token(), 'wrong-pin', `203.0.113.${i + 1}`)).status).toBe(401);
   expect((await enter(token())).status).toBe(423);
-  expect((await request(app).post(`${path}/client-login`).send({ password: pin, token: privateLink })).status).toBe(423);
+  expect((await request(app).post(`${path}/client-login`).send({ password: pin, token: privateLink })).status).toBe(200);
+  const notices = await db('activity_logs').where({ activity_type: 'gallery_pin_entry_paused', event_id: eventId });
+  expect(notices).toHaveLength(1);
+  expect(JSON.stringify(notices)).not.toContain(pin);
+  const bell = await request(app).get('/api/admin/notifications').set('Authorization', `Bearer ${mintAdminToken(adminId)}`);
+  expect(bell.status).toBe(200);
+  expect(bell.body.notifications).toContainEqual(expect.objectContaining({ type: 'gallery_pin_entry_paused', eventId, eventName: 'PIN entry gallery' }));
+});
+
+it('reserves the gallery budget before checking concurrent guesses', async () => {
+  const bcrypt = require('bcrypt');
+  let release;
+  let ready;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const allStarted = new Promise((resolve) => { ready = resolve; });
+  let started = 0;
+  const compare = jest.spyOn(bcrypt, 'compare').mockImplementation(async () => {
+    started += 1;
+    if (started === 5) ready();
+    await blocked;
+    return false;
+  });
+  const requests = Array.from({ length: 5 }, (_, i) => enter(token(), 'wrong-pin', `198.51.100.${i + 1}`).then((res) => res));
+  let timer;
+  try {
+    await Promise.race([allStarted, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Concurrent checks did not start')), 5000); })]);
+    const overflow = await enter(token(), 'wrong-pin', '198.51.100.99');
+    expect(overflow.status).toBe(429);
+    expect(overflow.body.code).toBe('CLIENT_PIN_ENTRY_BUSY');
+    expect(compare).toHaveBeenCalledTimes(5);
+  } finally {
+    clearTimeout(timer);
+    release();
+    const results = await Promise.all(requests);
+    compare.mockRestore();
+    expect(results.map((res) => res.status)).toEqual([401, 401, 401, 401, 401]);
+  }
+  const locked = await enter(token());
+  expect(locked.status).toBe(423);
+  expect(Number(locked.headers['retry-after'])).toBeGreaterThan(1700);
+  expect(await db('activity_logs').where({ activity_type: 'gallery_pin_entry_paused', event_id: eventId })).toHaveLength(1);
+});
+
+// Inject storage failures at the database boundary so the route and its real
+// transaction/revocation handling still run on both supported engines.
+async function failInserts(table, run) {
+  const pg = db.client.config.client === 'pg';
+  if (pg) {
+    await db.raw("CREATE FUNCTION pin_test_refuse_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test storage failure'; END $$");
+    await db.raw(`CREATE TRIGGER pin_test_failure BEFORE INSERT ON ${table} FOR EACH ROW EXECUTE FUNCTION pin_test_refuse_insert()`);
+  } else await db.raw(`CREATE TRIGGER pin_test_failure BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT, 'test storage failure'); END`);
+  try { await run(); }
+  finally {
+    await db.raw(`DROP TRIGGER pin_test_failure${pg ? ` ON ${table}` : ''}`);
+    if (pg) await db.raw('DROP FUNCTION pin_test_refuse_insert()');
+  }
+}
+
+it.each(['login_attempts', 'revoked_tokens'])('fails closed when %s cannot be written, without stranding the visitor', async (table) => {
+  const guest = token();
+  await failInserts(table, async () => {
+    const response = await enter(guest);
+    expect(response.status).toBe(503);
+    expect(response.body.token).toBeUndefined();
+    expect(response.headers['set-cookie']).toBeUndefined();
+  });
+  expect((await photos(guest)).status).toBe(200);
+});
+
+it('retains PIN-entry provenance in media grants and refuses them immediately after opt-out', async () => {
+  const elevated = await enter(token());
+  expect(elevated.status).toBe(200);
+  const access = require('../../src/services/galleryAccessService');
+  const event = await db('events').where({ id: eventId }).first();
+  const grant = access.grant(event, 'gallery', jwt.decode(elevated.body.token));
+  expect(grant.session.clientPinEntry).toEqual(expect.any(String));
+  await expect(access.authorize(event, grant)).resolves.toBe(grant);
+  expect((await update({ client_pin_entry_enabled: false })).status).toBe(200);
+  await expect(access.authorize(await db('events').where({ id: eventId }).first(), grant))
+    .rejects.toMatchObject({ code: 'CLIENT_PIN_ENTRY_ENDED' });
+});
+
+it('does not issue client access if the owner opts out during a PIN check', async () => {
+  const bcrypt = require('bcrypt');
+  const originalCompare = bcrypt.compare.bind(bcrypt);
+  const compare = jest.spyOn(bcrypt, 'compare').mockImplementationOnce(async (...args) => {
+    await db('events').where({ id: eventId }).update({ client_pin_entry_enabled: 0 });
+    return originalCompare(...args);
+  });
+  const guest = token();
+  try {
+    const response = await enter(guest);
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('CLIENT_ACCESS_UNAVAILABLE');
+    expect(response.body.token).toBeUndefined();
+    expect(response.headers['set-cookie']).toBeUndefined();
+  } finally { compare.mockRestore(); }
+  expect((await photos(guest)).status).toBe(200);
 });
 
 it.each([
@@ -152,7 +252,7 @@ it('does not substitute an admin preview for a gallery session', async () => {
 
 it('leaves the current guest session valid after an incorrect PIN', async () => {
   const guest = token();
-  const res = await enter(guest, 'wrong');
+  const res = await enter(guest, 'wrong-pin');
   expect(res.status).toBe(401);
   expect(res.headers['set-cookie']).toBeUndefined();
   expect((await photos(guest)).status).toBe(200);
@@ -228,4 +328,122 @@ it('permits only the owner to opt into the new credential path', async () => {
 it('normalizes the string false accepted by boolean request validation', async () => {
   expect((await update({ client_pin_entry_enabled: 'false' })).status).toBe(200);
   expect(Boolean((await db('events').where({ id: eventId }).first()).client_pin_entry_enabled)).toBe(false);
+});
+
+it('requires fresh strong PIN enrollment, including for a gallery with a legacy short PIN', async () => {
+  await db('events').where({ id: eventId }).update({ client_pin_entry_enabled: 0,
+    client_password_hash: await require('bcrypt').hash('1234', 4) });
+  for (const password of [undefined, '123456', '1234567', '        ']) {
+    const res = await update({ client_pin_entry_enabled: true, ...(password === undefined ? {} : { client_password: password }) });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('CLIENT_PIN_ENTRY_PASSWORD_REQUIRED');
+    expect(Boolean((await db('events').where({ id: eventId }).first()).client_pin_entry_enabled)).toBe(false);
+  }
+  expect((await update({ client_pin_entry_enabled: true, client_password: '12345678' })).status).toBe(200);
+  expect((await enter(token(), '12345678')).status).toBe(200);
+  expect((await update({ client_password: '123456' })).status).toBe(400);
+  expect((await update({ client_pin_entry_enabled: false, client_password: '123456' })).status).toBe(200);
+});
+
+it('validates PIN entry in the shared creation service before writing a gallery', async () => {
+  const create = (password) => request(app).post('/api/admin/events').set('Authorization', `Bearer ${mintAdminToken(adminId)}`)
+    .send({ event_type: 'wedding', event_name: `PIN enrollment ${crypto.randomUUID()}`, event_date: '2026-11-01',
+      customer_name: 'Review client', customer_email: 'client@example.test', admin_email: 'owner@example.test', require_password: false,
+      client_access_enabled: true, client_pin_entry_enabled: true, client_password: password });
+  expect((await create('123456')).status).toBe(400);
+  const response = await create('12345678');
+  expect(response.status).toBe(200);
+  const created = await db('events').where({ id: response.body.event?.id ?? response.body.id }).first();
+  expect(Boolean(created.client_pin_entry_enabled)).toBe(true);
+});
+
+it('ends PIN-entry access immediately on opt-out without ending a private-link client session, and prevents revival', async () => {
+  const privateSession = await request(app).post(`${path}/client-login`).send({ password: pin, token: privateLink });
+  const elevated = await enter(token());
+  expect(elevated.status).toBe(200);
+  expect(elevated.body.viaClientPin).toBe(true);
+  const auth = (bearer) => request(app).get('/api/auth/session').set('Authorization', `Bearer ${bearer}`)
+    .set('X-Gallery-Slug', slug);
+  expect((await auth(elevated.body.token)).body.viaClientPin).toBe(true);
+  expect((await update({ client_pin_entry_enabled: false })).status).toBe(200);
+  expect((await photos(elevated.body.token)).status).toBe(401);
+  expect((await auth(elevated.body.token)).body.valid).toBe(false);
+  expect((await photos(privateSession.body.token)).status).toBe(200);
+  // Reconfirming the SAME PIN still replaces this enrollment's hash. This
+  // stays safe within the same second, unlike a second-resolution iat cutoff.
+  expect((await update({ client_pin_entry_enabled: true })).status).toBe(400);
+  expect((await update({ client_pin_entry_enabled: true, client_password: pin })).status).toBe(200);
+  expect((await photos(elevated.body.token)).status).toBe(401);
+  expect((await photos(privateSession.body.token)).status).toBe(200);
+  const replacement = await enter(token());
+  expect(replacement.status).toBe(200);
+  expect(jwt.decode(replacement.body.token).clientPinEntry).not.toBe(jwt.decode(elevated.body.token).clientPinEntry);
+});
+
+it('does not restore PIN entry silently when Client Access is disabled and enabled again', async () => {
+  const elevated = await enter(token());
+  expect((await update({ client_access_enabled: false })).status).toBe(200);
+  const disabled = await db('events').where({ id: eventId }).first();
+  expect(Boolean(disabled.client_pin_entry_enabled)).toBe(false);
+  expect((await photos(elevated.body.token)).status).toBe(401);
+  expect((await update({ client_access_enabled: true })).status).toBe(200);
+  expect((await enter(token())).status).toBe(403);
+});
+
+it('refuses a stale enrollment save when another owner edit disables Client Access', async () => {
+  await db('events').where({ id: eventId }).update({ client_pin_entry_enabled: 0 });
+  const bcrypt = require('bcrypt');
+  const originalCompare = bcrypt.compare.bind(bcrypt);
+  const compare = jest.spyOn(bcrypt, 'compare').mockImplementationOnce(async (...args) => {
+    // sameAsStored runs after the edit route has loaded its event snapshot.
+    await db('events').where({ id: eventId }).update({ client_access_enabled: 0, client_pin_entry_enabled: 0 });
+    return originalCompare(...args);
+  });
+  try {
+    const response = await update({ client_pin_entry_enabled: true, client_password: pin });
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('CLIENT_ACCESS_CHANGED');
+  } finally { compare.mockRestore(); }
+  const event = await db('events').where({ id: eventId }).first();
+  expect(Boolean(event.client_access_enabled)).toBe(false);
+  expect(Boolean(event.client_pin_entry_enabled)).toBe(false);
+});
+
+it('revokes the previous client token when an existing client session re-enters PIN mode', async () => {
+  const first = await enter(token());
+  const second = await enter(first.body.token);
+  expect(second.status).toBe(200);
+  expect((await photos(first.body.token)).status).toBe(401);
+  expect((await photos(second.body.token)).status).toBe(200);
+});
+
+it('keeps the private-link failure bucket separate in both directions', async () => {
+  for (let i = 0; i < 5; i += 1) {
+    expect((await request(app).post(`${path}/client-login`).send({ password: crypto.randomUUID(), token: privateLink })).status).toBe(401);
+  }
+  expect((await request(app).post(`${path}/client-login`).send({ password: pin, token: privateLink })).status).toBe(423);
+  expect((await enter(token())).status).toBe(200);
+});
+
+it('keeps the gallery pause for its full configured duration and emits one owner notice', async () => {
+  for (let i = 0; i < 5; i += 1) await enter(token(), 'wrong-pin', `203.0.113.${i + 1}`);
+  // The failures are outside the 15m attempt window, but the 30m pause still
+  // has 10m remaining. Restarting a process cannot erase the persisted pause.
+  await db('login_attempts').where('identifier', 'like', `client-pin%:${eventId}`)
+    .update({ attempt_time: new Date(Date.now() - 20 * 60 * 1000).toISOString() });
+  const locked = await enter(token());
+  expect(locked.status).toBe(423);
+  expect(locked.body.retryAfter).toBeGreaterThan(9 * 60);
+  expect(locked.headers['retry-after']).toBe(String(locked.body.retryAfter));
+  expect(await db('activity_logs').where({ activity_type: 'gallery_pin_entry_paused', event_id: eventId })).toHaveLength(1);
+  await db('login_attempts').where({ identifier: `client-pin-lock:${eventId}` })
+    .update({ attempt_time: new Date(Date.now() - 31 * 60 * 1000).toISOString() });
+  expect((await enter(token())).status).toBe(200);
+});
+
+it('successful PIN entry does not erase failures from other visitors', async () => {
+  for (let i = 0; i < 4; i += 1) await enter(token(), 'wrong-pin', `203.0.113.${i + 1}`);
+  expect((await enter(token())).status).toBe(200);
+  expect((await enter(token(), 'wrong-pin', '203.0.113.9')).status).toBe(401);
+  expect((await enter(token())).status).toBe(423);
 });

@@ -2345,7 +2345,7 @@
       "browse": "Galeriewerkzeuge",
       "selection": "Auswahl"
     },
-    "settings": "Galerie-Einstellungen"
+    "settings": "Galerie-Optionen"
   },
   "categories": {
     "title": "Fotokategorien",
@@ -5146,6 +5146,7 @@
       "brandingUpdated": "Branding-Einstellungen aktualisiert",
       "generalSettingsUpdated": "Allgemeine Einstellungen aktualisiert",
       "securitySettingsUpdated": "Sicherheitseinstellungen aktualisiert",
+      "galleryPinEntryPaused": "PIN-Eingabe nach wiederholten Fehlversuchen in {{eventName}} pausiert. Private Kundenlinks bleiben verfügbar.",
       "themeUpdated": "Theme-Einstellungen aktualisiert",
       "archiveDownloaded": "Archiv für \"{{eventName}}\" heruntergeladen",
       "archiveDeleted": "Archiv für \"{{eventName}}\" gelöscht",
@@ -5557,6 +5558,7 @@
     "activities": {
       "event_created": "Neues Ereignis erstellt: {{eventName}}",
       "gallery_opened": "Galerie „{{eventName}}“ wurde geöffnet",
+      "gallery_pin_entry_paused": "PIN-Eingabe nach wiederholten Fehlversuchen in {{eventName}} pausiert. Private Kundenlinks bleiben verfügbar.",
       "gallery_downloaded": "Fotos aus „{{eventName}}“ wurden heruntergeladen",
       "photos_uploaded": "{{count}} Fotos hochgeladen in {{eventName}}",
       "media_uploaded": "{{media}} hochgeladen in {{eventName}}",
@@ -6828,7 +6830,16 @@
     "returnToGallery": "Zurück zur Galerie",
     "returnFailed": "Die Rückkehr zur Galerie ist fehlgeschlagen. Bitte versuche es erneut.",
     "pinEntryToggle": "PIN-Eingabe in der regulären Galerie erlauben",
-    "pinEntryDescription": "Besucher, die diese Galerie öffnen können, können mit der Kunden-PIN die Sichtbarkeit der Fotos verwalten. Der private Kundenlink bleibt ebenfalls verfügbar.",
+    "pinEntryDescription": "Besucher mit der PIN erhalten den vollständigen Kundenzugang, einschließlich ausgeblendeter Fotos, Originale und Vorschauen vor der Freigabe. Beim Ausschalten enden die PIN-Sitzungen; der private Kundenlink bleibt verfügbar.",
+    "pinEntryDialogDescription": "Gib deine Kunden-PIN ein, um die Kundenansicht mit ausgeblendeten Fotos und den Downloadoptionen für Kunden zu öffnen. Änderungen der Sichtbarkeit bestimmen, was Gäste sehen.",
+    "pinEntryInvalidPin": "Ungültige PIN. Bitte versuche es erneut.",
+    "pinEntryLocked": "Die PIN-Eingabe ist vorübergehend pausiert. Versuche es später erneut oder nutze deinen privaten Kundenlink.",
+    "pinEntryBusy": "Die PIN-Eingabe ist gerade ausgelastet. Warte einen Moment und versuche es erneut.",
+    "pinEntryFailed": "Der Kundenzugang konnte nicht geöffnet werden. Bitte versuche es erneut.",
+    "pinEntryEnrollTitle": "PIN-Eingabe in der Galerie aktivieren",
+    "pinEntryEnrollHelp": "Gib die bisherige PIN erneut ein oder lege eine neue mit mindestens 8 Zeichen fest. Bei einer öffentlichen Galerie ist diese PIN das einzige Geheimnis, das den Kundenzugang schützt.",
+    "pinEntryPinHelper": "Die PIN-Eingabe in der Galerie erfordert mindestens 8 Zeichen.",
+    "pinEntrySaveFailed": "Die PIN-Eingabe konnte nicht aktiviert werden. Prüfe, ob der Kundenzugang noch aktiviert ist, und versuche es erneut.",
     "entryUnavailable": "Die PIN-Eingabe ist für diese Galerie nicht mehr verfügbar.",
     "sessionExpired": "Deine Galeriesitzung ist abgelaufen. Öffne die Galerie erneut und versuche es noch einmal."
   },
