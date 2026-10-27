@@ -28,6 +28,8 @@ import { effectivePhotoPrice, formatPhotoPrice, snipcartItemProps } from '../../
 import { lockBodyScroll } from '../../utils/scrollLock';
 import { pushDialogLayer } from '../common/Modal';
 import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
+import { LightboxOpenGrow } from './LightboxOpenGrow';
+import type { LightboxOrigin } from './hooks/useTileClickOrigin';
 import { usePhotoLabels } from './PhotoLabels';
 import { useLightboxScrub } from './hooks/useLightboxScrub';
 import { usePendingAwareImageUrl } from './hooks/usePendingAwareImageUrl';
@@ -69,6 +71,9 @@ interface PhotoLightboxProps {
   // The photo on screen, on open and after every step — the host mirrors it
   // to `?photo=` (issue 1733, photoLink.ts).
   onCurrentPhotoChange?: (photoId: number) => void;
+  // The grid tile the lightbox was opened from, when it was opened by a
+  // click on one: the opening photo grows out of it (useTileClickOrigin).
+  openOrigin?: LightboxOrigin | null;
 }
 
 // Finger travel before a single-finger touch starts moving the carousel.
@@ -102,6 +107,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   people,
   onSelectPerson,
   onCurrentPhotoChange,
+  openOrigin = null,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
@@ -261,6 +267,20 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     currentPhotoId,
   );
   const { scrubbing } = scrub;
+  // Opened from a tile: until the photo's preview has loaded, the tile's
+  // image (grown out of the tile) is on screen instead of a black stage. A
+  // preview can take a while (a large original when there is no preview
+  // tier), and the tile's image is in hand. 'thumbnail' when that image would
+  // not show: the fetched thumbnail stands in for it.
+  const [opening, setOpening] = useState<{ photoId: number; origin: LightboxOrigin | 'thumbnail' } | null>(
+    () => (openOrigin && currentPhotoId !== undefined ? { photoId: currentPhotoId, origin: openOrigin } : null),
+  );
+  const openingShown = opening !== null && opening.photoId === currentPhotoId;
+  // Only for the photo opened on: stepping away ends it, as stepping back
+  // finds its slide kept, with no new load to report.
+  useEffect(() => {
+    if (opening && opening.photoId !== currentPhotoId) setOpening(null);
+  }, [currentPhotoId, opening]);
   // The slides are unmounted for the length of a scrub, so a swipe under way
   // has no track left to fire the `transitionend` that would end it: without
   // this the track came back parked on the neighbour, or in a phase that
@@ -343,7 +363,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const handleSlidePreviewLoad = useCallback(() => {
     onPreviewLoad();
     handlePreviewLoaded();
+    setOpening(null);
   }, [onPreviewLoad, handlePreviewLoaded]);
+  // A preview that does not decode is replaced by the fallback, which reports
+  // no load: the stand-ins leave here instead.
+  const handleSlidePreviewError = useCallback(() => {
+    handlePreviewLoaded();
+    setOpening(null);
+  }, [handlePreviewLoaded]);
 
   const { t } = useTranslation();
   // Neutral photo labels (issue 1733, E6): numbered against this lightbox's
@@ -1748,9 +1775,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 // Stable callback: the zoom measures the preview and the scrub's
                 // stand-in leaves once this is in.
                 onLoad={handleSlidePreviewLoad}
-                // A preview that does not decode is replaced by the fallback,
-                // which reports no load: the stand-in leaves here instead.
-                onError={scrub.handlePreviewLoaded}
+                onError={handleSlidePreviewError}
                 useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
                 onFallbackChange={(shown) => setFallbackPhotoId((prev) => (shown ? photo.id : prev === photo.id ? null : prev))}
                 onProtectionViolation={(violationType) => {
@@ -1790,7 +1815,31 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           );
         };
 
+        // The stage's box, shared with the opening stand-in below.
+        const stageStyle: React.CSSProperties = {
+          right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
+          // Stop above the opaque toolbar so it never masks the
+          // photo (#888).
+          bottom: `${toolbarHeight}px`,
+        };
+
         return (
+          <>
+          {/* The opening photo grown out of its tile, before the stage so a
+              loaded slide covers it. Outside the stage, whose overflow would
+              clip a tile under the toolbar. Mounted once the toolbar is
+              measured (a layout effect, before the first paint), so the stage
+              it grows into has its final size. */}
+          {openingShown && opening.origin !== 'thumbnail' && toolbarHeight > 0 && !scrubbing && !isVideoCurrent && (
+            <LightboxOpenGrow
+              origin={opening.origin}
+              aspect={currentPhoto.width && currentPhoto.height ? currentPhoto.width / currentPhoto.height : null}
+              stageStyle={stageStyle}
+              // Its image is gone (a revoked tile URL): the fetched thumbnail
+              // takes its place.
+              onError={() => setOpening((prev) => prev && { ...prev, origin: 'thumbnail' })}
+            />
+          )}
           <div
             ref={trackContainerRef}
             className="absolute top-0 left-0 overflow-hidden z-0"
@@ -1805,10 +1854,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             onTouchCancel={isVideoCurrent ? undefined : handleTouchCancel}
             style={{
               cursor: isVideoCurrent ? 'default' : (zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'),
-              right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
-              // Stop above the opaque toolbar so it never masks the
-              // photo (#888).
-              bottom: `${toolbarHeight}px`,
+              ...stageStyle,
               // Tell the browser we handle horizontal gestures ourselves so
               // it doesn't fight us with edge-swipe back navigation, native
               // pinch-zoom, etc. Videos keep default touch behaviour.
@@ -1818,8 +1864,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             {/* Hold-to-scrub stand-in (issue 1733): the thumbnail, in place of
                 the slides while a key is held — so no preview is requested for
                 a photo passed over — and underneath the landed slide until its
-                preview has loaded. */}
-            {(scrubbing || (scrub.standIn && !isVideoCurrent)) && (
+                preview has loaded. Also underneath the opening photo when the
+                tile's image it grew from will not show. */}
+            {(scrubbing || ((scrub.standIn || (openingShown && opening.origin === 'thumbnail')) && !isVideoCurrent)) && (
               <LightboxScrubStandIn photos={photos} currentIndex={currentIndex} slug={slug} />
             )}
             {scrubbing ? null : isVideoCurrent && videoLocked ? (
@@ -1877,6 +1924,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               </div>
             )}
           </div>
+          </>
         );
       })()}
 
