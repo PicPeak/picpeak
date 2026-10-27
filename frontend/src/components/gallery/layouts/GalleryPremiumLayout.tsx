@@ -304,9 +304,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   // Canvas-rendered and maximum-protection views keep the old limit, as
   // PhotoLightbox keeps them off full-resolution zoom.
   const { data: publicSettings } = usePublicSettings();
-  const maxZoomPercent = useCanvasRendering || protectionLevel === 'maximum'
-    ? DEFAULT_MAX_ZOOM_PERCENT
-    : publicSettings?.gallery_lightbox_max_zoom_percent ?? DEFAULT_MAX_ZOOM_PERCENT;
+  const zoomBeyondDefault = !useCanvasRendering && protectionLevel !== 'maximum';
+  const maxZoomPercent = zoomBeyondDefault
+    ? publicSettings?.gallery_lightbox_max_zoom_percent ?? DEFAULT_MAX_ZOOM_PERCENT
+    : DEFAULT_MAX_ZOOM_PERCENT;
   // The delivered preview can be smaller than the original. Keep Zoom's
   // pixel limit/aspect ratio tied to the loaded rendition, as its default
   // image renderer does internally.
