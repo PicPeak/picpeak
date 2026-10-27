@@ -116,4 +116,16 @@ describe('single-photo download hooks (issue 2043)', () => {
       markGalleryLimited('capped', false);
     }
   });
+
+  // Issue 2304: the HEAD before a direct video download rejected.
+  it('toasts the error when a direct video download is refused', async () => {
+    svc.downloadPhoto.mockRejectedValueOnce(new Error('Request failed with status code 404'));
+    const { result } = renderHook(() => useDownloadPhoto(), { wrapper });
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.error).mockClear();
+
+    act(() => { result.current.mutate({ slug: 'open', photoId: 821, filename: 'v.mp4', isVideo: true }); });
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to download photo'));
+    expect(toast.success).not.toHaveBeenCalled();
+  });
 });

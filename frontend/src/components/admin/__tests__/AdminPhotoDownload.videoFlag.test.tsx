@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement, ReactNode } from 'react';
+import { toast } from 'react-toastify';
 
 import { AdminPhotoGrid } from '../AdminPhotoGrid';
 import { AdminPhotoViewer } from '../AdminPhotoViewer';
@@ -66,6 +67,8 @@ const withQuery = (ui: ReactElement) => render(
 
 beforeEach(() => {
   localStorage.clear();
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.error).mockClear();
   downloadPhoto.mockReset();
   downloadPhoto.mockResolvedValue(undefined);
 });
@@ -86,6 +89,16 @@ describe('AdminPhotoGrid download (issue 2277)', () => {
     await clickTileDownload(2);
     await waitFor(() => expect(downloadPhoto).toHaveBeenCalledWith(42, 2, 'a.jpg', false));
   });
+
+  // Issue 2304: the HEAD preflight rejected (session expired, file gone).
+  it('shows the error toast, not "Download started", when the download fails', async () => {
+    downloadPhoto.mockRejectedValueOnce(new Error('Request failed with status code 404'));
+    withQuery(<AdminPhotoGrid photos={[video]} eventId={42} onPhotoClick={vi.fn()} onPhotosDeleted={vi.fn()} />);
+
+    await clickTileDownload(1);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to download photo'));
+    expect(toast.success).not.toHaveBeenCalled();
+  });
 });
 
 describe('AdminPhotoViewer download (issue 2277)', () => {
@@ -97,6 +110,15 @@ describe('AdminPhotoViewer download (issue 2277)', () => {
     renderViewer(video);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Download' }));
     await waitFor(() => expect(downloadPhoto).toHaveBeenCalledWith(42, 1, 'clip.mp4', true));
+  });
+
+  // Issue 2304: the HEAD preflight rejected (session expired, file gone).
+  it('shows the error toast, not "Download started", when the download fails', async () => {
+    downloadPhoto.mockRejectedValueOnce(new Error('Request failed with status code 404'));
+    renderViewer(video);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to download photo'));
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it('leaves a photo on the fetch path', async () => {

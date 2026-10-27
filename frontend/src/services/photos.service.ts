@@ -399,9 +399,15 @@ class PhotosService {
   // server's Content-Disposition. Fetching it as a blob held the whole file in
   // memory before the save started. The httpOnly admin_token cookie
   // authenticates the navigation, as it does every admin request.
+  //
+  // The browser handles a navigated response itself, so a HEAD goes first
+  // (issue 2304): an expired session (401, the interceptor's login redirect),
+  // a missing permission or a deleted file rejects here, and the caller shows
+  // its error toast instead of "Download started".
   async downloadPhoto(eventId: number, photoId: number, filename: string, isVideo = false): Promise<void> {
     const path = `/admin/events/${eventId}/photos/${photoId}/download`;
     if (isVideo) {
+      await api.head(path);
       const link = document.createElement('a');
       link.href = api.getUri({ url: path });
       link.setAttribute('download', filename);

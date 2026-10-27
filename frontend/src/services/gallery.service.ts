@@ -100,6 +100,15 @@ const directDownloadUrl = (slug: string, photoId: number, resolution?: string): 
     ...(resolution ? { params: { resolution } } : {}),
   }));
 
+// A direct download hands the response to the browser, so the page never
+// sees a refusal (issue 2304). A HEAD first runs the same checks without the
+// bytes: a 401, 403 or 404 rejects here and the caller shows its error toast.
+// Sent through `api`, so the interceptors add the gallery token, the
+// admin-preview flag and the 401 handling.
+const preflightDirectDownload = async (slug: string, photoId: number, resolution?: string): Promise<void> => {
+  await api.head(`/gallery/${slug}/download/${photoId}`, resolution ? { params: { resolution } } : undefined);
+};
+
 export const galleryService = {
   // Verify share token
   async verifyToken(slug: string, token: string): Promise<{ valid: boolean }> {
@@ -229,6 +238,7 @@ export const galleryService = {
 
   async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string, isVideo = false): Promise<void> {
     if ((!isIOS() || isVideo) && !isGalleryLimited(slug)) {
+      await preflightDirectDownload(slug, photoId, resolution);
       this.triggerDirectDownload(directDownloadUrl(slug, photoId, resolution), filename);
       return;
     }
@@ -349,6 +359,7 @@ export const galleryService = {
   async downloadPhoto(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string, isVideo = false): Promise<void> {
     return withDownloadLimit(slug, async () => {
       if (isVideo && !isGalleryLimited(slug)) {
+        await preflightDirectDownload(slug, photoId, resolution);
         this.triggerDirectDownload(directDownloadUrl(slug, photoId, resolution), filename);
         return;
       }

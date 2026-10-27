@@ -268,25 +268,31 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
         'Accept-Ranges': 'bytes',
       };
 
-      // Content-Length only when the bytes ship untransformed AND the size can
-      // be read without fetching them. A watermark or resize changes the
-      // length, and the only way to learn the new one is to do the work this
-      // branch exists to avoid — HEAD is allowed to omit it.
+      // The file is stat'ed on every backend (issue 2304): the app sends a
+      // HEAD before a direct download, and a file that is gone must answer
+      // 404 here, not 200 and then a failed download.
+      //
+      // Content-Length only when the bytes ship untransformed. A watermark or
+      // resize changes the length, and the only way to learn the new one is
+      // to do the work this branch exists to avoid — HEAD is allowed to omit it.
       const headWatermark = await resolveWatermarkSettingsForPhoto(req.event, photo);
-      if (!box && !headWatermark) {
-        try {
-          const headKey = resolvePhotoStorageKey(req.event, photo);
-          const headStorage = getStorage();
-          if (headKey && headStorage.kind() !== 'local') {
-            const headStat = await headStorage.stat(headKey);
-            if (!headStat) return res.status(404).json({ error: 'Photo file not found' });
-            headHeaders['Content-Length'] = headStat.size;
-            if (headStat.mtime) headHeaders['Last-Modified'] = new Date(headStat.mtime).toUTCString();
-          }
-        } catch (headErr) {
-          // No length is a valid HEAD; not worth failing the probe over.
-          logger.debug('HEAD probe could not stat the object', { photoId, error: headErr.message });
+      try {
+        const headKey = resolvePhotoStorageKey(req.event, photo);
+        const headStorage = getStorage();
+        const headStat = headKey && headStorage.kind() !== 'local'
+          ? await headStorage.stat(headKey)
+          : await fs.promises.stat(resolvePhotoFilePath(req.event, photo)).catch((err) => {
+            if (err.code === 'ENOENT') return null;
+            throw err;
+          });
+        if (!headStat) return res.status(404).json({ error: 'Photo file not found' });
+        if (!box && !headWatermark) {
+          headHeaders['Content-Length'] = headStat.size;
+          if (headStat.mtime) headHeaders['Last-Modified'] = new Date(headStat.mtime).toUTCString();
         }
+      } catch (headErr) {
+        // No length is a valid HEAD; not worth failing the probe over.
+        logger.debug('HEAD probe could not stat the object', { photoId, error: headErr.message });
       }
 
       res.set(headHeaders);

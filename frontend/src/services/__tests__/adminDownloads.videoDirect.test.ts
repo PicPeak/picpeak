@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../config/api', () => ({
   api: {
     get: vi.fn(),
+    head: vi.fn(async () => ({})),
     getUri: vi.fn(({ url }: { url: string }) => `/api${url}`),
   },
 }));

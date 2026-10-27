@@ -1609,6 +1609,17 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
       if (!stat) {
         return res.status(404).json({ error: 'Photo file not found' });
       }
+      // HEAD (issue 2304): the app probes before a direct video download, so
+      // a refusal or a missing file shows in the app. Answered from the stat,
+      // without opening the object.
+      if (req.method === 'HEAD') {
+        res.set({
+          'Content-Type': resolvePhotoContentType(photo),
+          'Content-Length': stat.size,
+          'Content-Disposition': contentDisposition,
+        });
+        return res.end();
+      }
       // Opened before the headers (issue 2129): a file removed since the
       // stat makes S3's get() reject here, and the lazy local stream fails
       // in pipeStreamToResponse, both as a 404.
@@ -1633,6 +1644,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
       'Content-Type': resolvePhotoContentType(photo),
       'Content-Disposition': contentDisposition,
     });
+    if (req.method === 'HEAD') return res.end();
     res.sendFile(filePath);
   } catch (error) {
     if (answerVanished(res, error, 'Photo file not found')) return;
