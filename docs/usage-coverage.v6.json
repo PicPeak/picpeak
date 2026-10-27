@@ -447,6 +447,7 @@
         "POST /",
         "GET /:id",
         "GET /:id/documents",
+        "POST /import",
         "PUT /:id",
         "GET /:id/send-preview",
         "POST /:id/send",
