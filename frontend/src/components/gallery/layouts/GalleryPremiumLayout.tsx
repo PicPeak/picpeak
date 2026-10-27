@@ -28,6 +28,7 @@ import { thumbnailUrlForTile } from '../imageTiers';
 import { TileImage } from '../TileImage';
 import { PhotoLabelsProvider, usePhotoLabels } from '../PhotoLabels';
 import { feedbackService } from '../../../services/feedback.service';
+import { BulkRatingPopover } from '../BulkRatingPopover';
 import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
 import { feedbackLockKind } from '../../../utils/feedbackLock';
@@ -764,6 +765,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     );
   }
 
+  // "Rate selected" (issue 1985): as in the other layouts, off with ratings off.
+  const bulkRatingShown = feedbackEnabled && !!feedbackOptions?.allowRatings && !!slug
+    && isSelectionMode && selectedPhotos.size > 0;
+
   return (
     // Tiles are numbered against the list this layout's lightbox steps
     // through, which a category filter narrows (issue 1733, E6).
@@ -820,7 +825,9 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
             ))}
           </div>
 
-          <div className="gallery-premium-nav-title">
+          {/* The monogram gives way to the rating star on a phone, where the
+              selection controls already fill the row (issue 1985). */}
+          <div className={`gallery-premium-nav-title${bulkRatingShown ? ' gallery-premium-nav-title--yield' : ''}`}>
             {eventName ? eventName.split(' ').map(w => w[0]).join('').slice(0, 3) : 'Gallery'}
           </div>
 
@@ -858,6 +865,19 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                 </motion.div>
               )}
             </AnimatePresence>
+            {/* Rate selected (issue 1985): an icon in the row, its stars in a
+                panel below the nav. Outside the animated box above, whose
+                transform would confine the panel to it. */}
+            {bulkRatingShown && (
+              <BulkRatingPopover
+                slug={slug}
+                photoIds={Array.from(selectedPhotos)}
+                requireNameEmail={feedbackOptions?.requireNameEmail}
+                className="gallery-premium-rate"
+                triggerClassName="gallery-premium-nav-btn"
+                popoverClassName="gallery-premium-rate-popover"
+              />
+            )}
 
             {/* Guest upload: this layout has no gallery header, which is where
                 every other layout offers it. Hidden while the selection
