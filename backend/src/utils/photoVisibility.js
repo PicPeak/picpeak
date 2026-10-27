@@ -91,6 +91,22 @@ function wherePhotoProcessed(query) {
 }
 
 /**
+ * Leave out videos, by media type or MIME type (a video recognised by its
+ * MIME type alone counts, as the frontend counts it). For the slideshow
+ * (issue 2285): a video has no slideshow or preview tier and the kiosk may
+ * not load /photo, so a video slide rendered broken for its whole duration.
+ */
+function whereNotVideo(query) {
+  return query
+    .where(function () {
+      this.whereNull('photos.media_type').orWhereNot('photos.media_type', 'video');
+    })
+    .where(function () {
+      this.whereNull('photos.mime_type').orWhereNot('photos.mime_type', 'like', 'video/%');
+    });
+}
+
+/**
  * wherePhotoProcessed for a query on a table that names photos by id only
  * (photo_feedback, ...) and never joins them, in the shape of wherePhotoLive.
  */
@@ -133,6 +149,7 @@ module.exports = {
   applyPhotoVisibilityFilter,
   wherePhotoProcessed,
   wherePhotoProcessedById,
+  whereNotVideo,
   isPhotoProcessed,
   isPhotoHiddenFromViewer,
 };

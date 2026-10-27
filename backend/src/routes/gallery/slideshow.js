@@ -4,7 +4,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { db } = require('../../database/db');
-const { livePhotos } = require('../../utils/photoVisibility');
+const { livePhotos, whereNotVideo } = require('../../utils/photoVisibility');
 const { formatBoolean } = require('../../utils/dbCompat');
 
 const router = express.Router();
@@ -30,6 +30,8 @@ function slideshowPhotosQuery(eventId, categoryId = null) {
     .where(function() {
       this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
     });
+  // No videos, as the list the kiosk renders has none (issue 2285).
+  whereNotVideo(q);
   // Category filter (#202) — keep the /session + /state count in sync with the
   // photos the kiosk actually renders.
   if (categoryId) q.where('photos.category_id', categoryId);
