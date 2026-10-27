@@ -221,6 +221,15 @@ maybe('download job notifier on Postgres', () => {
     expect(await pgDb('download_job_recipients').where({ email: guest.email })).toHaveLength(0);
   });
 
+  test('still accepts mail requests for a healthy build past its initial retention', async () => {
+    const event = await makeEvent();
+    const guest = await makeGuest(event, 'long-build@example.test');
+    const job = await makeJob(event);
+    await pgDb('download_jobs').where({ id: job.id }).update({ expires_at: new Date(Date.now() - 1000).toISOString() });
+    expect(await notifier.request(job, guest)).toBe('requested');
+    expect(await pgDb('download_job_recipients').where({ job_id: job.id })).toHaveLength(1);
+  });
+
   test('an eviction committed before a stale notification request cannot recreate its recipient', async () => {
     const event = await makeEvent();
     const guest = await makeGuest(event, 'evicted@example.test');

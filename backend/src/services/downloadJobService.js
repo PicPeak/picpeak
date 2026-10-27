@@ -680,16 +680,21 @@ class DownloadJobService {
 
   /** Keep the token/notification history until its original retention ends. */
   async evictJobs(jobs) {
+    if (!jobs.length) return;
     const storage = getStorage();
-    for (const job of jobs) {
-      if (job.zip_path) {
-        await storage.delete(job.zip_path);
-        this.readyStats.delete(job.zip_path);
+    const progress = createBuildProgress(this.stallTimeoutMs);
+    try {
+      for (const job of jobs) {
+        if (job.zip_path) {
+          await progress.wait(storage.delete(job.zip_path));
+          this.readyStats.delete(job.zip_path);
+        }
+        await progress.wait(db('download_jobs').where({ id: job.id, status: 'failed' }).update({
+          zip_path: null, size_bytes: null, entry_manifest: null,
+        }));
+        progress.touch();
       }
-      await db('download_jobs').where({ id: job.id, status: 'failed' }).update({
-        zip_path: null, size_bytes: null, entry_manifest: null,
-      });
-    }
+    } finally { progress.close(); }
   }
 
   /** Remove files before rows, retaining failed deletions for the next sweep. */
@@ -700,11 +705,11 @@ class DownloadJobService {
         await storage.delete(job.zip_path);
         this.readyStats.delete(job.zip_path);
       }
+      // Keep the existing sweep order: a notify pass that already claimed a
+      // recipient must commit before its deletion, so cancellation sees its mail.
+      await db('download_job_recipients').where({ job_id: job.id }).del();
       await require('./downloadJobNotifier').cancelPendingMails([job]);
-      await db.transaction(async (trx) => {
-        await trx('download_job_recipients').where({ job_id: job.id }).del();
-        await trx('download_jobs').where({ id: job.id }).del();
-      });
+      await db('download_jobs').where({ id: job.id }).del();
     }
   }
 

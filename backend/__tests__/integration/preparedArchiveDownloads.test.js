@@ -322,6 +322,25 @@ describe('native prepared archive downloads (#1966)', () => {
     expect(await db('download_jobs').where({ event_id: event.id, status: 'ready' })).toHaveLength(4);
   });
 
+  it('releases admission reservations when cache deletion stalls, retaining the artifact for retry', async () => {
+    const { event, ids } = await fixture({}, 5);
+    const ready = [];
+    for (const id of ids.slice(0, 4)) ready.push(await prepare(event, { photo_ids: [id] }));
+    const worker = new jobs.constructor({ stallTimeoutMs: 1000 });
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    const remove = jest.spyOn(storage, 'delete').mockReturnValue(held);
+    try {
+      await expect(worker.createJob({ event, resolution: 'original', photoIds: [ids[4]], accessLevel: 'guest' }))
+        .rejects.toThrow('stopped making progress');
+      expect(worker.reserved).toBe(0);
+      expect(worker.liveBuilds.size).toBe(0);
+      expect((await jobs.getStatus(ready[0].token)).zip_path).toBe(ready[0].zip_path);
+    } finally { release(); remove.mockRestore(); }
+    await prepare(event, { photo_ids: [ids[4]] });
+    expect(await storage.exists(ready[0].zip_path)).toBe(false);
+  });
+
   it.each(['priced', 'quota preview', 'resized'])('keeps every photo when final JPEG names collide (%s)', async (mode) => {
     const { event, ids } = await fixture(mode === 'priced' ? { is_priced: 1 }
       : mode === 'quota preview' ? { download_limit: 3 } : { download_standard_resolution: '800x600' });

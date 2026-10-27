@@ -136,7 +136,7 @@ async function request(job, recipient) {
     if (trx.client.config.client === 'pg') jobQuery.forShare();
     const current = await jobQuery.first('status', 'expires_at');
     if (!current || !['pending', 'building', 'ready'].includes(current.status)
-        || new Date(current.expires_at).getTime() <= Date.now()) return 'gone';
+        || (current.status === 'ready' && new Date(current.expires_at).getTime() <= Date.now())) return 'gone';
     // The caller's read of the owner may predate an erasure that has already
     // deleted this owner's rows; inserting now would bring the address back.
     if (!(await stillHolds(row, trx))) return 'gone';
