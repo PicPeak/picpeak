@@ -106,7 +106,19 @@ class S3StorageAdapter extends stream.EventEmitter {
         // SDK's default agent behavior, unchanged.
         ...(this.config.httpAgent && { httpAgent: this.config.httpAgent }),
         ...(this.config.httpsAgent && { httpsAgent: this.config.httpsAgent })
-      }
+      },
+      // Validate response checksums only when the caller asks for one.
+      // The SDK default (WHEN_SUPPORTED) wraps every GetObject Body in a
+      // ChecksumStream that pipes the real response into itself and has no
+      // _destroy, so destroying a half-read Body (a cancelled zip build, a
+      // client that disconnects) pauses the response but never closes it.
+      // Its socket stays checked out of the pool for good, socketTimeout
+      // does not reclaim it (the handler clears that timer once headers
+      // arrive), and after 50 of them every S3 call waits forever. Fixed in
+      // @smithy/core 3.27.0 (client-s3 >= 3.1076.0); this setting keeps any
+      // older resolution safe. Uploads keep their request checksums.
+      // See s3Storage.socketRelease.test.js.
+      responseChecksumValidation: 'WHEN_REQUIRED'
     };
     
     // Add credentials if provided
