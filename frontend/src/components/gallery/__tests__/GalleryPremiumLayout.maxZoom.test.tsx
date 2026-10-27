@@ -87,8 +87,8 @@ afterEach(() => {
   lightboxProps.zoom = undefined;
 });
 
-const renderLayout = () => render(
-  <GalleryPremiumLayout photos={photos} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} />,
+const renderLayout = (props: Partial<React.ComponentProps<typeof GalleryPremiumLayout>> = {}) => render(
+  <GalleryPremiumLayout photos={photos} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} {...props} />,
 );
 
 describe('Gallery Premium — maximum lightbox zoom (issue 2281)', () => {
@@ -101,5 +101,14 @@ describe('Gallery Premium — maximum lightbox zoom (issue 2281)', () => {
     settings.current = { gallery_lightbox_max_zoom_percent: 800 };
     renderLayout();
     expect(lightboxProps.zoom).toEqual({ maxZoomPixelRatio: 8 });
+  });
+
+  it.each([
+    ['canvas rendering', { useCanvasRendering: true }],
+    ['maximum protection', { protectionLevel: 'maximum' as const }],
+  ])('keeps the old limit with %s', (_label, props) => {
+    settings.current = { gallery_lightbox_max_zoom_percent: 1000 };
+    renderLayout(props);
+    expect(lightboxProps.zoom).toEqual({ maxZoomPixelRatio: 1 });
   });
 });
