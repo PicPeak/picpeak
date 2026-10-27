@@ -5,6 +5,16 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.5](https://github.com/PicPeak/picpeak/compare/v3.135.4...v3.135.5) (2026-10-27)
+
+
+### Bug Fixes
+
+* **admin:** send a video's preview request to its poster ([#2294](https://github.com/PicPeak/picpeak/issues/2294)) ([96d107b](https://github.com/PicPeak/picpeak/commit/96d107b62cde174130336bf5110c6bfa43201123))
+* **gallery:** show a Story video card's poster, not the clip ([#2292](https://github.com/PicPeak/picpeak/issues/2292)) ([8a6310c](https://github.com/PicPeak/picpeak/commit/8a6310c4b8dd9021d67ab067976ae9e81e9ddd01))
+* **slideshow:** leave videos out of the slideshow ([#2293](https://github.com/PicPeak/picpeak/issues/2293)) ([595b31a](https://github.com/PicPeak/picpeak/commit/595b31a871103391477fb42a95a948d5e366b594))
+* **storage:** stop abandoned S3 downloads from leaking pool sockets ([#2282](https://github.com/PicPeak/picpeak/issues/2282)) ([#2287](https://github.com/PicPeak/picpeak/issues/2287)) ([df34867](https://github.com/PicPeak/picpeak/commit/df3486726352209907335ac112a2267c76608d6d))
+
 ## [3.135.4](https://github.com/PicPeak/picpeak/compare/v3.135.3...v3.135.4) (2026-10-26)
 
 
