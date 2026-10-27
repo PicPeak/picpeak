@@ -170,6 +170,26 @@ describe('admin photo list sorting (issue 1739)', () => {
     });
   });
 
+  it('returns the stored camera clock when it was read, the server-zone one otherwise (issue 2305)', async () => {
+    // 02:30 on a spring-forward day: in the server's zone that may not
+    // exist, so captured_at holds 03:30. The camera clock is the truth.
+    const shifted = new Date(2026, 2, 29, 3, 30, 0).toISOString();
+    await addPhoto('gap.jpg', { captured_at: shifted, captured_at_wall: '2026-03-29T02:30:00' });
+    await addPhoto('offset.jpg', { captured_at: shifted, captured_at_wall: '2026-03-29T02:30:00+01:00' });
+    await addPhoto('none.jpg', { captured_at: shifted, captured_at_wall: '' });
+    await addPhoto('unread.jpg', { captured_at: shifted, captured_at_wall: null });
+    await addPhoto('clip.mp4', { media_type: 'video', captured_at: '2026-03-29T01:30:00.000Z', captured_at_wall: '2026-03-29T02:30:00' });
+    const byName = Object.fromEntries((await list('sort=name&order=asc'))
+      .map((p) => [p.filename, p.captured_at_local]));
+    expect(byName).toEqual({
+      'clip.mp4': null,
+      'gap.jpg': '2026-03-29T02:30:00',
+      'none.jpg': '2026-03-29T03:30:00',
+      'offset.jpg': '2026-03-29T02:30:00',
+      'unread.jpg': '2026-03-29T03:30:00',
+    });
+  });
+
   it('returns a video capture time as an instant, not as a server wall clock', async () => {
     // videoCaptureDate stores the real instant (offset or UTC creation_time).
     await addPhoto('clip.mp4', { media_type: 'video', captured_at: '2026-06-03T11:15:42.000Z' });

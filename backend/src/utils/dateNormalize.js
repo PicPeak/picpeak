@@ -69,4 +69,12 @@ function toServerWallClock(value) {
     + `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-module.exports = { toIso, toTimestamp, toServerWallClock };
+// photos.captured_at_wall (issue 2305) as 'YYYY-MM-DDTHH:MM:SS', the
+// recorded offset dropped: the list shows the camera's own clock. null
+// for NULL, '' (read, none) or anything else.
+function cameraWallClock(value) {
+  const m = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.exec(typeof value === 'string' ? value : '');
+  return m ? m[0] : null;
+}
+
+module.exports = { toIso, toTimestamp, toServerWallClock, cameraWallClock };

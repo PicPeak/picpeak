@@ -31,7 +31,7 @@ const {
   videoMimeType,
   importableExtensions,
 } = require('./externalMediaTypes');
-const { generateThumbnail, extractCaptureDate, orientedDimensions } = require('./imageProcessor');
+const { generateThumbnail, extractCaptureDate, extractCapture, captureWallColumn, orientedDimensions } = require('./imageProcessor');
 const { exifColumn } = require('./photoExif');
 const { processUploadedVideo, posterFrameError, extractVideoMetadata } = require('./videoProcessor');
 const { isInterruption: isResourceError } = require('./mediaProcessPolicy');
@@ -364,6 +364,7 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
   let width = null;
   let height = null;
   let capturedAt = null;
+  let captureWall = {};
   let exif = {};
   let credit = null;
   let video = null;
@@ -391,7 +392,10 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
       return 'skipped';
     }
     try {
-      capturedAt = await extractCaptureDate(f.full);
+      // With the camera's own clock (issue 2305).
+      const capture = await extractCapture(f.full);
+      capturedAt = capture ? capture.capturedAt : null;
+      captureWall = captureWallColumn(capture);
     } catch (dateErr) {
       logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
     }
@@ -490,6 +494,9 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
       width,
       height,
       captured_at: capturedAt ? capturedAt.toISOString() : null,
+      // The new file's camera clock, or NULL for the backfill to read.
+      captured_at_wall: null,
+      ...captureWall,
       // Camera details describe the file: the new one's, or none.
       exif_json: null,
       ...exif,
@@ -1062,9 +1069,13 @@ async function importExternalFolder({
         // one Sharp/exifr cannot parse, imports with captured_at NULL and
         // falls back to uploaded_at as before.
         let capturedAt = null;
+        let captureWall = {};
         if (!isVideo) {
           try {
-            capturedAt = await extractCaptureDate(f.full);
+            // With the camera's own clock (issue 2305).
+            const capture = await extractCapture(f.full);
+            capturedAt = capture ? capture.capturedAt : null;
+            captureWall = captureWallColumn(capture);
           } catch (dateErr) {
             logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
           }
@@ -1120,6 +1131,7 @@ async function importExternalFolder({
             // "[object Object]" (see CLAUDE.md). Strings round-trip on both
             // engines.
             captured_at: capturedAt ? capturedAt.toISOString() : null,
+            ...captureWall,
             ...exif,
             // Both columns, as the upload pipeline writes them: every
             // serving route and every image-only job tells a video from a

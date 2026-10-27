@@ -34,7 +34,7 @@ const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { adminThumbnailUrl, adminThumbnailVersion } = require('../utils/adminThumbnailUrl');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
-const { toIso, toServerWallClock } = require('../utils/dateNormalize');
+const { toIso, toServerWallClock, cameraWallClock } = require('../utils/dateNormalize');
 const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
 const { processUploadedPhotos } = require('../services/photoProcessor');
@@ -1979,7 +1979,10 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // A video's time is a real instant instead (videoCaptureDate keeps
         // the recording's offset or reads a UTC creation_time), so it goes
         // out as one and the browser shows it in its own zone.
-        captured_at_local: isVideoRow(photo) ? null : toServerWallClock(photo.captured_at),
+        // The camera clock as the EXIF wrote it wins when it was read (issue
+        // 2305): the server-zone formatting moves a time in that zone's
+        // spring-forward gap and every time after a TZ change.
+        captured_at_local: isVideoRow(photo) ? null : (cameraWallClock(photo.captured_at_wall) || toServerWallClock(photo.captured_at)),
         captured_at: isVideoRow(photo) ? toIso(photo.captured_at) : null,
         // Feedback data
         has_feedback: (commentMap[photo.id] > 0 || photo.average_rating > 0 || photo.like_count > 0),
