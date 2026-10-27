@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.185.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.185.0-beta.0...v3.185.1-beta.0) (2026-10-27)
+
+
+### Bug Fixes
+
+* **admin:** version video thumbnails outside the photo grid ([#2278](https://github.com/PicPeak/picpeak/issues/2278)) ([965795d](https://github.com/PicPeak/picpeak/commit/965795d6d176e9191753e807660cd52e7a736963))
+* **gallery:** fill in a pending video poster in the lightbox ([#2279](https://github.com/PicPeak/picpeak/issues/2279)) ([46653b5](https://github.com/PicPeak/picpeak/commit/46653b5c5a92a9f5e62344dd32a852b6fc6d89b8))
+* **storage:** stop abandoned S3 downloads from leaking pool sockets ([#2282](https://github.com/PicPeak/picpeak/issues/2282)) ([9fdb3c4](https://github.com/PicPeak/picpeak/commit/9fdb3c4e0cb1f0d4c7f821f43909124cb74ddef8))
+
 ## [3.185.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.184.0-beta.0...v3.185.0-beta.0) (2026-10-26)
 
 
