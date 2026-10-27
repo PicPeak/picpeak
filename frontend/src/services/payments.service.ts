@@ -10,6 +10,8 @@ export interface PaymentSettings {
   account_id: string | null;
   api_verified_at: string | null;
   webhook_verified_at: string | null;
+  site_url: string;
+  site_url_ready: boolean;
   webhook_url: string;
   api_version: string;
   webhook_events: string[];

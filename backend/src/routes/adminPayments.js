@@ -7,7 +7,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requireSuperAdmin } = require('../middleware/permissions');
 const { noStoreCache } = require('../middleware/noStoreCache');
 const { rateLimitKey } = require('../utils/rateLimitKey');
-const { getFrontendBaseUrl } = require('../utils/frontendUrl');
+const { getFrontendBaseUrl, getApiBaseUrl, isLoopbackBase } = require('../utils/frontendUrl');
 const { logActivity } = require('../database/db');
 const payments = require('../modules/photoSales/paymentSettings');
 const router = express.Router();
@@ -19,8 +19,23 @@ function failure(res, error) {
   return res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Payment settings are temporarily unavailable.' });
 }
 async function payload() {
-  const base = await getFrontendBaseUrl().catch(() => '');
-  return { ...await payments.settings(), webhook_url: base ? `${base.replace(/\/+$/, '')}/api/photo-sales/stripe/webhook` : '', api_version: Stripe.API_VERSION, webhook_events: payments.WEBHOOK_EVENTS };
+  const base = await getFrontendBaseUrl();
+  const apiBase = await getApiBaseUrl();
+  const webhookUrl = `${apiBase.replace(/\/+$/, '')}/photo-sales/stripe/webhook`;
+  return {
+    ...await payments.settings(), site_url: base, site_url_ready: publicHttpsUrl(base),
+    webhook_url: publicHttpsUrl(webhookUrl) ? webhookUrl : '',
+    api_version: Stripe.API_VERSION, webhook_events: payments.WEBHOOK_EVENTS,
+  };
+}
+
+// Configuration check only: a received signed event proves Stripe delivery.
+function publicHttpsUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash
+      && !isLoopbackBase(value) && !url.hostname.endsWith('.localhost');
+  } catch { return false; }
 }
 
 router.get('/', async (req, res) => {

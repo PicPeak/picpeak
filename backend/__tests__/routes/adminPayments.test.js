@@ -136,6 +136,37 @@ describe('installation payment settings', () => {
     expect(mockList).toHaveBeenCalledWith({ limit: 1 }); expect(mockCreate).not.toHaveBeenCalled();
     expect((await read()).body.webhook_verified_at).toBeNull();
   });
+  test('projects the public HTTPS address and uses the configured public API for Stripe notifications', async () => {
+    const originalApi = process.env.API_URL;
+    process.env.API_URL = 'https://api.photos.example.test/api/';
+    try {
+      const response = await read();
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ site_url: 'https://photos.example.test', site_url_ready: true,
+        webhook_url: 'https://api.photos.example.test/api/photo-sales/stripe/webhook', webhook_verified_at: null });
+      expect(mockAccount).not.toHaveBeenCalled();
+      expect(mockCreate).not.toHaveBeenCalled();
+    } finally {
+      if (originalApi === undefined) delete process.env.API_URL; else process.env.API_URL = originalApi;
+    }
+  });
+  test.each(['', 'http://photos.example.test', 'https://localhost', 'https://photos.localhost',
+    `https://u:${crypto.randomBytes(16).toString('hex')}@photos.example.test`, 'https://photos.example.test?query=1', 'https://photos.example.test#fragment'])
+  ('does not offer an invalid public destination to the setup wizard: %s', async (base) => {
+    const originalBase = process.env.FRONTEND_URL;
+    const originalApi = process.env.API_URL;
+    delete process.env.API_URL;
+    process.env.FRONTEND_URL = base;
+    try {
+      const response = await read();
+      expect(response.status).toBe(200);
+      expect(response.body.site_url_ready).toBe(false);
+      expect(response.body.webhook_url).toBe('');
+    } finally {
+      process.env.FRONTEND_URL = originalBase;
+      if (originalApi === undefined) delete process.env.API_URL; else process.env.API_URL = originalApi;
+    }
+  });
   test('only a valid current-mode signature records webhook verification; rotation resets it', async () => {
     await save();
     const sdk = new Stripe(KEY);

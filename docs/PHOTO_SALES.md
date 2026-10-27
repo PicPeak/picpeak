@@ -12,7 +12,11 @@ email. Ordinary galleries keep their existing download behaviour.
    Host header as their destination.
 2. As a **super admin**, open **Settings → Payments**. One Stripe account receives
    photo payments from every gallery on the installation. Prices and promos
-   remain per gallery; payment credentials are installation-wide.
+   remain per gallery; payment credentials are installation-wide. Follow the
+   five-step guide: check the public address, add a restricted key, configure
+   payment notifications, save/check access, then test a purchase. Moving
+   between steps does not save or discard credential entries; use the page's
+   Save changes / Discard bar. Saved secrets stay blank.
 3. Start in a dedicated [Stripe sandbox](https://docs.stripe.com/sandboxes).
    Create a [restricted API key](https://docs.stripe.com/keys/restricted-api-keys)
    with Account read, Checkout Sessions read/write, Payment Intents and Charges
@@ -21,8 +25,10 @@ email. Ordinary galleries keep their existing download behaviour.
    access; it does not claim to verify write/refund permissions.
 4. In Stripe, create an event destination using the webhook URL and required
    events shown on the Payments page. The path is
-   `/api/photo-sales/stripe/webhook`. If the API uses a separate public host,
-   use that host. Choose API version `2026-09-30.endive` and subscribe to
+   `/api/photo-sales/stripe/webhook`. The guide uses a separate public API
+   address when `API_URL` is configured and offers copy controls for the URL
+   and event names. HTTPS address checks validate the format, not Stripe's
+   ability to reach it. Choose API version `2026-09-30.endive` and subscribe to
    `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
    `checkout.session.async_payment_failed`, `checkout.session.expired`,
    `charge.refunded`, `charge.dispute.created`, `charge.dispute.updated`,
