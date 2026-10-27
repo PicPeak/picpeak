@@ -2848,6 +2848,8 @@
       "defaultRequirePasswordHelp": "Pre-check \"Require password\" when creating new events. Disable for quicker creation of public galleries.",
       "showGalleryFilterBar": "Show filter bar in galleries",
       "showGalleryFilterBarHelp": "Display the search-by-filename and sort controls above grid-layout galleries. Disable for a cleaner layout.",
+      "lightboxMaxZoom": "Maximum lightbox zoom",
+      "lightboxMaxZoomHelp": "Allow viewers to magnify images beyond their original pixel size. Higher zoom enlarges existing pixels; it does not add image detail. Allowed range: 100–1000. Default: 100.",
       "enablePhoneField": "Enable phone number field",
       "enablePhoneFieldHelp": "Adds an optional phone number input to the event form. Useful for downstream automations like WhatsApp delivery via n8n. Always optional even when enabled.",
       "defaultFeedbackEnabled": "Enable Guest Feedback by default",

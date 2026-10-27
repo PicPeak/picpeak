@@ -148,6 +148,8 @@ export interface EventSettings {
   first_look_keyword_detection: boolean;
   first_look_folder_keywords: string[];
   gallery_show_filter_bar: boolean;
+  // Maximum lightbox zoom, percent of the original's pixels (issue 2281).
+  gallery_lightbox_max_zoom_percent: number;
   event_phone_field_enabled: boolean;
 }
 
@@ -269,6 +271,7 @@ export function useSettingsState() {
     first_look_keyword_detection: true,
     first_look_folder_keywords: ['FirstLook', 'Sneak Peek'],
     gallery_show_filter_bar: true,
+    gallery_lightbox_max_zoom_percent: 100,
     event_phone_field_enabled: false
   });
 
@@ -451,6 +454,8 @@ export function useSettingsState() {
           ? settings.first_look_folder_keywords.map(String)
           : ['FirstLook', 'Sneak Peek'],
         gallery_show_filter_bar: toBoolean(settings.gallery_show_filter_bar, true),
+        // Same range and default as the backend (utils/lightboxZoom.js).
+        gallery_lightbox_max_zoom_percent: Math.min(1000, Math.max(100, Math.round(toNumber(settings.gallery_lightbox_max_zoom_percent, 100)))),
         event_phone_field_enabled: toBoolean(settings.event_phone_field_enabled, false)
       };
       setEventSettings(eventLoaded);
