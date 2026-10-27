@@ -3374,7 +3374,7 @@
       "showGalleryFilterBar": "Filterleiste in Galerien anzeigen",
       "showGalleryFilterBarHelp": "Dateiname-Suche und Sortiersteuerungen über Raster-Galerien anzeigen. Deaktivieren für ein übersichtlicheres Layout.",
       "lightboxMaxZoom": "Maximaler Zoom in der Lightbox",
-      "lightboxMaxZoomHelp": "Erlaubt Betrachtern, Bilder über ihre Originalpixelgröße hinaus zu vergrößern. Ein höherer Zoom vergrößert vorhandene Pixel, er fügt keine Bilddetails hinzu. Erlaubter Bereich: 100–1000. Standard: 100.",
+      "lightboxMaxZoomHelp": "Erlaubt Betrachtern, Bilder über ihre Originalpixelgröße hinaus zu vergrößern. Ein höherer Zoom vergrößert vorhandene Pixel, er fügt keine Bilddetails hinzu. Erlaubter Bereich: 100–1000. Standard: 100. Gilt für alle Galerien, auch bestehende.",
       "enablePhoneField": "Telefonnummer-Feld aktivieren",
       "enablePhoneFieldHelp": "Fügt ein optionales Telefonnummer-Eingabefeld zum Veranstaltungsformular hinzu. Nützlich für Folgeautomatisierungen wie WhatsApp-Zustellung via n8n. Immer optional, auch wenn aktiviert.",
       "defaultFeedbackEnabled": "Gäste-Feedback standardmäßig aktivieren",

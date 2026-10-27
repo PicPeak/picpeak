@@ -461,7 +461,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
               <span className="text-sm text-muted">%</span>
             </div>
             <p className="text-xs text-muted mt-1">
-              {t('settings.events.lightboxMaxZoomHelp', 'Allow viewers to magnify images beyond their original pixel size. Higher zoom enlarges existing pixels; it does not add image detail. Allowed range: 100–1000. Default: 100.')}
+              {t('settings.events.lightboxMaxZoomHelp', 'Allow viewers to magnify images beyond their original pixel size. Higher zoom enlarges existing pixels; it does not add image detail. Allowed range: 100–1000. Default: 100. Applies to all galleries, existing ones included.')}
             </p>
           </div>
 
