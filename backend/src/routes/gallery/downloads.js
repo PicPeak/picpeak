@@ -1390,7 +1390,7 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
       || !(await downloadJobService.isStillDeliverable(job, req.event, req.accessLevel))
     );
     if (job.status === 'ready' && !unavailable) {
-      const stat = job.zip_path && await getStorage().stat(job.zip_path);
+      const stat = await downloadJobService.readyStat(job);
       let ids;
       try { ids = JSON.parse(job.delivered_photo_ids || '[]'); } catch (_) { ids = []; }
       unavailable = !stat || (job.policy_version >= 2
@@ -1503,14 +1503,25 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
         status: 'stale',
       });
     }
-    const suffix = job.preview_only || isGalleryPriced(req.event) ? 'previews' : job.resolution;
+    const manifest = job.policy_version >= 2 ? readEntryManifest(job, deliveredIds, stat.size) : null;
+    if (job.policy_version >= 2 && !manifest) {
+      return res.status(409).json({ error: 'This download is no longer available. Please request it again' });
+    }
+    let suffix = job.preview_only ? 'previews' : job.resolution;
+    if (!job.preview_only && isGalleryPriced(req.event) && Array.isArray(deliveredIds)) {
+      const media = await livePhotos(db).whereIn('id', deliveredIds).select('media_type', 'mime_type');
+      const videos = media.filter(isVideo).length;
+      suffix = videos === 0 ? 'previews' : videos === media.length ? 'videos' : 'photo-previews-and-videos';
+    }
     // Native downloads use the response filename ahead of <a download>.
     // Part metadata changes only the name, never the job's authorised set.
     const part = parsePositiveInt32(req.query.part);
     const parts = parsePositiveInt32(req.query.parts);
+    const selected = req.query.selected === '1';
+    const selectionSuffix = suffix === job.resolution ? '' : `-${suffix}`;
     const archiveName = part && parts && part <= parts
-      ? `${req.event.slug}-selected-${part}-of-${parts}.zip`
-      : `${req.event.slug}-${suffix}.zip`;
+      ? `${req.event.slug}-selected-${part}-of-${parts}${selectionSuffix}.zip`
+      : selected ? `${req.event.slug}-selected${selectionSuffix}.zip` : `${req.event.slug}-${suffix}.zip`;
     // A HEAD probe is not a download (issue 2139): it answers the headers
     // without taking any of the quota, and on any gallery before the
     // counters below.
@@ -1525,10 +1536,6 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
         'Content-Disposition': buildContentDisposition(archiveName),
       });
       return res.end();
-    }
-    const manifest = job.policy_version >= 2 ? readEntryManifest(job, deliveredIds, stat.size) : null;
-    if (job.policy_version >= 2 && !manifest) {
-      return res.status(409).json({ error: 'This download is no longer available. Please request it again' });
     }
     // Open before reserving so a missing remote source cannot strand slots.
     const stream = await storage.get(job.zip_path);

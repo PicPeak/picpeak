@@ -110,8 +110,8 @@ describe('download job built during an archive', () => {
 
   function holdJobUploads() {
     const upload = gate();
-    const realPut = storage.putFromFile.bind(storage);
-    jest.spyOn(storage, 'putFromFile').mockImplementation(async (key, ...rest) => {
+    const realPut = storage.put.bind(storage);
+    jest.spyOn(storage, 'put').mockImplementation(async (key, ...rest) => {
       if (key.includes('/.download-cache/job-')) await upload.wait();
       return realPut(key, ...rest);
     });

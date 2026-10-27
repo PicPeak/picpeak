@@ -98,6 +98,36 @@ describe('native prepared archive downloads (#1966)', () => {
     expect((await api(event, 'post', 'download-jobs').send({ resolution: 'original' })).status).toBe(400);
   });
 
+  it('records real local-header boundaries for multi-MB sources with a slow ZIP output', async () => {
+    const { event, ids } = await fixture({}, 6);
+    for (const photo of await db('photos').whereIn('id', ids)) {
+      await storage.put(photo.path, Buffer.alloc(12 * 1024 * 1024, photo.id % 255));
+    }
+    const fs = require('fs');
+    const realWrite = fs.createWriteStream;
+    const slow = jest.spyOn(fs, 'createWriteStream').mockImplementation((file, options) => {
+      const output = realWrite(file, { ...options, highWaterMark: 1024 });
+      if (String(file).endsWith('.zip')) {
+        const write = output._write.bind(output);
+        output._write = (chunk, encoding, done) => setTimeout(() => write(chunk, encoding, done), 1);
+      }
+      return output;
+    });
+    try {
+      const job = await prepare(event);
+      const manifest = require('../../src/services/downloadJobDelivery').readEntryManifest(job, ids, Number(job.size_bytes));
+      expect(manifest).not.toBeNull();
+      const zip = new StreamZip({ file: path.join(process.env.STORAGE_PATH, job.zip_path), storeEntries: true });
+      await require('events').once(zip, 'ready');
+      try {
+        const offsets = Object.values(zip.entries()).sort((a, b) => a.offset - b.offset).map((entry) => entry.offset);
+        expect(manifest.map((entry) => entry.start)).toEqual(offsets);
+        expect(manifest.map((entry) => entry.end)).toEqual([...offsets.slice(1), zip.centralDirectory.offset]);
+      } finally { await new Promise((resolve) => zip.close(resolve)); }
+      expect((await api(event, 'head', `download-jobs/${job.token}/file`)).status).toBe(200);
+    } finally { slow.mockRestore(); }
+  });
+
   it.each([[], null, 'all', [0], ['1x'], [2147483648]])('refuses invalid selection %p instead of preparing all', async (photo_ids) => {
     const { event } = await fixture();
     expect((await api(event, 'post', 'download-jobs').send({ photo_ids })).status).toBe(400);
@@ -168,7 +198,142 @@ describe('native prepared archive downloads (#1966)', () => {
     const job = await prepare(event, {}, client);
     await db('download_jobs').where({ id: job.id }).update({ entry_manifest: '[]' });
     expect((await api(event, 'get', `download-jobs/${job.token}/file`, client)).status).toBe(409);
+    expect((await api(event, 'head', `download-jobs/${job.token}/file`, client)).status).toBe(409);
     expect(await grants(event)).toHaveLength(0);
+  });
+
+  it('retires pointer-based v2 artifacts and prepares a fresh job on retry', async () => {
+    const { event } = await fixture();
+    const old = await prepare(event);
+    await db('download_jobs').where({ id: old.id }).update({ policy_version: 2 });
+    expect((await api(event, 'get', `download-jobs/${old.token}`)).body.unavailable).toBe(true);
+    expect((await api(event, 'get', `download-jobs/${old.token}/file`)).status).toBe(409);
+    const replacement = await prepare(event);
+    expect(replacement.token).not.toBe(old.token);
+    expect(replacement.policy_version).toBe(3);
+    await jobs.sweepExpired(event.id);
+    expect(await storage.exists(old.zip_path)).toBe(false);
+  });
+
+  it('caps a burst from one gallery while admitting another gallery', async () => {
+    const { event, ids } = await fixture({}, 8);
+    const other = await fixture();
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    const build = jest.spyOn(jobs, '_build').mockImplementation(async (id) => {
+      await held; await jobs._fail(id, 'End of admission test');
+    });
+    try {
+      const burst = await Promise.all(ids.map((id) => api(event, 'post', 'download-jobs').send({ photo_ids: [id] })));
+      expect(burst.filter((response) => response.status === 202)).toHaveLength(2);
+      expect(burst.filter((response) => response.status === 429)).toHaveLength(6);
+      expect((await api(other.event, 'post', 'download-jobs').send({})).status).toBe(202);
+    } finally { release(); await Promise.all(jobs.liveBuilds.values()); build.mockRestore(); }
+  });
+
+  it('shares the per-gallery admission bound across service instances', async () => {
+    const { event, ids } = await fixture({}, 4);
+    const workers = [new jobs.constructor(), new jobs.constructor()];
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    const builds = workers.map((worker) => jest.spyOn(worker, '_build').mockImplementation(async (id) => {
+      await held; await worker._fail(id, 'End of multi-worker admission test');
+    }));
+    try {
+      const results = await Promise.allSettled(ids.map((id, i) => workers[i % 2].createJob({ event, resolution: 'original', photoIds: [id], accessLevel: 'guest' })));
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2);
+      expect(results.filter((result) => result.status === 'rejected' && result.reason.code === 'BUSY')).toHaveLength(2);
+    } finally { release(); await Promise.all(workers.flatMap((worker) => [...worker.liveBuilds.values()])); builds.forEach((build) => build.mockRestore()); }
+  });
+
+  it('bounds retained artifacts, reuses ready downloads at capacity, and reclaims expiry before admitting more', async () => {
+    const { event, ids } = await fixture({}, 5);
+    const ready = [];
+    for (const id of ids.slice(0, 4)) ready.push(await prepare(event, { photo_ids: [id] }));
+    expect((await api(event, 'post', 'download-jobs').send({ photo_ids: [ids[4]] })).status).toBe(429);
+    expect((await prepare(event, { photo_ids: [ids[0]] })).token).toBe(ready[0].token);
+    await db('download_jobs').where({ id: ready[0].id }).update({ expires_at: new Date(Date.now() - 1000).toISOString() });
+    await prepare(event, { photo_ids: [ids[4]] });
+    expect(await storage.exists(ready[0].zip_path)).toBe(false);
+    expect(await db('download_jobs').where({ event_id: event.id, status: 'ready' })).toHaveLength(4);
+  });
+
+  it.each(['read', 'open', 'render'])('fails a stalled %s, destroys late sources and frees the build slot', async (stage) => {
+    const { event, ids } = await fixture(stage === 'render' ? { download_standard_resolution: '800x600' } : {}, 1);
+    const worker = new jobs.constructor({ stallTimeoutMs: 1000 });
+    const source = new (require('stream').Readable)({ read() {} });
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    const readFile = require('fs').promises.readFile.bind(require('fs').promises);
+    const spy = stage === 'render'
+      ? jest.spyOn(require('fs').promises, 'readFile').mockImplementation((file, ...args) => String(file).includes(event.slug)
+        ? held : readFile(file, ...args))
+      : jest.spyOn(storage, 'get').mockImplementation(() => stage === 'open' ? held : Promise.resolve(source));
+    try {
+      const job = await worker.createJob({ event, resolution: event.download_standard_resolution, photoIds: ids, accessLevel: 'guest' });
+      await worker.liveBuilds.get(job.id);
+      const failed = await worker.getStatus(job.token);
+      expect(failed.status).toBe('failed');
+      expect(failed.error).toMatch(/stopped making progress/);
+      expect(worker.running).toBe(0);
+      expect(worker.liveBuilds.size).toBe(0);
+      if (stage === 'open') { release(source); await new Promise((resolve) => setImmediate(resolve)); }
+      if (stage !== 'render') expect(source.destroyed).toBe(true);
+    } finally { release(Buffer.alloc(0)); source.destroy(); spy.mockRestore(); }
+  });
+
+  it('throttles build progress queries for a larger gallery', async () => {
+    const { event } = await fixture({}, 25);
+    const queries = [];
+    const record = (query) => { if (/update [`"]download_jobs[`"]/.test(query.sql) && query.sql.includes('photo_count')) queries.push(query.sql); };
+    db.on('query', record);
+    try { await prepare(event); }
+    finally { db.removeListener('query', record); }
+    expect(queries.length).toBeLessThan(10);
+  });
+
+  it('keeps all ZIP bytes while storage is still opening its writer', async () => {
+    const { event } = await fixture();
+    const put = storage.put.bind(storage);
+    const slowOpen = jest.spyOn(storage, 'put').mockImplementation(async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return put(...args);
+    });
+    try {
+      const job = await prepare(event);
+      expect(await entries(job)).toHaveLength(3);
+      expect((await storage.stat(job.zip_path)).size).toBe(Number(job.size_bytes));
+    } finally { slowOpen.mockRestore(); }
+  });
+
+  it('shares ready polls briefly but probes the actual file afresh on delivery', async () => {
+    const { event } = await fixture();
+    const job = await prepare(event);
+    const stat = jest.spyOn(storage, 'stat');
+    try {
+      for (let i = 0; i < 3; i += 1) expect((await api(event, 'get', `download-jobs/${job.token}`)).body.unavailable).toBeUndefined();
+      expect(stat.mock.calls.filter(([key]) => key === job.zip_path)).toHaveLength(1);
+      await storage.delete(job.zip_path);
+      expect((await api(event, 'get', `download-jobs/${job.token}/file`)).status).toBe(410);
+      const now = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 5001);
+      try { expect((await api(event, 'get', `download-jobs/${job.token}`)).body.unavailable).toBe(true); }
+      finally { now.mockRestore(); }
+    } finally { stat.mockRestore(); }
+  });
+
+  it('preserves selection filenames and accurately labels priced videos', async () => {
+    const ordinary = await fixture();
+    const selection = await prepare(ordinary.event, { photo_ids: ordinary.ids.slice(0, 2) });
+    expect((await api(ordinary.event, 'head', `download-jobs/${selection.token}/file?selected=1`)).headers['content-disposition'])
+      .toContain(`${ordinary.event.slug}-selected.zip`);
+    const { event, ids } = await fixture({ is_priced: 1 });
+    await db('photos').where({ id: ids[2] }).update({ media_type: 'video', mime_type: 'video/mp4' });
+    const mixed = await prepare(event);
+    expect((await api(event, 'head', `download-jobs/${mixed.token}/file`)).headers['content-disposition'])
+      .toContain(`${event.slug}-photo-previews-and-videos.zip`);
+    const videos = await prepare(event, { photo_ids: [ids[2]] });
+    expect((await api(event, 'head', `download-jobs/${videos.token}/file?selected=1`)).headers['content-disposition'])
+      .toContain(`${event.slug}-selected-videos.zip`);
   });
 
   it('never lets a quota guest collect a portal original job in the same public scope', async () => {
@@ -274,11 +439,11 @@ describe('native prepared archive downloads (#1966)', () => {
 
   it('protects live builds past their initial retention and gives a finished job its full retention', async () => {
     const { event } = await fixture();
-    const realPut = storage.putFromFile.bind(storage);
+    const realPut = storage.put.bind(storage);
     let proceed; let entered;
     const held = new Promise((resolve) => { proceed = resolve; });
     const reached = new Promise((resolve) => { entered = resolve; });
-    const spy = jest.spyOn(storage, 'putFromFile').mockImplementation(async (...args) => {
+    const spy = jest.spyOn(storage, 'put').mockImplementation(async (...args) => {
       entered(); await held; return realPut(...args);
     });
     try {
