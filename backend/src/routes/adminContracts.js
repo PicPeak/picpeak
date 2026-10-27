@@ -4,6 +4,7 @@
  * Endpoint mounted at /api/admin/contracts. Surface:
  *   GET    /                            list (filter + sort + paginate)
  *   POST   /                            create (status=draft, seeded with all active system blocks)
+ *   POST   /import                      attach a historical contract PDF (no email, no clauses)
  *   GET    /:id                         detail (contract + included blocks)
  *   PUT    /:id                         update (block toggles + scalars; draft only)
  *   GET    /:id/send-preview            what a send would freeze and deliver, and its problems (read-only)
@@ -45,6 +46,7 @@ const accountingHistory = require('../services/accountingHistory');
 const contractBlocksService = require('../services/contractBlocksService');
 const contractContent = require('../services/contract/content');
 const contractAttachments = require('../services/contract/attachments');
+const { IMPORT_STATUSES } = require('../services/contract/imports');
 const { db } = require('../database/db');
 const { clientIpForAudit } = require('../utils/clientIp');
 
@@ -98,6 +100,32 @@ const signedPdfUpload = multer({
   fileFilter: (req, file, cb) => {
     const allowed = ['application/pdf'];
     if (validateFileType(file.originalname, file.mimetype, allowed)) return cb(null, true);
+    return cb(new Error('Only PDF files are allowed'));
+  },
+});
+
+// Historical contract imports (POST /import). Stored under
+// business-docs/contract/imports/<year>/ — inside the contract roots that
+// assertContractPdfPath serves from, apart from the renderer's own output.
+const importedContractStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const dir = path.join(getStoragePath(), 'business-docs', 'contract', 'imports', String(new Date().getFullYear()));
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  // Never the client's file name: it is not ours to trust, and two imports
+  // in one millisecond must not share a file.
+  filename: (_req, _file, cb) => {
+    cb(null, `imported-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`);
+  },
+});
+
+const importedContractUpload = multer({
+  storage: importedContractStorage,
+  // CVE-2026-82333: single unnamed `pdf` field only.
+  limits: { fileSize: 10 * 1024 * 1024, fieldArrayIndexLimit: 0 },
+  fileFilter: (req, file, cb) => {
+    if (validateFileType(file.originalname, file.mimetype, ['application/pdf'])) return cb(null, true);
     return cb(new Error('Only PDF files are allowed'));
   },
 });
@@ -183,6 +211,9 @@ function transformContract(c, inclusions, textSections, attachmentRows) {
     templateVersion: c.template_version_number == null ? null : Number(c.template_version_number),
     lockVersion: c.lock_version == null ? 1 : Number(c.lock_version),
     renderedContentSha256: c.rendered_content_sha256 || null,
+    // Migration 327 — set on contracts imported from a PDF (POST /import).
+    importedAt: c.imported_at || null,
+    isImported: !!c.imported_at,
     // Collect-then-freeze (#1446): when the customer's details came in.
     dataCollectedAt: c.data_collected_at || null,
     textSections: Array.isArray(textSections)
@@ -471,6 +502,78 @@ router.get(
     if (!exists) return res.status(404).json({ error: 'Contract not found' });
     const documents = await require('../services/documentArtifactService').listForDocument('contract', id);
     return successResponse(res, { documents });
+  }),
+);
+
+// POST /import — attach a historical contract PDF to a customer's account,
+// for studios moving from another tool. The row is written finished, in
+// one insert: the uploaded PDF as the contract (and as the signed copy when
+// signed), its SHA-256, the historical dates. No clauses are seeded, no
+// signing link is minted and no email is queued — the regular path
+// (create → send → upload signed PDF) emails the customer twice about a
+// contract they signed long ago. Mirrors POST /api/admin/invoices/import.
+//
+// Form fields (multipart/form-data):
+//   pdf                 file (required, application/pdf, max 10MB)
+//   customerAccountId   int (required)
+//   status              'fully_signed' | 'signed_by_customer' | 'cancelled'
+//   issueDate           ISO date (required; also the sent date)
+//   title, language, eventName, eventDate, validUntil      (optional)
+//   signedByCustomerAt  ISO date (optional, defaults to issueDate)
+//   signedByAdminAt     ISO date (optional, defaults to signedByCustomerAt)
+//   signedCustomerName, signedAdminName                    (optional)
+router.post(
+  '/import',
+  requirePermission('contracts.manage'),
+  importedContractUpload.single('pdf'),
+  [
+    body('customerAccountId').isInt({ min: 1 }),
+    body('status').isIn(IMPORT_STATUSES),
+    body('issueDate').isISO8601(),
+    body('title').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
+    body('language').optional({ values: 'falsy' }).isString().isLength({ max: 8 }),
+    body('eventName').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
+    body('eventDate').optional({ values: 'falsy' }).isISO8601(),
+    body('validUntil').optional({ values: 'falsy' }).isISO8601(),
+    body('signedByCustomerAt').optional({ values: 'falsy' }).isISO8601(),
+    body('signedByAdminAt').optional({ values: 'falsy' }).isISO8601(),
+    body('signedCustomerName').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
+    body('signedAdminName').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
+  ],
+  handleAsync(async (req, res) => {
+    // Multer has written the file. Anything that refuses the import must
+    // not leave it behind; once the row is committed it is the contract.
+    let contractId = null;
+    try {
+      validateRequest(req);
+      if (!req.file) {
+        return res.status(400).json({ error: 'PDF file is required', code: 'NO_FILE' });
+      }
+      if (!(await validateFileContent(req.file.path, 'application/pdf'))) {
+        await fs.promises.unlink(req.file.path).catch(() => {});
+        return res.status(400).json({ error: 'The uploaded file is not a PDF.', code: 'INVALID_PDF' });
+      }
+      // The file is about to be recorded as the contract's PDF; it has to be
+      // one the PDF routes will serve.
+      assertContractPdfPath(req.file.path);
+      contractId = await contractService.importContract({
+        ...req.body,
+        customerAccountId: parseInt(req.body.customerAccountId, 10),
+      }, req.file.path, req.admin?.id);
+    } catch (err) {
+      if (req.file && req.file.path && !contractId) await fs.promises.unlink(req.file.path).catch(() => {});
+      throw err;
+    }
+    require('../utils/logger').info('contract_import', {
+      contractId, status: req.body.status, adminId: req.admin?.id, requestId: req.id,
+    });
+    const data = await contractService.getContractById(contractId);
+    return successResponse(
+      res,
+      { contract: transformContract(data.contract, data.inclusions, data.textSections, data.attachments) },
+      201,
+      'Contract imported',
+    );
   }),
 );
 
