@@ -16,11 +16,10 @@ interface Options {
 }
 
 // Issue 2274: a row that stays pending (a stuck worker) must not keep every
-// open tab polling forever. Give up after this long since the first
-// "processing" answer, or after this many answers in a row that brought
-// nothing new, whichever comes first; the next list fetch starts over.
+// open tab polling forever. Give up this long after the first "processing"
+// answer; the next list fetch starts over. (No "N unchanged answers" rule: a
+// long transcode leaves the numbers unchanged too.)
 export const PROCESSING_POLL_DEADLINE_MS = 30 * 60_000;
-export const PROCESSING_POLL_MAX_UNCHANGED = 10;
 
 const statusOf = (error: unknown) => (error as { response?: { status?: number } } | null)?.response?.status;
 
@@ -37,7 +36,7 @@ const statusOf = (error: unknown) => (error as { response?: { status?: number } 
  * live refresh off, which is the same news. Any other failure backs off up to
  * the cap and stays silent.
  *
- * Bounded (issue 2274, see the constants above). Once given up, it waits for
+ * Bounded (issue 2274, see the deadline above). Once given up, it waits for
  * the next list fetch and returns true meanwhile, so live refresh can take
  * over.
  */
@@ -51,7 +50,6 @@ export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, 
   useEffect(() => {
     if (!enabled || halted) return undefined;
     let since: number | null = null;
-    let unchanged = 0;
     let delay = LIVE_REFRESH_INTERVAL_MS;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
@@ -72,10 +70,7 @@ export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, 
         const { loadedCount: count, loadedMaxId: maxId } = latest.current;
         if (next.processing !== false) since ??= Date.now();
         if (next.processing === false || next.count !== count || (next.max_id ?? null) !== maxId) {
-          unchanged = 0;
           latest.current.onLanded();
-        } else {
-          unchanged += 1;
         }
       } catch (error) {
         if (stopped) return;
@@ -87,8 +82,7 @@ export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, 
       } finally {
         inFlight = false;
       }
-      if (unchanged >= PROCESSING_POLL_MAX_UNCHANGED
-        || (since !== null && Date.now() - since >= PROCESSING_POLL_DEADLINE_MS)) {
+      if (since !== null && Date.now() - since >= PROCESSING_POLL_DEADLINE_MS) {
         stopped = true;
         setGaveUpOn(latest.current.listUpdatedAt);
         return;

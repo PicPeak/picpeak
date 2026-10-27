@@ -7,7 +7,7 @@ vi.mock('../../../services/gallery.service', () => ({
 }));
 
 import {
-  useProcessingRefresh, PROCESSING_POLL_DEADLINE_MS, PROCESSING_POLL_MAX_UNCHANGED,
+  useProcessingRefresh, PROCESSING_POLL_DEADLINE_MS,
 } from '../hooks/useProcessingRefresh';
 import { LIVE_REFRESH_INTERVAL_MS } from '../hooks/useLiveRefresh';
 
@@ -112,20 +112,14 @@ describe('useProcessingRefresh', () => {
   });
 
   // Issue 2274: a row stuck in processing must not be polled forever.
-  it('gives up after ten answers in a row that bring nothing new', async () => {
+  it('keeps polling a long transcode whose numbers do not move', async () => {
     const { result } = renderHook(() => useProcessingRefresh(base));
-    await advance(LIVE_REFRESH_INTERVAL_MS * PROCESSING_POLL_MAX_UNCHANGED);
-    expect(getPhotoState).toHaveBeenCalledTimes(PROCESSING_POLL_MAX_UNCHANGED);
-    expect(result.current).toBe(true);
-    await advance(LIVE_REFRESH_INTERVAL_MS * 5);
-    expect(getPhotoState).toHaveBeenCalledTimes(PROCESSING_POLL_MAX_UNCHANGED);
-    expect(onLanded).not.toHaveBeenCalled();
+    await advance(LIVE_REFRESH_INTERVAL_MS * 30);
+    expect(getPhotoState).toHaveBeenCalledTimes(30);
+    expect(result.current).toBe(false);
   });
 
   it('gives up 30 minutes after the first processing answer', async () => {
-    // The list never catches up (each answer reloads it), so only the
-    // deadline can end this.
-    getPhotoState.mockResolvedValue({ count: 11, max_id: 101, processing: true });
     const { result } = renderHook(() => useProcessingRefresh(base));
     await advance(LIVE_REFRESH_INTERVAL_MS);
     expect(result.current).toBe(false);
@@ -135,24 +129,29 @@ describe('useProcessingRefresh', () => {
     expect(calls).toBe(PROCESSING_POLL_DEADLINE_MS / LIVE_REFRESH_INTERVAL_MS + 1);
     await advance(LIVE_REFRESH_INTERVAL_MS * 5);
     expect(getPhotoState).toHaveBeenCalledTimes(calls);
+    expect(onLanded).not.toHaveBeenCalled();
   });
 
   it('starts over on the next list fetch after giving up', async () => {
     const { result, rerender } = renderHook((props) => useProcessingRefresh(props), { initialProps: base });
-    await advance(LIVE_REFRESH_INTERVAL_MS * PROCESSING_POLL_MAX_UNCHANGED);
+    const run = PROCESSING_POLL_DEADLINE_MS + LIVE_REFRESH_INTERVAL_MS;
+    await advance(run);
     expect(result.current).toBe(true);
+    const calls = getPhotoState.mock.calls.length;
     // A re-render without a new list keeps it stopped.
     rerender({ ...base });
     await advance(LIVE_REFRESH_INTERVAL_MS * 3);
-    expect(getPhotoState).toHaveBeenCalledTimes(PROCESSING_POLL_MAX_UNCHANGED);
+    expect(getPhotoState).toHaveBeenCalledTimes(calls);
     // The list was fetched again (navigation, focus, the live-refresh pill).
     rerender({ ...base, listUpdatedAt: 2 });
     expect(result.current).toBe(false);
     await advance(LIVE_REFRESH_INTERVAL_MS);
-    expect(getPhotoState).toHaveBeenCalledTimes(PROCESSING_POLL_MAX_UNCHANGED + 1);
-    // With a fresh budget: another full run before it gives up again.
-    await advance(LIVE_REFRESH_INTERVAL_MS * (PROCESSING_POLL_MAX_UNCHANGED - 1));
+    expect(getPhotoState).toHaveBeenCalledTimes(calls + 1);
+    // With a fresh deadline: another full run before it gives up again.
+    await advance(run - LIVE_REFRESH_INTERVAL_MS * 2);
+    expect(result.current).toBe(false);
+    await advance(LIVE_REFRESH_INTERVAL_MS);
     expect(result.current).toBe(true);
-    expect(getPhotoState).toHaveBeenCalledTimes(PROCESSING_POLL_MAX_UNCHANGED * 2);
+    expect(getPhotoState).toHaveBeenCalledTimes(calls * 2);
   });
 });
