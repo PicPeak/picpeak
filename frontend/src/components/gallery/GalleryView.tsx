@@ -1,4 +1,6 @@
 import { GalleryProductPanel } from '../../features/album-products/GalleryProductPanel';
+import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
+import { GalleryUnavailableNotice } from './GalleryUnavailableNotice';
 import { useGalleryFiltering, resolveMediaType } from './hooks/useGalleryFiltering';
 import { useGalleryUpload } from './hooks/useGalleryUpload';
 import { useLiveRefresh } from './hooks/useLiveRefresh';
@@ -1503,6 +1505,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // UX.md › States asks.
   const errorStatus = (error as { response?: { status?: number } } | null)?.response?.status;
   const galleryGone = errorStatus === 403 || errorStatus === 404 || errorStatus === 410;
+  if (isGalleryTemporarilyDisabled(error)) return <GalleryUnavailableNotice />;
   if (error) {
     // Check if it's an authentication error (401)
     const is401Error = (error as any)?.response?.status === 401;

@@ -13,7 +13,7 @@ const { errorResponse } = require('../../utils/routeHelpers');
 const { requireEventOwner, scopeEventsListQuery } = require('../../middleware/ownership');
 const { buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
 const { summarisePurchaseOrder } = require('../../modules/photoSales/adminOrders');
-const { queueEmail } = require('../../services/emailProcessor');
+const { queueEmail, getSupportEmail } = require('../../services/emailProcessor');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 
 async function loadOwnedEvent(req) {
@@ -114,7 +114,8 @@ module.exports = (router) => {
       const variables = emailVariables(order, event.event_name || event.slug, photoCount);
       variables.access_link = accessLink;
 
-      await queueEmail(event.id, order.buyer_email, 'photo_purchase_access', variables);
+      if (event.temporarily_disabled) variables.support_email = await getSupportEmail();
+      await queueEmail(event.id, order.buyer_email, event.temporarily_disabled ? 'photo_purchase_paused' : 'photo_purchase_access', variables);
       await db('photo_purchase_orders')
         .where({ id: order.id })
         .update({ email_sent: true, updated_at: new Date().toISOString() });

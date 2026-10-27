@@ -78,7 +78,8 @@ const STATUS_RANK = {
   expired: 2,
   draft: 3,
   inactive: 4,
-  archived: 5,
+  disabled: 5,
+  archived: 6,
 };
 
 const EXPIRING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -157,6 +158,7 @@ function applyEventListSort(query, sortBy, sortOrder) {
       `case
          when ?? = ? then ${STATUS_RANK.draft}
          when ?? = ? then ${STATUS_RANK.archived}
+         when ?? = ? then ${STATUS_RANK.disabled}
          when ?? is null or ?? = ? then ${STATUS_RANK.inactive}
          when ?? is null then ${STATUS_RANK.active}
          when ${expiry.sql} <= ? then ${STATUS_RANK.expired}
@@ -166,6 +168,7 @@ function applyEventListSort(query, sortBy, sortOrder) {
       [
         'is_draft', formatBoolean(true),
         'is_archived', formatBoolean(true),
+        'temporarily_disabled', formatBoolean(true),
         'is_active', 'is_active', formatBoolean(false),
         'expires_at',
         ...expiry.bindings, expiry.now,

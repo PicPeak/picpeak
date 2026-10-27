@@ -46,10 +46,12 @@ beforeAll(async () => {
   app.use('/api', require('../../src/middleware/csrf'));
   app.use('/api/admin/events', require('../../src/routes/adminEvents'));
   app.use('/api/gallery', require('../../src/routes/gallery'));
+  app.use('/api/auth', require('../../src/routes/auth'));
+  app.use((err, req, res, next) => res.status(err.statusCode || 500).json({ error: err.message, code: err.code }));
 }, 120000);
 
 beforeEach(async () => {
-  await db('events').where({ id: eventId }).update({ is_active: 1, is_archived: 0, is_draft: 0, require_password: 1,
+  await db('events').where({ id: eventId }).update({ is_active: 1, is_archived: 0, is_draft: 0, temporarily_disabled: 0, require_password: 1,
     expires_at: new Date(Date.now() + 86400000).toISOString(), reveal_mode: 0 });
   await db('customer_accounts').where({ id: customerId }).update({ is_active: 1, password_changed_at: null });
   if (!await db('event_customer_assignments').where({ event_id: eventId, customer_account_id: customerId }).first()) {
@@ -59,6 +61,138 @@ beforeEach(async () => {
   event = await db('events').where({ id: eventId }).first();
 });
 afterAll(async () => { if (cleanup) await cleanup(); });
+
+it('temporarily blocks public access and existing guest/client sessions, preserving admin access and credentials', async () => {
+  const bearer = token();
+  const clientBearer = token({ accessLevel: 'client', via: 'customer', customerId });
+  const adminBearer = mintAdminToken(adminId);
+  const setDisabled = (disabled) => request(app).put(`/api/admin/events/${eventId}`)
+    .set('Authorization', `Bearer ${adminBearer}`).send({ temporarily_disabled: disabled });
+  const original = await db('events').where({ id: eventId }).first();
+  expect((await setDisabled(true)).status).toBe(200);
+  await expectDirect(bearer, 403);
+  await expectDirect(clientBearer, 403);
+  await expectDirect(adminBearer, 200, '?admin_preview=1');
+  const info = await get(`/api/gallery/${slug}/info`);
+  expect(info.status).toBe(403);
+  expect(info.body).toMatchObject({ code: 'GALLERY_TEMPORARILY_DISABLED', error: 'This gallery is temporarily unavailable.' });
+  const adminInfo = await get(`/api/gallery/${slug}/info?admin_preview=1`, adminBearer);
+  expect(adminInfo.status).toBe(200);
+  const adminRead = await get(`/api/admin/events/${eventId}`, adminBearer);
+  expect(adminRead.status).toBe(200);
+  expect(adminRead.body.temporarily_disabled).toBeTruthy();
+  await db('events').where({ id: eventId }).update({ require_password: 0 });
+  await expectDirect(undefined, 403);
+  const login = await request(app).post('/api/auth/gallery/verify').send({ slug, password: '' });
+  expect(login.status).not.toBe(200);
+  expect((await setDisabled(false)).status).toBe(200);
+  await expectDirect(undefined, 200);
+  await db('events').where({ id: eventId }).update({ require_password: original.require_password });
+  await expectDirect(bearer, 200);
+  await expectDirect(clientBearer, 200);
+  const restored = await db('events').where({ id: eventId }).first();
+  for (const key of ['is_active', 'is_draft', 'is_archived', 'expires_at', 'password_hash', 'share_link', 'share_token']) {
+    expect(restored[key]).toEqual(original[key]);
+  }
+});
+
+it('blocks share links while disabled and restores them unchanged', async () => {
+  const shareToken = 'd'.repeat(32);
+  await db('events').where({ id: eventId }).update({ share_token: shareToken, temporarily_disabled: 1 });
+  for (const url of [`/api/gallery/resolve/${slug}`, `/api/gallery/resolve/${shareToken}`,
+    `/api/gallery/${slug}/verify-token/${shareToken}`]) {
+    const denied = await get(url);
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe('GALLERY_TEMPORARILY_DISABLED');
+    expect((await get(`${url}?admin_preview=1`, mintAdminToken(adminId))).status).toBe(200);
+    expect((await get(`${url}?admin_preview=1`, mintAdminToken(foreignId))).status).toBe(403);
+  }
+  await db('events').where({ id: eventId }).update({ temporarily_disabled: 0 });
+  expect((await get(`/api/gallery/resolve/${shareToken}`)).status).toBe(200);
+  expect((await get(`/api/gallery/${slug}/verify-token/${shareToken}`)).status).toBe(200);
+});
+
+it('refuses sign-in during a pause without recording incorrect password attempts', async () => {
+  await db('events').where({ id: eventId }).update({ temporarily_disabled: true });
+  const before = await db('login_attempts').count('* as count').first();
+  for (const [url, body] of [
+    ['/api/auth/gallery/verify', { slug, password: 'unimportant' }],
+    [`/api/auth/gallery/${slug}/client-login`, { password: 'unimportant', token: 'unimportant' }],
+    ['/api/auth/gallery/share-login', { slug, token: 'unimportant' }],
+  ]) {
+    const response = await request(app).post(url).send(body);
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('GALLERY_TEMPORARILY_DISABLED');
+    expect(response.headers['set-cookie']).toBeUndefined();
+  }
+  expect(await db('login_attempts').count('* as count').first()).toEqual(before);
+});
+
+it.each([null, 'invalid', {}, [true]])('rejects an invalid disabled flag: %p', async (value) => {
+  const response = await request(app).put(`/api/admin/events/${eventId}`)
+    .set('Authorization', `Bearer ${mintAdminToken(adminId)}`).send({ temporarily_disabled: value });
+  expect(response.status).toBe(400);
+  expect((await db('events').where({ id: eventId }).first()).temporarily_disabled).toBeFalsy();
+});
+
+it('scopes availability changes to admins allowed to edit this gallery', async () => {
+  const response = await request(app).put(`/api/admin/events/${eventId}`)
+    .set('Authorization', `Bearer ${mintAdminToken(foreignId)}`).send({ temporarily_disabled: true });
+  expect(response.status).toBe(403);
+});
+
+it('includes disabled galleries in their own list filter and excludes them from active galleries', async () => {
+  await db('events').where({ id: eventId }).update({ temporarily_disabled: 1 });
+  const bearer = mintAdminToken(adminId);
+  const disabled = await get('/api/admin/events?status=disabled&sortBy=status&sortOrder=asc', bearer);
+  expect(disabled.status).toBe(200);
+  expect(disabled.body.events.map((row) => row.id)).toContain(eventId);
+  const active = await get('/api/admin/events?status=active', bearer);
+  expect(active.status).toBe(200);
+  expect(active.body.events.map((row) => row.id)).not.toContain(eventId);
+});
+
+it('does not revive an expired gallery when temporary disabling is cleared', async () => {
+  await db('events').where({ id: eventId }).update({ temporarily_disabled: 1, expires_at: new Date(Date.now() - 1000).toISOString() });
+  const response = await request(app).put(`/api/admin/events/${eventId}`)
+    .set('Authorization', `Bearer ${mintAdminToken(adminId)}`).send({ temporarily_disabled: false });
+  expect(response.status).toBe(200);
+  await expectDirect(token(), 404);
+});
+
+it('reports a pause on session restoration without revoking the original session', async () => {
+  const bearer = token({ accessLevel: 'client' });
+  await db('events').where({ id: eventId }).update({ temporarily_disabled: true });
+  const paused = await get(`/api/auth/session?slug=${slug}`, bearer);
+  expect(paused.status).toBe(403);
+  expect(paused.body).toMatchObject({ valid: false, code: 'GALLERY_TEMPORARILY_DISABLED' });
+  await db('events').where({ id: eventId }).update({ temporarily_disabled: false });
+  expect((await get(`/api/auth/session?slug=${slug}`, bearer)).body).toMatchObject({ valid: true, accessLevel: 'client' });
+});
+
+it.each([{ is_draft: true }, { is_archived: true }, { is_active: false }, { expires_at: '2020-01-01T00:00:00Z' }])(
+  'keeps the normal lifecycle refusal when a paused gallery is also %p', async (change) => {
+    await db('events').where({ id: eventId }).update({ temporarily_disabled: true, ...change });
+    for (const url of endpoints) {
+      const response = await get(url, token());
+      expect(response.status).toBe(404);
+      expect(response.body.code).not.toBe('GALLERY_TEMPORARILY_DISABLED');
+    }
+  });
+
+it('allows an assigned editor, but refuses a foreign editor, to change availability', async () => {
+  await assignAdminRole(db, foreignId, 'editor');
+  const write = () => request(app).put(`/api/admin/events/${eventId}`)
+    .set('Authorization', `Bearer ${mintAdminToken(foreignId)}`).send({ temporarily_disabled: true });
+  try {
+    expect((await write()).status).toBe(403);
+    await db('event_admin_assignments').insert({ event_id: eventId, admin_user_id: foreignId, assigned_by: adminId });
+    expect((await write()).status).toBe(200);
+  } finally {
+    await db('event_admin_assignments').where({ event_id: eventId, admin_user_id: foreignId }).del();
+    await assignAdminRole(db, foreignId, 'viewer');
+  }
+});
 
 it('serves a valid session as a real list and JPEG', async () => {
   const bearer = token();

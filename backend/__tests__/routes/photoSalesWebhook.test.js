@@ -22,7 +22,10 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'sales-webhook-test-secret';
 process.env.STORAGE_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-sales-webhook-storage-'));
 process.env.SNIPCART_SECRET_API_KEY = 'sk_test_webhook';
 
-jest.mock('../../src/services/emailProcessor', () => ({ queueEmail: jest.fn(async () => undefined) }));
+jest.mock('../../src/services/emailProcessor', () => ({
+  ...jest.requireActual('../../src/services/emailProcessor'),
+  queueEmail: jest.fn(async () => undefined),
+}));
 jest.mock('../../src/utils/frontendUrl', () => ({
   getFrontendBaseUrl: async () => 'https://photos.example.com',
   getFrontendBaseUrlSync: () => 'https://photos.example.com',
@@ -198,6 +201,38 @@ describe('photo sales webhook and price check', () => {
   });
 
   describe('granting', () => {
+    it('honours a valid in-flight purchase while paused, confirms it without file links, and never refunds for the pause', async () => {
+      const eventId = await insertEvent('paused-checkout', { temporarily_disabled: true });
+      const photoId = await insertPhoto(eventId, 'paused.jpg');
+      await request(app).get(`/api/gallery/paused-checkout/price-check?photoId=${photoId}&sig=${signPhotoSale(photoId)}`).expect(403);
+      await db('app_settings').insert({ setting_key: 'branding_support_email', setting_value: JSON.stringify('help@example.test'), setting_type: 'branding' })
+        .onConflict('setting_key').merge();
+      const order = snipcartOrder([line('paused-checkout', photoId)]);
+      await deliver('order.completed', order.token).expect(200);
+      await deliver('order.completed', order.token).expect(200);
+      const granted = await stored(order.token);
+      expect(granted.status).toBe('completed');
+      expect(snipcart.refunds).toHaveLength(0);
+      expect(await db('photo_purchases').where({ order_id: order.token })).toHaveLength(1);
+      expect(queueEmail).toHaveBeenCalledTimes(1);
+      expect(queueEmail.mock.calls[0].slice(0, 3)).toEqual([null, order.email, 'photo_purchase_paused']);
+      expect(queueEmail.mock.calls[0][3]).toMatchObject({ support_email: 'help@example.test' });
+
+      const page = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`).expect(200);
+      expect(page.body).toMatchObject({ temporarily_disabled: true, order_id: order.token, photo_count: 1,
+        support_email: 'help@example.test', expires_at: granted.expires_at, photos: [] });
+      expect(page.body.download_url).toBeUndefined();
+      expect(page.headers['cache-control']).toContain('no-store');
+      const denied = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}/photos/${photoId}`).expect(403);
+      expect(denied.body.code).toBe('GALLERY_TEMPORARILY_DISABLED');
+
+      await db('events').where({ id: eventId }).update({ temporarily_disabled: false });
+      await request(app).get(`/api/gallery/paused-checkout/price-check?photoId=${photoId}&sig=${signPhotoSale(photoId)}`).expect(200);
+      const restored = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`).expect(200);
+      expect(restored.body.photos.map((photo) => photo.id)).toEqual([photoId]);
+      expect((await stored(order.token)).expires_at).toBe(granted.expires_at);
+    });
+
     it('grants a paid order read from Snipcart, and keeps the token out of the response', async () => {
       const order = snipcartOrder([line('on-sale', ids.photo), line('on-sale', ids.photo2)], { total: 7.5 });
       const res = await deliver('order.completed', order.token);
@@ -213,6 +248,16 @@ describe('photo sales webhook and price check', () => {
       const page = await request(app).get(`/api/gallery/purchased-downloads/${row.access_token}`);
       expect(page.status).toBe(200);
       expect(page.body.photo_ids.sort()).toEqual([ids.photo, ids.photo2].sort());
+    });
+
+    it('still refunds an invalid payment during a pause', async () => {
+      const eventId = await insertEvent('invalid-paused', { temporarily_disabled: true });
+      const photoId = await insertPhoto(eventId, 'invalid-paused.jpg');
+      const order = snipcartOrder([line('invalid-paused', photoId)], { total: 0.01 });
+      await deliver('order.completed', order.token).expect(200);
+      expect((await stored(order.token)).status).toBe('refunded');
+      expect(snipcart.refunds).toHaveLength(1);
+      expect(queueEmail).not.toHaveBeenCalled();
     });
 
     it('trusts Snipcart over the webhook body', async () => {

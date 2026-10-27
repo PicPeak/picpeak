@@ -39,7 +39,7 @@ const rateLimit = require('express-rate-limit');
 const { db } = require('../../database/db');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { rateLimitKey } = require('../../utils/rateLimitKey');
-const { queueEmail } = require('../../services/emailProcessor');
+const { queueEmail, getSupportEmail } = require('../../services/emailProcessor');
 const { createPurchaseAccessToken, buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const logger = require('../../utils/logger');
@@ -288,7 +288,11 @@ async function grantOrder(order) {
       .first(...ON_SALE_COLUMNS, 'event_name', 'photo_price', 'purchase_access_days', 'free_photo_count', 'promo_code', 'snipcart_discount_id')
     : null;
   if (!gallery) return rejectOrder(order, null, 'the cart does not name one priced gallery');
-  if (!isGalleryOnSale(gallery)) return rejectOrder(order, gallery, 'the gallery is not on sale');
+  // A temporary pause stops new checkout validation and file access, but is
+  // not a reason to refund an otherwise valid payment already in flight.
+  if (!isGalleryOnSale(gallery, { allowTemporarilyDisabled: true })) {
+    return rejectOrder(order, gallery, 'the gallery is not on sale');
+  }
 
   const currency = String(order.currency || '').toUpperCase();
   if (currency !== SALES_CURRENCY) {
@@ -383,7 +387,7 @@ async function grantOrder(order) {
   });
 
   if (buyerEmail) {
-    await queueEmail(null, buyerEmail, 'photo_purchase_access', {
+    await queueEmail(null, buyerEmail, gallery.temporarily_disabled ? 'photo_purchase_paused' : 'photo_purchase_access', {
       buyer_email: buyerEmail,
       gallery_name: gallery.event_name || gallerySlug,
       access_link: buildPurchasedDownloadUrl({ baseUrl: await getFrontendBaseUrl(), accessToken }),
@@ -391,6 +395,7 @@ async function grantOrder(order) {
       expires_at: expiresAt,
       download_count: photoIds.length,
       photo_count: photoIds.length,
+      ...(gallery.temporarily_disabled && { support_email: await getSupportEmail() }),
     });
     await db('photo_purchase_orders').where({ order_id: orderToken }).update({ email_sent: true });
   }

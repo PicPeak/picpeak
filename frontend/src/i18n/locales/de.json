@@ -1953,6 +1953,8 @@
     }
   },
   "gallery": {
+    "temporarilyUnavailable": "Diese Galerie ist vorübergehend nicht verfügbar.",
+    "temporarilyUnavailableHelp": "Bitte versuche es später erneut. Dein Galerie-Link bleibt gleich.",
     "revealPendingTitle": "Die Fotos sind noch eine Überraschung",
     "revealPendingMessage": "Der Gastgeber gibt die Galerie später frei — schauen Sie bald wieder vorbei!",
     "revealScheduledFor": "Freigabe geplant für {{date}}",
@@ -2390,6 +2392,13 @@
     "nestedFoldersHint": "Ordner in Ordnern verwalten Sie in der Ordnerleiste im Fotos-Tab."
   },
   "events": {
+    "disabled": "Deaktiviert",
+    "enableEvent": "Event aktivieren",
+    "disableEvent": "Event deaktivieren",
+    "temporarilyDisable": "Event vorübergehend deaktivieren",
+    "temporarilyDisableHelp": "Die Galerie für Kunden und Gäste offline nehmen und hier weiter bearbeiten. Nach der Aktivierung funktionieren dieselben Links und Passwörter wieder. Das Ablaufdatum bleibt unverändert.",
+    "temporarilyDisabledSuccess": "Galerie vorübergehend deaktiviert.",
+    "temporarilyEnabledSuccess": "Vorübergehende Pause aufgehoben.",
     "revealMode": "Reveal-Modus (Galerie bis zur Freigabe verbergen)",
     "revealModeHelp": "Gäste können hochladen, sehen aber keine Fotos, bis Sie die Galerie freigeben — manuell oder zum geplanten Zeitpunkt. Diashow und Kundenzugang funktionieren weiter.",
     "liveRefresh": "Live-Aktualisierung (Gäste auf neue Fotos hinweisen)",
@@ -7108,6 +7117,10 @@
     "videosFirstHelp": "Listet alle Videos vor den Fotos. Die Sortierung oben gilt weiterhin innerhalb der Videos und innerhalb der Fotos."
   },
   "photoSales": {
+    "purchaseConfirmed": "Dein Kauf war erfolgreich",
+    "purchasePausedHelp": "Dein Kauf bleibt gültig. Bitte verwende denselben Link, sobald die Galerie wieder verfügbar ist. Deine Zugriffsfrist bleibt unverändert.",
+    "purchaseContact": "Weitere Informationen erhältst du unter:",
+    "purchaseContactPhotographer": "Bitte wende dich für weitere Informationen an deinen Fotografen.",
     "cart": "Warenkorb",
     "addToCart": "Foto in den Warenkorb",
     "addToCartPrice": "Foto für {{price}} in den Warenkorb",

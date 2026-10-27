@@ -1,4 +1,4 @@
-const { isGalleryAvailable } = require('../utils/galleryLifecycle');
+const { isGalleryAvailable, assertGalleryEnabled } = require('../utils/galleryLifecycle');
 const { publicThemeFields } = require('../services/galleryTheme');
 const express = require('express');
 const { toDateOnly } = require('../utils/dateOnly');
@@ -645,6 +645,7 @@ router.post('/gallery/verify', [
       .where({ slug, is_active: formatBoolean(true), is_archived: formatBoolean(false) })
       .first();
 
+    assertGalleryEnabled(event);
     if (!isGalleryAvailable(event)) {
       // Perform a dummy bcrypt compare to prevent timing-based slug enumeration
       await bcrypt.compare(password || '', DUMMY_BCRYPT_HASH);
@@ -750,6 +751,9 @@ router.post('/gallery/verify', [
       }
     });
   } catch (error) {
+    if (error.code === 'GALLERY_TEMPORARILY_DISABLED') {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     errorResponse(res, error, 500, 'Verification failed');
   }
 });
@@ -777,6 +781,7 @@ router.post('/gallery/:slug/client-login', [
       .where({ slug, is_active: formatBoolean(true), is_archived: formatBoolean(false) })
       .first();
 
+    assertGalleryEnabled(event);
     if (!isGalleryAvailable(event) || !event.client_access_enabled || !event.client_password_hash) {
       await trackFailedAttempt(`client:${slug}`, ipAddress, userAgent);
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -840,6 +845,9 @@ router.post('/gallery/:slug/client-login', [
       accessLevel: 'client'
     });
   } catch (error) {
+    if (error.code === 'GALLERY_TEMPORARILY_DISABLED') {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     errorResponse(res, error, 500, 'Authentication failed');
   }
 });
@@ -881,6 +889,7 @@ router.post('/gallery/share-login', [
       }
     }
 
+    assertGalleryEnabled(event);
     if (!isGalleryAvailable(event)) {
       await trackFailedAttempt(shareIdentifier, ipAddress, userAgent);
       return res.status(404).json({ error: 'Gallery not found' });
@@ -939,6 +948,9 @@ router.post('/gallery/share-login', [
       }
     });
   } catch (error) {
+    if (error.code === 'GALLERY_TEMPORARILY_DISABLED') {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     errorResponse(res, error, 500, 'Share link login failed');
   }
 });
@@ -1055,6 +1067,9 @@ router.get('/session', async (req, res) => {
         ...(carried && { token: carried }),
       });
     } catch (err) {
+      if (err.code === 'GALLERY_TEMPORARILY_DISABLED') {
+        return res.status(err.statusCode).json({ valid: false, error: err.message, code: err.code });
+      }
       res.json({
         valid: false,
         error: 'Invalid or expired token'

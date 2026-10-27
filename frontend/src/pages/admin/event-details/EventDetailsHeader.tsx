@@ -210,6 +210,11 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
                   `relative`: on a phone the tooltip anchors to it, so it
                   starts at the content edge wherever the pill wrapped to. */}
               {event.is_draft ? <DraftPill /> : null}
+              {event.temporarily_disabled && !archived ? (
+                <Badge tone="warning" title={t('events.temporarilyDisableHelp', 'Take the gallery offline for clients and guests while keeping it editable here. Re-enable it to restore the same links and passwords. Expiration stays unchanged.')}>
+                  {t('events.disabled', 'Disabled')}
+                </Badge>
+              ) : null}
               {archived ? (
                 <span className="text-muted flex items-center">
                   <Archive className="w-4 h-4 mr-1" />

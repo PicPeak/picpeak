@@ -363,7 +363,10 @@ module.exports = (router) => {
 
       // Apply status filter
       if (status === 'active') {
-        query = query.where('is_active', formatBoolean(true)).where('is_archived', formatBoolean(false));
+        query = query.where('is_active', formatBoolean(true)).where('is_archived', formatBoolean(false))
+          .where('temporarily_disabled', formatBoolean(false));
+      } else if (status === 'disabled') {
+        query = query.where('temporarily_disabled', formatBoolean(true)).where('is_archived', formatBoolean(false));
       } else if (status === 'archived') {
         query = query.where('is_archived', formatBoolean(true));
       } else if (status === 'inactive') {
@@ -1214,6 +1217,7 @@ module.exports = (router) => {
     body('is_full_day').optional().isBoolean().toBoolean(),
     body('admin_email').optional().isEmail(),
     body('is_active').optional().isBoolean(),
+    body('temporarily_disabled').optional().not().isArray().isBoolean().toBoolean(),
     // The forms Date.parse reads, which is what the handler stores (it writes
     // toISOString()); isISO8601() alone also admits the basic format
     // (20261006T120000Z), which Node cannot parse and SQLite's strftime
@@ -1661,6 +1665,9 @@ module.exports = (router) => {
       }
 
       const hasRequirePasswordUpdate = Object.prototype.hasOwnProperty.call(updates, 'require_password');
+      if (Object.prototype.hasOwnProperty.call(updates, 'temporarily_disabled')) {
+        updates.temporarily_disabled = formatBoolean(updates.temporarily_disabled);
+      }
       let requirePasswordUpdate;
       if (hasRequirePasswordUpdate) {
         requirePasswordUpdate = parseBooleanInput(updates.require_password, true);

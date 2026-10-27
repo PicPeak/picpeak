@@ -1362,6 +1362,8 @@
     }
   },
   "gallery": {
+    "temporarilyUnavailable": "This gallery is temporarily unavailable.",
+    "temporarilyUnavailableHelp": "Please try again later. Your gallery link will stay the same.",
     "revealPendingTitle": "The photos are still a surprise",
     "revealPendingMessage": "The host will reveal the gallery later — check back soon!",
     "revealScheduledFor": "Reveal scheduled for {{date}}",
@@ -1799,6 +1801,13 @@
     "nestedFoldersHint": "Folders inside folders are managed in the folder bar of the Photos tab."
   },
   "events": {
+    "disabled": "Disabled",
+    "enableEvent": "Enable event",
+    "disableEvent": "Disable event",
+    "temporarilyDisable": "Temporarily disable event",
+    "temporarilyDisableHelp": "Take the gallery offline for clients and guests while keeping it editable here. Re-enable it to restore the same links and passwords. Expiration stays unchanged.",
+    "temporarilyDisabledSuccess": "Gallery temporarily disabled.",
+    "temporarilyEnabledSuccess": "Temporary pause removed.",
     "revealMode": "Reveal mode (hide gallery until reveal)",
     "revealModeHelp": "Guests can upload but see no photos until you reveal the gallery — manually or at the scheduled time. Slideshow and client access keep working.",
     "liveRefresh": "Live refresh (tell guests about new photos)",
@@ -7143,6 +7152,10 @@
     "videosFirstHelp": "Lists every video ahead of the photos. The sort above still applies within the videos and within the photos."
   },
   "photoSales": {
+    "purchaseConfirmed": "Your purchase was successful",
+    "purchasePausedHelp": "Your purchase remains valid. Please use this same link when the gallery is available again. Your access deadline has not changed.",
+    "purchaseContact": "For more information, contact:",
+    "purchaseContactPhotographer": "Please contact your photographer for more information.",
     "cart": "Cart",
     "addToCart": "Add photo to cart",
     "addToCartPrice": "Add photo to cart for {{price}}",
