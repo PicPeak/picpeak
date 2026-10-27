@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { motion, useInView } from 'framer-motion';
-import { Heart, Check } from 'lucide-react';
+import { Heart, Check, Video } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ColorLabelBadge } from '../../ColorLabelBadge';
 import { FirstLookBadge } from '../../GalleryTileBadges';
 import { ClientVisibilityToggle, isHiddenFromGuests } from '../../ClientVisibilityToggle';
@@ -83,6 +84,17 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   // Under neutral photo labels (issue 1733, E6) the caption, alt text and
   // checkbox name read "Photo 12 of 84" instead of a filename.
   const photoLabels = usePhotoLabels();
+  const { t } = useTranslation();
+
+  // A video has no preview tier, so lightboxImageUrl lands on `url`, the
+  // clip itself, which the card then downloaded only to fail decoding it as
+  // an image (issue 2284). Its picture is the poster frame on thumbnail_url,
+  // which names a picked frame and is always emitted for a video.
+  const isVideo = photo.media_type === 'video'
+    || Boolean(photo.mime_type && photo.mime_type.startsWith('video/'))
+    || photo.type === 'video';
+  const imageSrc = isVideo && photo.thumbnail_url ? photo.thumbnail_url : lightboxImageUrl(photo);
+
   const captionText = caption === 'none'
     ? null
     : photoLabels.of(photo, caption === 'original'
@@ -153,7 +165,8 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           // would be cropped a second time by object-cover and reframe every
           // photo. Previews use fit:'inside' and are the whole frame, so the
           // card looks exactly as it did while no longer pulling an original.
-          src={lightboxImageUrl(photo)}
+          // A video has only its poster, so it takes that crop (issue 2284).
+          src={imageSrc}
           alt={photoLabels.of(photo, photo.filename)}
           onLoad={() => setIsLoaded(true)}
           className={`w-full h-full object-cover transition-all duration-700 ease-out will-change-transform ${
@@ -181,6 +194,18 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
         photo={photo}
         className={`bottom-3 left-3${captionText ? ' transition-opacity group-hover:opacity-0' : ''}`}
       />
+
+      {/* Video badge, as the other layouts mark a video. Bottom-right, which
+          the hover caption covers, so it steps aside then. */}
+      {isVideo && (
+        <span
+          className={`absolute bottom-3 right-3 z-10 px-2 py-1 bg-black/60 text-white text-xs rounded flex items-center gap-1 pointer-events-none${captionText ? ' transition-opacity group-hover:opacity-0' : ''}`}
+          data-testid="story-video-badge"
+        >
+          <Video className="w-3 h-3" aria-hidden="true" />
+          {t('common.video', 'Video')}
+        </span>
+      )}
 
       {/* Selection checkbox (issue 1716). Visible while selecting or when
           selected; outside selection mode it appears on hover and starts the
