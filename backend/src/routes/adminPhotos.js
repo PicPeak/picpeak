@@ -1531,6 +1531,13 @@ router.get('/:eventId/preview/:photoId', adminAuth, requirePermission('photos.vi
       return res.status(503).json({ error: 'Preview not ready', status: photo.processing_status });
     }
 
+    // A video has no preview tier (issue 2286): its picture is the poster
+    // frame the thumbnail route serves. Never the generator, which would
+    // fetch the whole clip from remote storage only for Sharp to fail on it.
+    if (photo.media_type === 'video' || isVideoMimeType(photo.mime_type) || photo.type === 'video') {
+      return res.redirect(`${req.baseUrl}/${eventId}/thumbnail/${photo.id}`);
+    }
+
     const { PREVIEW_WIDTHS, normalizeTierWidth, ensurePreviewImageAtWidth, ensurePreviewImage } =
       require('../services/imageProcessor');
     const tierWidth = normalizeTierWidth(req.query.w, PREVIEW_WIDTHS);
