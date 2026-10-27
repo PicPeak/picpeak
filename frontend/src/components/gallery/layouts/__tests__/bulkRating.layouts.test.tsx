@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   submitBulkRating: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  guestContext: null as null | Record<string, unknown>,
 }));
 
 vi.mock('react-i18next', async () => ({
@@ -35,7 +36,7 @@ vi.mock('../../../../services/feedback.service', () => ({
   feedbackService: { submitFeedback: vi.fn(), submitBulkRating: mocks.submitBulkRating },
 }));
 vi.mock('../../../../hooks/useGallery', () => ({ useDownloadPhoto: () => ({ mutate: vi.fn() }) }));
-vi.mock('../../../../contexts/GuestIdentityContext', () => ({ useGuestIdentityOptional: () => null }));
+vi.mock('../../../../contexts/GuestIdentityContext', () => ({ useGuestIdentityOptional: () => mocks.guestContext }));
 vi.mock('../../../../utils/guestIdentityStorage', () => ({ getGuestIdentity: () => null }));
 vi.mock('../../../../hooks/useInputMode', () => ({ useInputMode: () => 'mouse' }));
 vi.mock('react-intersection-observer', () => ({ useInView: () => ({ ref: vi.fn(), inView: true }) }));
@@ -135,8 +136,12 @@ beforeEach(() => {
   }));
   mocks.toastSuccess.mockClear();
   mocks.toastError.mockClear();
+  mocks.guestContext = null;
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  document.body.querySelectorAll('[role="dialog"]').forEach((node) => node.remove());
+});
 
 describe.each(Object.entries(layouts))('Rate selected in the %s layout (issue 1985)', (_name, layout) => {
   it('sits in the selection bar when ratings are on and something is selected', () => {
@@ -267,6 +272,82 @@ describe.each(Object.entries(layouts))('Rate selected in the %s layout (issue 19
     fireEvent.click(within(dialog).getByText('Submit Feedback'));
     await waitFor(() => expect(mocks.submitBulkRating).toHaveBeenCalledWith('x', [1, 2], 4, { guest_name: 'Ana', guest_email: 'ana@example.com' }));
     await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('2 photos rated'));
+  });
+
+  it('stays open through guest registration and hands focus back once it closes', async () => {
+    // Stands in for the provider's GuestNamePromptModal: rendered after the
+    // press, takes focus, and leaves it on the body when it goes.
+    const prompt = document.createElement('div');
+    prompt.setAttribute('role', 'dialog');
+    const field = document.createElement('input');
+    prompt.appendChild(field);
+    let register: (value: unknown) => void = () => {};
+    mocks.guestContext = {
+      identityMode: 'guest',
+      identity: null,
+      ensureIdentity: vi.fn(() => {
+        setTimeout(() => {
+          document.body.appendChild(prompt);
+          field.focus();
+        });
+        return new Promise((resolve) => { register = resolve; });
+      }),
+    };
+    let answer: (value: unknown) => void = () => {};
+    mocks.submitBulkRating.mockImplementationOnce(() => new Promise((r) => { answer = r; }));
+    mount(layout.render({}));
+    const trigger = screen.getByTestId('bulk-rating-trigger');
+    fireEvent.click(trigger);
+    const star = within(screen.getByTestId('bulk-rating-popover')).getByLabelText('Rate 4 stars');
+    star.focus();
+    fireEvent.click(star);
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    fireEvent.mouseDown(field);
+    expect(screen.getByTestId('bulk-rating-popover')).toBeInTheDocument();
+
+    prompt.remove();
+    expect(document.activeElement).toBe(document.body);
+    register({ id: 7, name: 'Ann' });
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(screen.getByTestId('bulk-rating-popover')).toBeInTheDocument();
+
+    await waitFor(() => expect(mocks.submitBulkRating).toHaveBeenCalledTimes(1));
+    answer({ success: true, rating: 4, results: [1, 2].map((id) => ({ photo_id: id, success: true })) });
+    await waitFor(() => expect(screen.queryByTestId('bulk-rating-popover')).toBeNull());
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('2 photos rated');
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('keeps the panel open and hands focus back when a run fails', async () => {
+    mocks.submitBulkRating.mockRejectedValueOnce(new Error('network'));
+    mount(layout.render({}));
+    const trigger = screen.getByTestId('bulk-rating-trigger');
+    fireEvent.click(trigger);
+    const star = within(screen.getByTestId('bulk-rating-popover')).getByLabelText('Rate 4 stars');
+    star.focus();
+    fireEvent.click(star);
+    // What Chromium does when the focused star turns disabled.
+    star.blur();
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('Failed to submit rating'));
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.getByTestId('bulk-rating-popover')).toBeInTheDocument();
+  });
+
+  it('hands focus back when a run fails after the name-and-email dialog', async () => {
+    mocks.submitBulkRating.mockRejectedValueOnce(new Error('network'));
+    mount(layout.render({ requireNameEmail: true }));
+    const trigger = screen.getByTestId('bulk-rating-trigger');
+    fireEvent.click(trigger);
+    const star = within(screen.getByTestId('bulk-rating-popover')).getByLabelText('Rate 4 stars');
+    star.focus();
+    fireEvent.click(star);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('Enter your name'), { target: { value: 'Ana' } });
+    fireEvent.change(within(dialog).getByPlaceholderText('Enter your email'), { target: { value: 'ana@example.com' } });
+    fireEvent.click(within(dialog).getByText('Submit Feedback'));
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('Failed to submit rating'));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(screen.getByTestId('bulk-rating-popover')).toBeInTheDocument();
   });
 
   it('closes on Escape', () => {

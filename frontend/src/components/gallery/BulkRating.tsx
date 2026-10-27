@@ -15,7 +15,11 @@ interface BulkRatingProps {
   /** The selection. */
   photoIds: number[];
   requireNameEmail?: boolean;
-  /** Told when the name-and-email dialog opens and closes. */
+  /**
+   * Told when a dialog this control opens (the name-and-email dialog or the
+   * guest registration prompt) opens and closes. The open report comes before
+   * the dialog takes focus.
+   */
   onDialogChange?: (open: boolean) => void;
   /**
    * The name and email once given, held by a host that outlives this control
@@ -28,6 +32,8 @@ interface BulkRatingProps {
    * the mutation, so it still fires when this control unmounted meanwhile.
    */
   onRated?: (count: number, rating: number) => void;
+  /** Told when a run ended without rating every photo; called like onRated. */
+  onFailed?: () => void;
   className?: string;
 }
 
@@ -52,6 +58,7 @@ export const BulkRating: React.FC<BulkRatingProps> = ({
   identity: hostIdentity,
   onIdentityChange,
   onRated,
+  onFailed,
   className = '',
 }) => {
   const { t } = useTranslation();
@@ -61,9 +68,12 @@ export const BulkRating: React.FC<BulkRatingProps> = ({
   const [ownIdentity, setOwnIdentity] = useState<{ name: string; email: string } | null>(null);
   const identity = onIdentityChange ? hostIdentity ?? null : ownIdentity;
   const setIdentity = onIdentityChange ?? setOwnIdentity;
+  // Guest registration: the prompt is the provider's, open while this
+  // control waits on ensureIdentity().
+  const [awaitingIdentity, setAwaitingIdentity] = useState(false);
   const onDialogChangeRef = useRef(onDialogChange);
   onDialogChangeRef.current = onDialogChange;
-  const dialogOpen = pendingRating !== null;
+  const dialogOpen = pendingRating !== null || awaitingIdentity;
   useEffect(() => {
     if (!dialogOpen) return;
     onDialogChangeRef.current?.(true);
@@ -163,6 +173,9 @@ export const BulkRating: React.FC<BulkRatingProps> = ({
           rated: ratedCount,
           total: data.photoIds.length,
         }));
+      }
+      if (error || ratedCount < data.photoIds.length) {
+        onFailed?.();
       } else {
         onRated?.(ratedCount, data.rating);
       }
@@ -176,14 +189,25 @@ export const BulkRating: React.FC<BulkRatingProps> = ({
     if (busy || photoIds.length === 0) return;
     if (guestIdentity?.identityMode === 'guest') {
       const identityBefore = guestIdentity.identity?.id ?? null;
+      // Without an identity ensureIdentity() opens the registration prompt.
+      // Reported now, not from the effect: the prompt takes focus before
+      // that runs.
+      const prompts = !guestIdentity.identity;
+      if (prompts) {
+        onDialogChangeRef.current?.(true);
+        setAwaitingIdentity(true);
+      }
       let ensured;
       try {
         ensured = await guestIdentity.ensureIdentity();
       } catch {
         return;
+      } finally {
+        if (prompts) setAwaitingIdentity(false);
       }
       submit({ rating, identityChanged: (ensured?.id ?? null) !== identityBefore });
     } else if (requireNameEmail && !identity) {
+      onDialogChangeRef.current?.(true);
       setPendingRating(rating);
     } else {
       submit({ rating, guest_name: identity?.name, guest_email: identity?.email });

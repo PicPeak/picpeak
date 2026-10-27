@@ -46,9 +46,38 @@ export const BulkRatingPopover: React.FC<BulkRatingPopoverProps> = ({
   const openRef = useRef(open);
   openRef.current = open;
 
+  // Hands focus back to the trigger when it was lost (a star disabled while
+  // the request ran, a dialog that had nowhere to return it) or still sits in
+  // the panel. Focus moved to another control, or a panel the viewer already
+  // dismissed, is left alone.
+  const returnFocus = useCallback(() => {
+    const active = document.activeElement;
+    if (openRef.current && (!active || active === document.body || rootRef.current?.contains(active))) {
+      triggerRef.current?.focus();
+    }
+  }, []);
+
+  // A dialog BulkRating opened has closed. Its own focus restore runs as it
+  // unmounts, so look once that is done; only lost focus is taken back (a
+  // cancelled name-and-email dialog returns it to the star, which stays).
+  const dialogWasOpen = useRef(false);
   useEffect(() => {
-    // The name-and-email dialog is portalled to the body; a click in it is
-    // not a click outside.
+    if (dialogOpen) {
+      dialogWasOpen.current = true;
+      return;
+    }
+    if (!dialogWasOpen.current) return;
+    dialogWasOpen.current = false;
+    const id = window.setTimeout(() => {
+      const active = document.activeElement;
+      if (openRef.current && (!active || active === document.body)) triggerRef.current?.focus();
+    });
+    return () => window.clearTimeout(id);
+  }, [dialogOpen]);
+
+  useEffect(() => {
+    // BulkRating's dialogs are portalled to the body; a click in one is not
+    // a click outside.
     if (!open || dialogOpen) return;
     const onPointer = (event: MouseEvent | TouchEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
@@ -73,16 +102,10 @@ export const BulkRatingPopover: React.FC<BulkRatingPopoverProps> = ({
       ? t('feedback.bulkRatingDone', { count, defaultValue: '{{count}} photos rated' })
       : t('feedback.bulkRatingCleared', { count, defaultValue: 'Rating removed from {{count}} photos' }));
     // Closing unmounts the focused star; hand focus back to the trigger so a
-    // keyboard user keeps their place. A star disabled while the request ran
-    // has already dropped focus to the body, so that counts too. Focus moved
-    // to another control, or a panel the viewer already dismissed, is left
-    // alone.
-    const active = document.activeElement;
-    if (openRef.current && (!active || active === document.body || rootRef.current?.contains(active))) {
-      triggerRef.current?.focus();
-    }
+    // keyboard user keeps their place.
+    returnFocus();
     setOpen(false);
-  }, [t]);
+  }, [t, returnFocus]);
 
   const label = t('feedback.rateSelected', 'Rate selected');
   return (
@@ -91,12 +114,11 @@ export const BulkRatingPopover: React.FC<BulkRatingPopoverProps> = ({
       className={className}
       // Tabbing out closes the panel so it does not sit over controls that
       // keep focus. A null target (a star disabled mid-request) is not an exit,
-      // nor is the name-and-email dialog taking focus as it opens: that happens
-      // before onDialogChange reports it.
+      // nor is a dialog BulkRating opened taking focus: it reports the dialog
+      // before that.
       onBlur={(event) => {
         const next = event.relatedTarget as HTMLElement | null;
         if (!next || dialogOpen || rootRef.current?.contains(next)) return;
-        if (next.closest?.('[aria-modal="true"]')) return;
         setOpen(false);
       }}
     >
@@ -123,6 +145,8 @@ export const BulkRatingPopover: React.FC<BulkRatingPopoverProps> = ({
             identity={identity}
             onIdentityChange={setIdentity}
             onRated={onRated}
+            // A failed run keeps the panel open for another try.
+            onFailed={returnFocus}
           />
         </div>
       )}
