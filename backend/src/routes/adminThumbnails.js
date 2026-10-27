@@ -16,6 +16,15 @@ const { canonicalStorageKey, sameStorageKey } = require('../utils/storageKey');
 // process; another replica can still start its own.
 const runningJobs = { thumbnails: false, previews: false };
 
+// Photos one preview regeneration works on at once. 1 (the default) is the old
+// one-by-one loop. Each photo spends most of its time fetching the original
+// from storage and writing the rendition back, so a few in flight keep the CPU
+// busy; every slot also holds one full-resolution decode in memory.
+function previewRegenConcurrency() {
+  const configured = Number.parseInt(process.env.PREVIEW_REGEN_CONCURRENCY || '1', 10);
+  return Number.isFinite(configured) && configured > 0 ? Math.min(configured, 8) : 1;
+}
+
 /**
  * Who may start a regeneration. Scoped to an event it is that event's photo
  * work, for whoever can act on the event. Unscoped it rebuilds every gallery
@@ -381,7 +390,8 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
       let errorCount = 0;
       // Previews this run replaced, removed after the loop (see below).
       const superseded = [];
-      for (const photo of photos) {
+      const limit = require('p-limit')(previewRegenConcurrency());
+      await Promise.all(photos.map((photo) => limit(async () => {
         try {
           if (onlyMissing) {
             // No preview to replace, so no tiers to drop and nothing
@@ -432,7 +442,7 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
           logger.error(`Error regenerating preview for photo ${photo.id}:`, error);
           errorCount++;
         }
-      }
+      })));
       // Delete the replaced previews no row points at any more, as the
       // thumbnail endpoint does. One pass over every row's preview_path after
       // the loop, not a lookup per photo (on S3 every key moves). A row that
