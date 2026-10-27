@@ -1105,6 +1105,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     setSelectedPhotos(new Set());
     setIsSelectionMode(false);
   }, [setSelectedPhotos, setIsSelectionMode]);
+  // "Select photos" / "Cancel selection" in the sidebar and the grid: leaving
+  // selection mode drops the selection like the toolbar's X does, or Select
+  // all → Cancel left every photo ticked. Entering keeps what is selected.
+  const toggleSelectionMode = useCallback(() => {
+    if (isSelectionMode) cancelSelection();
+    else setIsSelectionMode(true);
+  }, [isSelectionMode, cancelSelection, setIsSelectionMode]);
   // The filters that live in the toolbar's filter panel; categories, search
   // and people have their own controls on the page.
   const activePanelFilterCount = activeFilters.length + activeColorFilters.length
@@ -1935,7 +1942,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           selectedPhotos={selectedPhotos}
           onSelectionChange={setSelectedPhotos}
           photosForIds={photosForIds}
-          onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
+          onToggleSelectionMode={toggleSelectionMode}
           eventName={event.event_name}
           eventLogo={data?.event?.hero_logo_url || brandingSettings?.logo_url}
           eventDate={event.event_date}
@@ -2064,7 +2071,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           sortDesc={sortDesc}
           onSortDescChange={setSortDesc}
           isSelectionMode={isSelectionMode}
-          onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
+          onToggleSelectionMode={toggleSelectionMode}
           hasVideos={hasVideoItems(scopedPhotos)}
           selectedCount={selectedPhotos.size}
           onSelectAll={selectAllVisible}
@@ -2515,7 +2522,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             selectedPhotos={selectedPhotos}
             onSelectionChange={setSelectedPhotos}
             photosForIds={photosForIds}
-            onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
+            onToggleSelectionMode={toggleSelectionMode}
             eventName={event.event_name}
             eventLogo={data?.event?.hero_logo_url || brandingSettings?.logo_url}
             eventDate={event.event_date}

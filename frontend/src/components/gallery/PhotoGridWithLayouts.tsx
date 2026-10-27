@@ -196,7 +196,11 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   const selectedPhotos = parentSelectedPhotos ?? localSelectedPhotos;
   const isSelectionMode = parentSelectionMode ?? localSelectionMode;
   const setSelectedPhotos = onSelectionChange ?? setLocalSelectedPhotos;
-  const toggleSelectionMode = parentToggleSelectionMode ?? (() => setLocalSelectionMode(!localSelectionMode));
+  // Leaving selection mode drops the selection, as the gallery's own toggle does.
+  const toggleSelectionMode = parentToggleSelectionMode ?? (() => {
+    if (localSelectionMode) setSelectedPhotos(new Set());
+    setLocalSelectionMode(!localSelectionMode);
+  });
 
   // Clear selection when category changes
   useEffect(() => {
