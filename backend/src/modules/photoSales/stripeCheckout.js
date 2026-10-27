@@ -299,21 +299,30 @@ async function reconcileSession(order, session, { failed = false, client = strip
       || (payment && (payment.currency?.toUpperCase() !== quote.currency || payment.amount_received !== quote.totalCents))) {
     return refusePaidOrder({ ...order, buyer_email: buyerEmail }, client);
   }
-  const now = new Date().toISOString();
   // Honor the immutable quote, with any newly shortened gallery expiry as
   // an additional cap. Price edits alone never invalidate a paid order.
-  const expiresAt = new Date(Math.min(Date.parse(quote.expiresAt), Date.parse(purchaseExpiry(gallery)))).toISOString();
-  await db.transaction(async (trx) => {
+  const granted = await db.transaction(async (trx) => {
+    // Match #2296's event-first lock order. A purchase committed after a
+    // resume starts after that pause, rather than missing its compensation.
+    const eventQuery = trx('events').where({ id: gallery.id });
+    if (trx.client.config.client === 'pg') eventQuery.forUpdate();
+    const current = await eventQuery.first();
+    if (!isGalleryOnSale(current, { allowTemporarilyDisabled: true }) || Date.parse(quote.expiresAt) <= Date.now()) return false;
+    const grantedAt = Date.now();
+    const now = new Date(grantedAt).toISOString();
+    const expiresAt = new Date(Math.min(Date.parse(quote.expiresAt), Date.parse(purchaseExpiry(current, grantedAt)))).toISOString();
     const changed = await trx('photo_purchase_orders').where({ id: order.id }).whereIn('status', OPEN).update({
       status: 'completed', buyer_email: buyerEmail, purchased_at: now, expires_at: expiresAt,
       promo_used: !!quote.promoCode, updated_at: now,
     });
-    if (!changed) return;
+    if (!changed) return true;
     await trx('photo_purchases').insert(purchaseRows({
       orderId: order.order_id, galleryId: gallery.id, buyerEmail, purchasedAt: now,
       expiresAt, accessToken: order.access_token, currency: order.currency, lines: quote.lines,
     }));
+    return true;
   });
+  if (!granted) return refusePaidOrder({ ...order, buyer_email: buyerEmail }, client);
   order = await db('photo_purchase_orders').where({ id: order.id }).first();
   await sendPurchaseEmail(order, quote.galleryName, quote.lines.length);
 }

@@ -42,7 +42,7 @@ async function sendPurchaseEmail(order, galleryName, photoCount) {
     expires_at: order.expires_at,
     download_count: photoCount,
     photo_count: photoCount,
-    ...(paused && { support_email: await getSupportEmail() }),
+    ...(paused && { support_email: await getSupportEmail(), expiry_date: gallery.expires_at }),
   };
   await db.transaction(async (trx) => {
     const claimed = await trx('photo_purchase_orders').where({ id: order.id, status: 'completed', email_sent: false })
