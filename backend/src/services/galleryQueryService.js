@@ -12,6 +12,7 @@ const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const { resolveHeroLogoVisible, originalNeedsPreview } = require('./galleryModel');
 const { heroAnchorQuery } = require('../utils/heroAnchor');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
+const { whereNotVideo } = require('../utils/photoVisibility');
 async function getGalleryPhotos({ event, query = {}, identity, accessLevel, adminPreview, hiddenForGuest, slug }) {
   // Get filter and sort parameters from query
   // `guest_id` is deliberately NOT read from the query string: the viewer's
@@ -47,6 +48,11 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
       this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
     });
   }
+
+  // The slideshow shows no videos (issue 2285): a video has no slideshow
+  // tier, so its slide fell back to /photo, which a slideshow session may
+  // not load. The /session and /state counts leave them out the same way.
+  if (accessLevel === 'slideshow') whereNotVideo(photosQuery);
 
   // Live Slideshow category filter (#202). Enforced server-side so the kiosk
   // viewer can't widen the set: when the event pins show_category_id, the
