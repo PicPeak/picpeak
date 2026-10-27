@@ -394,8 +394,24 @@ class PhotosService {
     return response.data;
   }
 
-  async downloadPhoto(eventId: number, photoId: number, filename: string): Promise<void> {
-    const response = await api.get(`/admin/events/${eventId}/photos/${photoId}/download`, {
+  // `isVideo` (issue 2277): a video navigates straight at the download URL,
+  // so the browser streams it with its own progress UI and names it from the
+  // server's Content-Disposition. Fetching it as a blob held the whole file in
+  // memory before the save started. The httpOnly admin_token cookie
+  // authenticates the navigation, as it does every admin request.
+  async downloadPhoto(eventId: number, photoId: number, filename: string, isVideo = false): Promise<void> {
+    const path = `/admin/events/${eventId}/photos/${photoId}/download`;
+    if (isVideo) {
+      const link = document.createElement('a');
+      link.href = api.getUri({ url: path });
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      return;
+    }
+
+    const response = await api.get(path, {
       responseType: 'blob'
     });
 

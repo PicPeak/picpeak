@@ -330,7 +330,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   const handleDownload = async (photo: AdminPhoto, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await photosService.downloadPhoto(eventId, photo.id, photo.filename);
+      await photosService.downloadPhoto(eventId, photo.id, photo.filename, isVideoItem(photo));
       toast.success('Download started');
     } catch {
       toast.error('Failed to download photo');
