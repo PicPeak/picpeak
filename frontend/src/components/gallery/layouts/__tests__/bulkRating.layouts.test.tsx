@@ -174,6 +174,16 @@ describe.each(Object.entries(layouts))('Rate selected in the %s layout (issue 19
     expect(mocks.submitBulkRating).toHaveBeenCalledWith('x', [1, 2], 0, expect.anything());
   });
 
+  it('hands focus back to the trigger when a rating closes the panel', async () => {
+    mount(layout.render({}));
+    fireEvent.click(screen.getByTestId('bulk-rating-trigger'));
+    const star = within(screen.getByTestId('bulk-rating-popover')).getByLabelText('Rate 4 stars');
+    star.focus();
+    fireEvent.click(star);
+    await waitFor(() => expect(screen.queryByTestId('bulk-rating-popover')).toBeNull());
+    expect(document.activeElement).toBe(screen.getByTestId('bulk-rating-trigger'));
+  });
+
   it('closes on Escape', () => {
     mount(layout.render({}));
     fireEvent.click(screen.getByTestId('bulk-rating-trigger'));

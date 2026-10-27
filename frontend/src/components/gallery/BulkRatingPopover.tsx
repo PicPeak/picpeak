@@ -69,6 +69,9 @@ export const BulkRatingPopover: React.FC<BulkRatingPopoverProps> = ({
     toast.success(rating > 0
       ? t('feedback.bulkRatingDone', { count, defaultValue: '{{count}} photos rated' })
       : t('feedback.bulkRatingCleared', { count, defaultValue: 'Rating removed from {{count}} photos' }));
+    // Closing unmounts the focused star; hand focus back to the trigger so a
+    // keyboard user keeps their place. Focus moved elsewhere is left alone.
+    if (rootRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
     setOpen(false);
   }, [t]);
 
