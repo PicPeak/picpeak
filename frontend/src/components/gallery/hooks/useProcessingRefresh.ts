@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { galleryService } from '../../../services/gallery.service';
 import { LIVE_REFRESH_INTERVAL_MS, LIVE_REFRESH_MAX_INTERVAL_MS } from './useLiveRefresh';
 
@@ -9,8 +10,6 @@ interface Options {
   /** What the loaded list holds. */
   loadedCount: number;
   loadedMaxId: number | null;
-  /** When the list last arrived (the query's dataUpdatedAt). */
-  listUpdatedAt: number;
   /** Reloads the list. */
   onLanded: () => void;
 }
@@ -40,12 +39,23 @@ const statusOf = (error: unknown) => (error as { response?: { status?: number } 
  * the next list fetch and returns true meanwhile, so live refresh can take
  * over.
  */
-export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, listUpdatedAt, onLanded }: Options): boolean {
-  const latest = useRef({ loadedCount, loadedMaxId, listUpdatedAt, onLanded });
-  latest.current = { loadedCount, loadedMaxId, listUpdatedAt, onLanded };
+export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, onLanded }: Options): boolean {
+  const queryClient = useQueryClient();
+  // Counts lists fetched from the server. Not dataUpdatedAt: a like or a
+  // rating patches the cached rows (a manual success) and moves it too, which
+  // would restart a poll that gave up (as in useLiveRefresh).
+  const [listFetches, setListFetches] = useState(0);
+  const latest = useRef({ loadedCount, loadedMaxId, listFetches, onLanded });
+  latest.current = { loadedCount, loadedMaxId, listFetches, onLanded };
   // The list fetch the poll gave up on; a newer one resumes it.
   const [gaveUpOn, setGaveUpOn] = useState<number | null>(null);
-  const halted = enabled && gaveUpOn === listUpdatedAt;
+  const halted = enabled && gaveUpOn === listFetches;
+
+  useEffect(() => queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== 'updated' || event.action.type !== 'success' || event.action.manual) return;
+    const [scope, eventSlug] = event.query.queryKey as unknown[];
+    if (scope === 'gallery-photos' && eventSlug === slug) setListFetches((n) => n + 1);
+  }), [queryClient, slug]);
 
   useEffect(() => {
     if (!enabled || halted) return undefined;
@@ -84,7 +94,7 @@ export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, 
       }
       if (since !== null && Date.now() - since >= PROCESSING_POLL_DEADLINE_MS) {
         stopped = true;
-        setGaveUpOn(latest.current.listUpdatedAt);
+        setGaveUpOn(latest.current.listFetches);
         return;
       }
       schedule();

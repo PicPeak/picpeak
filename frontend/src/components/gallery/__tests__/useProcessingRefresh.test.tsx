@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import React from 'react';
+import { act, renderHook as renderHookBare } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const getPhotoState = vi.fn();
 vi.mock('../../../services/gallery.service', () => ({
@@ -12,7 +14,14 @@ import {
 import { LIVE_REFRESH_INTERVAL_MS } from '../hooks/useLiveRefresh';
 
 const onLanded = vi.fn();
-const base = { slug: 'live', enabled: true, loadedCount: 10, loadedMaxId: 100, listUpdatedAt: 1, onLanded };
+const base = { slug: 'live', enabled: true, loadedCount: 10, loadedMaxId: 100, onLanded };
+
+let queryClient: QueryClient;
+const wrapper = ({ children }: { children: React.ReactNode }) => (
+  <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+);
+const renderHook: typeof renderHookBare = (callback, options) => renderHookBare(callback, { wrapper, ...options });
+const listKey = ['gallery-photos', 'live', 'all', null, 'guest'];
 
 function setHidden(hidden: boolean) {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
@@ -24,6 +33,7 @@ const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAs
 describe('useProcessingRefresh', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     getPhotoState.mockReset();
     onLanded.mockReset();
     getPhotoState.mockResolvedValue({ count: 10, max_id: 100, processing: true });
@@ -142,8 +152,13 @@ describe('useProcessingRefresh', () => {
     rerender({ ...base });
     await advance(LIVE_REFRESH_INTERVAL_MS * 3);
     expect(getPhotoState).toHaveBeenCalledTimes(calls);
+    // A like or a rating patching the cached rows is no new list.
+    act(() => { queryClient.setQueryData(listKey, { photos: [] }); });
+    expect(result.current).toBe(true);
+    await advance(LIVE_REFRESH_INTERVAL_MS * 3);
+    expect(getPhotoState).toHaveBeenCalledTimes(calls);
     // The list was fetched again (navigation, focus, the live-refresh pill).
-    rerender({ ...base, listUpdatedAt: 2 });
+    await act(async () => { await queryClient.fetchQuery({ queryKey: listKey, queryFn: async () => ({ photos: [] }) }); });
     expect(result.current).toBe(false);
     await advance(LIVE_REFRESH_INTERVAL_MS);
     expect(getPhotoState).toHaveBeenCalledTimes(calls + 1);
