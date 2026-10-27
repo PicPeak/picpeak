@@ -27,10 +27,15 @@ interface Request {
   photoIds?: number[];
 }
 
-const ArchiveDialogContext = createContext<React.ReactNode>(null);
-// Mount under the gallery's quota and photo-choice providers, while the
-// controller above GalleryViewContent preserves its state across renders.
-export const ArchiveDownloadDialog = () => useContext(ArchiveDialogContext);
+const ArchiveDialogContext = createContext<{ dialog: React.ReactNode; cancel: () => void } | null>(null);
+// The host stays below the live quota/rendition providers across layouts.
+// Losing gallery access settles the action instead of hiding a pending promise.
+export const ArchiveDownloadDialog: React.FC<{ available?: boolean }> = ({ available = true }) => {
+  const controller = useContext(ArchiveDialogContext);
+  const cancel = controller?.cancel;
+  useEffect(() => { if (!available) cancel?.(); }, [available, cancel]);
+  return available ? controller?.dialog ?? null : null;
+};
 
 /** UI owns preparation; the browser owns the ZIP transfer and its progress. */
 export const ArchiveDownloadProvider: React.FC<{ children: React.ReactNode; scopeKey?: string; renderDialog?: boolean }> = ({ children, scopeKey, renderDialog = true }) => {
@@ -43,6 +48,7 @@ export const ArchiveDownloadProvider: React.FC<{ children: React.ReactNode; scop
     pending.current = null;
     setRequest(null);
   }, []);
+  const cancel = useCallback(() => { lifetime.current += 1; finish(false); }, [finish]);
   useEffect(() => {
     setRequest(null);
     return () => {
@@ -109,11 +115,11 @@ export const ArchiveDownloadProvider: React.FC<{ children: React.ReactNode; scop
   }, [downloadSelectedPhotos]);
 
   return <ArchiveDownloadContext.Provider value={{ downloadAllPhotos, downloadSelectedPhotos, downloadPhotosInParts }}>
-    <ArchiveDialogContext.Provider value={request && <DownloadResolutionModal
+    <ArchiveDialogContext.Provider value={{ cancel, dialog: request && <DownloadResolutionModal
       slug={request.slug} choices={[]} startedJob={request.start} onRetry={request.retry}
       photoIds={request.photoIds}
       part={request.part} onClose={() => finish(false)} onDownloaded={() => finish(true)}
-    />}>
+    /> }}>
       {children}
       {renderDialog && <ArchiveDownloadDialog />}
     </ArchiveDialogContext.Provider>

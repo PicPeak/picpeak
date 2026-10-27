@@ -246,16 +246,97 @@ describe('native prepared archive downloads (#1966)', () => {
     } finally { release(); await Promise.all(workers.flatMap((worker) => [...worker.liveBuilds.values()])); builds.forEach((build) => build.mockRestore()); }
   });
 
-  it('bounds retained artifacts, reuses ready downloads at capacity, and reclaims expiry before admitting more', async () => {
+  it('reuses ready jobs at capacity and evicts old artifacts for the fifth and sixth selections', async () => {
+    const { event, ids } = await fixture({}, 6);
+    const ready = [];
+    for (const id of ids.slice(0, 4)) ready.push(await prepare(event, { photo_ids: [id] }));
+    expect((await prepare(event, { photo_ids: [ids[0]] })).token).toBe(ready[0].token);
+    for (const id of ids.slice(4)) await prepare(event, { photo_ids: [id] });
+    for (const job of ready.slice(0, 2)) {
+      expect(await storage.exists(job.zip_path)).toBe(false);
+      expect(await jobs.getStatus(job.token)).toMatchObject({ status: 'failed', zip_path: null, expires_at: job.expires_at });
+    }
+    expect(await db('download_jobs').where({ event_id: event.id, status: 'ready' })).toHaveLength(4);
+    // A valid repeat can be rebuilt after its old cached file was replaced.
+    await prepare(event, { photo_ids: [ids[0]] });
+    expect(await db('download_jobs').where({ event_id: event.id, status: 'ready' })).toHaveLength(4);
+  });
+
+  it('protects pending recipients and queued mail, but permits eviction after a mail was sent', async () => {
+    const { event, ids } = await fixture({}, 6);
+    const ready = [];
+    for (const id of ids.slice(0, 4)) ready.push(await prepare(event, { photo_ids: [id] }));
+    const timestamp = new Date().toISOString();
+    await db('download_job_recipients').insert([
+      { job_id: ready[0].id, email: 'waiting@example.test', created_at: timestamp, notified_at: null },
+      { job_id: ready[1].id, email: 'queued@example.test', created_at: timestamp, notified_at: timestamp },
+    ]);
+    await db('email_queue').insert({ event_id: event.id, recipient_email: 'queued@example.test',
+      email_type: 'download_ready', status: 'pending',
+      email_data: JSON.stringify({ gallery_link: 'https://example.test/?download_job=' + ready[1].token }),
+    });
+    await prepare(event, { photo_ids: [ids[4]] });
+    expect(await storage.exists(ready[0].zip_path)).toBe(true);
+    expect(await storage.exists(ready[1].zip_path)).toBe(true);
+    expect(await storage.exists(ready[2].zip_path)).toBe(false);
+    await db('email_queue').where({ event_id: event.id }).update({ status: 'sent' });
+    await prepare(event, { photo_ids: [ids[5]] });
+    expect(await storage.exists(ready[1].zip_path)).toBe(false);
+    // Preserve the request history used by the per-address hourly limit.
+    expect(await db('download_job_recipients').where({ job_id: ready[1].id })).toHaveLength(1);
+    expect((await api(event, 'get', 'download-jobs/' + ready[1].token)).body.status).toBe('failed');
+    await db('download_jobs').where({ id: ready[1].id }).update({ expires_at: new Date(Date.now() - 1000).toISOString() });
+    await jobs.sweepExpired(event.id);
+    expect(await db('download_job_recipients').where({ job_id: ready[1].id })).toHaveLength(0);
+  });
+
+  it('keeps the storage bound when every ready job still has a pending notification', async () => {
+    const { event, ids } = await fixture({}, 5);
+    for (const id of ids.slice(0, 4)) {
+      const job = await prepare(event, { photo_ids: [id] });
+      await db('download_job_recipients').insert({ job_id: job.id, email: 'waiting@example.test',
+        created_at: new Date().toISOString() });
+    }
+    expect((await api(event, 'post', 'download-jobs').send({ photo_ids: [ids[4]] })).status).toBe(429);
+    expect(await db('download_jobs').where({ event_id: event.id, status: 'ready' })).toHaveLength(4);
+    const other = await fixture();
+    await prepare(other.event);
+  });
+
+  it('retries failed artifact deletion before admitting more storage, without losing the cleanup record', async () => {
     const { event, ids } = await fixture({}, 5);
     const ready = [];
     for (const id of ids.slice(0, 4)) ready.push(await prepare(event, { photo_ids: [id] }));
-    expect((await api(event, 'post', 'download-jobs').send({ photo_ids: [ids[4]] })).status).toBe(429);
-    expect((await prepare(event, { photo_ids: [ids[0]] })).token).toBe(ready[0].token);
-    await db('download_jobs').where({ id: ready[0].id }).update({ expires_at: new Date(Date.now() - 1000).toISOString() });
+    const remove = jest.spyOn(storage, 'delete').mockRejectedValue(new Error('Storage delete failed'));
+    try {
+      for (let i = 0; i < 2; i += 1) {
+        expect((await api(event, 'post', 'download-jobs').send({ photo_ids: [ids[4]] })).status).toBe(500);
+        expect(await storage.exists(ready[0].zip_path)).toBe(true);
+        expect((await jobs.getStatus(ready[0].token)).zip_path).toBe(ready[0].zip_path);
+      }
+      expect(await db('download_jobs').where({ event_id: event.id, status: 'ready' })).toHaveLength(3);
+    } finally { remove.mockRestore(); }
     await prepare(event, { photo_ids: [ids[4]] });
     expect(await storage.exists(ready[0].zip_path)).toBe(false);
+    expect((await jobs.getStatus(ready[0].token)).zip_path).toBeNull();
     expect(await db('download_jobs').where({ event_id: event.id, status: 'ready' })).toHaveLength(4);
+  });
+
+  it.each(['priced', 'quota preview', 'resized'])('keeps every photo when final JPEG names collide (%s)', async (mode) => {
+    const { event, ids } = await fixture(mode === 'priced' ? { is_priced: 1 }
+      : mode === 'quota preview' ? { download_limit: 3 } : { download_standard_resolution: '800x600' });
+    const names = ['IMG_1.png', 'IMG_1.jpg', 'IMG_1_1.jpg'];
+    for (let i = 0; i < ids.length; i += 1) await db('photos').where({ id: ids[i] }).update({ filename: names[i] });
+    const job = await prepare(event);
+    const zip = new StreamZip.async({ file: path.join(process.env.STORAGE_PATH, job.zip_path) });
+    try {
+      const entries = Object.values(await zip.entries());
+      expect(entries).toHaveLength(3);
+      expect(new Set(entries.map((entry) => entry.name)).size).toBe(3);
+      expect(entries.every((entry) => entry.name.endsWith('.jpg'))).toBe(true);
+      expect(JSON.parse(job.delivered_photo_ids)).toEqual(ids);
+    } finally { await zip.close(); }
+    expect((await api(event, 'head', 'download-jobs/' + job.token + '/file')).status).toBe(200);
   });
 
   it.each(['read', 'open', 'render'])('fails a stalled %s, destroys late sources and frees the build slot', async (stage) => {
@@ -329,8 +410,17 @@ describe('native prepared archive downloads (#1966)', () => {
     const { event, ids } = await fixture({ is_priced: 1 });
     await db('photos').where({ id: ids[2] }).update({ media_type: 'video', mime_type: 'video/mp4' });
     const mixed = await prepare(event);
-    expect((await api(event, 'head', `download-jobs/${mixed.token}/file`)).headers['content-disposition'])
-      .toContain(`${event.slug}-photo-previews-and-videos.zip`);
+    const queries = [];
+    const record = (query) => { if (/^select/i.test(query.sql) && query.sql.includes('media_type')) queries.push(query.sql); };
+    db.on('query', record);
+    try {
+      for (const method of ['head', 'get']) {
+        queries.length = 0;
+        expect((await api(event, method, `download-jobs/${mixed.token}/file`)).headers['content-disposition'])
+          .toContain(`${event.slug}-photo-previews-and-videos.zip`);
+        expect(queries).toHaveLength(1);
+      }
+    } finally { db.removeListener('query', record); }
     const videos = await prepare(event, { photo_ids: [ids[2]] });
     expect((await api(event, 'head', `download-jobs/${videos.token}/file?selected=1`)).headers['content-disposition'])
       .toContain(`${event.slug}-selected-videos.zip`);

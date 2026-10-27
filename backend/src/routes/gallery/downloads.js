@@ -1474,7 +1474,8 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     // A photo hidden AFTER this archive was built is still inside it, and the
     // scope check above can't see that — both sides remain 'public'. Re-run
     // the visibility query over the packaged set before handing it over.
-    if (!(await downloadJobService.isStillDeliverable(job, req.event, req.accessLevel))) {
+    const deliveryPhotos = await downloadJobService.deliveryPhotos(job, req.event, req.accessLevel);
+    if (!deliveryPhotos) {
       return res.status(409).json({
         error: 'This gallery changed since the download was prepared — please request it again',
         status: 'stale',
@@ -1509,7 +1510,8 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     }
     let suffix = job.preview_only ? 'previews' : job.resolution;
     if (!job.preview_only && isGalleryPriced(req.event) && Array.isArray(deliveredIds)) {
-      const media = await livePhotos(db).whereIn('id', deliveredIds).select('media_type', 'mime_type');
+      const delivered = new Set(deliveredIds.map(Number));
+      const media = deliveryPhotos.filter((photo) => delivered.has(Number(photo.id)));
       const videos = media.filter(isVideo).length;
       suffix = videos === 0 ? 'previews' : videos === media.length ? 'videos' : 'photo-previews-and-videos';
     }

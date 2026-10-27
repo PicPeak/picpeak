@@ -41,9 +41,11 @@ const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, livePhotos, wherePhotoPr
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
 const { buildEntryManifest } = require('./downloadJobManifest');
+const { retireReadyJobs } = require('./downloadJobCache');
 const { readEntryManifest } = require('./downloadJobDelivery');
 const { createBuildProgress } = require('./downloadJobProgress');
 const { downloadLimitOf } = require('./downloadQuota');
+const { uniquifyZipNames } = require('../utils/filenameSanitizer');
 
 const blockedFoldersOf = (eventId) => require('./folderTreeService').downloadBlockedFolderIds(eventId);
 
@@ -61,8 +63,8 @@ const MAX_CONCURRENT_BUILDS = 2;
 // subset to enqueue unbounded 500-photo resizes — each one parking a promise
 // and eventually a full gallery's worth of CPU and disk.
 const MAX_QUEUED_BUILDS = 8;
-// A gallery cannot fill the instance queue. Include in-flight reservations
-// in the stored-job budget, so concurrent completions cannot exceed it.
+// A gallery cannot fill the instance queue. The storage budget includes
+// in-flight reservations and evicts replaceable ready archives as needed.
 const MAX_EVENT_BUILDS = 2;
 const MAX_EVENT_STORED_JOBS = 4;
 const STALL_TIMEOUT_MS = 2 * 60 * 1000;
@@ -241,14 +243,19 @@ class DownloadJobService {
         const reused = await this.findReusable(event.id, dedupKey, trx);
         if (reused) return { reused };
         const rows = await trx('download_jobs').where({ event_id: event.id })
-          .whereIn('status', ['pending', 'building', 'ready']).select('status');
-        const busy = rows.filter((row) => row.status !== 'ready').length;
+          .where(function () { this.whereIn('status', ['pending', 'building', 'ready']).orWhereNotNull('zip_path'); })
+          .select('status');
+        const busy = rows.filter((row) => ['pending', 'building'].includes(row.status)).length;
         if (busy >= MAX_EVENT_BUILDS) {
           const err = new Error('Too many downloads are being prepared for this gallery. Please try again later');
           err.code = 'BUSY';
           throw err;
         }
-        if (rows.length >= MAX_EVENT_STORED_JOBS) return { full: true };
+        // A failed deletion still occupies disk: reclaim it before admitting
+        // more work, rather than letting repeated storage errors bypass the cap.
+        if (rows.some((row) => row.status === 'failed')) return { full: true };
+        const evicted = await retireReadyJobs(trx, event.id, rows.length - MAX_EVENT_STORED_JOBS + 1);
+        if (!evicted) return { full: true };
         const inserted = await trx('download_jobs').insert({
           token,
           event_id: event.id,
@@ -263,7 +270,7 @@ class DownloadJobService {
           created_at: createdAt,
           expires_at: expiresAt,
         }).returning('id');
-        return { id: inserted[0]?.id ?? inserted[0] };
+        return { id: inserted[0]?.id ?? inserted[0], evicted };
       });
       let admitted = await admit();
       if (admitted.full) {
@@ -279,6 +286,14 @@ class DownloadJobService {
       }
       if (admitted.reused) return admitted.reused;
       const { id } = admitted;
+      try {
+        // Storage I/O stays outside the transaction. Do not build another
+        // archive if the old artifact could not be reclaimed.
+        await this.evictJobs(admitted.evicted);
+      } catch (error) {
+        await this._fail(id, 'Could not reclaim prepared download storage');
+        throw error;
+      }
 
       // Fire and forget — the row is the source of truth for progress. The
       // liveBuilds entry is what makes a pending/building row reusable; a row
@@ -339,6 +354,11 @@ class DownloadJobService {
    * Re-running the visibility query at delivery closes that window.
    */
   async isStillDeliverable(job, event, accessLevel) {
+    return !!await this.deliveryPhotos(job, event, accessLevel);
+  }
+
+  /** The authorized photo projection also supplies the archive filename. */
+  async deliveryPhotos(job, event, accessLevel) {
     // Unreleased v2 artifacts used buffered pointer values as boundaries.
     // Never reuse/charge against those; the normal sweep retires them.
     if (job.policy_version === 2) return false;
@@ -353,7 +373,8 @@ class DownloadJobService {
     if (!Array.isArray(ids) || ids.length === 0) return false;
 
     // Every packaged photo must still be visible to this requester.
-    const visible = await this.photoQuery(job.event_id, ids, accessLevel, await blockedFoldersOf(job.event_id)).select('photos.id');
+    const visible = await this.photoQuery(job.event_id, ids, accessLevel, await blockedFoldersOf(job.event_id))
+      .select('photos.id', 'photos.media_type', 'photos.mime_type');
     if (visible.length !== ids.length) return false;
 
     // …and the archive must still match the CURRENT rendition policy. Turning
@@ -368,7 +389,7 @@ class DownloadJobService {
       job.event_id, job.resolution, ids, identityWatermark, visibilityScope(accessLevel), isGalleryPriced(event),
       { version: job.policy_version || 1, previewOnly: !!job.preview_only }
     );
-    return expected === job.dedup_key;
+    return expected === job.dedup_key ? visible : null;
   }
 
   // Only a job still in flight: one cancelForEvent() failed keeps its reason.
@@ -440,6 +461,7 @@ class DownloadJobService {
       tmpDir = await progress.wait(fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-dljob-')));
       const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.zip`);
       const packaged = [];
+      const finalNames = new Map();
       let reportAt = Date.now();
       let reportedCount = 0;
       let reportedRevision = progress.revision;
@@ -528,6 +550,9 @@ class DownloadJobService {
               continue;
             }
             if (failure) { source.destroy?.(); return; }
+            // Conversion can give distinct source extensions the same final
+            // name. Uniquify after rewriting, against every packaged entry.
+            entryName = uniquifyZipNames([entryName], finalNames)[0];
             await progress.wait(new Promise((done, failed) => {
               const onEntry = (entry) => {
                 completeEntry = null;
@@ -653,6 +678,36 @@ class DownloadJobService {
     return this.isStillDeliverable(job, event, accessLevel);
   }
 
+  /** Keep the token/notification history until its original retention ends. */
+  async evictJobs(jobs) {
+    const storage = getStorage();
+    for (const job of jobs) {
+      if (job.zip_path) {
+        await storage.delete(job.zip_path);
+        this.readyStats.delete(job.zip_path);
+      }
+      await db('download_jobs').where({ id: job.id, status: 'failed' }).update({
+        zip_path: null, size_bytes: null, entry_manifest: null,
+      });
+    }
+  }
+
+  /** Remove files before rows, retaining failed deletions for the next sweep. */
+  async removeJobs(jobs) {
+    const storage = getStorage();
+    for (const job of jobs) {
+      if (job.zip_path) {
+        await storage.delete(job.zip_path);
+        this.readyStats.delete(job.zip_path);
+      }
+      await require('./downloadJobNotifier').cancelPendingMails([job]);
+      await db.transaction(async (trx) => {
+        await trx('download_job_recipients').where({ job_id: job.id }).del();
+        await trx('download_jobs').where({ id: job.id }).del();
+      });
+    }
+  }
+
   /**
    * Delete jobs past their retention, and finished archives that can no
    * longer be delivered: with a retention of days instead of an hour, those
@@ -666,6 +721,7 @@ class DownloadJobService {
     const now = new Date().toISOString();
     const staleBefore = new Date(Date.now() - LEASE_TIMEOUT_MS).toISOString();
     const inScope = (query) => eventId === undefined ? query : query.where({ event_id: eventId });
+    await this.evictJobs(await inScope(db('download_jobs')).where({ status: 'failed' }).whereNotNull('zip_path'));
     const expired = await inScope(db('download_jobs')).where('expires_at', '<=', now)
       .where(function () {
         this.whereNotIn('status', ['pending', 'building'])
@@ -690,21 +746,7 @@ class DownloadJobService {
     const doomed = [...expired, ...undeliverable];
     if (doomed.length === 0) return 0;
 
-    const storage = getStorage();
-    for (const job of doomed) {
-      if (job.zip_path) {
-        await storage.delete(job.zip_path).catch((e) =>
-          logger.warn('Failed deleting download job artifact', { jobId: job.id, error: e.message }));
-      }
-    }
-    const ids = doomed.map((j) => j.id);
-    // Explicitly, not only through the cascade: SQLite enforces foreign keys
-    // per connection.
-    await db('download_job_recipients').whereIn('job_id', ids).del();
-    // After the recipients (nothing new is queued for these jobs from here
-    // on) and before the jobs, so a failure leaves them for the next round.
-    await require('./downloadJobNotifier').cancelPendingMails(doomed);
-    await db('download_jobs').whereIn('id', ids).del();
+    await this.removeJobs(doomed);
     logger.info(`Download job sweep removed ${expired.length} expired and ${undeliverable.length} undeliverable job(s)`);
     return doomed.length;
   }

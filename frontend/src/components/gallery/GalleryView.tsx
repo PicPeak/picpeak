@@ -1502,10 +1502,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
   }, [showUrgentWarning, daysUntilExpiration, slug]);
 
-  if (isLoading || (isSwitchingClientMode && !showClientAccess)) {
-    return <GallerySkeleton />;
-  }
-
   // Auth failures end the session whenever they happen, background refetch
   // included. So does a gallery that is gone or closed to this guest (403,
   // 404, 410: expired, deleted, access withdrawn): keeping its grid would only
@@ -1515,6 +1511,22 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // UX.md › States asks.
   const errorStatus = (error as { response?: { status?: number } } | null)?.response?.status;
   const galleryGone = errorStatus === 403 || errorStatus === 404 || errorStatus === 410;
+  const downloadsAvailable = !!data && !isLoading && !galleryGone && errorStatus !== 401
+    && !isAdminSessionExpired(error) && !isPasswordChangeRequired(error)
+    && !(isSwitchingClientMode && !showClientAccess) && !hiddenUntilReveal;
+  // One provider/dialog root for loading, errors and every gallery layout:
+  // switching content cannot remount the preparation modal or strand its action.
+  const withDownloadProviders = (children: React.ReactNode) => (
+    <DownloadQuotaProvider slug={slug} event={data?.event}>
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
+        <ArchiveDownloadDialog available={downloadsAvailable} />
+        {children}
+      </PhotoDownloadChoiceProvider>
+    </DownloadQuotaProvider>
+  );
+  if (isLoading || (isSwitchingClientMode && !showClientAccess)) {
+    return withDownloadProviders(<GallerySkeleton />);
+  }
   if (error) {
     // Check if it's an authentication error (401)
     const is401Error = (error as any)?.response?.status === 401;
@@ -1522,7 +1534,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // An admin preview whose admin session idled out: offer to sign in again.
     // Logging a guest session out would leave the preview blank.
     if (isAdminSessionExpired(error)) {
-      return <PasswordChangeRequiredNotice reason="session" />;
+      return withDownloadProviders(<PasswordChangeRequiredNotice reason="session" />);
     }
 
     if (is401Error) {
@@ -1530,16 +1542,16 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // handle re-authentication. Not logout(): that also drops the guest
       // identity, which outlives this session by design (issue 2209).
       endSession();
-      return null;
+      return withDownloadProviders(null);
     }
 
     if (isPasswordChangeRequired(error)) {
-      return <PasswordChangeRequiredNotice />;
+      return withDownloadProviders(<PasswordChangeRequiredNotice />);
     }
   }
 
   if (!data || galleryGone) {
-    return (
+    return withDownloadProviders(
       <div className="min-h-screen bg-surface flex items-center justify-center p-4">
         <div className="text-center" role="alert">
           <AlertCircle className="w-10 h-10 mx-auto mb-3 text-muted-theme" aria-hidden="true" />
@@ -1607,10 +1619,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // render the upload-only view for EVERY layout. Enforcement is server-side
   // (the photo endpoints refuse plain guests); this is the friendly face.
   if (hiddenUntilReveal) {
-    return (
-      <DownloadQuotaProvider slug={slug} event={data?.event}>
-      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
-      <ArchiveDownloadDialog />
+    return withDownloadProviders(
       <GalleryLayout
         event={{
           ...event,
@@ -1692,8 +1701,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
-      </PhotoDownloadChoiceProvider>
-      </DownloadQuotaProvider>
     );
   }
 
@@ -1797,15 +1804,12 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     feedbackSettings?.identity_mode === 'guest' ? 'guest' : 'simple';
 
   if (isFullPageLayout) {
-    return (
+    return withDownloadProviders(
       // The same identity flow as the standard layout below (issue 1733):
       // Premium and Story already ask for it (ensureIdentity) before a like,
       // and finishing a selection needs it too. Without the provider a guest
       // in guest identity mode was never asked for a name and got a 401.
       <GuestIdentityProvider slug={slug} identityMode={identityMode}>
-      <DownloadQuotaProvider slug={slug} event={data?.event}>
-      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
-      <ArchiveDownloadDialog />
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
@@ -2042,17 +2046,12 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
-      </PhotoDownloadChoiceProvider>
-      </DownloadQuotaProvider>
       </GuestIdentityProvider>
     );
   }
 
-  return (
+  return withDownloadProviders(
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
-    <DownloadQuotaProvider slug={slug} event={data?.event}>
-      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
-      <ArchiveDownloadDialog />
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GridDensityOffered.Provider value={densityOffered}>
@@ -2622,8 +2621,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       </GridDensityOffered.Provider>
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
-      </PhotoDownloadChoiceProvider>
-    </DownloadQuotaProvider>
     </GuestIdentityProvider>
   );
 };
