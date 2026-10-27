@@ -15,7 +15,7 @@ router.use(noStoreCache, tokenLimiter);
 
 async function findCheckout(req) {
   if (!/^[0-9a-f]{48}$/.test(req.params.token || '')) return null;
-  const order = await db('photo_purchase_orders').where({ payment_provider: 'stripe', checkout_token: req.params.token }).first();
+  const order = await db('photo_purchase_orders').where({ checkout_token: req.params.token }).first();
   return verifyCheckoutBrowser(order, req.get('X-Photo-Checkout-Key')) ? order : null;
 }
 
@@ -44,6 +44,7 @@ router.post('/:token/cancel', async (req, res) => {
   try {
     const order = await findCheckout(req);
     if (!order) return res.status(404).json({ error: 'Checkout not found' });
+    if (OPEN.includes(order.status) && order.payment_provider !== 'stripe') return res.status(409).json({ error: 'Snipcart cannot confirm cancellation of an unpaid cart. Its reservation will expire automatically.' });
     if (OPEN.includes(order.status)) {
       const client = await stripeClient();
       let session = await checkoutSession(order, client);

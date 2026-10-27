@@ -7,12 +7,20 @@ import { Check, Copy, ExternalLink } from 'lucide-react';
 import { Button, Card, Input, Loading, Notice } from '../../../components/common';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { paymentsService, type PaymentSettingsUpdate } from '../../../services/payments.service';
+import { useOrderStatus } from '../../photo-sales/usePhotoOrderStatus';
+import { formatPhotoPrice } from '../../photo-sales/photoSales';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 
 export const PaymentsTab: React.FC = () => {
   const { t } = useTranslation();
+  const orderStatus = useOrderStatus();
   const { formatDateTime } = useLocalizedDate();
   const queryClient = useQueryClient();
+  const [availabilityDraft, setAvailabilityDraft] = useState<{ stripe: boolean; snipcart: boolean; revision: string } | null>(null);
+  const [snipcartPublicKey, setSnipcartPublicKey] = useState('');
+  const [snipcartSecretKey, setSnipcartSecretKey] = useState('');
+  const [snipcartRevision, setSnipcartRevision] = useState<string | null>(null);
+  const [ordersPage, setOrdersPage] = useState(1);
   const [secretKey, setSecretKey] = useState('');
   const [webhookSecret, setWebhookSecret] = useState('');
   const [draftRevision, setDraftRevision] = useState<string | null>(null);
@@ -20,22 +28,41 @@ export const PaymentsTab: React.FC = () => {
   const [checkedRevision, setCheckedRevision] = useState<string | null>(null);
   const stepHeading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { stepHeading.current?.focus(); }, [step]);
-  const isDirty = secretKey !== '' || webhookSecret !== '';
+  const stripeDirty = secretKey !== '' || webhookSecret !== '';
+  const snipcartDirty = snipcartPublicKey !== '' || snipcartSecretKey !== '';
+  const isDirty = stripeDirty || snipcartDirty || !!availabilityDraft;
   const query = useQuery({ queryKey: ['admin-payments'], queryFn: paymentsService.get });
-  const discard = () => { setSecretKey(''); setWebhookSecret(''); setDraftRevision(null); setCheckedRevision(null); };
+  const orders = useQuery({ queryKey: ['admin-payment-attention', ordersPage], queryFn: () => paymentsService.orders(ordersPage) });
+  const discard = () => { setAvailabilityDraft(null); setSnipcartPublicKey(''); setSnipcartSecretKey(''); setSnipcartRevision(null); discardStripe(); };
+  const discardStripe = () => { setSecretKey(''); setWebhookSecret(''); setDraftRevision(null); setCheckedRevision(null); };
   const message = (error: AxiosError<{ error?: string }>) => toast.error(error.response?.data?.error || t('settings.payments.failed'));
   const save = useMutation({
-    mutationFn: (input: PaymentSettingsUpdate) => paymentsService.save(input),
-    onSuccess: (data) => {
-      discard();
-      test.reset();
-      queryClient.setQueryData(['admin-payments'], data);
+    mutationFn: async () => {
+      if (!query.data) return;
+      let failed = false;
+      const changes: Array<{ provider: 'stripe' | 'snipcart' | 'availability'; input: PaymentSettingsUpdate }> = [];
+      if (stripeDirty) changes.push({ provider: 'stripe', input: { revision: draftRevision || query.data.revision,
+        ...(secretKey.trim() ? { secret_key: secretKey.trim() } : {}), ...(webhookSecret.trim() ? { webhook_secret: webhookSecret.trim() } : {}) } });
+      if (snipcartDirty) changes.push({ provider: 'snipcart', input: { provider: 'snipcart', revision: snipcartRevision || query.data.snipcart.revision,
+        ...(snipcartPublicKey.trim() ? { public_key: snipcartPublicKey.trim() } : {}), ...(snipcartSecretKey.trim() ? { secret_key: snipcartSecretKey.trim() } : {}) } });
+      if (availabilityDraft) changes.push({ provider: 'availability', input: { provider: 'availability', ...availabilityDraft } });
+      for (const change of changes) {
+        try {
+          const next = await paymentsService.save(change.input);
+          queryClient.setQueryData(['admin-payments'], next);
+          if (change.provider === 'stripe') { discardStripe(); test.reset(); setStep(4); }
+          else if (change.provider === 'availability') setAvailabilityDraft(null);
+          else { setSnipcartPublicKey(''); setSnipcartSecretKey(''); setSnipcartRevision(null); }
+        } catch (error) {
+          failed = true;
+          const detail = (error as AxiosError<{ error?: string }>).response?.data?.error || t('settings.payments.failed', 'Could not save payment settings.');
+          toast.error(`${change.provider === 'stripe' ? 'Stripe' : change.provider === 'snipcart' ? 'Snipcart' : t('settings.payments.providers', 'Payment providers')}: ${detail}`);
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ['public-settings'] });
       queryClient.invalidateQueries({ queryKey: ['admin-event-photo-orders'] });
-      setStep(4);
-      toast.success(t('settings.payments.saved'));
+      if (!failed) toast.success(t('settings.payments.saved', 'Payment settings saved'));
     },
-    onError: message,
   });
   const test = useMutation({
     mutationFn: paymentsService.test,
@@ -48,11 +75,17 @@ export const PaymentsTab: React.FC = () => {
     <Button variant="outline" onClick={() => void query.refetch()}>{t('common.retry', 'Retry')}</Button>
   </Notice>;
 
+  const apiAddressIssue = data.site_url_ready && !data.webhook_url;
+  const addressHelp = apiAddressIssue
+    ? t('settings.payments.wizard.apiAddressHelp', 'Your Site URL is ready, but the server’s API_URL override is not a public HTTPS address. Ask the server operator to correct or remove that override; changing the Site URL alone will not fix the webhook address.')
+    : t('settings.payments.wizard.addressHelp', 'Set the Site URL in Settings → General. Stripe must be able to reach PicPeak from the internet; a local or VPN-only address is not enough. This checks the address format, not delivery.');
+  const enabled = availabilityDraft || data.checkout_enabled;
   const pinned = data.source === 'environment';
   const ready = data.checkout_configured && data.webhook_configured;
-  const currentCheck = !isDirty && checkedRevision === data.revision ? test.data : undefined;
-  const apiChecked = !isDirty && !!(currentCheck || data.api_verified_at);
-  const canSave = !!((secretKey.trim() || data.checkout_configured) && (webhookSecret.trim() || data.webhook_configured));
+  const currentCheck = !stripeDirty && checkedRevision === data.revision ? test.data : undefined;
+  const apiChecked = !stripeDirty && !!(currentCheck || data.api_verified_at);
+  const stripeCanSave = !!((secretKey.trim() || data.checkout_configured) && (webhookSecret.trim() || data.webhook_configured));
+  const canSave = (!stripeDirty || (!pinned && stripeCanSave)) && (!snipcartDirty || (data.snipcart?.source !== 'environment' && !!((snipcartPublicKey.trim() || data.snipcart?.public_key) && (snipcartSecretKey.trim() || data.snipcart?.checkout_configured))));
   const steps = [
     t('settings.payments.wizard.address', 'Check your gallery address'),
     t('settings.payments.wizard.key', 'Add a restricted Stripe key'),
@@ -74,8 +107,17 @@ export const PaymentsTab: React.FC = () => {
     {label}<ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
   </a>;
   return <div className="space-y-6">
+    <Card><div className="p-6 space-y-4">
+      <h2 className="text-lg font-semibold text-heading">{t('settings.payments.providers', 'Payment providers')}</h2>
+      <p className="text-sm text-soft">{t('settings.payments.providersHelp', 'Offer either provider or both. Stripe is selected first when available. Turning off a provider stops new checkouts and keeps credentials for existing payments, refunds and disputes.')}</p>
+      {(['stripe', 'snipcart'] as const).map((provider) => <label key={provider} className="flex items-center gap-2 text-sm text-body">
+        <input type="checkbox" checked={enabled?.[provider] !== false} disabled={save.isPending}
+          onChange={(event) => { const next = { ...data.checkout_enabled, ...availabilityDraft, [provider]: event.target.checked }; setAvailabilityDraft(next.stripe === data.checkout_enabled.stripe && next.snipcart === data.checkout_enabled.snipcart ? null : next); }} />
+        {provider === 'stripe' ? t('settings.payments.offerStripe', 'Offer Stripe checkout when configured') : t('settings.payments.offerSnipcart', 'Offer Snipcart checkout when configured')}
+      </label>)}
+    </div></Card>
     <Card><div className="p-6 space-y-5">
-      {step === 0 && <p className="text-sm text-soft">{t('settings.payments.intro', 'One Stripe merchant account receives photo payments from every gallery on this installation. Only super admins can change credentials. Set individual prices in each gallery’s Photo sales settings.')}</p>}
+      {step === 0 && <p className="text-sm text-soft">{t('settings.payments.stripeIntro', 'One Stripe merchant account receives Stripe photo payments from every gallery on this installation. Only super admins can change credentials. Set individual prices in each gallery’s Photo sales settings.')}</p>}
       <Notice tone={ready ? 'info' : 'warning'} title={!ready ? t('settings.payments.notConfigured', 'Stripe is not configured') : data.test_mode ? t('settings.payments.testMode', 'Stripe test mode') : t('settings.payments.liveMode', 'Stripe live mode')}>
         {step === 0 && (!ready ? t('settings.payments.notConfiguredHelp', 'Complete the setup below before accepting photo purchases.') : data.test_mode ? t('settings.payments.testHelp', 'Test checkouts do not collect real money. Complete a test purchase and refund before going live.') : t('settings.payments.liveHelp', 'New checkouts collect real payments into the configured Stripe account.'))}
       </Notice>
@@ -103,8 +145,8 @@ export const PaymentsTab: React.FC = () => {
         <Input id="stripe-site-url" readOnly label={t('settings.payments.wizard.siteUrl', 'Public PicPeak address')}
           value={data.site_url} onFocus={(event) => event.target.select()} />
         <Notice tone={data.site_url_ready && data.webhook_url ? 'info' : 'warning'}
-          title={data.site_url_ready && data.webhook_url ? t('settings.payments.wizard.addressSet', 'HTTPS address configured') : t('settings.payments.wizard.addressMissing', 'Set your public HTTPS address first')}>
-          {t('settings.payments.wizard.addressHelp', 'Set the Site URL in Settings → General. Stripe must be able to reach PicPeak from the internet; a local or VPN-only address is not enough. This checks the address format, not delivery.')}
+          title={data.site_url_ready && data.webhook_url ? t('settings.payments.wizard.addressSet', 'HTTPS address configured') : apiAddressIssue ? t('settings.payments.wizard.apiAddressMissing', 'Correct the server’s public API address') : t('settings.payments.wizard.addressMissing', 'Set your public HTTPS address first')}>
+          {addressHelp}
         </Notice>
       </>}
       {step === 1 && <>
@@ -140,7 +182,7 @@ export const PaymentsTab: React.FC = () => {
             {t('settings.payments.wizard.copyUrl', 'Copy URL')}
           </Button>
         </div>
-        {!data.webhook_url && <Notice tone="warning">{t('settings.payments.wizard.addressHelp', 'Set the Site URL in Settings → General. Stripe must be able to reach PicPeak from the internet; a local or VPN-only address is not enough. This checks the address format, not delivery.')}</Notice>}
+        {!data.webhook_url && <Notice tone="warning">{addressHelp}</Notice>}
         <p className="text-sm text-soft">{t('settings.payments.version', 'Choose API version {{version}} and subscribe to these events.', { version: data.api_version })}</p>
         <ul aria-label={t('settings.payments.events', 'Required webhook events')} className="space-y-1 text-sm text-body">
           {data.webhook_events.map((event) => <li key={event}><code className="break-all">{event}</code></li>)}
@@ -163,11 +205,11 @@ export const PaymentsTab: React.FC = () => {
           <dt className="text-soft">{t('settings.payments.webhookSecret', 'Webhook signing secret')}</dt>
           <dd className="text-body">{webhookSecret.trim() ? t('settings.payments.wizard.entered', 'New value entered') : data.webhook_configured ? t('settings.payments.wizard.kept', 'Saved value kept') : t('settings.payments.wizard.missing', 'Not entered')}</dd>
         </dl>
-        {isDirty && <p className="text-sm text-warning-text">{canSave
+        {stripeDirty && <p className="text-sm text-warning-text">{stripeCanSave
           ? t('settings.payments.wizard.saveBeforeCheck', 'Save your changes before checking access.')
           : t('settings.payments.wizard.bothRequired', 'Enter both credentials before saving for the first time.')}</p>}
         {(currentCheck?.account_id || data.account_id) && <p className="text-sm text-soft">{t('settings.payments.account', 'Stripe account: {{account}}', { account: currentCheck?.account_id || data.account_id })}</p>}
-        <Button variant="outline" disabled={!data.checkout_configured || isDirty || save.isPending || test.isPending} isLoading={test.isPending} onClick={() => test.mutate()}>
+        <Button variant="outline" disabled={!data.checkout_configured || stripeDirty || save.isPending || test.isPending} isLoading={test.isPending} onClick={() => test.mutate()}>
           {t('settings.payments.checkApi', 'Check saved API access')}
         </Button>
         {apiChecked && <p role="status" className="text-sm text-body">{t('settings.payments.apiChecked', 'The saved API key passed read-only Account and Checkout Sessions checks.')}</p>}
@@ -189,7 +231,44 @@ export const PaymentsTab: React.FC = () => {
         {step < steps.length - 1 && <Button disabled={save.isPending} onClick={() => setStep((value) => value + 1)}>{t('settings.payments.wizard.next', 'Next step')}</Button>}
       </div>
     </div></Card>
-    {!pinned && <SettingsSaveBar isDirty={isDirty} isSaving={save.isPending} canSave={canSave} onDiscard={discard}
-      onSave={() => save.mutate({ revision: draftRevision || data.revision, ...(secretKey.trim() ? { secret_key: secretKey.trim() } : {}), ...(webhookSecret.trim() ? { webhook_secret: webhookSecret.trim() } : {}) })} />}
+    <Card><div className="p-6 space-y-4">
+      <h2 className="text-lg font-semibold text-heading">Snipcart</h2>
+      <p className="text-sm text-soft">{t('settings.payments.snipcart.intro', 'Keep Snipcart, add Stripe, or configure both. Buyers use one PicPeak cart and choose a provider at checkout. Stripe is selected first when both are available.')}</p>
+      <p role="status" className="text-sm text-body">{data.snipcart?.checkout_configured ? t('settings.payments.snipcart.ready', 'Snipcart credentials configured') : t('settings.payments.snipcart.missing', 'Snipcart is not configured')}</p>
+      {data.snipcart?.source === 'environment' ? <Notice tone="info" title={t('settings.payments.serverManaged', 'Managed by the server')}>
+        {t('settings.payments.snipcart.environment', 'SNIPCART_API_KEY and SNIPCART_SECRET_API_KEY take precedence as a pair. Existing server-managed stores continue working.')}
+      </Notice> : <>
+        <p className="text-sm text-soft">{t('settings.payments.snipcart.keysHelp', 'In Snipcart Dashboard → Account → API keys, copy the public and secret keys from the same store and test/live environment. The public key is sent to buyers’ browsers; the secret key is encrypted and stays on the server.')}</p>
+        {data.snipcart?.unreadable && <Notice tone="warning" title={t('settings.payments.unreadable', 'Saved credentials could not be decrypted')}>
+          {t('settings.payments.snipcart.restore', 'Restore the payment encryption key or enter both keys again for the same Snipcart store.')}
+        </Notice>}
+        <Input id="snipcart-public-key" label={t('settings.payments.snipcart.publicKey', 'Snipcart public API key')} value={snipcartPublicKey}
+          onChange={(event) => { setSnipcartRevision(snipcartRevision || data.snipcart.revision); setSnipcartPublicKey(event.target.value); }}
+          placeholder={data.snipcart?.public_key || ''} disabled={save.isPending} autoComplete="off" spellCheck={false} />
+        <Input id="snipcart-secret-key" type="password" label={t('settings.payments.snipcart.secretKey', 'Snipcart secret API key')} value={snipcartSecretKey}
+          onChange={(event) => { setSnipcartRevision(snipcartRevision || data.snipcart.revision); setSnipcartSecretKey(event.target.value); }}
+          disabled={save.isPending} autoComplete="new-password" spellCheck={false} />
+      </>}
+      <Input id="snipcart-webhook-url" readOnly label={t('settings.payments.snipcart.webhook', 'Snipcart webhook URL')} value={data.snipcart?.webhook_url || ''} onFocus={(event) => event.target.select()} />
+      <p className="text-sm text-soft">{t('settings.payments.snipcart.webhookHelp', 'Add this URL in Snipcart Dashboard → Store configurations → Webhooks, and allow your public PicPeak domain. Keep prices tax-inclusive and use EUR. Saving checks secret-key read access only; complete a test purchase, download and refund to verify the store, public key and webhook together.')}</p>
+    </div></Card>
+    <Card><div className="p-6 space-y-4">
+      <h2 className="text-lg font-semibold text-heading">{t('settings.payments.attention.title', 'Orders needing attention and deleted galleries')}</h2>
+      <p className="text-sm text-soft">{t('settings.payments.attention.help', 'Financial records remain available when a gallery is deleted. Unknown payments and unconfirmed refunds need checking in the provider’s dashboard before taking further action. A retry time does not confirm payment or a refund.')}</p>
+      {orders.isLoading ? <Loading /> : orders.isError ? <Button variant="outline" onClick={() => void orders.refetch()}>{t('common.retry', 'Retry')}</Button>
+        : !orders.data?.orders.length ? <p className="text-sm text-soft">{t('settings.payments.attention.empty', 'No orders to show.')}</p>
+        : <ul className="divide-y divide-line">{orders.data.orders.map((order) => <li key={order.id} className="py-3 text-sm space-y-1">
+          <p className="font-medium text-heading break-all">{order.payment_provider === 'stripe' ? 'Stripe' : 'Snipcart'} · {order.provider_order_id || order.order_id}</p>
+          <p className="text-body break-all">{order.buyer_email || '—'} · {orderStatus(order).label} · {formatPhotoPrice(order.total_cents / 100, order.currency)}</p>
+          <p className="text-soft">{order.orphaned ? t('settings.payments.attention.deleted', 'Gallery deleted') : t('settings.payments.attention.review', 'Check payment status in the provider dashboard')}</p>
+          {order.recovery_next_at && <p className="text-soft">{t('settings.payments.attention.retryAt', 'Next recovery check: {{time}}', { time: formatDateTime(order.recovery_next_at) })}</p>}
+        </li>)}</ul>}
+      <div className="flex flex-wrap gap-2">
+        {(ordersPage > 1 || orders.data?.has_more) && <><Button variant="outline" disabled={ordersPage <= 1} onClick={() => setOrdersPage((page) => page - 1)}>{t('common.previous', 'Previous')}</Button>
+        <Button variant="outline" disabled={!orders.data?.has_more} onClick={() => setOrdersPage((page) => page + 1)}>{t('common.next', 'Next')}</Button></>}
+        <Button variant="outline" isLoading={orders.isFetching} onClick={() => void orders.refetch()}>{t('common.refresh', 'Refresh')}</Button>
+      </div>
+    </div></Card>
+    <SettingsSaveBar isDirty={isDirty} isSaving={save.isPending} canSave={canSave} onDiscard={discard} onSave={() => save.mutate()} />
   </div>;
 };

@@ -37,7 +37,11 @@ export interface PhotoSalesEventInfo {
   promo_code?: string | null;
 }
 
+export type PaymentProvider = 'stripe' | 'snipcart';
+
 export interface PhotoSalesConfig {
+  providers: PaymentProvider[];
+  snipcartPublicKey: string | null;
   enabled: boolean;
   slug: string;
   checkoutReady: boolean;
@@ -65,6 +69,8 @@ export function buildPhotoSalesConfig(args: {
   slug: string;
   event?: PhotoSalesEventInfo | null;
   checkoutConfigured?: boolean;
+  providers?: PaymentProvider[];
+  snipcartPublicKey?: string | null;
 }): PhotoSalesConfig {
   const { slug, event, checkoutConfigured } = args;
   const isPriced = event?.is_priced === true;
@@ -81,6 +87,8 @@ export function buildPhotoSalesConfig(args: {
     ? Math.max(0, Math.floor(Number(event?.free_photo_count ?? 0)))
     : 0;
   return {
+    providers: args.providers || (checkoutConfigured ? ['stripe'] : []),
+    snipcartPublicKey: args.snipcartPublicKey || null,
     enabled: isPriced && Number.isFinite(price) && price > 0,
     slug,
     checkoutReady: isPriced && !!checkoutConfigured && Number.isFinite(price) && price > 0,

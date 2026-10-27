@@ -15,6 +15,9 @@ const replacementKey = ['rk', 'test', crypto.randomUUID().replaceAll('-', '')].j
 const signingSecret = 'whsec_' + crypto.randomUUID().replaceAll('-', '');
 const go = (user: ReturnType<typeof userEvent.setup>, label: RegExp) => user.click(screen.getByRole('button', { name: label }));
 const stored: PaymentSettings = {
+  checkout_enabled: { stripe: true, snipcart: true, revision: 'availability-one' },
+  snipcart: { source: 'none', revision: 'snipcart-one', public_key: '', checkout_configured: false, webhook_configured: false, unreadable: false, api_verified_at: null, webhook_url: 'https://photos.example.test/api/gallery/snipcart-webhook' },
+  providers: { available: ['stripe'], preferred: 'stripe' },
   source: 'settings', revision: 'revision-one', checkout_configured: true, webhook_configured: true,
   test_mode: true, unreadable: false, account_id: 'acct_test', api_verified_at: '2026-10-26T12:00:00Z',
   webhook_verified_at: null, webhook_url: 'https://photos.example.test/api/photo-sales/stripe/webhook',
@@ -22,7 +25,7 @@ const stored: PaymentSettings = {
   api_version: 'test-version', webhook_events: ['checkout.session.completed'],
 };
 async function open(data = stored) {
-  vi.mocked(api.get).mockResolvedValue({ data });
+  vi.mocked(api.get).mockImplementation(async (url) => ({ data: String(url).endsWith('/orders') ? { orders: [], has_more: false } : data }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<QueryClientProvider client={client}><PaymentsTab /></QueryClientProvider>);
   const user = userEvent.setup();
@@ -57,11 +60,11 @@ describe('installation Payments settings', () => {
     expect(field).toHaveValue(''); expect(api.put).not.toHaveBeenCalled();
   });
   it('shows environment-managed configuration without an editable credential form', async () => {
-    const { field, user } = await open({ ...stored, source: 'environment' });
+    const { field, user } = await open({ ...stored, source: 'environment', snipcart: { ...stored.snipcart, source: 'environment' } });
     await go(user, /Set up payment notifications/);
     expect(field).toBeDisabled();
     expect(screen.getByLabelText('Webhook signing secret')).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
     expect(screen.getByText('STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET is set in the server environment. These values take precedence as a pair. Ask the server operator to remove both variables before managing credentials here.')).toBeInTheDocument();
   });
   it('reports API access separately from signature verification', async () => {
@@ -162,4 +165,34 @@ describe('installation Payments settings', () => {
     act(() => client.setQueryData(['admin-payments'], { ...stored, source: 'environment', revision: 'another-key', api_verified_at: null }));
     await waitFor(() => expect(screen.queryByText('The saved API key passed read-only Account and Checkout Sessions checks.')).not.toBeInTheDocument());
   });
+  it('saves both changed providers and retains only the failed slice', async () => {
+    const publicKey = crypto.randomUUID(); const secret = crypto.randomUUID();
+    vi.mocked(api.put).mockImplementation(async (_url, body) => {
+      if ((body as { provider?: string }).provider === 'snipcart') throw { response: { data: { error: 'Store mismatch' } } };
+      return { data: { ...stored, revision: 'stripe-saved' } };
+    });
+    const { field, user } = await open();
+    await user.type(field, replacementKey);
+    await user.type(screen.getByLabelText('Snipcart public API key'), publicKey);
+    await user.type(screen.getByLabelText('Snipcart secret API key'), secret);
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('Snipcart secret API key')).toHaveValue(secret);
+    expect(screen.getByText('You have unsaved changes')).toBeInTheDocument();
+    expect(toast.error).toHaveBeenCalledWith('Snipcart: Store mismatch');
+    await go(user, /Add a restricted Stripe key/);
+    expect(screen.getByLabelText('Stripe API key')).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(api.put).mock.calls[2][1]).toMatchObject({ provider: 'snipcart', revision: 'snipcart-one' });
+  });
+
+  it('names the API_URL override when the site address is valid but the webhook address is not', async () => {
+    const { user } = await open({ ...stored, webhook_url: '' });
+    await go(user, /Check your gallery address/);
+    expect(screen.getByText('Correct the server’s public API address')).toBeInTheDocument();
+    expect(screen.getByText(/API_URL override/)).toBeInTheDocument();
+    expect(screen.queryByText('Set your public HTTPS address first')).not.toBeInTheDocument();
+  });
+
 });

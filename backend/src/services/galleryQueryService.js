@@ -41,7 +41,8 @@ async function freeQuotaAvailable(event) {
 
 const { guestUploadMaxEdgeOf } = require('./guestUploadDownscale');
 const { isPhotoSellable, signPhotoSale } = require('../modules/photoSales/sellable');
-const { stripeConfiguration } = require('../modules/photoSales/stripeClient');
+const { configuration: paymentProviders } = require('../modules/photoSales/providers');
+const { isDiscountId } = require('../modules/photoSales/promoDiscount');
 const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, whereNotVideo } = require('../utils/photoVisibility');
 const {
   galleryFullResolutionDenial, isRemuxWebKey, MAXIMUM_PROTECTION_CAP, capsFullSizeView,
@@ -628,7 +629,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   const showExif = parseBooleanInput(event.show_exif_to_guests, false);
 
   const theme = await publicThemeFields(event);
-  const checkout = event.promo_code ? await stripeConfiguration() : null;
+  const checkout = event.promo_code ? await paymentProviders() : null;
   return {
     pagination: { page, limit: limit || total, total, has_more: !!limit && page * limit < total },
     event: {
@@ -712,7 +713,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // in the store, so the UI never advertises a dead code.
       free_quota_available: await freeQuotaAvailable(event),
       promo_code: event.promo_code || null,
-      promo_discount_ready: !!(event.promo_code && checkout?.checkout_configured && checkout?.webhook_configured),
+      promo_discount_ready: !!(event.promo_code && (checkout?.available.includes('stripe') || (checkout?.available.includes('snipcart') && isDiscountId(event.snipcart_discount_id)))),
       // Promo banner override (#440). GalleryView has always read
       // promo_mode from THIS payload, but it was never sent — so every
       // per-event promo override silently resolved to 'inherit' and a

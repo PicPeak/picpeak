@@ -61,6 +61,7 @@ describe('installation payment settings', () => {
   });
   afterAll(async () => { if (cleanup) await cleanup(); });
   beforeEach(async () => {
+    delete process.env.SNIPCART_API_KEY; delete process.env.SNIPCART_SECRET_API_KEY;
     delete process.env.STRIPE_SECRET_KEY; delete process.env.STRIPE_WEBHOOK_SECRET; delete process.env.PAYMENTS_ENCRYPTION_KEY;
     await db('photo_purchase_orders').del();
     await db('app_settings').where('setting_key', 'like', 'payments_%').del();
@@ -258,4 +259,53 @@ describe('installation payment settings', () => {
     expect(await db('photo_purchase_orders').where({ id: pending.id }).first()).toMatchObject({ status: 'completed' });
     expect(Number((await db('photo_purchases').where({ order_id: pending.order_id }).count('* as n').first()).n)).toBe(1);
   });
+  test('stores Snipcart credentials encrypted, projects only the public key, and preserves environment precedence', async () => {
+    const publicKey = crypto.randomBytes(20).toString('hex'); const secretKey = crypto.randomBytes(20).toString('hex');
+    const fetcher = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true });
+    try {
+      const initial = (await read()).body;
+      const response = await auth(request(app).put('/api/admin/settings/payments')).send({ provider: 'snipcart', revision: initial.snipcart.revision, public_key: publicKey, secret_key: secretKey });
+      expect(response.status).toBe(200); expect(response.body.providers.available).toEqual(['snipcart']);
+      expect(response.body.snipcart).toMatchObject({ source: 'settings', public_key: publicKey, checkout_configured: true });
+      expect(JSON.stringify(response.body)).not.toContain(secretKey);
+      const stored = await getAppSetting('payments_snipcart_credentials'); expect(stored.secret_key).not.toContain(secretKey);
+      expect(() => payments.decrypt(stored.secret_key)).toThrow(); // separate encryption purpose
+      process.env.SNIPCART_API_KEY = crypto.randomBytes(20).toString('hex');
+      const masked = await read(); expect(masked.body.snipcart).toMatchObject({ source: 'environment', checkout_configured: false });
+      expect((await auth(request(app).put('/api/admin/settings/payments')).send({ provider: 'snipcart', revision: masked.body.snipcart.revision, secret_key: secretKey })).status).toBe(409);
+    } finally { fetcher.mockRestore(); }
+  });
+  test('surfaces orphaned and attention orders only to super admins without download or checkout credentials', async () => {
+    await order(true, 'refund_failed');
+    const orphanId = (await db('photo_purchase_orders').first()).id;
+    await db('photo_purchase_orders').where({ id: orphanId }).update({ gallery_id: null, recovery_needs_attention: true, checkout_browser_hash: crypto.randomBytes(32).toString('hex') });
+    const response = await auth(request(app).get('/api/admin/settings/payments/orders'));
+    expect(response.status).toBe(200); expect(response.body.orders).toHaveLength(1);
+    expect(response.body.orders[0]).toMatchObject({ orphaned: true, needs_attention: true, status: 'refund_failed' });
+    expect(JSON.stringify(response.body)).not.toMatch(/access_token|checkout_token|checkout_browser_hash|checkout_quote/);
+    expect((await auth(request(app).get('/api/admin/settings/payments/orders'), adminToken)).status).toBe(403);
+    expect((await auth(request(app).get('/api/admin/settings/payments/orders?page=-1'))).status).toBe(400);
+  });
+  test('serves a gallery CSP that permits Snipcart only when configured and remains one policy', async () => {
+    const policy = () => request(app).get('/api/public/settings/photo-sales-policy');
+    let response = await policy(); expect(response.status).toBe(204);
+    expect(response.headers['x-picpeak-gallery-csp']).not.toContain('snipcart');
+    expect(response.headers['x-picpeak-gallery-csp']).not.toContain('unsafe-eval');
+    process.env.SNIPCART_API_KEY = crypto.randomBytes(20).toString('hex'); process.env.SNIPCART_SECRET_API_KEY = crypto.randomBytes(20).toString('hex');
+    response = await policy(); expect(response.headers['x-picpeak-gallery-csp']).toContain('https://cdn.snipcart.com');
+    expect(response.headers['x-picpeak-gallery-csp']).toContain('unsafe-eval');
+    expect(response.headers['cache-control']).toBe('no-store');
+  });
+
+  test('checkout availability uses revision checks independently of environment-managed credentials', async () => {
+    process.env.STRIPE_SECRET_KEY = KEY; process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK;
+    const initial = (await read()).body;
+    const change = { provider: 'availability', revision: initial.checkout_enabled.revision, stripe: false, snipcart: true };
+    const result = await auth(request(app).put('/api/admin/settings/payments')).send(change);
+    expect(result.status).toBe(200); expect(result.body.providers.available).toEqual([]);
+    expect(result.body.checkout_configured).toBe(true);
+    expect((await auth(request(app).put('/api/admin/settings/payments')).send(change)).status).toBe(409);
+    expect((await auth(request(app).put('/api/admin/settings/payments'), adminToken).send(change)).status).toBe(403);
+  });
+
 });

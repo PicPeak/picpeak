@@ -1,7 +1,7 @@
 'use strict';
 
 const knex = require('knex');
-const migration = require('../../migrations/core/327_stripe_photo_checkout');
+const migration = require('../../migrations/core/331_stripe_photo_checkout');
 
 // Run the same upgrade contract on PostgreSQL when its dedicated test URL
 // is supplied, isolated in a fresh schema so other suites are untouched.
@@ -40,6 +40,13 @@ describe.each(['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : [])])('
     expect(await db('photo_purchase_orders').first()).toMatchObject({ order_id: 'historic-order', gallery_id: null, promo_gallery_id: null });
   });
 
+  test('finds a gallery foreign key by column even when its name is customised', async () => {
+    if (client === 'pg') await db.raw('ALTER TABLE photo_purchase_orders RENAME CONSTRAINT photo_purchase_orders_gallery_id_foreign TO custom_gallery_reference');
+    await migration.up(db);
+    await db('events').where({ id: 1 }).del();
+    expect(await db('photo_purchase_orders').first()).toMatchObject({ order_id: 'historic-order', gallery_id: null });
+  });
+
   test('repairs a partially applied foreign-key change', async () => {
     await db.schema.alterTable('photo_purchase_orders', (t) => t.dropForeign('gallery_id'));
     await migration.up(db);
@@ -56,4 +63,16 @@ describe.each(['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : [])])('
     expect(await db('photo_purchase_orders').first()).toMatchObject({ order_id: 'historic-order', gallery_id: 1 });
     expect(await db.schema.hasColumn('photo_purchase_orders', 'checkout_quote')).toBe(false);
   });
+  test('recovery storage backfills provider references idempotently and refuses to discard active checkouts', async () => {
+    await migration.up(db);
+    await db.schema.createTable('app_settings', (t) => { t.string('setting_key').primary(); t.string('setting_type'); t.text('setting_value'); });
+    const recovery = require('../../migrations/core/332_photo_checkout_recovery');
+    await recovery.up(db); await recovery.up(db);
+    expect(await db('photo_purchase_orders').first()).toMatchObject({ provider_order_id: 'historic-order' });
+    await expect(db('photo_purchase_orders').insert({ order_id: 'different-local-id', gallery_id: 1, payment_provider: 'snipcart', provider_order_id: 'historic-order' })).rejects.toThrow();
+    await db('photo_purchase_orders').insert({ order_id: 'snipcart:reserved', gallery_id: 1, payment_provider: 'snipcart', checkout_token: require('crypto').randomBytes(24).toString('hex') });
+    await expect(recovery.down(db)).rejects.toThrow('checkout orders exist');
+    expect(await db('photo_purchase_orders').where({ order_id: 'historic-order' }).first()).toBeTruthy();
+  });
+
 });

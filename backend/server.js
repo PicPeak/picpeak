@@ -154,26 +154,8 @@ if (process.env.NODE_ENV === 'production' && isTrustProxyUnset()) {
 // Security middleware with custom CSP
 // In native HTTP installs, do NOT force HTTPS for subresources.
 const enableHsts = process.env.ENABLE_HSTS === 'true';
-const cspDirectives = {
-  defaultSrc: ["'self'"],
-  scriptSrc: [
-    "'self'",
-    'https://www.google.com',
-    'https://www.gstatic.com'
-  ],
-  styleSrc: ["'self'", "'unsafe-inline'", "https:"], // Required for styled components
-  imgSrc: ["'self'", "data:", "https:", "blob:"], // Allow data URLs and external images
-  connectSrc: ["'self'", 'https://www.google.com', 'https://www.gstatic.com'], // API connections
-  fontSrc: ["'self'", "https:", "data:"], // Web fonts
-  objectSrc: ["'none'"], // Disable plugins
-  mediaSrc: ["'self'", "blob:"], // Audio/video, incl. page-created blobs (matches imgSrc)
-  frameSrc: ["'self'", 'https://www.google.com'],
-};
-// Only upgrade insecure requests when HSTS explicitly enabled (HTTPS deployment)
-if (enableHsts) {
-  // In helmet, an empty array enables the directive
-  cspDirectives.upgradeInsecureRequests = [];
-}
+const { siteDirectives, galleryPolicy } = require('./src/modules/photoSales/galleryCsp');
+const cspDirectives = siteDirectives();
 
 app.use(cookieParser());
 
@@ -1137,10 +1119,9 @@ try {
       }
       return next();
     };
-    // Hosted Checkout redirects out of PicPeak; galleries use the site's
-    // strict policy without third-party cart scripts or unsafe-eval.
-    app.get('/gallery/:slug/:token?', ogIntercept, (req, res) => sendSpa(res));
-    app.get('/gallery/:slug/show/:token', ogIntercept, (req, res) => sendSpa(res));
+    // Snipcart needs its SDK policy only when configured; Stripe-only stays strict.
+    app.get('/gallery/:slug/:token?', ogIntercept, galleryPolicy, (req, res) => sendSpa(res));
+    app.get('/gallery/:slug/show/:token', ogIntercept, galleryPolicy, (req, res) => sendSpa(res));
     // PicTransfer links (single-container deploys without nginx).
     const transferOgIntercept = (kind) => {
       const handler = handleTransferOgRequest(kind);

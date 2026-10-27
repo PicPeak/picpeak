@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { ShoppingBag, Send, Link2 } from 'lucide-react';
 import { api } from '../../../config/api';
-import { Badge, Card, Loading, type BadgeTone } from '../../../components/common';
+import { Badge, Card, Loading } from '../../../components/common';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { formatPhotoPrice } from '../../../features/photo-sales/photoSales';
+import { useOrderStatus } from '../../../features/photo-sales/usePhotoOrderStatus';
 import { PhotoSalesStoreNotice } from '../../../features/photo-sales/PhotoSalesStoreNotice';
 import {
   photoOrdersQueryKey, usePhotoOrders, type PhotoOrderSummary,
@@ -14,39 +15,6 @@ import {
 
 interface OrdersTabProps {
   eventId: number;
-}
-
-/** Badge for an order: payment and delivery state. */
-function useOrderStatus() {
-  const { t } = useTranslation();
-  return (order: PhotoOrderSummary): { tone: BadgeTone; label: string } => {
-    switch (order.status) {
-      case 'pending':
-      case 'creation_unknown':
-        return { tone: 'warning', label: t('photoSales.statusPending', 'Awaiting payment') };
-      case 'processing':
-        return { tone: 'warning', label: t('photoSales.statusProcessing', 'Payment processing') };
-      case 'refund_pending':
-        return { tone: 'warning', label: t('photoSales.statusRefundPending', 'Refund pending') };
-      case 'expired':
-      case 'failed':
-        return { tone: 'neutral', label: t('photoSales.statusUnpaid', 'Not paid') };
-      case 'completed':
-        return order.remaining_days > 0
-          ? { tone: 'success', label: t('photoSales.statusPaid', 'Paid') }
-          : { tone: 'neutral', label: t('photoSales.statusExpired', 'Access ended') };
-      case 'refunded':
-        return { tone: 'neutral', label: t('photoSales.statusRefunded', 'Refunded') };
-      case 'refund_failed':
-        return { tone: 'danger', label: t('photoSales.statusRefundFailed', 'Refund failed') };
-      case 'charged_back':
-        return { tone: 'danger', label: t('photoSales.statusChargedBack', 'Charged back') };
-      case 'cancelled':
-        return { tone: 'neutral', label: t('photoSales.statusCancelled', 'Cancelled') };
-      default:
-        return { tone: 'neutral', label: t('photoSales.statusUnknown', 'Unknown') };
-    }
-  };
 }
 
 /**
@@ -59,7 +27,8 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({ eventId }) => {
   const { format } = useLocalizedDate();
   const queryClient = useQueryClient();
   const orderStatus = useOrderStatus();
-  const { data, isLoading, isError, refetch } = usePhotoOrders(eventId);
+  const [includeAbandoned, setIncludeAbandoned] = useState(false);
+  const { data, isLoading, isError, refetch } = usePhotoOrders(eventId, true, includeAbandoned);
 
   const resendMutation = useMutation({
     mutationFn: (orderId: string) =>
@@ -113,12 +82,16 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({ eventId }) => {
   return (
     <div className="space-y-4">
       <PhotoSalesStoreNotice store={data?.store} />
+      <label className="flex items-center gap-2 text-sm text-body">
+        <input type="checkbox" checked={includeAbandoned} onChange={(event) => setIncludeAbandoned(event.target.checked)} />
+        {t('photoSales.showAbandoned', 'Show expired, failed and cancelled checkouts')}
+      </label>
 
       {orders.length === 0 ? (
         <Card padding="md">
           <div className="flex items-center gap-3 text-soft">
             <ShoppingBag className="w-5 h-5 shrink-0" />
-            <p>{t('photoSales.noOrders', 'No orders yet. Checkouts appear here when a buyer continues to payment.')}</p>
+            <p>{t('photoSales.noVisibleOrders', 'No orders to show. Expired, failed and cancelled checkouts are hidden unless selected above.')}</p>
           </div>
         </Card>
       ) : (

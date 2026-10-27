@@ -5,7 +5,9 @@ const rateLimit = require('express-rate-limit');
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const { rateLimitKey } = require('../../utils/rateLimitKey');
-const { reserveCheckout, checkoutSession, reconcileSession } = require('../../modules/photoSales/stripeCheckout');
+const { reserveCheckout } = require('../../modules/photoSales/checkoutReservation');
+const { checkoutSession, reconcileSession } = require('../../modules/photoSales/stripeCheckout');
+const snipcart = require('../../modules/photoSales/snipcartCheckout');
 const logger = require('../../utils/logger');
 
 const router = express.Router();
@@ -16,6 +18,7 @@ router.post('/:slug/checkout', noStoreCache, checkoutLimiter, verifyGalleryAcces
     // A preview session is an editing tool, never a buyer's payment flow.
     if (req.isAdminPreview) return res.status(403).json({ error: 'Purchases are unavailable in preview mode' });
     const order = await reserveCheckout(req.event, req.body);
+    if (order.payment_provider === 'snipcart') return res.json({ snipcart: snipcart.handoff(order) });
     const session = await checkoutSession(order);
     if (session.status !== 'open') {
       await reconcileSession(order, session);
@@ -28,7 +31,7 @@ router.post('/:slug/checkout', noStoreCache, checkoutLimiter, verifyGalleryAcces
     }
     // Provider errors can contain API keys or customer data. Log only their
     // classification; never forward the SDK message to the browser.
-    logger.error('Stripe checkout could not be created', { type: error.type || error.name });
+    logger.error('Photo checkout could not be created', { type: error.type || error.name });
     return res.status(503).json({ error: 'Checkout is temporarily unavailable. Please try again.', code: 'CHECKOUT_RETRY' });
   }
 });

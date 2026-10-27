@@ -1728,6 +1728,7 @@
       "signals": [],
       "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
       "route_signatures": [
+        "GET /photo-sales-policy",
         "GET /"
       ]
     },
@@ -2045,7 +2046,7 @@
       "decision": "excluded",
       "signals": [],
       "reason": "Installation payment credentials and provider probes are excluded from product usage.",
-      "route_signatures": ["GET /", "PUT /", "POST /test"]
+      "route_signatures": ["GET /", "PUT /", "GET /orders", "POST /test"]
     },
     "stripeWebhook.js": {
       "decision": "excluded",

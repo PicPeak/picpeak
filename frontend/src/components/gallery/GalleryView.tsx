@@ -426,7 +426,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const photoSalesValue = useMemo(() => buildPhotoSalesConfig({
     slug,
     event: data?.event,
-    checkoutConfigured: (settingsData as { photo_sales_checkout_configured?: boolean } | undefined)?.photo_sales_checkout_configured === true,
+    checkoutConfigured: settingsData?.photo_sales_checkout_configured === true,
+    providers: settingsData?.photo_sales_providers,
+    snipcartPublicKey: settingsData?.snipcart_api_key,
   }), [slug, data?.event, settingsData]);
 
   // Fetch feedback settings

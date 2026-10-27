@@ -849,7 +849,8 @@
     "today": "Heute",
     "chooseDate": "Datum wählen",
     "name": "Name",
-    "description": "Beschreibung"
+    "description": "Beschreibung",
+    "refresh": "Aktualisieren"
   },
   "upload": {
     "duplicates": {
@@ -3236,7 +3237,34 @@
         "liveHelp": "Schließe die Unternehmens- und Bankprüfung bei Stripe ab. Kläre nach den Tests offene Sandbox-Käufe und wiederhole dann die Schritte für Schlüssel und Benachrichtigungen im Live-Modus desselben Geschäftskontos. Live-Schlüssel lösen echte Zahlungen aus; behalte den Live-Zugriff für Erstattungen und Streitfälle.",
         "back": "Vorheriger Schritt",
         "next": "Nächster Schritt",
-        "progress": "Schritt {{current}} von {{total}}"
+        "progress": "Schritt {{current}} von {{total}}",
+        "apiAddressHelp": "Deine Website-URL ist bereit, aber die serverseitige Überschreibung API_URL ist keine öffentliche HTTPS-Adresse. Bitte den Serverbetreiber, diese Überschreibung zu korrigieren oder zu entfernen. Eine Änderung der Website-URL allein behebt die Webhook-Adresse nicht.",
+        "apiAddressMissing": "Öffentliche API-Adresse des Servers korrigieren"
+      },
+      "providers": "Zahlungsanbieter",
+      "providersHelp": "Biete einen oder beide Anbieter an. Stripe wird vorausgewählt, wenn verfügbar. Das Abschalten stoppt neue Checkouts; Zugangsdaten bleiben für bestehende Zahlungen, Rückerstattungen und Streitfälle erhalten.",
+      "offerStripe": "Stripe-Checkout anbieten, sobald eingerichtet",
+      "offerSnipcart": "Snipcart-Checkout anbieten, sobald eingerichtet",
+      "stripeIntro": "Ein Stripe-Händlerkonto empfängt Stripe-Fotozahlungen aller Galerien dieser Installation. Nur Super-Admins können Zugangsdaten ändern. Einzelpreise werden unter Fotoverkauf der jeweiligen Galerie festgelegt.",
+      "snipcart": {
+        "intro": "Behalte Snipcart, ergänze Stripe oder richte beide ein. Käufer nutzen einen PicPeak-Warenkorb und wählen den Anbieter beim Checkout. Sind beide verfügbar, wird Stripe vorausgewählt.",
+        "ready": "Snipcart-Zugangsdaten eingerichtet",
+        "missing": "Snipcart ist nicht eingerichtet",
+        "environment": "SNIPCART_API_KEY und SNIPCART_SECRET_API_KEY haben gemeinsam Vorrang. Bestehende, serverseitig verwaltete Shops funktionieren weiterhin.",
+        "keysHelp": "Kopiere im Snipcart-Dashboard unter Account → API keys den öffentlichen und geheimen Schlüssel desselben Shops und derselben Test-/Live-Umgebung. Der öffentliche Schlüssel wird an Browser der Käufer gesendet; der geheime Schlüssel bleibt verschlüsselt auf dem Server.",
+        "restore": "Stelle den Verschlüsselungsschlüssel für Zahlungen wieder her oder gib beide Schlüssel desselben Snipcart-Shops erneut ein.",
+        "publicKey": "Öffentlicher Snipcart-API-Schlüssel",
+        "secretKey": "Geheimer Snipcart-API-Schlüssel",
+        "webhook": "Snipcart-Webhook-URL",
+        "webhookHelp": "Trage diese URL im Snipcart-Dashboard unter Store configurations → Webhooks ein und erlaube deine öffentliche PicPeak-Domain. Verwende EUR und Preise inklusive Steuern. Speichern prüft nur den Lesezugriff des geheimen Schlüssels. Prüfe Shop, öffentlichen Schlüssel und Webhook gemeinsam mit Testkauf, Download und Rückerstattung."
+      },
+      "attention": {
+        "title": "Zu prüfende Bestellungen und gelöschte Galerien",
+        "help": "Finanzunterlagen bleiben nach dem Löschen einer Galerie erhalten. Unklare Zahlungen und unbestätigte Rückerstattungen müssen vor weiteren Schritten im Anbieter-Dashboard geprüft werden. Ein erneuter Prüftermin bestätigt weder Zahlung noch Rückerstattung.",
+        "empty": "Keine Bestellungen vorhanden.",
+        "deleted": "Galerie gelöscht",
+        "review": "Zahlungsstatus im Anbieter-Dashboard prüfen",
+        "retryAt": "Nächste Wiederherstellungsprüfung: {{time}}"
       }
     },
     "title": "Systemeinstellungen",
@@ -7303,7 +7331,15 @@
     "statusUnpaid": "Nicht bezahlt",
     "total": "Gesamt",
     "availablePromo": "Einmaliger Galerie-Code: {{code}}",
-    "statusUnknown": "Unbekannt"
+    "statusUnknown": "Unbekannt",
+    "checkoutMinimum": "Stripe erfordert mindestens 0,50 €. Füge ein weiteres Foto hinzu oder wähle einen anderen Zahlungsanbieter.",
+    "paymentProvider": "Zahlungsanbieter",
+    "promoReservationWindow": "Ein Checkout mit Aktionscode reserviert den Galeriecode für etwa 30 Minuten. Schließe die Zahlung in einem Fenster ab. Kehre nach Ablauf zu PicPeak zurück, um neu zu beginnen.",
+    "checkoutProviderHint": "Preise und Verfügbarkeit werden beim Fortfahren geprüft. Die Zahlung wird sicher über {{provider}} abgewickelt.",
+    "storeChooseProvider": "Gäste sehen Vorschauen mit Wasserzeichen. Ein Super-Admin kann Stripe, Snipcart oder beide unter Einstellungen → Zahlungen einrichten.",
+    "showAbandoned": "Abgelaufene, fehlgeschlagene und abgebrochene Checkouts anzeigen",
+    "noVisibleOrders": "Keine Bestellungen vorhanden. Abgelaufene, fehlgeschlagene und abgebrochene Checkouts werden ausgeblendet, sofern oben nicht ausgewählt.",
+    "statusAttention": "Prüfung erforderlich"
   },
   "photos": {
     "moveToCategory_one": "{{count}} Foto in Kategorie verschieben",

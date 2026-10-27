@@ -119,8 +119,9 @@ services:
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
       - PAYMENTS_ENCRYPTION_KEY=${PAYMENTS_ENCRYPTION_KEY:-}
-      # Retained only for historical Snipcart orders and refunds.
+      # Optional Snipcart checkout; existing stores remain supported.
       - SNIPCART_WEBHOOK_SECRET=${SNIPCART_WEBHOOK_SECRET:-}
+      - SNIPCART_API_KEY=${SNIPCART_API_KEY:-}
       - SNIPCART_SECRET_API_KEY=${SNIPCART_SECRET_API_KEY:-}
       # Unset by default (#705): an injected value would always win over the
       # `general_site_url` admin setting, so the setup wizard could never

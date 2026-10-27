@@ -23,16 +23,22 @@ exports.up = async function up(knex) {
   // Keep paid/pending financial records when the gallery goes away. A
   // Stripe payment may arrive after deletion and still needs refunding.
   const sqlite = knex.client.config.client === 'sqlite3';
-  const foreignKey = sqlite
+  const foreignKeys = sqlite
     ? (await knex.raw('PRAGMA foreign_key_list(photo_purchase_orders)'))
-      .find((fk) => fk.from === 'gallery_id')
-    : (await knex.raw(`SELECT delete_rule AS on_delete FROM information_schema.referential_constraints
-        WHERE constraint_schema = current_schema()
-        AND constraint_name = 'photo_purchase_orders_gallery_id_foreign'`)).rows[0];
+      .filter((fk) => fk.from === 'gallery_id')
+    : (await knex.raw(`SELECT c.conname AS constraint_name,
+      CASE c.confdeltype WHEN 'n' THEN 'SET NULL' WHEN 'c' THEN 'CASCADE' ELSE 'OTHER' END AS on_delete
+      FROM pg_constraint c
+      JOIN pg_class r ON r.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = r.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+      WHERE c.contype = 'f' AND n.nspname = current_schema()
+        AND r.relname = 'photo_purchase_orders' AND a.attname = 'gallery_id' `)).rows;
   const column = await knex('photo_purchase_orders').columnInfo('gallery_id');
-  if (!foreignKey || foreignKey.on_delete !== 'SET NULL' || !column.nullable) {
+  if (foreignKeys.length !== 1 || foreignKeys[0].on_delete !== 'SET NULL' || !column.nullable) {
     await knex.schema.alterTable('photo_purchase_orders', (t) => {
-      if (foreignKey) t.dropForeign('gallery_id');
+      if (sqlite && foreignKeys.length) t.dropForeign('gallery_id');
+      if (!sqlite) for (const fk of foreignKeys) t.dropForeign('gallery_id', fk.constraint_name);
       t.integer('gallery_id').nullable().alter();
       t.foreign('gallery_id').references('events.id').onDelete('SET NULL');
     });

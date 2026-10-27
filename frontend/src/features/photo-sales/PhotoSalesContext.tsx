@@ -22,6 +22,7 @@ interface PhotoSalesCartValue {
 }
 
 const PhotoSalesContext = createContext<PhotoSalesConfig & PhotoSalesCartValue>({
+  providers: [], snipcartPublicKey: null,
   enabled: false, checkoutReady: false, slug: '', price: 0, currency: 'EUR',
   itemDescription: '', freeCount: 0, accessDays: 30, promoCode: null,
   cartCount: 0, cartItemIds: new Set(), addToCart: () => {}, openCart: () => {},
@@ -46,6 +47,13 @@ function readCart(slug: string): CartPhoto[] {
 }
 
 export const PhotoSalesProvider: React.FC<{ value: PhotoSalesConfig; photos?: PurchasePhoto[]; children: React.ReactNode }> = ({ value, photos = [], children }) => {
+  useEffect(() => {
+    // A client-side transition from admin/public pages keeps their strict CSP.
+    // Enter through gallery HTML before loading Snipcart's payment SDK.
+    if (!value.providers.includes('snipcart')) return;
+    const navigation = performance.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined;
+    if (navigation && !new URL(navigation.name).pathname.startsWith('/gallery/')) window.location.replace(window.location.href);
+  }, [value.providers]);
   const [scope, setScope] = useState(value.slug);
   const [items, setItems] = useState<CartPhoto[]>(() => readCart(value.slug));
   const [open, setOpen] = useState(false);

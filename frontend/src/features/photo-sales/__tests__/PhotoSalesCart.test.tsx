@@ -1,6 +1,7 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { validCheckoutDestination } from '../PhotoSalesCart';
 import { PhotoSalesProvider, usePhotoSales } from '../PhotoSalesContext';
 import { PhotoPurchaseBadge } from '../PhotoPurchaseBadge';
 import { PhotoSalesCartButton } from '../PhotoSalesCartButton';
@@ -58,7 +59,7 @@ describe('PicPeak photo cart', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
     expect(vi.mocked(api.post).mock.calls[0]).toEqual(vi.mocked(api.post).mock.calls[1]);
-    expect(vi.mocked(api.post).mock.calls[0][1]).toEqual({ photoIds: [1], promoCode: 'FOTO-ONCE', checkoutKey: expect.any(String), browserKey: expect.stringMatching(/^[0-9a-f]{64}$/), language: 'en' });
+    expect(vi.mocked(api.post).mock.calls[0][1]).toEqual({ provider: 'stripe', photoIds: [1], promoCode: 'FOTO-ONCE', checkoutKey: expect.any(String), browserKey: expect.stringMatching(/^[0-9a-f]{64}$/), language: 'en' });
   });
 
   it('purchase buttons do not open the photo tile behind them', () => {
@@ -67,4 +68,22 @@ describe('PicPeak photo cart', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
     expect(openPhoto).not.toHaveBeenCalled();
   });
+  it('accepts only the exact Stripe origin or the local opaque confirmation route', () => {
+    expect(validCheckoutDestination('https://checkout.stripe.com/c/pay/example')).toBe(true);
+    expect(validCheckoutDestination(`/photo-checkout/${'a'.repeat(48)}`)).toBe(true);
+    for (const url of ['https://checkout.stripe.com.attacker.test/', 'https://checkout.stripe.com@attacker.test/', '//checkout.stripe.com/c/pay/test', 'javascript:alert(1)', 'https://attacker.test/', '/photo-checkout/../../admin']) expect(validCheckoutDestination(url)).toBe(false);
+  });
+  it('shows one provider choice for both integrations with Stripe preselected, and sends the chosen provider', async () => {
+    vi.mocked(api.post).mockRejectedValue(new Error('Keep page open'));
+    const both = { ...config(), providers: ['stripe', 'snipcart'] as const };
+    render(<PhotoSalesProvider value={{ ...both, providers: [...both.providers] }}><PhotoPurchaseBadge photo={photo} /><PhotoSalesCartButton /></PhotoSalesProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 1 photos' }));
+    expect(screen.getByRole('radio', { name: 'Stripe' })).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: 'Snipcart' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    await screen.findByRole('alert');
+    expect(api.post).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ provider: 'snipcart', photoIds: [1] }));
+  });
+
 });

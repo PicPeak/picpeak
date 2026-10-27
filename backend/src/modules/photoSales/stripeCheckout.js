@@ -1,142 +1,12 @@
 'use strict';
-
-const crypto = require('crypto');
 const { db } = require('../../database/db');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
-const { createPurchaseAccessToken } = require('./purchaseAccess');
 const { purchaseExpiry, purchaseRows, sendPurchaseEmail } = require('./fulfilment');
-const { SALES_CURRENCY, isGalleryOnSale, sellablePhotos } = require('./sellable');
-const { effectivePhotoPrice } = require('./priceRules');
+const { isGalleryOnSale, sellablePhotos } = require('./sellable');
 const { stripeClient, stripeConfiguration } = require('./stripeClient');
-const { lock: lockPaymentSettings, credentials, configurationOf } = require('./paymentSettings');
-
-const OPEN = ['pending', 'creation_unknown', 'processing'];
+const { reserveCheckout, quoteOf, verifyCheckoutBrowser, checkoutError, OPEN } = require('./checkoutReservation');
 const REFUSING = ['refund_pending', 'refund_failed'];
-
-function checkoutError(message, status = 400, code = 'CHECKOUT_INVALID') {
-  return Object.assign(new Error(message), { statusCode: status, code });
-}
-
-function quoteOf(order) { return JSON.parse(order.checkout_quote); }
 function idOf(value) { return typeof value === 'string' ? value : value?.id; }
-
-async function frontendOrigin() {
-  // Never build payment redirects from the caller-controlled Host header.
-  const base = await getFrontendBaseUrl();
-  let url;
-  try { url = new URL(base); } catch { /* reported below */ }
-  if (!url || (url.protocol !== 'https:' && !(process.env.NODE_ENV !== 'production' && url.protocol === 'http:'))
-      || url.username || url.password || url.search || url.hash) {
-    throw checkoutError('Configure the public Site URL before accepting payments.', 503, 'CHECKOUT_UNAVAILABLE');
-  }
-  return base.replace(/\/+$/, '');
-}
-
-function requestMatches(order, gallery, photoIds, promoCode, browserKey) {
-  const quote = quoteOf(order);
-  return Number(order.gallery_id) === Number(gallery.id)
-    && JSON.stringify(quote.lines.map((line) => line.photoId)) === JSON.stringify(photoIds)
-    && quote.promoCode === promoCode && verifyCheckoutBrowser(order, browserKey);
-}
-
-function browserHash(key) { return crypto.createHash('sha256').update(key).digest('hex'); }
-function verifyCheckoutBrowser(order, key) {
-  if (!order?.checkout_browser_hash || typeof key !== 'string' || !/^[0-9a-f]{64}$/.test(key)) return false;
-  return crypto.timingSafeEqual(Buffer.from(order.checkout_browser_hash), Buffer.from(browserHash(key)));
-}
-
-async function reserveCheckout(gallery, body) {
-  const configuration = await stripeConfiguration();
-  if (!configuration.checkout_configured || !configuration.webhook_configured) {
-    throw checkoutError('Photo purchases are not configured on this server.', 503, 'CHECKOUT_UNAVAILABLE');
-  }
-  if (!isGalleryOnSale(gallery)) throw checkoutError('This gallery is not available for purchases.', 409);
-  const { photoIds, checkoutKey, browserKey } = body || {};
-  const promoCode = typeof body?.promoCode === 'string' ? body.promoCode.trim().toUpperCase() : '';
-  if (!Array.isArray(photoIds) || !photoIds.length || photoIds.length > 100
-      || photoIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
-      || new Set(photoIds).size !== photoIds.length
-      || typeof checkoutKey !== 'string' || !/^[0-9a-f-]{36}$/i.test(checkoutKey) || promoCode.length > 64
-      || typeof browserKey !== 'string' || !/^[0-9a-f]{64}$/.test(browserKey)) {
-    throw checkoutError('Choose between 1 and 100 different photos.');
-  }
-  const existing = await db('photo_purchase_orders').where({ checkout_key: checkoutKey }).first();
-  if (existing) {
-    if (!requestMatches(existing, gallery, photoIds, promoCode, browserKey)) throw checkoutError('This checkout has changed. Please start again.', 409);
-    return existing;
-  }
-  const rows = await sellablePhotos(db, gallery.id).whereIn('photos.id', photoIds)
-    .select('photos.id', 'photos.photo_price', 'photos.filename', 'photos.original_filename');
-  if (rows.length !== photoIds.length) throw checkoutError('Some selected photos are no longer available.', 409, 'PHOTOS_UNAVAILABLE');
-  const byId = new Map(rows.map((row) => [Number(row.id), row]));
-  const base = await frontendOrigin();
-  // Stripe requires at least 30 minutes until Checkout expires. Refuse a
-  // last-minute purchase instead of promising access past gallery closure.
-  if (gallery.expires_at && new Date(gallery.expires_at).getTime() < Date.now() + 31 * 60e3) {
-    throw checkoutError('This gallery closes too soon to start a checkout.', 409, 'GALLERY_CLOSING');
-  }
-  const promoApplied = !!promoCode;
-  if (promoApplied && (!gallery.promo_code || promoCode !== gallery.promo_code
-      || Number(gallery.free_photo_count) <= 0)) {
-    throw checkoutError('This promo code is not available.', 409, 'PROMO_UNAVAILABLE');
-  }
-  let discount = promoApplied
-    ? Math.round(Math.max(0, Number(gallery.free_photo_count)) * Number(gallery.photo_price) * 100)
-    : 0;
-  const lines = photoIds.map((photoId) => {
-    const photo = byId.get(photoId);
-    const gross = Math.round(effectivePhotoPrice(gallery, photo) * 100);
-    if (!Number.isSafeInteger(gross) || gross < 0) throw checkoutError('A photo price is invalid.', 409);
-    const reduction = Math.min(discount, gross);
-    discount -= reduction;
-    return {
-      photoId,
-      name: String(photo.original_filename || photo.filename || `Photo ${photoId}`).slice(0, 120),
-      originalAmountCents: gross,
-      amountCents: gross - reduction,
-    };
-  });
-  const expiresAt = purchaseExpiry(gallery);
-  const quote = {
-    lines, promoCode, galleryName: gallery.event_name || gallery.slug, gallerySlug: gallery.slug,
-    totalCents: lines.reduce((sum, line) => sum + line.amountCents, 0), currency: SALES_CURRENCY,
-    locale: typeof body.language === 'string' && body.language.startsWith('de') ? 'de' : 'en',
-    expiresAt, base, testMode: configuration.test_mode,
-    sessionExpiresAt: Math.floor(Math.min(Date.now() + 60 * 60e3,
-      gallery.expires_at ? Date.parse(gallery.expires_at) : Infinity) / 1000),
-    integrationIdentifier: `picpeak_photo_checkout_${Array.from(crypto.randomBytes(8), (b) => String.fromCharCode(97 + b % 26)).join('')}`,
-  };
-  const order = {
-    order_id: `stripe:${crypto.randomUUID()}`, gallery_id: gallery.id,
-    payment_provider: 'stripe', checkout_key: checkoutKey,
-    checkout_token: createPurchaseAccessToken(), checkout_quote: JSON.stringify(quote),
-    checkout_browser_hash: browserHash(browserKey),
-    buyer_email: '', total_cents: quote.totalCents,
-    currency: SALES_CURRENCY, status: 'pending', purchased_at: new Date().toISOString(), expires_at: expiresAt,
-    access_token: createPurchaseAccessToken(), email_sent: false, promo_used: false,
-    promo_gallery_id: promoApplied ? gallery.id : null,
-  };
-  try {
-    // The unique nullable promo_gallery_id is the cross-process claim. The
-    // existing Snipcart redemption is backfilled by migration 327.
-    const inserted = await db.transaction(async (trx) => {
-      await lockPaymentSettings(trx);
-      const current = configurationOf(await credentials(trx));
-      if (!current.checkout_configured || !current.webhook_configured || current.test_mode !== configuration.test_mode) {
-        throw checkoutError('The payment configuration has changed. Please start again.', 409);
-      }
-      return trx('photo_purchase_orders').insert(order).returning('id');
-    });
-    return { ...order, id: inserted[0]?.id ?? inserted[0] };
-  } catch (error) {
-    const raced = await db('photo_purchase_orders').where({ checkout_key: checkoutKey }).first();
-    if (raced && requestMatches(raced, gallery, photoIds, promoCode, browserKey)) return raced;
-    if (promoApplied && await db('photo_purchase_orders').where({ promo_gallery_id: gallery.id }).first('id')) {
-      throw checkoutError('This promo code is already used or reserved by another checkout.', 409, 'PROMO_UNAVAILABLE');
-    }
-    throw error;
-  }
-}
 
 async function checkoutSession(order, client = stripeClient()) {
   client = await client;
@@ -148,7 +18,10 @@ async function checkoutSession(order, client = stripeClient()) {
     // Resolve an ambiguous creation before releasing anything. Stripe's
     // idempotency cache has a retention limit, so do not recreate an old
     // checkout with the same key after a long server outage.
-    let cursor;
+    const cutoff = (quote.sessionExpiresAt + 300) * 1000;
+    const restart = Date.now() >= cutoff && !(Date.parse(order.checkout_scan_started_at || '') >= cutoff);
+    let cursor = restart ? null : order.checkout_scan_cursor;
+    if (!cursor) await db('photo_purchase_orders').where({ id: order.id }).update({ checkout_scan_cursor: null, checkout_scan_started_at: new Date().toISOString() });
     for (let page = 0; page < 10; page++) {
       const listed = await client.checkout.sessions.list({
         created: { gte: Math.floor(Date.parse(order.purchased_at) / 1000) - 5, lte: quote.sessionExpiresAt + 300 },
@@ -156,22 +29,26 @@ async function checkoutSession(order, client = stripeClient()) {
       });
       const found = listed.data.find((session) => session.metadata?.picpeak_order_id === order.order_id);
       if (found) {
-        await db('photo_purchase_orders').where({ id: order.id }).update({ checkout_session_id: found.id });
+        await db('photo_purchase_orders').where({ id: order.id }).update({ checkout_session_id: found.id, checkout_scan_cursor: null });
         return client.checkout.sessions.retrieve(found.id, { expand: ['payment_intent.latest_charge'] });
       }
       if (!listed.has_more) {
-        // No new session can be created with fewer than 30 minutes left.
-        // Allow another five minutes for an in-flight creation to settle.
-        if (Date.now() >= (quote.sessionExpiresAt - 25 * 60) * 1000) {
+        // Only a complete scan after the full payment window plus grace
+        // proves absence. Before then another creation may still be in flight.
+        if (Date.now() >= (quote.sessionExpiresAt + 300) * 1000) {
           await db('photo_purchase_orders').where({ id: order.id }).whereNull('checkout_session_id').whereIn('status', OPEN)
-            .update({ status: 'expired', promo_gallery_id: null });
+            .update({ status: 'expired', promo_gallery_id: null, checkout_scan_cursor: null });
           throw checkoutError('This checkout has ended. Please start again.', 409, 'CHECKOUT_ENDED');
         }
-        throw checkoutError('Checkout creation is still being confirmed. Please try again.', 503, 'CHECKOUT_RETRY');
+        await db('photo_purchase_orders').where({ id: order.id }).update({ checkout_scan_cursor: null });
+        throw Object.assign(checkoutError('Checkout creation is still being confirmed. Please try again.', 503, 'CHECKOUT_RETRY'), { retryAt: new Date(cutoff).toISOString() });
       }
-      cursor = listed.data.at(-1)?.id;
+      const next = listed.data.at(-1)?.id;
+      if (!next || next === cursor) throw checkoutError('Provider recovery needs attention.', 503, 'CHECKOUT_RETRY');
+      cursor = next;
+      await db('photo_purchase_orders').where({ id: order.id }).update({ checkout_scan_cursor: cursor });
     }
-    throw checkoutError('Checkout creation could not yet be confirmed.', 503, 'CHECKOUT_RETRY');
+    throw Object.assign(checkoutError('Checkout creation could not yet be confirmed.', 503, 'CHECKOUT_RETRY'), { retryAt: new Date(Date.now() + 60000).toISOString() });
   }
   try {
     const deadline = new Intl.DateTimeFormat(quote.locale === 'de' ? 'de-DE' : 'en-GB', {
@@ -212,18 +89,21 @@ async function checkoutSession(order, client = stripeClient()) {
   }
 }
 
-async function revoke(order, status, { releasePromo = false } = {}) {
+async function revoke(order, status, { releasePromo = false, onlyStatuses = null } = {}) {
   const now = new Date().toISOString();
-  await db.transaction(async (trx) => {
+  return db.transaction(async (trx) => {
     const updated = await trx('photo_purchase_orders').where({ id: order.id })
       .whereNotIn('status', ['charged_back', 'refunded'])
+      .modify((q) => { if (onlyStatuses) q.whereIn('status', onlyStatuses); })
       .update({ status, updated_at: now, ...(releasePromo ? { promo_gallery_id: null } : {}) });
     if (updated) await trx('photo_purchases').where({ order_id: order.order_id }).update({ expires_at: now, updated_at: now });
+    return updated;
   });
 }
 
 async function refusePaidOrder(order, client) {
-  await revoke(order, 'refund_pending');
+  // A stale rejection must never revoke a purchase another worker fulfilled.
+  if (!(await revoke(order, 'refund_pending', { onlyStatuses: [...OPEN, ...REFUSING, 'expired', 'failed', 'cancelled'] }))) return;
   if (!order.payment_intent_id) {
     await revoke(order, 'cancelled', { releasePromo: !order.promo_used });
     return;
@@ -287,15 +167,8 @@ async function reconcileSession(order, session, { failed = false, client = strip
     return;
   }
   if (order.status === 'completed') return sendPurchaseEmail(order, quote.galleryName, quote.lines.length);
-  const gallery = order.gallery_id ? await db('events').where({ id: order.gallery_id }).first() : null;
-  const photos = gallery ? await sellablePhotos(db, gallery.id)
-    .whereIn('photos.id', quote.lines.map((line) => line.photoId)).select('photos.id') : [];
   const buyerEmail = session.customer_details?.email || session.customer_email || '';
-  // A temporary pause stops new checkouts and downloads, but does not
-  // invalidate an otherwise valid payment already in flight.
-  if (!isGalleryOnSale(gallery, { allowTemporarilyDisabled: true }) || photos.length !== quote.lines.length
-      || !buyerEmail || Date.parse(quote.expiresAt) <= Date.now()
-      || session.currency?.toUpperCase() !== quote.currency || session.amount_total !== quote.totalCents
+  if (!buyerEmail || session.currency?.toUpperCase() !== quote.currency || session.amount_total !== quote.totalCents
       || (payment && (payment.currency?.toUpperCase() !== quote.currency || payment.amount_received !== quote.totalCents))) {
     return refusePaidOrder({ ...order, buyer_email: buyerEmail }, client);
   }
@@ -304,20 +177,27 @@ async function reconcileSession(order, session, { failed = false, client = strip
   const granted = await db.transaction(async (trx) => {
     // Match #2296's event-first lock order. A purchase committed after a
     // resume starts after that pause, rather than missing its compensation.
-    const eventQuery = trx('events').where({ id: gallery.id });
+    const eventQuery = trx('events').where({ id: order.gallery_id || -1 });
     if (trx.client.config.client === 'pg') eventQuery.forUpdate();
     const current = await eventQuery.first();
+    const orderQuery = trx('photo_purchase_orders').where({ id: order.id });
+    if (trx.client.config.client === 'pg') orderQuery.forUpdate();
+    const currentOrder = await orderQuery.first();
+    if (!currentOrder || !OPEN.includes(currentOrder.status)) return true;
     if (!isGalleryOnSale(current, { allowTemporarilyDisabled: true }) || Date.parse(quote.expiresAt) <= Date.now()) return false;
     const grantedAt = Date.now();
     const now = new Date(grantedAt).toISOString();
     const expiresAt = new Date(Math.min(Date.parse(quote.expiresAt), Date.parse(purchaseExpiry(current, grantedAt)))).toISOString();
-    const changed = await trx('photo_purchase_orders').where({ id: order.id }).whereIn('status', OPEN).update({
-      status: 'completed', buyer_email: buyerEmail, purchased_at: now, expires_at: expiresAt,
-      promo_used: !!quote.promoCode, updated_at: now,
-    });
-    if (!changed) return true;
+    const currentPhotos = await sellablePhotos(trx, current.id).whereIn('photos.id', quote.lines.map((line) => line.photoId)).select('photos.id');
+    if (currentPhotos.length !== quote.lines.length) return false;
+    const changed = await trx('photo_purchase_orders').where({ id: order.id }).whereIn('status', OPEN)
+      .modify((q) => { if (quote.promoCode) q.where({ promo_gallery_id: current.id }); }).update({
+        status: 'completed', buyer_email: buyerEmail, purchased_at: now, expires_at: expiresAt,
+        promo_used: !!quote.promoCode, updated_at: now,
+      });
+    if (!changed) return (await trx('photo_purchase_orders').where({ id: order.id }).first('status'))?.status === 'completed';
     await trx('photo_purchases').insert(purchaseRows({
-      orderId: order.order_id, galleryId: gallery.id, buyerEmail, purchasedAt: now,
+      orderId: order.order_id, galleryId: current.id, buyerEmail, purchasedAt: now,
       expiresAt, accessToken: order.access_token, currency: order.currency, lines: quote.lines,
     }));
     return true;

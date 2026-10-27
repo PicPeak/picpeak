@@ -27,17 +27,17 @@ function key() {
   }
   return encryptionKey.value;
 }
-function encrypt(value) {
+function encrypt(value, purpose = KEY) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key(), iv);
-  cipher.setAAD(Buffer.from(KEY));
+  cipher.setAAD(Buffer.from(purpose));
   const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
   return [iv, cipher.getAuthTag(), ciphertext].map((v) => v.toString('base64url')).join('.');
 }
-function decrypt(value) {
+function decrypt(value, purpose = KEY) {
   const [iv, tag, ciphertext] = String(value).split('.').map((v) => Buffer.from(v, 'base64url'));
   const decipher = crypto.createDecipheriv('aes-256-gcm', key(), iv);
-  decipher.setAAD(Buffer.from(KEY));
+  decipher.setAAD(Buffer.from(purpose));
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
 }
@@ -97,6 +97,11 @@ async function verifyApi(secretKey) {
   }
 }
 
+function readOrderQuote(order) {
+  try { return JSON.parse(order.checkout_quote); }
+  catch { throw problem('An existing Stripe order needs attention before credentials can be changed.', 409); }
+}
+
 async function save(input) {
   const current = await credentials();
   if (current.source === 'environment') throw problem('Stripe credentials are managed by the server environment.', 409);
@@ -116,7 +121,7 @@ async function save(input) {
   }
   const orders = await db('photo_purchase_orders').where({ payment_provider: 'stripe' }).select('checkout_quote', 'status', 'checkout_session_id');
   if (!stored?.account_id) {
-    const sameMode = orders.filter((order) => JSON.parse(order.checkout_quote).testMode === testMode);
+    const sameMode = orders.filter((order) => readOrderQuote(order).testMode === testMode);
     const anchor = sameMode.find((order) => order.checkout_session_id);
     if (sameMode.length && !anchor) throw problem('Resolve existing checkouts using the current server credentials before moving them into Settings.', 409);
     if (anchor) {
@@ -139,13 +144,13 @@ async function save(input) {
       throw problem('This installation already has Stripe orders. Rotate a key for the same merchant account; changing accounts requires a migration.', 409);
     }
     if (orders.some((order) => {
-      const quote = JSON.parse(order.checkout_quote);
+      const quote = readOrderQuote(order);
       return quote.testMode !== testMode && (!quote.testMode || ['pending', 'creation_unknown', 'processing', 'refund_pending', 'refund_failed'].includes(order.status));
     })) throw problem('Resolve outstanding checkouts before changing mode. An installation with live orders must retain live payment access.', 409);
     if (fresh) {
-      await trx('app_settings').where({ setting_key: KEY }).update({ setting_value: JSON.stringify(next), updated_at: new Date() });
+      await trx('app_settings').where({ setting_key: KEY }).update({ setting_value: JSON.stringify(next), updated_at: new Date().toISOString() });
     } else {
-      await trx('app_settings').insert({ setting_key: KEY, setting_value: JSON.stringify(next), setting_type: 'payments', updated_at: new Date() });
+      await trx('app_settings').insert({ setting_key: KEY, setting_value: JSON.stringify(next), setting_type: 'payments', updated_at: new Date().toISOString() });
     }
   }).catch((error) => {
     if (['23505', 'SQLITE_CONSTRAINT'].includes(error.code)) throw problem('Payment settings changed. Reload before saving.', 409);
@@ -155,13 +160,16 @@ async function save(input) {
 }
 
 async function lock(trx) {
-  await trx('app_settings').where({ setting_key: KEY }).update({ setting_value: trx.ref('setting_value') });
+  await trx('app_settings').insert({ setting_key: 'payments_configuration_lock', setting_type: 'payments', setting_value: '0' })
+    .onConflict('setting_key').ignore();
+  await trx('app_settings').where({ setting_key: 'payments_configuration_lock' }).update({ setting_value: trx.ref('setting_value') });
 }
 
 async function recordWebhook(value) {
   const next = JSON.stringify({ fingerprint: fingerprint(value), received_at: new Date().toISOString() });
   await db('app_settings').insert({ setting_key: WEBHOOK_STATUS_KEY, setting_value: next, setting_type: 'payments' })
-    .onConflict('setting_key').merge({ setting_value: next, updated_at: new Date() });
+    .onConflict('setting_key').merge({ setting_value: next, updated_at: new Date().toISOString() });
 }
 
-module.exports = { credentials, configurationOf, settings, save, verifyApi, clientFor, recordWebhook, lock, WEBHOOK_EVENTS };
+module.exports = { credentials, configurationOf, settings, save, verifyApi, clientFor, recordWebhook, lock,
+  encrypt, decrypt, revision, WEBHOOK_EVENTS };

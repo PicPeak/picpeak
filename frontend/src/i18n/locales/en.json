@@ -849,7 +849,8 @@
     "today": "Today",
     "chooseDate": "Choose date",
     "name": "Name",
-    "description": "Description"
+    "description": "Description",
+    "refresh": "Refresh"
   },
   "upload": {
     "duplicates": {
@@ -2645,7 +2646,34 @@
         "liveHelp": "Finish Stripe’s business and bank verification. After testing, resolve outstanding sandbox checkouts, then repeat the key and notification steps in live mode using the same business account. Live keys collect real money; keep live access for refunds and disputes.",
         "back": "Previous step",
         "next": "Next step",
-        "progress": "Step {{current}} of {{total}}"
+        "progress": "Step {{current}} of {{total}}",
+        "apiAddressHelp": "Your Site URL is ready, but the server’s API_URL override is not a public HTTPS address. Ask the server operator to correct or remove that override; changing the Site URL alone will not fix the webhook address.",
+        "apiAddressMissing": "Correct the server’s public API address"
+      },
+      "providers": "Payment providers",
+      "providersHelp": "Offer either provider or both. Stripe is selected first when available. Turning off a provider stops new checkouts and keeps credentials for existing payments, refunds and disputes.",
+      "offerStripe": "Offer Stripe checkout when configured",
+      "offerSnipcart": "Offer Snipcart checkout when configured",
+      "stripeIntro": "One Stripe merchant account receives Stripe photo payments from every gallery on this installation. Only super admins can change credentials. Set individual prices in each gallery’s Photo sales settings.",
+      "snipcart": {
+        "intro": "Keep Snipcart, add Stripe, or configure both. Buyers use one PicPeak cart and choose a provider at checkout. Stripe is selected first when both are available.",
+        "ready": "Snipcart credentials configured",
+        "missing": "Snipcart is not configured",
+        "environment": "SNIPCART_API_KEY and SNIPCART_SECRET_API_KEY take precedence as a pair. Existing server-managed stores continue working.",
+        "keysHelp": "In Snipcart Dashboard → Account → API keys, copy the public and secret keys from the same store and test/live environment. The public key is sent to buyers’ browsers; the secret key is encrypted and stays on the server.",
+        "restore": "Restore the payment encryption key or enter both keys again for the same Snipcart store.",
+        "publicKey": "Snipcart public API key",
+        "secretKey": "Snipcart secret API key",
+        "webhook": "Snipcart webhook URL",
+        "webhookHelp": "Add this URL in Snipcart Dashboard → Store configurations → Webhooks, and allow your public PicPeak domain. Keep prices tax-inclusive and use EUR. Saving checks secret-key read access only; complete a test purchase, download and refund to verify the store, public key and webhook together."
+      },
+      "attention": {
+        "title": "Orders needing attention and deleted galleries",
+        "help": "Financial records remain available when a gallery is deleted. Unknown payments and unconfirmed refunds need checking in the provider’s dashboard before taking further action. A retry time does not confirm payment or a refund.",
+        "empty": "No orders to show.",
+        "deleted": "Gallery deleted",
+        "review": "Check payment status in the provider dashboard",
+        "retryAt": "Next recovery check: {{time}}"
       }
     },
     "title": "System Settings",
@@ -7338,7 +7366,15 @@
     "statusUnpaid": "Not paid",
     "total": "Total",
     "availablePromo": "One-time gallery code: {{code}}",
-    "statusUnknown": "Unknown"
+    "statusUnknown": "Unknown",
+    "checkoutMinimum": "Stripe requires a minimum of €0.50. Add another photo or choose another payment provider.",
+    "paymentProvider": "Payment provider",
+    "promoReservationWindow": "A promo checkout reserves the gallery code for about 30 minutes. Complete payment in one window; return to PicPeak to start again if it expires.",
+    "checkoutProviderHint": "Prices and availability are confirmed when you continue. Payment is handled securely by {{provider}}.",
+    "storeChooseProvider": "Guests see watermarked previews. A super admin can configure Stripe, Snipcart, or both in Settings → Payments.",
+    "showAbandoned": "Show expired, failed and cancelled checkouts",
+    "noVisibleOrders": "No orders to show. Expired, failed and cancelled checkouts are hidden unless selected above.",
+    "statusAttention": "Needs attention"
   },
   "photos": {
     "moveToCategory_one": "Move {{count}} photos to category",

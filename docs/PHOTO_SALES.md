@@ -1,9 +1,16 @@
-# Photo sales — setup, pricing and migration
+# Photo sales — setup, pricing and recovery
 
 Priced galleries show watermarked previews. Buyers choose photos in PicPeak,
-review their cart and pay on Stripe-hosted Checkout. Verified payment grants
+review their cart and pay with Stripe-hosted Checkout or Snipcart. If both are
+configured, buyers choose at checkout; Stripe is selected first. Verified payment grants
 access to the clean originals through the existing purchased-download page and
 email. Ordinary galleries keep their existing download behaviour.
+
+Existing Snipcart installations keep working after upgrading. Configure either
+provider or both in **Settings → Payments**. The provider checkboxes control new
+checkouts; turning one off retains its credentials and continues reconciliation,
+refunds and disputes for existing orders. Only super admins can change these
+installation-wide settings. Prices and promo credit remain per gallery.
 
 ## Set up Stripe
 
@@ -54,7 +61,8 @@ email. Ordinary galleries keep their existing download behaviour.
 
 Existing `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` environment variables
 remain supported. If either is set, the pair takes precedence and the Payments
-page is read-only. Values from the environment and database are never mixed.
+credential fields are read-only. Checkout availability can still be changed.
+Values from the environment and database are never mixed.
 Remove both variables and restart before managing credentials through Settings.
 Moving an existing setup into Settings verifies access to its existing sessions.
 Hosted Checkout needs no publishable key or browser payment SDK.
@@ -69,8 +77,32 @@ for the same account; unreadable credentials leave checkout unavailable.
 
 Stripe processing fees and optional Stripe services still apply. Hosted Checkout
 is included with [standard Stripe Payments pricing](https://stripe.com/pricing).
-PicPeak adds no separate cart fee. Refunds and disputes are managed in Stripe;
+PicPeak adds no separate cart fee to Stripe checkout. Snipcart retains its own
+subscription/transaction fees when chosen. Refunds and disputes are managed in Stripe;
 PicPeak reflects their effect on download access.
+
+## Set up or retain Snipcart
+
+Existing `SNIPCART_API_KEY` (public) and `SNIPCART_SECRET_API_KEY` (secret)
+continue to configure the store without requiring Stripe. Alternatively, remove
+both environment variables and enter the pair in Settings → Payments. Both
+must belong to the same store and test/live environment. Only the public key
+reaches the browser; the secret is encrypted at rest. Saving checks secret-key
+read access, not the public/secret pairing or successful payment delivery.
+
+Add the displayed `/api/gallery/snipcart-webhook` URL in Snipcart's dashboard,
+allow the public PicPeak domain, and keep prices tax-inclusive in EUR. Existing
+per-gallery webhook URLs and signed price-check URLs remain supported. Test a
+purchase, buyer email, original download and refund before accepting payments.
+Keep secret-key access to the same store for historical orders and refunds.
+The development HMAC simulator remains disabled in production.
+
+Buyers select photos and enter a promo in PicPeak, then Snipcart opens only
+when chosen at checkout. The server reserves the order and promo first; signed
+price-check URLs validate the saved prices. Gallery pages permit Snipcart's
+CDN, API and payment frames only while Snipcart checkout is offered. Stripe-only
+installations retain the strict gallery policy; admin pages never gain Snipcart
+script permissions.
 
 ## Pricing and access rules
 
@@ -82,32 +114,45 @@ PicPeak reflects their effect on download access.
 - A promo must be explicitly entered in the PicPeak cart. It is one use **per
   gallery**, not per buyer: the credit is `free_photo_count × photo_price`, capped
   at the cart total. Per-photo overrides do not change that credit. A fully
-  discounted order still completes Checkout to collect the buyer's email.
-- Starting a discounted checkout reserves the promo. Returning from Stripe alone
+  discounted order still completes the provider checkout to collect the buyer's email.
+- Starting a discounted checkout reserves the same database promo claim for
+  either provider. Promo checkout windows last approximately 31 minutes;
+  ordinary checkout windows last up to one hour. Returning from Stripe alone
   does not release it: PicPeak asks Stripe to expire the checkout first, so
   another open tab cannot pay using the same credit. Confirmed failed/expired
   checkouts release unused credit; a completed redemption remains spent after a
-  refund. Historical Snipcart redemptions remain spent too.
+  refund. Historical Snipcart redemptions remain spent too. Snipcart cannot
+  confirm cancellation of an unpaid cart through its Orders API; an unsubmitted
+  reservation expires after its window plus five minutes. A known pending
+  provider payment retains its claim while it settles. A late payment against
+  an expired reservation or a conflicting redemption is refused/refunded,
+  rather than granting a second use of the code. Pre-upgrade Snipcart carts
+  still validate, and must acquire the same unique claim at settlement.
 - PicPeak snapshots prices, discount and the promised download deadline before
   creating Checkout. Later price edits do not invalidate an honest purchase.
   Access never exceeds the gallery's expiry, including a later shortened expiry.
-  A gallery closing in less than 31 minutes cannot start a new checkout because
+  A gallery closing in less than 31 minutes cannot start a new Stripe checkout because
   Stripe requires at least 30 minutes until Checkout expiry.
 - Hidden, moderated, trashed, unprocessed and video items cannot be bought.
   Gallery access is checked before checkout and availability is checked again
   before delivery. Closing/deleting the gallery or withdrawing a photo before
   payment confirmation prevents delivery and triggers an automatic refund.
+  A temporary pause (#2296) preserves a valid purchase and email, blocks
+  downloads with an explanation/contact address, and compensates the overlap
+  when resumed without exceeding the gallery's expiry.
 - A success URL does not prove payment. Buyers see a confirmation screen while
   verified callbacks establish payment; delayed methods may take longer. The
   existing purchase token grants only that order's photos until its deadline.
 - Any refund, including a partial refund, or a dispute revokes the whole order's
   download access. To compensate a buyer while keeping access, use an agreed
   alternative rather than a partial refund. Dispute closure does not
-  automatically restore access.
+  automatically restore access, including when the merchant wins the dispute.
 
 ## Recovery and security
 
-Callbacks use the raw body and Stripe's timestamped signature verification. The
+Stripe callbacks use the raw body and timestamped signature verification.
+Snipcart callbacks validate its one-use request token and fetch the order using
+the secret API key. The
 server reads the authoritative Checkout Session and payment, checks mode,
 currency and total, and commits entitlements atomically. Duplicate or out-of-order
 callbacks cannot grant twice or revive a revoked order. Webhook responses and
@@ -119,34 +164,33 @@ can fetch a buyer's link or resend it.
 
 Creation retries reuse the same immutable request and Stripe idempotency key.
 An ambiguous timeout keeps its promo reservation until the provider's session
-can be reconciled. A periodic task recovers missed callbacks, abandoned checkouts
+can be reconciled. Recovery saves its pagination cursor, so stores with more
+than 1,000 sessions do not repeatedly scan only the first pages. Only a complete
+scan after the checkout window plus five minutes proves no session exists;
+incomplete/provider-failed scans retain the claim and eventually flag attention.
+A periodic task recovers missed callbacks, abandoned checkouts
 and failed email queueing; it uses the normal worker shutdown/restore lifecycle.
-Unknown creation outcomes are never treated as paid. After restoring an older
+It uses the existing database lease to prevent concurrent replica sweeps,
+isolates malformed quotes per order, and backs off repeated failures up to a
+daily check. Unknown outcomes are never declared unpaid or paid. Snipcart
+refunds that might already have been submitted are not automatically repeated. After restoring an older
 database, reconcile payments against Stripe; callbacks for this installation
 whose local order is missing fail for retry rather than claiming delivery. Financial order records
-survive gallery deletion, allowing late payments to be refunded.
+survive gallery deletion, allowing late payments to be refunded. Super admins
+can find orphaned orders and recovery/refund attention records in Settings →
+Payments. Gallery Orders hides expired, failed and cancelled attempts by default,
+with a checkbox to show them. Financial and uncertain records are retained;
+there is no automatic deletion policy.
 
 An unavailable-photo or total mismatch records the automatic refund outcome.
 **Refund pending** means it has not completed. **Refund failed** needs attention:
 check the order and refund in Stripe before issuing a manual refund. A provider
 outage does not unlock originals or claim that money has been returned.
 
-## Migrate from Snipcart
+## Changing providers
 
-The upgrade keeps existing galleries, prices, promo codes, orders and purchase
-links. Historical orders are marked `snipcart`; new checkouts use `stripe`.
-Configure Stripe before reopening priced galleries for sales: the old browser
-key does not activate the new checkout, and missing Stripe configuration leaves
-purchases unavailable while previews remain protected.
-
-Keep `SNIPCART_SECRET_API_KEY` and the existing `/api/gallery/snipcart-webhook`
-endpoint configured while settling in-flight Snipcart orders and monitoring their
-refunds/disputes. Existing per-gallery webhook URLs and signed price-check URLs
-remain supported for those checkouts. The development-only simulator secret
-remains ignored in production. New gallery views load no Snipcart scripts or CSS,
-expose no Snipcart public key and create no Snipcart discount coupons.
-
-Existing download links do not contact Snipcart. PicPeak does not cancel the
-merchant's Snipcart account or billing: reconcile its outstanding payments and
-refund responsibilities before changing or closing that service. Retain its
-financial exports according to the merchant's normal accounting practices.
+Adding Stripe does not disable Snipcart or change existing purchase links.
+Keep access to each merchant account while it has outstanding payments,
+refunds or disputes. PicPeak does not cancel a provider's subscription or billing;
+turning off its checkout checkbox only stops new PicPeak handoffs. Retain the
+provider's financial exports according to the merchant's accounting practices.

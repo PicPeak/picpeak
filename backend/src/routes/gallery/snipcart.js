@@ -22,6 +22,7 @@ const {
   ON_SALE_COLUMNS, isGalleryOnSale, sellablePhotos, verifyPhotoSale,
 } = require('../../modules/photoSales/sellable');
 
+const { quoteOf, OPEN } = require('../../modules/photoSales/checkoutReservation');
 const router = express.Router();
 
 router.get('/:slug/price-check', async (req, res) => {
@@ -47,9 +48,21 @@ router.get('/:slug/price-check', async (req, res) => {
       return res.status(404).json({ error: 'Photo not found in gallery' });
     }
 
+    let price = effectivePhotoPrice(event, photo);
+    if (req.query.checkout !== undefined) {
+      const token = String(req.query.checkout);
+      const reserved = /^[0-9a-f]{48}$/.test(token) ? await db('photo_purchase_orders')
+        .where({ payment_provider: 'snipcart', checkout_token: token, gallery_id: event.id }).first() : null;
+      const quote = reserved ? quoteOf(reserved) : null;
+      const line = quote?.lines.find((candidate) => candidate.photoId === photoId);
+      if (!reserved || !OPEN.includes(reserved.status) || !line || Date.now() >= quote.sessionExpiresAt * 1000) {
+        return res.status(409).json({ error: 'Checkout has ended. Return to the gallery to start again.' });
+      }
+      price = line.originalAmountCents / 100;
+    }
     return res.json({
       id: `${event.slug}-photo-${photo.id}`,
-      price: effectivePhotoPrice(event, photo),
+      price,
       customFields: [],
       url: `${req.protocol}://${req.get('host')}${req.originalUrl}`,
     });

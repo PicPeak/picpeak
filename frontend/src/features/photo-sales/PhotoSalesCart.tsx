@@ -4,16 +4,25 @@ import { Image, Trash2 } from 'lucide-react';
 import { Modal } from '../../components/common/Modal';
 import { api } from '../../config/api';
 import type { CartPhoto } from './PhotoSalesContext';
-import { formatPhotoPrice, type PhotoSalesConfig } from './photoSales';
+import { formatPhotoPrice, type PhotoSalesConfig, type PaymentProvider } from './photoSales';
+import { openSnipcartCheckout, type SnipcartHandoff } from './snipcartCheckout';
 import { checkoutBrowserKey } from './checkoutBrowserKey';
 import { AuthenticatedImage } from '../../components/common/AuthenticatedImage';
 import { Button } from '../../components/common/Button';
+
+export function validCheckoutDestination(destination: string): boolean {
+  if (/^\/photo-checkout\/[0-9a-f]{48}(?:\?cancelled=1)?$/.test(destination)) return true;
+  try { const url = new URL(destination); return url.origin === 'https://checkout.stripe.com' && !url.username && !url.password; }
+  catch { return false; }
+}
 
 export const PhotoSalesCart: React.FC<{
   open: boolean; onClose: () => void; config: PhotoSalesConfig;
   items: CartPhoto[]; onRemove: (id: number) => void;
 }> = ({ open, onClose, config, items, onRemove }) => {
   const { t, i18n } = useTranslation();
+  const [selectedProvider, setSelectedProvider] = useState<PaymentProvider>('stripe');
+  const provider = config.providers.includes(selectedProvider) ? selectedProvider : config.providers[0];
   const [promoCode, setPromoCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -30,19 +39,24 @@ export const PhotoSalesCart: React.FC<{
     setError('');
     const photoIds = items.map((item) => item.id);
     const code = promoCode.trim().toUpperCase();
-    const signature = JSON.stringify([config.slug, photoIds, code]);
+    const signature = JSON.stringify([config.slug, photoIds, code, provider]);
     if (request.current?.signature !== signature) request.current = { signature, key: crypto.randomUUID() };
     try {
-      const response = await api.post<{ checkout_url?: string; return_url?: string }>(`/gallery/${encodeURIComponent(config.slug)}/checkout`, {
-        photoIds, promoCode: code, checkoutKey: request.current.key, browserKey: checkoutBrowserKey(), language: i18n?.language || 'en',
+      const response = await api.post<{ checkout_url?: string; return_url?: string; snipcart?: SnipcartHandoff }>(`/gallery/${encodeURIComponent(config.slug)}/checkout`, {
+        provider, photoIds, promoCode: code, checkoutKey: request.current.key, browserKey: checkoutBrowserKey(), language: i18n?.language || 'en',
       });
+      if (provider === 'snipcart' && response.data.snipcart) {
+        await openSnipcartCheckout(config.snipcartPublicKey || '', response.data.snipcart);
+        setBusy(false); onClose(); return;
+      }
       const destination = response.data.checkout_url || response.data.return_url;
-      if (!destination) throw new Error('Missing checkout destination');
+      if (!destination || !validCheckoutDestination(destination)) throw new Error('Invalid checkout destination');
       window.location.assign(destination);
     } catch (caught) {
       const code = (caught as { response?: { data?: { code?: string } } })?.response?.data?.code;
       if (code === 'CHECKOUT_ENDED') request.current = undefined;
       const messages: Record<string, string> = {
+        CHECKOUT_MINIMUM: t('photoSales.checkoutMinimum', 'Stripe requires a minimum of €0.50. Add another photo or choose another payment provider.'),
         PHOTOS_UNAVAILABLE: t('photoSales.checkoutPhotosUnavailable', 'Some selected photos are no longer available. Remove them and try again.'),
         PROMO_UNAVAILABLE: t('photoSales.checkoutPromoUnavailable', 'This promo code is used or reserved by another checkout. Try again later or remove the code.'),
         GALLERY_CLOSING: t('photoSales.checkoutGalleryClosing', 'This gallery closes too soon to start a checkout. Please contact your photographer.'),
@@ -75,6 +89,13 @@ export const PhotoSalesCart: React.FC<{
           </button>
         </li>)}
       </ul>
+      {config.providers.length > 1 && <fieldset className="mt-4 space-y-2">
+        <legend className="text-sm font-medium text-heading">{t('photoSales.paymentProvider', 'Payment provider')}</legend>
+        {config.providers.map((choice) => <label key={choice} className="flex items-center gap-2 rounded-lg border border-line p-3 text-sm text-body">
+          <input type="radio" name={`${promoHintId}-provider`} value={choice} checked={provider === choice} disabled={busy} onChange={() => { setSelectedProvider(choice); setError(''); }} />
+          {choice === 'stripe' ? 'Stripe' : 'Snipcart'}
+        </label>)}
+      </fieldset>}
       {config.freeCount > 0 && <div className="mt-4 text-sm text-body">
         <label className="block">
           {t('photoSales.promoCode', 'Promo code')}
@@ -82,11 +103,12 @@ export const PhotoSalesCart: React.FC<{
         </label>
         {config.promoCode && <p id={promoHintId} className="mt-1 text-xs text-muted">{t('photoSales.availablePromo', 'One-time gallery code: {{code}}', { code: config.promoCode })}</p>}
       </div>}
+      {promoApplied && <p className="mt-3 text-xs text-muted">{t('photoSales.promoReservationWindow', 'A promo checkout reserves the gallery code for about 30 minutes. Complete payment in one window; return to PicPeak to start again if it expires.')}</p>}
       <dl className="mt-5 space-y-2 text-sm">
         {discount > 0 && <div className="flex justify-between text-body"><dt>{t('photoSales.promoDiscount', 'Gallery promo')}</dt><dd>−{format(discount)}</dd></div>}
         <div className="flex justify-between text-heading font-semibold"><dt>{t('photoSales.total', 'Total')}</dt><dd>{format(gross - discount)}</dd></div>
       </dl>
-      <p className="mt-3 text-xs text-muted">{t('photoSales.checkoutPriceHint', 'Prices and availability are confirmed when you continue. Payment is handled securely by Stripe.')}</p>
+      <p className="mt-3 text-xs text-muted">{t('photoSales.checkoutProviderHint', 'Prices and availability are confirmed when you continue. Payment is handled securely by {{provider}}.', { provider: provider === 'stripe' ? 'Stripe' : 'Snipcart' })}</p>
       {items.length >= 100 && <p className="mt-2 text-sm text-body">{t('photoSales.cartLimit', 'You can purchase up to 100 photos per order.')}</p>}
     </>}
     {error && <p role="alert" className="mt-4 text-sm text-danger">{error}</p>}

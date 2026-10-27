@@ -14,7 +14,7 @@ process.env.STRIPE_SECRET_KEY = ['rk', 'test', crypto.randomBytes(18).toString('
 process.env.STRIPE_WEBHOOK_SECRET = crypto.randomBytes(32).toString('hex');
 
 jest.mock('../../src/services/emailProcessor', () => ({ queueEmail: jest.fn(async () => true) }));
-jest.mock('../../src/utils/frontendUrl', () => ({ getFrontendBaseUrl: async () => 'https://photos.example.test' }));
+jest.mock('../../src/utils/frontendUrl', () => ({ getFrontendBaseUrl: async () => 'https://photos.example.test', getApiBaseUrl: async () => 'https://photos.example.test/api' }));
 jest.mock('../../src/modules/photoSales/stripeClient', () => ({
   ...jest.requireActual('../../src/modules/photoSales/stripeClient'),
   stripeClient: () => mockStripe,
@@ -101,14 +101,19 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     app = express();
     app.set('trust proxy', 1);
     app.use('/api/photo-sales/stripe/webhook', require('../../src/routes/stripeWebhook'));
+    app.use('/api/gallery', require('../../src/routes/gallery/snipcartWebhook'));
     app.use(express.json());
+    app.use('/api/gallery', require('../../src/routes/gallery/snipcart'));
+    app.use('/api/public/settings', require('../../src/routes/publicSettings'));
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/gallery/stripeCheckout'));
     app.use('/api/photo-checkout', require('../../src/routes/photoCheckout'));
     app.use('/api/gallery', require('../../src/routes/gallery/purchasedDownloads'));
   });
   afterAll(async () => { if (cleanup) await cleanup(); });
+  afterEach(() => jest.restoreAllMocks());
   beforeEach(async () => {
+    delete process.env.SNIPCART_API_KEY; delete process.env.SNIPCART_SECRET_API_KEY;
     browserKey = crypto.randomBytes(32).toString('hex');
     await db('photo_purchases').del();
     await db('photo_purchase_orders').del();
@@ -344,7 +349,7 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE' });
     const order = await orderFor(await create({ promoCode: 'FOTO-ONCE' }));
     const quote = JSON.parse(order.checkout_quote);
-    quote.sessionExpiresAt = Math.floor(Date.now() / 1000) - 60;
+    quote.sessionExpiresAt = Math.floor(Date.now() / 1000) - 301;
     await db('photo_purchase_orders').where({ id: order.id }).update({
       checkout_session_id: null, status: 'creation_unknown', checkout_quote: JSON.stringify(quote),
       purchased_at: new Date(Date.now() - 65 * 60e3).toISOString(),
@@ -396,6 +401,213 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     await webhook('checkout.session.completed', session);
     expect((await readOrder(order)).status).toBe('cancelled');
     expect(Number((await db('photo_purchases').count('* as n').first()).n)).toBe(0);
+  });
+
+  const enableSnipcart = () => {
+    process.env.SNIPCART_API_KEY = crypto.randomBytes(20).toString('hex');
+    process.env.SNIPCART_SECRET_API_KEY = crypto.randomBytes(20).toString('hex');
+  };
+  const deliverSnipcart = async (handoff, overrides = {}) => {
+    const remote = { token: crypto.randomUUID(), paymentStatus: 'Paid', currency: 'eur', email: 'buyer@example.test',
+      items: handoff.items, discounts: handoff.promo_code ? [{ code: handoff.promo_code }] : [],
+      total: handoff.items.reduce((sum, line) => sum + line.price, 0), ...overrides };
+    const fetcher = jest.spyOn(global, 'fetch').mockImplementation(async (url) => ({ ok: true, status: 200,
+      json: async () => String(url).includes('/requestvalidation/') ? {} : remote }));
+    const result = await request(app).post('/api/gallery/snipcart-webhook')
+      .set('X-Snipcart-RequestToken', crypto.randomUUID()).send({ eventName: 'order.completed', content: { token: remote.token } });
+    fetcher.mockRestore();
+    return { result, remote };
+  };
+  test('configuration supports Stripe-only, Snipcart-only and both, preferring Stripe', async () => {
+    const config = async () => (await request(app).get('/api/public/settings')).body;
+    expect((await config()).photo_sales_providers).toEqual(['stripe']);
+    enableSnipcart();
+    expect(await config()).toMatchObject({ photo_sales_providers: ['stripe', 'snipcart'], photo_sales_preferred_provider: 'stripe', snipcart_api_key: process.env.SNIPCART_API_KEY });
+    expect(JSON.stringify(await config())).not.toContain(process.env.SNIPCART_SECRET_API_KEY);
+    const stripeKey = process.env.STRIPE_SECRET_KEY; const webhookKey = process.env.STRIPE_WEBHOOK_SECRET;
+    try {
+      delete process.env.STRIPE_SECRET_KEY; delete process.env.STRIPE_WEBHOOK_SECRET;
+      expect((await config()).photo_sales_providers).toEqual(['snipcart']);
+      const response = await create();
+      expect(response.status).toBe(200); expect(response.body.snipcart.items).toHaveLength(1);
+      expect(mockStripe.checkout.sessions.create).not.toHaveBeenCalled();
+    } finally { process.env.STRIPE_SECRET_KEY = stripeKey; process.env.STRIPE_WEBHOOK_SECRET = webhookKey; }
+  });
+  test('rejects a positive Stripe total below EUR 0.50 before reserving a promo', async () => {
+    await db('events').where({ id: galleryId }).update({ photo_price: 1, free_photo_count: 1, promo_code: 'FOTO-ONCE' });
+    await db('photos').where({ id: ids[0] }).update({ photo_price: 1.25 });
+    const response = await create({ promoCode: 'FOTO-ONCE' });
+    expect(response.status).toBe(400); expect(response.body.code).toBe('CHECKOUT_MINIMUM');
+    expect(await db('photo_purchase_orders').first()).toBeUndefined();
+  });
+  test('promo sessions use a shorter valid Stripe expiry while ordinary sessions keep one hour', async () => {
+    await create();
+    expect(mockStripe.checkout.sessions.create.mock.calls[0][0].expires_at * 1000 - Date.now()).toBeGreaterThan(59 * 60e3);
+    await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE' });
+    await create({ promoCode: 'FOTO-ONCE' });
+    const remaining = mockStripe.checkout.sessions.create.mock.calls[1][0].expires_at * 1000 - Date.now();
+    expect(remaining).toBeGreaterThan(30 * 60e3); expect(remaining).toBeLessThanOrEqual(31 * 60e3);
+  });
+  test.each(['stripe', 'snipcart'])('the shared promo permits one concurrent reservation with %s attempted first', async (first) => {
+    enableSnipcart();
+    await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE', snipcart_discount_id: crypto.randomUUID() });
+    const replies = await Promise.all([first, first === 'stripe' ? 'snipcart' : 'stripe'].map((provider) => create({ provider, promoCode: 'FOTO-ONCE' })));
+    expect(replies.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(replies.find((r) => r.status === 409).body.code).toBe('PROMO_UNAVAILABLE');
+    expect(await db('photo_purchase_orders').where({ promo_gallery_id: galleryId })).toHaveLength(1);
+  });
+  test('Snipcart honours a signed reserved price snapshot, grants once and keeps the provider reference', async () => {
+    enableSnipcart();
+    const reply = await create({ provider: 'snipcart' });
+    expect(reply.status).toBe(200);
+    const local = await db('photo_purchase_orders').where({ checkout_token: reply.body.snipcart.checkout_token }).first();
+    await db('photos').where({ id: ids[0] }).update({ photo_price: 99 });
+    const price = await request(app).get(new URL(reply.body.snipcart.items[0].url).pathname + new URL(reply.body.snipcart.items[0].url).search);
+    expect(price.status).toBe(200); expect(price.body.price).toBe(5);
+    const { result, remote } = await deliverSnipcart(reply.body.snipcart);
+    expect(result.status).toBe(200);
+    expect(await readOrder(local)).toMatchObject({ status: 'completed', order_id: local.order_id, provider_order_id: remote.token });
+    expect(await db('photo_purchases').where({ order_id: local.order_id })).toHaveLength(1);
+    await deliverSnipcart(reply.body.snipcart, { token: remote.token });
+    expect(await db('photo_purchases').where({ order_id: local.order_id })).toHaveLength(1);
+    const status = await request(app).get(`/api/photo-checkout/${local.checkout_token}`).set('X-Photo-Checkout-Key', browserKey);
+    expect(status.body.status).toBe('completed'); expect(status.body.download_url).toBeTruthy();
+  });
+  test('a second paid Snipcart order reusing a reservation is refunded rather than lost', async () => {
+    enableSnipcart(); const reply = await create({ provider: 'snipcart' });
+    await deliverSnipcart(reply.body.snipcart);
+    const { result, remote } = await deliverSnipcart(reply.body.snipcart);
+    expect(result.status).toBe(200);
+    expect(await db('photo_purchase_orders').where({ provider_order_id: remote.token }).first()).toMatchObject({ status: 'refunded' });
+    expect(await db('photo_purchases')).toHaveLength(1);
+  });
+  test('a late Snipcart payment after promo expiry and a Stripe claim is refunded, preserving the Stripe claim', async () => {
+    enableSnipcart(); await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE', snipcart_discount_id: crypto.randomUUID() });
+    const reply = await create({ provider: 'snipcart', promoCode: 'FOTO-ONCE' });
+    const local = await db('photo_purchase_orders').where({ checkout_token: reply.body.snipcart.checkout_token }).first();
+    const quote = JSON.parse(local.checkout_quote); quote.sessionExpiresAt = Math.floor(Date.now() / 1000) - 301;
+    await db('photo_purchase_orders').where({ id: local.id }).update({ checkout_quote: JSON.stringify(quote), purchased_at: new Date(Date.now() - 65 * 60e3).toISOString() });
+    await require('../../src/services/photoCheckoutReconciler').reconcilePhotoCheckouts();
+    expect((await readOrder(local)).status).toBe('expired');
+    const stripe = await orderFor(await create({ promoCode: 'FOTO-ONCE' }));
+    const { result } = await deliverSnipcart(reply.body.snipcart, { total: 0 });
+    expect(result.status).toBe(200); expect((await readOrder(local)).status).toBe('refunded');
+    expect((await readOrder(stripe)).promo_gallery_id).toBe(galleryId);
+    expect(await db('photo_purchases')).toHaveLength(0);
+  });
+  test('recovery isolates malformed quotes and backs off unconfirmed refunds', async () => {
+    const bad = await orderFor(await create()); const good = await orderFor(await create()); const session = await pay(good);
+    await db('photo_purchase_orders').whereIn('id', [bad.id, good.id]).update({ purchased_at: new Date(Date.now() - 180e3).toISOString() });
+    await db('photo_purchase_orders').where({ id: bad.id }).update({ checkout_quote: '{' });
+    await require('../../src/services/photoCheckoutReconciler').reconcilePhotoCheckouts();
+    expect((await readOrder(bad))).toMatchObject({ recovery_needs_attention: db.client.config.client === 'pg' ? true : 1, recovery_error: 'QUOTE_UNREADABLE' });
+    expect((await readOrder(good)).status).toBe('completed');
+    expect(session.status).toBe('complete');
+  });
+  test('ambiguous creation persists pagination beyond 1,000 sessions without releasing the claim', async () => {
+    const order = await orderFor(await create());
+    const quote = JSON.parse(order.checkout_quote); quote.sessionExpiresAt = Math.floor(Date.now() / 1000) - 301;
+    const stale = { ...order, checkout_session_id: null, status: 'creation_unknown', checkout_quote: JSON.stringify(quote), purchased_at: new Date(Date.now() - 65 * 60e3).toISOString() };
+    await db('photo_purchase_orders').where({ id: order.id }).update({ checkout_session_id: null, status: stale.status, checkout_quote: stale.checkout_quote, purchased_at: stale.purchased_at });
+    mockStripe.checkout.sessions.list.mockImplementationOnce(async () => ({ data: [{ id: 'page-1' }], has_more: true }));
+    for (let page = 2; page <= 10; page++) mockStripe.checkout.sessions.list.mockImplementationOnce(async () => ({ data: [{ id: `page-${page}` }], has_more: true }));
+    const { checkoutSession } = require('../../src/modules/photoSales/stripeCheckout');
+    await expect(checkoutSession(stale, mockStripe)).rejects.toMatchObject({ code: 'CHECKOUT_RETRY' });
+    const progress = await readOrder(order); expect(progress.checkout_scan_cursor).toBe('page-10'); expect(progress.status).toBe('creation_unknown');
+    mockStripe.checkout.sessions.list.mockImplementationOnce(async (params) => {
+      expect(params.starting_after).toBe('page-10');
+      return { data: [sessions.get(order.checkout_session_id)], has_more: false };
+    });
+    expect((await checkoutSession(progress, mockStripe)).id).toBe(order.checkout_session_id);
+  });
+  test('the existing database lease prevents a second recovery runner from contacting the provider', async () => {
+    const order = await orderFor(await create());
+    await db('photo_purchase_orders').where({ id: order.id }).update({ purchased_at: new Date(Date.now() - 180e3).toISOString() });
+    const lease = require('../../src/services/maintenanceJobState'); await lease.ensure('photo_checkout_recovery');
+    const token = await lease.claim('photo_checkout_recovery'); expect(token).toBeTruthy();
+    try { await require('../../src/services/photoCheckoutReconciler').reconcilePhotoCheckouts(); expect(mockStripe.checkout.sessions.retrieve).not.toHaveBeenCalled(); }
+    finally { await lease.release('photo_checkout_recovery', token); }
+  });
+
+  test('turning off a provider stops new checkout but keeps signed payment settlement working', async () => {
+    const order = await orderFor(await create()); const session = await pay(order);
+    const providers = require('../../src/modules/photoSales/providers');
+    await providers.savePreferences({ revision: (await providers.preferences()).revision, stripe: false, snipcart: true });
+    try {
+      expect((await create()).status).toBe(503);
+      expect((await webhook('checkout.session.completed', session)).status).toBe(200);
+      expect((await readOrder(order)).status).toBe('completed');
+    } finally { await db('app_settings').where({ setting_key: 'payments_provider_availability' }).del(); }
+  });
+  test('an authoritative pending Snipcart payment keeps its promo after the cart reservation window', async () => {
+    enableSnipcart(); await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE', snipcart_discount_id: crypto.randomUUID() });
+    const reply = await create({ provider: 'snipcart', promoCode: 'FOTO-ONCE' });
+    const local = await db('photo_purchase_orders').where({ checkout_token: reply.body.snipcart.checkout_token }).first();
+    const { result, remote } = await deliverSnipcart(reply.body.snipcart, { total: 0, paymentStatus: 'Deferred' });
+    expect(result.status).toBe(200); expect((await readOrder(local))).toMatchObject({ status: 'processing', provider_order_id: remote.token });
+    const quote = JSON.parse(local.checkout_quote); quote.sessionExpiresAt = Math.floor(Date.now() / 1000) - 301;
+    await db('photo_purchase_orders').where({ id: local.id }).update({ checkout_quote: JSON.stringify(quote), purchased_at: new Date(Date.now() - 65 * 60e3).toISOString() });
+    const fetcher = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => remote });
+    try { await require('../../src/services/photoCheckoutReconciler').reconcilePhotoCheckouts(); } finally { fetcher.mockRestore(); }
+    expect((await readOrder(local))).toMatchObject({ status: 'processing', promo_gallery_id: galleryId });
+    await deliverSnipcart(reply.body.snipcart, { total: 0, token: remote.token });
+    expect((await readOrder(local)).status).toBe('completed');
+  });
+  test('an unconfirmed refund is flagged and backed off rather than polled every minute', async () => {
+    const order = await orderFor(await create()); await pay(order);
+    await db('photo_purchase_orders').where({ id: order.id }).update({ status: 'refund_failed', purchased_at: new Date(Date.now() - 180e3).toISOString() });
+    mockStripe.refunds.create.mockResolvedValueOnce({ id: crypto.randomUUID(), status: 'failed' });
+    await require('../../src/services/photoCheckoutReconciler').reconcilePhotoCheckouts();
+    const fresh = await readOrder(order);
+    expect(!!fresh.recovery_needs_attention).toBe(true); expect(Date.parse(fresh.recovery_next_at)).toBeGreaterThan(Date.now() + 60000);
+    const calls = mockStripe.checkout.sessions.retrieve.mock.calls.length;
+    await require('../../src/services/photoCheckoutReconciler').reconcilePhotoCheckouts();
+    expect(mockStripe.checkout.sessions.retrieve).toHaveBeenCalledTimes(calls);
+  });
+
+  test.each(['gallery_archived', 'quote_expired'])('a stale second worker cannot refund a fulfilled order when %s before it acquires the event lock', async (change) => {
+    const order = await orderFor(await create()); const session = await pay(order);
+    const { reconcileSession } = require('../../src/modules/photoSales/stripeCheckout');
+    const transaction = db.client.transaction.bind(db.client);
+    // Worker B has read the open order. Let worker A really fulfill it just
+    // before B enters its event/order transaction, then close the gallery/window.
+    jest.spyOn(db.client, 'transaction').mockImplementationOnce(async (callback, ...options) => {
+      await reconcileSession(order, session, { client: mockStripe });
+      if (change === 'gallery_archived') await db('events').where({ id: galleryId }).update({ is_archived: true });
+      else jest.spyOn(Date, 'now').mockReturnValue(Date.parse(JSON.parse(order.checkout_quote).expiresAt) + 1);
+      return transaction(callback, ...options);
+    });
+    await reconcileSession(order, session, { client: mockStripe });
+    expect((await readOrder(order)).status).toBe('completed');
+    expect(await db('photo_purchases').where({ order_id: order.order_id })).toHaveLength(1);
+    expect(mockStripe.refunds.create).not.toHaveBeenCalled();
+    expect(queueEmail).toHaveBeenCalledTimes(1);
+  });
+
+  test('simultaneous Stripe settlement and a pre-upgrade Snipcart promo payment grant only one redemption', async () => {
+    enableSnipcart(); await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE', snipcart_discount_id: crypto.randomUUID() });
+    const order = await orderFor(await create({ photoIds: ids.slice(0, 2), promoCode: 'FOTO-ONCE' })); const session = await pay(order);
+    const { signPhotoSale } = require('../../src/modules/photoSales/sellable');
+    const remote = { token: crypto.randomUUID(), paymentStatus: 'Paid', currency: 'eur', email: 'other@example.test', total: 5, discounts: [{ code: 'FOTO-ONCE' }],
+      items: ids.slice(0, 2).map((photoId) => ({ quantity: 1, url: `https://photos.example.test/api/gallery/stripe-gallery/price-check?photoId=${photoId}&sig=${signPhotoSale(photoId)}` })) };
+    const fetcher = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true });
+    try { await Promise.all([
+      require('../../src/modules/photoSales/stripeCheckout').reconcileSession(order, session, { client: mockStripe }),
+      require('../../src/modules/photoSales/snipcartOrders').reconcileOrder(remote),
+    ]); } finally { fetcher.mockRestore(); }
+    expect((await readOrder(order))).toMatchObject({ status: 'completed', promo_gallery_id: galleryId });
+    expect(await db('photo_purchase_orders').where({ provider_order_id: remote.token }).first()).toMatchObject({ status: 'refunded' });
+    expect(await db('photo_purchases')).toHaveLength(2);
+    expect(mockStripe.refunds.create).not.toHaveBeenCalled();
+  });
+
+  test('normal ambiguity waiting checks at the release boundary rather than extending the hold through backoff', async () => {
+    const order = await orderFor(await create()); const quote = JSON.parse(order.checkout_quote);
+    quote.sessionExpiresAt = Math.floor(Date.now() / 1000) + 60;
+    await db('photo_purchase_orders').where({ id: order.id }).update({ checkout_session_id: null, status: 'creation_unknown',
+      checkout_quote: JSON.stringify(quote), purchased_at: new Date(Date.now() - 65 * 60e3).toISOString() });
+    sessions.clear(); await require('../../src/services/photoCheckoutReconciler').reconcilePhotoCheckouts();
+    expect((await readOrder(order))).toMatchObject({ status: 'creation_unknown', recovery_next_at: new Date((quote.sessionExpiresAt + 300) * 1000).toISOString() });
   });
 
 });
