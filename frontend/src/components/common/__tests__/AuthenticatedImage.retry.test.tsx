@@ -546,6 +546,72 @@ describe('AuthenticatedImage retry', () => {
     expect(loaded.container.querySelector('img')?.hasAttribute('data-fallback')).toBe(false);
   });
 
+  it('shows a pending poster and asks again after Retry-After until the real one comes', async () => {
+    let n = 0;
+    URL.createObjectURL = vi.fn(() => `blob:${++n}`) as unknown as typeof URL.createObjectURL;
+    const pending = () => Promise.resolve({
+      ok: true,
+      blob: async () => new Blob(['p'], { type: 'image/jpeg' }),
+      headers: { get: (name: string) => ({ 'X-Poster-Pending': '1', 'Retry-After': '10' } as Record<string, string>)[name] ?? null },
+    });
+    const fetchMock = vi.fn().mockImplementationOnce(pending).mockImplementationOnce(pending).mockImplementation(ok);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { container } = render(<AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" />);
+    await flush();
+    // The placeholder is on screen, not an empty box.
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:1');
+
+    // Retry-After, not the 2 s backoff.
+    await advance(9999); await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await advance(1); await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Still pending: the new placeholder replaces the old one, the old blob goes.
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:2');
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:1');
+
+    await advance(10_000); await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:3');
+  });
+
+  it('polls a pending poster on its own budget, past the failure retries, then keeps it on screen', async () => {
+    const pending = () => Promise.resolve({
+      ok: true,
+      blob: async () => new Blob(['p'], { type: 'image/jpeg' }),
+      headers: { get: (name: string) => (name === 'X-Poster-Pending' ? '1' : null) },
+    });
+    const fetchMock = vi.fn().mockImplementation(pending);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { container } = render(<AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" maxRetries={2} />);
+    await flush();
+    // No Retry-After: the backoff floor of 2 s per poll; twelve polls.
+    for (let i = 0; i < 20; i++) { await advance(10_000); await flush(); }
+    expect(fetchMock).toHaveBeenCalledTimes(13);
+    expect(container.querySelector('img')).not.toBeNull();
+  });
+
+  it('stops polling a pending poster once the server answers a final 4xx', async () => {
+    const pending = () => Promise.resolve({
+      ok: true,
+      blob: async () => new Blob(['p'], { type: 'image/jpeg' }),
+      headers: { get: (name: string) => (name === 'X-Poster-Pending' ? '1' : null) },
+    });
+    const fetchMock = vi.fn().mockImplementationOnce(pending).mockImplementation(status(403));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { container } = render(<AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" />);
+    await flush();
+    await advance(2000); await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 10; i++) { await advance(30_000); await flush(); }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // The placeholder it had stays on screen.
+    expect(container.querySelector('img')).not.toBeNull();
+  });
+
   it('a new src gets a fresh retry budget', async () => {
     const fetchMock = vi.fn().mockImplementation(loadFailed);
     vi.stubGlobal('fetch', fetchMock);

@@ -169,3 +169,147 @@ describe('galleryService.savePhotoToDevice — iOS gating (#554)', () => {
     expect(galleryService.triggerBrowserDownload).toHaveBeenCalledTimes(1);
   });
 });
+
+// Issue 2263: a video on iOS navigates straight at the download URL like
+// desktop — buffering it for the share sheet kept the spinner up for the
+// whole transfer and usually outlived the share gesture anyway. A limited
+// gallery still fetches, so a refusal never lands as a broken file.
+describe('galleryService.savePhotoToDevice — videos (issue 2263)', () => {
+  let markGalleryLimited: typeof import('../../utils/downloadLimit').markGalleryLimited;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    galleryService = (await import('../gallery.service')).galleryService;
+    markGalleryLimited = (await import('../../utils/downloadLimit')).markGalleryLimited;
+
+    vi.spyOn(galleryService, 'fetchPhotoBlob').mockResolvedValue(fetchedBlob as any);
+    vi.spyOn(galleryService, 'triggerBrowserDownload').mockImplementation(() => undefined);
+    vi.spyOn(galleryService, 'triggerDirectDownload').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    markGalleryLimited('slug', false);
+    vi.restoreAllMocks();
+    delete (navigator as any).share;
+    delete (navigator as any).canShare;
+  });
+
+  it('downloads a video directly on iOS (no blob fetch, no share sheet)', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    const canShare = vi.fn().mockReturnValue(true);
+    installNavigator({ userAgent: IOS_UA, share, canShare });
+
+    await galleryService.savePhotoToDevice('slug', 9, 'clip.mp4', undefined, undefined, true);
+
+    expect(galleryService.fetchPhotoBlob).not.toHaveBeenCalled();
+    expect(share).not.toHaveBeenCalled();
+    expect(galleryService.triggerBrowserDownload).not.toHaveBeenCalled();
+    expect(galleryService.triggerDirectDownload).toHaveBeenCalledWith(
+      expect.stringMatching(/\/gallery\/slug\/download\/9$/),
+      'clip.mp4',
+    );
+  });
+
+  it('keeps the share flow for a photo on iOS', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    const canShare = vi.fn().mockReturnValue(true);
+    installNavigator({ userAgent: IOS_UA, share, canShare });
+
+    await galleryService.savePhotoToDevice('slug', 1, 'fallback.jpg', undefined, undefined, false);
+
+    expect(galleryService.fetchPhotoBlob).toHaveBeenCalledTimes(1);
+    expect(share).toHaveBeenCalledTimes(1);
+    expect(galleryService.triggerDirectDownload).not.toHaveBeenCalled();
+  });
+
+  it('downloads a video directly on Android, as before', async () => {
+    installNavigator({ userAgent: ANDROID_UA });
+
+    await galleryService.savePhotoToDevice('slug', 9, 'clip.mp4', undefined, undefined, true);
+
+    expect(galleryService.fetchPhotoBlob).not.toHaveBeenCalled();
+    expect(galleryService.triggerDirectDownload).toHaveBeenCalledTimes(1);
+  });
+
+  it('still fetches a video on iOS in a limited gallery', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    const canShare = vi.fn().mockReturnValue(true);
+    installNavigator({ userAgent: IOS_UA, share, canShare });
+    markGalleryLimited('slug', true);
+
+    await galleryService.savePhotoToDeviceUnchecked('slug', 9, 'clip.mp4', undefined, undefined, true);
+
+    expect(galleryService.triggerDirectDownload).not.toHaveBeenCalled();
+    expect(galleryService.fetchPhotoBlob).toHaveBeenCalledTimes(1);
+  });
+
+  it('still fetches a video on desktop in a limited gallery', async () => {
+    installNavigator({ userAgent: DESKTOP_UA });
+    markGalleryLimited('slug', true);
+
+    await galleryService.savePhotoToDeviceUnchecked('slug', 9, 'clip.mp4', undefined, undefined, true);
+
+    expect(galleryService.triggerDirectDownload).not.toHaveBeenCalled();
+    expect(galleryService.fetchPhotoBlob).toHaveBeenCalledTimes(1);
+    expect(galleryService.triggerBrowserDownload).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Issue 2263, grid/tile path: downloadPhoto downloads a video directly on
+// every platform when the gallery has no limit; photos and limited galleries
+// keep fetching.
+describe('galleryService.downloadPhoto — videos (issue 2263)', () => {
+  let markGalleryLimited: typeof import('../../utils/downloadLimit').markGalleryLimited;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    galleryService = (await import('../gallery.service')).galleryService;
+    markGalleryLimited = (await import('../../utils/downloadLimit')).markGalleryLimited;
+
+    vi.spyOn(galleryService, 'fetchPhotoBlob').mockResolvedValue(fetchedBlob as any);
+    vi.spyOn(galleryService, 'triggerBrowserDownload').mockImplementation(() => undefined);
+    vi.spyOn(galleryService, 'triggerDirectDownload').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    markGalleryLimited('slug', false);
+    vi.restoreAllMocks();
+  });
+
+  it.each([['iOS', IOS_UA], ['Android', ANDROID_UA], ['desktop', DESKTOP_UA]])(
+    'downloads a video directly on %s (no blob fetch)',
+    async (_name, userAgent) => {
+      installNavigator({ userAgent });
+
+      await galleryService.downloadPhoto('slug', 9, 'clip.mp4', undefined, '1920x1080', true);
+
+      expect(galleryService.fetchPhotoBlob).not.toHaveBeenCalled();
+      expect(galleryService.triggerBrowserDownload).not.toHaveBeenCalled();
+      expect(galleryService.triggerDirectDownload).toHaveBeenCalledWith(
+        expect.stringMatching(/\/gallery\/slug\/download\/9\?resolution=1920x1080$/),
+        'clip.mp4',
+      );
+    },
+  );
+
+  it('keeps fetching a photo', async () => {
+    installNavigator({ userAgent: DESKTOP_UA });
+
+    await galleryService.downloadPhoto('slug', 1, 'fallback.jpg', undefined, undefined, false);
+
+    expect(galleryService.triggerDirectDownload).not.toHaveBeenCalled();
+    expect(galleryService.fetchPhotoBlob).toHaveBeenCalledTimes(1);
+    expect(galleryService.triggerBrowserDownload).toHaveBeenCalledWith(fetchedBlob.blob, 'IMG_0001.jpg');
+  });
+
+  it('keeps fetching a video in a limited gallery', async () => {
+    installNavigator({ userAgent: DESKTOP_UA });
+    markGalleryLimited('slug', true);
+
+    await galleryService.downloadPhoto('slug', 9, 'clip.mp4', undefined, undefined, true);
+
+    expect(galleryService.triggerDirectDownload).not.toHaveBeenCalled();
+    expect(galleryService.fetchPhotoBlob).toHaveBeenCalledTimes(1);
+    expect(galleryService.triggerBrowserDownload).toHaveBeenCalledTimes(1);
+  });
+});

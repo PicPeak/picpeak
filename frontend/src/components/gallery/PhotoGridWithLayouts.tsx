@@ -124,10 +124,13 @@ interface PhotoGridWithLayoutsProps {
    * photos, it does not unselect them, and they are still downloaded.
    */
   photosForIds?: (ids: number[]) => QuotaPhoto[];
+  /** Videos first (issue 2263) — see BaseGalleryLayoutProps. */
+  videosFirst?: boolean;
 }
 
 export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   photos,
+  videosFirst = false,
   suppressEmptyState = false,
   emptyIsFiltered = false,
   eventPhotoCount,
@@ -348,6 +351,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
         photoId: photo.id,
         filename: photo.filename,
         resolution,
+        isVideo: photo.media_type === 'video',
       });
     });
   };
@@ -434,6 +438,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   // Select the appropriate layout component
   const layoutProps = {
     photos,
+    videosFirst,
     // Forwarded so the full-bleed layouts, which render their OWN
     // noPhotosFound return, don't contradict the folder tiles above them on a
     // folder-only root (#1160).

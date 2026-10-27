@@ -31,6 +31,7 @@ const {
   EXTENSION_TO_MIME
 } = require('../services/uploadSettings');
 const { resolvePhotoContentType } = require('../utils/photoContentType');
+const { adminThumbnailUrl, adminThumbnailVersion } = require('../utils/adminThumbnailUrl');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
 const { parseStoredExif } = require('../services/photoExif');
@@ -1466,6 +1467,120 @@ router.put('/:eventId/photos/:photoId/credit', adminAuth, requirePermission('pho
   }
 });
 
+// The preview image of a video (issue 2263, item 4). Both routes refuse what
+// the poster rebuild could not serve: a row still processing, an image, and
+// on remote storage a source over the poster's download bound.
+async function posterVideo(req, res) {
+  const photo = await livePhotos(db)
+    .where({ id: req.params.photoId, event_id: req.params.eventId })
+    .first();
+  if (!photo) {
+    res.status(404).json({ error: 'Photo not found' });
+    return null;
+  }
+  if (!(photo.media_type === 'video' || isVideoMimeType(photo.mime_type) || photo.type === 'video')) {
+    res.status(400).json({ error: 'Only a video has a preview image to choose' });
+    return null;
+  }
+  if (photo.processing_status === 'pending' || photo.processing_status === 'processing') {
+    res.status(409).json({ error: 'The video is still being processed' });
+    return null;
+  }
+  const event = await db('events').where('id', photo.event_id).first();
+  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const storage = getStorage();
+  if (!isExternal && storage.kind() !== 'local') {
+    const { resolvePhotoStorageKey } = require('../services/photoResolver');
+    const { videoThumbnailMaxSourceBytes } = require('../services/imageProcessor');
+    const stat = await storage.stat(resolvePhotoStorageKey(event, photo));
+    if (stat && stat.size > videoThumbnailMaxSourceBytes()) {
+      res.status(413).json({ error: 'This video is too large to take preview frames from' });
+      return null;
+    }
+  }
+  return { photo, event, isExternal };
+}
+
+// Three frames to pick from, generated on request and returned inline: they
+// are looked at once, so nothing is stored and nothing needs cleaning up.
+router.get('/:eventId/photos/:photoId/poster-candidates', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
+  try {
+    const found = await posterVideo(req, res);
+    if (!found) return;
+    const { photo, event, isExternal } = found;
+    const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
+    const { withLocalCopy } = require('../services/imageProcessor');
+    const { generatePosterCandidates, DEFAULT_POSTER_OFFSET_SECONDS } = require('../services/videoProcessor');
+    const generate = localPath => generatePosterCandidates(localPath, { duration: photo.duration });
+    const result = isExternal
+      ? await generate(resolvePhotoFilePath(event, photo))
+      : await withLocalCopy(resolvePhotoStorageKey(event, photo), generate);
+    if (!result.candidates.length) {
+      return res.status(422).json({ error: 'No frame could be read from this video' });
+    }
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      duration: result.duration,
+      poster_offset_seconds: photo.poster_offset_seconds ?? null,
+      default_offset_seconds: DEFAULT_POSTER_OFFSET_SECONDS,
+      candidates: result.candidates.map(candidate => ({
+        offset_seconds: candidate.offsetSeconds,
+        image: `data:image/jpeg;base64,${candidate.jpeg.toString('base64')}`,
+      })),
+    });
+  } catch (error) {
+    if (answerVanished(res, error, 'Video file not found')) return;
+    errorResponse(res, error, 500, 'Failed to read frames from the video');
+  }
+});
+
+// Keep a frame as the preview image, or `offset_seconds: null` for the
+// default one, and rebuild the poster at it the way a regenerate does.
+router.put('/:eventId/photos/:photoId/poster', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
+  try {
+    const raw = req.body?.offset_seconds;
+    if (raw !== null && (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0)) {
+      return res.status(400).json({ error: 'offset_seconds must be a number of seconds, or null for the default frame' });
+    }
+    const found = await posterVideo(req, res);
+    if (!found) return;
+    const { photo } = found;
+    // The stored duration is rounded down to the second; a frame of the
+    // last second is still inside the clip. Unknown: a day at most.
+    const longest = photo.duration != null ? Number(photo.duration) + 1 : 24 * 60 * 60;
+    if (raw !== null && raw > longest) {
+      return res.status(400).json({ error: 'offset_seconds lies past the end of the video' });
+    }
+    const offset = raw === null ? null : Math.round(raw * 1000) / 1000;
+
+    const fence = { id: photo.id, event_id: photo.event_id };
+    // The pick is written with the poster it shows (ensureThumbnail), never
+    // ahead of it: a listing read during the rebuild would hand out the new
+    // thumbnail URL for the old frame, and a browser would cache that.
+    // Strict: a frame that cannot be taken leaves the current poster and
+    // pick as they are, never the placeholder over them.
+    const key = await ensureThumbnail(photo, { force: true, strictVideoFrame: true, posterOffsetSeconds: offset });
+    if (!key) {
+      return res.status(422).json({ error: 'No frame could be taken from the video at that point' });
+    }
+    // The poster it replaced was dropped inside the rebuild (ensureThumbnail
+    // with posterOffsetSeconds), unless another row still names it.
+    await logActivity('photo_poster_updated', {
+      photo_id: photo.id, offset_seconds: offset,
+    }, photo.event_id, { type: 'admin', id: req.admin.id, name: req.admin.username });
+    const updated = await livePhotos(db).where(fence).first();
+    res.json({
+      poster_offset_seconds: offset,
+      thumbnail_url: adminThumbnailUrl(req.params.eventId, updated || { ...photo, poster_offset_seconds: offset }),
+      thumb_hash: updated?.thumb_hash || null,
+      processing_error: updated?.processing_error || null,
+    });
+  } catch (error) {
+    if (answerVanished(res, error, 'Video file not found')) return;
+    errorResponse(res, error, 500, 'Failed to update the preview image');
+  }
+});
+
 // Download a photo
 router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('photos.download'), requireEventOwnership, async (req, res) => {
   try {
@@ -1808,13 +1923,12 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         url: originalNeedsPreview(photo)
           ? `/admin/photos/${eventId}/preview/${photo.id}`
           : `/admin/photos/${eventId}/photo/${photo.id}`,
-        // Always expose a thumbnail URL; backend will generate on demand if missing.
-        // The route caches for an hour and a retried poster frame lands under
-        // the same key as the placeholder it replaces, so the URL of a tile
-        // showing the placeholder note differs from the URL once the note
-        // is gone — otherwise the browser kept the cached placeholder after
-        // a successful Retry (issue 1430, item 6).
-        thumbnail_url: `/admin/photos/${eventId}/thumbnail/${photo.id}${photo.processing_error ? '?v=note' : ''}`,
+        // Always expose a thumbnail URL; backend will generate on demand if
+        // missing. Versioned by adminThumbnailUrl, see there.
+        thumbnail_url: adminThumbnailUrl(eventId, photo),
+        // The frame picked as the video's preview image (issue 2263, item
+        // 4); null: the default frame.
+        poster_offset_seconds: photo.poster_offset_seconds ?? null,
         type: photo.type,
         // Guest visibility (#172). This explicit mapper never included it,
         // so the admin grid's "Hidden" badge could never render and a photo
@@ -2011,7 +2125,11 @@ router.get('/:eventId/thumbnail/:photoId', adminAuth, requirePermission('photos.
     // local stream fails in pipeStreamToResponse, both as a 404.
     const stream = await storage.get(thumbnailPath);
     res.setHeader('Content-Type', 'image/jpeg'); // Thumbnails are always JPEG
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    // A URL naming another version than the row's (a tab with an older list)
+    // gets the current image uncached: cached under that URL it would show
+    // when the version comes back, say on picking the earlier frame again.
+    const versionAsked = typeof req.query.v === 'string' ? req.query.v : '';
+    res.setHeader('Cache-Control', versionAsked === adminThumbnailVersion(photo) ? 'private, max-age=3600' : 'no-store');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Content-Length', stat.size);
     pipeStreamToResponse(stream, res, { context: `admin thumbnail for photo ${photoId}` });

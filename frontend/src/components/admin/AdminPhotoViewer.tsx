@@ -1,6 +1,6 @@
 import { usePhotoSelection } from '../../hooks/usePhotoSelection';
 import React, { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, Camera, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, Euro, ThumbsUp, ThumbsDown, Pencil, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -11,6 +11,7 @@ import { Badge, Button, useConfirm } from '../common';
 import { pushDialogLayer } from '../common/Modal';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { AdminAuthenticatedVideo } from './AdminAuthenticatedVideo';
+import { VideoPosterPicker, formatPosterOffset } from './VideoPosterPicker';
 import { ImageAnnotationOverlay } from '../gallery/annotation/ImageAnnotationOverlay';
 import { parseAnnotation } from '../../utils/photoAnnotation';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -23,6 +24,7 @@ import { useMutationWithToast, useModal } from '../../hooks';
 import { deleteOneConfirm, deletedMessage } from './photoDeleteCopy';
 import { isImeComposing } from '../../utils/imeComposition';
 import { formatPhotoPrice } from '../../features/photo-sales/photoSales';
+import { usePermission } from '../../hooks/usePermission';
 
 type AdminFeedbackResponse = {
   feedback: PhotoFeedback[];
@@ -95,6 +97,9 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   const [myMarks, setMyMarks] = useState<Record<number, { rating: number | null; color_label: ColorLabel | null }>>({});
   const categoryMenuModal = useModal();
   const commentsModal = useModal();
+  const posterModal = useModal();
+  // Picking a frame is photos.edit; a reader still sees which frame it is.
+  const canEditPhotos = usePermission('photos.edit');
   const queryClient = useQueryClient();
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   
@@ -202,6 +207,14 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
     } finally {
       setSavingCredit(false);
     }
+  };
+
+  // A new preview image (issue 2263): the rows carry a thumbnail URL that
+  // names the picked frame, so refetching them shows the new poster, in the
+  // grid behind the viewer too. The viewer stays open on the video.
+  const handlePosterChanged = () => {
+    toast.success(t('admin.photos.poster.saved'));
+    queryClient.invalidateQueries({ queryKey: ['admin-event-photos'] });
   };
 
   const handleCategoryChange = async (categoryId: number | null) => {
@@ -608,6 +621,40 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
               </p>
             )}
           </div>
+
+          {/* Preview image of a video (issue 2263) */}
+          {isVideo && (
+            <div className="mb-6" data-testid="admin-viewer-poster">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-neutral-400 text-sm flex items-center gap-1">
+                  <ImageIcon className="w-4 h-4" />
+                  {t('admin.photos.poster.label')}
+                </span>
+                {canEditPhotos && (
+                  <button
+                    onClick={posterModal.open}
+                    className="text-xs text-accent hover:text-accent-dark"
+                  >
+                    {t('admin.photos.poster.choose')}
+                  </button>
+                )}
+              </div>
+              <p className="text-white">
+                {currentPhoto.poster_offset_seconds == null
+                  ? t('admin.photos.poster.isDefault')
+                  : t('admin.photos.poster.isPicked', { time: formatPosterOffset(currentPhoto.poster_offset_seconds) })}
+              </p>
+              {canEditPhotos && (
+                <VideoPosterPicker
+                  open={posterModal.isOpen}
+                  onClose={posterModal.close}
+                  eventId={eventId}
+                  photoId={currentPhoto.id}
+                  onChanged={handlePosterChanged}
+                />
+              )}
+            </div>
+          )}
 
           {/* Metadata */}
           <div className="space-y-4 text-sm">

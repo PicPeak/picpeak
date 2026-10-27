@@ -5,6 +5,50 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.185.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.185.0-beta.0...v3.185.1-beta.0) (2026-10-27)
+
+
+### Bug Fixes
+
+* **admin:** version video thumbnails outside the photo grid ([#2278](https://github.com/PicPeak/picpeak/issues/2278)) ([965795d](https://github.com/PicPeak/picpeak/commit/965795d6d176e9191753e807660cd52e7a736963))
+* **gallery:** fill in a pending video poster in the lightbox ([#2279](https://github.com/PicPeak/picpeak/issues/2279)) ([46653b5](https://github.com/PicPeak/picpeak/commit/46653b5c5a92a9f5e62344dd32a852b6fc6d89b8))
+* **storage:** stop abandoned S3 downloads from leaking pool sockets ([#2282](https://github.com/PicPeak/picpeak/issues/2282)) ([9fdb3c4](https://github.com/PicPeak/picpeak/commit/9fdb3c4e0cb1f0d4c7f821f43909124cb74ddef8))
+
+## [3.185.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.184.0-beta.0...v3.185.0-beta.0) (2026-10-26)
+
+
+### Features
+
+* **video:** let admins choose a video's preview image ([#2269](https://github.com/PicPeak/picpeak/issues/2269)) ([aa9988f](https://github.com/PicPeak/picpeak/commit/aa9988f85cd74a566ef517961c3c63657c4f355e))
+
+## [3.184.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.183.0-beta.0...v3.184.0-beta.0) (2026-10-26)
+
+
+### Features
+
+* **gallery:** per-event "videos first" and pick up media that finishes processing ([#2267](https://github.com/PicPeak/picpeak/issues/2267)) ([d90eff7](https://github.com/PicPeak/picpeak/commit/d90eff77c4927ca7945508a74f0910ec08a21966))
+
+
+### Bug Fixes
+
+* **gallery:** keep lightbox arrows off the video controls, download videos directly ([#2266](https://github.com/PicPeak/picpeak/issues/2266)) ([7a432a3](https://github.com/PicPeak/picpeak/commit/7a432a301a2d7ad50ee2c485eaedcdd052136598))
+* **video:** store portrait clips upright, date them, keep posters in shape ([#2268](https://github.com/PicPeak/picpeak/issues/2268)) ([4f47e41](https://github.com/PicPeak/picpeak/commit/4f47e4109883893b28b43114f5705752ead285ad))
+
+## [3.183.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.182.0-beta.0...v3.183.0-beta.0) (2026-10-26)
+
+
+### Features
+
+* **gallery:** sell photos from priced galleries through Snipcart ([#2233](https://github.com/PicPeak/picpeak/issues/2233)) ([661a82e](https://github.com/PicPeak/picpeak/commit/661a82e1aae6805d3597dac8bb97f50139be3be5))
+* **legal:** add an AGB page next to Impressum and Datenschutz ([#2232](https://github.com/PicPeak/picpeak/issues/2232)) ([63cca01](https://github.com/PicPeak/picpeak/commit/63cca01479686ef58c742ae023d924b74a1eaf43))
+
+## [3.182.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.181.0-beta.0...v3.182.0-beta.0) (2026-10-26)
+
+
+### Features
+
+* shared product configurator for galleries and CRM ([#1924](https://github.com/PicPeak/picpeak/issues/1924)) ([#2222](https://github.com/PicPeak/picpeak/issues/2222)) ([a624aa2](https://github.com/PicPeak/picpeak/commit/a624aa229f3c61e06b7100c69056f38774259107))
+
 ## [3.181.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.180.4-beta.0...v3.181.0-beta.0) (2026-10-26)
 
 

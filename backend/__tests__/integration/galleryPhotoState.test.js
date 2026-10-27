@@ -78,8 +78,9 @@ describe('gallery photo state', () => {
     expect(state.body).toEqual({
       count: list.body.photos.length,
       max_id: Math.max(...list.body.photos.map((p) => p.id)),
+      processing: true,
     });
-    expect(state.body).toEqual({ count: 2, max_id: second });
+    expect(state.body).toEqual({ count: 2, max_id: second, processing: true });
     expect(list.body.event.live_refresh).toBe(true);
   });
 
@@ -97,28 +98,62 @@ describe('gallery photo state', () => {
     const list = await service.getGalleryPhotos({ ...args, slug: 'live' });
     const state = await service.getGalleryPhotoState(args);
     expect(list.photos.map((p) => p.filename).sort()).toEqual(['a.jpg', 'b.jpg', 'hidden.jpg']);
-    expect(state).toEqual({ count: 3, max_id: Math.max(...list.photos.map((p) => p.id)) });
+    expect(state).toEqual({ count: 3, max_id: Math.max(...list.photos.map((p) => p.id)), processing: false });
   });
 
   it('answers an empty gallery with a null max_id', async () => {
     const state = await request(app).get('/api/gallery/live/photos/state');
-    expect(state.body).toEqual({ count: 0, max_id: null });
+    expect(state.body).toEqual({ count: 0, max_id: null, processing: false });
   });
 
   it('reports nothing while reveal mode hides the gallery', async () => {
     await seed();
     await db('events').where('id', eventId).update({ reveal_mode: 1, revealed_at: null, reveal_at: null });
     const state = await request(app).get('/api/gallery/live/photos/state');
-    expect(state.body).toEqual({ count: 0, max_id: null });
+    expect(state.body).toEqual({ count: 0, max_id: null, processing: false });
   });
 
-  it('is 404 while the gallery has live refresh off', async () => {
+  it('is 404 while the gallery has live refresh off and nothing is processing', async () => {
     await seed();
+    await db('photos').where({ event_id: eventId, filename: 'processing.jpg' }).del();
     await db('events').where('id', eventId).update({ live_refresh: 0 });
     const state = await request(app).get('/api/gallery/live/photos/state');
     expect(state.status).toBe(404);
     const list = await request(app).get('/api/gallery/live/photos');
     expect(list.body.event.live_refresh).toBe(false);
+    expect(list.body.event.media_processing).toBe(false);
+  });
+
+  // Issue 2263: a video still being transcoded is left out of the list; the
+  // open gallery polls the state until it lands, live refresh on or off.
+  it('answers while media this viewer will see is processing, live refresh off', async () => {
+    await seed();
+    await db('events').where('id', eventId).update({ live_refresh: 0 });
+    const list = await request(app).get('/api/gallery/live/photos');
+    expect(list.body.event.media_processing).toBe(true);
+    const state = await request(app).get('/api/gallery/live/photos/state');
+    expect(state.status).toBe(200);
+    expect(state.body).toMatchObject({ count: 2, processing: true });
+
+    const id = (await db('photos').where({ event_id: eventId, filename: 'processing.jpg' }).first('id')).id;
+    await db('photos').where({ id }).update({ processing_status: 'complete' });
+    // Done: the list holds it, and the state goes back to 404 (nothing left).
+    const after = await request(app).get('/api/gallery/live/photos');
+    expect(after.body.photos.map((p) => p.filename)).toContain('processing.jpg');
+    expect(after.body.event.media_processing).toBe(false);
+    expect((await request(app).get('/api/gallery/live/photos/state')).status).toBe(404);
+  });
+
+  it('does not count hidden or held media that is still processing', async () => {
+    await addPhoto('a.jpg');
+    await addPhoto('hidden.mp4', { visibility: 'hidden', processing_status: 'processing' });
+    await addPhoto('held.mp4', { visibility: 'hidden', moderation_status: 'pending', processing_status: 'pending' });
+    await db('events').where('id', eventId).update({ live_refresh: 0 });
+    expect((await request(app).get('/api/gallery/live/photos')).body.event.media_processing).toBe(false);
+    expect((await request(app).get('/api/gallery/live/photos/state')).status).toBe(404);
+    // A failed transcode is not waited on either.
+    await addPhoto('failed.mp4', { processing_status: 'failed' });
+    expect((await request(app).get('/api/gallery/live/photos')).body.event.media_processing).toBe(false);
   });
 
   it('travels with a duplicated gallery', () => {

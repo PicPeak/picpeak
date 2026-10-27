@@ -575,15 +575,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
     try {
       photos = await db('photos')
         .join('events', 'photos.event_id', 'events.id')
-        .where(function () {
-          this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
-        })
-        .where(function () {
-          this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
-        })
-        .where(function () {
-          this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
-        })
+        // Videos too (issue 2263): see repairVideo below.
         // Archiving deletes the originals and keeps the rows, so every archived
         // photo would fail its read and add nothing but noise to a run that
         // already walks the whole library.
@@ -608,6 +600,8 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           'photos.size_bytes', 'photos.source_mtime_ms',
           // A RAW row's tier keys are scoped by its processing attempt.
           'photos.processing_attempt_id',
+          // The video branch: which rows are videos, and the date it fills.
+          'photos.media_type', 'photos.type', 'photos.mime_type', 'photos.captured_at',
           'events.source_mode', 'events.external_path', 'events.slug'
         );
     } catch (err) {
@@ -653,6 +647,73 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
       let staleTiers = 0;
       let errorCount = 0;
       let lostClaim = false;
+      let videoDated = 0;
+      let videoPosters = 0;
+
+      // A video stored before issue 2263 was fixed: dimensions as coded, not
+      // as displayed (a portrait phone clip reads as landscape), no capture
+      // date, and a poster squashed into a square. One probe of the original
+      // answers the first two; the poster is rebuilt when it is square and
+      // the video is not, which no poster built since can be. Returns false
+      // when the poster could not be rebuilt, so the row stays a candidate.
+      const repairVideo = async (photo, event, isExternal) => {
+        const { extractVideoMetadata } = require('../services/videoProcessor');
+        const { ensureThumbnail } = require('../services/imageProcessor');
+        const probed = isExternal
+          ? await (async () => {
+            const fullPath = resolvePhotoFilePath(event, photo);
+            await fs.access(fullPath);
+            return extractVideoMetadata(fullPath);
+          })()
+          : await withLocalCopy(resolvePhotoStorageKey(event, photo), async (localPath) => {
+            await fs.access(localPath);
+            return extractVideoMetadata(localPath);
+          });
+        checked++;
+
+        const fence = fenceOf(photo);
+        const values = {};
+        if (probed.width && probed.height && (photo.width !== probed.width || photo.height !== probed.height)) {
+          values.width = probed.width;
+          values.height = probed.height;
+        }
+        if (!photo.captured_at && probed.capturedAt) values.captured_at = probed.capturedAt;
+        if (Object.keys(values).length) {
+          // Dated only while still undated, as in the capture-date backfill.
+          if (values.captured_at && await db('photos').where(fence).whereNull('captured_at')
+            .update({ captured_at: values.captured_at })) videoDated++;
+          delete values.captured_at;
+          if (Object.keys(values).length && await db('photos').where(fence).update(values)) corrected++;
+        }
+
+        const portraitOrLandscape = probed.width && probed.height && probed.width !== probed.height;
+        let posterSquare = !photo.thumbnail_path;
+        if (photo.thumbnail_path && portraitOrLandscape) {
+          const poster = await withLocalCopy(photo.thumbnail_path, localPath => sharp(localPath).metadata())
+            .catch(() => null);
+          posterSquare = !poster || poster.width === poster.height;
+        }
+        if (portraitOrLandscape && posterSquare) {
+          // The whole row, as ensureThumbnail checks the source against it;
+          // gone or replaced since the probe, it is left for the next run.
+          const row = await db('photos').where(fence).first();
+          if (!row) return true;
+          // Unbounded like the admin regenerate job: an admin asked, and
+          // this runs one video at a time. Strict: a frame that cannot be
+          // taken is a failed repair, retried on the next run, not the
+          // placeholder counted as a fixed poster.
+          const key = await ensureThumbnail(row, { force: true, boundVideoSource: false, strictVideoFrame: true });
+          if (!key) return false;
+          videoPosters++;
+          // A video's poster key is attempt-scoped, so the rebuild wrote a
+          // new one; the squashed one is dropped unless another row has it.
+          if (row.thumbnail_path && row.thumbnail_path !== key
+            && !(await db('photos').where('thumbnail_path', row.thumbnail_path).first('id'))) {
+            await getStorage().delete(row.thumbnail_path).catch(() => {});
+          }
+        }
+        return true;
+      };
 
       try {
         for (const photo of photos) {
@@ -665,6 +726,16 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
               slug: photo.slug,
             };
             const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+
+            // The same three video markers as the capture-date backfill.
+            if (photo.media_type === 'video' || photo.type === 'video' || String(photo.mime_type || '').startsWith('video/')) {
+              if (await repairVideo(photo, event, isExternal)) {
+                await db('photos').where(fenceOf(photo)).update({ orientation_checked_at: nowIso() });
+              } else {
+                errorCount++;
+              }
+              continue;
+            }
 
             // Read the metadata the same way every other maintenance path
             // does. The dimension repair reads with resolvePhotoFilePath and
@@ -860,7 +931,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           return;
         }
         await maintenanceJobs.release(JOB_ORIENTATION_BACKFILL, token, {
-          checked, corrected, requeuedFaces, staleTiers, failed: errorCount,
+          checked, corrected, requeuedFaces, staleTiers, failed: errorCount, videoDated, videoPosters,
         });
         logger.info(
           `Orientation backfill complete: ${checked} checked, ${corrected} corrected, `
@@ -870,7 +941,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
         logger.error('Orientation backfill aborted:', err);
         await maintenanceJobs
           .release(JOB_ORIENTATION_BACKFILL, token, {
-            checked, corrected, requeuedFaces, staleTiers, failed: errorCount, error: err.message,
+            checked, corrected, requeuedFaces, staleTiers, failed: errorCount, videoDated, videoPosters, error: err.message,
           })
           .catch(() => {});
       } finally {

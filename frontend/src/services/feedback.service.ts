@@ -122,6 +122,8 @@ export interface PhotoFeedback {
   filename?: string;
   path?: string;
   photo_filename?: string;
+  /** The admin list's tile URL, versioned like the photo grid's. */
+  thumbnail_url?: string;
   is_mine?: boolean;
 }
 

@@ -167,6 +167,7 @@ describe('external re-scan of a video changed in place (issue 2114)', () => {
   it('records the new version, makes a new poster and starts the web copy and ladder over', async () => {
     const eventId = await seedEvent();
     const { video, keys } = await importWithRenditions(eventId);
+    await db('photos').where({ id: video.id }).update({ poster_offset_seconds: 4 });
     processUploadedVideo.mockClear();
 
     const edited = await editVideo();
@@ -184,6 +185,8 @@ describe('external re-scan of a video changed in place (issue 2114)', () => {
       web_path: null, web_status: 'pending', web_attempt_id: null,
       hls_path: null, hls_status: null, hls_attempt_id: null,
       processing_error: null,
+      // The frame picked in the old version goes with it.
+      poster_offset_seconds: null,
     });
     expect(Number(after.web_attempts)).toBe(0);
     expect(Number(after.hls_attempts)).toBe(0);

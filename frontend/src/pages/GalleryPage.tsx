@@ -10,6 +10,7 @@ import { Input, Button, ReCaptcha, CMSContentBlock, PoweredBy } from '../compone
 import { useGalleryAuth, useTheme } from '../contexts';
 import { useGalleryInfo } from '../hooks/useGallery';
 import { useFollowGalleryRename } from '../hooks/useFollowGalleryRename';
+import { useShowAgbLink } from '../hooks/useShowAgbLink';
 import { GalleryView } from '../components/gallery';
 import { GallerySkeleton } from '../components/gallery/GallerySkeleton';
 import { PasswordChangeRequiredNotice } from '../components/gallery/PasswordChangeRequiredNotice';
@@ -29,6 +30,7 @@ export const GalleryPage: React.FC = () => {
   // cookie while isAuthenticated is still false (fork survey A3 / #1563).
   const { isAuthenticated, isLoading: isRestoringSession, login, event, isClient, viaCustomer } = useGalleryAuth();
   const { t, i18n } = useTranslation();
+  const showAgb = useShowAgbLink();
   const { formatExpiry } = useLocalizedDate();
   const { setTheme } = useTheme();
   const [password, setPassword] = useState('');
@@ -405,6 +407,17 @@ export const GalleryPage: React.FC = () => {
                 {t('legal.impressum')}
               </Link>
               <span className="text-xs text-muted-theme">|</span>
+              {showAgb && (
+                <>
+                  <Link
+                    to="/agb"
+                    className="text-xs text-muted-theme hover:text-theme transition-colors"
+                  >
+                    {t('legal.agb')}
+                  </Link>
+                  <span className="text-xs text-muted-theme">|</span>
+                </>
+              )}
               <Link 
                 to="/datenschutz" 
                 className="text-xs text-muted-theme hover:text-theme transition-colors"
@@ -650,6 +663,17 @@ export const GalleryPage: React.FC = () => {
                 {t('legal.impressum')}
               </Link>
               <span className="text-xs text-muted-theme">|</span>
+              {showAgb && (
+                <>
+                  <Link
+                    to="/agb"
+                    className="text-xs text-muted-theme hover:text-theme transition-colors"
+                  >
+                    {t('legal.agb')}
+                  </Link>
+                  <span className="text-xs text-muted-theme">|</span>
+                </>
+              )}
               <Link 
                 to="/datenschutz" 
                 className="text-xs text-muted-theme hover:text-theme transition-colors"

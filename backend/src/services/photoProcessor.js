@@ -317,6 +317,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         photoData.audio_codec = videoMetadata.audioCodec;
         photoData.width = videoMetadata.width;
         photoData.height = videoMetadata.height;
+        // From the container's tags (issue 2263); already an ISO string.
+        if (videoMetadata.capturedAt) photoData.captured_at = videoMetadata.capturedAt;
       }
 
       // Add image dimensions if available
@@ -751,7 +753,8 @@ async function processPhoto(photoId) {
       // download for a broken tile (codex review of #845).
       let videoResult = null;
       try {
-        videoResult = await processUploadedVideo(localPath, videoThumbnailKey);
+        // A retried row keeps the frame an admin picked (issue 2263, item 4).
+        videoResult = await processUploadedVideo(localPath, videoThumbnailKey, { offsetSeconds: photo.poster_offset_seconds ?? null });
         if (videoResult.placeholder) posterError = posterFrameError(videoResult.thumbnailError);
       } catch (videoErr) {
         // "Not now" and a lost claim are not a verdict on the video.
@@ -779,6 +782,9 @@ async function processPhoto(photoId) {
         if (m.audioCodec) updateData.audio_codec = m.audioCodec;
         if (m.width) updateData.width = m.width;
         if (m.height) updateData.height = m.height;
+        // The EXIF read above skips videos; theirs is in the container's
+        // tags (issue 2263), already an ISO string.
+        if (!photo.captured_at && m.capturedAt) updateData.captured_at = m.capturedAt;
       }
     } else {
       // RAW/DNG can't be sharp-decoded directly — extract the embedded JPEG

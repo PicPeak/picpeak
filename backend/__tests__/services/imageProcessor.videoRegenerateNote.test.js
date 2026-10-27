@@ -20,8 +20,14 @@ jest.mock('../../src/database/db', () => {
       return { where: (_col, id) => ({ first: async () => state.events[id] || null }) };
     }
     if (table === 'photos') {
-      return { where: (criteria) => ({ first: async () => criteria,
-        update: async (values) => { state.updates.push({ criteria, values }); return 1; } }) };
+      return { where: (criteria) => {
+        const chain = { first: async () => criteria,
+          update: async (values) => { state.updates.push({ criteria, values }); return 1; } };
+        // The poster publish also checks the frame pick.
+        chain.whereNull = () => chain;
+        chain.where = () => chain;
+        return chain;
+      } };
     }
     if (table === 'app_settings') {
       return { whereIn: () => ({ select: async () => [] }) };

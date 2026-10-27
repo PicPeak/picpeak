@@ -178,6 +178,6 @@ describe('Premium lightbox canvas rendering (#1325)', () => {
     await readyCanvas(dialog, 2);
     expect(within(dialog).getByText('original-2.jpg')).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Download' }));
-    expect(download).toHaveBeenCalledWith({ slug: 'demo', photoId: 2, filename: 'photo-2.jpg' });
+    expect(download).toHaveBeenCalledWith({ slug: 'demo', photoId: 2, filename: 'photo-2.jpg', isVideo: false });
   });
 });

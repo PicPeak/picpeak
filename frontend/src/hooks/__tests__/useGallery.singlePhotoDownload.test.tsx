@@ -12,8 +12,10 @@ const svc = vi.hoisted(() => ({ downloadPhoto: vi.fn(), savePhotoToDevice: vi.fn
 vi.mock('../../services', () => ({ galleryService: svc }));
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+import { toast } from 'react-toastify';
 import { useDownloadPhoto, useSavePhotoToDevice } from '../useGallery';
 import { isPhotoDownloadPending } from '../usePhotoDownloadPending';
+import { markGalleryLimited } from '../../utils/downloadLimit';
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
@@ -90,6 +92,28 @@ describe('single-photo download hooks (issue 2043)', () => {
       expect(isPhotoDownloadPending(804)).toBe(false);
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  // Issue 2263: a video in a gallery without a limit downloads directly, so
+  // the call returns before any byte arrives; only a fetched download toasts.
+  it('toasts a fetched download, not a direct video download', async () => {
+    svc.downloadPhoto.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useDownloadPhoto(), { wrapper });
+    vi.mocked(toast.success).mockClear();
+
+    act(() => { result.current.mutate({ slug: 'open', photoId: 811, filename: 'v.mp4', isVideo: true }); });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(toast.success).not.toHaveBeenCalled();
+
+    markGalleryLimited('capped', true);
+    try {
+      act(() => { result.current.mutate({ slug: 'capped', photoId: 812, filename: 'w.mp4', isVideo: true }); });
+      await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+      act(() => { result.current.mutate({ slug: 'open', photoId: 813, filename: 'p.jpg' }); });
+      await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(2));
+    } finally {
+      markGalleryLimited('capped', false);
     }
   });
 });

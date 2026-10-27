@@ -100,15 +100,33 @@ async function galleryListQuery({ event, query = {}, identity, accessLevel }) {
 }
 
 /**
+ * Issue 2263: whether this viewer's list is still waiting on media the worker
+ * has not finished (a video being transcoded, say). The list leaves such
+ * media out, so an open gallery polls /photos/state while this is true and
+ * reloads once it has landed. Same visibility rule as the list, so a hidden
+ * or held upload never shows up here. Not for the slideshow, which follows
+ * new uploads on its own poll.
+ */
+async function hasMediaProcessing({ event, accessLevel, hiddenForGuest }) {
+  if (hiddenForGuest || accessLevel === 'slideshow') return false;
+  const row = await applyPhotoVisibilityFilter(livePhotos(db)
+    .where('photos.event_id', event.id)
+    .whereIn('photos.processing_status', ['pending', 'processing']), accessLevel)
+    .first('photos.id');
+  return !!row;
+}
+
+/**
  * Live refresh (issue 1733, C5): how many photos the viewer's list holds and
  * the highest id among them. One aggregate over galleryListQuery, no rows.
+ * `processing` is hasMediaProcessing, when the caller has already read it.
  */
-async function getGalleryPhotoState({ event, query = {}, identity, accessLevel, hiddenForGuest }) {
-  if (hiddenForGuest) return { count: 0, max_id: null };
+async function getGalleryPhotoState({ event, query = {}, identity, accessLevel, hiddenForGuest, processing = false }) {
+  if (hiddenForGuest) return { count: 0, max_id: null, processing: false };
   const { photosQuery } = await galleryListQuery({ event, query, identity, accessLevel });
   const row = await photosQuery.clearSelect().count('photos.id as count').max('photos.id as max_id').first();
   // PostgreSQL hands count back as a string.
-  return { count: Number(row.count), max_id: row.max_id == null ? null : Number(row.max_id) };
+  return { count: Number(row.count), max_id: row.max_id == null ? null : Number(row.max_id), processing };
 }
 
 async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug }) {
@@ -146,6 +164,15 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   // symptom is a grid that reshuffles between page loads. id is insertion
   // order, so it also makes the fallback ordering meaningful rather than
   // arbitrary.
+  //
+  // Videos first (issue 2263, per event, off by default): every video ahead
+  // of every photo, the chosen sort inside each group, so the pages arrive
+  // in the order the gallery shows them. Same test as the frontend's
+  // resolveMediaType. Not for the slideshow, which has its own play order.
+  if (parseBooleanInput(event.videos_first, false) && accessLevel !== 'slideshow') {
+    photosQuery = photosQuery
+      .orderByRaw('CASE WHEN photos.media_type = \'video\' OR photos.mime_type LIKE \'video/%\' THEN 0 ELSE 1 END');
+  }
   if (sort === 'capture_date') {
     // Sort by capture date, falling back to uploaded_at if capture date is
     // null. The expression is engine-specific, see utils/captureDateSql.
@@ -168,6 +195,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
 
   const limit = query.limit === undefined ? null : Math.min(250, Math.max(1, parseInt(query.limit, 10) || 100));
   const page = Math.max(1, parseInt(query.page, 10) || 1);
+  // Read before the list (issue 2263): media that finishes between the two
+  // reads is then in the list, or still reported as processing — never
+  // missing from the list while the flag says nothing is pending.
+  const mediaProcessing = await hasMediaProcessing({ event, accessLevel, hiddenForGuest });
   const countRow = hiddenForGuest ? { total: 0 } : await photosQuery.clone().clearSelect().clearOrder().count('photos.id as total').first();
   const total = Number(countRow.total);
   if (limit) photosQuery.limit(limit).offset((page - 1) * limit);
@@ -643,6 +674,11 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // Live refresh (issue 1733, C5): the open gallery polls /photos/state
       // only when this is on.
       live_refresh: parseBooleanInput(event.live_refresh, false),
+      // Media this viewer will see once the worker finishes it (issue 2263):
+      // the open gallery polls /photos/state until it has landed.
+      media_processing: mediaProcessing,
+      // Videos ahead of photos (issue 2263); the client sorts the same way.
+      videos_first: parseBooleanInput(event.videos_first, false),
       // Two-stage delivery (issue 1562): null for an ordinary gallery.
       delivery: hiddenForGuest ? null : guestDeliveryPayload(event, total),
       disable_right_click: parseBooleanInput(event.disable_right_click, false),
@@ -728,10 +764,19 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // same-origin).
       const imgQuery = [wmVersion, adminPreview ? 'admin_preview=1' : ''].filter(Boolean).join('&');
       const wmQuery = imgQuery ? `?${imgQuery}` : '';
+      // The thumbnail route caches for half an hour and a rebuilt poster
+      // lands under the same key, so the frame an admin picked for a video
+      // (issue 2263, item 4) rides in the URL: a new pick is a new URL.
+      const posterQuery = isVideo && photo.poster_offset_seconds != null
+        ? `?${[imgQuery, `poster=${photo.poster_offset_seconds}`].filter(Boolean).join('&')}`
+        : wmQuery;
       // The hero crop follows the event's focal point (issue 1737) and the
       // hero route caches for an hour, so a non-centre anchor rides in the
       // URL: a changed anchor is a new URL, not a stale cached crop.
       const heroQuery = [imgQuery, heroAnchorQuery(event.hero_image_anchor)].filter(Boolean).join('&');
+      const heroPosterQuery = isVideo && photo.poster_offset_seconds != null
+        ? [heroQuery, `poster=${photo.poster_offset_seconds}`].filter(Boolean).join('&')
+        : heroQuery;
       // Maximum protection caps the photo and preview routes (issue 2152):
       // a capped copy gets its own URL, so a browser never shows a cached
       // uncapped image for it after a level change, or the other way round.
@@ -772,10 +817,12 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // which is both a broken tile and a full download of the file. Images
         // keep the old behaviour: for them the original is a usable fallback.
         thumbnail_url: (photo.thumbnail_path || isVideo)
-          ? `/api/gallery/${slug}/thumbnail/${photo.id}${wmQuery}`
+          ? `/api/gallery/${slug}/thumbnail/${photo.id}${posterQuery}`
           : null,
         // Hero-optimized image URL (1920x1080) for full-width hero sections
-        hero_url: `/api/gallery/${slug}/hero/${photo.id}${heroQuery ? `?${heroQuery}` : ''}`,
+        // A video's hero is its poster (the hero route redirects there), so
+        // its URL names the frame pick too.
+        hero_url: `/api/gallery/${slug}/hero/${photo.id}${heroPosterQuery ? `?${heroPosterQuery}` : ''}`,
         // Lightbox preview URL (#492). Only emitted when the admin
         // has flipped lightbox_preview_enabled — the frontend
         // lightbox reads preview_url with a fallback to url so
@@ -915,4 +962,4 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     })
   };
 }
-module.exports = { getGalleryPhotos, getGalleryPhotoState };
+module.exports = { getGalleryPhotos, getGalleryPhotoState, hasMediaProcessing };

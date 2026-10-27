@@ -769,6 +769,10 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             : { moderation_status: null, visibility: 'visible' }),
           uploaded_by_admin_id: liveAdminIds.has(Number(manifestEntry?.uploaded_by_admin_id))
             ? Number(manifestEntry.uploaded_by_admin_id) : null,
+          // A video's frame pick (issue 2263); always written, as above.
+          poster_offset_seconds: isVideoEntry && manifestEntry?.poster_offset_seconds != null
+            && Number.isFinite(Number(manifestEntry.poster_offset_seconds)) && Number(manifestEntry.poster_offset_seconds) >= 0
+            ? Number(manifestEntry.poster_offset_seconds) : null,
         });
       }
 

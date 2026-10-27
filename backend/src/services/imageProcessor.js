@@ -123,10 +123,11 @@ function derivativeBasename(name, { cache = false } = {}) {
 // True when the row took the derivative. Unscoped (an ordinary image), a
 // source replaced since `photo` was read makes it false: the rendition
 // describes the old file, so the caller treats it as nothing generated.
-async function publishPhotoDerivative(photo, key, values) {
+// `narrow` adds conditions to the source guard (a video poster's frame pick).
+async function publishPhotoDerivative(photo, key, values, narrow = (query) => query) {
   const scope = derivativeContext.getStore();
   if (!scope) {
-    if (await sourceGuard(photo).update(values) === 1) return true;
+    if (await narrow(sourceGuard(photo)).update(values) === 1) return true;
     // Unscoped keys derive from the source name, not from an attempt id, so
     // the key can still be a row's own: an event rename moves the original
     // and keeps the rendition. When in doubt, keep the file.
@@ -141,7 +142,7 @@ async function publishPhotoDerivative(photo, key, values) {
     return false;
   }
   // The guarded update is the source check; its refusal drops the file.
-  if (await sourceGuard(photo).update(values) !== 1) {
+  if (await narrow(sourceGuard(photo)).update(values) !== 1) {
     await getStorage().delete(key).catch(() => {});
     throw Object.assign(new Error('Media source was superseded'), { code: 'MEDIA_SUPERSEDED', status: 422 });
   }
@@ -947,7 +948,13 @@ async function ownDerivativeName(photo, name) {
 // `checkSettings` gives a forced render the settings check of a lazy one
 // (issue 2140): a request-path rebuild, unlike the regenerate sweep, must not
 // publish over a regenerate that ran on new settings meanwhile.
-async function ensureThumbnail(photo, { force = false, boundVideoSource = true, checkSettings = !force } = {}) {
+// `strictVideoFrame`: a video whose frame cannot be taken gets no poster at
+// all (null) rather than the placeholder over the one it has, for a repair
+// that must know whether it repaired anything (the orientation backfill)
+// or an admin picking a frame (issue 2263, item 4). `posterOffsetSeconds`:
+// the frame to take instead of the row's pick (null: the default frame),
+// recorded on the row in the same write as the new poster.
+async function ensureThumbnail(photo, { force = false, boundVideoSource = true, checkSettings = !force, strictVideoFrame = false, posterOffsetSeconds } = {}) {
   // Check if thumbnail exists and is valid (works for any source).
   if (!force && photo.thumbnail_path) {
     const isValid = await isThumbnailValid(photo.thumbnail_path);
@@ -958,10 +965,95 @@ async function ensureThumbnail(photo, { force = false, boundVideoSource = true, 
   }
 
   photo = await withSourceVersion(photo);
-  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: checkSettings })), { force });
+  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource, lazy: checkSettings, strictVideoFrame, posterOffsetSeconds })), { force });
 }
 
-async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false } = {}) {
+// Video posters rebuilt off the request path (issue 2263). Building one
+// copies the video off a remote backend and runs ffmpeg for up to a minute,
+// which the gallery's thumbnail request used to wait for; it now answers with
+// the placeholder and queues the build here, once per photo in this process
+// however many tiles ask meanwhile. ffmpeg's own limits still apply.
+const queuedVideoThumbnails = new Set();
+// A rebuild that failed is not retried by the next tile for this long: each
+// try is a full source copy and an ffmpeg run, and the cause (a missing or
+// unreadable source) rarely clears within minutes.
+const VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS = 10 * 60 * 1000;
+// A refusal for capacity (a full media queue or staging area) is not a
+// verdict on the video: it is tried again after this, within the time the
+// image client keeps asking for a pending poster.
+const VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS = 30 * 1000;
+const failedVideoThumbnails = new Map(); // photo id -> when it may be tried again
+// Builds at once, source copy included: a gallery of videos with no posters
+// answers every tile at once, and each build may copy up to 512 MB off S3.
+// The rest wait their turn; past the backlog a tile queues nothing and its
+// next request asks again.
+const VIDEO_THUMBNAIL_CONCURRENCY = 2;
+const VIDEO_THUMBNAIL_BACKLOG = 200;
+let runningVideoThumbnails = 0;
+const waitingVideoThumbnails = []; // { id, start }
+// Stopped with the other services on shutdown: nothing waiting starts its
+// source copy any more, and a tile queues nothing new.
+let videoThumbnailQueueStopped = false;
+
+function stopVideoThumbnailQueue() {
+  videoThumbnailQueueStopped = true;
+  for (const { id } of waitingVideoThumbnails.splice(0)) queuedVideoThumbnails.delete(id);
+}
+
+function startVideoThumbnailQueue() {
+  videoThumbnailQueueStopped = false;
+}
+
+// `build` and `now` are seams for tests.
+function queueVideoThumbnail(photo, options = {}, { build = ensureThumbnail, now = Date.now } = {}) {
+  const id = Number(photo.id);
+  if (videoThumbnailQueueStopped || queuedVideoThumbnails.has(id)) return false;
+  const retryAt = failedVideoThumbnails.get(id);
+  if (retryAt !== undefined && now() < retryAt) return false;
+  const atCapacity = runningVideoThumbnails >= VIDEO_THUMBNAIL_CONCURRENCY;
+  if (atCapacity && waitingVideoThumbnails.length >= VIDEO_THUMBNAIL_BACKLOG) return false;
+  queuedVideoThumbnails.add(id);
+  const settle = (key, error) => {
+    queuedVideoThumbnails.delete(id);
+    runningVideoThumbnails -= 1;
+    const next = videoThumbnailQueueStopped ? null : waitingVideoThumbnails.shift();
+    if (next) next.start();
+    if (key) {
+      failedVideoThumbnails.delete(id);
+      return;
+    }
+    // Expired entries go as a new one comes in, so the map holds at most
+    // the failures of one cooldown window.
+    const at = now();
+    for (const [other, time] of failedVideoThumbnails) {
+      if (at >= time) failedVideoThumbnails.delete(other);
+    }
+    const transient = error && require('./imageResourcePolicy').isTransient(error);
+    failedVideoThumbnails.set(id, at + (transient ? VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS : VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS));
+  };
+  const start = () => {
+    runningVideoThumbnails += 1;
+    // defer() logs a failure itself.
+    require('./activeApplicationWork').defer('video poster', () => build(photo, options)).then(
+      (key) => settle(key), (error) => settle(null, error)
+    );
+  };
+  if (atCapacity) waitingVideoThumbnails.push({ id, start });
+  else start();
+  return true;
+}
+
+// The placeholder those requests get, rendered once per process.
+let videoPlaceholderBytes = null;
+function videoPlaceholderImage() {
+  if (!videoPlaceholderBytes) {
+    videoPlaceholderBytes = renderVideoPlaceholder(DEFAULT_THUMBNAIL_WIDTH, DEFAULT_THUMBNAIL_HEIGHT, DEFAULT_THUMBNAIL_QUALITY);
+    videoPlaceholderBytes.catch(() => { videoPlaceholderBytes = null; });
+  }
+  return videoPlaceholderBytes;
+}
+
+async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = false, retried = false, strictVideoFrame = false, posterOffsetSeconds } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
   const event = await db('events').where('id', photo.event_id).first();
@@ -1018,6 +1110,8 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   // "Regenerate thumbnails" button rebuilt the frame and the tile kept the
   // stale warning and Retry (issue 1430, item 6).
   let posterNote;
+  // The frame pick a video poster was taken at, read inside the flight.
+  let posterOffsetUsed;
   // Receives the placeholder hash of whatever thumbnail gets written.
   const meta = {};
   if (isVideoPhoto(photo)) {
@@ -1028,9 +1122,10 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     // fall back to a placeholder, or with its rendition since lost — stayed
     // thumbnail-less forever, however many times it was viewed or the admin
     // pressed regenerate.
-    const video = await regenerateVideoThumbnail(event, photo, isExternal, { boundSource: boundVideoSource });
+    const video = await regenerateVideoThumbnail(event, photo, isExternal, { boundSource: boundVideoSource, strict: strictVideoFrame, offsetSeconds: posterOffsetSeconds });
     newThumbnailPath = video?.thumbnailKey || null;
     meta.thumbHash = video?.thumbHash;
+    posterOffsetUsed = video?.offsetSeconds;
     if (video && photo.processing_status === 'complete') {
       const { posterFrameError } = require('./videoProcessor');
       posterNote = video.placeholder ? posterFrameError(video.thumbnailError) : null;
@@ -1099,12 +1194,35 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
   }
 
   if (newThumbnailPath) {
+    // A picked frame replaces whatever poster the row names at this point,
+    // read inside the flight: picks of one photo rebuild one after the
+    // other, so a snapshot taken before the rebuild would name a poster an
+    // earlier pick has already replaced, and leave that one behind.
+    const replaced = posterOffsetSeconds !== undefined && isVideoPhoto(photo)
+      ? (await db('photos').where('id', photo.id).first('thumbnail_path'))?.thumbnail_path
+      : null;
     if (!await publishPhotoDerivative(photo, newThumbnailPath, {
       thumbnail_path: newThumbnailPath,
       thumb_hash: meta.thumbHash || null,
       ...(posterNote !== undefined ? { processing_error: posterNote } : {}),
+      // A picked frame lands with its poster: listings never name a frame
+      // (in the thumbnail URL) that the stored poster does not show yet.
+      ...(isVideoPhoto(photo) && posterOffsetSeconds !== undefined ? { poster_offset_seconds: posterOffsetSeconds } : {}),
+    }, (query) => {
+      // A rebuild at the row's pick is recorded only while that is still the
+      // pick: singleFlight orders rebuilds within one process, not across
+      // replicas, and a pick saved elsewhere meanwhile must not be lost
+      // under a poster of the old frame.
+      if (posterOffsetSeconds !== undefined || posterOffsetUsed === undefined) return query;
+      return posterOffsetUsed == null
+        ? query.whereNull('poster_offset_seconds')
+        : query.where('poster_offset_seconds', posterOffsetUsed);
     })) return null;
 
+    if (replaced && replaced !== newThumbnailPath
+      && !(await db('photos').where('thumbnail_path', replaced).first('id'))) {
+      await getStorage().delete(replaced).catch(() => {});
+    }
     logger.info(`Regenerated thumbnail for photo ${photo.id}`);
     return newThumbnailPath;
   }
@@ -1117,7 +1235,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
     const current = rewriteShared ? null : await sourceGuard(photo).first('thumbnail_path');
     if (current?.thumbnail_path && current.thumbnail_path !== photo.thumbnail_path
         && await isThumbnailValid(current.thumbnail_path)) return current.thumbnail_path;
-    return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true });
+    return regenerateThumbnail(photo, { boundVideoSource, lazy, retried: true, strictVideoFrame, posterOffsetSeconds });
   }
 
   return null;
@@ -1151,7 +1269,16 @@ async function regenerateThumbnail(photo, { boundVideoSource = true, lazy = fals
  * video at a time, and bounded it could never give a large video whose
  * thumbnail is missing anything but the placeholder.
  */
-async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource = true } = {}) {
+/** The largest remote video a poster frame is copied down for, in bytes. */
+function videoThumbnailMaxSourceBytes() {
+  // Read at call time, as restoreService reads RESTORE_MAX_DECOMPRESSED_BYTES.
+  const configured = Number(process.env.VIDEO_THUMBNAIL_MAX_SOURCE_BYTES);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_VIDEO_THUMBNAIL_MAX_SOURCE_BYTES;
+}
+
+async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource = true, strict = false, offsetSeconds: pickedOffset } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
   const { processUploadedVideo } = require('./videoProcessor');
 
@@ -1162,13 +1289,22 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
     ? `ext${photo.id}_${versionTag(photo)}${sourceBasename}`
     : await ownDerivativeName(photo, sourceBasename));
   const thumbnailKey = path.posix.join('thumbnails', `thumb_${outputBasename.replace(/\.[^.]+$/, '.jpg')}`);
+  // The frame the admin picked (issue 2263, item 4); null is the default.
+  // Always read here, never taken from the caller's row: a regenerate sweep
+  // selects its rows up front, and a pick saved meanwhile must win. Rebuilds
+  // of one photo run one after the other (singleFlight), so the read inside
+  // this flight sees every pick saved before it.
+  // A caller saving a new pick passes it (recorded with the poster).
+  const offsetSeconds = pickedOffset !== undefined
+    ? pickedOffset
+    : (await db('photos').where('id', photo.id).first('poster_offset_seconds'))?.poster_offset_seconds;
 
   // Resolves to { thumbnailKey, placeholder, thumbnailError } or null, so the
   // caller can write the processing note the way the upload paths do.
   const generate = async (localPath) => {
-    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey), thumbnailKey);
+    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey, { offsetSeconds: offsetSeconds ?? null, strict }), thumbnailKey);
     if (!result?.thumbnailKey) return null;
-    return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null, thumbHash: result.thumbHash || null };
+    return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null, thumbHash: result.thumbHash || null, offsetSeconds: offsetSeconds ?? null };
   };
 
   try {
@@ -1181,13 +1317,10 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
     const sourceKey = resolvePhotoStorageKey(event, photo);
     const storage = getStorage();
     if (boundSource && storage.kind() !== 'local') {
-      // Read at call time, as restoreService reads RESTORE_MAX_DECOMPRESSED_BYTES.
-      const configured = Number(process.env.VIDEO_THUMBNAIL_MAX_SOURCE_BYTES);
-      const maxBytes = Number.isFinite(configured) && configured > 0
-        ? configured
-        : DEFAULT_VIDEO_THUMBNAIL_MAX_SOURCE_BYTES;
+      const maxBytes = videoThumbnailMaxSourceBytes();
       const stat = await storage.stat(sourceKey);
       if (stat && stat.size > maxBytes) {
+        if (strict) return null;
         logger.warn(`Video ${photo.id} is ${stat.size} bytes, over the ${maxBytes} byte limit; using the placeholder`);
         // Same filename derivation and explicit dimensions as
         // processUploadedVideo's own fallback, so this lands under
@@ -1207,6 +1340,31 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
     if (isResourceError(e)) throw e;
     return null;
   }
+}
+
+/** The play-button tile as JPEG bytes, the stand-in for a missing poster frame. */
+async function renderVideoPlaceholder(width, height, quality) {
+  const svg = `
+    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0f172a" stop-opacity="0.9"/>
+          <stop offset="100%" stop-color="#1e293b" stop-opacity="0.9"/>
+        </linearGradient>
+      </defs>
+      <rect width="${width}" height="${height}" rx="18" fill="url(#grad)"/>
+      <circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) / 6}" fill="rgba(255,255,255,0.85)"/>
+      <polygon points="${width / 2 - 10},${height / 2 - 14} ${width / 2 - 10},${height / 2 + 14} ${width / 2 + 16},${height / 2}" fill="#0f172a"/>
+      <text x="50%" y="${height - 18}" font-family="Arial, sans-serif" font-size="16" fill="rgba(255,255,255,0.9)" text-anchor="middle">
+        VIDEO
+      </text>
+    </svg>
+  `;
+
+  return sharp(Buffer.from(svg))
+    .resize(width, height, { fit: 'cover' })
+    .jpeg({ quality })
+    .toBuffer();
 }
 
 async function generateVideoPlaceholder(originalFilename, options = {}) {
@@ -1231,27 +1389,7 @@ async function generateVideoPlaceholder(originalFilename, options = {}) {
   }
 
   try {
-    const svg = `
-      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#0f172a" stop-opacity="0.9"/>
-            <stop offset="100%" stop-color="#1e293b" stop-opacity="0.9"/>
-          </linearGradient>
-        </defs>
-        <rect width="${width}" height="${height}" rx="18" fill="url(#grad)"/>
-        <circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) / 6}" fill="rgba(255,255,255,0.85)"/>
-        <polygon points="${width / 2 - 10},${height / 2 - 14} ${width / 2 - 10},${height / 2 + 14} ${width / 2 + 16},${height / 2}" fill="#0f172a"/>
-        <text x="50%" y="${height - 18}" font-family="Arial, sans-serif" font-size="16" fill="rgba(255,255,255,0.9)" text-anchor="middle">
-          VIDEO
-        </text>
-      </svg>
-    `;
-
-    const buffer = await sharp(Buffer.from(svg))
-      .resize(width, height, { fit: 'cover' })
-      .jpeg({ quality: settings.quality || DEFAULT_THUMBNAIL_QUALITY })
-      .toBuffer();
+    const buffer = await renderVideoPlaceholder(width, height, settings.quality || DEFAULT_THUMBNAIL_QUALITY);
 
     await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: 'image/jpeg' }), thumbnailRelKey);
 
@@ -2332,6 +2470,14 @@ module.exports = {
   generateThumbnail,
   isThumbnailValid,
   ensureThumbnail,
+  queueVideoThumbnail,
+  stopVideoThumbnailQueue,
+  startVideoThumbnailQueue,
+  videoThumbnailMaxSourceBytes,
+  VIDEO_THUMBNAIL_FAILURE_COOLDOWN_MS,
+  VIDEO_THUMBNAIL_TRANSIENT_COOLDOWN_MS,
+  VIDEO_THUMBNAIL_CONCURRENCY,
+  videoPlaceholderImage,
   generateVideoPlaceholder,
   generateHeroImage,
   isHeroValid,

@@ -3,8 +3,8 @@
  * only for a paid order of signed, sellable photos of a gallery that is on
  * sale, at the price and in the currency the database says; it refunds and
  * records anything else, and revokes a granted order that Snipcart later
- * reports refunded, charged back or cancelled. The price check answers the
- * database price for signed photos only.
+ * reports refunded (even partly), charged back or cancelled. The price check
+ * answers the database price for signed photos only.
  *
  * Snipcart is stubbed at fetch: request-token validation, the order read
  * (the source of truth) and the refund call.
@@ -234,6 +234,18 @@ describe('photo sales webhook and price check', () => {
       expect(queueEmail).toHaveBeenCalledTimes(1);
     });
 
+    it('never grants access past the gallery\'s expiry', async () => {
+      const galleryEnd = new Date(Date.now() + 2 * 864e5).toISOString();
+      const eventId = await insertEvent('ends-soon', { expires_at: galleryEnd, purchase_access_days: 30 });
+      const photoId = await insertPhoto(eventId, 'e.jpg');
+      const order = snipcartOrder([line('ends-soon', photoId)]);
+      await deliver('order.completed', order.token).expect(200);
+
+      expect(await stored(order.token)).toMatchObject({ status: 'completed', expires_at: galleryEnd });
+      const rows = await db('photo_purchases').where({ order_id: order.token });
+      expect(rows.map((r) => r.expires_at)).toEqual([galleryEnd]);
+    });
+
     it('answers 502 when the order cannot be read from Snipcart, so it is delivered again', async () => {
       const res = await deliver('order.completed', 'unknown-order');
       expect(res.status).toBe(502);
@@ -274,6 +286,20 @@ describe('photo sales webhook and price check', () => {
       const rows = await db('photo_purchases').where({ order_id: order.token });
       expect(rows.every((r) => new Date(r.expires_at).getTime() <= Date.now())).toBe(true);
     });
+  });
+
+  it('revokes a granted order that Snipcart refunds in part', async () => {
+    const order = snipcartOrder([line('on-sale', ids.photo), line('on-sale', ids.photo2)], { total: 7.5 });
+    await deliver('order.completed', order.token).expect(200);
+    const granted = await stored(order.token);
+
+    // A partial refund leaves the payment status at Paid.
+    order.refundsAmount = 2.5;
+    await deliver('order.refund.created', order.token).expect(200);
+
+    expect(await stored(order.token)).toMatchObject({ status: 'refunded' });
+    const page = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`);
+    expect(page.status).toBe(403);
   });
 
   describe('the audit refunds and records what it refuses', () => {
@@ -330,6 +356,24 @@ describe('photo sales webhook and price check', () => {
       const order = snipcartOrder([line('on-sale', ids.photo)], { total: 1 });
       await deliver('order.completed', order.token).expect(200);
       expect(await stored(order.token)).toMatchObject({ status: 'refund_failed' });
+    });
+
+    it('never records a refund it did not make', async () => {
+      const order = snipcartOrder([line('on-sale', ids.photo, { sig: null })], { total: undefined });
+      await deliver('order.completed', order.token).expect(200);
+      expect(await stored(order.token)).toMatchObject({ status: 'refund_failed' });
+      expect(snipcart.refunds).toHaveLength(0);
+    });
+
+    it('refunds a refused order once when two deliveries race', async () => {
+      const order = snipcartOrder([line('on-sale', ids.photo)], { total: 1 });
+      const results = await Promise.all([
+        deliver('order.completed', order.token),
+        deliver('order.paymentStatus.changed', order.token),
+      ]);
+      expect(results.map((r) => r.status)).toEqual([200, 200]);
+      expect(snipcart.refunds.filter((r) => r.token === order.token)).toHaveLength(1);
+      expect(await stored(order.token)).toMatchObject({ status: 'refunded' });
     });
   });
 

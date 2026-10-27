@@ -30,6 +30,7 @@ import { pushDialogLayer } from '../common/Modal';
 import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
 import { usePhotoLabels } from './PhotoLabels';
 import { useLightboxScrub } from './hooks/useLightboxScrub';
+import { usePendingAwareImageUrl } from './hooks/usePendingAwareImageUrl';
 import { exifLine } from '../../utils/photoExif';
 import { useLightboxAnnotation } from './annotation/useLightboxAnnotation';
 import { CommentAnnotationContext } from './annotation/CommentAnnotationContext';
@@ -72,6 +73,11 @@ interface PhotoLightboxProps {
 
 // Finger travel before a single-finger touch starts moving the carousel.
 const SWIPE_SLOP_PX = 8;
+
+// How far above the media stage's midpoint a video's nav arrows end (issue
+// 2263): VideoPlayer's control bar (~84px: p-4, progress bar, button row),
+// the 40px arrow and an 8px gap.
+const VIDEO_NAV_LIFT_PX = 132;
 
 const touchSpan = (touches: React.TouchList) => Math.hypot(
   touches[1].clientX - touches[0].clientX,
@@ -323,6 +329,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     containerRef: trackContainerRef,
   });
   const fullZoomLive = fullZoom.live;
+  // The player's poster follows one the server is still building (issue
+  // 2275): a plain poster URL kept the placeholder until a reopen.
+  const videoPoster = usePendingAwareImageUrl(
+    currentPhoto?.media_type === 'video' ? currentPhoto.thumbnail_url : null,
+    { slug },
+  );
   // One stable onLoad for the slide on screen (AuthenticatedImage re-runs its
   // load effect when the callback changes): the zoom measures the preview,
   // and the scrub's stand-in leaves once it is in.
@@ -364,6 +376,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       slug: photoSales.slug,
       priceCheckUrl: photoSales.priceCheckUrl,
       price: effectivePhotoPrice(photoSales.price, currentPhoto.photo_price),
+      description: photoSales.itemDescription,
       photo: currentPhoto,
     })
     : null;
@@ -883,6 +896,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       photoId: photo.id,
       filename: photo.filename,
       resolution,
+      isVideo: photo.media_type === 'video',
     }));
   };
   downloadRef.current = handleDownload;
@@ -1199,6 +1213,21 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const desktopFeedbackWidth = 416; // 26rem; keep in sync with panel width
   const isDesktopFeedback = showFeedback && !isSmallScreen;
 
+  // Issue 2263: centred on the screen, the arrows landed on a video's own
+  // control bar (on a portrait iPhone the Next arrow covered the fullscreen
+  // button). The video is centred in the media stage above the toolbar, so its
+  // bar ends at or below the stage's midpoint whatever the aspect ratio; the
+  // arrows sit VIDEO_NAV_LIFT_PX above that midpoint (bar + arrow + gap), and
+  // never higher than just below the close button.
+  const navArrowPlacement = currentPhoto.media_type === 'video'
+    ? {
+        className: '',
+        style: {
+          top: `max(calc(max(1rem, env(safe-area-inset-top)) + 3.5rem), calc((100% - ${toolbarHeight}px) / 2 - ${VIDEO_NAV_LIFT_PX}px))`,
+        },
+      }
+    : { className: 'top-1/2 -translate-y-1/2', style: {} };
+
   return (
     // pan-x pan-y: the feedback panel still scrolls, native pinch-zoom and
     // double-tap zoom are off for the whole lightbox.
@@ -1224,8 +1253,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       <button
         onClick={goToPrevious}
         hidden={annotating}
-        className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-20"
+        className={`absolute left-4 ${navArrowPlacement.className} p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-20`}
         aria-label="Previous photo"
+        style={navArrowPlacement.style}
       >
         <ChevronLeft className="w-6 h-6 text-white" />
       </button>
@@ -1234,9 +1264,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         <button
           onClick={goToNext}
           hidden={annotating}
-          className="absolute top-1/2 -translate-y-1/2 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-30"
+          className={`absolute ${navArrowPlacement.className} p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-30`}
           aria-label="Next photo"
-          style={{ right: isDesktopFeedback ? `${desktopFeedbackWidth + 16}px` : '1rem' }}
+          style={{ ...navArrowPlacement.style, right: isDesktopFeedback ? `${desktopFeedbackWidth + 16}px` : '1rem' }}
         >
           <ChevronRight className="w-6 h-6 text-white" />
         </button>
@@ -1643,11 +1673,16 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             return (
               <div key={slideKey(photo, slot)} className="h-full flex items-center justify-center" style={{ flex: '0 0 33.3333%' }}>
                 {photo.media_type === 'video' && photo.thumbnail_url ? (
-                  <img
+                  // Through AuthenticatedImage, so a poster the server is
+                  // still building is asked for again (issue 2275).
+                  <AuthenticatedImage
+                    queuePriority="prefetch"
                     src={photo.thumbnail_url}
                     alt={slideAlt(photo)}
                     className="max-w-full max-h-full object-contain select-none pointer-events-none"
                     draggable={false}
+                    isGallery={true}
+                    slug={slug}
                   />
                 ) : (
                   <AuthenticatedImage
@@ -1806,7 +1841,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 <VideoPlayer
                   src={currentPhoto.url}
                   hlsSrc={currentPhoto.hls_url}
-                  poster={currentPhoto.thumbnail_url}
+                  poster={videoPoster}
                   className="max-w-full max-h-full"
                   controls={true}
                   autoPlay={false}

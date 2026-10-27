@@ -10,14 +10,14 @@ const { db, logActivity } = require('../../database/db');
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { errorResponse } = require('../../utils/routeHelpers');
-const { requireEventOwnership, scopeEventsListQuery } = require('../../middleware/ownership');
+const { requireEventOwner, scopeEventsListQuery } = require('../../middleware/ownership');
 const { buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
 const { summarisePurchaseOrder } = require('../../modules/photoSales/adminOrders');
 const { queueEmail } = require('../../services/emailProcessor');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 
 async function loadOwnedEvent(req) {
-  // Defence in depth — requireEventOwnership already ran on write routes.
+  // Defence in depth — requireEventOwner already ran on write routes.
   return scopeEventsListQuery(db('events').where('id', req.params.id), req.admin).first();
 }
 
@@ -69,9 +69,10 @@ module.exports = (router) => {
     }
   });
 
-  // The buyer's purchase link, for the owner only: a role that may read
-  // every event's orders does not get foreign download links.
-  router.post('/:id/photo-orders/:orderId/access-link', adminAuth, requirePermission('events.edit'), requireEventOwnership, async (req, res) => {
+  // The buyer's purchase link, for the owner only: neither a role that may
+  // read every event's orders nor an assigned admin gets a buyer's download
+  // link (credentials on a gallery are owner-only, see requireEventOwner).
+  router.post('/:id/photo-orders/:orderId/access-link', adminAuth, requirePermission('events.edit'), requireEventOwner, async (req, res) => {
     try {
       const event = await loadOwnedEvent(req);
       if (!event) return res.status(404).json({ error: 'Event not found' });
@@ -90,8 +91,9 @@ module.exports = (router) => {
   });
 
   // Manual resend of the purchase access email (admin requirement: the
-  // buyer lost the mail and asks for the link again).
-  router.post('/:id/photo-orders/:orderId/resend-email', adminAuth, requirePermission('events.edit'), requireEventOwnership, async (req, res) => {
+  // buyer lost the mail and asks for the link again). Owner-only like the
+  // link itself: the email carries it.
+  router.post('/:id/photo-orders/:orderId/resend-email', adminAuth, requirePermission('events.edit'), requireEventOwner, async (req, res) => {
     try {
       const event = await loadOwnedEvent(req);
       if (!event) return res.status(404).json({ error: 'Event not found' });

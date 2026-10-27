@@ -69,6 +69,17 @@ describe('event settings draft', () => {
     expect(eventUpdatePayload({ ...base, moderate_guest_uploads: true }, base, t)).toEqual({ moderate_guest_uploads: true });
   });
 
+  it('reads and sends the videos-first switch, off by default, in the downloads section (issue 2263)', () => {
+    const base = eventFieldsFromEvent(EVENT, branding);
+    expect(base.videos_first).toBe(false);
+    expect(eventFieldsFromEvent({ ...EVENT, videos_first: 1 } as unknown as Event, branding).videos_first).toBe(true);
+    const next = { ...base, videos_first: true };
+    expect(eventUpdatePayload(next, base, t)).toEqual({ videos_first: true });
+    expect(eventUpdatePayload(base, next, t)).toEqual({ videos_first: false });
+    const draft: EventSettingsDraft = { event: next, feedback: null, downloads: null, slideshow: null };
+    expect([...dirtySections(draft, { ...draft, event: base })]).toEqual(['downloads']);
+  });
+
   it('reads and sends the neutral photo label switch, in the guests section (issue 1733, E6)', () => {
     const base = eventFieldsFromEvent({ ...EVENT, neutral_photo_labels: 0 } as unknown as Event, branding);
     expect(base.neutral_photo_labels).toBe(false);

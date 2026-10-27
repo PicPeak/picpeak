@@ -3634,10 +3634,11 @@
     },
     "orientationBackfill": {
       "title": "Photo Orientation",
-      "description": "Re-read EXIF orientation for photos imported before rotation was applied, correct their stored dimensions, and clear the thumbnails, previews and hero images generated from the unrotated originals. Only photos whose orientation actually changed are touched.",
+      "description": "Re-read EXIF orientation for photos imported before rotation was applied, correct their stored dimensions, and clear the thumbnails, previews and hero images generated from the unrotated originals. Only photos whose orientation actually changed are touched. Videos are re-read too: their dimensions are stored upright, a missing capture date is filled in and a squashed poster frame is rebuilt.",
       "button": "Fix Photo Orientation",
       "running": "Checking orientation...",
       "resultSuccess": "Last run: {{checked}} checked, {{corrected}} corrected, {{requeued}} requeued for face scanning, {{failed}} unreachable",
+      "videoResult": "Videos: {{dated}} capture date(s) filled in, {{posters}} poster frame(s) rebuilt",
       "staleTiers": "{{count}} cached size(s) could not be deleted and will keep serving the old orientation — re-run once storage is writable.",
       "staleTiers_one": "{{count}} cached size(s) could not be deleted and will keep serving the old orientation — re-run once storage is writable.",
       "staleTiers_other": "{{count}} cached size(s) could not be deleted and will keep serving the old orientation — re-run once storage is writable."
@@ -4917,6 +4918,23 @@
         "filterAll": "All names",
         "filterNone": "No name"
       },
+      "poster": {
+        "label": "Preview image",
+        "choose": "Choose preview image",
+        "title": "Choose the preview image",
+        "description": "The frame shown on the gallery tile before the video plays.",
+        "loading": "Taking frames from the video…",
+        "loadError": "The frames could not be taken from this video.",
+        "retry": "Try again",
+        "frameAt": "Frame at {{time}}",
+        "current": "Current",
+        "useDefault": "Use default",
+        "defaultHint": "The default is the frame {{time}} into the video.",
+        "isDefault": "Default frame",
+        "isPicked": "Frame at {{time}}",
+        "saved": "Preview image updated",
+        "saveError": "The preview image could not be updated"
+      },
       "approvedBy": "Approved: {{value}}",
       "rejectedBy": "Rejected: {{value}}",
       "deleteOneConfirm": "Delete \"{{name}}\"? The photo is removed from the gallery for good. This cannot be undone.",
@@ -5488,6 +5506,7 @@
   },
   "legal": {
     "impressum": "Legal Notice",
+    "agb": "Terms & Conditions",
     "datenschutz": "Privacy Policy",
     "notFoundTitle": "Page not found",
     "notFoundBody": "The page you are looking for does not exist.",
@@ -7119,7 +7138,9 @@
     "captureDateOldest": "Date Taken (Oldest First)",
     "filenameAZ": "Filename (A-Z)",
     "filenameZA": "Filename (Z-A)",
-    "dateTaken": "Date Taken"
+    "dateTaken": "Date Taken",
+    "videosFirst": "Show videos first",
+    "videosFirstHelp": "Lists every video ahead of the photos. The sort above still applies within the videos and within the photos."
   },
   "photoSales": {
     "cart": "Cart",
@@ -7186,6 +7207,7 @@
     "storeNoWebhook": "Guests can fill a cart, but paid orders are never delivered until {{keys}} is set.",
     "storeNoCheckout": "Guests see watermarked previews and cannot buy until {{keys}} is set.",
     "downloadHint": "The files are the originals, without watermark. Keep them safe: this link stops working when your access ends.",
+    "itemDescription": "Full quality, without watermark. Download until {{date}}.",
     "cartWithCount_one": "Cart, {{count}} photo",
     "cartWithCount_other": "Cart, {{count}} photos",
     "promoTitle_one": "{{count}} photo free with your first order",

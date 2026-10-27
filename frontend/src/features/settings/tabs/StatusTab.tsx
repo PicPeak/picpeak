@@ -952,7 +952,7 @@ export const StatusTab: React.FC<StatusTabProps> = ({
           </h2>
 
           <p className="text-sm text-soft mb-4">
-            {t('settings.orientationBackfill.description', 'Re-read EXIF orientation for photos imported before rotation was applied, correct their stored dimensions, and clear the thumbnails, previews and hero images generated from the unrotated originals. Only photos whose orientation actually changed are touched.')}
+            {t('settings.orientationBackfill.description', 'Re-read EXIF orientation for photos imported before rotation was applied, correct their stored dimensions, and clear the thumbnails, previews and hero images generated from the unrotated originals. Only photos whose orientation actually changed are touched. Videos are re-read too: their dimensions are stored upright, a missing capture date is filled in and a squashed poster frame is rebuilt.')}
           </p>
 
           {orientationStatus.lastResult && (
@@ -964,6 +964,16 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                 failed: orientationStatus.lastResult.failed,
                 defaultValue: 'Last run: {{checked}} checked, {{corrected}} corrected, {{requeued}} requeued for face scanning, {{failed}} unreachable',
               })}
+              {/* Runs from before videos were included carry neither count. */}
+              {(orientationStatus.lastResult.videoDated != null || orientationStatus.lastResult.videoPosters != null) && (
+                <span className="block mt-1">
+                  {t('settings.orientationBackfill.videoResult', {
+                    dated: orientationStatus.lastResult.videoDated ?? 0,
+                    posters: orientationStatus.lastResult.videoPosters ?? 0,
+                    defaultValue: 'Videos: {{dated}} capture date(s) filled in, {{posters}} poster frame(s) rebuilt',
+                  })}
+                </span>
+              )}
               {Number(orientationStatus.lastResult.staleTiers) > 0 && (
                 <span className="block text-warning-text mt-1">
                   {t('settings.orientationBackfill.staleTiers', {

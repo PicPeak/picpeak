@@ -21,6 +21,8 @@ export interface PhotoSalesContextValue {
   price: number;
   currency: string;
   priceCheckUrl: string;
+  /** Cart line description (PhotoSalesConfig.itemDescription). */
+  itemDescription: string;
   freeCount: number;
   photos: PhotoSalesPhoto[];
   /** True when the checkout UI can actually be shown (priced + key set). */
@@ -43,6 +45,7 @@ const PhotoSalesContext = createContext<PhotoSalesContextValue & PhotoSalesCart>
   price: 0,
   currency: 'EUR',
   priceCheckUrl: '',
+  itemDescription: '',
   freeCount: 0,
   photos: [],
   checkoutReady: false,

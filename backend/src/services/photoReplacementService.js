@@ -398,6 +398,9 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       duration: null,
       video_codec: null,
       audio_codec: null,
+      // A frame picked in the old clip (issue 2263, item 4) says nothing
+      // about the new one, whose poster was just taken at the default.
+      poster_offset_seconds: null,
       ...videoColumns,
       // A replaced video is queued for a new copy while the setting is on;
       // anything else starts over with none.

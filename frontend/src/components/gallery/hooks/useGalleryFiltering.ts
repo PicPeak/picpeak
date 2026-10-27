@@ -23,10 +23,13 @@ export interface GalleryFilterOptions {
   // Premium and Story: "Liked" means the viewer's own likes (`is_liked`),
   // the same set their heart toggles and their nav count read.
   likedIsOwn?: boolean;
+  // Videos first (issue 2263): every video ahead of every photo, `sortBy`
+  // within each group.
+  videosFirst?: boolean;
 }
 export const resolveMediaType = (photo: Photo): 'photo' | 'video' =>
   photo.media_type === 'video' || photo.mime_type?.startsWith('video/') || photo.type === 'video' ? 'video' : 'photo';
-export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAll = false, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null, minRating = null, selectedTagKeys, likedIsOwn = false }: GalleryFilterOptions) {
+export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAll = false, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null, minRating = null, selectedTagKeys, likedIsOwn = false, videosFirst = false }: GalleryFilterOptions) {
   return useMemo(() => {
     if (!sourcePhotos) return [];
 
@@ -135,6 +138,12 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
     // The flip multiplier reverses that when sortDesc differs from the natural order.
     const flip = sortDesc ? 1 : -1;
     photos.sort((a, b) => {
+      // Videos first is the primary key, ahead of every sort; the filters
+      // above only narrow, so a category or a search keeps it too.
+      if (videosFirst) {
+        const group = (resolveMediaType(a) === 'video' ? 0 : 1) - (resolveMediaType(b) === 'video' ? 0 : 1);
+        if (group !== 0) return group;
+      }
       switch (sortBy) {
         case 'name':
           // Natural order is ascending (A-Z); flip when sortDesc=true
@@ -170,5 +179,5 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
     }
     
     return photos;
-  }, [sourcePhotos, categories, folderId, viewAll, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey, minRating, selectedTagKeys, likedIsOwn]);
+  }, [sourcePhotos, categories, folderId, viewAll, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey, minRating, selectedTagKeys, likedIsOwn, videosFirst]);
 }

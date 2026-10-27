@@ -1083,6 +1083,8 @@ module.exports = (router) => {
         download_limit: source.download_limit || null,
         is_draft: formatBoolean(true),
         default_photo_sort: source.default_photo_sort || 'upload_date_desc',
+        // Part of the gallery's order, like the sort above (issue 2263).
+        videos_first: formatBoolean(parseBooleanInput(source.videos_first, false)),
         // Client-access secrets and the OG-share opt-in deliberately do NOT
         // carry over — admin re-decides per gallery.
         client_access_enabled: formatBoolean(false),
@@ -1333,6 +1335,8 @@ module.exports = (router) => {
       'capture_date_desc', 'capture_date_asc',
       'filename_asc', 'filename_desc'
     ]),
+    // Videos ahead of photos in the guest gallery (issue 2263).
+    body('videos_first').optional().isBoolean(),
     // Per-event promotional override (#440). Three-way mode:
     //   inherit → fall back to global branding_promo_markdown
     //   custom  → render this event's promo_markdown verbatim
@@ -2067,6 +2071,9 @@ module.exports = (router) => {
       }
       if (Object.prototype.hasOwnProperty.call(updates, 'neutral_photo_labels')) {
         updates.neutral_photo_labels = formatBoolean(parseBooleanInput(updates.neutral_photo_labels, false));
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'videos_first')) {
+        updates.videos_first = formatBoolean(parseBooleanInput(updates.videos_first, false));
       }
 
       // Reveal mode (#838). Turning the toggle ON from off clears

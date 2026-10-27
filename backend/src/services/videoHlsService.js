@@ -29,6 +29,7 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getStorage } = require('./storage');
 const { IS_VIDEO_SQL } = require('../utils/mediaTypeSql');
+const { displayDimensions } = require('../utils/videoProbe');
 const mediaAttempts = require('./mediaAttemptService');
 const { isHdr, canToneMap, HDR_TO_SDR_FILTER } = require('./videoRenditionService');
 
@@ -335,11 +336,8 @@ async function captureLadder(photo) {
 async function probe(localPath) {
   const metadata = await mediaProcesses.probeVideo(localPath);
   const video = (metadata.streams || []).find(s => s.codec_type === 'video');
-  const rotation = Number(video?.side_data_list?.find(item => item.rotation !== undefined)?.rotation ?? video?.tags?.rotate ?? 0);
-  const turned = Math.abs(rotation) % 180 === 90;
   return {
-    width: (turned ? video?.height : video?.width) || null,
-    height: (turned ? video?.width : video?.height) || null,
+    ...displayDimensions(video),
     bitrate: Number(video?.bit_rate) || Number(metadata.format?.bit_rate) || null,
     duration: Number(metadata.format?.duration) || null,
     audio: (metadata.streams || []).some(s => s.codec_type === 'audio'),

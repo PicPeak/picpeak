@@ -59,6 +59,8 @@ export type EditFormState = {
   download_limit: number;
   // Default photo sort
   default_photo_sort: string;
+  // Videos ahead of photos in the guest gallery (issue 2263).
+  videos_first: boolean;
   // Photo sales pricing for paid galleries.
   is_priced: boolean;
   free_photo_count: number;

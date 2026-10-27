@@ -68,6 +68,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const cors = require('cors');
 const path = require('path');
+const { withPhotoSalesSources } = require('./src/modules/photoSales/galleryCsp');
 const { initializeDatabase, db, enableApplicationWorkOwnership } = require('./src/database/db');
 const applicationWork = require('./src/services/activeApplicationWork');
 const restoreCoordinator = require('./src/services/portableRestoreCoordinator');
@@ -272,7 +273,7 @@ const corsOptions = {
   //
   // X-Request-Id carries the correlation id (middleware/requestId.js) that an
   // admin can quote from an error message.
-  exposedHeaders: ['Content-Disposition', 'Retry-After', 'X-Request-Id'],
+  exposedHeaders: ['Content-Disposition', 'Retry-After', 'X-Request-Id', 'X-Poster-Pending'],
 };
 
 // Only attach CORS to API endpoints, not static assets
@@ -393,7 +394,7 @@ function renderBrandHeader(branding) {
 </header>`;
 }
 
-function renderBrandFooter(branding) {
+function renderBrandFooter(branding, { showAgb = false } = {}) {
   const displayName = escapeHtml(branding.companyName || 'PicPeak');
   const footerNote = branding.footerText
     ? `<p>${escapeHtml(branding.footerText)}</p>`
@@ -406,6 +407,7 @@ function renderBrandFooter(branding) {
 
   const legalLinks = `
     <a href="/datenschutz">Privacy Policy</a>
+    ${showAgb ? '<a href="/agb">Terms &amp; Conditions</a>' : ''}
     <a href="/impressum">Impressum</a>
     ${supportLink}
   `;
@@ -456,7 +458,7 @@ const PUBLIC_SITE_FONT_FACES = `
 function buildPublicSiteDocument(payload) {
   const inlineStyles = composeInlineStyles(payload);
   const header = renderBrandHeader(payload.branding);
-  const footer = renderBrandFooter(payload.branding);
+  const footer = renderBrandFooter(payload.branding, { showAgb: payload.showAgb === true });
   const seoMeta = payload.seoSettings ? buildSeoMetaTags(payload.seoSettings) : '';
 
   return `<!DOCTYPE html>
@@ -507,6 +509,13 @@ async function handlePublicSiteRequest(req, res, next) {
         seoSettings[row.setting_key] = val;
       }
       payload.seoSettings = seoSettings;
+    } catch {}
+
+    // The AGB link is opt-in (migration 316): only once the admin switched
+    // the page on in CMS Pages.
+    try {
+      const agb = await db('cms_pages').where('slug', 'agb').first('show_in_footer');
+      payload.showAgb = !!agb && (agb.show_in_footer === true || agb.show_in_footer === 1);
     } catch {}
 
     const document = buildPublicSiteDocument(payload);
@@ -1126,8 +1135,14 @@ try {
       }
       return next();
     };
-    app.get('/gallery/:slug/:token?', ogIntercept, (req, res) => sendSpa(res));
-    app.get('/gallery/:slug/show/:token', ogIntercept, (req, res) => sendSpa(res));
+    // Gallery pages get the CSP photo sales needs (Snipcart's cart), like
+    // nginx's `location @gallery_spa`; every other page keeps the site policy.
+    const galleryCsp = helmet.contentSecurityPolicy({
+      useDefaults: false,
+      directives: withPhotoSalesSources(cspDirectives),
+    });
+    app.get('/gallery/:slug/:token?', ogIntercept, galleryCsp, (req, res) => sendSpa(res));
+    app.get('/gallery/:slug/show/:token', ogIntercept, galleryCsp, (req, res) => sendSpa(res));
     // PicTransfer links (single-container deploys without nginx).
     const transferOgIntercept = (kind) => {
       const handler = handleTransferOgRequest(kind);

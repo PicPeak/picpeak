@@ -91,6 +91,14 @@ export interface UploadProcessingStatus {
   failed: number;
 }
 
+// The single-photo download route, as a browser-navigable URL (direct
+// downloads). `resolution`: a size picked from the download menu.
+const directDownloadUrl = (slug: string, photoId: number, resolution?: string): string =>
+  withAdminPreview(api.getUri({
+    url: `/gallery/${slug}/download/${photoId}`,
+    ...(resolution ? { params: { resolution } } : {}),
+  }));
+
 export const galleryService = {
   // Verify share token
   async verifyToken(slug: string, token: string): Promise<{ valid: boolean }> {
@@ -207,19 +215,20 @@ export const galleryService = {
   //
   // `resolution` is a size the guest picked from the download menu (issue
   // 1733, E2); omitted, the server hands out the gallery's standard size.
-  async savePhotoToDevice(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string): Promise<void> {
-    return withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename, onProgress, resolution));
+  //
+  // `isVideo` (issue 2263): a video navigates straight at the download URL on
+  // iOS too. Buffering a whole video through fetch kept the spinner up for
+  // the full transfer, and by the time it arrived the share sheet's
+  // user-gesture window had usually expired, so Safari fell back to its
+  // "Download / View" sheet anyway. The direct download lands it in Files.
+  // A limited gallery still fetches, for the reason above.
+  async savePhotoToDevice(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string, isVideo = false): Promise<void> {
+    return withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename, onProgress, resolution, isVideo));
   },
 
-  async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string): Promise<void> {
-    if (!isIOS() && !isGalleryLimited(slug)) {
-      this.triggerDirectDownload(
-        withAdminPreview(api.getUri({
-          url: `/gallery/${slug}/download/${photoId}`,
-          ...(resolution ? { params: { resolution } } : {}),
-        })),
-        filename,
-      );
+  async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string, isVideo = false): Promise<void> {
+    if ((!isIOS() || isVideo) && !isGalleryLimited(slug)) {
+      this.triggerDirectDownload(directDownloadUrl(slug, photoId, resolution), filename);
       return;
     }
     if (!isIOS()) {
@@ -332,8 +341,16 @@ export const galleryService = {
   // Download single photo — kept as the canonical name for the existing
   // grid + lightbox-action callers that haven't been migrated to the
   // share-aware savePhotoToDevice path yet.
-  async downloadPhoto(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string): Promise<void> {
+  //
+  // `isVideo` (issue 2263): a video in a gallery without a limit navigates
+  // straight at the download URL, so the bytes stream and the tile's spinner
+  // clears at once instead of after the whole file is in memory.
+  async downloadPhoto(slug: string, photoId: number, filename: string, onProgress?: () => void, resolution?: string, isVideo = false): Promise<void> {
     return withDownloadLimit(slug, async () => {
+      if (isVideo && !isGalleryLimited(slug)) {
+        this.triggerDirectDownload(directDownloadUrl(slug, photoId, resolution), filename);
+        return;
+      }
       const fetched = await this.fetchPhotoBlob(slug, photoId, onProgress, resolution);
       this.triggerBrowserDownload(fetched.blob, fetched.serverFilename || filename);
     });
@@ -463,9 +480,10 @@ export const galleryService = {
     await api.patch(`/gallery/${slug}/photos/visibility/bulk`, { photoIds, visibility });
   },
 
-  // Live refresh (issue 1733, C5): what the photo list would hold right now.
-  async getPhotoState(slug: string, signal?: AbortSignal): Promise<{ count: number; max_id: number | null }> {
-    const response = await api.get<{ count: number; max_id: number | null }>(`/gallery/${slug}/photos/state`, { signal });
+  // Live refresh (issue 1733, C5): what the photo list would hold right now,
+  // and whether media is still processing for it (issue 2263).
+  async getPhotoState(slug: string, signal?: AbortSignal): Promise<{ count: number; max_id: number | null; processing?: boolean }> {
+    const response = await api.get<{ count: number; max_id: number | null; processing?: boolean }>(`/gallery/${slug}/photos/state`, { signal });
     return response.data;
   },
 

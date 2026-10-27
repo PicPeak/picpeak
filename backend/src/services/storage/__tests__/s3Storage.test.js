@@ -96,6 +96,14 @@ describe('S3StorageAdapter', () => {
       expect(config.requestHandler).not.toHaveProperty('requestTimeout');
     });
 
+    it('should validate response checksums only when required', () => {
+      // The default (WHEN_SUPPORTED) Body wrapper never closes the response
+      // when destroyed, leaking a pool socket per abandoned download; see
+      // s3Storage.socketRelease.test.js.
+      const [[config]] = S3Client.mock.calls;
+      expect(config.responseChecksumValidation).toBe('WHEN_REQUIRED');
+    });
+
     it('should allow overriding timeouts via config', () => {
       new S3StorageAdapter({
         bucket: 'test-bucket',

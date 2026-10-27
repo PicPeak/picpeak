@@ -23,6 +23,7 @@ vi.mock('../../common', async (importOriginal) => ({
   useConfirm: () => async () => true,
 }));
 vi.mock('react-toastify', () => ({ toast: { error: toastError, success: vi.fn() } }));
+vi.mock('../../../hooks/usePermission', () => ({ usePermission: () => true }));
 
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');

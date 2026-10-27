@@ -17,6 +17,15 @@ const watermarkService = require('../../services/watermarkService');
 const watermarkGeneratorService = require('../../services/watermarkGeneratorService');
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
 const withPreview = (req, url) => (req.isAdminPreview ? `${url}${url.includes('?') ? '&' : '?'}admin_preview=1` : url);
+
+// Whether a video thumbnail request names another frame pick than the row
+// has (issue 2263, item 4): `poster` is the pick, absent for the default.
+function posterVersionStale(photo, asked) {
+  const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
+  if (!isVideo) return false;
+  const current = photo.poster_offset_seconds != null ? String(photo.poster_offset_seconds) : '';
+  return (typeof asked === 'string' ? asked : '') !== current;
+}
 const secureImageService = require('../../services/secureImageService');
 const logger = require('../../utils/logger');
 const { pipeStreamToResponse, answerVanished } = require('../../utils/streamResponse');
@@ -818,20 +827,54 @@ router.get('/:slug/thumbnail/:photoId',
       // Responsive tier (#1095), whitelisted the same way the preview route's
       // is. Unrecognised or absent falls through to the canonical 300px
       // thumbnail, so existing clients are untouched.
-      const { THUMBNAIL_WIDTHS, normalizeTierWidth, ensureThumbnailAtWidth } =
-        require('../../services/imageProcessor');
+      const {
+        THUMBNAIL_WIDTHS, normalizeTierWidth, ensureThumbnailAtWidth,
+        isThumbnailValid, queueVideoThumbnail, videoPlaceholderImage,
+      } = require('../../services/imageProcessor');
       const thumbTier = normalizeTierWidth(req.query.w, THUMBNAIL_WIDTHS);
 
-      let thumbnailPath = thumbTier
-        ? (await ensureThumbnailAtWidth(photo, thumbTier)) || (await ensureThumbnail(photo))
-        : await ensureThumbnail(photo);
-      // A stored pointer outside the rendition namespace (a legacy
-      // `./thumbnails/...` or backslash shape) is rebuilt rather than served
-      // or left to 404 forever; the rebuild writes a canonical key. Checked
-      // against a concurrent settings change (issue 2140); the row keeps its
-      // pointer so a dropped render does not hand that pointer back.
-      if (thumbnailPath && !isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
-        thumbnailPath = await ensureThumbnail(photo, { force: true, checkSettings: true });
+      let thumbnailPath;
+      const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
+      if (isVideo) {
+        // A video's poster is never built on the request (issue 2263): on S3
+        // that copied up to 512 MB and ran ffmpeg for up to a minute while
+        // the tile waited. The rebuild is queued and the placeholder answers
+        // now, uncached, so the next request gets the real frame. Videos
+        // have no tiers, so the canonical poster serves every width.
+        const canonical = Boolean(photo.thumbnail_path)
+          && isPresentationRenditionKey(photo.thumbnail_path, 'thumbnail');
+        if (!canonical || !(await isThumbnailValid(photo.thumbnail_path))) {
+          // A legacy key is rebuilt forced, as below for a photo.
+          queueVideoThumbnail(photo, photo.thumbnail_path && !canonical ? { force: true, checkSettings: true } : {});
+          const placeholder = await videoPlaceholderImage();
+          res.set({
+            'Content-Type': 'image/jpeg',
+            'Cache-Control': 'no-store',
+            // The image client shows these bytes and asks again after
+            // Retry-After: the tile's URL never changes, so without the
+            // signal it kept the placeholder until the gallery was reloaded.
+            'X-Poster-Pending': '1',
+            'Retry-After': '10',
+            'Cross-Origin-Resource-Policy': 'cross-origin',
+            'X-Content-Type-Options': 'nosniff',
+            'Content-Length': placeholder.length,
+          });
+          // end(), not send(): no validator for bytes that stand in.
+          return res.status(200).end(placeholder);
+        }
+        thumbnailPath = photo.thumbnail_path;
+      } else {
+        thumbnailPath = thumbTier
+          ? (await ensureThumbnailAtWidth(photo, thumbTier)) || (await ensureThumbnail(photo))
+          : await ensureThumbnail(photo);
+        // A stored pointer outside the rendition namespace (a legacy
+        // `./thumbnails/...` or backslash shape) is rebuilt rather than served
+        // or left to 404 forever; the rebuild writes a canonical key. Checked
+        // against a concurrent settings change (issue 2140); the row keeps its
+        // pointer so a dropped render does not hand that pointer back.
+        if (thumbnailPath && !isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
+          thumbnailPath = await ensureThumbnail(photo, { force: true, checkSettings: true });
+        }
       }
 
       // What was actually resolved, not what was asked for. A tier request can
@@ -894,7 +937,11 @@ router.get('/:slug/thumbnail/:photoId',
       // Set appropriate headers with enhanced security
       res.set({
         'Content-Type': 'image/jpeg',
-        'Cache-Control': 'private, max-age=1800', // Reduced cache time
+        // A video's URL names its frame pick (galleryQueryService); one
+        // naming another pick than the row's (an older photo list) gets the
+        // current poster uncached, or that URL would show the wrong frame
+        // once the pick came back to it.
+        'Cache-Control': posterVersionStale(photo, req.query.poster) ? 'no-store' : 'private, max-age=1800', // Reduced cache time
         'Cross-Origin-Resource-Policy': 'cross-origin',
         'X-Content-Type-Options': 'nosniff',
         'X-Protected-Thumbnail': 'true',
@@ -951,7 +998,9 @@ router.get('/:slug/hero/:photoId',
       // would have spent one.
       const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
       if (isVideo) {
-        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/thumbnail/${photoId}`));
+        // With the frame an admin picked, as the gallery's thumbnail URL.
+        const poster = photo.poster_offset_seconds != null ? `?poster=${photo.poster_offset_seconds}` : '';
+        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/thumbnail/${photoId}${poster}`));
       }
 
       // The rendition follows the event's focal point and the response below

@@ -202,6 +202,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     photo_cap: event.photo_cap || 0,
     download_limit: event.download_limit || 0,
     default_photo_sort: event.default_photo_sort || 'upload_date_desc',
+    videos_first: truthy(event.videos_first),
     // Photo sales pricing for paid galleries.
     is_priced: truthy(event.is_priced),
     free_photo_count: Number(event.free_photo_count ?? 0),
@@ -265,6 +266,7 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   photo_cap: 'downloads',
   download_limit: 'downloads',
   default_photo_sort: 'downloads',
+  videos_first: 'downloads',
   is_priced: 'pricing',
   free_photo_count: 'pricing',
   photo_price: 'pricing',
@@ -442,6 +444,7 @@ function requestFields(f: EventFields): Record<string, unknown> {
     photo_cap: f.photo_cap > 0 ? f.photo_cap : null,
     download_limit: f.download_limit > 0 ? f.download_limit : null,
     default_photo_sort: f.default_photo_sort,
+    videos_first: f.videos_first,
     is_priced: f.is_priced,
     free_photo_count: f.free_photo_count > 0 ? f.free_photo_count : null,
     photo_price: f.photo_price > 0 ? f.photo_price : null,
