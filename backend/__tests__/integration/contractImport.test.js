@@ -143,19 +143,6 @@ describe('POST /api/admin/contracts/import', () => {
     expect(day(row.signed_by_admin_at)).toBe('2023-03-01');
   });
 
-  it('imports a contract signed only by the customer', async () => {
-    const res = await postImport(signedFields({ status: 'signed_by_customer', signedCustomerName: 'Alex Example' }));
-
-    expect(res.status).toBe(201);
-    const row = await db('contracts').where({ id: res.body.contract.id }).first();
-    expect(row.status).toBe('signed_by_customer');
-    expect(row.signed_by_customer_at).toBeTruthy();
-    expect(row.signed_by_admin_at).toBeNull();
-    expect(row.signed_customer_name).toBe('Alex Example');
-    expect(row.signed_pdf_path).toBe(row.pdf_path);
-    expect(queueEmail).not.toHaveBeenCalled();
-  });
-
   it('imports a cancelled contract as an unsigned PDF', async () => {
     const res = await postImport(signedFields({ status: 'cancelled' }));
 
@@ -166,6 +153,7 @@ describe('POST /api/admin/contracts/import', () => {
     expect(row.signed_pdf_path).toBeNull();
     expect(row.signed_by_customer_at).toBeNull();
     expect(row.signed_by_admin_at).toBeNull();
+    expect(row.sent_at).toBeNull();
     expect(Boolean(row.signed_pdf_is_wet_upload)).toBe(false);
   });
 
@@ -184,7 +172,18 @@ describe('POST /api/admin/contracts/import', () => {
   it.each([
     ['a status that would need signing', { status: 'sent' }, 400],
     ['a draft', { status: 'draft' }, 400],
+    // Every way on from it re-renders the PDF or is refused (see imports.js).
+    ['a contract signed only by the customer', { status: 'signed_by_customer' }, 400],
     ['a missing issue date', { issueDate: '' }, 400],
+    // ISO 8601, but not a date Date can read: these used to reach the
+    // service and throw a RangeError (500).
+    ['a week date', { issueDate: '2023-W05' }, 400],
+    ['an ordinal date', { issueDate: '2023-123' }, 400],
+    ['a day the month does not have', { signedByCustomerAt: '2023-02-30' }, 400],
+    ['a date before 2000', { issueDate: '1999-12-31' }, 400],
+    ['a signature in the future', { signedByAdminAt: '2999-01-01' }, 400],
+    ['a customer signature before the issue date', { signedByCustomerAt: '2023-02-28' }, 400],
+    ['a counter-signature before the customer signed', { signedByAdminAt: '2023-03-03' }, 400],
     ['an unknown customer', { customerAccountId: 999999 }, 404],
   ])('refuses %s, leaving no row and no file behind', async (_label, extra, status) => {
     const contractsBefore = await count('contracts');
@@ -214,6 +213,28 @@ describe('POST /api/admin/contracts/import', () => {
     expect(res.body.code).toBe('NO_FILE');
   });
 
+  it('accepts an event date ahead of the import', async () => {
+    const res = await postImport(signedFields({ eventDate: '2999-06-01', validUntil: '2999-06-01' }));
+
+    expect(res.status).toBe(201);
+  });
+
+  it('creates one contract per Idempotency-Key, and drops the retried upload', async () => {
+    const contractsBefore = await count('contracts');
+    const filesBefore = filesOnDisk().length;
+    const key = 'import-retry-0001';
+
+    const first = await postImport(signedFields()).set('Idempotency-Key', key);
+    const retry = await postImport(signedFields()).set('Idempotency-Key', key);
+
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(200);
+    expect(retry.body.replayed).toBe(true);
+    expect(retry.body.contract.id).toBe(first.body.contract.id);
+    expect(await count('contracts')).toBe(contractsBefore + 1);
+    expect(filesOnDisk()).toHaveLength(filesBefore + 1);
+  });
+
   it('requires contracts.manage', async () => {
     const insert = await db('admin_users').insert({
       username: 'no-role', email: 'no-role@example.com', password_hash: 'x',
@@ -239,8 +260,12 @@ describe('an imported contract keeps its PDF', () => {
 
   beforeAll(async () => {
     signedId = (await postImport(signedFields())).body.contract.id;
-    customerOnlyId = (await postImport(signedFields({ status: 'signed_by_customer' }))).body.contract.id;
     original = await db('contracts').where({ id: signedId }).first();
+    // The import no longer creates `signed_by_customer`, but the guard must
+    // hold for any imported row that reaches it: put one there by hand.
+    customerOnlyId = (await postImport(signedFields())).body.contract.id;
+    await db('contracts').where({ id: customerOnlyId })
+      .update({ status: 'signed_by_customer', signed_by_admin_at: null });
   });
 
   it('refuses a counter-signature, which would re-render the PDF from clauses it never had', async () => {
@@ -266,6 +291,19 @@ describe('an imported contract keeps its PDF', () => {
     const row = await db('contracts').where({ id: signedId }).first();
     expect(row.signed_pdf_path).toBe(original.signed_pdf_path);
     expect(queueEmail).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['resend-signed', {}],
+    ['restamp-signatures', { customerSignatureDataUrl: 'data:image/png;base64,iVBORw0KGgo=' }],
+  ])('refuses POST /:id/%s', async (endpoint, payload) => {
+    const res = await auth(request(app).post(`/api/admin/contracts/${signedId}/${endpoint}`)).send(payload);
+
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(res.body)).toContain('CONTRACT_IMPORTED');
+    expect(queueEmail).not.toHaveBeenCalled();
+    const row = await db('contracts').where({ id: signedId }).first();
+    expect(row.signed_pdf_sha256).toBe(original.signed_pdf_sha256);
   });
 
   it('refuses re-render-and-resend and re-stamping', async () => {

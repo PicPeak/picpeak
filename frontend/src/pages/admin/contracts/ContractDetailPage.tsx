@@ -405,6 +405,11 @@ export const ContractDetailPage: React.FC = () => {
     })) convertToInvoiceMutation.mutate();
   };
 
+  // An imported contract's PDF is the record (POST /contracts/import): the
+  // server answers 409 CONTRACT_IMPORTED to anything that would re-render,
+  // replace or re-sign it, so those actions are not offered.
+  const signingActions = !c.isImported;
+
   const menu: ActionMenuItem[] = [
     ...(canManage && canConvert && flags.bills ? [{ key: 'invoice', icon: <Receipt />, label: t('contracts.detail.convertToInvoice', 'Convert to invoice only'), disabled: convertToInvoiceMutation.isPending || convertToEventMutation.isPending, onSelect: () => { void convertToInvoice(); } }] : []),
     // Already converted: extra invoices (expenses, change requests) start
@@ -412,12 +417,12 @@ export const ContractDetailPage: React.FC = () => {
     ...(canManage && c.status === 'fully_signed' && alreadyConverted && flags.bills ? [{ key: 'newInvoice', icon: <Receipt />, label: t('contracts.detail.newInvoice', 'New invoice'), onSelect: () => navigate(`/admin/clients/bills/new?fromContractId=${c.id}`) }] : []),
     // The upload completes the contract for every signer, so it goes through
     // a dialog that confirms whose signatures the paper copy carries (#1446).
-    ...(canManage && (c.status === 'sent' || c.status === 'signed_by_customer') ? [{ key: 'upload', icon: <Upload />, label: t('contracts.detail.uploadSigned', 'Upload signed PDF'), disabled: uploadMutation.isPending, onSelect: () => setUploadOpen(true) }] : []),
+    ...(canManage && signingActions && (c.status === 'sent' || c.status === 'signed_by_customer') ? [{ key: 'upload', icon: <Upload />, label: t('contracts.detail.uploadSigned', 'Upload signed PDF'), disabled: uploadMutation.isPending, onSelect: () => setUploadOpen(true) }] : []),
     ...(c.signedPdfPath ? [{ key: 'signedPdf', icon: <FileDown />, label: t('contracts.detail.downloadSignedPdf', 'Download signed PDF'), onSelect: () => { void handleSignedPdfDownload(); } }] : []),
     // The signing certificate (#1446): the evidence record issued at completion.
     ...(hasCertificate ? [{ key: 'certificate', icon: <FileDown />, label: t('contracts.detail.downloadCertificate', 'Download signing certificate'), onSelect: () => { void handleCertificateDownload(); } }] : []),
     // Recovery: re-render the signed PDF and resend the confirmation email.
-    ...(canManage && c.status === 'fully_signed' ? [{ key: 'resend', icon: <MailCheck />, label: t('contracts.detail.resendSigned', 'Re-send signed PDF'), disabled: resendSignedMutation.isPending, onSelect: () => { void resendSigned(); } }] : []),
+    ...(canManage && signingActions && c.status === 'fully_signed' ? [{ key: 'resend', icon: <MailCheck />, label: t('contracts.detail.resendSigned', 'Re-send signed PDF'), disabled: resendSignedMutation.isPending, onSelect: () => { void resendSigned(); } }] : []),
     ...(canManage && (c.status === 'draft' || c.status === 'sent' || c.status === 'awaiting_data') ? [{ key: 'cancel', icon: <X />, label: t('contracts.detail.cancelContract', 'Cancel contract'), danger: true, disabled: cancelMutation.isPending, onSelect: () => { void cancelContract(); } }] : []),
   ];
 
@@ -641,7 +646,7 @@ export const ContractDetailPage: React.FC = () => {
           {/* Counter-sign form. Mirrors the public sign page: typed name +
               drawn signature (signature_pad) so the rendered PDF carries
               both signatures, not just typed labels. */}
-          {c.status === 'signed_by_customer' && !c.signedByAdminAt && (
+          {signingActions && c.status === 'signed_by_customer' && !c.signedByAdminAt && (
             <PermissionGate permission="contracts.manage">
               <CountersignCard
                 name={countersignName}
@@ -660,7 +665,7 @@ export const ContractDetailPage: React.FC = () => {
               their behalf and re-render the PDF. Names + timestamps + IPs
               stay untouched — this is purely a "the canvas glitched, here
               is the image we should have captured" recovery. */}
-          {legacySigning
+          {legacySigning && signingActions
             && (c.status === 'signed_by_customer' || c.status === 'signed_by_admin' || c.status === 'fully_signed')
             && (!c.signedCustomerSignaturePath || !c.signedAdminSignaturePath) && (
             <RestampSignaturesCard

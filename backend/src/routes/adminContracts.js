@@ -120,6 +120,24 @@ const importedContractStorage = multer.diskStorage({
   },
 });
 
+// Dates on POST /import, after isISO8601({ strict: true }) (which rejects
+// 2023-02-30). A calendar date (YYYY-MM-DD, optionally with a time): ISO
+// 8601 also allows ordinal and week dates (2023-123, 2023-W05), which Date
+// cannot read, and the service would then throw a RangeError. Not before
+// 2000; signing dates (`past`) not in the future, with a day of slack for
+// time zones. Event and expiry dates may be ahead.
+function isImportDate({ past }) {
+  return (value) => {
+    const d = new Date(value);
+    if (!/^\d{4}-\d{2}-\d{2}([T ]|$)/.test(String(value)) || Number.isNaN(d.getTime())) {
+      throw new Error('Must be a calendar date (YYYY-MM-DD)');
+    }
+    if (d < new Date('2000-01-01T00:00:00Z')) throw new Error('Must not be before 2000-01-01');
+    if (past && d > new Date(Date.now() + 24 * 60 * 60 * 1000)) throw new Error('Must not be in the future');
+    return true;
+  };
+}
+
 const importedContractUpload = multer({
   storage: importedContractStorage,
   // CVE-2026-82333: single unnamed `pdf` field only.
@@ -516,12 +534,15 @@ router.get(
 // Form fields (multipart/form-data):
 //   pdf                 file (required, application/pdf, max 10MB)
 //   customerAccountId   int (required)
-//   status              'fully_signed' | 'signed_by_customer' | 'cancelled'
-//   issueDate           ISO date (required; also the sent date)
+//   status              'fully_signed' | 'cancelled'
+//   issueDate           calendar date (required; also the sent date)
 //   title, language, eventName, eventDate, validUntil      (optional)
-//   signedByCustomerAt  ISO date (optional, defaults to issueDate)
-//   signedByAdminAt     ISO date (optional, defaults to signedByCustomerAt)
+//   signedByCustomerAt  calendar date (optional, defaults to issueDate)
+//   signedByAdminAt     calendar date (optional, defaults to signedByCustomerAt)
 //   signedCustomerName, signedAdminName                    (optional)
+// Header Idempotency-Key (optional): a retried submit with the same key
+// returns the contract the first one created (200, replayed) and drops
+// the second upload.
 router.post(
   '/import',
   requirePermission('contracts.manage'),
@@ -529,21 +550,25 @@ router.post(
   [
     body('customerAccountId').isInt({ min: 1 }),
     body('status').isIn(IMPORT_STATUSES),
-    body('issueDate').isISO8601(),
+    body('issueDate').isISO8601({ strict: true }).bail().custom(isImportDate({ past: true })),
     body('title').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
     body('language').optional({ values: 'falsy' }).isString().isLength({ max: 8 }),
     body('eventName').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
-    body('eventDate').optional({ values: 'falsy' }).isISO8601(),
-    body('validUntil').optional({ values: 'falsy' }).isISO8601(),
-    body('signedByCustomerAt').optional({ values: 'falsy' }).isISO8601(),
-    body('signedByAdminAt').optional({ values: 'falsy' }).isISO8601(),
+    body('eventDate').optional({ values: 'falsy' }).isISO8601({ strict: true }).bail().custom(isImportDate({ past: false })),
+    body('validUntil').optional({ values: 'falsy' }).isISO8601({ strict: true }).bail().custom(isImportDate({ past: false })),
+    body('signedByCustomerAt').optional({ values: 'falsy' }).isISO8601({ strict: true }).bail().custom(isImportDate({ past: true })),
+    body('signedByAdminAt').optional({ values: 'falsy' }).isISO8601({ strict: true }).bail().custom(isImportDate({ past: true })),
     body('signedCustomerName').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
     body('signedAdminName').optional({ values: 'falsy' }).isString().isLength({ max: 255 }),
+    header('Idempotency-Key').optional()
+      .matches(/^[A-Za-z0-9_-]{8,128}$/)
+      .withMessage('Idempotency-Key must be 8-128 letters, digits, "-" or "_"'),
   ],
   handleAsync(async (req, res) => {
     // Multer has written the file. Anything that refuses the import must
     // not leave it behind; once the row is committed it is the contract.
     let contractId = null;
+    let replayed = false;
     try {
       validateRequest(req);
       if (!req.file) {
@@ -556,22 +581,26 @@ router.post(
       // The file is about to be recorded as the contract's PDF; it has to be
       // one the PDF routes will serve.
       assertContractPdfPath(req.file.path);
-      contractId = await contractService.importContract({
+      ({ id: contractId, replayed } = await contractService.importContract({
         ...req.body,
         customerAccountId: parseInt(req.body.customerAccountId, 10),
-      }, req.file.path, req.admin?.id);
+      }, req.file.path, req.admin?.id, { idempotencyKey: req.get('Idempotency-Key') || null }));
     } catch (err) {
       if (req.file && req.file.path && !contractId) await fs.promises.unlink(req.file.path).catch(() => {});
       throw err;
     }
+    // A replay answers with the first import; this request's copy of the
+    // file belongs to no contract.
+    if (replayed) await fs.promises.unlink(req.file.path).catch(() => {});
     require('../utils/logger').info('contract_import', {
+      outcome: replayed ? 'replayed' : 'created',
       contractId, status: req.body.status, adminId: req.admin?.id, requestId: req.id,
     });
     const data = await contractService.getContractById(contractId);
     return successResponse(
       res,
-      { contract: transformContract(data.contract, data.inclusions, data.textSections, data.attachments) },
-      201,
+      { contract: transformContract(data.contract, data.inclusions, data.textSections, data.attachments), ...(replayed && { replayed: true }) },
+      replayed ? 200 : 201,
       'Contract imported',
     );
   }),

@@ -20,9 +20,12 @@ const { AppError } = require('../../utils/errors');
 const { hasColumnCached } = require('../../utils/schemaCache');
 const { toStoredPath } = require('../../utils/storedPath');
 const { sha256OfFile } = require('./signatureAssets');
-const { createContract } = require('./crud');
+const { createContractIdempotent } = require('./crud');
 
-const IMPORT_STATUSES = ['fully_signed', 'signed_by_customer', 'cancelled'];
+// Only finished states. `signed_by_customer` is left out: every way on from
+// it (countersign, signed-PDF upload, cancel) would either re-render the
+// original or is refused, so an import in that state could never be closed.
+const IMPORT_STATUSES = ['fully_signed', 'cancelled'];
 
 // ISO strings rather than Date objects, as the expiry and erasure services
 // bind them: node-sqlite3 can store a Date as "[object Object]".
@@ -35,9 +38,11 @@ const iso = (value) => new Date(value).toISOString();
  * @param {string} filePath the uploaded PDF, already under the contract
  *   storage roots (assertContractPdfPath)
  * @param {number} adminId
- * @returns {Promise<number>} the new contract id
+ * @param {{ idempotencyKey?: string|null }} [options] the same key on a
+ *   retried submit returns the contract the first one created
+ * @returns {Promise<{ id: number, replayed: boolean }>}
  */
-async function importContract(payload, filePath, adminId) {
+async function importContract(payload, filePath, adminId, { idempotencyKey = null } = {}) {
   if (!filePath) throw new AppError('PDF file is required', 400, 'NO_FILE');
   const status = payload.status;
   if (!IMPORT_STATUSES.includes(status)) {
@@ -45,23 +50,26 @@ async function importContract(payload, filePath, adminId) {
   }
 
   const issueDate = payload.issueDate;
-  const storedPath = toStoredPath(filePath);
-  const sha256 = sha256OfFile(filePath);
+  const signed = status === 'fully_signed';
   // Historical dates, never the moment of import (same reasoning as the
   // invoice import's paid_at): a contract signed in 2023 must not show up
   // as signed today.
   const customerSignedAt = payload.signedByCustomerAt || issueDate;
   const adminSignedAt = payload.signedByAdminAt || customerSignedAt;
-  const signed = status !== 'cancelled';
+  if (signed) assertDateOrder(issueDate, customerSignedAt, adminSignedAt);
 
+  const storedPath = toStoredPath(filePath);
+  const sha256 = sha256OfFile(filePath);
   const columns = {
     status,
-    sent_at: iso(issueDate),
+    // A cancelled import records no send: the original tool may never have
+    // sent it, and nothing here did.
+    sent_at: signed ? iso(issueDate) : null,
     pdf_path: storedPath,
     signed_by_customer_at: signed ? iso(customerSignedAt) : null,
-    signed_by_admin_at: status === 'fully_signed' ? iso(adminSignedAt) : null,
+    signed_by_admin_at: signed ? iso(adminSignedAt) : null,
     signed_customer_name: signed ? (payload.signedCustomerName || null) : null,
-    signed_admin_name: status === 'fully_signed' ? (payload.signedAdminName || null) : null,
+    signed_admin_name: signed ? (payload.signedAdminName || null) : null,
     // A signed import is the authoritative signed copy: the same columns a
     // wet-signed upload sets, so every reader treats it the same way.
     signed_pdf_path: signed ? storedPath : null,
@@ -76,7 +84,7 @@ async function importContract(payload, filePath, adminId) {
     if (await hasColumnCached('contracts', column)) columns[column] = value;
   }
 
-  return createContract({
+  return createContractIdempotent({
     customerAccountId: payload.customerAccountId,
     language: payload.language,
     title: payload.title,
@@ -84,7 +92,20 @@ async function importContract(payload, filePath, adminId) {
     eventDate: payload.eventDate,
     issueDate,
     validUntil: payload.validUntil || issueDate,
-  }, adminId, { imported: columns });
+  }, adminId, idempotencyKey, { imported: columns });
+}
+
+// Issued, then signed by the customer, then counter-signed — the order the
+// signing flow produces. Compared as instants, so a date-only issue date
+// and a timestamped signature on the same day pass.
+function assertDateOrder(issueDate, customerSignedAt, adminSignedAt) {
+  const t = (value) => new Date(value).getTime();
+  if (t(customerSignedAt) < t(issueDate)) {
+    throw new AppError('signedByCustomerAt cannot be before issueDate', 400, 'INVALID_DATE_ORDER');
+  }
+  if (t(adminSignedAt) < t(customerSignedAt)) {
+    throw new AppError('signedByAdminAt cannot be before signedByCustomerAt', 400, 'INVALID_DATE_ORDER');
+  }
 }
 
 module.exports = { importContract, IMPORT_STATUSES };

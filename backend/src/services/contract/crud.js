@@ -326,11 +326,12 @@ async function createContract(payload, adminId, { idempotencyKey = null, importe
  * handing over their draft.
  *
  * Without a key (or on a schema without migration 214) this is createContract.
+ * `imported` is passed through for POST /import (see ./imports).
  * Returns `{ id, replayed }`.
  */
-async function createContractIdempotent(payload, adminId, idempotencyKey) {
+async function createContractIdempotent(payload, adminId, idempotencyKey, { imported = null } = {}) {
   if (!idempotencyKey || !(await hasColumnCached('contracts', 'create_idempotency_key'))) {
-    return { id: await createContract(payload, adminId), replayed: false };
+    return { id: await createContract(payload, adminId, { imported }), replayed: false };
   }
   const findEarlier = async () => {
     const existing = await db('contracts')
@@ -351,7 +352,7 @@ async function createContractIdempotent(payload, adminId, idempotencyKey) {
   const earlier = await findEarlier();
   if (earlier) return earlier;
   try {
-    return { id: await createContract(payload, adminId, { idempotencyKey }), replayed: false };
+    return { id: await createContract(payload, adminId, { idempotencyKey, imported }), replayed: false };
   } catch (error) {
     // Two requests with the same key both missed the lookup; the unique index
     // let one insert through. Answer the other with that draft.
