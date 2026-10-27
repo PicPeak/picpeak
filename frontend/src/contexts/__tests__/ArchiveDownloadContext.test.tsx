@@ -52,7 +52,7 @@ describe('shared archive preparation', () => {
     expect(galleryService.startDownloadJob).toHaveBeenCalledExactlyOnceWith('party', undefined, [1, 2]);
     fireEvent.click(screen.getByRole('button', { name: 'Download' }));
     await screen.findByText('handed off');
-    expect(galleryService.downloadJobFile).toHaveBeenCalledExactlyOnceWith('party', 'job', undefined);
+    expect(galleryService.downloadJobFile).toHaveBeenCalledExactlyOnceWith('party', 'job', undefined, true);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
   it('keeps the selection on close and ignores a late start response', async () => {

@@ -40,6 +40,7 @@ const service = vi.hoisted(() => ({
 
 vi.mock('../../../contexts/ArchiveDownloadContext', () => ({
   ArchiveDownloadProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  ArchiveDownloadDialog: () => null,
   useArchiveDownload: () => service,
 }));
 

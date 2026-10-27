@@ -24,10 +24,16 @@ interface Request {
   retry: () => void;
   part?: Part;
   onProgress?: () => void;
+  photoIds?: number[];
 }
 
+const ArchiveDialogContext = createContext<React.ReactNode>(null);
+// Mount under the gallery's quota and photo-choice providers, while the
+// controller above GalleryViewContent preserves its state across renders.
+export const ArchiveDownloadDialog = () => useContext(ArchiveDialogContext);
+
 /** UI owns preparation; the browser owns the ZIP transfer and its progress. */
-export const ArchiveDownloadProvider: React.FC<{ children: React.ReactNode; scopeKey?: string }> = ({ children, scopeKey }) => {
+export const ArchiveDownloadProvider: React.FC<{ children: React.ReactNode; scopeKey?: string; renderDialog?: boolean }> = ({ children, scopeKey, renderDialog = true }) => {
   const [request, setRequest] = useState<Request | null>(null);
   const pending = useRef<((handedOff: boolean) => void) | null>(null);
   const sharing = useRef(false);
@@ -63,7 +69,7 @@ export const ArchiveDownloadProvider: React.FC<{ children: React.ReactNode; scop
         void promise.catch(() => {});
         setRequest({
           slug, start: promise, retry: start, onProgress,
-          part,
+          part, photoIds,
         });
       };
       start();
@@ -103,11 +109,14 @@ export const ArchiveDownloadProvider: React.FC<{ children: React.ReactNode; scop
   }, [downloadSelectedPhotos]);
 
   return <ArchiveDownloadContext.Provider value={{ downloadAllPhotos, downloadSelectedPhotos, downloadPhotosInParts }}>
-    {children}
-    {request && <DownloadResolutionModal
+    <ArchiveDialogContext.Provider value={request && <DownloadResolutionModal
       slug={request.slug} choices={[]} startedJob={request.start} onRetry={request.retry}
+      photoIds={request.photoIds}
       part={request.part} onClose={() => finish(false)} onDownloaded={() => finish(true)}
-    />}
+    />}>
+      {children}
+      {renderDialog && <ArchiveDownloadDialog />}
+    </ArchiveDialogContext.Provider>
   </ArchiveDownloadContext.Provider>;
 };
 

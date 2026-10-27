@@ -250,7 +250,8 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
         setPhase('error');
         return;
       }
-      galleryService.downloadJobFile(slug, token, part);
+      if (photoIds) galleryService.downloadJobFile(slug, token, part, true);
+      else galleryService.downloadJobFile(slug, token, part);
       onDownloaded?.();
       onClose();
     } catch (err) {
@@ -259,7 +260,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
       handingOff.current = false;
       if (generation.current === run) setChecking(false);
     }
-  }, [slug, part, onClose, onDownloaded, t, reportError]);
+  }, [slug, part, photoIds, onClose, onDownloaded, t, reportError]);
 
   // The original's file size, only where the payload knows it exactly: one
   // photo, or a selection (all loaded, as they were picked). Not for the

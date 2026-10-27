@@ -11,7 +11,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { differenceInDays, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArchiveDownloadProvider, useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
+import { ArchiveDownloadDialog, ArchiveDownloadProvider, useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
 import { toast } from 'react-toastify';
 
 import { Button } from '../common';
@@ -161,7 +161,7 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
 export const GalleryView: React.FC<GalleryViewProps> = (props) => {
   const { isClient, viaCustomer } = useGalleryAuth();
   const scope = isClient ? 'client' : viaCustomer ? 'customer' : 'guest';
-  return <ArchiveDownloadProvider scopeKey={`${props.slug}:${scope}`}>
+  return <ArchiveDownloadProvider scopeKey={`${props.slug}:${scope}`} renderDialog={false}>
     <GalleryViewContent {...props} />
   </ArchiveDownloadProvider>;
 };
@@ -1608,7 +1608,9 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // (the photo endpoints refuse plain guests); this is the friendly face.
   if (hiddenUntilReveal) {
     return (
+      <DownloadQuotaProvider slug={slug} event={data?.event}>
       <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
+      <ArchiveDownloadDialog />
       <GalleryLayout
         event={{
           ...event,
@@ -1691,6 +1693,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
       </GalleryLayout>
       </PhotoDownloadChoiceProvider>
+      </DownloadQuotaProvider>
     );
   }
 
@@ -1802,6 +1805,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <DownloadQuotaProvider slug={slug} event={data?.event}>
       <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
+      <ArchiveDownloadDialog />
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
@@ -2048,6 +2052,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
     <DownloadQuotaProvider slug={slug} event={data?.event}>
       <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
+      <ArchiveDownloadDialog />
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GridDensityOffered.Provider value={densityOffered}>

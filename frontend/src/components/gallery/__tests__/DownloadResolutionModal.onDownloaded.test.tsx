@@ -54,7 +54,7 @@ describe('DownloadResolutionModal: onDownloaded', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Prepare download' }));
     await user.click(await screen.findByRole('button', { name: 'Download' }));
-    expect(galleryService.downloadJobFile).toHaveBeenCalledWith('party', TOKEN, undefined);
+    expect(galleryService.downloadJobFile).toHaveBeenCalledWith('party', TOKEN, undefined, true);
     expect(calls).toEqual(['downloaded', 'close']);
   });
 

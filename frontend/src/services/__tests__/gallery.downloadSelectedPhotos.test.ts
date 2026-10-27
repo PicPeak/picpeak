@@ -72,9 +72,11 @@ describe('native archive transport', () => {
     window.history.replaceState({}, '', '/gallery/party?admin_preview=1');
     galleryService.downloadCachedArchive('party');
     galleryService.downloadJobFile('party', 'job', { index: 1, total: 2 });
+    galleryService.downloadJobFile('party', 'selected-job', undefined, true);
     expect(links.map((href) => new URL(href).pathname + new URL(href).search)).toEqual([
       '/api/gallery/party/download-all?admin_preview=1',
       '/api/gallery/party/download-jobs/job/file?part=1&parts=2&admin_preview=1',
+      '/api/gallery/party/download-jobs/selected-job/file?selected=1&admin_preview=1',
     ]);
     expect(api.get).not.toHaveBeenCalled();
     window.history.replaceState({}, '', '/');

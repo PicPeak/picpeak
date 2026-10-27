@@ -410,9 +410,9 @@ export const galleryService = {
 
   // Native browser download so the archive streams with Content-Length
   // (real progress bar, no in-memory blob for a multi-GB gallery).
-  downloadJobFile(slug: string, token: string, part?: { index: number; total: number }): void {
+  downloadJobFile(slug: string, token: string, part?: { index: number; total: number }, selected = false): void {
     const link = document.createElement('a');
-    const query = part ? `?part=${part.index}&parts=${part.total}` : '';
+    const query = part ? `?part=${part.index}&parts=${part.total}` : selected ? '?selected=1' : '';
     link.href = withAdminPreview(`/api/gallery/${slug}/download-jobs/${token}/file${query}`);
     link.setAttribute('download', '');
     document.body.appendChild(link);
