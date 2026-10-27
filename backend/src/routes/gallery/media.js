@@ -495,11 +495,13 @@ router.get('/:slug/hero/:photoId',
         return res.status(403).json({ error: 'Photo not available' });
       }
 
-      // Check if this is a video - videos don't get hero images
+      // Videos don't get hero images. Their hero is the poster frame the
+      // thumbnail route serves, never the original (issue 2284): a hero is an
+      // image background, so the Story hero fetched the whole clip only to
+      // fail decoding it, on the critical path of the page's first paint.
       const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
       if (isVideo) {
-        // For videos, redirect to the regular photo endpoint
-        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
+        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/thumbnail/${photoId}`));
       }
 
       // The rendition follows the event's focal point and the response below
