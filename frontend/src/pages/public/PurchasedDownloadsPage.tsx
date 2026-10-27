@@ -20,6 +20,7 @@ interface PurchasedAccessPayload {
   expires_at: string | null;
   photos: PurchasedPhoto[];
   temporarily_disabled?: boolean;
+  gallery_expires_at?: string | null;
   support_email?: string;
   photo_count?: number;
 }
@@ -145,7 +146,7 @@ export const PurchasedDownloadsPage: React.FC = () => {
                 </h1>
                 <p className="mt-1 text-sm text-muted-theme">
                   {t('photoSales.photoCount', '{{count}} photos', { count: data.photo_count ?? data.photos.length })}
-                  {expiresDate && <> · {t('photoSales.accessUntil', 'Access valid until')} {expiresDate}</>}
+                  {!paused && expiresDate && <> · {t('photoSales.accessUntil', 'Access valid until')} {expiresDate}</>}
                 </p>
               </div>
             </div>
@@ -157,11 +158,12 @@ export const PurchasedDownloadsPage: React.FC = () => {
                 <Clock className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="min-w-0">
                   <p className="font-medium text-theme">{t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.')}</p>
-                  <p className="mt-2">{t('photoSales.purchasePausedHelp', 'Your purchase remains valid. Please use this same link when the gallery is available again. Your access deadline has not changed.')}</p>
+                  <p className="mt-2">{t('photoSales.purchasePausedHelp', 'Your purchase remains valid. Please use this same link when the gallery is available again. Time lost during the pause will be added to your download window, up to the gallery expiry date.')}</p>
+                  {data.gallery_expires_at && <p className="mt-2">{t('photoSales.galleryExpiresOn', 'Gallery expiry: {{date}}', { date: formatDateTime(data.gallery_expires_at) })}</p>}
                   {data.support_email ? (
                     <p className="mt-3">
                       {t('photoSales.purchaseContact', 'For more information, contact:')}{' '}
-                      <a className="text-accent underline break-all" href={`mailto:${encodeURIComponent(data.support_email)}`}>{data.support_email}</a>
+                      <a className="text-accent underline break-all" href={`mailto:${data.support_email}`}>{data.support_email}</a>
                     </p>
                   ) : (
                     <p className="mt-3">{t('photoSales.purchaseContactPhotographer', 'Please contact your photographer for more information.')}</p>

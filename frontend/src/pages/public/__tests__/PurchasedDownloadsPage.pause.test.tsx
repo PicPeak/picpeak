@@ -6,7 +6,7 @@ const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock('../../../config/api', () => ({ api: { get } }));
 vi.mock('../../../hooks/useLocalizedDate', () => ({ useLocalizedDate: () => ({ formatDateTime: (value: string) => value }) }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (_key: string, fallback?: string) => fallback || _key }),
+  useTranslation: () => ({ t: (_key: string, fallback?: string, values?: { date?: string }) => (fallback || _key).replace('{{date}}', values?.date || '') }),
   initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
@@ -16,7 +16,7 @@ const access = {
   order_id: 'paid-order', gallery_slug: 'wedding', gallery_name: 'Wedding', buyer_email: 'buyer@example.test',
   expires_at: '2026-12-01T12:00:00Z', photos: [{ id: 7, filename: 'photo.jpg', photo_url: '/api/gallery/purchased-downloads/proof/photos/7' }],
 };
-const paused = { ...access, temporarily_disabled: true, support_email: 'help@example.test', photo_count: 1, photos: [] };
+const paused = { ...access, temporarily_disabled: true, support_email: 'help@example.test', photo_count: 1, photos: [], gallery_expires_at: '2027-01-01T12:00:00Z' };
 const mount = () => render(<MemoryRouter initialEntries={['/purchased-downloads/proof']}>
   <Routes><Route path="/purchased-downloads/:accessToken" element={<PurchasedDownloadsPage />} /></Routes>
 </MemoryRouter>);
@@ -24,13 +24,14 @@ const mount = () => render(<MemoryRouter initialEntries={['/purchased-downloads/
 describe('purchased downloads during a gallery pause', () => {
   beforeEach(() => { get.mockReset(); });
 
-  it('confirms the purchase, unchanged deadline and contact address, with no download links', async () => {
+  it('confirms the purchase, pause compensation, gallery cutoff and contact address, with no download links', async () => {
     get.mockResolvedValue({ data: paused });
     mount();
     expect(await screen.findByRole('heading', { name: 'Your purchase was successful' })).toBeInTheDocument();
-    expect(screen.getByText(/Your access deadline has not changed/)).toBeInTheDocument();
-    expect(screen.getByText(/2026-12-01T12:00:00Z/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'help@example.test' })).toHaveAttribute('href', 'mailto:help%40example.test');
+    expect(screen.getByText(/Time lost during the pause will be added/)).toBeInTheDocument();
+    expect(screen.getByText(/Gallery expiry: 2027-01-01T12:00:00Z/)).toBeInTheDocument();
+    expect(screen.queryByText(/2026-12-01T12:00:00Z/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'help@example.test' })).toHaveAttribute('href', 'mailto:help@example.test');
     expect(screen.queryByRole('link', { name: /Download/ })).toBeNull();
     expect(screen.queryByText('Access expired')).toBeNull();
   });

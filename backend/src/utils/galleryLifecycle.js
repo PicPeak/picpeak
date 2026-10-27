@@ -46,4 +46,4 @@ function assertGalleryAvailable(event, { adminPreview = false } = {}) {
   }
 }
 
-module.exports = { isGalleryAvailable, assertGalleryAvailable, assertGalleryEnabled, isGalleryExpired, requiresGalleryPassword };
+module.exports = { isTrue, isGalleryAvailable, assertGalleryAvailable, assertGalleryEnabled, isGalleryExpired, requiresGalleryPassword };

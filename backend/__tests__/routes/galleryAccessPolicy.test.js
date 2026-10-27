@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const fs = require('fs/promises');
 const path = require('path');
-process.env.JWT_SECRET = 'gallery-policy-regression-secret-at-least-32-characters';
+process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
 
 let db, cleanup, app, adminId, customerId, foreignId, cutoff, revokeToken;
 const eventId = 70001, photoId = 70002, slug = 'policy-test';
@@ -53,7 +53,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await db('events').where({ id: eventId }).update({ is_active: 1, is_archived: 0, is_draft: 0, temporarily_disabled: 0, require_password: 1,
-    expires_at: new Date(Date.now() + 86400000).toISOString(), reveal_mode: 0 });
+    expires_at: new Date(Date.now() + 86400000).toISOString(), reveal_mode: 0, gallery_password_changed_at: null });
   await db('customer_accounts').where({ id: customerId }).update({ is_active: 1, password_changed_at: null });
   if (!await db('event_customer_assignments').where({ event_id: eventId, customer_account_id: customerId }).first()) {
     await db('event_customer_assignments').insert({ event_id: eventId, customer_account_id: customerId });
@@ -140,20 +140,52 @@ it('blocks share links while disabled and restores them unchanged', async () => 
   expect((await get(`/api/gallery/${slug}/verify-token/${shareToken}`)).status).toBe(200);
 });
 
-it('refuses sign-in during a pause without recording incorrect password attempts', async () => {
-  await db('events').where({ id: eventId }).update({ temporarily_disabled: true });
+it('checks credentials before reporting a pause, without recording a valid login as a failure', async () => {
+  const password = crypto.randomBytes(16).toString('hex');
+  const pin = String(crypto.randomInt(100000, 1000000));
+  const share = crypto.randomBytes(16).toString('hex'), clientShare = crypto.randomBytes(32).toString('hex');
+  await db('events').where({ id: eventId }).update({ temporarily_disabled: true,
+    password_hash: await require('bcrypt').hash(password, 4), share_token: share,
+    client_access_enabled: true, client_password_hash: await require('bcrypt').hash(pin, 4), client_share_token: clientShare });
   const before = await db('login_attempts').count('* as count').first();
   for (const [url, body] of [
-    ['/api/auth/gallery/verify', { slug, password: 'unimportant' }],
-    [`/api/auth/gallery/${slug}/client-login`, { password: 'unimportant', token: 'unimportant' }],
-    ['/api/auth/gallery/share-login', { slug, token: 'unimportant' }],
+    ['/api/auth/gallery/verify', { slug, password }],
+    [`/api/auth/gallery/${slug}/client-login`, { password: pin, token: clientShare }],
   ]) {
     const response = await request(app).post(url).send(body);
     expect(response.status).toBe(403);
     expect(response.body.code).toBe('GALLERY_TEMPORARILY_DISABLED');
     expect(response.headers['set-cookie']).toBeUndefined();
   }
+  // A private share link still asks for the gallery password first.
+  expect((await request(app).post('/api/auth/gallery/share-login').send({ slug, token: share })).body)
+    .toEqual({ requires_password: true });
+  await db('events').where({ id: eventId }).update({ require_password: false });
+  const shared = await request(app).post('/api/auth/gallery/share-login').send({ slug, token: share });
+  expect(shared.status).toBe(403);
+  expect(shared.body.code).toBe('GALLERY_TEMPORARILY_DISABLED');
   expect(await db('login_attempts').count('* as count').first()).toEqual(before);
+  await db('events').where({ id: eventId }).update({ require_password: true });
+  for (const [url, body] of [
+    ['/api/auth/gallery/verify', { slug, password: crypto.randomBytes(16).toString('hex') }],
+    [`/api/auth/gallery/${slug}/client-login`, { password: crypto.randomBytes(16).toString('hex'), token: clientShare }],
+    ['/api/auth/gallery/share-login', { slug, token: crypto.randomBytes(32).toString('hex') }],
+  ]) {
+    const response = await request(app).post(url).send(body);
+    expect(response.status).toBe(401);
+    expect(response.body.code).not.toBe('GALLERY_TEMPORARILY_DISABLED');
+  }
+});
+
+it.each(['revoked', 'rotated', 'unassigned'])('refuses a %s gallery grant before exposing its pause', async (reason) => {
+  const bearer = token(reason === 'unassigned' ? { via: 'customer', customerId } : {});
+  await db('events').where({ id: eventId }).update({ temporarily_disabled: true });
+  if (reason === 'revoked') await revokeToken(bearer, 'pause-order-test');
+  else if (reason === 'rotated') await db('events').where({ id: eventId }).update({ gallery_password_changed_at: new Date().toISOString() });
+  else await db('event_customer_assignments').where({ event_id: eventId, customer_account_id: customerId }).del();
+  const response = await get(`/api/gallery/${slug}/photos`, bearer);
+  expect(response.status).toBe(reason === 'unassigned' ? 403 : 401);
+  expect(response.body.code).not.toBe('GALLERY_TEMPORARILY_DISABLED');
 });
 
 it.each([null, 'invalid', {}, [true]])('rejects an invalid disabled flag: %p', async (value) => {
@@ -254,7 +286,9 @@ it.each(['deactivated', 'password changed'])('rejects an assigned customer when 
     ? { is_active: 0 } : { password_changed_at: new Date().toISOString() });
   await expectDirect(bearer, 401);
 });
-it.each(['ISO', 'epoch'])('enforces expiry immediately for public and JWT access (%s)', async (format) => {
+// Epoch values are a SQLite storage shape; PostgreSQL's timestamp column
+// rejects them before the route can run.
+it.each(process.env.DATABASE_CLIENT === 'pg' ? ['ISO'] : ['ISO', 'epoch'])('enforces expiry immediately for public and JWT access (%s)', async (format) => {
   const expiry = Date.now() - 1000;
   await db('events').where({ id: eventId }).update({ require_password: 0, expires_at: format === 'ISO' ? new Date(expiry).toISOString() : expiry });
   await expectDirect(undefined, 404); await expectDirect(token(), 404);

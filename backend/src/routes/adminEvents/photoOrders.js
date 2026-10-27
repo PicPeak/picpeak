@@ -51,7 +51,7 @@ module.exports = (router) => {
         const rows = await db('photo_purchases')
           .where({ order_id: order.order_id })
           .select('*');
-        summaries.push(summarisePurchaseOrder(order, rows));
+        summaries.push(summarisePurchaseOrder(order, rows, event));
       }
 
       res.json({
@@ -114,7 +114,10 @@ module.exports = (router) => {
       const variables = emailVariables(order, event.event_name || event.slug, photoCount);
       variables.access_link = accessLink;
 
-      if (event.temporarily_disabled) variables.support_email = await getSupportEmail();
+      if (event.temporarily_disabled) {
+        variables.support_email = await getSupportEmail();
+        variables.expiry_date = event.expires_at;
+      }
       await queueEmail(event.id, order.buyer_email, event.temporarily_disabled ? 'photo_purchase_paused' : 'photo_purchase_access', variables);
       await db('photo_purchase_orders')
         .where({ id: order.id })

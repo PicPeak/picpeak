@@ -38,6 +38,7 @@ const { VIDEO_COUNT_SQL, VIDEO_DURATION_SQL } = require('../../utils/mediaTypeSq
 
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../../utils/galleryPasswordVault');
 const { credentialChangeColumns, sameAsStored } = require('../../utils/galleryCredentialCutoff');
+const { updateGalleryAvailability } = require('../../services/galleryPauseService');
 
 const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const {
@@ -382,12 +383,14 @@ module.exports = (router) => {
         query = query
           .where('is_active', formatBoolean(true))
           .where('is_archived', formatBoolean(false))
+          .where('temporarily_disabled', formatBoolean(false))
           .modify(whereTimestamp, 'expires_at', '<=', sevenDaysFromNow)
           .modify(whereTimestamp, 'expires_at', '>', new Date());
       } else if (status === 'awaiting_delivery') {
         // Two-stage delivery (issue 1562): a first look is out, the full
         // gallery is not yet.
-        query = query.where('delivery_status', 'partial').where('is_archived', formatBoolean(false));
+        query = query.where('delivery_status', 'partial').where('is_archived', formatBoolean(false))
+          .where('temporarily_disabled', formatBoolean(false));
       }
 
       // Get total count for pagination
@@ -1571,6 +1574,7 @@ module.exports = (router) => {
         'archive_size',
         // Server-managed timestamps
         'download_zip_generated_at', 'archived_at', 'revealed_at', 'event_reminder_sent_at',
+        'temporarily_disabled_at',
         // Credential-change cutoffs: clearing one would revive the sessions
         // the password change ended.
         'gallery_password_changed_at', 'client_password_changed_at',
@@ -2194,15 +2198,20 @@ module.exports = (router) => {
       const archiveLease = expiryChanged ? await claimEventArchive(event.id) : null;
       try {
         if (Object.keys(updates).length > 0) {
-          let eventUpdate = db('events').where('id', id);
-          if (keptGalleryHash) eventUpdate = eventUpdate.where('password_hash', event.password_hash);
-          if (keptClientHash) eventUpdate = eventUpdate.where('client_password_hash', event.client_password_hash);
-          if (touchesClientSecurity) eventUpdate = eventUpdate.where({
-            client_access_enabled: event.client_access_enabled,
-            client_pin_entry_enabled: event.client_pin_entry_enabled,
-            client_password_hash: event.client_password_hash,
-          });
-          const updated = await eventUpdate.update(updates);
+          const write = (connection, patch) => {
+            let eventUpdate = connection('events').where('id', id);
+            if (keptGalleryHash) eventUpdate = eventUpdate.where('password_hash', event.password_hash);
+            if (keptClientHash) eventUpdate = eventUpdate.where('client_password_hash', event.client_password_hash);
+            if (touchesClientSecurity) eventUpdate = eventUpdate.where({
+              client_access_enabled: event.client_access_enabled,
+              client_pin_entry_enabled: event.client_pin_entry_enabled,
+              client_password_hash: event.client_password_hash,
+            });
+            return eventUpdate.update(patch);
+          };
+          const hasPauseUpdate = Object.prototype.hasOwnProperty.call(updates, 'temporarily_disabled');
+          const updated = hasPauseUpdate
+            ? await updateGalleryAvailability(id, updates, write) : await write(db, updates);
           if (!updated && touchesClientSecurity) return res.status(409).json({
             error: 'Client access changed while saving. Reload and try again.', code: 'CLIENT_ACCESS_CHANGED',
           });
@@ -2217,7 +2226,9 @@ module.exports = (router) => {
               credentialChanges.add('client');
             }
             Object.assign(updates, await credentialChangeColumns(...credentialChanges));
-            await db('events').where('id', id).update(updates);
+            const retry = (connection, patch) => connection('events').where('id', id).update(patch);
+            if (hasPauseUpdate) await updateGalleryAvailability(id, updates, retry);
+            else await retry(db, updates);
           }
         }
       } finally {

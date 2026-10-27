@@ -158,20 +158,20 @@ function applyEventListSort(query, sortBy, sortOrder) {
       `case
          when ?? = ? then ${STATUS_RANK.draft}
          when ?? = ? then ${STATUS_RANK.archived}
-         when ?? = ? then ${STATUS_RANK.disabled}
          when ?? is null or ?? = ? then ${STATUS_RANK.inactive}
-         when ?? is null then ${STATUS_RANK.active}
          when ${expiry.sql} <= ? then ${STATUS_RANK.expired}
+         when ?? = ? then ${STATUS_RANK.disabled}
+         when ?? is null then ${STATUS_RANK.active}
          when ${expiry.sql} <= ? then ${STATUS_RANK.expiring}
          else ${STATUS_RANK.active}
        end ${dir}`,
       [
         'is_draft', formatBoolean(true),
         'is_archived', formatBoolean(true),
-        'temporarily_disabled', formatBoolean(true),
         'is_active', 'is_active', formatBoolean(false),
-        'expires_at',
         ...expiry.bindings, expiry.now,
+        'temporarily_disabled', formatBoolean(true),
+        'expires_at',
         ...expiry.bindings, expiry.until,
       ],
     );

@@ -1704,6 +1704,7 @@ async function notifyCustomerOfNewAssignments(customerId, addedEventIds) {
   const events = await db('events')
     .whereIn('id', addedEventIds)
     .where('is_archived', formatBoolean(false))
+    .where('temporarily_disabled', formatBoolean(false))
     .andWhere(function() {
       this.whereNull('is_draft').orWhere('is_draft', formatBoolean(false));
     })

@@ -5,16 +5,18 @@ describe('paused photo purchase confirmation', () => {
   beforeAll(async () => { ({ db, cleanup } = await bootCrmDb()); });
   afterAll(async () => { if (cleanup) await cleanup(); });
 
-  it.each(['en', 'de'])('renders the successful purchase, same link, deadline and support address in %s', async (__language) => {
+  it.each(['en', 'de'])('renders the successful purchase, same link, pause compensation, gallery cutoff and support address in %s', async (__language) => {
     const { renderQueuedEmail } = require('../../src/services/emailProcessor');
     const rendered = await renderQueuedEmail('photo_purchase_paused', {
       __language, gallery_name: 'Wedding', photo_count: 3,
       access_link: 'https://photos.example.test/purchased-downloads/proof',
-      expires_at: '2026-12-01T12:00:00Z', support_email: 'help@example.test',
+      expires_at: '2026-12-01T12:00:00Z', expiry_date: '2026-12-31T12:00:00Z', support_email: 'help@example.test',
     }, 'buyer@example.test');
     expect(rendered).not.toBeNull();
     expect(rendered.subject).toContain(__language === 'en' ? 'Purchase confirmed' : 'Kauf bestätigt');
     expect(rendered.html).toContain('help@example.test');
+    expect(rendered.html).toContain(__language === 'en' ? 'Time lost during the pause' : 'Pausenzeit');
+    expect(rendered.html).toContain(__language === 'en' ? 'final cutoff' : 'endgültige Grenze');
     expect(rendered.html).toContain('https://photos.example.test/purchased-downloads/proof');
     expect(rendered.html).not.toMatch(/\{\{(?:access_link|expires_at|support_email|photo_count)\}\}/);
   });

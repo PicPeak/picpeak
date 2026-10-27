@@ -202,35 +202,46 @@ describe('photo sales webhook and price check', () => {
 
   describe('granting', () => {
     it('honours a valid in-flight purchase while paused, confirms it without file links, and never refunds for the pause', async () => {
-      const eventId = await insertEvent('paused-checkout', { temporarily_disabled: true });
-      const photoId = await insertPhoto(eventId, 'paused.jpg');
-      await request(app).get(`/api/gallery/paused-checkout/price-check?photoId=${photoId}&sig=${signPhotoSale(photoId)}`).expect(403);
-      await db('app_settings').insert({ setting_key: 'branding_support_email', setting_value: JSON.stringify('help@example.test'), setting_type: 'branding' })
-        .onConflict('setting_key').merge();
-      const order = snipcartOrder([line('paused-checkout', photoId)]);
-      await deliver('order.completed', order.token).expect(200);
-      await deliver('order.completed', order.token).expect(200);
-      const granted = await stored(order.token);
-      expect(granted.status).toBe('completed');
-      expect(snipcart.refunds).toHaveLength(0);
-      expect(await db('photo_purchases').where({ order_id: order.token })).toHaveLength(1);
-      expect(queueEmail).toHaveBeenCalledTimes(1);
-      expect(queueEmail.mock.calls[0].slice(0, 3)).toEqual([null, order.email, 'photo_purchase_paused']);
-      expect(queueEmail.mock.calls[0][3]).toMatchObject({ support_email: 'help@example.test' });
+      const purchasedAt = Date.now();
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(purchasedAt);
+      try {
+        const eventId = await insertEvent('paused-checkout', { temporarily_disabled: true,
+          temporarily_disabled_at: new Date(purchasedAt - 3600e3).toISOString(), purchase_access_days: 1 });
+        const photoId = await insertPhoto(eventId, 'paused.jpg');
+        await request(app).get(`/api/gallery/paused-checkout/price-check?photoId=${photoId}&sig=${signPhotoSale(photoId)}`).expect(403);
+        await db('app_settings').insert({ setting_key: 'branding_support_email', setting_value: JSON.stringify('help@example.test'), setting_type: 'branding' })
+          .onConflict('setting_key').merge();
+        const order = snipcartOrder([line('paused-checkout', photoId)]);
+        await deliver('order.completed', order.token).expect(200);
+        await deliver('order.completed', order.token).expect(200);
+        const granted = await stored(order.token);
+        expect(granted.status).toBe('completed');
+        expect(snipcart.refunds).toHaveLength(0);
+        expect(await db('photo_purchases').where({ order_id: order.token })).toHaveLength(1);
+        expect(queueEmail).toHaveBeenCalledTimes(1);
+        expect(queueEmail.mock.calls[0].slice(0, 3)).toEqual([null, order.email, 'photo_purchase_paused']);
+        expect(queueEmail.mock.calls[0][3]).toMatchObject({ support_email: 'help@example.test' });
 
-      const page = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`).expect(200);
-      expect(page.body).toMatchObject({ temporarily_disabled: true, order_id: order.token, photo_count: 1,
-        support_email: 'help@example.test', expires_at: granted.expires_at, photos: [] });
-      expect(page.body.download_url).toBeUndefined();
-      expect(page.headers['cache-control']).toContain('no-store');
-      const denied = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}/photos/${photoId}`).expect(403);
-      expect(denied.body.code).toBe('GALLERY_TEMPORARILY_DISABLED');
+        const page = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`).expect(200);
+        expect(page.body).toMatchObject({ temporarily_disabled: true, order_id: order.token, photo_count: 1,
+          support_email: 'help@example.test', expires_at: granted.expires_at, photos: [] });
+        expect(page.body.download_url).toBeUndefined();
+        expect(page.headers['cache-control']).toContain('no-store');
+        const denied = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}/photos/${photoId}`).expect(403);
+        expect(denied.body.code).toBe('GALLERY_TEMPORARILY_DISABLED');
 
-      await db('events').where({ id: eventId }).update({ temporarily_disabled: false });
-      await request(app).get(`/api/gallery/paused-checkout/price-check?photoId=${photoId}&sig=${signPhotoSale(photoId)}`).expect(200);
-      const restored = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`).expect(200);
-      expect(restored.body.photos.map((photo) => photo.id)).toEqual([photoId]);
-      expect((await stored(order.token)).expires_at).toBe(granted.expires_at);
+        clock.mockReturnValue(purchasedAt + 2 * 864e5);
+        // The buyer's original day of access is preserved even after its raw
+        // deadline passes during the pause. Only time since this grant counts.
+        await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`).expect(200);
+        const { updateGalleryAvailability } = require('../../src/services/galleryPauseService');
+        await updateGalleryAvailability(eventId, { temporarily_disabled: false }, (trx, patch) =>
+          trx('events').where({ id: eventId }).update(patch));
+        await request(app).get(`/api/gallery/paused-checkout/price-check?photoId=${photoId}&sig=${signPhotoSale(photoId)}`).expect(200);
+        const restored = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`).expect(200);
+        expect(restored.body.photos.map((photo) => photo.id)).toEqual([photoId]);
+        expect((await stored(order.token)).expires_at).toBe(new Date(purchasedAt + 3 * 864e5).toISOString());
+      } finally { clock.mockRestore(); }
     });
 
     it('grants a paid order read from Snipcart, and keeps the token out of the response', async () => {

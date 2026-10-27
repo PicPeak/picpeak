@@ -246,10 +246,10 @@ export const AccessSection: React.FC<FieldsProps & { ownsEvent?: boolean; canCha
           onChange={(e) => set({ temporarily_disabled: e.target.checked })}
         />
         <div>
-          <span className="text-sm font-medium text-body">{t('events.temporarilyDisable', 'Temporarily disable event')}</span>
+          <span className="text-sm font-medium text-body">{t('events.temporarilyDisable', 'Temporarily disable gallery')}</span>
           <p className="text-xs text-muted mt-1">
             {canChangeAvailability
-              ? t('events.temporarilyDisableHelp', 'Take the gallery offline for clients and guests while keeping it editable here. Re-enable it to restore the same links and passwords. Expiration stays unchanged.')
+              ? t('events.temporarilyDisableHelp', 'Take the gallery offline for clients and guests while keeping it editable here. Re-enable it to restore the same links and passwords. Gallery expiry stays unchanged. Buyers receive the paused time back, up to that expiry.')
               : t('events.settingsTab.readOnly', 'You can see these settings but not change them.')}
           </p>
         </div>

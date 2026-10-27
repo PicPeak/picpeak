@@ -123,8 +123,16 @@ describe('events list column menus', () => {
     getEvents.mockResolvedValue(listPage([{ ...event(1, 'Availability Wedding'), temporarily_disabled: disabled }]));
     renderPage();
     await userEvent.click(await screen.findByRole('button', { name: 'More actions' }));
-    await userEvent.click(screen.getByRole('button', { name: disabled ? 'Enable event' : 'Disable event' }));
+    await userEvent.click(screen.getByRole('button', { name: disabled ? 'Enable gallery' : 'Disable gallery' }));
     await waitFor(() => expect(updateEvent).toHaveBeenCalledWith(1, { temporarily_disabled: !disabled }));
+  });
+
+  it('shows expired rather than disabled when the gallery expiry has passed', async () => {
+    getEvents.mockResolvedValue(listPage([{ ...event(1, 'Expired Wedding'), temporarily_disabled: true, expires_at: '2020-01-01T00:00:00Z' }]));
+    renderPage();
+    await screen.findByText('Expired Wedding');
+    expect(screen.getByText('events.expired')).toBeInTheDocument();
+    expect(screen.queryByText('Disabled', { selector: 'span' })).toBeNull();
   });
 
   it('filters disabled galleries on the server', async () => {

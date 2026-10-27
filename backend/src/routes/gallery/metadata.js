@@ -1,4 +1,4 @@
-const { isGalleryExpired, assertGalleryEnabled } = require('../../utils/galleryLifecycle');
+const { isTrue, isGalleryExpired, assertGalleryEnabled } = require('../../utils/galleryLifecycle');
 const { publicThemeFields } = require('../../services/galleryTheme');
 const express = require('express');
 const { db } = require('../../database/db');
@@ -92,7 +92,7 @@ router.get('/resolve/:identifier', noStoreCache, handleAsync(async (req, res) =>
   }
 
   const { event, matchType, shareToken } = result;
-  if (event.temporarily_disabled) {
+  if (isTrue(event.temporarily_disabled)) {
     req.requestedSlug = event.slug;
     const adminPreview = await verifyAdminPreview(req);
     if (!adminPreview) throwIfPasswordChangeRequired(req);
@@ -153,7 +153,7 @@ router.get('/:slug/verify-token/:token', noStoreCache, handleAsync(async (req, r
     throw new NotFoundError('Gallery', 'Invalid gallery link');
   }
 
-  if (event.temporarily_disabled) {
+  if (isTrue(event.temporarily_disabled)) {
     req.requestedSlug = slug;
     const adminPreview = await verifyAdminPreview(req);
     if (!adminPreview) throwIfPasswordChangeRequired(req);
@@ -317,7 +317,7 @@ router.get('/:slug/info', noStoreCache, async (req, res) => {
       info_markdown: event.info_markdown || null
     });
   } catch (error) {
-    if (error.isOperational) {
+    if (error.code === 'GALLERY_TEMPORARILY_DISABLED') {
       return res.status(error.statusCode).json({ error: error.message, code: error.code });
     }
     errorResponse(res, error, 500, 'Failed to fetch gallery info');

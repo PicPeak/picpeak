@@ -430,17 +430,15 @@ export const EventsListPage: React.FC = () => {
   const getEventStatus = (event: Event): { label: string; tone: BadgeTone } => {
     if (event.is_draft) return { label: t('events.draft'), tone: 'warning' };
     if (event.is_archived) return { label: t('events.archived'), tone: 'neutral' };
-    if (event.temporarily_disabled) return { label: t('events.disabled', 'Disabled'), tone: 'warning' };
     if (!event.is_active) return { label: t('events.inactive'), tone: 'danger' };
-
-    if (!event.expires_at) return { label: t('events.active'), tone: 'success' };
-
     // Expired means the timestamp has actually passed (#909):
     // differenceInDays truncates to whole days, so an event expiring in a
     // few hours returned 0 and showed "Expired" while the public gallery
     // (which compares real timestamps) correctly showed it active.
-    const expiresAt = parseISO(event.expires_at);
-    if (expiresAt.getTime() <= Date.now()) return { label: t('events.expired'), tone: 'danger' };
+    const expiresAt = event.expires_at ? parseISO(event.expires_at) : null;
+    if (expiresAt && expiresAt.getTime() <= Date.now()) return { label: t('events.expired'), tone: 'danger' };
+    if (event.temporarily_disabled) return { label: t('events.disabled', 'Disabled'), tone: 'warning' };
+    if (!expiresAt) return { label: t('events.active'), tone: 'success' };
     // Ceiling so the last day reads "1 day left", never "0 days".
     const days = Math.ceil((expiresAt.getTime() - Date.now()) / 86400000);
     if (days <= 7) return { label: t('events.daysLeft', { count: days }), tone: 'warning' };
@@ -924,7 +922,7 @@ export const EventsListPage: React.FC = () => {
                                     className="w-full text-left px-4 py-2 text-sm text-body hover:bg-hover flex items-center gap-2 disabled:opacity-50"
                                   >
                                     {event.temporarily_disabled ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
-                                    {event.temporarily_disabled ? t('events.enableEvent', 'Enable event') : t('events.disableEvent', 'Disable event')}
+                                    {event.temporarily_disabled ? t('events.enableEvent', 'Enable gallery') : t('events.disableEvent', 'Disable gallery')}
                                   </button>
                                 </PermissionGate>
                               )}

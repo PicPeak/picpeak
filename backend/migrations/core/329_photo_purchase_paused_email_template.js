@@ -10,7 +10,8 @@ const TRANSLATIONS = {
 <p>This gallery is temporarily unavailable. Your purchase remains valid. Please use this same link when the gallery is available again:</p>
 <p><a href="{{access_link}}" class="button">View my purchase</a></p>
 <p>{{access_link}}</p>
-<p>Your access deadline has not changed: {{expires_at}}.</p>
+<p>Time lost during the pause will be added to your download window when the gallery returns.</p>
+{{#if expiry_date}}<p>The gallery expiry remains the final cutoff: {{expiry_date}}.</p>{{/if}}
 {{#if support_email}}<p>For more information, contact <a href="mailto:{{support_email}}">{{support_email}}</a>.</p>{{/if}}`,
     body_text: `Your purchase was successful
 
@@ -19,29 +20,34 @@ Thank you for purchasing {{photo_count}} photos from {{gallery_name}}.
 This gallery is temporarily unavailable. Your purchase remains valid. Please use this same link when the gallery is available again:
 {{access_link}}
 
-Your access deadline has not changed: {{expires_at}}.
+Time lost during the pause will be added to your download window when the gallery returns.
+
+{{#if expiry_date}}The gallery expiry remains the final cutoff: {{expiry_date}}.{{/if}}
 
 {{#if support_email}}For more information, contact {{support_email}}.{{/if}}`,
   },
   de: {
     subject: 'Kauf bestätigt — Downloads vorübergehend nicht verfügbar',
-    body_html: `<h2>Dein Kauf war erfolgreich</h2>
+    body_html: `<h2>Ihr Kauf war erfolgreich</h2>
 <p>Vielen Dank für den Kauf von {{photo_count}} Fotos aus <strong>{{gallery_name}}</strong>.</p>
-<p>Diese Galerie ist vorübergehend nicht verfügbar. Dein Kauf bleibt gültig. Bitte verwende denselben Link, sobald die Galerie wieder verfügbar ist:</p>
+<p>Diese Galerie ist vorübergehend nicht verfügbar. Ihr Kauf bleibt gültig. Bitte verwenden Sie denselben Link, sobald die Galerie wieder verfügbar ist:</p>
 <p><a href="{{access_link}}" class="button">Meinen Kauf ansehen</a></p>
 <p>{{access_link}}</p>
-<p>Deine Zugriffsfrist bleibt unverändert: {{expires_at}}.</p>
-{{#if support_email}}<p>Weitere Informationen erhältst du unter <a href="mailto:{{support_email}}">{{support_email}}</a>.</p>{{/if}}`,
-    body_text: `Dein Kauf war erfolgreich
+<p>Die Pausenzeit wird Ihrer Zugriffsfrist gutgeschrieben, sobald die Galerie wieder verfügbar ist.</p>
+{{#if expiry_date}}<p>Der Ablauf der Galerie bleibt die endgültige Grenze: {{expiry_date}}.</p>{{/if}}
+{{#if support_email}}<p>Weitere Informationen erhalten Sie unter <a href="mailto:{{support_email}}">{{support_email}}</a>.</p>{{/if}}`,
+    body_text: `Ihr Kauf war erfolgreich
 
 Vielen Dank für den Kauf von {{photo_count}} Fotos aus {{gallery_name}}.
 
-Diese Galerie ist vorübergehend nicht verfügbar. Dein Kauf bleibt gültig. Bitte verwende denselben Link, sobald die Galerie wieder verfügbar ist:
+Diese Galerie ist vorübergehend nicht verfügbar. Ihr Kauf bleibt gültig. Bitte verwenden Sie denselben Link, sobald die Galerie wieder verfügbar ist:
 {{access_link}}
 
-Deine Zugriffsfrist bleibt unverändert: {{expires_at}}.
+Die Pausenzeit wird Ihrer Zugriffsfrist gutgeschrieben, sobald die Galerie wieder verfügbar ist.
 
-{{#if support_email}}Weitere Informationen erhältst du unter {{support_email}}.{{/if}}`,
+{{#if expiry_date}}Der Ablauf der Galerie bleibt die endgültige Grenze: {{expiry_date}}.{{/if}}
+
+{{#if support_email}}Weitere Informationen erhalten Sie unter {{support_email}}.{{/if}}`,
   },
 };
 
@@ -68,6 +74,7 @@ exports.up = async function up(knex) {
         'photo_count',
         'purchased_at',
         'expires_at',
+        'expiry_date',
         'support_email',
       ]),
     };
