@@ -42,6 +42,9 @@ export const BulkRatingPopover: React.FC<BulkRatingPopoverProps> = ({
   const [identity, setIdentity] = useState<{ name: string; email: string } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // Read when a run finishes, which can be after the viewer dismissed the panel.
+  const openRef = useRef(open);
+  openRef.current = open;
 
   useEffect(() => {
     // The name-and-email dialog is portalled to the body; a click in it is
@@ -72,9 +75,10 @@ export const BulkRatingPopover: React.FC<BulkRatingPopoverProps> = ({
     // Closing unmounts the focused star; hand focus back to the trigger so a
     // keyboard user keeps their place. A star disabled while the request ran
     // has already dropped focus to the body, so that counts too. Focus moved
-    // to another control is left alone.
+    // to another control, or a panel the viewer already dismissed, is left
+    // alone.
     const active = document.activeElement;
-    if (!active || active === document.body || rootRef.current?.contains(active)) {
+    if (openRef.current && (!active || active === document.body || rootRef.current?.contains(active))) {
       triggerRef.current?.focus();
     }
     setOpen(false);
@@ -82,7 +86,16 @@ export const BulkRatingPopover: React.FC<BulkRatingPopoverProps> = ({
 
   const label = t('feedback.rateSelected', 'Rate selected');
   return (
-    <div ref={rootRef} className={className}>
+    <div
+      ref={rootRef}
+      className={className}
+      // Tabbing out closes the panel so it does not sit over controls that
+      // keep focus. A null target (a star disabled mid-request) is not an exit.
+      onBlur={(event) => {
+        const next = event.relatedTarget as Node | null;
+        if (next && !dialogOpen && !rootRef.current?.contains(next)) setOpen(false);
+      }}
+    >
       <button
         ref={triggerRef}
         type="button"

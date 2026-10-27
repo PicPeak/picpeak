@@ -215,6 +215,43 @@ describe.each(Object.entries(layouts))('Rate selected in the %s layout (issue 19
     expect(document.activeElement).toBe(other);
   });
 
+  it('does not pull focus back after the viewer dismissed the panel mid-request', async () => {
+    let resolve: (value: unknown) => void = () => {};
+    mocks.submitBulkRating.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    mount(layout.render({}));
+    fireEvent.click(screen.getByTestId('bulk-rating-trigger'));
+    const star = within(screen.getByTestId('bulk-rating-popover')).getByLabelText('Rate 4 stars');
+    star.focus();
+    fireEvent.click(star);
+    await waitFor(() => expect(mocks.submitBulkRating).toHaveBeenCalledTimes(1));
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByTestId('bulk-rating-popover')).toBeNull();
+    (document.activeElement as HTMLElement | null)?.blur();
+    resolve({ success: true, rating: 4, results: [1, 2].map((id) => ({ photo_id: id, success: true })) });
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('2 photos rated'));
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('closes when focus tabs out of the panel', () => {
+    const { container } = mount(layout.render({}));
+    fireEvent.click(screen.getByTestId('bulk-rating-trigger'));
+    const star = within(screen.getByTestId('bulk-rating-popover')).getByLabelText('Rate 4 stars');
+    const other = document.createElement('button');
+    container.appendChild(other);
+    fireEvent.blur(star, { relatedTarget: other });
+    expect(screen.queryByTestId('bulk-rating-popover')).toBeNull();
+  });
+
+  it('stays open when focus moves inside the panel or drops to the body', () => {
+    mount(layout.render({}));
+    const trigger = screen.getByTestId('bulk-rating-trigger');
+    fireEvent.click(trigger);
+    const star = within(screen.getByTestId('bulk-rating-popover')).getByLabelText('Rate 4 stars');
+    fireEvent.blur(trigger, { relatedTarget: star });
+    fireEvent.blur(star, { relatedTarget: null });
+    expect(screen.getByTestId('bulk-rating-popover')).toBeInTheDocument();
+  });
+
   it('closes on Escape', () => {
     mount(layout.render({}));
     fireEvent.click(screen.getByTestId('bulk-rating-trigger'));
