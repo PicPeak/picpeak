@@ -184,6 +184,37 @@ describe.each(Object.entries(layouts))('Rate selected in the %s layout (issue 19
     expect(document.activeElement).toBe(screen.getByTestId('bulk-rating-trigger'));
   });
 
+  it('hands focus back when the pending request dropped it to the body', async () => {
+    let resolve: (value: unknown) => void = () => {};
+    mocks.submitBulkRating.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    mount(layout.render({}));
+    fireEvent.click(screen.getByTestId('bulk-rating-trigger'));
+    const star = within(screen.getByTestId('bulk-rating-popover')).getByLabelText('Rate 4 stars');
+    star.focus();
+    fireEvent.click(star);
+    // What Chromium does when the focused star turns disabled.
+    star.blur();
+    await waitFor(() => expect(mocks.submitBulkRating).toHaveBeenCalledTimes(1));
+    resolve({ success: true, rating: 4, results: [1, 2].map((id) => ({ photo_id: id, success: true })) });
+    await waitFor(() => expect(screen.queryByTestId('bulk-rating-popover')).toBeNull());
+    expect(document.activeElement).toBe(screen.getByTestId('bulk-rating-trigger'));
+  });
+
+  it('leaves focus alone when the viewer moved it to another control', async () => {
+    let resolve: (value: unknown) => void = () => {};
+    mocks.submitBulkRating.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    const { container } = mount(layout.render({}));
+    fireEvent.click(screen.getByTestId('bulk-rating-trigger'));
+    fireEvent.click(within(screen.getByTestId('bulk-rating-popover')).getByLabelText('Rate 4 stars'));
+    const other = document.createElement('button');
+    container.appendChild(other);
+    other.focus();
+    await waitFor(() => expect(mocks.submitBulkRating).toHaveBeenCalledTimes(1));
+    resolve({ success: true, rating: 4, results: [1, 2].map((id) => ({ photo_id: id, success: true })) });
+    await waitFor(() => expect(screen.queryByTestId('bulk-rating-popover')).toBeNull());
+    expect(document.activeElement).toBe(other);
+  });
+
   it('closes on Escape', () => {
     mount(layout.render({}));
     fireEvent.click(screen.getByTestId('bulk-rating-trigger'));
