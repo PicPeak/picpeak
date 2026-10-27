@@ -4158,6 +4158,7 @@
       "columns": {
         "photo": "Fotografija",
         "category": "Kategorija",
+        "captured": "Posneto",
         "uploaded": "Naloženo",
         "engagement": "Odzivi",
         "feedback": "Povratne informacije",
@@ -4168,6 +4169,7 @@
         "likes": "Všečki",
         "credit": "Avtor"
       },
+      "columnChooser": "Stolpci",
       "myMarks": "Vaše oznake",
       "myMarksHelp": "Vidite jih samo vi. V galeriji stranke se nikoli ne prikažejo, izvozijo pa se v Lightroom kot XMP.",
       "myRating": "Vaša ocena",

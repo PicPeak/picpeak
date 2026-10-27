@@ -155,6 +155,21 @@ describe('admin photo list sorting (issue 1739)', () => {
     });
   });
 
+  it('returns the capture time as a zone-less wall clock in the server zone', async () => {
+    // Read the way exifr reads a zone-less EXIF time: in the server's zone.
+    const exif = new Date(2026, 5, 3, 13, 15, 42).toISOString();
+    await addPhoto('managed.jpg', { captured_at: managed(exif) });
+    await addPhoto('imported.jpg', { captured_at: exif });
+    await addPhoto('undated.jpg', { captured_at: null });
+    const byName = Object.fromEntries((await list('sort=name&order=asc'))
+      .map((p) => [p.filename, p.captured_at_local]));
+    expect(byName).toEqual({
+      'managed.jpg': '2026-06-03T13:15:42',
+      'imported.jpg': '2026-06-03T13:15:42',
+      'undated.jpg': null,
+    });
+  });
+
   it('by rating puts the best rated first and unrated photos last', async () => {
     await addPhoto('unrated.jpg');
     await addPhoto('three.jpg', { average_rating: 3 });

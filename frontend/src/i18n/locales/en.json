@@ -4859,6 +4859,7 @@
       "columns": {
         "photo": "Photo",
         "category": "Category",
+        "captured": "Captured",
         "uploaded": "Uploaded",
         "engagement": "Engagement",
         "feedback": "Feedback",
@@ -4870,6 +4871,7 @@
         "likes": "Likes",
         "credit": "Credit"
       },
+      "columnChooser": "Columns",
       "visibility": {
         "none": "No photos match the selected visibility and filters.",
         "filterLabel": "Photo visibility",

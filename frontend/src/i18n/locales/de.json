@@ -5377,6 +5377,7 @@
       "columns": {
         "photo": "Foto",
         "category": "Kategorie",
+        "captured": "Aufgenommen",
         "uploaded": "Hochgeladen",
         "engagement": "Aktivität",
         "feedback": "Feedback",
@@ -5388,6 +5389,7 @@
         "likes": "Likes",
         "credit": "Urheber"
       },
+      "columnChooser": "Spalten",
       "visibility": {
         "none": "Keine Fotos entsprechen der ausgewählten Sichtbarkeit und den Filtern.",
         "filterLabel": "Foto-Sichtbarkeit",

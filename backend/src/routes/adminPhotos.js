@@ -34,6 +34,7 @@ const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { adminThumbnailUrl, adminThumbnailVersion } = require('../utils/adminThumbnailUrl');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
+const { toServerWallClock } = require('../utils/dateNormalize');
 const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
 const { processUploadedPhotos } = require('../services/photoProcessor');
@@ -1968,6 +1969,10 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         duration: photo.duration || null,
         size: photo.size_bytes,
         uploaded_at: photo.uploaded_at,
+        // The camera clock, zone-less, for the list's Captured column
+        // (issue 1739). Formatted here, in the zone exifr read the EXIF time
+        // in, so the browser shows it without shifting it to its own zone.
+        captured_at_local: toServerWallClock(photo.captured_at),
         // Feedback data
         has_feedback: (commentMap[photo.id] > 0 || photo.average_rating > 0 || photo.like_count > 0),
         average_rating: photo.average_rating || 0,
