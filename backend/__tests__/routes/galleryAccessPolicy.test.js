@@ -9,7 +9,7 @@ const fs = require('fs/promises');
 const path = require('path');
 process.env.JWT_SECRET = 'gallery-policy-regression-secret-at-least-32-characters';
 
-let db, cleanup, app, adminId, customerId, foreignId, event, cutoff, revokeToken;
+let db, cleanup, app, adminId, customerId, foreignId, cutoff, revokeToken;
 const eventId = 70001, photoId = 70002, slug = 'policy-test';
 const token = (claims = {}) => jwt.sign({ type: 'gallery', eventId, eventSlug: slug,
   iat: Math.floor(Date.now() / 1000) - 60, jti: crypto.randomUUID(), ...claims },
@@ -47,7 +47,8 @@ beforeAll(async () => {
   app.use('/api/admin/events', require('../../src/routes/adminEvents'));
   app.use('/api/gallery', require('../../src/routes/gallery'));
   app.use('/api/auth', require('../../src/routes/auth'));
-  app.use((err, req, res, next) => res.status(err.statusCode || 500).json({ error: err.message, code: err.code }));
+  app.use('/api/customer', require('../../src/routes/customer'));
+  app.use((err, req, res, _next) => res.status(err.statusCode || 500).json({ error: err.message, code: err.code }));
 }, 120000);
 
 beforeEach(async () => {
@@ -58,9 +59,36 @@ beforeEach(async () => {
     await db('event_customer_assignments').insert({ event_id: eventId, customer_account_id: customerId });
   }
   await cutoff.setSessionsValidAfter(0);
-  event = await db('events').where({ id: eventId }).first();
 });
 afterAll(async () => { if (cleanup) await cleanup(); });
+
+it('shows an assigned portal customer a temporary pause without minting a token or publishing a draft', async () => {
+  const portalToken = jwt.sign({ type: 'customer', customerId }, process.env.JWT_SECRET,
+    { issuer: 'picpeak-auth', expiresIn: '1h' });
+  const open = () => request(app).get(`/api/customer/events/${slug}/access-token`)
+    .set('Cookie', `customer_token=${portalToken}`);
+  const portal = require('../../src/services/customerPortalService');
+  const readStatus = async () => (await portal.getDashboard(customerId)).galleries.active.find((entry) => entry.id === eventId)?.availability;
+
+  await db('events').where({ id: eventId }).update({ temporarily_disabled: true });
+  expect(await readStatus()).toBe('paused');
+  expect((await portal.getEventOverview(customerId, slug)).event.availability).toBe('paused');
+  const refused = await open();
+  expect(refused.status).toBe(403);
+  expect(refused.body).toMatchObject({ code: 'GALLERY_TEMPORARILY_DISABLED' });
+  expect(refused.body.token).toBeUndefined();
+
+  await db('event_customer_assignments').where({ event_id: eventId, customer_account_id: customerId }).del();
+  expect((await open()).status).toBe(404);
+  await db('event_customer_assignments').insert({ event_id: eventId, customer_account_id: customerId });
+  await db('events').where({ id: eventId }).update({ is_draft: true });
+  expect(await readStatus()).toBe('unavailable');
+  expect((await open()).status).toBe(404);
+
+  await db('events').where({ id: eventId }).update({ is_draft: false, temporarily_disabled: false });
+  expect(await readStatus()).toBe('active');
+  expect((await open()).status).toBe(200);
+});
 
 it('temporarily blocks public access and existing guest/client sessions, preserving admin access and credentials', async () => {
   const bearer = token();

@@ -10,7 +10,7 @@
  *
  * Gallery state is decided here, not in the browser: `availability` is
  * `active`, `expired` (a history entry with its expiry date; it can't be
- * opened — decision #24c) or `unavailable` (inactive or still a draft).
+ * opened — decision #24c), `paused` or `unavailable` (inactive or still a draft).
  */
 
 const { db } = require('../database/db');
@@ -43,7 +43,8 @@ function todayDateOnly(now = new Date()) {
 
 function galleryAvailability(event) {
   if (isGalleryExpired(event)) return 'expired';
-  return isGalleryAvailable(event) ? 'active' : 'unavailable';
+  if (isGalleryAvailable(event)) return 'active';
+  return isGalleryAvailable(event, { allowTemporarilyDisabled: true }) ? 'paused' : 'unavailable';
 }
 
 function shapeEvent(e) {
