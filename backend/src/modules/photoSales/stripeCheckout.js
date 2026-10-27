@@ -291,7 +291,9 @@ async function reconcileSession(order, session, { failed = false, client = strip
   const photos = gallery ? await sellablePhotos(db, gallery.id)
     .whereIn('photos.id', quote.lines.map((line) => line.photoId)).select('photos.id') : [];
   const buyerEmail = session.customer_details?.email || session.customer_email || '';
-  if (!isGalleryOnSale(gallery) || photos.length !== quote.lines.length
+  // A temporary pause stops new checkouts and downloads, but does not
+  // invalidate an otherwise valid payment already in flight.
+  if (!isGalleryOnSale(gallery, { allowTemporarilyDisabled: true }) || photos.length !== quote.lines.length
       || !buyerEmail || Date.parse(quote.expiresAt) <= Date.now()
       || session.currency?.toUpperCase() !== quote.currency || session.amount_total !== quote.totalCents
       || (payment && (payment.currency?.toUpperCase() !== quote.currency || payment.amount_received !== quote.totalCents))) {
