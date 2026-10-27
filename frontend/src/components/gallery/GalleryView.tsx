@@ -283,7 +283,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   
   // Fetch photos WITHOUT filter (always get all photos, filter on frontend)
   // This ensures counts are always calculated from the full dataset
-  const { data, isLoading, error, refetch } = useGalleryPhotos(slug, 'all', guestId, !isSwitchingClientMode, accessScope);
+  const { data, dataUpdatedAt, isLoading, error, refetch } = useGalleryPhotos(slug, 'all', guestId, !isSwitchingClientMode, accessScope);
   const handleFeedbackChange = useFeedbackChange(slug, refetch, { patchRows: !isClient });
   const { isSelectionMode, setIsSelectionMode, selectedPhotos, setSelectedPhotos } = useGallerySelection(data?.photos);
   
@@ -486,11 +486,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // whatever arrived in the meantime too).
   const followProcessing = data?.event?.media_processing === true && !hiddenUntilReveal && !revealArmed
     && !uploadProcessing && !peopleData?.scan?.in_progress;
-  useProcessingRefresh({
+  // Issue 2274: once that poll gives up on a stuck row, live refresh takes over.
+  const processingPollHalted = useProcessingRefresh({
     slug,
     enabled: followProcessing,
     loadedCount: data?.photos?.length ?? 0,
     loadedMaxId,
+    listUpdatedAt: dataUpdatedAt,
     onLanded: () => { void refetch({ cancelRefetch: false }); },
   });
   const newPhotoCount = useLiveRefresh({
@@ -498,7 +500,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // revealArmed too: the reveal poll above keeps refetching the list after
     // the reveal, for as long as the mode is on.
     enabled: data?.event?.live_refresh === true && !hiddenUntilReveal && !revealArmed && !uploadProcessing
-      && !peopleData?.scan?.in_progress && !followProcessing,
+      && !peopleData?.scan?.in_progress && (!followProcessing || processingPollHalted),
     loadedCount: data?.photos?.length ?? 0,
     loadedMaxId,
   });

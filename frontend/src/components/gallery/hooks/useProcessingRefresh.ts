@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { galleryService } from '../../../services/gallery.service';
 import { LIVE_REFRESH_INTERVAL_MS, LIVE_REFRESH_MAX_INTERVAL_MS } from './useLiveRefresh';
 
@@ -9,9 +9,18 @@ interface Options {
   /** What the loaded list holds. */
   loadedCount: number;
   loadedMaxId: number | null;
+  /** When the list last arrived (the query's dataUpdatedAt). */
+  listUpdatedAt: number;
   /** Reloads the list. */
   onLanded: () => void;
 }
+
+// Issue 2274: a row that stays pending (a stuck worker) must not keep every
+// open tab polling forever. Give up after this long since the first
+// "processing" answer, or after this many answers in a row that brought
+// nothing new, whichever comes first; the next list fetch starts over.
+export const PROCESSING_POLL_DEADLINE_MS = 30 * 60_000;
+export const PROCESSING_POLL_MAX_UNCHANGED = 10;
 
 const statusOf = (error: unknown) => (error as { response?: { status?: number } } | null)?.response?.status;
 
@@ -27,13 +36,22 @@ const statusOf = (error: unknown) => (error as { response?: { status?: number } 
  * The state route answers 404 once nothing is processing on a gallery with
  * live refresh off, which is the same news. Any other failure backs off up to
  * the cap and stays silent.
+ *
+ * Bounded (issue 2274, see the constants above). Once given up, it waits for
+ * the next list fetch and returns true meanwhile, so live refresh can take
+ * over.
  */
-export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, onLanded }: Options): void {
-  const latest = useRef({ loadedCount, loadedMaxId, onLanded });
-  latest.current = { loadedCount, loadedMaxId, onLanded };
+export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, listUpdatedAt, onLanded }: Options): boolean {
+  const latest = useRef({ loadedCount, loadedMaxId, listUpdatedAt, onLanded });
+  latest.current = { loadedCount, loadedMaxId, listUpdatedAt, onLanded };
+  // The list fetch the poll gave up on; a newer one resumes it.
+  const [gaveUpOn, setGaveUpOn] = useState<number | null>(null);
+  const halted = enabled && gaveUpOn === listUpdatedAt;
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled || halted) return undefined;
+    let since: number | null = null;
+    let unchanged = 0;
     let delay = LIVE_REFRESH_INTERVAL_MS;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
@@ -52,8 +70,12 @@ export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, 
         if (stopped) return;
         delay = LIVE_REFRESH_INTERVAL_MS;
         const { loadedCount: count, loadedMaxId: maxId } = latest.current;
+        if (next.processing !== false) since ??= Date.now();
         if (next.processing === false || next.count !== count || (next.max_id ?? null) !== maxId) {
+          unchanged = 0;
           latest.current.onLanded();
+        } else {
+          unchanged += 1;
         }
       } catch (error) {
         if (stopped) return;
@@ -64,6 +86,12 @@ export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, 
         }
       } finally {
         inFlight = false;
+      }
+      if (unchanged >= PROCESSING_POLL_MAX_UNCHANGED
+        || (since !== null && Date.now() - since >= PROCESSING_POLL_DEADLINE_MS)) {
+        stopped = true;
+        setGaveUpOn(latest.current.listUpdatedAt);
+        return;
       }
       schedule();
     };
@@ -84,5 +112,8 @@ export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, 
       controller.abort();
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [slug, enabled]);
+    // gaveUpOn too: a list that arrived while giving up resumes at once.
+  }, [slug, enabled, halted, gaveUpOn]);
+
+  return halted;
 }
