@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.185.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.185.1-beta.0...v3.185.2-beta.0) (2026-10-27)
+
+
+### Bug Fixes
+
+* **admin:** send a video's preview request to its poster ([#2291](https://github.com/PicPeak/picpeak/issues/2291)) ([7f445e9](https://github.com/PicPeak/picpeak/commit/7f445e9cb4570cc802990b3e767cb983aadc3c61))
+* **gallery:** show a Story video card's poster, not the clip ([#2289](https://github.com/PicPeak/picpeak/issues/2289)) ([2bc5c4b](https://github.com/PicPeak/picpeak/commit/2bc5c4b355e6c85e44ff75246f75f12e5deec100))
+* **slideshow:** leave videos out of the slideshow ([#2290](https://github.com/PicPeak/picpeak/issues/2290)) ([aa1e9f3](https://github.com/PicPeak/picpeak/commit/aa1e9f3280d4cadedf0cc42909069b96b6baea3d))
+
 ## [3.185.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.185.0-beta.0...v3.185.1-beta.0) (2026-10-27)
 
 

@@ -151,8 +151,10 @@ describe('videos first (issue 2263)', () => {
       event: await db('events').where({ id: event.id }).first(), slug: event.slug,
       query: { sort: 'filename', order: 'asc' }, identity: { guestIdentifier: 'x' }, accessLevel: 'slideshow',
     });
+    // The slideshow shows no videos at all (issue 2285); the photos keep the
+    // requested order.
     expect(body.photos.map((p) => p.filename))
-      .toEqual(['a_video.mp4', 'b_photo.jpg', 'c_photo.jpg', 'd_video.mov', 'e_photo.jpg']);
+      .toEqual(['b_photo.jpg', 'c_photo.jpg', 'e_photo.jpg']);
   });
 
   it('is validated and stored through the event update', async () => {

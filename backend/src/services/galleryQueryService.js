@@ -41,7 +41,7 @@ async function freeQuotaAvailable(event) {
 const { guestUploadMaxEdgeOf } = require('./guestUploadDownscale');
 const { isPhotoSellable, signPhotoSale } = require('../modules/photoSales/sellable');
 const { isDiscountId } = require('../modules/photoSales/promoDiscount');
-const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, livePhotos, wherePhotoProcessed, whereNotVideo } = require('../utils/photoVisibility');
 const {
   galleryFullResolutionDenial, isRemuxWebKey, MAXIMUM_PROTECTION_CAP, capsFullSizeView,
 } = require('./galleryAssetPolicy');
@@ -65,6 +65,11 @@ async function galleryListQuery({ event, query = {}, identity, accessLevel }) {
 
   // Guests only see visible photos; clients see all but those under review
   photosQuery = applyPhotoVisibilityFilter(photosQuery, accessLevel);
+
+  // The slideshow shows no videos (issue 2285): a video has no slideshow
+  // tier, so its slide fell back to /photo, which a slideshow session may
+  // not load. The /session and /state counts leave them out the same way.
+  if (accessLevel === 'slideshow') whereNotVideo(photosQuery);
 
   // Live Slideshow category filter (#202). Enforced server-side so the kiosk
   // viewer can't widen the set: when the event pins show_category_id, the
