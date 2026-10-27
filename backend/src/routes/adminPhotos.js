@@ -34,7 +34,7 @@ const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { adminThumbnailUrl, adminThumbnailVersion } = require('../utils/adminThumbnailUrl');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
-const { toServerWallClock } = require('../utils/dateNormalize');
+const { toIso, toServerWallClock } = require('../utils/dateNormalize');
 const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
 const { processUploadedPhotos } = require('../services/photoProcessor');
@@ -1972,7 +1972,11 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // The camera clock, zone-less, for the list's Captured column
         // (issue 1739). Formatted here, in the zone exifr read the EXIF time
         // in, so the browser shows it without shifting it to its own zone.
-        captured_at_local: toServerWallClock(photo.captured_at),
+        // A video's time is a real instant instead (videoCaptureDate keeps
+        // the recording's offset or reads a UTC creation_time), so it goes
+        // out as one and the browser shows it in its own zone.
+        captured_at_local: photo.media_type === 'video' ? null : toServerWallClock(photo.captured_at),
+        captured_at: photo.media_type === 'video' ? toIso(photo.captured_at) : null,
         // Feedback data
         has_feedback: (commentMap[photo.id] > 0 || photo.average_rating > 0 || photo.like_count > 0),
         average_rating: photo.average_rating || 0,

@@ -76,7 +76,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
 }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
-  const { format: formatDate, formatWallClock } = useLocalizedDate();
+  const { format: formatDate, formatDateTime, formatWallClock } = useLocalizedDate();
   const queryClient = useQueryClient();
   // The same test the tiles below use to tell a video from a photo.
   const videoCount = photos.filter(isVideoItem).length;
@@ -1193,9 +1193,9 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                     ) : '—'}
                   </td>}
 
-                  {/* Capture time: the camera clock, unshifted (issue 1739) */}
+                  {/* Capture time: the camera clock, unshifted (issue 1739); a video's is an instant */}
                   {shows('captured') && <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap text-sm text-soft tabular-nums">
-                    {formatWallClock(photo.captured_at_local)}
+                    {photo.captured_at ? formatDateTime(photo.captured_at) : formatWallClock(photo.captured_at_local)}
                   </td>}
 
                   {/* Uploaded date */}

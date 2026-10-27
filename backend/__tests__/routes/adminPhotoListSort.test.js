@@ -170,6 +170,17 @@ describe('admin photo list sorting (issue 1739)', () => {
     });
   });
 
+  it('returns a video capture time as an instant, not as a server wall clock', async () => {
+    // videoCaptureDate stores the real instant (offset or UTC creation_time).
+    await addPhoto('clip.mp4', { media_type: 'video', captured_at: '2026-06-03T11:15:42.000Z' });
+    await addPhoto('still.jpg', { captured_at: '2026-06-03T11:15:42.000Z' });
+    const byName = Object.fromEntries((await list('sort=name&order=asc'))
+      .map((p) => [p.filename, [p.captured_at_local, p.captured_at]]));
+    expect(byName['clip.mp4']).toEqual([null, '2026-06-03T11:15:42.000Z']);
+    expect(byName['still.jpg'][1]).toBeNull();
+    expect(byName['still.jpg'][0]).toMatch(/^2026-06-0[34]T\d{2}:15:42$/);
+  });
+
   it('by rating puts the best rated first and unrated photos last', async () => {
     await addPhoto('unrated.jpg');
     await addPhoto('three.jpg', { average_rating: 3 });

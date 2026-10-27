@@ -51,6 +51,7 @@ const base = {
 const photos: AdminPhoto[] = [
   { ...base, id: 1, filename: 'dated.jpg', captured_at_local: '2026-06-03T23:45:10' },
   { ...base, id: 2, filename: 'undated.jpg', captured_at_local: null },
+  { ...base, id: 3, filename: 'clip.mp4', media_type: 'video', captured_at_local: null, captured_at: '2026-06-03T11:15:42.000Z' },
 ] as AdminPhoto[];
 
 const renderList = (props: Partial<ComponentProps<typeof AdminPhotoGrid>> = {}) => {
@@ -138,6 +139,10 @@ describe('AdminPhotoGrid Captured column', () => {
     // 23:45 stays 23:45 and the day stays the 3rd, whatever zone the test runs in.
     expect(cellOf(1)).toHaveTextContent('03.06.2026 23:45');
     expect(cellOf(2).textContent).toBe('');
+    // A video's time is an instant: shown in the browser's zone.
+    const local = new Date('2026-06-03T11:15:42.000Z');
+    const hhmm = `${String(local.getHours()).padStart(2, '0')}:${String(local.getMinutes()).padStart(2, '0')}`;
+    expect(cellOf(3).textContent).toContain(hhmm);
   });
 
   it('sorts by capture date', async () => {
