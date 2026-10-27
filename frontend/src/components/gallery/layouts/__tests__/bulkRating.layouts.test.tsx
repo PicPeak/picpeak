@@ -95,9 +95,9 @@ const photos = [1, 2, 3].map((id) => ({
   width: 3000, height: 2000, type: 'individual', size: 1, uploaded_at: '2026-01-01T00:00:00Z',
 })) as Photo[];
 
-type Setup = { allowRatings?: boolean; selected?: number[]; feedbackEnabled?: boolean };
+type Setup = { allowRatings?: boolean; selected?: number[]; feedbackEnabled?: boolean; requireNameEmail?: boolean };
 
-const props = ({ allowRatings = true, selected = [1, 2], feedbackEnabled = true }: Setup) => ({
+const props = ({ allowRatings = true, selected = [1, 2], feedbackEnabled = true, requireNameEmail = false }: Setup) => ({
   photos,
   slug: 'x',
   eventName: 'Sarah & Tom',
@@ -112,7 +112,7 @@ const props = ({ allowRatings = true, selected = [1, 2], feedbackEnabled = true 
   onDownloadSelected: vi.fn(),
   allowDownloads: true,
   feedbackEnabled,
-  feedbackOptions: { allowLikes: true, allowRatings },
+  feedbackOptions: { allowLikes: true, allowRatings, requireNameEmail },
 });
 
 const layouts = {
@@ -250,6 +250,23 @@ describe.each(Object.entries(layouts))('Rate selected in the %s layout (issue 19
     fireEvent.blur(trigger, { relatedTarget: star });
     fireEvent.blur(star, { relatedTarget: null });
     expect(screen.getByTestId('bulk-rating-popover')).toBeInTheDocument();
+  });
+
+  it('keeps the panel and the pending rating when the name-and-email dialog takes focus', async () => {
+    mount(layout.render({ requireNameEmail: true }));
+    fireEvent.click(screen.getByTestId('bulk-rating-trigger'));
+    const star = within(screen.getByTestId('bulk-rating-popover')).getByLabelText('Rate 4 stars');
+    star.focus();
+    fireEvent.click(star);
+    const dialog = await screen.findByRole('dialog');
+    // The dialog pulls focus in as it opens, before it is reported open.
+    fireEvent.blur(star, { relatedTarget: within(dialog).getByPlaceholderText('Enter your name') });
+    expect(screen.getByTestId('bulk-rating-popover')).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByPlaceholderText('Enter your name'), { target: { value: 'Ana' } });
+    fireEvent.change(within(dialog).getByPlaceholderText('Enter your email'), { target: { value: 'ana@example.com' } });
+    fireEvent.click(within(dialog).getByText('Submit Feedback'));
+    await waitFor(() => expect(mocks.submitBulkRating).toHaveBeenCalledWith('x', [1, 2], 4, { guest_name: 'Ana', guest_email: 'ana@example.com' }));
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('2 photos rated'));
   });
 
   it('closes on Escape', () => {

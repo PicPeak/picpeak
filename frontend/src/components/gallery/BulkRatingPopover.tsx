@@ -90,10 +90,14 @@ export const BulkRatingPopover: React.FC<BulkRatingPopoverProps> = ({
       ref={rootRef}
       className={className}
       // Tabbing out closes the panel so it does not sit over controls that
-      // keep focus. A null target (a star disabled mid-request) is not an exit.
+      // keep focus. A null target (a star disabled mid-request) is not an exit,
+      // nor is the name-and-email dialog taking focus as it opens: that happens
+      // before onDialogChange reports it.
       onBlur={(event) => {
-        const next = event.relatedTarget as Node | null;
-        if (next && !dialogOpen && !rootRef.current?.contains(next)) setOpen(false);
+        const next = event.relatedTarget as HTMLElement | null;
+        if (!next || dialogOpen || rootRef.current?.contains(next)) return;
+        if (next.closest?.('[aria-modal="true"]')) return;
+        setOpen(false);
       }}
     >
       <button
