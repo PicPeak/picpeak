@@ -92,14 +92,41 @@ it('freezes active purchases, credits only each purchase overlap once, and prese
   expect(await expiry(earlier)).toBe(iso(base + 9 * HOUR));
 });
 
-it('caps compensation at unchanged gallery expiry and never reopens an expired gallery', async () => {
+it('caps effective access at unchanged gallery expiry without discarding earned time', async () => {
   await db('events').where({ id: event.id }).update({ expires_at: iso(base + 6 * HOUR) });
   const item = await purchase(base - HOUR, base + 3 * HOUR);
   await save(true).expect(200);
   clock.mockReturnValue(base + 5 * HOUR); await save(false).expect(200);
-  expect(await expiry(item)).toBe(iso(base + 6 * HOUR));
+  expect(await expiry(item)).toBe(iso(base + 8 * HOUR));
+  expect((await page(item).expect(200)).body.expires_at).toBe(iso(base + 6 * HOUR));
   expect(new Date((await db('events').where({ id: event.id }).first()).expires_at).toISOString()).toBe(iso(base + 6 * HOUR));
   clock.mockReturnValue(base + 7 * HOUR); await page(item).expect(403);
+  await request(app).get(`/api/gallery/purchased-downloads/${item.accessToken}/photos/${photoId}`).expect(403);
+});
+
+it('keeps earned time when a resume also shortens gallery expiry, and applies the cutoff to pages, files and admin summaries', async () => {
+  const item = await purchase(base - HOUR, base + 3 * HOUR);
+  await save(true).expect(200);
+  clock.mockReturnValue(base + 5 * HOUR);
+  await save(false, { expires_at: iso(base + 6 * HOUR) }).expect(200);
+  expect(await expiry(item)).toBe(iso(base + 8 * HOUR));
+  expect((await db('photo_purchases').where({ order_id: item.orderId }).first()).expires_at).toBe(iso(base + 8 * HOUR));
+  expect((await page(item).expect(200)).body.expires_at).toBe(iso(base + 6 * HOUR));
+  const summary = await request(app).get(`/api/admin/events/${event.id}/photo-orders`)
+    .set('Authorization', `Bearer ${mintAdminToken(adminId)}`).expect(200);
+  expect(summary.body.orders.find((order) => order.order_id === item.orderId)).toMatchObject({
+    expires_at: iso(base + 6 * HOUR), remaining_ms: HOUR,
+  });
+  clock.mockReturnValue(base + 7 * HOUR);
+  await page(item).expect(403);
+  await request(app).get(`/api/gallery/purchased-downloads/${item.accessToken}/photos/${photoId}`).expect(403);
+  // Restoring a gallery cutoff cannot recover time that was overwritten.
+  // The earned purchase window is intact and is still its own upper limit.
+  await save(false, { expires_at: iso(base + 10 * HOUR) }).expect(200);
+  const restored = await page(item).expect(200);
+  expect(restored.body.expires_at).toBe(iso(base + 8 * HOUR));
+  await request(app).get(restored.body.photos[0].photo_url).expect(200);
+  clock.mockReturnValue(base + 9 * HOUR); await page(item).expect(403);
 });
 
 it('does not compensate when a guarded event update loses its race', async () => {

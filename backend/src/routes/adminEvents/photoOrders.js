@@ -11,7 +11,7 @@ const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { requireEventOwner, scopeEventsListQuery } = require('../../middleware/ownership');
-const { buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
+const { buildPurchasedDownloadUrl, pauseAdjustedExpiry } = require('../../modules/photoSales/purchaseAccess');
 const { summarisePurchaseOrder } = require('../../modules/photoSales/adminOrders');
 const { queueEmail, getSupportEmail } = require('../../services/emailProcessor');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
@@ -113,6 +113,7 @@ module.exports = (router) => {
       });
       const variables = emailVariables(order, event.event_name || event.slug, photoCount);
       variables.access_link = accessLink;
+      variables.expires_at = pauseAdjustedExpiry(order, event);
 
       if (event.temporarily_disabled) {
         variables.support_email = await getSupportEmail();

@@ -2,8 +2,8 @@ const crypto = require('crypto');
 const { toTimestamp } = require('../../utils/dateNormalize');
 const { isTrue } = require('../../utils/galleryLifecycle');
 
-/** Freeze only time that overlaps a still-valid purchase, capped by gallery expiry. */
-function pauseAdjustedExpiry(record, gallery, now = Date.now()) {
+/** Earn only time that overlaps a still-valid purchase. */
+function pauseCompensatedExpiry(record, gallery, now = Date.now()) {
   let end = toTimestamp(record?.expires_at);
   if (!Number.isFinite(end)) return null;
   if (isTrue(gallery?.temporarily_disabled)) {
@@ -11,9 +11,15 @@ function pauseAdjustedExpiry(record, gallery, now = Date.now()) {
     // An expired/revoked row is never revived by a later pause.
     if (Number.isFinite(start) && end > start) end += Math.max(0, now - start);
   }
-  const cutoff = toTimestamp(gallery?.expires_at);
-  if (Number.isFinite(cutoff)) end = Math.min(end, cutoff);
   return new Date(end).toISOString();
+}
+
+/** Gallery expiry limits access, without permanently shortening earned time. */
+function pauseAdjustedExpiry(record, gallery, now = Date.now()) {
+  const expiry = pauseCompensatedExpiry(record, gallery, now);
+  if (!expiry) return null;
+  const cutoff = toTimestamp(gallery?.expires_at);
+  return Number.isFinite(cutoff) ? new Date(Math.min(Date.parse(expiry), cutoff)).toISOString() : expiry;
 }
 
 function createPurchaseAccessToken() {
@@ -57,6 +63,7 @@ function buildPurchasedDownloadUrl({ baseUrl = '', accessToken } = {}) {
 }
 
 module.exports = {
+  pauseCompensatedExpiry,
   pauseAdjustedExpiry,
   createPurchaseAccessToken,
   isPurchaseAccessActive,

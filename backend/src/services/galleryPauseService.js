@@ -1,6 +1,6 @@
 const { db } = require('../database/db');
 const { isTrue } = require('../utils/galleryLifecycle');
-const { pauseAdjustedExpiry } = require('../modules/photoSales/purchaseAccess');
+const { pauseCompensatedExpiry } = require('../modules/photoSales/purchaseAccess');
 
 async function lockGallery(trx, id) {
   const query = trx('events').where({ id });
@@ -9,7 +9,7 @@ async function lockGallery(trx, id) {
 }
 
 async function writeExpiries(trx, table, rows, gallery, now) {
-  const changes = rows.map((row) => ({ id: row.id, expiry: pauseAdjustedExpiry(row, gallery, now) }))
+  const changes = rows.map((row) => ({ id: row.id, expiry: pauseCompensatedExpiry(row, gallery, now) }))
     .filter((change, i) => change.expiry && change.expiry !== rows[i].expires_at);
   // CASE + ids takes three bindings per row, below SQLite's 999 limit.
   // Batch writes avoid one database round trip for every purchased photo.
@@ -49,9 +49,9 @@ async function updateGalleryAvailability(id, updates, write) {
       ? (wasPaused && current.temporarily_disabled_at) || new Date(now).toISOString() : null };
     const updated = await write(trx, patch);
     if (updated && wasPaused && !paused) {
-      // A simultaneous expiry edit remains the hard cutoff; resuming never
-      // extends the gallery itself. Repeated saves cannot add the time twice.
-      await compensatePurchases(trx, { ...current, ...updates, temporarily_disabled: true }, now);
+      // Persist earned time independently of the gallery's mutable cutoff;
+      // authorization and display still cap it at the current gallery expiry.
+      await compensatePurchases(trx, current, now);
     }
     return updated;
   });

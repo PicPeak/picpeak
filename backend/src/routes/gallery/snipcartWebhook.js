@@ -392,20 +392,20 @@ async function grantOrder(order) {
       currency: SALES_CURRENCY,
       amount_cents: line.amountCents,
     })));
-    return true;
+    return current;
   });
   if (!granted) return rejectOrder(order, gallery, 'the gallery is no longer on sale');
 
   if (buyerEmail) {
-    await queueEmail(null, buyerEmail, gallery.temporarily_disabled ? 'photo_purchase_paused' : 'photo_purchase_access', {
+    await queueEmail(null, buyerEmail, granted.temporarily_disabled ? 'photo_purchase_paused' : 'photo_purchase_access', {
       buyer_email: buyerEmail,
-      gallery_name: gallery.event_name || gallerySlug,
+      gallery_name: granted.event_name || gallerySlug,
       access_link: buildPurchasedDownloadUrl({ baseUrl: await getFrontendBaseUrl(), accessToken }),
       purchased_at: purchasedAt,
       expires_at: expiresAt,
       download_count: photoIds.length,
       photo_count: photoIds.length,
-      ...(gallery.temporarily_disabled && { support_email: await getSupportEmail(), expiry_date: gallery.expires_at }),
+      ...(granted.temporarily_disabled && { support_email: await getSupportEmail(), expiry_date: granted.expires_at }),
     });
     await db('photo_purchase_orders').where({ order_id: orderToken }).update({ email_sent: true });
   }

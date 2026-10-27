@@ -188,6 +188,24 @@ it.each(['revoked', 'rotated', 'unassigned'])('refuses a %s gallery grant before
   expect(response.body.code).not.toBe('GALLERY_TEMPORARILY_DISABLED');
 });
 
+it('requires a token for password-protected media before reporting a pause, while public metadata retains its notice', async () => {
+  await db('events').where({ id: eventId }).update({ temporarily_disabled: true });
+  for (const url of endpoints) {
+    const response = await get(url);
+    expect(response.status).toBe(401);
+    expect(response.body.code).toBe('NO_TOKEN');
+  }
+  const metadata = await get(`/api/gallery/${slug}/info`);
+  expect(metadata.status).toBe(403);
+  expect(metadata.body.code).toBe('GALLERY_TEMPORARILY_DISABLED');
+  await db('events').where({ id: eventId }).update({ require_password: false });
+  for (const url of endpoints) {
+    const response = await get(url);
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('GALLERY_TEMPORARILY_DISABLED');
+  }
+});
+
 it.each([null, 'invalid', {}, [true]])('rejects an invalid disabled flag: %p', async (value) => {
   const response = await request(app).put(`/api/admin/events/${eventId}`)
     .set('Authorization', `Bearer ${mintAdminToken(adminId)}`).send({ temporarily_disabled: value });
@@ -237,6 +255,7 @@ it.each([{ is_draft: true }, { is_archived: true }, { is_active: false }, { expi
       const response = await get(url, token());
       expect(response.status).toBe(404);
       expect(response.body.code).not.toBe('GALLERY_TEMPORARILY_DISABLED');
+      expect((await get(url)).status).toBe(404);
     }
   });
 

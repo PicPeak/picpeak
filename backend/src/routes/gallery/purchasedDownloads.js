@@ -3,7 +3,7 @@ const fs = require('fs');
 const { db } = require('../../database/db');
 const { sellablePhotos } = require('../../modules/photoSales/sellable');
 const { errorResponse } = require('../../utils/routeHelpers');
-const { verifyPurchaseAccess, buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
+const { verifyPurchaseAccess, buildPurchasedDownloadUrl, pauseAdjustedExpiry } = require('../../modules/photoSales/purchaseAccess');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
 const { getStorage } = require('../../services/storage');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
@@ -89,7 +89,7 @@ router.get('/purchased-downloads/:accessToken', noStoreCache, async (req, res) =
         gallery_slug: gallery.slug,
         gallery_name: gallery.event_name || null,
         buyer_email: order.buyer_email,
-        expires_at: order.expires_at,
+        expires_at: pauseAdjustedExpiry(order, gallery),
         temporarily_disabled: true,
         gallery_expires_at: toIso(gallery.expires_at) || null,
         support_email: await getSupportEmail(),
@@ -115,7 +115,7 @@ router.get('/purchased-downloads/:accessToken', noStoreCache, async (req, res) =
       gallery_slug: gallery?.slug || null,
       gallery_name: gallery?.event_name || null,
       buyer_email: order.buyer_email,
-      expires_at: order.expires_at,
+      expires_at: pauseAdjustedExpiry(order, gallery),
       photo_ids: validPhotos.map((photo) => Number(photo.id)),
       photos: validPhotos.map((photo) => ({
         id: Number(photo.id),

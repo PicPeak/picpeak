@@ -30,6 +30,10 @@ jest.mock('../../src/utils/frontendUrl', () => ({
   getFrontendBaseUrl: async () => 'https://photos.example.com',
   getFrontendBaseUrlSync: () => 'https://photos.example.com',
 }));
+jest.mock('../../src/services/galleryPauseService', () => {
+  const actual = jest.requireActual('../../src/services/galleryPauseService');
+  return { ...actual, lockGallery: jest.fn(actual.lockGallery) };
+});
 
 const crypto = require('crypto');
 const request = require('supertest');
@@ -201,6 +205,32 @@ describe('photo sales webhook and price check', () => {
   });
 
   describe('granting', () => {
+    it.each([true, false])('uses the locked gallery snapshot for the email when paused becomes %s before settlement', async (paused) => {
+      const slug = `email-race-${paused}`;
+      const eventId = await insertEvent(slug, { temporarily_disabled: !paused });
+      const photoId = await insertPhoto(eventId, 'email-race.jpg');
+      const cutoff = new Date(Date.now() + 2 * 864e5).toISOString();
+      const { lockGallery } = require('../../src/services/galleryPauseService');
+      lockGallery.mockImplementationOnce(async (trx, id) => {
+        // The initial validation has read the old state. Model an admin save
+        // committed before the settlement acquires its gallery lock.
+        await trx('events').where({ id }).update({ temporarily_disabled: paused, expires_at: cutoff,
+          event_name: 'Updated gallery', temporarily_disabled_at: paused ? new Date().toISOString() : null });
+        return jest.requireActual('../../src/services/galleryPauseService').lockGallery(trx, id);
+      });
+      const order = snipcartOrder([line(slug, photoId)]);
+      await deliver('order.completed', order.token).expect(200);
+      expect((await stored(order.token)).status).toBe('completed');
+      expect(snipcart.refunds).toHaveLength(0);
+      expect(queueEmail).toHaveBeenCalledTimes(1);
+      expect(queueEmail.mock.calls[0].slice(0, 3)).toEqual([null, order.email,
+        paused ? 'photo_purchase_paused' : 'photo_purchase_access']);
+      expect(queueEmail.mock.calls[0][3]).toMatchObject({ gallery_name: 'Updated gallery', expires_at: cutoff });
+      if (paused) expect(queueEmail.mock.calls[0][3].expiry_date).toEqual(expect.anything());
+      else expect(queueEmail.mock.calls[0][3].expiry_date).toBeUndefined();
+      if (paused) expect(new Date(queueEmail.mock.calls[0][3].expiry_date).toISOString()).toBe(cutoff);
+    });
+
     it('honours a valid in-flight purchase while paused, confirms it without file links, and never refunds for the pause', async () => {
       const purchasedAt = Date.now();
       const clock = jest.spyOn(Date, 'now').mockReturnValue(purchasedAt);
@@ -233,7 +263,8 @@ describe('photo sales webhook and price check', () => {
         clock.mockReturnValue(purchasedAt + 2 * 864e5);
         // The buyer's original day of access is preserved even after its raw
         // deadline passes during the pause. Only time since this grant counts.
-        await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`).expect(200);
+        const paused = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`).expect(200);
+        expect(paused.body.expires_at).toBe(new Date(purchasedAt + 3 * 864e5).toISOString());
         const { updateGalleryAvailability } = require('../../src/services/galleryPauseService');
         await updateGalleryAvailability(eventId, { temporarily_disabled: false }, (trx, patch) =>
           trx('events').where({ id: eventId }).update(patch));
