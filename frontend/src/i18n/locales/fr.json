@@ -1479,6 +1479,7 @@
       "lightboxToggle": "Activer la génération anticipée des aperçus",
       "lightboxToggleHelp": "Désactivé par défaut : chaque aperçu est créé la première fois qu'un invité ouvre la photo. L'activer débloque le bouton ci-dessous, qui les crée tous à l'avance.",
       "regeneratePreviewsButton": "Régénérer tous les aperçus",
+      "generateMissingPreviewsButton": "Générer les aperçus manquants",
       "previewsRegenerateStarted": "Régénération des aperçus de la visionneuse démarrée",
       "previewsRegenerateError": "Échec du démarrage de la régénération des aperçus",
       "saveSuccess": "Paramètres des miniatures enregistrés",

@@ -2666,6 +2666,7 @@
       "lightboxToggle": "Omogoči vnaprejšnje ustvarjanje predogledov",
       "lightboxToggleHelp": "Privzeto izklopljeno: vsak predogled nastane, ko gost fotografijo prvič odpre. Vklop odklene spodnji gumb, ki jih ustvari vse vnaprej.",
       "regeneratePreviewsButton": "Ponovno ustvari vse predoglede",
+      "generateMissingPreviewsButton": "Ustvari manjkajoče predoglede",
       "previewsRegenerateStarted": "Ponovno ustvarjanje predogledov lightbox se je začelo",
       "previewsRegenerateError": "Ponovnega ustvarjanja predogledov ni bilo mogoče zagnati",
       "saveSuccess": "Nastavitve sličic so shranjene",

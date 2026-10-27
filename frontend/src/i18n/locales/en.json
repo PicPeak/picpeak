@@ -2958,6 +2958,7 @@
       "lightboxToggle": "Enable eager preview generation",
       "lightboxToggleHelp": "Off by default: each preview is built the first time a guest opens that photo. Turning this on unlocks the button below, which builds them all up front.",
       "regeneratePreviewsButton": "Regenerate All Previews",
+      "generateMissingPreviewsButton": "Generate Missing Previews",
       "previewsRegenerateStarted": "Lightbox preview regeneration started",
       "previewsRegenerateError": "Failed to start preview regeneration",
       "saveSuccess": "Thumbnail settings saved",
