@@ -170,49 +170,72 @@ class HostForwardingTest(unittest.TestCase):
 
 
 class SpaRobotsHeaderTest(unittest.TestCase):
-    # Only the landing page at `/` (served by the backend) is ever indexable.
-    # robots.txt leaves the app pages crawlable so that a crawler can read
-    # "X-Robots-Tag: noindex" on them; a Disallow kept bare login and share
-    # URLs in search results.
+    # Gallery HTML now resolves provider capabilities from the backend. Give
+    # this fixture that public policy contract rather than an absent upstream.
+    # nginx still serves its own welcome page as the disposable SPA shell.
     def test_every_app_page_answers_noindex(self):
+        source = (ROOT / "frontend/nginx.conf").read_text()
+        site = re.search(r'add_header Content-Security-Policy "([^"]+)" always;', source).group(1)
+        snipcart = site.replace("script-src 'self'", "script-src 'self' 'unsafe-eval' https://cdn.snipcart.com")
+        network = "picpeak-nginx-test-" + uuid.uuid4().hex[:12]
+        run("docker", "network", "create", network)
+        self.addCleanup(run, "docker", "network", "rm", network)
         with tempfile.TemporaryDirectory(prefix="picpeak-nginx-test-") as directory:
             directory = Path(directory)
-            (directory / "frontend.conf").write_text((ROOT / "frontend/nginx.conf").read_text())
+            (directory / "frontend.conf").write_text(source)
             (directory / "nginx.conf").write_text("""worker_processes 1;
 events { worker_connections 128; }
 http {
     include /etc/nginx/mime.types;
+    map $http_x_test_snipcart $fixture_gallery_csp {
+        default "%s";
+        "1" "%s";
+        "missing" "";
+    }
+    server {
+        listen 3000;
+        location = /api/public/settings/photo-sales-policy {
+            add_header X-PicPeak-Gallery-CSP $fixture_gallery_csp;
+            return 204;
+        }
+        location / { return 404; }
+    }
     include /fixtures/frontend.conf;
 }
-""")
+""" % (site, snipcart))
             name = "picpeak-nginx-test-" + uuid.uuid4().hex[:12]
             try:
-                # The image's own welcome page stands in for the SPA shell.
-                run("docker", "run", "-d", "--name", name, "--add-host", "backend:127.0.0.1",
+                run("docker", "run", "-d", "--name", name, "--network", network,
+                    "--network-alias", "backend",
                     "-p", "127.0.0.1::80", "-v", f"{directory}:/fixtures:ro",
                     IMAGE, "nginx", "-c", "/fixtures/nginx.conf", "-g", "daemon off;")
                 port = int(run("docker", "port", name, "80/tcp").split(":")[-1])
                 pages = ("/admin/login", "/admin", "/customer/login", "/gallery/some-slug/token",
                          "/transfer/abc123", "/setup", "/some-short-link", "/index.html")
                 for uri in pages:
-                    with self.subTest(uri=uri):
-                        for attempt in range(30):
-                            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
-                            try:
-                                connection.request("GET", uri, headers={"Host": "localhost"})
-                                response = connection.getresponse()
-                                response.read()
-                                break
-                            except (ConnectionError, OSError):
-                                if attempt == 29:
-                                    raise
-                                time.sleep(0.1)
-                            finally:
-                                connection.close()
-                        self.assertEqual(response.status, 200)
-                        self.assertEqual(response.getheader("X-Robots-Tag"), "noindex")
-                        # The location's own header list must not drop these.
-                        self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
+                    # Header is interpreted by our backend fixture only. A
+                    # missing upstream header exercises the strict fallback.
+                    for mode in ("0", "1", "missing"):
+                        with self.subTest(uri=uri, snipcart=mode):
+                            for attempt in range(30):
+                                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+                                try:
+                                    connection.request("GET", uri, headers={"Host": "localhost", "X-Test-Snipcart": mode})
+                                    response = connection.getresponse()
+                                    response.read()
+                                    break
+                                except (ConnectionError, OSError):
+                                    if attempt == 29:
+                                        raise
+                                    time.sleep(0.1)
+                                finally:
+                                    connection.close()
+                            self.assertEqual(response.status, 200)
+                            self.assertEqual(response.getheader("X-Robots-Tag"), "noindex")
+                            self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
+                            expected = snipcart if uri.startswith("/gallery/") and mode == "1" else site
+                            self.assertEqual(response.getheader("Content-Security-Policy"), expected)
+                            self.assertEqual(len(response.headers.get_all("Content-Security-Policy")), 1)
             finally:
                 run("docker", "rm", "-f", name)
 
