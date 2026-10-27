@@ -1911,6 +1911,10 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       photos.map(p => p.id),
     );
     
+    // Legacy video rows can carry media_type null/'image' (issue 1739 review).
+    const isVideoRow = (photo) => photo.media_type === 'video'
+      || isVideoMimeType(photo.mime_type) || photo.type === 'video';
+
     res.json({
       photos: photos.map(photo => ({
         id: photo.id,
@@ -1975,8 +1979,8 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // A video's time is a real instant instead (videoCaptureDate keeps
         // the recording's offset or reads a UTC creation_time), so it goes
         // out as one and the browser shows it in its own zone.
-        captured_at_local: photo.media_type === 'video' ? null : toServerWallClock(photo.captured_at),
-        captured_at: photo.media_type === 'video' ? toIso(photo.captured_at) : null,
+        captured_at_local: isVideoRow(photo) ? null : toServerWallClock(photo.captured_at),
+        captured_at: isVideoRow(photo) ? toIso(photo.captured_at) : null,
         // Feedback data
         has_feedback: (commentMap[photo.id] > 0 || photo.average_rating > 0 || photo.like_count > 0),
         average_rating: photo.average_rating || 0,
