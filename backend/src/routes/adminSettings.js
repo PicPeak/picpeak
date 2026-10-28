@@ -43,6 +43,7 @@ const router = express.Router();
 const SECRET_MASK = '••••••••';
 const { normaliseDownloadLimit } = require('../services/downloadQuota');
 const { GUEST_NAME_MODES } = require('../services/photoCredit');
+const { LIGHTBOX_MAX_ZOOM_KEY, MIN_LIGHTBOX_ZOOM_PERCENT, MAX_LIGHTBOX_ZOOM_PERCENT, parseLightboxMaxZoomPercent } = require('../utils/lightboxZoom');
 const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileSizeCache, clearMaxVideoSizeCache, MAX_ALLOWED_FILE_SIZE_MB, clearAllowedTypesCache } = require('../services/uploadSettings');
 const watermarkService = require('../services/watermarkService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
@@ -1952,6 +1953,16 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
         return res.status(400).json({ error: 'first_look_folder_keywords: at most 20 keywords, each with at least 3 letters or digits and at most 60 characters' });
       }
       settings.first_look_folder_keywords = [...new Set(list)];
+    }
+    // Maximum lightbox zoom (issue 2281), in percent of the original's pixels.
+    if (Object.prototype.hasOwnProperty.call(settings, LIGHTBOX_MAX_ZOOM_KEY)) {
+      const percent = parseLightboxMaxZoomPercent(settings[LIGHTBOX_MAX_ZOOM_KEY]);
+      if (percent === null) {
+        return res.status(400).json({
+          error: `${LIGHTBOX_MAX_ZOOM_KEY} must be an integer between ${MIN_LIGHTBOX_ZOOM_PERCENT} and ${MAX_LIGHTBOX_ZOOM_PERCENT}`
+        });
+      }
+      settings[LIGHTBOX_MAX_ZOOM_KEY] = percent;
     }
     if (Object.prototype.hasOwnProperty.call(settings, 'event_default_delivery_days')) {
       const days = Number(settings.event_default_delivery_days);

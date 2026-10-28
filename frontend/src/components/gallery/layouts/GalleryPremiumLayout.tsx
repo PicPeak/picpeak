@@ -50,6 +50,8 @@ import { exifLine } from '../../../utils/photoExif';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
 import { PremiumLightboxDownloadButton } from './PremiumLightboxDownloadButton';
 import { isPhotoDownloadPending } from '../../../hooks/usePhotoDownloadPending';
+import { usePublicSettings } from '../../../hooks/usePublicSettings';
+import { DEFAULT_MAX_ZOOM_PERCENT } from '../hooks/useFullResolutionZoom';
 
 const isVideoPhoto = (photo: Photo) => photo.media_type === 'video' || photo.type === 'video';
 
@@ -298,6 +300,15 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   const photoLabels = usePhotoLabels();
   const downloadPhotoMutation = useDownloadPhoto();
   const [lightboxIndex, setLightboxIndex] = useState(-1);
+  // The admin's maximum lightbox zoom (issue 2281). This layout's own lightbox
+  // zooms the loaded rendition, so the percent scales Zoom's pixel limit.
+  // Canvas-rendered and maximum-protection views keep the old limit, as
+  // PhotoLightbox keeps them off full-resolution zoom.
+  const { data: publicSettings } = usePublicSettings();
+  const zoomBeyondDefault = !useCanvasRendering && protectionLevel !== 'maximum';
+  const maxZoomPercent = zoomBeyondDefault
+    ? publicSettings?.gallery_lightbox_max_zoom_percent ?? DEFAULT_MAX_ZOOM_PERCENT
+    : DEFAULT_MAX_ZOOM_PERCENT;
   // The delivered preview can be smaller than the original. Keep Zoom's
   // pixel limit/aspect ratio tied to the loaded rendition, as its default
   // image renderer does internally.
@@ -1046,6 +1057,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           ...(allowDownloads ? [Download] : []),
           ...(showCaptions ? [Captions] : []),
         ]}
+        zoom={{ maxZoomPixelRatio: maxZoomPercent / 100 }}
         animation={{ fade: 300, swipe: 250 }}
         styles={{
           container: { backgroundColor: 'rgba(0, 0, 0, 0.95)' },

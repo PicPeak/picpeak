@@ -20,6 +20,12 @@ export interface AdminPhoto {
   category_slug: string | null;
   size: number;
   uploaded_at: string;
+  // The camera clock, 'YYYY-MM-DDTHH:MM:SS' with no zone (issue 1739); null
+  // when the photo carries no capture date. Format with formatWallClock.
+  captured_at_local?: string | null;
+  // A video's capture time as an instant (ISO), shown in the viewer's zone;
+  // null for photos, which send captured_at_local instead.
+  captured_at?: string | null;
   visibility?: PhotoVisibility;
   media_type?: 'photo' | 'video';
   mime_type?: string | null;
@@ -394,8 +400,24 @@ class PhotosService {
     return response.data;
   }
 
-  async downloadPhoto(eventId: number, photoId: number, filename: string): Promise<void> {
-    const response = await api.get(`/admin/events/${eventId}/photos/${photoId}/download`, {
+  // `isVideo` (issue 2277): a video navigates straight at the download URL,
+  // so the browser streams it with its own progress UI and names it from the
+  // server's Content-Disposition. Fetching it as a blob held the whole file in
+  // memory before the save started. The httpOnly admin_token cookie
+  // authenticates the navigation, as it does every admin request.
+  async downloadPhoto(eventId: number, photoId: number, filename: string, isVideo = false): Promise<void> {
+    const path = `/admin/events/${eventId}/photos/${photoId}/download`;
+    if (isVideo) {
+      const link = document.createElement('a');
+      link.href = api.getUri({ url: path });
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      return;
+    }
+
+    const response = await api.get(path, {
       responseType: 'blob'
     });
 

@@ -396,6 +396,24 @@ describe('drafts are announced once, at publish', () => {
   });
 });
 
+describe('paused gallery account announcements', () => {
+  it('does not announce an assigned gallery or its completion to accounts while paused', async () => {
+    const id = await seedEvent({ slug: 'pause-announcements', customerEmail: 'client@recipients.test' });
+    const customerId = await seedAccount('paused@recipients.test', 'Paused Customer');
+    await assign(id, customerId);
+    await db('events').where({ id }).update({ temporarily_disabled: true, delivery_status: 'partial' });
+    const accounts = require('../../src/services/customerAccountsService');
+    expect(await accounts.notifyCustomerOfNewAssignments(customerId, [id])).toBe(false);
+    expect(await queued('customer_gallery_assigned')).toHaveLength(0);
+    await request(app).post(`/admin/events/${id}/delivery/complete`).send({ send_email: true });
+    // Explicit inline mail keeps the existing draft/owner-send convention.
+    expect(await recipientsOf('gallery_completed')).not.toContain('paused@recipients.test');
+    await db('events').where({ id }).update({ temporarily_disabled: false });
+    expect(await accounts.notifyCustomerOfNewAssignments(customerId, [id])).toBe(true);
+    expect(await recipientsOf('customer_gallery_assigned')).toEqual(['paused@recipients.test']);
+  });
+});
+
 describe('accounts-only galleries get a generated password', () => {
   const createEvent = (input) => require('../../src/services/eventCreationService')
     .createEvent(input, { actor: { id: adminId, username: 'tester' } });
