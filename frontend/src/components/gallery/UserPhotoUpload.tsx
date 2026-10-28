@@ -135,12 +135,20 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   const maxFileSizeMb = Number.isFinite(Number(publicSettings?.general_max_file_size_mb))
     ? Number(publicSettings?.general_max_file_size_mb)
     : 50;
-  const maxFileSizeBytes = maxFileSizeMb * 1024 * 1024;
+
+  // Videos have their own limit (issue 2315), as in the admin uploader; the
+  // backend holds each file to its type's limit the same way.
+  const maxVideoSizeMb = Number.isFinite(Number(publicSettings?.general_max_video_size_mb))
+    ? Number(publicSettings?.general_max_video_size_mb)
+    : 500;
 
   const allowedMimeTypes = useMemo(
     () => extensionsToMimeTypes(publicSettings?.allowed_file_types),
     [publicSettings?.allowed_file_types]
   );
+  const videoUploadsAllowed = allowedMimeTypes.some((type) => type.startsWith('video/'));
+  const sizeLimitMbFor = (file: File) =>
+    (file.type.startsWith('video/') ? maxVideoSizeMb : maxFileSizeMb);
 
   // #1117 — on Android this appends a type the photo picker can't handle, so
   // the system falls back to the chooser that actually offers the camera.
@@ -165,9 +173,10 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         toast.error(t('upload.invalidFileType', { names: file.name }));
         return false;
       }
-      // Check file size against the configured per-file limit.
-      if (file.size > maxFileSizeBytes) {
-        toast.error(t('upload.fileTooLarge', { name: file.name, limit: maxFileSizeMb }));
+      // Check file size against the configured per-file limit for its type.
+      const limitMb = sizeLimitMbFor(file);
+      if (file.size > limitMb * 1024 * 1024) {
+        toast.error(t('upload.fileTooLarge', { name: file.name, limit: limitMb }));
         return false;
       }
       return true;
@@ -593,6 +602,11 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
                         rendering literally. */}
                     {t('upload.fileRequirements', { formats: formatsLabel, limit: maxFilesPerUpload, sizeLimit: maxFileSizeMb })}
                   </p>
+                  {videoUploadsAllowed && (
+                    <p className="text-xs text-muted-theme">
+                      {t('upload.videoSizeLimit', 'Videos: max {{sizeLimit}}MB per file', { sizeLimit: maxVideoSizeMb })}
+                    </p>
+                  )}
                   <input
                     type="file"
                     className="hidden"

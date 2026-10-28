@@ -14,6 +14,7 @@ const { withPublicUpload } = require('../../middleware/publicUploadStream');
 const { holdsGuestUploads, notifyGuestUploadsPending } = require('../../services/uploadReviewService');
 const { parseClientCaptureDate } = require('../../services/guestUploadDownscale');
 const { GALLERY_COOKIE_PREFIX, sanitizeSlugForCookie } = require('../../utils/tokenUtils');
+const { createUploadFileGuard } = require('../../utils/uploadAdmissionType');
 
 /**
  * This URL names the event by id, so verifyGalleryAccess has no slug to pick
@@ -78,7 +79,10 @@ router.post('/:eventId/upload', selectEventGalleryCookie, verifyGalleryAccess, d
 
     // Import multer and photo processing
     const multer = require('multer');
-    const { getAllowedMimeTypes, getMaxFilesPerUpload, getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB } = require('../../services/uploadSettings');
+    const {
+      getAllowedMimeTypes, getMaxFilesPerUpload, getMaxFileSizeBytes, getMaxVideoSizeBytes,
+      DEFAULT_MAX_FILE_SIZE_MB, DEFAULT_MAX_VIDEO_SIZE_MB,
+    } = require('../../services/uploadSettings');
     const { validateFileType, normalizeUploadMimeType, validateFileContent } = require('../../utils/fileSecurityUtils');
     const { validateUploadedFiles } = require('../../middleware/uploadValidation');
 
@@ -116,16 +120,31 @@ router.post('/:eventId/upload', selectEventGalleryCookie, verifyGalleryAccess, d
     } catch {
       maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024;
     }
+    // Videos have their own limit (general_max_video_size_mb), as on the admin
+    // upload (issue 2315). Multer and the request budget take the larger of
+    // the two, but only while a video type is allowed at all: this is a public
+    // route, and its body ceiling should not grow for a type nobody may send.
+    // Each file is then held to its own type's limit by the guard, which reads
+    // the container header before granting a video the larger one.
+    let maxVideoSizeBytes;
+    try {
+      maxVideoSizeBytes = await getMaxVideoSizeBytes();
+    } catch {
+      maxVideoSizeBytes = DEFAULT_MAX_VIDEO_SIZE_MB * 1024 * 1024;
+    }
+    const maxUploadBytes = allowedMimeTypes.some((type) => type.startsWith('video/'))
+      ? Math.max(maxFileSizeBytes, maxVideoSizeBytes) : maxFileSizeBytes;
 
     await withPublicUpload(req, res, {
-      eventId, guestId: uploader?.id || null, maxFiles: maxFilesPerUpload, maxFileBytes: maxFileSizeBytes, fileField: 'photos',
-      fileLimitMessage: `File too large. Maximum size is ${Math.floor(maxFileSizeBytes / (1024 * 1024))} MB per file.`,
+      eventId, guestId: uploader?.id || null, maxFiles: maxFilesPerUpload, maxFileBytes: maxUploadBytes, fileField: 'photos',
+      fileGuard: file => createUploadFileGuard(file, maxFileSizeBytes, maxVideoSizeBytes),
+      fileLimitMessage: `File too large. Maximum size is ${Math.floor(maxUploadBytes / (1024 * 1024))} MB per file.`,
     }, ({ storage, streamHandler, maxFiles, rejectBody }) => multer({
       storage,
       streamHandler,
       defParamCharset: 'utf8', // multer's latin1 default turns UTF-8 names into mojibake
       limits: {
-        fileSize: maxFileSizeBytes,
+        fileSize: maxUploadBytes,
         files: maxFiles,
         // The only text fields this route reads are category_id and
         // captured_at. Without these

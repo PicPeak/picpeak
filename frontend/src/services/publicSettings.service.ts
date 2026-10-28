@@ -87,6 +87,8 @@ export interface PublicSettings {
   // #613 follow-up — per-file size limit (MB), surfaced so the guest upload
   // modal shows the real limit and guards client-side. Backend enforces it too.
   general_max_file_size_mb?: number;
+  // Per-file video limit (MB), which guest uploads honour (issue 2315).
+  general_max_video_size_mb?: number;
   // Event field requirements
   event_require_customer_name?: boolean;
   event_require_customer_email?: boolean;

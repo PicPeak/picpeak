@@ -146,6 +146,7 @@
     "clickToUploadOrDropFolder": "Klik om te uploaden of sleep bestanden of een map hierheen",
     "takePhoto": "Foto maken",
     "fileRequirements": "{{formats}} (max. {{sizeLimit}} MB per bestand, {{limit}} bestanden per upload)",
+    "videoSizeLimit": "Video's: max. {{sizeLimit}} MB per bestand",
     "selectedFiles": "Geselecteerde bestanden",
     "uploading": "Uploaden...",
     "uploadComplete": "Upload voltooid!",

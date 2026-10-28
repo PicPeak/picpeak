@@ -56,6 +56,8 @@ router.get('/', async (req, res) => {
               // client-side before posting an oversized file. Backend enforces
               // via getMaxFileSizeBytes regardless.
               'general_max_file_size_mb',
+              // And the video one, which guest uploads honour since issue 2315.
+              'general_max_video_size_mb',
               // #798 — the admin login page needs to know whether to show
               // the "Sign in with SSO" button (and its label). Only these
               // two oidc_* keys are public; issuer/client stay admin-only.
@@ -286,6 +288,11 @@ router.get('/', async (req, res) => {
       general_max_file_size_mb: Number.isFinite(Number(settingsObject.general_max_file_size_mb))
         ? Number(settingsObject.general_max_file_size_mb)
         : 50,
+      // Per-file video limit (MB), issue 2315. Default mirrors uploadSettings.js
+      // DEFAULT_MAX_VIDEO_SIZE_MB.
+      general_max_video_size_mb: Number.isFinite(Number(settingsObject.general_max_video_size_mb))
+        ? Number(settingsObject.general_max_video_size_mb)
+        : 500,
       // SEO meta tag flags (safe to expose - these are intended for crawlers)
       seo_meta_noindex: settingsObject.seo_meta_noindex === true,
       seo_meta_nofollow: settingsObject.seo_meta_nofollow === true,

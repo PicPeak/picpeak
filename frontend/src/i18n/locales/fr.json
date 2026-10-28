@@ -146,6 +146,7 @@
     "clickToUploadOrDropFolder": "Cliquez pour téléverser ou glissez-déposez des fichiers ou un dossier",
     "takePhoto": "Prendre une photo",
     "fileRequirements": "{{formats}} (max {{sizeLimit}} Mo par fichier, {{limit}} fichiers par téléversement)",
+    "videoSizeLimit": "Vidéos : max {{sizeLimit}} Mo par fichier",
     "selectedFiles": "Fichiers sélectionnés",
     "uploading": "Téléversement en cours...",
     "transferring": "Transfert en cours",
