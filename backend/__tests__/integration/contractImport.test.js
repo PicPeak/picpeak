@@ -235,6 +235,34 @@ describe('POST /api/admin/contracts/import', () => {
     expect(filesOnDisk()).toHaveLength(filesBefore + 1);
   });
 
+  it('does not answer an import with a draft that used the same Idempotency-Key', async () => {
+    const key = 'draft-then-import-01';
+    const draft = await auth(request(app).post('/api/admin/contracts'))
+      .set('Idempotency-Key', key).send({ customerAccountId: customerId, title: 'Draft' });
+    expect(draft.status).toBe(201);
+    const contractsBefore = await count('contracts');
+    const filesBefore = filesOnDisk().length;
+
+    const res = await postImport(signedFields()).set('Idempotency-Key', key);
+
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(res.body)).toContain('IDEMPOTENCY_KEY_CONFLICT');
+    expect(await count('contracts')).toBe(contractsBefore);
+    expect(filesOnDisk()).toHaveLength(filesBefore);
+  });
+
+  it('orders dates by the calendar day written, not by the instant', async () => {
+    // 00:30 on the issue day at UTC+14 is the previous day in UTC. A time
+    // without a zone lands the same way on a UTC+ server (it parses as
+    // server-local), so comparing instants refused same-day signatures.
+    const res = await postImport(signedFields({
+      signedByCustomerAt: '2023-03-01T00:30:00+14:00',
+      signedByAdminAt: '2023-03-01T00:45:00+14:00',
+    }));
+
+    expect(res.status).toBe(201);
+  });
+
   it('requires contracts.manage', async () => {
     const insert = await db('admin_users').insert({
       username: 'no-role', email: 'no-role@example.com', password_hash: 'x',

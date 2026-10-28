@@ -96,14 +96,15 @@ async function importContract(payload, filePath, adminId, { idempotencyKey = nul
 }
 
 // Issued, then signed by the customer, then counter-signed — the order the
-// signing flow produces. Compared as instants, so a date-only issue date
-// and a timestamped signature on the same day pass.
+// signing flow produces. Compared as calendar days, as written: a date-only
+// value parses as UTC but a time without a zone as server-local, so
+// comparing instants could refuse a same-day signature on a UTC+ server.
 function assertDateOrder(issueDate, customerSignedAt, adminSignedAt) {
-  const t = (value) => new Date(value).getTime();
-  if (t(customerSignedAt) < t(issueDate)) {
+  const day = (value) => String(value).slice(0, 10);
+  if (day(customerSignedAt) < day(issueDate)) {
     throw new AppError('signedByCustomerAt cannot be before issueDate', 400, 'INVALID_DATE_ORDER');
   }
-  if (t(adminSignedAt) < t(customerSignedAt)) {
+  if (day(adminSignedAt) < day(customerSignedAt)) {
     throw new AppError('signedByAdminAt cannot be before signedByCustomerAt', 400, 'INVALID_DATE_ORDER');
   }
 }
