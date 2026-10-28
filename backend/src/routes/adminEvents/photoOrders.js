@@ -11,9 +11,9 @@ const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { requireEventOwner, scopeEventsListQuery } = require('../../middleware/ownership');
-const { buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
+const { buildPurchasedDownloadUrl, pauseAdjustedExpiry } = require('../../modules/photoSales/purchaseAccess');
 const { summarisePurchaseOrder } = require('../../modules/photoSales/adminOrders');
-const { queueEmail } = require('../../services/emailProcessor');
+const { queueEmail, getSupportEmail } = require('../../services/emailProcessor');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { stripeConfiguration } = require('../../modules/photoSales/stripeClient');
 const { configuration } = require('../../modules/photoSales/providers');
@@ -54,7 +54,7 @@ module.exports = (router) => {
         const rows = await db('photo_purchases')
           .where({ order_id: order.order_id })
           .select('*');
-        summaries.push(summarisePurchaseOrder(order, rows));
+        summaries.push(summarisePurchaseOrder(order, rows, event));
       }
 
       res.json({
@@ -112,8 +112,13 @@ module.exports = (router) => {
       });
       const variables = emailVariables(order, event.event_name || event.slug, photoCount);
       variables.access_link = accessLink;
+      variables.expires_at = pauseAdjustedExpiry(order, event);
 
-      await queueEmail(event.id, order.buyer_email, 'photo_purchase_access', variables);
+      if (event.temporarily_disabled) {
+        variables.support_email = await getSupportEmail();
+        variables.expiry_date = event.expires_at;
+      }
+      await queueEmail(event.id, order.buyer_email, event.temporarily_disabled ? 'photo_purchase_paused' : 'photo_purchase_access', variables);
       await db('photo_purchase_orders')
         .where({ id: order.id })
         .update({ email_sent: true, updated_at: new Date().toISOString() });

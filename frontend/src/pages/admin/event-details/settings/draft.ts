@@ -38,6 +38,7 @@ export type SettingsSectionKey =
   | 'danger';
 
 export interface EventFields extends EditFormState {
+  temporarily_disabled: boolean;
   /**
    * Read-only. The gallery's password was generated for portal-only access
    * (migration 264) and no customer email has been told it, so adding one
@@ -183,6 +184,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
     external_path: event.external_path || '',
     external_watch: truthy(event.external_watch),
     require_password: normalizeRequirePassword(event.require_password),
+    temporarily_disabled: truthy(event.temporarily_disabled),
     new_password: '',
     confirm_new_password: '',
     protection_level: event.protection_level || 'standard',
@@ -261,6 +263,7 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   review_contributor_uploads: 'general',
   expires_at: 'access',
   require_password: 'access',
+  temporarily_disabled: 'access',
   new_password: 'access',
   confirm_new_password: 'access',
   photo_cap: 'downloads',
@@ -423,6 +426,7 @@ function requestFields(f: EventFields): Record<string, unknown> {
     review_contributor_uploads: f.review_contributor_uploads,
     expires_at: f.expires_at || null,
     require_password: f.require_password,
+    temporarily_disabled: f.temporarily_disabled,
     allow_user_uploads: f.allow_user_uploads,
     upload_category_id: f.upload_category_id,
     moderate_guest_uploads: f.moderate_guest_uploads,

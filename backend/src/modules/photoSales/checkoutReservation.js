@@ -133,7 +133,7 @@ async function reserveCheckout(gallery, body) {
   };
   try {
     // The unique nullable promo_gallery_id is the cross-process claim. The
-    // existing Snipcart redemption is backfilled by migration 331.
+    // existing Snipcart redemption is backfilled by the checkout migration.
     const inserted = await db.transaction(async (trx) => {
       await lockPaymentSettings(trx);
       if (!(await providerConfiguration(trx)).available.includes(provider)) throw checkoutError('This payment provider is no longer available.', 409);

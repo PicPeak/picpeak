@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
-const { generateThumbnail, generateVideoPlaceholder, extractCaptureDate, withLocalCopy, withProcessableImage } = require('./imageProcessor');
+const { generateThumbnail, generateVideoPlaceholder, extractCaptureDate, extractCapture, captureWallColumn, withLocalCopy, withProcessableImage } = require('./imageProcessor');
 const { exifColumn } = require('./photoExif');
 const { generatePhotoFilename } = require('../utils/filenameSanitizer');
 const { processUploadedVideo, extractVideoMetadata, isVideoMimeType, posterFrameError } = require('./videoProcessor');
@@ -245,7 +245,9 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       const exif = isVideo ? {} : await exifColumn(tempPath);
       // Capture date (issue 1976), for the same reason; images only, as in
       // the worker.
-      const capturedAt = isVideo ? null : await extractCaptureDate(tempPath);
+      // With the camera's own clock (issue 2305).
+      const capture = isVideo ? null : await extractCapture(tempPath);
+      const capturedAt = capture ? capture.capturedAt : null;
 
       // Now upload the original through the storage backend and remove the
       // local temp copy.
@@ -297,6 +299,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         size_bytes: actualSize,
         content_sha256: contentSha256,
         captured_at: capturedAt ? capturedAt.toISOString() : null,
+        ...captureWallColumn(capture),
         uploaded_by: uploadedBy,
         source_origin: 'managed',
         media_type: mediaType,
@@ -715,10 +718,13 @@ async function processPhoto(photoId) {
       exifCredit = (await resolveCredit({ localPath })).credit_name || null;
     }
 
-    if (!photo.captured_at && !isVideo) {
+    // The camera's own clock too (issue 2305): also for a guest upload
+    // dated from the browser, so the backfill need not open it again.
+    if ((!photo.captured_at || photo.captured_at_wall == null) && !isVideo) {
       try {
-        const captured = await extractCaptureDate(localPath);
-        if (captured) updateData.captured_at = captured;
+        const capture = await extractCapture(localPath);
+        if (!photo.captured_at && capture && capture.capturedAt) updateData.captured_at = capture.capturedAt;
+        if (photo.captured_at_wall == null) Object.assign(updateData, captureWallColumn(capture));
       } catch (e) {
         logger.warn(`processPhoto: EXIF extraction failed for ${photoId}`, { error: e.message });
       }

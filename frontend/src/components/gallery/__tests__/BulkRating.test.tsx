@@ -15,8 +15,9 @@ import { feedbackService } from '../../../services/feedback.service';
 import { getGuestIdentity } from '../../../utils/guestIdentityStorage';
 import type { GalleryData, Photo } from '../../../types';
 
+const guest = vi.hoisted(() => ({ context: null as null | Record<string, unknown> }));
 vi.mock('../../../contexts/GuestIdentityContext', () => ({
-  useGuestIdentityOptional: () => null,
+  useGuestIdentityOptional: () => guest.context,
 }));
 
 vi.mock('../../../utils/guestIdentityStorage', () => ({ getGuestIdentity: vi.fn(() => null) }));
@@ -84,6 +85,7 @@ function renderControl(photoIds: number[], props: Partial<React.ComponentProps<t
 
 beforeEach(() => {
   vi.clearAllMocks();
+  guest.context = null;
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, queryFn: listFetch, staleTime: Infinity } } });
 });
 
@@ -301,6 +303,78 @@ describe('BulkRating', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onDialogChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('tells its host while the guest registration prompt is open, before it resolves', async () => {
+    seedCache([makePhoto(1)]);
+    submit.mockResolvedValue(ok([1], 4));
+    let register: (value: unknown) => void = () => {};
+    guest.context = {
+      identityMode: 'guest',
+      identity: null,
+      ensureIdentity: vi.fn(() => new Promise((resolve) => { register = resolve; })),
+    };
+    const onDialogChange = vi.fn();
+    renderControl([1], { onDialogChange });
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    // Reported in the press itself: the prompt takes focus before effects run.
+    expect(onDialogChange).toHaveBeenLastCalledWith(true);
+    register({ id: 7, name: 'Ann' });
+    await waitFor(() => expect(onDialogChange).toHaveBeenLastCalledWith(false));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+  });
+
+  it('reports a cancelled guest registration as closed and rates nothing', async () => {
+    let cancel: (reason: unknown) => void = () => {};
+    guest.context = {
+      identityMode: 'guest',
+      identity: null,
+      ensureIdentity: vi.fn(() => new Promise((_resolve, reject) => { cancel = reject; })),
+    };
+    const onDialogChange = vi.fn();
+    renderControl([1], { onDialogChange });
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    expect(onDialogChange).toHaveBeenLastCalledWith(true);
+    cancel(new Error('user_cancelled'));
+    await waitFor(() => expect(onDialogChange).toHaveBeenLastCalledWith(false));
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('reports no dialog when the guest already has an identity', async () => {
+    seedCache([makePhoto(1)]);
+    submit.mockResolvedValue(ok([1], 4));
+    const ann = { id: 7, name: 'Ann' };
+    guest.context = { identityMode: 'guest', identity: ann, ensureIdentity: vi.fn(async () => ann) };
+    const onDialogChange = vi.fn();
+    renderControl([1], { onDialogChange });
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(onDialogChange).not.toHaveBeenCalled();
+  });
+
+  it('tells its host when a run fails or falls short, and not when it succeeds', async () => {
+    seedCache([makePhoto(1), makePhoto(2)]);
+    const onFailed = vi.fn();
+    const onRated = vi.fn();
+    renderControl([1, 2], { onFailed, onRated });
+
+    submit.mockRejectedValueOnce(new Error('network'));
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    await waitFor(() => expect(onFailed).toHaveBeenCalledTimes(1));
+
+    submit.mockResolvedValueOnce({
+      success: true, rating: 4,
+      results: [{ photo_id: 1, success: true }, { photo_id: 2, success: false, error: 'Photo not found' }],
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rate 4 stars' })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    await waitFor(() => expect(onFailed).toHaveBeenCalledTimes(2));
+
+    submit.mockResolvedValueOnce(ok([1, 2], 4));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rate 4 stars' })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    await waitFor(() => expect(onRated).toHaveBeenCalledWith(2, 4));
+    expect(onFailed).toHaveBeenCalledTimes(2);
   });
 
   it('rates under the name and email its host kept, without asking again', async () => {

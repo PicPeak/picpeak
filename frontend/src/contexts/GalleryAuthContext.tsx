@@ -15,6 +15,7 @@ import {
 import { clearGuestIdentity } from '../utils/guestIdentityStorage';
 import type { GalleryAccessLevel } from '../types';
 import { isShareToken } from '../utils/shareToken';
+import { isGalleryTemporarilyDisabled } from '../utils/galleryAvailability';
 
 interface GalleryEvent {
   id: number;
@@ -334,7 +335,9 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         setIsAuthenticated(false);
         sessionStorage.removeItem(`gallery_event_${currentSlug}`);
         setEvent(null);
-        clearGalleryToken(currentSlug);
+        // A pause withdraws access without revoking a still-valid session.
+        // The server will recheck it, including revocation, after re-enabling.
+        if (!isGalleryTemporarilyDisabled(initialiseError)) clearGalleryToken(currentSlug);
         if (initialiseError?.response?.data?.error) {
           setError(initialiseError.response.data.error);
         }

@@ -2302,45 +2302,97 @@ async function regeneratePreviewImage(photo) {
   return null;
 }
 
+// The capture tags in the order extractCaptureDate prefers them, each with
+// the EXIF offset tag that belongs to it (exifr names 0x9004 CreateDate).
+const CAPTURE_DATE_TAGS = [
+  ['DateTimeOriginal', 'OffsetTimeOriginal'],
+  ['CreateDate', 'OffsetTimeDigitized'],
+  ['DateTimeDigitized', 'OffsetTimeDigitized'],
+  ['ModifyDate', 'OffsetTime'],
+];
+
+// exifr's own date reviver (exifr/src/dicts/tiff-revivers.mjs), applied here
+// because the tags are read raw: the camera clock read in the server's zone.
+function reviveExifDate(string) {
+  const [year, month, day, hours, minutes, seconds] = string.trim().split(/[-: ]/g).map(Number);
+  const date = new Date(year, month - 1, day);
+  if (!Number.isNaN(hours) && !Number.isNaN(minutes) && !Number.isNaN(seconds)) {
+    date.setHours(hours);
+    date.setMinutes(minutes);
+    date.setSeconds(seconds);
+  }
+  return Number.isNaN(+date) ? string : date;
+}
+
+// The EXIF text as the camera wrote it, 'YYYY-MM-DDTHH:MM:SS' plus the
+// recorded '+HH:MM' offset when there is one; null when it is not a full
+// date-time (blank fields, a date alone).
+function exifWallClock(raw, offset) {
+  const m = /^(\d{4})[:-](\d{2})[:-](\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(raw).trim());
+  if (!m) return null;
+  const off = typeof offset === 'string' && /^[+-]\d{2}:\d{2}$/.test(offset.trim()) ? offset.trim() : '';
+  return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}${off}`;
+}
+
+/**
+ * Read a photo's capture time from EXIF (issue 2305).
+ *
+ * { capturedAt, wall }: capturedAt is the instant stored in captured_at
+ * (the camera clock read in the server's zone, as before); wall is the
+ * camera clock itself, as written (exifWallClock), for captured_at_wall.
+ * That instant cannot always give it back: a time in the zone's
+ * spring-forward gap moves an hour, and a later TZ change shifts them all.
+ * Both null when the file carries no usable date. null when the file could
+ * not be read at all, like photoExif.extractPhotoExif. Never throws.
+ */
+async function extractCapture(imagePath) {
+  let exif;
+  try {
+    // Raw values: the revived Date has already lost the camera digits.
+    exif = await exifr.parse(imagePath, {
+      pick: CAPTURE_DATE_TAGS.flat(),
+      reviveValues: false,
+    });
+  } catch (error) {
+    logger.debug(`Could not extract EXIF date from ${path.basename(imagePath)}:`, error.message);
+    return error && error.code ? null : { capturedAt: null, wall: null };
+  }
+  const none = { capturedAt: null, wall: null };
+  if (!exif) return none;
+
+  const [tag, offsetTag] = CAPTURE_DATE_TAGS.find(([name]) => exif[name]) || [];
+  if (!tag) return none;
+  const raw = exif[tag];
+  const captureDate = typeof raw === 'string' ? reviveExifDate(raw) : raw;
+  const wall = typeof raw === 'string' ? exifWallClock(raw, exif[offsetTag]) : null;
+
+  if (captureDate instanceof Date) {
+    const now = new Date();
+    const minDate = new Date('1990-01-01');
+    if (captureDate > minDate && captureDate <= now) {
+      return { capturedAt: captureDate, wall };
+    }
+  }
+  if (typeof captureDate === 'string') {
+    const parsed = new Date(captureDate);
+    if (!isNaN(parsed.getTime())) {
+      return { capturedAt: parsed, wall };
+    }
+  }
+  return none;
+}
+
 /**
  * Extract capture date from EXIF metadata
  */
 async function extractCaptureDate(imagePath) {
-  try {
-    const exif = await exifr.parse(imagePath, {
-      pick: ['DateTimeOriginal', 'CreateDate', 'DateTimeDigitized', 'ModifyDate']
-    });
+  const capture = await extractCapture(imagePath);
+  return capture ? capture.capturedAt : null;
+}
 
-    if (!exif) {
-      return null;
-    }
-
-    const captureDate = exif.DateTimeOriginal ||
-                        exif.CreateDate ||
-                        exif.DateTimeDigitized ||
-                        exif.ModifyDate;
-
-    if (captureDate) {
-      if (captureDate instanceof Date) {
-        const now = new Date();
-        const minDate = new Date('1990-01-01');
-        if (captureDate > minDate && captureDate <= now) {
-          return captureDate;
-        }
-      }
-      if (typeof captureDate === 'string') {
-        const parsed = new Date(captureDate);
-        if (!isNaN(parsed.getTime())) {
-          return parsed;
-        }
-      }
-    }
-
-    return null;
-  } catch (error) {
-    logger.debug(`Could not extract EXIF date from ${path.basename(imagePath)}:`, error.message);
-    return null;
-  }
+/** The captured_at_wall column for an ingest path ('' = read, none; no column when unreadable). */
+function captureWallColumn(capture) {
+  return capture ? { captured_at_wall: capture.wall || '' } : {};
 }
 
 /**
@@ -2486,6 +2538,8 @@ module.exports = {
   isPreviewValid,
   ensurePreviewImage,
   extractCaptureDate,
+  extractCapture,
+  captureWallColumn,
   withLocalCopy,
   isRawFilename,
   originalNeedsPreview,

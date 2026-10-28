@@ -1,7 +1,7 @@
 'use strict';
 
 const knex = require('knex');
-const migration = require('../../migrations/core/331_stripe_photo_checkout');
+const migration = require('../../migrations/core/334_stripe_photo_checkout');
 
 // Run the same upgrade contract on PostgreSQL when its dedicated test URL
 // is supplied, isolated in a fresh schema so other suites are untouched.
@@ -66,7 +66,7 @@ describe.each(['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : [])])('
   test('recovery storage backfills provider references idempotently and refuses to discard active checkouts', async () => {
     await migration.up(db);
     await db.schema.createTable('app_settings', (t) => { t.string('setting_key').primary(); t.string('setting_type'); t.text('setting_value'); });
-    const recovery = require('../../migrations/core/332_photo_checkout_recovery');
+    const recovery = require('../../migrations/core/335_photo_checkout_recovery');
     await recovery.up(db); await recovery.up(db);
     expect(await db('photo_purchase_orders').first()).toMatchObject({ provider_order_id: 'historic-order' });
     await expect(db('photo_purchase_orders').insert({ order_id: 'different-local-id', gallery_id: 1, payment_provider: 'snipcart', provider_order_id: 'historic-order' })).rejects.toThrow();

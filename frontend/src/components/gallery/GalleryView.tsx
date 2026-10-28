@@ -1,4 +1,6 @@
 import { GalleryProductPanel } from '../../features/album-products/GalleryProductPanel';
+import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
+import { GalleryUnavailableNotice } from './GalleryUnavailableNotice';
 import { useGalleryFiltering, resolveMediaType } from './hooks/useGalleryFiltering';
 import { useGalleryUpload } from './hooks/useGalleryUpload';
 import { useLiveRefresh } from './hooks/useLiveRefresh';
@@ -488,7 +490,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // whatever arrived in the meantime too).
   const followProcessing = data?.event?.media_processing === true && !hiddenUntilReveal && !revealArmed
     && !uploadProcessing && !peopleData?.scan?.in_progress;
-  useProcessingRefresh({
+  // Issue 2274: once that poll gives up on a stuck row, live refresh takes over.
+  const processingPollHalted = useProcessingRefresh({
     slug,
     enabled: followProcessing,
     loadedCount: data?.photos?.length ?? 0,
@@ -500,7 +503,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // revealArmed too: the reveal poll above keeps refetching the list after
     // the reveal, for as long as the mode is on.
     enabled: data?.event?.live_refresh === true && !hiddenUntilReveal && !revealArmed && !uploadProcessing
-      && !peopleData?.scan?.in_progress && !followProcessing,
+      && !peopleData?.scan?.in_progress && (!followProcessing || processingPollHalted),
     loadedCount: data?.photos?.length ?? 0,
     loadedMaxId,
   });
@@ -1505,6 +1508,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // UX.md › States asks.
   const errorStatus = (error as { response?: { status?: number } } | null)?.response?.status;
   const galleryGone = errorStatus === 403 || errorStatus === 404 || errorStatus === 410;
+  if (isGalleryTemporarilyDisabled(error)) return <GalleryUnavailableNotice />;
   if (error) {
     // Check if it's an authentication error (401)
     const is401Error = (error as any)?.response?.status === 401;

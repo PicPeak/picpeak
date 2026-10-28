@@ -11,6 +11,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 
 import type { Photo } from '../../../types';
 
+vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => ({ data: undefined }) }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : key) }),
 }));

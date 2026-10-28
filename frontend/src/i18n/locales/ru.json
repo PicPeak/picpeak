@@ -3507,6 +3507,8 @@
     "ratePhoto": "Оценить фото",
     "rateSelected": "Оценить выбранные",
     "bulkRatingPartial": "Оценено фото: {{rated}} из {{total}}",
+    "bulkRatingDone": "Оценено фото: {{count}}",
+    "bulkRatingCleared": "Оценка убрана с фото: {{count}}",
     "ratingLimitReached": "Достигнут лимит оценок. Повторите попытку позже.",
     "ratingsCount_few": "{{count}} оценки",
     "ratingsCount_many": "{{count}} оценок",

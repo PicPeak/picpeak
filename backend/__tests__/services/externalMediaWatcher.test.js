@@ -88,6 +88,8 @@ describe('externalMediaWatcher (issue 1187)', () => {
     jest.doMock('../../src/services/imageProcessor', () => ({
       generateThumbnail: jest.fn(async () => 'thumbnails/mock.jpg'),
       extractCaptureDate: jest.fn(async () => null),
+      extractCapture: jest.fn(async () => null),
+      captureWallColumn: (c) => (c ? { captured_at_wall: c.wall || '' } : {}),
       orientedDimensions: (m) => ({ width: m.width, height: m.height }),
       ensureThumbnail: jest.fn(),
     }));
