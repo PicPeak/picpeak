@@ -10,11 +10,12 @@ import { AdminPhoto, type PhotoSortKey } from '../../services/photos.service';
 import { photosService } from '../../services/photos.service';
 import { uploadsService } from '../../services/uploads.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
-import { getPhotoViewMode, setPhotoViewMode, type PhotoViewMode } from '../../utils/photoViewPrefs';
+import { getHiddenPhotoColumns, getPhotoViewMode, setHiddenPhotoColumns, setPhotoViewMode, type PhotoListColumn, type PhotoViewMode } from '../../utils/photoViewPrefs';
 import { defaultCategoryLabel, isVideoItem, mediaSplitLabel, selectLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { Badge, Button, ColumnMenuHeader, useConfirm } from '../common';
 import type { ColumnMenuOption } from '../common';
 import { PermissionGate } from './PermissionGate';
+import { PhotoColumnChooser } from './PhotoColumnChooser';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { BulkCategoryModal } from './BulkCategoryModal';
 import { BulkCreditModal } from './BulkCreditModal';
@@ -75,7 +76,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
 }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
-  const { format: formatDate } = useLocalizedDate();
+  const { format: formatDate, formatDateTime, formatWallClock } = useLocalizedDate();
   const queryClient = useQueryClient();
   // The same test the tiles below use to tell a video from a photo.
   const videoCount = photos.filter(isVideoItem).length;
@@ -121,6 +122,23 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   const [isUpdatingCredit, setIsUpdatingCredit] = useState(false);
   // Layout toggle (Grid / List) persisted per admin via localStorage.
   const [viewMode, setViewMode] = useState<PhotoViewMode>(() => getPhotoViewMode());
+  // The list columns the admin hid (issue 1739), per browser like the layout.
+  const [hiddenColumns, setHiddenColumns] = useState<PhotoListColumn[]>(() => getHiddenPhotoColumns());
+  const shows = (column: PhotoListColumn) => !hiddenColumns.includes(column);
+  const toggleColumn = (column: PhotoListColumn) => {
+    const next = shows(column) ? [...hiddenColumns, column] : hiddenColumns.filter((c) => c !== column);
+    setHiddenColumns(next);
+    setHiddenPhotoColumns(next);
+  };
+  const columnLabels: Record<PhotoListColumn, string> = {
+    category: t('admin.photos.columns.category', 'Category'),
+    credit: t('admin.photos.columns.credit'),
+    captured: t('admin.photos.columns.captured', 'Captured'),
+    uploaded: t('admin.photos.columns.uploaded', 'Uploaded'),
+    engagement: t('admin.photos.columns.engagement', 'Engagement'),
+    feedback: t('admin.photos.columns.feedback', 'Feedback'),
+    size: t('admin.photos.columns.size', 'Size'),
+  };
 
   // Retry for a complete video on the placeholder tile (issue 1430, item 6);
   // the grid tile and the list row offer the same control.
@@ -140,6 +158,10 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   const NAME_SORT: ColumnMenuOption[] = [
     { value: 'name:asc', label: t('events.sortNameAsc', 'A – Z') },
     { value: 'name:desc', label: t('events.sortNameDesc', 'Z – A') },
+  ];
+  const CAPTURED_SORT: ColumnMenuOption[] = [
+    { value: 'capture_date:desc', label: t('events.sortDateNewest', 'Newest first') },
+    { value: 'capture_date:asc', label: t('events.sortDateOldest', 'Oldest first') },
   ];
   const UPLOADED_SORT: ColumnMenuOption[] = [
     { value: 'date:desc', label: t('events.sortDateNewest', 'Newest first') },
@@ -621,6 +643,9 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
               ? mediaSplitLabel(t, splitMediaCount(photos.length, videoCount))
               : t('gallery.photosCount', { count: photos.length })}
           </div>
+          {viewMode === 'list' && (
+            <PhotoColumnChooser labels={columnLabels} hidden={hiddenColumns} onToggle={toggleColumn} />
+          )}
           {/* Layout toggle: Grid / List — radiogroup so a screen reader
               announces the two options as one mutually-exclusive set. */}
           <div className="inline-flex rounded-lg border border-line-strong overflow-hidden" role="radiogroup" aria-label={t('admin.photos.viewMode', 'View mode')} onKeyDown={radioGroupKeyDown}>
@@ -1000,12 +1025,13 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
             <tr>
               <th className="w-8 px-3 py-2" />
               {listHeader(t('admin.photos.columns.photo', 'Photo'), 'px-3 py-2', 'left', NAME_SORT, t('gallery.sortByName', 'Sort by Name'))}
-              {listHeader(t('admin.photos.columns.category', 'Category'), 'hidden lg:table-cell px-3 py-2', 'left')}
-              {listHeader(t('admin.photos.columns.credit'), 'hidden lg:table-cell px-3 py-2', 'left')}
-              {listHeader(t('admin.photos.columns.uploaded', 'Uploaded'), 'hidden md:table-cell px-3 py-2', 'left', UPLOADED_SORT, t('gallery.sortByDate', 'Sort by Date'))}
-              {listHeader(t('admin.photos.columns.engagement', 'Engagement'), 'hidden xl:table-cell px-3 py-2', 'right', ENGAGEMENT_SORT, t('admin.photos.sort.engagement', 'Sort by Engagement'))}
-              {listHeader(t('admin.photos.columns.feedback', 'Feedback'), 'hidden sm:table-cell px-3 py-2', 'right', RATING_SORT, t('gallery.sortByRating', 'Sort by Rating'))}
-              {listHeader(t('admin.photos.columns.size', 'Size'), 'px-3 py-2', 'right', SIZE_SORT, t('gallery.sortBySize', 'Sort by Size'))}
+              {shows('category') && listHeader(columnLabels.category, 'hidden lg:table-cell px-3 py-2', 'left')}
+              {shows('credit') && listHeader(columnLabels.credit, 'hidden lg:table-cell px-3 py-2', 'left')}
+              {shows('captured') && listHeader(columnLabels.captured, 'hidden md:table-cell px-3 py-2', 'left', CAPTURED_SORT, t('gallery.sortByCaptureDate', 'Sort by Capture Date'))}
+              {shows('uploaded') && listHeader(columnLabels.uploaded, 'hidden md:table-cell px-3 py-2', 'left', UPLOADED_SORT, t('gallery.sortByDate', 'Sort by Date'))}
+              {shows('engagement') && listHeader(columnLabels.engagement, 'hidden xl:table-cell px-3 py-2', 'right', ENGAGEMENT_SORT, t('admin.photos.sort.engagement', 'Sort by Engagement'))}
+              {shows('feedback') && listHeader(columnLabels.feedback, 'hidden sm:table-cell px-3 py-2', 'right', RATING_SORT, t('gallery.sortByRating', 'Sort by Rating'))}
+              {shows('size') && listHeader(columnLabels.size, 'px-3 py-2', 'right', SIZE_SORT, t('gallery.sortBySize', 'Sort by Size'))}
               {listHeader(t('admin.photos.columns.actions', 'Actions'), 'w-px px-3 py-2', 'right')}
             </tr>
           </thead>
@@ -1154,26 +1180,31 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                   </td>
 
                   {/* Category */}
-                  <td className="hidden lg:table-cell px-3 py-2 max-w-[12rem] truncate text-sm text-soft">
+                  {shows('category') && <td className="hidden lg:table-cell px-3 py-2 max-w-[12rem] truncate text-sm text-soft">
                     {defaultCategoryLabel(t, photo) || '—'}
-                  </td>
+                  </td>}
 
                   {/* Credit (#1561) */}
-                  <td className="hidden lg:table-cell px-3 py-2 max-w-[12rem] text-sm text-soft">
+                  {shows('credit') && <td className="hidden lg:table-cell px-3 py-2 max-w-[12rem] text-sm text-soft">
                     {photo.credit_name ? (
                       <span className="block truncate" title={photo.credit_name}>{photo.credit_name}</span>
                     ) : photo.uploaded_by === 'guest' ? (
                       <span className="text-faint">{t('admin.photos.credit.unnamedGuest')}</span>
                     ) : '—'}
-                  </td>
+                  </td>}
+
+                  {/* Capture time: the camera clock, unshifted (issue 1739); a video's is an instant */}
+                  {shows('captured') && <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap text-sm text-soft tabular-nums">
+                    {photo.captured_at ? formatDateTime(photo.captured_at) : formatWallClock(photo.captured_at_local)}
+                  </td>}
 
                   {/* Uploaded date */}
-                  <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap text-sm text-soft">
+                  {shows('uploaded') && <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap text-sm text-soft">
                     {photo.uploaded_at ? formatDate(photo.uploaded_at) : '—'}
-                  </td>
+                  </td>}
 
                   {/* Engagement: views / downloads / likes */}
-                  <td className="hidden xl:table-cell px-3 py-2 text-right text-xs text-muted tabular-nums">
+                  {shows('engagement') && <td className="hidden xl:table-cell px-3 py-2 text-right text-xs text-muted tabular-nums">
                     <div className="flex items-center justify-end gap-3">
                       <span className="inline-flex items-center gap-1" title={t('admin.photos.columns.views', 'Views')}>
                         <Eye className="w-3.5 h-3.5" />
@@ -1188,10 +1219,10 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                         {likeCount}
                       </span>
                     </div>
-                  </td>
+                  </td>}
 
                   {/* Feedback: rating + comments */}
-                  <td className="hidden sm:table-cell px-3 py-2 text-right text-xs text-soft">
+                  {shows('feedback') && <td className="hidden sm:table-cell px-3 py-2 text-right text-xs text-soft">
                     {averageRating > 0 || commentCount > 0 ? (
                       <div className="flex items-center justify-end gap-2">
                         {averageRating > 0 && (
@@ -1208,12 +1239,12 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                         )}
                       </div>
                     ) : '—'}
-                  </td>
+                  </td>}
 
                   {/* Size */}
-                  <td className="px-3 py-2 text-right text-sm text-muted whitespace-nowrap tabular-nums">
+                  {shows('size') && <td className="px-3 py-2 text-right text-sm text-muted whitespace-nowrap tabular-nums">
                     {photosService.formatBytes(photo.size)}
-                  </td>
+                  </td>}
 
                   {/* Actions */}
                   <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>

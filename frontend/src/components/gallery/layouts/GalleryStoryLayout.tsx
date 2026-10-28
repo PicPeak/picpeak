@@ -8,6 +8,7 @@ import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { feedbackService } from '../../../services/feedback.service';
+import { BulkRatingPopover } from '../BulkRatingPopover';
 import { galleryService, splitIntoArchives } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
 import { isVideoItem, mediaSplitLabel, selectLabel, splitMediaCount } from '../../../utils/mediaCounts';
@@ -386,6 +387,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // with either off the like endpoint answers 403, so neither the card hearts
   // nor the bulk control are offered.
   const likesAllowed = feedbackEnabled && feedbackOptions?.allowLikes !== false;
+  // As the other layouts' "Rate selected": off with ratings off for the event.
+  const ratingsAllowed = feedbackEnabled && !!feedbackOptions?.allowRatings && !!slug;
   // The client's per-photo hide/show button (issue 1992); guests get none.
   const clientToggleVisibility = isClient ? onToggleVisibility : undefined;
   const allVisibleSelected = visiblePhotos.length > 0 && visiblePhotos.every((photo) => selected.has(photo.id));
@@ -675,6 +678,20 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   </span>
                   <span className="sm:hidden" aria-hidden="true">({selected.size})</span>
                 </button>
+              )}
+              {/* Rate selected (issue 1985): tiles here show no rating, so
+                  the result comes back as a toast. Icon only on a phone. */}
+              {ratingsAllowed && selected.size > 0 && (
+                <BulkRatingPopover
+                  slug={slug}
+                  photoIds={Array.from(selected)}
+                  requireNameEmail={feedbackOptions?.requireNameEmail}
+                  className="story-rate"
+                  triggerClassName="story-selection-btn"
+                  popoverClassName="story-rate-popover"
+                >
+                  <span className="hidden sm:inline">{t('feedback.rateSelected', 'Rate selected')}</span>
+                </BulkRatingPopover>
               )}
               {allowDownloads && onDownloadSelected && selected.size > 0 && (
                 <button

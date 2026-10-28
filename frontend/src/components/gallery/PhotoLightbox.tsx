@@ -8,6 +8,7 @@ import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { isPhotoDownloadPending, usePhotoDownloadPending } from '../../hooks/usePhotoDownloadPending';
 import { AuthenticatedImage } from '../common';
 import { useFullResolutionZoom, FullResolutionImage } from './hooks/useFullResolutionZoom';
+import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { PhotoFeedback } from './PhotoFeedback';
 import { lightboxImageUrl } from './imageTiers';
 import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
@@ -315,6 +316,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // leaving currentIndex past the end. The effect below re-syncs the
   // index (or closes the lightbox when nothing is left).
   const currentPhoto = photos[currentIndex] ?? photos[photos.length - 1];
+  // The admin's maximum lightbox zoom (issue 2281), in percent of the original's pixels.
+  const { data: publicSettings } = usePublicSettings();
   // Zoom to original pixels (issue 1733). Inert, with the old 3x ceiling,
   // unless the server offered this photo's original.
   const fullZoom = useFullResolutionZoom({
@@ -327,6 +330,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     setDragOffset,
     gesturing: isDragging || isPinching,
     containerRef: trackContainerRef,
+    maxZoomPercent: publicSettings?.gallery_lightbox_max_zoom_percent,
   });
   const fullZoomLive = fullZoom.live;
   // The player's poster follows one the server is still building (issue

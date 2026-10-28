@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { isGalleryTemporarilyDisabled } from '../utils/galleryAvailability';
+import { GalleryUnavailableNotice } from '../components/gallery/GalleryUnavailableNotice';
 import { useParams, Link } from 'react-router-dom';
 import { AlertCircle, Check, Clock, Copy } from 'lucide-react';
 import { differenceInDays, parseISO } from 'date-fns';
@@ -70,6 +72,8 @@ export const GalleryPage: React.FC = () => {
   const [identifierError, setIdentifierError] = useState<string | null>(null);
   const [identifierNeedsPasswordChange, setIdentifierNeedsPasswordChange] = useState(false);
   const [identifierAdminSessionExpired, setIdentifierAdminSessionExpired] = useState(false);
+  const [identifierDisabled, setIdentifierDisabled] = useState(false);
+  const [loginUnavailable, setLoginUnavailable] = useState(false);
   const lastResolvedIdentifier = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -110,6 +114,7 @@ export const GalleryPage: React.FC = () => {
           setIdentifierError(message);
           setIdentifierNeedsPasswordChange(isPasswordChangeRequired(error));
           setIdentifierAdminSessionExpired(isAdminSessionExpired(error));
+          setIdentifierDisabled(isGalleryTemporarilyDisabled(error));
         })
         .finally(() => {
           if (!cancelled) {
@@ -138,6 +143,7 @@ export const GalleryPage: React.FC = () => {
 
   React.useEffect(() => {
     setAutoLoginAttempted(false);
+    setLoginUnavailable(false);
   }, [resolvedSlug]);
   
   const { data: settingsData, isLoading: isLoadingSettings } = usePublicSettings();
@@ -208,6 +214,10 @@ export const GalleryPage: React.FC = () => {
           setLoginError(null);
         })
         .catch((error: any) => {
+          if (isGalleryTemporarilyDisabled(error)) {
+            setLoginUnavailable(true);
+            return;
+          }
           const message = error?.response?.data?.error;
           if (message) {
             setLoginError(message);
@@ -257,6 +267,10 @@ export const GalleryPage: React.FC = () => {
         });
       }
     } catch (error: any) {
+      if (isGalleryTemporarilyDisabled(error)) {
+        setLoginUnavailable(true);
+        return;
+      }
       console.error('Login error:', error);
       const errorMessage = error.response?.data?.error || '';
       const statusCode = error.response?.status;
@@ -350,6 +364,10 @@ export const GalleryPage: React.FC = () => {
     (isAdminPreview && isAdminSessionExpired(infoError))
   ) {
     return <PasswordChangeRequiredNotice reason="session" />;
+  }
+
+  if (loginUnavailable || (identifierError && identifierDisabled && !resolvedSlug && !isResolvingIdentifier) || isGalleryTemporarilyDisabled(infoError)) {
+    return <GalleryUnavailableNotice />;
   }
 
   // Gallery missing / archived / expired-link / unresolvable identifier all

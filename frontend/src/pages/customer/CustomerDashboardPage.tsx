@@ -15,7 +15,7 @@
  *     These can't be opened (decision #24c); Details still shows the event's
  *     documents.
  *
- * Whether a gallery is active, expired or not available yet comes from the
+ * Whether a gallery is active, expired, paused or not available yet comes from the
  * server (`availability`), not from the browser clock.
  *
  * Open → exchange the customer JWT for a per-event gallery JWT via
@@ -37,6 +37,7 @@ import {
 } from '../../services/customer.service';
 import { galleryService } from '../../services/gallery.service';
 import { isDownloadLimitError } from '../../utils/downloadLimit';
+import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
 import { calendarDay } from '../../utils/calendarDay';
 
@@ -242,7 +243,9 @@ export const CustomerDashboardPage: React.FC = () => {
       navigate(`/gallery/${encodeURIComponent(slug)}`);
     } catch (e: any) {
       const status = e?.response?.status;
-      if (status === 410) {
+      if (isGalleryTemporarilyDisabled(e)) {
+        toast.error(t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'));
+      } else if (status === 410) {
         toast.error(t('customer.dashboard.eventExpired', 'This gallery has expired.'));
       } else if (status === 403) {
         toast.error(t('customer.dashboard.eventForbidden', 'You no longer have access to this gallery.'));
@@ -267,7 +270,9 @@ export const CustomerDashboardPage: React.FC = () => {
       // A download limit refusal already said why (issue 1560).
       if (isDownloadLimitError(e)) return;
       const status = e?.response?.status;
-      if (status === 410) {
+      if (isGalleryTemporarilyDisabled(e)) {
+        toast.error(t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.'));
+      } else if (status === 410) {
         toast.error(t('customer.dashboard.eventExpired', 'This gallery has expired.'));
       } else if (status === 403) {
         toast.error(t('customer.dashboard.eventForbidden', 'You no longer have access to this gallery.'));
@@ -391,7 +396,9 @@ export const CustomerDashboardPage: React.FC = () => {
                             </span>
                           )}
                           {unavailable && (
-                            <span>{t('customer.dashboard.notAvailable', 'Not available yet')}</span>
+                            <span>{ev.availability === 'paused'
+                              ? t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.')
+                              : t('customer.dashboard.notAvailable', 'Not available yet')}</span>
                           )}
                           {isOpening && (
                             <span className="text-xs text-accent">

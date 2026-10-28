@@ -3,7 +3,7 @@ const fs = require('fs');
 const { db } = require('../../database/db');
 const { sellablePhotos } = require('../../modules/photoSales/sellable');
 const { errorResponse } = require('../../utils/routeHelpers');
-const { verifyPurchaseAccess, buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
+const { verifyPurchaseAccess, buildPurchasedDownloadUrl, pauseAdjustedExpiry } = require('../../modules/photoSales/purchaseAccess');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
 const { getStorage } = require('../../services/storage');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
@@ -11,6 +11,9 @@ const { getUseOriginalFilenames, pickRawDownloadName } = require('../../services
 const { buildContentDisposition } = require('../../utils/filenameSanitizer');
 const { pipeStreamToResponse } = require('../../utils/streamResponse');
 const logger = require('../../utils/logger');
+const { getSupportEmail } = require('../../services/emailProcessor');
+const { noStoreCache } = require('../../middleware/noStoreCache');
+const { toIso } = require('../../utils/dateNormalize');
 
 const router = express.Router();
 
@@ -20,8 +23,8 @@ const isTrue = (value) => value === true || value === 1 || value === '1';
  * A granted order (not refunded, charged back or cancelled — the webhook
  * revokes those) whose access has not expired.
  */
-function isOrderActive(order) {
-  return !!order && order.status === 'completed' && verifyPurchaseAccess(order);
+function isOrderActive(order, gallery) {
+  return !!order && order.status === 'completed' && verifyPurchaseAccess(order, gallery);
 }
 
 /**
@@ -40,14 +43,16 @@ async function orderGallery(order) {
  */
 async function activePurchase(accessToken, photoId) {
   const order = await db('photo_purchase_orders').where({ access_token: accessToken }).first();
-  if (!isOrderActive(order)) return null;
+  if (!order) return null;
+  const gallery = await orderGallery(order);
+  if (!isOrderActive(order, gallery)) return null;
   const row = await db('photo_purchases')
     .where({ order_id: order.order_id, access_token: accessToken, photo_id: photoId })
-    .first('id', 'photo_id', 'expires_at');
-  return row && verifyPurchaseAccess(row) ? { order, row } : null;
+    .first('id', 'photo_id', 'expires_at', 'purchased_at');
+  return row && verifyPurchaseAccess(row, gallery) ? { order, row, gallery } : null;
 }
 
-router.get('/purchased-downloads/:accessToken', async (req, res) => {
+router.get('/purchased-downloads/:accessToken', noStoreCache, async (req, res) => {
   try {
     const { accessToken } = req.params;
     const order = await db('photo_purchase_orders')
@@ -58,22 +63,39 @@ router.get('/purchased-downloads/:accessToken', async (req, res) => {
       return res.status(404).json({ error: 'Purchase link not found' });
     }
 
-    if (!isOrderActive(order)) {
+    const gallery = await orderGallery(order);
+    if (!isOrderActive(order, gallery)) {
       return res.status(403).json({ error: 'Access expired' });
     }
 
-    const gallery = await orderGallery(order);
     if (!gallery) {
       return res.status(404).json({ error: 'Gallery not available' });
     }
 
     const accessRows = await db('photo_purchases')
       .where({ order_id: order.order_id, access_token: accessToken })
-      .select('id', 'photo_id', 'expires_at', 'gallery_id', 'access_token');
+      .select('id', 'photo_id', 'expires_at', 'purchased_at', 'gallery_id', 'access_token');
 
-    const activeRows = accessRows.filter((row) => verifyPurchaseAccess(row));
+    const activeRows = accessRows.filter((row) => verifyPurchaseAccess(row, gallery));
     if (!activeRows.length) {
       return res.status(403).json({ error: 'Access expired' });
+    }
+
+    if (isTrue(gallery.temporarily_disabled)) {
+      // The order and entitlement remain intact. This response confirms a
+      // valid purchase without offering file URLs while the gallery is paused.
+      return res.json({
+        order_id: order.order_id,
+        gallery_slug: gallery.slug,
+        gallery_name: gallery.event_name || null,
+        buyer_email: order.buyer_email,
+        expires_at: pauseAdjustedExpiry(order, gallery),
+        temporarily_disabled: true,
+        gallery_expires_at: toIso(gallery.expires_at) || null,
+        support_email: await getSupportEmail(),
+        photo_count: activeRows.length,
+        photos: [],
+      });
     }
 
     const photoIds = activeRows.map((row) => row.photo_id);
@@ -93,7 +115,7 @@ router.get('/purchased-downloads/:accessToken', async (req, res) => {
       gallery_slug: gallery?.slug || null,
       gallery_name: gallery?.event_name || null,
       buyer_email: order.buyer_email,
-      expires_at: order.expires_at,
+      expires_at: pauseAdjustedExpiry(order, gallery),
       photo_ids: validPhotos.map((photo) => Number(photo.id)),
       photos: validPhotos.map((photo) => ({
         id: Number(photo.id),
@@ -113,7 +135,7 @@ router.get('/purchased-downloads/:accessToken', async (req, res) => {
 // gallery session): the order and the photo's purchase row must both be
 // unexpired, and the photo must still be a sellable photo of the order's
 // gallery.
-router.get('/purchased-downloads/:accessToken/photos/:photoId', async (req, res) => {
+router.get('/purchased-downloads/:accessToken/photos/:photoId', noStoreCache, async (req, res) => {
   try {
     const photoId = Number(req.params.photoId);
     if (!Number.isInteger(photoId) || photoId <= 0) {
@@ -124,7 +146,10 @@ router.get('/purchased-downloads/:accessToken/photos/:photoId', async (req, res)
       return res.status(403).json({ error: 'This purchase link does not include this photo or has expired' });
     }
 
-    const event = await orderGallery(purchase.order);
+    const event = purchase.gallery;
+    if (isTrue(event?.temporarily_disabled)) {
+      return res.status(403).json({ error: 'This gallery is temporarily unavailable.', code: 'GALLERY_TEMPORARILY_DISABLED' });
+    }
     const photo = event
       ? await sellablePhotos(db, event.id).where('photos.id', photoId).first('photos.*')
       : null;

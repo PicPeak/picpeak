@@ -20,6 +20,12 @@ export interface AdminPhoto {
   category_slug: string | null;
   size: number;
   uploaded_at: string;
+  // The camera clock, 'YYYY-MM-DDTHH:MM:SS' with no zone (issue 1739); null
+  // when the photo carries no capture date. Format with formatWallClock.
+  captured_at_local?: string | null;
+  // A video's capture time as an instant (ISO), shown in the viewer's zone;
+  // null for photos, which send captured_at_local instead.
+  captured_at?: string | null;
   visibility?: PhotoVisibility;
   media_type?: 'photo' | 'video';
   mime_type?: string | null;

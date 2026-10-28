@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ clientLogin: vi.fn() }));
+const mocks = vi.hoisted(() => ({ clientLogin: vi.fn(), infoError: null as unknown }));
 
 vi.mock('../../hooks/useShowAgbLink', () => ({ useShowAgbLink: () => false }));
 vi.mock('react-i18next', () => ({
@@ -18,7 +18,7 @@ vi.mock('../../contexts', () => ({
   }),
 }));
 vi.mock('../../hooks/useGallery', () => ({
-  useGalleryInfo: () => ({ data: { event_name: 'Private gallery' }, isLoading: false, error: null }),
+  useGalleryInfo: () => ({ data: { event_name: 'Private gallery' }, isLoading: false, error: mocks.infoError }),
 }));
 vi.mock('../../hooks/usePublicSettings', () => ({
   usePublicSettings: () => ({ data: { branding_hide_powered_by: true } }),
@@ -49,6 +49,7 @@ describe('ClientAccessPage private-link binding', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.clientLogin.mockResolvedValue({});
+    mocks.infoError = null;
   });
 
   it('submits the current link token with the PIN', async () => {
@@ -68,6 +69,21 @@ describe('ClientAccessPage private-link binding', () => {
     expect(mocks.clientLogin).not.toHaveBeenCalled();
     // A missing link is named as such, not as a wrong PIN to retry.
     expect(screen.getByText('clientAccess.linkInvalid')).toBeInTheDocument();
+    expect(screen.queryByText('clientAccess.invalidPin')).toBeNull();
+  });
+
+  it('explains a paused gallery before showing the private PIN form', () => {
+    mocks.infoError = { response: { status: 403, data: { code: 'GALLERY_TEMPORARILY_DISABLED' } } };
+    renderPage(`?token=${'a'.repeat(64)}`);
+    expect(screen.getByRole('heading', { name: 'gallery.temporarilyUnavailable' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('clientAccess.pinLabel')).toBeNull();
+  });
+
+  it('does not describe a pause during sign-in as a wrong PIN', async () => {
+    mocks.clientLogin.mockRejectedValueOnce({ response: { status: 403, data: { code: 'GALLERY_TEMPORARILY_DISABLED' } } });
+    renderPage(`?token=${'a'.repeat(64)}`);
+    await submitPin();
+    expect(await screen.findByRole('heading', { name: 'gallery.temporarilyUnavailable' })).toBeInTheDocument();
     expect(screen.queryByText('clientAccess.invalidPin')).toBeNull();
   });
 });
