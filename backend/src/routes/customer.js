@@ -178,7 +178,15 @@ router.get('/events/:slug/access-token', [
       return res.status(410).json({ error: 'This gallery has expired' });
     }
 
-    if (!isGalleryAvailable(event)) return res.status(404).json({ error: 'Event not found' });
+    if (!isGalleryAvailable(event)) {
+      // Only an assigned customer may distinguish a live gallery's pause
+      // from a gallery they cannot access. No gallery token is minted.
+      if (isGalleryAvailable(event, { allowTemporarilyDisabled: true })
+          && await customerAccountsService.customerHasAccessToEvent(req.customer.id, event.id)) {
+        return res.status(403).json({ error: 'This gallery is temporarily unavailable.', code: 'GALLERY_TEMPORARILY_DISABLED' });
+      }
+      return res.status(404).json({ error: 'Event not found' });
+    }
 
     const hasAccess = await customerAccountsService.customerHasAccessToEvent(
       req.customer.id,

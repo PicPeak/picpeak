@@ -4158,6 +4158,7 @@
       "columns": {
         "photo": "Fotografija",
         "category": "Kategorija",
+        "captured": "Posneto",
         "uploaded": "Naloženo",
         "engagement": "Odzivi",
         "feedback": "Povratne informacije",
@@ -4168,6 +4169,7 @@
         "likes": "Všečki",
         "credit": "Avtor"
       },
+      "columnChooser": "Stolpci",
       "myMarks": "Vaše oznake",
       "myMarksHelp": "Vidite jih samo vi. V galeriji stranke se nikoli ne prikažejo, izvozijo pa se v Lightroom kot XMP.",
       "myRating": "Vaša ocena",
@@ -5829,6 +5831,8 @@
     "ratePhoto": "Oceni fotografijo",
     "rateSelected": "Oceni izbrane",
     "bulkRatingPartial": "Ocenjenih fotografij: {{rated}} od {{total}}",
+    "bulkRatingDone": "Ocenjenih fotografij: {{count}}",
+    "bulkRatingCleared": "Ocena odstranjena s fotografij: {{count}}",
     "ratingLimitReached": "Omejitev ocen je dosežena. Poskusite znova pozneje.",
     "ratingsCount_one": "{{count}} ocena",
     "ratingsCount_other": "{{count}} ocen",

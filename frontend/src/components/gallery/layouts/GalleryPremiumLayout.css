@@ -155,10 +155,15 @@
   }
 }
 
+.gallery-premium-nav-title--yield {
+  display: none;
+}
+
 .gallery-premium-nav-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  margin-left: auto;
 }
 
 @media (min-width: 768px) {
@@ -250,6 +255,42 @@
 
 .gallery-premium-download-btn:hover {
   background-color: color-mix(in srgb, var(--color-text) 85%, var(--color-surface));
+}
+
+/* Rate selected (issue 1985): the panel hangs under the nav. On a phone it
+   spans the nav (the sticky nav is its containing block), so it never runs
+   off the edge; from sm up it sits under its button. */
+.gallery-premium-rate {
+  position: static;
+}
+
+.gallery-premium-rate-popover {
+  position: absolute;
+  top: 100%;
+  left: 1rem;
+  right: 1rem;
+  z-index: 45;
+  display: flex;
+  justify-content: center;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-surface-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  color: var(--color-text);
+}
+
+@media (min-width: 640px) {
+  .gallery-premium-rate {
+    position: relative;
+  }
+
+  .gallery-premium-rate-popover {
+    left: auto;
+    right: 0;
+    width: max-content;
+  }
 }
 
 /* Main Gallery */

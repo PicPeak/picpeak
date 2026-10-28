@@ -155,6 +155,34 @@ describe('admin photo list sorting (issue 1739)', () => {
     });
   });
 
+  it('returns the capture time as a zone-less wall clock in the server zone', async () => {
+    // Read the way exifr reads a zone-less EXIF time: in the server's zone.
+    const exif = new Date(2026, 5, 3, 13, 15, 42).toISOString();
+    await addPhoto('managed.jpg', { captured_at: managed(exif) });
+    await addPhoto('imported.jpg', { captured_at: exif });
+    await addPhoto('undated.jpg', { captured_at: null });
+    const byName = Object.fromEntries((await list('sort=name&order=asc'))
+      .map((p) => [p.filename, p.captured_at_local]));
+    expect(byName).toEqual({
+      'managed.jpg': '2026-06-03T13:15:42',
+      'imported.jpg': '2026-06-03T13:15:42',
+      'undated.jpg': null,
+    });
+  });
+
+  it('returns a video capture time as an instant, not as a server wall clock', async () => {
+    // videoCaptureDate stores the real instant (offset or UTC creation_time).
+    await addPhoto('clip.mp4', { media_type: 'video', captured_at: '2026-06-03T11:15:42.000Z' });
+    await addPhoto('legacy.mov', { media_type: 'image', mime_type: 'video/quicktime', captured_at: '2026-06-03T11:15:42.000Z' });
+    await addPhoto('still.jpg', { captured_at: '2026-06-03T11:15:42.000Z' });
+    const byName = Object.fromEntries((await list('sort=name&order=asc'))
+      .map((p) => [p.filename, [p.captured_at_local, p.captured_at]]));
+    expect(byName['clip.mp4']).toEqual([null, '2026-06-03T11:15:42.000Z']);
+    expect(byName['legacy.mov']).toEqual([null, '2026-06-03T11:15:42.000Z']);
+    expect(byName['still.jpg'][1]).toBeNull();
+    expect(byName['still.jpg'][0]).toMatch(/^2026-06-0[34]T\d{2}:15:42$/);
+  });
+
   it('by rating puts the best rated first and unrated photos last', async () => {
     await addPhoto('unrated.jpg');
     await addPhoto('three.jpg', { average_rating: 3 });

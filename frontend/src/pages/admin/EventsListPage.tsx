@@ -14,6 +14,8 @@ import {
   Calendar,
   Image,
   Activity,
+  PauseCircle,
+  PlayCircle,
   Copy,
   CheckCircle,
   ChevronLeft,
@@ -107,7 +109,7 @@ export const EventsListPage: React.FC = () => {
   const statusFilter: EventStatusFilter | undefined =
     filterParam === 'active' || filterParam === 'archived' ||
     filterParam === 'draft' || filterParam === 'expiring' ||
-    filterParam === 'inactive' || filterParam === 'awaiting_delivery'
+    filterParam === 'inactive' || filterParam === 'disabled' || filterParam === 'awaiting_delivery'
       ? filterParam
       : undefined;
   const isExpiringFilter = filterParam === 'expiring';
@@ -312,6 +314,16 @@ export const EventsListPage: React.FC = () => {
     errorMessage: (error) => archiveInProgressError(error, t) ?? t('toast.saveError'),
   });
 
+  const availabilityMutation = useMutationWithToast({
+    mutationFn: ({ id, disabled }: { id: number; disabled: boolean }) =>
+      eventsService.updateEvent(id, { temporarily_disabled: disabled }),
+    invalidateKeys: [['admin-events'], ['admin-event'], ['admin-dashboard-stats']],
+    successMessage: (_data, { disabled }) => disabled
+      ? t('events.temporarilyDisabledSuccess', 'Gallery temporarily disabled.')
+      : t('events.temporarilyEnabledSuccess', 'Temporary pause removed.'),
+    errorMessage: (error) => archiveInProgressError(error, t) ?? t('toast.saveError'),
+  });
+
   // Delete mutation
   const deleteMutation = useMutationWithToast({
     mutationFn: eventsService.deleteEvent,
@@ -419,15 +431,14 @@ export const EventsListPage: React.FC = () => {
     if (event.is_draft) return { label: t('events.draft'), tone: 'warning' };
     if (event.is_archived) return { label: t('events.archived'), tone: 'neutral' };
     if (!event.is_active) return { label: t('events.inactive'), tone: 'danger' };
-
-    if (!event.expires_at) return { label: t('events.active'), tone: 'success' };
-
     // Expired means the timestamp has actually passed (#909):
     // differenceInDays truncates to whole days, so an event expiring in a
     // few hours returned 0 and showed "Expired" while the public gallery
     // (which compares real timestamps) correctly showed it active.
-    const expiresAt = parseISO(event.expires_at);
-    if (expiresAt.getTime() <= Date.now()) return { label: t('events.expired'), tone: 'danger' };
+    const expiresAt = event.expires_at ? parseISO(event.expires_at) : null;
+    if (expiresAt && expiresAt.getTime() <= Date.now()) return { label: t('events.expired'), tone: 'danger' };
+    if (event.temporarily_disabled) return { label: t('events.disabled', 'Disabled'), tone: 'warning' };
+    if (!expiresAt) return { label: t('events.active'), tone: 'success' };
     // Ceiling so the last day reads "1 day left", never "0 days".
     const days = Math.ceil((expiresAt.getTime() - Date.now()) / 86400000);
     if (days <= 7) return { label: t('events.daysLeft', { count: days }), tone: 'warning' };
@@ -568,6 +579,13 @@ export const EventsListPage: React.FC = () => {
               onClick={() => patchParams({ filter: 'active' })}
             >
               {t('events.active')}
+            </Button>
+            <Button
+              variant={statusFilter === 'disabled' ? 'primary' : 'outline'}
+              size="md"
+              onClick={() => patchParams({ filter: 'disabled' })}
+            >
+              {t('events.disabled', 'Disabled')}
             </Button>
             <Button
               variant={isExpiringFilter ? 'primary' : 'outline'}
@@ -892,6 +910,22 @@ export const EventsListPage: React.FC = () => {
                                   {t('events.copyLink', 'Copy Link')}
                                 </button>
                               ) : null}
+                              {!event.is_archived && !event.share_secrets_hidden && (
+                                <PermissionGate permission="events.edit">
+                                  <button
+                                    disabled={availabilityMutation.isPending}
+                                    onClick={() => {
+                                      availabilityMutation.mutate({ id: event.id, disabled: !event.temporarily_disabled });
+                                      setActiveDropdown(null);
+                                      setDropdownPosition(null);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-sm text-body hover:bg-hover flex items-center gap-2 disabled:opacity-50"
+                                  >
+                                    {event.temporarily_disabled ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
+                                    {event.temporarily_disabled ? t('events.enableEvent', 'Enable gallery') : t('events.disableEvent', 'Disable gallery')}
+                                  </button>
+                                </PermissionGate>
+                              )}
                               {!event.is_archived ? (
                                 <PermissionGate permission="events.archive">
                                   <button

@@ -19,6 +19,9 @@ import type { Photo } from '../../../types';
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string, d?: unknown) => (typeof d === 'string' ? d : k) }) }));
 vi.mock('../../../hooks/useDevToolsProtection', () => ({ useDevToolsProtection: () => undefined }));
 vi.mock('../../../hooks/useGallery', () => ({ useSavePhotoToDevice: () => ({ mutate: vi.fn(), isPending: false }) }));
+// The admin's maximum lightbox zoom (issue 2281); undefined is a fresh install.
+const publicSettings: { gallery_lightbox_max_zoom_percent?: number } = {};
+vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => ({ data: publicSettings }) }));
 vi.mock('../../../hooks/useFeedbackLimitModal', () => ({ useFeedbackLimitModal: () => ({ modal: null, handleError: () => false }) }));
 vi.mock('../../../contexts/GuestIdentityContext', () => ({ useGuestIdentityOptional: () => null }));
 vi.mock('../../../services/feedback.service', () => ({
@@ -86,6 +89,7 @@ let densityListeners: Array<() => void> = [];
 
 beforeEach(() => {
   coarse = false;
+  delete publicSettings.gallery_lightbox_max_zoom_percent;
   FIT = { width: 600, height: 400 };
   resizeObservers = [];
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get() { return this.tagName === 'IMG' ? FIT.width : 0; } });
@@ -181,6 +185,37 @@ describe('PhotoLightbox with a full resolution', () => {
     expect(image().style.transform).toContain('scale(10)');
     expect(readout()).toBe('100%');
     expect(screen.getByLabelText('Zoom in')).toBeDisabled();
+  });
+
+  it('lifts the ceiling to the admin\'s maximum zoom for every input', () => {
+    publicSettings.gallery_lightbox_max_zoom_percent = 800;
+    const { image, readout, pinch, surface } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    pinch(20);
+    expect(image().style.transform).toContain('scale(20)');
+    pinch(20);
+    expect(image().style.transform).toContain('scale(80)');
+    expect(readout()).toBe('800%');
+    expect(screen.getByLabelText('Zoom in')).toBeDisabled();
+    fireEvent.wheel(surface, { deltaY: -500 });
+    expect(image().style.transform).toContain('scale(80)');
+  });
+
+  it('steps the zoom-in button up to the admin\'s maximum zoom', () => {
+    publicSettings.gallery_lightbox_max_zoom_percent = 200;
+    const { image, readout, surface } = setup([zoomable(1), zoomable(2), zoomable(3)]);
+    fireEvent.doubleClick(surface, { clientX: 0, clientY: 0 });
+    expect(readout()).toBe('100%');
+    for (let i = 0; i < 30; i += 1) fireEvent.click(screen.getByLabelText('Zoom in'));
+    expect(image().style.transform).toContain('scale(20)');
+    expect(readout()).toBe('200%');
+    expect(screen.getByLabelText('Zoom in')).toBeDisabled();
+  });
+
+  it('keeps 3x of fit without an original whatever the admin\'s maximum zoom', () => {
+    publicSettings.gallery_lightbox_max_zoom_percent = 1000;
+    const { image, pinch } = setup([photo(1), photo(2), photo(3)]);
+    pinch(8);
+    expect(image().style.transform).toContain('scale(3)');
   });
 
   it('halves the ceiling on a 2x display, never below 3x of fit', () => {

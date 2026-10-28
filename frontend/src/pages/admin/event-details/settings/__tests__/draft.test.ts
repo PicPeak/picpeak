@@ -33,6 +33,14 @@ const EVENT = {
 const branding = { headerStyle: 'standard' as const, primaryColor: '#222222' };
 
 describe('event settings draft', () => {
+  it('saves temporary availability in Access without touching lifecycle or credentials', () => {
+    const base = eventFieldsFromEvent(EVENT, branding);
+    const draft = { ...base, temporarily_disabled: true };
+    expect(eventUpdatePayload(draft, base, t)).toEqual({ temporarily_disabled: true });
+    const slice = { event: base, feedback: null, downloads: null, slideshow: null };
+    expect(dirtySections({ ...slice, event: draft }, slice)).toEqual(new Set(['access']));
+    expect(eventUpdatePayload(base, draft, t)).toEqual({ temporarily_disabled: false });
+  });
   it('sends nothing when nothing changed', () => {
     const base = eventFieldsFromEvent(EVENT, branding);
     expect(eventUpdatePayload({ ...base }, base, t)).toBeNull();

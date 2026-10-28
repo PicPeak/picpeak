@@ -21,6 +21,7 @@ vi.mock('../../../contexts/ArchiveDownloadContext', () => ({
   useArchiveDownload: () => mocks,
 }));
 
+vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => ({ data: undefined }) }));
 vi.mock('react-i18next', async () => ({
   ...await vi.importActual('react-i18next'),
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),

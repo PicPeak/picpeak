@@ -1,4 +1,6 @@
 import { GalleryProductPanel } from '../../features/album-products/GalleryProductPanel';
+import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
+import { GalleryUnavailableNotice } from './GalleryUnavailableNotice';
 import { useGalleryFiltering, resolveMediaType } from './hooks/useGalleryFiltering';
 import { useGalleryUpload } from './hooks/useGalleryUpload';
 import { useLiveRefresh } from './hooks/useLiveRefresh';
@@ -496,7 +498,8 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // whatever arrived in the meantime too).
   const followProcessing = data?.event?.media_processing === true && !hiddenUntilReveal && !revealArmed
     && !uploadProcessing && !peopleData?.scan?.in_progress;
-  useProcessingRefresh({
+  // Issue 2274: once that poll gives up on a stuck row, live refresh takes over.
+  const processingPollHalted = useProcessingRefresh({
     slug,
     enabled: followProcessing,
     loadedCount: data?.photos?.length ?? 0,
@@ -508,7 +511,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // revealArmed too: the reveal poll above keeps refetching the list after
     // the reveal, for as long as the mode is on.
     enabled: data?.event?.live_refresh === true && !hiddenUntilReveal && !revealArmed && !uploadProcessing
-      && !peopleData?.scan?.in_progress && !followProcessing,
+      && !peopleData?.scan?.in_progress && (!followProcessing || processingPollHalted),
     loadedCount: data?.photos?.length ?? 0,
     loadedMaxId,
   });
@@ -1512,7 +1515,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const errorStatus = (error as { response?: { status?: number } } | null)?.response?.status;
   const galleryGone = errorStatus === 403 || errorStatus === 404 || errorStatus === 410;
   const downloadsAvailable = !!data && !isLoading && !galleryGone && errorStatus !== 401
-    && !isAdminSessionExpired(error) && !isPasswordChangeRequired(error)
+    && !isGalleryTemporarilyDisabled(error) && !isAdminSessionExpired(error) && !isPasswordChangeRequired(error)
     && !(isSwitchingClientMode && !showClientAccess) && !hiddenUntilReveal;
   // One provider/dialog root for loading, errors and every gallery layout:
   // switching content cannot remount the preparation modal or strand its action.
@@ -1524,6 +1527,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       </PhotoDownloadChoiceProvider>
     </DownloadQuotaProvider>
   );
+  if (isGalleryTemporarilyDisabled(error)) return withDownloadProviders(<GalleryUnavailableNotice />);
   if (isLoading || (isSwitchingClientMode && !showClientAccess)) {
     return withDownloadProviders(<GallerySkeleton />);
   }

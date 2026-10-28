@@ -110,6 +110,8 @@ export interface PublicSettings {
   // Download limit default (issue 1560). null = unlimited.
   event_default_download_limit?: number | null;
   gallery_show_filter_bar?: boolean;
+  // Maximum lightbox zoom in percent of the original's pixels (issue 2281), 100–1000.
+  gallery_lightbox_max_zoom_percent?: number;
   event_phone_field_enabled?: boolean;
   // SEO meta tags (consumed by RobotsMetaTags)
   seo_meta_noindex?: boolean;

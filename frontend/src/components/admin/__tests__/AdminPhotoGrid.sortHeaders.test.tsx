@@ -132,7 +132,7 @@ describe('AdminPhotoGrid list sort headers', () => {
     renderList({ sortBy: 'date', sortOrder: 'desc', onSortChange: vi.fn() });
     const header = screen.getAllByRole('row')[0];
     expect(within(header).getAllByRole('button').map((b) => b.textContent))
-      .toEqual(['Photo', 'Uploaded', 'Engagement', 'Feedback', 'Size']);
+      .toEqual(['Photo', 'Captured', 'Uploaded', 'Engagement', 'Feedback', 'Size']);
   });
 
   it('keeps plain headers when the parent passes no sort handler', () => {

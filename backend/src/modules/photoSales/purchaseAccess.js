@@ -1,18 +1,40 @@
 const crypto = require('crypto');
+const { toTimestamp } = require('../../utils/dateNormalize');
+const { isTrue } = require('../../utils/galleryLifecycle');
+
+/** Earn only time that overlaps a still-valid purchase. */
+function pauseCompensatedExpiry(record, gallery, now = Date.now()) {
+  let end = toTimestamp(record?.expires_at);
+  if (!Number.isFinite(end)) return null;
+  if (isTrue(gallery?.temporarily_disabled)) {
+    const start = Math.max(toTimestamp(gallery.temporarily_disabled_at), toTimestamp(record.purchased_at));
+    // An expired/revoked row is never revived by a later pause.
+    if (Number.isFinite(start) && end > start) end += Math.max(0, now - start);
+  }
+  return new Date(end).toISOString();
+}
+
+/** Gallery expiry limits access, without permanently shortening earned time. */
+function pauseAdjustedExpiry(record, gallery, now = Date.now()) {
+  const expiry = pauseCompensatedExpiry(record, gallery, now);
+  if (!expiry) return null;
+  const cutoff = toTimestamp(gallery?.expires_at);
+  return Number.isFinite(cutoff) ? new Date(Math.min(Date.parse(expiry), cutoff)).toISOString() : expiry;
+}
 
 function createPurchaseAccessToken() {
   return crypto.randomBytes(24).toString('hex');
 }
 
-function isPurchaseAccessActive(record) {
+function isPurchaseAccessActive(record, gallery) {
   if (!record || !record.expires_at) return false;
-  const expiresAt = new Date(record.expires_at);
+  const expiresAt = new Date(gallery ? pauseAdjustedExpiry(record, gallery) : record.expires_at);
   if (!Number.isFinite(expiresAt.getTime())) return false;
   return expiresAt.getTime() > Date.now();
 }
 
-function verifyPurchaseAccess(record) {
-  return !!record && isPurchaseAccessActive(record);
+function verifyPurchaseAccess(record, gallery) {
+  return !!record && isPurchaseAccessActive(record, gallery);
 }
 
 function findValidPhotoPurchaseAccess({ galleryId, photoId, accessToken, rows = [] } = {}) {
@@ -41,6 +63,8 @@ function buildPurchasedDownloadUrl({ baseUrl = '', accessToken } = {}) {
 }
 
 module.exports = {
+  pauseCompensatedExpiry,
+  pauseAdjustedExpiry,
   createPurchaseAccessToken,
   isPurchaseAccessActive,
   verifyPurchaseAccess,
