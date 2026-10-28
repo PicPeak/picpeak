@@ -137,7 +137,7 @@ describe('GalleryView after a failed refetch', () => {
   });
 });
 
-it('keeps one archive dialog across content/layout changes and cancels it when the gallery disappears', async () => {
+it.each(['gone', 'paused'])('keeps one archive dialog across content/layout changes and cancels it when the gallery is %s', async (state) => {
   stable.modalMounts.mockClear(); stable.modalUnmounts.mockClear();
   photos = { data: loaded, isLoading: false, error: null, refetch: vi.fn() };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -157,9 +157,10 @@ it('keeps one archive dialog across content/layout changes and cancels it when t
   rerender(tree());
   expect(screen.getByRole('dialog')).toBeInTheDocument();
   expect(stable.modalMounts).toHaveBeenCalledTimes(1);
-  photos = { ...photos, error: httpError(403) };
+  photos = { ...photos, error: state === 'paused'
+    ? { response: { status: 403, data: { code: 'GALLERY_TEMPORARILY_DISABLED' } } } : httpError(403) };
   rerender(tree());
-  expect(screen.getByText('gallery.failedToLoad')).toBeInTheDocument();
+  expect(screen.getByText(state === 'paused' ? 'gallery.temporarilyUnavailable' : 'gallery.failedToLoad')).toBeInTheDocument();
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(stable.modalUnmounts).toHaveBeenCalledTimes(1);
   photos = { ...photos, data: undefined, error: null, isLoading: true };

@@ -289,7 +289,12 @@ class DownloadJobService {
       try {
         // Storage I/O stays outside the transaction. Do not build another
         // archive if the old artifact could not be reclaimed.
-        await this.evictJobs(admitted.evicted);
+        const reclaimed = await this.evictJobs(admitted.evicted);
+        if (reclaimed !== admitted.evicted.length) {
+          const err = new Error('Could not reclaim prepared download storage. Please try again later');
+          err.code = 'BUSY';
+          throw err;
+        }
       } catch (error) {
         await this._fail(id, 'Could not reclaim prepared download storage');
         throw error;
@@ -417,11 +422,7 @@ class DownloadJobService {
     const withZip = await db('download_jobs')
       .where({ event_id: eventId, status: 'failed' })
       .whereNotNull('zip_path');
-    const storage = getStorage();
-    for (const job of withZip) {
-      await storage.delete(job.zip_path).catch((e) =>
-        logger.warn('Failed deleting download job artifact', { jobId: job.id, error: e.message }));
-    }
+    await this.evictJobs(withZip);
   }
 
   async _build(id, event, resolution, photoIds, watermarkSettings, accessLevel, previewOnly, ttl) {
@@ -678,39 +679,46 @@ class DownloadJobService {
     return this.isStillDeliverable(job, event, accessLevel);
   }
 
-  /** Keep the token/notification history until its original retention ends. */
-  async evictJobs(jobs) {
-    if (!jobs.length) return;
-    const storage = getStorage();
+  /** A failed or stalled key must not prevent cleanup of other archives. */
+  async _deleteArtifact(job) {
+    if (!job.zip_path) return true;
     const progress = createBuildProgress(this.stallTimeoutMs);
     try {
-      for (const job of jobs) {
-        if (job.zip_path) {
-          await progress.wait(storage.delete(job.zip_path));
-          this.readyStats.delete(job.zip_path);
-        }
-        await progress.wait(db('download_jobs').where({ id: job.id, status: 'failed' }).update({
-          zip_path: null, size_bytes: null, entry_manifest: null,
-        }));
-        progress.touch();
-      }
+      await progress.wait(getStorage().delete(job.zip_path));
+      this.readyStats.delete(job.zip_path);
+      return true;
+    } catch (error) {
+      logger.warn('Failed deleting download job artifact', { jobId: job.id, error: error.message });
+      return false;
     } finally { progress.close(); }
+  }
+
+  /** Keep the token/notification history until its original retention ends. */
+  async evictJobs(jobs) {
+    let reclaimed = 0;
+    for (const job of jobs) {
+      if (!await this._deleteArtifact(job)) continue;
+      await db('download_jobs').where({ id: job.id, status: 'failed' }).update({
+        zip_path: null, size_bytes: null, entry_manifest: null,
+      });
+      reclaimed += 1;
+    }
+    return reclaimed;
   }
 
   /** Remove files before rows, retaining failed deletions for the next sweep. */
   async removeJobs(jobs) {
-    const storage = getStorage();
+    let removed = 0;
     for (const job of jobs) {
-      if (job.zip_path) {
-        await storage.delete(job.zip_path);
-        this.readyStats.delete(job.zip_path);
-      }
+      if (!await this._deleteArtifact(job)) continue;
       // Keep the existing sweep order: a notify pass that already claimed a
       // recipient must commit before its deletion, so cancellation sees its mail.
       await db('download_job_recipients').where({ job_id: job.id }).del();
       await require('./downloadJobNotifier').cancelPendingMails([job]);
       await db('download_jobs').where({ id: job.id }).del();
+      removed += 1;
     }
+    return removed;
   }
 
   /**
@@ -751,9 +759,9 @@ class DownloadJobService {
     const doomed = [...expired, ...undeliverable];
     if (doomed.length === 0) return 0;
 
-    await this.removeJobs(doomed);
-    logger.info(`Download job sweep removed ${expired.length} expired and ${undeliverable.length} undeliverable job(s)`);
-    return doomed.length;
+    const removed = await this.removeJobs(doomed);
+    logger.info(`Download job sweep removed ${removed} of ${doomed.length} expired/undeliverable job(s)`);
+    return removed;
   }
 }
 

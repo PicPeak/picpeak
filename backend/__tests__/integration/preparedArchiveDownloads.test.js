@@ -290,6 +290,24 @@ describe('native prepared archive downloads (#1966)', () => {
     expect(await db('download_job_recipients').where({ job_id: ready[1].id })).toHaveLength(0);
   });
 
+  it('admits simultaneous replacements through the service without exceeding the gallery cache cap', async () => {
+    const { event, ids } = await fixture({}, 6);
+    const ready = [];
+    for (const id of ids.slice(0, 4)) ready.push(await prepare(event, { photo_ids: [id] }));
+    const requests = await Promise.all(ids.slice(4).map((id) =>
+      api(event, 'post', 'download-jobs').send({ photo_ids: [id] })));
+    expect(requests.map((response) => response.status)).toEqual([202, 202]);
+    await Promise.all(jobs.liveBuilds.values());
+    const replacements = await db('download_jobs').whereIn('token', requests.map((response) => response.body.token));
+    expect(replacements.map((job) => job.status)).toEqual(['ready', 'ready']);
+    expect(await db('download_jobs').where({ event_id: event.id }).whereIn('status', ['pending', 'building', 'ready']))
+      .toHaveLength(4);
+    for (const job of ready.slice(0, 2)) {
+      expect(await jobs.getStatus(job.token)).toMatchObject({ status: 'failed', zip_path: null });
+      expect(await storage.exists(job.zip_path)).toBe(false);
+    }
+  });
+
   it('keeps the storage bound when every ready job still has a pending notification', async () => {
     const { event, ids } = await fixture({}, 5);
     for (const id of ids.slice(0, 4)) {
@@ -310,11 +328,13 @@ describe('native prepared archive downloads (#1966)', () => {
     const remove = jest.spyOn(storage, 'delete').mockRejectedValue(new Error('Storage delete failed'));
     try {
       for (let i = 0; i < 2; i += 1) {
-        expect((await api(event, 'post', 'download-jobs').send({ photo_ids: [ids[4]] })).status).toBe(500);
+        expect((await api(event, 'post', 'download-jobs').send({ photo_ids: [ids[4]] })).status).toBe(429);
         expect(await storage.exists(ready[0].zip_path)).toBe(true);
         expect((await jobs.getStatus(ready[0].token)).zip_path).toBe(ready[0].zip_path);
       }
       expect(await db('download_jobs').where({ event_id: event.id, status: 'ready' })).toHaveLength(3);
+      const other = await fixture();
+      await prepare(other.event);
     } finally { remove.mockRestore(); }
     await prepare(event, { photo_ids: [ids[4]] });
     expect(await storage.exists(ready[0].zip_path)).toBe(false);
@@ -332,13 +352,31 @@ describe('native prepared archive downloads (#1966)', () => {
     const remove = jest.spyOn(storage, 'delete').mockReturnValue(held);
     try {
       await expect(worker.createJob({ event, resolution: 'original', photoIds: [ids[4]], accessLevel: 'guest' }))
-        .rejects.toThrow('stopped making progress');
+        .rejects.toMatchObject({ code: 'BUSY' });
       expect(worker.reserved).toBe(0);
       expect(worker.liveBuilds.size).toBe(0);
       expect((await jobs.getStatus(ready[0].token)).zip_path).toBe(ready[0].zip_path);
     } finally { release(); remove.mockRestore(); }
     await prepare(event, { photo_ids: [ids[4]] });
     expect(await storage.exists(ready[0].zip_path)).toBe(false);
+  });
+
+  it('clears cancelled artifact references immediately so new jobs need no intervening sweep', async () => {
+    const { event, ids } = await fixture({}, 5);
+    const ready = [];
+    for (const id of ids.slice(0, 4)) ready.push(await prepare(event, { photo_ids: [id] }));
+    await jobs.cancelForEvent(event.id, 'The gallery changed');
+    for (const job of ready) {
+      expect(await jobs.getStatus(job.token)).toMatchObject({
+        status: 'failed', error: 'The gallery changed', zip_path: null, size_bytes: null, entry_manifest: null,
+      });
+      expect(await storage.exists(job.zip_path)).toBe(false);
+    }
+    const sweep = jest.spyOn(jobs, 'sweepExpired');
+    try {
+      await prepare(event, { photo_ids: [ids[4]] });
+      expect(sweep).not.toHaveBeenCalled();
+    } finally { sweep.mockRestore(); }
   });
 
   it.each(['priced', 'quota preview', 'resized'])('keeps every photo when final JPEG names collide (%s)', async (mode) => {

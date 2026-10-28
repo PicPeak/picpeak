@@ -78,20 +78,4 @@ describe.each(engines)('replaceable download cache on %s', (_name, client) => {
     expect((await db('download_jobs').whereIn('id', [waiting.id, other.id])).map((row) => row.status))
       .toEqual(['ready', 'ready']);
   });
-
-  it('serializes simultaneous replacements under the same event lock', async () => {
-    for (let i = 0; i < 4; i += 1) await job(i);
-    const admit = () => db.transaction(async (trx) => {
-      if (client === 'pg') await trx('events').where({ id: eventId }).forUpdate().first();
-      const rows = await trx('download_jobs').where({ event_id: eventId }).whereIn('status', ['pending', 'building', 'ready']);
-      const evicted = await retireReadyJobs(trx, eventId, rows.length - 4 + 1);
-      if (!evicted) throw new Error('No cache capacity');
-      await trx('download_jobs').insert({ event_id: eventId, status: 'pending' });
-      return evicted.map((row) => row.id);
-    });
-    const retired = (await Promise.all([admit(), admit()])).flat();
-    expect(new Set(retired).size).toBe(2);
-    expect(await db('download_jobs').where({ event_id: eventId }).whereIn('status', ['pending', 'building', 'ready']))
-      .toHaveLength(4);
-  });
 });

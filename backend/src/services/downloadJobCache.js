@@ -3,6 +3,8 @@
  * Pending recipients and queued (not yet sent) mail protect their archive.
  * Sent mail may point to an evicted cache entry; normal gallery access and
  * preparing the selection again remain available.
+ * Eviction follows creation order, not last access: any viewer preparing a
+ * new selection may replace another viewer's eligible ready archive.
  */
 async function retireReadyJobs(trx, eventId, needed) {
   if (needed <= 0) return [];
