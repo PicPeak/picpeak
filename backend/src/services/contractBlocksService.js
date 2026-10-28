@@ -41,6 +41,35 @@ const RUNTIME_SEEDED_BLOCKS = [
     is_system: true,
     is_active: true,
   },
+  {
+    // Closing provisions for a business in the United States. Only a US
+    // business's new contracts carry it, in place of the Swiss and German
+    // ones (contract/regionalClauses).
+    slug: 'closing_jurisdiction_us',
+    section: 'closing',
+    name: 'Closing provisions (US law)',
+    description: 'EXAMPLE — have your lawyer review before sending. Governing law and venue for a business in the United States: the laws of the state where the contractor is based.',
+    body_text: `**Closing provisions**
+
+This contract is governed by the laws of the state in which the contractor has its principal place of business, without regard to its conflict-of-laws rules.
+
+Any dispute arising out of or in connection with this contract shall be brought in the state or federal courts for the county in which the contractor has its principal place of business, to the extent permitted by law.
+
+If any provision of this contract is held invalid or unenforceable, the remaining provisions remain in full force and effect.
+
+This contract is the entire agreement between the parties on its subject. Changes must be made in writing and signed by both parties; an electronic signature counts as a signature.`,
+    body_text_de: `**Schlussbestimmungen**
+
+Dieser Vertrag unterliegt dem Recht des US-Bundesstaates, in dem der Auftragnehmer seinen Hauptgeschäftssitz hat, unter Ausschluss der Kollisionsnormen dieses Rechts.
+
+Streitigkeiten aus oder im Zusammenhang mit diesem Vertrag werden – soweit gesetzlich zulässig – vor den einzelstaatlichen oder Bundesgerichten des County ausgetragen, in dem der Auftragnehmer seinen Hauptgeschäftssitz hat.
+
+Sollte eine Bestimmung dieses Vertrages unwirksam oder nicht durchsetzbar sein, bleiben die übrigen Bestimmungen in vollem Umfang wirksam.
+
+Dieser Vertrag enthält die gesamte Vereinbarung der Parteien über seinen Gegenstand. Änderungen bedürfen der Schriftform und der Unterschrift beider Parteien; eine elektronische Signatur gilt als Unterschrift.`,
+    is_system: true,
+    is_active: true,
+  },
 ];
 
 // Module-scope flag so the seed check runs once per process. The

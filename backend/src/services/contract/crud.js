@@ -14,6 +14,7 @@ const { ensureInt } = require('../../utils/numericHelpers');
 const { unicodeSearchForms } = require('../../utils/sqlSecurity');
 const { adminActor, ensureCustomerActive, nextContractNumber, releaseQuoteOnDeadContract } = require('./helpers');
 const { auditedInsert, auditedUpdate, auditedDelete } = require('../accountingHistory');
+const regionalClauses = require('./regionalClauses');
 
 
 // ---------------------------------------------------------------------
@@ -187,6 +188,12 @@ async function createContract(payload, adminId, { idempotencyKey = null } = {}) 
   const version = (!Array.isArray(payload.blocks) || payload.templateVersionId)
     ? await require('./templates').resolveVersionForNewContract(payload.templateVersionId || null)
     : null;
+  // A US business's contract from the standard template closes under US law
+  // instead of Swiss or German law (contract/regionalClauses).
+  if (version && version.template_is_system) {
+    const usClosing = await db('contract_blocks').where({ slug: regionalClauses.US_CLOSING, is_active: true }).first();
+    version.items = regionalClauses.standardItemsFor(version.items, profile?.country_code, usClosing);
+  }
   const validDays = ensureInt(await getAppSetting('crm_contracts_default_valid_days')) || 30;
   const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
   const validUntil = payload.validUntil || new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
@@ -274,9 +281,10 @@ async function createContract(payload, adminId, { idempotencyKey = null } = {}) 
       // block (12+ round-trips inside the transaction on a fresh contract).
       // Batched into a single `.insert(rows)` since the row count is
       // bounded (system block count) and the inserts are independent.
-      const systemBlocks = await trx('contract_blocks')
+      // The clauses for the business's legal system (contract/regionalClauses).
+      const systemBlocks = regionalClauses.systemBlocksFor(await trx('contract_blocks')
         .where({ is_system: true, is_active: true })
-        .orderBy(['section', 'display_order']);
+        .orderBy(['section', 'display_order']), profile?.country_code);
       const sectionCounters = {};
       const inclusionRows = systemBlocks.map((block) => {
         sectionCounters[block.section] = (sectionCounters[block.section] || 0) + 1;

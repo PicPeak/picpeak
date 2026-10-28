@@ -31,6 +31,7 @@ const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { SECTIONS_ORDER } = require('./helpers');
 const content = require('./content');
 const { DEFAULT_CONSENTS } = require('./consents');
+const { isUsOnlyClause } = require('./regionalClauses');
 
 const DEFAULT_SETTING = 'crm_contracts_default_template_id';
 const SYSTEM_NAME = 'Standard contract';
@@ -41,9 +42,14 @@ let ensured = false;
 
 const insertedId = (rows) => (typeof rows[0] === 'object' ? rows[0].id : rows[0]);
 
-/** The active system blocks in the order contracts always had them. */
+/**
+ * The active system blocks in the order contracts always had them. The US
+ * closing provisions stay out: a US business's contract takes them in place
+ * of the European ones when it is made (contract/regionalClauses).
+ */
 async function systemBlocks(conn = db) {
-  const blocks = await conn('contract_blocks').where({ is_system: true, is_active: true }).select('*');
+  const blocks = (await conn('contract_blocks').where({ is_system: true, is_active: true }).select('*'))
+    .filter((block) => !isUsOnlyClause(block.slug));
   const rank = (section) => {
     const i = SECTIONS_ORDER.indexOf(section);
     return i === -1 ? SECTIONS_ORDER.length : i;

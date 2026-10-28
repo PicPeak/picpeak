@@ -201,8 +201,17 @@ function parseContentSnapshot(value) {
  * its values as they were — `**ACME**` in a customer name printed bold — and
  * every clause heading, and its stored PDF says so, so it keeps being read
  * that way.
+ *
+ * Format 4 changes no field either: a contract in any language but German
+ * heads each clause with the title its own text opens with (`**Subject of
+ * contract**`) instead of the library block's name, which the seeded blocks
+ * carry in German. One sent before that printed the block names, and keeps
+ * being read that way.
  */
-const SNAPSHOT_FORMAT = 3;
+const SNAPSHOT_FORMAT = 4;
+
+// A clause text's opening `**Title**` line.
+const LEADING_TITLE = /^\s*\*\*([^*\n]+)\*\*\s*\n+/;
 
 /**
  * The columns of a quote line the contract renderer reads, coerced to the
@@ -334,6 +343,9 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
   // knew only `**bold**`), so it is doubled for the escape-aware parser. That
   // includes one sent before snapshots existed at all (no rendered_content).
   const legacy = snapshot ? ensureInt(snapshot.format) < 3 : !!contract.sent_at;
+  // Clause headings in the contract's own language (format 4): every
+  // language but German, for a contract not yet sent or sent since.
+  const titledHeadings = locale !== 'de' && (snapshot ? ensureInt(snapshot.format) >= 4 : !contract.sent_at);
   const render = (template) => {
     const out = renderTemplatedBody(template, placeholders, { output: legacy ? 'text' : 'markdown' });
     return legacy && typeof out === 'string' ? out.replace(/\\/g, '\\\\') : out;
@@ -344,9 +356,10 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
     title: snapshot ? snapshot.title : (contract.title || ''),
     introText: intro ? render(intro) : null,
     outroText: outro ? render(outro) : null,
-    // Placeholders filled in, then a leading `**Title**` line dropped: the
-    // clause name is already printed as its heading. Inline `**bold**`
-    // stays for the PDF (the signing page strips it).
+    // Placeholders filled in, then a leading `**Title**` line dropped: it
+    // becomes the heading (outside German, see format 4), or the clause name
+    // already is. Inline `**bold**` stays for the PDF (the signing page
+    // strips it).
     //
     // A clause whose text comes out empty — hidden by "Show only if"
     // (#1445) — is left out with its heading, and a section left without
@@ -360,15 +373,16 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
     sections: groupSections(clauses
       .map((clause) => {
         const text = content.pickLocale(clause.body, locale);
+        const rendered = String(render(text) || '');
+        const title = titledHeadings ? (rendered.match(LEADING_TITLE) || [])[1] : null;
         return {
           blockId: clause.blockId,
           position: clause.position,
           kind: clause.kind,
           slug: clause.slug,
-          name: clause.name,
+          name: (title && title.trim()) || clause.name,
           section: clause.section,
-          body: String(render(text) || '')
-            .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, ''),
+          body: rendered.replace(LEADING_TITLE, ''),
           ruled: /^\s*\{\{\s*#(?:if|unless)\s/.test(String(text || '')),
         };
       })

@@ -638,7 +638,7 @@ async function loadPublishedVersion(versionId) {
   const version = await db('contract_template_versions as v')
     .join('contract_templates as t', 't.id', 'v.template_id')
     .where('v.id', versionId)
-    .select('v.*', 't.status as template_status')
+    .select('v.*', 't.status as template_status', 't.is_system as template_is_system')
     .first();
   if (!version || version.status !== 'published') {
     throw new AppError('Pick a published template version', 400, 'TEMPLATE_VERSION_INVALID');

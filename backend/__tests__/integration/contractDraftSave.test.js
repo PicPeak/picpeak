@@ -99,7 +99,9 @@ describe('contract draft save (issue 1447)', () => {
     const res = await auth(request(app).post('/api/admin/contracts')).send(payload);
 
     expect(res.status).toBe(201);
-    const systemCount = library.filter((b) => b.isSystem).length;
+    // All but the US closing provisions, which only a US business's
+    // contracts carry (contract/regionalClauses).
+    const systemCount = library.filter((b) => b.isSystem && b.slug !== 'closing_jurisdiction_us').length;
     const inclusions = await db('contract_block_inclusions').where({ contract_id: res.body.contract.id });
     expect(inclusions).toHaveLength(systemCount);
   }, WITHIN);
