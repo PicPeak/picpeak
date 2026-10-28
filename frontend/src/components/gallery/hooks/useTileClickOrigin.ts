@@ -9,6 +9,7 @@
  * (a `?photo=` link, history back) finds nothing and opens without the grow.
  */
 import { useCallback, useEffect, useRef } from 'react';
+import { GRID_TILE_ATTR } from '../layouts/gridWindow';
 
 export interface LightboxOrigin {
   /** The tile's image as it is on screen: already fetched and decoded. */
@@ -17,19 +18,12 @@ export interface LightboxOrigin {
   rect: { left: number; top: number; width: number; height: number };
 }
 
-// The tile's image: the nearest element around the click that holds exactly
-// one <img>. Two or more means the walk has left the tile for the grid, which
-// happens for a tile without an image (a video without a poster).
+// The tile's image: the first <img> of the photo tile around the click, the
+// photo itself (badges and overlays come after it). Outside a tile, or in one
+// without an image (a video without a poster, a canvas), there is none.
 const tileImageAt = (target: EventTarget | null): HTMLImageElement | null => {
-  let node = target instanceof Element ? target : null;
-  while (node && node !== document.body) {
-    if (node instanceof HTMLImageElement) return node;
-    const images = node.getElementsByTagName('img');
-    if (images.length === 1) return images[0];
-    if (images.length > 1) return null;
-    node = node.parentElement;
-  }
-  return null;
+  const tile = target instanceof Element ? target.closest(`[${GRID_TILE_ATTR}]`) : null;
+  return tile?.querySelector('img') ?? null;
 };
 
 export function useTileClickOrigin() {

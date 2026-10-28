@@ -2,12 +2,14 @@
  * The opening photo is on screen at once, Pixieset-style:
  *
  *  - opened from a tile, the tile's own image grows from the tile to the
- *    photo's place, framed at the photo's aspect, and stays until the preview
- *    has loaded, instead of a black stage for as long as the preview takes;
- *  - with reduced motion it is there without the animation;
+ *    photo's place, framed at the photo's aspect and no larger than the image
+ *    the slide loads, instead of a black stage for as long as that takes;
+ *  - the loaded slide then fades in over it, after the grow;
+ *  - a swipe or a zoom ends it, as they move the slide but not the image;
+ *  - with reduced motion there is no grow and no fade;
  *  - opened any other way, and for videos, the lightbox is as it was.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Photo } from '../../../types';
 
@@ -25,11 +27,12 @@ vi.mock('../../../services/feedback.service', async (importOriginal) => ({
 }));
 vi.mock('../../../services/gallery.service', () => ({ galleryService: { trackPhotoView: vi.fn() } }));
 vi.mock('../../common', () => ({
-  AuthenticatedImage: ({ src, alt, queuePriority, onLoad, onError }: {
-    src: string; alt: string; queuePriority?: string; onLoad?: () => void; onError?: () => void;
+  AuthenticatedImage: ({ src, alt, queuePriority, onLoad, onError, style }: {
+    src: string; alt: string; queuePriority?: string; onLoad?: () => void; onError?: () => void; style?: React.CSSProperties;
   }) => (
     <img
       alt={alt}
+      style={style}
       data-src={src}
       data-priority={queuePriority ?? 'normal'}
       onLoad={() => onLoad?.()}
@@ -75,6 +78,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   delete (HTMLElement.prototype as Partial<HTMLElement>).animate;
 });
@@ -82,6 +86,9 @@ afterEach(() => {
 const standIn = () => screen.queryByTestId('lightbox-scrub-stand-in');
 const grow = () => screen.queryByTestId('lightbox-open-grow') as HTMLImageElement | null;
 const preview = () => document.querySelector('[data-src^="/preview/2"][data-priority="high"]') as HTMLElement;
+// slide → track → the container carrying the touch handlers.
+const touchSurface = () => preview().parentElement!.parentElement!.parentElement as HTMLElement;
+const finger = (x: number) => ({ clientX: x, clientY: 300 });
 
 describe('PhotoLightbox opening', () => {
   it('opens as it did without a tile to grow from (a `?photo=` link)', () => {
@@ -121,8 +128,55 @@ describe('PhotoLightbox opening', () => {
     const inset = (frames[0].clipPath as string).match(/[\d.]+/g)!.map(Number);
     expect(inset.map((px) => Math.round(px * 100) / 100)).toEqual([0, 166.67, 0, 166.67]);
     expect(frames[1]).toMatchObject({ transform: 'none' });
+  });
 
+  it('fades the loaded slide in over the tile image once the grow is over', () => {
+    vi.useFakeTimers();
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    // Laid out and clickable, but transparent over the tile image meanwhile.
+    expect(preview().style.opacity).toBe('0');
+
+    // Loaded mid-grow: both stay as they are until the grow is over.
     fireEvent.load(preview());
+    expect(grow()).not.toBeNull();
+    expect(preview().style.opacity).toBe('0');
+
+    act(() => { vi.advanceTimersByTime(250); });
+    expect(preview().style.opacity).toBe('1');
+    expect(preview().style.transition).toBe('opacity 200ms');
+    expect(grow()).not.toBeNull();
+
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(grow()).toBeNull();
+    expect(preview().style.opacity).toBe('');
+  });
+
+  it('grows no larger than the image the slide shows at its natural size', () => {
+    // An 800 x 533 original: its preview is 800 px wide, smaller than the
+    // 1000 px stage, and the slide shows it at that size.
+    const small = photos.map((photo) => ({ ...photo, width: 800, height: 533 } as Photo));
+    render(<PhotoLightbox photos={small} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    expect(grow()!.style.width).toBe('800px');
+    expect(grow()!.style.left).toBe('100px');
+  });
+
+  it('ends with a swipe, not with a tap', () => {
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    fireEvent.touchStart(touchSurface(), { touches: [finger(200)] });
+    fireEvent.touchEnd(touchSurface(), { touches: [], changedTouches: [finger(200)] });
+    expect(grow()).not.toBeNull();
+
+    // The neighbour slides in over a stage the tile image no longer sits on,
+    // and the slide on screen shows as usual.
+    fireEvent.touchStart(touchSurface(), { touches: [finger(200)] });
+    fireEvent.touchMove(touchSurface(), { touches: [finger(150)] });
+    expect(grow()).toBeNull();
+    expect(preview().style.opacity).toBe('');
+  });
+
+  it('ends with a zoom', () => {
+    render(<PhotoLightbox photos={photos} initialIndex={1} onClose={vi.fn()} slug="g" openOrigin={origin} />);
+    fireEvent.keyDown(document, { key: '+' });
     expect(grow()).toBeNull();
   });
 
@@ -132,6 +186,11 @@ describe('PhotoLightbox opening', () => {
     expect(grow()!.style.width).toBe('1000px');
     expect(grow()!.style.visibility).toBe('');
     expect(animate).not.toHaveBeenCalled();
+
+    // No fade either: the slide takes over as soon as it has loaded.
+    fireEvent.load(preview());
+    expect(grow()).toBeNull();
+    expect(preview().style.opacity).toBe('');
   });
 
   it('falls back to the fetched thumbnail when the tile image is gone', () => {

@@ -10,6 +10,7 @@ import { ClientVisibilityToggle, isHiddenFromGuests } from '../ClientVisibilityT
 import { useGalleryTileBadges } from '../GalleryTileBadges';
 import { usePhotoLabels } from '../PhotoLabels';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
+import { GRID_TILE_ATTR } from './gridWindow';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import { feedbackLockKind } from '../../../utils/feedbackLock';
@@ -113,7 +114,8 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   return (
     <div className="photo-grid relative">
       {/* Main Carousel */}
-      <div className="photo-card relative h-[50vh] sm:h-[60vh] lg:h-[70vh] bg-black rounded-lg overflow-hidden">
+      {/* A photo tile: "View full size" opens the lightbox grown out of it. */}
+      <div className="photo-card relative h-[50vh] sm:h-[60vh] lg:h-[70vh] bg-black rounded-lg overflow-hidden" {...{ [GRID_TILE_ATTR]: '' }}>
         {/* A video's original cannot render as an image, and on a gallery
             with a download limit fetching it takes a slot (issue 1560):
             its poster instead. */}

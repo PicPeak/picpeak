@@ -2,6 +2,8 @@
  * The tile a click opens the lightbox from reaches the lightbox, for the
  * opening photo to grow out of. Opened any other way (a `?photo=` link) there
  * is none, and a tile whose image has not loaded yet has nothing to offer.
+ * The tile is the photo tile around the click (`data-grid-tile`), and its
+ * image the tile's first, whatever else the tile or the page holds.
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -24,15 +26,19 @@ vi.mock('../../common', () => ({ Button: ({ children, ...rest }: React.Component
 vi.mock('../DownloadQuotaNotice', () => ({ DownloadQuotaNotice: () => null }));
 vi.mock('../DownloadResolutionModal', () => ({ DownloadResolutionModal: () => null }));
 vi.mock('../HeroHeader', () => ({ HeroHeader: () => null }));
-// A tile as the layouts render it: the image inside a clickable card, with an
-// overlay above it.
+// A tile as the layouts render it (PhotoCard): the photo inside a clickable
+// card marked as a tile, with an overlay and a badge image after it. Next to
+// the grid, a picture that belongs to no tile.
 vi.mock('../layouts', () => ({
   GridGalleryLayout: ({ photos, onPhotoClick }: { photos: Photo[]; onPhotoClick: (i: number) => void }) => (
     <div>
+      <img data-testid="banner" src="blob:banner" alt="" />
+      <button data-testid="outside" onClick={() => onPhotoClick(0)} />
       {photos.map((photo, index) => (
-        <div key={photo.id} data-testid={`tile-${photo.id}`} onClick={() => onPhotoClick(index)}>
+        <div key={photo.id} data-grid-tile="" data-testid={`tile-${photo.id}`} onClick={() => onPhotoClick(index)}>
           <img src={`blob:tile-${photo.id}`} alt="" />
           <span data-testid={`overlay-${photo.id}`} />
+          <img src="blob:badge" alt="" />
         </div>
       ))}
     </div>
@@ -79,6 +85,14 @@ describe('PhotoGridWithLayouts — the tile the lightbox opens from', () => {
     loaded(tileImage(10));
     fireEvent.click(screen.getByTestId('tile-10'), { detail: 0 });
     expect(lightboxProps.openOrigin).toMatchObject({ src: 'blob:tile-10' });
+  });
+
+  it('finds nothing outside a tile, even with a single picture on the way up', () => {
+    render(<PhotoGridWithLayouts photos={photos} slug="g" />);
+    loaded(screen.getByTestId('banner') as HTMLImageElement);
+    fireEvent.click(screen.getByTestId('outside'), { detail: 0 });
+    expect(screen.getByTestId('lightbox')).toBeTruthy();
+    expect(lightboxProps.openOrigin).toBeNull();
   });
 
   it('has nothing to grow from while the tile image is still loading', () => {

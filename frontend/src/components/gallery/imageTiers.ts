@@ -145,6 +145,26 @@ export function lightboxImageUrl(photo: {
 }
 
 /**
+ * Long edge, in pixels, of the image lightboxImageUrl serves, when it can be
+ * known: the preview tier it asks for (the server renders fit 'inside' and
+ * without enlargement, so never past the source), or the original. The
+ * lightbox shows that image at most at its natural size, so this is how large
+ * the photo will be on a stage wider than it. Null without dimensions for an
+ * original.
+ */
+export function lightboxImageLongEdge(photo: {
+  preview_url?: string | null;
+  slideshow_url?: string | null;
+  width?: number | null;
+  height?: number | null;
+}): number | null {
+  const sourceLongEdge = photo.width && photo.height ? Math.max(photo.width, photo.height) : null;
+  if (!(photo.preview_url || photo.slideshow_url)) return sourceLongEdge;
+  const tier = applyDataSaver(viewportPreviewWidth(photo), PREVIEW_WIDTHS);
+  return sourceLongEdge ? Math.min(tier, sourceLongEdge) : tier;
+}
+
+/**
  * An aspect-preserved rendition for a face avatar (#1096).
  *
  * NOT the thumbnail. faceCropStyle positions the crop by scaling the whole

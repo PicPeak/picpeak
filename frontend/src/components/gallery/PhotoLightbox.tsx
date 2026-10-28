@@ -9,7 +9,7 @@ import { isPhotoDownloadPending, usePhotoDownloadPending } from '../../hooks/use
 import { AuthenticatedImage } from '../common';
 import { useFullResolutionZoom, FullResolutionImage } from './hooks/useFullResolutionZoom';
 import { PhotoFeedback } from './PhotoFeedback';
-import { lightboxImageUrl } from './imageTiers';
+import { lightboxImageLongEdge, lightboxImageUrl } from './imageTiers';
 import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
 import { PhotoColorLabels } from './PhotoColorLabels';
 import { PhotoDecision } from './PhotoDecision';
@@ -28,7 +28,7 @@ import { effectivePhotoPrice, formatPhotoPrice, snipcartItemProps } from '../../
 import { lockBodyScroll } from '../../utils/scrollLock';
 import { pushDialogLayer } from '../common/Modal';
 import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
-import { LightboxOpenGrow } from './LightboxOpenGrow';
+import { LightboxOpenGrow, OPEN_FADE_MS } from './LightboxOpenGrow';
 import type { LightboxOrigin } from './hooks/useTileClickOrigin';
 import { usePhotoLabels } from './PhotoLabels';
 import { useLightboxScrub } from './hooks/useLightboxScrub';
@@ -270,17 +270,32 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // Opened from a tile: until the photo's preview has loaded, the tile's
   // image (grown out of the tile) is on screen instead of a black stage. A
   // preview can take a while (a large original when there is no preview
-  // tier), and the tile's image is in hand. 'thumbnail' when that image would
-  // not show: the fetched thumbnail stands in for it.
-  const [opening, setOpening] = useState<{ photoId: number; origin: LightboxOrigin | 'thumbnail' } | null>(
-    () => (openOrigin && currentPhotoId !== undefined ? { photoId: currentPhotoId, origin: openOrigin } : null),
-  );
+  // tier), and the tile's image is in hand. The slide stays transparent over
+  // it until it has loaded and the grow is over (`revealing`), then fades in.
+  // 'thumbnail' when the tile's image would not show: the fetched thumbnail
+  // stands in for it, under a slide shown as usual.
+  const [opening, setOpening] = useState<{
+    photoId: number;
+    origin: LightboxOrigin | 'thumbnail';
+    loaded?: boolean;
+    revealing?: boolean;
+  } | null>(() => {
+    const photo = photos[initialIndex];
+    return openOrigin && photo && photo.media_type !== 'video'
+      ? { photoId: photo.id, origin: openOrigin }
+      : null;
+  });
   const openingShown = opening !== null && opening.photoId === currentPhotoId;
-  // Only for the photo opened on: stepping away ends it, as stepping back
-  // finds its slide kept, with no new load to report.
+  // The slide is hidden under the grown tile image until it fades in.
+  const openingCoversSlide = openingShown && opening.origin !== 'thumbnail';
+  // Only for the photo opened on, as it was opened: stepping away ends it, as
+  // stepping back finds its slide kept, with no new load to report. So do a
+  // swipe once the track moves (not the touch that may be a tap) and a zoom,
+  // which move or scale the slide but not the tile image under it; the slide
+  // shows as usual from then on.
   useEffect(() => {
-    if (opening && opening.photoId !== currentPhotoId) setOpening(null);
-  }, [currentPhotoId, opening]);
+    if (opening && (opening.photoId !== currentPhotoId || dragX !== 0 || zoom !== 1)) setOpening(null);
+  }, [currentPhotoId, opening, dragX, zoom]);
   // The slides are unmounted for the length of a scrub, so a swipe under way
   // has no track left to fire the `transitionend` that would end it: without
   // this the track came back parked on the neighbour, or in a phase that
@@ -363,7 +378,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const handleSlidePreviewLoad = useCallback(() => {
     onPreviewLoad();
     handlePreviewLoaded();
-    setOpening(null);
+    // The grown tile image hands over to the slide in its own time; the
+    // fetched thumbnail stand-in goes at once, like the scrub's.
+    setOpening((prev) => (prev && prev.origin !== 'thumbnail' ? { ...prev, loaded: true } : null));
   }, [onPreviewLoad, handlePreviewLoaded]);
   // A preview that does not decode is replaced by the fallback, which reports
   // no load: the stand-ins leave here instead.
@@ -1768,7 +1785,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 className="max-w-full max-h-full object-contain select-none"
                 // Invisible under the painted original, still laid out and
                 // still the target of every click, drag and context menu.
-                style={fullZoom.previewHidden ? { ...imageStyle, opacity: 0 } : imageStyle}
+                style={fullZoom.previewHidden
+                  ? { ...imageStyle, opacity: 0 }
+                  : openingCoversSlide
+                    // Faded in over the grown tile image once both are ready.
+                    ? { ...imageStyle, opacity: opening.revealing ? 1 : 0, transition: `opacity ${OPEN_FADE_MS}ms` }
+                    : imageStyle}
                 draggable={false}
                 isGallery={true}
                 slug={slug}
@@ -1830,11 +1852,15 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               clip a tile under the toolbar. Mounted once the toolbar is
               measured (a layout effect, before the first paint), so the stage
               it grows into has its final size. */}
-          {openingShown && opening.origin !== 'thumbnail' && toolbarHeight > 0 && !scrubbing && !isVideoCurrent && (
+          {openingCoversSlide && opening.origin !== 'thumbnail' && toolbarHeight > 0 && !scrubbing && !isVideoCurrent && (
             <LightboxOpenGrow
               origin={opening.origin}
               aspect={currentPhoto.width && currentPhoto.height ? currentPhoto.width / currentPhoto.height : null}
+              maxLongEdge={lightboxImageLongEdge(currentPhoto)}
               stageStyle={stageStyle}
+              loaded={opening.loaded === true}
+              onReveal={() => setOpening((prev) => prev && { ...prev, revealing: true })}
+              onDone={() => setOpening(null)}
               // Its image is gone (a revoked tile URL): the fetched thumbnail
               // takes its place.
               onError={() => setOpening((prev) => prev && { ...prev, origin: 'thumbnail' })}
