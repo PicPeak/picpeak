@@ -2030,6 +2030,8 @@
       "signals": [],
       "reason": "Public payment and gallery purchase surface: financial state and buyer activity are excluded from product usage.",
       "route_signatures": [
+        "POST /:slug/checkout/promo-verification",
+        "POST /:slug/checkout/promo-verification/confirm",
         "POST /:slug/checkout"
       ]
     },

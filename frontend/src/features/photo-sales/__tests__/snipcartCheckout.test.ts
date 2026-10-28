@@ -2,7 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
 const handoff = () => ({ checkout_token: crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '').slice(0, 16),
   expires_at: new Date(Date.now() + 1800000).toISOString(), promo_code: 'FOTO-ONCE',
-  items: [{ id: 'gallery-photo-1', name: 'Portrait', price: 5, quantity: 1, maxQuantity: 1, shippable: false,
+  items: [{ id: 'gallery-photo-1', name: 'Portrait', price: 5, quantity: 1, minQuantity: 1, maxQuantity: 1, shippable: false,
     url: 'https://photos.example.test/api/gallery/one/price-check', customFields: [{ name: 'photoId', value: '1', type: 'hidden' }] }] });
 function fixture() {
   const provider = {
@@ -14,7 +14,7 @@ function fixture() {
 }
 describe('Snipcart handoff', () => {
   beforeEach(() => vi.resetModules());
-  afterEach(() => { Reflect.deleteProperty(window, 'Snipcart'); });
+  afterEach(() => { Reflect.deleteProperty(window, 'Snipcart'); document.getElementById('snipcart')?.remove(); });
   it('replaces provider items and discounts with the server quote before opening payment', async () => {
     const provider = fixture(); const quote = handoff();
     const { openSnipcartCheckout } = await import('../snipcartCheckout');
@@ -24,6 +24,7 @@ describe('Snipcart handoff', () => {
     expect(provider.api.cart.items.add).toHaveBeenCalledWith(...quote.items);
     expect(provider.api.cart.applyDiscount).toHaveBeenCalledWith('FOTO-ONCE');
     expect(provider.api.theme.cart.open).toHaveBeenCalledOnce();
+    expect(document.getElementById('snipcart')).toHaveClass('picpeak-photo-checkout');
     expect(provider.events.on).toHaveBeenCalledWith('cart.confirmed', expect.any(Function));
     expect(document.querySelector('script[src*="snipcart"]')).toBeNull();
   });

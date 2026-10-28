@@ -202,6 +202,8 @@ async function grantOrder(order) {
     return reject(gallery, 'the payment does not match an available checkout reservation');
   }
 
+  // Already-submitted pre-upgrade payments still settle here. New unpaid
+  // carts without a reservation are refused by price-check before payment.
   // Per-order gross recomputed from the database: every photo carries its
   // effective price (override or gallery default). The free quota is the
   // one-time promo-code discount, verified below.

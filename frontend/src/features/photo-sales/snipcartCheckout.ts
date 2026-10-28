@@ -1,9 +1,11 @@
+import './snipcartCheckout.css';
+
 /** Snipcart is loaded only after the buyer selects it and continues. */
 export interface SnipcartHandoff {
   checkout_token: string;
   promo_code: string;
   expires_at: string;
-  items: Array<{ id: string; name: string; price: number; quantity: number; maxQuantity: number; shippable: boolean; url: string; customFields: Array<{ name: string; value: string; type: string }> }>;
+  items: Array<{ id: string; name: string; price: number; quantity: number; minQuantity: number; maxQuantity: number; shippable: boolean; url: string; customFields: Array<{ name: string; value: string; type: string }> }>;
 }
 interface SnipcartSdk {
   store: { getState: () => { cart: { items: { items: Array<{ uniqueId: string }> }; discounts: { items: Array<{ code: string }> } } } };
@@ -19,6 +21,16 @@ let configuredKey: string | undefined;
 let unsubscribe: (() => void) | undefined;
 function load(publicKey: string): Promise<SnipcartSdk> {
   if (configuredKey && configuredKey !== publicKey) return Promise.reject(new Error('Reload after a store configuration change'));
+  let root = document.getElementById('snipcart');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'snipcart'; root.hidden = true;
+    root.dataset.apiKey = publicKey; root.dataset.currency = 'eur';
+    root.dataset.configModalStyle = 'side'; root.dataset.configAddProductBehavior = 'none';
+    document.body.appendChild(root);
+  }
+  // Apply before SDK startup/open, including a cart restored by Snipcart.
+  root.classList.add('picpeak-photo-checkout');
   if (sdk()?.api) return Promise.resolve(sdk()!);
   if (loading) return loading;
   configuredKey = publicKey;
@@ -29,13 +41,6 @@ function load(publicKey: string): Promise<SnipcartSdk> {
     const fail = () => { cleanup(); loading = undefined; script?.remove(); reject(new Error('Payment provider could not load')); };
     const timeout = window.setTimeout(fail, 30000);
     document.addEventListener('snipcart.ready', ready);
-    if (!document.getElementById('snipcart')) {
-      const root = document.createElement('div');
-      root.id = 'snipcart'; root.hidden = true;
-      root.dataset.apiKey = publicKey; root.dataset.currency = 'eur';
-      root.dataset.configModalStyle = 'side'; root.dataset.configAddProductBehavior = 'none';
-      document.body.appendChild(root);
-    }
     if (!document.getElementById('picpeak-snipcart-css')) {
       const css = document.createElement('link');
       css.id = 'picpeak-snipcart-css'; css.rel = 'stylesheet';

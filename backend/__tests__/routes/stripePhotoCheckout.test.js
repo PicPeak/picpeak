@@ -15,7 +15,10 @@ process.env.STRIPE_WEBHOOK_SECRET = crypto.randomBytes(32).toString('hex');
 
 jest.mock('../../src/services/emailProcessor', () => ({
   queueEmail: jest.fn(async () => true), getSupportEmail: jest.fn(async () => 'support@example.test'),
+  initializeTransporter: jest.fn(), resolveFromIdentity: jest.fn(async () => ({ fromName: 'PicPeak', fromEmail: 'studio@example.test' })),
+  wrapEmailHtml: jest.fn(async (html) => html), buildSignatureTextFor: jest.fn(async () => '\nStudio'),
 }));
+jest.mock('../../src/services/emailWebhookTransport', () => ({ isEnabled: jest.fn(() => false), send: jest.fn(async () => {}) }));
 jest.mock('../../src/utils/frontendUrl', () => ({ getFrontendBaseUrl: async () => 'https://photos.example.test', getApiBaseUrl: async () => 'https://photos.example.test/api' }));
 jest.mock('../../src/modules/photoSales/stripeClient', () => ({
   ...jest.requireActual('../../src/modules/photoSales/stripeClient'),
@@ -24,6 +27,7 @@ jest.mock('../../src/modules/photoSales/stripeClient', () => ({
 
 const { queueEmail } = require('../../src/services/emailProcessor');
 const { reconcileWebhook } = require('../../src/modules/photoSales/stripeCheckout');
+const promoIdentity = require('../../src/modules/photoSales/promoIdentity');
 const sdk = new Stripe(process.env.STRIPE_SECRET_KEY);
 const sessions = new Map();
 const payments = new Map();
@@ -69,10 +73,37 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     iat: Math.floor(Date.now() / 1000) - 1, jti: crypto.randomUUID(), ...extra,
   }, process.env.JWT_SECRET, { issuer: 'picpeak-auth', expiresIn: '1h' });
   const post = (body, bearer) => {
-    const req = request(app).post('/api/gallery/stripe-gallery/checkout').set('X-Forwarded-For', `198.51.100.${++requestSeq}`);
+    const req = request(app).post('/api/gallery/stripe-gallery/checkout').set('X-Forwarded-For', `198.51.${Math.floor(++requestSeq / 250)}.${requestSeq % 250 + 1}`);
     return (bearer ? req.set('Authorization', `Bearer ${bearer}`) : req).send({ browserKey, ...body });
   };
-  const create = (extra = {}) => post({ photoIds: [ids[0]], checkoutKey: crypto.randomUUID(), ...extra });
+  // Payment-state tests use a signed proof. The verification route tests
+  // below exercise the actual email-code exchange that issues this proof.
+  const grant = (email = 'buyer@example.test', gallery = galleryId, browser = browserKey) => promoIdentity.issueGrant({
+    gallery_id: gallery, browser_hash: promoIdentity.browserHash(browser), email_hash: promoIdentity.emailHash(email),
+  });
+  const create = (extra = {}) => post({ photoIds: [ids[0]], checkoutKey: crypto.randomUUID(),
+    ...(extra.promoCode ? { promoGrant: grant() } : {}), ...extra });
+  const verification = (action, body, slug = 'stripe-gallery', bearer) => {
+    const req = request(app).post(`/api/gallery/${slug}/checkout/promo-verification${action === 'confirm' ? '/confirm' : ''}`)
+      .set('X-Forwarded-For', `203.0.${Math.floor(++requestSeq / 250)}.${requestSeq % 250 + 1}`);
+    return (bearer ? req.set('Authorization', `Bearer ${bearer}`) : req).send({ browserKey, promoCode: 'FOTO-ONCE', ...body });
+  };
+  const offerPromo = () => db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE' });
+  const anotherGallery = async () => {
+    const slug = `other-${crypto.randomUUID()}`;
+    const [event] = await db('events').insert({ slug, event_name: 'Other gallery', event_type: 'wedding', event_date: '2026-10-01',
+      host_email: 'host@example.test', admin_email: 'admin@example.test', password_hash: 'x', share_link: `/gallery/${slug}/share`,
+      share_token: crypto.randomUUID(), expires_at: new Date(Date.now() + 10 * 864e5).toISOString(), is_active: 1, is_archived: 0,
+      is_draft: 0, require_password: 0, allow_downloads: 1, is_priced: 1, photo_price: 5, free_photo_count: 1,
+      promo_code: 'FOTO-ONCE', snipcart_discount_id: crypto.randomUUID() }).returning('id');
+    const [photo] = await db('photos').insert({ event_id: event.id, filename: 'other.jpg', path: 'private/other.jpg',
+      type: 'individual', media_type: 'image', mime_type: 'image/jpeg', processing_status: 'complete' }).returning('id');
+    return { id: event.id, slug, photoId: photo.id };
+  };
+  const checkoutOther = (gallery, email = 'buyer@example.test', extra = {}) => request(app).post(`/api/gallery/${gallery.slug}/checkout`)
+    .set('X-Forwarded-For', `192.0.${Math.floor(++requestSeq / 250)}.${requestSeq % 250 + 1}`)
+    .send({ photoIds: [gallery.photoId], checkoutKey: crypto.randomUUID(), browserKey, promoCode: 'FOTO-ONCE',
+      promoGrant: grant(email, gallery.id), ...extra });
   const orderFor = async (response) => {
     const id = response.body.checkout_url.split('/').pop();
     return db('photo_purchase_orders').where({ checkout_session_id: id }).first();
@@ -121,6 +152,7 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     browserKey = crypto.randomBytes(32).toString('hex');
     await db('photo_purchases').del();
     await db('photo_purchase_orders').del();
+    await db('photo_checkout_verifications').del();
     await db('events').where('slug', 'stripe-gallery').update({ slug: `old-${++gallerySeq}` });
     const rows = await db('events').insert({
       slug: 'stripe-gallery', event_type: 'wedding', event_name: 'Photo sales', event_date: '2026-10-01',
@@ -138,6 +170,158 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     }
     jest.clearAllMocks();
     sessions.clear(); payments.clear(); idempotency.clear();
+  });
+
+  test('verifies a promo by email without creating a feedback guest, and retains no plaintext identity or code', async () => {
+    await offerPromo();
+    const send = jest.spyOn(promoIdentity, 'sendCodeEmail').mockResolvedValue();
+    const sent = await verification('send', { email: ' Buyer@Example.test ', language: 'de-DE' });
+    expect(sent.status).toBe(202);
+    expect(sent.headers['cache-control']).toContain('no-store');
+    const message = send.mock.calls[0][0];
+    expect(message).toMatchObject({ to: 'buyer@example.test', language: 'de' });
+    const row = await db('photo_checkout_verifications').first();
+    expect(row).toMatchObject({ email_hash: promoIdentity.emailHash(message.to), browser_hash: promoIdentity.browserHash(browserKey), attempts: 0 });
+    expect(JSON.stringify(row)).not.toContain(message.to);
+    expect(JSON.stringify(row)).not.toContain(message.code);
+    expect(JSON.stringify(sent.body)).not.toContain(message.code);
+    expect(Number((await db('gallery_guests').count('* as n').first()).n)).toBe(0);
+    expect(await db('photo_purchase_orders').first()).toBeUndefined();
+    const confirmed = await verification('confirm', { challenge: sent.body.challenge, code: message.code });
+    expect(confirmed.status).toBe(200);
+    const response = await create({ promoCode: 'FOTO-ONCE', promoGrant: confirmed.body.grant });
+    expect(response.status).toBe(200);
+    expect((await orderFor(response)).promo_identity_hash).toBe(promoIdentity.emailHash(message.to));
+    expect(JSON.stringify(mockStripe.checkout.sessions.create.mock.calls)).not.toContain(confirmed.body.grant);
+    expect(JSON.stringify(mockStripe.checkout.sessions.create.mock.calls)).not.toContain(row.email_hash);
+    expect((await verification('confirm', { challenge: sent.body.challenge, code: message.code })).status).toBe(400);
+  });
+
+  test.each(['missing', 'forged', 'expired', 'wrong_gallery', 'wrong_browser'])('refuses %s promo identity before creating an order or provider checkout', async (kind) => {
+    await offerPromo();
+    let proof = grant();
+    if (kind === 'missing') proof = undefined;
+    if (kind === 'forged') proof += 'x';
+    if (kind === 'expired') proof = jwt.sign({ type: 'photo_checkout_promo', galleryId, browser: promoIdentity.browserHash(browserKey), identity: promoIdentity.emailHash('buyer@example.test') }, process.env.JWT_SECRET,
+      { issuer: 'picpeak-auth', audience: 'photo_checkout_promo', expiresIn: -1 });
+    if (kind === 'wrong_gallery') proof = grant('buyer@example.test', galleryId + 1);
+    if (kind === 'wrong_browser') proof = grant('buyer@example.test', galleryId, crypto.randomBytes(32).toString('hex'));
+    const response = await create({ promoCode: 'FOTO-ONCE', promoGrant: proof });
+    expect(response.status).toBe(401); expect(response.body.code).toBe('CHECKOUT_PROMO_IDENTITY_REQUIRED');
+    expect(await db('photo_purchase_orders').first()).toBeUndefined();
+    expect(mockStripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
+  test('binds codes to the requesting gallery and browser and checks expiry at redemption', async () => {
+    await offerPromo(); const other = await anotherGallery();
+    const send = jest.spyOn(promoIdentity, 'sendCodeEmail').mockResolvedValue();
+    const sent = await verification('send', { email: 'buyer@example.test' });
+    const body = { challenge: sent.body.challenge, code: send.mock.calls[0][0].code };
+    expect((await verification('confirm', { ...body, browserKey: crypto.randomBytes(32).toString('hex') })).status).toBe(400);
+    expect((await verification('confirm', body, other.slug)).status).toBe(400);
+    expect((await db('photo_checkout_verifications').first()).attempts).toBe(0);
+    await db('photo_checkout_verifications').update({ expires_at: new Date(Date.now() - 1000).toISOString() });
+    expect((await verification('confirm', body)).status).toBe(400);
+  });
+
+  test('claims only five comparisons under concurrent guesses and only one grant under concurrent correct codes', async () => {
+    await offerPromo(); const send = jest.spyOn(promoIdentity, 'sendCodeEmail').mockResolvedValue();
+    const sent = await verification('send', { email: 'buyer@example.test' });
+    const correct = send.mock.calls[0][0].code; const wrong = correct === '000000' ? '111111' : '000000';
+    const rejected = await Promise.all(Array.from({ length: 8 }, () => verification('confirm', { challenge: sent.body.challenge, code: wrong })));
+    expect(rejected.every((response) => response.status === 400)).toBe(true);
+    expect((await db('photo_checkout_verifications').first()).attempts).toBe(5);
+    expect((await verification('confirm', { challenge: sent.body.challenge, code: correct })).status).toBe(400);
+    const next = await verification('send', { email: 'another@example.test' });
+    const body = { challenge: next.body.challenge, code: send.mock.calls[1][0].code };
+    const results = await Promise.all([verification('confirm', body), verification('confirm', body)]);
+    expect(results.map((response) => response.status).sort()).toEqual([200, 400]);
+  });
+
+  test('serializes per-address sends across galleries and browsers, with five sends per hour and a resend delay', async () => {
+    await offerPromo(); const other = await anotherGallery();
+    const send = jest.spyOn(promoIdentity, 'sendCodeEmail').mockResolvedValue();
+    const responses = await Promise.all([verification('send', { email: ' Buyer@Example.test ' }),
+      verification('send', { email: 'buyer@example.test', browserKey: crypto.randomBytes(32).toString('hex') }, other.slug)]);
+    expect(responses.map((response) => response.status).sort()).toEqual([202, 429]);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(responses.find((response) => response.status === 429).headers['retry-after']).toBeDefined();
+    for (let i = 0; i < 4; i++) {
+      await db('photo_checkout_verifications').update({ created_at: new Date(Date.now() - 65000).toISOString() });
+      expect((await verification('send', { email: 'buyer@example.test' })).status).toBe(202);
+    }
+    await db('photo_checkout_verifications').update({ created_at: new Date(Date.now() - 65000).toISOString() });
+    expect((await verification('send', { email: 'buyer@example.test' })).status).toBe(429);
+    expect(send).toHaveBeenCalledTimes(5);
+  });
+
+  test('a failed email creates no usable challenge and does not consume the address send budget', async () => {
+    await offerPromo(); const send = jest.spyOn(promoIdentity, 'sendCodeEmail').mockRejectedValueOnce(new Error('Transport unavailable')).mockResolvedValue();
+    expect((await verification('send', { email: 'buyer@example.test' })).status).toBe(503);
+    expect(await db('photo_checkout_verifications').first()).toBeUndefined();
+    expect((await verification('send', { email: 'buyer@example.test' })).status).toBe(202);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  test('does not send codes with invalid promo input or while payment providers are disabled', async () => {
+    await offerPromo(); const send = jest.spyOn(promoIdentity, 'sendCodeEmail').mockResolvedValue();
+    expect((await verification('send', { email: 'buyer@example.test', promoCode: { toString: null } })).status).toBe(409);
+    const providers = require('../../src/modules/photoSales/providers');
+    await providers.savePreferences({ revision: (await providers.preferences()).revision, stripe: false, snipcart: false });
+    try {
+      expect((await verification('send', { email: 'buyer@example.test' })).status).toBe(503);
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      await providers.savePreferences({ revision: (await providers.preferences()).revision, stripe: true, snipcart: true });
+    }
+  });
+
+  test.each(['paused', 'unpriced', 'no_promo', 'slideshow'])('does not email verification codes for a %s gallery/session', async (kind) => {
+    await offerPromo(); const send = jest.spyOn(promoIdentity, 'sendCodeEmail').mockResolvedValue();
+    if (kind === 'paused') await db('events').where({ id: galleryId }).update({ is_active: false });
+    if (kind === 'unpriced') await db('events').where({ id: galleryId }).update({ is_priced: false });
+    if (kind === 'no_promo') await db('events').where({ id: galleryId }).update({ free_photo_count: 0 });
+    const response = await verification('send', { email: 'buyer@example.test' }, 'stripe-gallery', kind === 'slideshow' ? token({ type: 'slideshow' }) : undefined);
+    expect(response.status).toBeGreaterThanOrEqual(400); expect(send).not.toHaveBeenCalled();
+  });
+
+  test.each(['stripe', 'snipcart'])('one verified address cannot hold another gallery promo after a new browser or provider (%s first)', async (provider) => {
+    await offerPromo(); enableSnipcart();
+    await db('events').where({ id: galleryId }).update({ snipcart_discount_id: crypto.randomUUID() });
+    const other = await anotherGallery(); const key = crypto.randomUUID();
+    const first = await create({ provider, promoCode: 'FOTO-ONCE', checkoutKey: key }); expect(first.status).toBe(200);
+    expect((await create({ provider, promoCode: 'FOTO-ONCE', checkoutKey: key })).body).toEqual(first.body);
+    browserKey = crypto.randomBytes(32).toString('hex');
+    const blocked = await checkoutOther(other, 'BUYER@example.test', { provider: provider === 'stripe' ? 'snipcart' : 'stripe' });
+    expect(blocked.status).toBe(409); expect(blocked.body.code).toBe('CHECKOUT_PROMO_BUSY');
+    expect((await checkoutOther(other, 'different@example.test')).status).toBe(200);
+  });
+
+  test('concurrent reservations for one verified address serialize across galleries and release after confirmed cancellation', async () => {
+    await offerPromo(); const other = await anotherGallery();
+    const responses = await Promise.all([create({ promoCode: 'FOTO-ONCE' }), checkoutOther(other)]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(responses.find((response) => response.status === 409).body.code).toBe('CHECKOUT_PROMO_BUSY');
+    const order = await orderFor(responses.find((response) => response.status === 200));
+    expect((await request(app).post(`/api/photo-checkout/${order.checkout_token}/cancel`).set('X-Photo-Checkout-Key', browserKey)).status).toBe(200);
+    const next = Number(order.gallery_id) === Number(galleryId) ? await checkoutOther(other) : await create({ promoCode: 'FOTO-ONCE' });
+    expect(next.status).toBe(200);
+  });
+
+  test.each(['creation_unknown', 'processing', 'refund_pending', 'refund_failed'])('keeps the verified identity cap while a %s payment remains ambiguous', async (status) => {
+    await offerPromo(); const other = await anotherGallery(); const order = await orderFor(await create({ promoCode: 'FOTO-ONCE' }));
+    await db('photo_purchase_orders').where({ id: order.id }).update({ status });
+    expect((await checkoutOther(other)).body.code).toBe('CHECKOUT_PROMO_BUSY');
+  });
+
+  test('prunes expired challenges without resetting the current hourly send budget', async () => {
+    await offerPromo(); jest.spyOn(promoIdentity, 'sendCodeEmail').mockResolvedValue();
+    await verification('send', { email: 'buyer@example.test' });
+    const fresh = await db('photo_checkout_verifications').first();
+    await db('photo_checkout_verifications').insert({ ...fresh, id: undefined, challenge: crypto.randomBytes(24).toString('hex'),
+      created_at: new Date(Date.now() - 2 * 3600e3).toISOString(), expires_at: new Date(Date.now() - 90 * 60e3).toISOString() });
+    await promoIdentity.prune(); expect(await db('photo_checkout_verifications')).toHaveLength(1);
+    expect((await verification('send', { email: 'buyer@example.test' })).status).toBe(429);
   });
 
   test('creates server-priced checkout without exposing credentials or private photo URLs to Stripe', async () => {
@@ -465,6 +649,10 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     const reply = await create({ provider: 'snipcart' });
     expect(reply.status).toBe(200);
     const local = await db('photo_purchase_orders').where({ checkout_token: reply.body.snipcart.checkout_token }).first();
+    expect(reply.body.snipcart.items[0]).toMatchObject({ quantity: 1, minQuantity: 1, maxQuantity: 1 });
+    const stripped = new URL(reply.body.snipcart.items[0].url); stripped.searchParams.delete('checkout');
+    const denied = await request(app).get(stripped.pathname + stripped.search);
+    expect(denied.status).toBe(409); expect(denied.body.code).toBe('CHECKOUT_REQUIRED');
     await db('photos').where({ id: ids[0] }).update({ photo_price: 99 });
     const price = await request(app).get(new URL(reply.body.snipcart.items[0].url).pathname + new URL(reply.body.snipcart.items[0].url).search);
     expect(price.status).toBe(200); expect(price.body.price).toBe(5);
@@ -484,6 +672,20 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     expect(result.status).toBe(200);
     expect(await db('photo_purchase_orders').where({ provider_order_id: remote.token }).first()).toMatchObject({ status: 'refunded' });
     expect(await db('photo_purchases')).toHaveLength(1);
+  });
+  test.each(['removed_photo', 'removed_discount', 'added_discount'])('server quote checks still refuse a paid Snipcart cart with %s', async (change) => {
+    enableSnipcart(); await offerPromo();
+    await db('events').where({ id: galleryId }).update({ snipcart_discount_id: crypto.randomUUID() });
+    const reply = await create({ provider: 'snipcart', photoIds: ids.slice(0, 2), promoCode: 'FOTO-ONCE' });
+    const overrides = { total: 5 };
+    if (change === 'removed_photo') overrides.items = reply.body.snipcart.items.slice(0, 1);
+    if (change === 'removed_discount') overrides.discounts = [];
+    if (change === 'added_discount') overrides.discounts = [{ code: 'FOTO-ONCE' }, { code: 'UNEXPECTED' }];
+    const { result, remote } = await deliverSnipcart(reply.body.snipcart, overrides);
+    expect(result.status).toBe(200);
+    expect(await db('photo_purchase_orders').where({ provider_order_id: remote.token }).first()).toMatchObject({ status: 'refunded' });
+    expect(await db('photo_purchases')).toHaveLength(0);
+    expect(queueEmail).not.toHaveBeenCalled();
   });
   test('a late Snipcart payment after promo expiry and a Stripe claim is refunded, preserving the Stripe claim', async () => {
     enableSnipcart(); await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE', snipcart_discount_id: crypto.randomUUID() });

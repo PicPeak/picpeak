@@ -30,6 +30,7 @@ async function reconcilePhotoCheckouts() {
   if (!token) return;
   const keeper = lease.startLeaseKeeper(JOB, token);
   try {
+    await require('../modules/photoSales/promoIdentity').prune();
     const config = await stripeConfiguration();
     const orders = await db('photo_purchase_orders')
       .where((q) => q.whereIn('status', [...OPEN, 'refund_pending', 'refund_failed'])

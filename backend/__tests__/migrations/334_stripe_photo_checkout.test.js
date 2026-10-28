@@ -75,4 +75,36 @@ describe.each(['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : [])])('
     expect(await db('photo_purchase_orders').where({ order_id: 'historic-order' }).first()).toBeTruthy();
   });
 
+  test('promo identity upgrade reruns, erases gallery challenges on deletion and preserves financial identity state', async () => {
+    await migration.up(db);
+    const identity = require('../../migrations/core/336_photo_checkout_promo_identity');
+    await identity.up(db); await identity.up(db);
+    const hash = require('crypto').randomBytes(32).toString('hex');
+    await db('photo_purchase_orders').update({ promo_identity_hash: hash });
+    await db('photo_checkout_verifications').insert({ gallery_id: 1, challenge: require('crypto').randomBytes(24).toString('hex'),
+      email_hash: hash, browser_hash: hash, code_hash: 'hash', created_at: new Date().toISOString(), expires_at: new Date().toISOString() });
+    await expect(identity.down(db)).rejects.toThrow('verified checkout orders exist');
+    await db('events').where({ id: 1 }).del();
+    expect(await db('photo_checkout_verifications')).toHaveLength(0);
+    expect(await db('photo_purchase_orders').first()).toMatchObject({ gallery_id: null, promo_identity_hash: hash });
+    await db('photo_purchase_orders').update({ promo_identity_hash: null });
+    await identity.down(db);
+    expect(await db.schema.hasTable('photo_checkout_verifications')).toBe(false);
+    expect(await db.schema.hasColumn('photo_purchase_orders', 'promo_identity_hash')).toBe(false);
+  });
+
+  test('repairs an interrupted verification-table index step', async () => {
+    const identity = require('../../migrations/core/336_photo_checkout_promo_identity');
+    await identity.up(db);
+    for (const name of ['challenge_unique', 'email_hash_index', 'expires_at_index']) {
+      await db.raw('DROP INDEX ??', [`photo_checkout_verifications_${name}`]);
+    }
+    await identity.up(db);
+    const hash = require('crypto').randomBytes(32).toString('hex');
+    const row = { gallery_id: 1, challenge: require('crypto').randomBytes(24).toString('hex'),
+      email_hash: hash, browser_hash: hash, code_hash: 'hash', created_at: new Date().toISOString(), expires_at: new Date().toISOString() };
+    await db('photo_checkout_verifications').insert(row);
+    await expect(db('photo_checkout_verifications').insert(row)).rejects.toThrow();
+  });
+
 });

@@ -96,7 +96,7 @@ read access, not the public/secret pairing or successful payment delivery.
 
 Add the displayed `/api/gallery/snipcart-webhook` URL in Snipcart's dashboard,
 allow the public PicPeak domain, and keep prices tax-inclusive in EUR. Existing
-per-gallery webhook URLs and signed price-check URLs remain supported. Test a
+per-gallery webhook URLs remain supported. Test a
 purchase, buyer email, original download and refund before accepting payments.
 Keep secret-key access to the same store for historical orders and refunds.
 The development HMAC simulator remains disabled in production.
@@ -107,6 +107,10 @@ price-check URLs validate the saved prices. Gallery pages permit Snipcart's
 CDN, API and payment frames only while Snipcart checkout is offered. Stripe-only
 installations retain the strict gallery policy; admin pages never gain Snipcart
 script permissions.
+
+After handoff, Snipcart hides item removal, quantity changes and the discount
+box; totals remain visible. Close Snipcart to edit the cart in PicPeak. Editing
+does not release a pending payment or its promo reservation.
 
 ## Pricing and access rules
 
@@ -119,6 +123,19 @@ script permissions.
   gallery**, not per buyer: the credit is `free_photo_count × photo_price`, capped
   at the cart total. Per-photo overrides do not change that credit. A fully
   discounted order still completes the provider checkout to collect the buyer's email.
+- Applying a promo also requires a six-digit code emailed by PicPeak; no account
+  or feedback registration is created. Configure SMTP or the email webhook
+  transport before offering promos. Ordinary paid checkout needs no verification.
+  Codes last 15 minutes with five attempts. Sending is limited to once a minute
+  and five times an hour per address across galleries, plus a network limit.
+  A verified address can hold one outstanding promo checkout across both
+  providers and galleries. This prevents fresh tabs from resetting the cap;
+  multiple mailboxes/aliases and repeated reservations after expiry remain possible.
+  Verification grants last 30 minutes and are gallery- and session-bound.
+  PicPeak retains keyed address hashes, hashed codes and hashed browser proofs;
+  expired challenges are removed by checkout recovery after the hourly budget.
+  Order identity hashes remain with financial history. JWT-secret rotation
+  invalidates grants and changes the address hashes used for this cap.
 - Starting a discounted checkout reserves the same database promo claim for
   either provider. Promo checkout windows last approximately 31 minutes;
   ordinary checkout windows last up to one hour. Returning from Stripe alone
@@ -130,8 +147,11 @@ script permissions.
   reservation expires after its window plus five minutes. A known pending
   provider payment retains its claim while it settles. A late payment against
   an expired reservation or a conflicting redemption is refused/refunded,
-  rather than granting a second use of the code. Pre-upgrade Snipcart carts
-  still validate, and must acquire the same unique claim at settlement.
+  rather than granting a second use of the code. Unpaid pre-upgrade Snipcart
+  carts without a PicPeak reservation must restart from the gallery, so they
+  cannot bypass promo verification. Already-submitted payments continue to
+  settle, acquiring the same unique promo claim when applicable; purchase
+  links, refunds and disputes are unaffected.
 - PicPeak snapshots prices, discount and the promised download deadline before
   creating Checkout. Later price edits do not invalidate an honest purchase.
   Access never exceeds the gallery's expiry, including a later shortened expiry.

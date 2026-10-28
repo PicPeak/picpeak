@@ -27,7 +27,7 @@ function handoff(order) {
     expires_at: new Date(quote.sessionExpiresAt * 1000).toISOString(),
     items: quote.lines.map((line) => ({
       id: `${quote.gallerySlug}-photo-${line.photoId}`,
-      name: line.name, price: line.originalAmountCents / 100, quantity: 1, maxQuantity: 1, shippable: false,
+      name: line.name, price: line.originalAmountCents / 100, quantity: 1, minQuantity: 1, maxQuantity: 1, shippable: false,
       url: `${quote.apiBase.replace(/\/+$/, '')}/gallery/${encodeURIComponent(quote.gallerySlug)}/price-check?photoId=${line.photoId}&sig=${signPhotoSale(line.photoId)}&checkout=${order.checkout_token}`,
       customFields: [{ name: 'photoId', value: String(line.photoId), type: 'hidden' }],
     })),

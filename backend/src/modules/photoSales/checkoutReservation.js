@@ -11,6 +11,8 @@ const { SALES_CURRENCY, isGalleryOnSale, sellablePhotos } = require('./sellable'
 const { effectivePhotoPrice } = require('./priceRules');
 const { stripeConfiguration } = require('./stripeClient');
 const { lock: lockPaymentSettings, credentials, configurationOf } = require('./paymentSettings');
+const promoIdentity = require('./promoIdentity');
+const { browserHash } = promoIdentity;
 
 const OPEN = ['pending', 'creation_unknown', 'processing'];
 
@@ -32,14 +34,14 @@ async function frontendOrigin() {
   return base.replace(/\/+$/, '');
 }
 
-function requestMatches(order, gallery, photoIds, promoCode, browserKey, provider) {
+function requestMatches(order, gallery, photoIds, promoCode, browserKey, provider, identityHash) {
   const quote = quoteOf(order);
   return order.payment_provider === provider && Number(order.gallery_id) === Number(gallery.id)
     && JSON.stringify(quote.lines.map((line) => line.photoId)) === JSON.stringify(photoIds)
-    && quote.promoCode === promoCode && verifyCheckoutBrowser(order, browserKey);
+    && quote.promoCode === promoCode && verifyCheckoutBrowser(order, browserKey)
+    && (!promoCode || order.promo_identity_hash === identityHash);
 }
 
-function browserHash(key) { return crypto.createHash('sha256').update(key).digest('hex'); }
 function verifyCheckoutBrowser(order, key) {
   if (!order?.checkout_browser_hash || typeof key !== 'string' || !/^[0-9a-f]{64}$/.test(key)) return false;
   return crypto.timingSafeEqual(Buffer.from(order.checkout_browser_hash), Buffer.from(browserHash(key)));
@@ -62,9 +64,18 @@ async function reserveCheckout(gallery, body) {
       || typeof browserKey !== 'string' || !/^[0-9a-f]{64}$/.test(browserKey)) {
     throw checkoutError('Choose between 1 and 100 different photos.');
   }
+  const promoApplied = !!promoCode;
+  if (promoApplied && (!gallery.promo_code || promoCode !== gallery.promo_code
+      || Number(gallery.free_photo_count) <= 0)) {
+    throw checkoutError('This promo code is not available.', 409, 'PROMO_UNAVAILABLE');
+  }
+  const identityHash = promoApplied ? promoIdentity.verifiedIdentity(body.promoGrant, gallery.id, browserKey) : null;
+  if (promoApplied && !identityHash) {
+    throw checkoutError('Verify your email before using the gallery promo.', 401, 'CHECKOUT_PROMO_IDENTITY_REQUIRED');
+  }
   const existing = await db('photo_purchase_orders').where({ checkout_key: checkoutKey }).first();
   if (existing) {
-    if (!requestMatches(existing, gallery, photoIds, promoCode, browserKey, provider)) throw checkoutError('This checkout has changed. Please start again.', 409);
+    if (!requestMatches(existing, gallery, photoIds, promoCode, browserKey, provider, identityHash)) throw checkoutError('This checkout has changed. Please start again.', 409);
     return existing;
   }
   const rows = await sellablePhotos(db, gallery.id).whereIn('photos.id', photoIds)
@@ -76,11 +87,6 @@ async function reserveCheckout(gallery, body) {
   // last-minute purchase instead of promising access past gallery closure.
   if (provider === 'stripe' && gallery.expires_at && new Date(gallery.expires_at).getTime() < Date.now() + 31 * 60e3) {
     throw checkoutError('This gallery closes too soon to start a checkout.', 409, 'GALLERY_CLOSING');
-  }
-  const promoApplied = !!promoCode;
-  if (promoApplied && (!gallery.promo_code || promoCode !== gallery.promo_code
-      || Number(gallery.free_photo_count) <= 0)) {
-    throw checkoutError('This promo code is not available.', 409, 'PROMO_UNAVAILABLE');
   }
   let discount = promoApplied
     ? Math.round(Math.max(0, Number(gallery.free_photo_count)) * Number(gallery.photo_price) * 100)
@@ -130,12 +136,25 @@ async function reserveCheckout(gallery, body) {
     currency: SALES_CURRENCY, status: 'pending', purchased_at: new Date().toISOString(), expires_at: expiresAt,
     access_token: createPurchaseAccessToken(), email_sent: false, promo_used: false,
     promo_gallery_id: promoApplied ? gallery.id : null,
+    promo_identity_hash: identityHash,
   };
   try {
     // The unique nullable promo_gallery_id is the cross-process claim. The
     // existing Snipcart redemption is backfilled by the checkout migration.
     const inserted = await db.transaction(async (trx) => {
       await lockPaymentSettings(trx);
+      // A verified mailbox has one outstanding promo across galleries and
+      // providers. A different browser/session proof cannot reset this cap.
+      // Keep ambiguous/refunding holds while recovery resolves the payment;
+      // fulfilled redemptions and confirmed terminal attempts free this cap.
+      if (identityHash) {
+        const held = await trx('photo_purchase_orders').where({ promo_identity_hash: identityHash, promo_used: false })
+          .whereIn('status', [...OPEN, 'refund_pending', 'refund_failed']).whereNotNull('promo_gallery_id').first('gallery_id');
+        if (held) {
+          if (Number(held.gallery_id) === Number(gallery.id)) throw checkoutError('This promo code is already reserved by another checkout.', 409, 'PROMO_UNAVAILABLE');
+          throw checkoutError('Finish your existing promo checkout or wait for it to end before starting another.', 409, 'CHECKOUT_PROMO_BUSY');
+        }
+      }
       if (!(await providerConfiguration(trx)).available.includes(provider)) throw checkoutError('This payment provider is no longer available.', 409);
       const current = provider === 'stripe' ? configurationOf(await credentials(trx)) : snipcartSettings.configurationOf(await snipcartSettings.credentials(trx));
       if (!current.checkout_configured || !current.webhook_configured || current.test_mode !== configuration.test_mode) {
@@ -146,7 +165,8 @@ async function reserveCheckout(gallery, body) {
     return { ...order, id: inserted[0]?.id ?? inserted[0] };
   } catch (error) {
     const raced = await db('photo_purchase_orders').where({ checkout_key: checkoutKey }).first();
-    if (raced && requestMatches(raced, gallery, photoIds, promoCode, browserKey, provider)) return raced;
+    if (raced && requestMatches(raced, gallery, photoIds, promoCode, browserKey, provider, identityHash)) return raced;
+    if (error.code === 'CHECKOUT_PROMO_BUSY') throw error;
     if (promoApplied && await db('photo_purchase_orders').where({ promo_gallery_id: gallery.id }).first('id')) {
       throw checkoutError('This promo code is already used or reserved by another checkout.', 409, 'PROMO_UNAVAILABLE');
     }

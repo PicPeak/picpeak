@@ -91,6 +91,7 @@ export const PhotoSalesProvider: React.FC<{ value: PhotoSalesConfig; photos?: Pu
     <PhotoSalesContext.Provider value={{ ...value, cartCount: items.length, cartItemIds, addToCart, openCart: () => setOpen(true) }}>
       {children}
       {value.checkoutReady && <PhotoSalesCart
+        key={value.slug}
         open={open} onClose={() => setOpen(false)} config={value} items={displayedItems}
         onRemove={(id) => setItems((current) => current.filter((item) => item.id !== id))}
       />}
