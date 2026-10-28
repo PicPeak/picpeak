@@ -25,6 +25,7 @@ async function checkScheduledReveals() {
       .where('reveal_at', '<=', now)
       .where('is_active', formatBoolean(true))
       .where('is_archived', formatBoolean(false))
+      .where('temporarily_disabled', formatBoolean(false))
       // Drafts aren't guest-reachable — stamping/notifying would burn the
       // reveal before publication and fire workflows for a dead link.
       .where('is_draft', formatBoolean(false));
@@ -38,6 +39,7 @@ async function checkScheduledReveals() {
       const stamped = await db('events')
         .where('id', event.id)
         .whereNull('revealed_at')
+        .where('temporarily_disabled', formatBoolean(false))
         .update({ revealed_at: event.reveal_at, reveal_at: null });
       if (stamped !== 1) continue;
 

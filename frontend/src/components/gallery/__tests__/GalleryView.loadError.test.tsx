@@ -95,6 +95,12 @@ const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`),
 afterEach(cleanup);
 
 describe('GalleryView after a failed refetch', () => {
+  it('replaces already loaded photos with a friendly message when disabled without ending the session', () => {
+    show({ response: { status: 403, data: { code: 'GALLERY_TEMPORARILY_DISABLED' } } });
+    expect(screen.getByText('gallery.temporarilyUnavailable')).toBeInTheDocument();
+    expect(screen.queryByTestId('photo-grid')).not.toBeInTheDocument();
+    expect(stable.auth.endSession).not.toHaveBeenCalled();
+  });
   it.each([403, 404, 410])('replaces the grid when the gallery is gone (%i)', (status) => {
     show(httpError(status));
     expect(screen.getByText('gallery.failedToLoad')).toBeInTheDocument();

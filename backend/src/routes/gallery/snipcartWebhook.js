@@ -39,8 +39,9 @@ const rateLimit = require('express-rate-limit');
 const { db } = require('../../database/db');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { rateLimitKey } = require('../../utils/rateLimitKey');
-const { queueEmail } = require('../../services/emailProcessor');
+const { queueEmail, getSupportEmail } = require('../../services/emailProcessor');
 const { createPurchaseAccessToken, buildPurchasedDownloadUrl } = require('../../modules/photoSales/purchaseAccess');
+const { lockGallery } = require('../../services/galleryPauseService');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const logger = require('../../utils/logger');
 const { allocateFreeLines } = require('../../modules/photoSales/priceRules');
@@ -269,9 +270,9 @@ async function rejectOrder(order, gallery, reason) {
  * after the gallery expires — expiry deactivates and archives the gallery,
  * which takes the originals (and every purchase link) down with it.
  */
-function purchaseExpiry(gallery) {
+function purchaseExpiry(gallery, now = Date.now()) {
   const days = Number(gallery.purchase_access_days || 30);
-  const accessEnd = Date.now() + (Number.isFinite(days) ? days : 30) * 24 * 60 * 60 * 1000;
+  const accessEnd = now + (Number.isFinite(days) ? days : 30) * 24 * 60 * 60 * 1000;
   const galleryEnd = gallery.expires_at ? new Date(gallery.expires_at).getTime() : NaN;
   return new Date(Number.isFinite(galleryEnd) ? Math.min(accessEnd, galleryEnd) : accessEnd).toISOString();
 }
@@ -288,7 +289,11 @@ async function grantOrder(order) {
       .first(...ON_SALE_COLUMNS, 'event_name', 'photo_price', 'purchase_access_days', 'free_photo_count', 'promo_code', 'snipcart_discount_id')
     : null;
   if (!gallery) return rejectOrder(order, null, 'the cart does not name one priced gallery');
-  if (!isGalleryOnSale(gallery)) return rejectOrder(order, gallery, 'the gallery is not on sale');
+  // A temporary pause stops new checkout validation and file access, but is
+  // not a reason to refund an otherwise valid payment already in flight.
+  if (!isGalleryOnSale(gallery, { allowTemporarilyDisabled: true })) {
+    return rejectOrder(order, gallery, 'the gallery is not on sale');
+  }
 
   const currency = String(order.currency || '').toUpperCase();
   if (currency !== SALES_CURRENCY) {
@@ -351,11 +356,18 @@ async function grantOrder(order) {
   }
 
   const buyerEmail = order.email || order.user?.email || order.billingAddress?.email || '';
-  const purchasedAt = new Date().toISOString();
-  const expiresAt = purchaseExpiry(gallery);
+  let purchasedAt;
+  let expiresAt;
   const accessToken = createPurchaseAccessToken();
 
-  await db.transaction(async (trx) => {
+  const granted = await db.transaction(async (trx) => {
+    // Same event-first lock as resume/compensation. A grant committed after
+    // resume starts its clock after the pause, rather than missing its credit.
+    const current = await lockGallery(trx, gallery.id);
+    if (!isGalleryOnSale(current, { allowTemporarilyDisabled: true })) return false;
+    const now = Date.now();
+    purchasedAt = new Date(now).toISOString();
+    expiresAt = purchaseExpiry(current, now);
     await trx('photo_purchase_orders').insert({
       order_id: orderToken,
       gallery_id: gallery.id,
@@ -380,17 +392,20 @@ async function grantOrder(order) {
       currency: SALES_CURRENCY,
       amount_cents: line.amountCents,
     })));
+    return current;
   });
+  if (!granted) return rejectOrder(order, gallery, 'the gallery is no longer on sale');
 
   if (buyerEmail) {
-    await queueEmail(null, buyerEmail, 'photo_purchase_access', {
+    await queueEmail(null, buyerEmail, granted.temporarily_disabled ? 'photo_purchase_paused' : 'photo_purchase_access', {
       buyer_email: buyerEmail,
-      gallery_name: gallery.event_name || gallerySlug,
+      gallery_name: granted.event_name || gallerySlug,
       access_link: buildPurchasedDownloadUrl({ baseUrl: await getFrontendBaseUrl(), accessToken }),
       purchased_at: purchasedAt,
       expires_at: expiresAt,
       download_count: photoIds.length,
       photo_count: photoIds.length,
+      ...(granted.temporarily_disabled && { support_email: await getSupportEmail(), expiry_date: granted.expires_at }),
     });
     await db('photo_purchase_orders').where({ order_id: orderToken }).update({ email_sent: true });
   }

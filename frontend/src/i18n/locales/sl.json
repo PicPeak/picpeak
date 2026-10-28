@@ -5831,6 +5831,8 @@
     "ratePhoto": "Oceni fotografijo",
     "rateSelected": "Oceni izbrane",
     "bulkRatingPartial": "Ocenjenih fotografij: {{rated}} od {{total}}",
+    "bulkRatingDone": "Ocenjenih fotografij: {{count}}",
+    "bulkRatingCleared": "Ocena odstranjena s fotografij: {{count}}",
     "ratingLimitReached": "Omejitev ocen je dosežena. Poskusite znova pozneje.",
     "ratingsCount_one": "{{count}} ocena",
     "ratingsCount_other": "{{count}} ocen",

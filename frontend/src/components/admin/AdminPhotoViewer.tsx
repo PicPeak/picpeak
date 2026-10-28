@@ -173,7 +173,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
 
   const handleDownload = async () => {
     try {
-      await photosService.downloadPhoto(eventId, currentPhoto.id, currentPhoto.filename);
+      await photosService.downloadPhoto(eventId, currentPhoto.id, currentPhoto.filename, Boolean(isVideo));
       toast.success('Download started');
     } catch (error) {
       toast.error('Failed to download photo');

@@ -23,6 +23,11 @@ interface BulkRatingProps {
    */
   identity?: { name: string; email: string } | null;
   onIdentityChange?: (identity: { name: string; email: string }) => void;
+  /**
+   * Told when every photo of a run was rated (or cleared, at 0). Called from
+   * the mutation, so it still fires when this control unmounted meanwhile.
+   */
+  onRated?: (count: number, rating: number) => void;
   className?: string;
 }
 
@@ -46,6 +51,7 @@ export const BulkRating: React.FC<BulkRatingProps> = ({
   onDialogChange,
   identity: hostIdentity,
   onIdentityChange,
+  onRated,
   className = '',
 }) => {
   const { t } = useTranslation();
@@ -157,6 +163,8 @@ export const BulkRating: React.FC<BulkRatingProps> = ({
           rated: ratedCount,
           total: data.photoIds.length,
         }));
+      } else {
+        onRated?.(ratedCount, data.rating);
       }
     },
   });

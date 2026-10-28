@@ -73,6 +73,7 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
     const activeEvents = await applyEventScope(db('events'), req.admin, 'id')
       .where('is_active', formatBoolean(true))
       .where('is_archived', formatBoolean(false))
+      .where('temporarily_disabled', formatBoolean(false))
       .count('id as count')
       .first();
 
