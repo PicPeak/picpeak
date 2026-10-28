@@ -115,6 +115,7 @@ it('offers re-send and re-stamp on a signed contract', async () => {
   renderPage();
   await user.click(await screen.findByRole('button', { name: 'More actions' }));
   expect(screen.getByText('Re-stamp missing signatures')).toBeInTheDocument();
+  expect(screen.getAllByText(/No signature image captured/)).toHaveLength(2);
   expect(screen.getByRole('menuitem', { name: 'Re-send signed PDF' })).toBeInTheDocument();
 });
 
@@ -126,6 +127,8 @@ it('offers neither on an imported contract, but keeps the download', async () =>
   expect(screen.getByRole('menuitem', { name: 'Download signed PDF' })).toBeInTheDocument();
   expect(screen.queryByRole('menuitem', { name: 'Re-send signed PDF' })).not.toBeInTheDocument();
   expect(screen.queryByText('Re-stamp missing signatures')).not.toBeInTheDocument();
+  // Nor a hint pointing at that card.
+  expect(screen.queryByText(/No signature image captured/)).not.toBeInTheDocument();
 });
 
 it('offers no counter-signature or upload on an imported contract awaiting one', async () => {

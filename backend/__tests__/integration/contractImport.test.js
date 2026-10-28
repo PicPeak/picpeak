@@ -116,6 +116,10 @@ describe('POST /api/admin/contracts/import', () => {
     expect(day(row.sent_at)).toBe('2023-03-01');
     expect(day(row.signed_by_customer_at)).toBe('2023-03-04');
     expect(day(row.signed_by_admin_at)).toBe('2023-03-05');
+    // A date without a time is kept at midday UTC, the same calendar day in
+    // every zone from UTC-12 to UTC+12.
+    const instant = (v) => new Date(require('../../src/utils/queueTimestamps').toMillis(v)).toISOString();
+    expect(instant(row.signed_by_customer_at)).toBe('2023-03-04T12:00:00.000Z');
 
     // No clauses, no free text: the PDF is the contract.
     expect(await count('contract_block_inclusions', { contract_id: contract.id })).toBe(0);

@@ -28,8 +28,13 @@ const { createContractIdempotent } = require('./crud');
 const IMPORT_STATUSES = ['fully_signed', 'cancelled'];
 
 // ISO strings rather than Date objects, as the expiry and erasure services
-// bind them: node-sqlite3 can store a Date as "[object Object]".
-const iso = (value) => new Date(value).toISOString();
+// bind them: node-sqlite3 can store a Date as "[object Object]". A date
+// without a time is stored at 12:00 UTC, which is that same calendar day
+// from UTC-12 to UTC+12; midnight UTC showed as the evening before west
+// of Greenwich.
+const iso = (value) => (/^\d{4}-\d{2}-\d{2}$/.test(String(value))
+  ? `${value}T12:00:00.000Z`
+  : new Date(value).toISOString());
 
 /**
  * @param {object} payload  customerAccountId, status, issueDate (required);

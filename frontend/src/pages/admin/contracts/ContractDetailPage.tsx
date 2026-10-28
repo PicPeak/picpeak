@@ -409,6 +409,8 @@ export const ContractDetailPage: React.FC = () => {
   // server answers 409 CONTRACT_IMPORTED to anything that would re-render,
   // replace or re-sign it, so those actions are not offered.
   const signingActions = !c.isImported;
+  // An import's dates are the days written on the original, without a time.
+  const historicalDateTime = c.isImported ? formatDate : formatDateTime;
 
   const menu: ActionMenuItem[] = [
     ...(canManage && canConvert && flags.bills ? [{ key: 'invoice', icon: <Receipt />, label: t('contracts.detail.convertToInvoice', 'Convert to invoice only'), disabled: convertToInvoiceMutation.isPending || convertToEventMutation.isPending, onSelect: () => { void convertToInvoice(); } }] : []),
@@ -551,7 +553,7 @@ export const ContractDetailPage: React.FC = () => {
                 {c.sentAt && (
                   <p className="text-xs">
                     <span className="text-body">{t('contracts.detail.sentAt', 'Sent at')}: </span>
-                    {formatDateTime(c.sentAt)}
+                    {historicalDateTime(c.sentAt)}
                   </p>
                 )}
                 {/* Inline lineage badges so the linked invoice / source
@@ -608,8 +610,8 @@ export const ContractDetailPage: React.FC = () => {
                   {c.signedByCustomerAt ? (
                     <>
                       <p className="font-medium">{c.signedCustomerName}</p>
-                      <p className="text-xs text-body">{formatDateTime(c.signedByCustomerAt)}</p>
-                      {!c.signedCustomerSignaturePath && (
+                      <p className="text-xs text-body">{historicalDateTime(c.signedByCustomerAt)}</p>
+                      {signingActions && !c.signedCustomerSignaturePath && (
                         <p className="text-xs text-warning-text mt-1">
                           {t('contracts.detail.noSignatureImage',
                             'No signature image captured — use "Re-stamp signatures" below to add one.')}
@@ -627,8 +629,8 @@ export const ContractDetailPage: React.FC = () => {
                   {c.signedByAdminAt ? (
                     <>
                       <p className="font-medium">{c.signedAdminName}</p>
-                      <p className="text-xs text-body">{formatDateTime(c.signedByAdminAt)}</p>
-                      {!c.signedAdminSignaturePath && (
+                      <p className="text-xs text-body">{historicalDateTime(c.signedByAdminAt)}</p>
+                      {signingActions && !c.signedAdminSignaturePath && (
                         <p className="text-xs text-warning-text mt-1">
                           {t('contracts.detail.noSignatureImage',
                             'No signature image captured — use "Re-stamp signatures" below to add one.')}
