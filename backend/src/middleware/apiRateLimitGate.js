@@ -63,6 +63,9 @@ function createApiRateLimitGate(getLimiter) {
     // Repeated slashes collapsed for the same reason as in authRateLimitGate.
     const path = req.path.toLowerCase().replace(/\/{2,}/g, '/');
     if (!path.startsWith('/api/')) return next();
+    // nginx asks for this static-shell policy on every gallery navigation.
+    // It neither authenticates a viewer nor exposes protected gallery data.
+    if (['GET', 'HEAD'].includes(req.method) && /^\/api\/public\/settings\/photo-sales-policy\/?$/.test(path)) return next();
     if (EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix))) return next();
     if (AUTH_ENDPOINT_RE.test(path)) return next();
 

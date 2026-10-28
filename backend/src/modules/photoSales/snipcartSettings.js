@@ -1,7 +1,7 @@
 'use strict';
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
-const { encrypt, decrypt, revision, lock } = require('./paymentSettings');
+const { encrypt, decrypt, revision, lock, reportUnreadableCredentials } = require('./paymentSettings');
 const KEY = 'payments_snipcart_credentials';
 const API = 'https://app.snipcart.com/api';
 const problem = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
@@ -14,7 +14,10 @@ async function credentials(conn = db) {
   if (!stored) return { publicKey: '', secretKey: '', source: 'none' };
   try {
     return { publicKey: stored.public_key || '', secretKey: decrypt(stored.secret_key, KEY), source: 'settings', stored };
-  } catch { return { publicKey: '', secretKey: '', source: 'settings', stored, unreadable: true }; }
+  } catch {
+    reportUnreadableCredentials('snipcart');
+    return { publicKey: '', secretKey: '', source: 'settings', stored, unreadable: true };
+  }
 }
 function configurationOf(value) {
   return { checkout_configured: !!value.publicKey && !!value.secretKey, webhook_configured: !!value.secretKey };
@@ -70,6 +73,8 @@ async function save(input) {
     if (fresh) await trx('app_settings').where({ setting_key: KEY }).update({ setting_value: JSON.stringify(next), updated_at: new Date().toISOString() });
     else await trx('app_settings').insert({ setting_key: KEY, setting_type: 'payments', setting_value: JSON.stringify(next) });
   });
+  // Lazy import: providers reads this module to resolve credentials.
+  require('./providers').invalidateConfiguration();
   return settings();
 }
 module.exports = { credentials, configurationOf, request, auth, settings, save, verifyApi };

@@ -13,7 +13,9 @@ process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
 process.env.STRIPE_SECRET_KEY = ['rk', 'test', crypto.randomBytes(18).toString('hex')].join('_');
 process.env.STRIPE_WEBHOOK_SECRET = crypto.randomBytes(32).toString('hex');
 
-jest.mock('../../src/services/emailProcessor', () => ({ queueEmail: jest.fn(async () => true) }));
+jest.mock('../../src/services/emailProcessor', () => ({
+  queueEmail: jest.fn(async () => true), getSupportEmail: jest.fn(async () => 'support@example.test'),
+}));
 jest.mock('../../src/utils/frontendUrl', () => ({ getFrontendBaseUrl: async () => 'https://photos.example.test', getApiBaseUrl: async () => 'https://photos.example.test/api' }));
 jest.mock('../../src/modules/photoSales/stripeClient', () => ({
   ...jest.requireActual('../../src/modules/photoSales/stripeClient'),
@@ -113,6 +115,8 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
   afterAll(async () => { if (cleanup) await cleanup(); });
   afterEach(() => jest.restoreAllMocks());
   beforeEach(async () => {
+    // Fixture writes bypass the Payments save paths that invalidate this cache.
+    require('../../src/modules/photoSales/providers').invalidateConfiguration();
     delete process.env.SNIPCART_API_KEY; delete process.env.SNIPCART_SECRET_API_KEY;
     browserKey = crypto.randomBytes(32).toString('hex');
     await db('photo_purchases').del();
@@ -552,6 +556,62 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     expect((await readOrder(local))).toMatchObject({ status: 'processing', promo_gallery_id: galleryId });
     await deliverSnipcart(reply.body.snipcart, { total: 0, token: remote.token });
     expect((await readOrder(local)).status).toBe('completed');
+  });
+
+  test('expires an unpaid Snipcart reservation without a promo while retaining its history', async () => {
+    enableSnipcart();
+    const response = await create({ provider: 'snipcart' });
+    expect(response.status).toBe(200);
+    const local = await db('photo_purchase_orders').where({ checkout_token: response.body.snipcart.checkout_token }).first();
+    const quote = JSON.parse(local.checkout_quote);
+    await db('photo_purchase_orders').where({ id: local.id }).update({
+      purchased_at: new Date(Date.now() - 7200e3).toISOString(),
+      checkout_quote: JSON.stringify({ ...quote, sessionExpiresAt: Math.floor(Date.now() / 1000) - 301 }),
+    });
+    await require('../../src/services/photoCheckoutReconciler').reconcilePhotoCheckouts();
+    expect(await readOrder(local)).toMatchObject({ status: 'expired', promo_gallery_id: null });
+    expect(await db('photo_purchases').where({ order_id: local.order_id })).toHaveLength(0);
+  });
+
+  test.each(['stripe', 'snipcart'])('honours a %s payment during a pause and keeps compensation and confirmation deadlines in sync', async (provider) => {
+    if (provider === 'snipcart') enableSnipcart();
+    await db('events').where({ id: galleryId }).update({ purchase_access_days: 1 });
+    const response = await create({ provider });
+    expect(response.status).toBe(200);
+    const local = provider === 'stripe' ? await orderFor(response)
+      : await db('photo_purchase_orders').where({ checkout_token: response.body.snipcart.checkout_token }).first();
+    const pauseAt = Date.now();
+    await db('events').where({ id: galleryId }).update({
+      temporarily_disabled: true, temporarily_disabled_at: new Date(pauseAt).toISOString(),
+    });
+    const grantedAt = pauseAt + 60000;
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(grantedAt);
+    if (provider === 'stripe') {
+      expect((await webhook('checkout.session.completed', await pay(local))).status).toBe(200);
+    } else await deliverSnipcart(response.body.snipcart);
+    const granted = await readOrder(local);
+    expect(granted.status).toBe('completed');
+    const pausedMail = queueEmail.mock.calls.find((call) => call[2] === 'photo_purchase_paused');
+    expect(pausedMail).toBeDefined();
+    expect(pausedMail[3].support_email).toBe('support@example.test');
+    expect(new Date(pausedMail[3].expires_at).toISOString()).toBe(new Date(granted.expires_at).toISOString());
+
+    clock.mockReturnValue(grantedAt + 3600e3);
+    await require('../../src/services/galleryPauseService').updateGalleryAvailability(galleryId, { temporarily_disabled: false },
+      (trx, updates) => trx('events').where({ id: galleryId }).update(updates));
+    const resumed = await readOrder(local);
+    const earned = new Date(Date.parse(granted.expires_at) + 3600e3).toISOString();
+    expect(new Date(resumed.expires_at).toISOString()).toBe(earned);
+    const photo = await db('photo_purchases').where({ order_id: local.order_id }).first();
+    expect(new Date(photo.expires_at).toISOString()).toBe(earned);
+
+    // A retry may hold the old snapshot; its mail must use the locked fresh row.
+    await db('photo_purchase_orders').where({ id: local.id }).update({ email_sent: false });
+    queueEmail.mockClear();
+    await require('../../src/modules/photoSales/fulfilment').sendPurchaseEmail({ ...granted, email_sent: false }, 'Photo sales', 1);
+    expect(queueEmail).toHaveBeenCalledTimes(1);
+    expect(queueEmail.mock.calls[0][2]).toBe('photo_purchase_access');
+    expect(new Date(queueEmail.mock.calls[0][3].expires_at).toISOString()).toBe(earned);
   });
   test('an unconfirmed refund is flagged and backed off rather than polled every minute', async () => {
     const order = await orderFor(await create()); await pay(order);

@@ -1,6 +1,7 @@
 'use strict';
 const helmet = require('helmet');
 const providers = require('./providers');
+const logger = require('../../utils/logger');
 
 function siteDirectives() {
   return {
@@ -23,10 +24,13 @@ function withPhotoSalesSources(directives) {
   return result;
 }
 async function galleryPolicy(req, res, next) {
+  let enabled = false;
   try {
-    const enabled = (await providers.configuration()).available.includes('snipcart');
-    const directives = enabled ? withPhotoSalesSources(siteDirectives()) : siteDirectives();
-    helmet.contentSecurityPolicy({ useDefaults: false, directives })(req, res, next);
-  } catch (error) { next(error); }
+    enabled = (await providers.configuration()).available.includes('snipcart');
+  } catch (error) {
+    logger.warn('Gallery payment policy unavailable; using the strict policy', { type: error.name });
+  }
+  const directives = enabled ? withPhotoSalesSources(siteDirectives()) : siteDirectives();
+  helmet.contentSecurityPolicy({ useDefaults: false, directives })(req, res, next);
 }
 module.exports = { siteDirectives, galleryPolicy, SNIPCART_SOURCES, withPhotoSalesSources };

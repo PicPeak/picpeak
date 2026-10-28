@@ -32,6 +32,10 @@ router.post('/', webhookLimiter, express.raw({ type: 'application/json', limit: 
     await recordWebhook(value);
     if (!EVENTS.has(event.type)) return res.json({ ok: true });
     try {
+      // Deduplication is state-based, not an event-id ledger: reconciliation
+      // re-fetches the authoritative session, locks/rechecks order state, and
+      // claims email_sent transactionally. Replays and the recovery worker
+      // therefore share the same idempotent fulfillment path.
       await reconcileWebhook(event, client);
       // Never return access tokens: providers retain webhook responses.
       return res.json({ ok: true });

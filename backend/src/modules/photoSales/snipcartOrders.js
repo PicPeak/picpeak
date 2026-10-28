@@ -248,8 +248,9 @@ async function grantOrder(order) {
       if (trx.client.config.client === 'pg') eventQuery.forUpdate();
       const currentGallery = await eventQuery.first();
       if (!isGalleryOnSale(currentGallery, { allowTemporarilyDisabled: true })) throw Object.assign(new Error('Gallery closed'), { code: 'SALE_CLOSED' });
-      purchasedAt = new Date().toISOString();
-      expiresAt = purchaseExpiry(currentGallery, Date.parse(purchasedAt));
+      const now = Date.now();
+      purchasedAt = new Date(now).toISOString();
+      expiresAt = purchaseExpiry(currentGallery, now);
       await trx('photo_purchase_orders').insert({
         order_id: orderToken, payment_provider: 'snipcart', provider_order_id: orderToken,
         gallery_id: gallery.id,

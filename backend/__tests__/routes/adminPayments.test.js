@@ -61,6 +61,8 @@ describe('installation payment settings', () => {
   });
   afterAll(async () => { if (cleanup) await cleanup(); });
   beforeEach(async () => {
+    // Fixture writes bypass the Payments save paths that invalidate this cache.
+    require('../../src/modules/photoSales/providers').invalidateConfiguration();
     delete process.env.SNIPCART_API_KEY; delete process.env.SNIPCART_SECRET_API_KEY;
     delete process.env.STRIPE_SECRET_KEY; delete process.env.STRIPE_WEBHOOK_SECRET; delete process.env.PAYMENTS_ENCRYPTION_KEY;
     await db('photo_purchase_orders').del();
@@ -152,8 +154,7 @@ describe('installation payment settings', () => {
     }
   });
   test.each(['', 'http://photos.example.test', 'https://localhost', 'https://photos.localhost',
-    `https://u:${crypto.randomBytes(16).toString('hex')}@photos.example.test`, 'https://photos.example.test?query=1', 'https://photos.example.test#fragment'])
-  ('does not offer an invalid public destination to the setup wizard: %s', async (base) => {
+    `https://u:${crypto.randomBytes(16).toString('hex')}@photos.example.test`, 'https://photos.example.test?query=1', 'https://photos.example.test#fragment'])('does not offer an invalid public destination to the setup wizard: %s', async (base) => {
     const originalBase = process.env.FRONTEND_URL;
     const originalApi = process.env.API_URL;
     delete process.env.API_URL;
@@ -306,6 +307,39 @@ describe('installation payment settings', () => {
     expect(result.body.checkout_configured).toBe(true);
     expect((await auth(request(app).put('/api/admin/settings/payments')).send(change)).status).toBe(409);
     expect((await auth(request(app).put('/api/admin/settings/payments'), adminToken).send(change)).status).toBe(403);
+  });
+
+  test.each(['stripe', 'snipcart'])('reports unreadable saved %s credentials after an encryption-key change without logging secrets', async (provider) => {
+    const publicKey = crypto.randomBytes(20).toString('hex');
+    const secretKey = crypto.randomBytes(20).toString('hex');
+    const fetcher = provider === 'snipcart' ? jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true }) : null;
+    if (provider === 'stripe') await save();
+    else {
+      const initial = (await read()).body;
+      await auth(request(app).put('/api/admin/settings/payments')).send({
+        provider, revision: initial.snipcart.revision, public_key: publicKey, secret_key: secretKey,
+      }).expect(200);
+    }
+    const logger = require('../../src/utils/logger');
+    const log = jest.spyOn(logger, 'error').mockImplementation(() => {});
+    process.env.PAYMENTS_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
+    try {
+      const response = await read();
+      expect(response.status).toBe(200);
+      expect(provider === 'stripe' ? response.body : response.body.snipcart)
+        .toMatchObject({ unreadable: true, checkout_configured: false });
+      expect(response.body.providers.available).not.toContain(provider);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('PAYMENTS_ENCRYPTION_KEY'), { provider });
+      const output = JSON.stringify(log.mock.calls);
+      expect(output).not.toContain(KEY);
+      expect(output).not.toContain(WEBHOOK);
+      expect(output).not.toContain(secretKey);
+      expect(output).not.toContain(process.env.PAYMENTS_ENCRYPTION_KEY);
+    } finally {
+      delete process.env.PAYMENTS_ENCRYPTION_KEY;
+      log.mockRestore();
+      fetcher?.mockRestore();
+    }
   });
 
 });

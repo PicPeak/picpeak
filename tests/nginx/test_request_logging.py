@@ -177,6 +177,10 @@ class SpaRobotsHeaderTest(unittest.TestCase):
         source = (ROOT / "frontend/nginx.conf").read_text()
         site = re.search(r'add_header Content-Security-Policy "([^"]+)" always;', source).group(1)
         snipcart = site.replace("script-src 'self'", "script-src 'self' 'unsafe-eval' https://cdn.snipcart.com")
+        # A real refused connection, not merely an HTTP 502 fixture response.
+        source = source.replace(
+            'proxy_pass http://$backend_upstream:3000/api/public/settings/photo-sales-policy;',
+            'proxy_pass http://127.0.0.1:$fixture_policy_port/api/public/settings/photo-sales-policy;')
         network = "picpeak-nginx-test-" + uuid.uuid4().hex[:12]
         run("docker", "network", "create", network)
         self.addCleanup(run, "docker", "network", "rm", network)
@@ -191,18 +195,24 @@ http {
         default "%s";
         "1" "%s";
         "missing" "";
+        "unavailable" "%s";
     }
+    map $http_x_test_snipcart $fixture_policy_port { default 3000; "dead" 3999; }
     server {
         listen 3000;
         location = /api/public/settings/photo-sales-policy {
-            add_header X-PicPeak-Gallery-CSP $fixture_gallery_csp;
+            if ($http_x_test_snipcart = "unavailable") { return 503; }
+            if ($http_x_test_snipcart = "limited") { return 429; }
+            if ($http_x_test_snipcart = "unauthorized") { return 401; }
+            if ($http_x_test_snipcart = "forbidden") { return 403; }
+            add_header X-PicPeak-Gallery-CSP $fixture_gallery_csp always;
             return 204;
         }
         location / { return 404; }
     }
     include /fixtures/frontend.conf;
 }
-""" % (site, snipcart))
+""" % (site, snipcart, snipcart))
             name = "picpeak-nginx-test-" + uuid.uuid4().hex[:12]
             try:
                 run("docker", "run", "-d", "--name", name, "--network", network,
@@ -215,7 +225,7 @@ http {
                 for uri in pages:
                     # Header is interpreted by our backend fixture only. A
                     # missing upstream header exercises the strict fallback.
-                    for mode in ("0", "1", "missing"):
+                    for mode in ("0", "1", "missing", "unavailable", "limited", "unauthorized", "forbidden", "dead"):
                         with self.subTest(uri=uri, snipcart=mode):
                             for attempt in range(30):
                                 connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)

@@ -74,6 +74,10 @@ material independently of database backups. Set a stable `PAYMENTS_ENCRYPTION_KE
 before the first save if JWT secrets will be rotated independently. Changing or
 losing the encryption key requires restoring it or re-entering both credentials
 for the same account; unreadable credentials leave checkout unavailable.
+The Payments page shows an unreadable-credentials warning and the backend logs
+a provider-specific recovery message without including keys or ciphertext.
+When `PAYMENTS_ENCRYPTION_KEY` is unset, rotating `JWT_SECRET` also changes the
+payment encryption key; adding a new dedicated key later has the same effect.
 
 Stripe processing fees and optional Stripe services still apply. Hosted Checkout
 is included with [standard Stripe Payments pricing](https://stripe.com/pricing).

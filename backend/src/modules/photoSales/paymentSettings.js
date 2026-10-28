@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const Stripe = require('stripe');
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
+const logger = require('../../utils/logger');
 
 const KEY = 'payments_stripe_credentials';
 const WEBHOOK_STATUS_KEY = 'payments_stripe_webhook_status';
@@ -42,6 +43,10 @@ function decrypt(value, purpose = KEY) {
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
 }
 function revision(stored) { return crypto.createHash('sha256').update(JSON.stringify(stored || null)).digest('hex'); }
+function reportUnreadableCredentials(provider) {
+  // Never log the ciphertext, key material or crypto error details.
+  logger.error('Saved payment credentials could not be decrypted. Restore the original PAYMENTS_ENCRYPTION_KEY (or JWT_SECRET fallback), or re-enter credentials for the same merchant in Settings → Payments.', { provider });
+}
 function fingerprint(credentials) {
   return crypto.createHash('sha256').update(`${credentials.secretKey}\0${credentials.webhookSecret}`).digest('hex');
 }
@@ -60,6 +65,7 @@ async function credentials(conn = db) {
   try {
     return { secretKey: decrypt(stored.secret_key), webhookSecret: decrypt(stored.webhook_secret), source: 'settings', stored };
   } catch {
+    reportUnreadableCredentials('stripe');
     return { secretKey: '', webhookSecret: '', source: 'settings', stored, unreadable: true };
   }
 }
@@ -156,6 +162,8 @@ async function save(input) {
     if (['23505', 'SQLITE_CONSTRAINT'].includes(error.code)) throw problem('Payment settings changed. Reload before saving.', 409);
     throw error;
   });
+  // Lazy import: providers reads this module to resolve credentials.
+  require('./providers').invalidateConfiguration();
   return settings();
 }
 
@@ -172,4 +180,4 @@ async function recordWebhook(value) {
 }
 
 module.exports = { credentials, configurationOf, settings, save, verifyApi, clientFor, recordWebhook, lock,
-  encrypt, decrypt, revision, WEBHOOK_EVENTS };
+  encrypt, decrypt, revision, reportUnreadableCredentials, WEBHOOK_EVENTS };
