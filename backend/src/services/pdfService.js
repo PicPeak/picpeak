@@ -382,7 +382,9 @@ function formatDate(value, dateFormat) {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = String(d.getFullYear());
-  const format = (dateFormat && dateFormat.format) || 'DD.MM.YYYY';
+  // Upper-cased: Settings → General stores the date-fns spelling
+  // ("MM/dd/yyyy"), which used to fall through to DD.MM.YYYY.
+  const format = String((dateFormat && dateFormat.format) || 'DD.MM.YYYY').toUpperCase();
   switch (format) {
   case 'MM/DD/YYYY': return `${mm}/${dd}/${yyyy}`;
   case 'DD/MM/YYYY': return `${dd}/${mm}/${yyyy}`;
