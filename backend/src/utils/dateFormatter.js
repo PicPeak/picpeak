@@ -1,5 +1,6 @@
 const { db } = require('../database/db');
 const logger = require('./logger');
+const { isUnitedStates } = require('./postalAddress');
 
 // Default date format settings
 const DEFAULT_FORMAT = {
@@ -113,13 +114,16 @@ async function formatDate(date, language = 'en') {
  * - falsy input → empty string (template's {{#if ...}} block hides)
  * - invalid date → the original value coerced to String (defensive
  *   passthrough; matches the prior behaviour of the three local copies)
+ * - a US business (`issuerCountryCode` 'US') gets MM/DD/YYYY, the order
+ *   its customers read
  */
-function formatShortDate(value) {
+function formatShortDate(value, issuerCountryCode = null) {
   if (!value) return '';
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return String(value);
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
+  if (isUnitedStates(issuerCountryCode)) return `${mm}/${dd}/${d.getFullYear()}`;
   return `${dd}.${mm}.${d.getFullYear()}`;
 }
 

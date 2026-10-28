@@ -4,6 +4,7 @@
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
 const { formatShortDate } = require('../../utils/dateFormatter');
+const { cityLine, isUnitedStates } = require('../../utils/postalAddress');
 const businessProfileService = require('../businessProfileService');
 const { buildIssuerBlock, buildRecipientBlock } = require('../_renderContext');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
@@ -45,12 +46,20 @@ function renderTemplatedBody(template, variables, { output = 'markdown' } = {}) 
  * customer record, business profile, and (when available) the
  * customer's active payment-term defaults so block placeholders for
  * net_days / skonto_percent / etc. resolve. Returns plain strings —
- * dates formatted DD.MM.YYYY in DE-CH style, numbers as-is.
+ * dates formatted DD.MM.YYYY in DE-CH style (MM/DD/YYYY from a US
+ * business), numbers as-is.
  */
 async function buildPlaceholderContext(contract, customer) {
   const profile = (await businessProfileService.getProfile()).profile || {};
   const issuerCompany = profile.company_name || '';
-  const issuerAddress = [profile.address_line1, profile.postal_code, profile.city]
+  // A US business writes "123 Main St, Denver, CO 80202" for both
+  // addresses (utils/postalAddress); everyone else keeps the plain join.
+  const usBusiness = isUnitedStates(profile.country_code);
+  const issuerAddress = (usBusiness
+    ? [profile.address_line1, cityLine({
+      postalCode: profile.postal_code, city: profile.city, state: profile.state, countryCode: 'US',
+    })]
+    : [profile.address_line1, profile.postal_code, profile.city])
     .filter(Boolean)
     .join(', ');
 
@@ -80,7 +89,12 @@ async function buildPlaceholderContext(contract, customer) {
         || '')
     : '';
   const customerAddress = customer
-    ? [customer.address_line1, customer.address_line2, customer.postal_code, customer.city]
+    ? (usBusiness
+      ? [customer.address_line1, customer.address_line2, cityLine({
+        postalCode: customer.postal_code, city: customer.city, state: customer.state,
+        countryCode: customer.country_code || 'US',
+      })]
+      : [customer.address_line1, customer.address_line2, customer.postal_code, customer.city])
       .filter(Boolean)
       .join(', ')
     : '';
@@ -89,8 +103,8 @@ async function buildPlaceholderContext(contract, customer) {
     customer_name: customerName,
     customer_address: customerAddress,
     event_name: contract.event_name || '',
-    event_date: formatShortDate(contract.event_date),
-    issue_date: formatShortDate(contract.issue_date),
+    event_date: formatShortDate(contract.event_date, profile.country_code),
+    issue_date: formatShortDate(contract.issue_date, profile.country_code),
     contract_number: contract.contract_number || '',
     title: contract.title || '',
     net_days: String(netDaysDefault),

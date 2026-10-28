@@ -29,6 +29,7 @@
 const crypto = require('crypto');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { unicodeSearchForms } = require('../utils/sqlSecurity');
+const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
 const { db, withRetry, logActivity } = require('../database/db');
 const { adminActivityActor } = require('../utils/activityActor');
 const logger = require('../utils/logger');
@@ -1205,7 +1206,7 @@ async function sendQuote(id, adminId) {
     response_url: responseUrl,
     accept_url: `${responseUrl}?action=accept`,
     decline_url: `${responseUrl}?action=decline`,
-    valid_until: formatShortDate(quote.valid_until),
+    valid_until: formatShortDate(quote.valid_until, ctx.issuer?.countryCode),
     event_name: quote.event_name || '',
     total_amount: formatMajor(quote.total_amount_minor, quote.currency, ctx.locale, ctx.issuer?.countryCode),
     has_add_ons: hasAddOns,
@@ -1238,10 +1239,9 @@ function formatMajor(minor, currency, locale, issuerCountryCode) {
   // language. de-CH is the only Intl locale that produces that
   // format, so we force it whenever the issuer sits in that region.
   // Outside DACH we still honour the document locale.
-  const cc = (issuerCountryCode || '').toUpperCase();
-  const intlLocale = ['CH', 'LI', 'DE', 'AT'].includes(cc)
-    ? 'de-CH'
-    : (locale === 'de' ? 'de-CH' : 'en-GB');
+  // A US issuer writes $1,000.00 the same way (utils/issuerIntlLocale).
+  const intlLocale = issuerIntlLocale(issuerCountryCode)
+    || (locale === 'de' ? 'de-CH' : 'en-GB');
   return new Intl.NumberFormat(intlLocale, {
     style: 'currency', currency: (currency || 'CHF').toUpperCase(),
   }).format(Number(minor || 0) / 100);
@@ -1980,9 +1980,7 @@ async function adminAcceptQuote(id, adminId) {
         { actor: adminId, source: 'quote.accept.admin' });
 
       const formatMoney = (minor, currency, locale) =>
-        new Intl.NumberFormat(locale === 'de' ? 'de-CH' : 'en-GB', {
-          style: 'currency', currency: (currency || 'CHF').toUpperCase(),
-        }).format(Number(minor || 0) / 100);
+        formatMajor(minor, currency, locale, ctx.issuer && ctx.issuer.countryCode);
 
       const lang = customer.preferred_language || ctx.locale || 'de';
       await emailProcessor.queueEmail(null, customer.email, 'quote_accepted_customer', {

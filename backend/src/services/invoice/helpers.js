@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
+const { issuerIntlLocale } = require('../../utils/issuerIntlLocale');
 const { AppError } = require('../../utils/errors');
 const { nextDocumentNumber } = require('../../utils/documentSequences');
 const { ensureInt } = require('../../utils/numericHelpers');
@@ -278,9 +279,10 @@ async function resolveIntlLocale(docLocale) {
   try {
     const businessProfileService = require('../businessProfileService');
     const profile = (await businessProfileService.getProfile()).profile || {};
-    const cc = (profile.country_code || '').toUpperCase();
-    if (['CH', 'LI', 'DE', 'AT'].includes(cc)) {
-      _cachedIntlLocale = 'de-CH';
+    // DACH businesses write 1'000.00, a US business $1,000.00.
+    const fixed = issuerIntlLocale(profile.country_code);
+    if (fixed) {
+      _cachedIntlLocale = fixed;
       return _cachedIntlLocale;
     }
   } catch (_) { /* fall through to per-locale default */ }

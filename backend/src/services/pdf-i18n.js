@@ -12,6 +12,8 @@
  * via `t(labels, locale, key)`.
  */
 
+const { isUnitedStates } = require('../utils/postalAddress');
+
 const LABELS = {
   en: {
     quote_title: 'Quote',
@@ -908,6 +910,36 @@ const LABELS = {
   },
 };
 
+/**
+ * US English: what a business in the United States calls things on its own
+ * quotes and invoices. Layered over `en`, so every label not listed here reads
+ * exactly as before. A document gets it through documentLocale().
+ */
+LABELS['en-US'] = {
+  ...LABELS.en,
+  storno_title: 'Credit memo',
+  salutation: 'Hello,',
+  lead_in_quote: 'Here is our quote for the following:',
+  lead_in_invoice: 'Here is our invoice for the following:',
+  table_pos: '#',
+  totals_net: 'Subtotal',
+  totals_vat: 'Sales tax',
+  payment_conditions: 'Payment terms',
+  skonto_phrase: '{percent}% discount if paid within {days} business days.',
+  vat_id_label: 'EIN',
+  vat_id_label_ch: 'EIN',
+  vat_id_label_at: 'EIN',
+  tax_id_label: 'Sales tax ID',
+};
+
+/**
+ * The label set a document is written in: its language, except that an
+ * English document from a business in the United States reads in US English.
+ */
+function documentLocale(locale, issuerCountryCode) {
+  return locale === 'en' && isUnitedStates(issuerCountryCode) ? 'en-US' : locale;
+}
+
 function t(locale, key, vars = {}) {
   const dict = LABELS[locale] || LABELS.en;
   let str = dict[key] || LABELS.en[key] || key;
@@ -917,4 +949,4 @@ function t(locale, key, vars = {}) {
   return str;
 }
 
-module.exports = { t, LABELS };
+module.exports = { t, LABELS, documentLocale };
