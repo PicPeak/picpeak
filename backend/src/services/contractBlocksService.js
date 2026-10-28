@@ -49,7 +49,7 @@ const RUNTIME_SEEDED_BLOCKS = [
     section: 'closing',
     name: 'Closing provisions (US law)',
     description: 'EXAMPLE — have your lawyer review before sending. Governing law and venue for a business in the United States: the laws of the state where the contractor is based.',
-    body_text: `**Closing provisions**
+    body_text: `**Governing law and general terms**
 
 This contract is governed by the laws of the state in which the contractor has its principal place of business, without regard to its conflict-of-laws rules.
 
@@ -58,7 +58,7 @@ Any dispute arising out of or in connection with this contract shall be brought 
 If any provision of this contract is held invalid or unenforceable, the remaining provisions remain in full force and effect.
 
 This contract is the entire agreement between the parties on its subject. Changes must be made in writing and signed by both parties; an electronic signature counts as a signature.`,
-    body_text_de: `**Schlussbestimmungen**
+    body_text_de: `**Anwendbares Recht und allgemeine Bestimmungen**
 
 Dieser Vertrag unterliegt dem Recht des US-Bundesstaates, in dem der Auftragnehmer seinen Hauptgeschäftssitz hat, unter Ausschluss der Kollisionsnormen dieses Rechts.
 
