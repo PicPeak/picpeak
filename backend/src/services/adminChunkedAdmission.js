@@ -125,6 +125,10 @@ async function upload(meta, index, source, declaredBytes, chunkSize) {
         progress: meta.receivedChunks.size / meta.expectedChunks * 100,
         complete: meta.receivedChunks.size === meta.expectedChunks };
     } finally {
+      // What the hourly byte rate charges a public (guest) session when it
+      // settles, as the single-request path meters its body. Admin sessions
+      // are never rate-charged.
+      meta.admission.receivedBytes += count.bytes;
       await cleanupAttempt(meta, part);
     }
   });
