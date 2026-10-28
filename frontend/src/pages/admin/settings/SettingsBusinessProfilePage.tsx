@@ -21,6 +21,7 @@ import { Button, Card, Loading, Input, CountrySelect, TimeField } from '../../..
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { toast } from 'react-toastify';
 import { currencyOptions, normalizeCurrency } from '../../../constants/currencies';
+import { cityLine, isUnitedStates } from '../../../utils/postalAddress';
 import { useMutationWithToast } from '../../../hooks';
 
 // Full IANA timezone list for the picker. `Intl.supportedValuesOf` is ES2022
@@ -103,12 +104,18 @@ export const SettingsBusinessProfilePage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input label={t('businessProfile.field.companyName', 'Company name') as string} value={profile.companyName}
             onChange={(e) => setProfile({ ...profile, companyName: e.target.value })} />
-          <Input label={t('businessProfile.field.vatId', 'VAT ID (USt-IdNr.)') as string} value={profile.vatId}
+          {/* A US business's numbers are its EIN and its sales tax ID, and
+              its documents label them so (pdf-i18n en-US). */}
+          <Input label={(isUnitedStates(profile.countryCode)
+            ? t('businessProfile.field.vatIdUs', 'EIN')
+            : t('businessProfile.field.vatId', 'VAT ID (USt-IdNr.)')) as string} value={profile.vatId}
             onChange={(e) => setProfile({ ...profile, vatId: e.target.value })} />
           {/* Migration 139 — Steuernummer. Distinct from VAT-ID. §14
               UStG requires one or both on every invoice; many
               Kleinunternehmer (§19 UStG) only have this. */}
-          <Input label={t('businessProfile.field.taxId', 'Tax number (Steuernummer)') as string}
+          <Input label={(isUnitedStates(profile.countryCode)
+            ? t('businessProfile.field.taxIdUs', 'Sales tax ID')
+            : t('businessProfile.field.taxId', 'Tax number (Steuernummer)')) as string}
             value={profile.taxId}
             onChange={(e) => setProfile({ ...profile, taxId: e.target.value })} />
           <Input label={t('businessProfile.field.addressLine1', 'Address line 1') as string} value={profile.addressLine1}
@@ -457,11 +464,11 @@ const EmailSignaturePreview: React.FC<{ profile: BusinessProfile }> = ({ profile
   }
 
   // "LI-9494 Schaan / Liechtenstein" — the same shape the PDF issuer
-  // block uses, assembled identically on the backend.
-  const cc = profile.countryCode ? profile.countryCode.toUpperCase() : '';
-  const pc = profile.postalCode || '';
-  const left = [cc && pc ? `${cc}-${pc}` : (pc || cc), profile.city || ''].filter(Boolean).join(' ');
-  const cityCountry = [left, profile.countryName || ''].filter(Boolean).join(' / ');
+  // block uses, assembled identically on the backend. A US business
+  // writes "Denver, CO 80202" with no country.
+  const usBusiness = isUnitedStates(profile.countryCode);
+  const cityCountry = [cityLine(profile), usBusiness ? '' : (profile.countryName || '')]
+    .filter(Boolean).join(' / ');
 
   const addressLines = [profile.addressLine1, profile.addressLine2, cityCountry]
     .map((l) => (l || '').trim())
@@ -469,7 +476,7 @@ const EmailSignaturePreview: React.FC<{ profile: BusinessProfile }> = ({ profile
   const contacts = [profile.phone, profile.mobile, profile.email, profile.website]
     .map((c) => (c || '').trim())
     .filter(Boolean);
-  const vatLabel = i18n.language?.startsWith('de') ? 'USt-IdNr.' : 'VAT ID';
+  const vatLabel = usBusiness ? 'EIN' : (i18n.language?.startsWith('de') ? 'USt-IdNr.' : 'VAT ID');
 
   const isEmpty = !profile.companyName && !addressLines.length && !contacts.length
     && !profile.vatId && !profile.emailSignatureExtra;
