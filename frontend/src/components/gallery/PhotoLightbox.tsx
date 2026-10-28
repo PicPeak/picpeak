@@ -1846,6 +1846,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   src={currentPhoto.url}
                   hlsSrc={currentPhoto.hls_url}
                   poster={videoPoster}
+                  // A definite height, so the <video>'s h-full object-contain
+                  // fits the clip into the stage. With the default 'auto' it
+                  // laid out at its natural aspect from the full width, and
+                  // the player's overflow-hidden cut a portrait clip to its
+                  // top (issue 2314).
+                  height="100%"
                   className="max-w-full max-h-full"
                   controls={true}
                   autoPlay={false}
