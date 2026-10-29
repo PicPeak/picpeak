@@ -1,0 +1,116 @@
+name: Branch cleanup
+
+# Deletes the head branches of closed pull requests once they have been
+# closed for GRACE_DAYS. The repo setting "Automatically delete head
+# branches" already removes a branch when its PR merges; this catches the
+# rest: PRs closed without merging, and merged ones from before that
+# setting was on.
+#
+# A branch is only deleted when all of these hold:
+# - it is the head of a closed PR from this repo (forks are never touched),
+# - its most recent PR closed more than GRACE_DAYS ago,
+# - it still points at that PR's last commit (nothing pushed since),
+# - no open PR uses it as head or base,
+# - it is not protected and not in KEEP / KEEP_PREFIXES.
+# A deleted branch can be restored from its PR page ("Restore branch").
+#
+# Run it by hand with dry_run to see what it would delete.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only list the branches, delete nothing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: branch-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete branches of closed PRs
+        uses: actions/github-script@v7
+        env:
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        with:
+          script: |
+            const GRACE_DAYS = 14;
+            const KEEP = new Set(['main', 'stable', 'beta', 'pr-assets']);
+            const KEEP_PREFIXES = ['release-please--'];
+            const dryRun = process.env.DRY_RUN === 'true';
+            const { owner, repo } = context.repo;
+            const repoName = `${owner}/${repo}`;
+            const cutoff = Date.now() - GRACE_DAYS * 24 * 60 * 60 * 1000;
+
+            const branches = await github.paginate(github.rest.repos.listBranches, {
+              owner, repo, per_page: 100,
+            });
+            const candidates = new Map(
+              branches
+                .filter((b) => !b.protected && !KEEP.has(b.name)
+                  && !KEEP_PREFIXES.some((p) => b.name.startsWith(p)))
+                .map((b) => [b.name, b.commit.sha]),
+            );
+
+            const open = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            for (const pr of open) {
+              candidates.delete(pr.base.ref);
+              if (pr.head.repo?.full_name === repoName) candidates.delete(pr.head.ref);
+            }
+
+            // Most recently closed same-repo PR per remaining branch.
+            const latest = new Map();
+            const closed = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'closed', per_page: 100,
+            });
+            for (const pr of closed) {
+              if (pr.head.repo?.full_name !== repoName) continue;
+              if (!candidates.has(pr.head.ref)) continue;
+              const seen = latest.get(pr.head.ref);
+              if (!seen || new Date(pr.closed_at) > new Date(seen.closed_at)) {
+                latest.set(pr.head.ref, pr);
+              }
+            }
+
+            let deleted = 0;
+            for (const [ref, pr] of latest) {
+              if (new Date(pr.closed_at).getTime() > cutoff) continue;
+              if (candidates.get(ref) !== pr.head.sha) {
+                core.info(`keep ${ref}: has commits after #${pr.number} closed`);
+                continue;
+              }
+              const state = pr.merged_at ? 'merged' : 'closed';
+              if (dryRun) {
+                core.info(`would delete ${ref} (#${pr.number}, ${state} ${pr.closed_at})`);
+                continue;
+              }
+              try {
+                await github.rest.git.deleteRef({ owner, repo, ref: `heads/${ref}` });
+                deleted += 1;
+                core.info(`deleted ${ref} (#${pr.number}, ${state} ${pr.closed_at})`);
+              } catch (err) {
+                core.warning(`could not delete ${ref}: ${err.message}`);
+              }
+            }
+
+            const untracked = [...candidates.keys()].filter((ref) => !latest.has(ref));
+            if (untracked.length) {
+              core.info(`left alone (no closed PR): ${untracked.join(', ')}`);
+            }
+            core.summary
+              .addRaw(dryRun
+                ? `Dry run, ${latest.size} branch(es) checked.`
+                : `Deleted ${deleted} branch(es).`)
+              .write();

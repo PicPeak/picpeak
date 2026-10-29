@@ -146,6 +146,7 @@
     "clickToUploadOrDropFolder": "Klik om te uploaden of sleep bestanden of een map hierheen",
     "takePhoto": "Foto maken",
     "fileRequirements": "{{formats}} (max. {{sizeLimit}} MB per bestand, {{limit}} bestanden per upload)",
+    "videoSizeLimit": "Video's: max. {{sizeLimit}} MB per bestand",
     "selectedFiles": "Geselecteerde bestanden",
     "uploading": "Uploaden...",
     "uploadComplete": "Upload voltooid!",
@@ -286,6 +287,7 @@
     "passwordHint": "Het wachtwoord is verstrekt door de organisator van het evenement. Neem contact op als u het niet heeft."
   },
   "gallery": {
+    "preparingHint": "De bestanden worden voorbereid — bij grote galerijen kan dit even duren.",
     "revealPendingTitle": "De foto's zijn nog een verrassing",
     "revealPendingMessage": "De gastheer onthult de galerij later — kom snel terug!",
     "revealScheduledFor": "Onthulling gepland voor {{date}}",

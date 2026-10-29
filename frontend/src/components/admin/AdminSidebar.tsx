@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useGuardedLinkClick, useLeaveGuard } from '../../contexts/UnsavedChangesContext';
 import {
   ArrowLeft,
+  ChevronRight,
   LayoutDashboard,
   BarChart3,
   Settings,
@@ -371,7 +372,30 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
   // on every navigation so clicking the section entry again (or
   // deep-linking) lands in section mode.
   const [peekMain, setPeekMain] = useState(false);
-  useEffect(() => { setPeekMain(false); }, [location.key]);
+  // In the phone drawer a section entry opens the section's list in place
+  // instead of navigating to its first page and closing: otherwise the
+  // drawer is gone before the admin sees the second level, and the only way
+  // to it is to open the menu again. `drill` is that section, shown without
+  // a navigation; picking one of its pages navigates and closes the drawer.
+  const [drill, setDrill] = useState<string | null>(null);
+  useEffect(() => { setPeekMain(false); setDrill(null); }, [location.key]);
+  // A drawer opened again shows the section of the current page, not where
+  // the admin had browsed to before closing it.
+  useEffect(() => {
+    if (isDrawer && isOpen) return;
+    setDrill(null);
+    if (isDrawer) setPeekMain(false);
+  }, [isDrawer, isOpen]);
+  // The control that moved the panel unmounts with it, so focus follows:
+  // to "Back to menu" on the way in, to the section's entry on the way out.
+  const backRef = useRef<HTMLButtonElement>(null);
+  const [focusEntry, setFocusEntry] = useState<string | null>(null);
+  useEffect(() => { if (drill) backRef.current?.focus(); }, [drill]);
+  useEffect(() => {
+    if (!focusEntry) return;
+    drawerRef.current?.querySelector<HTMLElement>(`[data-section-entry="${focusEntry}"]`)?.focus();
+    setFocusEntry(null);
+  }, [focusEntry, drawerRef]);
 
   const clientsItems = useClientsNavItems();
   const accountingItems = useAccountingNavItems();
@@ -410,7 +434,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
           href: settingsTabHref(i.key),
           label: i.label,
           icon: i.icon,
-          active: activeSettingsTab === i.key,
+          // Outside Settings (its list opened from the drawer) no tab is the
+          // current page, although the fallback tab would match.
+          active: isUnder(SETTINGS_PATH) && activeSettingsTab === i.key,
           replace: true,
           keywords: i.keywords,
         })),
@@ -464,7 +490,22 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
     },
   ];
   const activeSection = sections.find((sec) => sec.paths.some(isUnder)) ?? null;
-  const section = peekMain ? null : activeSection;
+  const section = sections.find((sec) => sec.key === drill)
+    ?? (peekMain ? null : activeSection);
+  /**
+   * The section a main-menu entry drills into in the drawer, or null when it
+   * navigates. A section of one page navigates: a list of one is a detour.
+   */
+  const drillTarget = (href: string): SidebarSection | null => {
+    if (!isDrawer) return null;
+    const sec = sections.find((s) => s.paths.includes(href));
+    if (!sec) return null;
+    return sec.groups.reduce((n, g) => n + g.items.length, 0) > 1 ? sec : null;
+  };
+  // Settings tabs swap with history.replace, which is right between tabs but
+  // would overwrite the page the admin came from when the tab is picked from
+  // a section they drilled into from elsewhere.
+  const replaceFor = (item: SidebarSectionItem) => !!item.replace && section === activeSection;
 
   // Settings is 30 tabs in 8 groups — long enough that scanning it is the
   // slow part. Only Settings gets the filter; every other section is short
@@ -525,11 +566,14 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
       // leave a visible step in the horizontal divider where the
       // sidebar meets the main column. Shadow uses the same neutral
       // border colors so it looks identical to the previous border.
-      className={`fixed inset-y-0 left-0 z-50 ${widthClasses} bg-shell shadow-[1px_0_0_0_theme(colors.neutral.200)] dark:shadow-[1px_0_0_0_theme(colors.neutral.700)] transform transition-all duration-200 ease-in-out lg:relative lg:translate-x-0 lg:h-screen ${
+      className={`fixed inset-y-0 left-0 z-50 ${widthClasses} bg-shell shadow-[1px_0_0_0_theme(colors.neutral.200)] dark:shadow-[1px_0_0_0_theme(colors.neutral.700)] transform transition-all duration-200 ease-in-out lg:relative lg:translate-x-0 lg:h-full ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       }`}
     >
-      <div className="flex flex-col h-screen lg:h-full">
+      {/* h-full, not h-screen: as a drawer the box is `fixed inset-y-0`, which
+          is the visible viewport, while 100vh on iOS Safari also counts the
+          area under the browser toolbar and hid the end of the list there. */}
+      <div className="flex flex-col h-full">
         {/* Brand row: title on the left, mobile close (X) on the
             right. The desktop collapse toggle used to live here but
             was moved down next to the version / storage widgets so
@@ -625,8 +669,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                 <span className="text-xl font-semibold text-heading truncate">{section.title}</span>
               </div>
               <button
+                ref={backRef}
                 type="button"
-                onClick={() => setPeekMain(true)}
+                onClick={() => {
+                  setDrill(null);
+                  setPeekMain(true);
+                  setFocusEntry(section.key);
+                }}
                 title={collapsed ? t('admin.backToMenu', 'Back to menu') : undefined}
                 className={`w-full text-left ${itemClass(false)}`}
               >
@@ -656,7 +705,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                       if (e.key === 'Enter' && firstMatch) {
                         e.preventDefault();
                         const go = () => {
-                          navigate(firstMatch.href, { replace: !!firstMatch.replace });
+                          navigate(firstMatch.href, { replace: replaceFor(firstMatch) });
                           onClose();
                         };
                         if (!isAnyDirty) { go(); return; }
@@ -718,8 +767,8 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                           <Link
                             key={item.key}
                             to={item.href}
-                            replace={item.replace}
-                            onClick={(e) => guardedClick(e, item.href, item.replace, () => onClose())}
+                            replace={replaceFor(item)}
+                            onClick={(e) => guardedClick(e, item.href, replaceFor(item), () => onClose())}
                             title={collapsed ? item.label : undefined}
                             aria-current={isActive ? 'page' : undefined}
                             className={itemClass(isActive)}
@@ -740,18 +789,32 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                 const isActive = location.pathname === item.href ||
                                (item.href !== '/admin/dashboard' && location.pathname.startsWith(item.href));
                 const label = t(item.nameKey);
+                const target = drillTarget(item.href);
 
                 return (
                   <NavLink
                     key={item.nameKey}
                     to={entryHref(item.href)}
-                    onClick={(e) => guardedClick(e, entryHref(item.href), false, () => {
-                      // Clicking the current section's entry while peeking
-                      // at the main menu hands the sidebar back to section
-                      // mode even if the URL doesn't change.
-                      if (activeSection?.paths.includes(item.href)) setPeekMain(false);
-                      onClose();
-                    })}
+                    data-section-entry={sections.find((s) => s.paths.includes(item.href))?.key}
+                    onClick={(e) => {
+                      // Opening a section's list leaves the page, and any
+                      // unsaved form on it, alone: no leave guard yet. A
+                      // modified click still opens the section in a new tab.
+                      const modified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
+                      if (target && !modified) {
+                        e.preventDefault();
+                        setDrill(target.key);
+                        return;
+                      }
+                      guardedClick(e, entryHref(item.href), false, () => {
+                        // Clicking the current section's entry while peeking
+                        // at the main menu hands the sidebar back to section
+                        // mode even if the URL doesn't change. (In the drawer
+                        // a section of several pages drills instead, above.)
+                        if (activeSection?.paths.includes(item.href)) setPeekMain(false);
+                        onClose();
+                      });
+                    }}
                     title={collapsed ? label : undefined}
                     className={itemClass(isActive)}
                   >
@@ -762,6 +825,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                         who haven't set CI colours yet see no migration regression. */}
                     <item.icon className={iconClass(isActive)} />
                     <span className={collapsed ? 'lg:hidden' : ''}>{label}</span>
+                    {/* Marks the entries that open a list rather than a page. */}
+                    {target && (
+                      <ChevronRight
+                        aria-hidden="true"
+                        className={`ml-auto w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-faint'}`}
+                      />
+                    )}
                   </NavLink>
                 );
               })}

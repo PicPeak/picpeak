@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
 import { Button } from '../../common';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
@@ -9,7 +10,7 @@ import type { Photo } from '../../../types';
 import { STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { feedbackService } from '../../../services/feedback.service';
 import { BulkRatingPopover } from '../BulkRatingPopover';
-import { galleryService, splitIntoArchives } from '../../../services/gallery.service';
+import { splitIntoArchives } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
 import { isVideoItem, mediaSplitLabel, selectLabel, splitMediaCount } from '../../../utils/mediaCounts';
 import { toast } from 'react-toastify';
@@ -126,6 +127,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   void _onPhotoClick;
   void _onOpenPhotoWithFeedback;
   void _onDownload;
+  const archives = useArchiveDownload();
   const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -461,12 +463,12 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       ? t('gallery.downloadingInParts', { count: ids.length, parts })
       : t('gallery.downloading', { count: ids.length }));
     try {
-      await galleryService.downloadPhotosInParts(slug, ids);
+      if (!await archives.downloadPhotosInParts(slug, ids)) return;
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
     }
-  }, [downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
+  }, [archives, downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
 
   // Needs something to download: either the whole-gallery callback, or
   // downloadable photos in the current scope. On a folder-only root of a gallery with

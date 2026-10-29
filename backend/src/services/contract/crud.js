@@ -164,8 +164,13 @@ async function getContractById(id) {
  * Custom (non-system) blocks are NOT auto-included — admin opts in to
  * those explicitly so a runaway block library doesn't pollute every
  * new contract.
+ *
+ * `imported` (see ./imports.js) is the historical-import path: its
+ * columns go into the same insert (status, PDF paths, signed-at dates,
+ * imported_at), and no clauses are seeded, because the uploaded PDF is
+ * the whole contract.
  */
-async function createContract(payload, adminId, { idempotencyKey = null } = {}) {
+async function createContract(payload, adminId, { idempotencyKey = null, imported = null } = {}) {
   // Self-heal: ensure runtime-seeded system blocks (e.g. the
   // quote_line_items_table added after migration 131 was deployed)
   // exist before we copy active system blocks into the new contract's
@@ -184,7 +189,7 @@ async function createContract(payload, adminId, { idempotencyKey = null } = {}) 
   // so by default a contract contains what it always did. Resolved before
   // the transaction (it reads through the global db).
   const content = require('./content');
-  const version = (!Array.isArray(payload.blocks) || payload.templateVersionId)
+  const version = !imported && (!Array.isArray(payload.blocks) || payload.templateVersionId)
     ? await require('./templates').resolveVersionForNewContract(payload.templateVersionId || null)
     : null;
   const validDays = ensureInt(await getAppSetting('crm_contracts_default_valid_days')) || 30;
@@ -249,14 +254,17 @@ async function createContract(payload, adminId, { idempotencyKey = null } = {}) 
     if (hasKeyCol) {
       row.create_idempotency_key = idempotencyKey;
     }
-    const history = { actor: adminId, source: 'contract.create' };
+    if (imported) Object.assign(row, imported);
+    const history = { actor: adminId, source: imported ? 'contract.import' : 'contract.create' };
     const inserted = await auditedInsert(trx, 'contracts', row, history);
     if (row.project_id && row.deal_uuid) {
       await require('../projectService').linkDealToProject(row.deal_uuid, row.project_id, trx, { id: adminId });
     }
     const contractId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
-    if (Array.isArray(payload.blocks)) {
+    if (imported) {
+      // Nothing to seed: the imported PDF is the contract.
+    } else if (Array.isArray(payload.blocks)) {
       // The editor sends the admin's block selection with the create, so the
       // draft and its inclusions commit together. It used to follow up with a
       // separate update, which could fail after the draft was committed
@@ -300,10 +308,12 @@ async function createContract(payload, adminId, { idempotencyKey = null } = {}) 
     try {
       // Pass `trx` so the audit insert rides the transaction's connection;
       // the global db here deadlocks the single-connection SQLite pool.
-      await logActivity('contract_created', { contractId, contractNumber, customerAccountId: payload.customerAccountId }, null, actor, trx);
+      await logActivity('contract_created', {
+        contractId, contractNumber, customerAccountId: payload.customerAccountId, ...(imported && { imported: true }),
+      }, null, actor, trx);
     } catch (_) { /* logging is best-effort */ }
 
-    logger.info('Contract created', { adminId, contractId, contractNumber });
+    logger.info(imported ? 'Contract imported' : 'Contract created', { adminId, contractId, contractNumber });
     return contractId;
   });
 }
@@ -316,23 +326,28 @@ async function createContract(payload, adminId, { idempotencyKey = null } = {}) 
  * handing over their draft.
  *
  * Without a key (or on a schema without migration 214) this is createContract.
+ * `imported` is passed through for POST /import (see ./imports).
  * Returns `{ id, replayed }`.
  */
-async function createContractIdempotent(payload, adminId, idempotencyKey) {
+async function createContractIdempotent(payload, adminId, idempotencyKey, { imported = null } = {}) {
   if (!idempotencyKey || !(await hasColumnCached('contracts', 'create_idempotency_key'))) {
-    return { id: await createContract(payload, adminId), replayed: false };
+    return { id: await createContract(payload, adminId, { imported }), replayed: false };
   }
+  const hasImportedCol = await hasColumnCached('contracts', 'imported_at');
   const findEarlier = async () => {
     const existing = await db('contracts')
       .where({ create_idempotency_key: idempotencyKey })
-      .select('id', 'created_by_admin_id', 'customer_account_id')
+      .select('id', 'created_by_admin_id', 'customer_account_id', ...(hasImportedCol ? ['imported_at'] : []))
       .first();
     if (!existing) return null;
     // A replay answers with the earlier draft as-is, and an update cannot move
     // a contract to another customer. A key reused for a different customer
     // would have the caller write that customer's contract into this draft.
+    // Nor does a draft answer an import (POST /import) or the other way
+    // round: the caller would be told about a contract of the wrong kind.
     if (Number(existing.created_by_admin_id) !== Number(adminId)
-      || Number(existing.customer_account_id) !== Number(payload.customerAccountId)) {
+      || Number(existing.customer_account_id) !== Number(payload.customerAccountId)
+      || (hasImportedCol && Boolean(existing.imported_at) !== Boolean(imported))) {
       throw new AppError('This request key was already used for a different draft.', 409, 'IDEMPOTENCY_KEY_CONFLICT');
     }
     return { id: existing.id, replayed: true };
@@ -341,7 +356,7 @@ async function createContractIdempotent(payload, adminId, idempotencyKey) {
   const earlier = await findEarlier();
   if (earlier) return earlier;
   try {
-    return { id: await createContract(payload, adminId, { idempotencyKey }), replayed: false };
+    return { id: await createContract(payload, adminId, { idempotencyKey, imported }), replayed: false };
   } catch (error) {
     // Two requests with the same key both missed the lookup; the unique index
     // let one insert through. Answer the other with that draft.

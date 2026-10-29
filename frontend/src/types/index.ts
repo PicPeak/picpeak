@@ -441,6 +441,7 @@ export interface GalleryData {
   event: {
     id: number;
     event_name: string;
+    is_priced?: boolean;
     event_type: string;
     /** Server-derived capability; never contains the private client link or PIN. */
     client_pin_entry_available?: boolean;

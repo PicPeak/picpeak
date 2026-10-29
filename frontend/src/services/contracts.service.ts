@@ -363,6 +363,10 @@ export interface ContractSummary {
   customerAddressMissing?: boolean;
   /** When the customer supplied their details (collect-then-freeze, #1446). */
   dataCollectedAt?: string | null;
+  /** Imported from a PDF (POST /contracts/import): the uploaded PDF is the
+   *  record, so the server refuses re-sign, upload, resend and re-stamp. */
+  importedAt?: string | null;
+  isImported?: boolean;
   createdAt: string;
   updatedAt: string;
   inclusions?: ContractBlockInclusion[];

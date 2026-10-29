@@ -7,7 +7,7 @@
  */
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 type PhotosResult = { data: unknown; isLoading: boolean; error: unknown; refetch: () => void };
@@ -22,6 +22,7 @@ const stable = vi.hoisted(() => ({
   settings: { data: {} },
   watermark: { watermarkEnabled: false },
   t: (key: string) => key,
+  modalMounts: vi.fn(), modalUnmounts: vi.fn(),
 }));
 
 vi.mock('../../../contexts', () => ({
@@ -48,7 +49,7 @@ vi.mock('../../../services/analytics.service', () => ({
   analyticsService: { track: vi.fn(), trackGalleryEvent: vi.fn(), trackSearch: vi.fn(), trackExpirationWarning: vi.fn() },
 }));
 vi.mock('../../../services/gallery.service', () => ({
-  galleryService: { getPeople: vi.fn().mockResolvedValue({ people: [] }) },
+  galleryService: { getPeople: vi.fn().mockResolvedValue({ people: [] }), startDownloadJob: vi.fn().mockResolvedValue({ token: 'job', status: 'pending' }) },
 }));
 vi.mock('../../../services/feedback.service', () => ({
   feedbackService: {
@@ -60,9 +61,21 @@ vi.mock('../../../services/feedback.service', () => ({
 vi.mock('../GalleryLayout', () => ({
   GalleryLayout: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock('../PhotoGridWithLayouts', () => ({
-  PhotoGridWithLayouts: () => <div data-testid="photo-grid" />,
+vi.mock('../DownloadResolutionModal', () => ({
+  DownloadResolutionModal: () => {
+    React.useEffect(() => { stable.modalMounts(); return () => { stable.modalUnmounts(); }; }, []);
+    return <div role="dialog">Preparing archive</div>;
+  },
 }));
+vi.mock('../PhotoGridWithLayouts', () => ({
+  PhotoGridWithLayouts: () => <StartArchive />,
+}));
+
+import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
+function StartArchive() {
+  const archives = useArchiveDownload();
+  return <div data-testid="photo-grid"><button onClick={() => void archives.downloadAllPhotos('wedding')}>Prepare archive</button></div>;
+}
 
 import { GalleryView } from '../GalleryView';
 
@@ -92,7 +105,7 @@ function show(error: unknown) {
 
 const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { response: { status } });
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); stable.theme.theme = {}; });
 
 describe('GalleryView after a failed refetch', () => {
   it('replaces already loaded photos with a friendly message when disabled without ending the session', () => {
@@ -122,4 +135,39 @@ describe('GalleryView after a failed refetch', () => {
     expect(screen.getByTestId('photo-grid')).toBeInTheDocument();
     expect(screen.queryByText('gallery.failedToLoad')).toBeNull();
   });
+});
+
+it.each(['gone', 'paused'])('keeps one archive dialog across content/layout changes and cancels it when the gallery is %s', async (state) => {
+  stable.modalMounts.mockClear(); stable.modalUnmounts.mockClear();
+  photos = { data: loaded, isLoading: false, error: null, refetch: vi.fn() };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = () => <QueryClientProvider client={client}><GalleryView slug="wedding" event={event} /></QueryClientProvider>;
+  const { rerender } = render(tree());
+  fireEvent.click(screen.getByRole('button', { name: 'Prepare archive' }));
+  expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  expect(stable.modalMounts).toHaveBeenCalledTimes(1);
+  stable.theme.theme = { galleryLayout: 'gallery-premium' };
+  rerender(tree());
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(stable.modalMounts).toHaveBeenCalledTimes(1);
+  stable.theme.theme = { galleryLayout: 'gallery-story' };
+  rerender(tree());
+  expect(stable.modalMounts).toHaveBeenCalledTimes(1);
+  photos = { ...photos, error: httpError(500) };
+  rerender(tree());
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(stable.modalMounts).toHaveBeenCalledTimes(1);
+  photos = { ...photos, error: state === 'paused'
+    ? { response: { status: 403, data: { code: 'GALLERY_TEMPORARILY_DISABLED' } } } : httpError(403) };
+  rerender(tree());
+  expect(screen.getByText(state === 'paused' ? 'gallery.temporarilyUnavailable' : 'gallery.failedToLoad')).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(stable.modalUnmounts).toHaveBeenCalledTimes(1);
+  photos = { ...photos, data: undefined, error: null, isLoading: true };
+  rerender(tree());
+  photos = { data: loaded, error: null, isLoading: false, refetch: vi.fn() };
+  rerender(tree());
+  fireEvent.click(screen.getByRole('button', { name: 'Prepare archive' }));
+  expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  expect(stable.modalMounts).toHaveBeenCalledTimes(2);
 });

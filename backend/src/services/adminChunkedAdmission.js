@@ -103,6 +103,9 @@ async function upload(meta, index, source, declaredBytes, chunkSize) {
   if (video && !meta.videoValidated && index !== 0) throw error('Upload video chunk 0 first', 409);
   return exclusive(meta, async signal => {
     await quota.recheckStaging(meta.admission);
+    // A re-sent chunk is charged again: a public session reserves the next
+    // attempt against the hourly byte rate before reading it.
+    await quota.growRate(meta.admission, meta.admission.receivedBytes + expected);
     const count = { bytes: 0 };
     // Serialized attempts use one bounded, exclusive pathname. A cleanup
     // failure makes the session non-retryable instead of accumulating parts.
@@ -125,6 +128,10 @@ async function upload(meta, index, source, declaredBytes, chunkSize) {
         progress: meta.receivedChunks.size / meta.expectedChunks * 100,
         complete: meta.receivedChunks.size === meta.expectedChunks };
     } finally {
+      // What the hourly byte rate charges a public (guest) session when it
+      // settles, as the single-request path meters its body. Admin sessions
+      // are never rate-charged.
+      meta.admission.receivedBytes += count.bytes;
       await cleanupAttempt(meta, part);
     }
   });

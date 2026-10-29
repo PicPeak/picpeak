@@ -12,7 +12,13 @@ import type { Photo } from '../../../types';
 const quota = vi.hoisted(() => ({ remaining: 10 }));
 const mocks = vi.hoisted(() => ({
   downloadSelectedPhotos: vi.fn(),
+  downloadPhotosInParts: vi.fn(),
   showDownloadLimitReached: vi.fn(),
+}));
+
+vi.mock('../../../contexts/ArchiveDownloadContext', () => ({
+  ArchiveDownloadProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useArchiveDownload: () => mocks,
 }));
 
 vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => ({ data: undefined }) }));
@@ -49,8 +55,7 @@ vi.mock('../../../services/gallery.service', async () => {
     splitIntoArchives: actual.splitIntoArchives,
     galleryService: {
       trackPhotoView: vi.fn(),
-      downloadSelectedPhotos: mocks.downloadSelectedPhotos,
-      downloadPhotosInParts: actual.galleryService.downloadPhotosInParts,
+
     },
   };
 });
@@ -81,8 +86,9 @@ const downloadAll = () => screen.getByTitle('common.downloadAll');
 
 beforeEach(() => {
   quota.remaining = 10;
-  mocks.downloadSelectedPhotos.mockReset().mockResolvedValue(undefined);
+  mocks.downloadSelectedPhotos.mockReset().mockResolvedValue(true);
   mocks.showDownloadLimitReached.mockReset();
+  mocks.downloadPhotosInParts.mockReset().mockResolvedValue(true);
 });
 afterEach(() => cleanup());
 
@@ -95,13 +101,13 @@ describe('Gallery Premium — Download All', () => {
     fireEvent.click(downloadAll());
     expect(onDownloadEverything).toHaveBeenCalledTimes(1);
     expect(onPhotoSelect).not.toHaveBeenCalled();
-    expect(mocks.downloadSelectedPhotos).not.toHaveBeenCalled();
+    expect(mocks.downloadPhotosInParts).not.toHaveBeenCalled();
   });
 
   it('downloads the photos in scope when there is no whole-gallery path', async () => {
     render(<GalleryPremiumLayout photos={photos} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} />);
     fireEvent.click(downloadAll());
-    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledWith('demo', [1, 2, 3, 4]));
+    await waitFor(() => expect(mocks.downloadPhotosInParts).toHaveBeenCalledWith('demo', [1, 2, 3, 4]));
   });
 
   it('hands off to the resolution picker when the gallery offers a choice', () => {
@@ -110,14 +116,14 @@ describe('Gallery Premium — Download All', () => {
       downloadChoices={[{ id: 'original' }, { id: '1920x1080' }] as never} onPickResolution={onPickResolution} />);
     fireEvent.click(downloadAll());
     expect(onPickResolution).toHaveBeenCalledWith([1, 2, 3, 4]);
-    expect(mocks.downloadSelectedPhotos).not.toHaveBeenCalled();
+    expect(mocks.downloadPhotosInParts).not.toHaveBeenCalled();
   });
 
   it('leaves out photos in a category that opts out of downloads', async () => {
     const list = photos.map((photo) => ({ ...photo, category_allow_downloads: photo.category_name !== 'Party' }));
     render(<GalleryPremiumLayout photos={list} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} />);
     fireEvent.click(downloadAll());
-    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledWith('demo', [1, 2]));
+    await waitFor(() => expect(mocks.downloadPhotosInParts).toHaveBeenCalledWith('demo', [1, 2]));
   });
 
   it('is absent when nothing in scope can be downloaded and there is no whole-gallery path', () => {
@@ -145,20 +151,18 @@ describe('Gallery Premium — Download All', () => {
     quota.remaining = 5000;
     render(<GalleryPremiumLayout photos={manyPhotos(1201)} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} />);
     fireEvent.click(downloadAll());
-    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledTimes(3));
-    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(1, 'demo', idsFrom(1, 500), { index: 1, total: 3 });
-    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(2, 'demo', idsFrom(501, 1000), { index: 2, total: 3 });
-    expect(mocks.downloadSelectedPhotos).toHaveBeenNthCalledWith(3, 'demo', idsFrom(1001, 1201), { index: 3, total: 3 });
+    await waitFor(() => expect(mocks.downloadPhotosInParts).toHaveBeenCalledTimes(1));
+    expect(mocks.downloadPhotosInParts).toHaveBeenCalledWith('demo', idsFrom(1, 1201));
   });
 
-  it('stops at the first part that fails', async () => {
+  it('handles a failed archive preparation without starting it again', async () => {
     quota.remaining = 5000;
-    mocks.downloadSelectedPhotos.mockReset().mockRejectedValueOnce(new Error('network'));
+    mocks.downloadPhotosInParts.mockReset().mockRejectedValueOnce(new Error('network'));
     render(<GalleryPremiumLayout photos={manyPhotos(1201)} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} />);
     fireEvent.click(downloadAll());
-    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.downloadPhotosInParts).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(mocks.downloadSelectedPhotos).toHaveBeenCalledTimes(1);
+    expect(mocks.downloadPhotosInParts).toHaveBeenCalledTimes(1);
   });
 
   it('skips the resolution picker past 500 photos, whose single archive would be cut short', async () => {
@@ -167,7 +171,7 @@ describe('Gallery Premium — Download All', () => {
     render(<GalleryPremiumLayout photos={manyPhotos(501)} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()}
       downloadChoices={[{ id: 'original' }, { id: '1920x1080' }] as never} onPickResolution={onPickResolution} />);
     fireEvent.click(downloadAll());
-    await waitFor(() => expect(mocks.downloadSelectedPhotos).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.downloadPhotosInParts).toHaveBeenCalledTimes(1));
     expect(onPickResolution).not.toHaveBeenCalled();
   });
 
@@ -176,7 +180,7 @@ describe('Gallery Premium — Download All', () => {
     render(<GalleryPremiumLayout photos={photos} slug="demo" onPhotoClick={vi.fn()} onDownload={vi.fn()} />);
     fireEvent.click(downloadAll());
     expect(mocks.showDownloadLimitReached).toHaveBeenCalledWith({ remaining: 3 });
-    expect(mocks.downloadSelectedPhotos).not.toHaveBeenCalled();
+    expect(mocks.downloadPhotosInParts).not.toHaveBeenCalled();
   });
 });
 

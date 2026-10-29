@@ -465,20 +465,53 @@ async function resolveEmailAccent(configuredPrimary, configuredButtonText) {
  * The colour the seeded templates' inline green turns into. It is link text
  * as well as border and box colour, so it has to read on the email card at
  * 4.5:1: the accent itself when it does, else the accent darkened step by
- * step until it does. null when the contrast can't be computed (a named or
- * hsl() colour) — the template then keeps its green.
+ * step until it does — or, on a dark card no darker shade reads on,
+ * lightened step by step. A lightened accent must also read on the info
+ * panel at the 3:1 its links get (listLinkColor): seeded links sit in that
+ * panel too, and a light panel on a dark card would turn them near-white on
+ * near-white. null when no shade works or the contrast can't be computed (a
+ * named or hsl() colour) — the template then keeps its green.
  */
-function templateAccentOn(accent, card) {
+function templateAccentOn(accent, card, panel) {
   const rgb = parseColor(accent);
-  if (!rgb || contrastRatio(accent, card) === null) return null;
+  const ratio = contrastRatio(accent, card);
+  if (!rgb || ratio === null) return null;
+  if (ratio >= 4.5) return accent;
   const hex = (c) => Math.round(c).toString(16).padStart(2, '0');
-  for (let step = 0; step <= 20; step += 1) {
-    const f = 1 - step * 0.05;
-    const candidate = `#${hex(rgb.r * f)}${hex(rgb.g * f)}${hex(rgb.b * f)}`;
-    if (contrastRatio(candidate, card) >= 4.5) return step === 0 ? accent : candidate;
+  const shade = (f) => `#${hex(rgb.r * f)}${hex(rgb.g * f)}${hex(rgb.b * f)}`;
+  const tint = (f) => `#${hex(rgb.r + (255 - rgb.r) * f)}${hex(rgb.g + (255 - rgb.g) * f)}${hex(rgb.b + (255 - rgb.b) * f)}`;
+  for (let step = 1; step <= 20; step += 1) {
+    if (contrastRatio(shade(1 - step * 0.05), card) >= 4.5) return shade(1 - step * 0.05);
   }
-  // A card too dark for any darker accent: the template keeps its green.
+  // Black did not read, so the card is dark: white, the last tint, does.
+  for (let step = 1; step <= 20; step += 1) {
+    const candidate = tint(step * 0.05);
+    if (contrastRatio(candidate, card) >= 4.5) {
+      return (contrastRatio(candidate, panel) ?? 0) >= 3 ? candidate : null;
+    }
+  }
   return null;
+}
+
+/**
+ * Seeded templates draw their CTA as an anchor with the green as an inline
+ * background-color (no `class="button"`, so the wrapper's button style never
+ * reached it). That fill is the button, not link text: it takes the accent
+ * as is, like the header and every `class="button"` CTA, and the label in
+ * the same style attribute takes the button text colour — added when the
+ * style has none, or the label would inherit the wrapper's `a` colour, which
+ * is the fill.
+ */
+function themeInlineButtons(html, fill, label) {
+  return String(html).replace(/style="([^"]*)"/gi, (match, css) => {
+    if (!/background-color:\s*#5c8762\b/i.test(css)) return match;
+    let themed = css.replace(/background-color:\s*#5c8762\b/gi, `background-color: ${fill}`);
+    const labelled = /(^|;)\s*color:/i.test(themed);
+    themed = labelled
+      ? themed.replace(/(^|;)\s*color:\s*[^;]*/i, `$1 color: ${label}`)
+      : `${themed.replace(/;?\s*$/, ';')} color: ${label};`;
+    return `style="${themed}"`;
+  });
 }
 
 function isUsableLogoUrl(value) {
@@ -551,8 +584,9 @@ async function wrapEmailHtml(htmlBody, subject, language = 'en', { seededTemplat
   // accent is too light to read as link text on the card. Template bodies
   // only: an edited template can't be told apart from a seeded one, but a
   // newsletter or a hand-written mail never meant the accent by it.
+  if (seededTemplate) htmlBody = themeInlineButtons(htmlBody, primaryColor, buttonTextColor);
   if (seededTemplate && primaryColor.toLowerCase() !== LEGACY_EMAIL_GREEN.toLowerCase()) {
-    const inlineAccent = templateAccentOn(primaryColor, containerBgColor);
+    const inlineAccent = templateAccentOn(primaryColor, containerBgColor, listBgColor);
     if (inlineAccent) htmlBody = String(htmlBody).replace(/#5c8762\b/gi, inlineAccent);
   }
 
@@ -841,7 +875,11 @@ function safeTemplateReplace(template, variables, options = {}) {
     if (!variables || !Object.prototype.hasOwnProperty.call(variables, key)) {
       return match;
     }
-    const raw = String(variables[key]);
+    // A variable the sender passed as null (no expiry date, no promised
+    // date) has no value to print; String(null) put a literal "null" in the
+    // mail.
+    const value = variables[key];
+    const raw = value === null || value === undefined ? '' : String(value);
     if (escapeOnSubstitute && !HTML_PASSTHROUGH_KEYS.has(key)) {
       return escapeHtml(raw);
     }

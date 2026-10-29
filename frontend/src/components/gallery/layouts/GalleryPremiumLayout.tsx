@@ -18,6 +18,7 @@ import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut, Upload, ClipboardList, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
 import { parseISO } from 'date-fns';
 import { useInView } from 'react-intersection-observer';
 
@@ -296,6 +297,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   void _onPhotoClick;
   void _onOpenPhotoWithFeedback;
   void _onDownload;
+  const archives = useArchiveDownload();
   const { t, i18n } = useTranslation();
   const photoLabels = usePhotoLabels();
   const downloadPhotoMutation = useDownloadPhoto();
@@ -638,7 +640,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     toast.info(t('gallery.downloading', { count: ids.length }));
 
     try {
-      await galleryService.downloadSelectedPhotos(slug, ids);
+      if (!await archives.downloadSelectedPhotos(slug, ids)) return;
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
@@ -648,7 +650,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     // toolbar does. A failure keeps it to retry or trim.
     onDeselectAll?.();
     if (isSelectionMode) onToggleSelectionMode?.();
-  }, [selectedPhotos, slug, t, downloadChoices, onPickResolution, selectionOverQuota, downloadQuota.remaining, onDeselectAll, isSelectionMode, onToggleSelectionMode]);
+  }, [archives, selectedPhotos, slug, t, downloadChoices, onPickResolution, selectionOverQuota, downloadQuota.remaining, onDeselectAll, isSelectionMode, onToggleSelectionMode]);
 
   // Same path as Gallery Story's Download All: the whole-gallery download
   // when the container offers it (#1160), else the ids in scope. That
@@ -684,12 +686,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       ? t('gallery.downloadingInParts', { count: ids.length, parts })
       : t('gallery.downloading', { count: ids.length }));
     try {
-      await galleryService.downloadPhotosInParts(slug, ids);
+      if (!await archives.downloadPhotosInParts(slug, ids)) return;
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
     }
-  }, [downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
+  }, [archives, downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
 
   const handleDownloadFromLightbox = useCallback((slide: { src?: string; photoId?: number }) => {
     if (!allowDownloads || !slide.src) return;

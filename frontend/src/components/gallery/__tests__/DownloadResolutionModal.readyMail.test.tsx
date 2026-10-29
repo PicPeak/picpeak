@@ -10,17 +10,17 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('react-i18next', () => ({
-  initReactI18next: { type: '3rdParty', init: vi.fn() },
-  useTranslation: () => ({ t: (k: string, d?: unknown) => (typeof d === 'string' ? d : k) }),
-}));
+vi.mock('react-i18next', () => {
+  const t = (k: string, d?: unknown) => typeof d === 'string' ? d : k;
+  return { initReactI18next: { type: '3rdParty', init: vi.fn() }, useTranslation: () => ({ t }) };
+});
 vi.mock('../../../services/gallery.service', () => ({
   galleryService: {
     startDownloadJob: vi.fn(),
     getDownloadJob: vi.fn(),
     requestDownloadJobMail: vi.fn(),
     downloadJobFile: vi.fn(),
-    downloadAllPhotos: vi.fn(),
+    downloadCachedArchive: vi.fn(),
   },
 }));
 vi.mock('../../../contexts/DownloadQuotaContext', () => ({
@@ -42,7 +42,7 @@ const job = (over: Record<string, unknown> = {}) => ({
 describe('DownloadResolutionModal: email me when it is ready', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(galleryService.startDownloadJob).mockResolvedValue({ token: TOKEN, status: 'pending' });
+    vi.mocked(galleryService.startDownloadJob).mockResolvedValue({ token: TOKEN, status: 'pending', resolution: '1500x1000' });
     vi.mocked(galleryService.requestDownloadJobMail).mockResolvedValue(undefined);
   });
 
@@ -92,7 +92,7 @@ describe('DownloadResolutionModal: email me when it is ready', () => {
     render(<DownloadResolutionModal slug="party" choices={choices} resumeToken={TOKEN} onClose={onClose} />);
 
     await user.click(await screen.findByRole('button', { name: 'Download' }));
-    expect(galleryService.downloadJobFile).toHaveBeenCalledWith('party', TOKEN, 'party-800x600.zip');
+    expect(galleryService.downloadJobFile).toHaveBeenCalledWith('party', TOKEN, undefined);
     expect(galleryService.startDownloadJob).not.toHaveBeenCalled();
   });
 

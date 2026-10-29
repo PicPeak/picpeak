@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useArchiveDownload } from '../contexts/ArchiveDownloadContext';
 import { useQuery, useMutation, type UseMutationOptions } from '@tanstack/react-query';
 import { galleryService } from '../services';
 import { toast } from 'react-toastify';
@@ -124,11 +125,12 @@ export const useSavePhotoToDevice = () => {
 };
 
 export const useDownloadAllPhotos = () => {
+  const archives = useArchiveDownload();
   return useMutation({
     mutationFn: ({ slug, zipReady }: { slug: string; zipReady?: boolean }) =>
-      galleryService.downloadAllPhotos(slug, zipReady),
-    onSuccess: () => {
-      toast.success('Download started');
+      archives.downloadAllPhotos(slug, zipReady),
+    onSuccess: (handedOff) => {
+      if (handedOff) toast.success('Download started');
     },
     onError: (error) => {
       if (isDownloadLimitError(error)) return;
