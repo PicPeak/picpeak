@@ -3698,7 +3698,11 @@
       "empty": "Noch keine Tokens. Generieren Sie oben einen, um zu beginnen.",
       "preview": "Vorschau",
       "revokeAction": "Token widerrufen",
-      "loadFailed": "Die API-Tokens konnten nicht geladen werden"
+      "loadFailed": "Die API-Tokens konnten nicht geladen werden",
+      "galleryPasswordScopes": "Galerie-Passwörter",
+      "galleryPasswordScopesWarning": "Diese Scopes geben Galerie-Passwörter heraus. Sie sind nicht in admin enthalten: Setzen Sie sie nur bei einem Token, das sie braucht. Jede Nutzung wird unter Ihrem Namen protokolliert.",
+      "scopeGalleryPasswordsRead": "Zeigt das gespeicherte Passwort einer Galerie. Funktioniert nur, solange „Galerie-Passwörter wiederherstellbar speichern“ aktiv ist.",
+      "scopeGalleryPasswordsReset": "Setzt das Passwort einer Galerie zurück und kann das neue an den Kunden mailen. Gäste müssen sich neu anmelden."
     },
     "webhooks": {
       "title": "Webhooks",

@@ -1551,7 +1551,11 @@
       "statusActive": "Actief",
       "confirmRevoke": "Dit token intrekken? Deze actie kan niet ongedaan worden gemaakt.",
       "revoke": "Intrekken",
-      "empty": "Nog geen tokens. Genereer er een hierboven om te beginnen."
+      "empty": "Nog geen tokens. Genereer er een hierboven om te beginnen.",
+      "galleryPasswordScopes": "Galerijwachtwoorden",
+      "galleryPasswordScopesWarning": "Deze scopes geven galerijwachtwoorden vrij. Ze vallen niet onder admin: vink ze alleen aan bij een token dat ze nodig heeft. Elk gebruik wordt op jouw naam gelogd.",
+      "scopeGalleryPasswordsRead": "Toont het opgeslagen wachtwoord van een galerij. Werkt alleen zolang \"Galerijwachtwoorden herstelbaar bewaren\" aan staat.",
+      "scopeGalleryPasswordsReset": "Stelt het wachtwoord van een galerij opnieuw in en kan het nieuwe naar de klant mailen. Gasten moeten opnieuw inloggen."
     },
     "webhooks": {
       "title": "Webhooks",

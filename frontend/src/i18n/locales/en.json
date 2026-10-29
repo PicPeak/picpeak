@@ -3107,7 +3107,11 @@
       "empty": "No tokens yet. Generate one above to get started.",
       "preview": "Preview",
       "revokeAction": "Revoke token",
-      "loadFailed": "Could not load the API tokens"
+      "loadFailed": "Could not load the API tokens",
+      "galleryPasswordScopes": "Gallery passwords",
+      "galleryPasswordScopesWarning": "These scopes hand out gallery passwords. They are not part of admin: tick them only on a token that needs them. Every use is logged under your name.",
+      "scopeGalleryPasswordsRead": "Reveals a gallery's saved password. Only works while \"Keep gallery passwords recoverable\" is on.",
+      "scopeGalleryPasswordsReset": "Resets a gallery's password and can mail the new one to the client. Guests must sign in again."
     },
     "webhooks": {
       "title": "Webhooks",

@@ -28,7 +28,11 @@ const baseDoc = {
         bearerFormat: 'pp_live_*',
         description:
           'Long-lived API token. Issue via Settings → API Tokens. ' +
-          'Token format: `pp_live_<random>`. Scopes: `read`, `write`, `admin`.'
+          'Token format: `pp_live_<random>`. Scopes: `read`, `write`, `admin` ' +
+          '(`admin` implies `write`, `write` implies `read`). ' +
+          '`gallery_passwords:read` (reveal a recoverable gallery password) and ' +
+          '`gallery_passwords:reset` (reset a gallery password) are separate: ' +
+          'no other scope implies them, not even `admin`, and neither implies the other.'
       }
     },
     schemas: {

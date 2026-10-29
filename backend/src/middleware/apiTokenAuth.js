@@ -7,7 +7,12 @@ const { roleEventScope } = require('./permissions');
 const { loadAssignedEventIds } = require('./ownership');
 
 const TOKEN_PREFIX = 'pp_live_';
-const VALID_SCOPES = ['read', 'write', 'admin'];
+// The gallery_passwords:* scopes (issue 2326) reveal a gallery's recoverable
+// password and reset it. Nothing implies them, not even 'admin': a token gets
+// them only when they were ticked on it, each one on its own.
+const GALLERY_PASSWORD_READ_SCOPE = 'gallery_passwords:read';
+const GALLERY_PASSWORD_RESET_SCOPE = 'gallery_passwords:reset';
+const VALID_SCOPES = ['read', 'write', 'admin', GALLERY_PASSWORD_READ_SCOPE, GALLERY_PASSWORD_RESET_SCOPE];
 
 function hashToken(plaintext) {
   return crypto.createHash('sha256').update(plaintext).digest('hex');
@@ -152,7 +157,8 @@ async function apiTokenAuth(req, res, next) {
 function requireApiScope(scope) {
   return (req, res, next) => {
     const have = req.apiToken?.scopes || [];
-    // 'admin' implies write/read; 'write' implies read.
+    // 'admin' implies write/read; 'write' implies read. The gallery_passwords:*
+    // scopes are implied by nothing and imply nothing.
     const expanded = new Set(have);
     if (have.includes('admin')) ['write', 'read'].forEach((s) => expanded.add(s));
     if (have.includes('write')) expanded.add('read');
@@ -176,5 +182,7 @@ module.exports = {
   parseScopes,
   isMissingRolesSchema,
   TOKEN_PREFIX,
-  VALID_SCOPES
+  VALID_SCOPES,
+  GALLERY_PASSWORD_READ_SCOPE,
+  GALLERY_PASSWORD_RESET_SCOPE
 };

@@ -1656,6 +1656,12 @@
         "sso_account": "Tu cuenta inicia sesión mediante el inicio de sesión único, así que no puede usar llaves de acceso.",
         "unsupported": "Este navegador no admite llaves de acceso."
       }
+    },
+    "apiTokens": {
+      "galleryPasswordScopes": "Contraseñas de galería",
+      "galleryPasswordScopesWarning": "Estos scopes entregan contraseñas de galería. No forman parte de admin: márcalos solo en un token que los necesite. Cada uso queda registrado a tu nombre.",
+      "scopeGalleryPasswordsRead": "Muestra la contraseña guardada de una galería. Solo funciona mientras «Guardar contraseñas de galería recuperables» esté activado.",
+      "scopeGalleryPasswordsReset": "Restablece la contraseña de una galería y puede enviar la nueva al cliente por correo. Los invitados deben volver a iniciar sesión."
     }
   },
   "analytics": {
