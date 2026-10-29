@@ -4,6 +4,7 @@ import { de, enUS, es, fr, nl, ptBR, ru, sl } from 'date-fns/locale';
 import type { Locale } from 'date-fns';
 import { usePublicSettings } from './usePublicSettings';
 import { expiryDay } from '../utils/expiryDay';
+import { parseCalendarDay } from '../utils/calendarDay';
 
 // One entry per shipped UI locale (src/i18n/locales). Keyed by base
 // language so a regional tag like `de-DE` or `fr-CH` resolves too.
@@ -31,10 +32,15 @@ export const resolveDateLocale = (language: string | undefined): Locale =>
  */
 const SQLITE_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/;
 
-/** A date or date string as a Date, reading SQLite's zone-less shape as UTC. */
+/**
+ * A date or date string as a Date, reading SQLite's zone-less shape as UTC
+ * and a bare calendar day as that day in the viewer's zone.
+ */
 export const toDisplayDate = (date: Date | string): Date => {
   if (typeof date !== 'string') return date;
   const text = date.trim();
+  const day = parseCalendarDay(text);
+  if (day) return day;
   return new Date(SQLITE_UTC_TIMESTAMP.test(text) ? `${text.replace(' ', 'T')}Z` : date);
 };
 
