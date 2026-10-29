@@ -8,6 +8,7 @@ import type { Photo, DownloadResolutionChoice, GalleryPerson } from '../../types
 import { useDownloadPhoto } from '../../hooks/useGallery';
 import { isPhotoDownloadPending } from '../../hooks/usePhotoDownloadPending';
 import { PhotoLightbox } from './PhotoLightbox';
+import { useTileClickOrigin, type LightboxOrigin } from './hooks/useTileClickOrigin';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
 import { analyticsService } from '../../services/analytics.service';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -208,14 +209,21 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   // reports it; null while that lightbox is closed.
   const lightboxPhotoIdRef = useRef<number | null>(null);
 
+  // The tile a click opened the lightbox from, for it to grow out of; null
+  // when it opened any other way.
+  const takeTileOrigin = useTileClickOrigin();
+  const [lightboxOrigin, setLightboxOrigin] = useState<LightboxOrigin | null>(null);
+
   const handlePhotoClick = (index: number) => {
     setOpenFeedbackInitially(false);
+    setLightboxOrigin(takeTileOrigin());
     setSelectedPhotoIndex(index);
     if (photos[index]) onLightboxPhotoChange?.(photos[index].id, 'open');
   };
 
   const handleOpenWithFeedback = (index: number) => {
     setOpenFeedbackInitially(true);
+    setLightboxOrigin(takeTileOrigin());
     setSelectedPhotoIndex(index);
     if (photos[index]) onLightboxPhotoChange?.(photos[index].id, 'open');
   };
@@ -291,6 +299,9 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     const index = photos.findIndex((photo) => photo.id === openPhotoId);
     if (index >= 0) {
       setOpenFeedbackInitially(false);
+      // No tile to grow from. A lightbox a click already opened (and this
+      // link only mirrors) read its origin on open and keeps it.
+      setLightboxOrigin(null);
       setSelectedPhotoIndex(index);
     }
   }, [openPhotoId, photos]);
@@ -597,6 +608,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           people={people}
           onSelectPerson={onSelectPerson}
           onCurrentPhotoChange={(photoId) => onLightboxPhotoChange?.(photoId, 'step')}
+          openOrigin={lightboxOrigin}
         />
       )}
 

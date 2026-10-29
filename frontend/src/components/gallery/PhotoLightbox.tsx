@@ -10,7 +10,7 @@ import { AuthenticatedImage } from '../common';
 import { useFullResolutionZoom, FullResolutionImage } from './hooks/useFullResolutionZoom';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { PhotoFeedback } from './PhotoFeedback';
-import { lightboxImageUrl } from './imageTiers';
+import { lightboxImageLongEdge, lightboxImageUrl } from './imageTiers';
 import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
 import { PhotoColorLabels } from './PhotoColorLabels';
 import { PhotoDecision } from './PhotoDecision';
@@ -29,6 +29,8 @@ import { effectivePhotoPrice, formatPhotoPrice, snipcartItemProps } from '../../
 import { lockBodyScroll } from '../../utils/scrollLock';
 import { pushDialogLayer } from '../common/Modal';
 import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
+import { LightboxOpenGrow, OPEN_FADE_MS } from './LightboxOpenGrow';
+import type { LightboxOrigin } from './hooks/useTileClickOrigin';
 import { usePhotoLabels } from './PhotoLabels';
 import { useLightboxScrub } from './hooks/useLightboxScrub';
 import { usePendingAwareImageUrl } from './hooks/usePendingAwareImageUrl';
@@ -70,6 +72,9 @@ interface PhotoLightboxProps {
   // The photo on screen, on open and after every step — the host mirrors it
   // to `?photo=` (issue 1733, photoLink.ts).
   onCurrentPhotoChange?: (photoId: number) => void;
+  // The grid tile the lightbox was opened from, when it was opened by a
+  // click on one: the opening photo grows out of it (useTileClickOrigin).
+  openOrigin?: LightboxOrigin | null;
 }
 
 // Finger travel before a single-finger touch starts moving the carousel.
@@ -103,6 +108,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   people,
   onSelectPerson,
   onCurrentPhotoChange,
+  openOrigin = null,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
@@ -262,6 +268,35 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     currentPhotoId,
   );
   const { scrubbing } = scrub;
+  // Opened from a tile: until the photo's preview has loaded, the tile's
+  // image (grown out of the tile) is on screen instead of a black stage. A
+  // preview can take a while (a large original when there is no preview
+  // tier), and the tile's image is in hand. The slide stays transparent over
+  // it until it has loaded and the grow is over (`revealing`), then fades in.
+  // 'thumbnail' when the tile's image would not show: the fetched thumbnail
+  // stands in for it, under a slide shown as usual.
+  const [opening, setOpening] = useState<{
+    photoId: number;
+    origin: LightboxOrigin | 'thumbnail';
+    loaded?: boolean;
+    revealing?: boolean;
+  } | null>(() => {
+    const photo = photos[initialIndex];
+    return openOrigin && photo && photo.media_type !== 'video'
+      ? { photoId: photo.id, origin: openOrigin }
+      : null;
+  });
+  const openingShown = opening !== null && opening.photoId === currentPhotoId;
+  // The slide is hidden under the grown tile image until it fades in.
+  const openingCoversSlide = openingShown && opening.origin !== 'thumbnail';
+  // Only for the photo opened on, as it was opened: stepping away ends it, as
+  // stepping back finds its slide kept, with no new load to report. So do a
+  // swipe once the track moves (not the touch that may be a tap) and a zoom,
+  // which move or scale the slide but not the tile image under it; the slide
+  // shows as usual from then on.
+  useEffect(() => {
+    if (opening && (opening.photoId !== currentPhotoId || dragX !== 0 || zoom !== 1)) setOpening(null);
+  }, [currentPhotoId, opening, dragX, zoom]);
   // The slides are unmounted for the length of a scrub, so a swipe under way
   // has no track left to fire the `transitionend` that would end it: without
   // this the track came back parked on the neighbour, or in a phase that
@@ -347,7 +382,16 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const handleSlidePreviewLoad = useCallback(() => {
     onPreviewLoad();
     handlePreviewLoaded();
+    // The grown tile image hands over to the slide in its own time; the
+    // fetched thumbnail stand-in goes at once, like the scrub's.
+    setOpening((prev) => (prev && prev.origin !== 'thumbnail' ? { ...prev, loaded: true } : null));
   }, [onPreviewLoad, handlePreviewLoaded]);
+  // A preview that does not decode is replaced by the fallback, which reports
+  // no load: the stand-ins leave here instead.
+  const handleSlidePreviewError = useCallback(() => {
+    handlePreviewLoaded();
+    setOpening(null);
+  }, [handlePreviewLoaded]);
 
   const { t } = useTranslation();
   // Neutral photo labels (issue 1733, E6): numbered against this lightbox's
@@ -1745,16 +1789,19 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 className="max-w-full max-h-full object-contain select-none"
                 // Invisible under the painted original, still laid out and
                 // still the target of every click, drag and context menu.
-                style={fullZoom.previewHidden ? { ...imageStyle, opacity: 0 } : imageStyle}
+                style={fullZoom.previewHidden
+                  ? { ...imageStyle, opacity: 0 }
+                  : openingCoversSlide
+                    // Faded in over the grown tile image once both are ready.
+                    ? { ...imageStyle, opacity: opening.revealing ? 1 : 0, transition: `opacity ${OPEN_FADE_MS}ms` }
+                    : imageStyle}
                 draggable={false}
                 isGallery={true}
                 slug={slug}
                 // Stable callback: the zoom measures the preview and the scrub's
                 // stand-in leaves once this is in.
                 onLoad={handleSlidePreviewLoad}
-                // A preview that does not decode is replaced by the fallback,
-                // which reports no load: the stand-in leaves here instead.
-                onError={scrub.handlePreviewLoaded}
+                onError={handleSlidePreviewError}
                 useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
                 onFallbackChange={(shown) => setFallbackPhotoId((prev) => (shown ? photo.id : prev === photo.id ? null : prev))}
                 onProtectionViolation={(violationType) => {
@@ -1794,7 +1841,35 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           );
         };
 
+        // The stage's box, shared with the opening stand-in below.
+        const stageStyle: React.CSSProperties = {
+          right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
+          // Stop above the opaque toolbar so it never masks the
+          // photo (#888).
+          bottom: `${toolbarHeight}px`,
+        };
+
         return (
+          <>
+          {/* The opening photo grown out of its tile, before the stage so a
+              loaded slide covers it. Outside the stage, whose overflow would
+              clip a tile under the toolbar. Mounted once the toolbar is
+              measured (a layout effect, before the first paint), so the stage
+              it grows into has its final size. */}
+          {openingCoversSlide && opening.origin !== 'thumbnail' && toolbarHeight > 0 && !scrubbing && !isVideoCurrent && (
+            <LightboxOpenGrow
+              origin={opening.origin}
+              aspect={currentPhoto.width && currentPhoto.height ? currentPhoto.width / currentPhoto.height : null}
+              maxLongEdge={lightboxImageLongEdge(currentPhoto)}
+              stageStyle={stageStyle}
+              loaded={opening.loaded === true}
+              onReveal={() => setOpening((prev) => prev && { ...prev, revealing: true })}
+              onDone={() => setOpening(null)}
+              // Its image is gone (a revoked tile URL): the fetched thumbnail
+              // takes its place.
+              onError={() => setOpening((prev) => prev && { ...prev, origin: 'thumbnail' })}
+            />
+          )}
           <div
             ref={trackContainerRef}
             className="absolute top-0 left-0 overflow-hidden z-0"
@@ -1809,10 +1884,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             onTouchCancel={isVideoCurrent ? undefined : handleTouchCancel}
             style={{
               cursor: isVideoCurrent ? 'default' : (zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'),
-              right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
-              // Stop above the opaque toolbar so it never masks the
-              // photo (#888).
-              bottom: `${toolbarHeight}px`,
+              ...stageStyle,
               // Tell the browser we handle horizontal gestures ourselves so
               // it doesn't fight us with edge-swipe back navigation, native
               // pinch-zoom, etc. Videos keep default touch behaviour.
@@ -1822,8 +1894,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             {/* Hold-to-scrub stand-in (issue 1733): the thumbnail, in place of
                 the slides while a key is held — so no preview is requested for
                 a photo passed over — and underneath the landed slide until its
-                preview has loaded. */}
-            {(scrubbing || (scrub.standIn && !isVideoCurrent)) && (
+                preview has loaded. Also underneath the opening photo when the
+                tile's image it grew from will not show. */}
+            {(scrubbing || ((scrub.standIn || (openingShown && opening.origin === 'thumbnail')) && !isVideoCurrent)) && (
               <LightboxScrubStandIn photos={photos} currentIndex={currentIndex} slug={slug} />
             )}
             {scrubbing ? null : isVideoCurrent && videoLocked ? (
@@ -1887,6 +1960,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               </div>
             )}
           </div>
+          </>
         );
       })()}
 

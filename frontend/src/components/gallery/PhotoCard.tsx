@@ -5,6 +5,7 @@ import { Download, Maximize2, Check, MessageSquare, Heart, Loader2 } from 'lucid
 import { useInView } from 'react-intersection-observer';
 import { AuthenticatedImage } from '../common';
 import { thumbnailUrlForTile } from './imageTiers';
+import { GRID_TILE_ATTR } from './layouts/gridWindow';
 import { TileImage } from './TileImage';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { feedbackService } from '../../services/feedback.service';
@@ -538,6 +539,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       className={className}
       style={lazy ? { ...style, opacity: !inView && fadeInWhenVisible ? 0 : 1 } : style}
       onClick={handlePhotoClick}
+      // A photo tile: the lightbox grows out of the one it was opened from.
+      {...{ [GRID_TILE_ATTR]: '' }}
       {...containerProps}
     >
       {inView && tile ? (
