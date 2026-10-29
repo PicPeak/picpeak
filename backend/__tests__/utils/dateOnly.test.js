@@ -41,3 +41,31 @@ describe('every gallery payload that carries event_date goes through toDateOnly'
     expect(src).not.toMatch(/event_date: event\.event_date,/);
   });
 });
+
+describe('every quote, invoice and contract payload sends its date columns through toDateOnly', () => {
+  // Issue 2333: on PostgreSQL a raw `date` column reaches the browser as
+  // "2026-03-01T00:00:00.000Z", a day early anywhere west of UTC, and a
+  // date input refuses it. The PDF render contexts format server-side and
+  // keep the driver's Date on purpose; these are the JSON payloads.
+  const fs = require('fs');
+  const path = require('path');
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '../../src', rel), 'utf8');
+  const COLUMNS = 'issue_date|valid_until|due_date|event_date|monthly_period_start|monthly_period_end';
+  const RAW = new RegExp(`\\b\\w+: \\w+\\.(?:${COLUMNS})(?: \\|\\| null)?,`, 'g');
+  const WRAPPED = new RegExp(`toDateOnly\\(\\w+\\.(?:${COLUMNS})\\)`, 'g');
+
+  test.each([
+    ['routes/adminQuotes.js', 3],
+    ['routes/adminInvoices.js', 5],
+    ['routes/customer.js', 8],
+    ['services/dealsService.js', 9],
+    ['services/publicDocumentViews.js', 5],
+    ['services/invoice/payments.js', 2],
+    ['services/invoice/drafts.js', 2],
+    ['services/contract/sendPreview.js', 2],
+  ])('%s', (rel, count) => {
+    const src = read(rel);
+    expect(src.match(WRAPPED) || []).toHaveLength(count);
+    expect(src.match(RAW) || []).toEqual([]);
+  });
+});
