@@ -1,9 +1,9 @@
 # Print sales PR review for issue #48
 
-Implementation prepared for a draft PR discussing [issue #48](https://github.com/PicPeak/picpeak/issues/48).
+Implementation for draft PR discussion of [issue #48](https://github.com/PicPeak/picpeak/issues/48).
 This is an experimental, default-off branch based on upstream
 `c37353976f5d7e5f1e0b7b34f6b14dbeb672cdab` (3.186.0-beta.0), not an approved
-scope or a production deployment. Publication and the draft PR are pending.
+scope or a production deployment.
 
 The direction follows the [maintainer's generic-service guidance](https://github.com/PicPeak/picpeak/issues/48#issuecomment-6402523874)
 and the [proposed initial scope](https://github.com/PicPeak/picpeak/issues/48#issuecomment-6403652368):
@@ -29,6 +29,8 @@ retention behaviour, see [the workflow guide](print-sales.md) and
 The [lab setup and API research](print-sales-labs.md) explains the implemented
 manual route, separate customer/supplier payment flows, and proposed Manual/API
 settings sections and connector contract. Those API features are not implemented.
+The API portion is tracked separately in
+[Feature issue #2341](https://github.com/PicPeak/picpeak/issues/2341).
 
 ## What this checkpoint covers
 
@@ -105,9 +107,8 @@ the feature on any existing installation.
 ## Synthetic UI examples
 
 These screenshots show synthetic artwork, addresses and prices in actual components.
-They are prepared for publication on the fork's separate `pr-assets` branch,
-outside the code branch. The links below are publication targets and are not
-available until the assets are published with the PR.
+They are published on the fork's separate `pr-assets` branch, outside the code
+branch.
 
 - [Production configuration](https://raw.githubusercontent.com/icelessgo/picpeak/pr-assets/issue-assets/48-print-sales-exploration-2026-10-29/admin-desktop.png)
 - [Gallery basket and crop](https://raw.githubusercontent.com/icelessgo/picpeak/pr-assets/issue-assets/48-print-sales-exploration-2026-10-29/gallery-desktop.png)

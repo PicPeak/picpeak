@@ -12,6 +12,11 @@ connector endpoint, API credential field, public artwork link or automatic lab
 purchase in this branch. The API setup below is a development guide; it cannot
 be enabled by entering a lab API key today.
 
+The API portion has its own
+[Feature issue #2341](https://github.com/PicPeak/picpeak/issues/2341), separate from
+the invoice/manual-fulfilment PR. The connector design below informs that issue;
+it is not an API deliverable of the manual PR.
+
 ## Payments and lab selection today
 
 Acceptance creates one native CRM invoice using shared-catalogue retail prices,
