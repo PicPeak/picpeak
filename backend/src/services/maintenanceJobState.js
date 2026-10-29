@@ -258,13 +258,14 @@ async function pauseRequested(jobName, token) {
 }
 
 /**
- * Drop a pause request, called by a fresh run right after its claim: a
- * request left by a runner that died before reading it must not stop the
- * next run at its first item.
+ * Drop a pause request left by a run that is over, called before a fresh
+ * claim: it must not stop the next run at its first item. Only an idle job
+ * is touched, so a pause asked of a live run (or of the run this start is
+ * about to claim, once it holds the job) is never erased.
  */
-async function clearPause(jobName, token) {
+async function clearIdlePause(jobName) {
   await db('maintenance_jobs')
-    .where({ job_name: jobName, claim_token: token })
+    .where({ job_name: jobName, is_running: false })
     .update({ pause_requested: false });
 }
 
@@ -272,7 +273,7 @@ module.exports = {
   startLeaseKeeper,
   requestPause,
   pauseRequested,
-  clearPause,
+  clearIdlePause,
   ensure,
   claim,
   heartbeat,

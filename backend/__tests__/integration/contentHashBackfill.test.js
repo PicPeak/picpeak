@@ -193,6 +193,34 @@ describe('content-hash backfill (issue 2194)', () => {
     expect((await row(p.id)).content_sha256).toBe(sha(Buffer.from('bytes')));
   });
 
+  it('a pause asked for right after the claim is honoured, not cleared by the start', async () => {
+    const event = await makeEvent();
+    const p = await addPhoto(event, Buffer.from('bytes'));
+    // Another replica presses pause the moment this start holds the job.
+    const realClaim = maintenanceJobs.claim.bind(maintenanceJobs);
+    jest.spyOn(maintenanceJobs, 'claim').mockImplementationOnce(async (...args) => {
+      const token = await realClaim(...args);
+      expect(await maintenanceJobs.requestPause(JOB)).toBe(true);
+      return token;
+    });
+    await startAndRun();
+    expect((await row(p.id)).content_sha256).toBeNull();
+    expect((await backfill.status()).paused).toBe(true);
+  });
+
+  it('a runner whose claim was taken over mid-read writes nothing', async () => {
+    const event = await makeEvent();
+    const p = await addPhoto(event, Buffer.from('read by the old runner'));
+    const token = await maintenanceJobs.claim(JOB);
+    // While the old runner reads, its lease goes stale and another start takes over.
+    jest.spyOn(storage, 'get').mockImplementationOnce(async (key) => {
+      await db('maintenance_jobs').where({ job_name: JOB }).update({ claim_token: 'taken-over' });
+      return fs.createReadStream(path.join(process.env.STORAGE_PATH, key));
+    });
+    await backfill.__test.run(token, { lost: () => false, stop: () => {} });
+    expect((await row(p.id)).content_sha256).toBeNull();
+  });
+
   it('records an unreadable original, skips it, and only tries it again on a retry', async () => {
     const event = await makeEvent();
     const missing = await addPhoto(event, null);

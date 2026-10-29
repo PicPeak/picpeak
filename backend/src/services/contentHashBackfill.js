@@ -92,7 +92,7 @@ async function hashOriginal(photo) {
  * of an external file (new size and mtime) or a trash since makes the write
  * a no-op, so a hash never lands on bytes it was not computed from.
  */
-function fenced(photo) {
+function fenced(photo, token) {
   return livePhotos(db).where({
     id: photo.id,
     path: photo.path,
@@ -101,7 +101,12 @@ function fenced(photo) {
     external_relpath: photo.external_relpath ?? null,
     size_bytes: photo.size_bytes ?? null,
     source_mtime_ms: photo.source_mtime_ms ?? null,
-  }).whereNull('content_sha256');
+  }).whereNull('content_sha256')
+    // Only while this run still holds the job: a runner whose lease was taken
+    // over while it read a file must not write what it read.
+    .whereExists(function () {
+      this.select(db.raw('1')).from('maintenance_jobs').where({ job_name: JOB, claim_token: token });
+    });
 }
 
 /**
@@ -144,13 +149,13 @@ async function run(token, lease) {
           // never tried again in a loop, and never stops the run.
           logger.warn(`Content-hash backfill: original of photo ${photo.id} could not be read: ${err.message}`);
           failed++;
-          await fenced(photo)
+          await fenced(photo, token)
             .update({ content_sha256_error: String(err.message || err).slice(0, ERROR_MAX) })
             .catch((writeErr) => logger.warn(`Content-hash backfill: could not record the error of photo ${photo.id}: ${writeErr.message}`));
           continue;
         }
         if (!hash) { skipped++; continue; }
-        const updated = await fenced(photo).update({ content_sha256: hash, content_sha256_error: null });
+        const updated = await fenced(photo, token).update({ content_sha256: hash, content_sha256_error: null });
         if (updated) hashed++; else skipped++;
       }
       if (lostClaim || paused) break;
@@ -183,13 +188,15 @@ async function run(token, lease) {
  * that failed before (a NAS that was not mounted) are tried once more.
  */
 async function start({ retryUnreadable = false } = {}) {
+  // Before the claim, not after it: a pause requested between the claim and
+  // a later clear would be lost although the request was acknowledged.
+  await maintenanceJobs.clearIdlePause(JOB);
   const token = await maintenanceJobs.claim(JOB);
   if (!token) return null;
   const lease = maintenanceJobs.startLeaseKeeper(JOB, token);
 
   let count;
   try {
-    await maintenanceJobs.clearPause(JOB, token);
     if (retryUnreadable) {
       await livePhotos(db).whereNull('content_sha256').whereNotNull('content_sha256_error')
         .update({ content_sha256_error: null });
