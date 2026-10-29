@@ -2,6 +2,7 @@ import { api } from '../config/api';
 
 export type FeatureKey =
   | 'albumProducts'
+  | 'printSales'
   | 'galleries'
   | 'reminderEmails'
   | 'calendar'

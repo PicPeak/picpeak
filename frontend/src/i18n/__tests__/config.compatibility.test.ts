@@ -26,4 +26,12 @@ describe('bundled translations with the patched HTTP backend', () => {
       await i18n.changeLanguage(previousLanguage || 'en');
     }
   });
+  it('bundles a nonempty German translation for every print-sales label', () => {
+    const labels = (value: Record<string, unknown>, prefix = ''): string[] => Object.entries(value).flatMap(([key, item]) => {
+      if (typeof item !== 'string') return labels(item as Record<string, unknown>, `${prefix}${key}.`);
+      expect(item.trim()).not.toBe('');
+      return [`${prefix}${key}`];
+    });
+    expect(labels(de.printSales).sort()).toEqual(labels(en.printSales).sort());
+  });
 });

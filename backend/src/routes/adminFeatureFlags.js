@@ -25,6 +25,7 @@ const logger = require('../utils/logger');
 // `FeatureKey` union in frontend/src/contexts/FeatureFlagsContext.tsx.
 const KNOWN_FLAGS = [
   'albumProducts',
+  'printSales',
   'galleries',
   'reminderEmails',
   // Incoming mail (migration 128) — IMAP polling of a dedicated mailbox into
@@ -132,6 +133,7 @@ const KNOWN_FLAGS = [
 // new release that hasn't run its migration yet on this instance).
 const DEFAULT_FLAGS = {
   albumProducts: false,
+  printSales: false,
   galleries: true,
   incomingMail: false,
   // F.3 — reminderEmails is a placeholder card in the Features tab

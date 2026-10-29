@@ -1,0 +1,346 @@
+.print-shop-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.print-shop-dialog button:focus-visible,.print-shop-dialog [tabindex]:focus-visible {
+  outline: 2px solid var(--ui-accent-strong,#477968);
+  outline-offset: 3px;
+}
+
+.print-shop-dialog button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.print-text-button {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: .875rem;
+  min-height: 2.25rem;
+  text-align: left;
+}
+
+.print-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: .75rem;
+}
+
+.print-photo-tile {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: .65rem;
+  text-align: left;
+  font-size: .8rem;
+  background: var(--ui-inset,#f4f4f2);
+}
+
+.print-photo-tile[aria-pressed=true],.print-variant[aria-pressed=true],.print-film-photo[aria-pressed=true] {
+  border-color: var(--ui-accent-strong,#477968);
+}
+
+.print-photo-check {
+  position: absolute;
+  top: .5rem;
+  right: .5rem;
+  border-radius: 50%;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #233d33;
+  box-shadow: 0 1px 8px #0003;
+}
+
+.print-photo-tile[aria-pressed=true] .print-photo-check {
+  background: var(--ui-accent-strong,#477968);
+  color: var(--ui-accent-fg,#fff);
+}
+
+.print-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0,1.15fr) minmax(0,1fr);
+  gap: 2rem;
+}
+
+.print-variant-grid {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: .6rem;
+}
+
+.print-variant {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  border: 2px solid var(--ui-line,#ddd);
+  border-radius: .6rem;
+  padding: .75rem;
+  text-align: left;
+  font-size: .875rem;
+}
+
+.print-size-icon {
+  height: 2rem;
+  display: flex;
+  align-items: center;
+}
+
+.print-size-icon i {
+  display: block;
+  height: 1.8rem;
+  max-width: 3rem;
+  border: 1px solid currentColor;
+  background: linear-gradient(135deg,#d6c8ad88,#7b9b9988);
+}
+
+.print-segment {
+  display: flex;
+  gap: .25rem;
+  border: 1px solid var(--ui-line,#ddd);
+  padding: .25rem;
+  border-radius: .6rem;
+}
+
+.print-segment button {
+  flex: 1;
+  padding: .5rem .6rem;
+  border-radius: .35rem;
+  font-size: .8rem;
+}
+
+.print-segment button[aria-pressed=true] {
+  background: var(--ui-accent-strong,#477968);
+  color: var(--ui-accent-fg,#fff);
+}
+
+.print-crop-stage {
+  background: var(--ui-inset,#f1f1ee);
+  border-radius: .65rem;
+  padding: 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 12rem;
+}
+
+.print-crop-frame {
+  position: relative;
+  overflow: hidden;
+  width: min(100%,calc(23rem * var(--print-ratio,.666667)));
+  max-height: 23rem;
+  max-width: 100%;
+  box-shadow: 0 3px 12px #0002;
+  user-select: none;
+}
+
+.print-filmstrip {
+  display: flex;
+  overflow-x: auto;
+  padding: .25rem;
+  gap: .5rem;
+}
+
+.print-film-photo {
+  position: relative;
+  width: 3.5rem;
+  height: 4rem;
+  border-radius: .4rem;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 2px solid transparent;
+}
+
+.print-film-photo span {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  background: #fff;
+  color: #244033;
+  font-size: .7rem;
+  padding: 0 .25rem;
+}
+
+.print-quantity {
+  display: inline-flex;
+  border: 1px solid var(--ui-line-strong,#ccc);
+  border-radius: .5rem;
+  overflow: hidden;
+}
+
+.print-quantity button {
+  width: 2.5rem;
+  min-height: 2.75rem;
+}
+
+.print-quantity input {
+  text-align: center;
+  width: 3.25rem;
+  min-width: 0;
+  background: transparent;
+  appearance: textfield;
+}
+
+.print-quantity input::-webkit-inner-spin-button {
+  appearance: none;
+}
+
+.print-quantity input[aria-invalid=true] {
+  outline: 2px solid #b04938;
+  outline-offset: -2px;
+}
+
+.print-basket-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--ui-line,#ddd);
+}
+
+.print-space {
+  position: relative;
+  overflow: hidden;
+  border-radius: .5rem;
+  isolation: isolate;
+}
+
+.print-space-art {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 30%;
+  transform: translate(-50%,-50%);
+  overflow: hidden;
+  box-shadow: 0 3px 8px #0003;
+}
+
+.print-space-desk {
+  background: linear-gradient(#e3e0d9 0 73%,#b59c7c 73% 76%,#d3bea3 76%);
+}
+
+.print-space-desk .print-space-art {
+  top: auto;
+  bottom: 27%;
+  transform: translateX(-50%);
+}
+
+.print-space-furniture {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.print-space-desk i:nth-child(1) {
+  position: absolute;
+  width: 19%;
+  height: 2%;
+  left: 6%;
+  bottom: 27%;
+  background: #cec8bc;
+  box-shadow: 0 -.3rem #f1eee7,0 -.55rem #7d8980;
+}
+
+.print-space-desk i:nth-child(2) {
+  position: absolute;
+  width: 6%;
+  height: 12%;
+  right: 13%;
+  bottom: 27%;
+  background: #9c8573;
+  border-radius: 0 0 25% 25%;
+}
+
+.print-space-desk i:nth-child(3) {
+  position: absolute;
+  width: 13%;
+  height: 24%;
+  right: 9.5%;
+  bottom: 37%;
+  border-radius: 65% 20%;
+  background: #829180;
+  transform: rotate(-15deg);
+}
+
+.print-space-wall {
+  background: linear-gradient(#ece7df 0 89%,#b4a58e 89% 90%,#d1c4b2 90%);
+}
+
+.print-space-wall i:nth-child(1) {
+  position: absolute;
+  width: 66.6667%;
+  height: 30%;
+  left: 16.6667%;
+  bottom: 10%;
+  background: #b5b6ad;
+  border-radius: 1rem 1rem .4rem .4rem;
+  box-shadow: inset 0 -1.4rem #a0a499;
+}
+
+.print-space-wall i:nth-child(2) {
+  position: absolute;
+  width: 26%;
+  height: 16%;
+  left: 21%;
+  bottom: 23%;
+  background: #d0cec3;
+  border-radius: .6rem;
+  box-shadow: 7rem 0 #c4c5bb;
+}
+
+.print-space-wall i:nth-child(3) {
+  position: absolute;
+  width: 28%;
+  height: 3%;
+  left: 36%;
+  bottom: 6%;
+  background: #8f7962;
+  border-radius: 50%;
+  box-shadow: 0 .4rem .25rem #0001;
+}
+
+@media (max-width: 639px) {
+  .print-editor-grid {
+    grid-template-columns: minmax(0,1fr);
+    gap: 1.5rem;
+  }
+  .print-photo-grid {
+    grid-template-columns: repeat(3,minmax(0,1fr));
+    gap: .4rem;
+  }
+  .print-crop-frame {
+    max-height: 17rem;
+    width: min(100%,calc(17rem * var(--print-ratio,.666667)));
+  }
+  .print-basket-line {
+    gap: .75rem;
+  }
+  .print-estimate {
+    flex-basis: 100%;
+  }
+  .print-basket-line > .relative {
+    width: 4rem;
+  }
+
+}
+
+.print-trim-guide {
+  position: absolute;
+  pointer-events: none;
+  border: 1px dashed white;
+  box-shadow: 0 0 0 1px #2228,0 0 0 20rem #0002;
+}
+
+.print-estimate {
+  margin-right: auto;
+  align-self: center;
+  font-weight: 600;
+}

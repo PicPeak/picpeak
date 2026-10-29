@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallba
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
-import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock, Loader2, ShoppingCart, Check } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock, Loader2, ShoppingCart, Check, Printer } from 'lucide-react';
 import type { Photo, GalleryPerson } from '../../types';
 import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { isPhotoDownloadPending, usePhotoDownloadPending } from '../../hooks/usePhotoDownloadPending';
@@ -24,6 +24,8 @@ import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { useDownloadChoice } from '../../contexts/DownloadChoiceContext';
 import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableMessage } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
+import { usePrintSales } from '../../features/print-sales/PrintSalesContext';
+import { isPhotograph } from '../../features/print-sales/shopping';
 import { usePhotoSales } from '../../features/photo-sales/PhotoSalesContext';
 import { effectivePhotoPrice, formatPhotoPrice, snipcartItemProps } from '../../features/photo-sales/photoSales';
 import { lockBodyScroll } from '../../utils/scrollLock';
@@ -110,6 +112,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const photoSales = usePhotoSales();
+  const printSales = usePrintSales();
   // Pinch baseline lives in a ref so a burst of touchmoves within one
   // render frame chains off the previous step, not off stale state.
   // isPinching is state because it gates the image's transform transition.
@@ -1489,6 +1492,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 </button>
               );
             })()}
+
+            {printSales?.available && currentPhoto && isPhotograph(currentPhoto) && <button type="button"
+              className="inline-flex items-center gap-2 rounded-full bg-white/10 hover:bg-white/20 px-3 py-2 text-white text-sm"
+              onClick={() => { onClose(); printSales.openPhoto(currentPhoto.id); }} aria-label={t('printSales.printThisPhoto', 'Print this photograph')}>
+              <Printer className="w-5 h-5" aria-hidden="true" /><span className="hidden sm:inline">{t('printSales.print', 'Print')}</span>
+            </button>}
 
             {/* Inline Like */}
             {feedbackEnabled && feedbackSettings?.allow_likes && (

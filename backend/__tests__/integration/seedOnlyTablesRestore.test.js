@@ -29,19 +29,21 @@ afterAll(async () => { if (cleanup) await cleanup(); });
 
 linuxIt('preserves seed-only tables the archive predates, while still clearing a genuine user-data table', async () => {
   // Simulate an archive made before migration 201 (product_usage), 129
-  // (ledger_accounts/vat_codes) and 226 (customer_groups): drop all of them
-  // so the export below never lists them in its manifest.
+  // (ledger_accounts/vat_codes), 226 (customer_groups) and 334 (print settings):
+  // drop them so the export below never lists them in its manifest.
   await db.schema.dropTable('product_usage_state');
   await db.schema.dropTable('vat_codes');
   await db.schema.dropTable('ledger_accounts');
   await db.schema.dropTable('customer_group_members');
   await db.schema.dropTable('customer_groups');
+  await db.schema.dropTable('print_sales_settings');
 
   const { filePath, manifest } = await createPicpeak({ includeFiles: false, outDir: `${tmpDir}/archives-seed-only` });
   expect(Object.hasOwn(manifest.tables, 'product_usage_state')).toBe(false);
   expect(Object.hasOwn(manifest.tables, 'ledger_accounts')).toBe(false);
   expect(Object.hasOwn(manifest.tables, 'vat_codes')).toBe(false);
   expect(Object.hasOwn(manifest.tables, 'customer_groups')).toBe(false);
+  expect(Object.hasOwn(manifest.tables, 'print_sales_settings')).toBe(false);
 
   // This instance is on a schema that HAS all of these tables (the archive
   // predates them, this instance doesn't) — recreate them via their
@@ -49,6 +51,10 @@ linuxIt('preserves seed-only tables the archive predates, while still clearing a
   await require('../../migrations/core/201_product_usage').up(db);
   await require('../../migrations/core/129_create_ledger_accounts_and_vat_codes').up(db);
   await require('../../migrations/core/226_customer_groups').up(db);
+  await require('../../migrations/core/337_print_sales').up(db);
+  const printProfiles = require('../../src/services/printSales/profiles');
+  await printProfiles.save(db, { revision: 0, profiles: [], countries: ['IE'],
+    shippingPresetId: null, policy: 'Local studio fulfilment policy' });
 
   // Also seed a local customer_groups row — the genuine user-data case
   // that must still be cleared by the restore (no regression on #1586).
@@ -66,6 +72,7 @@ linuxIt('preserves seed-only tables the archive predates, while still clearing a
   expect(vatCodesBefore.length).toBeGreaterThan(0);
   expect(await db('customer_groups')).toHaveLength(1);
   expect(await db('customer_group_members')).toHaveLength(1);
+  expect((await printProfiles.settings(db)).policy).toBe('Local studio fulfilment policy');
 
   expect((await importFromPicpeak({ picpeakPath: filePath, currentAdminId: adminId })).restored).toBe(true);
 
@@ -79,4 +86,13 @@ linuxIt('preserves seed-only tables the archive predates, while still clearing a
   // Genuine user-data table: still correctly cleared (not regressed).
   expect(await db('customer_groups')).toEqual([]);
   expect(await db('customer_group_members')).toEqual([]);
+
+  // A seeded singleton can still hold studio data. An older archive must not
+  // adopt the target's lab/delivery settings, and the normal editor must recover.
+  expect(await db('print_sales_settings')).toEqual([]);
+  expect(await printProfiles.settings(db)).toMatchObject({ revision: 0, profiles: [], countries: [], policy: '' });
+  expect(await printProfiles.save(db, { revision: 0, profiles: [], countries: ['DE'],
+    shippingPresetId: null, policy: 'Restored studio fulfilment policy' })).toMatchObject({
+    revision: 1, countries: ['DE'], policy: 'Restored studio fulfilment policy',
+  });
 });

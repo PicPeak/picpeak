@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bookmark } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +45,17 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
   const [animating, setAnimating] = useState(false);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
+  const mounted = useRef(false);
+  const animationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (animationTimeout.current !== null) clearTimeout(animationTimeout.current);
+      animationTimeout.current = null;
+    };
+  }, []);
 
   const submitFavoriteMutation = useMutation({
     // The photo travels with the call. The function and the callbacks below
@@ -57,6 +68,9 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
         guest_email: data.guest_email || undefined
       }),
     onMutate: async () => {
+      if (!mounted.current) return;
+      if (animationTimeout.current !== null) clearTimeout(animationTimeout.current);
+      animationTimeout.current = null;
       setIsSubmitting(true);
       setAnimating(true);
       // Optimistic update
@@ -90,8 +104,13 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       }
     },
     onSettled: () => {
+      // A mutation can settle after the lightbox has unmounted this control.
+      if (!mounted.current) return;
       setIsSubmitting(false);
-      setTimeout(() => setAnimating(false), 300);
+      animationTimeout.current = setTimeout(() => {
+        animationTimeout.current = null;
+        if (mounted.current) setAnimating(false);
+      }, 300);
     }
   });
 

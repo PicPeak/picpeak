@@ -1,3 +1,4 @@
+import { PrintGallerySettings } from '../print-sales/GallerySettings';
 import { useQuery } from '@tanstack/react-query';
 import { ChoiceSummary } from './ConfigurationPicker';
 import { useState } from 'react';
@@ -366,6 +367,6 @@ export function EventProductsCard(props: { eventId: number; ownsEvent: boolean }
   const enabled = useFeatureEnabled('albumProducts'),
     { hasPermission } = usePermissions();
   return enabled && hasPermission('products.view') ? (
-    <EventProducts {...props} />
+    <><PrintGallerySettings {...props} /><EventProducts {...props} /></>
   ) : null;
 }

@@ -176,6 +176,7 @@ export const FeaturesTab: React.FC = () => {
             onToggle={(next) => setFlag('transfers', next)}
           />
 
+          <FeatureCard icon={Images} title={t('printSales.adminTitle','Print sales')} description={t('printSales.featureDescription','Catalogue-backed photographic prints, invoice payments and manual lab fulfilment. Requires product configuration and billing.')} feature="printSales" sidebarHidden sidebarHiddenLabel={settingsOnlyLabel} enabled={staged.printSales} onToggle={next=>setFlag('printSales',next)} configureHref={settingsTabLink('printSales','printSales')} configureLabel={configureLabel}/>
           <FeatureCard icon={Images} title={t('albumProducts.featureTitle','Product configurator')} description={t('albumProducts.featureDescription','Shared product options for galleries and CRM quotes.')} feature="albumProducts" sidebarHidden sidebarHiddenLabel={settingsOnlyLabel} enabled={staged.albumProducts} onToggle={next=>setFlag('albumProducts',next)} configureHref={settingsTabLink('albumProducts','albumProducts')} configureLabel={configureLabel}/>
 
           {/* Face recognition (#1074). Requires the optional picpeak-ml

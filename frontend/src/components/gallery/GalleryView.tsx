@@ -1,3 +1,4 @@
+import { PrintSalesProvider, PrintShopEntry } from '../../features/print-sales/GalleryPrintShop';
 import { GalleryProductPanel } from '../../features/album-products/GalleryProductPanel';
 import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 import { GalleryUnavailableNotice } from './GalleryUnavailableNotice';
@@ -1813,6 +1814,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // Premium and Story already ask for it (ensureIdentity) before a like,
       // and finishing a selection needs it too. Without the provider a guest
       // in guest identity mode was never asked for a name and got a 401.
+      <PrintSalesProvider slug={slug} enabled={viaCustomer} photos={data?.photos || []} selectedPhotoIds={selectedPhotos}>
       <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
@@ -2039,6 +2041,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         </PhotoSalesProvider>
 
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
+        <PrintShopEntry />
 
         {/* Filename list for a RAW editor search (issue 1733, A3d). */}
         {showCopyFilenames && (
@@ -2051,10 +2054,12 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
       </GuestIdentityProvider>
+      </PrintSalesProvider>
     );
   }
 
   return withDownloadProviders(
+    <PrintSalesProvider slug={slug} enabled={viaCustomer} photos={data?.photos || []} selectedPhotoIds={selectedPhotos}>
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
@@ -2241,6 +2246,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       >
         {clientAccessDialog}
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
+        <PrintShopEntry />
         {/* Expiration Banner */}
         {showUrgentWarning && event.expires_at && (
           <ExpirationBanner daysRemaining={daysUntilExpiration} expiresAt={event.expires_at} />
@@ -2626,5 +2632,6 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
     </GuestIdentityProvider>
+    </PrintSalesProvider>
   );
 };

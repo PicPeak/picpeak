@@ -64,7 +64,7 @@ const EXCLUDED_TABLES = new Set([
 ]);
 
 // Storage subdirs holding non-recalculable blobs — always included.
-const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products'];
+const DOC_DIRS = ['business-docs', 'uploads', 'transfers', 'album-products', '.print-sales'];
 // Original gallery photos — only when includePhotos is true (large; otherwise
 // the admin re-uploads originals per gallery and previews are re-rendered).
 const PHOTO_DIRS = ['events/active', 'events/archived', 'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];
@@ -260,7 +260,7 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     let tableBytes = 0;
     for (const table of tables) {
       const { largestRowBytes: largest, ...meta } = await writeTableNdjson(table, dataDir, pathMap, (name, rows) => {
-        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files'].includes(name)) referenceRows.set(name, rows);
+        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files', 'print_sales_assets'].includes(name)) referenceRows.set(name, rows);
       });
       tableMeta[table] = meta;
       largestRowBytes = Math.max(largestRowBytes, largest);
