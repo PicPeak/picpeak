@@ -5,6 +5,23 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.187.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.186.0-beta.0...v3.187.0-beta.0) (2026-10-29)
+
+
+### Features
+
+* **contracts:** import historical signed contract PDFs without emailing the customer ([#2301](https://github.com/PicPeak/picpeak/issues/2301)) ([5c26cff](https://github.com/PicPeak/picpeak/commit/5c26cff4732baffb5fdb2ad0bb31f9cb8ba14ecb))
+* **thumbnails:** add an onlyMissing mode to preview regeneration ([#2318](https://github.com/PicPeak/picpeak/issues/2318)) ([60f2513](https://github.com/PicPeak/picpeak/commit/60f25133a1f172a2737f801d63ec048e88802bda))
+
+
+### Bug Fixes
+
+* **admin:** phone menu opens a section's pages in place ([#2325](https://github.com/PicPeak/picpeak/issues/2325)) ([223e127](https://github.com/PicPeak/picpeak/commit/223e1279a1aadffca4a27468ea80d1feaa3d2dc1))
+* **email:** gallery mail follows the brand colour on dark cards and drops a missing expiry date ([#2324](https://github.com/PicPeak/picpeak/issues/2324)) ([8d5e2ca](https://github.com/PicPeak/picpeak/commit/8d5e2caec5f69886274a8ca96beaff4247af235a))
+* **gallery:** download large archives without browser buffering ([#2270](https://github.com/PicPeak/picpeak/issues/2270)) ([405b35d](https://github.com/PicPeak/picpeak/commit/405b35d2295dfdf9021f4230d0adc31fe8a56c4a))
+* **gallery:** fit portrait videos into the lightbox instead of cropping them ([#2322](https://github.com/PicPeak/picpeak/issues/2322)) ([ac62b37](https://github.com/PicPeak/picpeak/commit/ac62b372eba7adf98fcad7c00ab4f84fcaecd37a))
+* **uploads:** honour Max Video Size for guests and upload large guest files in chunks ([#2323](https://github.com/PicPeak/picpeak/issues/2323)) ([bdb07f9](https://github.com/PicPeak/picpeak/commit/bdb07f96ca47a70ff66a294c9ed74be153b6c7a1))
+
 ## [3.186.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.185.2-beta.0...v3.186.0-beta.0) (2026-10-28)
 
 
