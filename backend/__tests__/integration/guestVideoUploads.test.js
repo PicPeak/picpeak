@@ -372,6 +372,23 @@ describe('chunked guest upload processing and quota', () => {
     expect(await db('public_upload_requests').where({ active: 1 }).first()).toMatchObject({ rate_bytes: 2 * jpeg.length });
   });
 
+  test('complete answers once the admission is settled, so the next file finds its slot', async () => {
+    process.env.PUBLIC_UPLOAD_LIMITS_JSON = JSON.stringify({ guest: { requests: 1 } });
+    const quota = require('../../src/services/publicUploadQuota');
+    const settle = quota.finish;
+    // A slow settlement: the answer must still wait for it.
+    jest.spyOn(quota, 'finish').mockImplementation(async (...args) => {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return settle(...args);
+    });
+    const event = await makeEvent();
+    const token = galleryToken(event);
+    const guest = await makeGuest(event);
+    const { res } = await chunked(event, token, jpeg, 'one.jpg', guest.token);
+    expect(res.status).toBe(202);
+    expect((await init(event, token, { filename: 'two.jpg', fileSize: jpeg.length }, guest.token)).status).toBe(200);
+  });
+
   test('a session older than the rate window that grows moves its charge into the current window', async () => {
     process.env.PUBLIC_UPLOAD_LIMITS_JSON = JSON.stringify({ guest: { hourBytes: 2 * jpeg.length } });
     const quota = require('../../src/services/publicUploadQuota');

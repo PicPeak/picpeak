@@ -452,6 +452,13 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', ...guestChunkChain, a
   };
   req.once('aborted', cancel);
   res.once('close', cancel);
+  let response;
+  let responseStatus = 200;
+  const reply = {
+    set(name, value) { res.set(name, value); return reply; },
+    status(code) { responseStatus = code; return reply; },
+    json(body) { response = body; return reply; },
+  };
   try {
     const gate = await guestUploadGate(req);
     if (gate.refusal) {
@@ -470,12 +477,14 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', ...guestChunkChain, a
       size: mergedFile.size,
       path: mergedFile.path,
     }];
-    // Exactly what the single-request upload does with its files.
-    await acceptGuestFiles(req, res, {
+    // Exactly what the single-request upload does with its files. Its answer
+    // waits for the admission to settle, as withPublicUpload's does: the
+    // dialog starts the next file on it, and that file needs the slot.
+    await acceptGuestFiles(req, reply, {
       eventId: mergedFile.eventId, credit: gate.credit, photoCap: gate.photoCap, uploadReservation: mergedFile.uploadReservation,
     });
   } catch (error) {
-    chunkError(req, res, error, 'Failed to complete upload');
+    chunkError(req, reply, error, 'Failed to complete upload');
   } finally {
     req.removeListener('aborted', cancel);
     res.removeListener('close', cancel);
@@ -483,6 +492,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', ...guestChunkChain, a
       await chunkedUpload.finishUpload(req.params.uploadId, { owner })
         .catch(err => logger.warn('Chunk upload cleanup unavailable; admission retained', { error: err.message }));
     }
+    if (response !== undefined && !res.headersSent && !res.destroyed) res.status(responseStatus).json(response);
   }
 });
 
