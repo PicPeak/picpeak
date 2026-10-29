@@ -134,6 +134,23 @@ describe('duplicates view (issue 2194)', () => {
     expect(group.photos[1].source).toBe('admin');
   });
 
+  it('reads SQLite\'s zone-less upload time as UTC when picking the oldest', async () => {
+    // 11:00 UTC from the database default, after 10:00Z written by the API.
+    // Read in the server's zone (Berlin), the zone-less one would come first.
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'Europe/Berlin';
+    try {
+      const event = await mkEvent();
+      const later = await mkPhoto(event, { content_sha256: hash('tz'), uploaded_at: '2026-10-01 11:00:00' });
+      const earlier = await mkPhoto(event, { content_sha256: hash('tz'), uploaded_at: '2026-10-01T10:00:00.000Z' });
+      const res = await groups(event);
+      expect(res.body.groups[0].photos.map((p) => p.id)).toEqual([earlier, later]);
+      expect(res.body.groups[0].photos.map((p) => p.uploaded_at)).toEqual(['2026-10-01T10:00:00.000Z', '2026-10-01T11:00:00.000Z']);
+    } finally {
+      if (previousTz === undefined) delete process.env.TZ; else process.env.TZ = previousTz;
+    }
+  });
+
   it('answers an empty list for a gallery without duplicates', async () => {
     const event = await mkEvent();
     await mkPhoto(event, { content_sha256: hash('only') });

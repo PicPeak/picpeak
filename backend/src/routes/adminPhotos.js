@@ -80,7 +80,7 @@ async function folderIdUpdate(eventId, raw) {
 const { photoCapOf, countEventPhotos, insertPhotoWithinCap, photoCapError } = require('../services/photoCap');
 const { claimPromotion } = require('../services/watchFolderClaims');
 const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
-const { sha256File, findDuplicate, duplicateName, listDuplicateGroups, duplicatesOf, DEFAULT_GROUP_LIMIT, MAX_GROUP_LIMIT } = require('../services/photoDuplicates');
+const { sha256File, findDuplicate, duplicateName, listDuplicateGroups, duplicatesOf, uploadedMs, DEFAULT_GROUP_LIMIT, MAX_GROUP_LIMIT } = require('../services/photoDuplicates');
 
 
 const { validateFileType, validateFileContent, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
@@ -1391,7 +1391,9 @@ router.get('/:eventId/photos/duplicates', adminAuth, requirePermission('photos.v
         photos: group.photos.map((photo) => ({
           id: photo.id,
           filename: duplicateName(photo),
-          uploaded_at: toIso(photo.uploaded_at) || null,
+          // One shape for every row: SQLite's zone-less default would be
+          // read in the browser's zone and pick the wrong oldest copy.
+          uploaded_at: Number.isFinite(uploadedMs(photo)) ? new Date(uploadedMs(photo)).toISOString() : null,
           size: photo.size_bytes ?? null,
           media_type: photo.media_type || 'image',
           source: photoSource(photo),

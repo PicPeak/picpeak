@@ -11,7 +11,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const { db } = require('../database/db');
 const { livePhotos } = require('../utils/photoVisibility');
-const { toIso } = require('../utils/dateNormalize');
+const { toTimestamp } = require('../utils/dateNormalize');
 
 /** Hex SHA-256 of a local file, streamed. */
 async function sha256File(filePath) {
@@ -39,8 +39,11 @@ const duplicateName = (photo) => photo.original_filename || photo.filename;
 const DEFAULT_GROUP_LIMIT = 50;
 const MAX_GROUP_LIMIT = 100;
 
+// toTimestamp reads SQLite's zone-less CURRENT_TIMESTAMP as UTC; Date.parse
+// would read it in the server's zone and could put it after an ISO upload
+// that came later.
 const uploadedMs = (photo) => {
-  const ms = Date.parse(toIso(photo.uploaded_at) || '');
+  const ms = toTimestamp(photo.uploaded_at);
   return Number.isFinite(ms) ? ms : Infinity;
 };
 /** Oldest upload first; the id breaks ties and orders rows without a date. */
@@ -108,6 +111,6 @@ async function duplicatesOf(eventId, keep, conn = db) {
 }
 
 module.exports = {
-  sha256File, findDuplicate, duplicateName, listDuplicateGroups, duplicatesOf,
+  sha256File, findDuplicate, duplicateName, listDuplicateGroups, duplicatesOf, uploadedMs,
   DEFAULT_GROUP_LIMIT, MAX_GROUP_LIMIT,
 };
