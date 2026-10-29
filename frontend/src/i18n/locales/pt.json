@@ -2489,6 +2489,31 @@
         "deleteFailed_one": "Não foi possível excluir {{count}} foto; ela continua na galeria",
         "deleteFailed_many": "Não foi possível excluir {{count}} fotos; elas continuam na galeria",
         "deleteFailed_other": "Não foi possível excluir {{count}} fotos; elas continuam na galeria"
+      },
+      "duplicates": {
+        "open": "Duplicados",
+        "title": "Fotos duplicadas",
+        "intro": "Só coincidem ficheiros idênticos byte a byte: cópias reexportadas ou redimensionadas não são detetadas, e fotos ainda sem hash (importadas antes do hash) não são comparadas.",
+        "empty": "Sem duplicados nesta galeria",
+        "emptyHelp": "Nenhuma foto aqui partilha o mesmo ficheiro com outra.",
+        "loadFailed": "Não foi possível carregar os duplicados",
+        "copies_one": "{{count}} cópia idêntica",
+        "copies_other": "{{count}} cópias idênticas",
+        "keep": "Manter",
+        "keepThis": "Manter {{name}}",
+        "keepOne_one": "Manter a marcada, mover {{count}} para o lixo",
+        "keepOne_other": "Manter a marcada, mover {{count}} para o lixo",
+        "keepAll_one": "Manter a foto marcada em {{count}} grupo",
+        "keepAll_other": "Manter a foto marcada nos {{count}} grupos",
+        "trashed_one": "{{count}} cópia movida para o lixo",
+        "trashed_other": "{{count}} cópias movidas para o lixo",
+        "failed": "Não foi possível mover as cópias para o lixo",
+        "trashOff": "O lixo está desativado e eliminar é definitivo, por isso esta vista apenas lista as cópias.",
+        "sourceAdmin": "Envio ou importação",
+        "sourceGuest": "Envio de convidado",
+        "sourceExternal": "Pasta externa",
+        "range_one": "Grupo {{from}}–{{to}} de {{count}}",
+        "range_other": "Grupos {{from}}–{{to}} de {{count}}"
       }
     },
     "events": {

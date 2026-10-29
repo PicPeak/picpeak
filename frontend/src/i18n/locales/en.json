@@ -5002,6 +5002,31 @@
         "deleted_other": "{{count}} photos deleted",
         "deleteFailed_one": "{{count}} photo could not be deleted and is still in the gallery",
         "deleteFailed_other": "{{count}} photos could not be deleted and are still in the gallery"
+      },
+      "duplicates": {
+        "open": "Duplicates",
+        "title": "Duplicate photos",
+        "intro": "Only byte-identical files match: re-exported or resized copies are not detected, and photos without a hash yet (imported before hashing) are not compared.",
+        "empty": "No duplicates in this gallery",
+        "emptyHelp": "No two photos here share the same file.",
+        "loadFailed": "Could not load the duplicates",
+        "copies_one": "{{count}} identical copy",
+        "copies_other": "{{count}} identical copies",
+        "keep": "Keep",
+        "keepThis": "Keep {{name}}",
+        "keepOne_one": "Keep the marked one, move {{count}} to the trash",
+        "keepOne_other": "Keep the marked one, move {{count}} to the trash",
+        "keepAll_one": "Keep the marked photo in {{count}} group",
+        "keepAll_other": "Keep the marked photo in all {{count}} groups",
+        "trashed_one": "{{count}} copy moved to the trash",
+        "trashed_other": "{{count}} copies moved to the trash",
+        "failed": "Could not move the copies to the trash",
+        "trashOff": "The trash is turned off and deleting is final, so this view only lists the copies.",
+        "sourceAdmin": "Upload or import",
+        "sourceGuest": "Guest upload",
+        "sourceExternal": "External folder",
+        "range_one": "Group {{from}}–{{to}} of {{count}}",
+        "range_other": "Groups {{from}}–{{to}} of {{count}}"
       }
     },
     "events": {

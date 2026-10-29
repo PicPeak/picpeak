@@ -147,6 +147,42 @@ export interface TrashRestoreResult {
   failed: Array<{ id: number; filename: string; code: string; error: string }>;
 }
 
+/** One photo of a duplicates group (issue 2194). */
+export interface DuplicatePhoto {
+  id: number;
+  /** The name it was uploaded under. */
+  filename: string;
+  uploaded_at: string | null;
+  size: number | null;
+  media_type: string;
+  /** How it arrived: an admin upload or import, a guest upload, an external folder. */
+  source: 'admin' | 'guest' | 'external';
+  moderation_status: PhotoModerationStatus | null;
+  thumbnail_url: string;
+}
+
+/** Photos of one gallery with the same bytes, oldest upload first. */
+export interface DuplicateGroup {
+  content_sha256: string;
+  photos: DuplicatePhoto[];
+}
+
+export interface DuplicateGroupsPage {
+  groups: DuplicateGroup[];
+  total_groups: number;
+  /** Photos across all groups, the kept ones included. */
+  total_photos: number;
+  limit: number;
+  offset: number;
+}
+
+export interface DuplicatesResolveResult {
+  trashed: number;
+  photo_ids: number[];
+  failed: number[];
+  retention_days: number;
+}
+
 /** Admin filter on the guests' approve / reject (issue 744). */
 export type DecisionFilter = 'approved' | 'rejected' | 'undecided';
 
@@ -367,6 +403,18 @@ class PhotosService {
 
   async purgeFromTrash(eventId: number, ids: number[]): Promise<{ purged: number; failed: number[] }> {
     const response = await api.post(`/admin/events/${eventId}/photos/trash/purge`, { ids });
+    return response.data;
+  }
+
+  /** Groups of byte-identical photos in the gallery (issue 2194), a page at a time. */
+  async getDuplicates(eventId: number, params: { limit?: number; offset?: number } = {}): Promise<DuplicateGroupsPage> {
+    const response = await api.get(`/admin/events/${eventId}/photos/duplicates`, { params });
+    return response.data;
+  }
+
+  /** Keep each named photo and move the other copies of it to the trash. */
+  async resolveDuplicates(eventId: number, keepIds: number[]): Promise<DuplicatesResolveResult> {
+    const response = await api.post(`/admin/events/${eventId}/photos/duplicates/resolve`, { keepIds });
     return response.data;
   }
 

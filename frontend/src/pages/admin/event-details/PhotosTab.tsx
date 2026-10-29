@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { hashKey, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ClipboardCheck, Folders, FolderTree, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, ClipboardCheck, Copy, Folders, FolderTree, Trash2, Upload } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Badge, Button, Card, Loading } from '../../../components/common';
-import { AdminPhotoGrid, AdminPhotoViewer, PhotoFilters, PhotoUploadModal, PhotoFilterPanel, PhotoExportMenu, EventCategoryManager, PhotoTrashModal, photoTrashQueryKey } from '../../../components/admin';
+import { AdminPhotoGrid, AdminPhotoViewer, PhotoFilters, PhotoUploadModal, PhotoFilterPanel, PhotoExportMenu, EventCategoryManager, PhotoTrashModal, photoTrashQueryKey, PhotoDuplicatesModal, photoDuplicatesQueryKey } from '../../../components/admin';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
 import { usePermissions } from '../../../contexts/PermissionsContext';
 import { AdminPhoto, photosService, CREDIT_FILTER_NONE, type PhotoFilters as PhotoFilterParams, type FeedbackFilters, type FilterSummary } from '../../../services/photos.service';
@@ -130,6 +130,8 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
     enabled: Number.isFinite(eventId) && canDelete,
   });
   const trashCount = trash?.items.length ?? 0;
+  // Byte-identical copies in this gallery (issue 2194).
+  const [showDuplicates, setShowDuplicates] = useState(false);
 
   // Deleting, hiding/showing or reviewing photos from this tab changes the
   // review bar's counts too, so every refresh also re-reads them.
@@ -139,6 +141,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
     queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
     queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id, 'moderation'] });
     queryClient.invalidateQueries({ queryKey: photoTrashQueryKey(eventId) });
+    queryClient.invalidateQueries({ queryKey: photoDuplicatesQueryKey(eventId) });
     queryClient.invalidateQueries({ queryKey: ['external-import-status', eventId] });
   };
   const moderationFilter = photoFilters.moderation;
@@ -329,6 +332,15 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           )}
         </div>
         <div className="flex flex-wrap items-start gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<Copy className="w-4 h-4" />}
+            onClick={() => setShowDuplicates(true)}
+            data-testid="photo-duplicates-open"
+          >
+            {t('admin.photos.duplicates.open')}
+          </Button>
           {/* Only while deleting goes to the trash, or something is still in it. */}
           {canDelete && ((trash?.retention_days ?? 0) > 0 || trashCount > 0) && (
             <Button
@@ -366,6 +378,15 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           }}
         />
       )}
+
+      <PhotoDuplicatesModal
+        eventId={eventId}
+        open={showDuplicates}
+        onClose={() => setShowDuplicates(false)}
+        canDelete={canDelete}
+        trashRetentionDays={trash?.retention_days}
+        onTrashed={refreshAfterPhotoChange}
+      />
 
       {/* Photo Grid */}
       {photosLoading ? (

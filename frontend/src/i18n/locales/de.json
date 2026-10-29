@@ -5520,6 +5520,31 @@
         "deleted_other": "{{count}} Fotos gelöscht",
         "deleteFailed_one": "{{count}} Foto konnte nicht gelöscht werden und ist noch in der Galerie",
         "deleteFailed_other": "{{count}} Fotos konnten nicht gelöscht werden und sind noch in der Galerie"
+      },
+      "duplicates": {
+        "open": "Duplikate",
+        "title": "Doppelte Fotos",
+        "intro": "Nur byte-identische Dateien werden erkannt: neu exportierte oder verkleinerte Kopien nicht, und Fotos ohne Hash (importiert, bevor gehasht wurde) werden nicht verglichen.",
+        "empty": "Keine Duplikate in dieser Galerie",
+        "emptyHelp": "Keine zwei Fotos hier haben dieselbe Datei.",
+        "loadFailed": "Die Duplikate konnten nicht geladen werden",
+        "copies_one": "{{count}} identische Kopie",
+        "copies_other": "{{count}} identische Kopien",
+        "keep": "Behalten",
+        "keepThis": "{{name}} behalten",
+        "keepOne_one": "Markiertes behalten, {{count}} in den Papierkorb",
+        "keepOne_other": "Markiertes behalten, {{count}} in den Papierkorb",
+        "keepAll_one": "Markiertes Foto in {{count}} Gruppe behalten",
+        "keepAll_other": "Markiertes Foto in allen {{count}} Gruppen behalten",
+        "trashed_one": "{{count}} Kopie in den Papierkorb verschoben",
+        "trashed_other": "{{count}} Kopien in den Papierkorb verschoben",
+        "failed": "Die Kopien konnten nicht in den Papierkorb verschoben werden",
+        "trashOff": "Der Papierkorb ist ausgeschaltet und Löschen ist endgültig, daher listet diese Ansicht die Kopien nur auf.",
+        "sourceAdmin": "Upload oder Import",
+        "sourceGuest": "Gast-Upload",
+        "sourceExternal": "Externer Ordner",
+        "range_one": "Gruppe {{from}}–{{to}} von {{count}}",
+        "range_other": "Gruppen {{from}}–{{to}} von {{count}}"
       }
     },
     "events": {

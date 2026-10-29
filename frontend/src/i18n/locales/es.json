@@ -2316,6 +2316,31 @@
         "deleteFailed_one": "No se pudo eliminar {{count}} foto; sigue en la galería",
         "deleteFailed_many": "No se pudieron eliminar {{count}} fotos; siguen en la galería",
         "deleteFailed_other": "No se pudieron eliminar {{count}} fotos; siguen en la galería"
+      },
+      "duplicates": {
+        "open": "Duplicados",
+        "title": "Fotos duplicadas",
+        "intro": "Solo coinciden archivos idénticos byte a byte: las copias reexportadas o redimensionadas no se detectan, y las fotos aún sin hash (importadas antes del hash) no se comparan.",
+        "empty": "No hay duplicados en esta galería",
+        "emptyHelp": "Ninguna foto de aquí comparte el mismo archivo con otra.",
+        "loadFailed": "No se pudieron cargar los duplicados",
+        "copies_one": "{{count}} copia idéntica",
+        "copies_other": "{{count}} copias idénticas",
+        "keep": "Conservar",
+        "keepThis": "Conservar {{name}}",
+        "keepOne_one": "Conservar la marcada, mover {{count}} a la papelera",
+        "keepOne_other": "Conservar la marcada, mover {{count}} a la papelera",
+        "keepAll_one": "Conservar la foto marcada en {{count}} grupo",
+        "keepAll_other": "Conservar la foto marcada en los {{count}} grupos",
+        "trashed_one": "{{count}} copia movida a la papelera",
+        "trashed_other": "{{count}} copias movidas a la papelera",
+        "failed": "No se pudieron mover las copias a la papelera",
+        "trashOff": "La papelera está desactivada y borrar es definitivo, así que esta vista solo enumera las copias.",
+        "sourceAdmin": "Subida o importación",
+        "sourceGuest": "Subida de invitado",
+        "sourceExternal": "Carpeta externa",
+        "range_one": "Grupo {{from}}–{{to}} de {{count}}",
+        "range_other": "Grupos {{from}}–{{to}} de {{count}}"
       }
     },
     "guests": {

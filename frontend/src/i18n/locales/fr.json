@@ -2403,6 +2403,31 @@
         "deleteFailed_one": "{{count}} photo n’a pas pu être supprimée et se trouve toujours dans la galerie",
         "deleteFailed_many": "{{count}} photos n’ont pas pu être supprimées et se trouvent toujours dans la galerie",
         "deleteFailed_other": "{{count}} photos n’ont pas pu être supprimées et se trouvent toujours dans la galerie"
+      },
+      "duplicates": {
+        "open": "Doublons",
+        "title": "Photos en double",
+        "intro": "Seuls les fichiers identiques octet par octet correspondent : les copies réexportées ou redimensionnées ne sont pas détectées, et les photos encore sans empreinte (importées avant le hachage) ne sont pas comparées.",
+        "empty": "Aucun doublon dans cette galerie",
+        "emptyHelp": "Aucune photo ici ne partage le même fichier qu’une autre.",
+        "loadFailed": "Impossible de charger les doublons",
+        "copies_one": "{{count}} copie identique",
+        "copies_other": "{{count}} copies identiques",
+        "keep": "Conserver",
+        "keepThis": "Conserver {{name}}",
+        "keepOne_one": "Conserver celle marquée, mettre {{count}} à la corbeille",
+        "keepOne_other": "Conserver celle marquée, mettre {{count}} à la corbeille",
+        "keepAll_one": "Conserver la photo marquée dans {{count}} groupe",
+        "keepAll_other": "Conserver la photo marquée dans les {{count}} groupes",
+        "trashed_one": "{{count}} copie mise à la corbeille",
+        "trashed_other": "{{count}} copies mises à la corbeille",
+        "failed": "Impossible de mettre les copies à la corbeille",
+        "trashOff": "La corbeille est désactivée et la suppression est définitive : cette vue ne fait que lister les copies.",
+        "sourceAdmin": "Envoi ou import",
+        "sourceGuest": "Envoi d’invité",
+        "sourceExternal": "Dossier externe",
+        "range_one": "Groupe {{from}}–{{to}} sur {{count}}",
+        "range_other": "Groupes {{from}}–{{to}} sur {{count}}"
       }
     },
     "events": {
