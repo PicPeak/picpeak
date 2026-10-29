@@ -1442,19 +1442,28 @@ router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission(
     }
 
     // One resolve at a time per gallery: two admins keeping different photos
-    // of one group must not trash every copy between them. The gallery row is
-    // locked on PostgreSQL (SQLite runs one write transaction at a time), and
-    // each kept photo is read again under the lock, so a keep the other
-    // request already trashed trashes nothing here.
+    // of one group must not trash every copy between them. On PostgreSQL the
+    // gallery row and then the group's photo rows are locked, so neither a
+    // second resolve nor a replacement upload (which rewrites content_sha256)
+    // can change them between the read and the trash; SQLite runs every query
+    // on one connection, so the transaction alone serialises it. Each kept
+    // photo is read again under the lock: a keep the other request already
+    // trashed, or one replaced by different bytes, trashes nothing here.
     const gone = await db.transaction(async (trx) => {
+      const pg = trx.client.config.client === 'pg';
       const gallery = trx('events').where({ id: eventId });
-      if (trx.client.config.client === 'pg') gallery.forUpdate();
+      if (pg) gallery.forUpdate();
       await gallery.first('id');
       const trashed = [];
       for (const stale of kept) {
-        const keep = await livePhotos(trx).where({ id: stale.id, event_id: eventId }).first();
+        if (!stale.content_sha256) continue;
+        const group = livePhotos(trx).where({ event_id: eventId, content_sha256: stale.content_sha256 }).orderBy('id');
+        if (pg) group.forUpdate();
+        const rows = await group;
+        const keep = rows.find((row) => Number(row.id) === Number(stale.id));
         if (!keep) continue;
         for (const photo of await duplicatesOf(eventId, keep, trx)) {
+          if (!rows.some((row) => Number(row.id) === Number(photo.id))) continue;
           if (await photoTrash.trashPhoto(photo, req.admin.id, retentionDays, Date.now(), trx)) trashed.push(photo);
         }
       }
