@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { useState } from 'react';
-import { GalleryPrintShop } from '../GalleryPrintShop';
+import { GalleryPrintShop, PrintSalesProvider, PrintShopEntry } from '../GalleryPrintShop';
 import { PrintSalesAdminPage } from '../AdminPage';
+import { SpatialPreview } from '../SpatialPreview';
+import { usePrintSales } from '../PrintSalesContext';
 import { centredCrop } from '../CropEditor';
 import { ProfileEditor } from '../ProfileEditor';
 import { api } from '../../../config/api';
@@ -13,8 +15,8 @@ const permissions = vi.hoisted(() => ({ enabled: true, manage: true }));
 vi.mock('react-i18next', async original => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }) }));
 vi.mock('../../../contexts/PermissionsContext', () => ({ usePermissions: () => ({ hasPermission: (p: string) => permissions.manage || !['products.manage', 'products.configure', 'bills.manage', 'customers.edit'].includes(p) }) }));
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => permissions.enabled }));
-vi.mock('../../../components/common/AuthenticatedImage', () => ({ AuthenticatedImage: ({ onLoad, isGallery: _gallery, slug: _slug, ...props }: any) =>
-  <img {...props} onLoad={() => onLoad?.({ width: 400, height: 600 })} /> }));
+vi.mock('../../../components/common/AuthenticatedImage', () => ({ AuthenticatedImage: ({ onLoad, onUnavailable, isGallery: _gallery, slug: _slug, ...props }: any) =>
+  <img {...props} onError={() => onUnavailable?.(true)} onLoad={() => onLoad?.(props.src?.includes('landscape') ? { width: 800, height: 400 } : { width: 400, height: 600 })} /> }));
 vi.mock('../../../components/admin/SettingsSaveBar', () => ({ SettingsSaveBar: ({ onSave, isDirty }: any) => <button disabled={!isDirty} onClick={onSave}>Save print settings</button> }));
 vi.mock('../../../config/api', () => ({ api: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
 const photo = { id: 1, filename: 'sample.jpg', original_filename: 'camera.jpg', url: '/synthetic.jpg', width: 400, height: 600 } as Photo;
@@ -33,14 +35,16 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 async function addItem() {
-  fireEvent.change(await screen.findByLabelText('Photograph'), { target: { value: '1' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Choose prints' }));
+  fireEvent.click(screen.getByRole('button', { name: /camera.jpg/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Choose print options (1)' }));
   fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
   fireEvent.click(screen.getByRole('button', { name: 'Add to basket' }));
 }
 describe('gallery print order journey', () => {
   it('reviews the server total and requires explicit selection acknowledgement before acceptance', async () => {
     render(<GalleryPrintShop slug="fixture" photos={[photo]} />); await addItem();
-    fireEvent.change(screen.getAllByLabelText('Copies')[1], { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Copies: camera.jpg'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Review selections and final total' }));
     const confirm = await screen.findByRole('button', { name: 'Confirm order and request invoice' });
     expect(confirm).toBeDisabled(); expect(screen.getByText('Synthetic buyer policy')).toBeInTheDocument();
@@ -74,13 +78,133 @@ describe('gallery print order journey', () => {
   it('isolates stored baskets between buyer scopes', async () => {
     sessionStorage.setItem('print-basket:another-buyer', JSON.stringify([{ photoId: 999 }]));
     render(<GalleryPrintShop slug="fixture" photos={[photo]} />);
-    await screen.findByLabelText('Photograph');
+    await screen.findByRole('button', { name: 'Choose prints' });
     expect(screen.queryByText('Your basket')).not.toBeInTheDocument();
   });
   it('quietly withdraws a disabled shop', async () => {
     vi.mocked(api.get).mockRejectedValue({ response: { status: 403 } });
     const { container } = render(<GalleryPrintShop slug="fixture" photos={[photo]} />);
     await waitFor(() => expect(api.get).toHaveBeenCalled()); expect(container).toBeEmptyDOMElement();
+  });
+  it('retains the source crop and copies when selecting more, and centres each new photograph independently', async () => {
+    const second = { ...photo, id: 2, filename: 'second.jpg', original_filename: 'second.jpg', url: '/landscape.jpg' };
+    render(<GalleryPrintShop slug="fixture" photos={[photo, second]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose prints' }));
+    fireEvent.click(screen.getByRole('button', { name: /camera.jpg/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose print options (1)' }));
+    fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
+    fireEvent.change(screen.getByLabelText('Crop zoom'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Copies for this photograph'), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Select more photographs' }));
+    fireEvent.click(screen.getByRole('button', { name: /second.jpg/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose print options (2)' }));
+    fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
+    expect(screen.getByLabelText('Crop zoom')).toHaveValue('2');
+    expect(screen.getByLabelText('Copies for this photograph')).toHaveValue(3);
+    expect(screen.getByRole('button', { name: 'Add to basket (2)' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'second.jpg' }));
+    fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
+    expect(screen.getByLabelText('Crop zoom')).toHaveValue('1');
+    fireEvent.click(screen.getByRole('button', { name: 'Add to basket (2)' }));
+    await waitFor(() => {
+      const lines = JSON.parse(sessionStorage.getItem('print-basket:buyer-1') || '[]');
+      expect(lines).toHaveLength(2); expect(lines.map((i: any) => i.quantity)).toEqual([3, 3]);
+      expect(lines[0].crop).toEqual({ x: .25, y: .25, width: .5, height: .5 });
+      expect(lines[1].crop.width).toBeCloseTo(1 / 3); expect(lines[1].crop.height).toBe(1);
+    });
+  });
+  it('retains selections across searches and beyond the first page', async () => {
+    const photos = Array.from({ length: 30 }, (_, n) => ({ ...photo, id: n + 1, original_filename: `image-${n + 1}.jpg` }));
+    render(<GalleryPrintShop slug="fixture" photos={photos} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose prints' }));
+    fireEvent.click(screen.getByRole('button', { name: /image-1.jpg/ }));
+    fireEvent.change(screen.getByLabelText('Find a photograph'), { target: { value: 'image-30' } });
+    fireEvent.click(screen.getByRole('button', { name: /image-30.jpg/ }));
+    fireEvent.change(screen.getByLabelText('Find a photograph'), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: /image-1.jpg/ })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Choose print options (2)' }));
+    expect(screen.getByRole('button', { name: 'image-1.jpg' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'image-30.jpg' })).toBeInTheDocument();
+  });
+  it('never persists an invalid quantity and prevents a quotation while it is invalid', async () => {
+    render(<GalleryPrintShop slug="fixture" photos={[photo]} />); await addItem();
+    const input = screen.getByLabelText('Copies: camera.jpg');
+    for (const value of ['', '0', '101', '1.5']) {
+      fireEvent.change(input, { target: { value } });
+      expect(screen.getByRole('button', { name: 'Review selections and final total' })).toBeDisabled();
+      expect(JSON.parse(sessionStorage.getItem('print-basket:buyer-1')!)[0].quantity).toBe(1);
+    }
+    fireEvent.blur(input);
+    expect(input).toHaveValue(1); expect(screen.getByRole('button', { name: 'Review selections and final total' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'More copies: Copies: camera.jpg' }));
+    expect(input).toHaveValue(2);
+  });
+  it('keeps a ready preview when clicking the active photo and clears invalid text when switching photos', async () => {
+    const second = { ...photo, id: 2, original_filename: 'second.jpg', url: '/second.jpg' };
+    render(<GalleryPrintShop slug="fixture" photos={[photo, second]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose prints' }));
+    fireEvent.click(screen.getByRole('button', { name: /camera.jpg/ })); fireEvent.click(screen.getByRole('button', { name: /second.jpg/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose print options (2)' })); fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
+    fireEvent.click(screen.getByRole('button', { name: 'second.jpg' })); fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
+    const add = screen.getByRole('button', { name: 'Add to basket (2)' }); expect(add).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'second.jpg' })); expect(add).toBeEnabled();
+    fireEvent.change(screen.getByLabelText('Copies for this photograph'), { target: { value: '0' } }); expect(add).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'camera.jpg' })); fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
+    expect(screen.getByLabelText('Copies for this photograph')).toHaveValue(1); expect(add).toBeEnabled();
+  });
+  it('holds adding until the preview loads and withdraws it when the preview fails', async () => {
+    render(<GalleryPrintShop slug="fixture" photos={[photo]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose prints' }));
+    fireEvent.click(screen.getByRole('button', { name: /camera.jpg/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose print options (1)' }));
+    const add = screen.getByRole('button', { name: 'Add to basket' }), image = screen.getByAltText('Selected photograph and print crop');
+    expect(add).toBeDisabled(); fireEvent.load(image); expect(add).toBeEnabled(); fireEvent.error(image); expect(add).toBeDisabled();
+  });
+  it('uses finished trim dimensions for spatial scale without modifying the crop', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/orders') ? { orders: [] } : { variants: [{ ...variant, trimMm: { width: 100, height: 150 }, bleedMm: { left: 5, top: 5, right: 5, bottom: 5 }, artwork: { widthMm: 110, heightMm: 160 } }], countries: ['IE'], basketScope: 'buyer-1' } }) as any);
+    render(<GalleryPrintShop slug="fixture" photos={[photo]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose prints' })); fireEvent.click(screen.getByRole('button', { name: /camera.jpg/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose print options (1)' })); fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
+    fireEvent.change(screen.getByLabelText('Crop zoom'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'See it in a space' }));
+    expect(screen.getByTestId('spatial-print').style.width).toBe(`${100 / 1200 * 100}%`);
+    expect(parseFloat((screen.getByTestId('spatial-print').firstElementChild as HTMLElement).style.width)).toBeCloseTo(110);
+    expect(parseFloat((screen.getByTestId('spatial-print').firstElementChild as HTMLElement).style.top)).toBeCloseTo(-5 / 150 * 100);
+    fireEvent.click(screen.getByRole('button', { name: 'On a wall' }));
+    expect(screen.getByTestId('spatial-print').style.width).toBe(`${100 / 3000 * 100}%`);
+    expect(screen.getByLabelText('Crop zoom')).toHaveValue('2');
+    fireEvent.click(screen.getByRole('button', { name: 'Add to basket' }));
+    expect(JSON.parse(sessionStorage.getItem('print-basket:buyer-1')!)[0].crop.width).toBe(.5);
+  });
+  it('does not shrink oversized art to fit a desk or invent trim dimensions for an older offer', () => {
+    const props = { slug: 'fixture', src: '/sample.jpg', crop: { x: 0, y: 0, width: 1, height: 1 }, fit: 'cover' };
+    const { rerender, container } = render(<SpatialPreview {...props} variant={variant} />);
+    expect(container).toBeEmptyDOMElement();
+    rerender(<SpatialPreview {...props} variant={{ ...variant, trimMm: { width: 900, height: 1200 } }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'See it in a space' }));
+    expect(screen.getByTestId('spatial-print')).toBeInTheDocument(); fireEvent.click(screen.getByRole('button', { name: 'On a desk' }));
+    expect(screen.queryByTestId('spatial-print')).not.toBeInTheDocument(); expect(screen.getByRole('status')).toHaveTextContent('does not fit');
+  });
+  it('never silently drops an oversized gallery selection and performs no requests when unavailable', async () => {
+    const photos = Array.from({ length: 21 }, (_, n) => ({ ...photo, id: n + 1, original_filename: `image-${n + 1}.jpg` }));
+    const { rerender } = render(<PrintSalesProvider slug="fixture" enabled={false} photos={photos}><PrintShopEntry /></PrintSalesProvider>);
+    expect(api.get).not.toHaveBeenCalled();
+    rerender(<PrintSalesProvider slug="fixture" photos={photos} selectedPhotoIds={new Set(photos.map(p => p.id))}><PrintShopEntry /></PrintSalesProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose prints' }));
+    expect(screen.getByRole('button', { name: 'Choose print options (21)' })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Deselect');
+    fireEvent.click(screen.getByRole('button', { name: /image-1.jpg/ }));
+    expect(screen.getByRole('button', { name: 'Choose print options (20)' })).toBeEnabled();
+  });
+  it('starts directly on a viewed photograph and retains its draft on closing and reopening', async () => {
+    function Opener() { const shop = usePrintSales(); return <button disabled={!shop?.available} onClick={() => shop?.openPhoto(1)}>Print viewed photo</button>; }
+    render(<PrintSalesProvider slug="fixture" photos={[photo]}><Opener /></PrintSalesProvider>);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Print viewed photo' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Print viewed photo' })); fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
+    fireEvent.change(screen.getByLabelText('Crop zoom'), { target: { value: '2' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Print viewed photo' })); fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
+    expect(screen.getByLabelText('Crop zoom')).toHaveValue('2');
   });
   it('derives an aspect-correct centred crop and bounded zoom', () => {
     expect(centredCrop(2, 1)).toEqual({ x: .25, y: 0, width: .5, height: 1 });

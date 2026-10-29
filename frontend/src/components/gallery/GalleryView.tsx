@@ -1,4 +1,4 @@
-import { GalleryPrintShop } from '../../features/print-sales/GalleryPrintShop';
+import { PrintSalesProvider, PrintShopEntry } from '../../features/print-sales/GalleryPrintShop';
 import { GalleryProductPanel } from '../../features/album-products/GalleryProductPanel';
 import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 import { GalleryUnavailableNotice } from './GalleryUnavailableNotice';
@@ -1791,6 +1791,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // Premium and Story already ask for it (ensureIdentity) before a like,
       // and finishing a selection needs it too. Without the provider a guest
       // in guest identity mode was never asked for a name and got a 401.
+      <PrintSalesProvider slug={slug} enabled={viaCustomer} photos={data?.photos || []} selectedPhotoIds={selectedPhotos}>
       <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <DownloadQuotaProvider slug={slug} event={data?.event}>
       <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
@@ -2018,7 +2019,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         </PhotoSalesProvider>
 
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
-        {viaCustomer && <GalleryPrintShop slug={slug} photos={filteredPhotos} />}
+        <PrintShopEntry />
 
         {/* Filename list for a RAW editor search (issue 1733, A3d). */}
         {showCopyFilenames && (
@@ -2033,10 +2034,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       </PhotoDownloadChoiceProvider>
       </DownloadQuotaProvider>
       </GuestIdentityProvider>
+      </PrintSalesProvider>
     );
   }
 
   return (
+    <PrintSalesProvider slug={slug} enabled={viaCustomer} photos={data?.photos || []} selectedPhotoIds={selectedPhotos}>
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
     <DownloadQuotaProvider slug={slug} event={data?.event}>
       <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
@@ -2225,7 +2228,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       >
         {clientAccessDialog}
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
-        {viaCustomer && <GalleryPrintShop slug={slug} photos={filteredPhotos} />}
+        <PrintShopEntry />
         {/* Expiration Banner */}
         {showUrgentWarning && event.expires_at && (
           <ExpirationBanner daysRemaining={daysUntilExpiration} expiresAt={event.expires_at} />
@@ -2612,5 +2615,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       </PhotoDownloadChoiceProvider>
     </DownloadQuotaProvider>
     </GuestIdentityProvider>
+    </PrintSalesProvider>
   );
 };

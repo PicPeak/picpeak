@@ -90,7 +90,8 @@ function createService({ db, storage, sharp }) {
           crop: { x: 0, y: 0, width: 1, height: 1 }, fit: p.definition.manufacturing.fitModes[0] }], { includeDelivery: false });
         const item = plan.items[0];
         variants.push({ id: p.definition.id, version: item.profile.version, selection: item.profile.selection,
-          artwork: item.profile.artwork, fitModes: item.profile.manufacturing.fitModes,
+          artwork: item.profile.artwork, trimMm: item.profile.manufacturing.trimMm, bleedMm: item.profile.manufacturing.bleedMm,
+          fitModes: item.profile.manufacturing.fitModes,
           background: item.profile.manufacturing.background ?? '#ffffff', currency: plan.currency, unitPriceMinor: item.unitPriceMinor });
       } catch (error) {
         if (![400, 409].includes(error.statusCode)) throw error;

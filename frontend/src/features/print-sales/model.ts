@@ -24,6 +24,7 @@ export interface Settings {
 }
 export interface Variant {
   id: string; version: string; selection: Choice; artwork: { widthMm: number; heightMm: number };
+  trimMm?: { width: number; height: number }; bleedMm?: Edges;
   fitModes: ('cover' | 'contain')[]; background?: string; currency: string; unitPriceMinor: number;
 }
 export interface CartItem { photoId: number; profileId: string; quantity: number; crop: Crop; fit: 'cover' | 'contain' }

@@ -204,6 +204,8 @@ test('HTTP permissions deny shared gallery passwords and unassigned customer ide
   expect((await request(galleryApp).get(root).set('Authorization', `Bearer ${galleryToken({ customerId: customerId + 999 })}`)).status).toBeGreaterThanOrEqual(400);
   const response = await request(galleryApp).get(root).set('Authorization', `Bearer ${galleryToken()}`);
   expect(response.status).toBe(200); expect(response.body.variants).toHaveLength(1);
+  expect(response.body.variants[0].trimMm).toEqual(definition.manufacturing.trimMm);
+  expect(response.body.variants[0].bleedMm).toEqual(definition.manufacturing.bleedMm);
   expect(JSON.stringify(response.body)).not.toContain('storage_key');
 });
 test('HTTP shop switch is default-off and disabled flags block configuration but preserve admin order reads', async () => {

@@ -5,9 +5,9 @@
  * a ref, and rewriting the address bar on every render would trip Safari's
  * replaceState rate limit.
  */
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, screen, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import type { Photo } from '../../../types';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string, d?: unknown) => (typeof d === 'string' ? d : k) }) }));
@@ -27,12 +27,15 @@ vi.mock('../../common', () => ({
 }));
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn() } }));
 
+import { PrintSalesContext } from '../../../features/print-sales/PrintSalesContext';
 import { PhotoLightbox } from '../PhotoLightbox';
 import { DownloadQuotaProvider } from '../../../contexts/DownloadQuotaContext';
 
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
 
 const photos = [10, 11, 12].map((id) => ({ id, filename: `${id}.jpg`, url: `/p/${id}`, thumbnail_url: `/t/${id}` } as Photo));
+
+afterEach(cleanup);
 
 describe('PhotoLightbox onCurrentPhotoChange (issue 1733)', () => {
   it('fires for the opening photo and for every step, not for every render', () => {
@@ -62,5 +65,22 @@ describe('PhotoLightbox onCurrentPhotoChange (issue 1733)', () => {
     fireEvent.keyDown(document, { key: 'ArrowLeft' });
     expect(onCurrentPhotoChange).toHaveBeenLastCalledWith(10);
     expect(onCurrentPhotoChange).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('physical print entry', () => {
+  it('opens the current photograph after closing the lightbox, only when authorised', () => {
+    const openPhoto = vi.fn(), close = vi.fn();
+    const ui = (available: boolean) => <QueryClientProvider client={new QueryClient()}><DownloadQuotaProvider slug="g" event={{} as never}>
+      <PrintSalesContext.Provider value={{ available, count: 0, openPhoto, openBulk: vi.fn(), openBasket: vi.fn() }}>
+        <PhotoLightbox photos={photos} initialIndex={1} onClose={close} slug="g" />
+      </PrintSalesContext.Provider>
+    </DownloadQuotaProvider></QueryClientProvider>;
+    const { rerender } = render(ui(false));
+    expect(screen.queryByRole('button', { name: 'Print this photograph' })).not.toBeInTheDocument();
+    rerender(ui(true)); fireEvent.keyDown(document, { key: 'ArrowRight' });
+    fireEvent.click(screen.getByRole('button', { name: 'Print this photograph' }));
+    expect(openPhoto).toHaveBeenCalledWith(12); expect(close).toHaveBeenCalledTimes(1);
+    expect(close.mock.invocationCallOrder[0]).toBeLessThan(openPhoto.mock.invocationCallOrder[0]);
   });
 });
