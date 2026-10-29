@@ -272,6 +272,12 @@ async function deleteClaimedEvent(eventId, event, adminContext, supersededArchiv
     }
 
     await trx('photos').where('event_id', eventId).del();
+    // Favourite lists (issue 2303) carry the names guests gave them: the same
+    // inert-cascade reason. After the photos, whose delete takes the
+    // favourites in the lists with it on PostgreSQL.
+    if (await trx.schema.hasTable('favorite_lists')) {
+      await trx('favorite_lists').where('event_id', eventId).del();
+    }
     // Scene tags (issue 1733): the same inert-cascade reason. After the
     // photos, not with the face data above: a tagging worker locks the photo
     // row before its tags, and the reverse order can deadlock on PostgreSQL.

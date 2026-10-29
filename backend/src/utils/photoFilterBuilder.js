@@ -72,6 +72,48 @@ function whereDecision(builder, decisions) {
   });
 }
 
+/**
+ * The favourite-list filter (issue 2303), parsed from `favorite_list` ('default'
+ * or a list id) and `favorite_guest` (a registered guest's id). Null when
+ * neither is a usable value, so a malformed one is ignored like an unknown
+ * colour.
+ */
+function normalizeFavoriteListFilter({ favorite_list: list, favorite_guest: guest } = {}) {
+  const guestId = Number(guest);
+  const filter = { guestId: Number.isSafeInteger(guestId) && guestId > 0 ? guestId : null, listId: undefined };
+  if (list === 'default') filter.listId = null;
+  else if (list !== undefined && list !== null && list !== '') {
+    const listId = Number(list);
+    if (Number.isSafeInteger(listId) && listId > 0) filter.listId = listId;
+  }
+  if (filter.listId === undefined && filter.guestId === null) return null;
+  return filter;
+}
+
+/**
+ * Narrow to the photos saved in one favourite list, or by one guest in any of
+ * their lists (issue 2303). The admin reaches it from the guest detail ("show
+ * in photos"). A list of another gallery matches nothing. Always ANDed: it is
+ * the set the admin is looking at, not one more feedback criterion.
+ */
+function whereInFavoriteList(builder, eventId, { listId, guestId }) {
+  return builder.whereExists(function () {
+    this.select('*')
+      .from('photo_feedback')
+      .whereRaw('photo_feedback.photo_id = photos.id')
+      .where('photo_feedback.event_id', eventId)
+      .where('photo_feedback.feedback_type', 'favorite')
+      .where('photo_feedback.is_hidden', false);
+    if (guestId) this.where('photo_feedback.guest_id', guestId);
+    if (listId === null) this.whereNull('photo_feedback.favorite_list_id');
+    else if (listId !== undefined) {
+      this.whereIn('photo_feedback.favorite_list_id', function () {
+        this.select('id').from('favorite_lists').where({ id: listId, event_id: eventId });
+      });
+    }
+  });
+}
+
 class PhotoFilterBuilder {
   constructor(queryBuilder, eventId, identityMode = 'simple') {
     this.query = queryBuilder;
@@ -107,6 +149,9 @@ class PhotoFilterBuilder {
 
     // Always filter by event
     this.query.where('photos.event_id', this.eventId);
+
+    const favoriteList = normalizeFavoriteListFilter(filters);
+    if (favoriteList) whereInFavoriteList(this.query, this.eventId, favoriteList);
 
     // Build conditions array
     const conditions = [];
@@ -356,4 +401,7 @@ class PhotoFilterBuilder {
   }
 }
 
-module.exports = { PhotoFilterBuilder, normalizeColorLabels, normalizeDecisionFilter, whereDecision };
+module.exports = {
+  PhotoFilterBuilder, normalizeColorLabels, normalizeDecisionFilter, whereDecision,
+  normalizeFavoriteListFilter, whereInFavoriteList,
+};

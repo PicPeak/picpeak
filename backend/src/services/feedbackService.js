@@ -8,6 +8,7 @@ const { isValidDecision } = require('../constants/photoDecisions');
 const { resolveEventFeedbackDefaults, DEFAULT_KEYBIND_MODE, KEYBIND_MODES } = require('./feedbackDefaults');
 const { applyPhotoVisibilityFilter, joinLivePhotos, livePhotos, wherePhotoLive, wherePhotoProcessed, wherePhotoProcessedById } = require('../utils/photoVisibility');
 const selectionSubmissions = require('./selectionSubmissions');
+const favoriteLists = require('./favoriteLists');
 const { serializeAnnotation, withParsedAnnotation } = require('../utils/photoAnnotation');
 
 // The camera-original name, for the feedback exports (#1224). Both exports
@@ -49,6 +50,7 @@ const FEEDBACK_SETTINGS_COLUMNS = [
   'allow_favorites',
   'allow_reactions',
   'allow_color_labels',
+  'allow_favorite_lists',
   'allow_decisions',
   'allow_selection_submit',
   'allow_annotations',
@@ -119,6 +121,22 @@ function scopeColorLabelsToMode(query, identityMode, column = 'guest_identifier'
     this.whereNot(column, SHARED_COLOR_LABEL_IDENTITY).orWhereNull(column);
   });
 }
+
+/**
+ * Narrow a favourite query to one list (issue 2303). `listId` undefined is a
+ * gallery without lists: every list counts, as before lists existed, so a
+ * favourite left in a list after the toggle went off still reads as saved and
+ * one click still clears it. NULL is the guest's default list.
+ */
+function scopeFavoriteList(query, feedbackType, listId, column = 'favorite_list_id') {
+  if (feedbackType !== 'favorite' || listId === undefined) return query;
+  return listId === null ? query.whereNull(column) : query.where(column, listId);
+}
+
+// One guest's identity in SQL, as feedback_count counts it, with a row of no
+// identity at all (pre-078) counted on its own rather than dropped.
+const GUEST_KEY_SQL = 'COALESCE(CAST(photo_feedback.guest_id AS VARCHAR), photo_feedback.guest_identifier, '
+  + '\'row:\' || CAST(photo_feedback.id AS VARCHAR))';
 
 function pickSettingsColumns(settings) {
   const picked = {};
@@ -242,7 +260,7 @@ class FeedbackService {
    * duplicate-check uses (guest_id when present, fall back to
    * guest_identifier). Used for the per-guest favorite/like caps (#655).
    */
-  async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier, executor = db) {
+  async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier, executor = db, favoriteListId = undefined) {
     const query = executor('photo_feedback')
       // Nor do likes on photos in the trash: the guest cannot see or undo them.
       .modify(wherePhotoLive, 'photo_feedback.photo_id')
@@ -261,6 +279,13 @@ class FeedbackService {
       query.where('guest_id', guestId);
     } else {
       query.where('guest_identifier', guestIdentifier);
+    }
+    // The favourites cap is per list (issue 2303), and a photo counts once:
+    // without lists it may still sit in two lists left from when they were on.
+    if (feedbackType === 'favorite') {
+      scopeFavoriteList(query, feedbackType, favoriteListId);
+      const distinct = await query.countDistinct('photo_feedback.photo_id as count').first();
+      return parseInt(distinct?.count, 10) || 0;
     }
     const result = await query.count('* as count').first();
     return parseInt(result?.count, 10) || 0;
@@ -542,13 +567,22 @@ class FeedbackService {
       if (lock) {
         return { locked: true, kind: lock.kind, submitted_at: lock.submitted_at };
       }
-      return this.writeGuestFeedback(photoId, eventId, feedbackData, guestIdentifier, trx, cap);
+      // A favourite saved into a named list (issue 2303): the list is this
+      // viewer's, checked under the lock its deletion takes as well, so the
+      // row never points at a list that is gone.
+      const listId = feedback_type === 'favorite' ? feedbackData.favorite_list_id : undefined;
+      if (listId && !(await favoriteLists.findOwnList(eventId, viewer, listId, trx))) {
+        return { list_missing: true };
+      }
+      const written = await this.writeGuestFeedback(photoId, eventId, feedbackData, guestIdentifier, trx, cap);
+      if (listId && !written.limit_reached && !written.guest_missing) await favoriteLists.touch(listId, trx);
+      return written;
     });
     // The photo's counters are rebuilt after the commit, as they were before
     // the write had a transaction. Inside it the aggregate would not see
     // another guest's like on the same photo that is still uncommitted (the
     // lock is per guest), and the two would each store a count of one.
-    if (!result.locked && !result.guest_missing && !result.limit_reached) {
+    if (!result.locked && !result.guest_missing && !result.limit_reached && !result.list_missing) {
       await this.updatePhotoFeedbackStats(photoId);
     }
     return result;
@@ -565,6 +599,10 @@ class FeedbackService {
   async writeGuestFeedback(photoId, eventId, feedbackData, guestIdentifier, executor, cap = null) {
     try {
       const { feedback_type, rating, comment_text, reaction, color_label, decision, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
+      // The list a favourite goes to (issue 2303): undefined without lists,
+      // null for the default list, else a list the caller checked is the
+      // guest's own.
+      const favoriteListId = feedback_type === 'favorite' ? feedbackData.favorite_list_id : undefined;
 
       const recount = () => (executor.isTransaction ? undefined : this.updatePhotoFeedbackStats(photoId));
 
@@ -603,6 +641,9 @@ class FeedbackService {
         } else {
           duplicateQuery.where('guest_identifier', guestIdentifier);
         }
+        // Per list (issue 2303): one photo can sit in several of a guest's
+        // lists, so the same photo in another list is not a duplicate.
+        scopeFavoriteList(duplicateQuery, feedback_type, favoriteListId);
         const existing = await duplicateQuery.first();
 
         if (existing) {
@@ -744,6 +785,8 @@ class FeedbackService {
             });
             if (guest_id) selection.where('guest_id', guest_id);
             else selection.where('guest_identifier', guestIdentifier);
+            // Only this list's copy (issue 2303); the photo stays in the others.
+            scopeFavoriteList(selection, feedback_type, favoriteListId);
             await selection.delete();
 
             await recount();
@@ -766,7 +809,7 @@ class FeedbackService {
       if (feedback_type === 'favorite' || feedback_type === 'like') {
         if (cap && cap > 0) {
           const currentCount = await this.countGuestFeedback(
-            eventId, feedback_type, guest_id, guestIdentifier, executor,
+            eventId, feedback_type, guest_id, guestIdentifier, executor, favoriteListId,
           );
           if (currentCount >= cap) {
             // Don't insert; surface a structured payload so the route layer
@@ -798,6 +841,8 @@ class FeedbackService {
         reaction: feedback_type === 'reaction' ? reaction : null,
         color_label: feedback_type === 'color_label' ? color_label : null,
         decision: feedback_type === 'decision' ? decision : null,
+        // NULL is the default list, and the only value without lists.
+        ...(favoriteListId ? { favorite_list_id: favoriteListId } : {}),
         // A drawing belongs to a comment (issue 1733). Re-serialised from the
         // validated structure here, whatever the caller handed over.
         ...(storedAnnotation ? { annotation: storedAnnotation } : {}),
@@ -922,7 +967,10 @@ class FeedbackService {
       // Newest first; the id breaks a same-second tie.
       const feedback = await query
         .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
-        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'color_label', 'decision', 'annotation', 'guest_name', 'created_at', 'updated_at', 'is_approved', 'is_hidden');
+        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'color_label', 'decision', 'annotation', 'guest_name', 'created_at', 'updated_at', 'is_approved', 'is_hidden',
+          // The viewer's own lists only (issue 2303): another guest's list
+          // ids are nobody else's business.
+          ...(options.with_favorite_list ? ['favorite_list_id'] : []));
 
       // Rating rows are re-ranked among themselves by last mutation, so the
       // viewer's own rating (the first rating row the route finds) is the
@@ -983,7 +1031,11 @@ class FeedbackService {
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_ratings', ['rating']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_likes', ['like']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_comments', ['comment']),
-          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_favorites', ['favorite']),
+          // A (guest, photo) pair once, whatever lists hold it (issue 2303).
+          db.raw(
+            `COUNT(DISTINCT CASE WHEN feedback_type = ? THEN ${GUEST_KEY_SQL} || ':' || CAST(photo_feedback.photo_id AS VARCHAR) END) as total_favorites`,
+            ['favorite'],
+          ),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_reactions', ['reaction']),
           // Approve / reject (issue 744), per guest like reactions.
           db.raw('COUNT(CASE WHEN feedback_type = ? AND decision = ? THEN 1 END) as total_approved', ['decision', 'approved']),
@@ -1162,7 +1214,9 @@ class FeedbackService {
         .select(
           trx.raw('COUNT(CASE WHEN feedback_type = ? AND is_approved = ? THEN 1 END) as comment_count', ['comment', formatBoolean(true)]),
           trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as like_count', ['like']),
-          trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as favorite_count', ['favorite']),
+          // Distinct guests who saved it (issue 2303): a photo in two of one
+          // guest's lists is one favourite, as it was before lists.
+          trx.raw(`COUNT(DISTINCT CASE WHEN feedback_type = ? THEN ${GUEST_KEY_SQL} END) as favorite_count`, ['favorite']),
           trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as reaction_count', ['reaction']),
           colorLabelCount,
           ...decisionCounts,
@@ -1389,12 +1443,19 @@ class FeedbackService {
           'photo_feedback.guest_email',
           'photo_feedback.created_at',
           // Who took / uploaded the photo (#1561), beside who reacted to it.
-          'photos.credit_name as credit'
+          'photos.credit_name as credit',
+          'photo_feedback.favorite_list_id'
         )
         .orderBy('photos.filename')
         .orderBy('photo_feedback.created_at');
 
-      return feedback;
+      // The list a favourite is in (issue 2303), by name, last so existing
+      // column positions hold. Blank for every other type.
+      const listNames = await favoriteLists.namesForEvent(eventId);
+      return feedback.map(({ favorite_list_id: listId, ...row }) => ({
+        ...row,
+        favorite_list: row.feedback_type === 'favorite' ? favoriteLists.exportName(listNames, listId) : '',
+      }));
     } catch (error) {
       logger.error('Error exporting feedback:', error);
       throw error;
@@ -1432,10 +1493,12 @@ class FeedbackService {
           'photo_feedback.guest_email',
           'photo_feedback.guest_identifier',
           'photo_feedback.created_at',
-          'photos.credit_name as credit'
+          'photos.credit_name as credit',
+          'photo_feedback.favorite_list_id'
         )
         .orderBy('photos.filename')
         .orderBy('photo_feedback.guest_identifier');
+      const listNames = await favoriteLists.namesForEvent(eventId);
 
       const byKey = new Map();
       for (const row of rows) {
@@ -1461,6 +1524,8 @@ class FeedbackService {
             decision: '',
             decision_reason: '',
             latest_at: row.created_at,
+            // Every list the guest saved the photo in (issue 2303).
+            favorite_lists: '',
           };
           byKey.set(key, entry);
         }
@@ -1469,9 +1534,13 @@ class FeedbackService {
         if (!entry.guest_email && row.guest_email) entry.guest_email = row.guest_email;
 
         switch (row.feedback_type) {
-        case 'favorite':
+        case 'favorite': {
           entry.is_favorited = true;
+          const listName = favoriteLists.exportName(listNames, row.favorite_list_id);
+          const names = entry.favorite_lists ? entry.favorite_lists.split('; ') : [];
+          if (!names.includes(listName)) entry.favorite_lists = [...names, listName].join('; ');
           break;
+        }
         case 'like':
           entry.is_liked = true;
           break;
@@ -1636,6 +1705,9 @@ class FeedbackService {
             guest_email: null,
             updated_at: new Date(),
           });
+        // Their favourite lists (issue 2303) go the same way as the
+        // favourites in them: kept, detached from the person.
+        await favoriteLists.anonymizeGuest(guestId, trx);
       });
 
       for (const pid of photoIds) {
@@ -1674,8 +1746,13 @@ class FeedbackService {
         const scope = () => trx('photo_feedback')
           .where({ event_id: survivor.event_id })
           .whereIn('guest_id', [keepGuestId, ...sources]);
+        // The lists first (issue 2303): same-named lists fold into one, so the
+        // dedupe below sees the favourites under the list they end up in.
+        await favoriteLists.mergeGuests(trx, survivor, sources);
+        const hasListColumn = await trx.schema.hasColumn('photo_feedback', 'favorite_list_id');
         const rows = await scope().select(
           'id', 'photo_id', 'guest_id', 'feedback_type', 'is_hidden', 'created_at', 'updated_at',
+          ...(hasListColumn ? ['favorite_list_id'] : []),
         );
         const photoIds = [...new Set(rows.map((row) => row.photo_id))];
         const sourceIds = new Set(sources.map(Number));
@@ -1695,7 +1772,10 @@ class FeedbackService {
         const duplicates = [];
         for (const row of rows) {
           if (row.feedback_type === 'comment' || row.is_hidden) continue;
-          const key = `${row.photo_id}:${row.feedback_type}`;
+          // A favourite is one per photo per list (issue 2303).
+          const key = row.feedback_type === 'favorite'
+            ? `${row.photo_id}:favorite:${row.favorite_list_id ?? 'default'}`
+            : `${row.photo_id}:${row.feedback_type}`;
           if (seen.has(key)) duplicates.push(row.id);
           else seen.add(key);
         }

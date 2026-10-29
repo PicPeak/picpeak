@@ -98,6 +98,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     allow_reactions: allowReactionsInput,
     allow_color_labels: allowColorLabelsInput,
     allow_decisions: allowDecisionsInput,
+    allow_favorite_lists: allowFavoriteListsInput,
     keybind_mode: keybindModeInput,
     // "Finish selection" (issue 1733): off unless the form switches it on.
     allow_selection_submit = false,
@@ -278,6 +279,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     allow_reactions: allowReactionsInput,
     allow_color_labels: allowColorLabelsInput,
     allow_decisions: allowDecisionsInput,
+    allow_favorite_lists: allowFavoriteListsInput,
     keybind_mode: keybindModeInput,
   }, await resolveEventFeedbackDefaults());
 
@@ -570,6 +572,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
         allow_reactions: formatBoolean(feedbackDefaults.allow_reactions),
         allow_color_labels: formatBoolean(feedbackDefaults.allow_color_labels),
         allow_decisions: formatBoolean(feedbackDefaults.allow_decisions),
+        allow_favorite_lists: formatBoolean(feedbackDefaults.allow_favorite_lists),
         allow_selection_submit: formatBoolean(allow_selection_submit),
         keybind_mode: feedbackDefaults.keybind_mode,
         allow_annotations: formatBoolean(allow_annotations),
