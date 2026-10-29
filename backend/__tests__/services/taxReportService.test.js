@@ -570,3 +570,58 @@ describe('renderTaxReportCsv scope', () => {
     expect(filename).not.toMatch(/income_|cost_/);
   });
 });
+
+describe('report row order (issue 2335)', () => {
+  // PostgreSQL hands back Dates; String(Date) starts with the weekday name,
+  // so a string compare put Fri 16 Oct before Mon 12 Oct before Thu 15 Oct.
+  const invoice = (id, issueDate) => ({
+    id, invoice_number: `R-2026-000${id}`, issue_date: issueDate,
+    currency: 'CHF', status: 'paid', vat_rate: 8.1,
+    net_amount_minor: 10000, vat_amount_minor: 810, total_amount_minor: 10810,
+    late_fee_amount_minor: 0, replaces_invoice_id: null,
+    customer_company_name: 'ACME', event_name: 'Wedding A',
+  });
+  const inbound = (id, invoiceDate, createdAt) => ({
+    id, invoice_date: invoiceDate, created_at: createdAt,
+    supplier_name: `Supplier ${id}`, description: `Cost ${id}`, disposition: 'eigener_aufwand',
+    tax_treatment: 'domestic', status: 'categorized', event_id: null,
+    net_amount_minor: 1000, vat_amount_minor: 81, total_amount_minor: 1081, event_name: null,
+  });
+  const expense = (id, createdAt) => ({
+    id, created_at: createdAt, supplier_name: null, description: `Expense ${id}`,
+    disposition: 'eigener_aufwand', tax_treatment: 'domestic', status: 'open', event_id: null,
+    original_currency: null, original_amount_minor: null, chf_amount_minor: 500,
+    net_amount_minor: null, vat_amount_minor: null, gross_amount_minor: null, event_name: null,
+  });
+  const PERIOD = { from: '2026-10-01', to: '2026-10-31', currency: 'CHF' };
+
+  it('sorts PostgreSQL Dates chronologically, not by weekday name', async () => {
+    costTablesPresent = true;
+    invoiceRowsForRun = [invoice(1, new Date(2026, 9, 16)), invoice(2, new Date(2026, 9, 12))];
+    inboundRowsForRun = [inbound(5, new Date(2026, 9, 15), new Date(2026, 9, 20, 9))];
+    expenseRowsForRun = [expense(9, new Date(2026, 9, 13, 12)), expense(8, new Date(2026, 9, 19, 8))];
+
+    const out = await taxReportService.getTaxReport(PERIOD);
+    expect(out.costs.rows.map((r) => `${r.source}-${r.id}`)).toEqual(['expense-9', 'incoming-5', 'expense-8']);
+    expect(out.ledger.map((r) => r.key)).toEqual(['out-2', 'expense-9', 'incoming-5', 'out-1', 'expense-8']);
+
+    // The CSV export writes the ledger in this order. The mock serves the
+    // invoice rows on the first invoices query of a run, so reset it.
+    callCount = 0;
+    const { content } = await taxReportService.renderTaxReportCsv(PERIOD);
+    const dataLines = content.split('\n').filter((l) => /^"\d+",/.test(l));
+    expect(dataLines.map((l) => l.split('","')[2])).toEqual(
+      ['2026-10-12', '2026-10-13', '2026-10-15', '2026-10-16', '2026-10-19'],
+    );
+  });
+
+  it('sorts SQLite text, zone-less timestamps and epoch ms together', async () => {
+    costTablesPresent = true;
+    invoiceRowsForRun = [invoice(1, '2026-10-16'), invoice(2, '2026-10-12')];
+    inboundRowsForRun = [inbound(5, null, '2026-10-15 09:00:00')];
+    expenseRowsForRun = [expense(9, Date.UTC(2026, 9, 13, 12))];
+
+    const out = await taxReportService.getTaxReport(PERIOD);
+    expect(out.ledger.map((r) => r.key)).toEqual(['out-2', 'expense-9', 'incoming-5', 'out-1']);
+  });
+});
