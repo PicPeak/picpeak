@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { useState } from 'react';
 import { GalleryPrintShop } from '../GalleryPrintShop';
 import { PrintSalesAdminPage } from '../AdminPage';
 import { centredCrop } from '../CropEditor';
+import { ProfileEditor } from '../ProfileEditor';
 import { api } from '../../../config/api';
 import type { Photo } from '../../../types';
-import type { Order, Variant } from '../model';
+import type { Order, Variant, Profile } from '../model';
 const permissions = vi.hoisted(() => ({ enabled: true, manage: true }));
 vi.mock('react-i18next', async original => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }) }));
 vi.mock('../../../contexts/PermissionsContext', () => ({ usePermissions: () => ({ hasPermission: (p: string) => permissions.manage || !['products.manage', 'products.configure', 'bills.manage', 'customers.edit'].includes(p) }) }));
@@ -103,5 +105,44 @@ describe('print administration', () => {
     const policy = await screen.findByLabelText('Buyer policy and delivery information');
     fireEvent.change(policy, { target: { value: 'Unsaved policy' } }); fireEvent.click(screen.getByRole('button', { name: 'Save print settings' }));
     await screen.findByText('Print settings changed; reload before saving'); expect(policy).toHaveValue('Unsaved policy');
+  });
+  it('saves studio delivery zones as CRM references without inventing another price list', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [] } :
+      { revision: 4, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: 10, products: [],
+        presets: [{ id: 10, name: 'Studio delivery item', currency: 'EUR', product_id: null }] } }) as any);
+    vi.mocked(api.put).mockImplementation(async (_url: string, value: any) => ({ data: value }) as any);
+    render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
+    fireEvent.change(await screen.findByLabelText('Delivery pricing'), { target: { value: 'zones' } });
+    fireEvent.change(screen.getByLabelText('Zone name'), { target: { value: 'Our destinations' } });
+    fireEvent.change(screen.getByLabelText('Delivery countries (two-letter codes, separated by commas)'), { target: { value: 'IE, DE' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save print settings' }));
+    await waitFor(() => expect(api.put).toHaveBeenCalled());
+    const sent = vi.mocked(api.put).mock.calls[0][1] as any;
+    expect(sent.shippingPresetId).toBeNull();
+    expect(sent.shippingZones[0]).toMatchObject({ name: 'Our destinations', countries: ['IE', 'DE'], cataloguePresetId: 10 });
+    expect(sent.shippingZones[0]).not.toHaveProperty('price');
+  });
+  it('allows output, supplier instructions and photo-placement choices without selecting a named lab', () => {
+    const initial: Profile = { cataloguePresetId: 0, definition: { id: 'profile', revision: 1, enabled: false, labReference: '',
+      selection: { productId: '', productVersion: '', values: {} }, manufacturing: { capability: 'single-photo-rectangle',
+        trimMm: { width: 100, height: 150 }, bleedMm: { top: 0, right: 0, bottom: 0, left: 0 }, safeInsetMm: { top: 0, right: 0, bottom: 0, left: 0 },
+        resolution: { targetDpi: 300, minimumDpi: 150 }, output: { format: 'jpeg', colourSpace: 'srgb' }, fitModes: ['cover', 'contain'] } } };
+    function Harness() {
+      const [value, setValue] = useState(initial);
+      return <><ProfileEditor value={value} products={[]} presets={[]} onChange={setValue} /><output data-testid="profile-json">{JSON.stringify(value)}</output></>;
+    }
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText('File format'), { target: { value: 'png' } });
+    fireEvent.change(screen.getByLabelText('PNG compression (0–9)'), { target: { value: '9' } });
+    expect(JSON.parse(screen.getByTestId('profile-json').textContent!).definition.manufacturing.output).toEqual({ format: 'png', colourSpace: 'srgb', compressionLevel: 9 });
+    fireEvent.change(screen.getByLabelText('File format'), { target: { value: 'tiff' } });
+    fireEvent.change(screen.getByLabelText('TIFF compression'), { target: { value: 'deflate' } });
+    fireEvent.change(screen.getByLabelText('Supplier label (optional)'), { target: { value: 'Our production partner' } });
+    fireEvent.change(screen.getByLabelText('Supplier preparation and ordering instructions'), { target: { value: 'Our stock code.\nOur packing instructions.' } });
+    fireEvent.click(screen.getByLabelText('Fit whole photograph'));
+    const result = JSON.parse(screen.getByTestId('profile-json').textContent!).definition;
+    expect(result.manufacturing.output).toEqual({ format: 'tiff', colourSpace: 'srgb', compression: 'deflate' });
+    expect(result.manufacturing.fitModes).toEqual(['cover']); expect(result.supplierName).toBe('Our production partner');
+    expect(result.instructions).toContain('\nOur packing instructions.');
   });
 });

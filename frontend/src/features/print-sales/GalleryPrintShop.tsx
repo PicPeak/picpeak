@@ -70,9 +70,9 @@ export function GalleryPrintShop({ slug, photos }: { slug: string; photos: Photo
       {variant && photo && <>
         <p><ChoiceSummary choice={variant.selection} /></p>
         <label>{t('printSales.fit', 'Photo placement')}<select className="input" value={selectedFit} onChange={e => { setFit(e.target.value as 'cover' | 'contain'); setCrop(whole); }}>
-          {variant.fitModes.map(f => <option key={f} value={f}>{f === 'cover' ? t('printSales.cover', 'Crop to fill') : t('printSales.contain', 'Fit whole photograph with white borders')}</option>)}</select></label>
+          {variant.fitModes.map(f => <option key={f} value={f}>{f === 'cover' ? t('printSales.cover', 'Crop to fill') : t('printSales.fitWhole', 'Fit whole photograph')}</option>)}</select></label>
         <CropEditor key={`${photo.id}:${variant.id}:${selectedFit}:${editing}`} src={photo.preview_url || photo.url} slug={slug}
-          ratio={variant.artwork.widthMm / variant.artwork.heightMm} fit={selectedFit} value={crop} onChange={setCrop} resetOnLoad={editing === undefined || crop === whole} />
+          ratio={variant.artwork.widthMm / variant.artwork.heightMm} fit={selectedFit} background={variant.background} value={crop} onChange={setCrop} resetOnLoad={editing === undefined || crop === whole} />
         <label>{t('printSales.quantity', 'Copies')}<input className="input ml-2" type="number" min={1} max={100} value={quantity} onChange={e => setQuantity(Number(e.target.value))} /></label>
         <Button disabled={(cart.length >= 20 && editing === undefined) || !Number.isInteger(quantity) || quantity < 1 || quantity > 100} onClick={() => {
           const item: CartItem = { photoId, profileId: variant.id, quantity, crop: selectedFit === 'contain' ? whole : crop, fit: selectedFit };
@@ -82,7 +82,7 @@ export function GalleryPrintShop({ slug, photos }: { slug: string; photos: Photo
       {!!cart.length && <section className="space-y-3"><h3 className="font-semibold">{t('printSales.basket', 'Your basket')}</h3>
         {cart.map((item, n) => <div className="flex flex-wrap gap-3 items-center" key={n}>
           {photos.find(p => p.id === item.photoId) && <CropPreview src={photos.find(p => p.id === item.photoId)!.preview_url || photos.find(p => p.id === item.photoId)!.url}
-            slug={slug} crop={item.crop} fit={item.fit} ratio={(offers?.variants.find(v => v.id === item.profileId)?.artwork.widthMm || 1) / (offers?.variants.find(v => v.id === item.profileId)?.artwork.heightMm || 1)} />}
+            slug={slug} crop={item.crop} fit={item.fit} background={offers?.variants.find(v => v.id === item.profileId)?.background} ratio={(offers?.variants.find(v => v.id === item.profileId)?.artwork.widthMm || 1) / (offers?.variants.find(v => v.id === item.profileId)?.artwork.heightMm || 1)} />}
           <span>{photos.find(p => p.id === item.photoId)?.filename || `#${item.photoId}`} · {offers?.variants.find(v => v.id === item.profileId)?.selection.product.name}</span>
           {offers?.variants.find(v => v.id === item.profileId) && <ChoiceSummary choice={offers.variants.find(v => v.id === item.profileId)!.selection} />}
           <label>{t('printSales.quantity', 'Copies')}<input className="input w-20" type="number" min={1} max={100} value={item.quantity}
@@ -102,7 +102,7 @@ export function GalleryPrintShop({ slug, photos }: { slug: string; photos: Photo
     {quote && <section className="space-y-4" aria-label={t('printSales.orderReview', 'Review print order')}>
       <ul>{quote.items?.map((i, n) => <li key={n} className="flex flex-wrap gap-3 items-center mb-3">
         {photos.find(p => p.id === i.photoId) && <CropPreview src={photos.find(p => p.id === i.photoId)!.preview_url || photos.find(p => p.id === i.photoId)!.url}
-          slug={slug} crop={i.crop} fit={i.fit} ratio={(i.artwork?.widthMm || 2) / (i.artwork?.heightMm || 3)} />}
+          slug={slug} crop={i.crop} fit={i.fit} background={i.background} ratio={(i.artwork?.widthMm || 2) / (i.artwork?.heightMm || 3)} />}
         {i.filename} · <ChoiceSummary choice={i.selection} /> × {i.quantity}</li>)}</ul>
       <p>{t('printSales.net', 'Before tax')}: {formatMoneyMinor(quote.netMinor, quote.currency)} · {t('printSales.tax', 'Tax')}: {formatMoneyMinor(quote.vatMinor, quote.currency)}</p>
       <p className="text-lg font-semibold">{t('printSales.finalTotal', 'Total including delivery and tax')}: {formatMoneyMinor(quote.totalMinor, quote.currency)}</p>

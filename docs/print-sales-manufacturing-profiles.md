@@ -34,13 +34,16 @@ const definition = {
   enabled: false, // explicit opt-in; no default enabled profile
   selection: { productId, productVersion, values },
   labReference: 'Optional operator reference',
+  supplierName: 'Optional studio-defined supplier label',
+  instructions: 'Optional preparation instructions.\nOptional packing instructions.',
   manufacturing: {
     capability: 'single-photo-rectangle',
     trimMm: { width: 101.6, height: 152.4 },
     bleedMm: { top: 2, right: 2, bottom: 2, left: 2 },
     safeInsetMm: { top: 3, right: 3, bottom: 3, left: 3 },
     resolution: { targetDpi: 300, minimumDpi: 150 },
-    output: { format: 'jpeg', colourSpace: 'srgb' },
+    output: { format: 'jpeg', colourSpace: 'srgb', quality: 95, chromaSubsampling: '4:4:4' },
+    background: '#ffffff',
     fitModes: ['cover', 'contain'],
   },
 };
@@ -54,7 +57,14 @@ and must leave a positive safe rectangle. Derived pixel dimensions use
 `round(artworkMm × targetDpi / 25.4)` independently on each axis.
 
 The initial capability is a single rectangular photo face, with optional bleed.
-It accepts only sRGB JPEG requirements. Canvas wrapping/mirroring, folded cards,
+It accepts embedded sRGB JPEG, PNG or 8-bit TIFF requirements. JPEG has configurable
+quality (1–100, default 95) and chroma sampling (4:4:4 or 4:2:0, default 4:4:4).
+PNG supports lossless compression levels 0–9 (default 6); TIFF supports `lzw`,
+`deflate` or `none` compression (default `lzw`). Only the fields appropriate to
+the selected format are accepted. A solid RGB hex background controls transparent
+pixels and whole-photo borders; it defaults to white for newly compiled profiles.
+Allowed `fitModes` can offer either or both `cover` and `contain`.
+Canvas wrapping/mirroring, folded cards,
 books, masks, custom templates, CMYK and uploaded ICC profiles are rejected.
 Unknown manufacturing/output fields are refused, rather than silently ignored.
 The calling order service checks effective source resolution against the crop,
@@ -80,7 +90,10 @@ studio configuration must be corrected rather than partly trusted.
 
 The returned snapshot contains the validated native selection (including labels
 and display measurements), profile ID/revision, cleaned manufacturing requirements,
-derived artwork geometry and optional lab reference. Its SHA-256 `version` covers
+derived artwork geometry, optional lab reference, supplier label and multiline
+instructions. Labels and instructions are studio-owned free text, with no
+supplier registry, preferred lab or lab-specific defaults. The snapshot has
+`schemaVersion: 2`; its SHA-256 `version` covers
 all of that content, including a changed specification whose revision was not
 bumped. Inputs and returned snapshots do not share mutable nested objects.
 
@@ -89,29 +102,39 @@ Rebind/review the profile against the new product version before selling it agai
 Even a label or image edit currently requires this conservative review. Existing
 order snapshots must be retained verbatim and must not be re-resolved against
 the current catalogue. This helper neither persists nor protects those records;
-durable immutability, revision enforcement and permissions belong to the later
+durable immutability, revision enforcement and permissions belong to the
 profile/order service. A content hash is an identity, not an authenticity proof.
 
 Profiles contain no prices, VAT, currency or delivery charges. Those stay in the
 native CRM catalogue/billing machinery. The resolver is also not an authorization
-check: future callers must load trusted studio definitions and enforce gallery,
+check: callers must load trusted studio definitions and enforce gallery,
 buyer and media access before accepting an order.
 
-## Following slices
+The worker also consumes already accepted schema-version-one snapshots verbatim,
+using their original JPEG defaults and transparency behaviour. New settings do
+not alter an accepted order's encoding, geometry, supplier instructions or price.
+
+Delivery configuration is separate from manufacturing: studios can use one flat
+native CRM delivery item or named zones with disjoint country sets and their own
+native delivery items. The selected zone and commercial invoice line are frozen
+in the order. Missing country coverage never falls back to included delivery.
+
+## Connected workflow
 
 1. Profile persistence and admin setup behind a default-off feature gate, with
    native permissions, optimistic revisions and SQLite/PostgreSQL tests. Review
    exact-match configuration ergonomics before adding broader matching rules.
 2. Photo/crop/quantity bindings, a small gallery basket, server-calculated native
    prices and an acceptance transaction freezing source identities and the above
-   snapshots. Agree verified buyer identity and product-only invoice mapping
-   first. Reusing the existing gallery lock as checkout would inherit automatic
-   project-invoice append behaviour and is not a substitute for that transaction.
+   snapshots. Buyers use verified customer-portal assignments, and each order
+   creates a product-only native invoice. Reusing the existing gallery lock as
+   checkout would inherit automatic project-invoice append behaviour and is not
+   a substitute for that transaction.
 3. Bounded preparation with retained original versions, verifiable output files,
    neutral supplier pack/order sheet and an explicit settled-payment/studio-review
-   release gate. Integrate backup, deletion, privacy and recovery inventories.
+   release gate, integrated with backup, deletion, privacy and recovery inventories.
 
-Current native integration points to investigate further are
+The implemented workflow uses
 `albumProducts/service.js` and `library.js` for catalogue ownership,
 `albumProducts/crm.js` and `billing.js` plus `invoice/create.js` and
 `invoice/payments.js` for commercial records, `galleryClientSessionService.js`
@@ -134,7 +157,9 @@ npx eslint src/services/printSales/manufacturingProfiles.js \
 ```
 
 Synthetic fixtures use the real shared-library validator/resolver. They cover two
-independent studio specifications, nominal versus production geometry, exact
+independent studio specifications with different encodings, background colours
+and free supplier instructions, nominal versus production geometry, exact
 variants, dependent/multiple choices, stale/disabled catalogue data, ambiguity,
 detached snapshots, unsupported requirements and resource limits. This is not
-database, application, payment, rendering or physical-product validation.
+database, application, payment, rendering or physical-product validation; the
+connected workflow's separate validation is described in [print sales](print-sales.md).

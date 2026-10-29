@@ -55,7 +55,8 @@ function createService({ db, storage, sharp }) {
   }
   async function asset(orderId, kind, bytes, claim = null, extension = 'bin') {
     const id = crypto.randomUUID(), key = `.print-sales/${orderId}/${id}.${extension}`;
-    await storage.put(key, bytes, { contentType: extension === 'jpg' ? 'image/jpeg' : 'application/octet-stream', cacheControl: 'private, no-store' });
+    const contentType = { jpg: 'image/jpeg', png: 'image/png', tif: 'image/tiff', pdf: 'application/pdf', zip: 'application/zip' }[extension] || 'application/octet-stream';
+    await storage.put(key, bytes, { contentType, cacheControl: 'private, no-store' });
     const row = { id, order_id: orderId, storage_key: key, sha256: V.hash(bytes), size: bytes.length, kind, claim, created_at: now() };
     try { await db('print_sales_assets').insert(row); }
     catch (error) { await storage.delete(key).catch(() => {}); throw error; }
@@ -73,7 +74,7 @@ function createService({ db, storage, sharp }) {
         delivery: contact?.delivery, policy: s.policy, buyerEmail: contact?.buyerEmail,
         items: s.items.map(i => ({ photoId: i.photoId, filename: i.source.filename, quantity: i.quantity,
           crop: i.crop, fit: i.fit, profileId: i.profile.id, selection: i.profile.selection,
-          artwork: i.profile.artwork, manufacturing: i.profile.manufacturing, unitPriceMinor: i.unitPriceMinor })) }) };
+          artwork: i.profile.artwork, background: i.profile.manufacturing.background ?? '#ffffff', manufacturing: i.profile.manufacturing, unitPriceMinor: i.unitPriceMinor })) }) };
   }
   async function owned(id, customerId, eventId) {
     const row = await db('print_sales_orders').where({ id: V.uuid(id), customer_account_id: customerId, event_id: eventId }).first();
@@ -86,11 +87,11 @@ function createService({ db, storage, sharp }) {
     for (const p of config.profiles.filter(p => p.definition.enabled)) {
       try {
         const plan = await D.plan(db, [{ profileId: p.definition.id, photoId: 1, quantity: 1,
-          crop: { x: 0, y: 0, width: 1, height: 1 }, fit: p.definition.manufacturing.fitModes[0] }]);
+          crop: { x: 0, y: 0, width: 1, height: 1 }, fit: p.definition.manufacturing.fitModes[0] }], { includeDelivery: false });
         const item = plan.items[0];
         variants.push({ id: p.definition.id, version: item.profile.version, selection: item.profile.selection,
           artwork: item.profile.artwork, fitModes: item.profile.manufacturing.fitModes,
-          currency: plan.currency, unitPriceMinor: item.unitPriceMinor });
+          background: item.profile.manufacturing.background ?? '#ffffff', currency: plan.currency, unitPriceMinor: item.unitPriceMinor });
       } catch (error) {
         if (![400, 409].includes(error.statusCode)) throw error;
         // Stale or incomplete manufacturing configurations are withdrawn.
@@ -109,7 +110,8 @@ function createService({ db, storage, sharp }) {
       if (existing.status === 'capturing') throw new ConflictError('This quotation is still being prepared');
       return shape(existing);
     }
-    const plan = await D.plan(db, input.items), destination = D.delivery(input.delivery, plan.countries);
+    const destination = D.delivery(input.delivery, (await P.settings(db)).countries),
+      plan = await D.plan(db, input.items, { country: destination.country });
     const id = input.requestId;
     await db.transaction(async tx => {
       // Match customer erasure and native gallery deletion before taking order
@@ -201,7 +203,9 @@ function createService({ db, storage, sharp }) {
           open.filter(o => ['queued', 'running'].includes(o.render_status)).length >= 20)
         throw new ConflictError('The studio order queue is full; try again after existing orders are processed');
       await buyer(tx, eventId, customerId);
-      const snapshot = P.parse(current.snapshot), next = await D.plan(tx, snapshot.cart);
+      const snapshot = P.parse(current.snapshot), contact = P.parse(current.contact);
+      if (!contact || V.hash(contact) !== snapshot.contactHash) throw new ConflictError('Confirmed delivery details changed; review a new quotation');
+      const next = await D.plan(tx, snapshot.cart, { country: contact.delivery.country });
       if (V.hash(current.snapshot) !== current.snapshot_hash || snapshot.signature !== next.signature)
         throw new ConflictError('The product offer changed; review a new quotation');
       for (const item of snapshot.items) {

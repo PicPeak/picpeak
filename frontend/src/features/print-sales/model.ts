@@ -2,23 +2,28 @@ import { api } from '../../config/api';
 import type { Choice, Product } from '../album-products/model';
 export type Crop = { x: number; y: number; width: number; height: number };
 export type Edges = { top: number; right: number; bottom: number; left: number };
+export type Output = { format: 'jpeg'; colourSpace: 'srgb'; quality?: number; chromaSubsampling?: '4:4:4' | '4:2:0' }
+  | { format: 'png'; colourSpace: 'srgb'; compressionLevel?: number }
+  | { format: 'tiff'; colourSpace: 'srgb'; compression?: 'lzw' | 'deflate' | 'none' };
+export interface DeliveryZone { id: string; name: string; countries: string[]; cataloguePresetId: number | null }
 export interface Profile {
   cataloguePresetId: number;
   definition: {
-    id: string; revision: number; enabled: boolean; labReference: string;
+    id: string; revision: number; enabled: boolean; labReference: string; supplierName?: string; instructions?: string;
     selection: { productId: string; productVersion: string; values: Record<string, string[]> };
     manufacturing: { capability: 'single-photo-rectangle'; trimMm: { width: number; height: number };
       bleedMm: Edges; safeInsetMm: Edges; resolution: { targetDpi: number; minimumDpi: number };
-      output: { format: 'jpeg'; colourSpace: 'srgb' }; fitModes: ('cover' | 'contain')[] };
+      output: Output; background?: string; fitModes: ('cover' | 'contain')[] };
   };
 }
 export interface Settings {
   revision: number; profiles: Profile[]; countries: string[]; policy: string; shippingPresetId: number | null;
+  shippingZones?: DeliveryZone[];
   products?: Product[]; presets?: { id: number; name: string; product_id: string | null; currency: string }[];
 }
 export interface Variant {
   id: string; version: string; selection: Choice; artwork: { widthMm: number; heightMm: number };
-  fitModes: ('cover' | 'contain')[]; currency: string; unitPriceMinor: number;
+  fitModes: ('cover' | 'contain')[]; background?: string; currency: string; unitPriceMinor: number;
 }
 export interface CartItem { photoId: number; profileId: string; quantity: number; crop: Crop; fit: 'cover' | 'contain' }
 export interface Delivery { name: string; line1: string; line2: string; city: string; region: string; postalCode: string; country: string }
@@ -28,7 +33,7 @@ export interface Order {
   buyerEmail?: string; acceptedAt: string | null; reviewedAt: string | null; submittedAt: string | null; dispatchedAt: string | null;
   supplierReference: string | null; tracking: string | null; needsAttention: boolean; purgedAt: string | null;
   items?: { photoId: number; filename: string; quantity: number; crop: Crop; fit: string; selection: Choice;
-    artwork?: { widthMm: number; heightMm: number }; unitPriceMinor: number }[];
+    artwork?: { widthMm: number; heightMm: number }; background?: string; unitPriceMinor: number }[];
 }
 export const printSales = {
   settings: () => api.get<Settings>('/admin/print-sales/settings').then(r => r.data),

@@ -9,6 +9,7 @@ import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { errorMessage } from '../album-products/model';
 import { formatMoneyMinor } from '../../utils/money';
 import { ProfileEditor } from './ProfileEditor';
+import { DeliveryEditor } from './DeliveryEditor';
 import { printSales, type Settings, type Order, type Profile } from './model';
 function newProfile(): Profile {
   return { cataloguePresetId: 0, definition: { id: crypto.randomUUID(), revision: 1, enabled: false, labReference: '',
@@ -79,13 +80,7 @@ export function PrintSalesAdminPage() {
     {!enabled && <p>{t('printSales.closed', 'Print ordering is disabled. Existing orders remain available for review.')}</p>}
     {!draft && !error && <Loading />}
     {draft && <fieldset disabled={!canConfigure || busy} className="space-y-5">
-      <label className="block">{t('printSales.countries', 'Delivery countries (two-letter codes, separated by commas)')}
-        <input className="input w-full" value={draft.countries.join(', ')} onChange={e => setDraft({ ...draft, countries: e.target.value.toUpperCase().split(',').map(s => s.trim()) })} /></label>
-      <label className="block">{t('printSales.deliveryPrice', 'Delivery price from CRM catalogue')}
-        <select className="input w-full" value={draft.shippingPresetId ?? ''} onChange={e => setDraft({ ...draft, shippingPresetId: e.target.value ? Number(e.target.value) : null })}>
-          <option value="">{t('printSales.includedDelivery', 'Delivery included (no extra line)')}</option>
-          {draft.presets?.filter(p => !p.product_id).map(p => <option key={p.id} value={p.id}>{p.name} ({p.currency})</option>)}
-        </select></label>
+      <DeliveryEditor value={draft} onChange={setDraft} />
       <label className="block">{t('printSales.policy', 'Buyer policy and delivery information')}
         <textarea className="input w-full" rows={4} maxLength={5000} value={draft.policy} onChange={e => setDraft({ ...draft, policy: e.target.value })} /></label>
       {draft.profiles.map((p, n) => <div key={p.definition.id} className="space-y-2">

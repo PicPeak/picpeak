@@ -73,11 +73,19 @@ describe('catalogue-backed rectangular manufacturing profiles', () => {
   test('two studios use different production geometry without changing catalogue sizes', () => {
     const other = copy(definition);
     other.labReference = 'Studio B / flat print';
+    other.supplierName = 'Supplier selected by the second studio';
+    other.instructions = 'Use our stock code.\nCheck our packaging instructions.';
+    other.manufacturing.output = { format: 'tiff', colourSpace: 'srgb', compression: 'lzw' };
+    other.manufacturing.background = '#000000';
     other.manufacturing.trimMm = { width: 100, height: 150 };
     other.manufacturing.bleedMm = { top: 0, right: 0, bottom: 0, left: 0 };
     const first = resolve(), second = resolveProfile(catalogue, [other], selection);
     expect(second.artwork).toEqual({ widthMm: 100, heightMm: 150, widthPx: 1181, heightPx: 1772 });
     expect(second.selection).toEqual(first.selection);
+    expect(first.manufacturing.output.format).toBe('jpeg');
+    expect(second.manufacturing.output).toMatchObject({ format: 'tiff', compression: 'lzw' });
+    expect(second.supplierName).toBe('Supplier selected by the second studio');
+    expect(second.instructions).toContain('\nCheck our packaging instructions.');
     expect(second.version).not.toBe(first.version);
   });
 

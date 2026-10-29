@@ -24,7 +24,7 @@ function delivery(input, countries) {
   ].map(([k, max, required]) => [k, V.text(input[k] ?? '', max, required)])) };
 }
 /** Native configured pricing and native total arithmetic; no client amount is trusted. */
-async function plan(tx, cart) {
+async function plan(tx, cart, { country, includeDelivery = true } = {}) {
   if (!Array.isArray(cart) || !cart.length || cart.length > 20) fail('Choose between 1 and 20 photo items');
   const config = await P.settings(tx), catalogue = await P.catalogue(tx), items = [], lines = [];
   let currency, vatCode, vatRate;
@@ -51,8 +51,10 @@ async function plan(tx, cart) {
       unitPriceMinor: line.unit_price_minor, linePosition: line.position });
     lines.push(line);
   }
-  if (config.shippingPresetId !== null) {
-    const p = await P.priceItem(tx, config.shippingPresetId); check(p);
+  // Offers show product unit prices only. Quotations need a real destination.
+  const shipping = includeDelivery ? require('./delivery').selection(config, country) : null;
+  if (shipping?.cataloguePresetId != null) {
+    const p = await P.priceItem(tx, shipping.cataloguePresetId); check(p);
     lines.push({ position: lines.length + 1, quantity: 1, description: p.name,
       unit_price_minor: Number(p.unit_price_minor), discount_percent: 0, line_kind: 'item' });
   }
@@ -61,7 +63,7 @@ async function plan(tx, cart) {
     fail('Order amount is outside the supported range');
   const result = { settingsRevision: config.revision, items, lines: totals.lineItems,
     currency, vatCode, vatRate, netMinor: totals.netAmountMinor, vatMinor: totals.vatAmountMinor,
-    totalMinor: totals.totalAmountMinor, policy: config.policy };
+    totalMinor: totals.totalAmountMinor, policy: config.policy, shipping };
   return { ...result, signature: V.hash(result), countries: config.countries };
 }
 /** Crop is interpreted in EXIF-oriented pixels; never stretch a mismatched crop. */

@@ -132,10 +132,22 @@ async function run(job) {
     }
   };
   let pipeline = sharp(input, options);
-  const allowed = new Set(['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw']);
+  const allowed = new Set(['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'tiff', 'flatten', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw']);
   for (const [name, encodedArgs] of job.steps) {
     if (!allowed.has(name)) throw refusal('Unsupported image operation');
     const args = decode(encodedArgs);
+    if (name === 'flatten') {
+      const o = args[0];
+      if (args.length !== 1 || !o || Object.keys(o).join() !== 'background' ||
+          typeof o.background !== 'string' || !/^#[a-f0-9]{6}$/i.test(o.background)) throw refusal('Unsupported image operation');
+    }
+    if (name === 'tiff') {
+      const o = args[0], keys = ['compression', 'xres', 'yres', 'resolutionUnit'];
+      if (args.length !== 1 || !o || Object.keys(o).length !== keys.length || Object.keys(o).some(k => !keys.includes(k)) ||
+          !['lzw', 'deflate', 'none'].includes(o.compression) || o.resolutionUnit !== 'inch' ||
+          ![o.xres, o.yres].every(n => Number.isFinite(n) && n >= 72 / 25.4 && n <= 600 / 25.4))
+        throw refusal('Unsupported image operation');
+    }
     // Narrow on purpose: only the built-in sRGB profile is allowed. Print
     // artwork may embed that known profile; arbitrary profile paths remain
     // forbidden. EXIF is only ever written to carry an Orientation tag.
@@ -189,6 +201,7 @@ async function run(job) {
 }
 
 function serve() {
+  if (typeof WebAssembly !== 'undefined') process.exit(127);
   const cap = Number(process.argv[2] || 0);
   if (cap > 0) {
     // Started under `ulimit -v`: refuse to parse anything if the address

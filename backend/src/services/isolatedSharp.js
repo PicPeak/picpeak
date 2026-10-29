@@ -9,9 +9,11 @@ const { spawn } = require('child_process');
 const logger = require('../utils/logger');
 const { configuration, refusal, MiB } = require('./imageResourcePolicy');
 
-const methods = ['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw'];
+const methods = ['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'tiff', 'flatten', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw'];
 const WORKER = path.join(__dirname, 'sharpWorker.js');
-const NODE_FLAGS = ['--jitless', '--no-expose-wasm', '--max-old-space-size=64'];
+// --jitless disables WebAssembly exposure too. The separate --no-expose-wasm
+// flag was removed by newer Node/V8 releases and made both child modes fail.
+const NODE_FLAGS = ['--jitless', '--max-old-space-size=64'];
 const MESSAGE_BYTES = 1024 * 1024;
 const READY_MS = 15000;
 const IDLE_MS = 30000;

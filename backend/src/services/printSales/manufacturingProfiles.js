@@ -52,7 +52,7 @@ function selectionKey(selection) {
 
 function manufacturing(input) {
   object(input, ['capability', 'trimMm', 'bleedMm', 'safeInsetMm',
-    'resolution', 'output', 'fitModes'], 'manufacturing requirements');
+    'resolution', 'output', 'fitModes', 'background'], 'manufacturing requirements');
   if (input.capability !== 'single-photo-rectangle')
     fail('Only single-photo rectangular artwork is supported');
   object(input.trimMm, ['width', 'height'], 'trim dimensions');
@@ -74,16 +74,15 @@ function manufacturing(input) {
     fail('Minimum resolution must not exceed target resolution');
   // This is a capability declaration, not a claim that arbitrary ICC transforms
   // or soft proofing have been implemented. Reject unsupported requirements.
-  object(input.output, ['format', 'colourSpace'], 'output requirements');
-  if (input.output.format !== 'jpeg' || input.output.colourSpace !== 'srgb')
-    fail('Only sRGB JPEG output is supported');
+  const output = require('./output').output(input.output), background = input.background === undefined ? '#ffffff' : input.background;
+  if (typeof background !== 'string' || !/^#[a-f0-9]{6}$/i.test(background)) fail('Choose a solid RGB background colour');
   if (!Array.isArray(input.fitModes) || !input.fitModes.length ||
       input.fitModes.length > 2 || new Set(input.fitModes).size !== input.fitModes.length ||
       input.fitModes.some((mode) => !['cover', 'contain'].includes(mode)))
     fail('Choose supported crop/fit modes');
   return {
     capability: input.capability, trimMm, bleedMm, safeInsetMm, resolution,
-    output: { format: 'jpeg', colourSpace: 'srgb' },
+    output, background: background.toLowerCase(),
     fitModes: [...input.fitModes].sort(),
   };
 }
@@ -91,7 +90,7 @@ function manufacturing(input) {
 /** Compile one trusted studio definition into a detached, content-versioned snapshot. */
 function defineProfile(catalogue, input) {
   object(input, ['id', 'revision', 'enabled', 'selection', 'manufacturing',
-    'labReference'], 'manufacturing profile');
+    'labReference', 'supplierName', 'instructions'], 'manufacturing profile');
   V.uuid(input.id);
   if (!Number.isSafeInteger(input.revision) || input.revision < 1)
     fail('Profile revision must be a positive integer');
@@ -105,7 +104,7 @@ function defineProfile(catalogue, input) {
   if (widthPx * heightPx > MAX_OUTPUT_PIXELS)
     fail('Artwork exceeds the 60 megapixel output limit');
   const snapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: input.id,
     revision: input.revision,
     enabled: input.enabled,
@@ -113,8 +112,15 @@ function defineProfile(catalogue, input) {
     manufacturing: spec,
     artwork: { widthMm, heightMm, widthPx, heightPx },
     labReference: V.text(input.labReference ?? '', 200),
+    supplierName: V.text(input.supplierName ?? '', 120),
+    instructions: instructions(input.instructions ?? ''),
   };
   return { ...snapshot, version: V.hash(snapshot) };
+}
+
+function instructions(value) {
+  if (typeof value !== 'string' || value.length > 2000) fail('Supplier instructions support at most 2000 characters');
+  return value.replace(/\r\n?/g, '\n').split('\n').map(line => V.text(line, 2000)).join('\n').trim();
 }
 
 /**

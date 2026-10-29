@@ -28,9 +28,7 @@ async function priceItem(tx, id, productId = null) {
 }
 /** One revision for the complete configuration; commercial prices remain CRM-owned. */
 async function save(db, input) {
-  if (!input || !Array.isArray(input.profiles) || input.profiles.length > 100 ||
-      !Array.isArray(input.countries) || !input.countries.length || input.countries.length > 250 ||
-      input.countries.some(c => typeof c !== 'string' || !/^[A-Z]{2}$/.test(c)))
+  if (!input || !Array.isArray(input.profiles) || input.profiles.length > 100)
     throw new AppError('Choose profiles and delivery countries', 400);
   V.revision(input.revision);
   const policy = V.text(input.policy, 5000, true);
@@ -62,12 +60,10 @@ async function save(db, input) {
       }
       profiles.push({ definition, cataloguePresetId: entry.cataloguePresetId });
     }
-    const shippingPresetId = input.shippingPresetId ?? null;
-    if (shippingPresetId !== null) {
-      if (!Number.isSafeInteger(shippingPresetId)) throw new AppError('Choose a delivery catalogue item', 400);
-      await priceItem(tx, shippingPresetId);
-    }
-    const configuration = { profiles, countries: [...new Set(input.countries)].sort(), policy, shippingPresetId };
+    const delivery = require('./delivery').configuration(input, previous);
+    for (const id of new Set([delivery.shippingPresetId, ...delivery.shippingZones.map(z => z.cataloguePresetId)].filter(id => id !== null)))
+      await priceItem(tx, id);
+    const configuration = { profiles, policy, ...delivery };
     await tx('print_sales_settings').where({ id: 1, revision: input.revision }).update({
       revision: input.revision + 1, configuration: JSON.stringify(configuration), updated_at: new Date().toISOString(),
     });

@@ -7,8 +7,8 @@ export function centredCrop(sourceRatio: number, targetRatio: number, zoom = 1):
     height = Math.min(1, sourceRatio / targetRatio) / zoom;
   return { x: (1 - width) / 2, y: (1 - height) / 2, width, height };
 }
-export function CropEditor({ src, slug, ratio, fit, value, onChange, resetOnLoad = true }: {
-  src: string; slug: string; ratio: number; fit: 'cover' | 'contain'; value: Crop; onChange: (crop: Crop) => void; resetOnLoad?: boolean;
+export function CropEditor({ src, slug, ratio, fit, value, onChange, resetOnLoad = true, background = '#ffffff' }: {
+  src: string; slug: string; ratio: number; fit: 'cover' | 'contain'; value: Crop; onChange: (crop: Crop) => void; resetOnLoad?: boolean; background?: string;
 }) {
   const { t } = useTranslation(), [sourceRatio, setSourceRatio] = useState(1), [zoom, setZoom] = useState(1);
   const drag = useRef<{ x: number; y: number; crop: Crop }>();
@@ -17,7 +17,7 @@ export function CropEditor({ src, slug, ratio, fit, value, onChange, resetOnLoad
     if (resetOnLoad) onChange(fit === 'contain' ? { x: 0, y: 0, width: 1, height: 1 } : centredCrop(width / height, ratio));
   }, [fit, ratio, resetOnLoad, onChange]);
   return <div className="space-y-3 max-w-xl">
-    <div className="relative overflow-hidden rounded-lg" style={{ aspectRatio: sourceRatio }}>
+    <div className="relative overflow-hidden rounded-lg" style={{ aspectRatio: fit === 'contain' ? ratio : sourceRatio, background }}>
       <AuthenticatedImage key={src} src={src} slug={slug} isGallery alt={t('printSales.cropPreview', 'Selected photograph and print crop')}
         className="w-full h-full object-contain" onLoad={loaded} />
       {fit === 'cover' && <div role="img" aria-label={t('printSales.cropArea', 'Print crop; drag to reposition')}
@@ -42,9 +42,9 @@ export function CropEditor({ src, slug, ratio, fit, value, onChange, resetOnLoad
     </>}
   </div>;
 }
-export function CropPreview({ src, slug, crop, fit, ratio }: { src: string; slug: string; crop: Crop; fit: string; ratio: number }) {
+export function CropPreview({ src, slug, crop, fit, ratio, background = '#ffffff' }: { src: string; slug: string; crop: Crop; fit: string; ratio: number; background?: string }) {
   const { t } = useTranslation();
-  return <div className="relative w-24 overflow-hidden bg-white" style={{ aspectRatio: ratio }}>
+  return <div className="relative w-24 overflow-hidden" style={{ aspectRatio: ratio, background }}>
     <AuthenticatedImage src={src} slug={slug} isGallery alt={t('printSales.preparedCrop', 'Selected print crop')}
       className={fit === 'contain' ? 'w-full h-full object-contain' : 'absolute max-w-none'}
       style={fit === 'contain' ? undefined : { width: `${100 / crop.width}%`, height: `${100 / crop.height}%`,

@@ -14,15 +14,22 @@ received maintainer agreement on #48.
 2. Create products/options in the shared product catalogue. Link each product to
    an active fixed-price CRM item with currency, option surcharges and output VAT.
    There is no second print price list or tax implementation.
-3. Open **Settings → Print sales**. Choose delivery countries, buyer policy and
-   an optional ordinary CRM delivery-price item. Delivery is its own taxable
-   product line; all lines in an order must share currency and output VAT code.
-   No delivery item means delivery is included in the product price.
+3. Open **Settings → Print sales**. Choose the buyer policy and either one
+   delivery-price item for all enabled countries or studio-defined delivery
+   zones. Give each zone a name, explicit two-letter country codes and an
+   optional ordinary CRM delivery-price item. A country can belong to only one
+   zone; countries outside the configured list are unavailable. Delivery is its
+   own taxable product line; all lines in an order must share currency and
+   output VAT code. No delivery item means delivery is included in that zone.
 4. Add each supported product/option combination as a manufacturing profile.
    Choose the shared options and matching CRM item; enter actual trim, bleed,
-   safe insets, source/output DPI and the lab's reference. Verify these against
-   that studio's production specification, then enable the variant and use the
-   standard settings save bar. Display dimensions do not determine artwork size.
+   safe insets and source/output DPI. Choose the output format/encoding, solid
+   background colour and allowed crop/whole-photo placement choices. Optional
+   free-text supplier labels, production codes and multiline instructions carry
+   into the frozen pack and studio sheet. There is no lab directory, preferred
+   supplier or supplier-specific preset. Verify the profile against the chosen
+   supplier's specification, then enable the variant and use the standard
+   settings save bar. Display dimensions do not determine artwork size.
 5. The gallery owner enables ordering in the gallery's product settings. The
    enabling admin becomes its billing/fulfilment owner and must retain native
    billing/customer permissions. Order acceptance checks that live authority.
@@ -52,9 +59,10 @@ testing, colour checks or physical sample approval.
 
 Quotations retain order-specific original bytes **before** acceptance, along with
 source hashes, original filenames, EXIF-oriented geometry, manufacturing/profile
-versions, native configured lines, taxes, totals and the policy. Quotations expire
-after 30 minutes. Catalogue, pricing, billing-owner, source and visibility changes
-require a new quotation. A shared gallery password or entered customer ID cannot
+versions, the selected delivery zone, native configured lines, taxes, totals and
+the policy. Quotations expire after 30 minutes. Catalogue, pricing, billing-owner,
+source and visibility changes require a new quotation, as do production or
+delivery-zone edits. A shared gallery password or entered customer ID cannot
 identify the buyer. Guests, PIN-only clients and admin previews cannot order.
 
 Acceptance locks the catalogue/settings/order, verifies the buyer assignment and
@@ -92,18 +100,35 @@ admin access to orders and prepared files.
 
 The existing isolated image worker performs metadata inspection and rendering.
 Its profile allowlist accepts only built-in sRGB with explicit attachment on/off;
-arbitrary ICC paths remain forbidden. Output is JPEG at the frozen pixel size,
-with embedded sRGB and JFIF density, without copying camera EXIF/XMP/GPS. Density
-metadata rounds fractional DPI; derived pixel geometry and the manifest retain
-the configured physical dimensions/resolution. There is no arbitrary ICC upload,
-CMYK conversion, soft-proof promise, canvas wrapping, folded-card imposition or
+arbitrary ICC paths remain forbidden. Each frozen profile chooses one encoding:
+
+- JPEG: quality 1–100 and 4:4:4 or 4:2:0 chroma sampling (defaults 95 and 4:4:4).
+- PNG: lossless compression level 0–9 (default 6).
+- 8-bit TIFF: LZW, Deflate or no compression (default LZW).
+
+All three use the frozen pixel size and embed sRGB without copying camera
+EXIF/XMP/GPS. JPEG uses JFIF density, PNG uses pHYs and TIFF carries resolution
+tags. Density metadata can round fractional DPI; derived pixel geometry and the
+manifest retain the configured physical dimensions/resolution. New profiles
+flatten transparency and whole-photo borders to the configured solid RGB
+background (default white). The worker still accepts version-one frozen profiles
+with their original JPEG defaults and transparency behaviour; accepted orders
+are never upgraded by re-resolving their definitions. The Node child launch uses
+`--jitless` (which disables WebAssembly) without the obsolete
+`--no-expose-wasm` flag, so current Node versions can run the isolated renderer.
+There is no arbitrary ICC upload, CMYK conversion, soft-proof promise, canvas
+wrapping, folded-card imposition or
 album layout capability. Canvas-front/flat wall-art output must be a supported
 single rectangle. Bleed is part of the selected artwork ratio; it is not a
 supplier-specific mirror/wrap operation.
 
-The supplier ZIP contains numbered JPEGs, a versioned manifest mapping each file
-to its frozen source/profile/crop/quantity and invoice position, and a private
-studio PDF with cropped thumbnails and delivery/checklist details. A receipt is
+The supplier ZIP contains numbered `.jpg`, `.png` or `.tif` files as configured,
+a version-two manifest mapping each file to its frozen source/profile/crop/quantity
+and invoice position, and a private
+studio PDF with cropped thumbnails, supplier instructions and delivery/checklist
+details. The manifest retains the frozen delivery selection and full production
+profile. Manual submission and dispatch still apply to the whole order; supplier
+labels do not implement separate shipments or API routing. A receipt is
 not the order sheet. Every manual release re-verifies file SHA-256 identities.
 
 Current bounds are 20 photo items, 1–100 copies each, 50 MiB per source, 200 MiB
@@ -111,7 +136,8 @@ of captured originals per quotation, two simultaneous captures globally and two
 unexpired quotations per buyer (20 globally). At most 20 accepted orders can be
 queued/running and at most 100 accepted orders await studio resolution (10 per
 buyer). A render profile allows at most 60 megapixels; an order allows 64 MiB of
-production JPEGs and an 80 MiB ZIP.
+production image files and an 80 MiB ZIP. Lossless formats can reach these bounds
+sooner; unsupported sizes are refused rather than silently reducing quality.
 Reads have a 60-second timeout. These are conservative initial limits, not an
 ARM64 throughput or memory benchmark; image-resource policy may refuse earlier.
 
@@ -142,14 +168,19 @@ invoice/payment services, optimistic settings, quote replay/concurrent acceptanc
 multiple crops, delivery VAT, monthly-billing isolation, gallery deletion, both
 payment/render completion orders, partial settlement, tampering, worker claim
 recovery, bounded retry, retention, privacy and portable storage inclusion.
-An additional case runs the actual isolated renderer and inspects ICC/density
-and metadata stripping. The same integration suite is run on SQLite and local
+Additional cases run the actual isolated renderer for JPEG, PNG and TIFF and
+inspect ICC/density, metadata stripping and transparent-source backgrounds.
+They also cover frozen version-one profiles, exact delivery-zone pricing,
+uncovered countries, zone edits and native delivery invoice lines.
+The same integration suite is run on SQLite and local
 PostgreSQL 18.4. Frontend tests cover confirmation, retry IDs, crop editing,
 buyer-scoped baskets, conflicts and disabled-feature history.
-The final print-sales suite has 34 cases on each engine; the focused unit/image
-and inventory suites have 108 cases, and the frontend workflow/regression set has
-21. Additional native catalogue/CRM regressions also pass. Integration fixtures
-use local storage; live S3-bucket ordering/restore and ARM64 capacity measurements
+The final print-sales suite has 42 cases on each engine; the focused unit/image
+and inventory suites have 152 cases, and the frontend workflow/regression set has
+25. Native catalogue/CRM regressions (62 cases) and native-process protections
+(17 cases) also pass. The output test asserts that a separate image worker is in
+use before testing the encoders. Integration fixtures use local storage;
+live S3-bucket ordering/restore and ARM64 capacity measurements
 are not claimed.
 
 Desktop (1365×1000) and phone (390×844) screenshots/browser checks use synthetic

@@ -26,6 +26,7 @@ function sheet(row, snapshot, contact, entries) {
   pdf.fontSize(10).text(`Order ${row.id}\nSelection ${row.snapshot_hash}\nInvoice ${row.invoice_id}`);
   pdf.moveDown().text('PRIVATE STUDIO CHECKLIST — verify settlement and exact files before manual lab submission.');
   pdf.moveDown().text(`Deliver to: ${Object.values(contact.delivery).filter(Boolean).join(', ')}\nBuyer: ${contact.buyerEmail}`);
+  if (snapshot.shipping?.zoneName) pdf.text(`Delivery zone: ${snapshot.shipping.zoneName}`);
   pdf.text(`Retail total: ${snapshot.totalMinor} minor units (${snapshot.currency}); VAT ${snapshot.vatMinor}`);
   for (let n = 0; n < snapshot.items.length; n++) {
     const i = snapshot.items[n], p = i.profile, e = entries[n];
@@ -34,7 +35,9 @@ function sheet(row, snapshot, contact, entries) {
     pdf.fontSize(10).text(`File: ${e.name}\nSource: ${i.source.filename}\nSource SHA-256: ${i.source.sha256}\nArtwork SHA-256: ${V.hash(e.bytes)}`);
     pdf.text(`Trim: ${p.manufacturing.trimMm.width} × ${p.manufacturing.trimMm.height} mm\nArtwork: ${p.artwork.widthMm} × ${p.artwork.heightMm} mm\nBleed (top/right/bottom/left): ${Object.values(p.manufacturing.bleedMm).join('/')} mm\nProfile: ${p.id} revision ${p.revision}\nLab reference: ${p.labReference || '(not provided)'}`);
     pdf.text(p.selection.attributes.map(a => `${a.name}: ${a.options.map(o => o.name).join(', ')}`).join('\n'));
-    pdf.text('Output: sRGB JPEG. Single rectangular face only; no wrapping, folds or imposition.');
+    pdf.text(`Supplier: ${p.supplierName || '(studio configured)'}\nOutput: sRGB ${p.manufacturing.output.format.toUpperCase()}. Single rectangular face; no wrapping, folds or imposition.`);
+    if (p.instructions) pdf.moveDown().text(`Supplier instructions:\n${p.instructions}`);
+    if (pdf.y + 270 > pdf.page.height - pdf.page.margins.bottom) pdf.addPage();
     pdf.image(e.thumbnail, { fit: [250, 250] });
     pdf.moveDown().text('[ ] Correct file, crop, product, finish and quantities\n[ ] Delivery and actual lab destination checked\nLab reference / operator notes: ______________________________');
   }
@@ -70,24 +73,27 @@ function createWorker({ db, storage, sharp, orders }) {
         throw new Error('Frozen order identity changed or delivery was erased');
       for (let n = 0; n < s.items.length; n++) {
         const item = s.items[n], source = await db('print_sales_assets').where({ id: item.source.assetId, order_id: row.id }).first();
+        if (![1, 2].includes(item.profile.schemaVersion)) throw new Error('Unsupported frozen manufacturing profile version');
         if (!source || source.sha256 !== item.source.sha256) throw new Error('Retained original identity changed');
         const bytes = await verified(storage, source), geometry = require('./domain').geometry(item.source, item);
         let raster = sharp(bytes).rotate();
         if (item.fit === 'cover') raster = raster.extract({ left: geometry.left, top: geometry.top, width: geometry.width, height: geometry.height });
-        const encoded = await raster.resize(item.profile.artwork.widthPx, item.profile.artwork.heightPx,
-          { fit: item.fit === 'contain' ? 'contain' : 'cover', background: '#ffffff' })
-          .withIccProfile('srgb', { attach: true }).jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer();
-        const image = require('./jpegDensity').jpegDensity(encoded, item.profile.manufacturing.resolution.targetDpi);
+        const m = item.profile.manufacturing;
+        raster = raster.resize(item.profile.artwork.widthPx, item.profile.artwork.heightPx,
+          { fit: item.fit === 'contain' ? 'contain' : 'cover', background: m.background ?? '#ffffff' });
+        // Version-one accepted profiles retain their original transparency behaviour.
+        if (m.background !== undefined) raster = raster.flatten({ background: m.background });
+        const encoded = await require('./output').encode(raster, m.output, m.resolution.targetDpi), image = encoded.bytes;
         outputBytes += image.length;
         if (outputBytes > 64 * 1024 * 1024) throw new Error('Production artwork exceeds the 64 MB order limit');
         const thumbnail = await sharp(image).resize(320, 320, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
-        const asset = await orders.asset(row.id, 'artwork', image, row.claim, 'jpg');
-        entries.push({ name: `${String(n + 1).padStart(3, '0')}.jpg`, bytes: image, thumbnail, assetId: asset.id });
+        const asset = await orders.asset(row.id, 'artwork', image, row.claim, encoded.extension);
+        entries.push({ name: `${String(n + 1).padStart(3, '0')}.${encoded.extension}`, bytes: image, thumbnail, assetId: asset.id });
       }
       const report = await sheet(row, s, contact, entries);
       await orders.asset(row.id, 'sheet', report, row.claim, 'pdf');
-      const manifest = Buffer.from(JSON.stringify({ schemaVersion: 1, orderId: row.id, selectionHash: row.snapshot_hash,
-        invoiceId: row.invoice_id, items: s.items.map((i, n) => ({ file: entries[n].name, sha256: V.hash(entries[n].bytes),
+      const manifest = Buffer.from(JSON.stringify({ schemaVersion: 2, orderId: row.id, selectionHash: row.snapshot_hash,
+        invoiceId: row.invoice_id, shipping: s.shipping ?? null, items: s.items.map((i, n) => ({ file: entries[n].name, sha256: V.hash(entries[n].bytes),
           sourceFilename: i.source.filename, sourceSha256: i.source.sha256, quantity: i.quantity,
           crop: i.crop, fit: i.fit, profile: i.profile, invoiceLinePosition: i.linePosition })) }, null, 2));
       const pack = await zip([...entries, { name: 'manifest.json', bytes: manifest }, { name: 'order-sheet.pdf', bytes: report }]);

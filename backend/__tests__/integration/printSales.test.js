@@ -317,3 +317,100 @@ test('migration rollback refuses to discard retained orders', async () => {
   await expect(require('../../migrations/core/334_print_sales').down(db)).rejects.toThrow('destructive rollback');
   expect((await orders.owned(q.id, customerId, event.id)).status).toBe('quoted');
 });
+test.each(['png', 'tiff'])('studio-selected %s artwork and supplier instructions survive later configuration edits', async format => {
+  const p = config.profiles[0].definition;
+  p.supplierName = 'Studio-selected production partner'; p.instructions = 'Check the trim dimensions.\nUse the recorded stock code.';
+  p.labReference = 'STUDIO-OWN-SKU'; p.manufacturing.background = '#102030';
+  p.manufacturing.output = { format, colourSpace: 'srgb' };
+  config = await P.save(db, config); const a = await accepted();
+  p.supplierName = 'Changed future partner'; p.instructions = 'Future orders only';
+  p.manufacturing.output = { format: 'jpeg', colourSpace: 'srgb' };
+  await P.save(db, { ...config, profiles: [{ ...config.profiles[0], definition: p }] });
+  const isolated = require('../../src/services/isolatedSharp');
+  try {
+    await require('../../src/services/printSales/worker').createWorker({ db, storage, sharp: isolated, orders }).runOne();
+    const row = await fulfilment.order(a.id, admin); expect(row.error).toBeNull(); expect(row.render_status).toBe('ready');
+    const file = await db('print_sales_assets').where({ order_id: a.id, kind: 'artwork', claim: row.claim }).first();
+    expect(file.storage_key.endsWith(format === 'png' ? '.png' : '.tif')).toBe(true);
+    const meta = await sharp(await require('../../src/services/printSales/orders').verified(storage, file)).metadata();
+    expect(meta).toMatchObject({ format, width: 100, height: 150, density: 100 }); expect(meta.icc).toBeTruthy();
+    const frozen = P.parse(row.snapshot).items[0].profile;
+    expect(frozen.supplierName).toBe('Studio-selected production partner'); expect(frozen.instructions).toContain('\nUse the recorded stock code.');
+    const pack = await db('print_sales_assets').where({ order_id: a.id, kind: 'pack', claim: row.claim }).first();
+    const fs = require('fs/promises'), path = require('path'), temporary = path.join(process.env.STORAGE_PATH, `${uuid()}.zip`);
+    await fs.writeFile(temporary, await require('../../src/services/printSales/orders').verified(storage, pack));
+    const archive = new (require('node-stream-zip').async)({ file: temporary });
+    try {
+      const manifest = JSON.parse((await archive.entryData('manifest.json')).toString('utf8'));
+      expect(manifest.schemaVersion).toBe(2);
+      expect(manifest.shipping).toEqual(P.parse(row.snapshot).shipping);
+      expect(manifest.items[0].file).toBe(`001.${format === 'png' ? 'png' : 'tif'}`);
+      expect(manifest.items[0].profile).toEqual(frozen);
+    } finally { await archive.close(); await fs.rm(temporary, { force: true }); }
+  } finally { await isolated.shutdown(); }
+});
+test('studio background handles transparent originals without relying on a supplier-specific convention', async () => {
+  const bytes = await sharp({ create: { width: 400, height: 600, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+  await storage.put(`events/active/${event.slug}/individual/source.jpg`, bytes);
+  await db('photos').where({ id: photoId }).update({ content_sha256: V.hash(bytes) });
+  config.profiles[0].definition.manufacturing.output = { format: 'png', colourSpace: 'srgb' };
+  config.profiles[0].definition.manufacturing.background = '#102030'; await P.save(db, config);
+  const a = await accepted(); await worker.runOne();
+  const row = await fulfilment.order(a.id, admin); expect(row.render_status).toBe('ready');
+  const file = await db('print_sales_assets').where({ order_id: a.id, kind: 'artwork', claim: row.claim }).first();
+  const { data, info } = await sharp(await require('../../src/services/printSales/orders').verified(storage, file)).raw().toBuffer({ resolveWithObject: true });
+  expect(info.channels).toBe(3); expect([...data.subarray(0, 3)]).toEqual([16, 32, 48]);
+});
+test('country zones use different native delivery prices and freeze the selected zone on the invoice order', async () => {
+  const vat = await db('vat_codes').where({ direction: 'output', active: true }).where('rate', '>', 0).first();
+  const home = await require('../../src/services/quoteService').createLineItemPreset({ name: 'Studio home delivery', currency: 'EUR', price_mode: 'fixed', unit_price_minor: 100, vat_code: vat.code });
+  const other = await require('../../src/services/quoteService').createLineItemPreset({ name: 'Studio other delivery', currency: 'EUR', price_mode: 'fixed', unit_price_minor: 300, vat_code: vat.code });
+  config = await P.save(db, { ...config, shippingZones: [
+    { id: uuid(), name: 'Home region', countries: ['IE'], cataloguePresetId: home.id },
+    { id: uuid(), name: 'Second region', countries: ['DE'], cataloguePresetId: other.id },
+  ] });
+  const offers = await orders.offers(event.id, customerId); expect(offers.variants).toHaveLength(1);
+  expect(offers.countries).toEqual(['DE', 'IE']);
+  const homeQuote = await quoted(), input = payload(); input.delivery.country = 'DE'; input.delivery.city = 'Berlin'; input.delivery.postalCode = '10115';
+  const otherQuote = await quoted(input); expect(homeQuote.netMinor).toBe(600); expect(otherQuote.netMinor).toBe(800);
+  const a = await orders.accept(event.id, customerId, 'client', otherQuote.id, { snapshotHash: otherQuote.snapshotHash, acknowledgeSelection: true });
+  expect(P.parse((await fulfilment.order(a.id, admin)).snapshot).shipping).toMatchObject({ country: 'DE', zoneId: config.shippingZones[1].id, cataloguePresetId: other.id });
+  const lines = await db('invoice_line_items').where({ invoice_id: a.invoiceId }).orderBy('position');
+  expect(Number(lines[1].unit_price_minor)).toBe(300);
+});
+test('a country without a configured zone is refused without retaining files or creating an invoice', async () => {
+  await P.save(db, { ...config, shippingZones: [{ id: uuid(), name: 'Configured destinations', countries: ['DE'], cataloguePresetId: null }] });
+  await expect(quoted()).rejects.toThrow('supported delivery country');
+  expect(await db('print_sales_orders')).toHaveLength(0); expect(await db('print_sales_assets')).toHaveLength(0);
+});
+test('changing destination pricing requires a new quotation instead of rewriting the confirmed total', async () => {
+  config = await P.save(db, { ...config, shippingZones: [{ id: uuid(), name: 'Configured destinations', countries: ['IE'], cataloguePresetId: null }] });
+  const q = await quoted(); await P.save(db, { ...config, shippingZones: [{ ...config.shippingZones[0], name: 'Updated region' }] });
+  await expect(orders.accept(event.id, customerId, 'client', q.id, { snapshotHash: q.snapshotHash, acknowledgeSelection: true })).rejects.toThrow('offer changed');
+});
+test('a configured crop/fit restriction is enforced on the server', async () => {
+  config.profiles[0].definition.manufacturing.fitModes = ['contain']; await P.save(db, config);
+  await expect(quoted()).rejects.toThrow('crop/fit mode');
+});
+test('a version-one accepted profile keeps its frozen JPEG requirements after a configuration upgrade', async () => {
+  const a = await accepted(); await worker.runOne();
+  const original = await fulfilment.order(a.id, admin), old = P.parse(original.snapshot), id = uuid();
+  await db('print_sales_orders').insert({ id, request_hash: 'historical-fixture', customer_account_id: customerId,
+    status: 'capturing', render_status: 'pending', created_at: new Date().toISOString(), expires_at: new Date().toISOString() });
+  const source = await orders.asset(id, 'source', sourceBytes);
+  for (const item of old.items) {
+    item.source.assetId = source.id; const p = item.profile;
+    item.profile = { schemaVersion: 1, id: p.id, revision: p.revision, enabled: p.enabled, selection: p.selection,
+      manufacturing: { ...p.manufacturing, output: { format: 'jpeg', colourSpace: 'srgb' } }, artwork: p.artwork, labReference: p.labReference };
+    delete item.profile.manufacturing.background; item.profile.version = V.hash(item.profile);
+  }
+  const serialized = JSON.stringify(old);
+  await db('print_sales_orders').where({ id }).update({ status: 'accepted', render_status: 'queued', accepted_at: new Date().toISOString(),
+    snapshot: serialized, snapshot_hash: V.hash(serialized), contact: original.contact });
+  config.profiles[0].definition.manufacturing.output = { format: 'png', colourSpace: 'srgb' }; await P.save(db, config);
+  await worker.runOne();
+  const row = await db('print_sales_orders').where({ id }).first(); expect(row.render_status).toBe('ready');
+  const file = await db('print_sales_assets').where({ order_id: id, kind: 'artwork', claim: row.claim }).first();
+  expect((await sharp(await require('../../src/services/printSales/orders').verified(storage, file)).metadata()).format).toBe('jpeg');
+  expect(row.snapshot).toBe(serialized);
+});

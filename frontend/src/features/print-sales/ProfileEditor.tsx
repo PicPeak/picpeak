@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { ConfigurationPicker } from '../album-products/ConfigurationPicker';
 import { Input, Switch } from '../../components/common';
 import type { Product } from '../album-products/model';
-import type { Profile, Settings } from './model';
+import type { Profile, Settings, Output } from './model';
 export function ProfileEditor({ value, products, presets, onChange }: {
   value: Profile; products: Product[]; presets: Settings['presets']; onChange: (value: Profile) => void;
 }) {
@@ -46,7 +46,41 @@ export function ProfileEditor({ value, products, presets, onChange }: {
         value={m.resolution[key]} onChange={e => definition({ manufacturing: { ...m, resolution: { ...m.resolution, [key]: Number(e.target.value) } } })} />)}</div>
     <Input label={t('printSales.labReference', 'Lab reference or production code')} maxLength={200} value={d.labReference}
       onChange={e => definition({ labReference: e.target.value })} />
-    <p className="text-sm text-muted">{t('printSales.rectangularOnly', 'Single rectangular face, sRGB JPEG. Display sizes are separate from production measurements. Verify the lab requirements before enabling.')}</p>
+    <Input label={t('printSales.supplierName', 'Supplier label (optional)')} maxLength={120} value={d.supplierName || ''}
+      onChange={e => definition({ supplierName: e.target.value })} />
+    <label className="block">{t('printSales.supplierInstructions', 'Supplier preparation and ordering instructions')}
+      <textarea className="input w-full" rows={3} maxLength={2000} value={d.instructions || ''} onChange={e => definition({ instructions: e.target.value })} /></label>
+    <fieldset className="space-y-3"><legend>{t('printSales.outputRequirements', 'Production output requirements')}</legend>
+      <label className="block">{t('printSales.outputFormat', 'File format')}
+        <select className="input" value={m.output.format} onChange={e => {
+          const format = e.target.value as Output['format'];
+          const output: Output = format === 'jpeg' ? { format, colourSpace: 'srgb', quality: 95, chromaSubsampling: '4:4:4' }
+            : format === 'png' ? { format, colourSpace: 'srgb', compressionLevel: 6 } : { format, colourSpace: 'srgb', compression: 'lzw' };
+          definition({ manufacturing: { ...m, output } });
+        }}><option value="jpeg">JPEG</option><option value="png">PNG</option><option value="tiff">TIFF (8-bit)</option></select></label>
+      {m.output.format === 'jpeg' && <>
+        <Input label={t('printSales.jpegQuality', 'JPEG quality (1–100)')} type="number" min={1} max={100} value={m.output.quality ?? 95}
+          onChange={e => definition({ manufacturing: { ...m, output: { ...m.output, format: 'jpeg', quality: Number(e.target.value) } } })} />
+        <label className="block">{t('printSales.jpegSampling', 'JPEG chroma sampling')}
+          <select className="input" value={m.output.chromaSubsampling ?? '4:4:4'} onChange={e => definition({ manufacturing: { ...m, output: { ...m.output, format: 'jpeg', chromaSubsampling: e.target.value as '4:4:4' | '4:2:0' } } })}>
+            <option value="4:4:4">4:4:4</option><option value="4:2:0">4:2:0</option></select></label>
+      </>}
+      {m.output.format === 'png' && <Input label={t('printSales.pngCompression', 'PNG compression (0–9)')} type="number" min={0} max={9} value={m.output.compressionLevel ?? 6}
+        onChange={e => definition({ manufacturing: { ...m, output: { ...m.output, format: 'png', compressionLevel: Number(e.target.value) } } })} />}
+      {m.output.format === 'tiff' && <label className="block">{t('printSales.tiffCompression', 'TIFF compression')}
+        <select className="input" value={m.output.compression ?? 'lzw'} onChange={e => definition({ manufacturing: { ...m, output: { ...m.output, format: 'tiff', compression: e.target.value as 'lzw' | 'deflate' | 'none' } } })}>
+          <option value="lzw">LZW</option><option value="deflate">Deflate</option><option value="none">{t('printSales.noCompression', 'Uncompressed')}</option></select></label>}
+      <label className="block">{t('printSales.background', 'Background and fit border colour')}
+        <input type="color" value={m.background ?? '#ffffff'} onChange={e => definition({ manufacturing: { ...m, background: e.target.value } })} /></label>
+      <p className="text-sm text-muted">{t('printSales.supportedColour', 'Supported colour output: embedded sRGB. Other colour spaces and uploaded ICC profiles require a separately validated renderer.')}</p>
+    </fieldset>
+    <fieldset><legend>{t('printSales.allowedFit', 'Photo placement choices offered to buyers')}</legend>
+      {(['cover', 'contain'] as const).map(mode => <label key={mode} className="flex gap-2">
+        <input type="checkbox" checked={m.fitModes.includes(mode)} onChange={e => definition({ manufacturing: { ...m,
+          fitModes: e.target.checked ? [...m.fitModes, mode] : m.fitModes.filter(f => f !== mode) } })} />
+        {mode === 'cover' ? t('printSales.cover', 'Crop to fill') : t('printSales.fitWhole', 'Fit whole photograph')}</label>)}
+    </fieldset>
+    <p className="text-sm text-muted">{t('printSales.rectangularOutput', 'Single rectangular face. Display sizes are separate from production measurements. Verify your supplier requirements before enabling.')}</p>
     <Switch label={t('printSales.enableProfile', 'Enable this verified print variant')} checked={d.enabled} onChange={enabled => definition({ enabled })} />
   </article>;
 }
