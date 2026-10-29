@@ -1,8 +1,9 @@
-const { db, logActivity } = require('../../database/db');
+const { db } = require('../../database/db');
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { requireEventOwnership, requireEventOwner, scopeEventsQuery } = require('../../middleware/ownership');
-const { readGalleryPassword, isRecoverableStorageEnabled } = require('../../utils/galleryPasswordVault');
+const { isRecoverableStorageEnabled } = require('../../utils/galleryPasswordVault');
+const { revealGalleryPassword } = require('../../services/galleryPasswordService');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 
@@ -40,13 +41,7 @@ module.exports = (router) => {
       const event = await scopeEventsQuery(db('events').where('id', id), req.admin, 'created_by', { assignments: false }).first('id', 'event_name', 'require_password', 'client_access_enabled');
       if (!event) return res.status(404).json({ error: 'Event not found' });
 
-      const stored = await readGalleryPassword(id);
-      if (stored.password || stored.clientPassword) {
-        await logActivity('gallery_password_viewed',
-          { eventName: event.event_name, galleryPassword: Boolean(stored.password), clientPassword: Boolean(stored.clientPassword) },
-          id,
-          { type: 'admin', id: req.admin.id, name: req.admin.username });
-      }
+      const stored = await revealGalleryPassword(id, event, { type: 'admin', id: req.admin.id, name: req.admin.username });
       res.json({
         enabled: stored.enabled,
         password: stored.password,
