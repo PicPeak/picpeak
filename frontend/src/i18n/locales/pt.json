@@ -730,6 +730,25 @@
     "toolbar": {
       "browse": "Ferramentas da galeria",
       "selection": "Seleção"
+    },
+    "favoriteLists": {
+      "saveTo": "Salvar na lista",
+      "defaultList": "Meus favoritos",
+      "manage": "Gerenciar listas…",
+      "title": "Suas listas",
+      "intro": "Organize seus favoritos em listas. O marcador salva na lista escolhida.",
+      "defaultHint": "Lista padrão",
+      "nameLabel": "Nome da lista",
+      "rename": "Renomear {{name}}",
+      "deleteNamed": "Excluir {{name}}",
+      "confirmDelete_one": "Excluir \"{{name}}\" e a {{count}} foto salva nela?",
+      "confirmDelete_other": "Excluir \"{{name}}\" e as {{count}} fotos salvas nela?",
+      "delete": "Excluir lista",
+      "newPlaceholder": "Nova lista, ex.: Álbum",
+      "create": "Adicionar",
+      "nameTaken": "Você já tem uma lista com este nome.",
+      "limitReached": "Você pode ter até {{count}} listas.",
+      "saveError": "Não foi possível salvar a lista."
     }
   },
   "categories": {
@@ -1493,6 +1512,7 @@
       "defaultAllowRatings": "Classificação por estrelas",
       "defaultAllowLikes": "Gostos",
       "defaultAllowFavorites": "Favoritos",
+      "defaultAllowFavoriteLists": "Listas de favoritos",
       "defaultAllowComments": "Comentários",
       "defaultAllowReactions": "Reações emoji",
       "defaultAllowColorLabels": "Etiquetas de cor",
@@ -2565,7 +2585,16 @@
         "rated": "Avaliado",
         "reacted": "Reagiu",
         "commented": "Comentado",
-        "labeled": "Etiquetas de cor"
+        "labeled": "Etiquetas de cor",
+        "defaultList": "Lista padrão",
+        "favoriteLists": "Listas de favoritos",
+        "listCount_one": "{{count}} foto",
+        "listCount_other": "{{count}} fotos",
+        "listUpdated": "Atualizada {{date}}",
+        "showInPhotos": "Mostrar nas fotos",
+        "clearListFilter": "Mostrar todas as fotos",
+        "listFilterNamed": "Mostrando as fotos de {{name}}.",
+        "listFilter": "Mostrando as fotos de uma lista de favoritos."
       },
       "inviteStatus": {
         "pending": "Pendente",
@@ -3439,6 +3468,8 @@
       "reactions": "Reações com emojis",
       "reactionsDesc": "Um emoji por convidado por foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Marcar fotos como favoritas",
+      "favoriteLists": "Listas de favoritos",
+      "favoriteListsDesc": "Os convidados organizam os favoritos em listas com nome próprio, como \"Álbum\" ou \"Impressão\"",
       "perGuestLimits": "Limites por convidado",
       "perGuestLimitsDesc": "Limite quantas fotos cada convidado pode favoritar ou curtir — útil para pedidos como \"escolha suas N favoritas para o álbum\". Deixe em 0 para não ter limite. Se você reduzir o limite para menos do que um convidado já marcou, as marcações dele continuam; só novas adições ficam bloqueadas até ele remover algumas.",
       "maxFavoritesPerGuest": "Máximo de favoritas por convidado",

@@ -122,6 +122,9 @@ export const PhotoExportMenu: React.FC<PhotoExportMenuProps> = ({
         has_favorites: filters.hasFavorites,
         min_favorites: filters.minFavorites,
         has_comments: filters.hasComments,
+        // One favourite list (issue 2303), from the guest detail's link.
+        favorite_list: filters.favoriteList,
+        favorite_guest: filters.favoriteGuest,
         // #1044 — lets "export only the greens" round-trip to Lightroom.
         color_labels: filters.colorLabels?.length ? filters.colorLabels : undefined,
         my_color_labels: filters.myColorLabels?.length ? filters.myColorLabels : undefined,

@@ -2348,6 +2348,25 @@
     "toolbar": {
       "browse": "Galeriewerkzeuge",
       "selection": "Auswahl"
+    },
+    "favoriteLists": {
+      "saveTo": "In Liste speichern",
+      "defaultList": "Meine Favoriten",
+      "manage": "Listen verwalten…",
+      "title": "Deine Listen",
+      "intro": "Sortiere deine Favoriten in Listen. Das Lesezeichen speichert in die gewählte Liste.",
+      "defaultHint": "Standardliste",
+      "nameLabel": "Name der Liste",
+      "rename": "{{name}} umbenennen",
+      "deleteNamed": "{{name}} löschen",
+      "confirmDelete_one": "„{{name}}“ und das {{count}} darin gespeicherte Foto löschen?",
+      "confirmDelete_other": "„{{name}}“ und die {{count}} darin gespeicherten Fotos löschen?",
+      "delete": "Liste löschen",
+      "newPlaceholder": "Neue Liste, z. B. Album",
+      "create": "Hinzufügen",
+      "nameTaken": "Du hast bereits eine Liste mit diesem Namen.",
+      "limitReached": "Du kannst bis zu {{count}} Listen anlegen.",
+      "saveError": "Die Liste konnte nicht gespeichert werden."
     }
   },
   "categories": {
@@ -3392,6 +3411,7 @@
       "defaultAllowRatings": "Sternebewertung",
       "defaultAllowLikes": "Likes",
       "defaultAllowFavorites": "Favoriten",
+      "defaultAllowFavoriteLists": "Favoritenlisten",
       "defaultAllowComments": "Kommentare",
       "defaultAllowReactions": "Emoji-Reaktionen",
       "defaultAllowColorLabels": "Farbmarkierungen",
@@ -5595,7 +5615,16 @@
         "rated": "Bewertet",
         "reacted": "Reagiert",
         "commented": "Kommentiert",
-        "labeled": "Farbmarkierungen"
+        "labeled": "Farbmarkierungen",
+        "defaultList": "Standardliste",
+        "favoriteLists": "Favoritenlisten",
+        "listCount_one": "{{count}} Foto",
+        "listCount_other": "{{count}} Fotos",
+        "listUpdated": "Geändert {{date}}",
+        "showInPhotos": "In Fotos zeigen",
+        "clearListFilter": "Alle Fotos zeigen",
+        "listFilterNamed": "Angezeigt werden die Fotos in {{name}}.",
+        "listFilter": "Angezeigt werden die Fotos einer Favoritenliste."
       },
       "inviteStatus": {
         "pending": "Ausstehend",
@@ -6521,6 +6550,8 @@
       "reactions": "Emoji-Reaktionen",
       "reactionsDesc": "Ein Emoji pro Gast und Foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Fotos als Favoriten markieren",
+      "favoriteLists": "Favoritenlisten",
+      "favoriteListsDesc": "Gäste sortieren ihre Favoriten in eigene Listen, etwa „Album“ oder „Druck“",
       "perGuestLimits": "Limits pro Gast",
       "perGuestLimitsDesc": "Begrenzen, wie viele Fotos jeder Gast favorisieren oder liken kann — praktisch für „Wählen Sie Ihre Top-N fürs Album“-Abläufe. 0 = unbegrenzt. Eine Senkung unter den aktuellen Stand eines Gasts lässt vorhandene Einträge bestehen; nur neue Hinzufügungen werden blockiert, bis er welche entfernt.",
       "maxFavoritesPerGuest": "Max. Favoriten pro Gast",

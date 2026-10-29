@@ -2,6 +2,7 @@ import React from 'react';
 import { Heart, Star, MessageSquare, Bookmark } from 'lucide-react';
 import { Button } from '../common';
 import { useTranslation } from 'react-i18next';
+import { FavoriteListSwitcher } from './FavoriteListSwitcher';
 
 export type FilterType = 'all' | 'liked' | 'favorited' | 'rated' | 'commented';
 // Multi-select feedback filters (#889): the active set holds the concrete
@@ -97,6 +98,8 @@ export const GalleryFilter: React.FC<GalleryFilterProps> = ({
             </Button>
           </div>
         </div>
+        {/* Named lists (issue 2303); absent without them. */}
+        <FavoriteListSwitcher className="mt-2" />
       </div>
     );
   }
@@ -223,6 +226,8 @@ export const GalleryFilter: React.FC<GalleryFilterProps> = ({
           </div>
         </div>
       )}
+      {/* Named lists (issue 2303); absent without them. */}
+      <FavoriteListSwitcher className="mt-2" />
     </div>
   );
 };

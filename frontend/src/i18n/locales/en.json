@@ -1757,6 +1757,25 @@
     "toolbar": {
       "browse": "Gallery tools",
       "selection": "Selection"
+    },
+    "favoriteLists": {
+      "saveTo": "Save to list",
+      "defaultList": "My favorites",
+      "manage": "Manage lists…",
+      "title": "Your lists",
+      "intro": "Sort your favorites into lists. The bookmark saves to the list you pick.",
+      "defaultHint": "Default list",
+      "nameLabel": "List name",
+      "rename": "Rename {{name}}",
+      "deleteNamed": "Delete {{name}}",
+      "confirmDelete_one": "Delete \"{{name}}\" and the {{count}} photo saved in it?",
+      "confirmDelete_other": "Delete \"{{name}}\" and the {{count}} photos saved in it?",
+      "delete": "Delete list",
+      "newPlaceholder": "New list, e.g. Album",
+      "create": "Add",
+      "nameTaken": "You already have a list with this name.",
+      "limitReached": "You can have up to {{count}} lists.",
+      "saveError": "The list could not be saved."
     }
   },
   "categories": {
@@ -2867,6 +2886,7 @@
       "defaultAllowRatings": "Star ratings",
       "defaultAllowLikes": "Likes",
       "defaultAllowFavorites": "Favorites",
+      "defaultAllowFavoriteLists": "Favorite lists",
       "defaultAllowComments": "Comments",
       "defaultAllowReactions": "Emoji reactions",
       "defaultAllowColorLabels": "Color labels",
@@ -5077,7 +5097,16 @@
         "rated": "Rated",
         "reacted": "Reacted",
         "commented": "Commented",
-        "labeled": "Color labels"
+        "labeled": "Color labels",
+        "defaultList": "Default list",
+        "favoriteLists": "Favorite lists",
+        "listCount_one": "{{count}} photo",
+        "listCount_other": "{{count}} photos",
+        "listUpdated": "Updated {{date}}",
+        "showInPhotos": "Show in photos",
+        "clearListFilter": "Show all photos",
+        "listFilterNamed": "Showing the photos in {{name}}.",
+        "listFilter": "Showing the photos in one favorite list."
       },
       "inviteStatus": {
         "pending": "Pending",
@@ -6576,6 +6605,8 @@
       "reactions": "Emoji Reactions",
       "reactionsDesc": "One emoji per guest per photo (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Mark photos as favorites",
+      "favoriteLists": "Favorite lists",
+      "favoriteListsDesc": "Guests sort their favorites into lists they name, such as \"Album\" or \"Print\"",
       "perGuestLimits": "Per-guest limits",
       "perGuestLimitsDesc": "Cap how many photos each guest can favorite or like — useful for \"pick your top N for the album\" workflows. Leave at 0 for no limit. Lowering a cap below an existing guest's count keeps their existing rows; only new adds are blocked until they remove some.",
       "maxFavoritesPerGuest": "Max favorites per guest",
