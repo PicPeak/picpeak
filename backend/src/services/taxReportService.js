@@ -51,6 +51,7 @@ const REPORTABLE_STATUSES = ['sent', 'paid', 'overdue', 'pending_delivery', 'can
 
 // D.2 — `ensureInt` consolidated into utils/numericHelpers.
 const { ensureInt } = require('../utils/numericHelpers');
+const { toTimestamp } = require('../utils/dateNormalize');
 const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
 const logger = require('../utils/logger');
 
@@ -159,6 +160,16 @@ async function loadSkontoMap(invoiceIds) {
     map.set(r.invoice_id, cur);
   }
   return map;
+}
+
+// Chronological order for report and journal rows. On PostgreSQL `date` is a Date, and
+// String(Date) starts with the weekday name, so a string compare sorted the
+// PDF and CSV exports Fri, Mon, Thu (issue 2335). On SQLite it is text or
+// epoch ms; toTimestamp reads every shape. A row without a date sorts first.
+function byDate(a, b) {
+  const ta = toTimestamp(a.date);
+  const tb = toTimestamp(b.date);
+  return ((Number.isNaN(ta) ? -Infinity : ta) - (Number.isNaN(tb) ? -Infinity : tb)) || 0;
 }
 
 /**
@@ -335,7 +346,7 @@ async function loadCosts({ from, to, cur }) {
   }
 
   // Stable chronological order across both sources.
-  rows.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  rows.sort(byDate);
 
   return { rows, totalNet, totalVat, totalGross, reclaimableVat };
 }
@@ -575,7 +586,7 @@ async function getTaxReport({ from, to, currency, includeCosts = true } = {}) {
         totalMinor: -Math.abs(c.totalMinor),
       })),
     ];
-    ledger.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    ledger.sort(byDate);
 
     return {
       rows,
@@ -1123,5 +1134,5 @@ module.exports = {
   renderTaxReportPdf,
   renderTaxReportCsv,
   // Exposed for unit tests.
-  _internal: { grossUpLateFee, computeReportedAmounts, buildCustomerLabel, formatVatRate, loadCosts, scopeLedger, normalizeScope },
+  _internal: { grossUpLateFee, computeReportedAmounts, buildCustomerLabel, formatVatRate, loadCosts, scopeLedger, normalizeScope, byDate },
 };

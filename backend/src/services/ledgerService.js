@@ -19,7 +19,7 @@
 
 const { db, withRetry } = require('../database/db');
 const { getAppSetting } = require('../utils/appSettings');
-const { buildCustomerLabel } = require('./taxReportService')._internal;
+const { buildCustomerLabel, byDate } = require('./taxReportService')._internal;
 const { ensureInt } = require('../utils/numericHelpers');
 const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('./accountingHistory');
@@ -389,7 +389,8 @@ async function buildPostings({ from, to, currency } = {}) {
       }
     }
 
-    postings.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    // By time value: on PostgreSQL `date` is a Date (issue 2335).
+    postings.sort(byDate);
     return { postings, currency: cur, period: { from, to } };
   });
 }
