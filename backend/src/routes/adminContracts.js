@@ -41,6 +41,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { validateFileType, validateFileContent } = require('../utils/fileSecurityUtils');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
+const { toDateOnly } = require('../utils/dateOnly');
 const contractService = require('../services/contractService');
 const accountingHistory = require('../services/accountingHistory');
 const contractBlocksService = require('../services/contractBlocksService');
@@ -177,15 +178,16 @@ function transformContract(c, inclusions, textSections, attachmentRows) {
     // related doc in one query.
     dealUuid: c.deal_uuid || null,
     language: c.language,
-    issueDate: c.issue_date,
-    validUntil: c.valid_until,
+    // `date` columns: a bare day on both engines (see utils/dateOnly).
+    issueDate: toDateOnly(c.issue_date),
+    validUntil: toDateOnly(c.valid_until),
     title: c.title,
     // Event snapshot fields (migration 130 in-place edit). Null when
     // the standalone contract didn't set them OR when the column
     // hasn't migrated yet on this install — the API surface stays
     // stable either way.
     eventName: c.event_name || null,
-    eventDate: c.event_date || null,
+    eventDate: toDateOnly(c.event_date),
     eventTimeStart: c.event_time_start || null,
     eventTimeEnd: c.event_time_end || null,
     introText: c.intro_text,
