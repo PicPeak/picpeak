@@ -1013,6 +1013,8 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       }
       // SQLite does not enable FK cascades: erase client names/session
       // digests on this deletion path too, with history before its offers.
+      if (await trx.schema.hasTable('print_sales_orders'))
+        await trx('print_sales_orders').where({ event_id: Number(req.params.id) }).update({ event_id: null });
       if (await trx.schema.hasTable('event_album_products')) {
         if (await trx.schema.hasTable('album_product_choice_history')) {
           await trx('album_product_choice_history')

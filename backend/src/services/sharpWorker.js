@@ -136,10 +136,11 @@ async function run(job) {
   for (const [name, encodedArgs] of job.steps) {
     if (!allowed.has(name)) throw refusal('Unsupported image operation');
     const args = decode(encodedArgs);
-    // Narrow on purpose: a profile argument can be a file path, the profile is
-    // never attached, and EXIF is only ever written to carry an Orientation tag.
+    // Narrow on purpose: only the built-in sRGB profile is allowed. Print
+    // artwork may embed that known profile; arbitrary profile paths remain
+    // forbidden. EXIF is only ever written to carry an Orientation tag.
     if (name === 'withIccProfile' && (args.length !== 2 || args[0] !== 'srgb' || !args[1] ||
-        Object.keys(args[1]).join() !== 'attach' || args[1].attach !== false)) throw refusal('Unsupported image operation');
+        Object.keys(args[1]).join() !== 'attach' || typeof args[1].attach !== 'boolean')) throw refusal('Unsupported image operation');
     if (name === 'withExif') {
       const exif = args[0];
       const keys = exif && typeof exif === 'object' ? Object.keys(exif) : [];

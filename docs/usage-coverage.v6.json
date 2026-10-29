@@ -222,6 +222,10 @@
         "gallery_watermarks"
       ],
       "reason": "Watermark logo upload/removal and default watermark behavior settings only; no image contents or applied-watermark usage data."
+    },
+    "printSales": {
+      "signals": [],
+      "reason": "Experimental print sales contain private buyer details, photographs, crops and financial records; neither order content nor customer actions are collected."
     }
   },
   "reviewed_picpeak_base": "a5ff9264 (3.124.1-beta.0)",
@@ -2019,6 +2023,32 @@
         "POST /snipcart-webhook",
         "POST /:slug/snipcart-webhook"
       ]
+    },
+    "adminPrintSales.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Experimental print sales contain private buyer details, photographs, crops and financial records; neither order content nor customer actions are collected.",
+      "route_signatures": [
+        "GET /settings",
+        "PUT /settings",
+        "GET /events/:eventId",
+        "PUT /events/:eventId",
+        "GET /orders",
+        "GET /orders/:id",
+        "POST /orders/:id/actions",
+        "GET /orders/:id/files/:kind"
+      ]
+    },
+    "gallery/printSales.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Experimental print sales contain private buyer details, photographs, crops and financial records; neither order content nor customer actions are collected.",
+      "route_signatures": [
+        "GET /:slug/print-sales",
+        "GET /:slug/print-sales/orders",
+        "POST /:slug/print-sales/quotes",
+        "POST /:slug/print-sales/orders/:id/accept"
+      ]
     }
   },
   "feature_flags": {
@@ -2192,6 +2222,10 @@
     "albumProducts": {
       "signals": [],
       "reason": "Experimental product configuration is excluded from usage signals; no private product choices or audit labels are observed."
+    },
+    "printSales": {
+      "signals": [],
+      "reason": "Experimental print sales contain private buyer details, photographs, crops and financial records; neither order content nor customer actions are collected."
     }
   },
   "excluded_runtime": [

@@ -1,13 +1,14 @@
-# Print-sales manufacturing profiles: preparatory slice
+# Print-sales manufacturing profiles
 
 Related: [print sales #48](https://github.com/PicPeak/picpeak/issues/48),
 [shared product configuration](album-products.md).
 
-This is an isolated domain helper for discussion and testing. Nothing imports it
-from application routes or workers. It does not enable a shop, persist profiles,
-render photographs, create orders/invoices, take payments or submit lab orders.
-The wider proposal on #48 has not yet received agreement on its buyer, invoice
-or worker integration boundaries. The helper does not decide those boundaries.
+The resolver now underpins the default-off experimental [print-sales workflow](print-sales.md):
+profile configuration, known-customer gallery orders, native product-only invoices,
+bounded preparation and reviewed manual fulfilment. The contract below describes
+the pure resolver; persistence, access checks and file lifecycle belong to its
+calling services. These are implementation choices for review, not maintainer
+agreement or a production rollout.
 
 ## Contract
 
@@ -56,9 +57,9 @@ The initial capability is a single rectangular photo face, with optional bleed.
 It accepts only sRGB JPEG requirements. Canvas wrapping/mirroring, folded cards,
 books, masks, custom templates, CMYK and uploaded ICC profiles are rejected.
 Unknown manufacturing/output fields are refused, rather than silently ignored.
-No renderer exists here: embedding/converting sRGB and validating effective
-source resolution will require real output tests in the rendering slice. A
-minimum-DPI value in a profile does not yet check a photograph's quality.
+The calling order service checks effective source resolution against the crop,
+and the isolated renderer embeds built-in sRGB. Those operations remain outside
+the pure resolver. Geometry and output tests do not establish physical lab quality.
 
 There is a maximum of 100 candidate profiles per resolution request, 2,000 mm
 per trim axis, 100 mm per bleed/safe edge, 72–600 DPI, and 60 megapixels per

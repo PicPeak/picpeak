@@ -1278,6 +1278,7 @@ async function eraseCustomer(id, erasedByAdminId) {
       throw new NotFoundError('Customer', id);
     }
 
+    await require('./printSales/fulfilment').eraseCustomer(trx, id);
     erasedDocuments = await customerDocumentsService.markErasedForCustomer(id, trx);
     erasedContracts = await contractErasure.apply(trx, contractPlan, eraseActor);
 

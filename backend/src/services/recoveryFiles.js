@@ -17,7 +17,7 @@ const logger = require('../utils/logger');
 const MANAGED_ROOTS = [
   'events/active', 'events/archived', 'thumbnails', 'previews', 'heroes',
   'videos', 'watermarks', 'uploads/transfers', 'transfers',
-  'business-docs/customer-documents', 'album-products',
+  'business-docs/customer-documents', 'album-products', '.print-sales',
 ];
 const DEFAULT_MAX_BYTES = 5000 * 1024 * 1024;
 // The list of required keys lives beside the database dump it belongs to; the
@@ -26,6 +26,7 @@ const REFERENCES_SUFFIX = '.storage-references.json';
 // Only the columns a storage reference is read from, fetched in id order.
 const REFERENCE_COLUMNS = {
   album_product_images: ['id', 'storage_key'],
+  print_sales_assets: ['id', 'storage_key'],
   events: ['id', 'is_archived', 'archive_path', 'source_mode'],
   photos: ['id', 'event_id', 'path', 'source_origin', 'thumbnail_path', 'preview_path', 'hero_path', 'watermark_path', 'web_path'],
   customer_documents: ['id', 'storage_key', 'purged_at'],
@@ -162,6 +163,7 @@ async function requiredKeys(knex, selected, derived) {
       table === 'transfer_uploads' ? 'uploads/transfers' : 'transfers', `Transfer file ${row.id}`);
   }
   for await (const row of rows(knex, 'album_product_images')) add(row.storage_key, 'album-products', `Product image ${row.id}`);
+  for await (const row of rows(knex, 'print_sales_assets')) add(row.storage_key, '.print-sales', `Print order asset ${row.id}`);
   return keys;
 }
 

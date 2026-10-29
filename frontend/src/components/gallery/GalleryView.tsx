@@ -1,3 +1,4 @@
+import { GalleryPrintShop } from '../../features/print-sales/GalleryPrintShop';
 import { GalleryProductPanel } from '../../features/album-products/GalleryProductPanel';
 import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 import { GalleryUnavailableNotice } from './GalleryUnavailableNotice';
@@ -2017,6 +2018,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         </PhotoSalesProvider>
 
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
+        {viaCustomer && <GalleryPrintShop slug={slug} photos={filteredPhotos} />}
 
         {/* Filename list for a RAW editor search (issue 1733, A3d). */}
         {showCopyFilenames && (
@@ -2223,6 +2225,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       >
         {clientAccessDialog}
         {(isClient || viaCustomer) && <GalleryProductPanel slug={slug} />}
+        {viaCustomer && <GalleryPrintShop slug={slug} photos={filteredPhotos} />}
         {/* Expiration Banner */}
         {showUrgentWarning && event.expires_at && (
           <ExpirationBanner daysRemaining={daysUntilExpiration} expiresAt={event.expires_at} />

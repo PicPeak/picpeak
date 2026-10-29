@@ -1,0 +1,167 @@
+# Experimental gallery print sales (#48)
+
+This branch implements three connected slices on the merged shared product
+catalogue: manufacturing-profile administration; known-customer photo/crop orders
+with native invoices; and background preparation with reviewed manual fulfilment.
+`printSales` and every gallery's shop switch default **off**. Nothing is deployed
+or enabled by these source changes. The proposed initial boundaries have not
+received maintainer agreement on #48.
+
+## Configure and use
+
+1. Enable **Product configurator**, **Billing** and **Print sales** in Settings →
+   Features. Use an assigned, active customer-portal account for the buyer.
+2. Create products/options in the shared product catalogue. Link each product to
+   an active fixed-price CRM item with currency, option surcharges and output VAT.
+   There is no second print price list or tax implementation.
+3. Open **Settings → Print sales**. Choose delivery countries, buyer policy and
+   an optional ordinary CRM delivery-price item. Delivery is its own taxable
+   product line; all lines in an order must share currency and output VAT code.
+   No delivery item means delivery is included in the product price.
+4. Add each supported product/option combination as a manufacturing profile.
+   Choose the shared options and matching CRM item; enter actual trim, bleed,
+   safe insets, source/output DPI and the lab's reference. Verify these against
+   that studio's production specification, then enable the variant and use the
+   standard settings save bar. Display dimensions do not determine artwork size.
+5. The gallery owner enables ordering in the gallery's product settings. The
+   enabling admin becomes its billing/fulfilment owner and must retain native
+   billing/customer permissions. Order acceptance checks that live authority.
+6. A verified assigned customer opens the gallery through the customer portal.
+   The shop offers supported variants, drag/zoom/reset crops, whole-photo fit,
+   per-photo copies and a basket scoped to that buyer's browser session. The same
+   photograph can appear more than once with different products/crops. Delivery
+   details are collected once; the server reuses the verified account email.
+7. Review the frozen quotation, final tax/delivery total and policy. Explicit
+   confirmation creates one product-only **native invoice** and queues artwork.
+   The studio opens that invoice from the order and issues/sends it through
+   normal CRM billing. The customer pays by bank transfer; native confirmed
+   payments are authoritative. No invoice or payment email is sent by the shop
+   itself. Preparation and payment can finish in either order.
+8. In Print sales, download the settled order's supplier ZIP and studio PDF,
+   check the exact files, record the studio review, submit to the chosen lab
+   manually, record its reference, and explicitly record dispatch/tracking.
+   None of these buttons calls a supplier API or purchases anything.
+
+The client acknowledges selected photographs, crops, quantities, prices, delivery
+and policy (`photo-selection-v1`). This does not claim that the client approved
+unfinished production files. The separate studio review binds the finished
+artwork's byte identity. Shop configuration must not substitute for actual lab
+testing, colour checks or physical sample approval.
+
+## Acceptance and billing guarantees
+
+Quotations retain order-specific original bytes **before** acceptance, along with
+source hashes, original filenames, EXIF-oriented geometry, manufacturing/profile
+versions, native configured lines, taxes, totals and the policy. Quotations expire
+after 30 minutes. Catalogue, pricing, billing-owner, source and visibility changes
+require a new quotation. A shared gallery password or entered customer ID cannot
+identify the buyer. Guests, PIN-only clients and admin previews cannot order.
+
+Acceptance locks the catalogue/settings/order, verifies the buyer assignment and
+request acknowledgement and creates the native invoice within the same database
+transaction. Request replay returns the existing order/invoice. Concurrent capture
+requests return a retryable conflict; concurrent acceptance cannot create another
+obligation. Monthly/manual accumulation and automatic project-invoice appending
+are bypassed. Each photo allocation retains its own invoice line position.
+
+The immutable commercial/source snapshot is protected by SQLite and PostgreSQL
+triggers. Contacts are stored separately so eventual privacy cleanup can remove
+them. Financial option images use native invoice retention. A catalogue edit
+never changes accepted work; a later source replacement never supplies new bytes
+to an accepted order.
+
+Partial payment, a cancelled invoice, an invoice whose frozen commercial content
+changed, missing delivery details, unready/tampered files or an obsolete review
+holds fulfilment. The native invoice must be fully settled without relying on a
+success page or a user-supplied payment state. Native correction/refund accounting
+stays authoritative. To withdraw an order, correct/cancel its invoice and any
+live replacements first, then cancel the order before lab submission. Automatic
+rebinding to a reissued invoice is not implemented; agree revised selections as
+a new order rather than silently changing accepted artwork or charges. Orders
+already submitted to a lab require manual cancellation/refund resolution.
+
+## Preparation, files and recovery
+
+The normal backend starts a database-backed worker. One order is prepared at a
+time across replicas. A claim UUID, heartbeat and compare-and-set publication
+prevent an interrupted attempt from publishing over a newer attempt. Claims
+older than five minutes can recover; three failures require explicit studio
+retry. Failure never rewrites the invoice or pretends that received money is
+unpaid. Feature withdrawal pauses new rendering and ordering while retaining
+admin access to orders and prepared files.
+
+The existing isolated image worker performs metadata inspection and rendering.
+Its profile allowlist accepts only built-in sRGB with explicit attachment on/off;
+arbitrary ICC paths remain forbidden. Output is JPEG at the frozen pixel size,
+with embedded sRGB and JFIF density, without copying camera EXIF/XMP/GPS. Density
+metadata rounds fractional DPI; derived pixel geometry and the manifest retain
+the configured physical dimensions/resolution. There is no arbitrary ICC upload,
+CMYK conversion, soft-proof promise, canvas wrapping, folded-card imposition or
+album layout capability. Canvas-front/flat wall-art output must be a supported
+single rectangle. Bleed is part of the selected artwork ratio; it is not a
+supplier-specific mirror/wrap operation.
+
+The supplier ZIP contains numbered JPEGs, a versioned manifest mapping each file
+to its frozen source/profile/crop/quantity and invoice position, and a private
+studio PDF with cropped thumbnails and delivery/checklist details. A receipt is
+not the order sheet. Every manual release re-verifies file SHA-256 identities.
+
+Current bounds are 20 photo items, 1–100 copies each, 50 MiB per source, 200 MiB
+of captured originals per quotation, two simultaneous captures globally and two
+unexpired quotations per buyer (20 globally). At most 20 accepted orders can be
+queued/running and at most 100 accepted orders await studio resolution (10 per
+buyer). A render profile allows at most 60 megapixels; an order allows 64 MiB of
+production JPEGs and an 80 MiB ZIP.
+Reads have a 60-second timeout. These are conservative initial limits, not an
+ARM64 throughput or memory benchmark; image-resource policy may refuse earlier.
+
+Private objects live under `.print-sales/<order-id>/` using the normal local/S3
+storage adapter. Normal backups, required-key recovery inventories and portable
+exports/imports include them, **even when gallery photos are excluded**. Database
+backups alone do not replace storage backups. Capture, acceptance, rendering,
+retention and downloads participate in the native application-work drain; the
+worker also stops/resumes with coordinated restore. Gallery deletion clears its
+live order link on both normal and archived paths and retains order-specific
+sources. It does not cancel paid work or its invoice.
+
+Unaccepted quotations expire; abandoned sources become eligible for cleanup
+after another day. Accepted unpaid/paid orders are retained until explicitly
+resolved, independently of invoice due dates. Dispatched/cancelled artwork and
+contacts are purged after 90 days from closure. Cleanup runs in batches. Native
+customer erasure requires active accepted orders to be resolved first; terminal
+order contacts are cleared and files scheduled for purge. Commercial/audit
+snapshots and native financial records remain under their accounting retention
+rules. This includes source filenames and specifications; document that in the
+studio's retention policy. Failed/superseded render attempts are private and are
+removed with terminal order assets, not exposed as current artwork.
+
+## Validation and limits
+
+Synthetic tests cover real core migrations, native HTTP authentication and CRM
+invoice/payment services, optimistic settings, quote replay/concurrent acceptance,
+multiple crops, delivery VAT, monthly-billing isolation, gallery deletion, both
+payment/render completion orders, partial settlement, tampering, worker claim
+recovery, bounded retry, retention, privacy and portable storage inclusion.
+An additional case runs the actual isolated renderer and inspects ICC/density
+and metadata stripping. The same integration suite is run on SQLite and local
+PostgreSQL 18.4. Frontend tests cover confirmation, retry IDs, crop editing,
+buyer-scoped baskets, conflicts and disabled-feature history.
+The final print-sales suite has 34 cases on each engine; the focused unit/image
+and inventory suites have 108 cases, and the frontend workflow/regression set has
+21. Additional native catalogue/CRM regressions also pass. Integration fixtures
+use local storage; live S3-bucket ordering/restore and ARM64 capacity measurements
+are not claimed.
+
+Desktop (1365×1000) and phone (390×844) screenshots/browser checks use synthetic
+fixtures and the real UI components. They are visual/interaction checks, not a
+claim that a live shop, real payment or physical supplier product was tested.
+Production build, TypeScript and lint are checked. The broader portable restore
+containment suite needed `PICPEAK_IMPORT_WORKER_MEMORY_MIB=2048` on this Node 24
+runner; its default budget intermittently refused restore workers. This changes
+the test process only, not application defaults or print worker limits.
+
+Stripe/card collection, guest accounts, paid digital downloads, albums, supplier
+API connectors, automatic invoice delivery and post-submission lab cancellation
+are outside this release. No existing private deployment or production data is
+migrated by this branch. Lab profile approval, physical samples and a controlled
+deployment review remain necessary before opening an actual shop.

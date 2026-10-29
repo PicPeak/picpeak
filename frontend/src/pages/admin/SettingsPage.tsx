@@ -1,3 +1,4 @@
+import { PrintSalesAdminPage } from '../../features/print-sales/AdminPage';
 import { AlbumProductCataloguePage } from '../../features/album-products/CataloguePage';
 import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -229,6 +230,7 @@ export const SettingsPage: React.FC = () => {
           )}
 
           {activeTab === 'albumProducts' && <AlbumProductCataloguePage />}
+          {activeTab === 'printSales' && <PrintSalesAdminPage />}
           {activeTab === 'features' && <FeaturesTab />}
 
           {activeTab === 'general' && (
