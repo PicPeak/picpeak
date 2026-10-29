@@ -207,7 +207,10 @@ async function loadCosts({ from, to, cur }) {
   // (no SQL date() function) so it's valid on both Postgres and SQLite — the
   // mocked unit tests can't catch a PG-only function error. invoice_date is a
   // DATE, created_at a TIMESTAMP; both compare correctly against ISO literals.
-  const toEnd = `${to} 23:59:59.999`;
+  // The 'T' matters on SQLite, where created_at is text: it sorts after the
+  // space of 'YYYY-MM-DD HH:MM:SS' and after the digits of an ISO time, so
+  // both shapes on the last day are inside; PostgreSQL reads it as before.
+  const toEnd = `${to}T23:59:59.999`;
 
   const push = (r) => {
     rows.push(r);
