@@ -80,7 +80,7 @@ async function folderIdUpdate(eventId, raw) {
 const { photoCapOf, countEventPhotos, insertPhotoWithinCap, photoCapError } = require('../services/photoCap');
 const { claimPromotion } = require('../services/watchFolderClaims');
 const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
-const { sha256File, findDuplicate, duplicateName } = require('../services/photoDuplicates');
+const { sha256File, findDuplicate, duplicateName, listDuplicateGroups, duplicatesOf, uploadedMs, DEFAULT_GROUP_LIMIT, MAX_GROUP_LIMIT } = require('../services/photoDuplicates');
 
 
 const { validateFileType, validateFileContent, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
@@ -1359,6 +1359,156 @@ router.post('/:eventId/photos/trash/purge', adminAuth, requirePermission('photos
     res.status(purged > 0 || failed.length === 0 ? 200 : 500).json({ purged, failed });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to delete photos from the trash');
+  }
+});
+
+// The duplicates view (issue 2194): photos of this gallery with the same
+// bytes, by the content hash uploads store. Only byte-identical files match,
+// never across galleries, and a photo without a hash (imported before
+// hashing) is not compared.
+const photoSource = (photo) => {
+  if (photo.uploaded_by === 'guest') return 'guest';
+  if (photo.source_origin === 'external' || photo.source_origin === 'reference') return 'external';
+  return 'admin';
+};
+
+router.get('/:eventId/photos/duplicates', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.eventId, 10);
+    const limitParam = parseInt(req.query.limit, 10);
+    const offsetParam = parseInt(req.query.offset, 10);
+    const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, MAX_GROUP_LIMIT) : DEFAULT_GROUP_LIMIT;
+    const offset = Number.isInteger(offsetParam) && offsetParam > 0 ? offsetParam : 0;
+    const result = await listDuplicateGroups(eventId, {
+      limit,
+      offset,
+      columns: ['filename', 'original_filename', 'size_bytes', 'media_type', 'uploaded_by', 'source_origin',
+        'moderation_status', 'processing_error', 'poster_offset_seconds'],
+    });
+    res.json({
+      groups: result.groups.map((group) => ({
+        content_sha256: group.content_sha256,
+        photos: group.photos.map((photo) => ({
+          id: photo.id,
+          filename: duplicateName(photo),
+          // One shape for every row: SQLite's zone-less default would be
+          // read in the browser's zone and pick the wrong oldest copy.
+          uploaded_at: Number.isFinite(uploadedMs(photo)) ? new Date(uploadedMs(photo)).toISOString() : null,
+          size: photo.size_bytes ?? null,
+          media_type: photo.media_type || 'image',
+          source: photoSource(photo),
+          moderation_status: photo.moderation_status || null,
+          thumbnail_url: adminThumbnailUrl(eventId, photo),
+        })),
+      })),
+      total_groups: result.total_groups,
+      total_photos: result.total_photos,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to list duplicate photos');
+  }
+});
+
+// Keep one photo of each named group and move the others to the trash. The
+// server picks "the others" from the kept photo's hash, so a stale page can
+// never trash a photo that is not a copy, nor the kept one. Trash only: with
+// a retention of 0 deleting is final, and this cleanup does not do that.
+router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.eventId, 10);
+    // Each kept photo comes with the hash of the group the admin saw: a photo
+    // replaced by other bytes since the page loaded keeps its id, and must not
+    // stand for the new content's group.
+    const { keep } = req.body || {};
+    const validKeep = (k) => k && Number.isInteger(k.id) && k.id > 0
+      && typeof k.content_sha256 === 'string' && /^[0-9a-f]{64}$/.test(k.content_sha256);
+    if (!Array.isArray(keep) || keep.length === 0 || !keep.every(validKeep)) {
+      return res.status(400).json({ error: 'Invalid photo IDs' });
+    }
+    const keepIds = keep.map((k) => k.id);
+    const shownHash = new Map(keep.map((k) => [k.id, k.content_sha256]));
+    if (keep.length > MAX_GROUP_LIMIT) {
+      return res.status(400).json({ error: `At most ${MAX_GROUP_LIMIT} groups per request` });
+    }
+    const event = await db('events').where({ id: eventId }).first();
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+
+    const retentionDays = await photoTrash.getRetentionDays();
+    if (retentionDays <= 0) {
+      return res.status(409).json({ error: 'The trash is turned off', code: 'TRASH_OFF' });
+    }
+
+    const kept = await livePhotos(db).where('event_id', eventId).whereIn('id', [...new Set(keepIds)]);
+    const keptHashes = new Set();
+    for (const photo of kept) {
+      if (!photo.content_sha256 || photo.content_sha256 !== shownHash.get(Number(photo.id))) continue;
+      if (keptHashes.has(photo.content_sha256)) {
+        return res.status(400).json({ error: 'Keep one photo per group', code: 'SAME_GROUP' });
+      }
+      keptHashes.add(photo.content_sha256);
+    }
+
+    // One resolve at a time per gallery: two admins keeping different photos
+    // of one group must not trash every copy between them. On PostgreSQL the
+    // gallery row and then the group's photo rows are locked, so neither a
+    // second resolve nor a replacement upload (which rewrites content_sha256)
+    // can change them between the read and the trash; SQLite runs every query
+    // on one connection, so the transaction alone serialises it. Each kept
+    // photo is read again under the lock: a keep the other request already
+    // trashed, or one replaced by different bytes, trashes nothing here.
+    const gone = await db.transaction(async (trx) => {
+      const pg = trx.client.config.client === 'pg';
+      const gallery = trx('events').where({ id: eventId });
+      if (pg) gallery.forUpdate();
+      await gallery.first('id');
+      const trashed = [];
+      for (const stale of kept) {
+        // Replaced since the page loaded: its new bytes are not the group shown.
+        const shown = shownHash.get(Number(stale.id));
+        if (!stale.content_sha256 || stale.content_sha256 !== shown) continue;
+        const group = livePhotos(trx).where({ event_id: eventId, content_sha256: shown }).orderBy('id');
+        if (pg) group.forUpdate();
+        const rows = await group;
+        const keep = rows.find((row) => Number(row.id) === Number(stale.id));
+        if (!keep) continue;
+        for (const photo of await duplicatesOf(eventId, keep, trx)) {
+          if (!rows.some((row) => Number(row.id) === Number(photo.id))) continue;
+          if (await photoTrash.trashPhoto(photo, req.admin.id, retentionDays, Date.now(), trx)) trashed.push(photo);
+        }
+      }
+      return trashed;
+    });
+    const failedIds = [];
+
+    // As the bulk delete: one photo.deleted per photo, one activity entry.
+    try {
+      const webhookService = require('../services/webhookService');
+      for (const photo of gone) {
+        await webhookService.fire('photo.deleted', {
+          event: { id: eventId, slug: event.slug, event_name: event.event_name },
+          photo: { id: photo.id, filename: photo.filename },
+        });
+      }
+    } catch (e) { /* non-fatal */ }
+    if (gone.length > 0) {
+      await logActivity('photos_bulk_deleted',
+        { count: gone.length, eventName: event.event_name, trashed: gone.length, duplicates: true },
+        eventId,
+        { type: 'admin', id: req.admin.id, name: req.admin.username }
+      );
+      downloadZipService.invalidate(eventId);
+    }
+
+    res.json({
+      trashed: gone.length,
+      photo_ids: gone.map((photo) => photo.id),
+      failed: failedIds,
+      retention_days: retentionDays,
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to move duplicate photos to the trash');
   }
 });
 

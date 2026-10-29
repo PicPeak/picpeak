@@ -2343,6 +2343,31 @@
         "deleted_other": "{{count}} foto's verwijderd",
         "deleteFailed_one": "{{count}} foto kon niet worden verwijderd en staat nog in de galerij",
         "deleteFailed_other": "{{count}} foto's konden niet worden verwijderd en staan nog in de galerij"
+      },
+      "duplicates": {
+        "open": "Duplicaten",
+        "title": "Dubbele foto's",
+        "intro": "Alleen byte-identieke bestanden komen overeen: opnieuw geëxporteerde of verkleinde kopieën worden niet herkend, en foto's zonder hash (geïmporteerd vóór het hashen) worden niet vergeleken.",
+        "empty": "Geen duplicaten in deze galerij",
+        "emptyHelp": "Geen twee foto's hier delen hetzelfde bestand.",
+        "loadFailed": "De duplicaten konden niet worden geladen",
+        "copies_one": "{{count}} identieke kopie",
+        "copies_other": "{{count}} identieke kopieën",
+        "keep": "Behouden",
+        "keepThis": "{{name}} behouden",
+        "keepOne_one": "Gemarkeerde behouden, {{count}} naar de prullenbak",
+        "keepOne_other": "Gemarkeerde behouden, {{count}} naar de prullenbak",
+        "keepAll_one": "Gemarkeerde foto in {{count}} groep behouden",
+        "keepAll_other": "Gemarkeerde foto in alle {{count}} groepen behouden",
+        "trashed_one": "{{count}} kopie naar de prullenbak verplaatst",
+        "trashed_other": "{{count}} kopieën naar de prullenbak verplaatst",
+        "failed": "De kopieën konden niet naar de prullenbak worden verplaatst",
+        "trashOff": "De prullenbak staat uit en verwijderen is definitief, dus deze weergave toont de kopieën alleen.",
+        "sourceAdmin": "Upload of import",
+        "sourceGuest": "Gastupload",
+        "sourceExternal": "Externe map",
+        "range_one": "Groep {{from}}–{{to}} van {{count}}",
+        "range_other": "Groepen {{from}}–{{to}} van {{count}}"
       }
     },
     "events": {

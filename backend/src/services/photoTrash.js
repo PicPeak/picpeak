@@ -52,10 +52,11 @@ async function getRetentionDays() {
 
 /**
  * Move one photo of the gallery to the trash. False when it was not in the
- * gallery any more (already trashed or deleted by another request).
+ * gallery any more (already trashed or deleted by another request). `conn`
+ * lets a caller run it inside its own transaction.
  */
-async function trashPhoto(photo, adminId, retentionDays, now = Date.now()) {
-  const updated = await db('photos')
+async function trashPhoto(photo, adminId, retentionDays, now = Date.now(), conn = db) {
+  const updated = await conn('photos')
     .where({ id: photo.id, event_id: photo.event_id })
     .whereNull('deleted_at')
     .update({
