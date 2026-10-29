@@ -28,13 +28,13 @@ const { createContractIdempotent } = require('./crud');
 const IMPORT_STATUSES = ['fully_signed', 'cancelled'];
 
 // ISO strings rather than Date objects, as the expiry and erasure services
-// bind them: node-sqlite3 can store a Date as "[object Object]". A date
-// without a time is stored at 12:00 UTC, which is that same calendar day
-// from UTC-12 to UTC+12; midnight UTC showed as the evening before west
-// of Greenwich.
-const iso = (value) => (/^\d{4}-\d{2}-\d{2}$/.test(String(value))
-  ? `${value}T12:00:00.000Z`
-  : new Date(value).toISOString());
+// bind them: node-sqlite3 can store a Date as "[object Object]". A
+// historical date is kept as the calendar day written, at 12:00 UTC, which
+// is that same day from UTC-12 to UTC+12: midnight UTC showed as the
+// evening before west of Greenwich, and a zoned time such as
+// 2023-03-01T00:30+14:00 is Feb 28 in UTC. assertDateOrder compares the
+// same written day, so what is checked is what is stored.
+const isoDay = (value) => `${String(value).slice(0, 10)}T12:00:00.000Z`;
 
 /**
  * @param {object} payload  customerAccountId, status, issueDate (required);
@@ -69,10 +69,10 @@ async function importContract(payload, filePath, adminId, { idempotencyKey = nul
     status,
     // A cancelled import records no send: the original tool may never have
     // sent it, and nothing here did.
-    sent_at: signed ? iso(issueDate) : null,
+    sent_at: signed ? isoDay(issueDate) : null,
     pdf_path: storedPath,
-    signed_by_customer_at: signed ? iso(customerSignedAt) : null,
-    signed_by_admin_at: signed ? iso(adminSignedAt) : null,
+    signed_by_customer_at: signed ? isoDay(customerSignedAt) : null,
+    signed_by_admin_at: signed ? isoDay(adminSignedAt) : null,
     signed_customer_name: signed ? (payload.signedCustomerName || null) : null,
     signed_admin_name: signed ? (payload.signedAdminName || null) : null,
     // A signed import is the authoritative signed copy: the same columns a
@@ -80,7 +80,7 @@ async function importContract(payload, filePath, adminId, { idempotencyKey = nul
     signed_pdf_path: signed ? storedPath : null,
   };
   const optional = {
-    imported_at: iso(Date.now()),
+    imported_at: new Date().toISOString(),
     pdf_sha256: sha256,
     signed_pdf_sha256: signed ? sha256 : null,
     signed_pdf_is_wet_upload: signed,

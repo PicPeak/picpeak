@@ -265,6 +265,12 @@ describe('POST /api/admin/contracts/import', () => {
     }));
 
     expect(res.status).toBe(201);
+    // Stored as the day written, so it does not show as Feb 28 west of
+    // UTC+14 next to an issue date of Mar 1.
+    const row = await db('contracts').where({ id: res.body.contract.id }).first();
+    const instant = (v) => new Date(require('../../src/utils/queueTimestamps').toMillis(v)).toISOString();
+    expect(instant(row.signed_by_customer_at)).toBe('2023-03-01T12:00:00.000Z');
+    expect(instant(row.signed_by_admin_at)).toBe('2023-03-01T12:00:00.000Z');
   });
 
   it('requires contracts.manage', async () => {
