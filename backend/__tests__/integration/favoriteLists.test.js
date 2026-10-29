@@ -385,6 +385,17 @@ describe('named favourite lists (issue 2303)', () => {
         .toEqual([[photoIds[0], null], [photoIds[0], listId], [photoIds[1], listId]].sort());
     });
 
+    it('sends every list date as an ISO instant, also from an epoch-ms favourite on SQLite', async () => {
+      // Production SQLite stores a favourite written as a Date as epoch ms;
+      // the detail view formats this value, and a number crashed it.
+      await db('photo_feedback').where({ feedback_type: 'favorite', guest_id: guests[0].id }).whereNull('favorite_list_id')
+        .update({ created_at: Date.UTC(2026, 9, 29, 21, 0) });
+      const detail = await admin('get', `/events/${eventId}/guests/${guests[0].id}`);
+      const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+      expect(detail.body.favorite_lists[0].updated_at).toBe('2026-10-29T21:00:00.000Z');
+      for (const list of detail.body.favorite_lists) expect(list.updated_at).toMatch(ISO);
+    });
+
     it('filters the admin photo list and the filtered view by list', async () => {
       const ids = (res) => res.body.photos.map((p) => p.id).sort();
       expect(ids(await admin('get', `/photos/${eventId}/photos?favorite_list=${listId}`)))

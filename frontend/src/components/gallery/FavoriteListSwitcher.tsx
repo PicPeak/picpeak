@@ -37,13 +37,13 @@ export const FavoriteListSwitcher: React.FC<FavoriteListSwitcherProps> = ({ vari
     ? 'bg-white/10 hover:bg-white/20 text-white border-0 rounded-full px-2 py-1 text-xs max-w-[7.5rem] sm:max-w-[10rem] [&>option]:text-black'
     : 'input-themed rounded-lg px-2 py-1.5 text-sm max-w-full';
 
-  return (
+  const select = (
     <select
       value={activeListId === null ? '' : String(activeListId)}
       onChange={handleChange}
       aria-label={label}
       title={label}
-      className={`min-w-0 truncate cursor-pointer ${style} ${className}`}
+      className={`min-w-0 truncate cursor-pointer ${style} ${variant === 'toolbar' ? className : ''}`}
     >
       <option value="">{t('gallery.favoriteLists.defaultList', 'My favorites')} ({defaultCount})</option>
       {lists.map((list) => (
@@ -51,5 +51,14 @@ export const FavoriteListSwitcher: React.FC<FavoriteListSwitcherProps> = ({ vari
       ))}
       <option value={MANAGE}>{t('gallery.favoriteLists.manage', 'Manage lists…')}</option>
     </select>
+  );
+  // The lightbox bar has no room for a caption; everywhere else the select
+  // also decides what "Saved" shows, which a bare select does not say.
+  if (variant === 'toolbar') return select;
+  return (
+    <div className={`flex flex-col gap-1 min-w-0 ${className}`}>
+      <span className="text-xs text-muted-theme">{label}</span>
+      {select}
+    </div>
   );
 };

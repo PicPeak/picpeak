@@ -151,7 +151,9 @@ export const PhotoExportMenu: React.FC<PhotoExportMenuProps> = ({
     filters.hasComments ||
     (filters.colorLabels?.length || 0) > 0 ||
     (filters.myColorLabels?.length || 0) > 0 ||
-    (filters.decisions?.length || 0) > 0
+    (filters.decisions?.length || 0) > 0 ||
+    // A favourite list opened from the guest detail (issue 2303).
+    filters.favoriteList != null || filters.favoriteGuest != null
   );
 
   const isDisabled = disabled || (!hasSelection && !hasFilters);

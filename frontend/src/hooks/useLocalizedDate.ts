@@ -151,6 +151,9 @@ export const useLocalizedDate = () => {
    */
   const formatDateTime = (date: Date | string, formatStr?: string) => {
     const dateObj = toDisplayDate(date);
+    // As in `format`: an unparseable value renders blank instead of throwing
+    // a RangeError that takes the whole page down.
+    if (!isValid(dateObj)) return '';
     let dateFormat = formatStr;
     if (!dateFormat && settings?.general_date_format) {
       dateFormat = typeof settings.general_date_format === 'string'

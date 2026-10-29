@@ -15,6 +15,7 @@ const { errorResponse } = require('../utils/routeHelpers');
 const { ValidationError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
+const { toTimestamp } = require('../utils/dateNormalize');
 const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
 const favoriteLists = require('../services/favoriteLists');
 
@@ -554,9 +555,17 @@ router.get(
         .where({ event_id: eventId, guest_id: guestId })
         .orderBy('id', 'asc')
         .select('id', 'name', 'created_at', 'updated_at');
-      const lastChange = (rows) => rows.reduce((latest, row) => (
-        !latest || new Date(row.created_at) > new Date(latest) ? row.created_at : latest
-      ), null);
+      // As an ISO instant, whatever the engine stored: SQLite holds a
+      // favourite's created_at as epoch ms or zone-less text, and the detail
+      // view formats this value as a date.
+      const isoOf = (value) => {
+        const ms = toTimestamp(value);
+        return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+      };
+      const lastChange = (rows) => {
+        const latest = Math.max(...rows.map((row) => toTimestamp(row.created_at)).filter(Number.isFinite));
+        return Number.isFinite(latest) ? new Date(latest).toISOString() : null;
+      };
       const defaultRows = feedback.filter((row) => row.feedback_type === 'favorite' && row.favorite_list_id == null);
       const favoriteListSummaries = [
         {
@@ -571,7 +580,7 @@ router.get(
             id: Number(list.id),
             name: list.name,
             count: new Set(rows.map((row) => row.photo_id)).size,
-            updated_at: list.updated_at || list.created_at,
+            updated_at: isoOf(list.updated_at || list.created_at),
           };
         }),
       ];
