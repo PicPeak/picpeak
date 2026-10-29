@@ -1680,7 +1680,11 @@
       "statusActive": "Ativo",
       "confirmRevoke": "Revogar este token? Esta ação é irreversível.",
       "revoke": "Revogar",
-      "empty": "Ainda sem tokens. Gere um acima para começar."
+      "empty": "Ainda sem tokens. Gere um acima para começar.",
+      "galleryPasswordScopes": "Senhas das galerias",
+      "galleryPasswordScopesWarning": "Estes scopes revelam senhas de galerias. Não fazem parte de admin: marque-os apenas num token que precise deles. Cada uso é registado em seu nome.",
+      "scopeGalleryPasswordsRead": "Mostra a senha guardada de uma galeria. Só funciona enquanto \"Manter senhas das galerias recuperáveis\" estiver ativado.",
+      "scopeGalleryPasswordsReset": "Redefine a senha de uma galeria e pode enviar a nova ao cliente por e-mail. Os convidados têm de iniciar sessão novamente."
     },
     "webhooks": {
       "title": "Webhooks",

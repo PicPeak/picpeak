@@ -22,7 +22,11 @@ interface ApiTokenRow {
   owner_username: string | null;
 }
 
-const ALL_SCOPES: Array<'read' | 'write' | 'admin'> = ['read', 'write', 'admin'];
+type ApiScope = 'read' | 'write' | 'admin' | 'gallery_passwords:read' | 'gallery_passwords:reset';
+
+const ALL_SCOPES: ApiScope[] = ['read', 'write', 'admin'];
+// Issue 2326: separate from the ladder above, implied by no other scope.
+const GALLERY_PASSWORD_SCOPES: ApiScope[] = ['gallery_passwords:read', 'gallery_passwords:reset'];
 
 /**
  * Admin tab for managing API tokens (#322). Lists active tokens, lets
@@ -36,7 +40,7 @@ export const ApiTokensTab: React.FC = () => {
   const { formatDateTime: fmtDateTime, format: fmtDate } = useLocalizedDate();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
-  const [scopes, setScopes] = useState<Array<'read' | 'write' | 'admin'>>(['read']);
+  const [scopes, setScopes] = useState<ApiScope[]>(['read']);
   const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null);
 
   const { data: tokens, isLoading, isError, isFetching, refetch } = useQuery({
@@ -72,7 +76,7 @@ export const ApiTokensTab: React.FC = () => {
     onError: () => toast.error(t('toast.saveError')),
   });
 
-  const toggleScope = (scope: 'read' | 'write' | 'admin') => {
+  const toggleScope = (scope: ApiScope) => {
     setScopes((prev) => (prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]));
   };
 
@@ -170,6 +174,35 @@ export const ApiTokensTab: React.FC = () => {
         <p className="text-xs text-muted">
           {t('settings.apiTokens.scopeHint', 'admin > write > read. A read-only token cannot mutate, even if its owner is super_admin.')}
         </p>
+
+        <fieldset className="mt-4">
+          <legend className="block text-sm font-medium text-body mb-2">
+            {t('settings.apiTokens.galleryPasswordScopes', 'Gallery passwords')}
+          </legend>
+          <Notice tone="warning" size="sm" className="mb-3">
+            {t('settings.apiTokens.galleryPasswordScopesWarning', 'These scopes hand out gallery passwords. They are not part of admin: tick them only on a token that needs them. Every use is logged under your name.')}
+          </Notice>
+          <div className="space-y-2">
+            {GALLERY_PASSWORD_SCOPES.map((s) => (
+              <label key={s} className="flex items-start gap-2 text-sm text-body">
+                <input
+                  type="checkbox"
+                  checked={scopes.includes(s)}
+                  onChange={() => toggleScope(s)}
+                  className="mt-0.5 w-4 h-4 text-accent rounded focus:ring-accent"
+                />
+                <span>
+                  <code className="font-mono text-xs">{s}</code>
+                  <span className="block text-xs text-muted">
+                    {s === 'gallery_passwords:read'
+                      ? t('settings.apiTokens.scopeGalleryPasswordsRead', 'Reveals a gallery\'s saved password. Only works while "Keep gallery passwords recoverable" is on.')
+                      : t('settings.apiTokens.scopeGalleryPasswordsReset', 'Resets a gallery\'s password and can mail the new one to the client. Guests must sign in again.')}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
       </Card>
 
       <Card padding="md">

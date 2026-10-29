@@ -1580,7 +1580,11 @@
       "statusActive": "Actif",
       "confirmRevoke": "Voulez-vous révoquer ce jeton ? Cette action ne peut pas être annulée.",
       "revoke": "Révoquer",
-      "empty": "Aucun jeton pour l'instant. Générez-en un ci-dessus pour commencer."
+      "empty": "Aucun jeton pour l'instant. Générez-en un ci-dessus pour commencer.",
+      "galleryPasswordScopes": "Mots de passe des galeries",
+      "galleryPasswordScopesWarning": "Ces scopes donnent accès aux mots de passe des galeries. Ils ne font pas partie d'admin : cochez-les uniquement sur un jeton qui en a besoin. Chaque utilisation est journalisée à votre nom.",
+      "scopeGalleryPasswordsRead": "Affiche le mot de passe enregistré d'une galerie. Ne fonctionne que tant que « Conserver les mots de passe des galeries récupérables » est activé.",
+      "scopeGalleryPasswordsReset": "Réinitialise le mot de passe d'une galerie et peut envoyer le nouveau au client par e-mail. Les invités doivent se reconnecter."
     },
     "webhooks": {
       "title": "Webhooks",
