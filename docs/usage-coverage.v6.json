@@ -1783,7 +1783,9 @@
         "GET /events/:id/photos",
         "GET /events/:id/photos/download",
         "GET /events/:id/photos/:photoId/download",
-        "GET /events/:id/photos/:photoId/preview"
+        "GET /events/:id/photos/:photoId/preview",
+        "GET /events/:id/password",
+        "POST /events/:id/reset-password"
       ]
     },
     "gallery/downloads.js": {
