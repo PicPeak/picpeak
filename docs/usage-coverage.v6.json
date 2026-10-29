@@ -1134,6 +1134,8 @@
         "GET /:eventId/photos/trash/:photoId/thumbnail",
         "POST /:eventId/photos/trash/restore",
         "POST /:eventId/photos/trash/purge",
+        "GET /:eventId/photos/duplicates",
+        "POST /:eventId/photos/duplicates/resolve",
         "GET /:eventId/photos/moderation",
         "POST /:eventId/photos/moderation",
         "GET /:eventId/photos/credits",

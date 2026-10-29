@@ -80,7 +80,7 @@ async function folderIdUpdate(eventId, raw) {
 const { photoCapOf, countEventPhotos, insertPhotoWithinCap, photoCapError } = require('../services/photoCap');
 const { claimPromotion } = require('../services/watchFolderClaims');
 const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
-const { sha256File, findDuplicate, duplicateName } = require('../services/photoDuplicates');
+const { sha256File, findDuplicate, duplicateName, listDuplicateGroups, duplicatesOf, DEFAULT_GROUP_LIMIT, MAX_GROUP_LIMIT } = require('../services/photoDuplicates');
 
 
 const { validateFileType, validateFileContent, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
@@ -1359,6 +1359,131 @@ router.post('/:eventId/photos/trash/purge', adminAuth, requirePermission('photos
     res.status(purged > 0 || failed.length === 0 ? 200 : 500).json({ purged, failed });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to delete photos from the trash');
+  }
+});
+
+// The duplicates view (issue 2194): photos of this gallery with the same
+// bytes, by the content hash uploads store. Only byte-identical files match,
+// never across galleries, and a photo without a hash (imported before
+// hashing) is not compared.
+const photoSource = (photo) => {
+  if (photo.uploaded_by === 'guest') return 'guest';
+  if (photo.source_origin === 'external' || photo.source_origin === 'reference') return 'external';
+  return 'admin';
+};
+
+router.get('/:eventId/photos/duplicates', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.eventId, 10);
+    const limitParam = parseInt(req.query.limit, 10);
+    const offsetParam = parseInt(req.query.offset, 10);
+    const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, MAX_GROUP_LIMIT) : DEFAULT_GROUP_LIMIT;
+    const offset = Number.isInteger(offsetParam) && offsetParam > 0 ? offsetParam : 0;
+    const result = await listDuplicateGroups(eventId, {
+      limit,
+      offset,
+      columns: ['filename', 'original_filename', 'size_bytes', 'media_type', 'uploaded_by', 'source_origin',
+        'moderation_status', 'processing_error', 'poster_offset_seconds'],
+    });
+    res.json({
+      groups: result.groups.map((group) => ({
+        content_sha256: group.content_sha256,
+        photos: group.photos.map((photo) => ({
+          id: photo.id,
+          filename: duplicateName(photo),
+          uploaded_at: toIso(photo.uploaded_at) || null,
+          size: photo.size_bytes ?? null,
+          media_type: photo.media_type || 'image',
+          source: photoSource(photo),
+          moderation_status: photo.moderation_status || null,
+          thumbnail_url: adminThumbnailUrl(eventId, photo),
+        })),
+      })),
+      total_groups: result.total_groups,
+      total_photos: result.total_photos,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to list duplicate photos');
+  }
+});
+
+// Keep one photo of each named group and move the others to the trash. The
+// server picks "the others" from the kept photo's hash, so a stale page can
+// never trash a photo that is not a copy, nor the kept one. Trash only: with
+// a retention of 0 deleting is final, and this cleanup does not do that.
+router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.eventId, 10);
+    const { keepIds } = req.body || {};
+    if (!Array.isArray(keepIds) || keepIds.length === 0 || !keepIds.every((id) => Number.isInteger(id) && id > 0)) {
+      return res.status(400).json({ error: 'Invalid photo IDs' });
+    }
+    if (keepIds.length > MAX_GROUP_LIMIT) {
+      return res.status(400).json({ error: `At most ${MAX_GROUP_LIMIT} groups per request` });
+    }
+    const event = await db('events').where({ id: eventId }).first();
+    if (!event) return res.status(404).json({ error: 'Event not found' });
+
+    const retentionDays = await photoTrash.getRetentionDays();
+    if (retentionDays <= 0) {
+      return res.status(409).json({ error: 'The trash is turned off', code: 'TRASH_OFF' });
+    }
+
+    const kept = await livePhotos(db).where('event_id', eventId).whereIn('id', [...new Set(keepIds)]);
+    const keptHashes = new Set();
+    for (const photo of kept) {
+      if (!photo.content_sha256) continue;
+      if (keptHashes.has(photo.content_sha256)) {
+        return res.status(400).json({ error: 'Keep one photo per group', code: 'SAME_GROUP' });
+      }
+      keptHashes.add(photo.content_sha256);
+    }
+
+    const gone = [];
+    const failedIds = [];
+    for (const keep of kept) {
+      for (const photo of await duplicatesOf(eventId, keep)) {
+        try {
+          if (await photoTrash.trashPhoto(photo, req.admin.id, retentionDays)) gone.push(photo);
+        } catch (error) {
+          logger.error(`duplicates: could not trash photo ${photo.id}`, { error: error.message });
+          failedIds.push(photo.id);
+        }
+      }
+    }
+    if (gone.length === 0 && failedIds.length > 0) {
+      return res.status(500).json({ error: 'Failed to move photos to the trash', failed: failedIds });
+    }
+
+    // As the bulk delete: one photo.deleted per photo, one activity entry.
+    try {
+      const webhookService = require('../services/webhookService');
+      for (const photo of gone) {
+        await webhookService.fire('photo.deleted', {
+          event: { id: eventId, slug: event.slug, event_name: event.event_name },
+          photo: { id: photo.id, filename: photo.filename },
+        });
+      }
+    } catch (e) { /* non-fatal */ }
+    if (gone.length > 0) {
+      await logActivity('photos_bulk_deleted',
+        { count: gone.length, eventName: event.event_name, trashed: gone.length, duplicates: true },
+        eventId,
+        { type: 'admin', id: req.admin.id, name: req.admin.username }
+      );
+      downloadZipService.invalidate(eventId);
+    }
+
+    res.json({
+      trashed: gone.length,
+      photo_ids: gone.map((photo) => photo.id),
+      failed: failedIds,
+      retention_days: retentionDays,
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to move duplicate photos to the trash');
   }
 });
 
