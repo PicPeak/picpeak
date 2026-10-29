@@ -2,7 +2,7 @@
 const V = require('../albumProducts/validation');
 const { parse } = require('./profiles');
 const { invoiceIdentity, verified } = require('./orders');
-const { ConflictError, NotFoundError } = require('../../utils/errors');
+const { AppError, ConflictError, NotFoundError } = require('../../utils/errors');
 const now = () => new Date().toISOString();
 function createService({ db, storage }) {
   async function order(id, admin) {
@@ -30,6 +30,7 @@ function createService({ db, storage }) {
     return assets;
   }
   async function action(id, admin, input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AppError('Choose a fulfilment action', 400);
     const row = await order(id, admin);
     if (input.action === 'retry') {
       const changed = await db('print_sales_orders').where({ id, status: 'accepted', render_status: 'failed' })
@@ -104,11 +105,18 @@ function createService({ db, storage }) {
         .where('closed_at', '<', old).orWhere('purge_requested', true)))).limit(20);
     for (const row of rows) {
       const assets = await db('print_sales_assets').where({ order_id: row.id });
+      let complete = true;
       for (const a of assets) {
-        await storage.delete(a.storage_key);
-        await db('print_sales_assets').where({ id: a.id }).del();
+        try {
+          await storage.delete(a.storage_key);
+          await db('print_sales_assets').where({ id: a.id }).del();
+        } catch (error) {
+          // Keep the asset row for retry; one storage fault must not hold every other order.
+          complete = false;
+          require('../../utils/logger').error('Print asset cleanup failed', { orderId: row.id, assetId: a.id, error: error.message });
+        }
       }
-      await db('print_sales_orders').where({ id: row.id }).update({ purged_at: now(), contact: null });
+      if (complete) await db('print_sales_orders').where({ id: row.id }).update({ purged_at: now(), contact: null });
     }
   }
   return { order, settled, files, action, download, cleanup };

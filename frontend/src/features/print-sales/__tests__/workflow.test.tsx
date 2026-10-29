@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render as renderUi, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState, type ReactElement } from 'react';
 import { GalleryPrintShop, PrintSalesProvider, PrintShopEntry } from '../GalleryPrintShop';
 import { PrintSalesAdminPage } from '../AdminPage';
 import { SpatialPreview } from '../SpatialPreview';
@@ -11,9 +12,10 @@ import { ProfileEditor } from '../ProfileEditor';
 import { api } from '../../../config/api';
 import type { Photo } from '../../../types';
 import type { Order, Variant, Profile } from '../model';
-const permissions = vi.hoisted(() => ({ enabled: true, manage: true }));
+function render(ui: ReactElement) { return renderUi(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>{ui}</QueryClientProvider>); }
+const permissions = vi.hoisted(() => ({ enabled: true, manage: true, denied: new Set<string>() }));
 vi.mock('react-i18next', async original => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }) }));
-vi.mock('../../../contexts/PermissionsContext', () => ({ usePermissions: () => ({ hasPermission: (p: string) => permissions.manage || !['products.manage', 'products.configure', 'bills.manage', 'customers.edit'].includes(p) }) }));
+vi.mock('../../../contexts/PermissionsContext', () => ({ usePermissions: () => ({ hasPermission: (p: string) => !permissions.denied.has(p) && (permissions.manage || !['products.manage', 'products.configure', 'bills.manage', 'customers.edit'].includes(p)) }) }));
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => permissions.enabled }));
 vi.mock('../../../components/common/AuthenticatedImage', () => ({ AuthenticatedImage: ({ onLoad, onUnavailable, isGallery: _gallery, slug: _slug, ...props }: any) =>
   <img {...props} onError={() => onUnavailable?.(true)} onLoad={() => onLoad?.(props.src?.includes('landscape') ? { width: 800, height: 400 } : { width: 400, height: 600 })} /> }));
@@ -29,7 +31,7 @@ const quotation: Order = { id: 'order-1', status: 'quoted', renderStatus: 'pendi
   supplierReference: null, tracking: null, needsAttention: false, purgedAt: null,
   items: [{ photoId: 1, filename: 'camera.jpg', quantity: 2, crop: { x: 0, y: 0, width: 1, height: 1 }, fit: 'cover', selection: variant.selection, unitPriceMinor: 250 }] };
 beforeEach(() => {
-  sessionStorage.clear(); permissions.enabled = true; permissions.manage = true;
+  sessionStorage.clear(); permissions.enabled = true; permissions.manage = true; permissions.denied.clear();
   vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/orders') ? { orders: [] } : { variants: [variant], countries: ['IE'], policy: 'Synthetic buyer policy', basketScope: 'buyer-1' } }) as any);
   vi.mocked(api.post).mockImplementation(async (url: string) => ({ data: url.endsWith('/accept') ? { ...quotation, status: 'accepted', acceptedAt: '2026-10-28', invoiceId: 42 } : quotation }) as any);
 });
@@ -221,6 +223,33 @@ describe('print administration', () => {
     expect(await screen.findByText(/Open native invoice/)).toHaveAttribute('href', '/admin/clients/bills/42');
     expect(screen.queryByRole('button', { name: 'Save print settings' })).not.toBeInTheDocument();
   });
+  it('keeps file-download permissions separate from fulfilment edits and explains read-only settings', async () => {
+    permissions.denied.add('customers.edit'); permissions.denied.add('products.manage');
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [{ ...quotation, status: 'accepted', acceptedAt: '2026-10-28', invoiceId: 42, renderStatus: 'ready' }] } :
+      { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } }) as any);
+    render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
+    expect(await screen.findByText('You can view these print settings but cannot change them.')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Supplier pack' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'I checked these production files' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel order after native invoice correction' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save print settings' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Buyer policy and delivery information')).toBeDisabled();
+    expect(screen.getByText('Artwork ready')).toBeInTheDocument();
+  });
+  it('distinguishes an order-load failure from an empty list and offers a working retry', async () => {
+    let attempts = 0;
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/orders') && !attempts++) throw new Error('Synthetic order load failure');
+      return { data: url.includes('/orders') ? { orders: [] } : { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } } as any;
+    });
+    render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
+    const failure = await screen.findByRole('alert');
+    expect(failure).toHaveTextContent('Could not load print orders');
+    expect(screen.queryByText('No print orders yet')).not.toBeInTheDocument();
+    fireEvent.click(within(failure).getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('No print orders yet')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
   it('preserves unsaved configuration after a stale-settings rejection', async () => {
     vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [] } :
       { revision: 3, profiles: [], countries: ['IE'], policy: 'Original policy', shippingPresetId: null, products: [], presets: [] } }) as any);
@@ -295,7 +324,7 @@ describe('print administration', () => {
     expect(p.definition.manufacturing.bleedMm).toEqual({ top: 3.175, right: 3.175, bottom: 3.175, left: 3.175 });
     expect(p.definition.manufacturing.safeInsetMm).toEqual({ top: 6.35, right: 6.35, bottom: 6.35, left: 6.35 });
     expect(p.definition.manufacturing.output.colourSpace).toBe('adobe-rgb-1998');
-    fireEvent.change(screen.getByLabelText('Trim width (mm)'), { target: { value: '149.7' } });
+    fireEvent.change(screen.getByLabelText('Trim width (mm)'), { target: { value: '149,7' } });
     expect(JSON.parse(screen.getByTestId('profile-json').textContent!).definition.manufacturing.trimMm.width).toBe(149.7);
   });
 });

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { ConfigurationPicker } from '../album-products/ConfigurationPicker';
+import { DecimalInput } from '../../components/common/DecimalInput';
 import { Input, Switch } from '../../components/common';
 import type { Product } from '../album-products/model';
 import type { Profile, Settings, Output, ColourSpace } from './model';
@@ -33,15 +34,19 @@ export function ProfileEditor({ value, products, presets, onChange }: {
       </select></label>
     <ProductionStartingPoints value={m} onChange={manufacturing => definition({ manufacturing, enabled: false })} />
     <div className="grid gap-4 sm:grid-cols-2">
-      {(['width', 'height'] as const).map(axis => <Input key={axis} type="number" min={1} max={2000} step="any"
-        label={axis === 'width' ? t('printSales.trimWidth', 'Trim width (mm)') : t('printSales.trimHeight', 'Trim height (mm)')}
-        value={m.trimMm[axis]} onChange={e => definition({ manufacturing: { ...m, trimMm: { ...m.trimMm, [axis]: Number(e.target.value) } } })} />)}
+      {(['width', 'height'] as const).map(axis => <label className="block text-sm" key={axis}>
+        {axis === 'width' ? t('printSales.trimWidth', 'Trim width (mm)') : t('printSales.trimHeight', 'Trim height (mm)')}
+        <DecimalInput className="input w-full" min={1} max={2000} value={m.trimMm[axis]}
+          onChange={amount => definition({ manufacturing: { ...m, trimMm: { ...m.trimMm, [axis]: amount } } })} />
+      </label>)}
     </div>
     {(['bleedMm', 'safeInsetMm'] as const).map(group => <fieldset key={group}>
       <legend>{group === 'bleedMm' ? t('printSales.bleed', 'Bleed outside trim (mm)') : t('printSales.safeInset', 'Safe area inside trim (mm)')}</legend>
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">{(['top', 'right', 'bottom', 'left'] as const).map(side =>
-        <Input key={side} type="number" min={0} max={100} step="any" label={t(`printSales.edge.${side}`, side)} value={m[group][side]}
-          onChange={e => definition({ manufacturing: { ...m, [group]: { ...m[group], [side]: Number(e.target.value) } } })} />)}</div>
+        <label className="block text-sm" key={side}>{t(`printSales.edge.${side}`, side)}
+          <DecimalInput className="input w-full" min={0} max={100} value={m[group][side]}
+            onChange={amount => definition({ manufacturing: { ...m, [group]: { ...m[group], [side]: amount } } })} />
+        </label>)}</div>
     </fieldset>)}
     <div className="grid gap-3 sm:grid-cols-2">{(['targetDpi', 'minimumDpi'] as const).map(key =>
       <Input key={key} type="number" min={72} max={600} label={key === 'targetDpi' ? t('printSales.targetDpi', 'Output resolution (DPI)') : t('printSales.minimumDpi', 'Minimum source resolution (DPI)')}

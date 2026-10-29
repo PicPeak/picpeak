@@ -12,8 +12,9 @@ exports.up = async function (db) {
   if (!await db.schema.hasColumn('events', 'print_sales_enabled'))
     await db.schema.alterTable('events', t => {
       t.boolean('print_sales_enabled').notNullable().defaultTo(false);
-      t.integer('print_sales_admin_id').references('id').inTable('admin_users').onDelete('SET NULL');
     });
+  if (!await db.schema.hasColumn('events', 'print_sales_admin_id'))
+    await db.schema.alterTable('events', t => t.integer('print_sales_admin_id').references('id').inTable('admin_users').onDelete('SET NULL'));
   if (!await db.schema.hasTable('print_sales_orders')) await db.schema.createTable('print_sales_orders', t => {
     t.string('id', 36).primary(); t.string('request_hash', 64).notNullable();
     t.integer('event_id').references('id').inTable('events').onDelete('SET NULL');

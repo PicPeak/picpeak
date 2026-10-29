@@ -34,6 +34,7 @@ async function plan(tx, cart, { country, includeDelivery = true } = {}) {
     currency = p.currency; vatCode = p.vat_code; vatRate = p.vatRate;
   };
   for (const item of cart) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) fail('Invalid print item');
     V.uuid(item.profileId); integer(item.photoId, 1, 2147483647); integer(item.quantity, 1, 100);
     const entry = config.profiles.find(p => p.definition.id === item.profileId && p.definition.enabled);
     if (!entry) fail('This print variant is unavailable');

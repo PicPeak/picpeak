@@ -23,6 +23,7 @@ beforeAll(async () => {
   worker = require('../../src/services/printSales/worker').createWorker({ db, storage, sharp, orders });
   adminApp = buildRouteApp('/api/admin/print-sales', require('../../src/routes/adminPrintSales'));
   galleryApp = buildRouteApp('/api/gallery', require('../../src/routes/gallery/printSales'));
+  galleryApp.set('trust proxy', 'loopback');
   sourceBytes = await sharp({ create: { width: 400, height: 600, channels: 3, background: '#3578a2' } }).jpeg().toBuffer();
 }, 180000);
 afterAll(async () => { if (cleanup) await cleanup(); });
@@ -316,7 +317,7 @@ test('settings recover their empty seed after restoring a backup from before thi
 });
 test('migration rollback refuses to discard retained orders', async () => {
   const q = await quoted();
-  await expect(require('../../migrations/core/334_print_sales').down(db)).rejects.toThrow('destructive rollback');
+  await expect(require('../../migrations/core/337_print_sales').down(db)).rejects.toThrow('destructive rollback');
   expect((await orders.owned(q.id, customerId, event.id)).status).toBe('quoted');
 });
 test.each(['png', 'tiff'])('studio-selected %s artwork and supplier instructions survive later configuration edits', async format => {
@@ -431,4 +432,78 @@ test('a version-one accepted profile keeps its frozen JPEG requirements after a 
   const file = await db('print_sales_assets').where({ order_id: id, kind: 'artwork', claim: row.claim }).first();
   expect((await sharp(await require('../../src/services/printSales/orders').verified(storage, file)).metadata()).format).toBe('jpeg');
   expect(row.snapshot).toBe(serialized);
+});
+
+test('refuses a billing-owner change between initial access and the acceptance transaction', async () => {
+  const q = await quoted(), policy = require('../../src/database/crmAccess');
+  const original = policy.loadCrmActor;
+  const ids = await db('admin_users').insert({ username: uuid(), email: `${uuid()}@example.com`, password_hash: 'unused',
+    is_active: true, created_at: new Date().toISOString() }).returning('id');
+  const replacement = ids[0]?.id ?? ids[0];
+  const change = jest.spyOn(policy, 'loadCrmActor').mockImplementationOnce(async options => {
+    const actor = await original(options);
+    await db('events').where({ id: event.id }).update({ print_sales_admin_id: replacement });
+    return actor;
+  });
+  try {
+    await expect(orders.accept(event.id, customerId, 'client', q.id, { snapshotHash: q.snapshotHash, acknowledgeSelection: true }))
+      .rejects.toThrow('billing owner changed');
+    expect((await db('print_sales_orders').where({ id: q.id }).first()).invoice_id).toBeNull();
+  } finally { change.mockRestore(); }
+});
+
+test('isolates retention deletion failures, preserves retry records and keeps purging other orders', async () => {
+  const a = await quoted(), b = await quoted();
+  await db('print_sales_orders').whereIn('id', [a.id, b.id]).update({ expires_at: '2000-01-01T00:00:00Z' });
+  const stuck = await db('print_sales_assets').where({ order_id: a.id }).first();
+  const original = storage.delete.bind(storage);
+  const deletion = jest.spyOn(storage, 'delete').mockImplementation(async key => {
+    if (key === stuck.storage_key) throw new Error('Synthetic storage delete failure');
+    return original(key);
+  });
+  try {
+    await expect(fulfilment.cleanup()).resolves.toBeUndefined();
+    expect((await fulfilment.order(a.id, admin)).purged_at).toBeNull();
+    expect(await db('print_sales_assets').where({ id: stuck.id }).first()).toBeTruthy();
+    expect((await fulfilment.order(b.id, admin)).purged_at).toBeTruthy();
+  } finally { deletion.mockRestore(); }
+  await fulfilment.cleanup();
+  expect((await fulfilment.order(a.id, admin)).purged_at).toBeTruthy();
+});
+
+test.each([null, [], 'invalid'])('invalid photo entries return a validation response without creating an order: %p', async item => {
+  const input = payload(); input.items = [item];
+  const response = await request(galleryApp).post(`/api/gallery/${event.slug}/print-sales/quotes`)
+    .set('Authorization', `Bearer ${galleryToken()}`).send(input);
+  expect(response.status).toBe(400);
+  expect(await db('print_sales_orders').where({ id: input.requestId }).first()).toBeUndefined();
+});
+
+test('accepts multiline buyer policies and normalises line endings before freezing the quotation', async () => {
+  const policy = 'Selection terms.\r\nDelivery information.';
+  config = await P.save(db, { ...config, policy });
+  expect(config.policy).toBe('Selection terms.\nDelivery information.');
+  expect((await quoted()).policy).toBe(config.policy);
+  await expect(P.save(db, { ...config, policy: 'Invalid\u0000policy' })).rejects.toThrow('Invalid text');
+});
+
+test('repairs a partially applied gallery-column migration without changing existing shop configuration', async () => {
+  await db.schema.alterTable('events', t => t.dropColumn('print_sales_admin_id'));
+  await require('../../migrations/core/337_print_sales').up(db);
+  expect(await db.schema.hasColumn('events', 'print_sales_admin_id')).toBe(true);
+  expect((await P.settings(db)).policy).toBe(config.policy);
+});
+
+test('archived-gallery deletion detaches retained orders and keeps them visible in the studio list', async () => {
+  const a = await accepted();
+  await db('events').where({ id: event.id }).update({ is_archived: true });
+  const app = buildRouteApp('/api/admin/archives', require('../../src/routes/adminArchives'));
+  const response = await request(app).delete(`/api/admin/archives/${event.id}`).set('Authorization', `Bearer ${adminToken}`);
+  expect(response.status).toBe(200);
+  expect((await fulfilment.order(a.id, admin)).event_id).toBeNull();
+  const listing = await request(adminApp).get('/api/admin/print-sales/orders').set('Authorization', `Bearer ${adminToken}`);
+  expect(listing.status).toBe(200); expect(listing.body.orders.some(o => o.id === a.id)).toBe(true);
+  await storage.delete(`events/active/${event.slug}/individual/source.jpg`);
+  expect(await worker.runOne()).toBe(true);
+  expect((await fulfilment.order(a.id, admin)).render_status).toBe('ready');
 });

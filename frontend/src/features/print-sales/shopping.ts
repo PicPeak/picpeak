@@ -1,3 +1,4 @@
+import { photoDisplayFilename } from '../../utils/photoFilename';
 import type { Photo } from '../../types';
 import type { CartItem, Crop, Variant } from './model';
 export const MAX_ITEMS = 20;
@@ -5,7 +6,7 @@ export const whole: Crop = { x: 0, y: 0, width: 1, height: 1 };
 export type BasketLine = CartItem & { lineId: string; version?: string };
 export type Draft = CartItem & { ready: boolean; version?: string };
 export const isPhotograph = (p: Photo) => p.media_type !== 'video' && !p.mime_type?.startsWith('video/');
-export const photoName = (p: Photo) => p.original_filename || p.filename;
+export const photoName = photoDisplayFilename;
 // Both renditions preserve the full image ratio; never derive crop geometry from a square tile.
 export const photoSource = (p: Photo) => p.preview_url || p.slideshow_url || p.url;
 export const validQuantity = (n: number) => Number.isSafeInteger(n) && n >= 1 && n <= 100;
@@ -33,7 +34,7 @@ export function requestItem(i: CartItem): CartItem {
 }
 export function newDraft(photoId: number, variant: Variant, previous?: Draft): Draft {
   return { photoId, profileId: variant.id, quantity: previous?.quantity || 1,
-    fit: previous && variant.fitModes.includes(previous.fit) ? previous.fit : variant.fitModes[0],
+    fit: previous && variant.fitModes.includes(previous.fit) ? previous.fit : variant.fitModes.includes('cover') ? 'cover' : variant.fitModes[0],
     crop: { ...whole }, ready: false, version: variant.version };
 }
 export function dimensions(v: Variant) {

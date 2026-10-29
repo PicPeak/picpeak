@@ -31,7 +31,10 @@ async function save(db, input) {
   if (!input || !Array.isArray(input.profiles) || input.profiles.length > 100)
     throw new AppError('Choose profiles and delivery countries', 400);
   V.revision(input.revision);
-  const policy = V.text(input.policy, 5000, true);
+  // Policies are plain text paragraphs, like supplier instructions, not a single-line label.
+  if (typeof input.policy !== 'string' || input.policy.length > 5000) throw new AppError('Invalid text', 400);
+  const policy = input.policy.replace(/\r\n?/g, '\n').split('\n').map(line => V.text(line, 5000)).join('\n').trim();
+  if (!policy) throw new AppError('A buyer policy is required', 400);
   return db.transaction(async tx => {
     await tx('album_product_catalogue').where({ id: 1 }).forUpdate().first();
     // An older portable backup has no singleton row for this new feature.

@@ -51,7 +51,7 @@ linuxIt('preserves seed-only tables the archive predates, while still clearing a
   await require('../../migrations/core/201_product_usage').up(db);
   await require('../../migrations/core/129_create_ledger_accounts_and_vat_codes').up(db);
   await require('../../migrations/core/226_customer_groups').up(db);
-  await require('../../migrations/core/334_print_sales').up(db);
+  await require('../../migrations/core/337_print_sales').up(db);
   const printProfiles = require('../../src/services/printSales/profiles');
   await printProfiles.save(db, { revision: 0, profiles: [], countries: ['IE'],
     shippingPresetId: null, policy: 'Local studio fulfilment policy' });

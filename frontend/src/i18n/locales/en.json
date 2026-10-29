@@ -11543,7 +11543,8 @@
     "lockAndBill": "Lock choice and add to billing"
   },
   "printSales": {
-    "product": "Print product",
+    "refresh": "Refresh",
+    "product": "Catalogue product",
     "chooseProduct": "Choose a product",
     "staleProfile": "The catalogue changed. Review the options and production measurements before enabling this profile.",
     "rebind": "Use current catalogue version",
@@ -11719,6 +11720,25 @@
     "containHint": "The whole photograph is included. Empty space uses the studio’s configured background.",
     "finePosition": "Fine-tune position",
     "printThisPhoto": "Print this photograph",
-    "print": "Print"
+    "print": "Print",
+    "productGroup": "Print product",
+    "statusCapturing": "Preparing quotation",
+    "statusQuoted": "Awaiting confirmation",
+    "statusFailed": "Quotation failed",
+    "statusExpired": "Expired",
+    "unknownStatus": "Unknown status",
+    "artworkPending": "Artwork not queued",
+    "artworkQueued": "Artwork queued",
+    "artworkRunning": "Preparing artwork",
+    "artworkReady": "Artwork ready",
+    "artworkFailed": "Artwork preparation failed",
+    "artworkStopped": "Artwork preparation stopped",
+    "readOnly": "You can view these print settings but cannot change them.",
+    "settingsFailed": "Could not load print settings",
+    "ordersFailed": "Could not load print orders",
+    "noOrders": "No print orders yet",
+    "noOrdersHelp": "Enable ordering for an assigned customer’s gallery to receive an order.",
+    "notificationAccepted": "Print order {{orderId}} confirmed in {{eventName}} · invoice #{{invoiceId}}",
+    "deletedGallery": "Deleted gallery"
   }
 }

@@ -1,6 +1,6 @@
-# Gallery print shopping exploration
+# Gallery print shopping
 
-This local UX iteration builds on the configurable print-order workflow. It does not change payment, manufacturing or fulfilment responsibilities. Products, approved size/finish combinations, prices, destinations and production requirements still come from studio configuration.
+The gallery shop builds on the configurable print-order workflow. It does not change payment, manufacturing or fulfilment responsibilities. Products, approved size/finish combinations, prices, destinations and production requirements still come from studio configuration.
 
 ## Buyer journey
 

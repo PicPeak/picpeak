@@ -34,7 +34,7 @@ export function PrintEditor({ slug, photos, variants, drafts, active, setActive,
         <SpatialPreview variant={variant} src={photoSource(photo)} slug={slug} crop={draft.crop} fit={draft.fit} />
       </section>
       <section className="space-y-5 min-w-0">
-        {products.length > 1 && <div className="print-segment flex-wrap" aria-label={t('printSales.product', 'Print product')}>{products.map(([id, name]) => <button type="button" key={id} aria-pressed={shownProduct === id} onClick={() => setProduct(id)}>{name}</button>)}</div>}
+        {products.length > 1 && <div className="print-segment flex-wrap" aria-label={t('printSales.productGroup', 'Print product')}>{products.map(([id, name]) => <button type="button" key={id} aria-pressed={shownProduct === id} onClick={() => setProduct(id)}>{name}</button>)}</div>}
         <fieldset><legend className="font-semibold mb-2">{t('printSales.variant', 'Size and finish')}</legend><div className="print-variant-grid">{variants.filter(v => v.selection.product.id === shownProduct).map(v => <button type="button" key={v.id}
           className="print-variant" aria-pressed={variant.id === v.id} onClick={() => { if (v.id !== draft.profileId) update(newDraft(draft.photoId, v, draft)); }}>
           <span className="print-size-icon" aria-hidden="true"><i style={{ aspectRatio: v.artwork.widthMm / v.artwork.heightMm }} /></span>

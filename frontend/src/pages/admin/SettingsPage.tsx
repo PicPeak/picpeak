@@ -66,6 +66,7 @@ import type { FeatureKey } from '../../services/featureFlags.service';
 // Settings tabs that are a feature's own page carry its state label.
 const TAB_FEATURE: Partial<Record<string, FeatureKey>> = {
   albumProducts: 'albumProducts',
+  printSales: 'printSales',
   slideshow: 'slideshow',
   transfers: 'transfers',
   whatsapp: 'whatsapp',

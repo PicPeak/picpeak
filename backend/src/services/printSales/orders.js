@@ -101,7 +101,7 @@ function createService({ db, storage, sharp }) {
     return { variants, countries: config.countries, policy: config.policy, basketScope: V.hash({ eventId, customerId }) };
   }
   async function quote(eventId, customerId, accessLevel, input) {
-    V.uuid(input.requestId);
+    V.uuid(input?.requestId);
     const { event, customer } = await buyer(db, eventId, customerId);
     const requestHash = V.hash({ cart: input.items, delivery: input.delivery });
     const existing = await db('print_sales_orders').where({ id: input.requestId }).first();
@@ -178,7 +178,7 @@ function createService({ db, storage, sharp }) {
   }
   async function accept(eventId, customerId, accessLevel, id, input) {
     const { event } = await buyer(db, eventId, customerId), row = await owned(id, customerId, eventId);
-    if (input.snapshotHash !== row.snapshot_hash || input.acknowledgeSelection !== true)
+    if (input?.snapshotHash !== row.snapshot_hash || input?.acknowledgeSelection !== true)
       throw new AppError('Confirm the displayed photo selections, prices and policy', 400);
     if (row.accepted_at) return shape(row);
     const policy = require('../../database/crmAccess');
@@ -197,13 +197,13 @@ function createService({ db, storage, sharp }) {
       if (current.accepted_at) return shape(current);
       if (current.status !== 'quoted' || new Date(current.expires_at).getTime() <= Date.now())
         throw new ConflictError('The quotation expired; review a new quotation');
-      if (current.created_by_admin_id !== event.print_sales_admin_id)
+      const { event: currentEvent } = await buyer(tx, eventId, customerId);
+      if (current.created_by_admin_id !== currentEvent.print_sales_admin_id || currentEvent.print_sales_admin_id !== admin.id)
         throw new ConflictError('The studio billing owner changed; review a new quotation');
       const open = await tx('print_sales_orders').where({ status: 'accepted' }).select('customer_account_id', 'render_status');
       if (open.length >= 100 || open.filter(o => o.customer_account_id === customerId).length >= 10 ||
           open.filter(o => ['queued', 'running'].includes(o.render_status)).length >= 20)
         throw new ConflictError('The studio order queue is full; try again after existing orders are processed');
-      await buyer(tx, eventId, customerId);
       const snapshot = P.parse(current.snapshot), contact = P.parse(current.contact);
       if (!contact || V.hash(contact) !== snapshot.contactHash) throw new ConflictError('Confirmed delivery details changed; review a new quotation');
       const next = await D.plan(tx, snapshot.cart, { country: contact.delivery.country });
@@ -216,8 +216,8 @@ function createService({ db, storage, sharp }) {
         if (!source || !await storage.stat(source.storage_key)) throw new ConflictError('Retained original is missing');
       }
       const created = await require('../invoiceService').createInvoice({
-        customerAccountId: customerId, eventId, eventName: event.event_name,
-        projectId: event.project_id, currency: snapshot.currency, vatCode: snapshot.vatCode,
+        customerAccountId: customerId, eventId, eventName: currentEvent.event_name,
+        projectId: currentEvent.project_id, currency: snapshot.currency, vatCode: snapshot.vatCode,
         vatRate: snapshot.vatRate, lineItems: snapshot.lines, _skipMonthlyRouting: true,
         skontoDisabled: true,
       }, admin.id, tx);
@@ -227,7 +227,7 @@ function createService({ db, storage, sharp }) {
       const invoiceHash = await invoiceIdentity(tx, invoice);
       await tx('print_sales_orders').where({ id, status: 'quoted' }).update({ status: 'accepted', accepted_at: now(),
         invoice_id: invoiceId, invoice_hash: invoiceHash, render_status: 'queued' });
-      await require('../../database/db').logActivity('print_order_accepted', { orderId: id, invoiceId }, eventId,
+      await require('../../database/db').logActivity('print_order_accepted', { orderId: id, invoiceId, eventName: currentEvent.event_name }, eventId,
         { type: 'customer', id: customerId }, tx);
       return shape(await tx('print_sales_orders').where({ id }).first());
     }));

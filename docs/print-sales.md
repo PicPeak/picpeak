@@ -222,3 +222,11 @@ API connectors, automatic invoice delivery and post-submission lab cancellation
 are outside this release. No existing private deployment or production data is
 migrated by this branch. Lab profile approval, physical samples and a controlled
 deployment review remain necessary before opening an actual shop.
+
+## Installation and recovery
+
+Core migration `337_print_sales` adds three order/configuration tables, the gallery switches, the default-off feature flag and the `.print-sales` backup path. It reuses existing permissions and requires no payment-provider setup. The migration guards each gallery column independently so an interrupted SQLite upgrade can be rerun. Recheck migration numbers against main and other drafts before integration.
+
+Retention retries failed storage deletions without dropping their asset records or marking the order purged. Other orders continue through cleanup, and each failure is logged at error level with order/asset identifiers. Fix the storage access problem to let a later sweep complete. Native accounting records remain retained separately.
+
+See [gallery print shopping](print-sales-shopping.md) for the buyer journey, crop controls and spatial scale; detailed PR validation and screenshots belong in the pull-request description.

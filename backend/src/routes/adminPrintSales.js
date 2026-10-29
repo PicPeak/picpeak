@@ -34,7 +34,7 @@ router.get('/events/:eventId', requireEventOwner, permissions('products.view'), 
 }));
 router.put('/events/:eventId', requireEventOwner, requireFeatureFlag('printSales'), requireFeatureFlag('albumProducts'), requireFeatureFlag('bills'),
   permissions('products.configure', 'bills.manage', 'customers.edit'), handleAsync(async (req, res) => {
-    if (typeof req.body.enabled !== 'boolean') throw new AppError('Choose whether gallery ordering is enabled', 400);
+    if (typeof req.body?.enabled !== 'boolean') throw new AppError('Choose whether gallery ordering is enabled', 400);
     const changed = await db('events').where({ id: Number(req.params.eventId) }).update({
       print_sales_enabled: formatBoolean(req.body.enabled), print_sales_admin_id: req.admin.id,
     });
