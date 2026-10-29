@@ -4,6 +4,7 @@ import { de, enUS, es, fr, nl, ptBR, ru, sl } from 'date-fns/locale';
 import type { Locale } from 'date-fns';
 import { usePublicSettings } from './usePublicSettings';
 import { expiryDay } from '../utils/expiryDay';
+import { parseCalendarDay } from '../utils/calendarDay';
 
 // One entry per shipped UI locale (src/i18n/locales). Keyed by base
 // language so a regional tag like `de-DE` or `fr-CH` resolves too.
@@ -32,26 +33,14 @@ export const resolveDateLocale = (language: string | undefined): Locale =>
 const SQLITE_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/;
 
 /**
- * A `date` column: 'YYYY-MM-DD', a calendar day with no time (issue 2330).
- * `new Date()` reads it as UTC midnight, which west of UTC is the evening of
- * the day before, so it is built as that day at local noon instead, the way
- * `parseWallClock` does, where no DST gap can move it.
- */
-const CALENDAR_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-/**
  * A date or date string as a Date, reading SQLite's zone-less shape as UTC
  * and a bare calendar day as that day in the viewer's zone.
  */
 export const toDisplayDate = (date: Date | string): Date => {
   if (typeof date !== 'string') return date;
   const text = date.trim();
-  const day = CALENDAR_DAY.exec(text);
-  if (day) {
-    const [, y, mo, d] = day;
-    const local = new Date(Number(y), Number(mo) - 1, Number(d), 12);
-    return local.getMonth() === Number(mo) - 1 && local.getDate() === Number(d) ? local : new Date(NaN);
-  }
+  const day = parseCalendarDay(text);
+  if (day) return day;
   return new Date(SQLITE_UTC_TIMESTAMP.test(text) ? `${text.replace(' ', 'T')}Z` : date);
 };
 

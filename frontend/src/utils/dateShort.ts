@@ -1,3 +1,5 @@
+import { parseCalendarDay } from './calendarDay';
+
 /**
  * formatShortDate — canonical DD.MM.YYYY formatter for public + customer
  * surfaces that don't have access to admin Settings (general_date_format).
@@ -14,7 +16,9 @@
  */
 export function formatShortDate(value: string | null | undefined): string {
   if (!value) return '';
-  const d = new Date(value);
+  // A bare 'YYYY-MM-DD' (a `date` column) is that calendar day, not UTC
+  // midnight: new Date() would show the day before west of UTC (issue 2330).
+  const d = parseCalendarDay(value) ?? new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
 }
