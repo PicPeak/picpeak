@@ -81,7 +81,13 @@ describe('duplicates view (issue 2194)', () => {
 
   const base = (event) => `/api/admin/events/${event.id}/photos`;
   const groups = (event, who = 'owner', query = '') => as(request(app).get(`${base(event)}/duplicates${query}`), who);
-  const resolve = (event, keepIds, who = 'owner') => as(request(app).post(`${base(event)}/duplicates/resolve`), who).send({ keepIds });
+  // As the dialog sends it: each kept photo with the hash of the group shown.
+  const resolve = async (event, keepIds, who = 'owner', shown = {}) => {
+    const rows = await db('photos').whereIn('id', keepIds).select('id', 'content_sha256');
+    const hashOf = (id) => shown[id] || rows.find((r) => Number(r.id) === Number(id))?.content_sha256 || '0'.repeat(64);
+    return as(request(app).post(`${base(event)}/duplicates/resolve`), who)
+      .send({ keep: keepIds.map((id) => ({ id, content_sha256: hashOf(id) })) });
+  };
   const live = async (photoId) => (await db('photos').where({ id: photoId }).first())?.deleted_at == null;
 
   beforeAll(async () => {
@@ -218,6 +224,27 @@ describe('duplicates view (issue 2194)', () => {
     const alive = [await live(a), await live(b)].filter(Boolean);
     expect(alive).toHaveLength(1);
     expect(first.body.trashed + second.body.trashed).toBe(1);
+  });
+
+  it('a kept photo replaced by other bytes since the page loaded trashes nothing', async () => {
+    const event = await mkEvent();
+    const keep = await mkPhoto(event, { content_sha256: hash('shown') });
+    const copy = await mkPhoto(event, { content_sha256: hash('shown') });
+    // Meanwhile the kept photo is replaced by bytes that match another group.
+    const other1 = await mkPhoto(event, { content_sha256: hash('other') });
+    await db('photos').where({ id: keep }).update({ content_sha256: hash('other') });
+
+    const res = await resolve(event, [keep], 'owner', { [keep]: hash('shown') });
+    expect(res.status).toBe(200);
+    expect(res.body.trashed).toBe(0);
+    expect([await live(keep), await live(copy), await live(other1)]).toEqual([true, true, true]);
+  });
+
+  it('refuses a keep without the hash of its group', async () => {
+    const event = await mkEvent();
+    const a = await mkPhoto(event, { content_sha256: hash('nohash') });
+    const res = await as(request(app).post(`${base(event)}/duplicates/resolve`), 'owner').send({ keep: [{ id: a }] });
+    expect(res.status).toBe(400);
   });
 
   it('resolves several groups in one request, and refuses two keeps of one group', async () => {

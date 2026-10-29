@@ -108,13 +108,13 @@ describe('PhotoDuplicatesModal', () => {
     expect(within(a).getByRole('radio', { name: 'admin.photos.duplicates.keepThis:IMG_21.jpg' })).not.toBeChecked();
 
     await user.click(within(a).getByTestId('duplicates-keep-aaa'));
-    await waitFor(() => expect(resolveDuplicates).toHaveBeenCalledWith(7, [5]));
+    await waitFor(() => expect(resolveDuplicates).toHaveBeenCalledWith(7, [{ id: 5, content_sha256: 'aaa' }]));
     expect(toastSuccess).toHaveBeenCalledWith('admin.photos.duplicates.trashed:2');
     expect(onTrashed).toHaveBeenCalled();
 
     await user.click(within(a).getByRole('radio', { name: 'admin.photos.duplicates.keepThis:IMG_21.jpg' }));
     await user.click(within(a).getByTestId('duplicates-keep-aaa'));
-    await waitFor(() => expect(resolveDuplicates).toHaveBeenLastCalledWith(7, [21]));
+    await waitFor(() => expect(resolveDuplicates).toHaveBeenLastCalledWith(7, [{ id: 21, content_sha256: 'aaa' }]));
   });
 
   it('keeps the marked photo in every group at once', async () => {
@@ -123,7 +123,7 @@ describe('PhotoDuplicatesModal', () => {
     await screen.findByTestId('duplicates-group-aaa');
     await user.click(screen.getByRole('radio', { name: 'admin.photos.duplicates.keepThis:IMG_32.jpg' }));
     await user.click(screen.getByTestId('duplicates-keep-all'));
-    await waitFor(() => expect(resolveDuplicates).toHaveBeenCalledWith(7, [5, 32]));
+    await waitFor(() => expect(resolveDuplicates).toHaveBeenCalledWith(7, [{ id: 5, content_sha256: 'aaa' }, { id: 32, content_sha256: 'bbb' }]));
   });
 
   it('says so when the gallery has no duplicates', async () => {

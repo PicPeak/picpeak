@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { Copy, Film, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { Badge, Button, EmptyState, ErrorState, Loading, Modal, Notice } from '../common';
-import { photosService, type DuplicateGroup, type DuplicatePhoto } from '../../services/photos.service';
+import { photosService, type DuplicateGroup, type DuplicateKeep, type DuplicatePhoto } from '../../services/photos.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { formatFileSize } from '../../utils/fileSize';
 
@@ -69,7 +69,7 @@ export const PhotoDuplicatesModal: React.FC<PhotoDuplicatesModalProps> = ({
   const mayTrash = canDelete && !trashOff;
 
   const resolve = useMutation({
-    mutationFn: (keepIds: number[]) => photosService.resolveDuplicates(eventId, keepIds),
+    mutationFn: (keep: DuplicateKeep[]) => photosService.resolveDuplicates(eventId, keep),
     onSuccess: (result) => {
       if (result.trashed > 0) {
         toast.success(t('admin.photos.duplicates.trashed', { count: result.trashed }));
@@ -110,7 +110,7 @@ export const PhotoDuplicatesModal: React.FC<PhotoDuplicatesModalProps> = ({
           leftIcon={<Trash2 className="w-4 h-4" />}
           disabled={busy}
           isLoading={busy}
-          onClick={() => resolve.mutate(groups.map(keepOf))}
+          onClick={() => resolve.mutate(groups.map((group) => ({ id: keepOf(group), content_sha256: group.content_sha256 })))}
           data-testid="duplicates-keep-all"
         >
           {t('admin.photos.duplicates.keepAll', { count: groups.length })}
@@ -194,7 +194,7 @@ export const PhotoDuplicatesModal: React.FC<PhotoDuplicatesModalProps> = ({
                       variant="outline"
                       size="sm"
                       disabled={busy}
-                      onClick={() => resolve.mutate([keepId])}
+                      onClick={() => resolve.mutate([{ id: keepId, content_sha256: group.content_sha256 }])}
                       data-testid={`duplicates-keep-${group.content_sha256}`}
                     >
                       {t('admin.photos.duplicates.keepOne', { count: group.photos.length - 1 })}

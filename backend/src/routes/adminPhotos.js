@@ -1418,11 +1418,18 @@ router.get('/:eventId/photos/duplicates', adminAuth, requirePermission('photos.v
 router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId, 10);
-    const { keepIds } = req.body || {};
-    if (!Array.isArray(keepIds) || keepIds.length === 0 || !keepIds.every((id) => Number.isInteger(id) && id > 0)) {
+    // Each kept photo comes with the hash of the group the admin saw: a photo
+    // replaced by other bytes since the page loaded keeps its id, and must not
+    // stand for the new content's group.
+    const { keep } = req.body || {};
+    const validKeep = (k) => k && Number.isInteger(k.id) && k.id > 0
+      && typeof k.content_sha256 === 'string' && /^[0-9a-f]{64}$/.test(k.content_sha256);
+    if (!Array.isArray(keep) || keep.length === 0 || !keep.every(validKeep)) {
       return res.status(400).json({ error: 'Invalid photo IDs' });
     }
-    if (keepIds.length > MAX_GROUP_LIMIT) {
+    const keepIds = keep.map((k) => k.id);
+    const shownHash = new Map(keep.map((k) => [k.id, k.content_sha256]));
+    if (keep.length > MAX_GROUP_LIMIT) {
       return res.status(400).json({ error: `At most ${MAX_GROUP_LIMIT} groups per request` });
     }
     const event = await db('events').where({ id: eventId }).first();
@@ -1436,7 +1443,7 @@ router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission(
     const kept = await livePhotos(db).where('event_id', eventId).whereIn('id', [...new Set(keepIds)]);
     const keptHashes = new Set();
     for (const photo of kept) {
-      if (!photo.content_sha256) continue;
+      if (!photo.content_sha256 || photo.content_sha256 !== shownHash.get(Number(photo.id))) continue;
       if (keptHashes.has(photo.content_sha256)) {
         return res.status(400).json({ error: 'Keep one photo per group', code: 'SAME_GROUP' });
       }
@@ -1458,8 +1465,10 @@ router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission(
       await gallery.first('id');
       const trashed = [];
       for (const stale of kept) {
-        if (!stale.content_sha256) continue;
-        const group = livePhotos(trx).where({ event_id: eventId, content_sha256: stale.content_sha256 }).orderBy('id');
+        // Replaced since the page loaded: its new bytes are not the group shown.
+        const shown = shownHash.get(Number(stale.id));
+        if (!stale.content_sha256 || stale.content_sha256 !== shown) continue;
+        const group = livePhotos(trx).where({ event_id: eventId, content_sha256: shown }).orderBy('id');
         if (pg) group.forUpdate();
         const rows = await group;
         const keep = rows.find((row) => Number(row.id) === Number(stale.id));

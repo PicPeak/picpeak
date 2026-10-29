@@ -176,6 +176,11 @@ export interface DuplicateGroupsPage {
   offset: number;
 }
 
+export interface DuplicateKeep {
+  id: number;
+  content_sha256: string;
+}
+
 export interface DuplicatesResolveResult {
   trashed: number;
   photo_ids: number[];
@@ -412,9 +417,13 @@ class PhotosService {
     return response.data;
   }
 
-  /** Keep each named photo and move the other copies of it to the trash. */
-  async resolveDuplicates(eventId: number, keepIds: number[]): Promise<DuplicatesResolveResult> {
-    const response = await api.post(`/admin/events/${eventId}/photos/duplicates/resolve`, { keepIds });
+  /**
+   * Keep each named photo and move the other copies of it to the trash. Each
+   * keep carries the hash of the group shown, so a photo replaced since the
+   * page loaded is skipped instead of standing for its new content.
+   */
+  async resolveDuplicates(eventId: number, keep: DuplicateKeep[]): Promise<DuplicatesResolveResult> {
+    const response = await api.post(`/admin/events/${eventId}/photos/duplicates/resolve`, { keep });
     return response.data;
   }
 
