@@ -4269,6 +4269,24 @@
       "noneToFill": "Alle Fotos haben bereits einen Platzhalter",
       "button": "Platzhalter berechnen"
     },
+    "contentHashBackfill": {
+      "title": "Inhalts-Hashes",
+      "description": "Berechnet den Inhalts-Hash, über den die Duplikaterkennung vergleicht, für Fotos und Videos aus dem überwachten Ordner, aus externen Medien oder aus S3 sowie für alle, die vor den Hashes hinzugefügt wurden. Die Dateien werden einzeln gelesen; Sie können jederzeit pausieren und später an derselben Stelle weitermachen. Originale, die sich nicht lesen lassen, werden übersprungen und gezählt. Neue Fotos erhalten ihren Hash automatisch; neue Videos bekommen ihn hier.",
+      "ioWarning": "Dabei wird jedes Original ohne Hash einmal gelesen: Rechnen Sie mit Last auf dem NAS und mit ausgehendem Datenverkehr bei S3.",
+      "total": "Fotos und Videos",
+      "hashed": "Mit Hash",
+      "pending": "Noch ohne Hash",
+      "unreadable": "Nicht lesbar",
+      "result": "Letzter Lauf: {{hashed}} berechnet, {{failed}} Originale nicht lesbar",
+      "resultPaused": "Pausiert: bisher {{hashed}} berechnet, {{failed}} Originale nicht lesbar",
+      "running": "Originale werden gelesen...",
+      "pause": "Pausieren",
+      "pausing": "Pausiert nach der aktuellen Datei...",
+      "resume": "Fortsetzen",
+      "button": "Hashes berechnen",
+      "noneToHash": "Alle Originale haben einen Hash",
+      "retryUnreadable": "Nicht lesbare erneut versuchen ({{count}})"
+    },
     "saveBar": {
       "unsaved": "Du hast ungespeicherte Änderungen",
       "leaveTitle": "Ungespeicherte Änderungen verwerfen?",

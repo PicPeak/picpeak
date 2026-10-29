@@ -21,6 +21,7 @@ const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
 const { resolveCredit } = require('./photoCredit');
 const { exifColumn } = require('./photoExif');
+const { sha256File } = require('./photoDuplicates');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getStorage } = require('./storage');
@@ -139,9 +140,16 @@ async function processEvent(event, storage) {
       let exif = {};
       let capturedAt = null;
       let captureWall = {};
+      // Content hash (issue 2194), as the upload paths store it. An image is
+      // hashed from the local copy below, so the object is still fetched
+      // once. A video is not: that would be a second full download, so it is
+      // left to the content-hash backfill, as is an object that cannot be
+      // read now.
+      let contentSha256 = null;
       if (isImage) {
         try {
           dimensions = await withLocalCopy(entry.key, async (localPath) => {
+            contentSha256 = await sha256File(localPath).catch(() => null);
             credit = await resolveCredit({ localPath });
             exif = await exifColumn(localPath);
             // The row is inserted complete, so the worker never reads it.
@@ -176,6 +184,7 @@ async function processEvent(event, storage) {
           path: relativePath,
           type: 'individual',
           size_bytes: entry.size,
+          content_sha256: contentSha256,
           media_type: isVideo ? 'video' : 'image',
           mime_type: mimeType,
           source_origin: 'managed',

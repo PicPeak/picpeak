@@ -48,6 +48,7 @@ const JOB_CAPTURE_DATE_BACKFILL = 'photo_capture_date_backfill';
 const JOB_ORIENTATION_BACKFILL = 'photo_orientation_backfill';
 const JOB_CREDIT_BACKFILL = 'photo_credit_backfill';
 const JOB_THUMB_HASH_BACKFILL = 'photo_thumb_hash_backfill';
+const JOB_CONTENT_HASH_BACKFILL = 'photo_content_hash_backfill';
 
 // How long a run may go without renewing its lease before another replica is
 // allowed to take it over. Generous on purpose: these jobs walk the whole
@@ -235,8 +236,49 @@ function startLeaseKeeper(jobName, token) {
   };
 }
 
+/**
+ * Ask a running job to pause (issue 2194, migration 338). Only a job that
+ * checks pauseRequested() between items honours it; the runner may sit on
+ * another replica, so the request is a flag on the row. Returns false when
+ * the job is not running.
+ */
+async function requestPause(jobName) {
+  const updated = await db('maintenance_jobs')
+    .where({ job_name: jobName, is_running: true })
+    .update({ pause_requested: true });
+  return updated > 0;
+}
+
+/** Whether the run holding `token` has been asked to pause. */
+async function pauseRequested(jobName, token) {
+  const row = await db('maintenance_jobs')
+    .where({ job_name: jobName, claim_token: token })
+    .first('pause_requested');
+  return Boolean(row && row.pause_requested);
+}
+
+/**
+ * Drop a pause request left by a run that is over, called before a fresh
+ * claim: it must not stop the next run at its first item. Only a job that is
+ * idle, or whose runner stopped renewing (a crash; the claim will take it
+ * over), is touched, so a pause asked of a live run, or of the run this start
+ * is about to claim once it holds the job, is never erased.
+ */
+async function clearIdlePause(jobName, { staleAfterMs = DEFAULT_STALE_MS } = {}) {
+  const cutoff = cutoffIso(staleAfterMs);
+  await db('maintenance_jobs')
+    .where({ job_name: jobName })
+    .where(function () {
+      this.where('is_running', false).orWhere('heartbeat_at', '<', cutoff);
+    })
+    .update({ pause_requested: false });
+}
+
 module.exports = {
   startLeaseKeeper,
+  requestPause,
+  pauseRequested,
+  clearIdlePause,
   ensure,
   claim,
   heartbeat,
@@ -247,6 +289,7 @@ module.exports = {
   JOB_ORIENTATION_BACKFILL,
   JOB_CREDIT_BACKFILL,
   JOB_THUMB_HASH_BACKFILL,
+  JOB_CONTENT_HASH_BACKFILL,
   DEFAULT_STALE_MS,
   HEARTBEAT_INTERVAL_MS,
 };

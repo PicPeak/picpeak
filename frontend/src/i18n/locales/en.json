@@ -3678,6 +3678,24 @@
       "noneToFill": "All photos already have a placeholder",
       "button": "Compute Placeholders"
     },
+    "contentHashBackfill": {
+      "title": "Content Hashes",
+      "description": "Compute the content hash duplicate detection matches on, for photos and videos imported through the watch folder, external media or S3, and for those added before hashes existed. Files are read one at a time; pause at any point and start again later to continue where it stopped. Originals that cannot be read are skipped and counted. New photos get their hash automatically; new videos get theirs here.",
+      "ioWarning": "This reads every original without a hash once: expect disk I/O on a NAS and egress traffic on S3.",
+      "total": "Photos and Videos",
+      "hashed": "Hashed",
+      "pending": "Not Hashed Yet",
+      "unreadable": "Unreadable",
+      "result": "Last run: {{hashed}} hashed, {{failed}} originals unreadable",
+      "resultPaused": "Paused: {{hashed}} hashed, {{failed}} originals unreadable so far",
+      "running": "Hashing originals...",
+      "pause": "Pause",
+      "pausing": "Pausing after the current file...",
+      "resume": "Resume",
+      "button": "Compute Hashes",
+      "noneToHash": "All originals are hashed",
+      "retryUnreadable": "Retry unreadable ({{count}})"
+    },
     "saveBar": {
       "unsaved": "You have unsaved changes",
       "leaveTitle": "Discard unsaved changes?",
