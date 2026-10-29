@@ -21,7 +21,7 @@ const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
 const { resolveCredit } = require('./photoCredit');
 const { exifColumn } = require('./photoExif');
-const { sha256File, sha256Stream } = require('./photoDuplicates');
+const { sha256File } = require('./photoDuplicates');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getStorage } = require('./storage');
@@ -142,9 +142,9 @@ async function processEvent(event, storage) {
       let captureWall = {};
       // Content hash (issue 2194), as the upload paths store it. An image is
       // hashed from the local copy below, so the object is still fetched
-      // once; a video is streamed from the bucket. Best-effort: an object
-      // that cannot be read now is imported without one and left for the
-      // content-hash backfill.
+      // once. A video is not: that would be a second full download, so it is
+      // left to the content-hash backfill, as is an object that cannot be
+      // read now.
       let contentSha256 = null;
       if (isImage) {
         try {
@@ -173,12 +173,6 @@ async function processEvent(event, storage) {
           });
         } catch (err) {
           logger.debug(`[s3AutoImporter] could not read dimensions for ${entry.key}: ${err.message}`);
-        }
-      } else {
-        try {
-          contentSha256 = await sha256Stream(await storage.get(entry.key));
-        } catch (err) {
-          logger.debug(`[s3AutoImporter] could not hash ${entry.key}: ${err.message}`);
         }
       }
 

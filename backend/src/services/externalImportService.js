@@ -406,9 +406,10 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     credit = creditFromFile ? await resolveCredit({ localPath: f.full, isVideo: false }) : null;
   }
   // The content hash (issue 2194) follows the bytes too: the old one would
-  // match a duplicate the file no longer is. Read in place, streamed; NULL
-  // when it cannot be read, which leaves it to the content-hash backfill.
-  const contentSha256 = await sha256File(f.full).catch((hashErr) => {
+  // match a duplicate the file no longer is. Read in place, streamed, for an
+  // image; a video's is cleared and left to the content-hash backfill, as is
+  // a file that cannot be read now.
+  const contentSha256 = isVideo ? null : await sha256File(f.full).catch((hashErr) => {
     logger.warn(`Could not hash changed external file ${f.rel}: ${hashErr.message}`);
     return null;
   });
@@ -1099,10 +1100,12 @@ async function importExternalFolder({
         const credit = await resolveCredit({ localPath: f.full, isVideo });
 
         // Content hash (issue 2194), as the upload paths store it, of the
-        // file in place on the share, streamed. Best-effort like the reads
-        // above: a file that cannot be read now goes in without one and is
-        // left for the content-hash backfill.
-        const contentSha256 = await sha256File(f.full).catch((hashErr) => {
+        // file in place on the share, streamed. Images only: a second full
+        // read of a large video would hold up the import (and the request
+        // that runs it), so videos are left to the content-hash backfill.
+        // Best-effort like the reads above: a file that cannot be read now
+        // goes in without one, for the same.
+        const contentSha256 = isVideo ? null : await sha256File(f.full).catch((hashErr) => {
           logger.warn(`Could not hash ${f.rel}: ${hashErr.message}`);
           return null;
         });

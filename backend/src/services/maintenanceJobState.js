@@ -259,13 +259,18 @@ async function pauseRequested(jobName, token) {
 
 /**
  * Drop a pause request left by a run that is over, called before a fresh
- * claim: it must not stop the next run at its first item. Only an idle job
- * is touched, so a pause asked of a live run (or of the run this start is
- * about to claim, once it holds the job) is never erased.
+ * claim: it must not stop the next run at its first item. Only a job that is
+ * idle, or whose runner stopped renewing (a crash; the claim will take it
+ * over), is touched, so a pause asked of a live run, or of the run this start
+ * is about to claim once it holds the job, is never erased.
  */
-async function clearIdlePause(jobName) {
+async function clearIdlePause(jobName, { staleAfterMs = DEFAULT_STALE_MS } = {}) {
+  const cutoff = cutoffIso(staleAfterMs);
   await db('maintenance_jobs')
-    .where({ job_name: jobName, is_running: false })
+    .where({ job_name: jobName })
+    .where(function () {
+      this.where('is_running', false).orWhere('heartbeat_at', '<', cutoff);
+    })
     .update({ pause_requested: false });
 }
 

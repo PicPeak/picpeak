@@ -365,9 +365,10 @@ async function processNewPhoto(filePath) {
   const webCopyEnabled = isVideo && await require('./videoRenditionService').queuesVideos();
   // Content hash (issue 2194), as the upload paths store it, so a later
   // upload of the same file into this gallery is caught as a duplicate.
-  // Streamed, videos too. Best-effort: a file that cannot be read now is
-  // imported without one and left for the content-hash backfill.
-  const contentSha256 = await sha256File(filePath).catch((err) => {
+  // Images only: a second full read of a large video would hold up the
+  // import, so videos are left to the content-hash backfill. Best-effort: a
+  // file that cannot be read now is imported without one, for the same.
+  const contentSha256 = isVideo ? null : await sha256File(filePath).catch((err) => {
     logger.warn(`Could not hash ${relativePath}: ${err.message}`);
     return null;
   });

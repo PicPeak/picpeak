@@ -76,12 +76,25 @@ describe('content hash on watch-folder and S3 ingest (issue 2194)', () => {
     expect(photo.content_sha256).toBe(sha(bytes));
   });
 
-  it('the S3 auto-import streams a video from the bucket to hash it', async () => {
+  it('the S3 auto-import leaves a video to the backfill instead of downloading it twice', async () => {
     const event = await makeEvent();
-    const bytes = Buffer.from('not a real mp4, hashed as bytes all the same');
+    const bytes = Buffer.from('not a real mp4, never read for its hash');
     const { photo, bucket } = await importFromBucket(event, 'clip.mp4', bytes);
     expect(photo.media_type).toBe('video');
-    expect(photo.content_sha256).toBe(sha(bytes));
-    expect(bucket.get).toHaveBeenCalledWith(`events/active/${event.slug}/clip.mp4`);
+    expect(photo.content_sha256).toBeNull();
+    expect(bucket.get).not.toHaveBeenCalled();
+  });
+
+  it('the watcher leaves a video to the backfill', async () => {
+    const event = await makeEvent();
+    const dir = path.join(process.env.STORAGE_PATH, 'events/active', event.slug, 'individual');
+    await fs.promises.mkdir(dir, { recursive: true });
+    const filePath = path.join(dir, 'CLIP_0001.mp4');
+    await fs.promises.writeFile(filePath, Buffer.from('not a real mp4'));
+
+    await processNewPhoto(filePath);
+
+    const photo = await db('photos').where({ event_id: event.id }).first();
+    expect(photo).toMatchObject({ media_type: 'video', content_sha256: null });
   });
 });

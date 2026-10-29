@@ -208,6 +208,18 @@ describe('content-hash backfill (issue 2194)', () => {
     expect((await backfill.status()).paused).toBe(true);
   });
 
+  it('a pause left by a runner that crashed does not stop the run that takes over', async () => {
+    const event = await makeEvent();
+    const p = await addPhoto(event, Buffer.from('bytes'));
+    // Paused, then the process died before it read the request or released.
+    await maintenanceJobs.claim(JOB);
+    expect(await maintenanceJobs.requestPause(JOB)).toBe(true);
+    await db('maintenance_jobs').where({ job_name: JOB })
+      .update({ heartbeat_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() });
+    await startAndRun();
+    expect((await row(p.id)).content_sha256).toBe(sha(Buffer.from('bytes')));
+  });
+
   it('a runner whose claim was taken over mid-read writes nothing', async () => {
     const event = await makeEvent();
     const p = await addPhoto(event, Buffer.from('read by the old runner'));
