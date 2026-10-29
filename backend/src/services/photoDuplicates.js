@@ -99,9 +99,9 @@ async function listDuplicateGroups(eventId, { limit = DEFAULT_GROUP_LIMIT, offse
  * one, move the rest to the trash". Empty when `keep` is not a live, hashed
  * photo of the gallery.
  */
-async function duplicatesOf(eventId, keep) {
+async function duplicatesOf(eventId, keep, conn = db) {
   if (!keep?.content_sha256 || String(keep.event_id) !== String(eventId) || keep.deleted_at) return [];
-  return livePhotos(db)
+  return livePhotos(conn)
     .where({ event_id: eventId, content_sha256: keep.content_sha256 })
     .whereNot('id', keep.id)
     .orderBy('id');

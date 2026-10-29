@@ -1441,21 +1441,26 @@ router.post('/:eventId/photos/duplicates/resolve', adminAuth, requirePermission(
       keptHashes.add(photo.content_sha256);
     }
 
-    const gone = [];
-    const failedIds = [];
-    for (const keep of kept) {
-      for (const photo of await duplicatesOf(eventId, keep)) {
-        try {
-          if (await photoTrash.trashPhoto(photo, req.admin.id, retentionDays)) gone.push(photo);
-        } catch (error) {
-          logger.error(`duplicates: could not trash photo ${photo.id}`, { error: error.message });
-          failedIds.push(photo.id);
+    // One resolve at a time per gallery: two admins keeping different photos
+    // of one group must not trash every copy between them. The gallery row is
+    // locked on PostgreSQL (SQLite runs one write transaction at a time), and
+    // each kept photo is read again under the lock, so a keep the other
+    // request already trashed trashes nothing here.
+    const gone = await db.transaction(async (trx) => {
+      const gallery = trx('events').where({ id: eventId });
+      if (trx.client.config.client === 'pg') gallery.forUpdate();
+      await gallery.first('id');
+      const trashed = [];
+      for (const stale of kept) {
+        const keep = await livePhotos(trx).where({ id: stale.id, event_id: eventId }).first();
+        if (!keep) continue;
+        for (const photo of await duplicatesOf(eventId, keep, trx)) {
+          if (await photoTrash.trashPhoto(photo, req.admin.id, retentionDays, Date.now(), trx)) trashed.push(photo);
         }
       }
-    }
-    if (gone.length === 0 && failedIds.length > 0) {
-      return res.status(500).json({ error: 'Failed to move photos to the trash', failed: failedIds });
-    }
+      return trashed;
+    });
+    const failedIds = [];
 
     // As the bulk delete: one photo.deleted per photo, one activity entry.
     try {

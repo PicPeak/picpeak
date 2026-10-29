@@ -189,6 +189,20 @@ describe('duplicates view (issue 2194)', () => {
     expect((await groups(event)).body.groups[0].photos.map((p) => p.id)).toEqual([a1, a2, a3]);
   });
 
+  it('two admins keeping different copies of one group at once leave one copy live', async () => {
+    // Both requests read their kept photo before either trashes anything; the
+    // second must not trash the first one's keep because of its stale read.
+    const event = await mkEvent();
+    const a = await mkPhoto(event, { content_sha256: hash('race') });
+    const b = await mkPhoto(event, { content_sha256: hash('race') });
+
+    const [first, second] = await Promise.all([resolve(event, [a]), resolve(event, [b])]);
+    expect([first.status, second.status]).toEqual([200, 200]);
+    const alive = [await live(a), await live(b)].filter(Boolean);
+    expect(alive).toHaveLength(1);
+    expect(first.body.trashed + second.body.trashed).toBe(1);
+  });
+
   it('resolves several groups in one request, and refuses two keeps of one group', async () => {
     const event = await mkEvent();
     const x1 = await mkPhoto(event, { content_sha256: hash('x') });
