@@ -57,7 +57,14 @@ and must leave a positive safe rectangle. Derived pixel dimensions use
 `round(artworkMm × targetDpi / 25.4)` independently on each axis.
 
 The initial capability is a single rectangular photo face, with optional bleed.
-It accepts embedded sRGB JPEG, PNG or 8-bit TIFF requirements. JPEG has configurable
+It accepts RGB JPEG, PNG or 8-bit TIFF requirements, with embedded `srgb`,
+`adobe-rgb-1998` (compatible), `display-p3` or `prophoto-rgb` output. Non-sRGB
+snapshots include a service-computed `profileSha256` identifying a fixed bundled
+CC0 profile; passing a different hash is refused. These are delivery encodings,
+not a promise of 16-bit editing, full source-gamut preservation, soft proofing or
+universal supplier acceptance. See the
+[market research](print-sales-market-research.md) for the surveyed requirements
+and the Adobe-compatible/8-bit ProPhoto limitations. JPEG has configurable
 quality (1–100, default 95) and chroma sampling (4:4:4 or 4:2:0, default 4:4:4).
 PNG supports lossless compression levels 0–9 (default 6); TIFF supports `lzw`,
 `deflate` or `none` compression (default `lzw`). Only the fields appropriate to
@@ -68,8 +75,9 @@ Canvas wrapping/mirroring, folded cards,
 books, masks, custom templates, CMYK and uploaded ICC profiles are rejected.
 Unknown manufacturing/output fields are refused, rather than silently ignored.
 The calling order service checks effective source resolution against the crop,
-and the isolated renderer embeds built-in sRGB. Those operations remain outside
-the pure resolver. Geometry and output tests do not establish physical lab quality.
+and the isolated renderer converts to and embeds the selected RGB profile. Those
+operations remain outside the pure resolver. Geometry and output tests do not
+establish physical lab quality.
 
 There is a maximum of 100 candidate profiles per resolution request, 2,000 mm
 per trim axis, 100 mm per bleed/safe edge, 72–600 DPI, and 60 megapixels per

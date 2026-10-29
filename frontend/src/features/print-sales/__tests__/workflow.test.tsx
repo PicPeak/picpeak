@@ -145,4 +145,33 @@ describe('print administration', () => {
     expect(result.manufacturing.fitModes).toEqual(['cover']); expect(result.supplierName).toBe('Our production partner');
     expect(result.instructions).toContain('\nOur packing instructions.');
   });
+  it('copies generic dimensions and trim allowances without changing catalogue choices or prices, and requires a fresh enable', async () => {
+    const initial: Profile = { cataloguePresetId: 10, definition: { id: 'profile', revision: 1, enabled: true, labReference: 'Our stock',
+      selection: { productId: '', productVersion: 'frozen-version', values: { finish: ['matte'] } }, manufacturing: { capability: 'single-photo-rectangle',
+        trimMm: { width: 100, height: 150 }, bleedMm: { top: 1, right: 2, bottom: 3, left: 4 }, safeInsetMm: { top: 1, right: 2, bottom: 3, left: 4 },
+        resolution: { targetDpi: 300, minimumDpi: 150 }, output: { format: 'jpeg', colourSpace: 'srgb' }, fitModes: ['cover', 'contain'] } } };
+    function Harness() {
+      const [value, setValue] = useState(initial);
+      return <><ProfileEditor value={value} products={[]} presets={[]} onChange={setValue} /><output data-testid="profile-json">{JSON.stringify(value)}</output></>;
+    }
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText('Start from a common size'), { target: { value: 'in-4-6' } });
+    let p = JSON.parse(screen.getByTestId('profile-json').textContent!);
+    expect(p.definition.manufacturing.trimMm).toEqual({ width: 101.6, height: 152.4 });
+    expect(p.definition.enabled).toBe(false); expect(p.cataloguePresetId).toBe(10); expect(p.definition.selection).toEqual(initial.definition.selection);
+    expect(p.definition.manufacturing.bleedMm).toEqual(initial.definition.manufacturing.bleedMm);
+    fireEvent.change(screen.getByLabelText('Start from a common size'), { target: { value: 'cm-10-15' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Swap width and height' }));
+    fireEvent.change(screen.getByLabelText('Added bleed on every edge'), { target: { value: '3.175' } });
+    fireEvent.change(screen.getByLabelText('Safe inset inside every trim edge'), { target: { value: '6.35' } });
+    fireEvent.change(screen.getByLabelText('Output colour profile'), { target: { value: 'adobe-rgb-1998' } });
+    fireEvent.change(screen.getByLabelText('File format'), { target: { value: 'tiff' } });
+    p = JSON.parse(screen.getByTestId('profile-json').textContent!);
+    expect(p.definition.manufacturing.trimMm).toEqual({ width: 150, height: 100 });
+    expect(p.definition.manufacturing.bleedMm).toEqual({ top: 3.175, right: 3.175, bottom: 3.175, left: 3.175 });
+    expect(p.definition.manufacturing.safeInsetMm).toEqual({ top: 6.35, right: 6.35, bottom: 6.35, left: 6.35 });
+    expect(p.definition.manufacturing.output.colourSpace).toBe('adobe-rgb-1998');
+    fireEvent.change(screen.getByLabelText('Trim width (mm)'), { target: { value: '149.7' } });
+    expect(JSON.parse(screen.getByTestId('profile-json').textContent!).definition.manufacturing.trimMm.width).toBe(149.7);
+  });
 });

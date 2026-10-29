@@ -11643,7 +11643,7 @@
     "tiffCompression": "TIFF compression",
     "noCompression": "Uncompressed",
     "background": "Background and fit border colour",
-    "supportedColour": "Supported colour output: embedded sRGB. Other colour spaces and uploaded ICC profiles require a separately validated renderer.",
+    "supportedColour": "Select the RGB profile your supplier accepts. Output is converted and tagged with that profile. Printer/paper soft-proof profiles are different; do not substitute one as the output profile.",
     "allowedFit": "Photo placement choices offered to buyers",
     "fitWhole": "Fit whole photograph",
     "rectangularOutput": "Single rectangular face. Display sizes are separate from production measurements. Verify your supplier requirements before enabling.",
@@ -11654,6 +11654,26 @@
     "deliveryZone": "Delivery zone",
     "zoneName": "Zone name",
     "removeZone": "Remove delivery zone",
-    "addZone": "Add delivery zone"
+    "addZone": "Add delivery zone",
+    "outputColourProfile": "Output colour profile",
+    "adobeCompatibleHelp": "Uses an open Adobe RGB (1998) compatible ICC profile. Confirm acceptance if your supplier requires Adobe’s exact profile name or file.",
+    "proPhotoHelp": "This exporter delivers 8 bits per channel. Use ProPhoto only where the supplier explicitly accepts 8-bit ProPhoto files; 16-bit editing and export are separate requirements.",
+    "genericStartingPoints": "Generic production starting points",
+    "startingPointHelp": "Copy a starting value, then verify your supplier’s actual template. Applying a starting point disables the variant until you enable it again after review. Prices and catalogue choices stay as configured.",
+    "swapOrientation": "Swap width and height",
+    "bleedStartingPoint": "Added bleed on every edge",
+    "keepEdges": "Keep current edge values",
+    "noAddedBleed": "No added bleed (0 mm)",
+    "safeStartingPoint": "Safe inset inside every trim edge",
+    "trimGuidance": "Bleed extends artwork beyond the finished trim; safe insets are guides for keeping important content inside it, not printed borders. Photographic edge cropping varies by supplier. Do not add press bleed or crop marks unless the product requires them. A 10 × 15 cm print is not exactly 4 × 6 in.",
+    "sizeStartingPoint": "Start from a common size",
+    "chooseSizeStartingPoint": "Choose a size to copy into the editable dimensions",
+    "sizeGroup": {
+      "metric": "Metric photographic sizes",
+      "imperial": "Inch photographic sizes",
+      "square": "Square sizes",
+      "paper": "ISO A paper sizes"
+    },
+    "wideGamutHelp": "Preparation can reduce the original colour gamut. A wider output profile cannot restore lost colours. Verify colour with your supplier’s test prints before enabling."
   }
 }

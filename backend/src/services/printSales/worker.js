@@ -35,7 +35,8 @@ function sheet(row, snapshot, contact, entries) {
     pdf.fontSize(10).text(`File: ${e.name}\nSource: ${i.source.filename}\nSource SHA-256: ${i.source.sha256}\nArtwork SHA-256: ${V.hash(e.bytes)}`);
     pdf.text(`Trim: ${p.manufacturing.trimMm.width} × ${p.manufacturing.trimMm.height} mm\nArtwork: ${p.artwork.widthMm} × ${p.artwork.heightMm} mm\nBleed (top/right/bottom/left): ${Object.values(p.manufacturing.bleedMm).join('/')} mm\nProfile: ${p.id} revision ${p.revision}\nLab reference: ${p.labReference || '(not provided)'}`);
     pdf.text(p.selection.attributes.map(a => `${a.name}: ${a.options.map(o => o.name).join(', ')}`).join('\n'));
-    pdf.text(`Supplier: ${p.supplierName || '(studio configured)'}\nOutput: sRGB ${p.manufacturing.output.format.toUpperCase()}. Single rectangular face; no wrapping, folds or imposition.`);
+    pdf.text(`Supplier: ${p.supplierName || '(studio configured)'}\nOutput: ${require('./colourProfiles').profile(p.manufacturing.output.colourSpace).label} ${p.manufacturing.output.format.toUpperCase()}. Single rectangular face; no wrapping, folds or imposition.`);
+    if (p.manufacturing.output.profileSha256) pdf.text(`Output ICC SHA-256: ${p.manufacturing.output.profileSha256}`);
     if (p.instructions) pdf.moveDown().text(`Supplier instructions:\n${p.instructions}`);
     if (pdf.y + 270 > pdf.page.height - pdf.page.margins.bottom) pdf.addPage();
     pdf.image(e.thumbnail, { fit: [250, 250] });
@@ -84,6 +85,7 @@ function createWorker({ db, storage, sharp, orders }) {
         // Version-one accepted profiles retain their original transparency behaviour.
         if (m.background !== undefined) raster = raster.flatten({ background: m.background });
         const encoded = await require('./output').encode(raster, m.output, m.resolution.targetDpi), image = encoded.bytes;
+        if (m.output.profileSha256) require('./colourProfiles').verify(await sharp(image).metadata(), m.output);
         outputBytes += image.length;
         if (outputBytes > 64 * 1024 * 1024) throw new Error('Production artwork exceeds the 64 MB order limit');
         const thumbnail = await sharp(image).resize(320, 320, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();

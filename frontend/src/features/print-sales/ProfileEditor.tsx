@@ -2,7 +2,8 @@ import { useTranslation } from 'react-i18next';
 import { ConfigurationPicker } from '../album-products/ConfigurationPicker';
 import { Input, Switch } from '../../components/common';
 import type { Product } from '../album-products/model';
-import type { Profile, Settings, Output } from './model';
+import type { Profile, Settings, Output, ColourSpace } from './model';
+import { ProductionStartingPoints } from './ProductionStartingPoints';
 export function ProfileEditor({ value, products, presets, onChange }: {
   value: Profile; products: Product[]; presets: Settings['presets']; onChange: (value: Profile) => void;
 }) {
@@ -30,6 +31,7 @@ export function ProfileEditor({ value, products, presets, onChange }: {
         <option value={0}>{t('printSales.choosePrice', 'Choose a price item')}</option>
         {presets?.filter(p => p.product_id === d.selection.productId).map(p => <option key={p.id} value={p.id}>{p.name} ({p.currency})</option>)}
       </select></label>
+    <ProductionStartingPoints value={m} onChange={manufacturing => definition({ manufacturing, enabled: false })} />
     <div className="grid gap-4 sm:grid-cols-2">
       {(['width', 'height'] as const).map(axis => <Input key={axis} type="number" min={1} max={2000} step="any"
         label={axis === 'width' ? t('printSales.trimWidth', 'Trim width (mm)') : t('printSales.trimHeight', 'Trim height (mm)')}
@@ -54,8 +56,9 @@ export function ProfileEditor({ value, products, presets, onChange }: {
       <label className="block">{t('printSales.outputFormat', 'File format')}
         <select className="input" value={m.output.format} onChange={e => {
           const format = e.target.value as Output['format'];
-          const output: Output = format === 'jpeg' ? { format, colourSpace: 'srgb', quality: 95, chromaSubsampling: '4:4:4' }
-            : format === 'png' ? { format, colourSpace: 'srgb', compressionLevel: 6 } : { format, colourSpace: 'srgb', compression: 'lzw' };
+          const colourSpace = m.output.colourSpace;
+          const output: Output = format === 'jpeg' ? { format, colourSpace, quality: 95, chromaSubsampling: '4:4:4' }
+            : format === 'png' ? { format, colourSpace, compressionLevel: 6 } : { format, colourSpace, compression: 'lzw' };
           definition({ manufacturing: { ...m, output } });
         }}><option value="jpeg">JPEG</option><option value="png">PNG</option><option value="tiff">TIFF (8-bit)</option></select></label>
       {m.output.format === 'jpeg' && <>
@@ -72,7 +75,16 @@ export function ProfileEditor({ value, products, presets, onChange }: {
           <option value="lzw">LZW</option><option value="deflate">Deflate</option><option value="none">{t('printSales.noCompression', 'Uncompressed')}</option></select></label>}
       <label className="block">{t('printSales.background', 'Background and fit border colour')}
         <input type="color" value={m.background ?? '#ffffff'} onChange={e => definition({ manufacturing: { ...m, background: e.target.value } })} /></label>
-      <p className="text-sm text-muted">{t('printSales.supportedColour', 'Supported colour output: embedded sRGB. Other colour spaces and uploaded ICC profiles require a separately validated renderer.')}</p>
+      <label className="block">{t('printSales.outputColourProfile', 'Output colour profile')}
+        <select className="input w-full" value={m.output.colourSpace} onChange={e => definition({ enabled: false,
+          manufacturing: { ...m, output: { ...m.output, colourSpace: e.target.value as ColourSpace } } })}>
+          <option value="srgb">sRGB</option><option value="adobe-rgb-1998">Adobe RGB (1998) compatible</option>
+          <option value="display-p3">Display P3</option><option value="prophoto-rgb">ProPhoto RGB (ROMM RGB)</option>
+        </select></label>
+      <p className="text-sm text-muted">{t('printSales.supportedColour', 'Select the RGB profile your supplier accepts. Output is converted and tagged with that profile. Printer/paper soft-proof profiles are different; do not substitute one as the output profile.')}</p>
+      {m.output.colourSpace !== 'srgb' && <p className="text-sm text-muted">{t('printSales.wideGamutHelp', 'Preparation can reduce the original colour gamut. A wider output profile cannot restore lost colours. Verify colour with your supplier’s test prints before enabling.')}</p>}
+      {m.output.colourSpace === 'adobe-rgb-1998' && <p className="text-sm text-muted">{t('printSales.adobeCompatibleHelp', 'Uses an open Adobe RGB (1998) compatible ICC profile. Confirm acceptance if your supplier requires Adobe’s exact profile name or file.')}</p>}
+      {m.output.colourSpace === 'prophoto-rgb' && <p className="text-sm text-warning-text">{t('printSales.proPhotoHelp', 'This exporter delivers 8 bits per channel. Use ProPhoto only where the supplier explicitly accepts 8-bit ProPhoto files; 16-bit editing and export are separate requirements.')}</p>}
     </fieldset>
     <fieldset><legend>{t('printSales.allowedFit', 'Photo placement choices offered to buyers')}</legend>
       {(['cover', 'contain'] as const).map(mode => <label key={mode} className="flex gap-2">

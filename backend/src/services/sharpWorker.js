@@ -148,10 +148,9 @@ async function run(job) {
           ![o.xres, o.yres].every(n => Number.isFinite(n) && n >= 72 / 25.4 && n <= 600 / 25.4))
         throw refusal('Unsupported image operation');
     }
-    // Narrow on purpose: only the built-in sRGB profile is allowed. Print
-    // artwork may embed that known profile; arbitrary profile paths remain
-    // forbidden. EXIF is only ever written to carry an Orientation tag.
-    if (name === 'withIccProfile' && (args.length !== 2 || args[0] !== 'srgb' || !args[1] ||
+    // Only built-in sRGB and the pinned print RGB profiles are allowed.
+    // EXIF is only ever written to carry an Orientation tag.
+    if (name === 'withIccProfile' && (args.length !== 2 || !require('./printSales/colourProfiles').allowed(args[0]) || !args[1] ||
         Object.keys(args[1]).join() !== 'attach' || typeof args[1].attach !== 'boolean')) throw refusal('Unsupported image operation');
     if (name === 'withExif') {
       const exif = args[0];

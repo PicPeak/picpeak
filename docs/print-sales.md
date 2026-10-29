@@ -24,7 +24,8 @@ received maintainer agreement on #48.
 4. Add each supported product/option combination as a manufacturing profile.
    Choose the shared options and matching CRM item; enter actual trim, bleed,
    safe insets and source/output DPI. Choose the output format/encoding, solid
-   background colour and allowed crop/whole-photo placement choices. Optional
+   RGB delivery profile, background colour and allowed crop/whole-photo placement
+   choices. Optional
    free-text supplier labels, production codes and multiline instructions carry
    into the frozen pack and studio sheet. There is no lab directory, preferred
    supplier or supplier-specific preset. Verify the profile against the chosen
@@ -54,6 +55,15 @@ and policy (`photo-selection-v1`). This does not claim that the client approved
 unfinished production files. The separate studio review binds the finished
 artwork's byte identity. Shop configuration must not substitute for actual lab
 testing, colour checks or physical sample approval.
+
+The shared catalogue and production editor include 43 generic size helpers,
+including separate metric and inch photographic sizes, squares and ISO A6–A2.
+Production helpers also copy common added-bleed and safe-inset values into the
+editable per-edge controls. Applying a production helper or changing the output
+colour profile disables the variant until it is reviewed and enabled again.
+Helpers do not create products, prices or supplier associations. Their evidence,
+exact values and limitations are recorded in the
+[market research](print-sales-market-research.md).
 
 ## Acceptance and billing guarantees
 
@@ -99,15 +109,19 @@ unpaid. Feature withdrawal pauses new rendering and ordering while retaining
 admin access to orders and prepared files.
 
 The existing isolated image worker performs metadata inspection and rendering.
-Its profile allowlist accepts only built-in sRGB with explicit attachment on/off;
-arbitrary ICC paths remain forbidden. Each frozen profile chooses one encoding:
+Its profile allowlist accepts built-in sRGB and three fixed, CC0 RGB assets:
+Adobe RGB (1998) compatible, Display P3 and ProPhoto/ROMM RGB. Arbitrary ICC paths
+and uploads remain forbidden. New non-sRGB snapshots freeze the profile SHA-256;
+the worker verifies that the prepared file embeds those exact ICC bytes before
+publication. The supplier sheet includes that identity. Each profile chooses
+one encoding:
 
 - JPEG: quality 1–100 and 4:4:4 or 4:2:0 chroma sampling (defaults 95 and 4:4:4).
 - PNG: lossless compression level 0–9 (default 6).
 - 8-bit TIFF: LZW, Deflate or no compression (default LZW).
 
-All three use the frozen pixel size and embed sRGB without copying camera
-EXIF/XMP/GPS. JPEG uses JFIF density, PNG uses pHYs and TIFF carries resolution
+All three use the frozen pixel size and embed the selected RGB profile without
+copying camera EXIF/XMP/GPS. JPEG uses JFIF density, PNG uses pHYs and TIFF carries resolution
 tags. Density metadata can round fractional DPI; derived pixel geometry and the
 manifest retain the configured physical dimensions/resolution. New profiles
 flatten transparency and whole-photo borders to the configured solid RGB
@@ -116,6 +130,12 @@ with their original JPEG defaults and transparency behaviour; accepted orders
 are never upgraded by re-resolving their definitions. The Node child launch uses
 `--jitless` (which disables WebAssembly) without the obsolete
 `--no-expose-wasm` flag, so current Node versions can run the isolated renderer.
+Delivery is 8 bits per channel, including ProPhoto. Select ProPhoto only for a
+supplier that explicitly accepts 8-bit ProPhoto; a 16-bit workflow is not provided.
+The Adobe-compatible asset is not Adobe's proprietary file and may not satisfy
+suppliers that identify a profile by its exact description. The current raster
+pipeline can normalise through sRGB/P3 before encoding; a wider destination is
+not a guarantee of full source-gamut preservation. See the research for details.
 There is no arbitrary ICC upload, CMYK conversion, soft-proof promise, canvas
 wrapping, folded-card imposition or
 album layout capability. Canvas-front/flat wall-art output must be a supported
@@ -175,9 +195,9 @@ uncovered countries, zone edits and native delivery invoice lines.
 The same integration suite is run on SQLite and local
 PostgreSQL 18.4. Frontend tests cover confirmation, retry IDs, crop editing,
 buyer-scoped baskets, conflicts and disabled-feature history.
-The final print-sales suite has 42 cases on each engine; the focused unit/image
-and inventory suites have 152 cases, and the frontend workflow/regression set has
-25. Native catalogue/CRM regressions (62 cases) and native-process protections
+The final print-sales suite has 45 cases on each engine; the focused unit/image
+and inventory suites have 162 cases, and the frontend workflow/regression set has
+33. Native catalogue/CRM regressions (62 cases) and native-process protections
 (17 cases) also pass. The output test asserts that a separate image worker is in
 use before testing the encoders. Integration fixtures use local storage;
 live S3-bucket ordering/restore and ARM64 capacity measurements

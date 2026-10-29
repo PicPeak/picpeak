@@ -361,6 +361,22 @@ test('studio background handles transparent originals without relying on a suppl
   const { data, info } = await sharp(await require('../../src/services/printSales/orders').verified(storage, file)).raw().toBuffer({ resolveWithObject: true });
   expect(info.channels).toBe(3); expect([...data.subarray(0, 3)]).toEqual([16, 32, 48]);
 });
+test.each(['adobe-rgb-1998', 'display-p3', 'prophoto-rgb'])('the %s ICC identity is frozen and embedded after future settings change', async colourSpace => {
+  config.profiles[0].definition.manufacturing.output = { format: 'png', colourSpace };
+  config = await P.save(db, config); const a = await accepted();
+  const frozen = P.parse((await fulfilment.order(a.id, admin)).snapshot).items[0].profile.manufacturing.output;
+  expect(frozen.profileSha256).toMatch(/^[a-f0-9]{64}$/);
+  config.profiles[0].definition.manufacturing.output = { format: 'png', colourSpace: 'srgb' }; await P.save(db, config);
+  const isolated = require('../../src/services/isolatedSharp');
+  try {
+    await require('../../src/services/printSales/worker').createWorker({ db, storage, sharp: isolated, orders }).runOne();
+    const row = await fulfilment.order(a.id, admin); expect(row.error).toBeNull(); expect(row.render_status).toBe('ready');
+    const file = await db('print_sales_assets').where({ order_id: a.id, kind: 'artwork', claim: row.claim }).first();
+    const metadata = await sharp(await require('../../src/services/printSales/orders').verified(storage, file)).metadata();
+    expect(crypto.createHash('sha256').update(metadata.icc).digest('hex')).toBe(frozen.profileSha256);
+    expect(P.parse(row.snapshot).items[0].profile.manufacturing.output).toEqual(frozen);
+  } finally { await isolated.shutdown(); }
+});
 test('country zones use different native delivery prices and freeze the selected zone on the invoice order', async () => {
   const vat = await db('vat_codes').where({ direction: 'output', active: true }).where('rate', '>', 0).first();
   const home = await require('../../src/services/quoteService').createLineItemPreset({ name: 'Studio home delivery', currency: 'EUR', price_mode: 'fixed', unit_price_minor: 100, vat_code: vat.code });

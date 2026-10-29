@@ -2,16 +2,18 @@
 const { ValidationError } = require('../../utils/errors');
 const { jpegDensity } = require('./jpegDensity');
 const { pngDensity } = require('./pngDensity');
+const colours = require('./colourProfiles');
 const fail = message => { throw new ValidationError(message); };
 /** Only implemented encodings reach the renderer. No file paths or supplier presets. */
 function output(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input) || input.colourSpace !== 'srgb')
-    fail('Choose supported sRGB output requirements');
+  if (!input || typeof input !== 'object' || Array.isArray(input)) fail('Choose supported RGB output requirements');
+  const colour = colours.profile(input.colourSpace);
   const allowed = { jpeg: ['quality', 'chromaSubsampling'], png: ['compressionLevel'], tiff: ['compression'] };
   if (!Object.hasOwn(allowed, input.format) ||
-      Object.keys(input).some(k => !['format', 'colourSpace', ...allowed[input.format]].includes(k)))
+      Object.keys(input).some(k => !['format', 'colourSpace', 'profileSha256', ...allowed[input.format]].includes(k)))
     fail('Choose supported JPEG, PNG or TIFF output requirements');
-  const result = { format: input.format, colourSpace: 'srgb' };
+  if (input.profileSha256 !== undefined && input.profileSha256 !== colour.sha256) fail('Output ICC profile identity changed');
+  const result = { format: input.format, colourSpace: input.colourSpace, ...(colour.sha256 ? { profileSha256: colour.sha256 } : {}) };
   if (input.format === 'jpeg') {
     const quality = input.quality === undefined ? 95 : input.quality,
       chromaSubsampling = input.chromaSubsampling === undefined ? '4:4:4' : input.chromaSubsampling;
@@ -32,7 +34,7 @@ function output(input) {
 }
 async function encode(raster, requirements, dpi) {
   const spec = output(requirements);
-  raster = raster.withIccProfile('srgb', { attach: true });
+  raster = raster.withIccProfile(colours.verifiedProfile(spec.colourSpace).icc, { attach: true });
   if (spec.format === 'jpeg') return { extension: 'jpg', bytes: jpegDensity(await raster
     .jpeg({ quality: spec.quality, chromaSubsampling: spec.chromaSubsampling }).toBuffer(), dpi) };
   if (spec.format === 'png') return { extension: 'png', bytes: pngDensity(await raster

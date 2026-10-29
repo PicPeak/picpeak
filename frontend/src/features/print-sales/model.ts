@@ -2,9 +2,10 @@ import { api } from '../../config/api';
 import type { Choice, Product } from '../album-products/model';
 export type Crop = { x: number; y: number; width: number; height: number };
 export type Edges = { top: number; right: number; bottom: number; left: number };
-export type Output = { format: 'jpeg'; colourSpace: 'srgb'; quality?: number; chromaSubsampling?: '4:4:4' | '4:2:0' }
-  | { format: 'png'; colourSpace: 'srgb'; compressionLevel?: number }
-  | { format: 'tiff'; colourSpace: 'srgb'; compression?: 'lzw' | 'deflate' | 'none' };
+export type ColourSpace = 'srgb' | 'adobe-rgb-1998' | 'display-p3' | 'prophoto-rgb';
+export type Output = { format: 'jpeg'; colourSpace: ColourSpace; quality?: number; chromaSubsampling?: '4:4:4' | '4:2:0' }
+  | { format: 'png'; colourSpace: ColourSpace; compressionLevel?: number }
+  | { format: 'tiff'; colourSpace: ColourSpace; compression?: 'lzw' | 'deflate' | 'none' };
 export interface DeliveryZone { id: string; name: string; countries: string[]; cataloguePresetId: number | null }
 export interface Profile {
   cataloguePresetId: number;

@@ -3,6 +3,8 @@ const sharp = require('sharp');
 const { output, encode } = require('../../src/services/printSales/output');
 const { pngDensity } = require('../../src/services/printSales/pngDensity');
 const { ValidationError } = require('../../src/utils/errors');
+const colours = require('../../src/services/printSales/colourProfiles');
+const rgbProfiles = ['adobe-rgb-1998', 'display-p3', 'prophoto-rgb'];
 const make = () => sharp({ create: { width: 100, height: 150, channels: 3, background: '#102030' } });
 test.each(['jpeg', 'png', 'tiff'])('%s output has frozen dimensions, density and embedded sRGB without camera metadata', async format => {
   const source = await make().withExif({ IFD0: { Make: 'Private camera' } }).png().toBuffer();
@@ -13,6 +15,28 @@ test.each(['jpeg', 'png', 'tiff'])('%s output has frozen dimensions, density and
 });
 test('minimal historical JPEG requirements keep the original encoding defaults', () => {
   expect(output({ format: 'jpeg', colourSpace: 'srgb' })).toEqual({ format: 'jpeg', colourSpace: 'srgb', quality: 95, chromaSubsampling: '4:4:4' });
+});
+test.each(rgbProfiles.flatMap(colourSpace => ['jpeg', 'png', 'tiff'].map(format => [colourSpace, format])))('%s %s converts pixels, embeds the pinned ICC and round-trips an sRGB colour', async (colourSpace, format) => {
+  const spec = output({ format, colourSpace });
+  expect(spec.profileSha256).toBe(colours.profile(colourSpace).sha256);
+  const { bytes } = await encode(make(), spec, 300), meta = await sharp(bytes).metadata();
+  expect(meta).toMatchObject({ format, width: 100, height: 150, density: 300, depth: 'uchar' });
+  if (format !== 'jpeg') expect(meta.bitsPerSample).toBe(8);
+  expect(meta.exif).toBeUndefined(); expect(meta.xmp).toBeUndefined();
+  expect(() => colours.verify(meta, spec)).not.toThrow();
+  const encoded = await sharp(bytes, { ignoreIcc: true }).raw().toBuffer();
+  expect([...encoded.subarray(0, 3)]).not.toEqual([16, 32, 48]);
+  const roundTrip = await sharp(bytes).raw().toBuffer();
+  // 8-bit ProPhoto's wider gamut quantises this dark sample more coarsely.
+  const maximumError = colourSpace === 'prophoto-rgb' ? 5 : 3;
+  [16, 32, 48].forEach((value, n) => expect(Math.abs(roundTrip[n] - value)).toBeLessThanOrEqual(maximumError));
+});
+test('profile identities reject substitution and missing or differently tagged output', () => {
+  expect(() => output({ format: 'png', colourSpace: 'adobe-rgb-1998', profileSha256: '0'.repeat(64) })).toThrow('identity changed');
+  expect(() => output({ format: 'png', colourSpace: '../arbitrary.icc' })).toThrow(ValidationError);
+  expect(() => colours.verify({}, output({ format: 'png', colourSpace: 'adobe-rgb-1998' }))).toThrow('frozen output ICC');
+  const wrong = require('fs').readFileSync(colours.profile('display-p3').icc);
+  expect(() => colours.verify({ icc: wrong }, output({ format: 'png', colourSpace: 'adobe-rgb-1998' }))).toThrow('frozen output ICC');
 });
 test('JPEG quality and chroma selection are applied to real encoded pixels', async () => {
   const raw = Buffer.alloc(100 * 150 * 3);
@@ -55,6 +79,11 @@ test('the isolated renderer accepts the supported operations and refuses extra T
       const result = await encode(isolated(source).flatten({ background: '#102030' }), { format, colourSpace: 'srgb' }, 300);
       expect((await sharp(result.bytes).metadata()).format).toBe(format);
     }
+    for (const colourSpace of rgbProfiles) {
+      const spec = output({ format: 'png', colourSpace }), result = await encode(isolated(source), spec, 300);
+      colours.verify(await sharp(result.bytes).metadata(), spec);
+    }
+    await expect(isolated(source).withIccProfile('/tmp/arbitrary.icc', { attach: true }).png().toBuffer()).rejects.toThrow('Unsupported image operation');
     await expect(isolated(source).flatten({ background: '/path/to/colour' }).png().toBuffer()).rejects.toThrow('Unsupported image operation');
     await expect(isolated(source).tiff({ compression: 'lzw', xres: 1, yres: 1, resolutionUnit: 'inch', tile: true }).toBuffer()).rejects.toThrow('Unsupported image operation');
   } finally { await isolated.shutdown(); }
