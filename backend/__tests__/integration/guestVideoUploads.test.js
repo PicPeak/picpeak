@@ -372,6 +372,27 @@ describe('chunked guest upload processing and quota', () => {
     expect(await db('public_upload_requests').where({ active: 1 }).first()).toMatchObject({ rate_bytes: 2 * jpeg.length });
   });
 
+  test('a session older than the rate window that grows moves its charge into the current window', async () => {
+    process.env.PUBLIC_UPLOAD_LIMITS_JSON = JSON.stringify({ guest: { hourBytes: 2 * jpeg.length } });
+    const quota = require('../../src/services/publicUploadQuota');
+    const event = await makeEvent();
+    const token = galleryToken(event);
+    const guest = await makeGuest(event);
+    expect((await init(event, token, { filename: 'old.jpg', fileSize: jpeg.length }, guest.token)).status).toBe(200);
+    // The same session, begun 61 minutes ago.
+    const old = new Date(Date.now() - 61 * 60000).toISOString();
+    await db('public_upload_requests').where({ active: 1 }).update({ created_at: old });
+    const row = await db('public_upload_requests').where({ active: 1 }).first();
+    const session = { ...row, rate_bytes: Number(row.rate_bytes), limits: quota.configuration('public') };
+    await quota.growRate(session, 2 * jpeg.length);
+    const moved = await db('public_upload_requests').where({ id: row.id }).first();
+    expect(Number(moved.rate_bytes)).toBe(2 * jpeg.length);
+    expect(new Date(moved.created_at).getTime()).toBeGreaterThan(Date.now() - 60000);
+    // The grown charge fills this hour's rate, so a new session is refused.
+    const next = await init(event, token, { filename: 'new.jpg', fileSize: jpeg.length }, guest.token);
+    expect(next.status).toBe(429); expect(next.body.code).toBe('UPLOAD_BYTE_RATE_LIMIT');
+  });
+
   test('accepted chunks and an abort are refunded to the API rate limit; a refused chunk is not', async () => {
     const refund = jest.fn();
     const limited = express();
