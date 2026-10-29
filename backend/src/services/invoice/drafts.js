@@ -11,6 +11,7 @@ const { renumberLineItemPositions } = require('../../utils/lineItemPositions');
 const { extendedLineColumns, lineItemFieldsToApi } = require('../../utils/lineItemTotals');
 const { computeMonthlyCadenceDate, getHierarchyHelpers, nextInvoiceNumber } = require('./helpers');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
+const { toDateOnly } = require('../../utils/dateOnly');
 
 
 /**
@@ -319,8 +320,8 @@ async function getMonthlyDraft(customerId) {
     id: draft.id,
     invoiceNumber: draft.invoice_number,
     currency: draft.currency,
-    periodStart: draft.monthly_period_start,
-    periodEnd: draft.monthly_period_end,
+    periodStart: toDateOnly(draft.monthly_period_start),
+    periodEnd: toDateOnly(draft.monthly_period_end),
     netAmountMinor: draft.net_amount_minor,
     vatRate: draft.vat_rate == null ? null : Number(draft.vat_rate),
     vatAmountMinor: draft.vat_amount_minor,
