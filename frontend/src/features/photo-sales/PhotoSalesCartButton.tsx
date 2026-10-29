@@ -5,13 +5,12 @@ import { usePhotoSales } from './PhotoSalesContext';
 
 /**
  * Photo sales — the gallery header's cart button. Same accent CTA as the
- * header's Download button it replaces in a priced gallery; `.snipcart-
- * checkout` makes Snipcart open the cart. The count shows only once the cart
+ * header's Download button it replaces in a priced gallery. The count shows only once the cart
  * holds something, so an empty or still-loading cart shows no empty bubble.
  */
 export const PhotoSalesCartButton: React.FC = () => {
   const { t } = useTranslation();
-  const { checkoutReady, cartCount } = usePhotoSales();
+  const { checkoutReady, cartCount, openCart } = usePhotoSales();
   if (!checkoutReady) return null;
 
   const label = cartCount > 0
@@ -21,8 +20,9 @@ export const PhotoSalesCartButton: React.FC = () => {
   return (
     <button
       type="button"
-      className="snipcart-checkout gallery-btn inline-flex items-center gap-2 px-3 sm:px-4 h-9 rounded-lg text-sm font-medium transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+      className="gallery-btn inline-flex items-center gap-2 px-3 sm:px-4 h-9 rounded-lg text-sm font-medium transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
       style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-accent-fg, #ffffff)' }}
+      onClick={openCart}
       aria-label={label}
       title={label}
     >

@@ -1,5 +1,9 @@
 {
   "settings_tabs": {
+    "payments": {
+      "signals": [],
+      "reason": "Excluded: payment credentials, merchant identity and verification status are not product usage."
+    },
     "accounting": {
       "signals": [
         "accounting",
@@ -1725,6 +1729,7 @@
       "signals": [],
       "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
       "route_signatures": [
+        "GET /photo-sales-policy",
         "GET /"
       ]
     },
@@ -2023,6 +2028,39 @@
       "route_signatures": [
         "POST /snipcart-webhook",
         "POST /:slug/snipcart-webhook"
+      ]
+    },
+    "gallery/stripeCheckout.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public payment and gallery purchase surface: financial state and buyer activity are excluded from product usage.",
+      "route_signatures": [
+        "POST /:slug/checkout/promo-verification",
+        "POST /:slug/checkout/promo-verification/confirm",
+        "POST /:slug/checkout"
+      ]
+    },
+    "photoCheckout.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public payment and gallery purchase surface: financial state and buyer activity are excluded from product usage.",
+      "route_signatures": [
+        "GET /:token",
+        "POST /:token/cancel"
+      ]
+    },
+    "adminPayments.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Installation payment credentials and provider probes are excluded from product usage.",
+      "route_signatures": ["GET /", "PUT /", "GET /orders", "POST /test"]
+    },
+    "stripeWebhook.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public payment and gallery purchase surface: financial state and buyer activity are excluded from product usage.",
+      "route_signatures": [
+        "POST /"
       ]
     }
   },

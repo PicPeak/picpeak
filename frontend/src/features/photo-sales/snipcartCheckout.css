@@ -1,0 +1,10 @@
+/* Snipcart 3.4.0: the quoted photos and promo are edited in PicPeak.
+ * Keep totals visible; display:none also removes these controls from keyboard
+ * navigation. Server-side quote validation remains the authority on payment.
+ * https://docs.snipcart.com/v3/themes/default/reference/3.4.0
+ */
+#snipcart.picpeak-photo-checkout .snipcart-item-line__header button,
+#snipcart.picpeak-photo-checkout .snipcart-item-quantity__quantity button,
+#snipcart.picpeak-photo-checkout .snipcart-discount-box {
+  display: none !important;
+}

@@ -2,10 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../config/api';
 
 /** What became of an order: granted, or refused/revoked (see the webhook). */
-export type PhotoOrderStatus = 'completed' | 'refunded' | 'refund_failed' | 'charged_back' | 'cancelled';
+export type PhotoOrderStatus = 'pending' | 'creation_unknown' | 'processing' | 'completed' | 'refund_pending' | 'refunded' | 'refund_failed' | 'charged_back' | 'cancelled' | 'expired' | 'failed';
 
 export interface PhotoOrderSummary {
   order_id: string;
+  payment_provider: 'snipcart' | 'stripe';
+  needs_attention?: boolean;
   buyer_email: string;
   total_cents: number;
   currency: string;
@@ -18,17 +20,17 @@ export interface PhotoOrderSummary {
 
 export interface PhotoOrdersPayload {
   orders: PhotoOrderSummary[];
-  /** Whether this install can sell: public key (cart) and secret key (webhook). */
-  store?: { checkout_configured: boolean; webhook_configured: boolean };
+  /** Configuration presence, not a provider connectivity check. */
+  store?: { available: Array<'stripe' | 'snipcart'>; preferred: 'stripe' | 'snipcart' | null; stripe: { checkout_configured: boolean; webhook_configured: boolean; test_mode: boolean } };
 }
 
 export const photoOrdersQueryKey = (eventId: number) => ['admin-event-photo-orders', eventId];
 
 /** The gallery's photo orders and the store configuration, for the admin. */
-export function usePhotoOrders(eventId: number | undefined, enabled = true) {
+export function usePhotoOrders(eventId: number | undefined, enabled = true, includeAbandoned = false) {
   return useQuery<PhotoOrdersPayload>({
-    queryKey: photoOrdersQueryKey(eventId ?? 0),
-    queryFn: () => api.get(`/admin/events/${eventId}/photo-orders`).then((r) => r.data),
+    queryKey: [...photoOrdersQueryKey(eventId ?? 0), includeAbandoned],
+    queryFn: () => api.get(`/admin/events/${eventId}/photo-orders`, { params: { include_abandoned: includeAbandoned } }).then((r) => r.data),
     enabled: !!eventId && enabled,
   });
 }

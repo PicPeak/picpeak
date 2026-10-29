@@ -68,7 +68,6 @@ const helmet = require('helmet');
 const compression = require('compression');
 const cors = require('cors');
 const path = require('path');
-const { withPhotoSalesSources } = require('./src/modules/photoSales/galleryCsp');
 const { initializeDatabase, db, enableApplicationWorkOwnership } = require('./src/database/db');
 const applicationWork = require('./src/services/activeApplicationWork');
 const restoreCoordinator = require('./src/services/portableRestoreCoordinator');
@@ -155,26 +154,8 @@ if (process.env.NODE_ENV === 'production' && isTrustProxyUnset()) {
 // Security middleware with custom CSP
 // In native HTTP installs, do NOT force HTTPS for subresources.
 const enableHsts = process.env.ENABLE_HSTS === 'true';
-const cspDirectives = {
-  defaultSrc: ["'self'"],
-  scriptSrc: [
-    "'self'",
-    'https://www.google.com',
-    'https://www.gstatic.com'
-  ],
-  styleSrc: ["'self'", "'unsafe-inline'", "https:"], // Required for styled components
-  imgSrc: ["'self'", "data:", "https:", "blob:"], // Allow data URLs and external images
-  connectSrc: ["'self'", 'https://www.google.com', 'https://www.gstatic.com'], // API connections
-  fontSrc: ["'self'", "https:", "data:"], // Web fonts
-  objectSrc: ["'none'"], // Disable plugins
-  mediaSrc: ["'self'", "blob:"], // Audio/video, incl. page-created blobs (matches imgSrc)
-  frameSrc: ["'self'", 'https://www.google.com'],
-};
-// Only upgrade insecure requests when HSTS explicitly enabled (HTTPS deployment)
-if (enableHsts) {
-  // In helmet, an empty array enables the directive
-  cspDirectives.upgradeInsecureRequests = [];
-}
+const { siteDirectives, galleryPolicy } = require('./src/modules/photoSales/galleryCsp');
+const cspDirectives = siteDirectives();
 
 app.use(cookieParser());
 
@@ -305,6 +286,8 @@ app.use('/api/analytics/tracker', require('./src/routes/analyticsTrackerProxy'))
 // so the router carries its own. Unmatched gallery paths fall through to the
 // regular gallery router below unchanged.
 app.use('/api/gallery', require('./src/routes/gallery/snipcartWebhook'));
+// Stripe authenticates the original bytes with a timestamped signature.
+app.use('/api/photo-sales/stripe/webhook', require('./src/routes/stripeWebhook'));
 
 // Health check endpoint. Public, so it answers only `status` (see
 // src/services/healthCheck.js).
@@ -903,6 +886,7 @@ app.use('/api/admin/usage', require('./src/routes/adminUsage'));
 app.use('/api/admin/external-media', require('./src/routes/adminExternalMedia'));
 // Gallery routes - main routes first, then feedback routes
 app.use('/api/gallery', galleryRoutes);
+app.use('/api/photo-checkout', require('./src/routes/photoCheckout'));
 app.use('/api/gallery', require('./src/routes/galleryFeedback'));
 app.use('/api/gallery', require('./src/routes/galleryGuests'));
 app.use('/api/admin', adminRoutes);
@@ -1135,14 +1119,9 @@ try {
       }
       return next();
     };
-    // Gallery pages get the CSP photo sales needs (Snipcart's cart), like
-    // nginx's `location @gallery_spa`; every other page keeps the site policy.
-    const galleryCsp = helmet.contentSecurityPolicy({
-      useDefaults: false,
-      directives: withPhotoSalesSources(cspDirectives),
-    });
-    app.get('/gallery/:slug/:token?', ogIntercept, galleryCsp, (req, res) => sendSpa(res));
-    app.get('/gallery/:slug/show/:token', ogIntercept, galleryCsp, (req, res) => sendSpa(res));
+    // Snipcart needs its SDK policy only when configured; Stripe-only stays strict.
+    app.get('/gallery/:slug/:token?', ogIntercept, galleryPolicy, (req, res) => sendSpa(res));
+    app.get('/gallery/:slug/show/:token', ogIntercept, galleryPolicy, (req, res) => sendSpa(res));
     // PicTransfer links (single-container deploys without nginx).
     const transferOgIntercept = (kind) => {
       const handler = handleTransferOgRequest(kind);
@@ -1363,6 +1342,7 @@ async function startServerInternal() {
     // + run the overdue reminder ladder. No-op when the `bills` feature
     // flag is OFF (the service short-circuits on empty result sets).
     startInvoiceScheduler();
+    require('./src/services/photoCheckoutReconciler').start();
     
     // Initialize email transporter and start queue processor.
     // Skipped under the webhook transport (#1225): an install that switched to
@@ -1548,10 +1528,8 @@ async function startServerInternal() {
     // lazy means they don't pay for a module graph they never use.
     require('./src/services/faceQueue').start();
 
-    // Photo sales: priced galleries whose promo-code
-    // discount is missing (e.g. the Snipcart secret key was added after the
-    // gallery was saved) get one sync attempt per server start. Fire and
-    // forget, delayed so the HTTP stack is up.
+    // Initialize local promo codes for galleries created before photo sales.
+    // Delay until the HTTP stack is up; no payment-provider call is needed.
     setTimeout(() => {
       require('./src/modules/photoSales/promoDiscount').startupSync().catch(() => {});
     }, 5000);

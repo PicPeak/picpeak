@@ -77,10 +77,12 @@ async function claimDiscountCreation(eventId, current) {
   return (await query.update({ snipcart_discount_id: claim })) ? claim : null;
 }
 
-function snipcartAuth() {
-  const secret = (process.env.SNIPCART_SECRET_API_KEY || '').trim();
-  if (!secret) return null;
-  return Buffer.from(`${secret}:`).toString('base64');
+async function snipcartAuth() {
+  if (!(await require('./providers').preferences()).snipcart) return null;
+  const settings = require('./snipcartSettings');
+  const value = await settings.credentials();
+  return settings.configurationOf(value).checkout_configured
+    ? Buffer.from(`${value.secretKey}:`).toString('base64') : null;
 }
 
 /**
@@ -89,8 +91,8 @@ function snipcartAuth() {
  */
 async function syncPromoDiscount(eventRow) {
   try {
-    const auth = snipcartAuth();
-    if (!auth) return { ok: false, skipped: true, error: 'SNIPCART_SECRET_API_KEY is not set' };
+    const auth = await snipcartAuth();
+    if (!auth) return { ok: false, skipped: true, error: 'Snipcart checkout is not configured' };
 
     const freeCount = Math.max(0, Math.floor(Number(eventRow.free_photo_count || 0)));
     const price = Number(eventRow.photo_price || 0);
@@ -117,20 +119,19 @@ async function syncPromoDiscount(eventRow) {
     if (isDiscountId(existingId)) {
       const response = await fetch(`${SNIPCART_API}/discounts/${encodeURIComponent(existingId)}`, {
         method: 'PUT',
-        headers,
+        headers, signal: AbortSignal.timeout(15000),
         body: JSON.stringify(body),
       });
       if (response.ok) return { ok: true };
       if (response.status !== 404) {
-        const text = await response.text().catch(() => '');
-        return { ok: false, error: `Snipcart discount API HTTP ${response.status}: ${text.slice(0, 200)}` };
+        return { ok: false, error: `Snipcart discount API HTTP ${response.status}` };
       }
       // 404: the stored id is gone — create a fresh discount below.
     }
 
     const claim = await claimDiscountCreation(eventRow.id, existingId || null);
     if (!claim) return { ok: false, skipped: true, error: 'Another process is creating this discount' };
-    const created = await fetch(`${SNIPCART_API}/discounts`, { method: 'POST', headers, body: JSON.stringify(body) });
+    const created = await fetch(`${SNIPCART_API}/discounts`, { method: 'POST', headers, signal: AbortSignal.timeout(15000), body: JSON.stringify(body) });
     const createdBody = created.ok ? await created.json().catch(() => ({})) : {};
     await db('events')
       .where({ id: eventRow.id, snipcart_discount_id: claim })
@@ -138,8 +139,8 @@ async function syncPromoDiscount(eventRow) {
     if (!created.ok) return { ok: false, error: `Snipcart discount create HTTP ${created.status}` };
     return { ok: true };
   } catch (error) {
-    logger.warn(`Promo discount sync failed for event ${eventRow?.id}: ${error.message}`);
-    return { ok: false, error: error.message };
+    logger.warn('Promo discount sync failed', { eventId: eventRow?.id, type: error.name });
+    return { ok: false, error: 'Snipcart discount synchronisation failed' };
   }
 }
 
@@ -179,7 +180,7 @@ async function startupSync() {
       await ensurePromoForEvent(event);
     }
   } catch (error) {
-    logger.warn(`Promo discount startup sync failed: ${error.message}`);
+    logger.warn('Promo discount startup sync failed', { type: error.type || error.name });
   }
 }
 

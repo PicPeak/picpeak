@@ -1,34 +1,36 @@
 'use strict';
+const helmet = require('helmet');
+const providers = require('./providers');
+const logger = require('../../utils/logger');
 
-/**
- * Photo sales — the Content-Security-Policy of gallery pages.
- *
- * Snipcart's v3 cart loads from its CDN, compiles its templates at runtime
- * ('unsafe-eval'), calls its API and frames the payment form. nginx grants
- * that on gallery pages only (`location @gallery_spa` in frontend/nginx.conf);
- * this is the same grant for installs where the backend serves the SPA
- * itself (the all-in-one image, native installs). Every other page keeps the
- * site policy.
- */
-
+function siteDirectives() {
+  return {
+    defaultSrc: ['\'self\''], scriptSrc: ['\'self\'', 'https://www.google.com', 'https://www.gstatic.com'],
+    styleSrc: ['\'self\'', '\'unsafe-inline\'', 'https:'], imgSrc: ['\'self\'', 'data:', 'https:', 'blob:'],
+    connectSrc: ['\'self\'', 'https://www.google.com', 'https://www.gstatic.com'],
+    fontSrc: ['\'self\'', 'https:', 'data:'], objectSrc: ['\'none\''], mediaSrc: ['\'self\'', 'blob:'],
+    frameSrc: ['\'self\'', 'https://www.google.com'],
+    ...(process.env.ENABLE_HSTS === 'true' ? { upgradeInsecureRequests: [] } : {}),
+  };
+}
 const SNIPCART_SOURCES = {
   scriptSrc: ['\'unsafe-eval\'', 'https://cdn.snipcart.com'],
-  connectSrc: [
-    'https://app.snipcart.com',
-    'https://api.snipcart.com',
-    'https://payment.snipcart.com',
-    'https://cdn.snipcart.com',
-  ],
+  connectSrc: ['https://app.snipcart.com', 'https://api.snipcart.com', 'https://payment.snipcart.com', 'https://cdn.snipcart.com'],
   frameSrc: ['https://app.snipcart.com', 'https://payment.snipcart.com'],
 };
-
-/** The site's helmet CSP directives plus what Snipcart's cart needs. */
 function withPhotoSalesSources(directives) {
   const result = { ...directives };
-  for (const [name, sources] of Object.entries(SNIPCART_SOURCES)) {
-    result[name] = [...(directives[name] || []), ...sources];
-  }
+  for (const [name, sources] of Object.entries(SNIPCART_SOURCES)) result[name] = [...(directives[name] || []), ...sources];
   return result;
 }
-
-module.exports = { SNIPCART_SOURCES, withPhotoSalesSources };
+async function galleryPolicy(req, res, next) {
+  let enabled = false;
+  try {
+    enabled = (await providers.configuration()).available.includes('snipcart');
+  } catch (error) {
+    logger.warn('Gallery payment policy unavailable; using the strict policy', { type: error.name });
+  }
+  const directives = enabled ? withPhotoSalesSources(siteDirectives()) : siteDirectives();
+  helmet.contentSecurityPolicy({ useDefaults: false, directives })(req, res, next);
+}
+module.exports = { siteDirectives, galleryPolicy, SNIPCART_SOURCES, withPhotoSalesSources };

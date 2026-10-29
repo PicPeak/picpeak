@@ -123,6 +123,12 @@ services:
     container_name: picpeak-backend
     env_file: .env
     environment:
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - PAYMENTS_ENCRYPTION_KEY=${PAYMENTS_ENCRYPTION_KEY:-}
+      - SNIPCART_API_KEY=${SNIPCART_API_KEY:-}
+      - SNIPCART_SECRET_API_KEY=${SNIPCART_SECRET_API_KEY:-}
+      - SNIPCART_WEBHOOK_SECRET=${SNIPCART_WEBHOOK_SECRET:-}
       - NODE_ENV=production
       # Trust exactly the immediately connected frontend nginx hop. The
       # backend port is host-loopback-only, preventing remote bypasses.

@@ -67,6 +67,7 @@ describe('maintenanceMiddleware — SPA shell vs API split', () => {
       ['/assets/index-abc123.js', 'hashed bundle the shell loads'],
       ['/gallery/some-event', 'guest gallery route'],
       ['/customer/portal', 'customer portal route'],
+      ['/api/public/settings/photo-sales-policy', 'gallery HTML policy lookup'],
     ])('%s (%s)', async (path) => {
       const { passed } = await run(path);
       expect(passed).toBe(true);

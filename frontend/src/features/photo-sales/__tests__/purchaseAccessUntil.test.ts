@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { purchaseAccessUntil, snipcartItemProps } from '../photoSales';
+import { purchaseAccessUntil, buildPhotoSalesConfig } from '../photoSales';
 
 const NOW = Date.parse('2026-10-26T12:00:00.000Z');
 const DAY = 24 * 60 * 60 * 1000;
@@ -18,11 +18,11 @@ describe('purchaseAccessUntil', () => {
   });
 });
 
-describe('snipcartItemProps description', () => {
-  const args = { slug: 'g', priceCheckUrl: '/api/gallery/g/price-check', price: 5, photo: { id: 3, sale_token: 'x' } };
-
-  it('puts the access note on the cart line', () => {
-    expect(snipcartItemProps({ ...args, description: 'Download until 28.10.2026.' })?.['data-item-description'])
-      .toBe('Download until 28.10.2026.');
+describe('photo checkout configuration', () => {
+  it('requires server checkout configuration before offering purchases', () => {
+    const event = { is_priced: true, photo_price: 5 };
+    expect(buildPhotoSalesConfig({ slug: 'g', event }).checkoutReady).toBe(false);
+    expect(buildPhotoSalesConfig({ slug: 'g', event, checkoutConfigured: true }).checkoutReady).toBe(true);
+    expect(buildPhotoSalesConfig({ slug: 'g', event: { ...event, is_priced: false }, checkoutConfigured: true }).checkoutReady).toBe(false);
   });
 });

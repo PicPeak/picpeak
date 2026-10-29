@@ -3,10 +3,18 @@ const { db, withRetry } = require('../database/db');
 const logger = require('../utils/logger');
 const { normaliseDownloadLimit } = require('../services/downloadQuota');
 const { normalizeStatusColors } = require('../utils/statusColors');
+const { configuration } = require('../modules/photoSales/providers');
 const { parseLightboxMaxZoomPercent, DEFAULT_LIGHTBOX_ZOOM_PERCENT } = require('../utils/lightboxZoom');
 const router = express.Router();
 
 // Get public settings (branding and theme)
+// nginx uses an internal subrequest so gallery HTML gets exactly one policy.
+router.get('/photo-sales-policy', require('../modules/photoSales/galleryCsp').galleryPolicy, (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.set('X-PicPeak-Gallery-CSP', res.get('Content-Security-Policy'));
+  res.status(204).end();
+});
+
 router.get('/', async (req, res) => {
   try {
     // Fetch branding, theme, general, security, analytics, and event settings
@@ -91,6 +99,7 @@ router.get('/', async (req, res) => {
     });
 
     // Return only safe public settings
+    const checkout = await configuration();
     const publicSettings = {
       branding_company_name: settingsObject.branding_company_name || '',
       branding_company_tagline: settingsObject.branding_company_tagline || '',
@@ -297,10 +306,11 @@ router.get('/', async (req, res) => {
       seo_meta_noindex: settingsObject.seo_meta_noindex === true,
       seo_meta_nofollow: settingsObject.seo_meta_nofollow === true,
       seo_meta_noai: settingsObject.seo_meta_noai === true,
-      // Photo sales: Snipcart's PUBLIC API key. It is meant
-      // to ship to the browser; the webhook secret is never exposed. Null
-      // keeps the gallery-side purchase UI hidden when unconfigured.
-      snipcart_api_key: process.env.SNIPCART_API_KEY || null,
+      // Public integration capabilities only; secret credentials stay server-side.
+      photo_sales_checkout_configured: checkout.available.length > 0,
+      photo_sales_providers: checkout.available,
+      photo_sales_preferred_provider: checkout.preferred,
+      snipcart_api_key: checkout.snipcart_public_key,
     };
 
     res.json(publicSettings);

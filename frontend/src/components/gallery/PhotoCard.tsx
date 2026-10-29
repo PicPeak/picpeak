@@ -375,10 +375,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const actionIconClass = actionVariant === 'dark' ? 'w-5 h-5 text-white' : 'w-5 h-5 text-neutral-800';
 
   const handlePhotoClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Photo sales: cart controls let the click bubble to
-    // Snipcart's document-level delegation; the tile must ignore those
-    // clicks instead of opening the lightbox.
-    if ((e.target as HTMLElement | null)?.closest?.('.snipcart-add-item, .snipcart-checkout')) {
+    // Purchase controls own their click instead of opening the lightbox.
+    if ((e.target as HTMLElement | null)?.closest?.('[data-photo-purchase]')) {
       return;
     }
     if (isTouchDevice && !overlayVisible && !isSelectionMode) {
@@ -585,7 +583,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {beforeOverlay}
 
           {/* Photo sales: always-visible price chip; one
-              tap puts the photo into the Snipcart cart. */}
+              tap puts the photo into the cart. */}
           <PhotoPurchaseBadge photo={photo} />
 
           {/* Hover Overlay */}

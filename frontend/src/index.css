@@ -763,15 +763,7 @@
   }
 }
 
-/* Photo sales: Snipcart's default theme layers its modal at
-   z-index 20, BELOW PicPeak's sticky gallery header (z-40) and lightbox
-   (z-50), which made the cart's close / continue-shopping controls
-   unclickable at checkout. The #snipcart root is portaled to <body>, so
-   lifting the modal here puts the whole cart above all gallery chrome. */
-#snipcart .snipcart-modal,
-#snipcart .snipcart-modal__container {
-  z-index: 2147483647;
-}
+
 
 /* Photo sales: the tile price chip sits on the photo itself, so it carries
    its own dark backing to stay legible on light and dark pictures. In the

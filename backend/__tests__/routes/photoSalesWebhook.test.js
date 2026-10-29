@@ -268,7 +268,10 @@ describe('photo sales webhook and price check', () => {
         const { updateGalleryAvailability } = require('../../src/services/galleryPauseService');
         await updateGalleryAvailability(eventId, { temporarily_disabled: false }, (trx, patch) =>
           trx('events').where({ id: eventId }).update(patch));
-        await request(app).get(`/api/gallery/paused-checkout/price-check?photoId=${photoId}&sig=${signPhotoSale(photoId)}`).expect(200);
+        // The gallery is available again; the old unpaid cart now needs a
+        // shared checkout reservation, independently of the valid paid order.
+        const restart = await request(app).get(`/api/gallery/paused-checkout/price-check?photoId=${photoId}&sig=${signPhotoSale(photoId)}`).expect(409);
+        expect(restart.body.code).toBe('CHECKOUT_REQUIRED');
         const restored = await request(app).get(`/api/gallery/purchased-downloads/${granted.access_token}`).expect(200);
         expect(restored.body.photos.map((photo) => photo.id)).toEqual([photoId]);
         expect((await stored(order.token)).expires_at).toBe(new Date(purchasedAt + 3 * 864e5).toISOString());
@@ -469,11 +472,16 @@ describe('photo sales webhook and price check', () => {
       .get(`/api/gallery/${slug}/price-check`)
       .query(sig ? { photoId, sig } : { photoId });
 
-    it('answers the database price of a signed sellable photo', async () => {
+    it('requires an old unpaid cart to restart, while honouring an already-submitted legacy payment', async () => {
+      const before = Number((await db('photo_purchase_orders').count('* as n').first()).n);
       const res = await check('on-sale', ids.photo2);
-      expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ id: `on-sale-photo-${ids.photo2}`, price: 2.5, customFields: [] });
-      expect(res.body).not.toHaveProperty('valid');
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'CHECKOUT_REQUIRED' });
+      expect(res.body.error).toContain('restarted in PicPeak');
+      expect(Number((await db('photo_purchase_orders').count('* as n').first()).n)).toBe(before);
+      const order = snipcartOrder([line('on-sale', ids.photo2)], { total: 2.5 });
+      await deliver('order.completed', order.token).expect(200);
+      expect(await stored(order.token)).toMatchObject({ status: 'completed', total_cents: 250 });
     });
 
     it('refuses an unsigned or wrongly signed photo', async () => {

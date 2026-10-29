@@ -12,6 +12,11 @@ function summarisePurchaseOrder(order, rows = [], gallery) {
 
   return {
     order_id: String(order?.order_id || ''),
+    payment_provider: order?.payment_provider || 'snipcart',
+    provider_order_id: order?.provider_order_id || order?.checkout_session_id || null,
+    needs_attention: !!order?.recovery_needs_attention || ['refund_pending', 'refund_failed'].includes(order?.status),
+    recovery_error: order?.recovery_error || null,
+    recovery_next_at: order?.recovery_next_at || null,
     buyer_email: String(order?.buyer_email || ''),
     total_cents: Number(order?.total_cents || 0),
     currency: String(order?.currency || 'EUR'),

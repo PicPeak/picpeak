@@ -11,6 +11,7 @@ import { GalleryPage } from './pages/GalleryPage';
 import { ClientAccessPage } from './pages/ClientAccessPage';
 import { PreviewPage } from './pages/gallery/PreviewPage';
 import { PurchasedDownloadsPage } from './pages/public/PurchasedDownloadsPage';
+import { PhotoCheckoutPage } from './pages/public/PhotoCheckoutPage';
 const SlideshowPage = lazy(() => import('./pages/gallery/SlideshowPage').then((m) => ({ default: m.SlideshowPage })));
 import { LegalPage } from './pages/public/LegalPage';
 import {
@@ -204,6 +205,7 @@ const router = createBrowserRouter(
     {/* Photo sales: buyer access page; the
         token is bound to the order and the entitlement runs
         against photo_purchases.expires_at server-side. */}
+    <Route path="/photo-checkout/:token" element={<PhotoCheckoutPage />} />
     <Route path="/purchased-downloads/:accessToken" element={<PurchasedDownloadsPage />} />
     {/* Live Slideshow ("Diashow") — token-only fullscreen kiosk.
         Self-manages its session token; no GalleryAuthProvider. */}

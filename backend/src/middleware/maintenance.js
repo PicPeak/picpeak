@@ -88,6 +88,7 @@ async function maintenanceMiddleware(req, res, next) {
     '/api/auth/admin/sso/callback',
     '/api/auth/session',
     '/api/public/settings',
+    '/api/public/settings/photo-sales-policy',
     '/health'
   ];
   
