@@ -22,6 +22,7 @@ const { bootCrmDb } = require('./helpers/crmDb');
 // likewise exempt: retaining their local rows would mix installations.
 const SEEDED_BUT_NOT_SEED_ONLY = new Set([
   'album_product_catalogue',       // editable installation data; an older restore must not retain local products
+  'print_sales_settings',          // 334; editable lab configuration must clear; profiles.settings/save recover the empty singleton
   'external_media_source_lock',    // 274; assignment/revocation reseed the lock at runtime after an older restore
   'migrations',                   // migration ledger itself (runner bookkeeping)
   'app_settings',                 // db.js base schema
