@@ -7,10 +7,14 @@
 # middleware.
 #
 #   cp docker-compose.crowdsec-traefik.example.yml docker-compose.crowdsec-traefik.yml
-#   docker compose -f docker-compose.production.yml -f docker-compose.crowdsec-traefik.yml up -d
+#   echo 'COMPOSE_FILE=docker-compose.production.yml:docker-compose.crowdsec-traefik.yml' >> .env
+#   docker compose up -d
 #
-# Rollback: run the same command without the second -f (and remove
-# TRUST_PROXY=2 from .env if you set it there).
+# Keep COMPOSE_FILE in .env (or pass both -f on every command): an update
+# run with docker-compose.production.yml alone drops the Traefik labels and
+# publishes the frontend port again, so CrowdSec no longer sits in front.
+#
+# Rollback: remove the overlay from COMPOSE_FILE and run `docker compose up -d`.
 #
 # Expects in .env:
 #   PICPEAK_DOMAIN=photos.example.com
@@ -19,6 +23,7 @@
 #   CROWDSEC_MIDDLEWARE=crowdsec@file    bouncer middleware defined in Traefik
 #   TRAEFIK_ENTRYPOINT=websecure
 #   TRAEFIK_CERTRESOLVER=letsencrypt
+#   TRAEFIK_TRUST_PROXY=2               3 with a CDN in front of Traefik (see the guide)
 #
 # Guide: https://docs.picpeak.app/deployment/bot-protection/crowdsec-traefik
 
@@ -43,8 +48,10 @@ services:
 
   backend:
     environment:
-      # Two hops: Traefik, then the bundled frontend nginx.
-      TRUST_PROXY: "2"
+      # Two hops: Traefik, then the bundled frontend nginx. Its own variable,
+      # because .env usually still carries TRUST_PROXY=1 from the default
+      # install, which is wrong behind Traefik.
+      TRUST_PROXY: "${TRAEFIK_TRUST_PROXY:-2}"
       COOKIE_SECURE: "true"
 
 networks:
