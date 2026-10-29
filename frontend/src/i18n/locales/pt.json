@@ -1827,7 +1827,7 @@
     },
     "contentHashBackfill": {
       "title": "Hashes de conteúdo",
-      "description": "Calcula o hash de conteúdo usado pela detecção de duplicados, para fotos e vídeos importados pela pasta monitorada, por mídia externa ou pelo S3, e para os adicionados antes de os hashes existirem. Os arquivos são lidos um de cada vez; você pode pausar a qualquer momento e iniciar de novo depois para continuar de onde parou. Originais que não podem ser lidos são ignorados e contados. Arquivos novos recebem o hash automaticamente.",
+      "description": "Calcula o hash de conteúdo usado pela detecção de duplicados, para fotos e vídeos importados pela pasta monitorada, por mídia externa ou pelo S3, e para os adicionados antes de os hashes existirem. Os arquivos são lidos um de cada vez; você pode pausar a qualquer momento e iniciar de novo depois para continuar de onde parou. Originais que não podem ser lidos são ignorados e contados. Fotos novas recebem o hash automaticamente; vídeos novos o recebem aqui.",
       "ioWarning": "Isso lê uma vez cada original sem hash: espere carga de E/S em um NAS e tráfego de saída no S3.",
       "total": "Fotos e vídeos",
       "hashed": "Com hash",

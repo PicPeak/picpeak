@@ -3356,7 +3356,7 @@
     },
     "contentHashBackfill": {
       "title": "Zgoščene vrednosti vsebine",
-      "description": "Izračuna zgoščeno vrednost vsebine, po kateri primerja zaznavanje dvojnikov, za fotografije in videoposnetke, uvožene prek nadzorovane mape, zunanjih medijev ali S3, ter za tiste, dodane preden so zgoščene vrednosti obstajale. Datoteke se berejo ena za drugo; kadar koli lahko začasno ustavite in pozneje znova zaženete, da se nadaljuje, kjer se je ustavilo. Izvirniki, ki jih ni mogoče prebrati, so preskočeni in prešteti. Nove datoteke dobijo zgoščeno vrednost samodejno.",
+      "description": "Izračuna zgoščeno vrednost vsebine, po kateri primerja zaznavanje dvojnikov, za fotografije in videoposnetke, uvožene prek nadzorovane mape, zunanjih medijev ali S3, ter za tiste, dodane preden so zgoščene vrednosti obstajale. Datoteke se berejo ena za drugo; kadar koli lahko začasno ustavite in pozneje znova zaženete, da se nadaljuje, kjer se je ustavilo. Izvirniki, ki jih ni mogoče prebrati, so preskočeni in prešteti. Nove fotografije dobijo zgoščeno vrednost samodejno; novi videoposnetki jo dobijo tukaj.",
       "ioWarning": "Vsak izvirnik brez zgoščene vrednosti se enkrat prebere: pričakujte obremenitev diska na NAS in odhodni promet pri S3.",
       "total": "Fotografije in videoposnetki",
       "hashed": "Z zgoščeno vrednostjo",

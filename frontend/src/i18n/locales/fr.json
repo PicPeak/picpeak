@@ -1748,7 +1748,7 @@
     },
     "contentHashBackfill": {
       "title": "Empreintes de contenu",
-      "description": "Calcule l'empreinte de contenu sur laquelle repose la détection des doublons, pour les photos et vidéos importées depuis le dossier surveillé, les médias externes ou S3, et pour celles ajoutées avant l'existence des empreintes. Les fichiers sont lus un par un ; vous pouvez mettre en pause à tout moment et relancer plus tard pour reprendre là où il s'est arrêté. Les originaux illisibles sont ignorés et comptés. Les nouveaux fichiers reçoivent leur empreinte automatiquement.",
+      "description": "Calcule l'empreinte de contenu sur laquelle repose la détection des doublons, pour les photos et vidéos importées depuis le dossier surveillé, les médias externes ou S3, et pour celles ajoutées avant l'existence des empreintes. Les fichiers sont lus un par un ; vous pouvez mettre en pause à tout moment et relancer plus tard pour reprendre là où il s'est arrêté. Les originaux illisibles sont ignorés et comptés. Les nouvelles photos reçoivent leur empreinte automatiquement ; les nouvelles vidéos la reçoivent ici.",
       "ioWarning": "Chaque original sans empreinte est lu une fois : prévoyez des E/S disque sur un NAS et du trafic sortant sur S3.",
       "total": "Photos et vidéos",
       "hashed": "Avec empreinte",

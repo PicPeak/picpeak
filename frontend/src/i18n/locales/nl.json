@@ -1698,7 +1698,7 @@
     },
     "contentHashBackfill": {
       "title": "Inhoudshashes",
-      "description": "Berekent de inhoudshash waarop de duplicaatdetectie vergelijkt, voor foto's en video's die via de bewaakte map, externe media of S3 zijn geïmporteerd, en voor alles wat werd toegevoegd voordat er hashes bestonden. Bestanden worden één voor één gelezen; je kunt op elk moment pauzeren en later opnieuw starten om verder te gaan waar het stopte. Originelen die niet te lezen zijn, worden overgeslagen en geteld. Nieuwe bestanden krijgen hun hash automatisch.",
+      "description": "Berekent de inhoudshash waarop de duplicaatdetectie vergelijkt, voor foto's en video's die via de bewaakte map, externe media of S3 zijn geïmporteerd, en voor alles wat werd toegevoegd voordat er hashes bestonden. Bestanden worden één voor één gelezen; je kunt op elk moment pauzeren en later opnieuw starten om verder te gaan waar het stopte. Originelen die niet te lezen zijn, worden overgeslagen en geteld. Nieuwe foto's krijgen hun hash automatisch; nieuwe video's krijgen die hier.",
       "ioWarning": "Hierbij wordt elk origineel zonder hash één keer gelezen: reken op schijfbelasting op een NAS en uitgaand verkeer bij S3.",
       "total": "Foto's en video's",
       "hashed": "Met hash",
