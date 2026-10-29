@@ -72,9 +72,10 @@ describe('maintenance job state (#1181)', () => {
   test('the migration seeds a row for each job', async () => {
     const names = await db('maintenance_jobs').pluck('job_name');
     // 190 seeds the orientation backfill alongside 189's two (#1198), and
-    // 232 the credit backfill (#1561), 292 the placeholder backfill (issue 1733).
+    // 232 the credit backfill (#1561), 292 the placeholder backfill (issue 1733),
+    // 338 the content-hash backfill (issue 2194).
     expect(names.sort()).toEqual([
-      'photo_capture_date_backfill', 'photo_credit_backfill', 'photo_dimension_repair', 'photo_orientation_backfill',
+      'photo_capture_date_backfill', 'photo_content_hash_backfill', 'photo_credit_backfill', 'photo_dimension_repair', 'photo_orientation_backfill',
       'photo_thumb_hash_backfill',
     ]);
   });

@@ -12,11 +12,19 @@ const fs = require('fs');
 const { db } = require('../database/db');
 const { livePhotos } = require('../utils/photoVisibility');
 
-/** Hex SHA-256 of a local file, streamed. */
-async function sha256File(filePath) {
+/**
+ * Hex SHA-256 of a readable stream, chunk by chunk: an original on S3 or a
+ * NAS mount is never held in memory whole.
+ */
+async function sha256Stream(stream) {
   const hash = crypto.createHash('sha256');
-  for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
+  for await (const chunk of stream) hash.update(chunk);
   return hash.digest('hex');
+}
+
+/** Hex SHA-256 of a local file, streamed. */
+function sha256File(filePath) {
+  return sha256Stream(fs.createReadStream(filePath));
 }
 
 /**
@@ -34,4 +42,4 @@ function findDuplicate(eventId, contentSha256) {
 /** The name an uploader recognises the existing photo by. */
 const duplicateName = (photo) => photo.original_filename || photo.filename;
 
-module.exports = { sha256File, findDuplicate, duplicateName };
+module.exports = { sha256File, sha256Stream, findDuplicate, duplicateName };

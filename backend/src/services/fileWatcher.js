@@ -6,6 +6,7 @@ const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
 const { resolveCredit } = require('./photoCredit');
 const { exifColumn } = require('./photoExif');
+const { sha256File } = require('./photoDuplicates');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -362,6 +363,14 @@ async function processNewPhoto(filePath) {
   // wait for the next switch-on backfill. No transaction is open here.
   // Metadata stripping (issue 2102) queues it too.
   const webCopyEnabled = isVideo && await require('./videoRenditionService').queuesVideos();
+  // Content hash (issue 2194), as the upload paths store it, so a later
+  // upload of the same file into this gallery is caught as a duplicate.
+  // Streamed, videos too. Best-effort: a file that cannot be read now is
+  // imported without one and left for the content-hash backfill.
+  const contentSha256 = await sha256File(filePath).catch((err) => {
+    logger.warn(`Could not hash ${relativePath}: ${err.message}`);
+    return null;
+  });
 
   // Add to database
   const insertResult = await db('photos').insert({
@@ -381,6 +390,7 @@ async function processNewPhoto(filePath) {
     source_origin: 'managed',
     processing_status: 'complete',
     size_bytes: stats.size,
+    content_sha256: contentSha256,
     mime_type: mimeType,
     captured_at: capturedAt ? capturedAt.toISOString() : null,
     ...captureWallColumn(capture),

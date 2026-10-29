@@ -21,6 +21,7 @@ const sharp = require('./isolatedSharp');
 const { retryTransient } = require('./imageResourcePolicy');
 const { resolveCredit } = require('./photoCredit');
 const { exifColumn } = require('./photoExif');
+const { sha256File, sha256Stream } = require('./photoDuplicates');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getStorage } = require('./storage');
@@ -139,9 +140,16 @@ async function processEvent(event, storage) {
       let exif = {};
       let capturedAt = null;
       let captureWall = {};
+      // Content hash (issue 2194), as the upload paths store it. An image is
+      // hashed from the local copy below, so the object is still fetched
+      // once; a video is streamed from the bucket. Best-effort: an object
+      // that cannot be read now is imported without one and left for the
+      // content-hash backfill.
+      let contentSha256 = null;
       if (isImage) {
         try {
           dimensions = await withLocalCopy(entry.key, async (localPath) => {
+            contentSha256 = await sha256File(localPath).catch(() => null);
             credit = await resolveCredit({ localPath });
             exif = await exifColumn(localPath);
             // The row is inserted complete, so the worker never reads it.
@@ -166,6 +174,12 @@ async function processEvent(event, storage) {
         } catch (err) {
           logger.debug(`[s3AutoImporter] could not read dimensions for ${entry.key}: ${err.message}`);
         }
+      } else {
+        try {
+          contentSha256 = await sha256Stream(await storage.get(entry.key));
+        } catch (err) {
+          logger.debug(`[s3AutoImporter] could not hash ${entry.key}: ${err.message}`);
+        }
       }
 
       try {
@@ -176,6 +190,7 @@ async function processEvent(event, storage) {
           path: relativePath,
           type: 'individual',
           size_bytes: entry.size,
+          content_sha256: contentSha256,
           media_type: isVideo ? 'video' : 'image',
           mime_type: mimeType,
           source_origin: 'managed',
