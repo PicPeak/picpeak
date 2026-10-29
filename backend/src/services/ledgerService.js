@@ -250,8 +250,9 @@ async function buildPostings({ from, to, currency } = {}) {
   if (!currency) throw httpError(400, '`currency` is required', 'VALIDATION');
   const cur = String(currency).toUpperCase();
   // Inclusive end-of-day bound; plain range comparison (no SQL date()) so it's
-  // valid on both Postgres and SQLite.
-  const toEnd = `${to} 23:59:59.999`;
+  // valid on both Postgres and SQLite. The 'T' keeps both SQLite text shapes
+  // of the last day inside (see taxReportService loadCosts).
+  const toEnd = `${to}T23:59:59.999`;
 
   return withRetry(async () => {
     const cfg = await getConfig();
