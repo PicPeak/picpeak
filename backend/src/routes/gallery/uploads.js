@@ -15,6 +15,7 @@ const { holdsGuestUploads, notifyGuestUploadsPending } = require('../../services
 const { parseClientCaptureDate } = require('../../services/guestUploadDownscale');
 const { GALLERY_COOKIE_PREFIX, sanitizeSlugForCookie } = require('../../utils/tokenUtils');
 const { rateLimitKey } = require('../../utils/rateLimitKey');
+const { refundRateLimit } = require('../../services/rateLimitService');
 const chunkedUpload = require('../../services/chunkedUploadService');
 const { createUploadFileGuard } = require('../../utils/uploadAdmissionType');
 const logger = require('../../utils/logger');
@@ -432,6 +433,10 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', ...guestChun
       declaredBytes: Number.isFinite(declaredBytes) ? declaredBytes : undefined,
       owner: guestUploadOwner(req),
     });
+    // An accepted chunk is one of many requests of a single upload, held to
+    // the session's admission: it does not count against the address's API
+    // budget, or guests behind one venue network run into 429 mid-file.
+    refundRateLimit(req);
     res.json(result);
   } catch (error) {
     chunkError(req, res, error, 'Failed to upload chunk');
@@ -492,6 +497,8 @@ router.delete('/:eventId/chunked-upload/:uploadId', ...guestChunkChain, async (r
     if (!aborted) {
       return res.status(404).json({ error: 'Upload not found or expired' });
     }
+    // Part of the same upload as its chunks: not charged either.
+    refundRateLimit(req);
     res.json({ success: true, message: 'Upload aborted' });
   } catch (error) {
     chunkError(req, res, error, 'Failed to abort upload');

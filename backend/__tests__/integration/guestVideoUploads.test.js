@@ -358,6 +358,48 @@ describe('chunked guest upload processing and quota', () => {
     expect(second.status).toBe(429); expect(second.body.code).toBe('UPLOAD_CONCURRENCY_LIMIT');
   });
 
+  test('a re-sent chunk is charged again and refused once it would pass the hourly byte rate', async () => {
+    process.env.PUBLIC_UPLOAD_LIMITS_JSON = JSON.stringify({ guest: { hourBytes: 2 * jpeg.length } });
+    const event = await makeEvent();
+    const token = galleryToken(event);
+    const guest = await makeGuest(event);
+    const { body: { uploadId } } = await init(event, token, { filename: 'shot.jpg', fileSize: jpeg.length }, guest.token);
+    expect((await chunk(event, token, uploadId, 0, jpeg, guest.token)).status).toBe(200);
+    expect((await chunk(event, token, uploadId, 0, jpeg, guest.token)).status).toBe(200);
+    expect(await db('public_upload_requests').where({ active: 1 }).first()).toMatchObject({ rate_bytes: 2 * jpeg.length });
+    const third = await chunk(event, token, uploadId, 0, jpeg, guest.token);
+    expect(third.status).toBe(429); expect(third.body.code).toBe('UPLOAD_BYTE_RATE_LIMIT');
+    expect(await db('public_upload_requests').where({ active: 1 }).first()).toMatchObject({ rate_bytes: 2 * jpeg.length });
+  });
+
+  test('accepted chunks and an abort are refunded to the API rate limit; a refused chunk is not', async () => {
+    const refund = jest.fn();
+    const limited = express();
+    limited.set('trust proxy', true);
+    limited.use(express.json());
+    limited.use(require('cookie-parser')());
+    // Stands in for the general limiter, which leaves the refund on req.
+    limited.use((req, res, next) => { req.rateLimitRefund = refund; next(); });
+    limited.use('/api/gallery', require('../../src/routes/gallery'));
+    const event = await makeEvent();
+    const token = galleryToken(event);
+    const send = (method, url) => as(request(limited)[method](`/api/gallery/${event.id}/chunked-upload${url}`), token);
+    const begun = await send('post', '/init').send({ filename: 'clip.mp4', fileSize: 2 * MiB });
+    expect(begun.status).toBe(200);
+    started.add(begun.body.uploadId);
+    expect(refund).not.toHaveBeenCalled();
+    const short = await send('post', `/${begun.body.uploadId}/chunk/0`).set('Content-Type', 'application/octet-stream').send(Buffer.alloc(10));
+    expect(short.status).toBe(400);
+    expect(refund).not.toHaveBeenCalled();
+    const video = admissionVideo(2 * MiB);
+    const sent = await send('post', `/${begun.body.uploadId}/chunk/0`).set('Content-Type', 'application/octet-stream')
+      .send(video.subarray(0, begun.body.chunkSize));
+    expect(sent.status).toBe(200);
+    expect(refund).toHaveBeenCalledTimes(1);
+    expect((await send('delete', `/${begun.body.uploadId}`)).status).toBe(200);
+    expect(refund).toHaveBeenCalledTimes(2);
+  });
+
   test('an idle session is released by the expiry sweep', async () => {
     const event = await makeEvent();
     const started = await init(event, galleryToken(event), { filename: 'clip.mp4', fileSize: 2 * MiB });

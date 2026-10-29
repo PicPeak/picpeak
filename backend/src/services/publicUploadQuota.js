@@ -520,6 +520,26 @@ async function recheckStaging(session) {
   });
 }
 
+/** A public chunk session that re-sends a chunk takes in more than it
+ * reserved at begin(). Before the attempt, its rate charge grows to `total`,
+ * which must still fit every scope's hourly byte rate; otherwise retries
+ * would stream bytes past the rate until the session settles. */
+async function growRate(session, total) {
+  if (session.upload_kind !== 'public' || total <= session.rate_bytes) return;
+  await locked(async trx => {
+    const since = new Date(Date.now() - 3600000).toISOString();
+    const own = session.created_at >= since ? session.rate_bytes : 0;
+    for (const scope of scopesOf(session)) {
+      const rate = await filter(trx('public_upload_requests').where({ upload_kind: 'public' }).where('created_at', '>=', since), scope, session)
+        .sum('rate_bytes as bytes').first();
+      if (Number(rate?.bytes || 0) - own + total > session.limits[scope].hourBytes) throw refusal('UPLOAD_BYTE_RATE_LIMIT');
+    }
+    const updated = await trx('public_upload_requests').where({ id: session.id, active: 1 }).update({ rate_bytes: total });
+    if (!updated) throw refusal('UPLOAD_RESERVATION_LOST', 409);
+  });
+  session.rate_bytes = total;
+}
+
 /** The photo left the processing queue (complete or terminally failed): its
  * work hold ends, its lifetime charge stays. */
 async function releasePending(photoId) {
@@ -586,7 +606,7 @@ function stopMaintenance() {
 }
 
 module.exports = {
-  begin, reserveFile, recheckStaging, prepareObject, commitObject, failedObject, unfinishedKeys, finish, releasePending, processingComplete: releasePending,
+  begin, reserveFile, recheckStaging, growRate, prepareObject, commitObject, failedObject, unfinishedKeys, finish, releasePending, processingComplete: releasePending,
   reconcilePending, heartbeat, cleanupAbandoned, retryRetainedObjects, startMaintenance, stopMaintenance, requestBudget, configuration, refusal, forAdmin,
   STALE_MS, LATE_WRITE_MS, _legacyCache: legacyCache,
 };
