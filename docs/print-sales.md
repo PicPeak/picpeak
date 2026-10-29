@@ -65,6 +65,12 @@ Helpers do not create products, prices or supplier associations. Their evidence,
 exact values and limitations are recorded in the
 [market research](print-sales-market-research.md).
 
+For the manual lab setup checklist, payment/lab-account boundary and a researched
+proposal for optional studio-managed API connectors, see
+[Print labs: manual setup and optional API connections](print-sales-labs.md).
+That proposal does not add an API connection or automatic purchasing to this
+implementation.
+
 ## Acceptance and billing guarantees
 
 Quotations retain order-specific original bytes **before** acceptance, along with
