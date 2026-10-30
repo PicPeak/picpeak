@@ -249,10 +249,10 @@ async function buildPostings({ from, to, currency } = {}) {
   if (!from || !to) throw httpError(400, '`from` and `to` are required (YYYY-MM-DD)', 'VALIDATION');
   if (!currency) throw httpError(400, '`currency` is required', 'VALIDATION');
   const cur = String(currency).toUpperCase();
-  // Inclusive end-of-day bound; plain range comparison (no SQL date()) so it's
-  // valid on both Postgres and SQLite. The 'T' keeps both SQLite text shapes
-  // of the last day inside (see taxReportService loadCosts).
-  const toEnd = `${to}T23:59:59.999`;
+  // Exclusive bound at 24:00 of the `to` day; plain range comparison (no
+  // SQL date()) so it's valid on both Postgres and SQLite, and every SQLite
+  // text shape of the last day is inside (see taxReportService loadCosts).
+  const beforeEnd = `${to}T24:00:00`;
 
   return withRetry(async () => {
     const cfg = await getConfig();
@@ -312,7 +312,7 @@ async function buildPostings({ from, to, currency } = {}) {
           qb.whereBetween('inbound_documents.invoice_date', [from, to])
             .orWhere((q2) => q2.whereNull('inbound_documents.invoice_date')
               .andWhere('inbound_documents.created_at', '>=', from)
-              .andWhere('inbound_documents.created_at', '<=', toEnd));
+              .andWhere('inbound_documents.created_at', '<', beforeEnd));
         })
         .where((qb) => { qb.where('inbound_documents.currency', cur).orWhereNull('inbound_documents.currency'); })
         .whereNotIn('inbound_documents.status', ['declined', 'duplicate'])
@@ -352,7 +352,7 @@ async function buildPostings({ from, to, currency } = {}) {
         .modify((q) => {
           if (hasCatCol) q.leftJoin('expense_categories', 'expenses.category_id', 'expense_categories.id');
         })
-        .whereRaw('expenses.created_at >= ? AND expenses.created_at <= ?', [from, toEnd])
+        .whereRaw('expenses.created_at >= ? AND expenses.created_at < ?', [from, beforeEnd])
         .whereNot('expenses.status', 'declined')
         .whereNotIn('expenses.disposition', ['duplikat', 'abgelehnt'])
         .modify((q) => { if (cur !== 'CHF') q.where('expenses.original_currency', cur); })

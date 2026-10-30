@@ -9,7 +9,9 @@
  *    changes nothing
  *  - the writers now store ISO text
  *  - a cost on the last day of the period is in it, in both text shapes
- *    SQLite holds ('YYYY-MM-DD HH:MM:SS' and ISO with a 'T')
+ *    SQLite holds ('YYYY-MM-DD HH:MM:SS' and ISO with a 'T'), up to its last
+ *    millisecond
+ * The portable import's rerun of the rewrite is in picpeakImportCostTimestamps.
  */
 
 const fs = require('fs');
@@ -72,8 +74,12 @@ describe('cost timestamps on SQLite (tax report, journal)', () => {
   it('counts a cost on the last day of the period in both text shapes', async () => {
     const iso = await expense('2026-10-31T18:30:00.000Z', 'ISO');
     const plain = await expense('2026-10-31 18:30:00', 'database default');
+    const lastMs = await expense('2026-10-31T23:59:59.999Z', 'last millisecond');
     await expense('2026-11-01T00:00:00.000Z', 'next month');
-    expect(await costIds()).toEqual([`expense-${iso}`, `expense-${plain}`].sort());
+    await expense('2026-11-01 00:00:00', 'next month, database default');
+    expect(await costIds()).toEqual([`expense-${iso}`, `expense-${plain}`, `expense-${lastMs}`].sort());
+    const { postings } = await ledgerService.buildPostings(PERIOD);
+    expect(postings.filter((p) => p.source === 'expense')).toHaveLength(3);
   });
 
   it('new expenses and incoming invoices are stored as ISO text', async () => {

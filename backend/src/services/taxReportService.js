@@ -207,10 +207,11 @@ async function loadCosts({ from, to, cur }) {
   // (no SQL date() function) so it's valid on both Postgres and SQLite — the
   // mocked unit tests can't catch a PG-only function error. invoice_date is a
   // DATE, created_at a TIMESTAMP; both compare correctly against ISO literals.
-  // The 'T' matters on SQLite, where created_at is text: it sorts after the
-  // space of 'YYYY-MM-DD HH:MM:SS' and after the digits of an ISO time, so
-  // both shapes on the last day are inside; PostgreSQL reads it as before.
-  const toEnd = `${to}T23:59:59.999`;
+  // The bound is exclusive: 24:00 of the `to` day, with no zone. On SQLite,
+  // where created_at is text, every shape of the last day sorts below it
+  // ('YYYY-MM-DD HH:MM:SS', and ISO up to '…T23:59:59.999Z'); PostgreSQL
+  // reads 24:00 as the next midnight in the session time zone.
+  const beforeEnd = `${to}T24:00:00`;
 
   const push = (r) => {
     rows.push(r);
@@ -231,7 +232,7 @@ async function loadCosts({ from, to, cur }) {
         qb.whereBetween('inbound_documents.invoice_date', [from, to])
           .orWhere((q2) => q2.whereNull('inbound_documents.invoice_date')
             .andWhere('inbound_documents.created_at', '>=', from)
-            .andWhere('inbound_documents.created_at', '<=', toEnd));
+            .andWhere('inbound_documents.created_at', '<', beforeEnd));
       })
       // Currency match, but INCLUDE rows with no currency set — captured
       // invoices (email/upload) often have a null currency; treat them as the
@@ -285,7 +286,7 @@ async function loadCosts({ from, to, cur }) {
     const isChf = cur === 'CHF';
     const q = db('expenses')
       .leftJoin('events', 'expenses.event_id', 'events.id')
-      .whereRaw('expenses.created_at >= ? AND expenses.created_at <= ?', [from, toEnd])
+      .whereRaw('expenses.created_at >= ? AND expenses.created_at < ?', [from, beforeEnd])
       .whereNot('expenses.status', 'declined')
       .whereNotIn('expenses.disposition', ['duplikat', 'abgelehnt']);
     // CHF report includes every expense (all carry a CHF base). A

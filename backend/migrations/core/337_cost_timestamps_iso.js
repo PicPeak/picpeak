@@ -8,31 +8,18 @@
  * before every text, so those rows never fell in any period: every expense,
  * and every incoming invoice without an invoice date, was missing from both.
  * The writers now store ISO text; this turns the numbers already stored into
- * the same 'YYYY-MM-DDTHH:MM:SS.sssZ' text.
+ * the same 'YYYY-MM-DDTHH:MM:SS.sssZ' text (src/utils/costTimestamps.js, which
+ * the portable import runs too).
  *
  * SQLite only: PostgreSQL columns are typed timestamps and were never
  * affected. Only numeric values are touched (typeof integer or real), so a
  * second run changes nothing. No down(): the old shape was the bug.
  */
 
-const COLUMNS = {
-  expenses: ['created_at', 'updated_at'],
-  inbound_documents: ['created_at', 'updated_at'],
-};
+const { isoSqliteCostTimestamps } = require('../../src/utils/costTimestamps');
 
 exports.up = async function up(knex) {
-  if (knex.client.config.client === 'pg') return;
-  for (const [table, columns] of Object.entries(COLUMNS)) {
-    if (!(await knex.schema.hasTable(table))) continue;
-    for (const column of columns) {
-      if (!(await knex.schema.hasColumn(table, column))) continue;
-      await knex.raw(
-        'UPDATE ?? SET ?? = strftime(\'%Y-%m-%dT%H:%M:%fZ\', ?? / 1000.0, \'unixepoch\') '
-          + 'WHERE typeof(??) IN (\'integer\', \'real\')',
-        [table, column, column, column]
-      );
-    }
-  }
+  await isoSqliteCostTimestamps(knex);
 };
 
 exports.down = async function down() {
