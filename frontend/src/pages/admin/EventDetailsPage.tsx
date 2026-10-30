@@ -479,7 +479,9 @@ export const EventDetailsPage: React.FC = () => {
               categories={categories}
               photoFilters={photoFilters}
               setPhotoFilters={setPhotoFilters}
-              feedbackFilters={favoriteListActive ? { ...feedbackFilters, ...favoriteListFilter } : feedbackFilters}
+              // Always the URL's list filter, undefined once cleared: the
+              // panel writes these props back into the state on any change.
+              feedbackFilters={{ ...feedbackFilters, ...favoriteListFilter }}
               setFeedbackFilters={setFeedbackFilters}
               filterSummary={filterSummary}
               showMediaFilter={showMediaFilter}

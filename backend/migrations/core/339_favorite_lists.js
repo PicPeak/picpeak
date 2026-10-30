@@ -26,6 +26,8 @@
  * rebuild photo_feedback, for a constraint it would never enforce.
  */
 
+const { SHARED_COLOR_LABEL_IDENTITY } = require('../../src/constants/colorLabels');
+
 exports.up = async function (knex) {
   const isPg = knex.client.config.client === 'pg';
 
@@ -62,6 +64,28 @@ exports.up = async function (knex) {
   }
 };
 
+// After the rollback the photos' counters must say what the old code would
+// write: favorite_count and feedback_count as feedbackService counted them
+// before this migration. A photo saved only in an extra list keeps no count.
+async function recountPhotos(knex, photoIds) {
+  if (!photoIds.length || !(await knex.schema.hasTable('photos'))) return;
+  const counters = {
+    favorite_count: 'SELECT COUNT(*) FROM photo_feedback pf WHERE pf.photo_id = photos.id '
+      + 'AND pf.feedback_type = \'favorite\' AND pf.is_hidden = ?',
+    feedback_count: 'SELECT COUNT(DISTINCT CASE WHEN pf.guest_identifier IS NULL OR pf.guest_identifier <> ? '
+      + 'THEN COALESCE(CAST(pf.guest_id AS VARCHAR), pf.guest_identifier) END) '
+      + 'FROM photo_feedback pf WHERE pf.photo_id = photos.id AND pf.is_hidden = ?',
+  };
+  for (const [column, sql] of Object.entries(counters)) {
+    if (!(await knex.schema.hasColumn('photos', column))) continue;
+    const bindings = column === 'feedback_count' ? [SHARED_COLOR_LABEL_IDENTITY, false] : [false];
+    for (let i = 0; i < photoIds.length; i += 500) {
+      await knex('photos').whereIn('id', photoIds.slice(i, i + 500))
+        .update({ [column]: knex.raw(`(${sql})`, bindings) });
+    }
+  }
+}
+
 exports.down = async function (knex) {
   if (await knex.schema.hasColumn('event_feedback_settings', 'allow_favorite_lists')) {
     await knex.schema.alterTable('event_feedback_settings', (table) => {
@@ -72,7 +96,10 @@ exports.down = async function (knex) {
   // would read as second copies in the default list, which the old duplicate
   // check toggles off as one and every counter counts twice.
   if (await knex.schema.hasColumn('photo_feedback', 'favorite_list_id')) {
+    const photoIds = (await knex('photo_feedback').whereNotNull('favorite_list_id').distinct('photo_id'))
+      .map((row) => row.photo_id);
     await knex('photo_feedback').whereNotNull('favorite_list_id').del();
+    await recountPhotos(knex, photoIds);
   }
   // Before the column, as in 182: SQLite rebuilds the table on dropColumn and
   // a lingering index over the dropped column makes the rebuild fail.
