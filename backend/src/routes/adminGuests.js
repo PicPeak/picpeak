@@ -15,7 +15,9 @@ const { errorResponse } = require('../utils/routeHelpers');
 const { ValidationError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
+const { toTimestamp } = require('../utils/dateNormalize');
 const { adminThumbnailUrl, ADMIN_THUMBNAIL_COLUMNS } = require('../utils/adminThumbnailUrl');
+const favoriteLists = require('../services/favoriteLists');
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -58,6 +60,38 @@ function escapeCsvCell(value) {
   return str;
 }
 
+/**
+ * A guest's likes and favourites for the per-guest exports, each favourite
+ * with the name of its list (issue 2303; the default list is
+ * favoriteLists.DEFAULT_LIST_EXPORT_NAME, a like has none).
+ */
+async function guestSelectionsForExport(eventId, guestId, listNames) {
+  const rows = await db('photo_feedback')
+    .modify(joinLivePhotos, 'photo_feedback.photo_id', 'photos.id')
+    .where('photo_feedback.guest_id', guestId)
+    .whereIn('photo_feedback.feedback_type', ['like', 'favorite'])
+    .select('photos.filename', 'photos.original_filename', 'photo_feedback.feedback_type', 'photo_feedback.favorite_list_id');
+  return rows.map(({ favorite_list_id: listId, ...row }) => ({
+    ...row,
+    list: row.feedback_type === 'favorite' ? favoriteLists.exportName(listNames, listId) : '',
+  }));
+}
+
+function selectionsCsv(selections) {
+  const header = 'filename,original_filename,feedback_type,list';
+  const rows = selections.map(
+    (s) =>
+      `${escapeCsvCell(s.filename)},${escapeCsvCell(s.original_filename)},${escapeCsvCell(s.feedback_type)},${escapeCsvCell(s.list)}`
+  );
+  return [header, ...rows].join('\n');
+}
+
+// One name per photo: a photo liked and saved, or saved in two lists, is one
+// file to find in Lightroom.
+function selectionsTxt(selections) {
+  return [...new Set(selections.map((s) => s.original_filename || s.filename))].join('\n');
+}
+
 // ----------------------------------------------------------------------------
 // GET /admin/events/:eventId/guests — list guests with aggregated counts
 // ----------------------------------------------------------------------------
@@ -89,7 +123,9 @@ router.get(
           'gallery_guests.last_seen_at',
           'gallery_guests.email_verified_at',
           db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'like\' THEN 1 END) AS likes'),
-          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'favorite\' THEN 1 END) AS favorites'),
+          // Photos, not rows: one photo may sit in several of the guest's
+          // favourite lists (issue 2303).
+          db.raw('COUNT(DISTINCT CASE WHEN photo_feedback.feedback_type = \'favorite\' THEN photo_feedback.photo_id END) AS favorites'),
           db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'comment\' THEN 1 END) AS comments'),
           db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'rating\' THEN 1 END) AS ratings'),
           db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'reaction\' THEN 1 END) AS reactions'),
@@ -407,12 +443,9 @@ router.get(
       });
       archive.pipe(res);
 
+      const listNames = await favoriteLists.namesForEvent(eventId);
       for (const g of guests) {
-        const selections = await db('photo_feedback')
-          .modify(joinLivePhotos, 'photo_feedback.photo_id', 'photos.id')
-          .where('photo_feedback.guest_id', g.id)
-          .whereIn('photo_feedback.feedback_type', ['like', 'favorite'])
-          .select('photos.filename', 'photos.original_filename', 'photo_feedback.feedback_type');
+        const selections = await guestSelectionsForExport(eventId, g.id, listNames);
 
         const safeName = g.name.replace(/[^a-zA-Z0-9_-]/g, '_') || `guest_${g.id}`;
         const filename = `${safeName}.${format}`;
@@ -421,15 +454,10 @@ router.get(
         if (format === 'json') {
           body = JSON.stringify({ guest: g, selections }, null, 2);
         } else if (format === 'csv') {
-          const header = 'filename,original_filename,feedback_type';
-          const rows = selections.map(
-            (s) =>
-              `${escapeCsvCell(s.filename)},${escapeCsvCell(s.original_filename)},${escapeCsvCell(s.feedback_type)}`
-          );
-          body = [header, ...rows].join('\n');
+          body = selectionsCsv(selections);
         } else {
           // txt — just filenames
-          body = selections.map((s) => s.original_filename || s.filename).join('\n');
+          body = selectionsTxt(selections);
         }
         archive.append(body, { name: filename });
       }
@@ -470,6 +498,7 @@ router.get(
           'photo_feedback.comment_text',
           'photo_feedback.reaction',
           'photo_feedback.color_label',
+          'photo_feedback.favorite_list_id',
           'photo_feedback.created_at',
           'photos.id as photo_id',
           'photos.filename',
@@ -500,7 +529,11 @@ router.get(
         if (row.feedback_type === 'like') {
           selections.liked.push(photoFor(row));
         } else if (row.feedback_type === 'favorite') {
-          selections.favorited.push(photoFor(row));
+          // Which list it is in (issue 2303); null is the default list.
+          selections.favorited.push({
+            ...photoFor(row),
+            favorite_list_id: row.favorite_list_id == null ? null : Number(row.favorite_list_id),
+          });
         } else if (row.feedback_type === 'rating') {
           selections.rated.push({ photo: photoFor(row), rating: row.rating });
         } else if (row.feedback_type === 'comment') {
@@ -516,12 +549,49 @@ router.get(
         }
       }
 
+      // The guest's favourite lists (issue 2303), the default list first,
+      // each with its photo count and when it last changed.
+      const ownLists = await db('favorite_lists')
+        .where({ event_id: eventId, guest_id: guestId })
+        .orderBy('id', 'asc')
+        .select('id', 'name', 'created_at', 'updated_at');
+      // As an ISO instant, whatever the engine stored: SQLite holds a
+      // favourite's created_at as epoch ms or zone-less text, and the detail
+      // view formats this value as a date.
+      const isoOf = (value) => {
+        const ms = toTimestamp(value);
+        return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+      };
+      const lastChange = (rows) => {
+        const latest = Math.max(...rows.map((row) => toTimestamp(row.created_at)).filter(Number.isFinite));
+        return Number.isFinite(latest) ? new Date(latest).toISOString() : null;
+      };
+      const defaultRows = feedback.filter((row) => row.feedback_type === 'favorite' && row.favorite_list_id == null);
+      const favoriteListSummaries = [
+        {
+          id: null,
+          name: null,
+          count: new Set(defaultRows.map((row) => row.photo_id)).size,
+          updated_at: lastChange(defaultRows),
+        },
+        ...ownLists.map((list) => {
+          const rows = feedback.filter((row) => row.feedback_type === 'favorite' && Number(row.favorite_list_id) === Number(list.id));
+          return {
+            id: Number(list.id),
+            name: list.name,
+            count: new Set(rows.map((row) => row.photo_id)).size,
+            updated_at: isoOf(list.updated_at || list.created_at),
+          };
+        }),
+      ];
+
       res.json({
         guest: {
           ...serializeGuest(guest),
           stats: {
             likes: selections.liked.length,
-            favorites: selections.favorited.length,
+            // Photos, not rows: one may sit in several lists (issue 2303).
+            favorites: new Set(selections.favorited.map((p) => p.id)).size,
             comments: selections.commented.length,
             ratings: selections.rated.length,
             reactions: selections.reacted.length,
@@ -529,6 +599,7 @@ router.get(
           },
         },
         selections,
+        favorite_lists: favoriteListSummaries,
       });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to fetch guest detail');
@@ -553,11 +624,7 @@ router.get(
       const guest = await loadGuestOr404(eventId, guestId, res);
       if (!guest) return;
 
-      const selections = await db('photo_feedback')
-        .modify(joinLivePhotos, 'photo_feedback.photo_id', 'photos.id')
-        .where('photo_feedback.guest_id', guestId)
-        .whereIn('photo_feedback.feedback_type', ['like', 'favorite'])
-        .select('photos.filename', 'photos.original_filename', 'photo_feedback.feedback_type');
+      const selections = await guestSelectionsForExport(eventId, guestId, await favoriteLists.namesForEvent(eventId));
 
       const safeName = guest.name.replace(/[^a-zA-Z0-9_-]/g, '_') || `guest_${guest.id}`;
       const filename = `${safeName}.${format}`;
@@ -570,17 +637,12 @@ router.get(
       if (format === 'csv') {
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        const header = 'filename,original_filename,feedback_type';
-        const rows = selections.map(
-          (s) =>
-            `${escapeCsvCell(s.filename)},${escapeCsvCell(s.original_filename)},${escapeCsvCell(s.feedback_type)}`
-        );
-        return res.send([header, ...rows].join('\n'));
+        return res.send(selectionsCsv(selections));
       }
       // txt — one filename per line
       res.setHeader('Content-Type', 'text/plain');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      return res.send(selections.map((s) => s.original_filename || s.filename).join('\n'));
+      return res.send(selectionsTxt(selections));
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to export guest');
     }

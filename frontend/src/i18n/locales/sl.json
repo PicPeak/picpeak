@@ -1613,6 +1613,27 @@
     "toolbar": {
       "browse": "Orodja galerije",
       "selection": "Izbira"
+    },
+    "favoriteLists": {
+      "saveTo": "Shrani na seznam",
+      "defaultList": "Moje priljubljene",
+      "manage": "Upravljanje seznamov …",
+      "title": "Vaši seznami",
+      "intro": "Priljubljene fotografije razvrstite na sezname. Zaznamek shrani na izbrani seznam.",
+      "defaultHint": "Privzeti seznam",
+      "nameLabel": "Ime seznama",
+      "rename": "Preimenuj {{name}}",
+      "deleteNamed": "Izbriši {{name}}",
+      "confirmDelete_one": "Izbrišem »{{name}}« in {{count}} fotografijo, shranjeno na njem?",
+      "confirmDelete_two": "Izbrišem »{{name}}« in {{count}} fotografiji, shranjeni na njem?",
+      "confirmDelete_few": "Izbrišem »{{name}}« in {{count}} fotografije, shranjene na njem?",
+      "confirmDelete_other": "Izbrišem »{{name}}« in {{count}} fotografij, shranjenih na njem?",
+      "delete": "Izbriši seznam",
+      "newPlaceholder": "Nov seznam, npr. Album",
+      "create": "Dodaj",
+      "nameTaken": "Seznam s tem imenom že imate.",
+      "limitReached": "Ustvarite lahko največ {{count}} seznamov.",
+      "saveError": "Seznama ni bilo mogoče shraniti."
     }
   },
   "categories": {
@@ -2566,6 +2587,7 @@
       "defaultAllowRatings": "Ocene z zvezdicami",
       "defaultAllowLikes": "Všečki",
       "defaultAllowFavorites": "Priljubljene",
+      "defaultAllowFavoriteLists": "Seznami priljubljenih",
       "defaultAllowComments": "Komentarji",
       "defaultAllowReactions": "Odzivi z emoji",
       "defaultAllowColorLabels": "Barvne oznake",
@@ -4340,7 +4362,18 @@
         "rated": "Ocenjeno",
         "reacted": "Odzval se",
         "commented": "Komentirano",
-        "labeled": "Barvne oznake"
+        "labeled": "Barvne oznake",
+        "defaultList": "Privzeti seznam",
+        "favoriteLists": "Seznami priljubljenih",
+        "listCount_one": "{{count}} fotografija",
+        "listCount_two": "{{count}} fotografiji",
+        "listCount_few": "{{count}} fotografije",
+        "listCount_other": "{{count}} fotografij",
+        "listUpdated": "Posodobljeno {{date}}",
+        "showInPhotos": "Prikaži med fotografijami",
+        "clearListFilter": "Prikaži vse fotografije",
+        "listFilterNamed": "Prikazane so fotografije s seznama {{name}}.",
+        "listFilter": "Prikazane so fotografije z enega seznama priljubljenih."
       },
       "inviteStatus": {
         "pending": "Čaka",
@@ -5736,6 +5769,8 @@
       "reactions": "Emoji odzivi",
       "reactionsDesc": "En emoji na gosta na fotografijo (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Označi fotografije kot priljubljene",
+      "favoriteLists": "Seznami priljubljenih",
+      "favoriteListsDesc": "Gostje priljubljene fotografije razvrstijo na sezname z lastnim imenom, npr. »Album« ali »Tisk«",
       "perGuestLimits": "Omejitve na gosta",
       "perGuestLimitsDesc": "Omejite, koliko fotografij lahko vsak gost doda med priljubljene ali všečka — uporabno pri poteku dela »izberite svojih najboljših N za album«. Za brez omejitve pustite 0. Če omejitev znižate pod trenutno število gosta, se njegovi obstoječi vnosi ohranijo; nova dodajanja so blokirana, dokler nekaterih ne odstrani.",
       "maxFavoritesPerGuest": "Največ priljubljenih na gosta",

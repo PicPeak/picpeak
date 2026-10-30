@@ -76,7 +76,9 @@ const MOVE_TABLES = [
     // moderator-hidden row coexist with the guest's visible replacement and
     // excludes hidden rows from the counts. Without it the visible row is
     // dropped as redundant against the hidden one.
-    keys: ['feedback_type', 'is_hidden'],
+    // favorite_list_id too (issue 2303): a photo saved in two of one guest's
+    // lists is two favourites, not a duplicate of one.
+    keys: ['feedback_type', 'is_hidden', 'favorite_list_id'],
     // A comment is distinct content, never a per-guest toggle: two comments
     // from one guest are two comments, so they always move.
     alwaysMove: (row) => row.feedback_type === 'comment',

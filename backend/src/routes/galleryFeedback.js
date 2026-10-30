@@ -23,6 +23,7 @@ const {
 } = require('../utils/feedbackValidation');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 const { normalizeAnnotation } = require('../utils/photoAnnotation');
+const favoriteLists = require('../services/favoriteLists');
 
 // Most photos one bulk rating request may name (issue 1733).
 const BULK_RATING_MAX_PHOTOS = 200;
@@ -101,6 +102,8 @@ router.get('/:slug/feedback-settings',
         allow_reactions: Boolean(settings.allow_reactions),
         allow_color_labels: Boolean(settings.allow_color_labels),
         allow_decisions: Boolean(settings.allow_decisions),
+        // Named favourite lists (issue 2303).
+        allow_favorite_lists: Boolean(settings.allow_favorite_lists),
         // Drawing on a comment (issue 1733).
         allow_annotations: Boolean(settings.allow_annotations),
         // Which lightbox shortcut scheme this gallery uses (#1044).
@@ -177,6 +180,7 @@ router.get('/:slug/photos/:photoId/feedback',
         guest_id: req.guest?.id,
         guest_identifier: guestIdentifier,
         identity_mode: settings.identity_mode,
+        with_favorite_list: Boolean(settings.allow_favorite_lists),
       });
 
       // The photo's shared tag (#1197), when the event is in that mode.
@@ -265,7 +269,14 @@ router.get('/:slug/photos/:photoId/feedback',
             : (guestFeedback.find(f => f.feedback_type === 'color_label')?.color_label || null),
           // Approve / reject (issue 744) and the reason the guest gave.
           decision: guestFeedback.find(f => f.feedback_type === 'decision')?.decision || null,
-          decision_reason: guestFeedback.find(f => f.feedback_type === 'decision')?.comment_text || null
+          decision_reason: guestFeedback.find(f => f.feedback_type === 'decision')?.comment_text || null,
+          // Which of the guest's lists hold the photo (issue 2303), null for
+          // the default list; the bookmark shows the list the guest picked.
+          ...(settings.allow_favorite_lists ? {
+            favorite_list_ids: [...new Set(guestFeedback
+              .filter(f => f.feedback_type === 'favorite' && !f.is_hidden)
+              .map(f => (f.favorite_list_id == null ? null : Number(f.favorite_list_id))))],
+          } : {}),
         }
       });
     } catch (error) {
@@ -299,6 +310,24 @@ router.post('/:slug/photos/:photoId/feedback',
       if (refusal) return res.status(refusal.status).json(refusal.body);
 
       const guestIdentifier = await generateGuestIdentifier(req);
+
+      // The list a favourite goes to (issue 2303). Without lists the field is
+      // refused rather than ignored, and the service reads every list as one,
+      // as before lists existed. Absent or null is the default list.
+      let favoriteListId;
+      if (feedbackType === 'favorite' && settings.allow_favorite_lists) {
+        const raw = req.body.favorite_list_id;
+        if (raw === undefined || raw === null) {
+          favoriteListId = null;
+        } else {
+          favoriteListId = Number(raw);
+          if (!Number.isSafeInteger(favoriteListId) || favoriteListId <= 0) {
+            return res.status(400).json({ error: 'Invalid favorite list', code: 'INVALID_FAVORITE_LIST' });
+          }
+        }
+      } else if (req.body.favorite_list_id !== undefined && req.body.favorite_list_id !== null) {
+        return res.status(403).json({ error: 'Favorite lists are not enabled', code: 'FAVORITE_LISTS_DISABLED' });
+      }
 
       // A drawing (issue 1733) belongs to a comment and needs its own switch.
       // Validated here into a fresh structure; anything off is a 400 and the
@@ -359,6 +388,7 @@ router.post('/:slug/photos/:photoId/feedback',
         color_label: req.body.color_label,
         decision: req.body.decision,
         annotation,
+        favorite_list_id: favoriteListId,
         ...feedbackAuthor(req, settings)
       };
       
@@ -429,6 +459,11 @@ router.post('/:slug/photos/:photoId/feedback',
           error: 'Guest identity required',
           code: 'GUEST_IDENTITY_REQUIRED'
         });
+      }
+
+      // Not one of this guest's lists in this gallery, or deleted meanwhile.
+      if (result && result.list_missing) {
+        return res.status(404).json({ error: 'Favorite list not found', code: 'FAVORITE_LIST_NOT_FOUND' });
       }
 
       // Handed in (issue 1733, A1): the picks, or the approve / reject, are
@@ -724,6 +759,10 @@ router.get('/:slug/my-feedback',
         query.where('photo_feedback.guest_identifier', guestIdentifier);
       }
 
+      // The list of each favourite (issue 2303), only while the gallery has
+      // lists: without them the rows read as they always did.
+      const { allow_favorite_lists: listsOn } = await feedbackService.getEventFeedbackSettings(event.id);
+
       // Name the columns rather than photo_feedback.*: the row also carries
       // guest_email, guest_name, ip_address and user_agent. After an admin
       // merges two guest identities those still describe the source guest,
@@ -742,7 +781,8 @@ router.get('/:slug/my-feedback',
           'photo_feedback.is_approved',
           'photo_feedback.created_at',
           'photo_feedback.updated_at',
-          'photos.filename'
+          'photos.filename',
+          ...(listsOn ? ['photo_feedback.favorite_list_id'] : [])
         )
         .orderBy('photo_feedback.created_at', 'desc');
 
@@ -887,6 +927,137 @@ router.post('/:slug/selection/submit',
     } catch (error) {
       logger.error('Error submitting selection:', error);
       res.status(500).json({ error: 'Failed to submit' });
+    }
+  }
+);
+
+// Named favourite lists (issue 2303). The default list is implicit (NULL on
+// the favourite row) and has no route: it cannot be renamed or deleted. Every
+// route answers 403 while the gallery has lists off.
+function favoriteListRefusal(req, settings) {
+  const refusal = feedbackWriteRefusal(req, settings, 'favorite');
+  if (refusal) return refusal;
+  if (!settings.allow_favorite_lists) {
+    return { status: 403, body: { error: 'Favorite lists are not enabled', code: 'FAVORITE_LISTS_DISABLED' } };
+  }
+  return null;
+}
+
+// The shared answers of the list writes; null when the result is a success.
+function favoriteListWriteError(res, result) {
+  if (result.guest_missing) {
+    return res.status(401).json({ error: 'Guest identity required', code: 'GUEST_IDENTITY_REQUIRED' });
+  }
+  if (result.locked) {
+    // The same answer a favourite gets: the lists are part of the selection.
+    return res.status(409).json({
+      error: 'The selection is finished; the picks are locked',
+      code: 'SELECTION_LOCKED',
+      kind: result.kind,
+      submitted_at: result.submitted_at,
+    });
+  }
+  if (result.not_found) {
+    return res.status(404).json({ error: 'Favorite list not found', code: 'FAVORITE_LIST_NOT_FOUND' });
+  }
+  if (result.invalid_name) {
+    return res.status(400).json({
+      error: `A list name needs 1 to ${favoriteLists.NAME_MAX_LENGTH} characters`,
+      code: 'INVALID_FAVORITE_LIST_NAME',
+      max_length: favoriteLists.NAME_MAX_LENGTH,
+    });
+  }
+  if (result.name_taken) {
+    return res.status(409).json({ error: 'A list with this name exists', code: 'FAVORITE_LIST_NAME_TAKEN' });
+  }
+  if (result.limit_reached) {
+    return res.status(403).json({ error: 'List limit reached', code: 'FAVORITE_LIST_LIMIT_REACHED', limit: result.limit });
+  }
+  return null;
+}
+
+const favoriteListGuards = [verifyGalleryAccess, blockHiddenGallery, resolveGuest, scopeGuestToFeedback];
+const favoriteListWriteGuards = [verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, scopeGuestToFeedback];
+
+// The viewer's lists with the number of photos in each.
+router.get('/:slug/favorite-lists',
+  ...favoriteListGuards,
+  async (req, res) => {
+    try {
+      const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
+      const refusal = favoriteListRefusal(req, settings);
+      if (refusal) return res.status(refusal.status).json(refusal.body);
+      const lists = await favoriteLists.listForViewer(req.event.id, await selectionViewer(req));
+      res.json({
+        ...lists,
+        max_lists: favoriteLists.MAX_LISTS_PER_GUEST,
+        max_name_length: favoriteLists.NAME_MAX_LENGTH,
+      });
+    } catch (error) {
+      logger.error('Error listing favorite lists:', error);
+      res.status(500).json({ error: 'Failed to get favorite lists' });
+    }
+  }
+);
+
+router.post('/:slug/favorite-lists',
+  ...favoriteListWriteGuards,
+  async (req, res) => {
+    try {
+      const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
+      const refusal = favoriteListRefusal(req, settings);
+      if (refusal) return res.status(refusal.status).json(refusal.body);
+      await feedbackRateLimit('favorite_list')(req, res, (err) => { if (err) throw err; });
+      if (res.headersSent) return;
+      const result = await favoriteLists.create(req.event.id, await selectionViewer(req), req.body?.name);
+      if (favoriteListWriteError(res, result)) return;
+      res.status(201).json({ success: true, list: result.list });
+    } catch (error) {
+      logger.error('Error creating favorite list:', error);
+      res.status(500).json({ error: 'Failed to create the list' });
+    }
+  }
+);
+
+router.patch('/:slug/favorite-lists/:listId',
+  ...favoriteListWriteGuards,
+  async (req, res) => {
+    try {
+      const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
+      const refusal = favoriteListRefusal(req, settings);
+      if (refusal) return res.status(refusal.status).json(refusal.body);
+      await feedbackRateLimit('favorite_list')(req, res, (err) => { if (err) throw err; });
+      if (res.headersSent) return;
+      const result = await favoriteLists.rename(req.event.id, await selectionViewer(req), req.params.listId, req.body?.name);
+      if (favoriteListWriteError(res, result)) return;
+      res.json({ success: true, list: result.list });
+    } catch (error) {
+      logger.error('Error renaming favorite list:', error);
+      res.status(500).json({ error: 'Failed to rename the list' });
+    }
+  }
+);
+
+// Deletes the list and the favourites in it.
+router.delete('/:slug/favorite-lists/:listId',
+  ...favoriteListWriteGuards,
+  async (req, res) => {
+    try {
+      const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
+      const refusal = favoriteListRefusal(req, settings);
+      if (refusal) return res.status(refusal.status).json(refusal.body);
+      await feedbackRateLimit('favorite_list')(req, res, (err) => { if (err) throw err; });
+      if (res.headersSent) return;
+      const result = await favoriteLists.remove(req.event.id, await selectionViewer(req), req.params.listId);
+      if (favoriteListWriteError(res, result)) return;
+      // After the commit, as for a favourite: favorite_count is per guest.
+      for (const photoId of result.photo_ids) {
+        await feedbackService.updatePhotoFeedbackStats(photoId);
+      }
+      res.json({ success: true, removed: result.removed });
+    } catch (error) {
+      logger.error('Error deleting favorite list:', error);
+      res.status(500).json({ error: 'Failed to delete the list' });
     }
   }
 );

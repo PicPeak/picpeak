@@ -598,6 +598,25 @@
     "toolbar": {
       "browse": "Herramientas de la galería",
       "selection": "Selección"
+    },
+    "favoriteLists": {
+      "saveTo": "Guardar en la lista",
+      "defaultList": "Mis favoritos",
+      "manage": "Gestionar listas…",
+      "title": "Tus listas",
+      "intro": "Ordena tus favoritos en listas. El marcador guarda en la lista que elijas.",
+      "defaultHint": "Lista predeterminada",
+      "nameLabel": "Nombre de la lista",
+      "rename": "Renombrar {{name}}",
+      "deleteNamed": "Eliminar {{name}}",
+      "confirmDelete_one": "¿Eliminar «{{name}}» y la {{count}} foto guardada en ella?",
+      "confirmDelete_other": "¿Eliminar «{{name}}» y las {{count}} fotos guardadas en ella?",
+      "delete": "Eliminar lista",
+      "newPlaceholder": "Nueva lista, p. ej. Álbum",
+      "create": "Añadir",
+      "nameTaken": "Ya tienes una lista con este nombre.",
+      "limitReached": "Puedes tener hasta {{count}} listas.",
+      "saveError": "No se pudo guardar la lista."
     }
   },
   "categories": {
@@ -1403,6 +1422,7 @@
       "defaultAllowRatings": "Valoración con estrellas",
       "defaultAllowLikes": "Me gusta",
       "defaultAllowFavorites": "Favoritos",
+      "defaultAllowFavoriteLists": "Listas de favoritos",
       "defaultAllowComments": "Comentarios",
       "defaultAllowReactions": "Reacciones emoji",
       "defaultAllowColorLabels": "Etiquetas de color",
@@ -2323,7 +2343,16 @@
         "colorLabels": "Etiquetas de color"
       },
       "detail": {
-        "labeled": "Etiquetas de color"
+        "labeled": "Etiquetas de color",
+        "defaultList": "Lista predeterminada",
+        "favoriteLists": "Listas de favoritos",
+        "listCount_one": "{{count}} foto",
+        "listCount_other": "{{count}} fotos",
+        "listUpdated": "Actualizada {{date}}",
+        "showInPhotos": "Ver en fotos",
+        "clearListFilter": "Mostrar todas las fotos",
+        "listFilterNamed": "Se muestran las fotos de {{name}}.",
+        "listFilter": "Se muestran las fotos de una lista de favoritos."
       }
     },
     "catalogedMedia": "{{size}} catalogados",
@@ -3193,6 +3222,8 @@
       "reactions": "Reacciones con emojis",
       "reactionsDesc": "Un emoji por invitado y foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Marcar fotos como favoritas",
+      "favoriteLists": "Listas de favoritos",
+      "favoriteListsDesc": "Los invitados ordenan sus favoritos en listas con nombre propio, como «Álbum» o «Impresión»",
       "identityMode": "Modo de identidad",
       "identityModeSimple": "Feedback simple",
       "identityModeSimpleDesc": "Anónimo, basado en dispositivo. Visitantes del mismo dispositivo comparten estado.",

@@ -614,6 +614,25 @@
     "toolbar": {
       "browse": "Galerijtools",
       "selection": "Selectie"
+    },
+    "favoriteLists": {
+      "saveTo": "Opslaan in lijst",
+      "defaultList": "Mijn favorieten",
+      "manage": "Lijsten beheren…",
+      "title": "Je lijsten",
+      "intro": "Sorteer je favorieten in lijsten. De bladwijzer slaat op in de lijst die je kiest.",
+      "defaultHint": "Standaardlijst",
+      "nameLabel": "Naam van de lijst",
+      "rename": "{{name}} hernoemen",
+      "deleteNamed": "{{name}} verwijderen",
+      "confirmDelete_one": "„{{name}}” en de {{count}} foto erin verwijderen?",
+      "confirmDelete_other": "„{{name}}” en de {{count}} foto’s erin verwijderen?",
+      "delete": "Lijst verwijderen",
+      "newPlaceholder": "Nieuwe lijst, bijv. Album",
+      "create": "Toevoegen",
+      "nameTaken": "Je hebt al een lijst met deze naam.",
+      "limitReached": "Je kunt maximaal {{count}} lijsten hebben.",
+      "saveError": "De lijst kon niet worden opgeslagen."
     }
   },
   "categories": {
@@ -1364,6 +1383,7 @@
       "defaultAllowRatings": "Sterbeoordelingen",
       "defaultAllowLikes": "Likes",
       "defaultAllowFavorites": "Favorieten",
+      "defaultAllowFavoriteLists": "Favorietenlijsten",
       "defaultAllowComments": "Reacties",
       "defaultAllowReactions": "Emoji-reacties",
       "defaultAllowColorLabels": "Kleurlabels",
@@ -2415,7 +2435,16 @@
         "rated": "Beoordeeld",
         "reacted": "Gereageerd",
         "commented": "Becommentarieerd",
-        "labeled": "Kleurlabels"
+        "labeled": "Kleurlabels",
+        "defaultList": "Standaardlijst",
+        "favoriteLists": "Favorietenlijsten",
+        "listCount_one": "{{count}} foto",
+        "listCount_other": "{{count}} foto’s",
+        "listUpdated": "Gewijzigd {{date}}",
+        "showInPhotos": "Tonen bij foto’s",
+        "clearListFilter": "Alle foto’s tonen",
+        "listFilterNamed": "De foto’s in {{name}} worden getoond.",
+        "listFilter": "De foto’s in één favorietenlijst worden getoond."
       },
       "inviteStatus": {
         "pending": "In behandeling",
@@ -3289,6 +3318,8 @@
       "reactions": "Emoji-reacties",
       "reactionsDesc": "Eén emoji per gast per foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Foto's als favoriet markeren",
+      "favoriteLists": "Favorietenlijsten",
+      "favoriteListsDesc": "Gasten sorteren hun favorieten in lijsten met een eigen naam, zoals „Album” of „Afdruk”",
       "identityMode": "Identiteitsmodus",
       "identityModeSimple": "Eenvoudige feedback",
       "identityModeSimpleDesc": "Anoniem, apparaatgebaseerd. Alle bezoekers op hetzelfde apparaat delen de toestand.",

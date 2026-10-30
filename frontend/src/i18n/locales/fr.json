@@ -627,6 +627,25 @@
     "toolbar": {
       "browse": "Outils de la galerie",
       "selection": "Sélection"
+    },
+    "favoriteLists": {
+      "saveTo": "Enregistrer dans la liste",
+      "defaultList": "Mes favoris",
+      "manage": "Gérer les listes…",
+      "title": "Vos listes",
+      "intro": "Classez vos favoris dans des listes. Le signet enregistre dans la liste choisie.",
+      "defaultHint": "Liste par défaut",
+      "nameLabel": "Nom de la liste",
+      "rename": "Renommer {{name}}",
+      "deleteNamed": "Supprimer {{name}}",
+      "confirmDelete_one": "Supprimer « {{name}} » et la {{count}} photo qu’elle contient ?",
+      "confirmDelete_other": "Supprimer « {{name}} » et les {{count}} photos qu’elle contient ?",
+      "delete": "Supprimer la liste",
+      "newPlaceholder": "Nouvelle liste, p. ex. Album",
+      "create": "Ajouter",
+      "nameTaken": "Vous avez déjà une liste portant ce nom.",
+      "limitReached": "Vous pouvez créer jusqu’à {{count}} listes.",
+      "saveError": "La liste n’a pas pu être enregistrée."
     }
   },
   "categories": {
@@ -1385,6 +1404,7 @@
       "defaultAllowRatings": "Notes en étoiles",
       "defaultAllowLikes": "J'aime",
       "defaultAllowFavorites": "Favoris",
+      "defaultAllowFavoriteLists": "Listes de favoris",
       "defaultAllowComments": "Commentaires",
       "defaultAllowReactions": "Réactions emoji",
       "defaultAllowColorLabels": "Étiquettes de couleur",
@@ -2475,7 +2495,16 @@
         "rated": "Notés",
         "reacted": "A réagi",
         "commented": "Commentés",
-        "labeled": "Étiquettes de couleur"
+        "labeled": "Étiquettes de couleur",
+        "defaultList": "Liste par défaut",
+        "favoriteLists": "Listes de favoris",
+        "listCount_one": "{{count}} photo",
+        "listCount_other": "{{count}} photos",
+        "listUpdated": "Modifiée {{date}}",
+        "showInPhotos": "Voir dans les photos",
+        "clearListFilter": "Afficher toutes les photos",
+        "listFilterNamed": "Photos de {{name}}.",
+        "listFilter": "Photos d’une liste de favoris."
       },
       "inviteStatus": {
         "pending": "En attente",
@@ -3349,6 +3378,8 @@
       "reactions": "Réactions emoji",
       "reactionsDesc": "Un emoji par invité et par photo (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Marquer les photos comme favoris",
+      "favoriteLists": "Listes de favoris",
+      "favoriteListsDesc": "Les invités classent leurs favoris dans des listes qu’ils nomment, comme « Album » ou « Tirage »",
       "identityMode": "Mode d'identité",
       "identityModeSimple": "Commentaires simples",
       "identityModeSimpleDesc": "Anonyme, basé sur l'appareil. Tous les visiteurs sur le même appareil partagent le même état.",

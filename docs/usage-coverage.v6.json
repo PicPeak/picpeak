@@ -1623,7 +1623,11 @@
         "GET /:slug/feedback-summary",
         "GET /:slug/my-feedback",
         "GET /:slug/selection",
-        "POST /:slug/selection/submit"
+        "POST /:slug/selection/submit",
+        "GET /:slug/favorite-lists",
+        "POST /:slug/favorite-lists",
+        "PATCH /:slug/favorite-lists/:listId",
+        "DELETE /:slug/favorite-lists/:listId"
       ]
     },
     "galleryGuests.js": {

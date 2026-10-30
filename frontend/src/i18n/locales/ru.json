@@ -660,6 +660,27 @@
     "toolbar": {
       "browse": "Инструменты галереи",
       "selection": "Выбор"
+    },
+    "favoriteLists": {
+      "saveTo": "Сохранять в список",
+      "defaultList": "Моё избранное",
+      "manage": "Управлять списками…",
+      "title": "Ваши списки",
+      "intro": "Разложите избранное по спискам. Закладка сохраняет фото в выбранный список.",
+      "defaultHint": "Список по умолчанию",
+      "nameLabel": "Название списка",
+      "rename": "Переименовать «{{name}}»",
+      "deleteNamed": "Удалить «{{name}}»",
+      "confirmDelete_one": "Удалить «{{name}}» и {{count}} сохранённое в нём фото?",
+      "confirmDelete_few": "Удалить «{{name}}» и {{count}} сохранённых в нём фото?",
+      "confirmDelete_many": "Удалить «{{name}}» и {{count}} сохранённых в нём фото?",
+      "confirmDelete_other": "Удалить «{{name}}» и {{count}} сохранённых в нём фото?",
+      "delete": "Удалить список",
+      "newPlaceholder": "Новый список, например «Альбом»",
+      "create": "Добавить",
+      "nameTaken": "У вас уже есть список с таким названием.",
+      "limitReached": "Можно создать не больше {{count}} списков.",
+      "saveError": "Не удалось сохранить список."
     }
   },
   "categories": {
@@ -1427,6 +1448,7 @@
       "defaultAllowRatings": "Оценка звёздами",
       "defaultAllowLikes": "Лайки",
       "defaultAllowFavorites": "Избранное",
+      "defaultAllowFavoriteLists": "Списки избранного",
       "defaultAllowComments": "Комментарии",
       "defaultAllowReactions": "Эмодзи-реакции",
       "defaultAllowColorLabels": "Цветовые метки",
@@ -2537,7 +2559,18 @@
         "rated": "Оценено",
         "reacted": "Отреагировал",
         "commented": "Прокомментировано",
-        "labeled": "Цветовые метки"
+        "labeled": "Цветовые метки",
+        "defaultList": "Список по умолчанию",
+        "favoriteLists": "Списки избранного",
+        "listCount_one": "{{count}} фото",
+        "listCount_few": "{{count}} фото",
+        "listCount_many": "{{count}} фото",
+        "listCount_other": "{{count}} фото",
+        "listUpdated": "Изменён {{date}}",
+        "showInPhotos": "Показать в фото",
+        "clearListFilter": "Показать все фото",
+        "listFilterNamed": "Показаны фото из списка «{{name}}».",
+        "listFilter": "Показаны фото одного списка избранного."
       },
       "inviteStatus": {
         "pending": "Ожидает",
@@ -3417,6 +3450,8 @@
       "reactions": "Эмодзи-реакции",
       "reactionsDesc": "Один эмодзи на гостя для каждого фото (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Отмечать фото как избранные",
+      "favoriteLists": "Списки избранного",
+      "favoriteListsDesc": "Гости раскладывают избранное по своим спискам, например «Альбом» или «Печать»",
       "identityMode": "Режим идентификации",
       "identityModeSimple": "Простые отзывы",
       "identityModeSimpleDesc": "Анонимно, на основе устройства. Все посетители на одном устройстве используют общее состояние.",

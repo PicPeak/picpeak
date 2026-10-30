@@ -77,6 +77,8 @@ export interface FeedbackSettings {
   allow_color_labels: boolean;
   /** Approve / reject per photo (issue 744). Off unless switched on. */
   allow_decisions?: boolean;
+  /** Named favourite lists per guest (issue 2303). Off unless switched on. */
+  allow_favorite_lists?: boolean;
   /** "Finish selection" for guests (issue 1733). Off unless switched on. */
   allow_selection_submit?: boolean;
   /** Drawing on a photo with a comment (issue 1733). Off unless switched on. */
@@ -148,6 +150,28 @@ export interface MyFeedback {
   /** The viewer's approve / reject (issue 744) and the reason they gave. */
   decision?: PhotoDecision | null;
   decision_reason?: string | null;
+  /**
+   * The viewer's lists that hold the photo (issue 2303), null for the default
+   * list. Only while the gallery has lists on.
+   */
+  favorite_list_ids?: Array<number | null>;
+}
+
+/** One of the guest's own favourite lists (issue 2303). */
+export interface FavoriteList {
+  id: number;
+  name: string;
+  count: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FavoriteListsResponse {
+  /** Photos in the guest's default list. */
+  default_count: number;
+  lists: FavoriteList[];
+  max_lists: number;
+  max_name_length: number;
 }
 
 export interface FeedbackResponse {
@@ -370,6 +394,8 @@ class FeedbackService {
     decision?: PhotoDecision;
     /** Only with feedback_type 'comment' (issue 1733). */
     annotation?: PhotoAnnotation;
+    /** Only with feedback_type 'favorite' (issue 2303): null = default list. */
+    favorite_list_id?: number | null;
     guest_name?: string;
     guest_email?: string;
   }) {
@@ -428,6 +454,42 @@ class FeedbackService {
   async getMyFeedback(slug: string) {
     const response = await api.get(`/gallery/${slug}/my-feedback`);
     return response.data;
+  }
+
+  // Named favourite lists (issue 2303). The default list has no route.
+  async getFavoriteLists(slug: string): Promise<FavoriteListsResponse> {
+    const response = await api.get(`/gallery/${slug}/favorite-lists`);
+    return response.data;
+  }
+
+  async createFavoriteList(slug: string, name: string): Promise<FavoriteList> {
+    try {
+      const response = await api.post(`/gallery/${slug}/favorite-lists`, { name });
+      return response.data.list;
+    } catch (error) {
+      explainFeedbackLock(error);
+      throw error;
+    }
+  }
+
+  async renameFavoriteList(slug: string, listId: number, name: string): Promise<FavoriteList> {
+    try {
+      const response = await api.patch(`/gallery/${slug}/favorite-lists/${listId}`, { name });
+      return response.data.list;
+    } catch (error) {
+      explainFeedbackLock(error);
+      throw error;
+    }
+  }
+
+  /** Deletes the list and the favourites in it. */
+  async deleteFavoriteList(slug: string, listId: number): Promise<void> {
+    try {
+      await api.delete(`/gallery/${slug}/favorite-lists/${listId}`);
+    } catch (error) {
+      explainFeedbackLock(error);
+      throw error;
+    }
   }
 }
 

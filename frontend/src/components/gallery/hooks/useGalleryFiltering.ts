@@ -23,13 +23,17 @@ export interface GalleryFilterOptions {
   // Premium and Story: "Liked" means the viewer's own likes (`is_liked`),
   // the same set their heart toggles and their nav count read.
   likedIsOwn?: boolean;
+  // "Saved" means the viewer's own favourites in myFeedbackPhotoIds: guest
+  // identity mode, and every mode while the gallery has favourite lists
+  // (issue 2303), where the set holds the active list.
+  favoritedIsOwn?: boolean;
   // Videos first (issue 2263): every video ahead of every photo, `sortBy`
   // within each group.
   videosFirst?: boolean;
 }
 export const resolveMediaType = (photo: Photo): 'photo' | 'video' =>
   photo.media_type === 'video' || photo.mime_type?.startsWith('video/') || photo.type === 'video' ? 'video' : 'photo';
-export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAll = false, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null, minRating = null, selectedTagKeys, likedIsOwn = false, videosFirst = false }: GalleryFilterOptions) {
+export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAll = false, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null, minRating = null, selectedTagKeys, likedIsOwn = false, favoritedIsOwn = isGuestIdentityMode, videosFirst = false }: GalleryFilterOptions) {
   return useMemo(() => {
     if (!sourcePhotos) return [];
 
@@ -73,7 +77,7 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
           : isGuestIdentityMode
             ? myFeedbackPhotoIds.liked.has(photo.id)
             : (photo.like_count || 0) > 0,
-        favorited: (photo) => isGuestIdentityMode
+        favorited: (photo) => favoritedIsOwn
           ? myFeedbackPhotoIds.favorited.has(photo.id)
           : (photo.favorite_count || 0) > 0,
         rated: (photo) => isGuestIdentityMode
@@ -179,5 +183,5 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, viewAl
     }
     
     return photos;
-  }, [sourcePhotos, categories, folderId, viewAll, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey, minRating, selectedTagKeys, likedIsOwn, videosFirst]);
+  }, [sourcePhotos, categories, folderId, viewAll, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey, minRating, selectedTagKeys, likedIsOwn, favoritedIsOwn, videosFirst]);
 }

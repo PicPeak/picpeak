@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 
-import { Button, Card, EmptyState, Loading } from '../../components/common';
+import { Button, Card, EmptyState, Loading, Notice } from '../../components/common';
 import { PasswordResetModal, PublishGalleryDialog, SendGalleryEmailDialog, DuplicateEventDialog, EventRenameDialog, AdminGuestsList } from '../../components/admin';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
@@ -175,9 +175,30 @@ export const EventDetailsPage: React.FC = () => {
     }
   }, [eventLoading, event?.is_priced, activeTab]);
 
+  // One favourite list, or one guest's favourites (issue 2303): set by the
+  // guest detail's "Show in photos" link as ?favorite_list / ?favorite_guest,
+  // kept in the URL so the view can be copied, cleared from the notice.
+  const favoriteListParam = searchParams.get('favorite_list');
+  const favoriteGuestParam = Number(searchParams.get('favorite_guest'));
+  const favoriteListFilter = useMemo<Pick<FeedbackFilters, 'favoriteList' | 'favoriteGuest'>>(() => {
+    const listId = Number(favoriteListParam);
+    return {
+      favoriteList: favoriteListParam === 'default' ? 'default'
+        : Number.isSafeInteger(listId) && listId > 0 ? listId : undefined,
+      favoriteGuest: Number.isSafeInteger(favoriteGuestParam) && favoriteGuestParam > 0 ? favoriteGuestParam : undefined,
+    };
+  }, [favoriteListParam, favoriteGuestParam]);
+  const favoriteListActive = favoriteListFilter.favoriteList !== undefined || favoriteListFilter.favoriteGuest !== undefined;
+  const clearFavoriteListFilter = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    ['favorite_list', 'favorite_guest', 'favorite_label'].forEach((key) => next.delete(key));
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   // Merge feedback filters into the photo query so the grid follows them.
   const combinedPhotoFilters: PhotoFilterParams = useMemo(() => ({
     ...photoFilters,
+    ...favoriteListFilter,
     hasLikes: feedbackFilters.hasLikes || undefined,
     hasFavorites: feedbackFilters.hasFavorites || undefined,
     hasComments: feedbackFilters.hasComments || undefined,
@@ -186,7 +207,7 @@ export const EventDetailsPage: React.FC = () => {
     myColorLabels: feedbackFilters.myColorLabels?.length ? feedbackFilters.myColorLabels : undefined,
     decisions: feedbackFilters.decisions?.length ? feedbackFilters.decisions : undefined,
     logic: feedbackFilters.logic,
-  }), [photoFilters, feedbackFilters]);
+  }), [photoFilters, feedbackFilters, favoriteListFilter]);
 
   // Photos for the Photos tab and the Settings hero picker. Polls every 2s
   // while any photo is still being processed.
@@ -431,6 +452,22 @@ export const EventDetailsPage: React.FC = () => {
             />
           )}
 
+          {activeTab === 'photos' && favoriteListActive && (
+            <Notice
+              tone="info"
+              className="mb-4"
+              action={(
+                <Button size="sm" variant="outline" onClick={clearFavoriteListFilter}>
+                  {t('admin.guests.detail.clearListFilter', 'Show all photos')}
+                </Button>
+              )}
+            >
+              {searchParams.get('favorite_label')
+                ? t('admin.guests.detail.listFilterNamed', { name: searchParams.get('favorite_label'), defaultValue: 'Showing the photos in {{name}}.' })
+                : t('admin.guests.detail.listFilter', 'Showing the photos in one favorite list.')}
+            </Notice>
+          )}
+
           {activeTab === 'photos' && (
             <PhotosTab
               event={event}
@@ -442,7 +479,9 @@ export const EventDetailsPage: React.FC = () => {
               categories={categories}
               photoFilters={photoFilters}
               setPhotoFilters={setPhotoFilters}
-              feedbackFilters={feedbackFilters}
+              // Always the URL's list filter, undefined once cleared: the
+              // panel writes these props back into the state on any change.
+              feedbackFilters={{ ...feedbackFilters, ...favoriteListFilter }}
               setFeedbackFilters={setFeedbackFilters}
               filterSummary={filterSummary}
               showMediaFilter={showMediaFilter}
