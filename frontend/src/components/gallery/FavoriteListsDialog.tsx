@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 
 import { Button } from '../common';
-import { feedbackService } from '../../services/feedback.service';
+import { feedbackService, type FavoriteListsResponse } from '../../services/feedback.service';
 import { favoriteListsQueryKey, useFavoriteListsOptional } from '../../contexts/FavoriteListsContext';
 import { feedbackLockKind } from '../../utils/feedbackLock';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
@@ -75,6 +75,13 @@ export const FavoriteListsDialog: React.FC = () => {
     run(async () => {
       const list = await feedbackService.createFavoriteList(slug, name);
       setNewName('');
+      // Into the cache first: the check that drops a remembered list that is
+      // gone would otherwise meet the new id before the refetch lands.
+      queryClient.setQueriesData<FavoriteListsResponse>({ queryKey: favoriteListsQueryKey(slug) }, (current) => (
+        current && !current.lists.some((entry) => entry.id === list.id)
+          ? { ...current, lists: [...current.lists, list] }
+          : current
+      ));
       // A new list is where the guest means to save next.
       setActiveListId(list.id);
       refresh();

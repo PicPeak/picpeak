@@ -49,6 +49,13 @@ vi.mock('../../../services/feedback.service', () => ({
   },
 }));
 
+// Null (no provider) unless a test sets it: simple identity mode.
+let guestIdentityValue: any = null;
+vi.mock('../../../contexts/GuestIdentityContext', async () => {
+  const actual = await vi.importActual<typeof import('../../../contexts/GuestIdentityContext')>('../../../contexts/GuestIdentityContext');
+  return { ...actual, useGuestIdentityOptional: () => guestIdentityValue };
+});
+
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 vi.mock('../../../hooks/useFeedbackLimitModal', () => ({
   useFeedbackLimitModal: () => ({ modal: null, handleError: () => false }),
@@ -81,6 +88,7 @@ beforeEach(() => {
   submitFeedback.mockReset().mockResolvedValue({ created: true });
   getFavoriteLists.mockReset();
   createFavoriteList.mockReset();
+  guestIdentityValue = null;
   try { window.localStorage.clear(); } catch { /* ignore */ }
 });
 
@@ -211,5 +219,74 @@ describe('the Saved filter', () => {
 
   it('keeps the aggregate in simple mode without lists, as before', () => {
     expect(ids({})).toEqual([1, 2]);
+  });
+});
+
+describe('creating a list with the real state', () => {
+  const Harness: React.FC = () => {
+    const value = useFavoriteListsState('summer', true);
+    return (
+      <FavoriteListsContext.Provider value={value}>
+        <button type="button" onClick={() => value?.openManager()}>open</button>
+        <span data-testid="active">{String(value?.activeListId)}</span>
+        <FavoriteListsDialog />
+      </FavoriteListsContext.Provider>
+    );
+  };
+
+  it('keeps the new list active while the lists refetch', async () => {
+    getFavoriteLists
+      .mockResolvedValueOnce({ default_count: 0, lists: [{ id: 4, name: 'Print', count: 0 }], max_lists: 20, max_name_length: 60 })
+      // The refetch after the create has not landed yet.
+      .mockReturnValue(new Promise(() => {}));
+    createFavoriteList.mockResolvedValue({ id: 12, name: 'Mum', count: 0 });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><Harness /></QueryClientProvider>);
+    await waitFor(() => expect(getFavoriteLists).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByTestId('active').textContent).toBe('null'));
+
+    fireEvent.click(screen.getByText('open'));
+    fireEvent.change(await screen.findByPlaceholderText('New list, e.g. Album'), { target: { value: 'Mum' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() => expect(createFavoriteList).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('active').textContent).toBe('12'));
+    // Still the new list once every effect has run.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByTestId('active').textContent).toBe('12');
+    expect(window.localStorage.getItem('picpeak:favorite-list:summer')).toBe('12');
+  });
+});
+
+describe('the switcher in guest identity mode', () => {
+  it('asks for the guest\'s name before opening the list manager', async () => {
+    let register: () => void = () => {};
+    guestIdentityValue = {
+      identityMode: 'guest',
+      ensureIdentity: vi.fn(() => new Promise<void>((resolve) => { register = resolve; })),
+    };
+    const value = lists();
+    wrap(value, <FavoriteListSwitcher />);
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '__manage' } });
+    expect(guestIdentityValue.ensureIdentity).toHaveBeenCalled();
+    expect(value.openManager).not.toHaveBeenCalled();
+
+    register();
+    await waitFor(() => expect(value.openManager).toHaveBeenCalled());
+  });
+
+  it('stays closed when the guest cancels the prompt', async () => {
+    guestIdentityValue = {
+      identityMode: 'guest',
+      ensureIdentity: vi.fn(() => Promise.reject(new Error('user_cancelled'))),
+    };
+    const value = lists();
+    wrap(value, <FavoriteListSwitcher />);
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '__manage' } });
+    await waitFor(() => expect(guestIdentityValue.ensureIdentity).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(value.openManager).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFavoriteListsOptional } from '../../contexts/FavoriteListsContext';
+import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 
 const MANAGE = '__manage';
 
@@ -19,6 +20,7 @@ interface FavoriteListSwitcherProps {
 export const FavoriteListSwitcher: React.FC<FavoriteListSwitcherProps> = ({ variant = 'panel', className = '' }) => {
   const { t } = useTranslation();
   const favoriteLists = useFavoriteListsOptional();
+  const guestIdentity = useGuestIdentityOptional();
   if (!favoriteLists) return null;
 
   const { lists, defaultCount, activeListId, setActiveListId, openManager } = favoriteLists;
@@ -27,7 +29,13 @@ export const FavoriteListSwitcher: React.FC<FavoriteListSwitcherProps> = ({ vari
   const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const { value } = event.target;
     if (value === MANAGE) {
-      openManager();
+      // In guest mode a list belongs to a registered guest: ask for the name
+      // first, as the bookmark does, or creating one is refused.
+      if (guestIdentity?.identityMode === 'guest') {
+        guestIdentity.ensureIdentity().then(openManager, () => {});
+      } else {
+        openManager();
+      }
       return;
     }
     setActiveListId(value === '' ? null : Number(value));

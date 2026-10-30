@@ -3,7 +3,7 @@
  *
  * A guest sorts their favourites into lists they name. NULL on the favourite
  * row is the default list. photos.favorite_count stays "distinct guests who
- * saved it", the cap is per list, and with the gallery toggle off nothing
+ * saved it", the cap counts photos across every list, and with the gallery toggle off nothing
  * changes for the guest.
  */
 
@@ -295,15 +295,23 @@ describe('named favourite lists (issue 2303)', () => {
       expect(state.body.selection.used).toBe(1);
     });
 
-    it('applies the favourites cap per list', async () => {
-      await setSettings({ max_favorites_per_guest: 1 });
+    it('counts the favourites cap across every list, a photo once', async () => {
+      await setSettings({ max_favorites_per_guest: 2 });
       const listId = (await createList(guests[0], 'Print')).body.list.id;
       expect((await favorite(guests[0], photoIds[0])).status).toBe(200);
-      const capped = await favorite(guests[0], photoIds[1]);
+      // The same photo in a second list takes no new slot.
+      expect((await favorite(guests[0], photoIds[0], listId)).body).toMatchObject({ created: true });
+      expect((await favorite(guests[0], photoIds[1], listId)).body).toMatchObject({ created: true });
+      // Two photos picked: a third is refused in any list.
+      const capped = await favorite(guests[0], photoIds[2]);
       expect(capped.status).toBe(403);
       expect(capped.body.code).toBe('FAVORITE_LIMIT_REACHED');
-      expect((await favorite(guests[0], photoIds[1], listId)).body).toMatchObject({ created: true });
       expect((await favorite(guests[0], photoIds[2], listId)).body.code).toBe('FAVORITE_LIMIT_REACHED');
+      // At the cap, a picked photo still goes into another list.
+      expect((await favorite(guests[0], photoIds[1])).body).toMatchObject({ created: true });
+
+      const state = await as(guests[0], 'get', '/selection');
+      expect(state.body.selection).toMatchObject({ used: 2, cap: 2 });
     });
   });
 

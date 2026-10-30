@@ -260,7 +260,7 @@ class FeedbackService {
    * duplicate-check uses (guest_id when present, fall back to
    * guest_identifier). Used for the per-guest favorite/like caps (#655).
    */
-  async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier, executor = db, favoriteListId = undefined) {
+  async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier, executor = db) {
     const query = executor('photo_feedback')
       // Nor do likes on photos in the trash: the guest cannot see or undo them.
       .modify(wherePhotoLive, 'photo_feedback.photo_id')
@@ -280,10 +280,9 @@ class FeedbackService {
     } else {
       query.where('guest_identifier', guestIdentifier);
     }
-    // The favourites cap is per list (issue 2303), and a photo counts once:
-    // without lists it may still sit in two lists left from when they were on.
+    // A photo counts once, in however many of the guest's favourite lists it
+    // sits (issue 2303).
     if (feedbackType === 'favorite') {
-      scopeFavoriteList(query, feedbackType, favoriteListId);
       const distinct = await query.countDistinct('photo_feedback.photo_id as count').first();
       return parseInt(distinct?.count, 10) || 0;
     }
@@ -807,9 +806,17 @@ class FeedbackService {
       // always allowed. NULL or 0 stored in the column means "unlimited" —
       // the photographer hasn't opted in to a cap for this event.
       if (feedback_type === 'favorite' || feedback_type === 'like') {
-        if (cap && cap > 0) {
+        // The favourites cap counts the guest's photos across every list
+        // (issue 2303), as the selection counter does: a photo already in
+        // another list takes no new slot.
+        const pickedElsewhere = feedback_type === 'favorite' && cap && cap > 0
+          && await executor('photo_feedback')
+            .where({ photo_id: photoId, event_id: eventId, feedback_type, is_hidden: false })
+            .where(guest_id ? { guest_id } : { guest_identifier: guestIdentifier })
+            .first('id');
+        if (cap && cap > 0 && !pickedElsewhere) {
           const currentCount = await this.countGuestFeedback(
-            eventId, feedback_type, guest_id, guestIdentifier, executor, favoriteListId,
+            eventId, feedback_type, guest_id, guestIdentifier, executor,
           );
           if (currentCount >= cap) {
             // Don't insert; surface a structured payload so the route layer

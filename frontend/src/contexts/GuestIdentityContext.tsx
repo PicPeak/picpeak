@@ -170,6 +170,10 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
     // Every mounted photo, regardless of id.
     queryClient.invalidateQueries({ queryKey: ['photo-feedback', slug] });
+    // The guest's own favourite lists (issue 2303). Reset, not invalidate:
+    // their owner sits above this provider and keeps its active list across
+    // the remount, so the previous guest's lists must not linger meanwhile.
+    queryClient.resetQueries({ queryKey: ['favorite-lists', slug] });
 
     // Only on a SWITCH away from an established identity — signing in for the
     // first time (null -> A) must not remount, or registering from the prompt
