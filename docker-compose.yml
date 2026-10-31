@@ -167,6 +167,7 @@ services:
       - BACKUP_DIR=/backup
       # Watch-folder auto-import: max photos processed in parallel (default 2).
       - FILE_WATCHER_CONCURRENCY=${FILE_WATCHER_CONCURRENCY:-2}
+      - PREVIEW_REGEN_CONCURRENCY=${PREVIEW_REGEN_CONCURRENCY:-1}
       # External-media folder watcher (issue 1187); all optional, see .env.example.
       - EXTERNAL_MEDIA_WATCH=${EXTERNAL_MEDIA_WATCH:-true}
       - EXTERNAL_MEDIA_WATCH_POLLING=${EXTERNAL_MEDIA_WATCH_POLLING:-false}
