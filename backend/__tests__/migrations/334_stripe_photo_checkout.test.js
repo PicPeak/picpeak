@@ -77,7 +77,7 @@ describe.each(['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : [])])('
 
   test('promo identity upgrade reruns, erases gallery challenges on deletion and preserves financial identity state', async () => {
     await migration.up(db);
-    const identity = require('../../migrations/core/336_photo_checkout_promo_identity');
+    const identity = require('../../migrations/core/340_photo_checkout_promo_identity');
     await identity.up(db); await identity.up(db);
     const hash = require('crypto').randomBytes(32).toString('hex');
     await db('photo_purchase_orders').update({ promo_identity_hash: hash });
@@ -94,7 +94,7 @@ describe.each(['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : [])])('
   });
 
   test('repairs an interrupted verification-table index step', async () => {
-    const identity = require('../../migrations/core/336_photo_checkout_promo_identity');
+    const identity = require('../../migrations/core/340_photo_checkout_promo_identity');
     await identity.up(db);
     for (const name of ['challenge_unique', 'email_hash_index', 'expires_at_index']) {
       await db.raw('DROP INDEX ??', [`photo_checkout_verifications_${name}`]);
