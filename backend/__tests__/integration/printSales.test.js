@@ -317,7 +317,7 @@ test('settings recover their empty seed after restoring a backup from before thi
 });
 test('migration rollback refuses to discard retained orders', async () => {
   const q = await quoted();
-  await expect(require('../../migrations/core/337_print_sales').down(db)).rejects.toThrow('destructive rollback');
+  await expect(require('../../migrations/core/341_print_sales').down(db)).rejects.toThrow('destructive rollback');
   expect((await orders.owned(q.id, customerId, event.id)).status).toBe('quoted');
 });
 test.each(['png', 'tiff'])('studio-selected %s artwork and supplier instructions survive later configuration edits', async format => {
@@ -489,7 +489,7 @@ test('accepts multiline buyer policies and normalises line endings before freezi
 
 test('repairs a partially applied gallery-column migration without changing existing shop configuration', async () => {
   await db.schema.alterTable('events', t => t.dropColumn('print_sales_admin_id'));
-  await require('../../migrations/core/337_print_sales').up(db);
+  await require('../../migrations/core/341_print_sales').up(db);
   expect(await db.schema.hasColumn('events', 'print_sales_admin_id')).toBe(true);
   expect((await P.settings(db)).policy).toBe(config.policy);
 });
