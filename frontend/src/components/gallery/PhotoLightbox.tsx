@@ -1866,8 +1866,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               onReveal={() => setOpening((prev) => prev && { ...prev, revealing: true })}
               onDone={() => setOpening(null)}
               // Its image is gone (a revoked tile URL): the fetched thumbnail
-              // takes its place.
-              onError={() => setOpening((prev) => prev && { ...prev, origin: 'thumbnail' })}
+              // takes its place, unless the slide is already in: no load would
+              // follow to take the thumbnail away again.
+              onError={() => setOpening((prev) => prev && (prev.loaded ? null : { ...prev, origin: 'thumbnail' }))}
             />
           )}
           <div

@@ -1,8 +1,8 @@
 /**
  * The grid tile a photo was opened from, for the lightbox to grow out of.
  *
- * Every layout calls `onPhotoClick(index)` without the event, and threading
- * one through all of them would touch every layout for an animation. Instead
+ * The layouts of the grid call `onPhotoClick(index)` without the event, and
+ * threading one through all of them would touch each for an animation. Instead
  * this listens for clicks on the document in the capture phase, before the
  * tile's own handler runs, and the opener reads the clicked tile back while
  * that same click is still being dispatched. A lightbox opened any other way
@@ -24,6 +24,22 @@ export interface LightboxOrigin {
 const tileImageAt = (target: EventTarget | null): HTMLImageElement | null => {
   const tile = target instanceof Element ? target.closest(`[${GRID_TILE_ATTR}]`) : null;
   return tile?.querySelector('img') ?? null;
+};
+
+// Where an image's pixels are inside its box. object-cover fills the box; an
+// object-contain one (the Carousel's) leaves bars, and the grow must start
+// from the photo, not from them.
+const paintedRect = (image: HTMLImageElement, box: LightboxOrigin['rect']): LightboxOrigin['rect'] => {
+  if (getComputedStyle(image).objectFit !== 'contain') return box;
+  const scale = Math.min(box.width / image.naturalWidth, box.height / image.naturalHeight);
+  const width = image.naturalWidth * scale;
+  const height = image.naturalHeight * scale;
+  return {
+    left: box.left + (box.width - width) / 2,
+    top: box.top + (box.height - height) / 2,
+    width,
+    height,
+  };
 };
 
 export function useTileClickOrigin() {
@@ -60,6 +76,6 @@ export function useTileClickOrigin() {
     // position, and its target is the tile itself.
     const { clientX: x, clientY: y } = click;
     if (click.detail > 0 && (x < left || x > left + width || y < top || y > top + height)) return null;
-    return { src, rect: { left, top, width, height } };
+    return { src, rect: paintedRect(image, { left, top, width, height }) };
   }, []);
 }

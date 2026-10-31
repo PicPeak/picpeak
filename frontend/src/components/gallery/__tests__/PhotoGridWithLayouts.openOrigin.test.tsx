@@ -80,6 +80,23 @@ describe('PhotoGridWithLayouts — the tile the lightbox opens from', () => {
     });
   });
 
+  it('starts from the photo, not its bars, in an object-contain box (the Carousel)', () => {
+    render(<PhotoGridWithLayouts photos={photos} slug="g" />);
+    const image = tileImage(11);
+    loaded(image, { left: 0, top: 100, width: 1200, height: 600 });
+    Object.defineProperty(image, 'naturalHeight', { value: 600 });
+    image.style.objectFit = 'contain';
+
+    // Portrait 300 x 600 in a 1200 x 600 box. A click on the bars, as on the
+    // box's "View full size" button, still opens from the tile.
+    fireEvent.click(screen.getByTestId('overlay-11'), { detail: 1, clientX: 20, clientY: 200 });
+
+    expect(lightboxProps.openOrigin).toEqual({
+      src: 'blob:tile-11',
+      rect: { left: 450, top: 100, width: 300, height: 600 },
+    });
+  });
+
   it('takes a keyboard click, which has no position, from the tile itself', () => {
     render(<PhotoGridWithLayouts photos={photos} slug="g" />);
     loaded(tileImage(10));
