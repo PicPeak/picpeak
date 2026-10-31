@@ -117,7 +117,7 @@ linux('the process guard and kernel leases, where the host has them', () => {
   });
   test('the ordinary image worker can load and decode Sharp under its production native cap', async () => {
     const result = await runner.run(process.execPath,
-      ['--jitless', '--no-expose-wasm', '--max-old-space-size=64', '-e',
+      [...require('../src/services/isolatedSharp').nodeFlags, '-e',
         "const sharp=require('sharp');sharp({create:{width:16,height:16,channels:3,background:'white'}}).jpeg().toBuffer().then(bytes=>sharp(bytes).metadata()).then(meta=>process.stdout.write(JSON.stringify({width:meta.width,height:meta.height,format:meta.format}))).catch(error=>{process.stderr.write(error.stack);process.exitCode=1})"],
       { memoryBytes: 768 * 1024 * 1024, cpuSeconds: 30, wallMs: 30000 }).catch(error => {
       throw new Error(`Owned ordinary Sharp control failed (${error.exitCode}/${error.signal}): ${error.cause?.message || error.message}`, { cause: error });

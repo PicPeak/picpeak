@@ -138,6 +138,14 @@ describe('isolated image runner', () => {
     await fs.rm(workspace, { recursive: true, force: true });
   });
 
+  test('the worker flags start this Node, with WebAssembly off and nothing else on stdout', () => {
+    const { execFileSync } = require('child_process');
+    // CI runs Node 22, which accepts the flag; only Node 24 would catch it coming back.
+    expect(sharp.nodeFlags).not.toContain('--no-expose-wasm');
+    const stdout = execFileSync(process.execPath, [...sharp.nodeFlags, '-p', 'typeof WebAssembly'], { encoding: 'utf8' });
+    expect(stdout).toBe('undefined\n');
+  });
+
   test('runs on this host and reports how it is isolated', async () => {
     expect(await sharp.prepare()).toBe(process.platform === 'linux' ? 'capped' : 'child');
   });
