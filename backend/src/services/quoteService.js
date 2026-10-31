@@ -1044,10 +1044,13 @@ async function getQuotePdfBuffer(quoteId) {
  */
 async function renderQuotePdfFromPayload(payload) {
   const customer = await db('customer_accounts').where({ id: payload.customerAccountId }).first();
+  // The same fallbacks as createQuote, so the preview is the quote it saves.
+  const profile = (await businessProfileService.getProfile()).profile;
+  const currency = (payload.currency || profile?.default_currency || 'CHF').toUpperCase();
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
   const preparedLineItems = await prepareQuoteLineItems(payload.lineItems, {
     customerId: payload.customerAccountId,
-    currency: (payload.currency || 'CHF').toUpperCase(),
+    currency,
     hours: payload.hours,
     days: payload.days,
   });
@@ -1060,8 +1063,8 @@ async function renderQuotePdfFromPayload(payload) {
   const fakeQuote = {
     quote_number: 'PREVIEW',
     customer_account_id: payload.customerAccountId,
-    language: payload.language || customer?.preferred_language || 'de',
-    currency: (payload.currency || 'CHF').toUpperCase(),
+    language: payload.language || customer?.preferred_language || profile?.default_locale || 'de',
+    currency,
     issue_date: payload.issueDate || new Date().toISOString().slice(0, 10),
     valid_until: payload.validUntil,
     intro_text: payload.introText,

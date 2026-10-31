@@ -48,6 +48,8 @@ import { businessProfileService } from '../../../services/businessProfile.servic
 import { userManagementService } from '../../../services/userManagement.service';
 import { settingsService } from '../../../services/settings.service';
 import { useAdminAuth } from '../../../contexts/AdminAuthContext';
+import { usePermissions } from '../../../contexts/PermissionsContext';
+import { currencyOptions } from '../../../constants/currencies';
 import { toast } from 'react-toastify';
 import { quoteErrorText } from '../../../utils/quoteErrors';
 import { todayIsoDate } from '../../../utils/localDate';
@@ -272,11 +274,15 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
   // A new quote starts in the business's currency once its profile is in,
   // unless the admin picked one first.
   const currencyChosenRef = useRef(false);
+  // The profile route asks for these (adminBusinessProfile.js); without them
+  // the form stays on CHF, as it always did.
+  const { hasAnyPermission, isSuperAdmin } = usePermissions();
+  const canReadProfile = isSuperAdmin || hasAnyPermission(['settings.view', 'settings.banking']);
   const { data: profileSnapshot } = useQuery({
     queryKey: ['business-profile-snapshot'],
     queryFn: () => businessProfileService.get(),
     staleTime: 5 * 60 * 1000,
-    enabled: !isEdit,
+    enabled: !isEdit && canReadProfile,
   });
   useEffect(() => {
     const profile = profileSnapshot?.profile;
@@ -622,6 +628,9 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
             customerAccountId: c.id,
             customerLabel: c.companyName || c.displayName || c.email,
             customerIsPassive: Boolean(c.isPassive),
+            // A new quote has no language of its own: the server takes this
+            // customer's, not the one picked before.
+            ...(isEdit ? {} : { language: '' }),
           }))}
           onCreate={(c) => setForm((f) => ({
             ...f,
@@ -634,6 +643,7 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
           }))}
           onClear={() => setForm((f) => ({
             ...f, customerAccountId: null, customerLabel: '', customerIsPassive: false,
+            ...(isEdit ? {} : { language: '' }),
           }))}
           searchPlaceholder={t('quotes.customerSearch', 'Search customer by email or company…') as string}
         />
@@ -778,7 +788,7 @@ export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId,
               setForm((f) => ({ ...f, currency: e.target.value }));
             }}
               className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm">
-              <option>CHF</option><option>EUR</option><option>USD</option><option>GBP</option>
+              {currencyOptions(form.currency).map((code) => <option key={code}>{code}</option>)}
             </select>
           </div>
         </div>
