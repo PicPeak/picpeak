@@ -48,6 +48,20 @@ describe('validateUploadedFiles queueing', () => {
     expect(calls.length).toBeGreaterThan(0);
   });
 
+  it('reports a server that cannot load the image library as that, not as a bad file', async () => {
+    const sharp = require('../../src/services/isolatedSharp');
+    const failure = Object.assign(new Error('Image processing is unavailable on this server'), { code: 'SHARP_UNAVAILABLE' });
+    sharp.mockImplementationOnce(() => ({ metadata: jest.fn().mockRejectedValue(failure) }));
+    const file = path.join(dir, 'fine.jpg');
+    fs.writeFileSync(file, 'x');
+    const req = { files: [{ originalname: 'fine.jpg', path: file }] };
+    await validateUploadedFiles(req, {}, () => {});
+    expect(req.files).toHaveLength(0);
+    expect(req.invalidFiles).toEqual([expect.objectContaining({
+      filename: 'fine.jpg', code: 'SHARP_UNAVAILABLE', error: 'Image processing is unavailable on this server',
+    })]);
+  });
+
   it('leaves a non-decodable type alone', async () => {
     const file = path.join(dir, 'clip.mov');
     fs.writeFileSync(file, 'x');

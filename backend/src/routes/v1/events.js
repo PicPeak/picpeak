@@ -531,7 +531,8 @@ async function handleV1PhotoUpload(req, res) {
     await validateUploadedFiles(checked, res, () => {});
     if (checked.files.length === 0) {
       await fs.unlink(tempPath).catch(() => {});
-      return res.status(400).json({ error: `Invalid image file: ${req.file.originalname}` });
+      const [rejected] = checked.invalidFiles || [];
+      return res.status(400).json({ error: rejected?.code === require('../../services/imageResourcePolicy').LIBRARY_UNAVAILABLE ? rejected.error : `Invalid image file: ${req.file.originalname}` });
     }
 
     const event = await db('events').where({ id: req.params.id }).first();

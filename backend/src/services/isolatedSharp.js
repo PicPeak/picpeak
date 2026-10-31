@@ -135,6 +135,10 @@ function resolveMode(policy) {
       } catch (exit) {
         logger.warn(`IMAGE PROCESSING RUNS INSIDE THE BACKEND PROCESS: ${reason}, and a plain image worker did not start either ` +
           `(${startFailure(exit)}). The pixel limit still applies, but a crash or memory exhaustion in the image library now takes the backend down with it.`);
+        // No worker starts when sharp itself cannot load: every image would
+        // fail, so this line has to be findable before the first upload.
+        try { require('./sharpWorker').loadSharp(); }
+        catch (error) { logger.error(`IMAGE PROCESSING IS UNAVAILABLE: ${error.message}${error.detail ? ` (${error.detail})` : ''}`); }
         return 'inprocess';
       }
     })();

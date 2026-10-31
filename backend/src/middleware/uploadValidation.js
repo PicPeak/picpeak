@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const sharp = require('../services/isolatedSharp');
 const logger = require('../utils/logger');
+const { LIBRARY_UNAVAILABLE } = require('../services/imageResourcePolicy');
 
 /**
  * Validate uploaded file is complete and not corrupted
@@ -30,6 +31,8 @@ async function validateUploadedFile(filePath, extension, queueing = {}) {
           ...queueing
         }).metadata();
       } catch (metadataError) {
+        // A server that cannot load the image library says nothing about the file.
+        if (metadataError.code === LIBRARY_UNAVAILABLE) throw metadataError;
         // If metadata reading fails, the file is likely incomplete
         throw Object.assign(new Error(`Invalid image file: ${metadataError.message}`), { code: metadataError.code, imageLimit: metadataError.imageLimit, imageMax: metadataError.imageMax });
       }
