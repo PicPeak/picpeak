@@ -13,6 +13,7 @@
  */
 
 const express = require('express');
+const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, param, validationResult } = require('express-validator');
@@ -42,6 +43,7 @@ const { getClientIp } = require('../utils/requestIp');
 // human-readable rule below: minimum length, at least one uppercase letter,
 // at least one digit. No special-character or breach-list requirement.
 const customerAccountsService = require('../services/customerAccountsService');
+const customerContactsService = require('../services/customerContactsService');
 const { customerAuth } = require('../middleware/customerAuth');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 const { auditedUpdate } = require('../services/accountingHistory');
@@ -51,6 +53,57 @@ const router = express.Router();
 const TOKEN_TTL_SECONDS = 24 * 60 * 60; // mirrors admin tokens
 
 // ---- login -------------------------------------------------------------
+
+function signSession({ customer, contact }, ipAddress) {
+  return jwt.sign({
+    customerId: customer.id,
+    email: (contact || customer).email,
+    type: 'customer',
+    ip: ipAddress,
+    loginTime: Date.now(),
+    // One customer has several logins, which the iat-based revocation key
+    // cannot tell apart: a contact's session is revoked by its own jti.
+    ...(contact ? { contactId: contact.id, jti: crypto.randomUUID() } : {}),
+  }, process.env.JWT_SECRET, {
+    expiresIn: TOKEN_TTL_SECONDS,
+    issuer: 'picpeak-auth',
+  });
+}
+
+// Resolve effective features + branding right here so a login response carries
+// the same shape as /session. Without this, the first render after login would
+// use the context's DEFAULT_FEATURES (all false).
+async function sessionPayload({ customer, contact }) {
+  const person = contact || customer;
+  const rights = contact ? customerContactsService.rightsOf(contact) : customerContactsService.HOLDER_RIGHTS;
+  let features = { calendar: false, quotes: false, bills: false, hoursLogging: false, contracts: false, documents: false };
+  let branding = { showLogo: true, showCompanyName: true };
+  let companies = [];
+  try {
+    companies = await customerContactsService.companiesFor(person.email);
+    features = await customerAccountsService.getEffectiveFeaturesForCustomer(customer);
+    if (contact) features = customerContactsService.applyRights(features, rights);
+    const globals = await customerAccountsService.getCustomerSurfaceGlobals();
+    branding = { showLogo: globals.showLogo, showCompanyName: globals.showCompanyName };
+  } catch (e) {
+    logger.warn('Customer session: failed to resolve features/branding, using defaults', { error: e?.message });
+  }
+  return {
+    customer: {
+      id: customer.id,
+      contactId: contact?.id ?? null,
+      rights,
+      companies,
+      email: person.email,
+      displayName: person.display_name,
+      firstName: person.first_name,
+      lastName: person.last_name,
+      preferredLanguage: person.preferred_language || customer.preferred_language || 'en',
+    },
+    features,
+    branding,
+  };
+}
 
 // The customerPortal feature flag deliberately does NOT gate this route.
 // Flipping the master toggle off in Settings → Features hides the
@@ -102,80 +155,87 @@ router.post('/login', [
       return res.status(400).json({ error: 'reCAPTCHA verification failed' });
     }
 
-    const customer = await db('customer_accounts').where('email', email).first();
+    const credential = await customerContactsService.credentialFor(email);
     // Generic error to prevent user enumeration — same wording as admin login.
     // One bcrypt compare on every path so an unknown email is not a timing
     // oracle (the dummy hash matches nothing).
-    const passwordMatches = customer && customer.password_hash
-      ? await bcrypt.compare(password, customer.password_hash)
+    const passwordMatches = credential
+      ? await bcrypt.compare(password, credential.password_hash)
       : await bcrypt.compare(password, DUMMY_BCRYPT_HASH).then(() => false);
     if (!passwordMatches) {
       await trackFailedAttempt(lockoutKey, ipAddress, userAgent);
       return res.status(401).json({ error: getGenericAuthError() });
     }
-    if (!customer.is_active) {
+    // A person at several customers starts in the first one. Own customer
+    // first, so a customer without contacts logs in exactly as before.
+    const [membership] = await customerContactsService.membershipsFor(email);
+    if (!membership) {
       await trackFailedAttempt(lockoutKey, ipAddress, userAgent);
       return res.status(401).json({ error: getGenericAuthError() });
     }
+    const { customer, contact } = membership;
+    const person = contact || customer;
 
     await trackSuccessfulLogin(lockoutKey, ipAddress, userAgent);
-    // Not a billing field, so this leaves no history entry.
-    await auditedUpdate(db, 'customer_accounts', { id: customer.id }, {
-      last_login: new Date(),
-      last_login_ip: ipAddress,
-    }, { actor: { type: 'customer', id: customer.id }, source: 'customer.login' });
-
-    const token = jwt.sign({
-      customerId: customer.id,
-      email: customer.email,
-      type: 'customer',
-      ip: ipAddress,
-      loginTime: Date.now(),
-    }, process.env.JWT_SECRET, {
-      expiresIn: TOKEN_TTL_SECONDS,
-      issuer: 'picpeak-auth',
-    });
-
-    setCustomerAuthCookie(res, token);
-
-    await logActivity('customer_login',
-      { customerId: customer.id, email: customer.email, ipAddress },
-      null,
-      { type: 'customer', id: customer.id, name: customer.email }
-    );
-
-    // Resolve effective features + branding right here so the login
-    // response carries the same shape as /session. Without this, the
-    // first-render dashboard after login would use the context's
-    // DEFAULT_FEATURES (all false) — features only "appear" on the next
-    // CustomerAuthProvider mount (e.g. after the user navigates to a
-    // gallery and back). Mirroring the /session resolution keeps the
-    // frontend on a single source of truth.
-    let features = { calendar: false, quotes: false, bills: false, hoursLogging: false, contracts: false, documents: false };
-    let branding = { showLogo: true, showCompanyName: true };
-    try {
-      features = await customerAccountsService.getEffectiveFeaturesForCustomer(customer);
-      const globals = await customerAccountsService.getCustomerSurfaceGlobals();
-      branding = { showLogo: globals.showLogo, showCompanyName: globals.showCompanyName };
-    } catch (e) {
-      logger.warn('Customer login: failed to resolve features/branding, using defaults', { error: e?.message });
+    if (contact) {
+      await db('customer_contacts').where('id', contact.id).update({
+        last_login: new Date(),
+        last_login_ip: ipAddress,
+      });
+    } else {
+      // Not a billing field, so this leaves no history entry.
+      await auditedUpdate(db, 'customer_accounts', { id: customer.id }, {
+        last_login: new Date(),
+        last_login_ip: ipAddress,
+      }, { actor: { type: 'customer', id: customer.id }, source: 'customer.login' });
     }
 
-    res.json({
-      customer: {
-        id: customer.id,
-        email: customer.email,
-        displayName: customer.display_name,
-        firstName: customer.first_name,
-        lastName: customer.last_name,
-        preferredLanguage: customer.preferred_language || 'en',
-      },
-      features,
-      branding,
-    });
+    setCustomerAuthCookie(res, signSession(membership, ipAddress));
+
+    await logActivity('customer_login',
+      { customerId: customer.id, email: person.email, ipAddress, ...(contact && { contactId: contact.id }) },
+      null,
+      { type: 'customer', id: customer.id, name: person.email }
+    );
+
+    res.json(await sessionPayload(membership));
   } catch (error) {
     logger.error('Customer login error:', error);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// ---- switch company ----------------------------------------------------
+
+/**
+ * POST /switch-company { customerId }
+ *
+ * A person at several customers works in one at a time. The new session is
+ * for the customer named here, and only one this address belongs to right now,
+ * read fresh rather than taken from the old token. The old session ends, along
+ * with any gallery token minted from it.
+ */
+router.post('/switch-company', [
+  customerAuth,
+  body('customerId').isInt({ min: 1 }).toInt(),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
+    const memberships = await customerContactsService.membershipsFor(req.customer.email);
+    const membership = memberships.find(({ customer }) => customer.id === req.body.customerId);
+    if (!membership) return res.status(404).json({ error: 'Company not found' });
+
+    if (!await revokeToken(req.token, 'company_switch')) throw new Error('Token revocation failed');
+    setCustomerAuthCookie(res, signSession(membership, getClientIp(req)));
+    await logActivity('customer_company_switch',
+      { customerId: membership.customer.id, contactId: membership.contact?.id ?? null },
+      null,
+      { type: 'customer', id: membership.customer.id, name: req.customer.email });
+    res.json(await sessionPayload(membership));
+  } catch (error) {
+    logger.error('Customer company switch error:', error);
+    res.status(500).json({ error: 'Failed to switch company' });
   }
 });
 
@@ -210,14 +270,16 @@ router.get('/session', customerAuth, async (req, res) => {
   // their galleries even if the settings table is briefly unavailable.
   let features = { calendar: false, quotes: false, bills: false, hoursLogging: false, contracts: false, documents: false };
   let branding = { showLogo: true, showCompanyName: true };
+  let companies = [];
   try {
-    features = await customerAccountsService.getEffectiveFeaturesForCustomer(req.customer.id);
+    companies = await customerContactsService.companiesFor(req.customer.email);
+    features = await customerAccountsService.getEffectiveFeaturesForSession(req.customer);
     const globals = await customerAccountsService.getCustomerSurfaceGlobals();
     branding = { showLogo: globals.showLogo, showCompanyName: globals.showCompanyName };
   } catch (e) {
     logger.warn('Customer session: failed to resolve features/branding, using defaults', { error: e?.message });
   }
-  res.json({ customer: req.customer, features, branding });
+  res.json({ customer: { ...req.customer, companies }, features, branding });
 });
 
 // ---- invitation lifecycle (public) -------------------------------------
@@ -243,6 +305,9 @@ router.get('/invite/:token', [
         // its profile form. Customer can still edit any field — we just
         // saved them some typing.
         prefill: invitation.prefill || null,
+        // A contact joins an existing customer, so the accept page asks only
+        // for the person, not for company data.
+        forContact: !!invitation.contact_id,
       },
     });
   } catch (error) {
@@ -297,6 +362,7 @@ router.post('/accept-invite', [
   body('profile.last_name').optional({ nullable: true }).isString().isLength({ max: 80 }),
   body('profile.display_name').optional({ nullable: true }).isString().isLength({ max: 120 }),
   body('profile.phone').optional({ nullable: true }).isString().isLength({ max: 40 }),
+  body('profile.preferred_language').optional({ nullable: true }).isString().isLength({ max: 8 }),
   body('profile.company_name').optional({ nullable: true }).isString().isLength({ max: 120 }),
   body('profile.vat_id').optional({ nullable: true }).isString().isLength({ max: 40 }),
   body('profile.address_line1').optional({ nullable: true }).isString().isLength({ max: 255 }),

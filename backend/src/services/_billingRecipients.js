@@ -27,13 +27,16 @@
  * @param {string|null|undefined} perDocCcEmail   the `cc_pdf_email`
  *                                 column from the document being sent;
  *                                 may be null/empty (no per-doc CC).
+ * @param {string[]} [contactEmails]  contacts of this customer who follow
+ *                                 invoices (customerContactsService
+ *                                 .mailRecipients); CC'd like the rest.
  * @returns {{ to: string, cc: string[] | undefined }}
  *   `to`  — single address (billing_email when set, else email).
  *   `cc`  — array of additional addresses, or undefined when there
  *           are none. Always deduplicated against `to` and against
  *           itself (case-insensitive).
  */
-function resolveBillingRecipients(customer, perDocCcEmail) {
+function resolveBillingRecipients(customer, perDocCcEmail, contactEmails = []) {
   const billing = String(customer?.billing_email || '').trim();
   const main = String(customer?.email || '').trim();
   const perDoc = String(perDocCcEmail || '').trim();
@@ -61,6 +64,7 @@ function resolveBillingRecipients(customer, perDocCcEmail) {
   // we don't want to CC self.
   if (billing && main) pushCc(main);
   if (perDoc) pushCc(perDoc);
+  contactEmails.forEach(pushCc);
 
   return { to, cc: ccList.length > 0 ? ccList : undefined };
 }

@@ -69,6 +69,7 @@ export const CustomerAcceptInvitePage: React.FC = () => {
   const { token = '' } = useParams<{ token: string }>();
 
   const [invitation, setInvitation] = useState<CustomerInvitationInfo | null>(null);
+  const forContact = !!invitation?.forContact;
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(true);
 
@@ -294,7 +295,9 @@ export const CustomerAcceptInvitePage: React.FC = () => {
               <section className="space-y-3">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-theme flex items-center gap-2">
                   <Phone className="w-4 h-4" />
-                  {t('customer.acceptInvite.section.contact', 'Contact & business (optional)')}
+                  {forContact
+                    ? t('customer.profile.section.contactOnly', 'Contact')
+                    : t('customer.acceptInvite.section.contact', 'Contact & business (optional)')}
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -311,7 +314,7 @@ export const CustomerAcceptInvitePage: React.FC = () => {
                       onChange={(e) => update('phone', e.target.value)}
                     />
                   </div>
-                  <div>
+                  {!forContact && <div>
                     <label className="block text-sm font-medium text-theme mb-1" htmlFor="invite-company">
                       {t('customer.profile.field.companyName', 'Company name')}
                     </label>
@@ -323,8 +326,8 @@ export const CustomerAcceptInvitePage: React.FC = () => {
                       value={form.company_name}
                       onChange={(e) => update('company_name', e.target.value)}
                     />
-                  </div>
-                  <div>
+                  </div>}
+                  {!forContact && <div>
                     <label className="block text-sm font-medium text-theme mb-1" htmlFor="invite-vat">
                       {t('customer.profile.field.vatId', 'VAT ID')}
                     </label>
@@ -335,12 +338,12 @@ export const CustomerAcceptInvitePage: React.FC = () => {
                       value={form.vat_id}
                       onChange={(e) => update('vat_id', e.target.value)}
                     />
-                  </div>
+                  </div>}
                 </div>
               </section>
 
               {/* Address */}
-              <section className="space-y-3">
+              {!forContact && <section className="space-y-3">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-theme flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
                   {t('customer.acceptInvite.section.address', 'Billing address (optional)')}
@@ -425,7 +428,7 @@ export const CustomerAcceptInvitePage: React.FC = () => {
                     />
                   </div>
                 </div>
-              </section>
+              </section>}
 
               {/* Password — required */}
               <section className="space-y-3">

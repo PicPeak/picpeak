@@ -26,6 +26,7 @@ const requireIncoming = requireFeatureFlag('incomingInvoices', 'INCOMING_INVOICE
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { answerVanished } = require('../utils/streamResponse');
 const customerAccountsService = require('../services/customerAccountsService');
+const customerContactsService = require('../services/customerContactsService');
 const accountingHistory = require('../services/accountingHistory');
 const customerHoursService = require('../services/customerHoursService');
 const combinedBillingService = require('../services/combinedBillingService');
@@ -739,6 +740,91 @@ router.post('/:id/password-reset', [
     requestedByAdminId: req.admin.id,
   });
   successResponse(res, { email: result.email, expiresAt: result.expiresAt });
+}));
+
+/**
+ * Contacts of a customer (migration 342): further people with an own login and
+ * own rights. Same permission split as the customer's own account:
+ * customers.create invites and resets, customers.edit changes the record,
+ * customers.delete removes. Adding a contact and handing out a login need the
+ * customerPortal flag. Login itself is not gated by it, so a contact must stay
+ * editable and removable while the flag is off.
+ */
+const requirePortal = requireFeatureFlag('customerPortal', 'CUSTOMER_PORTAL_DISABLED');
+const contactGuards = (permission, ...gates) => [
+  adminAuth,
+  ...gates,
+  requirePermission(permission),
+  param('id').isInt({ min: 1 }),
+];
+const contactItemGuards = (permission, ...gates) => [
+  ...contactGuards(permission, ...gates),
+  param('contactId').isInt({ min: 1 }),
+];
+const contactFields = [
+  body('email').optional().isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
+  body('salutation').optional({ nullable: true }).isString().isLength({ max: 32 }),
+  body('first_name').optional({ nullable: true }).isString().isLength({ max: 80 }),
+  body('last_name').optional({ nullable: true }).isString().isLength({ max: 80 }),
+  body('display_name').optional({ nullable: true }).isString().isLength({ max: 120 }),
+  body('phone').optional({ nullable: true }).isString().isLength({ max: 40 }),
+  body('preferred_language').optional({ nullable: true }).isString().isLength({ max: 8 }),
+  body('receivesMail').optional().isBoolean().toBoolean(),
+  body('isActive').optional().isBoolean().toBoolean(),
+  body('invite').optional().isBoolean().toBoolean(),
+  body('rights').optional().isObject(),
+];
+
+router.get('/:id/contacts', contactGuards('customers.view'), handleAsync(async (req, res) => {
+  validateRequest(req);
+  successResponse(res, {
+    contacts: await customerContactsService.listContacts(parseInt(req.params.id, 10)),
+  });
+}));
+
+router.post('/:id/contacts', [
+  ...contactGuards('customers.create', requirePortal),
+  body('email').isEmail(),
+  ...contactFields,
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const contact = await customerContactsService.createContact(parseInt(req.params.id, 10), req.body, req.admin.id);
+  successResponse(res, { contact }, 201);
+}));
+
+router.put('/:id/contacts/:contactId', [
+  ...contactItemGuards('customers.edit'),
+  ...contactFields,
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const contact = await customerContactsService.updateContact(
+    parseInt(req.params.id, 10), parseInt(req.params.contactId, 10), req.body, req.admin.id,
+  );
+  successResponse(res, { contact });
+}));
+
+router.delete('/:id/contacts/:contactId', contactItemGuards('customers.delete'), handleAsync(async (req, res) => {
+  validateRequest(req);
+  await customerContactsService.deleteContact(
+    parseInt(req.params.id, 10), parseInt(req.params.contactId, 10), req.admin.id,
+  );
+  successResponse(res, { message: 'Contact deleted' });
+}));
+
+router.post('/:id/contacts/:contactId/send-invite', contactItemGuards('customers.create', requirePortal), handleAsync(async (req, res) => {
+  validateRequest(req);
+  const result = await customerContactsService.sendInvitation(
+    parseInt(req.params.id, 10), parseInt(req.params.contactId, 10), req.admin.id,
+  );
+  successResponse(res, result);
+}));
+
+router.post('/:id/contacts/:contactId/password-reset', contactItemGuards('customers.create', requirePortal), handleAsync(async (req, res) => {
+  validateRequest(req);
+  const result = await customerContactsService.createPasswordReset(
+    parseInt(req.params.id, 10), parseInt(req.params.contactId, 10), req.admin.id,
+  );
+  successResponse(res, result);
 }));
 
 /**

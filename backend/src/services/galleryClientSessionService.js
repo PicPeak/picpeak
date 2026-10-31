@@ -18,6 +18,7 @@ async function replaceGallerySession(res, event, source, accessLevel, ip, presen
   // parent-session revocation checks after either role change.
   const provenance = source.via === 'customer' ? {
     via: 'customer', customerId: source.customerId,
+    ...(source.contactId !== undefined && { contactId: source.contactId }),
     parentIat: source.parentIat, parentJti: source.parentJti,
   } : {};
   const token = jwt.sign({

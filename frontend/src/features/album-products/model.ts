@@ -67,6 +67,8 @@ export interface Choice {
   colour?: Pick<Option, 'id' | 'name' | 'imageId'>;
 }
 export interface Offer {
+  // A contact whose login may look at the gallery but not decide for the customer.
+  readOnly?: boolean;
   customerId?: number | null;
   cataloguePresetId?: number | null;
   showPrices?: boolean;

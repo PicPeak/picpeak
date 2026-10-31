@@ -16,8 +16,10 @@
  * to wrap their content in `<CustomerLayout>` — same approach AdminLayout uses.
  */
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Link, NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'react-toastify';
+import { customerService } from '../../services/customer.service';
 import {
   Calendar,
   FileText,
@@ -78,9 +80,28 @@ const isDrawerLayout = () => typeof window.matchMedia === 'function' && window.m
 export const CustomerLayout: React.FC = () => {
   const { t } = useTranslation();
   const location = useLocation();
-  const { customer, features, branding, isAuthenticated, isLoading, logout } = useCustomerAuth();
+  const { customer, features, branding, isAuthenticated, isLoading, logout, setSession } = useCustomerAuth();
+  const navigate = useNavigate();
+  const companies = customer?.companies ?? [];
+
+  // The dashboard is the one page every company has: an open document or
+  // gallery may belong to the company being left.
+  const switchCompany = async (customerId: number) => {
+    if (switching) return;
+    setSwitching(true);
+    try {
+      setSession(await customerService.switchCompany(customerId));
+      setSidebarOpen(false);
+      navigate('/customer/dashboard', { replace: true });
+    } catch {
+      toast.error(t('customer.nav.switchFailed', 'Could not switch company. Please try again.'));
+    } finally {
+      setSwitching(false);
+    }
+  };
   const { data: settingsData } = usePublicSettings();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
   useEscapeClose(sidebarOpen, () => setSidebarOpen(false));
   const isDrawer = useSyncExternalStore(subscribeDrawer, isDrawerLayout);
   // The open drawer covers the page behind a backdrop, so it holds the
@@ -114,7 +135,11 @@ export const CustomerLayout: React.FC = () => {
 
   // Filter out feature-gated entries the customer can't see. Galleries +
   // Profile have no feature property, so they're always present.
-  const visibleNav = NAV.filter((item) => !item.feature || features[item.feature] === true);
+  const visibleNav = NAV.filter((item) => !item.feature || features[item.feature] === true)
+    // The dashboard stays the home page of a login without galleries.
+    .map((item) => (item.to === '/customer/dashboard' && customer?.rights?.galleries === 'none'
+      ? { ...item, labelKey: 'customer.nav.overview', fallback: 'Overview' }
+      : item));
 
   // Branding visibility — admin can hide either piece independently. If
   // both are hidden the brand link still exists (you can click it to
@@ -233,6 +258,21 @@ export const CustomerLayout: React.FC = () => {
             <div className="min-w-0">
               <div className="text-sm font-medium text-theme truncate">{greetingName}</div>
               <div className="text-xs text-muted-theme truncate">{customer?.email}</div>
+              {companies.length > 1 && (
+                <label className="mt-2 block text-xs text-muted-theme">
+                  <span className="block mb-1">{t('customer.nav.company', 'Company')}</span>
+                  <select
+                    className="input-themed w-full"
+                    value={customer?.id}
+                    aria-disabled={switching}
+                    onChange={(e) => switchCompany(Number(e.target.value))}
+                  >
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.id}>{company.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
             <button
               type="button"

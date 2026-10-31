@@ -6,6 +6,7 @@ const { getAppSetting } = require('../../utils/appSettings');
 const { AppError } = require('../../utils/errors');
 const { formatShortDate } = require('../../utils/dateFormatter');
 const { resolveBillingRecipients } = require('../_billingRecipients');
+const customerContactsService = require('../customerContactsService');
 const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt } = require('../../utils/numericHelpers');
@@ -104,6 +105,8 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
     updated_at: new Date(),
   };
   if (await hasColumnCached('invoices', 'late_fee_vat_minor')) update.late_fee_vat_minor = lateFeeVat;
+  // Before the fee lands: a failed lookup must not charge it with no mail.
+  const contactRecipients = await customerContactsService.mailRecipients(customer?.id, 'bills');
   // Conditional on the row still waiting on the customer: every caller
   // checked that, but from a snapshot. A payment or a Storno landing in
   // between must not be overwritten with `overdue`, a fee and a Mahnung.
@@ -175,7 +178,10 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
   }
   attachments.push({ filename: `${fresh.invoice_number}_Mahnung.pdf`, contentPath: mahnungPath, contentType: 'application/pdf' });
 
-  const { to: reminderTo, cc: reminderCc } = resolveBillingRecipients(customer, invoice.cc_pdf_email);
+  const { to: reminderTo, cc: reminderCc } = resolveBillingRecipients(
+    customer, invoice.cc_pdf_email,
+    contactRecipients.map((contact) => contact.email),
+  );
   try {
     await emailProcessor.queueEmail(invoice.event_id || null, reminderTo, templateKey, {
       // Render in the customer/invoice language, not the gallery event's (#760).

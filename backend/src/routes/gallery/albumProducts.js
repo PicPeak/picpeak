@@ -13,6 +13,8 @@ const { ForbiddenError } = require('../../utils/errors');
 const { pipeStreamToResponse } = require('../../utils/streamResponse');
 const service = () =>
   require('../../services/albumProducts/service').application();
+const customerContactsService = require('../../services/customerContactsService');
+
 const router = express.Router();
 router.use(
   '/:slug/album-products',
@@ -29,9 +31,12 @@ router.use(
 );
 router.get(
   '/:slug/album-products',
-  handleAsync(async (req, res) =>
-    res.json({ offers: await service().clientOffers(req.event.id) }),
-  ),
+  handleAsync(async (req, res) => {
+    const offers = await service().clientOffers(req.event.id);
+    const readOnly = !!req.viaCustomer
+      && !(await customerContactsService.sessionMayAct(req.galleryAccess?.session, 'galleries'));
+    res.json({ offers: offers.map((offer) => ({ ...offer, readOnly })) });
+  }),
 );
 router.get(
   '/:slug/album-products/images/:imageId',
@@ -51,6 +56,14 @@ router.get(
 );
 router.put(
   '/:slug/album-products/:id',
+  handleAsync(async (req, res, next) => {
+    // An album choice binds the customer: a view-only contact looks, not decides.
+    if (req.viaCustomer
+      && !(await customerContactsService.sessionMayAct(req.galleryAccess?.session, 'galleries'))) {
+      throw new ForbiddenError('Your login may not do this');
+    }
+    next();
+  }),
   param('id').isUUID(),
   body('revision').isInt({ min: 1 }),
   body('mutationId').isUUID(),

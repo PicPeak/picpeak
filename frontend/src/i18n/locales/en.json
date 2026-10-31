@@ -7474,7 +7474,10 @@
       "bills": "Invoices",
       "profile": "Profile",
       "contracts": "Contracts",
-      "documents": "Documents"
+      "documents": "Documents",
+      "overview": "Overview",
+      "company": "Company",
+      "switchFailed": "Could not switch company. Please try again."
     },
     "comingSoon": {
       "tag": "Coming soon"
@@ -7552,7 +7555,8 @@
         "personal": "Personal information",
         "contact": "Contact & business",
         "address": "Billing address",
-        "password": "Change password"
+        "password": "Change password",
+        "contactOnly": "Contact"
       },
       "field": {
         "email": "Email (login)",
@@ -8211,6 +8215,60 @@
     "statusFilter": {
       "label": "Status",
       "all": "All statuses"
+    },
+    "contacts": {
+      "title": "Contacts",
+      "add": "Add contact",
+      "empty": "Only the account holder has access. Add people who need their own login.",
+      "passiveHint": "Invite this customer to the portal first. Until then, contacts cannot get a login.",
+      "email": "Email",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "created": "Contact added",
+      "saved": "Contact saved",
+      "deleted": "Contact removed",
+      "invited": "Invitation sent",
+      "resetSent": "Password reset link sent",
+      "deleteConfirm": "Remove {{name}}? Their login stops working right away.",
+      "saveOnly": "Save without login",
+      "saveInvite": "Save and invite",
+      "invite": "Invite",
+      "reinvite": "Send invitation again",
+      "resetPassword": "Reset password",
+      "deactivate": "Deactivate",
+      "reactivate": "Reactivate",
+      "delete": "Remove",
+      "rightsHint": "A right cannot go beyond what is switched on for this customer under Customer features.",
+      "receivesMail": "Send a copy of gallery notices and invoices",
+      "receivesMailHint": "Only for areas this contact has a right to. The customer keeps getting their own mail.",
+      "area": {
+        "galleries": "Galleries",
+        "quotes": "Quotes",
+        "contracts": "Contracts",
+        "bills": "Invoices",
+        "documents": "Documents",
+        "company": "Company data"
+      },
+      "level": {
+        "none": "No access",
+        "view": "View",
+        "act": "View and act",
+        "edit": "Edit"
+      },
+      "preset": {
+        "admin": "Admin",
+        "accounting": "Accounting",
+        "marketing": "Marketing",
+        "viewer": "Viewer"
+      },
+      "status": {
+        "inactive": "Inactive",
+        "lastLogin": "Last login {{date}}",
+        "login": "Has a login",
+        "invited": "Invited",
+        "noLogin": "No login"
+      },
+      "signerHint": "Contacts sign a contract only when they are named as a signer on it."
     }
   },
   "clients": {
@@ -11458,6 +11516,7 @@
     "manageCatalogue": "Manage catalogue",
     "savedChoice": "Saved choice",
     "lockedHelp": "Contact the studio if you need to change this choice.",
+    "readOnlyHelp": "Your login can view this choice but not make it.",
     "chooseModel": "Choose a model",
     "chooseColour": "Choose a colour",
     "yourName": "Your name",

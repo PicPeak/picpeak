@@ -24,6 +24,7 @@ import { SUPPORTED_LANGUAGES } from '../../components/common/LanguageSelector';
 import { DecimalInput } from '../../components/common/DecimalInput';
 import { AssignedEventsDialog } from '../../components/admin/AssignedEventsDialog';
 import { CustomerGroupsCard } from '../../components/admin/CustomerGroupsCard';
+import { CustomerContactsCard } from '../../components/admin/CustomerContactsCard';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import {
   customerAdminService,
@@ -458,6 +459,16 @@ export const CustomerDetailPage: React.FC = () => {
         customerId={customerId}
         groups={customer.groups}
         canManage={hasPermission('customers.groups.manage')}
+      />
+
+      {/* Further logins of this customer (migration 342) */}
+      <CustomerContactsCard
+        customerId={customerId}
+        isPassive={!!customer.isPassive}
+        portalEnabled={!!flags.customerPortal}
+        canCreate={hasPermission('customers.create')}
+        canEdit={hasPermission('customers.edit')}
+        canDelete={hasPermission('customers.delete')}
       />
 
       {/* Assigned events */}

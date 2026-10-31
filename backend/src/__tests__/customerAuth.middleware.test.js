@@ -391,6 +391,8 @@ describe('customerAuth — happy path', () => {
       firstName: 'Charlie',
       lastName: 'Customer',
       preferredLanguage: 'de',
+      contactId: null,
+      rights: require('../services/customerContactsService').HOLDER_RIGHTS,
     });
     expect(req.token).toBe('tkn');
   });

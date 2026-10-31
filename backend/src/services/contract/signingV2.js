@@ -1495,6 +1495,9 @@ async function portalSigningAccess(customer, contractId) {
   // A contract sent before signatures v2 signs on the portal's own page with
   // the customer's session (upstream #1465): no token reaches the browser.
   if (!isV2(contract)) {
+    // The older flow takes any typed name and has no signer to match a contact
+    // against, so only the account holder signs there.
+    if (customer.contactId) throw new AppError('You are not a signer of this contract. Use the link from the signing email.', 403, 'SIGNER_NOT_FOUND');
     if (contract.status !== 'sent') throw new AppError('This contract is not waiting for your signature', 409, 'CONTRACT_NOT_SIGNABLE');
     return { mode: 'portal' };
   }
@@ -1522,6 +1525,21 @@ async function portalSigningAccess(customer, contractId) {
   }
   const session = await openSession(contract.id, row, 'portal');
   return { mode: 'session', sessionToken: session.token, expiresAt: session.expiresAt };
+}
+
+/**
+ * Which of these contracts wait for details from this person: portalSigningAccess
+ * opens a contract in `awaiting_data` for its first customer signer only. A
+ * contact usually is not one, the holder always was.
+ */
+async function portalDetailsContracts(customer, contracts) {
+  const ids = contracts.filter((c) => isV2(c) && c.status === 'awaiting_data').map((c) => c.id);
+  if (!ids.length) return new Set();
+  const rows = await db('contract_signers')
+    .whereIn('contract_id', ids)
+    .where({ role: 'customer', position: 1, email_hash: fieldEncryption.hashEmail(customer.email) })
+    .select('contract_id');
+  return new Set(rows.map((row) => Number(row.contract_id)));
 }
 
 /**
@@ -1636,6 +1654,7 @@ module.exports = {
   clearFollowUpFailure,
   portalSigningAccess,
   portalSignerStates,
+  portalDetailsContracts,
   adminOverview,
   revealEvidence,
   notifyAdmin,

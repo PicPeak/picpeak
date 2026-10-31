@@ -33,11 +33,12 @@ function ProductChoice({
     [model, setModel] = useState(initial.selection?.model?.id || ''),
     [colour, setColour] = useState(initial.selection?.colour?.id || ''),
     [name, setName] = useState(''),
-    [busy, setBusy] = useState(false),
+    [saving, setBusy] = useState(false),
     [error, setError] = useState('');
   const attempt = useRef<{ fingerprint: string; id: string } | null>(null);
   const product = offer.product,
-    locked = offer.status === 'locked';
+    locked = offer.status === 'locked',
+    busy = saving || !!offer.readOnly;
   const submit = async (commit: boolean) => {
     setBusy(true);
     setError('');
@@ -93,6 +94,14 @@ function ProductChoice({
           {t(
             'products.needsReview',
             'Your selected options changed. Please review and submit your choice again.',
+          )}
+        </p>
+      )}
+      {!locked && offer.readOnly && (
+        <p>
+          {t(
+            'albumProducts.readOnlyHelp',
+            'Your login can view this choice but not make it.',
           )}
         </p>
       )}
@@ -274,7 +283,7 @@ function ProductChoice({
               }
               onClick={() => submit(true)}
             >
-              {busy
+              {saving
                 ? t('common.saving', 'Saving…')
                 : t('albumProducts.submit', 'Submit choice')}
             </Button>

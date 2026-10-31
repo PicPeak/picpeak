@@ -8,6 +8,7 @@ const { getDashboard, getEventOverview, getEventAccessToken, notify } = vi.hoist
 }));
 vi.mock('../../../services/customer.service', () => ({ customerService: { getDashboard, getEventOverview, getEventAccessToken } }));
 vi.mock('react-toastify', () => ({ toast: { error: notify } }));
+vi.mock('../../../contexts/CustomerAuthContext', () => ({ useCustomerAuth: () => ({ customer: null }) }));
 vi.mock('../../../hooks/useLocalizedDate', () => ({ useLocalizedDate: () => ({ format: (value: string) => value, formatExpiry: (value: string) => value }) }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key: string, fallback?: string) => fallback || _key }),

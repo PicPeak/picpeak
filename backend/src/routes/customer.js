@@ -31,6 +31,7 @@ const rateLimit = require('express-rate-limit');
 const { receiveDocumentUpload, discardTempFile, sendDocumentAttachment } = require('../middleware/customerDocumentUpload');
 const documentFormats = require('../services/documentFormats');
 const customerAccountsService = require('../services/customerAccountsService');
+const customerContactsService = require('../services/customerContactsService');
 const customerDocumentsService = require('../services/customerDocumentsService');
 const customerDocumentNotifications = require('../services/customerDocumentNotifications');
 const customerDocumentAbuse = require('../services/customerDocumentAbuse');
@@ -42,17 +43,40 @@ const contractSignedPdfUpload = require('../utils/contractSignedPdfUpload');
 const { auditedUpdate } = require('../services/accountingHistory');
 const { neverFrozen } = require('../services/contract/helpers');
 
-// Gate a customer-facing route on BOTH the global master flag AND the
-// per-customer override — getEffectiveFeaturesForCustomer combines them, so an
-// admin disabling e.g. Bills globally is honoured even when feature_bills=true
-// on the row. Sends the 403 and returns false on denial; true if allowed.
+// Gate a customer-facing route on the global master flag, the per-customer
+// override AND a contact's own right — getEffectiveFeaturesForSession combines
+// them, so an admin disabling e.g. Bills globally is honoured even when
+// feature_bills=true on the row. Sends the 403 and returns false on denial;
+// true if allowed.
 async function customerFeatureAllowed(req, res, featureKey, label) {
-  const eff = await customerAccountsService.getEffectiveFeaturesForCustomer(req.customer.id);
+  const eff = await customerAccountsService.getEffectiveFeaturesForSession(req.customer);
   if (!eff || !eff[featureKey]) {
     res.status(403).json({ error: `${label} are disabled for this account`, code: 'CUSTOMER_FEATURE_DISABLED' });
     return false;
   }
   return true;
+}
+
+// A contact's right to change something, on top of the read gate a route
+// already has. Sends the 403 and returns false on denial.
+function customerMayAct(req, res, area) {
+  if (customerContactsService.hasRight(req.customer.rights, area, 'act')) return true;
+  res.status(403).json({ error: 'Your login may not do this', code: 'CUSTOMER_RIGHT_MISSING' });
+  return false;
+}
+
+// These two routes are the older signing flow, which takes any typed name and
+// has no signer row to match a contact against.
+function holderSigns(req, res) {
+  if (!req.customer.contactId) return true;
+  res.status(403).json({ error: 'You are not a signer of this contract.', code: 'SIGNER_NOT_FOUND' });
+  return false;
+}
+
+function customerMaySeeGalleries(req, res) {
+  if (customerContactsService.hasRight(req.customer.rights, 'galleries')) return true;
+  res.status(403).json({ error: 'Galleries are disabled for this login', code: 'CUSTOMER_RIGHT_MISSING' });
+  return false;
 }
 
 /**
@@ -91,6 +115,8 @@ const PROFILE_FIELD_MAP = {
   preferredLanguage: 'preferred_language',
 };
 const CUSTOMER_NAME_FIELDS = new Set(['first_name', 'last_name', 'display_name', 'company_name']);
+// What a contact's own profile holds; the rest of the map is the company's.
+const CONTACT_PROFILE_FIELDS = new Set(['salutation', 'first_name', 'last_name', 'display_name', 'phone', 'preferred_language']);
 
 function shapeProfile(row) {
   if (!row) return null;
@@ -121,6 +147,33 @@ function shapeProfile(row) {
   };
 }
 
+// A contact sees their own person, and the company's data with the right for
+// it. Newsletter consent stays with the customer's own address.
+function shapeContactProfile(account, contact, rights) {
+  const company = customerContactsService.hasRight(rights, 'company') ? shapeProfile(account) : {};
+  return {
+    ...shapeProfile(contact),
+    id: account.id,
+    companyName: company.companyName ?? null,
+    vatId: company.vatId ?? null,
+    addressLine1: company.addressLine1 ?? null,
+    addressLine2: company.addressLine2 ?? null,
+    postalCode: company.postalCode ?? null,
+    city: company.city ?? null,
+    state: company.state ?? null,
+    countryCode: company.countryCode ?? null,
+    preferredLanguage: contact.preferred_language || account.preferred_language || 'en',
+    marketingOptOut: false,
+  };
+}
+
+async function loadProfile(req) {
+  const row = await db('customer_accounts').where('id', req.customer.id).first();
+  if (!row || !req.customer.contactId) return shapeProfile(row);
+  const contact = await db('customer_contacts').where('id', req.customer.contactId).first();
+  return shapeContactProfile(row, contact, req.customer.rights);
+}
+
 const router = express.Router();
 
 const GALLERY_TOKEN_TTL_SECONDS = 24 * 60 * 60;
@@ -129,6 +182,7 @@ const GALLERY_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 
 router.get('/events', customerAuth, async (req, res) => {
   try {
+    if (!customerMaySeeGalleries(req, res)) return;
     const events = await customerAccountsService.listEventsForCustomer(req.customer.id);
     // shapeEvent adds `availability` (active | expired | unavailable), decided
     // server-side so the portal never works out expiry from the browser clock.
@@ -165,6 +219,7 @@ router.get('/events/:slug/access-token', [
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
+    if (!customerMaySeeGalleries(req, res)) return undefined;
 
     const { slug } = req.params;
     const event = await db('events').where('slug', slug).first();
@@ -226,6 +281,7 @@ router.get('/events/:slug/access-token', [
       // Rechecked on each gallery/media request, including account status.
       via: 'customer',
       customerId: req.customer.id,
+      ...(req.customer.contactId && { contactId: req.customer.contactId }),
     }, process.env.JWT_SECRET, {
       expiresIn: galleryTtlSeconds,
       issuer: 'picpeak-auth',
@@ -279,11 +335,11 @@ router.get('/events/:slug/access-token', [
  */
 router.get('/profile', customerAuth, async (req, res) => {
   try {
-    const row = await db('customer_accounts').where('id', req.customer.id).first();
-    if (!row) {
+    const profile = await loadProfile(req);
+    if (!profile) {
       return res.status(404).json({ error: 'Profile not found' });
     }
-    res.json({ profile: shapeProfile(row) });
+    res.json({ profile });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to load profile');
   }
@@ -341,21 +397,39 @@ router.put('/profile', [
       updates[snake] = value;
     }
     updates.updated_at = new Date();
+    const changedFields = Object.keys(updates).filter((k) => k !== 'updated_at');
 
-    await auditedUpdate(db, 'customer_accounts', { id: req.customer.id }, updates, {
-      actor: { type: 'customer', id: req.customer.id, name: req.customer.displayName || null },
-      source: 'customer.portal.profile',
-    });
-
-    const row = await db('customer_accounts').where('id', req.customer.id).first();
+    // The holder's row is both person and company. A contact's person is their
+    // own row, and the company's fields take the company right.
+    if (req.customer.contactId) {
+      const company = {};
+      for (const [field, value] of Object.entries(updates)) {
+        if (field !== 'updated_at' && !CONTACT_PROFILE_FIELDS.has(field)) {
+          company[field] = value;
+          delete updates[field];
+        }
+      }
+      if (Object.keys(company).length > 0) {
+        if (!customerMayAct(req, res, 'company')) return undefined;
+        await auditedUpdate(db, 'customer_accounts', { id: req.customer.id },
+          { ...company, updated_at: new Date() },
+          { actor: portalActor(req), source: 'customer.portal.profile' });
+      }
+      await db('customer_contacts').where('id', req.customer.contactId).update(updates);
+    } else {
+      await auditedUpdate(db, 'customer_accounts', { id: req.customer.id }, updates, {
+        actor: { type: 'customer', id: req.customer.id, name: req.customer.displayName || null },
+        source: 'customer.portal.profile',
+      });
+    }
 
     await logActivity('customer_self_profile_update',
-      { customerId: req.customer.id, fields: Object.keys(updates).filter((k) => k !== 'updated_at') },
+      { customerId: req.customer.id, fields: changedFields },
       null,
       { type: 'customer', id: req.customer.id, name: req.customer.email }
     );
 
-    res.json({ profile: shapeProfile(row) });
+    res.json({ profile: await loadProfile(req) });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to update profile');
   }
@@ -374,6 +448,7 @@ router.put('/profile', [
  */
 router.get('/profile/marketing', customerAuth, async (req, res) => {
   try {
+    if (req.customer.contactId) return res.json({ marketingOptOut: false, marketingOptOutAt: null });
     const row = await db('customer_accounts')
       .where('id', req.customer.id)
       .select('marketing_opt_out', 'marketing_opt_out_at')
@@ -401,6 +476,11 @@ router.put('/profile/marketing', [
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: safeValidationErrors(errors) });
+    }
+    // The newsletter goes to the customer's own address, which is theirs to
+    // decide about.
+    if (req.customer.contactId) {
+      return res.status(403).json({ error: 'Your login may not do this', code: 'CUSTOMER_RIGHT_MISSING' });
     }
     const newsletterService = require('../services/newsletterService');
     await newsletterService.setMarketingOptOut(
@@ -446,7 +526,10 @@ router.post('/profile/password', [
       });
     }
 
-    const row = await db('customer_accounts').where('id', req.customer.id).first();
+    const contactId = req.customer.contactId;
+    const row = contactId
+      ? await customerContactsService.credentialFor(req.customer.email)
+      : await db('customer_accounts').where('id', req.customer.id).first();
     if (!row || !row.password_hash) {
       return res.status(400).json({ error: 'Password change unavailable' });
     }
@@ -456,12 +539,17 @@ router.post('/profile/password', [
     }
 
     const newHash = await bcrypt.hash(newPassword, getBcryptRounds());
-    // Not a billing field, so this leaves no history entry.
-    await auditedUpdate(db, 'customer_accounts', { id: req.customer.id }, {
-      password_hash: newHash,
-      password_changed_at: new Date(),
-      updated_at: new Date(),
-    }, { actor: { type: 'customer', id: req.customer.id }, source: 'customer.portal.password' });
+    if (contactId) {
+      const updated = await customerContactsService.setPassword(req.customer.email, newHash);
+      if (updated !== 1) return res.status(401).json({ error: 'Current password is incorrect' });
+    } else {
+      // Not a billing field, so this leaves no history entry.
+      await auditedUpdate(db, 'customer_accounts', { id: req.customer.id }, {
+        password_hash: newHash,
+        password_changed_at: new Date(),
+        updated_at: new Date(),
+      }, { actor: { type: 'customer', id: req.customer.id }, source: 'customer.portal.password' });
+    }
 
     await logActivity('customer_password_change',
       { customerId: req.customer.id },
@@ -549,7 +637,8 @@ router.get('/quotes', customerAuth, async (req, res) => {
         responseLockedAt: q.response_locked_at,
         acceptedAt: q.accepted_at,
         declinedAt: q.declined_at,
-        canRespond: publicDocumentViews.quoteAcceptsResponse(q) && usableTokens.has(q.id),
+        canRespond: customerContactsService.hasRight(req.customer.rights, 'quotes', 'act')
+          && publicDocumentViews.quoteAcceptsResponse(q) && usableTokens.has(q.id),
       })),
     });
   } catch (error) {
@@ -764,8 +853,11 @@ router.get('/contracts', customerAuth, async (req, res) => {
     const progress = await require('../services/contract/signers').customerSignerProgress(rows.map((r) => r.id));
     // Whether THIS customer may sign a v2 contract now: not once they have
     // signed, and not before their turn in a sequential one (#1446).
-    const me = await dbi('customer_accounts').where({ id: req.customer.id }).first('email');
-    const mine = await require('../services/contract/signingV2').portalSignerStates(me || {}, rows);
+    const mine = await require('../services/contract/signingV2').portalSignerStates(portalSigner(req), rows);
+    const mayAct = customerContactsService.hasRight(req.customer.rights, 'contracts', 'act');
+    const detailsFor = req.customer.contactId
+      ? await require('../services/contract/signingV2').portalDetailsContracts(req.customer, rows)
+      : null;
 
     res.json({
       contracts: rows.map((c) => ({
@@ -788,13 +880,14 @@ router.get('/contracts', customerAuth, async (req, res) => {
         hasCertificate: certified.has(Number(c.id)),
         // A signatures-v2 contract signs through a signer session, so it has
         // no action token to look for; one sent before still needs a live one.
-        canSign: c.status === 'sent' && (Number(c.signing_version) === 2
+        canSign: mayAct && c.status === 'sent' && (Number(c.signing_version) === 2
           ? !!(mine.get(c.id) || {}).canSign
-          : liveTokens.has(c.id)),
+          : !req.customer.contactId && liveTokens.has(c.id)),
         signerState: (mine.get(c.id) || {}).state || null,
         waitingFor: (mine.get(c.id) || {}).waitingFor || null,
         // Collect-then-freeze (#1446): the customer's details come first.
-        canCompleteDetails: c.status === 'awaiting_data' && Number(c.signing_version) === 2,
+        canCompleteDetails: mayAct && c.status === 'awaiting_data' && Number(c.signing_version) === 2
+          && (!detailsFor || detailsFor.has(Number(c.id))),
         signerProgress: progress.get(Number(c.id)) || null,
       })),
     });
@@ -810,12 +903,10 @@ router.get('/contracts', customerAuth, async (req, res) => {
 router.post('/contracts/:id/signing-access', customerAuth, async (req, res) => {
   try {
     if (!(await customerFeatureAllowed(req, res, 'contracts', 'Contracts'))) return;
+    if (!customerMayAct(req, res, 'contracts')) return;
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid contract id' });
-    const { db: dbi } = require('../database/db');
-    const customer = await dbi('customer_accounts').where({ id: req.customer.id }).first();
-    if (!customer) return res.status(404).json({ error: 'Contract not found' });
-    const result = await require('../services/contract/signingV2').portalSigningAccess(customer, id);
+    const result = await require('../services/contract/signingV2').portalSigningAccess(req.customer, id);
     return res.json(result);
   } catch (error) {
     const status = error.statusCode || error.status;
@@ -940,7 +1031,19 @@ const QUOTE = { table: 'quotes', featureKey: 'quotes', label: 'Quotes', notFound
 // The signed-in customer, as the actor the accounting change history records
 // for a portal signature, upload or response.
 function portalActor(req) {
-  return { type: 'customer', id: req.customer.id, name: req.customer.displayName || null };
+  return {
+    type: 'customer',
+    id: req.customer.id,
+    name: req.customer.displayName || (req.customer.contactId ? req.customer.email : null),
+  };
+}
+
+// Who signs through this session: the logged-in person, and only a login with
+// the right to sign counts. Without it, no signer row matches.
+function portalSigner(req) {
+  return customerContactsService.hasRight(req.customer.rights, 'contracts', 'act')
+    ? { email: req.customer.email }
+    : {};
 }
 
 function sendValidationErrors(req, res) {
@@ -971,12 +1074,12 @@ router.get('/contracts/:id', customerAuth, async (req, res) => {
     const liveTokens = await publicDocumentViews.liveContractTokens([contract.id]);
     // Same rule as the list: a signatures-v2 contract signs through a signer
     // session — when it is this customer's turn and they haven't answered.
-    const me = await db('customer_accounts').where({ id: req.customer.id }).first('email');
-    const mine = (await require('../services/contract/signingV2').portalSignerStates(me || {}, [contract])).get(contract.id) || {};
+    const mine = (await require('../services/contract/signingV2').portalSignerStates(portalSigner(req), [contract])).get(contract.id) || {};
     res.json({
       contract: view,
       canSign: contract.status === 'sent'
-        && (Number(contract.signing_version) === 2 ? !!mine.canSign : liveTokens.has(contract.id)),
+        && customerContactsService.hasRight(req.customer.rights, 'contracts', 'act')
+        && (Number(contract.signing_version) === 2 ? !!mine.canSign : !req.customer.contactId && liveTokens.has(contract.id)),
       signerState: mine.state || null,
       waitingFor: mine.waitingFor || null,
     });
@@ -996,6 +1099,7 @@ router.post(
   async (req, res) => {
     try {
       if (sendValidationErrors(req, res)) return;
+      if (!customerMayAct(req, res, 'contracts') || !holderSigns(req, res)) return;
       const contract = await ownedDocument(req, res, CONTRACT);
       if (!contract) return;
       const token = (await publicDocumentViews.liveContractTokens([contract.id])).get(contract.id);
@@ -1028,6 +1132,7 @@ router.post(
   contractSignedPdfUpload.uploadSignedPdfSettingGuard,
   async (req, res, next) => {
     try {
+      if (!customerMayAct(req, res, 'contracts') || !holderSigns(req, res)) return undefined;
       const contract = await ownedDocument(req, res, CONTRACT);
       if (!contract) return undefined;
       const token = (await publicDocumentViews.liveContractTokens([contract.id])).get(contract.id);
@@ -1060,7 +1165,8 @@ router.get('/quotes/:id', customerAuth, async (req, res) => {
     const usableTokens = await publicDocumentViews.usableQuoteTokens([quote.id]);
     res.json({
       quote: view,
-      canRespond: publicDocumentViews.quoteAcceptsResponse(quote) && usableTokens.has(quote.id),
+      canRespond: customerContactsService.hasRight(req.customer.rights, 'quotes', 'act')
+        && publicDocumentViews.quoteAcceptsResponse(quote) && usableTokens.has(quote.id),
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to load quote');
@@ -1099,6 +1205,7 @@ router.post(
   async (req, res) => {
     try {
       if (sendValidationErrors(req, res)) return;
+      if (!customerMayAct(req, res, 'quotes')) return;
       const quote = await ownedDocument(req, res, QUOTE);
       if (!quote) return;
       const token = (await publicDocumentViews.usableQuoteTokens([quote.id])).get(quote.id);
@@ -1146,7 +1253,7 @@ router.post(
  */
 router.get('/dashboard', customerAuth, async (req, res) => {
   try {
-    res.json(await customerPortalService.getDashboard(req.customer.id));
+    res.json(await customerPortalService.getDashboard(req.customer.id, req.customer));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to load dashboard');
   }
@@ -1168,7 +1275,8 @@ router.get('/events/:slug/overview', [
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
-    const overview = await customerPortalService.getEventOverview(req.customer.id, req.params.slug);
+    if (!customerMaySeeGalleries(req, res)) return undefined;
+    const overview = await customerPortalService.getEventOverview(req.customer.id, req.params.slug, req.customer);
     if (!overview) return res.status(404).json({ error: 'Event not found' });
     res.json(overview);
   } catch (error) {
@@ -1218,7 +1326,9 @@ function sendDocumentError(res, error, fallback) {
 
 router.get('/documents', customerAuth, requireDocumentsFeature, async (req, res) => {
   try {
-    const documents = await customerDocumentsService.listForCustomer(req.customer.id);
+    const mayAct = customerContactsService.hasRight(req.customer.rights, 'documents', 'act');
+    const documents = (await customerDocumentsService.listForCustomer(req.customer.id))
+      .map((doc) => (mayAct ? doc : { ...doc, canDelete: false }));
     const limits = await customerDocumentsService.getLimits();
     const usedBytes = await customerDocumentsService.getUsageBytes(req.customer.id);
     // Drives the upload control's accept list and copy, so it can't drift
@@ -1240,6 +1350,7 @@ router.get('/documents', customerAuth, requireDocumentsFeature, async (req, res)
 router.post('/documents', customerAuth, requireDocumentsFeature, documentUploadLimiter, async (req, res) => {
   let file = null;
   try {
+    if (!customerMayAct(req, res, 'documents')) return undefined;
     const limits = await customerDocumentsService.getLimits();
     const usedBytes = await customerDocumentsService.getUsageBytes(req.customer.id);
     if (usedBytes >= limits.quotaBytes) {
@@ -1340,7 +1451,9 @@ router.get('/documents/:id', customerAuth, requireDocumentsFeature, async (req, 
   try {
     const row = await loadCustomerDocument(req, res);
     if (!row) return undefined;
-    return res.json({ document: customerDocumentsService.toCustomerDto(row) });
+    const document = customerDocumentsService.toCustomerDto(row);
+    const mayAct = customerContactsService.hasRight(req.customer.rights, 'documents', 'act');
+    return res.json({ document: mayAct ? document : { ...document, canDelete: false } });
   } catch (error) {
     return sendDocumentError(res, error, 'Failed to load document');
   }
@@ -1354,6 +1467,7 @@ router.get('/documents/:id', customerAuth, requireDocumentsFeature, async (req, 
  */
 router.delete('/documents/:id', customerAuth, requireDocumentsFeature, documentUploadLimiter, async (req, res) => {
   try {
+    if (!customerMayAct(req, res, 'documents')) return undefined;
     const id = documentIdParam(req);
     if (!id) return res.status(404).json({ error: 'Document not found', code: 'DOCUMENT_NOT_FOUND' });
     await customerDocumentsService.softDeleteByCustomer(req.customer.id, id,

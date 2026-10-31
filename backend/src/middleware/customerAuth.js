@@ -7,13 +7,16 @@ const { requestLogPath } = require('../utils/requestLogPath');
  * but operates on customer_accounts rather than admin_users — so an
  * admin token cannot pass as a customer and vice versa.
  *
- * Sets `req.customer = { id, email, displayName, isActive }` on success.
+ * Sets `req.customer` on success. `id` is always the customer account, also for
+ * a contact's session, so ownership checks stay what they are; `contactId` and
+ * `rights` say which login it is and what that login may do.
  */
 
 const jwt = require('jsonwebtoken');
 const sessionAccess = require('../services/sessionAccessService');
 const logger = require('../utils/logger');
 const { getCustomerTokenFromRequest } = require('../utils/tokenUtils');
+const { HOLDER_RIGHTS, rightsOf } = require('../services/customerContactsService');
 
 async function customerAuth(req, res, next) {
   try {
@@ -56,13 +59,16 @@ async function customerAuth(req, res, next) {
       logger.info('customer session IP changed', { accountId: customer.id, tokenIp: decoded.ip, requestIp });
     }
 
+    const person = customer.contact || customer;
     req.customer = {
       id: customer.id,
-      email: customer.email,
-      displayName: customer.display_name,
-      firstName: customer.first_name,
-      lastName: customer.last_name,
-      preferredLanguage: customer.preferred_language || 'en',
+      contactId: customer.contact?.id ?? null,
+      rights: customer.contact ? rightsOf(customer.contact) : HOLDER_RIGHTS,
+      email: person.email,
+      displayName: person.display_name,
+      firstName: person.first_name,
+      lastName: person.last_name,
+      preferredLanguage: person.preferred_language || customer.preferred_language || 'en',
     };
     req.token = token;
     // CRM authorization here is the typed customer session plus the existing

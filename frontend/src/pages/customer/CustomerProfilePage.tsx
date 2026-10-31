@@ -41,6 +41,7 @@ import {
   type CustomerProfileFull,
   type CustomerProfileUpdate,
 } from '../../services/customer.service';
+import { useCustomerAuth } from '../../contexts/CustomerAuthContext';
 
 const SALUTATION_OPTIONS = [
   { value: '', labelKey: 'customer.profile.salutation.none', fallback: '— Not specified —' },
@@ -70,9 +71,16 @@ function profileToForm(p: CustomerProfileFull): CustomerProfileUpdate {
   };
 }
 
+// Saved only by a login with the company right.
+const COMPANY_FIELDS: (keyof CustomerProfileUpdate)[] = [
+  'companyName', 'vatId', 'addressLine1', 'addressLine2', 'postalCode', 'city', 'state', 'countryCode',
+];
+
 export const CustomerProfilePage: React.FC = () => {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const { customer } = useCustomerAuth();
+  const canEditCompany = (customer?.rights?.company ?? 'act') === 'act';
 
   const { data: profile, isLoading, error } = useQuery({
     queryKey: ['customer-profile'],
@@ -111,6 +119,7 @@ export const CustomerProfilePage: React.FC = () => {
       const payload: CustomerProfileUpdate = {};
       for (const [k, v] of Object.entries(form)) {
         const key = k as keyof CustomerProfileUpdate;
+        if (!canEditCompany && COMPANY_FIELDS.includes(key)) continue;
         payload[key] = (typeof v === 'string' && v.trim() === '') ? null : v as any;
       }
       const updated = await customerService.updateProfile(payload);
@@ -289,7 +298,9 @@ export const CustomerProfilePage: React.FC = () => {
           <div className="flex items-center gap-2 mb-4">
             <Phone className="w-5 h-5 text-muted-theme" />
             <h2 className="text-lg font-semibold text-theme">
-              {t('customer.profile.section.contact', 'Contact & business')}
+              {canEditCompany
+                ? t('customer.profile.section.contact', 'Contact & business')
+                : t('customer.profile.section.contactOnly', 'Contact')}
             </h2>
           </div>
 
@@ -309,7 +320,7 @@ export const CustomerProfilePage: React.FC = () => {
               />
             </div>
 
-            <div>
+            {canEditCompany && <div>
               <label className="block text-sm font-medium text-theme mb-1" htmlFor="profile-company">
                 {t('customer.profile.field.companyName', 'Company name')}
               </label>
@@ -321,9 +332,9 @@ export const CustomerProfilePage: React.FC = () => {
                 value={form.companyName || ''}
                 onChange={(e) => updateField('companyName', e.target.value)}
               />
-            </div>
+            </div>}
 
-            <div>
+            {canEditCompany && <div>
               <label className="block text-sm font-medium text-theme mb-1" htmlFor="profile-vat">
                 {t('customer.profile.field.vatId', 'VAT ID')}
               </label>
@@ -336,11 +347,11 @@ export const CustomerProfilePage: React.FC = () => {
                 value={form.vatId || ''}
                 onChange={(e) => updateField('vatId', e.target.value)}
               />
-            </div>
+            </div>}
           </div>
         </ProfileTile>
 
-        <ProfileTile>
+        {canEditCompany && <ProfileTile>
           <div className="flex items-center gap-2 mb-4">
             <MapPin className="w-5 h-5 text-muted-theme" />
             <h2 className="text-lg font-semibold text-theme">
@@ -445,7 +456,7 @@ export const CustomerProfilePage: React.FC = () => {
               />
             </div>
           </div>
-        </ProfileTile>
+        </ProfileTile>}
 
         {profileErr && (
           <p className="text-sm text-status hue-danger">{profileErr}</p>
