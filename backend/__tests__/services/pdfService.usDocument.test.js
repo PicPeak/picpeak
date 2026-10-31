@@ -143,3 +143,35 @@ describe('wording', () => {
     expect(drawn()).not.toContain('Sales tax');
   });
 });
+
+describe('a US customer with no country on file', () => {
+  it('reads as a domestic address, state included', async () => {
+    const texts = drawnText();
+    await pdfService.renderInvoiceToBuffer(invoiceContext({}, { recipient: usRecipient({ countryCodeIso: null }) }));
+    expect(mentions(texts(), 'Denver, CO 80203')).toBe(true);
+  });
+});
+
+describe('the totals printed in a contract', () => {
+  const { drawContractTotals } = pdfService._internal;
+  const contractTotals = { netMinor: 17500, vatMinor: 1400, vatRatePercent: 8, grossMinor: 18900 };
+
+  function vatRow(locale, issuer) {
+    const texts = drawnText();
+    const doc = new PDFDocument({ size: 'A4' });
+    doc._theme = builtInTheme('contract');
+    drawContractTotals(doc, {
+      locale, currency: 'USD', intlLocale: 'en-US', totals: contractTotals, issuer,
+    }, 50, 100, 495);
+    doc.end();
+    return texts();
+  }
+
+  it('use the same word as the invoice, not the stored German default', () => {
+    expect(mentions(vatRow('en-US', usIssuer({ vatLabel: 'MwSt.' })), 'MwSt.')).toBe(false);
+  });
+
+  it('keep a label the admin set', () => {
+    expect(mentions(vatRow('en', usIssuer({ vatLabel: 'State tax' })), 'State tax')).toBe(true);
+  });
+});

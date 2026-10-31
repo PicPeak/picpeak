@@ -927,6 +927,8 @@ LABELS['en-US'] = {
   payment_conditions: 'Payment terms',
   skonto_phrase: '{percent}% discount if paid within {days} business days.',
   vat_id_label: 'EIN',
+  // A US business's own tax number is its EIN, whatever the lookup's
+  // country branch: only a US business reads this set.
   vat_id_label_ch: 'EIN',
   vat_id_label_at: 'EIN',
   tax_id_label: 'Sales tax ID',

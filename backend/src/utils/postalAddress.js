@@ -17,17 +17,16 @@ function isUnitedStates(countryCode) {
 
 /**
  * The line under the street: "Denver, CO 80202" for a US address,
- * "LI-9494 Schaan" elsewhere ("9494 Schaan" with `prefixCountry: false`, the
- * form the window envelope's return-address line uses).
+ * "LI-9494 Schaan" elsewhere.
  */
-function cityLine({ postalCode, city, state, countryCode } = {}, { prefixCountry = true } = {}) {
+function cityLine({ postalCode, city, state, countryCode } = {}) {
   const pc = postalCode ? String(postalCode).trim() : '';
   const town = city ? String(city).trim() : '';
   if (isUnitedStates(countryCode)) {
     const stateZip = [state ? String(state).trim() : '', pc].filter(Boolean).join(' ');
     return state ? [town, stateZip].filter(Boolean).join(', ') : [town, stateZip].filter(Boolean).join(' ');
   }
-  const cc = prefixCountry && countryCode ? String(countryCode).trim().toUpperCase() : '';
+  const cc = countryCode ? String(countryCode).trim().toUpperCase() : '';
   return [cc && pc ? `${cc}-${pc}` : (pc || cc), town].filter(Boolean).join(' ');
 }
 

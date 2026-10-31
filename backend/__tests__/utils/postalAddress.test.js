@@ -25,11 +25,6 @@ describe('cityLine', () => {
     expect(cityLine({ city: 'Berlin', postalCode: '10115', countryCode: 'de', state: 'Berlin' })).toBe('DE-10115 Berlin');
   });
 
-  test('without the prefix a European address is just postal code and city', () => {
-    expect(cityLine({ city: 'Vaduz', postalCode: '9490', countryCode: 'LI' }, { prefixCountry: false })).toBe('9490 Vaduz');
-    expect(cityLine({ city: 'Denver', state: 'CO', postalCode: '80202', countryCode: 'US' }, { prefixCountry: false })).toBe('Denver, CO 80202');
-  });
-
   test('missing pieces drop out instead of leaving separators behind', () => {
     expect(cityLine({ city: 'Vaduz', countryCode: 'LI' })).toBe('LI Vaduz');
     expect(cityLine({ postalCode: '9490' })).toBe('9490');

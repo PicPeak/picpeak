@@ -60,6 +60,13 @@ describe('formatDate', () => {
     expect(formatDate('2026-04-19', { format: 'dd.MM.yyyy' })).toBe('19.04.2026');
   });
 
+  // Settings → General preselects dd/MM/yyyy, so an install that saved the page
+  // without choosing a format prints slashes; dd.MM.yyyy is the way back.
+  it('prints the format stored by the General settings page, dots included', () => {
+    expect(formatDate('2026-11-15', { format: 'dd.MM.yyyy' })).toBe('15.11.2026');
+    expect(formatDate('2026-11-15', { format: 'dd/MM/yyyy' })).toBe('15/11/2026');
+  });
+
   it('returns empty string on empty input', () => {
     expect(formatDate('')).toBe('');
     expect(formatDate(null)).toBe('');

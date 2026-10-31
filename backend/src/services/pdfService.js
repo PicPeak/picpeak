@@ -28,7 +28,7 @@
 const PDFDocument = require('pdfkit');
 const { SwissQRBill, Table } = require('swissqrbill/pdf');
 const { t, documentLocale } = require('./pdf-i18n');
-const { cityLine, printsCountryLine } = require('../utils/postalAddress');
+const { cityLine, printsCountryLine, isUnitedStates } = require('../utils/postalAddress');
 const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
 const { parsePromotionSnapshot } = require('../utils/lineItemTotals');
 const { parseInlineMarkdown } = require('../utils/placeholders');
@@ -694,7 +694,8 @@ function drawRecipientBlock(doc, recipient, locale, { flowY = null, issuerCountr
   // leaves it off a letter to a US address.
   const postalSegment = cityLine({
     postalCode: recipient.postalCode, city: recipient.city, state: recipient.state,
-    countryCode: recipient.countryCodeIso,
+    // A US business's customer with no country is a domestic address.
+    countryCode: recipient.countryCodeIso || (isUnitedStates(issuerCountryCode) ? 'US' : null),
   });
   const lines = [
     recipient.hasCompany ? recipient.attentionLine : null,
@@ -1310,7 +1311,7 @@ function drawContractTotals(doc, ctx, x, y, width) {
   }
   if (Number(totals.vatMinor) !== 0 || Number(totals.vatRatePercent) > 0) {
     row(
-      ctx.vatLabel || t(locale, 'totals_vat'),
+      vatRowLabel(ctx.issuer, locale),
       formatMinor(totals.vatMinor, currency, intlLocale),
       `${stripTrailingZeros(totals.vatRatePercent)}%`,
     );
@@ -2941,7 +2942,7 @@ function renderContractInProcess(context) {
                   currency: (ctx.quoteCurrency || 'CHF').toUpperCase(),
                   intlLocale: localeForIntl(locale, ctx.issuer?.countryCode),
                   totals: ctx.quoteTotals,
-                  vatLabel: ctx.issuer && ctx.issuer.vatLabel,
+                  issuer: ctx.issuer,
                 }, PAGE.marginLeft, doc.y, PAGE.contentWidth);
                 doc.y = y;
                 doc.fillColor(themeColor(doc, 'text'));
@@ -3095,6 +3096,6 @@ module.exports = {
   _raw: { renderDocument, renderContract: renderContractInProcess },
   // Exposed for unit tests + advanced callers.
   _internal: {
-    formatMinor, formatDate, t, registerCustomFonts, registerThemeFonts, drawLineItems, stampPageNumbers, themeColor,
+    formatMinor, formatDate, t, registerCustomFonts, registerThemeFonts, drawLineItems, drawContractTotals, stampPageNumbers, themeColor,
   },
 };
