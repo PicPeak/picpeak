@@ -118,7 +118,7 @@ async function refusePaidOrder(order, client) {
     status = refund.status === 'succeeded' ? 'refunded'
       : ['pending', 'requires_action'].includes(refund.status) ? 'refund_pending' : 'refund_failed';
   } finally {
-    await revoke(order, status);
+    await revoke(order, status, { releasePromo: status === 'refunded' && !order.promo_used });
   }
 }
 
@@ -145,8 +145,8 @@ async function reconcileSession(order, session, { failed = false, client = strip
     } : {}),
   });
   order = await db('photo_purchase_orders').where({ id: order.id }).first();
-  if (charge?.disputed) return revoke(order, 'charged_back');
-  if (Number(charge?.amount_refunded) > 0) return revoke(order, 'refunded');
+  if (charge?.disputed) return revoke(order, 'charged_back', { releasePromo: !order.promo_used });
+  if (Number(charge?.amount_refunded) > 0) return revoke(order, 'refunded', { releasePromo: !order.promo_used });
   if (REFUSING.includes(order.status)) return refusePaidOrder(order, client);
   // Stripe can mark a zero-total Checkout paid without creating a
   // PaymentIntent. Only a matching zero-total quote permits that path.

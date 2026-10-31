@@ -510,6 +510,38 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     expect(mockStripe.checkout.sessions.create.mock.calls[0]).toEqual(mockStripe.checkout.sessions.create.mock.calls[1]);
   });
 
+  test('a refused promo payment that is refunded releases the unused promo', async () => {
+    await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE' });
+    const order = await orderFor(await create({ photoIds: ids, promoCode: 'FOTO-ONCE' }));
+    const session = await pay(order);
+    await db('photos').where({ id: ids[0] }).update({ visibility: 'hidden' });
+    expect((await webhook('checkout.session.completed', session)).status).toBe(200);
+    expect((await readOrder(order))).toMatchObject({ status: 'refunded', promo_gallery_id: null });
+    await db('photos').where({ id: ids[0] }).update({ visibility: 'visible' });
+    expect((await create({ promoCode: 'FOTO-ONCE' })).status).toBe(200);
+  });
+
+  test('a refund that is still unconfirmed keeps the promo held', async () => {
+    await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE' });
+    const order = await orderFor(await create({ photoIds: ids, promoCode: 'FOTO-ONCE' }));
+    const session = await pay(order);
+    await db('photos').where({ id: ids[0] }).update({ visibility: 'hidden' });
+    mockStripe.refunds.create.mockResolvedValueOnce({ id: 're_pending', status: 'pending' });
+    expect((await webhook('checkout.session.completed', session)).status).toBe(200);
+    expect((await readOrder(order))).toMatchObject({ status: 'refund_pending', promo_gallery_id: galleryId });
+  });
+
+  test.each(['refund', 'dispute'])('a %s on an unfulfilled promo order releases the unused promo', async (kind) => {
+    await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE' });
+    const order = await orderFor(await create({ photoIds: ids, promoCode: 'FOTO-ONCE' }));
+    const session = await pay(order);
+    const payment = payments.get(session.payment_intent);
+    if (kind === 'refund') payment.latest_charge.amount_refunded = 1;
+    else payment.latest_charge.disputed = true;
+    await reconcileWebhook({ type: kind === 'refund' ? 'charge.refunded' : 'charge.dispute.created', data: { object: { payment_intent: payment.id } } }, mockStripe);
+    expect((await readOrder(order))).toMatchObject({ status: kind === 'refund' ? 'refunded' : 'charged_back', promo_gallery_id: null });
+  });
+
   test('failed delayed payment releases an unused promo, but does not unlock any photos', async () => {
     await db('events').where({ id: galleryId }).update({ free_photo_count: 1, promo_code: 'FOTO-ONCE' });
     const order = await orderFor(await create({ photoIds: ids, promoCode: 'FOTO-ONCE' }));
