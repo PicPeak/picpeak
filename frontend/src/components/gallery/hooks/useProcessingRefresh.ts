@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { galleryService } from '../../../services/gallery.service';
 import { LIVE_REFRESH_INTERVAL_MS, LIVE_REFRESH_MAX_INTERVAL_MS } from './useLiveRefresh';
 
@@ -12,6 +13,12 @@ interface Options {
   /** Reloads the list. */
   onLanded: () => void;
 }
+
+// Issue 2274: a row that stays pending (a stuck worker) must not keep every
+// open tab polling forever. Give up this long after the first "processing"
+// answer; the next list fetch starts over. (No "N unchanged answers" rule: a
+// long transcode leaves the numbers unchanged too.)
+export const PROCESSING_POLL_DEADLINE_MS = 30 * 60_000;
 
 const statusOf = (error: unknown) => (error as { response?: { status?: number } } | null)?.response?.status;
 
@@ -27,13 +34,32 @@ const statusOf = (error: unknown) => (error as { response?: { status?: number } 
  * The state route answers 404 once nothing is processing on a gallery with
  * live refresh off, which is the same news. Any other failure backs off up to
  * the cap and stays silent.
+ *
+ * Bounded (issue 2274, see the deadline above). Once given up, it waits for
+ * the next list fetch and returns true meanwhile, so live refresh can take
+ * over.
  */
-export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, onLanded }: Options): void {
-  const latest = useRef({ loadedCount, loadedMaxId, onLanded });
-  latest.current = { loadedCount, loadedMaxId, onLanded };
+export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, onLanded }: Options): boolean {
+  const queryClient = useQueryClient();
+  // Counts lists fetched from the server. Not dataUpdatedAt: a like or a
+  // rating patches the cached rows (a manual success) and moves it too, which
+  // would restart a poll that gave up (as in useLiveRefresh).
+  const [listFetches, setListFetches] = useState(0);
+  const latest = useRef({ loadedCount, loadedMaxId, listFetches, onLanded });
+  latest.current = { loadedCount, loadedMaxId, listFetches, onLanded };
+  // The list fetch the poll gave up on; a newer one resumes it.
+  const [gaveUpOn, setGaveUpOn] = useState<number | null>(null);
+  const halted = enabled && gaveUpOn === listFetches;
+
+  useEffect(() => queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== 'updated' || event.action.type !== 'success' || event.action.manual) return;
+    const [scope, eventSlug] = event.query.queryKey as unknown[];
+    if (scope === 'gallery-photos' && eventSlug === slug) setListFetches((n) => n + 1);
+  }), [queryClient, slug]);
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled || halted) return undefined;
+    let since: number | null = null;
     let delay = LIVE_REFRESH_INTERVAL_MS;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
@@ -52,6 +78,7 @@ export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, 
         if (stopped) return;
         delay = LIVE_REFRESH_INTERVAL_MS;
         const { loadedCount: count, loadedMaxId: maxId } = latest.current;
+        if (next.processing !== false) since ??= Date.now();
         if (next.processing === false || next.count !== count || (next.max_id ?? null) !== maxId) {
           latest.current.onLanded();
         }
@@ -64,6 +91,11 @@ export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, 
         }
       } finally {
         inFlight = false;
+      }
+      if (since !== null && Date.now() - since >= PROCESSING_POLL_DEADLINE_MS) {
+        stopped = true;
+        setGaveUpOn(latest.current.listFetches);
+        return;
       }
       schedule();
     };
@@ -84,5 +116,8 @@ export function useProcessingRefresh({ slug, enabled, loadedCount, loadedMaxId, 
       controller.abort();
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [slug, enabled]);
+    // gaveUpOn too: a list that arrived while giving up resumes at once.
+  }, [slug, enabled, halted, gaveUpOn]);
+
+  return halted;
 }

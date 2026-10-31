@@ -38,7 +38,8 @@ const { requirePermission } = require('../../middleware/permissions');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const {
   generateThumbnail,
-  extractCaptureDate,
+  extractCapture,
+  captureWallColumn,
   ensurePreviewImage,
   ensurePreviewImageAtWidth,
   normalizeTierWidth,
@@ -695,6 +696,7 @@ async function handleV1PhotoUpload(req, res) {
     let credit = {};
     let exif = {};
     let capturedAt = null;
+    let captureWall = {};
     let thumbRel = null;
     const thumbMeta = {};
     if (!videoUpload) {
@@ -711,7 +713,10 @@ async function handleV1PhotoUpload(req, res) {
       // Camera details (issue 1733, D1), from the same temp file.
       exif = await require('../../services/photoExif').exifColumn(tempPath);
       // Capture date, for the same reason: the worker never runs for this row.
-      capturedAt = await extractCaptureDate(tempPath);
+      // With the camera's own clock (issue 2305).
+      const capture = await extractCapture(tempPath);
+      capturedAt = capture ? capture.capturedAt : null;
+      captureWall = captureWallColumn(capture);
 
       try {
         thumbRel = await generateThumbnail(tempPath, { meta: thumbMeta });
@@ -757,6 +762,7 @@ async function handleV1PhotoUpload(req, res) {
       size_bytes: stat.size,
       content_sha256: contentSha256,
       captured_at: capturedAt ? capturedAt.toISOString() : null,
+      ...captureWall,
       width,
       height,
       media_type: videoUpload ? 'video' : 'image',

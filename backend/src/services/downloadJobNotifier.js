@@ -130,6 +130,13 @@ async function request(job, recipient) {
       // gallery deletion takes them in (see notifyReady).
       if (!(await trx('events').where({ id: job.event_id }).forShare().first('id'))) return 'gone';
     }
+    // Admission may have retired the job after the route read it. The event
+    // lock orders this check with eviction, before touching owner/recipient rows.
+    const jobQuery = trx('download_jobs').where({ id: job.id, event_id: job.event_id });
+    if (trx.client.config.client === 'pg') jobQuery.forShare();
+    const current = await jobQuery.first('status', 'expires_at');
+    if (!current || !['pending', 'building', 'ready'].includes(current.status)
+        || (current.status === 'ready' && new Date(current.expires_at).getTime() <= Date.now())) return 'gone';
     // The caller's read of the owner may predate an erasure that has already
     // deleted this owner's rows; inserting now would bring the address back.
     if (!(await stillHolds(row, trx))) return 'gone';

@@ -1,4 +1,4 @@
-const { isGalleryExpired } = require('../../utils/galleryLifecycle');
+const { isTrue, isGalleryExpired, assertGalleryEnabled } = require('../../utils/galleryLifecycle');
 const { publicThemeFields } = require('../../services/galleryTheme');
 const express = require('express');
 const { db } = require('../../database/db');
@@ -70,7 +70,7 @@ function throwIfPasswordChangeRequired(req) {
   if (ACCOUNT_REFUSAL_CODES.has(req.adminPreviewDenied?.code)) throw req.adminPreviewDenied;
 }
 
-router.get('/resolve/:identifier', handleAsync(async (req, res) => {
+router.get('/resolve/:identifier', noStoreCache, handleAsync(async (req, res) => {
   const { identifier } = req.params;
   let result = await resolveShareIdentifier(identifier);
 
@@ -92,6 +92,12 @@ router.get('/resolve/:identifier', handleAsync(async (req, res) => {
   }
 
   const { event, matchType, shareToken } = result;
+  if (isTrue(event.temporarily_disabled)) {
+    req.requestedSlug = event.slug;
+    const adminPreview = await verifyAdminPreview(req);
+    if (!adminPreview) throwIfPasswordChangeRequired(req);
+    assertGalleryEnabled(event, { adminPreview });
+  }
   const requiresPassword = !(event.require_password === false || event.require_password === 0 || event.require_password === '0');
 
   // The share_token is a bearer secret. Only return it (and the share
@@ -125,7 +131,7 @@ router.get('/:slug/verify-token/:token', noStoreCache, handleAsync(async (req, r
 
   const event = await db('events')
     .where({ slug, is_active: formatBoolean(true), is_archived: formatBoolean(false) })
-    .select('id', 'share_link', 'share_token', 'is_draft')
+    .select('id', 'share_link', 'share_token', 'is_draft', 'is_active', 'is_archived', 'expires_at', 'temporarily_disabled')
     .first();
 
   if (!event) {
@@ -147,11 +153,18 @@ router.get('/:slug/verify-token/:token', noStoreCache, handleAsync(async (req, r
     throw new NotFoundError('Gallery', 'Invalid gallery link');
   }
 
+  if (isTrue(event.temporarily_disabled)) {
+    req.requestedSlug = slug;
+    const adminPreview = await verifyAdminPreview(req);
+    if (!adminPreview) throwIfPasswordChangeRequired(req);
+    assertGalleryEnabled(event, { adminPreview });
+  }
+
   res.json({ valid: true });
 }));
 
 // Get gallery info (with optional token verification)
-router.get('/:slug/info', async (req, res) => {
+router.get('/:slug/info', noStoreCache, async (req, res) => {
   try {
     const { slug } = req.params;
     const { token } = req.query;
@@ -166,6 +179,7 @@ router.get('/:slug/info', async (req, res) => {
         'event_date',
         'expires_at',
         'is_active',
+        'temporarily_disabled',
         'is_archived',
         'share_link',
         'share_token',
@@ -238,6 +252,7 @@ router.get('/:slug/info', async (req, res) => {
     if (event.is_draft && !adminPreview) {
       return res.status(404).json({ error: 'Gallery is not yet published' });
     }
+    assertGalleryEnabled(event, { adminPreview });
     
     // If token provided, verify it matches the share link
     if (token) {
@@ -302,6 +317,9 @@ router.get('/:slug/info', async (req, res) => {
       info_markdown: event.info_markdown || null
     });
   } catch (error) {
+    if (error.code === 'GALLERY_TEMPORARILY_DISABLED') {
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
+    }
     errorResponse(res, error, 500, 'Failed to fetch gallery info');
   }
 });

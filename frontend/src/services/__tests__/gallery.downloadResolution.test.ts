@@ -17,6 +17,7 @@ describe('single-photo download with a picked resolution', () => {
     Object.defineProperty(navigator, 'userAgent', { value: DESKTOP_UA, configurable: true });
     galleryService = (await import('../gallery.service')).galleryService;
     api = (await import('../../config/api')).api;
+    vi.spyOn(api, 'head').mockResolvedValue({} as never);
     vi.spyOn(galleryService, 'triggerDirectDownload').mockImplementation(() => undefined);
     vi.spyOn(galleryService, 'triggerBrowserDownload').mockImplementation(() => undefined);
   });
@@ -29,6 +30,8 @@ describe('single-photo download with a picked resolution', () => {
     await galleryService.savePhotoToDevice('party', 7, 'a.jpg', undefined, '1500x1000');
     const [href] = vi.mocked(galleryService.triggerDirectDownload).mock.calls[0];
     expect(href).toMatch(/\/gallery\/party\/download\/7\?resolution=1500x1000$/);
+    // The HEAD preflight (issue 2304) probes the same size.
+    expect(api.head).toHaveBeenCalledWith('/gallery/party/download/7', { params: { resolution: '1500x1000' } });
   });
 
   it('leaves the link alone without a pick', async () => {

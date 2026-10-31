@@ -30,10 +30,10 @@ const { isGalleryPriced } = require('./priceRules');
 const SALES_CURRENCY = 'EUR';
 
 /** The events columns isGalleryOnSale reads. */
-const ON_SALE_COLUMNS = ['id', 'slug', 'is_priced', 'is_active', 'is_archived', 'is_draft', 'expires_at'];
+const ON_SALE_COLUMNS = ['id', 'slug', 'is_priced', 'is_active', 'is_archived', 'is_draft', 'expires_at', 'temporarily_disabled'];
 
-function isGalleryOnSale(event) {
-  return isGalleryPriced(event) && isGalleryAvailable(event);
+function isGalleryOnSale(event, { allowTemporarilyDisabled = false } = {}) {
+  return isGalleryPriced(event) && isGalleryAvailable(event, { allowTemporarilyDisabled });
 }
 
 function isVideoPhoto(photo) {

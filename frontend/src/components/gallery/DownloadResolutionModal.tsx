@@ -4,7 +4,7 @@ import { Download, Check, AlertCircle, X, Loader2, Mail } from 'lucide-react';
 
 import { Button } from '../common';
 import { galleryService } from '../../services/gallery.service';
-import type { DownloadResolutionChoice, DownloadJobState, DownloadJobStatus } from '../../types';
+import type { DownloadResolutionChoice, DownloadJobState } from '../../types';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { useDownloadChoice } from '../../contexts/DownloadChoiceContext';
 import { downloadChoiceKind, knownTotalBytes } from '../../utils/downloadChoice';
@@ -14,14 +14,14 @@ import {
   selectionTooLargeMessage, showDownloadLimitReached, type QuotaPhoto,
 } from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
+import type { StartedArchive } from '../../contexts/ArchiveDownloadContext';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
 
 /**
  * Resolution picker for gallery downloads (#858).
  *
- * Shown after "Download all"/"Download selected" when the gallery has the
- * picker enabled. A non-standard size has nothing cached behind it and can
- * take minutes to build, so the server prepares it as a job and this modal
+ * Used by all archive downloads, with a size picker when enabled. A size or
+ * selection without a ready cache can take minutes to build, so the server prepares it as a job and this modal
  * walks the three states the build actually has:
  *
  *   choose → preparing (poll) → ready (click to download)
@@ -51,9 +51,6 @@ const HINT_FALLBACK: Record<ReturnType<typeof downloadChoiceKind>, string> = {
 };
 
 const POLL_MS = 1500;
-// Give up after ~10 minutes of polling. The job may well still finish server
-// side; this only stops the modal spinning forever in front of the user.
-const MAX_POLLS = (10 * 60 * 1000) / POLL_MS;
 
 type Phase = 'choose' | 'preparing' | 'ready' | 'error';
 
@@ -62,6 +59,11 @@ interface DownloadResolutionModalProps {
   choices: DownloadResolutionChoice[];
   /** The gallery's own standard size — served from the pre-built archive. */
   standardResolution?: string;
+  zipReady?: boolean;
+  /** A standard-size archive already requested by a gallery action. */
+  startedJob?: Promise<StartedArchive>;
+  onRetry?: () => void;
+  part?: { index: number; total: number };
   /** Omitted = the whole gallery. */
   photoIds?: number[];
   /** The photos this download would ship, priced against the download limit (issue 1560). */
@@ -81,6 +83,10 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
   slug,
   choices,
   standardResolution,
+  zipReady,
+  startedJob,
+  onRetry,
+  part,
   photoIds,
   quotaPhotos,
   photo,
@@ -93,50 +99,54 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
   const downloadQuota = useDownloadQuota();
   const { watermarked } = useDownloadChoice();
   const overQuota = !!quotaPhotos && !downloadQuota.allows(quotaPhotos);
-  const [phase, setPhase] = useState<Phase>(resumeToken ? 'preparing' : 'choose');
+  const [phase, setPhase] = useState<Phase>(resumeToken || startedJob ? 'preparing' : 'choose');
   const [selected, setSelected] = useState<string>(choices[0]?.id ?? 'original');
   const [error, setError] = useState<string | null>(null);
   const [photoCount, setPhotoCount] = useState(0);
   const [notify, setNotify] = useState<DownloadJobState['notify'] | 'failed'>(undefined);
+  const handingOff = useRef(false);
+  const [checking, setChecking] = useState(false);
   const tokenRef = useRef<string | null>(resumeToken ?? null);
-  // Guards the polling loop against running on after unmount / close.
-  const activeRef = useRef(true);
+  // Each action/effect owns a generation. StrictMode cleanup or a retry
+  // invalidates all replies and polling loops belonging to the old one.
+  const generation = useRef(0);
+  useEffect(() => () => { generation.current += 1; }, []);
 
-  useEffect(() => {
-    activeRef.current = true;
-    return () => { activeRef.current = false; };
-  }, []);
+  const reportError = useCallback((err: unknown) => {
+    setError(isSelectionTooLargeError(err)
+      ? selectionTooLargeMessage(err.info.limit)
+      : isDownloadLimitError(err)
+        ? t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.')
+        : t('gallery.downloadPrepFailed', 'Preparation failed'));
+    setPhase('error');
+  }, [t]);
 
-  const filename = `${slug}-${selected === 'original' ? 'original' : selected}.zip`;
-
-  const poll = useCallback(async (token: string) => {
-    for (let i = 0; i < MAX_POLLS; i += 1) {
-      if (!activeRef.current) return;
+  const poll = useCallback(async (token: string, run: number) => {
+    while (generation.current === run) {
       await new Promise((r) => setTimeout(r, POLL_MS));
-      if (!activeRef.current) return;
+      if (generation.current !== run) return;
       try {
         const state = await galleryService.getDownloadJob(slug, token);
+        if (generation.current !== run) return;
         setPhotoCount(state.photo_count || 0);
-        // A failed request stays shown; the poll must not offer it again.
         setNotify((current) => (current === 'failed' ? current : state.notify));
-        if (state.status === 'ready') {
-          setPhase('ready');
+        if (state.unavailable) {
+          setError(t('gallery.downloadGone', 'This download is no longer available. Please request it again.'));
+          setPhase('error');
           return;
         }
+        if (state.status === 'ready') { setPhase('ready'); return; }
         if (state.status === 'failed') {
           setError(state.error || t('gallery.downloadPrepFailed', 'Preparation failed'));
           setPhase('error');
           return;
         }
-      } catch {
-        setError(t('gallery.downloadPrepFailed', 'Preparation failed'));
-        setPhase('error');
+      } catch (err) {
+        if (generation.current === run) reportError(err);
         return;
       }
     }
-    setError(t('gallery.downloadPrepTimeout', 'This is taking longer than expected. Please try again.'));
-    setPhase('error');
-  }, [slug, t]);
+  }, [slug, t, reportError]);
 
   const start = useCallback(async () => {
     if (onPick) {
@@ -147,9 +157,9 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
     // Whole-gallery download at the gallery's OWN standard size is exactly
     // what the pre-built archive already contains — take it instead of
     // re-resizing and re-packaging the entire gallery for the same bytes.
-    if (!photoIds && selected === standardResolution) {
+    if (!photoIds && zipReady && !isGalleryLimited(slug) && selected === standardResolution) {
       try {
-        await galleryService.downloadAllPhotos(slug, true);
+        galleryService.downloadCachedArchive(slug);
         onDownloaded?.();
       } catch (err) {
         // The limit refusal already told the guest why (issue 1560).
@@ -159,54 +169,52 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
       return;
     }
 
+    const run = ++generation.current;
     setPhase('preparing');
     setError(null);
     // A new job: a mail request that failed for the last one says nothing about it.
     setNotify(undefined);
     try {
       const job = await galleryService.startDownloadJob(slug, selected, photoIds);
+      if (generation.current !== run) return;
       tokenRef.current = job.token;
       // A job can be deduped onto an already-finished build, in which case
       // there is nothing to wait for.
-      if ((job.status as DownloadJobStatus) === 'ready') {
+      if (job.status === 'ready') {
         setPhase('ready');
         return;
       }
-      await poll(job.token);
+      await poll(job.token, run);
     } catch (err) {
-      setError(isSelectionTooLargeError(err)
-        ? selectionTooLargeMessage(err.info.limit)
-        : isDownloadLimitError(err)
-        ? t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.')
-        : t('gallery.downloadPrepFailed', 'Preparation failed'));
-      setPhase('error');
+      if (generation.current === run) reportError(err);
     }
-  }, [slug, selected, photoIds, poll, t, standardResolution, onClose, onDownloaded, onPick]);
+  }, [slug, selected, photoIds, poll, reportError, standardResolution, zipReady, onClose, onDownloaded, onPick]);
 
-  // Pick a job up again from the mail link. It may have been swept since
-  // (retention passed, or the gallery changed), which reads as not found;
-  // not swept yet, it says `unavailable`.
   useEffect(() => {
-    if (!resumeToken) return;
+    if (!resumeToken && !startedJob) return;
+    const run = ++generation.current;
     (async () => {
       try {
-        const state = await galleryService.getDownloadJob(slug, resumeToken);
-        if (!activeRef.current) return;
-        if (state.status === 'failed' || state.unavailable) throw new Error('gone');
-        setSelected(state.resolution);
-        if (state.status === 'ready') {
-          setPhase('ready');
-          return;
-        }
-        setNotify(state.notify);
-        await poll(resumeToken);
-      } catch {
-        if (!activeRef.current) return;
-        setError(t('gallery.downloadGone', 'This download is no longer available. Please request it again.'));
-        setPhase('error');
+        const job = startedJob ? await startedJob : {
+          ...await galleryService.getDownloadJob(slug, resumeToken!), token: resumeToken!,
+        };
+        if (generation.current !== run) return;
+        if ('unavailable' in job && job.unavailable || job.status === 'failed') throw new Error('gone');
+        tokenRef.current = job.token;
+        setSelected(job.resolution);
+        if (job.status === 'ready') { setPhase('ready'); return; }
+        if ('notify' in job && (job.notify === 'available' || job.notify === 'requested')) setNotify(job.notify);
+        await poll(job.token, run);
+      } catch (err) {
+        if (generation.current !== run) return;
+        if (resumeToken) {
+          setError(t('gallery.downloadGone', 'This download is no longer available. Please request it again.'));
+          setPhase('error');
+        } else reportError(err);
       }
     })();
-  }, [resumeToken, slug, poll, t]);
+    return () => { if (generation.current === run) generation.current += 1; };
+  }, [resumeToken, startedJob, slug, poll, t, reportError]);
 
   const requestMail = useCallback(async () => {
     const token = tokenRef.current;
@@ -221,28 +229,38 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
 
   const download = useCallback(async () => {
     const token = tokenRef.current;
-    if (!token) return;
-    // Download limit (issue 1560): the file is a browser navigation, which
-    // cannot show why it was refused. Ask first — another viewer may have
-    // used up the quota while this archive was being prepared.
-    if (isGalleryLimited(slug)) {
-      try {
-        const state = await galleryService.getDownloadJob(slug, token);
-        if (state.download_limit_reached) {
-          showDownloadLimitReached(state.download_limit_reached);
-          notifyDownloadQuotaChanged(slug);
-          setError(t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.'));
-          setPhase('error');
-          return;
-        }
-      } catch {
-        // The file route still enforces the limit; let it decide.
+    if (!token || handingOff.current) return;
+    const run = generation.current;
+    handingOff.current = true;
+    setChecking(true);
+    try {
+      // Recheck permission, expiry and quota before each native handoff.
+      // The file route remains authoritative if anything changes after this.
+      const state = await galleryService.getDownloadJob(slug, token);
+      if (generation.current !== run) return;
+      if (state.download_limit_reached) {
+        showDownloadLimitReached(state.download_limit_reached);
+        notifyDownloadQuotaChanged(slug);
+        setError(t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.'));
+        setPhase('error');
+        return;
       }
+      if (state.status !== 'ready' || state.unavailable) {
+        setError(t('gallery.downloadGone', 'This download is no longer available. Please request it again.'));
+        setPhase('error');
+        return;
+      }
+      if (photoIds) galleryService.downloadJobFile(slug, token, part, true);
+      else galleryService.downloadJobFile(slug, token, part);
+      onDownloaded?.();
+      onClose();
+    } catch (err) {
+      if (generation.current === run) reportError(err);
+    } finally {
+      handingOff.current = false;
+      if (generation.current === run) setChecking(false);
     }
-    galleryService.downloadJobFile(slug, token, filename);
-    onDownloaded?.();
-    onClose();
-  }, [slug, filename, onClose, onDownloaded, t]);
+  }, [slug, part, photoIds, onClose, onDownloaded, t, reportError]);
 
   // The original's file size, only where the payload knows it exactly: one
   // photo, or a selection (all loaded, as they were picked). Not for the
@@ -283,7 +301,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
     })
     : null;
 
-  const title = resumeToken
+  const title = resumeToken || startedJob
     ? t('gallery.preparedDownload', 'Your prepared download')
     : t('gallery.chooseResolution', 'Choose a download size');
 
@@ -398,7 +416,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
             <p className="text-xs text-muted-theme mt-1">
               {photoCount > 0
                 ? t('gallery.preparingProgress', '{{count}} photos packaged', { count: photoCount })
-                : t('gallery.preparingHint', 'Resizing photos — this can take a moment for large galleries.')}
+                : t('gallery.preparingHint', 'Preparing the files — this can take a moment for large galleries.')}
             </p>
             {notify === 'available' && (
               <Button variant="outline" size="sm" className="mt-4" onClick={requestMail} leftIcon={<Mail className="w-4 h-4" />}>
@@ -426,7 +444,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
             <p className="text-sm font-medium text-theme mb-4">
               {t('gallery.downloadReady', 'Your download is ready')}
             </p>
-            <Button variant="primary" onClick={download} leftIcon={<Download className="w-4 h-4" />}>
+            <Button variant="primary" onClick={download} disabled={checking} leftIcon={<Download className="w-4 h-4" />}>
               {t('gallery.downloadNow', 'Download')}
             </Button>
           </div>
@@ -442,7 +460,12 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
               </Button>
               {/* A resumed job has no selection behind it to prepare again. */}
               {!resumeToken && (
-                <Button variant="primary" onClick={() => setPhase('choose')}>
+                <Button variant="primary" onClick={() => {
+                    setError(null);
+                    setNotify(undefined);
+                    if (onRetry) { setPhase('preparing'); onRetry(); }
+                    else setPhase('choose');
+                  }}>
                   {t('common.retry', 'Try again')}
                 </Button>
               )}

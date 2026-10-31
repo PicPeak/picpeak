@@ -164,6 +164,16 @@ describe('public Live Slideshow routes', () => {
       const res = await request(app).get(stateUrl());
       expect(res.status).toBe(404);
     });
+
+    it('blocks slideshow polls and new sessions while temporarily disabled, restoring the same link', async () => {
+      const id = await insertEvent(db, { temporarily_disabled: 1 });
+      expect((await request(app).get(stateUrl())).status).toBe(404);
+      const sessionUrl = `/api/gallery/${SLUG}/show/${TOKEN}/session`;
+      expect((await request(app).get(sessionUrl)).status).toBe(404);
+      await db('events').where({ id }).update({ temporarily_disabled: 0 });
+      expect((await request(app).get(stateUrl())).status).toBe(200);
+      expect((await request(app).get(sessionUrl)).status).toBe(200);
+    });
   });
 
   describe('slideshowSettings — image fit (global default + per-event override)', () => {

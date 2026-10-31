@@ -118,6 +118,7 @@ describe('prepared archives removed between stat and read (issue 2129)', () => {
     // The fallback would start a rebuild of the cache; not this test's business.
     jest.spyOn(zips, 'generateZip').mockResolvedValue({ success: false });
     jest.spyOn(jobs, 'isStillDeliverable').mockResolvedValue(true);
+    jest.spyOn(jobs, 'deliveryPhotos').mockResolvedValue([]);
   });
   afterEach(() => jest.restoreAllMocks());
   afterAll(async () => { if (cleanup) await cleanup(); });

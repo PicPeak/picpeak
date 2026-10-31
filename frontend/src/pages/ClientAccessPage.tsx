@@ -11,6 +11,8 @@ import { usePublicSettings } from '../hooks/usePublicSettings';
 import { usePublicDarkMode } from '../hooks/usePublicDarkMode';
 import { useShowAgbLink } from '../hooks/useShowAgbLink';
 import { buildResourceUrl } from '../utils/url';
+import { isGalleryTemporarilyDisabled } from '../utils/galleryAvailability';
+import { GalleryUnavailableNotice } from '../components/gallery/GalleryUnavailableNotice';
 
 export const ClientAccessPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -22,6 +24,8 @@ export const ClientAccessPage: React.FC = () => {
   const [pin, setPin] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginUnavailable, setLoginUnavailable] = useState(false);
+  React.useEffect(() => setLoginUnavailable(false), [slug]);
 
   const { data: galleryInfo, isLoading: isLoadingInfoQuery, error: infoError } = useGalleryInfo(slug);
   // A renamed gallery's old slug: move to the new one, ?token= included.
@@ -69,6 +73,10 @@ export const ClientAccessPage: React.FC = () => {
       await clientLogin(slug, pin, linkToken);
       navigate(`/gallery/${slug}`, { replace: true });
     } catch (error: any) {
+      if (isGalleryTemporarilyDisabled(error)) {
+        setLoginUnavailable(true);
+        return;
+      }
       const statusCode = error.response?.status;
       if (statusCode === 401) {
         setLoginError(t('clientAccess.invalidPin'));
@@ -91,6 +99,8 @@ export const ClientAccessPage: React.FC = () => {
       </div>
     );
   }
+
+  if (loginUnavailable || isGalleryTemporarilyDisabled(infoError)) return <GalleryUnavailableNotice />;
 
   if (infoError || !galleryInfo) {
     return (

@@ -48,6 +48,8 @@ describe('galleryService.savePhotoToDevice — iOS gating (#554)', () => {
   beforeEach(async () => {
     vi.resetModules();
     galleryService = (await import('../gallery.service')).galleryService;
+    // The HEAD preflight before a direct download (issue 2304).
+    vi.spyOn((await import('../../config/api')).api, 'head').mockResolvedValue({} as never);
 
     vi.spyOn(galleryService, 'fetchPhotoBlob').mockResolvedValue(fetchedBlob as any);
     vi.spyOn(galleryService, 'triggerBrowserDownload').mockImplementation(() => undefined);
@@ -180,6 +182,8 @@ describe('galleryService.savePhotoToDevice — videos (issue 2263)', () => {
   beforeEach(async () => {
     vi.resetModules();
     galleryService = (await import('../gallery.service')).galleryService;
+    // The HEAD preflight before a direct download (issue 2304).
+    vi.spyOn((await import('../../config/api')).api, 'head').mockResolvedValue({} as never);
     markGalleryLimited = (await import('../../utils/downloadLimit')).markGalleryLimited;
 
     vi.spyOn(galleryService, 'fetchPhotoBlob').mockResolvedValue(fetchedBlob as any);
@@ -264,6 +268,8 @@ describe('galleryService.downloadPhoto — videos (issue 2263)', () => {
   beforeEach(async () => {
     vi.resetModules();
     galleryService = (await import('../gallery.service')).galleryService;
+    // The HEAD preflight before a direct download (issue 2304).
+    vi.spyOn((await import('../../config/api')).api, 'head').mockResolvedValue({} as never);
     markGalleryLimited = (await import('../../utils/downloadLimit')).markGalleryLimited;
 
     vi.spyOn(galleryService, 'fetchPhotoBlob').mockResolvedValue(fetchedBlob as any);

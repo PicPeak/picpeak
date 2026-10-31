@@ -268,8 +268,11 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
         // Also every photo whose camera details were never read (issue 1733,
         // D1). exif_json is written even when a file carries none ('{}'), so
         // a photo is read for them once and never again.
+        // And every photo whose camera clock was never read (issue 2305):
+        // '' marks a file read without one, so it is not read again.
         .where(function () {
-          this.whereNull('photos.captured_at').orWhereNull('photos.exif_json');
+          this.whereNull('photos.captured_at').orWhereNull('photos.exif_json')
+            .orWhereNull('photos.captured_at_wall');
         })
         // Three markers, because no single one is reliable. fileWatcher's
         // auto-import sets type='video' and a video/* mime but never
@@ -296,7 +299,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
         .select(
           'photos.id', 'photos.path', 'photos.filename',
           'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
-          'photos.captured_at', 'photos.exif_json',
+          'photos.captured_at', 'photos.exif_json', 'photos.captured_at_wall',
           'events.source_mode', 'events.external_path', 'events.slug'
         );
     } catch (err) {
@@ -318,10 +321,11 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
     });
 
     applicationWork.defer('dimension repair', async () => {
-      const { extractCaptureDate, withLocalCopy } = require('../services/imageProcessor');
+      const { extractCapture, withLocalCopy } = require('../services/imageProcessor');
       const { extractPhotoExif } = require('../services/photoExif');
       const { resolvePhotoStorageKey } = require('../services/photoResolver');
       let exifCount = 0;
+      let wallCount = 0;
       let successCount = 0;
       let missingCount = 0;
       let errorCount = 0;
@@ -348,11 +352,12 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             // One open of the original serves both reads; each is skipped
             // when the row already has its value.
             const needsDate = !photo.captured_at;
+            const needsWall = photo.captured_at_wall == null;
             const readFile = async (localPath) => ({
-              captured: needsDate ? await extractCaptureDate(localPath) : null,
+              capture: needsDate || needsWall ? await extractCapture(localPath) : null,
               exif: photo.exif_json ? null : await extractPhotoExif(localPath),
             });
-            let captured;
+            let capture;
             let exif;
             if (isExternal) {
               let fullPath;
@@ -372,7 +377,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
                 continue;
               }
 
-              ({ captured, exif } = await readFile(fullPath));
+              ({ capture, exif } = await readFile(fullPath));
             } else {
               let sourceKey;
               try {
@@ -388,7 +393,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
               // mode a missing object throws out of getToFile and lands in the
               // outer catch — both end up counted as failures, which is what a
               // missing original is.
-              ({ captured, exif } = await withLocalCopy(sourceKey, async (localPath) => {
+              ({ capture, exif } = await withLocalCopy(sourceKey, async (localPath) => {
                 await fs.access(localPath);
                 return readFile(localPath);
               }));
@@ -404,9 +409,21 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
                 .update({ exif_json: JSON.stringify(exif) });
             }
 
+            // The camera clock of a photo that already has its date (issue
+            // 2305), same fence; '' when the file carries none. A null
+            // capture (the file could not be read) writes nothing. A photo
+            // still without a date gets it with the date below.
+            if (!needsDate && needsWall && capture) {
+              wallCount += await db('photos')
+                .where({ id: photo.id, path: photo.path, filename: photo.filename })
+                .whereNull('captured_at_wall')
+                .update({ captured_at_wall: capture.wall || '' });
+            }
+
             // The counters below are about capture dates; a photo that was
             // only missing its camera details is done here.
             if (!needsDate) continue;
+            const captured = capture ? capture.capturedAt : null;
 
             if (!captured) {
             // No date recovered. Usually genuine — plenty of sources carry no
@@ -434,7 +451,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             const updated = await db('photos')
               .where({ id: photo.id, path: photo.path, filename: photo.filename })
               .whereNull('captured_at')
-              .update({ captured_at: captured.toISOString() });
+              .update({ captured_at: captured.toISOString(), captured_at_wall: capture.wall || '' });
             // Counted, not dropped: without this a candidate that was read but
             // not written falls out of the run's arithmetic entirely, and
             // success + noExif + failed silently stops adding up to the count
@@ -459,16 +476,16 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
           logger.warn(`Capture date backfill stopped: claim taken over after ${successCount} updated, ${errorCount} errors`);
           return;
         }
-        await maintenanceJobs.release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, exif: exifCount });
+        await maintenanceJobs.release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, exif: exifCount, wallClock: wallCount });
         logger.info(
           `Capture date backfill complete: ${successCount} updated, ${missingCount} without EXIF, `
           + `${errorCount} errors, ${skippedCount} skipped (dated or replaced mid-run), `
-          + `${exifCount} with camera details read`
+          + `${exifCount} with camera details read, ${wallCount} with the camera clock read`
         );
       } catch (err) {
         logger.error('Capture date backfill aborted:', err);
         await maintenanceJobs
-          .release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, exif: exifCount, error: err.message })
+          .release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, exif: exifCount, wallClock: wallCount, error: err.message })
           .catch(() => {});
       } finally {
         lease.stop();
@@ -513,7 +530,7 @@ router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.
     const counts = await scoped()
       .count('photos.id as total')
       .count({ dated: db.raw('CASE WHEN photos.captured_at IS NOT NULL THEN 1 END') })
-      .count({ pending: db.raw('CASE WHEN photos.captured_at IS NULL OR photos.exif_json IS NULL THEN 1 END') })
+      .count({ pending: db.raw('CASE WHEN photos.captured_at IS NULL OR photos.exif_json IS NULL OR photos.captured_at_wall IS NULL THEN 1 END') })
       .first();
 
     const total = Number(counts.total);

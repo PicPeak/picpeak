@@ -1,7 +1,11 @@
-function summarisePurchaseOrder(order, rows = []) {
+const { pauseAdjustedExpiry } = require('./purchaseAccess');
+
+function summarisePurchaseOrder(order, rows = [], gallery) {
   const photos = Array.isArray(rows) ? rows : [];
   const purchasedAt = order?.purchased_at ? new Date(order.purchased_at) : null;
-  const expiresAt = order?.expires_at ? new Date(order.expires_at) : null;
+  const effectiveExpiry = gallery && order?.status === 'completed'
+    ? pauseAdjustedExpiry(order, gallery) : order?.expires_at;
+  const expiresAt = effectiveExpiry ? new Date(effectiveExpiry) : null;
   const remainingMs = expiresAt && Number.isFinite(expiresAt.getTime())
     ? Math.max(0, expiresAt.getTime() - Date.now())
     : 0;
@@ -12,7 +16,7 @@ function summarisePurchaseOrder(order, rows = []) {
     total_cents: Number(order?.total_cents || 0),
     currency: String(order?.currency || 'EUR'),
     purchased_at: order?.purchased_at || null,
-    expires_at: order?.expires_at || null,
+    expires_at: effectiveExpiry || null,
     // Granted, or what became of it: refunded, refund_failed, charged_back,
     // cancelled. The access token itself is never listed — the owner fetches
     // the link through POST …/access-link.

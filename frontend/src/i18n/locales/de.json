@@ -1953,6 +1953,8 @@
     }
   },
   "gallery": {
+    "temporarilyUnavailable": "Diese Galerie ist vorübergehend nicht verfügbar.",
+    "temporarilyUnavailableHelp": "Bitte versuchen Sie es später erneut. Ihr Galerie-Link bleibt gleich.",
     "revealPendingTitle": "Die Fotos sind noch eine Überraschung",
     "revealPendingMessage": "Der Gastgeber gibt die Galerie später frei — schauen Sie bald wieder vorbei!",
     "revealScheduledFor": "Freigabe geplant für {{date}}",
@@ -2127,7 +2129,7 @@
     },
     "prepareDownload": "Download vorbereiten",
     "preparingDownload": "Download wird vorbereitet…",
-    "preparingHint": "Fotos werden verkleinert — bei großen Galerien kann das einen Moment dauern.",
+    "preparingHint": "Dateien werden vorbereitet — bei großen Galerien kann das einen Moment dauern.",
     "preparingProgress": "{{count}} Fotos verpackt",
     "downloadReady": "Ihr Download ist bereit",
     "downloadNow": "Herunterladen",
@@ -2390,6 +2392,13 @@
     "nestedFoldersHint": "Ordner in Ordnern verwalten Sie in der Ordnerleiste im Fotos-Tab."
   },
   "events": {
+    "disabled": "Deaktiviert",
+    "enableEvent": "Galerie aktivieren",
+    "disableEvent": "Galerie deaktivieren",
+    "temporarilyDisable": "Galerie vorübergehend deaktivieren",
+    "temporarilyDisableHelp": "Die Galerie für Kunden und Gäste offline nehmen und hier weiter bearbeiten. Nach der Aktivierung funktionieren dieselben Links und Passwörter wieder. Der Ablauf der Galerie bleibt unverändert. Die Zugriffsfristen für Käufe werden um die Pausenzeit verlängert, höchstens bis zum Ablauf der Galerie.",
+    "temporarilyDisabledSuccess": "Galerie vorübergehend deaktiviert.",
+    "temporarilyEnabledSuccess": "Vorübergehende Pause aufgehoben.",
     "revealMode": "Reveal-Modus (Galerie bis zur Freigabe verbergen)",
     "revealModeHelp": "Gäste können hochladen, sehen aber keine Fotos, bis Sie die Galerie freigeben — manuell oder zum geplanten Zeitpunkt. Diashow und Kundenzugang funktionieren weiter.",
     "liveRefresh": "Live-Aktualisierung (Gäste auf neue Fotos hinweisen)",
@@ -3373,6 +3382,8 @@
       "defaultRequirePasswordHelp": "\"Passwort erforderlich\" beim Erstellen neuer Veranstaltungen vorausgewählt. Deaktivieren für schnellere Erstellung öffentlicher Galerien.",
       "showGalleryFilterBar": "Filterleiste in Galerien anzeigen",
       "showGalleryFilterBarHelp": "Dateiname-Suche und Sortiersteuerungen über Raster-Galerien anzeigen. Deaktivieren für ein übersichtlicheres Layout.",
+      "lightboxMaxZoom": "Maximaler Zoom in der Lightbox",
+      "lightboxMaxZoomHelp": "Erlaubt Betrachtern, Bilder über ihre Originalpixelgröße hinaus zu vergrößern. Ein höherer Zoom vergrößert vorhandene Pixel, er fügt keine Bilddetails hinzu. Erlaubter Bereich: 100–1000. Standard: 100. Gilt für alle Galerien, auch bestehende.",
       "enablePhoneField": "Telefonnummer-Feld aktivieren",
       "enablePhoneFieldHelp": "Fügt ein optionales Telefonnummer-Eingabefeld zum Veranstaltungsformular hinzu. Nützlich für Folgeautomatisierungen wie WhatsApp-Zustellung via n8n. Immer optional, auch wenn aktiviert.",
       "defaultFeedbackEnabled": "Gäste-Feedback standardmäßig aktivieren",
@@ -3478,6 +3489,7 @@
       "lightboxToggle": "Vorab-Erzeugung von Vorschauen aktivieren",
       "lightboxToggleHelp": "Standardmäßig deaktiviert: Jede Vorschau entsteht, sobald ein Gast das Foto zum ersten Mal öffnet. Aktivieren schaltet die Schaltfläche unten frei, die alle im Voraus erzeugt.",
       "regeneratePreviewsButton": "Alle Vorschauen neu generieren",
+      "generateMissingPreviewsButton": "Fehlende Vorschauen generieren",
       "previewsRegenerateStarted": "Neugenerierung der Lightbox-Vorschauen gestartet",
       "previewsRegenerateError": "Neugenerierung der Vorschauen konnte nicht gestartet werden",
       "saveSuccess": "Vorschaubild-Einstellungen gespeichert",
@@ -5377,6 +5389,7 @@
       "columns": {
         "photo": "Foto",
         "category": "Kategorie",
+        "captured": "Aufgenommen",
         "uploaded": "Hochgeladen",
         "engagement": "Aktivität",
         "feedback": "Feedback",
@@ -5388,6 +5401,7 @@
         "likes": "Likes",
         "credit": "Urheber"
       },
+      "columnChooser": "Spalten",
       "visibility": {
         "none": "Keine Fotos entsprechen der ausgewählten Sichtbarkeit und den Filtern.",
         "filterLabel": "Foto-Sichtbarkeit",
@@ -6600,6 +6614,12 @@
     "ratePhoto": "Foto bewerten",
     "rateSelected": "Auswahl bewerten",
     "bulkRatingPartial": "{{rated}} von {{total}} Fotos wurden bewertet",
+    "bulkRatingDone": "{{count}} Fotos bewertet",
+    "bulkRatingDone_one": "{{count}} Foto bewertet",
+    "bulkRatingDone_other": "{{count}} Fotos bewertet",
+    "bulkRatingCleared": "Bewertung von {{count}} Fotos entfernt",
+    "bulkRatingCleared_one": "Bewertung von {{count}} Foto entfernt",
+    "bulkRatingCleared_other": "Bewertung von {{count}} Fotos entfernt",
     "ratingLimitReached": "Bewertungslimit erreicht. Bitte versuchen Sie es später erneut.",
     "ratingsCount_one": "{{count}} Bewertungen",
     "ratingsCount_other": "{{count}} Bewertungen",
@@ -7108,6 +7128,11 @@
     "videosFirstHelp": "Listet alle Videos vor den Fotos. Die Sortierung oben gilt weiterhin innerhalb der Videos und innerhalb der Fotos."
   },
   "photoSales": {
+    "purchaseConfirmed": "Ihr Kauf war erfolgreich",
+    "galleryExpiresOn": "Ablauf der Galerie: {{date}}",
+    "purchasePausedHelp": "Ihr Kauf bleibt gültig. Bitte verwenden Sie denselben Link, sobald die Galerie wieder verfügbar ist. Die Pausenzeit wird Ihrer Zugriffsfrist gutgeschrieben, höchstens bis zum Ablauf der Galerie.",
+    "purchaseContact": "Weitere Informationen erhalten Sie unter:",
+    "purchaseContactPhotographer": "Bitte wenden Sie sich für weitere Informationen an Ihren Fotografen.",
     "cart": "Warenkorb",
     "addToCart": "Foto in den Warenkorb",
     "addToCartPrice": "Foto für {{price}} in den Warenkorb",

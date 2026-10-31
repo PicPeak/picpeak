@@ -78,7 +78,7 @@ export interface CustomerProfilePrefill {
 }
 
 /** Gallery state, decided by the server (#1444). */
-export type GalleryAvailability = 'active' | 'expired' | 'unavailable';
+export type GalleryAvailability = 'active' | 'expired' | 'paused' | 'unavailable';
 
 export interface CustomerEvent {
   id: number;
@@ -272,7 +272,7 @@ export const customerService = {
   async logout(): Promise<void> {
     try {
       await api.post('/customer/auth/logout');
-    } catch (e) {
+    } catch {
       // Logout is best-effort — the cookie clear is what matters and
       // the backend always clears it even on error.
     }

@@ -11,6 +11,7 @@ import type { Photo } from '../../../types';
 import type { FeedbackFilterType } from '../GalleryFilter';
 import { useGalleryFiltering } from '../hooks/useGalleryFiltering';
 
+vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => ({ data: undefined }) }));
 vi.mock('react-i18next', async () => ({
   ...await vi.importActual('react-i18next'),
   useTranslation: () => ({

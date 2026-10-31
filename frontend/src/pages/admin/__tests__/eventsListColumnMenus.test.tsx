@@ -46,8 +46,10 @@ vi.mock('../../../contexts/PermissionsContext', () => ({
 }));
 
 const getEvents = vi.fn();
+const updateEvent = vi.fn().mockResolvedValue({});
 vi.mock('../../../services/events.service', () => ({
   eventsService: {
+    updateEvent: (...args: unknown[]) => updateEvent(...args),
     getEvents: (...args: unknown[]) => getEvents(...args),
     archiveEvent: vi.fn(),
     deleteEvent: vi.fn(),
@@ -112,8 +114,31 @@ async function openMenu(name: string) {
 
 describe('events list column menus', () => {
   beforeEach(() => {
+    updateEvent.mockClear();
     getEvents.mockReset();
     getEvents.mockResolvedValue(listPage([event(1, 'Hochzeit Meier')], 40));
+  });
+
+  it.each([false, true])('offers the availability action for disabled=%s and saves only that flag', async (disabled) => {
+    getEvents.mockResolvedValue(listPage([{ ...event(1, 'Availability Wedding'), temporarily_disabled: disabled }]));
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'More actions' }));
+    await userEvent.click(screen.getByRole('button', { name: disabled ? 'Enable gallery' : 'Disable gallery' }));
+    await waitFor(() => expect(updateEvent).toHaveBeenCalledWith(1, { temporarily_disabled: !disabled }));
+  });
+
+  it('shows expired rather than disabled when the gallery expiry has passed', async () => {
+    getEvents.mockResolvedValue(listPage([{ ...event(1, 'Expired Wedding'), temporarily_disabled: true, expires_at: '2020-01-01T00:00:00Z' }]));
+    renderPage();
+    await screen.findByText('Expired Wedding');
+    expect(screen.getByText('events.expired')).toBeInTheDocument();
+    expect(screen.queryByText('Disabled', { selector: 'span' })).toBeNull();
+  });
+
+  it('filters disabled galleries on the server', async () => {
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Disabled' }));
+    await waitFor(() => expect(getEvents).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'disabled', page: 1 })));
   });
 
   it('asks the server for nothing in particular until a column is chosen', async () => {

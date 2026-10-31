@@ -12,7 +12,8 @@ import { getGalleryToken } from '../../../utils/galleryAuthStorage';
  * server says the viewer may have the original (`photo.full_resolution_url`,
  * which the photo route decides again on every request), zooming past fit
  * loads it, decodes it off screen and lays it over the preview under the same
- * transform. The ceiling then becomes the original's own pixels.
+ * transform. The ceiling then becomes the original's own pixels, times the
+ * admin's maximum lightbox zoom (issue 2281; 100 % by default).
  *
  * 100 % means one image pixel per DEVICE pixel: the point past which zooming
  * only enlarges pixels. On a 2x display that is half the CSS-pixel figure.
@@ -46,9 +47,15 @@ export function actualPixelsZoom(natural: Size, fit: Size, devicePixelRatio: num
   return shown > 0 && longEdge(natural) > 0 ? longEdge(natural) / shown : null;
 }
 
-/** Never below the old ceiling: a small original still zooms to 3x of fit. */
-export function maxZoomFor(actualZoom: number | null): number {
-  return Math.max(BASE_MAX_ZOOM, actualZoom ?? 0);
+/** The admin's maximum lightbox zoom when none is set (issue 2281): the original's own pixels. */
+export const DEFAULT_MAX_ZOOM_PERCENT = 100;
+
+/**
+ * The original's pixels times the admin's maximum zoom percent (issue 2281),
+ * never below the old ceiling: a small original still zooms to 3x of fit.
+ */
+export function maxZoomFor(actualZoom: number | null, maxZoomPercent = DEFAULT_MAX_ZOOM_PERCENT): number {
+  return Math.max(BASE_MAX_ZOOM, (actualZoom ?? 0) * (maxZoomPercent / 100));
 }
 
 /**
@@ -87,12 +94,15 @@ interface Options {
   gesturing: boolean;
   /** The element the lightbox measures the cursor against; its centre is the image's. */
   containerRef: RefObject<HTMLElement>;
+  /** How far past the original's pixels the ceiling goes, in percent of them (issue 2281). */
+  maxZoomPercent?: number;
 }
 
 interface LoadedOriginal extends Size { photoId: number; url: string; src: string }
 
 export function useFullResolutionZoom({
   photo, slug, enabled, zoom, dragOffset, setZoom, setDragOffset, gesturing, containerRef,
+  maxZoomPercent = DEFAULT_MAX_ZOOM_PERCENT,
 }: Options) {
   const photoId = photo?.id;
   const stated = photo?.width && photo?.height ? { width: photo.width, height: photo.height } : null;
@@ -268,7 +278,7 @@ export function useFullResolutionZoom({
   // While the ceiling is merely unknown (the preview is between two loads and
   // has no box), the zoom holds where it is: no further in, and not forced out.
   const ceilingKnown = !url || failed || actualZoom !== null;
-  const maxZoom = ceilingKnown ? maxZoomFor(actualZoom) : Math.max(BASE_MAX_ZOOM, zoom);
+  const maxZoom = ceilingKnown ? maxZoomFor(actualZoom, maxZoomPercent) : Math.max(BASE_MAX_ZOOM, zoom);
   live.current = { zoom, dragOffset, actualZoom, maxZoom };
 
   // The ceiling can come down under a zoom already past it: the window grew,

@@ -69,6 +69,7 @@ interface CreateEventData {
 }
 
 interface UpdateEventData {
+  temporarily_disabled?: boolean;
   event_name?: string;
   event_date?: string;
   customer_name?: string;
@@ -165,7 +166,7 @@ export interface DownloadLimitUsage {
   downloads_remaining: number | null;
 }
 
-export type EventStatusFilter = 'active' | 'inactive' | 'archived' | 'draft' | 'expiring' | 'awaiting_delivery';
+export type EventStatusFilter = 'active' | 'inactive' | 'disabled' | 'archived' | 'draft' | 'expiring' | 'awaiting_delivery';
 
 /**
  * Columns the events list can be ordered by. Mirrors SORTABLE in

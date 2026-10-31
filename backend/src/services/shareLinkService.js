@@ -149,6 +149,7 @@ const resolveShareIdentifier = async (identifier, { includeDrafts = false } = {}
       'expires_at',
       'is_active',
       'is_archived',
+      'temporarily_disabled',
       'is_draft'
     )
     .where(includeDrafts ? UNPUBLISHED_EVENT_FILTER : ACTIVE_EVENT_FILTER);

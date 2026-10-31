@@ -246,7 +246,8 @@ async function notifyGalleryRecipients(event, { buildInlineEmailData, recipients
  * expired gallery's portal link answers 410.
  */
 function accountsAnnounceable(event, now = new Date()) {
-  if (parseBooleanInput(event.is_draft, false) || parseBooleanInput(event.is_archived, false)) return false;
+  if (parseBooleanInput(event.is_draft, false) || parseBooleanInput(event.is_archived, false)
+      || parseBooleanInput(event.temporarily_disabled, false)) return false;
   if (!event.expires_at) return true;
   const expires = new Date(event.expires_at);
   return Number.isNaN(expires.getTime()) || expires > now;

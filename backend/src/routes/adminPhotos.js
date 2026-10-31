@@ -34,6 +34,7 @@ const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { adminThumbnailUrl, adminThumbnailVersion } = require('../utils/adminThumbnailUrl');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { captureDateOrderSql } = require('../utils/captureDateSql');
+const { toIso, toServerWallClock, cameraWallClock } = require('../utils/dateNormalize');
 const { parseStoredExif } = require('../services/photoExif');
 const { originalNeedsPreview } = require('../utils/rawFormats');
 const { processUploadedPhotos } = require('../services/photoProcessor');
@@ -1609,6 +1610,17 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
       if (!stat) {
         return res.status(404).json({ error: 'Photo file not found' });
       }
+      // HEAD (issue 2304): the app probes before a direct video download, so
+      // a refusal or a missing file shows in the app. Answered from the stat,
+      // without opening the object.
+      if (req.method === 'HEAD') {
+        res.set({
+          'Content-Type': resolvePhotoContentType(photo),
+          'Content-Length': stat.size,
+          'Content-Disposition': contentDisposition,
+        });
+        return res.end();
+      }
       // Opened before the headers (issue 2129): a file removed since the
       // stat makes S3's get() reject here, and the lazy local stream fails
       // in pipeStreamToResponse, both as a 404.
@@ -1633,6 +1645,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
       'Content-Type': resolvePhotoContentType(photo),
       'Content-Disposition': contentDisposition,
     });
+    if (req.method === 'HEAD') return res.end();
     res.sendFile(filePath);
   } catch (error) {
     if (answerVanished(res, error, 'Photo file not found')) return;
@@ -1910,6 +1923,10 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       photos.map(p => p.id),
     );
     
+    // Legacy video rows can carry media_type null/'image' (issue 1739 review).
+    const isVideoRow = (photo) => photo.media_type === 'video'
+      || isVideoMimeType(photo.mime_type) || photo.type === 'video';
+
     res.json({
       photos: photos.map(photo => ({
         id: photo.id,
@@ -1968,6 +1985,17 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         duration: photo.duration || null,
         size: photo.size_bytes,
         uploaded_at: photo.uploaded_at,
+        // The camera clock, zone-less, for the list's Captured column
+        // (issue 1739). Formatted here, in the zone exifr read the EXIF time
+        // in, so the browser shows it without shifting it to its own zone.
+        // A video's time is a real instant instead (videoCaptureDate keeps
+        // the recording's offset or reads a UTC creation_time), so it goes
+        // out as one and the browser shows it in its own zone.
+        // The camera clock as the EXIF wrote it wins when it was read (issue
+        // 2305): the server-zone formatting moves a time in that zone's
+        // spring-forward gap and every time after a TZ change.
+        captured_at_local: isVideoRow(photo) ? null : (cameraWallClock(photo.captured_at_wall) || toServerWallClock(photo.captured_at)),
+        captured_at: isVideoRow(photo) ? toIso(photo.captured_at) : null,
         // Feedback data
         has_feedback: (commentMap[photo.id] > 0 || photo.average_rating > 0 || photo.like_count > 0),
         average_rating: photo.average_rating || 0,

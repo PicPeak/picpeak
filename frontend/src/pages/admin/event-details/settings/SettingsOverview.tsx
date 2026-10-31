@@ -89,6 +89,7 @@ export function useSectionSummaries(
     },
     access: {
       parts: [
+        ...(f.temporarily_disabled ? [{ text: t('events.disabled', 'Disabled'), tone: 'off' as const }] : []),
         f.require_password
           ? { text: s('passwordOn', 'Password on'), tone: 'strong' }
           : { text: s('passwordOff', 'No password'), tone: 'off' },

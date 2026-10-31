@@ -8,17 +8,17 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('react-i18next', () => ({
-  initReactI18next: { type: '3rdParty', init: vi.fn() },
-  useTranslation: () => ({ t: (k: string, d?: unknown) => (typeof d === 'string' ? d : k) }),
-}));
+vi.mock('react-i18next', () => {
+  const t = (k: string, d?: unknown) => typeof d === 'string' ? d : k;
+  return { initReactI18next: { type: '3rdParty', init: vi.fn() }, useTranslation: () => ({ t }) };
+});
 vi.mock('../../../services/gallery.service', () => ({
   galleryService: {
     startDownloadJob: vi.fn(),
     getDownloadJob: vi.fn(),
     requestDownloadJobMail: vi.fn(),
     downloadJobFile: vi.fn(),
-    downloadAllPhotos: vi.fn(),
+    downloadCachedArchive: vi.fn(),
   },
 }));
 vi.mock('../../../contexts/DownloadQuotaContext', () => ({
@@ -36,10 +36,11 @@ const choices = [{ id: '1500x1000', label: 'Medium', width: 1500, height: 1000 }
 describe('DownloadResolutionModal: onDownloaded', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(galleryService.getDownloadJob).mockResolvedValue({ status: 'ready', resolution: '1500x1000', photo_count: 2, size_bytes: 100 });
   });
 
   it('reports a download handed over, before closing', async () => {
-    vi.mocked(galleryService.startDownloadJob).mockResolvedValue({ token: TOKEN, status: 'ready' });
+    vi.mocked(galleryService.startDownloadJob).mockResolvedValue({ token: TOKEN, status: 'ready', resolution: '1500x1000' });
     const calls: string[] = [];
     const user = userEvent.setup();
     render(
@@ -53,7 +54,7 @@ describe('DownloadResolutionModal: onDownloaded', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Prepare download' }));
     await user.click(await screen.findByRole('button', { name: 'Download' }));
-    expect(galleryService.downloadJobFile).toHaveBeenCalledWith('party', TOKEN, 'party-1500x1000.zip');
+    expect(galleryService.downloadJobFile).toHaveBeenCalledWith('party', TOKEN, undefined, true);
     expect(calls).toEqual(['downloaded', 'close']);
   });
 

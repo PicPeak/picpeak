@@ -225,6 +225,56 @@
   outline-offset: 2px;
 }
 
+/* Rate selected (issue 1985): the panel hangs under the selection bar. On a
+   phone it spans the fixed nav, its containing block; from sm up it sits
+   under its pill. The shared control's colours follow the Story palette. */
+.story-rate {
+  position: static;
+}
+
+.story-rate-popover {
+  position: absolute;
+  top: 100%;
+  left: 1rem;
+  right: 1rem;
+  z-index: 51;
+  display: flex;
+  justify-content: center;
+  margin-top: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background-color: rgba(13, 13, 13, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.story-rate-popover .gallery-bulk-rating span,
+.story-rate-popover .gallery-bulk-rating button {
+  color: var(--story-muted-foreground);
+}
+
+.story-rate-popover .gallery-bulk-rating button:hover:not(:disabled) {
+  color: var(--story-primary);
+}
+
+.story-rate-popover .gallery-bulk-rating button:focus-visible {
+  outline: 2px solid var(--story-primary);
+  outline-offset: 1px;
+  border-radius: 9999px;
+}
+
+@media (min-width: 640px) {
+  .story-rate {
+    position: relative;
+  }
+
+  .story-rate-popover {
+    left: auto;
+    right: 0;
+    width: max-content;
+  }
+}
+
 .story-nav-favorites-count {
   position: absolute;
   top: -0.25rem;

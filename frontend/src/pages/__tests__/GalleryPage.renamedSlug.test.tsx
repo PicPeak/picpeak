@@ -22,6 +22,9 @@ const infoCalls: Array<string | undefined> = [];
 vi.mock('../../hooks/useGallery', () => ({
   useGalleryInfo: (slug?: string) => {
     infoCalls.push(slug);
+    if (slug === 'temporarily-disabled-gallery') {
+      return { data: undefined, isLoading: false, error: { response: { status: 403, data: { code: 'GALLERY_TEMPORARILY_DISABLED' } } } };
+    }
     if (slug === 'wedding-old-name-2026-06-05') {
       return {
         data: undefined,
@@ -86,6 +89,28 @@ afterEach(() => {
 });
 
 describe('GalleryPage — renamed gallery', () => {
+  it('shows a friendly unavailable screen for a disabled gallery', () => {
+    render(
+      <MemoryRouter initialEntries={['/gallery/temporarily-disabled-gallery']}>
+        <Routes><Route path="/gallery/:slug/:token?" element={<GalleryPage />} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('This gallery is temporarily unavailable.')).toBeInTheDocument();
+    expect(screen.queryByTestId('gallery-view')).toBeNull();
+    expect(screen.queryByTestId('cms-gallery-not-found')).toBeNull();
+  });
+
+  it('shows the same unavailable screen when a short share link cannot resolve while disabled', async () => {
+    const { galleryService } = await import('../../services');
+    vi.mocked(galleryService.resolveIdentifier).mockRejectedValueOnce({ response: { status: 403, data: { code: 'GALLERY_TEMPORARILY_DISABLED' } } });
+    render(
+      <MemoryRouter initialEntries={[`/gallery/${TOKEN}`]}>
+        <Routes><Route path="/gallery/:slug/:token?" element={<GalleryPage />} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('This gallery is temporarily unavailable.')).toBeInTheDocument();
+    expect(screen.queryByTestId('cms-gallery-not-found')).toBeNull();
+  });
   it('replaces an old-slug link with the new slug, keeping token and query', async () => {
     render(
       <MemoryRouter initialEntries={[`/gallery/${OLD_SLUG}/${TOKEN}?photo=42`]}>

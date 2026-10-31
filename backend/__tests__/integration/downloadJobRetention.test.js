@@ -279,6 +279,41 @@ describe('Prepared downloads: retention, sweep and ready mail (issue 1733)', () 
       expect(exists(job.zip_path)).toBe(false);
     });
 
+    it.each(['failed', 'ready'])('retains one undeletable %s archive while cleaning other galleries, then retries it', async (status) => {
+      const blocked = await makeEvent();
+      const stuck = await makeJob(blocked.event, blocked.photoIds, { expiresIn: -1000 });
+      await db('download_jobs').where({ id: stuck.id }).update({ status });
+      await db('download_job_recipients').insert({
+        job_id: stuck.id, email: 'retry-cleanup@example.test', created_at: new Date().toISOString(),
+      });
+      const other = await makeEvent();
+      const expired = await makeJob(other.event, other.photoIds, { expiresIn: -1000 });
+      const changed = await makeEvent();
+      const undeliverable = await makeJob(changed.event, changed.photoIds);
+      await db('events').where({ id: changed.event.id }).update({ allow_downloads: 0 });
+      const storage = require('../../src/services/storage').getStorage();
+      const realDelete = storage.delete.bind(storage);
+      const remove = jest.spyOn(storage, 'delete').mockImplementation(async (key) => {
+        if (key === stuck.zip_path) throw Object.assign(new Error('Access denied'), { code: 'EACCES' });
+        return realDelete(key);
+      });
+      try {
+        expect(await jobs.sweepExpired(blocked.event.id)).toBe(0);
+        await expect(jobs.sweepExpired()).resolves.toBeGreaterThanOrEqual(2);
+        expect(await jobRow(stuck.id)).toMatchObject({ status, zip_path: stuck.zip_path });
+        expect(exists(stuck.zip_path)).toBe(true);
+        expect(await db('download_job_recipients').where({ job_id: stuck.id })).toHaveLength(1);
+        for (const job of [expired, undeliverable]) {
+          expect(await jobRow(job.id)).toBeUndefined();
+          expect(exists(job.zip_path)).toBe(false);
+        }
+      } finally { remove.mockRestore(); }
+      expect(await jobs.sweepExpired(blocked.event.id)).toBe(1);
+      expect(await jobRow(stuck.id)).toBeUndefined();
+      expect(exists(stuck.zip_path)).toBe(false);
+      expect(await db('download_job_recipients').where({ job_id: stuck.id })).toHaveLength(0);
+    });
+
     it.each([
       ['expired', { expires_at: new Date(Date.now() - HOUR).toISOString() }],
       ['archived', { is_archived: 1 }],

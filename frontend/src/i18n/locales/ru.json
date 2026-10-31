@@ -150,6 +150,7 @@
     "clickToUploadOrDropFolder": "Нажмите для загрузки или перетащите файлы или папку",
     "takePhoto": "Сделать фото",
     "fileRequirements": "{{formats}} (макс. {{sizeLimit}} МБ на файл, {{limit}} файлов за загрузку)",
+    "videoSizeLimit": "Видео: макс. {{sizeLimit}} МБ на файл",
     "selectedFiles": "Выбранные файлы",
     "uploading": "Загрузка...",
     "uploadComplete": "Загрузка завершена!",
@@ -310,6 +311,7 @@
     "passwordHint": "Пароль предоставлен организатором события. Свяжитесь с ним, если у вас его нет."
   },
   "gallery": {
+    "preparingHint": "Подготовка файлов — для больших галерей это может занять некоторое время.",
     "revealPendingTitle": "Фотографии пока остаются сюрпризом",
     "revealPendingMessage": "Организатор откроет галерею позже — загляните ещё раз!",
     "revealScheduledFor": "Открытие запланировано на {{date}}",
@@ -3507,6 +3509,8 @@
     "ratePhoto": "Оценить фото",
     "rateSelected": "Оценить выбранные",
     "bulkRatingPartial": "Оценено фото: {{rated}} из {{total}}",
+    "bulkRatingDone": "Оценено фото: {{count}}",
+    "bulkRatingCleared": "Оценка убрана с фото: {{count}}",
     "ratingLimitReached": "Достигнут лимит оценок. Повторите попытку позже.",
     "ratingsCount_few": "{{count}} оценки",
     "ratingsCount_many": "{{count}} оценок",

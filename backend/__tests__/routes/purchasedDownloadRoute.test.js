@@ -155,6 +155,25 @@ describe('purchased photo download by purchase link', () => {
       .toEqual([`/api/gallery/purchased-downloads/${TOKEN}/photos/${boughtId}`]);
   });
 
+  it('blocks a purchased S3 original during a pause without reading storage, and restores the same entitlement', async () => {
+    const before = await db('photo_purchase_orders').where({ access_token: TOKEN }).first();
+    await db('events').where({ slug: SLUG }).update({ temporarily_disabled: true });
+    mockStorage.get.mockClear();
+    try {
+      await request(app).get(`/api/gallery/purchased-downloads/${TOKEN}/photos/${boughtId}`).expect(403);
+      await request(app).head(`/api/gallery/purchased-downloads/${TOKEN}/photos/${boughtId}`).expect(403);
+      expect(mockStorage.get).not.toHaveBeenCalled();
+      const expired = await request(app).get(`/api/gallery/purchased-downloads/${EXPIRED_TOKEN}`).expect(403);
+      expect(expired.body).not.toHaveProperty('temporarily_disabled');
+      await request(app).get(`/api/gallery/purchased-downloads/${'c'.repeat(48)}`).expect(404);
+    } finally {
+      await db('events').where({ slug: SLUG }).update({ temporarily_disabled: false });
+    }
+    const original = await request(app).get(`/api/gallery/purchased-downloads/${TOKEN}/photos/${boughtId}`).buffer(true).parse(binary).expect(200);
+    expect(original.body.equals(mockOriginal)).toBe(true);
+    expect(await db('photo_purchase_orders').where({ access_token: TOKEN }).first()).toEqual(before);
+  });
+
   it('refuses a photo of the gallery that this order did not buy', async () => {
     const res = await request(app).get(`/api/gallery/purchased-downloads/${TOKEN}/photos/${otherId}`);
     expect(res.status).toBe(403);

@@ -24,7 +24,7 @@ const { exifColumn } = require('./photoExif');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getStorage } = require('./storage');
-const { withLocalCopy, extractCaptureDate, withProcessableImage } = require('./imageProcessor');
+const { withLocalCopy, extractCapture, captureWallColumn, withProcessableImage } = require('./imageProcessor');
 const { isRawFilename } = require('../utils/rawFormats');
 const { normalizeUploadMimeType } = require('../utils/fileSecurityUtils');
 const { getAllowedExtensions } = require('./uploadSettings');
@@ -138,13 +138,17 @@ async function processEvent(event, storage) {
       let credit = {};
       let exif = {};
       let capturedAt = null;
+      let captureWall = {};
       if (isImage) {
         try {
           dimensions = await withLocalCopy(entry.key, async (localPath) => {
             credit = await resolveCredit({ localPath });
             exif = await exifColumn(localPath);
             // The row is inserted complete, so the worker never reads it.
-            capturedAt = await extractCaptureDate(localPath);
+            // With the camera's own clock (issue 2305).
+            const capture = await extractCapture(localPath);
+            capturedAt = capture ? capture.capturedAt : null;
+            captureWall = captureWallColumn(capture);
             // sharp cannot decode a RAW, so measure its embedded preview.
             const proc = await withProcessableImage(localPath, filename);
             try {
@@ -177,6 +181,7 @@ async function processEvent(event, storage) {
           source_origin: 'managed',
           uploaded_at: new Date().toISOString(),
           captured_at: capturedAt ? capturedAt.toISOString() : null,
+          ...captureWall,
           ...(dimensions && { width: dimensions.width, height: dimensions.height }),
           ...credit,
           ...exif,

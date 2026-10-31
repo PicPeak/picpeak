@@ -9,6 +9,12 @@ import { toBoolean, toNumber } from '../../../utils/parsers';
 import type { GuestNameMode } from '../../../types';
 
 const BYTES_PER_GB = 1024 * 1024 * 1024;
+
+/** The stored maximum lightbox zoom, or 100 when it is not an integer from 100 to 1000 (issue 2281). */
+const lightboxMaxZoomPercent = (value: unknown): number => {
+  const percent = toNumber(value, 100);
+  return Number.isInteger(percent) && percent >= 100 && percent <= 1000 ? percent : 100;
+};
 export const MAX_FILES_PER_UPLOAD_LIMIT = 2000;
 
 export interface GeneralSettings {
@@ -148,6 +154,8 @@ export interface EventSettings {
   first_look_keyword_detection: boolean;
   first_look_folder_keywords: string[];
   gallery_show_filter_bar: boolean;
+  // Maximum lightbox zoom, percent of the original's pixels (issue 2281).
+  gallery_lightbox_max_zoom_percent: number;
   event_phone_field_enabled: boolean;
 }
 
@@ -269,6 +277,7 @@ export function useSettingsState() {
     first_look_keyword_detection: true,
     first_look_folder_keywords: ['FirstLook', 'Sneak Peek'],
     gallery_show_filter_bar: true,
+    gallery_lightbox_max_zoom_percent: 100,
     event_phone_field_enabled: false
   });
 
@@ -451,6 +460,9 @@ export function useSettingsState() {
           ? settings.first_look_folder_keywords.map(String)
           : ['FirstLook', 'Sneak Peek'],
         gallery_show_filter_bar: toBoolean(settings.gallery_show_filter_bar, true),
+        // Same range and fallback as the backend (utils/lightboxZoom.js): a
+        // stored value out of range shows the 100 the gallery actually uses.
+        gallery_lightbox_max_zoom_percent: lightboxMaxZoomPercent(settings.gallery_lightbox_max_zoom_percent),
         event_phone_field_enabled: toBoolean(settings.event_phone_field_enabled, false)
       };
       setEventSettings(eventLoaded);

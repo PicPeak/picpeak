@@ -1,7 +1,7 @@
 const { db } = require('../database/db');
 const { userHasAllPermissions, roleEventScope } = require('../middleware/permissions');
 const { canAccessEvent, loadAssignedEventIds } = require('../middleware/ownership');
-const { assertGalleryAvailable, requiresGalleryPassword } = require('../utils/galleryLifecycle');
+const { assertGalleryAvailable, isGalleryAvailable, requiresGalleryPassword } = require('../utils/galleryLifecycle');
 const { isTokenBeforeCutoff } = require('../utils/sessionCutoff');
 const { AppError } = require('../utils/errors');
 const { assertGalleryCredentialCurrent } = require('../utils/galleryCredentialCutoff');
@@ -27,7 +27,11 @@ class GalleryAccessService {
       || !event || Number(grant.eventId) !== Number(event.id)) {
       throw new AppError('Invalid gallery grant', 403, 'INVALID_GALLERY_GRANT');
     }
-    assertGalleryAvailable(event, { adminPreview: grant.kind === 'admin' });
+    if (grant.kind === 'public' && requiresGalleryPassword(event)
+      && isGalleryAvailable(event, { allowTemporarilyDisabled: true })) {
+      throw new AppError('No token provided', 401, 'NO_TOKEN');
+    }
+    if (grant.kind !== 'gallery') assertGalleryAvailable(event, { adminPreview: grant.kind === 'admin' });
     if (!Number.isFinite(grant.issuedAt) || await isTokenBeforeCutoff({ iat: grant.issuedAt })) {
       throw new AppError('Session invalidated', 401, 'SESSION_INVALIDATED');
     }
@@ -78,8 +82,8 @@ class GalleryAccessService {
           throw new AppError('Access to this gallery has been revoked', 403, 'CUSTOMER_ASSIGNMENT_REVOKED');
         }
       }
-    } else if (requiresGalleryPassword(event)) {
-      throw new AppError('No token provided', 401, 'NO_TOKEN');
+      // Only a current credentialed session may learn about a pause here.
+      assertGalleryAvailable(event);
     }
     return grant;
   }

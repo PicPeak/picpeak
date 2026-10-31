@@ -1704,6 +1704,7 @@ async function notifyCustomerOfNewAssignments(customerId, addedEventIds) {
   const events = await db('events')
     .whereIn('id', addedEventIds)
     .where('is_archived', formatBoolean(false))
+    .where('temporarily_disabled', formatBoolean(false))
     .andWhere(function() {
       this.whereNull('is_draft').orWhere('is_draft', formatBoolean(false));
     })
@@ -1821,6 +1822,7 @@ async function listEventsForCustomer(customerId) {
       'events.event_date',
       'events.expires_at',
       'events.is_active',
+      'events.temporarily_disabled',
       // Needed to tell an unpublished draft from an open gallery (#1444).
       'events.is_draft',
       'event_customer_assignments.assigned_at'

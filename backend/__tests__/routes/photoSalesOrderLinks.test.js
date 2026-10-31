@@ -130,4 +130,13 @@ describe('photo sales: buyer links stay with the gallery owner', () => {
     expect((await resend('owner')).status).toBe(200);
     expect(queueEmail).toHaveBeenCalledTimes(1);
   });
+
+  it('uses the current gallery cutoff in a resent confirmation without truncating the stored purchase window', async () => {
+    const cutoff = new Date(Date.now() + 864e5).toISOString();
+    await db('events').where({ id: id.event }).update({ expires_at: cutoff });
+    expect((await resend('owner')).status).toBe(200);
+    expect(queueEmail.mock.calls[0][3].expires_at).toBe(cutoff);
+    const order = await db('photo_purchase_orders').where({ order_id: ORDER }).first();
+    expect(new Date(order.expires_at).getTime()).toBeGreaterThan(Date.parse(cutoff));
+  });
 });

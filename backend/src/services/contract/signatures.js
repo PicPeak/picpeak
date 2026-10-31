@@ -12,7 +12,7 @@ const pdfStampService = require('../pdfStampService');
 const emailProcessor = require('../emailProcessor');
 const { ensureContractEmailTemplatesSeeded } = require('../contractEmailTemplates');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
-const { adminActor, customerPublicActor, emitContractEvent, maybeStoreIp } = require('./helpers');
+const { adminActor, assertNotImported, customerPublicActor, emitContractEvent, maybeStoreIp } = require('./helpers');
 const { buildSignatureStamps, persistAuditCertificate, persistContractPdf, persistSignatureImage, sha256OfFile } = require('./signatureAssets');
 const { getContractById } = require('./crud');
 const { auditedUpdate } = require('../accountingHistory');
@@ -309,6 +309,7 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
   }
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
+  assertNotImported(contract);
   // Signatures v2 (#1446): only after every customer signer, into the
   // issuer's slot, and completion issues the signing certificate.
   if (Number(contract.signing_version) === 2) {
@@ -610,6 +611,10 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
     removeUpload(filePath);
     throw new AppError('Contract not found', 404);
   }
+  if (contract.imported_at) {
+    removeUpload(filePath);
+    assertNotImported(contract);
+  }
   // Expired is final (#1446), and a contract still collecting details was
   // never frozen: there is nothing a paper copy could be the signed form of.
   if (['cancelled', 'draft', 'expired', 'awaiting_data'].includes(contract.status)) {
@@ -789,6 +794,7 @@ async function rerenderAndResend(contractId, adminId) {
 
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
+  assertNotImported(contract);
   if (contract.status !== 'fully_signed') {
     throw new AppError(
       `Re-send is only available on fully-signed contracts (status: ${contract.status})`,
@@ -970,6 +976,7 @@ async function rerenderAndResend(contractId, adminId) {
 async function restampSignatures(contractId, { customerSignatureDataUrl, adminSignatureDataUrl }, adminId) {
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
+  assertNotImported(contract);
   // Signatures v2 stamp each slot from the document's record; re-stamping is
   // only for contracts signed before (#1446, decision #21).
   if (Number(contract.signing_version) === 2) {

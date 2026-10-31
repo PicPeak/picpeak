@@ -522,6 +522,74 @@ describe('admin thumbnail regeneration (#1129)', () => {
     });
   });
 
+  /**
+   * onlyMissing: a run cut short by a restart, or repeated after new uploads,
+   * builds only the previews that do not exist yet. Without it every press
+   * deletes and rebuilds every preview in the library, finished ones included.
+   */
+  describe('regenerate-previews with onlyMissing', () => {
+    async function seedMixed() {
+      const eventId = await seedEvent();
+      const done = await seedPhoto(eventId, { source_origin: 'managed', filename: 'done.jpg', preview_path: 'previews/preview_done.jpg' });
+      const missing = await seedPhoto(eventId, { source_origin: 'managed', filename: 'missing.jpg' });
+      return { done, missing };
+    }
+
+    it('counts and builds only the photos with no preview', async () => {
+      const { missing } = await seedMixed();
+
+      const res = await request(app).post('/admin/thumbnails/regenerate-previews').send({ onlyMissing: true });
+      await drain();
+
+      expect(res.body.count).toBe(1);
+      expect(imageProcessor.ensurePreviewImage).toHaveBeenCalledTimes(1);
+      expect(imageProcessor.ensurePreviewImage.mock.calls[0][0].id).toBe(missing);
+    });
+
+    it('leaves existing previews and their tiers alone', async () => {
+      await seedMixed();
+
+      await request(app).post('/admin/thumbnails/regenerate-previews').send({ onlyMissing: true });
+      await drain();
+
+      expect(imageProcessor.deletePreviewTiers).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
+      // Not forced: joining a lazy generation already in flight is fine.
+      expect(imageProcessor.ensurePreviewImage.mock.calls[0][1]).toBeUndefined();
+    });
+
+    it('starts nothing when every preview exists', async () => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, { source_origin: 'managed', preview_path: 'previews/preview_done.jpg' });
+
+      const res = await request(app).post('/admin/thumbnails/regenerate-previews').send({ onlyMissing: true });
+
+      expect(res.body.count).toBe(0);
+      expect(imageProcessor.ensurePreviewImage).not.toHaveBeenCalled();
+      // The lock is released: a full run can start straight after.
+      const next = await request(app).post('/admin/thumbnails/regenerate-previews').send({});
+      await drain();
+      expect(next.status).toBe(200);
+    });
+
+    it.each([
+      ['without the flag', {}],
+      ['with a non-boolean flag', { onlyMissing: 'false' }],
+    ])('still rebuilds every preview %s', async (_name, body) => {
+      await seedMixed();
+
+      const res = await request(app).post('/admin/thumbnails/regenerate-previews').send(body);
+      await drain();
+
+      expect(res.body.count).toBe(2);
+      expect(imageProcessor.deletePreviewTiers).toHaveBeenCalledTimes(2);
+      expect(imageProcessor.ensurePreviewImage).toHaveBeenCalledTimes(2);
+      for (const call of imageProcessor.ensurePreviewImage.mock.calls) {
+        expect(call[1]).toEqual({ force: true });
+      }
+    });
+  });
+
   it('scopes to one event when asked', async () => {
     const a = await seedEvent();
     await seedPhoto(a, { source_origin: 'external', external_relpath: 'a.jpg' });

@@ -284,6 +284,23 @@ describe('Reveal mode (#838)', () => {
       await db('events').where('id', eventId).update({ reveal_at: null, revealed_at: null });
     });
 
+    it('keeps a due reveal pending throughout a pause and stamps it after resuming', async () => {
+      const due = new Date(Date.now() - 5 * 60_000).toISOString();
+      await db('events').where({ id: eventId }).update({ reveal_mode: 1, temporarily_disabled: true, reveal_at: due, revealed_at: null });
+      const { checkScheduledReveals } = require('../../src/services/revealScheduler');
+      try {
+        await checkScheduledReveals();
+        const paused = await db('events').where({ id: eventId }).first();
+        expect(paused.revealed_at).toBeNull();
+        expect(new Date(paused.reveal_at).getTime()).toBe(Date.parse(due));
+        await db('events').where({ id: eventId }).update({ temporarily_disabled: false });
+        await checkScheduledReveals();
+        const resumed = await db('events').where({ id: eventId }).first();
+        expect(new Date(resumed.revealed_at).getTime()).toBe(Date.parse(due));
+        expect(resumed.reveal_at).toBeNull();
+      } finally { await db('events').where({ id: eventId }).update({ temporarily_disabled: false, revealed_at: null, reveal_at: null }); }
+    });
+
     it('POST /:id/reveal stamps revealed_at, clears the schedule, and is idempotent', async () => {
       await db('events').where('id', eventId).update({ reveal_at: new Date(Date.now() + 3600_000).toISOString() });
       const res = await request(app)

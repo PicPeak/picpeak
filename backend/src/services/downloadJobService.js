@@ -1,11 +1,9 @@
 /**
- * Custom-resolution download jobs (#858).
+ * Prepared gallery archive downloads (#858, #1966).
  *
- * The plain download-all is served from the pre-built cache, which is built at
- * the gallery's STANDARD resolution. When a guest picks a different size there
- * is nothing to cache against — so instead of holding an HTTP connection open
- * while sharp chews through a whole gallery (a reverse proxy would time it out
- * long before it finished), the archive is built as a job:
+ * The ready whole-gallery cache is already a native download. Other archives
+ * are prepared as jobs so neither a browser Blob nor a long-running HTTP
+ * preparation request has to hold a whole gallery:
  *
  *   POST .../download-jobs   → { token, status: 'pending' }
  *   GET  .../download-jobs/:token        → poll { status, progress }
@@ -27,20 +25,27 @@ const os = require('os');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const crypto = require('crypto');
+const { Transform } = require('stream');
 const archiver = require('archiver');
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
-const { renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, resolveWatermarkSettings, isVideo } = require('./downloadRendition');
+const { renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, renderedDownloadType, resolveWatermarkSettings, isVideo } = require('./downloadRendition');
 const { isGalleryPriced, resolveForcedWatermarkSettingsForPhoto } = require('../modules/photoSales/priceRules');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
-const { parseResolution, getDownloadGlobals } = require('../utils/downloadResolutions');
+const { parseResolution, getDownloadGlobals, resolveEventDownloadPolicy, pickRequestedResolution } = require('../utils/downloadResolutions');
 const { isGalleryAvailable, isGalleryExpired } = require('../utils/galleryLifecycle');
 const { parseBooleanInput } = require('../utils/parsers');
 const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, livePhotos, wherePhotoProcessed } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 const applicationWork = require('./activeApplicationWork');
+const { buildEntryManifest } = require('./downloadJobManifest');
+const { retireReadyJobs } = require('./downloadJobCache');
+const { readEntryManifest } = require('./downloadJobDelivery');
+const { createBuildProgress } = require('./downloadJobProgress');
+const { downloadLimitOf } = require('./downloadQuota');
+const { uniquifyZipNames } = require('../utils/filenameSanitizer');
 
 const blockedFoldersOf = (eventId) => require('./folderTreeService').downloadBlockedFolderIds(eventId);
 
@@ -58,6 +63,12 @@ const MAX_CONCURRENT_BUILDS = 2;
 // subset to enqueue unbounded 500-photo resizes — each one parking a promise
 // and eventually a full gallery's worth of CPU and disk.
 const MAX_QUEUED_BUILDS = 8;
+// A gallery cannot fill the instance queue. The storage budget includes
+// in-flight reservations and evicts replaceable ready archives as needed.
+const MAX_EVENT_BUILDS = 2;
+const MAX_EVENT_STORED_JOBS = 4;
+const STALL_TIMEOUT_MS = 2 * 60 * 1000;
+const PROGRESS_INTERVAL_MS = 30 * 1000;
 // A build heartbeats while it works. A row whose heartbeat is older than this
 // has no live worker (crashed or restarted) and may be failed by recovery.
 const LEASE_TIMEOUT_MS = 5 * 60 * 1000;
@@ -73,7 +84,7 @@ function visibilityScope(accessLevel) {
 }
 
 class DownloadJobService {
-  constructor() {
+  constructor({ stallTimeoutMs = STALL_TIMEOUT_MS } = {}) {
     this.running = 0;
     // jobId -> in-flight build promise. Only jobs present here are safe to
     // rejoin; rows left 'pending'/'building' by a previous process are not.
@@ -81,6 +92,10 @@ class DownloadJobService {
     // Slots claimed between the admission check and the liveBuilds entry.
     // Without it, concurrent requests all pass the check before any registers.
     this.reserved = 0;
+    this.stallTimeoutMs = stallTimeoutMs;
+    this.readyStats = new Map();
+    this.reservedByEvent = new Map();
+    this.buildEvents = new Map();
   }
 
   cacheDir(slug) {
@@ -102,7 +117,7 @@ class DownloadJobService {
    * id. Hashing the resolved id set also stops a stale archive being reused
    * after photos are added, removed or hidden.
    */
-  dedupKey(eventId, resolution, resolvedPhotoIds, watermark, visibilityScope, priced = false) {
+  dedupKey(eventId, resolution, resolvedPhotoIds, watermark, visibilityScope, priced = false, { version = 1, previewOnly = false } = {}) {
     const ids = [...resolvedPhotoIds].map(Number).sort((a, b) => a - b).join(',');
     // The full watermark SETTINGS, not just the on/off flag: an admin who
     // edits the watermark text or logo while it stays enabled would otherwise
@@ -113,9 +128,10 @@ class DownloadJobService {
     // Photo sales: a priced gallery packages previews, so a job
     // built before pricing (clean originals) must not match. Unpriced keys
     // stay byte-identical to upstream.
+    const mode = version >= 2 ? `|v${version}|${previewOnly ? 'preview' : 'download'}` : '';
     const sales = priced ? '|priced' : '';
     return crypto.createHash('sha256')
-      .update(`${eventId}|${resolution}|${visibilityScope}|${ids}|${wm}${sales}`)
+      .update(`${eventId}|${resolution}|${visibilityScope}|${ids}|${wm}${sales}${mode}`)
       .digest('hex')
       .slice(0, 64);
   }
@@ -152,20 +168,29 @@ class DownloadJobService {
    * building them: after a restart those rows have no live worker, so rejoining
    * one would leave the client polling until the TTL expires.
    */
-  async findReusable(eventId, dedupKey) {
-    const rows = await db('download_jobs')
+  async findReusable(eventId, dedupKey, query = db) {
+    const rows = await query('download_jobs')
       .where({ event_id: eventId, dedup_key: dedupKey })
       .whereIn('status', ['pending', 'building', 'ready'])
-      .where('expires_at', '>', new Date().toISOString())
+      .where(function () {
+        this.where('expires_at', '>', new Date().toISOString()).orWhereIn('status', ['pending', 'building']);
+      })
       .orderBy('id', 'desc');
-    return rows.find((r) => r.status === 'ready' || this.liveBuilds.has(r.id)) || null;
+    return rows.find((r) => {
+      if (r.status !== 'ready') return this.liveBuilds.has(r.id);
+      if ((r.policy_version || 1) < 2) return true;
+      if (r.policy_version === 2) return false;
+      let ids;
+      try { ids = JSON.parse(r.delivered_photo_ids); } catch (_) { return false; }
+      return !!readEntryManifest(r, ids, Number(r.size_bytes));
+    }) || null;
   }
 
   /**
    * Create (or join) a job. Returns the job row. Building continues in the
    * background — callers poll getStatus().
    */
-  async createJob({ event, resolution, photoIds, accessLevel }) {
+  async createJob({ event, resolution, photoIds, accessLevel, previewOnly = false }) {
     const watermark = await resolveWatermarkSettings(event);
 
     // Resolve the photo set up front, under THIS requester's visibility, so
@@ -179,10 +204,14 @@ class DownloadJobService {
     }
 
     const scope = visibilityScope(accessLevel);
-    const dedupKey = this.dedupKey(event.id, resolution, resolvedIds, watermark, scope, isGalleryPriced(event));
+    const identityWatermark = isGalleryPriced(event)
+      ? { download: watermark, sales: await resolveForcedWatermarkSettingsForPhoto(event) } : watermark;
+    // v3 retires archives whose v2 boundaries came from archive.pointer().
+    const dedupKey = this.dedupKey(event.id, resolution, resolvedIds, identityWatermark, scope, isGalleryPriced(event), { version: 3, previewOnly });
 
     const existing = await this.findReusable(event.id, dedupKey);
     if (existing) return existing;
+    await this.recoverOrphanedJobs(event.id);
 
     // Refuse rather than queue without bound. The client shows this as a
     // retryable error, which is far better than accepting work the box can't
@@ -191,49 +220,129 @@ class DownloadJobService {
     // The slot is reserved SYNCHRONOUSLY here — checking liveBuilds.size and
     // only populating it after the awaited insert let a burst of concurrent
     // requests all pass the check before any of them registered.
-    if (this.reserved + this.liveBuilds.size >= MAX_QUEUED_BUILDS) {
+    const eventInFlight = (this.reservedByEvent.get(event.id) || 0)
+      + [...this.buildEvents.values()].filter((eventId) => eventId === event.id).length;
+    if (eventInFlight >= MAX_EVENT_BUILDS || this.reserved + this.liveBuilds.size >= MAX_QUEUED_BUILDS) {
       const err = new Error('Too many downloads are being prepared right now');
       err.code = 'BUSY';
       throw err;
     }
     this.reserved += 1;
+    this.reservedByEvent.set(event.id, (this.reservedByEvent.get(event.id) || 0) + 1);
 
     try {
       const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + await jobTtlMs()).toISOString();
+      const ttl = await jobTtlMs();
+      const createdAt = new Date().toISOString();
+      const expiresAt = new Date(Date.parse(createdAt) + ttl).toISOString();
 
-      const inserted = await db('download_jobs').insert({
-        token,
-        event_id: event.id,
-        resolution,
-        photo_ids: JSON.stringify(resolvedIds),
-        dedup_key: dedupKey,
-        visibility_scope: scope,
-        status: 'pending',
-        heartbeat_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        expires_at: expiresAt,
-      }).returning('id');
-      const id = inserted[0]?.id ?? inserted[0];
+      const admit = () => db.transaction(async (trx) => {
+        // Same event-row serialization as the download allowance: SQLite
+        // serializes writes; Postgres needs an explicit row lock.
+        if (trx.client.config.client === 'pg') await trx('events').where({ id: event.id }).forUpdate().first();
+        const reused = await this.findReusable(event.id, dedupKey, trx);
+        if (reused) return { reused };
+        const rows = await trx('download_jobs').where({ event_id: event.id })
+          .where(function () { this.whereIn('status', ['pending', 'building', 'ready']).orWhereNotNull('zip_path'); })
+          .select('status');
+        const busy = rows.filter((row) => ['pending', 'building'].includes(row.status)).length;
+        if (busy >= MAX_EVENT_BUILDS) {
+          const err = new Error('Too many downloads are being prepared for this gallery. Please try again later');
+          err.code = 'BUSY';
+          throw err;
+        }
+        // A failed deletion still occupies disk: reclaim it before admitting
+        // more work, rather than letting repeated storage errors bypass the cap.
+        if (rows.some((row) => row.status === 'failed')) return { full: true };
+        const evicted = await retireReadyJobs(trx, event.id, rows.length - MAX_EVENT_STORED_JOBS + 1);
+        if (!evicted) return { full: true };
+        const inserted = await trx('download_jobs').insert({
+          token,
+          event_id: event.id,
+          resolution,
+          photo_ids: JSON.stringify(resolvedIds),
+          dedup_key: dedupKey,
+          visibility_scope: scope,
+          policy_version: 3,
+          preview_only: previewOnly,
+          status: 'pending',
+          heartbeat_at: new Date().toISOString(),
+          created_at: createdAt,
+          expires_at: expiresAt,
+        }).returning('id');
+        return { id: inserted[0]?.id ?? inserted[0], evicted };
+      });
+      let admitted = await admit();
+      if (admitted.full) {
+        // Reclaim expired/stale artifacts without waiting for the scheduled
+        // sweep. Delete outside the admission transaction and its row lock.
+        await this.sweepExpired(event.id);
+        admitted = await admit();
+        if (admitted.full) {
+          const err = new Error('This gallery has reached its prepared download limit. Please reuse an existing download or try again later');
+          err.code = 'BUSY';
+          throw err;
+        }
+      }
+      if (admitted.reused) return admitted.reused;
+      const { id } = admitted;
+      try {
+        // Storage I/O stays outside the transaction. Do not build another
+        // archive if the old artifact could not be reclaimed.
+        const reclaimed = await this.evictJobs(admitted.evicted);
+        if (reclaimed !== admitted.evicted.length) {
+          const err = new Error('Could not reclaim prepared download storage. Please try again later');
+          err.code = 'BUSY';
+          throw err;
+        }
+      } catch (error) {
+        await this._fail(id, 'Could not reclaim prepared download storage');
+        throw error;
+      }
 
       // Fire and forget — the row is the source of truth for progress. The
       // liveBuilds entry is what makes a pending/building row reusable; a row
       // without one is an orphan from a previous process.
       const promise = applicationWork.track('download job',
-        () => this._build(id, event, resolution, resolvedIds, watermark, accessLevel))
+        () => this._build(id, event, resolution, resolvedIds, watermark, accessLevel, previewOnly, ttl))
         .catch((err) => logger.error('Download job build failed', { jobId: id, error: err.message }))
-        .finally(() => this.liveBuilds.delete(id));
+        .finally(() => { this.liveBuilds.delete(id); this.buildEvents.delete(id); });
       this.liveBuilds.set(id, promise);
+      this.buildEvents.set(id, event.id);
 
       return await db('download_jobs').where({ id }).first();
     } finally {
       // The slot is now accounted for by liveBuilds (or the insert failed).
       this.reserved -= 1;
+      const remaining = this.reservedByEvent.get(event.id) - 1;
+      if (remaining) this.reservedByEvent.set(event.id, remaining);
+      else this.reservedByEvent.delete(event.id);
     }
   }
 
   async getStatus(token) {
-    return db('download_jobs').where({ token }).first();
+    const job = await db('download_jobs').where({ token }).first();
+    // Startup cannot fail a recent lease belonging to another replica. A
+    // worker lost just before restart becomes stale later; polling must then
+    // report failure rather than spin forever without the old UI timeout.
+    if (job && ['pending', 'building'].includes(job.status)
+        && (!job.heartbeat_at || Date.now() - new Date(job.heartbeat_at).getTime() > LEASE_TIMEOUT_MS)) {
+      await this.recoverOrphanedJobs();
+      return db('download_jobs').where({ token }).first();
+    }
+    return job;
+  }
+
+  /** Polls share a brief existence probe; GET/HEAD always stat afresh. */
+  async readyStat(job) {
+    if (!job.zip_path) return null;
+    const cached = this.readyStats.get(job.zip_path);
+    if (cached && cached.expiresAt > Date.now()) return cached.promise;
+    if (this.readyStats.size >= 256) this.readyStats.delete(this.readyStats.keys().next().value);
+    const promise = getStorage().stat(job.zip_path);
+    this.readyStats.set(job.zip_path, { expiresAt: Date.now() + 5000, promise });
+    try { return await promise; }
+    catch (error) { this.readyStats.delete(job.zip_path); throw error; }
   }
 
   /** Exposed so the delivery route can re-check the requester's scope. */
@@ -250,6 +359,16 @@ class DownloadJobService {
    * Re-running the visibility query at delivery closes that window.
    */
   async isStillDeliverable(job, event, accessLevel) {
+    return !!await this.deliveryPhotos(job, event, accessLevel);
+  }
+
+  /** The authorized photo projection also supplies the archive filename. */
+  async deliveryPhotos(job, event, accessLevel) {
+    // Unreleased v2 artifacts used buffered pointer values as boundaries.
+    // Never reuse/charge against those; the normal sweep retires them.
+    if (job.policy_version === 2) return false;
+    const policy = await resolveEventDownloadPolicy(event);
+    if (job.resolution !== policy.standard && pickRequestedResolution(policy, job.resolution) === null) return false;
     let ids;
     try {
       ids = JSON.parse(job.photo_ids || '[]');
@@ -259,7 +378,8 @@ class DownloadJobService {
     if (!Array.isArray(ids) || ids.length === 0) return false;
 
     // Every packaged photo must still be visible to this requester.
-    const visible = await this.photoQuery(job.event_id, ids, accessLevel, await blockedFoldersOf(job.event_id)).select('photos.id');
+    const visible = await this.photoQuery(job.event_id, ids, accessLevel, await blockedFoldersOf(job.event_id))
+      .select('photos.id', 'photos.media_type', 'photos.mime_type');
     if (visible.length !== ids.length) return false;
 
     // …and the archive must still match the CURRENT rendition policy. Turning
@@ -268,10 +388,13 @@ class DownloadJobService {
     // TTL. Recomputing the identity is the cheapest way to notice: any input
     // that changes the archive changes the key.
     const watermark = await resolveWatermarkSettings(event);
+    const identityWatermark = job.policy_version >= 2 && isGalleryPriced(event)
+      ? { download: watermark, sales: await resolveForcedWatermarkSettingsForPhoto(event) } : watermark;
     const expected = this.dedupKey(
-      job.event_id, job.resolution, ids, watermark, visibilityScope(accessLevel), isGalleryPriced(event)
+      job.event_id, job.resolution, ids, identityWatermark, visibilityScope(accessLevel), isGalleryPriced(event),
+      { version: job.policy_version || 1, previewOnly: !!job.preview_only }
     );
-    return expected === job.dedup_key;
+    return expected === job.dedup_key ? visible : null;
   }
 
   // Only a job still in flight: one cancelForEvent() failed keeps its reason.
@@ -299,167 +422,209 @@ class DownloadJobService {
     const withZip = await db('download_jobs')
       .where({ event_id: eventId, status: 'failed' })
       .whereNotNull('zip_path');
-    const storage = getStorage();
-    for (const job of withZip) {
-      await storage.delete(job.zip_path).catch((e) =>
-        logger.warn('Failed deleting download job artifact', { jobId: job.id, error: e.message }));
-    }
+    await this.evictJobs(withZip);
   }
 
-  async _build(id, event, resolution, photoIds, watermarkSettings, accessLevel) {
-    // Back-pressure: a queued job stays 'pending' (which the UI shows as
-    // "preparing") rather than piling more sharp pipelines onto a box that is
-    // already saturated.
-    while (this.running >= MAX_CONCURRENT_BUILDS) {
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    this.running += 1;
-
+  async _build(id, event, resolution, photoIds, watermarkSettings, accessLevel, previewOnly, ttl) {
+    // Queued work has not started a source read. Keep that lease while it
+    // waits; an active build below must earn renewals by making progress.
+    let queueCancelled = false;
+    const queuedHeartbeat = setInterval(() => {
+      db('download_jobs').where({ id, status: 'pending' }).update({ heartbeat_at: new Date().toISOString() })
+        .then((changed) => { if (!changed) queueCancelled = true; })
+        .catch((err) => logger.warn('Download queue heartbeat failed', { jobId: id, error: err.message }));
+    }, PROGRESS_INTERVAL_MS);
+    queuedHeartbeat.unref();
+    let acquired = false;
     let tmpDir;
+    let progress;
+    let heartbeat;
     try {
-      // A job the archive failed while it waited for a slot stays failed.
+      while (this.running >= MAX_CONCURRENT_BUILDS) {
+        if (queueCancelled) return;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      clearInterval(queuedHeartbeat);
+      this.running += 1;
+      acquired = true;
       const started = await db('download_jobs').where({ id, status: 'pending' })
         .update({ status: 'building', heartbeat_at: new Date().toISOString() });
-      if (started === 0) return;
-
-      // Same query that produced the dedup identity, so the archive can never
-      // contain photos the requester wasn't entitled to at creation time.
-      const photos = await this.photoQuery(event.id, photoIds, accessLevel, await blockedFoldersOf(event.id))
-        .select('photos.*')
-        .orderBy('photos.uploaded_at', 'desc');
-
-      if (photos.length === 0) {
-        await this._fail(id, 'No photos available for this selection');
-        return;
-      }
+      if (!started) return;
+      progress = createBuildProgress(this.stallTimeoutMs);
+      const folders = await progress.wait(blockedFoldersOf(event.id));
+      const photos = await progress.wait(this.photoQuery(event.id, photoIds, accessLevel, folders)
+        .select('photos.*').orderBy('photos.uploaded_at', 'desc'));
+      if (!photos.length) throw new Error('No photos available for this selection');
 
       const box = parseResolution(resolution);
       const storage = getStorage();
-      const useOriginal = await getUseOriginalFilenames();
-      const entryNames = getZipEntryNames(photos, useOriginal);
-
-      tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-dljob-'));
+      const entryNames = getZipEntryNames(photos, await progress.wait(getUseOriginalFilenames()));
+      tmpDir = await progress.wait(fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-dljob-')));
       const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.zip`);
+      const packaged = [];
+      const finalNames = new Map();
+      let reportAt = Date.now();
+      let reportedCount = 0;
+      let reportedRevision = progress.revision;
+      let reporting = false;
+      const report = async (force = false) => {
+        if (reporting || progress.signal.aborted) return;
+        if (!force && (progress.revision === reportedRevision
+            || (packaged.length - reportedCount < 10 && Date.now() - reportAt < PROGRESS_INTERVAL_MS))) return;
+        reporting = true;
+        const revision = progress.revision, count = packaged.length;
+        try {
+          // One conditional write checks cancellation AND reports progress;
+          // at most once per ten entries or thirty seconds, not twice/photo.
+          const changed = await progress.wait(db('download_jobs').where({ id, status: 'building' })
+            .update({ photo_count: count, heartbeat_at: new Date().toISOString() }));
+          if (!changed) progress.abort(new Error('Download preparation was cancelled'));
+          reportedRevision = revision; reportedCount = count; reportAt = Date.now();
+        } finally { reporting = false; }
+      };
+      heartbeat = setInterval(() => { report().catch((error) => progress.abort(error)); }, PROGRESS_INTERVAL_MS);
+      heartbeat.unref();
 
-      let appended = 0;
-      const appendedIds = [];
-      let cancelled = false;
-      await new Promise((resolve, reject) => {
+      await progress.wait(new Promise((resolve, reject) => {
         const output = fs.createWriteStream(tmpPath);
-        // level 0 — photos are already compressed, so deflate only burns CPU.
         const archive = archiver('zip', { zlib: { level: 0 } });
-        // Bound and reclaim the storage reads (#1399 follow-up). The per-photo
-        // catch below deliberately skips a bad source, but it never destroyed
-        // the stream it had already opened, so every skipped photo leaked a
-        // socket for the life of the process.
-        // A queued read that dies would otherwise stall the archive and hold
-        // its slot for the life of the build, so it fails the job instead.
-        const guard = createArchiveStreamGuard({
-          onFatalError: (err) => { guard.destroyAll(); archive.abort(); reject(err); },
+        let failure;
+        let completeEntry;
+        const fail = (error) => {
+          if (failure) return;
+          failure = error;
+          guard.destroyAll();
+          archive.abort();
+          output.destroy();
+          completeEntry?.(error);
+          reject(error);
+        };
+        const guard = createArchiveStreamGuard({ onFatalError: fail });
+        const aborted = () => fail(progress.signal.reason);
+        progress.signal.addEventListener('abort', aborted, { once: true });
+        output.on('error', fail);
+        archive.on('error', fail);
+        output.on('close', () => {
+          progress.signal.removeEventListener('abort', aborted);
+          if (failure) reject(failure); else resolve();
         });
-        output.on('close', resolve);
-        archive.on('error', (err) => { guard.destroyAll(); reject(err); });
+        // Bytes flowing through the archive count even for a very large
+        // video. Rendering/opening a stalled source produces no such signal.
+        archive.on('data', () => progress.touch());
         archive.pipe(output);
-
         (async () => {
           for (let i = 0; i < photos.length; i += 1) {
+            progress.signal.throwIfAborted();
             const photo = photos[i];
             const name = entryNames[i] || `photo-${photo.id}.jpg`;
+            let source;
+            let entryName = name;
             try {
-              // Photo sales: before the checkout every
-              // photo of a priced gallery is packaged as the watermarked
-              // low-quality preview; free photos and non-priced galleries
-              // keep the historical build unchanged. Videos stay untouched.
-              let photoSettings = watermarkSettings;
-              let previewEntry = null;
-              if (isGalleryPriced(event) && !isVideo(photo)) {
-                photoSettings = await resolveForcedWatermarkSettingsForPhoto(event, photo);
-                previewEntry = await renderPreviewForDownload(photo, photoSettings);
-                // No preview means no photo: the original must never stand in.
-                if (!previewEntry) throw new Error('No sales preview of this photo');
-              }
-              if (previewEntry) {
-                archive.append(previewEntry.buffer, { name: previewDownloadName(name, previewEntry.extension) });
+              const salesPreview = isGalleryPriced(event) && !isVideo(photo);
+              const settings = salesPreview
+                ? await progress.wait(resolveForcedWatermarkSettingsForPhoto(event, photo)) : watermarkSettings;
+              if (previewOnly || salesPreview) {
+                const preview = await progress.wait(renderPreviewForDownload(photo, settings));
+                if (!preview) throw new Error('No preview of this photo');
+                source = preview.buffer;
+                entryName = previewDownloadName(name, preview.extension);
               } else {
-                const rendered = await renderPhotoForDownload(event, photo, box, photoSettings);
-                if (rendered) {
-                  archive.append(rendered, { name });
-                } else {
+                source = await progress.wait(renderPhotoForDownload(event, photo, box, settings));
+                if (source) entryName = renderedDownloadType(source, photo, name).name;
+                else {
                   const key = resolvePhotoStorageKey(event, photo);
-                  if (key) {
-                    if (!await guard.acquire()) break;
-                    archive.append(guard.track(await storage.get(key)), { name });
-                  } else {
-                    archive.file(resolvePhotoFilePath(event, photo), { name });
+                  if (key && storage.kind() === 'local' && !await progress.wait(storage.stat(key))) {
+                    throw new Error('Photo missing in storage');
                   }
+                  if (!key) await progress.wait(fsp.access(resolvePhotoFilePath(event, photo)));
+                  // Register a late-opening source too: the closed guard
+                  // destroys it if the deadline expired while it opened.
+                  source = await progress.wait((key ? storage.get(key) : Promise.resolve(fs.createReadStream(resolvePhotoFilePath(event, photo))))
+                    .then((stream) => guard.track(stream)));
                 }
               }
-              appended += 1;
-              appendedIds.push(photo.id);
-              // Progress is coarse (photo count, not bytes) but it is what the
-              // modal needs to show movement on a long build.
-              if (appended % 10 === 0 || appended === photos.length) {
-                // Doubles as the lease heartbeat — see LEASE_TIMEOUT_MS. No
-                // row updated means the archive cancelled the job.
-                const alive = await db('download_jobs').where({ id, status: 'building' })
-                  .update({ photo_count: appended, heartbeat_at: new Date().toISOString() });
-                if (alive === 0) {
-                  cancelled = true;
-                  break;
-                }
-              }
-            } catch (err) {
-              logger.warn('Skipping photo in download job', { jobId: id, photoId: photo.id, error: err.message });
+            } catch (error) {
+              progress.signal.throwIfAborted();
+              logger.warn('Skipping photo in download job', { jobId: id, photoId: photo.id, error: error.message });
+              progress.touch();
+              await report();
+              continue;
             }
+            if (failure) { source.destroy?.(); return; }
+            // Conversion can give distinct source extensions the same final
+            // name. Uniquify after rewriting, against every packaged entry.
+            entryName = uniquifyZipNames([entryName], finalNames)[0];
+            await progress.wait(new Promise((done, failed) => {
+              const onEntry = (entry) => {
+                completeEntry = null;
+                packaged.push({ photoId: photo.id, name: entry.name });
+                progress.touch();
+                done();
+              };
+              completeEntry = (error) => { archive.removeListener('entry', onEntry); failed(error); };
+              archive.once('entry', onEntry);
+              archive.append(source, { name: entryName });
+            }));
+            await report();
           }
-          archive.finalize();
-        })().catch((err) => { guard.destroyAll(); reject(err); });
-      });
-
-      if (cancelled) return;
-      if (appended === 0) {
-        await this._fail(id, 'No photos could be packaged');
-        return;
-      }
-
-      const stat = await fsp.stat(tmpPath);
-      const row = await db('download_jobs').where({ id }).first();
-      if (row.status !== 'building') return;
+          await archive.finalize();
+        })().catch(fail);
+      }));
+      if (!packaged.length) throw new Error('No photos could be packaged');
+      const stat = await progress.wait(fsp.stat(tmpPath));
+      const manifest = await progress.wait(buildEntryManifest(tmpPath, packaged, stat.size));
+      await report(true);
+      progress.signal.throwIfAborted();
+      const row = await progress.wait(db('download_jobs').where({ id, status: 'building' }).first());
+      if (!row) return;
       const key = this.jobKey(event.slug, row.token);
-      await storage.putFromFile(key, tmpPath);
-
-      // Only a job still building goes ready. The archive can cancel it
-      // during the upload, after it deleted the gallery's files: then the
-      // zip belongs to no job and goes too.
+      // Stream the upload through the storage abstraction so local and S3
+      // copies also have observable progress and a reclaimable source.
+      const uploadSource = fs.createReadStream(tmpPath);
+      // A transform preserves back-pressure. A data listener on the source
+      // could drain bytes before a storage backend finishes opening its writer.
+      const uploadBody = new Transform({ transform(chunk, encoding, done) { progress.touch(); done(null, chunk); } });
+      uploadSource.once('error', (error) => uploadBody.destroy(error));
+      uploadBody.once('error', (error) => progress.abort(error));
+      const stopUpload = () => { uploadSource.destroy(); uploadBody.destroy(progress.signal.reason); };
+      progress.signal.addEventListener('abort', stopUpload, { once: true });
+      const upload = storage.put(key, uploadBody);
+      uploadSource.pipe(uploadBody);
+      try { await progress.wait(upload); }
+      catch (error) {
+        // A backend may finish after cancellation; never leave that late
+        // artifact behind or let it turn an abandoned job into a ready one.
+        void upload.then(() => storage.delete(key)).catch(() => {});
+        throw error;
+      } finally {
+        progress.signal.removeEventListener('abort', stopUpload);
+        uploadSource.destroy();
+        uploadBody.destroy();
+      }
       const committed = await db('download_jobs').where({ id, status: 'building' }).update({
-        status: 'ready',
-        zip_path: key,
-        size_bytes: stat.size,
-        photo_count: appended,
-        // Only what actually landed in the zip: a missing/corrupt source is
-        // skipped, and counting it as downloaded would inflate that photo's
-        // stats for a file the guest never received. Kept SEPARATE from
-        // photo_ids, which is the requested set the dedup fingerprint was
-        // computed from — overwriting it would make every job with a skipped
-        // photo fail the delivery fingerprint check.
-        delivered_photo_ids: JSON.stringify(appendedIds),
-        completed_at: new Date().toISOString(),
+        status: 'ready', zip_path: key, size_bytes: stat.size, photo_count: packaged.length,
+        // Keep the requested identity separate from entries actually shipped.
+        delivered_photo_ids: JSON.stringify(packaged.map((entry) => entry.photoId)),
+        entry_manifest: JSON.stringify(manifest),
+        expires_at: new Date(Date.now() + ttl).toISOString(), completed_at: new Date().toISOString(),
       });
-      if (committed === 0) {
-        await storage.delete(key).catch((e) =>
-          logger.warn('Failed deleting download job artifact', { jobId: id, error: e.message }));
+      if (!committed) {
+        await storage.delete(key).catch((error) => logger.warn('Failed deleting download job artifact', { jobId: id, error: error.message }));
         return;
       }
-      logger.info('Download job ready', { jobId: id, photos: appended, bytes: stat.size });
-      // Whoever asked to be mailed (issue 1733). The archive is ready either
-      // way, so a mail that cannot be queued must not fail the job.
+      progress.close();
+      clearInterval(heartbeat);
+      logger.info('Download job ready', { jobId: id, photos: packaged.length, bytes: stat.size });
       await require('./downloadJobNotifier').notifyReady(id)
-        .catch((err) => logger.warn('Download job mail failed', { jobId: id, error: err.message }));
-    } catch (err) {
-      logger.error('Download job error', { jobId: id, error: err.message });
-      await this._fail(id, err.message).catch(() => {});
+        .catch((error) => logger.warn('Download job mail failed', { jobId: id, error: error.message }));
+    } catch (error) {
+      logger.error('Download job error', { jobId: id, error: error.message });
+      await this._fail(id, error.message).catch(() => {});
     } finally {
-      this.running -= 1;
+      clearInterval(queuedHeartbeat);
+      clearInterval(heartbeat);
+      progress?.close();
+      if (acquired) this.running -= 1;
       if (tmpDir) await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
   }
@@ -470,13 +635,15 @@ class DownloadJobService {
    * them, the client that owns such a token would poll a job that can never
    * finish. Called once at startup.
    */
-  async recoverOrphanedJobs() {
+  async recoverOrphanedJobs(eventId) {
     // Only rows whose LEASE has expired. A live worker heartbeats while it
     // builds, so in a multi-replica deployment a rolling restart can't have
     // one replica fail jobs another is still working on — which a blanket
     // "fail everything pending" would do.
     const staleBefore = new Date(Date.now() - LEASE_TIMEOUT_MS).toISOString();
-    const orphaned = await db('download_jobs')
+    const query = db('download_jobs');
+    if (eventId !== undefined) query.where({ event_id: eventId });
+    const orphaned = await query
       .whereIn('status', ['pending', 'building'])
       .where(function () {
         this.whereNull('heartbeat_at').orWhere('heartbeat_at', '<', staleBefore);
@@ -505,10 +672,53 @@ class DownloadJobService {
   async isDeliverableToAnyone(job, event) {
     if (!isGalleryAvailable(event, { adminPreview: true }) || isGalleryExpired(event)) return false;
     if (!parseBooleanInput(event.allow_downloads, true)) return false;
+    if (job.preview_only && !downloadLimitOf(event)) return false;
     // The two scopes map onto the two access levels that differ in what they
     // see: a 'hidden' archive was built for a client, the rest for a guest.
     const accessLevel = job.visibility_scope === 'hidden' ? 'client' : 'guest';
     return this.isStillDeliverable(job, event, accessLevel);
+  }
+
+  /** A failed or stalled key must not prevent cleanup of other archives. */
+  async _deleteArtifact(job) {
+    if (!job.zip_path) return true;
+    const progress = createBuildProgress(this.stallTimeoutMs);
+    try {
+      await progress.wait(getStorage().delete(job.zip_path));
+      this.readyStats.delete(job.zip_path);
+      return true;
+    } catch (error) {
+      logger.warn('Failed deleting download job artifact', { jobId: job.id, error: error.message });
+      return false;
+    } finally { progress.close(); }
+  }
+
+  /** Keep the token/notification history until its original retention ends. */
+  async evictJobs(jobs) {
+    let reclaimed = 0;
+    for (const job of jobs) {
+      if (!await this._deleteArtifact(job)) continue;
+      await db('download_jobs').where({ id: job.id, status: 'failed' }).update({
+        zip_path: null, size_bytes: null, entry_manifest: null,
+      });
+      reclaimed += 1;
+    }
+    return reclaimed;
+  }
+
+  /** Remove files before rows, retaining failed deletions for the next sweep. */
+  async removeJobs(jobs) {
+    let removed = 0;
+    for (const job of jobs) {
+      if (!await this._deleteArtifact(job)) continue;
+      // Keep the existing sweep order: a notify pass that already claimed a
+      // recipient must commit before its deletion, so cancellation sees its mail.
+      await db('download_job_recipients').where({ job_id: job.id }).del();
+      await require('./downloadJobNotifier').cancelPendingMails([job]);
+      await db('download_jobs').where({ id: job.id }).del();
+      removed += 1;
+    }
+    return removed;
   }
 
   /**
@@ -520,12 +730,19 @@ class DownloadJobService {
    * is not an error in either storage backend, and deleting rows by id is a
    * no-op for the replica that comes second. Returns how many were removed.
    */
-  async sweepExpired() {
+  async sweepExpired(eventId) {
     const now = new Date().toISOString();
-    const expired = await db('download_jobs').where('expires_at', '<=', now);
+    const staleBefore = new Date(Date.now() - LEASE_TIMEOUT_MS).toISOString();
+    const inScope = (query) => eventId === undefined ? query : query.where({ event_id: eventId });
+    await this.evictJobs(await inScope(db('download_jobs')).where({ status: 'failed' }).whereNotNull('zip_path'));
+    const expired = await inScope(db('download_jobs')).where('expires_at', '<=', now)
+      .where(function () {
+        this.whereNotIn('status', ['pending', 'building'])
+          .orWhereNull('heartbeat_at').orWhere('heartbeat_at', '<', staleBefore);
+      });
 
     const undeliverable = [];
-    const ready = await db('download_jobs').where({ status: 'ready' }).where('expires_at', '>', now);
+    const ready = await inScope(db('download_jobs')).where({ status: 'ready' }).where('expires_at', '>', now);
     const events = new Map();
     for (const job of ready) {
       try {
@@ -542,23 +759,9 @@ class DownloadJobService {
     const doomed = [...expired, ...undeliverable];
     if (doomed.length === 0) return 0;
 
-    const storage = getStorage();
-    for (const job of doomed) {
-      if (job.zip_path) {
-        await storage.delete(job.zip_path).catch((e) =>
-          logger.warn('Failed deleting download job artifact', { jobId: job.id, error: e.message }));
-      }
-    }
-    const ids = doomed.map((j) => j.id);
-    // Explicitly, not only through the cascade: SQLite enforces foreign keys
-    // per connection.
-    await db('download_job_recipients').whereIn('job_id', ids).del();
-    // After the recipients (nothing new is queued for these jobs from here
-    // on) and before the jobs, so a failure leaves them for the next round.
-    await require('./downloadJobNotifier').cancelPendingMails(doomed);
-    await db('download_jobs').whereIn('id', ids).del();
-    logger.info(`Download job sweep removed ${expired.length} expired and ${undeliverable.length} undeliverable job(s)`);
-    return doomed.length;
+    const removed = await this.removeJobs(doomed);
+    logger.info(`Download job sweep removed ${removed} of ${doomed.length} expired/undeliverable job(s)`);
+    return removed;
   }
 }
 

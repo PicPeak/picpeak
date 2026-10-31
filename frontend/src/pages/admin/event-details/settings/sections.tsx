@@ -224,7 +224,7 @@ export const GeneralSection: React.FC<FieldsProps & {
 
 // `ownsEvent` false (a team member, issue 743): password protection and the
 // password itself are shown read-only; the server refuses changing them.
-export const AccessSection: React.FC<FieldsProps & { ownsEvent?: boolean }> = ({ f, set, ownsEvent = true }) => {
+export const AccessSection: React.FC<FieldsProps & { ownsEvent?: boolean; canChangeAvailability?: boolean }> = ({ f, set, ownsEvent = true, canChangeAvailability = true }) => {
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
   const [showPassword, setShowPassword] = useState(false);
@@ -237,6 +237,23 @@ export const AccessSection: React.FC<FieldsProps & { ownsEvent?: boolean }> = ({
   const [pickCount, setPickCount] = useState(0);
   return (
     <SectionCard>
+      <label className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          className={`mt-1 ${checkboxClass}`}
+          checked={f.temporarily_disabled}
+          disabled={!canChangeAvailability}
+          onChange={(e) => set({ temporarily_disabled: e.target.checked })}
+        />
+        <div>
+          <span className="text-sm font-medium text-body">{t('events.temporarilyDisable', 'Temporarily disable gallery')}</span>
+          <p className="text-xs text-muted mt-1">
+            {canChangeAvailability
+              ? t('events.temporarilyDisableHelp', 'Take the gallery offline for clients and guests while keeping it editable here. Re-enable it to restore the same links and passwords. Gallery expiry stays unchanged. Buyers receive the paused time back, up to that expiry.')
+              : t('events.settingsTab.readOnly', 'You can see these settings but not change them.')}
+          </p>
+        </div>
+      </label>
       <div>
         <div className="md:w-64">
           <label className={labelClass}>{t('events.expirationDate')}</label>

@@ -1,4 +1,6 @@
 import { GalleryProductPanel } from '../../features/album-products/GalleryProductPanel';
+import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
+import { GalleryUnavailableNotice } from './GalleryUnavailableNotice';
 import { useGalleryFiltering, resolveMediaType } from './hooks/useGalleryFiltering';
 import { useGalleryUpload } from './hooks/useGalleryUpload';
 import { useLiveRefresh } from './hooks/useLiveRefresh';
@@ -11,6 +13,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { differenceInDays, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { ArchiveDownloadDialog, ArchiveDownloadProvider, useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
 import { toast } from 'react-toastify';
 
 import { Button } from '../common';
@@ -157,7 +160,16 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
   }
 };
 
-export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
+export const GalleryView: React.FC<GalleryViewProps> = (props) => {
+  const { isClient, viaCustomer } = useGalleryAuth();
+  const scope = isClient ? 'client' : viaCustomer ? 'customer' : 'guest';
+  return <ArchiveDownloadProvider scopeKey={`${props.slug}:${scope}`} renderDialog={false}>
+    <GalleryViewContent {...props} />
+  </ArchiveDownloadProvider>;
+};
+
+const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
+  const archives = useArchiveDownload();
   const { t } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
   const { logout, endSession, isClient, viaCustomer, viaClientPin, enterClientMode, leaveClientMode, isSwitchingClientMode } = useGalleryAuth();
@@ -486,7 +498,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // whatever arrived in the meantime too).
   const followProcessing = data?.event?.media_processing === true && !hiddenUntilReveal && !revealArmed
     && !uploadProcessing && !peopleData?.scan?.in_progress;
-  useProcessingRefresh({
+  // Issue 2274: once that poll gives up on a stuck row, live refresh takes over.
+  const processingPollHalted = useProcessingRefresh({
     slug,
     enabled: followProcessing,
     loadedCount: data?.photos?.length ?? 0,
@@ -498,7 +511,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // revealArmed too: the reveal poll above keeps refetching the list after
     // the reveal, for as long as the mode is on.
     enabled: data?.event?.live_refresh === true && !hiddenUntilReveal && !revealArmed && !uploadProcessing
-      && !peopleData?.scan?.in_progress && !followProcessing,
+      && !peopleData?.scan?.in_progress && (!followProcessing || processingPollHalted),
     loadedCount: data?.photos?.length ?? 0,
     loadedMaxId,
   });
@@ -1235,7 +1248,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       return;
     }
 
-    downloadAllMutation.mutate({ slug, zipReady: data?.event?.download_zip_ready });
+    downloadAllMutation.mutate({ slug, zipReady: data?.event?.download_zip_ready && !data?.event?.is_priced });
     
     // Track download all action
     analyticsService.trackGalleryEvent('bulk_download', {
@@ -1294,12 +1307,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           toast.info(t('gallery.downloading', { count: selectedPhotoList.length }));
         }
         try {
-          await galleryService.downloadSelectedPhotos(
+          const handedOff = await archives.downloadSelectedPhotos(
             slug,
             selectedPhotoList.map((p) => p.id),
             undefined,
             () => keepSelectedRunAlive(runId),
           );
+          if (!handedOff) return;
         } catch (error) {
           // A refusal keeps the selection, to trim it to what is left; so does
           // a selection over the server's per-download cap, which the service
@@ -1308,6 +1322,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           if (!asToolbarZip) throw error;
           if (isSelectionTooLargeError(error)) return;
           toast.error(t('gallery.downloadError'));
+          return;
         }
       } else {
         for (const photo of selectedPhotoList) {
@@ -1393,7 +1408,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       }));
     }
 
-    await galleryService.downloadPhotosInParts(slug, peopleDownloadableIds).catch((error) => {
+    await archives.downloadPhotosInParts(slug, peopleDownloadableIds).catch((error) => {
       // The limit refusal already told the guest why (issue 1560).
       if (!isDownloadLimitError(error)) throw error;
     });
@@ -1447,7 +1462,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       photo_count: folderDownloadIds.length,
     });
 
-    await galleryService.downloadSelectedPhotos(slug, folderDownloadIds).catch((error) => {
+    await archives.downloadSelectedPhotos(slug, folderDownloadIds).catch((error) => {
       // The limit refusal already told the guest why (issue 1560).
       if (!isDownloadLimitError(error)) throw error;
     });
@@ -1490,10 +1505,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
   }, [showUrgentWarning, daysUntilExpiration, slug]);
 
-  if (isLoading || (isSwitchingClientMode && !showClientAccess)) {
-    return <GallerySkeleton />;
-  }
-
   // Auth failures end the session whenever they happen, background refetch
   // included. So does a gallery that is gone or closed to this guest (403,
   // 404, 410: expired, deleted, access withdrawn): keeping its grid would only
@@ -1503,6 +1514,23 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // UX.md › States asks.
   const errorStatus = (error as { response?: { status?: number } } | null)?.response?.status;
   const galleryGone = errorStatus === 403 || errorStatus === 404 || errorStatus === 410;
+  const downloadsAvailable = !!data && !isLoading && !galleryGone && errorStatus !== 401
+    && !isGalleryTemporarilyDisabled(error) && !isAdminSessionExpired(error) && !isPasswordChangeRequired(error)
+    && !(isSwitchingClientMode && !showClientAccess) && !hiddenUntilReveal;
+  // One provider/dialog root for loading, errors and every gallery layout:
+  // switching content cannot remount the preparation modal or strand its action.
+  const withDownloadProviders = (children: React.ReactNode) => (
+    <DownloadQuotaProvider slug={slug} event={data?.event}>
+      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
+        <ArchiveDownloadDialog available={downloadsAvailable} />
+        {children}
+      </PhotoDownloadChoiceProvider>
+    </DownloadQuotaProvider>
+  );
+  if (isGalleryTemporarilyDisabled(error)) return withDownloadProviders(<GalleryUnavailableNotice />);
+  if (isLoading || (isSwitchingClientMode && !showClientAccess)) {
+    return withDownloadProviders(<GallerySkeleton />);
+  }
   if (error) {
     // Check if it's an authentication error (401)
     const is401Error = (error as any)?.response?.status === 401;
@@ -1510,7 +1538,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // An admin preview whose admin session idled out: offer to sign in again.
     // Logging a guest session out would leave the preview blank.
     if (isAdminSessionExpired(error)) {
-      return <PasswordChangeRequiredNotice reason="session" />;
+      return withDownloadProviders(<PasswordChangeRequiredNotice reason="session" />);
     }
 
     if (is401Error) {
@@ -1518,16 +1546,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       // handle re-authentication. Not logout(): that also drops the guest
       // identity, which outlives this session by design (issue 2209).
       endSession();
-      return null;
+      return withDownloadProviders(null);
     }
 
     if (isPasswordChangeRequired(error)) {
-      return <PasswordChangeRequiredNotice />;
+      return withDownloadProviders(<PasswordChangeRequiredNotice />);
     }
   }
 
   if (!data || galleryGone) {
-    return (
+    return withDownloadProviders(
       <div className="min-h-screen bg-surface flex items-center justify-center p-4">
         <div className="text-center" role="alert">
           <AlertCircle className="w-10 h-10 mx-auto mb-3 text-muted-theme" aria-hidden="true" />
@@ -1595,8 +1623,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // render the upload-only view for EVERY layout. Enforcement is server-side
   // (the photo endpoints refuse plain guests); this is the friendly face.
   if (hiddenUntilReveal) {
-    return (
-      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
+    return withDownloadProviders(
       <GalleryLayout
         event={{
           ...event,
@@ -1663,6 +1690,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             slug={slug}
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
+            zipReady={data?.event?.download_zip_ready && !data?.event?.is_priced}
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
@@ -1677,7 +1705,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
-      </PhotoDownloadChoiceProvider>
     );
   }
 
@@ -1781,14 +1808,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     feedbackSettings?.identity_mode === 'guest' ? 'guest' : 'simple';
 
   if (isFullPageLayout) {
-    return (
+    return withDownloadProviders(
       // The same identity flow as the standard layout below (issue 1733):
       // Premium and Story already ask for it (ensureIdentity) before a like,
       // and finishing a selection needs it too. Without the provider a guest
       // in guest identity mode was never asked for a name and got a 401.
       <GuestIdentityProvider slug={slug} identityMode={identityMode}>
-      <DownloadQuotaProvider slug={slug} event={data?.event}>
-      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
@@ -1997,6 +2022,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             slug={slug}
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
+            zipReady={data?.event?.download_zip_ready && !data?.event?.is_priced}
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
@@ -2024,16 +2050,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
-      </PhotoDownloadChoiceProvider>
-      </DownloadQuotaProvider>
       </GuestIdentityProvider>
     );
   }
 
-  return (
+  return withDownloadProviders(
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
-    <DownloadQuotaProvider slug={slug} event={data?.event}>
-      <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
       <GalleryTileBadgesProvider value={tileBadges}>
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GridDensityOffered.Provider value={densityOffered}>
@@ -2571,6 +2593,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             slug={slug}
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
+            zipReady={data?.event?.download_zip_ready && !data?.event?.is_priced}
             photoIds={resolutionPickerIds || undefined}
             quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             resumeToken={resumeJobToken || undefined}
@@ -2602,8 +2625,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       </GridDensityOffered.Provider>
       </PhotoLabelsProvider>
       </GalleryTileBadgesProvider>
-      </PhotoDownloadChoiceProvider>
-    </DownloadQuotaProvider>
     </GuestIdentityProvider>
   );
 };

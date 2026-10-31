@@ -87,6 +87,8 @@ export interface PublicSettings {
   // #613 follow-up — per-file size limit (MB), surfaced so the guest upload
   // modal shows the real limit and guards client-side. Backend enforces it too.
   general_max_file_size_mb?: number;
+  // Per-file video limit (MB), which guest uploads honour (issue 2315).
+  general_max_video_size_mb?: number;
   // Event field requirements
   event_require_customer_name?: boolean;
   event_require_customer_email?: boolean;
@@ -110,6 +112,8 @@ export interface PublicSettings {
   // Download limit default (issue 1560). null = unlimited.
   event_default_download_limit?: number | null;
   gallery_show_filter_bar?: boolean;
+  // Maximum lightbox zoom in percent of the original's pixels (issue 2281), 100–1000.
+  gallery_lightbox_max_zoom_percent?: number;
   event_phone_field_enabled?: boolean;
   // SEO meta tags (consumed by RobotsMetaTags)
   seo_meta_noindex?: boolean;

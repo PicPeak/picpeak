@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { Photo } from '../../../types';
 
+vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => ({ data: undefined }) }));
 vi.mock('react-i18next', async () => ({
   ...await vi.importActual('react-i18next'),
   useTranslation: () => ({

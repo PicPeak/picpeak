@@ -435,6 +435,36 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             </label>
           </div>
 
+          {/* Maximum lightbox zoom (issue 2281), in percent of the original's pixels. */}
+          <div>
+            <label className="block text-sm font-medium text-body mb-1" htmlFor="gallery_lightbox_max_zoom_percent">
+              {t('settings.events.lightboxMaxZoom', 'Maximum lightbox zoom')}
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="gallery_lightbox_max_zoom_percent"
+                type="number"
+                min={100}
+                max={1000}
+                step={10}
+                value={eventSettings.gallery_lightbox_max_zoom_percent}
+                onChange={(e) => setEventSettings(prev => ({
+                  ...prev,
+                  gallery_lightbox_max_zoom_percent: parseInt(e.target.value, 10) || 0,
+                }))}
+                onBlur={() => setEventSettings(prev => ({
+                  ...prev,
+                  gallery_lightbox_max_zoom_percent: Math.min(1000, Math.max(100, prev.gallery_lightbox_max_zoom_percent)),
+                }))}
+                className="w-32 px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading text-sm"
+              />
+              <span className="text-sm text-muted">%</span>
+            </div>
+            <p className="text-xs text-muted mt-1">
+              {t('settings.events.lightboxMaxZoomHelp', 'Allow viewers to magnify images beyond their original pixel size. Higher zoom enlarges existing pixels; it does not add image detail. Allowed range: 100–1000. Default: 100. Applies to all galleries, existing ones included.')}
+            </p>
+          </div>
+
           <div>
             <label className="flex items-start gap-3">
               <input

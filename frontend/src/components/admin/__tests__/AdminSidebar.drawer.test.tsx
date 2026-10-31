@@ -7,7 +7,7 @@
 import React, { useRef, useState } from 'react';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigationType } from 'react-router-dom';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('react-i18next', () => ({
@@ -85,6 +85,13 @@ function stubResizableViewport(initiallyDrawer: boolean) {
   };
 }
 
+// Where the router is, and whether it got there by push or replace.
+const LocationProbe: React.FC = () => {
+  const location = useLocation();
+  const type = useNavigationType();
+  return <output data-testid="location">{`${location.pathname}${location.search} ${type}`}</output>;
+};
+
 const Harness: React.FC<{ path?: string }> = ({ path = '/admin/dashboard' }) => {
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -94,6 +101,7 @@ const Harness: React.FC<{ path?: string }> = ({ path = '/admin/dashboard' }) => 
         <button ref={toggleRef} onClick={() => setOpen(true)}>hamburger</button>
         {/* AdminLayout always passes onToggleCollapse: its button is `hidden lg:flex`. */}
         <AdminSidebar isOpen={open} onClose={() => setOpen(false)} onToggleCollapse={() => {}} />
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -175,5 +183,80 @@ describe('AdminSidebar drawer (issue 2074)', () => {
     stubViewport(false);
     const { container } = render(<Harness />);
     expect(drawer(container)).not.toHaveAttribute('inert');
+  });
+});
+
+describe('AdminSidebar drawer drill-down', () => {
+  const location = () => screen.getByTestId('location').textContent;
+
+  it('opens a section\'s list in the drawer instead of navigating and closing', () => {
+    stubViewport(true);
+    const { container } = render(<Harness />);
+    fireEvent.click(screen.getByText('hamburger'));
+    const entry = screen.getByText('navigation.settings').closest('a') as HTMLElement;
+    fireEvent.click(entry);
+
+    expect(location()).toBe('/admin/dashboard POP');
+    expect(drawer(container)).not.toHaveAttribute('inert');
+    expect(screen.getByText('Event Types')).toBeInTheDocument();
+    // The dashboard is the current page, not the section's fallback tab.
+    expect(drawer(container).querySelector('[aria-current="page"]')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByText('Back to menu').closest('button'));
+
+    fireEvent.click(screen.getByText('Back to menu'));
+    expect(screen.queryByText('Event Types')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByText('navigation.settings').closest('a'));
+  });
+
+  it('navigates with push and closes once a page in the drilled section is picked', () => {
+    stubViewport(true);
+    const { container } = render(<Harness />);
+    fireEvent.click(screen.getByText('hamburger'));
+    fireEvent.click(screen.getByText('navigation.settings'));
+    fireEvent.click(screen.getByText('Event Types'));
+
+    // Push, not the replace Settings tabs use among themselves: the
+    // dashboard the admin came from stays in the history.
+    expect(location()).toBe('/admin/settings?tab=eventTypes PUSH');
+    expect(drawer(container)).toHaveAttribute('inert');
+  });
+
+  it('shows the current page\'s section again when the drawer reopens', () => {
+    stubViewport(true);
+    render(<Harness path="/admin/settings?tab=features" />);
+    fireEvent.click(screen.getByText('hamburger'));
+    fireEvent.click(screen.getByText('Back to menu'));
+    fireEvent.click(screen.getByLabelText('Close menu'));
+    fireEvent.click(screen.getByText('hamburger'));
+    expect(screen.getByText('Event Types')).toBeInTheDocument();
+  });
+
+  it('drops the opened list when the window grows past the drawer breakpoint', () => {
+    const resize = stubResizableViewport(true);
+    render(<Harness />);
+    fireEvent.click(screen.getByText('hamburger'));
+    fireEvent.click(screen.getByText('navigation.settings'));
+    expect(screen.getByText('Event Types')).toBeInTheDocument();
+
+    // On lg the sidebar shows the current page's menu, and the dashboard is
+    // not in Settings.
+    resize(false);
+    expect(screen.queryByText('Event Types')).not.toBeInTheDocument();
+  });
+
+  it('leaves a modified click on a section entry to the browser', () => {
+    stubViewport(true);
+    render(<Harness />);
+    fireEvent.click(screen.getByText('hamburger'));
+    // Ctrl/Cmd-click opens the section in a new tab; the drawer does not drill.
+    fireEvent.click(screen.getByText('navigation.settings'), { ctrlKey: true });
+    expect(screen.queryByText('Event Types')).not.toBeInTheDocument();
+  });
+
+  it('keeps navigating straight to the section on lg and wider', () => {
+    stubViewport(false);
+    render(<Harness />);
+    fireEvent.click(screen.getByText('navigation.settings'));
+    expect(location()).toMatch(/^\/admin\/settings PUSH$/);
   });
 });

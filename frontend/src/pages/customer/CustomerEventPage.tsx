@@ -4,7 +4,7 @@
  * Everything for one event in one place: the gallery, and the quotes,
  * contracts, invoices and documents that belong to it. The server decides
  * which of these the customer may see and whether the gallery is open,
- * expired or not available yet — an expired gallery is shown with its
+ * expired, temporarily paused or not available yet — an expired gallery is shown with its
  * expiry date and can't be opened.
  */
 import React, { useState } from 'react';
@@ -21,6 +21,7 @@ import { customerService } from '../../services/customer.service';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
 import { CustomerDocumentList } from './CustomerDocumentsPage';
 import { DOWNLOAD_JOB_QUERY_PARAM, readDownloadJobParam } from '../../components/gallery/downloadJobLink';
+import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 
 /** Open a blob URL produced by `load` in a new tab, keeping the click gesture. */
 async function openPdf(load: () => Promise<string>, blockedMessage: string, failedMessage: string) {
@@ -89,8 +90,10 @@ export const CustomerEventPage: React.FC = () => {
       const downloadJob = readDownloadJobParam(location.search);
       navigate(`/gallery/${encodeURIComponent(event.slug)}${
         downloadJob ? `?${DOWNLOAD_JOB_QUERY_PARAM}=${downloadJob}` : ''}`);
-    } catch {
-      toast.error(t('customer.dashboard.openError', 'Could not open this gallery. Please try again.'));
+    } catch (error) {
+      toast.error(isGalleryTemporarilyDisabled(error)
+        ? t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.')
+        : t('customer.dashboard.openError', 'Could not open this gallery. Please try again.'));
     } finally {
       setOpening(false);
     }
@@ -144,7 +147,9 @@ export const CustomerEventPage: React.FC = () => {
           </p>
         ) : (
           <p className="text-sm text-muted-theme">
-            {t('customer.event.galleryUnavailable', 'This gallery is not available yet.')}
+            {event.availability === 'paused'
+              ? t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.')
+              : t('customer.event.galleryUnavailable', 'This gallery is not available yet.')}
           </p>
         )}
       </Card>

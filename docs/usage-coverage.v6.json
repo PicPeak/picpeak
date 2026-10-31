@@ -447,6 +447,7 @@
         "POST /",
         "GET /:id",
         "GET /:id/documents",
+        "POST /import",
         "PUT /:id",
         "GET /:id/send-preview",
         "POST /:id/send",
@@ -1866,6 +1867,10 @@
       "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
       "route_signatures": [
         "POST /:eventId/upload",
+        "POST /:eventId/chunked-upload/init",
+        "POST /:eventId/chunked-upload/:uploadId/chunk/:chunkIndex",
+        "POST /:eventId/chunked-upload/:uploadId/complete",
+        "DELETE /:eventId/chunked-upload/:uploadId",
         "GET /:slug/uploads/status"
       ]
     },

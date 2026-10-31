@@ -9,7 +9,7 @@ const { exifColumn } = require('./photoExif');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
-const { generateThumbnail, generateVideoPlaceholder, withProcessableImage, extractCaptureDate, prefixedBasename } = require('./imageProcessor');
+const { generateThumbnail, generateVideoPlaceholder, withProcessableImage, extractCapture, captureWallColumn, prefixedBasename } = require('./imageProcessor');
 const logger = require('../utils/logger');
 const { isVideoMimeType } = require('./videoProcessor');
 const mime = require('mime-types');
@@ -354,7 +354,9 @@ async function processNewPhoto(filePath) {
   const exif = isVideo ? {} : await exifColumn(filePath);
   // Capture date, likewise: the row is complete, so the worker that reads it
   // for an upload never runs, and the timeline sorted it by import time.
-  const capturedAt = isVideo ? null : await extractCaptureDate(filePath);
+  // With the camera's own clock (issue 2305).
+  const capture = isVideo ? null : await extractCapture(filePath);
+  const capturedAt = capture ? capture.capturedAt : null;
   // Browser-playable copy (issue 1430): a video the watcher picks up is
   // queued like an uploaded one while the setting is on; otherwise it would
   // wait for the next switch-on backfill. No transaction is open here.
@@ -381,6 +383,7 @@ async function processNewPhoto(filePath) {
     size_bytes: stats.size,
     mime_type: mimeType,
     captured_at: capturedAt ? capturedAt.toISOString() : null,
+    ...captureWallColumn(capture),
     ...(dimensions && { width: dimensions.width, height: dimensions.height }),
     ...(webCopyEnabled ? { web_status: 'pending' } : {}),
     ...credit,

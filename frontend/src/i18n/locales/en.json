@@ -1362,6 +1362,8 @@
     }
   },
   "gallery": {
+    "temporarilyUnavailable": "This gallery is temporarily unavailable.",
+    "temporarilyUnavailableHelp": "Please try again later. Your gallery link will stay the same.",
     "revealPendingTitle": "The photos are still a surprise",
     "revealPendingMessage": "The host will reveal the gallery later — check back soon!",
     "revealScheduledFor": "Reveal scheduled for {{date}}",
@@ -1536,7 +1538,7 @@
     },
     "prepareDownload": "Prepare download",
     "preparingDownload": "Preparing your download…",
-    "preparingHint": "Resizing photos — this can take a moment for large galleries.",
+    "preparingHint": "Preparing the files — this can take a moment for large galleries.",
     "preparingProgress": "{{count}} photos packaged",
     "downloadReady": "Your download is ready",
     "downloadNow": "Download",
@@ -1799,6 +1801,13 @@
     "nestedFoldersHint": "Folders inside folders are managed in the folder bar of the Photos tab."
   },
   "events": {
+    "disabled": "Disabled",
+    "enableEvent": "Enable gallery",
+    "disableEvent": "Disable gallery",
+    "temporarilyDisable": "Temporarily disable gallery",
+    "temporarilyDisableHelp": "Take the gallery offline for clients and guests while keeping it editable here. Re-enable it to restore the same links and passwords. Gallery expiry stays unchanged. Buyers receive the paused time back, up to that expiry.",
+    "temporarilyDisabledSuccess": "Gallery temporarily disabled.",
+    "temporarilyEnabledSuccess": "Temporary pause removed.",
     "revealMode": "Reveal mode (hide gallery until reveal)",
     "revealModeHelp": "Guests can upload but see no photos until you reveal the gallery — manually or at the scheduled time. Slideshow and client access keep working.",
     "liveRefresh": "Live refresh (tell guests about new photos)",
@@ -2848,6 +2857,8 @@
       "defaultRequirePasswordHelp": "Pre-check \"Require password\" when creating new events. Disable for quicker creation of public galleries.",
       "showGalleryFilterBar": "Show filter bar in galleries",
       "showGalleryFilterBarHelp": "Display the search-by-filename and sort controls above grid-layout galleries. Disable for a cleaner layout.",
+      "lightboxMaxZoom": "Maximum lightbox zoom",
+      "lightboxMaxZoomHelp": "Allow viewers to magnify images beyond their original pixel size. Higher zoom enlarges existing pixels; it does not add image detail. Allowed range: 100–1000. Default: 100. Applies to all galleries, existing ones included.",
       "enablePhoneField": "Enable phone number field",
       "enablePhoneFieldHelp": "Adds an optional phone number input to the event form. Useful for downstream automations like WhatsApp delivery via n8n. Always optional even when enabled.",
       "defaultFeedbackEnabled": "Enable Guest Feedback by default",
@@ -2958,6 +2969,7 @@
       "lightboxToggle": "Enable eager preview generation",
       "lightboxToggleHelp": "Off by default: each preview is built the first time a guest opens that photo. Turning this on unlocks the button below, which builds them all up front.",
       "regeneratePreviewsButton": "Regenerate All Previews",
+      "generateMissingPreviewsButton": "Generate Missing Previews",
       "previewsRegenerateStarted": "Lightbox preview regeneration started",
       "previewsRegenerateError": "Failed to start preview regeneration",
       "saveSuccess": "Thumbnail settings saved",
@@ -4859,6 +4871,7 @@
       "columns": {
         "photo": "Photo",
         "category": "Category",
+        "captured": "Captured",
         "uploaded": "Uploaded",
         "engagement": "Engagement",
         "feedback": "Feedback",
@@ -4870,6 +4883,7 @@
         "likes": "Likes",
         "credit": "Credit"
       },
+      "columnChooser": "Columns",
       "visibility": {
         "none": "No photos match the selected visibility and filters.",
         "filterLabel": "Photo visibility",
@@ -6655,6 +6669,12 @@
     "ratePhoto": "Rate photo",
     "rateSelected": "Rate selected",
     "bulkRatingPartial": "{{rated}} of {{total}} photos were rated",
+    "bulkRatingDone": "{{count}} photos rated",
+    "bulkRatingDone_one": "{{count}} photo rated",
+    "bulkRatingDone_other": "{{count}} photos rated",
+    "bulkRatingCleared": "Rating removed from {{count}} photos",
+    "bulkRatingCleared_one": "Rating removed from {{count}} photo",
+    "bulkRatingCleared_other": "Rating removed from {{count}} photos",
     "ratingLimitReached": "Rating limit reached. Try again later.",
     "ratingsCount_one": "{{count}} ratings",
     "ratingsCount_other": "{{count}} ratings",
@@ -7143,6 +7163,11 @@
     "videosFirstHelp": "Lists every video ahead of the photos. The sort above still applies within the videos and within the photos."
   },
   "photoSales": {
+    "purchaseConfirmed": "Your purchase was successful",
+    "galleryExpiresOn": "Gallery expiry: {{date}}",
+    "purchasePausedHelp": "Your purchase remains valid. Please use this same link when the gallery is available again. Time lost during the pause will be added to your download window, up to the gallery expiry date.",
+    "purchaseContact": "For more information, contact:",
+    "purchaseContactPhotographer": "Please contact your photographer for more information.",
     "cart": "Cart",
     "addToCart": "Add photo to cart",
     "addToCartPrice": "Add photo to cart for {{price}}",

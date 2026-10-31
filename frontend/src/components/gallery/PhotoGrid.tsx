@@ -3,12 +3,12 @@ import { Download, Maximize2, Check, Package, MessageSquare, Star, Play } from '
 import { useInView } from 'react-intersection-observer';
 import { toast as toastify } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
+import { useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
 
 import type { Photo } from '../../types';
 import { useDownloadPhoto } from '../../hooks/useGallery';
 import { PhotoLightbox } from './PhotoLightbox';
 import { Button, AuthenticatedImage } from '../common';
-import { galleryService } from '../../services/gallery.service';
 import { analyticsService } from '../../services/analytics.service';
 import { hasVideoItems, selectLabel } from '../../utils/mediaCounts';
 
@@ -37,6 +37,7 @@ export const PhotoGrid: React.FC<PhotoGridProps> = ({
   disableRightClick = false,
   enableDevtoolsProtection = false
 }) => {
+  const archives = useArchiveDownload();
   const { t } = useTranslation();
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [selectedPhotos, setSelectedPhotos] = useState<Set<number>>(new Set());
@@ -107,14 +108,14 @@ export const PhotoGrid: React.FC<PhotoGridProps> = ({
     toastify.info(t('gallery.downloading', { count: ids.length }));
 
     try {
-      await galleryService.downloadSelectedPhotos(slug, ids);
+      if (!await archives.downloadSelectedPhotos(slug, ids)) return;
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       toastify.error(t('gallery.downloadError'));
-    } finally {
-      setSelectedPhotos(new Set());
-      setIsSelectionMode(false);
+      return;
     }
+    setSelectedPhotos(new Set());
+    setIsSelectionMode(false);
   };
 
   if (photos.length === 0) {

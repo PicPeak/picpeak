@@ -159,6 +159,8 @@ describe('camera details (issue 1733, D1)', () => {
     const id = await addPhoto(event, 'up.jpg', { processing_status: 'pending', size_bytes: shot.length }, shot);
     await processPhoto(id);
     expect(JSON.parse((await db('photos').where({ id }).first()).exif_json)).toEqual({ model: 'X-T5', iso: 160 });
+    // No date in this file: read, none (issue 2305).
+    expect((await db('photos').where({ id }).first()).captured_at_wall).toBe('');
 
     const temp = path.join(process.env.STORAGE_PATH, 'replace-exif.jpg');
     await fs.promises.writeFile(temp, await image.clone().toBuffer());
@@ -166,6 +168,7 @@ describe('camera details (issue 1733, D1)', () => {
       { originalFilename: 'new.jpg', mimeType: 'image/jpeg', event });
     expect(result.success).toBe(true);
     expect((await db('photos').where({ id }).first()).exif_json).toBe('{}');
+    expect((await db('photos').where({ id }).first()).captured_at_wall).toBe('');
   }, 30000);
 
   it('the paths that complete a row without the worker read them too', async () => {
@@ -181,6 +184,8 @@ describe('camera details (issue 1733, D1)', () => {
       const row = await db('photos').where({ event_id: event.id, ...where }).first();
       expect(row).toBeTruthy();
       expect(new Date(row.captured_at).getTime()).toBe(captured);
+      // And the camera clock as written, on every one of these paths (issue 2305).
+      expect(row.captured_at_wall).toBe('2021-06-15T14:30:00');
       return row.exif_json && JSON.parse(row.exif_json);
     };
 
@@ -240,7 +245,7 @@ describe('camera details (issue 1733, D1)', () => {
     const full = await addPhoto(event, 'full.jpg', {}, withExif);
     const plain = await addPhoto(event, 'plain.jpg', { captured_at: '2026-06-01T09:45:03.000Z' }, await image.clone().toBuffer());
     // Already read: must not be touched, and must not be a candidate.
-    const done = await addPhoto(event, 'done.jpg', { captured_at: '2026-06-01T09:45:03.000Z', exif_json: JSON.stringify(EXIF) });
+    const done = await addPhoto(event, 'done.jpg', { captured_at: '2026-06-01T09:45:03.000Z', exif_json: JSON.stringify(EXIF), captured_at_wall: '' });
 
     const before = await admin(request(app).get('/api/admin/photos/repair-capture-dates/status'));
     expect(before.body).toMatchObject({ total: 3, withoutCaptureDate: 1, pending: 2 });
@@ -263,6 +268,9 @@ describe('camera details (issue 1733, D1)', () => {
     expect(JSON.parse(fullRow.exif_json)).toEqual({ make: 'FUJIFILM', model: 'X-T5', aperture: 1.4, iso: 160 });
     expect(fullRow.exif_json).not.toMatch(/SER123456|gps|latitude/i);
     expect(fullRow.captured_at).toBeTruthy();
+    // The camera clock with it (issue 2305); '' for a file without one.
+    expect(fullRow.captured_at_wall).toBe('2026-06-01T09:45:03');
+    expect((await db('photos').where({ id: plain }).first()).captured_at_wall).toBe('');
     expect((await db('photos').where({ id: plain }).first()).exif_json).toBe('{}');
     expect(JSON.parse((await db('photos').where({ id: done }).first()).exif_json)).toEqual(EXIF);
 

@@ -38,6 +38,24 @@ export const toDisplayDate = (date: Date | string): Date => {
   return new Date(SQLITE_UTC_TIMESTAMP.test(text) ? `${text.replace(' ', 'T')}Z` : date);
 };
 
+/**
+ * A zone-less wall-clock time, 'YYYY-MM-DDTHH:MM[:SS]', split into a day and
+ * an 'HH:MM' clock, or null. The admin photo list sends a photo's capture
+ * time this way: the camera clock, already formatted by the server (issue
+ * 1739). It must never go through `new Date(value)` as an instant. The day is
+ * built at noon so no DST gap in the browser's zone can move it.
+ */
+const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/;
+export const parseWallClock = (value: string | null | undefined): { day: Date; time: string } | null => {
+  const match = typeof value === 'string' ? WALL_CLOCK.exec(value.trim()) : null;
+  if (!match) return null;
+  const [, y, mo, d, h, mi] = match;
+  const day = new Date(Number(y), Number(mo) - 1, Number(d), 12);
+  if (day.getMonth() !== Number(mo) - 1 || day.getDate() !== Number(d)) return null;
+  if (Number(h) > 23 || Number(mi) > 59) return null;
+  return { day, time: `${h}:${mi}` };
+};
+
 // Convert old date format strings to new date-fns format
 const convertDateFormat = (format: string): string => {
   return format
@@ -144,11 +162,23 @@ export const useLocalizedDate = () => {
     return dateFnsFormat(dateObj, `${dateFormat} ${timeFormatToken}`, { locale: getLocale() });
   };
 
+  /**
+   * A zone-less wall-clock time (see parseWallClock) shaped like
+   * formatDateTime, with no shift to the browser's zone. '' when the value
+   * is empty or not that shape.
+   */
+  const formatWallClock = (value: string | null | undefined, formatStr?: string) => {
+    const parsed = parseWallClock(value);
+    if (!parsed) return '';
+    return `${format(parsed.day, formatStr)} ${formatTime(parsed.time)}`;
+  };
+
   return {
     format,
     formatExpiry,
     formatTime,
     formatDateTime,
+    formatWallClock,
     formatDistanceToNow,
     locale: getLocale(),
     dateFormat: settings?.general_date_format
