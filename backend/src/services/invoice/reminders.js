@@ -187,7 +187,7 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
       outstanding_amount: formatMajor(outstandingMinor, invoice.currency, locale),
       paid_amount: formatMajor(invoice.paid_amount_minor, invoice.currency, locale),
       late_fee_amount: formatMajor(lateFeeGross, invoice.currency, locale),
-      due_date: formatShortDate(invoice.due_date),
+      due_date: formatShortDate(invoice.due_date, ctx.issuer?.countryCode),
       days_overdue: daysOverdue,
       cc: reminderCc,
       attachments,

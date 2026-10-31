@@ -12,6 +12,7 @@ const businessProfileService = require('../businessProfileService');
 const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { adminActor, ensureCustomerActive, nextContractNumber } = require('./helpers');
+const regionalClauses = require('./regionalClauses');
 const { resolveDefaultEventType } = require('../eventTypeService');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 
@@ -73,6 +74,7 @@ async function createFromQuote(quoteId, adminId, { contractTemplateId = null } =
   ensureCustomerActive(customer);
 
   const profile = (await businessProfileService.getProfile()).profile;
+  await regionalClauses.fitVersionToBusiness(version, profile?.country_code);
   const validDays = ensureInt(await getAppSetting('crm_contracts_default_valid_days')) || 30;
   const issueDate = new Date().toISOString().slice(0, 10);
   const validUntil = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)

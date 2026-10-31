@@ -9673,6 +9673,8 @@
       "companyName": "Company name",
       "vatId": "VAT ID (USt-IdNr.)",
       "taxId": "Tax number (Steuernummer)",
+      "vatIdUs": "EIN",
+      "taxIdUs": "Sales tax ID",
       "addressLine1": "Address line 1",
       "addressLine2": "Address line 2",
       "postalCode": "Postal code",

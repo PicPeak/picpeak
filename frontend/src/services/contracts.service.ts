@@ -674,7 +674,7 @@ export const contractsService = {
     return data.data || data;
   },
 
-  async listBlocks(params: { section?: ContractBlockSection; includeInactive?: boolean } = {}): Promise<{ blocks: ContractBlock[] }> {
+  async listBlocks(params: { section?: ContractBlockSection; includeInactive?: boolean; forNewContract?: boolean } = {}): Promise<{ blocks: ContractBlock[] }> {
     const { data } = await api.get('/admin/contracts/blocks', { params });
     return data.data || data;
   },

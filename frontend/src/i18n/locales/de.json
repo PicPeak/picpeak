@@ -9639,6 +9639,8 @@
       "companyName": "Firmenname",
       "vatId": "USt-IdNr.",
       "taxId": "Steuernummer",
+      "vatIdUs": "EIN",
+      "taxIdUs": "Sales-Tax-ID (USA)",
       "addressLine1": "Adresszeile 1",
       "addressLine2": "Adresszeile 2",
       "postalCode": "PLZ",

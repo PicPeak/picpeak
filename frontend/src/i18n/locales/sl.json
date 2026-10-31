@@ -8478,6 +8478,8 @@
       "companyName": "Ime podjetja",
       "vatId": "ID za DDV (USt-IdNr.)",
       "taxId": "Davčna številka (Steuernummer)",
+      "vatIdUs": "EIN",
+      "taxIdUs": "ID za prometni davek (ZDA)",
       "addressLine1": "Naslovna vrstica 1",
       "addressLine2": "Naslovna vrstica 2",
       "postalCode": "Poštna številka",

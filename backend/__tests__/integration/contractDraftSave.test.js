@@ -63,7 +63,7 @@ describe('contract draft save (issue 1447)', () => {
     else await db('feature_flags').insert({ key: 'contracts', value: true });
     app = buildRouteApp('/api/admin/contracts', require('../../src/routes/adminContracts'));
 
-    const res = await auth(request(app).get('/api/admin/contracts/blocks'));
+    const res = await auth(request(app).get('/api/admin/contracts/blocks?forNewContract=true'));
     library = res.body.blocks;
   }, 120000);
 
@@ -99,6 +99,8 @@ describe('contract draft save (issue 1447)', () => {
     const res = await auth(request(app).post('/api/admin/contracts')).send(payload);
 
     expect(res.status).toBe(201);
+    // All but the US closing provisions, which only a US business's
+    // contracts carry (contract/regionalClauses).
     const systemCount = library.filter((b) => b.isSystem).length;
     const inclusions = await db('contract_block_inclusions').where({ contract_id: res.body.contract.id });
     expect(inclusions).toHaveLength(systemCount);

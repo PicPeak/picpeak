@@ -27,7 +27,9 @@
 
 const PDFDocument = require('pdfkit');
 const { SwissQRBill, Table } = require('swissqrbill/pdf');
-const { t } = require('./pdf-i18n');
+const { t, documentLocale } = require('./pdf-i18n');
+const { cityLine, printsCountryLine, isUnitedStates } = require('../utils/postalAddress');
+const { issuerIntlLocale } = require('../utils/issuerIntlLocale');
 const { parsePromotionSnapshot } = require('../utils/lineItemTotals');
 const { parseInlineMarkdown } = require('../utils/placeholders');
 const pdfFonts = require('./pdf/fonts');
@@ -380,7 +382,9 @@ function formatDate(value, dateFormat) {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = String(d.getFullYear());
-  const format = (dateFormat && dateFormat.format) || 'DD.MM.YYYY';
+  // Upper-cased: Settings → General stores the date-fns spelling
+  // ("MM/dd/yyyy"), which used to fall through to DD.MM.YYYY.
+  const format = String((dateFormat && dateFormat.format) || 'DD.MM.YYYY').toUpperCase();
   switch (format) {
   case 'MM/DD/YYYY': return `${mm}/${dd}/${yyyy}`;
   case 'DD/MM/YYYY': return `${dd}/${mm}/${yyyy}`;
@@ -404,13 +408,11 @@ function formatDate(value, dateFormat) {
  * Per maintainer: "in FL, CH, DE we write 1'000.00 not 1,000.00".
  */
 function localeForIntl(locale, issuerCountryCode) {
-  const cc = (issuerCountryCode || '').toUpperCase();
-  if (['CH', 'LI', 'DE', 'AT'].includes(cc)) {
-    // de-CH is the only one of these that uses the apostrophe
-    // separator in Intl.NumberFormat. fr-CH would render 1 000.00
-    // (NBSP) which Swiss accountants don't want either.
-    return 'de-CH';
-  }
+  // de-CH is the only Intl locale with the apostrophe separator; fr-CH
+  // would render 1 000.00 (NBSP), which Swiss accountants don't want
+  // either. A US business gets en-US (utils/issuerIntlLocale).
+  const fixed = issuerIntlLocale(issuerCountryCode);
+  if (fixed) return fixed;
   const map = { de: 'de-CH', en: 'en-GB', fr: 'fr-CH', nl: 'nl-NL', pt: 'pt-PT', ru: 'ru-RU' };
   return map[locale] || locale || 'en-GB';
 }
@@ -575,12 +577,10 @@ function drawIssuerBlock(doc, issuer, x, y, width, locale, { grid = null } = {})
     // country name comes from the explicit `countryName` override
     // when set (migration 107); otherwise we resolve it from the
     // ISO country code via the locale-aware COUNTRY_NAMES map.
-    const cc = issuer.countryCode ? String(issuer.countryCode).toUpperCase() : '';
-    const pc = issuer.postalCode || '';
-    const city = issuer.city || '';
-    const left = [cc && pc ? `${cc}-${pc}` : (pc || cc), city].filter(Boolean).join(' ');
-    const country = issuer.countryName || countryName(issuer.countryCode, locale);
-    return [left, country].filter(Boolean).join(' / ');
+    // A US business writes "Denver, CO 80202" with no country.
+    const country = printsCountryLine(issuer.countryCode, issuer.countryCode)
+      ? (issuer.countryName || countryName(issuer.countryCode, locale)) : '';
+    return [cityLine(issuer), country].filter(Boolean).join(' / ');
   })();
   // When the admin opted into the inline-name variant (migration 108)
   // the company name renders as the first address line, in the same
@@ -656,7 +656,7 @@ function vatIdLabel(locale, countryCode) {
  * AFTER the address window (useful when drawing the horizontal
  * divider below).
  */
-function drawRecipientBlock(doc, recipient, locale, { flowY = null } = {}) {
+function drawRecipientBlock(doc, recipient, locale, { flowY = null, issuerCountryCode = null } = {}) {
   // With the theme's address window off (#1445) the block sits in the flow
   // at the left margin — a letter handed over digitally needs no envelope
   // window, and no return-address line for one.
@@ -685,21 +685,25 @@ function drawRecipientBlock(doc, recipient, locale, { flowY = null } = {}) {
   }
   doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(bodyText(doc).size);
   // Postal line mirrors the issuer block: "<CC>-<postal> <city>"
-  // (e.g. "FL-9494 Schaan"). The country code prefix is dropped
-  // when the customer has no countryCodeIso so the line still
-  // reads cleanly. The country name on the line below comes from
-  // the explicit `country` override (customer_accounts.country_name,
-  // migration 107) or falls back to the locale-aware lookup.
-  const cc = recipient.countryCodeIso ? String(recipient.countryCodeIso).toUpperCase() : '';
-  const pc = recipient.postalCode || '';
-  const postalLeft = cc && pc ? `${cc}-${pc}` : (pc || cc);
-  const postalSegment = [postalLeft, recipient.city].filter(Boolean).join(' ');
+  // (e.g. "FL-9494 Schaan"), or "Denver, CO 80203" for a US
+  // address. The country code prefix is dropped when the customer
+  // has no countryCodeIso so the line still reads cleanly. The
+  // country name on the line below comes from the explicit
+  // `country` override (customer_accounts.country_name, migration
+  // 107) or falls back to the locale-aware lookup; a US business
+  // leaves it off a letter to a US address.
+  const postalSegment = cityLine({
+    postalCode: recipient.postalCode, city: recipient.city, state: recipient.state,
+    // A US business's customer with no country is a domestic address.
+    countryCode: recipient.countryCodeIso || (isUnitedStates(issuerCountryCode) ? 'US' : null),
+  });
   const lines = [
     recipient.hasCompany ? recipient.attentionLine : null,
     recipient.addressLine1,
     recipient.addressLine2,
     postalSegment,
-    recipient.country || countryName(recipient.countryCodeIso, locale),
+    printsCountryLine(recipient.countryCodeIso, issuerCountryCode)
+      ? (recipient.country || countryName(recipient.countryCodeIso, locale)) : null,
   ].filter(Boolean);
   for (const line of lines) {
     doc.text(line, x, y, { width: w });
@@ -1307,7 +1311,7 @@ function drawContractTotals(doc, ctx, x, y, width) {
   }
   if (Number(totals.vatMinor) !== 0 || Number(totals.vatRatePercent) > 0) {
     row(
-      ctx.vatLabel || t(locale, 'totals_vat'),
+      vatRowLabel(ctx.issuer, locale),
       formatMinor(totals.vatMinor, currency, intlLocale),
       `${stripTrailingZeros(totals.vatRatePercent)}%`,
     );
@@ -1320,6 +1324,20 @@ function drawContractTotals(doc, ctx, x, y, width) {
   y = doc.y + 6;
   doc.fontSize(10);
   return y;
+}
+
+/**
+ * The VAT row's label. A label set under Settings → Accounting overrides the
+ * document language's own word — except the stored default, 'MwSt.' (the
+ * column default every install starts with, migration 107), which counts as
+ * unset on a document that isn't German: an English invoice says VAT, or
+ * Sales tax from a US business, not MwSt.
+ */
+const STORED_DEFAULT_VAT_LABEL = 'MwSt.';
+function vatRowLabel(issuer, locale) {
+  const label = issuer && typeof issuer.vatLabel === 'string' ? issuer.vatLabel.trim() : '';
+  if (!label || (label === STORED_DEFAULT_VAT_LABEL && locale !== 'de')) return t(locale, 'totals_vat');
+  return label;
 }
 
 function drawTotals(doc, ctx, x, y, width) {
@@ -1363,8 +1381,7 @@ function drawTotals(doc, ctx, x, y, width) {
   // Not VAT-registered and no VAT on this document: no MwSt. row (see
   // vatRowHidden); the VAT note below stands in its place.
   if (!vatRowHidden(ctx)) {
-    // Custom VAT label (Settings → Accounting) overrides the per-locale default.
-    const vatLabel = (ctx.issuer && ctx.issuer.vatLabel) || t(locale, 'totals_vat');
+    const vatLabel = vatRowLabel(ctx.issuer, locale);
     doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).text(vatLabel, labelX, y, { width: labelCol });
     doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).text(`${stripTrailingZeros(totals.vatRate)}%`, rateX, y, { width: rateCol, align: 'right' });
     doc.text(formatMinor(totals.vatAmountMinor, currency, intlLocale), valueX, y, { width: valueCol, align: 'right' });
@@ -1672,19 +1689,16 @@ function drawFooter(doc, issuer, locale, { bottomLimit = null } = {}) {
   const defaultY = doc.page.height - P.marginBottom - reserved;
   const footerY = bottomLimit == null ? defaultY : Math.min(defaultY, bottomLimit - reserved);
 
-  const cc = issuer.countryCode ? String(issuer.countryCode).toUpperCase() : '';
-  const pc = issuer.postalCode || '';
-  const postalLeft = cc && pc ? `${cc}-${pc}` : (pc || cc);
-  const postalSegment = [postalLeft, issuer.city].filter(Boolean).join(' ');
-
   doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(smallTextSize(doc._theme)).fillColor(themeColor(doc, 'subtle'));
   const parts = (footer.mode === 'custom' ? [footer.text] : [
     issuer.companyName,
     issuer.addressLine1,
-    postalSegment,
+    cityLine(issuer),
     // Prefer the explicit country_name override (migration 107)
-    // before falling back to the COUNTRY_NAMES lookup.
-    issuer.countryName || countryName(issuer.countryCode, locale),
+    // before falling back to the COUNTRY_NAMES lookup. A US business
+    // leaves the country out, as on its letterhead.
+    printsCountryLine(issuer.countryCode, issuer.countryCode)
+      ? (issuer.countryName || countryName(issuer.countryCode, locale)) : null,
   ]).filter(Boolean);
   doc.text(parts.join(', '), P.marginLeft, footerY, {
     width: P.contentWidth, align: 'center', lineBreak: false,
@@ -2339,8 +2353,10 @@ function renderDocument(type, context) {
         const issuerEndY = drawIssuerBlock(doc, ctx.issuer, grid.labelX,
           centredLogo ? Math.max(issuerY, logoBottom) : issuerY,
           metaRight - grid.labelX, ctx.locale, { grid });
-        const recipientEndY = drawRecipientBlock(doc, ctx.recipient, ctx.locale,
-          windowOn ? {} : { flowY: Math.max(issuerY, logoBottom || 0) });
+        const recipientEndY = drawRecipientBlock(doc, ctx.recipient, ctx.locale, {
+          issuerCountryCode: ctx.issuer.countryCode,
+          ...(windowOn ? {} : { flowY: Math.max(issuerY, logoBottom || 0) }),
+        });
 
         // ---- meta block -----------------------------------------------
         // Bottom-aligned to the address field's lower edge: DIN 5008 Form B
@@ -2597,7 +2613,8 @@ function renderDocument(type, context) {
  * can rely on it without optional-chaining everywhere.
  */
 function normaliseContext(type, ctx) {
-  const locale = ctx.locale || 'de';
+  // An English document from a US business reads in US English (pdf-i18n).
+  const locale = documentLocale(ctx.locale || 'de', ctx.issuer?.countryCode);
   return {
     type,
     locale,
@@ -2699,7 +2716,7 @@ function renderContractInProcess(context) {
     (async () => {
       try {
         const ctx = context || {};
-        const locale = ctx.locale || 'de';
+        const locale = documentLocale(ctx.locale || 'de', ctx.issuer && ctx.issuer.countryCode);
         const theme = ctx.theme || builtInTheme('contract');
         // Settings → General date format, like quotes and invoices (#1445;
         // contracts used to pass the locale here, which always fell back).
@@ -2749,8 +2766,10 @@ function renderContractInProcess(context) {
         const issuerEndY = drawIssuerBlock(doc, ctx.issuer || {}, issuerX, centredLogo ? Math.max(issuerY, logoBottom) : issuerY,
           issuerWidth, locale);
         const windowOn = addressWindowOn(doc);
-        const recipientEndY = drawRecipientBlock(doc, ctx.recipient || {}, locale,
-          windowOn ? {} : { flowY: Math.max(issuerY, logoBottom || 0) });
+        const recipientEndY = drawRecipientBlock(doc, ctx.recipient || {}, locale, {
+          issuerCountryCode: ctx.issuer && ctx.issuer.countryCode,
+          ...(windowOn ? {} : { flowY: Math.max(issuerY, logoBottom || 0) }),
+        });
         let y = Math.max(issuerEndY, recipientEndY, windowOn ? ADDR_WINDOW.top + ADDR_WINDOW.height : 0) + 6;
         // Folding marks on the letter page, when the contract theme has them.
         drawFoldingMarks(doc, theme.foldingMarks);
@@ -2923,7 +2942,7 @@ function renderContractInProcess(context) {
                   currency: (ctx.quoteCurrency || 'CHF').toUpperCase(),
                   intlLocale: localeForIntl(locale, ctx.issuer?.countryCode),
                   totals: ctx.quoteTotals,
-                  vatLabel: ctx.issuer && ctx.issuer.vatLabel,
+                  issuer: ctx.issuer,
                 }, PAGE.marginLeft, doc.y, PAGE.contentWidth);
                 doc.y = y;
                 doc.fillColor(themeColor(doc, 'text'));
@@ -3077,6 +3096,6 @@ module.exports = {
   _raw: { renderDocument, renderContract: renderContractInProcess },
   // Exposed for unit tests + advanced callers.
   _internal: {
-    formatMinor, formatDate, t, registerCustomFonts, registerThemeFonts, drawLineItems, stampPageNumbers, themeColor,
+    formatMinor, formatDate, t, registerCustomFonts, registerThemeFonts, drawLineItems, drawContractTotals, stampPageNumbers, themeColor,
   },
 };

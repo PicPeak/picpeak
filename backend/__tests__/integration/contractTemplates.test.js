@@ -54,7 +54,10 @@ const templatesUrl = (path = '') => `/api/admin/contract-templates${path}`;
 async function systemBlocksInLegacyOrder() {
   const { SECTIONS_ORDER } = require('../../src/services/contract/helpers');
   const rank = (s) => (SECTIONS_ORDER.indexOf(s) === -1 ? 99 : SECTIONS_ORDER.indexOf(s));
-  const rows = await db('contract_blocks').where({ is_system: true, is_active: true });
+  // All but the US closing provisions, which only a US business's contracts
+  // carry (contract/regionalClauses); this business is in no country yet.
+  const rows = (await db('contract_blocks').where({ is_system: true, is_active: true }))
+    .filter((row) => row.slug !== 'closing_jurisdiction_us');
   return rows.sort((a, b) => rank(a.section) - rank(b.section) || a.display_order - b.display_order || a.id - b.id);
 }
 

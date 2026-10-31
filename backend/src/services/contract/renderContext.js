@@ -4,6 +4,7 @@
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
 const { formatShortDate } = require('../../utils/dateFormatter');
+const { cityLine, isUnitedStates } = require('../../utils/postalAddress');
 const businessProfileService = require('../businessProfileService');
 const { buildIssuerBlock, buildRecipientBlock } = require('../_renderContext');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
@@ -45,12 +46,20 @@ function renderTemplatedBody(template, variables, { output = 'markdown' } = {}) 
  * customer record, business profile, and (when available) the
  * customer's active payment-term defaults so block placeholders for
  * net_days / skonto_percent / etc. resolve. Returns plain strings —
- * dates formatted DD.MM.YYYY in DE-CH style, numbers as-is.
+ * dates formatted DD.MM.YYYY in DE-CH style (MM/DD/YYYY from a US
+ * business), numbers as-is.
  */
 async function buildPlaceholderContext(contract, customer) {
   const profile = (await businessProfileService.getProfile()).profile || {};
   const issuerCompany = profile.company_name || '';
-  const issuerAddress = [profile.address_line1, profile.postal_code, profile.city]
+  // A US business writes "123 Main St, Denver, CO 80202" for both
+  // addresses (utils/postalAddress); everyone else keeps the plain join.
+  const usBusiness = isUnitedStates(profile.country_code);
+  const issuerAddress = (usBusiness
+    ? [profile.address_line1, cityLine({
+      postalCode: profile.postal_code, city: profile.city, state: profile.state, countryCode: 'US',
+    })]
+    : [profile.address_line1, profile.postal_code, profile.city])
     .filter(Boolean)
     .join(', ');
 
@@ -80,7 +89,12 @@ async function buildPlaceholderContext(contract, customer) {
         || '')
     : '';
   const customerAddress = customer
-    ? [customer.address_line1, customer.address_line2, customer.postal_code, customer.city]
+    ? (usBusiness
+      ? [customer.address_line1, customer.address_line2, cityLine({
+        postalCode: customer.postal_code, city: customer.city, state: customer.state,
+        countryCode: customer.country_code || 'US',
+      })]
+      : [customer.address_line1, customer.address_line2, customer.postal_code, customer.city])
       .filter(Boolean)
       .join(', ')
     : '';
@@ -89,8 +103,8 @@ async function buildPlaceholderContext(contract, customer) {
     customer_name: customerName,
     customer_address: customerAddress,
     event_name: contract.event_name || '',
-    event_date: formatShortDate(contract.event_date),
-    issue_date: formatShortDate(contract.issue_date),
+    event_date: formatShortDate(contract.event_date, profile.country_code),
+    issue_date: formatShortDate(contract.issue_date, profile.country_code),
     contract_number: contract.contract_number || '',
     title: contract.title || '',
     net_days: String(netDaysDefault),
@@ -108,7 +122,8 @@ async function buildPlaceholderContext(contract, customer) {
 // Render-context builder + PDF helpers
 // ---------------------------------------------------------------------
 
-const isIncluded = (row) => row.included === true || row.included === 1 || row.included === '1';
+const isSet = (value) => value === true || value === 1 || value === '1';
+const isIncluded = (row) => isSet(row.included);
 
 /**
  * A contract's clauses in reading order, each with its texts by language
@@ -136,6 +151,7 @@ function orderedClauses(contract, inclusions, textSections = []) {
         position: ensureInt(row.position),
         slug: row.block_slug || null,
         name: row.block_name || null,
+        system: isSet(row.block_is_system),
         body: content.mergeLocaleMaps(base, row.body_override),
       };
     }),
@@ -187,8 +203,18 @@ function parseContentSnapshot(value) {
  * its values as they were — `**ACME**` in a customer name printed bold — and
  * every clause heading, and its stored PDF says so, so it keeps being read
  * that way.
+ *
+ * Format 4 adds `system` to each clause: a contract in any language but
+ * German heads a seeded clause with the title its own text opens with
+ * (`**Subject of contract**`) instead of the library block's name, which the
+ * seeded blocks carry in German. A clause an admin wrote keeps the name they
+ * gave it. One sent before that printed the block names, and keeps being read
+ * that way.
  */
-const SNAPSHOT_FORMAT = 3;
+const SNAPSHOT_FORMAT = 4;
+
+// A clause text's opening `**Title**` line.
+const LEADING_TITLE = /^\s*\*\*([^*\n]+)\*\*\s*\n+/;
 
 /**
  * The columns of a quote line the contract renderer reads, coerced to the
@@ -320,6 +346,9 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
   // knew only `**bold**`), so it is doubled for the escape-aware parser. That
   // includes one sent before snapshots existed at all (no rendered_content).
   const legacy = snapshot ? ensureInt(snapshot.format) < 3 : !!contract.sent_at;
+  // Clause headings in the contract's own language (format 4): every
+  // language but German, for a contract not yet sent or sent since.
+  const titledHeadings = locale !== 'de' && (snapshot ? ensureInt(snapshot.format) >= 4 : !contract.sent_at);
   const render = (template) => {
     const out = renderTemplatedBody(template, placeholders, { output: legacy ? 'text' : 'markdown' });
     return legacy && typeof out === 'string' ? out.replace(/\\/g, '\\\\') : out;
@@ -330,9 +359,10 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
     title: snapshot ? snapshot.title : (contract.title || ''),
     introText: intro ? render(intro) : null,
     outroText: outro ? render(outro) : null,
-    // Placeholders filled in, then a leading `**Title**` line dropped: the
-    // clause name is already printed as its heading. Inline `**bold**`
-    // stays for the PDF (the signing page strips it).
+    // Placeholders filled in, then a leading `**Title**` line dropped: it
+    // becomes the heading (a seeded clause outside German, see format 4), or the clause name
+    // already is. Inline `**bold**` stays for the PDF (the signing page
+    // strips it).
     //
     // A clause whose text comes out empty — hidden by "Show only if"
     // (#1445) — is left out with its heading, and a section left without
@@ -346,15 +376,16 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
     sections: groupSections(clauses
       .map((clause) => {
         const text = content.pickLocale(clause.body, locale);
+        const rendered = String(render(text) || '');
+        const title = titledHeadings && clause.system ? (rendered.match(LEADING_TITLE) || [])[1] : null;
         return {
           blockId: clause.blockId,
           position: clause.position,
           kind: clause.kind,
           slug: clause.slug,
-          name: clause.name,
+          name: (title && title.trim()) || clause.name,
           section: clause.section,
-          body: String(render(text) || '')
-            .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, ''),
+          body: rendered.replace(LEADING_TITLE, ''),
           ruled: /^\s*\{\{\s*#(?:if|unless)\s/.test(String(text || '')),
         };
       })
