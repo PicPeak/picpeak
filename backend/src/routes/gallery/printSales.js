@@ -20,7 +20,7 @@ router.get('/:slug/print-sales/orders', handleAsync(async (req, res) => {
   const s = service(); await s.buyer(require('../../database/db').db, req.event.id, customer(req));
   const rows = await require('../../database/db').db('print_sales_orders')
     .where({ event_id: req.event.id, customer_account_id: customer(req) }).orderBy('created_at', 'desc').limit(50);
-  res.json({ orders: rows.map(s.shape) });
+  res.json({ orders: rows.map(s.customerShape) });
 }));
 router.post('/:slug/print-sales/quotes', require('express-rate-limit')({ windowMs: 10 * 60e3, max: 20, standardHeaders: true, legacyHeaders: false }),
   handleAsync(async (req, res) => res.status(201).json(await service().quote(req.event.id, customer(req), req.accessLevel, req.body))));

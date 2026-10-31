@@ -43,7 +43,7 @@ export function ProfileEditor({ value, products, presets, onChange }: {
     {(['bleedMm', 'safeInsetMm'] as const).map(group => <fieldset key={group}>
       <legend>{group === 'bleedMm' ? t('printSales.bleed', 'Bleed outside trim (mm)') : t('printSales.safeInset', 'Safe area inside trim (mm)')}</legend>
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">{(['top', 'right', 'bottom', 'left'] as const).map(side =>
-        <label className="block text-sm" key={side}>{t(`printSales.edge.${side}`, side)}
+        <label className="block text-sm" key={side}>{t(`printSales.edge.${side}`, side[0].toUpperCase() + side.slice(1))}
           <DecimalInput className="input w-full" min={0} max={100} value={m[group][side]}
             onChange={amount => definition({ manufacturing: { ...m, [group]: { ...m[group], [side]: amount } } })} />
         </label>)}</div>
@@ -83,7 +83,7 @@ export function ProfileEditor({ value, products, presets, onChange }: {
       <label className="block">{t('printSales.outputColourProfile', 'Output colour profile')}
         <select className="input w-full" value={m.output.colourSpace} onChange={e => definition({ enabled: false,
           manufacturing: { ...m, output: { ...m.output, colourSpace: e.target.value as ColourSpace } } })}>
-          <option value="srgb">sRGB</option><option value="adobe-rgb-1998">Adobe RGB (1998) compatible</option>
+          <option value="srgb">sRGB</option><option value="adobe-rgb-1998">{t('printSales.adobeCompatible', 'Adobe RGB (1998) compatible')}</option>
           <option value="display-p3">Display P3</option><option value="prophoto-rgb">ProPhoto RGB (ROMM RGB)</option>
         </select></label>
       <p className="text-sm text-muted">{t('printSales.supportedColour', 'Select the RGB profile your supplier accepts. Output is converted and tagged with that profile. Printer/paper soft-proof profiles are different; do not substitute one as the output profile.')}</p>

@@ -7,9 +7,13 @@ const { AppError, ConflictError, NotFoundError, ForbiddenError } = require('../.
 const { livePhotos, wherePhotoProcessed, isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
 const { assertGalleryAvailable, isTrue } = require('../../utils/galleryLifecycle');
 const work = require('../activeApplicationWork');
+const { formatBoolean } = require('../../utils/dbCompat');
+const { artworkBytes, MAX_ORDER_ARTWORK_BYTES } = require('./output');
+const { isManagedOriginalKey, resolvePhotoStorageKey } = require('../photoResolver');
 const now = () => new Date().toISOString();
 const fingerprint = p => V.hash({ id: p.id, path: p.path, sha: p.content_sha256 || null, filename: p.original_filename });
 const MAX_SOURCE_BYTES = 50 * 1024 * 1024;
+const MAX_UNACCEPTED_SOURCE_BYTES = 4 * 1024 * 1024 * 1024;
 
 async function read(storage, key, max = MAX_SOURCE_BYTES, options) {
   const stream = await storage.get(key, options), chunks = [];
@@ -47,6 +51,13 @@ function createService({ db, storage, sharp }) {
     require('../invoice/helpers').ensureCustomerCanBill(customer);
     return { event, customer };
   }
+  /** Not on tx: the permission lookup uses the global connection. */
+  async function billingOwner(event) {
+    const admin = await db('admin_users').where({ id: event.print_sales_admin_id, is_active: formatBoolean(true) }).first();
+    if (!admin || !await require('../../middleware/permissions').userHasAllPermissions(admin.id, ['bills.manage', 'customers.edit']))
+      throw new ForbiddenError('The studio billing owner is unavailable');
+    return admin;
+  }
   async function photo(tx, eventId, id, accessLevel) {
     const p = await wherePhotoProcessed(livePhotos(tx)).where({ id, event_id: eventId }).first();
     if (!p || isPhotoHiddenFromViewer(p, accessLevel) || p.media_type === 'video' || p.mime_type?.startsWith('video/'))
@@ -76,13 +87,18 @@ function createService({ db, storage, sharp }) {
           crop: i.crop, fit: i.fit, profileId: i.profile.id, selection: i.profile.selection,
           artwork: i.profile.artwork, background: i.profile.manufacturing.background ?? '#ffffff', manufacturing: i.profile.manufacturing, unitPriceMinor: i.unitPriceMinor })) }) };
   }
+  /** The lab reference is the studio's own bookkeeping, not the buyer's. */
+  function customerShape(row) {
+    const { supplierReference, ...rest } = shape(row);
+    return rest;
+  }
   async function owned(id, customerId, eventId) {
     const row = await db('print_sales_orders').where({ id: V.uuid(id), customer_account_id: customerId, event_id: eventId }).first();
     if (!row) throw new NotFoundError('Print order');
     return row;
   }
   async function offers(eventId, customerId) {
-    await buyer(db, eventId, customerId);
+    await billingOwner((await buyer(db, eventId, customerId)).event);
     const config = await P.settings(db), variants = [];
     for (const p of config.profiles.filter(p => p.definition.enabled)) {
       try {
@@ -96,6 +112,7 @@ function createService({ db, storage, sharp }) {
       } catch (error) {
         if (![400, 409].includes(error.statusCode)) throw error;
         // Stale or incomplete manufacturing configurations are withdrawn.
+        require('../../utils/logger').warn('Print variant withdrawn from offers', { profileId: p.definition.id, error: error.message });
       }
     }
     return { variants, countries: config.countries, policy: config.policy, basketScope: V.hash({ eventId, customerId }) };
@@ -103,16 +120,21 @@ function createService({ db, storage, sharp }) {
   async function quote(eventId, customerId, accessLevel, input) {
     V.uuid(input?.requestId);
     const { event, customer } = await buyer(db, eventId, customerId);
+    await billingOwner(event);
     const requestHash = V.hash({ cart: input.items, delivery: input.delivery });
     const existing = await db('print_sales_orders').where({ id: input.requestId }).first();
     if (existing) {
       if (existing.customer_account_id !== customerId || existing.event_id !== eventId || existing.request_hash !== requestHash)
         throw new ConflictError('This request identifier was already used');
       if (existing.status === 'capturing') throw new ConflictError('This quotation is still being prepared');
-      return shape(existing);
+      if (!existing.snapshot) throw new ConflictError('This quotation could not be prepared; review a new quotation');
+      return customerShape(existing);
     }
     const destination = D.delivery(input.delivery, (await P.settings(db)).countries),
       plan = await D.plan(db, input.items, { country: destination.country });
+    // Before anything is retained or invoiced: the worker cannot render more.
+    if (plan.items.reduce((sum, i) => sum + artworkBytes(i.profile.artwork, i.profile.manufacturing.output), 0) > MAX_ORDER_ARTWORK_BYTES)
+      throw new AppError('Choose fewer or smaller prints for one order', 400);
     const id = input.requestId;
     await db.transaction(async tx => {
       // Match customer erasure and native gallery deletion before taking order
@@ -125,11 +147,17 @@ function createService({ db, storage, sharp }) {
       await tx('print_sales_settings').where({ id: 1 }).forUpdate().first();
       if (await tx('print_sales_orders').where({ id }).first())
         throw new ConflictError('This quotation request is already being prepared; retry shortly');
+      const studio = o => Number(o.created_by_admin_id) === Number(event.print_sales_admin_id);
       const pending = await tx('print_sales_orders').whereIn('status', ['capturing', 'quoted']).where('expires_at', '>', now());
-      const open = await tx('print_sales_orders').where({ status: 'accepted' }).select('customer_account_id');
-      if (open.length >= 100 || open.filter(o => o.customer_account_id === customerId).length >= 10)
+      const open = await tx('print_sales_orders').where({ status: 'accepted' }).select('customer_account_id', 'created_by_admin_id');
+      // Failed and lapsed quotations keep their sources until the next sweep.
+      const retained = await tx('print_sales_assets as a').join('print_sales_orders as o', 'o.id', 'a.order_id')
+        .whereNull('o.accepted_at').whereNull('o.purged_at').sum({ bytes: 'a.size' }).first();
+      if (Number(retained?.bytes || 0) >= MAX_UNACCEPTED_SOURCE_BYTES)
+        throw new ConflictError('Too many print quotations are waiting; try again later');
+      if (open.filter(studio).length >= 100 || open.filter(o => o.customer_account_id === customerId).length >= 10)
         throw new ConflictError('Resolve existing studio orders before placing another order');
-      if (pending.length >= 20 || pending.filter(o => o.status === 'capturing').length >= 2 ||
+      if (pending.filter(studio).length >= 20 || pending.filter(o => o.status === 'capturing').length >= 2 ||
           pending.filter(o => o.customer_account_id === customerId).length >= 2)
         throw new ConflictError('Finish or wait for an existing quotation before creating another');
       await tx('print_sales_orders').insert({ id, request_hash: requestHash, event_id: eventId,
@@ -141,8 +169,8 @@ function createService({ db, storage, sharp }) {
       for (const item of plan.items) {
         if (!sources.has(item.photoId)) {
           const p = await photo(db, eventId, item.photoId, accessLevel);
-          const key = require('../photoResolver').resolvePhotoStorageKey(event, p);
-          if (!key) throw new AppError('Print ordering currently requires managed originals', 400);
+          const key = resolvePhotoStorageKey(event, p);
+          if (!key || !isManagedOriginalKey(key)) throw new AppError('Print ordering currently requires managed originals', 400);
           const stat = await storage.stat(key);
           if (!stat || stat.size > MAX_SOURCE_BYTES) throw new AppError('Original is missing or too large for print ordering', 400);
           const bytes = await read(storage, key, MAX_SOURCE_BYTES, { ifMatch: stat.etag, versionId: stat.versionId });
@@ -170,9 +198,12 @@ function createService({ db, storage, sharp }) {
       const changed = await db('print_sales_orders').where({ id, status: 'capturing' })
         .update({ status: 'quoted', snapshot: serial, snapshot_hash: snapshotHash, contact: JSON.stringify(contact) });
       if (!changed) throw new ConflictError('The quotation expired during preparation');
-      return shape(await owned(id, customerId, eventId));
+      return customerShape(await owned(id, customerId, eventId));
     } catch (error) {
       await db('print_sales_orders').where({ id, status: 'capturing' }).update({ status: 'failed', error: 'Source preparation failed' });
+      // Erased or cancelled mid-capture: this request stored sources after the
+      // purge ran, and a purged order is never swept again.
+      await db('print_sales_orders').where({ id }).whereNotNull('purged_at').update({ purged_at: null, purge_requested: formatBoolean(true) });
       throw error;
     }
   }
@@ -180,11 +211,12 @@ function createService({ db, storage, sharp }) {
     const { event } = await buyer(db, eventId, customerId), row = await owned(id, customerId, eventId);
     if (input?.snapshotHash !== row.snapshot_hash || input?.acknowledgeSelection !== true)
       throw new AppError('Confirm the displayed photo selections, prices and policy', 400);
-    if (row.accepted_at) return shape(row);
+    if (row.accepted_at) return customerShape(row);
     const policy = require('../../database/crmAccess');
-    const admin = await db('admin_users').where({ id: event.print_sales_admin_id, is_active: true }).first();
-    if (!admin || !await require('../../middleware/permissions').userHasAllPermissions(admin.id, ['bills.manage', 'customers.edit']))
-      throw new ForbiddenError('The studio billing owner is unavailable');
+    const admin = await billingOwner(event);
+    // Outside the transaction: it holds the settings lock, and S3 is a network call.
+    for (const source of await db('print_sales_assets').where({ order_id: id, kind: 'source' }))
+      if (!await storage.stat(source.storage_key)) throw new ConflictError('Retained original is missing');
     const actor = await policy.loadCrmActor({ id: admin.id });
     const { hasColumnCached } = require('../../utils/schemaCache');
     await hasColumnCached('invoices', 'vat_code'); await hasColumnCached('invoices', 'project_id');
@@ -194,8 +226,8 @@ function createService({ db, storage, sharp }) {
       await tx('album_product_catalogue').where({ id: 1 }).forUpdate().first();
       await tx('print_sales_settings').where({ id: 1 }).forUpdate().first();
       const current = await tx('print_sales_orders').where({ id }).forUpdate().first();
-      if (current.accepted_at) return shape(current);
-      if (current.status !== 'quoted' || new Date(current.expires_at).getTime() <= Date.now())
+      if (current.accepted_at) return customerShape(current);
+      if (current.status !== 'quoted' || !(new Date(current.expires_at).getTime() > Date.now()))
         throw new ConflictError('The quotation expired; review a new quotation');
       const { event: currentEvent } = await buyer(tx, eventId, customerId);
       if (current.created_by_admin_id !== currentEvent.print_sales_admin_id || currentEvent.print_sales_admin_id !== admin.id)
@@ -213,7 +245,7 @@ function createService({ db, storage, sharp }) {
         const p = await photo(tx, eventId, item.photoId, accessLevel);
         if (fingerprint(p) !== item.source.fingerprint) throw new ConflictError('A selected photograph changed; review a new quotation');
         const source = await tx('print_sales_assets').where({ id: item.source.assetId, order_id: id, kind: 'source' }).first();
-        if (!source || !await storage.stat(source.storage_key)) throw new ConflictError('Retained original is missing');
+        if (!source) throw new ConflictError('Retained original is missing');
       }
       const created = await require('../invoiceService').createInvoice({
         customerAccountId: customerId, eventId, eventName: currentEvent.event_name,
@@ -229,10 +261,10 @@ function createService({ db, storage, sharp }) {
         invoice_id: invoiceId, invoice_hash: invoiceHash, render_status: 'queued' });
       await require('../../database/db').logActivity('print_order_accepted', { orderId: id, invoiceId, eventName: currentEvent.event_name }, eventId,
         { type: 'customer', id: customerId }, tx);
-      return shape(await tx('print_sales_orders').where({ id }).first());
+      return customerShape(await tx('print_sales_orders').where({ id }).first());
     }));
   }
-  return { buyer, photo, asset, shape, owned, offers,
+  return { buyer, photo, asset, shape, customerShape, owned, offers,
     quote: (...args) => work.track('print order source capture', () => quote(...args)),
     accept: (...args) => work.track('print order acceptance', () => accept(...args)) };
 }

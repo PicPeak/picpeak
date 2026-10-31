@@ -1,12 +1,12 @@
 'use strict';
 const router = require('express').Router();
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAllPermissions } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
-const { requireEventOwner } = require('../middleware/ownership');
+const { requireEventOwner, canLinkCrmToEvent } = require('../middleware/ownership');
 const { handleAsync } = require('../utils/routeHelpers');
 const { db } = require('../database/db');
-const { AppError, NotFoundError } = require('../utils/errors');
+const { AppError, ConflictError, ForbiddenError, NotFoundError } = require('../utils/errors');
 const P = require('../services/printSales/profiles');
 const O = require('../services/printSales/orders');
 const G = require('../services/albumProducts/library');
@@ -35,10 +35,18 @@ router.get('/events/:eventId', requireEventOwner, permissions('products.view'), 
 router.put('/events/:eventId', requireEventOwner, requireFeatureFlag('printSales'), requireFeatureFlag('albumProducts'), requireFeatureFlag('bills'),
   permissions('products.configure', 'bills.manage', 'customers.edit'), handleAsync(async (req, res) => {
     if (typeof req.body?.enabled !== 'boolean') throw new AppError('Choose whether gallery ordering is enabled', 400);
-    const changed = await db('events').where({ id: Number(req.params.eventId) }).update({
-      print_sales_enabled: formatBoolean(req.body.enabled), print_sales_admin_id: req.admin.id,
-    });
-    if (!changed) throw new NotFoundError('Gallery');
+    const event = await db('events').where({ id: Number(req.params.eventId) }).first('id', 'created_by');
+    if (!event) throw new NotFoundError('Gallery');
+    // Orders invoice under the event, so the CRM rule applies, not event access.
+    if (!canLinkCrmToEvent(req.admin, event)) throw new ForbiddenError('Only the gallery owner can run print ordering for this gallery');
+    const update = { print_sales_enabled: formatBoolean(req.body.enabled) };
+    if (req.body.enabled) {
+      // Billing stays with the gallery's owner, whoever flips the switch.
+      update.print_sales_admin_id = event.created_by ?? req.admin.id;
+      if (!await userHasAllPermissions(update.print_sales_admin_id, ['bills.manage', 'customers.edit']))
+        throw new ConflictError('The gallery owner needs billing and customer permissions to take print orders');
+    }
+    await db('events').where({ id: event.id }).update(update);
     res.json({ enabled: req.body.enabled });
   }));
 router.get('/orders', permissions('products.view', 'bills.view', 'customers.view'), handleAsync(async (req, res) => {
@@ -49,11 +57,11 @@ router.get('/orders', permissions('products.view', 'bills.view', 'customers.view
 }));
 router.get('/orders/:id', permissions('products.view', 'bills.view', 'customers.view'), handleAsync(async (req, res) =>
   res.json(O.application().shape(await fulfilment().order(req.params.id, req.admin)))));
-router.post('/orders/:id/actions', permissions('products.configure', 'bills.manage', 'customers.edit'), handleAsync(async (req, res) => {
+router.post('/orders/:id/actions', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.edit'), handleAsync(async (req, res) => {
   await require('../services/activeApplicationWork').track('manual print fulfilment', () => fulfilment().action(req.params.id, req.admin, req.body));
   res.json(O.application().shape(await fulfilment().order(req.params.id, req.admin)));
 }));
-router.get('/orders/:id/files/:kind', permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
+router.get('/orders/:id/files/:kind', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
   V.uuid(req.params.id);
   const bytes = await require('../services/activeApplicationWork').track('print supplier file download', () => fulfilment().download(req.params.id, req.admin, req.params.kind));
   const pack = req.params.kind === 'pack';

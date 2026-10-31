@@ -4,6 +4,7 @@ const G = require('../albumProducts/library');
 const { defineProfile } = require('./manufacturingProfiles');
 const { AppError, ConflictError } = require('../../utils/errors');
 const { isTruthyFlag } = require('../../utils/lineItemTotals');
+const { artworkBytes, MAX_ORDER_ARTWORK_BYTES } = require('./output');
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 const defaults = () => ({ profiles: [], countries: [], policy: '', shippingPresetId: null });
 async function catalogue(tx) {
@@ -43,7 +44,7 @@ async function save(db, input) {
     const current = await tx('print_sales_settings').where({ id: 1 }).forUpdate().first();
     if (current.revision !== input.revision) throw new ConflictError('Print settings changed; reload before saving');
     const previous = parse(current.configuration), cat = await catalogue(tx), seen = new Set(), variants = new Set();
-    const profiles = [];
+    const profiles = [], prices = [], deliveries = [];
     for (const entry of input.profiles) {
       if (!entry?.definition || !Number.isSafeInteger(entry.cataloguePresetId)) throw new AppError('Choose a CRM price item', 400);
       const prior = previous.profiles.find(p => p.definition.id === entry.definition.id);
@@ -59,13 +60,18 @@ async function save(db, input) {
         const key = V.hash({ product: snapshot.selection.product.id, values: G.valuesOf(snapshot.selection) });
         if (variants.has(key)) throw new AppError('Two profiles enable the same product choices', 400);
         variants.add(key);
-        await priceItem(tx, entry.cataloguePresetId, definition.selection.productId);
+        if (artworkBytes(snapshot.artwork, snapshot.manufacturing.output) > MAX_ORDER_ARTWORK_BYTES)
+          throw new AppError('This output file would exceed the 64 MB order limit; use a compressed format or a lower resolution', 400);
+        prices.push(await priceItem(tx, entry.cataloguePresetId, definition.selection.productId));
       }
       profiles.push({ definition, cataloguePresetId: entry.cataloguePresetId });
     }
     const delivery = require('./delivery').configuration(input, previous);
     for (const id of new Set([delivery.shippingPresetId, ...delivery.shippingZones.map(z => z.cataloguePresetId)].filter(id => id !== null)))
-      await priceItem(tx, id);
+      deliveries.push(await priceItem(tx, id));
+    // A quotation prices delivery with the prints, on one invoice with one VAT code.
+    if (deliveries.some(d => prices.some(p => p.currency !== d.currency || p.vat_code !== d.vat_code)))
+      throw new AppError('Delivery prices must use the same currency and output VAT code as the enabled print variants', 400);
     const configuration = { profiles, policy, ...delivery };
     await tx('print_sales_settings').where({ id: 1, revision: input.revision }).update({
       revision: input.revision + 1, configuration: JSON.stringify(configuration), updated_at: new Date().toISOString(),

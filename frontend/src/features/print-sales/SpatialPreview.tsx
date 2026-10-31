@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Crop, Variant } from './model';
 import { CropPreview } from './CropEditor';
+import { formatCm } from './shopping';
 
 // Fixed scene dimensions in millimetres: changing product size never rescales the room.
 export const spaces = { desk: { width: 1200, height: 850 }, wall: { width: 3000, height: 2250 } };
@@ -31,8 +32,8 @@ export function SpatialPreview({ variant, src, slug, crop, fit }: { variant: Var
         </div>}
       </div>
       {!fits && <p role="status" className="text-sm">{t('printSales.spaceTooSmall', 'This print does not fit this scene at the illustrated scale. Try the wall view or a smaller size.')}</p>}
-      <p className="text-xs text-muted">{t('printSales.sceneWidth', 'Scene width')}: {space.width / 10} cm</p>
-      <p className="text-xs text-muted">{trim.width / 10} × {trim.height / 10} cm · {t('printSales.scaleNote', 'Illustrative scale; accessories are not included. Colours and trim may vary. This preview does not change your crop.')}</p>
+      <p className="text-xs text-muted">{t('printSales.sceneWidth', 'Scene width')}: {formatCm(space.width)} cm</p>
+      <p className="text-xs text-muted">{formatCm(trim.width)} × {formatCm(trim.height)} cm · {t('printSales.scaleNote', 'Illustrative scale; accessories are not included. Colours and trim may vary. This preview does not change your crop.')}</p>
     </div>}
   </section>;
 }

@@ -7,16 +7,20 @@ import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { errorMessage } from '../album-products/model';
 export function PrintGallerySettings({ eventId, ownsEvent }: { eventId: number; ownsEvent: boolean }) {
-  const enabled = useFeatureEnabled('printSales'), { hasPermission } = usePermissions(), { t } = useTranslation();
+  const printEnabled = useFeatureEnabled('printSales'), catalogueEnabled = useFeatureEnabled('albumProducts'), billsEnabled = useFeatureEnabled('bills');
+  const enabled = printEnabled && catalogueEnabled && billsEnabled, { hasPermission } = usePermissions(), { t } = useTranslation();
+  const canView = ownsEvent && hasPermission('products.view'),
+    canEdit = hasPermission('products.configure') && hasPermission('bills.manage') && hasPermission('customers.edit');
   const [on, setOn] = useState(false), [loaded, setLoaded] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   useEffect(() => {
     let active = true;
-    if (ownsEvent && enabled) api.get<{ enabled: boolean }>(`/admin/print-sales/events/${eventId}`).then(r => {
+    if (canView && enabled) api.get<{ enabled: boolean }>(`/admin/print-sales/events/${eventId}`).then(r => {
       if (active) { setOn(r.data.enabled); setLoaded(true); }
     }).catch(e => { if (active) setError(errorMessage(e)); });
     return () => { active = false; };
-  }, [eventId, ownsEvent, enabled]);
-  if (!enabled || !ownsEvent || !hasPermission('bills.manage') || !hasPermission('customers.edit')) return null;
+  }, [eventId, canView, enabled]);
+  if (!enabled || !canView) return null;
+  if (!canEdit) return <p className="text-sm text-muted">{on ? t('printSales.galleryOn', 'Print ordering is on for this gallery.') : t('printSales.galleryOff', 'Print ordering is off for this gallery.')}</p>;
   return <section className="p-4 border border-line rounded-lg space-y-3">
     <Switch label={t('printSales.enableGallery', 'Enable print ordering for assigned customer accounts')} checked={on} disabled={!loaded || busy}
       onChange={async next => {

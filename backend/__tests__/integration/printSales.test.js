@@ -507,3 +507,162 @@ test('archived-gallery deletion detaches retained orders and keeps them visible 
   expect(await worker.runOne()).toBe(true);
   expect((await fulfilment.order(a.id, admin)).render_status).toBe('ready');
 });
+
+const authed = req => req.set('Authorization', `Bearer ${adminToken}`);
+const paidAndReady = async () => { const a = await accepted(); await pay(a); await worker.runOne(); return fulfilment.order(a.id, admin); };
+const submitted = async () => {
+  const row = await paidAndReady();
+  await fulfilment.action(row.id, admin, { action: 'review', artworkVersion: row.artwork_version });
+  await fulfilment.action(row.id, admin, { action: 'submit', artworkVersion: row.artwork_version, supplierReference: 'LAB-1' });
+  return fulfilment.order(row.id, admin);
+};
+const invoices = () => require('../../src/services/invoiceService');
+async function newAdmin(extra = {}) {
+  const ids = await db('admin_users').insert({ username: uuid(), email: `${uuid()}@example.com`, password_hash: 'unused',
+    is_active: true, created_at: new Date().toISOString(), ...extra }).returning('id');
+  return ids[0]?.id ?? ids[0];
+}
+test('a Storno and reissue moves fulfilment to the paid replacement', async () => {
+  const row = await paidAndReady();
+  await invoices().cancelInvoice(row.invoice_id, admin.id);
+  await expect(fulfilment.download(row.id, admin, 'sheet')).rejects.toThrow('fully settled');
+  const reissued = await invoices().reissueInvoice(row.invoice_id, admin.id);
+  const replacement = await db('invoices').where({ replaces_invoice_id: row.invoice_id }).first();
+  expect(replacement?.id).toBeDefined(); expect(reissued).toBeDefined();
+  await expect(fulfilment.download(row.id, admin, 'sheet')).rejects.toThrow('fully settled');
+  await invoices().markPaid(replacement.id, { amountMinor: Number(replacement.total_amount_minor), paymentMethod: 'bank_transfer' }, admin.id);
+  expect((await fulfilment.download(row.id, admin, 'sheet')).length).toBeGreaterThan(0);
+});
+test('an order at the lab whose invoice was cancelled can be closed, which releases customer erasure', async () => {
+  const row = await submitted(), { eraseCustomer } = require('../../src/services/printSales/fulfilment');
+  await expect(fulfilment.action(row.id, admin, { action: 'resolve', note: 'Lab refunded' })).rejects.toThrow('native billing first');
+  await invoices().cancelInvoice(row.invoice_id, admin.id);
+  await expect(fulfilment.action(row.id, admin, { action: 'cancel' })).rejects.toThrow('manual resolution');
+  await expect(fulfilment.action(row.id, admin, { action: 'resolve', note: '  ' })).rejects.toThrow();
+  await db.transaction(tx => expect(eraseCustomer(tx, customerId)).rejects.toThrow('Resolve active print orders'));
+  await fulfilment.action(row.id, admin, { action: 'resolve', note: 'Lab refunded' });
+  expect(await fulfilment.order(row.id, admin)).toMatchObject({ status: 'resolved', render_status: 'cancelled' });
+  await db.transaction(tx => eraseCustomer(tx, customerId));
+  await expect(fulfilment.action(row.id, admin, { action: 'resolve', note: 'Again' })).rejects.toThrow('open order');
+  const logged = await db('activity_logs').where({ activity_type: 'print_order_resolve' }).orderBy('id', 'desc').first();
+  expect(JSON.stringify(logged.metadata)).toContain('Lab refunded');
+});
+test('cancelling a closed order changes nothing, and cancel and retry leave an activity record', async () => {
+  const a = await accepted();
+  await invoices().cancelInvoice(a.invoiceId, admin.id);
+  await fulfilment.action(a.id, admin, { action: 'cancel' });
+  const closed = (await fulfilment.order(a.id, admin)).closed_at;
+  await expect(fulfilment.action(a.id, admin, { action: 'cancel' })).rejects.toThrow('already closed');
+  expect((await fulfilment.order(a.id, admin)).closed_at).toEqual(closed);
+  expect(await db('activity_logs').where({ activity_type: 'print_order_cancel' }).first()).toBeTruthy();
+});
+test('the gallery switch keeps billing with the gallery owner, also when a super admin flips it', async () => {
+  const owner = await newAdmin();
+  await assignAdminRole(db, owner);
+  await db('events').where({ id: event.id }).update({ created_by: owner, print_sales_admin_id: null, print_sales_enabled: false });
+  const put = enabled => authed(request(adminApp).put(`/api/admin/print-sales/events/${event.id}`)).send({ enabled });
+  expect((await put(true)).status).toBe(200);
+  expect(Number((await db('events').where({ id: event.id }).first()).print_sales_admin_id)).toBe(owner);
+  await db('events').where({ id: event.id }).update({ print_sales_admin_id: admin.id });
+  expect((await put(false)).status).toBe(200);
+  expect(Number((await db('events').where({ id: event.id }).first()).print_sales_admin_id)).toBe(admin.id);
+});
+test('the gallery switch refuses an owner who could not be invoiced under', async () => {
+  const owner = await newAdmin();
+  await db('events').where({ id: event.id }).update({ created_by: owner });
+  const response = await authed(request(adminApp).put(`/api/admin/print-sales/events/${event.id}`)).send({ enabled: true });
+  expect(response.status).toBe(409);
+});
+test('a gallery a non-owner manages cannot be opened: invoices would be refused under it', async () => {
+  const other = await newAdmin();
+  await assignAdminRole(db, other, 'admin');
+  await db('events').where({ id: event.id }).update({ created_by: null });
+  const response = await request(adminApp).put(`/api/admin/print-sales/events/${event.id}`)
+    .set('Authorization', `Bearer ${mintAdminToken(other)}`).send({ enabled: true });
+  expect(response.status).toBe(403);
+  expect(response.body.error).toContain('gallery owner');
+});
+test('with the feature off, fulfilment and file downloads stop while order reads stay', async () => {
+  const row = await paidAndReady();
+  await db('feature_flags').where({ key: 'printSales' }).update({ value: false });
+  require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+  const action = await authed(request(adminApp).post(`/api/admin/print-sales/orders/${row.id}/actions`)).send({ action: 'review', artworkVersion: row.artwork_version });
+  expect(action.status).toBe(403);
+  expect((await authed(request(adminApp).get(`/api/admin/print-sales/orders/${row.id}/files/pack`))).status).toBe(403);
+  expect((await authed(request(adminApp).get(`/api/admin/print-sales/orders/${row.id}`))).status).toBe(200);
+});
+test('a photo path that leaves the managed originals is refused', async () => {
+  await db('photos').where({ id: photoId }).update({ path: '../../.print-sales/other/source.jpg' });
+  await expect(quoted()).rejects.toThrow('managed originals');
+});
+test('output too large for one order is refused before anything is retained or invoiced', async () => {
+  const big = { ...definition, manufacturing: { ...definition.manufacturing, trimMm: { width: 600, height: 400 }, resolution: { targetDpi: 300, minimumDpi: 72 } } };
+  const presetId = config.profiles[0].cataloguePresetId, settings = await P.settings(db);
+  const save = (d, revision) => P.save(db, { ...settings, revision, profiles: [{ definition: d, cataloguePresetId: presetId }] });
+  await expect(save({ ...big, manufacturing: { ...big.manufacturing, output: { format: 'tiff', colourSpace: 'srgb', compression: 'none' } } }, settings.revision))
+    .rejects.toThrow('64 MB');
+  await save(big, settings.revision);
+  const input = payload();
+  input.items = Array.from({ length: 5 }, () => ({ ...input.items[0] }));
+  await expect(quoted(input)).rejects.toThrow('fewer or smaller');
+  expect(await db('print_sales_orders').first()).toBeUndefined();
+});
+test('buyers do not see the lab reference', async () => {
+  const row = await submitted();
+  expect(orders.shape(row).supplierReference).toBe('LAB-1');
+  expect(orders.customerShape(row).supplierReference).toBeUndefined();
+  const response = await request(galleryApp).get(`/api/gallery/${event.slug}/print-sales/orders`).set('Authorization', `Bearer ${galleryToken()}`);
+  expect(response.status).toBe(200); expect(JSON.stringify(response.body)).not.toContain('LAB-1');
+});
+test('sources stored after a purge are swept, not orphaned', async () => {
+  const input = payload();
+  const racing = require('../../src/services/printSales/orders').createService({ db, storage, sharp: bytes => {
+    return { metadata: async () => {
+      await db('print_sales_orders').where({ id: input.requestId }).update({ status: 'cancelled', render_status: 'cancelled',
+        contact: null, purged_at: new Date().toISOString(), closed_at: new Date().toISOString() });
+      return sharp(bytes).metadata();
+    } };
+  } });
+  await expect(racing.quote(event.id, customerId, 'client', input)).rejects.toThrow('expired during preparation');
+  expect(await db('print_sales_assets').where({ order_id: input.requestId }).first()).toBeTruthy();
+  await fulfilment.cleanup();
+  expect(await db('print_sales_assets').where({ order_id: input.requestId }).first()).toBeUndefined();
+});
+test('a deactivated billing owner closes the shop before any original is retained', async () => {
+  await db('admin_users').where({ id: admin.id }).update({ is_active: false });
+  try {
+    await expect(orders.offers(event.id, customerId)).rejects.toThrow('billing owner');
+    await expect(quoted()).rejects.toThrow('billing owner');
+    expect(await db('print_sales_orders').first()).toBeUndefined();
+  } finally { await db('admin_users').where({ id: admin.id }).update({ is_active: true }); }
+});
+test('delivery priced differently from the enabled variants is refused on save', async () => {
+  const preset = await require('../../src/services/quoteService').createLineItemPreset({ name: 'Delivery', currency: 'USD',
+    price_mode: 'fixed', unit_price_minor: 500, vat_code: (await db('quote_line_item_presets').where({ id: config.profiles[0].cataloguePresetId }).first()).vat_code });
+  const settings = await P.settings(db);
+  await expect(P.save(db, { ...settings, shippingZones: [], countries: ['IE'], shippingPresetId: preset.id })).rejects.toThrow('same currency');
+});
+test('quotations stop once unaccepted orders hold too many retained bytes', async () => {
+  const failed = uuid();
+  await db('print_sales_orders').insert({ id: failed, request_hash: 'x', event_id: event.id, customer_account_id: customerId,
+    created_by_admin_id: admin.id, status: 'failed', created_at: new Date().toISOString(), expires_at: new Date().toISOString() });
+  for (let n = 0; n < 4; n++)
+    await db('print_sales_assets').insert({ id: uuid(), order_id: failed, storage_key: `.print-sales/${failed}/${n}`, sha256: 'x', size: 1100000000, kind: 'source', created_at: new Date().toISOString() });
+  await expect(quoted()).rejects.toThrow('Too many print quotations');
+});
+test('a replayed request for a failed quotation is refused, not returned as an empty order', async () => {
+  const input = payload(), racing = require('../../src/services/printSales/orders').createService({ db, storage,
+    sharp: () => ({ metadata: async () => { throw new Error('unreadable'); } }) });
+  await expect(racing.quote(event.id, customerId, 'client', input)).rejects.toThrow('unreadable');
+  await expect(quoted(input)).rejects.toThrow('could not be prepared');
+});
+test('.print-sales is in every default backup path list', async () => {
+  const { DEFAULT_PATHS } = require('../../migrations/core/109_add_backup_paths');
+  expect(DEFAULT_PATHS.map(p => p.path)).toContain('.print-sales');
+});
+test('removing a billing admin closes their shop on both engines', async () => {
+  const owner = await newAdmin();
+  await db('events').where({ id: event.id }).update({ print_sales_admin_id: owner });
+  await require('../../src/services/userManagementService').deleteAdminUser(owner, admin.id);
+  expect((await db('events').where({ id: event.id }).first()).print_sales_admin_id).toBeNull();
+});

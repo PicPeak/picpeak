@@ -121,11 +121,5 @@ catalogue, picker and native CRM pricing. This continuation adds setup helpers
 there and production choices to the default-off print-sales branch. It keeps
 source retention, order immutability, native invoices/bank transfers, settled
 payment, studio review and manual supplier submission as implemented.
-[PR #2253](https://github.com/PicPeak/picpeak/pull/2253), the separate preparatory
-album-selection helper, is closed without merging. The open draft
-[payment PR #2280](https://github.com/PicPeak/picpeak/pull/2280) adds digital-photo
-checkout work; it is not a merged payment dependency of this print branch.
-Its migrations 334–336 overlap this branch's existing 334 print-sales migration;
-renumbering and integration checks are required when preparing an upstream merge.
 These options do not implement album layout, physical supplier approval,
 automatic lab ordering or a production rollout.

@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import { photoDisplayFilename } from '../../utils/photoFilename';
 import type { Photo } from '../../types';
 import type { CartItem, Crop, Variant } from './model';
@@ -12,7 +13,7 @@ export const photoSource = (p: Photo) => p.preview_url || p.slideshow_url || p.u
 export const validQuantity = (n: number) => Number.isSafeInteger(n) && n >= 1 && n <= 100;
 export function validCrop(c: Crop): boolean {
   return !!c && [c.x, c.y, c.width, c.height].every(Number.isFinite) && c.x >= 0 && c.y >= 0 &&
-    c.width > 0 && c.height > 0 && c.x + c.width <= 1.000001 && c.y + c.height <= 1.000001;
+    c.width >= .01 && c.height >= .01 && c.x + c.width <= 1.0000001 && c.y + c.height <= 1.0000001;
 }
 export function readBasket(value: string | null): BasketLine[] {
   try {
@@ -37,10 +38,11 @@ export function newDraft(photoId: number, variant: Variant, previous?: Draft): D
     fit: previous && variant.fitModes.includes(previous.fit) ? previous.fit : variant.fitModes.includes('cover') ? 'cover' : variant.fitModes[0],
     crop: { ...whole }, ready: false, version: variant.version };
 }
+export const formatCm = (mm: number) => (mm / 10).toLocaleString(i18next.language || undefined, { maximumFractionDigits: 1 });
 export function dimensions(v: Variant) {
-  return v.trimMm ? `${v.trimMm.width / 10} × ${v.trimMm.height / 10} cm` :
+  return v.trimMm ? `${formatCm(v.trimMm.width)} × ${formatCm(v.trimMm.height)} cm` :
     v.selection.attributes?.flatMap(a => a.options.filter(o => o.width && o.height).map(o => o.name)).join(' · ') ||
-    `${v.artwork.widthMm} × ${v.artwork.heightMm} mm artwork`;
+    i18next.t('printSales.artworkFile', { defaultValue: '{{width}} × {{height}} mm artwork', width: v.artwork.widthMm, height: v.artwork.heightMm });
 }
 export const choices = (v: Variant, omitSizes = false) => v.selection.attributes?.flatMap(a => {
   const options = a.options.filter(o => !omitSizes || !(o.width && o.height));

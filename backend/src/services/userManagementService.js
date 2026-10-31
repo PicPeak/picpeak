@@ -665,6 +665,11 @@ async function deleteAdminUser(id, deletedById) {
     if (await trx.schema.hasTable('selection_submissions')) {
       await trx('selection_submissions').where('reopened_by', id).update({ reopened_by: null });
     }
+    // The print shops they billed (migration 341): SET NULL, which closes the shop.
+    if (await trx.schema.hasTable('print_sales_orders')) {
+      await trx('events').where('print_sales_admin_id', id).update({ print_sales_admin_id: null });
+      await trx('print_sales_orders').where('created_by_admin_id', id).update({ created_by_admin_id: null });
+    }
     if (await trx.schema.hasColumn('photos', 'uploaded_by_admin_id')) {
       await trx('photos').where('uploaded_by_admin_id', id).update({ uploaded_by_admin_id: null });
     }

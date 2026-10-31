@@ -34,7 +34,7 @@ export function CropEditor({ src, slug, ratio, fit, value, onChange, resetOnLoad
       <div role="group" aria-label={t('printSales.cropArea', 'Print crop; drag photograph to reposition')} tabIndex={fit === 'cover' && ready ? 0 : undefined}
         className={`print-crop-frame ${fit === 'cover' ? 'touch-none cursor-move' : ''}`} style={{ aspectRatio: ratio, background, '--print-ratio': ratio } as React.CSSProperties}
         onKeyDown={e => {
-          if (fit !== 'cover' || !ready) return;
+          if (fit !== 'cover' || !ready || e.altKey || e.metaKey || e.ctrlKey) return;
           const step = e.shiftKey ? .05 : .01;
           if (e.key === 'Home') { e.preventDefault(); onChange(centredCrop(sourceRatio, ratio)); }
           else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {

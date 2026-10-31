@@ -122,7 +122,11 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
     const payload = { items: cart.map(requestItem), delivery }, fingerprint = JSON.stringify(payload);
     if (attempt.current?.fingerprint !== fingerprint) attempt.current = { fingerprint, id: crypto.randomUUID() };
     try { setQuote((await api.post<Order>(`${root}/quotes`, { ...payload, requestId: attempt.current.id })).data); }
-    catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+    catch (e) {
+      // Only a request that never arrived may reuse its id; a refused one is spent.
+      if ((e as { response?: unknown }).response) attempt.current = undefined;
+      setError(errorMessage(e));
+    } finally { setBusy(false); }
   };
   const accept = async () => {
     if (!quote || !approved) return;
@@ -142,7 +146,10 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
   }
   const estimateLabel = [...estimates].map(([currency, total]) => formatMoneyMinor(total, currency)).join(' + ');
 
-  const footer = view === 'photos' ? <Button disabled={!picked.length || picked.length + cart.length > MAX_ITEMS} onClick={continueSelection}>{t('printSales.choosePrintOptions', 'Choose print options')} ({picked.length})</Button> : view === 'editor' ? <>
+  const footer = view === 'photos' ? <>
+    <Button variant="secondary" onClick={() => setView('basket')}>{t('common.back', 'Back')}</Button>
+    <Button disabled={!picked.length || picked.length + cart.length > MAX_ITEMS} onClick={continueSelection}>{t('printSales.choosePrintOptions', 'Choose print options')} ({picked.length})</Button>
+  </> : view === 'editor' ? <>
     <Button variant="secondary" onClick={() => editing ? setView('basket') : chooseMore()}>{t('common.back', 'Back')}</Button>
     <Button disabled={!validDraft || !previewReady || drafts.some(d => !d.ready) || (!editing && cart.length + drafts.length > MAX_ITEMS)} onClick={add}>
       {editing ? t('printSales.saveCrop', 'Update basket item') : t('printSales.addToBasket', 'Add to basket')}{!editing && drafts.length > 1 ? ` (${drafts.length})` : ''}
@@ -197,9 +204,9 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
               {offers?.countries.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
           </section>}
           {orders.filter(o => o.acceptedAt).map(o => <article className="border border-border-token rounded-lg p-4" key={o.id}>
-            <h3>{o.status === 'cancelled' ? t('printSales.orderCancelled', 'Order cancelled') : t('printSales.orderConfirmed', 'Order confirmed')} · {o.id.slice(0, 8)}</h3>
+            <h3>{o.status === 'cancelled' ? t('printSales.orderCancelled', 'Order cancelled') : o.status === 'resolved' ? t('printSales.closedManually', 'Closed manually') : t('printSales.orderConfirmed', 'Order confirmed')} · {o.id.slice(0, 8)}</h3>
             <p>{formatMoneyMinor(o.totalMinor, o.currency)} · {t('printSales.invoiceNumber', 'Invoice')} #{o.invoiceId}</p>
-            <p>{o.dispatchedAt ? t('printSales.dispatched', 'Dispatched') : o.submittedAt ? t('printSales.withLab', 'Submitted to the lab') : t('printSales.studioReview', 'The studio is arranging your invoice and checking the artwork.')}</p>
+            <p>{o.status === 'resolved' ? t('printSales.closedManuallyHelp', 'The studio closed this order. Please contact them with any questions.') : o.dispatchedAt ? t('printSales.dispatched', 'Dispatched') : o.submittedAt ? t('printSales.withLab', 'Submitted to the lab') : t('printSales.studioReview', 'The studio is arranging your invoice and checking the artwork.')}</p>
             {o.tracking && <p>{o.tracking}</p>}
           </article>)}
         </>}

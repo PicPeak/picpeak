@@ -32,6 +32,16 @@ function output(input) {
   }
   return result;
 }
+/** The most a single order's artwork may add up to; the worker refuses anything above it. */
+const MAX_ORDER_ARTWORK_BYTES = 64 * 1024 * 1024;
+/**
+ * Expected encoded size. Refusing before an invoice exists needs a number up
+ * front: uncompressed TIFF is exact, the others are generous for photographs.
+ */
+function artworkBytes(artwork, spec) {
+  const perPixel = spec.format === 'jpeg' ? 1 : spec.format === 'tiff' && spec.compression === 'none' ? 3 : 2;
+  return artwork.widthPx * artwork.heightPx * perPixel;
+}
 async function encode(raster, requirements, dpi) {
   const spec = output(requirements);
   raster = raster.withIccProfile(colours.verifiedProfile(spec.colourSpace).icc, { attach: true });
@@ -42,4 +52,4 @@ async function encode(raster, requirements, dpi) {
   return { extension: 'tif', bytes: await raster.tiff({ compression: spec.compression,
     xres: dpi / 25.4, yres: dpi / 25.4, resolutionUnit: 'inch' }).toBuffer() };
 }
-module.exports = { output, encode };
+module.exports = { output, encode, artworkBytes, MAX_ORDER_ARTWORK_BYTES };

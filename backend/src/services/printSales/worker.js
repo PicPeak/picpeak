@@ -5,6 +5,7 @@ const archiver = require('archiver');
 const V = require('../albumProducts/validation');
 const { parse } = require('./profiles');
 const { verified } = require('./orders');
+const { MAX_ORDER_ARTWORK_BYTES } = require('./output');
 const { isTrue } = require('../../utils/galleryLifecycle');
 const work = require('../activeApplicationWork');
 const now = () => new Date().toISOString();
@@ -87,7 +88,7 @@ function createWorker({ db, storage, sharp, orders }) {
         const encoded = await require('./output').encode(raster, m.output, m.resolution.targetDpi), image = encoded.bytes;
         if (m.output.profileSha256) require('./colourProfiles').verify(await sharp(image).metadata(), m.output);
         outputBytes += image.length;
-        if (outputBytes > 64 * 1024 * 1024) throw new Error('Production artwork exceeds the 64 MB order limit');
+        if (outputBytes > MAX_ORDER_ARTWORK_BYTES) throw new Error('Production artwork exceeds the 64 MB order limit');
         const thumbnail = await sharp(image).resize(320, 320, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
         const asset = await orders.asset(row.id, 'artwork', image, row.claim, encoded.extension);
         entries.push({ name: `${String(n + 1).padStart(3, '0')}.${encoded.extension}`, bytes: image, thumbnail, assetId: asset.id });

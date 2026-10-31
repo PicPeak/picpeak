@@ -56,7 +56,7 @@ exports.up = async function (db) {
     feature_flag: null, display_order: 115, description: 'Retained print order originals and production artwork' }).onConflict('path').ignore();
 };
 exports.down = async function (db) {
-  if (await db('print_sales_orders').first()) throw new Error('Retained print orders prevent destructive rollback');
+  if (await db.schema.hasTable('print_sales_orders') && await db('print_sales_orders').first()) throw new Error('Retained print orders prevent destructive rollback');
   await db.schema.dropTableIfExists('print_sales_assets');
   await db.schema.dropTableIfExists('print_sales_orders');
   if (db.client.config.client === 'pg') await db.raw('DROP FUNCTION IF EXISTS print_sales_snapshot_guard()');

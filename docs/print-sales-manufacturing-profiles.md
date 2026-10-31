@@ -7,8 +7,7 @@ The resolver now underpins the default-off experimental [print-sales workflow](p
 profile configuration, known-customer gallery orders, native product-only invoices,
 bounded preparation and reviewed manual fulfilment. The contract below describes
 the pure resolver; persistence, access checks and file lifecycle belong to its
-calling services. These are implementation choices for review, not maintainer
-agreement or a production rollout.
+calling services.
 
 ## Contract
 

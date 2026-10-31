@@ -226,6 +226,7 @@ type Flags = ReturnType<typeof useFeatureFlags>['flags'];
 export function settingsTabGatedOff(flags: Flags): Partial<Record<SettingsTab, boolean>> {
   return {
     albumProducts: !flags.albumProducts,
+    printSales: !flags.printSales,
     crm: !(flags.quotes || flags.bills || flags.contracts || flags.documents),
     contracts: !flags.contracts,
     accounting: !flags.accounting,
@@ -250,7 +251,7 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
     {
       label: t('settings.groups.general', 'General'),
       items: [
-        {key:'printSales' as const,label:t('printSales.adminTitle','Print sales'),icon:ImageIcon},
+        ...(flags.printSales ? [{key:'printSales' as const,label:t('printSales.adminTitle','Print sales'),icon:ImageIcon}] : []),
         ...(flags.albumProducts ? [{key:'albumProducts' as const,label:t('albumProducts.catalogue','Product catalogue'),icon:ImageIcon}] : []),
         { key: 'features',   label: t('settings.features.title',   'Features'),       icon: ToggleRight },
         { key: 'general',    label: t('settings.general.title'),                       icon: Sliders },

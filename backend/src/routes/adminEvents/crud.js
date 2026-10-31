@@ -1591,6 +1591,9 @@ module.exports = (router) => {
         // the due-date source is derived below from how the date was set.
         'delivery_completed_at', 'delivery_reminder_sent_at', 'delivery_overdue_notified_at',
         'delivery_due_source',
+        // Print ordering and its billing owner: PUT /admin/print-sales/events/:eventId
+        // only, which needs billing permissions an events.edit holder may not have.
+        'print_sales_enabled', 'print_sales_admin_id',
       ];
       // Only canonical keys reach the UPDATE. SQLite resolves quoted
       // identifiers case-insensitively, so `{ "Event_Name": ... }` lands on

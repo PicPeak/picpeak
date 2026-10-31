@@ -25,7 +25,7 @@ The optional scenes have fixed physical dimensions:
 
 A print's width and height are divided by the corresponding scene dimensions. Furniture and scene dimensions stay fixed when changing print size. Prints too large for a scene are withheld with an explanation instead of silently shrinking them. Large formats move to the wall scene automatically when they no longer fit the desk.
 
-The offers response now includes **finished trim dimensions and individual bleed edges**, alongside the existing artwork dimensions. This is additive metadata; there is no migration or order-payload change. The crop editor depicts the complete production artwork, with a dashed finished edge when bleed is present. The spatial view clips the artwork to that trim rectangle, including asymmetric bleed, without rewriting the selected source crop. An older response without trim dimensions simply omits spatial previews.
+The offers response includes **finished trim dimensions and individual bleed edges**, alongside the artwork dimensions. The crop editor depicts the complete production artwork, with a dashed finished edge when bleed is present. The spatial view clips the artwork to that trim rectangle, including asymmetric bleed, without rewriting the selected source crop. An older response without trim dimensions simply omits spatial previews.
 
 The scenes are original generic illustrations. They communicate approximate physical size, not colour accuracy, material, framing, canvas wrap/depth, installation or an AR measurement of a buyer's own room. The supported production capability remains a single rectangular photo face. Accessories are labelled as illustrative and not included.
 

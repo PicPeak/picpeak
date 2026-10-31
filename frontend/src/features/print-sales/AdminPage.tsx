@@ -7,6 +7,7 @@ import { Button, Loading, EmptyState, ErrorState, Notice, Badge } from '../../co
 import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { errorMessage } from '../album-products/model';
 import { formatMoneyMinor } from '../../utils/money';
 import { ProfileEditor } from './ProfileEditor';
@@ -20,15 +21,15 @@ function newProfile(): Profile {
       output: { format: 'jpeg', colourSpace: 'srgb' }, fitModes: ['cover', 'contain'] } } };
 }
 function StudioOrder({ initial, onError }: { initial: Order; onError: (s: string) => void }) {
-  const { hasPermission } = usePermissions();
-  const canFiles = ['products.configure', 'bills.manage', 'customers.view'].every(hasPermission);
-  const canManage = ['products.configure', 'bills.manage', 'customers.edit'].every(hasPermission);
+  const { hasPermission } = usePermissions(), enabled = useFeatureEnabled('printSales'), { formatDateTime } = useLocalizedDate();
+  const canFiles = enabled && ['products.configure', 'bills.manage', 'customers.view'].every(hasPermission);
+  const canManage = enabled && ['products.configure', 'bills.manage', 'customers.edit'].every(hasPermission);
   const { t } = useTranslation(), [order, setOrder] = useState(initial), [busy, setBusy] = useState(false),
-    [reference, setReference] = useState(initial.supplierReference || ''), [tracking, setTracking] = useState(initial.tracking || '');
+    [reference, setReference] = useState(initial.supplierReference || ''), [tracking, setTracking] = useState(initial.tracking || ''), [note, setNote] = useState('');
   useEffect(() => { setOrder(initial); }, [initial]);
   const act = async (action: string) => {
     setBusy(true); onError('');
-    try { setOrder(await printSales.action(order.id, action, { artworkVersion: order.artworkVersion, supplierReference: reference, tracking })); }
+    try { setOrder(await printSales.action(order.id, action, { artworkVersion: order.artworkVersion, supplierReference: reference, tracking, note })); }
     catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
   };
   const download = async (kind: string) => {
@@ -40,11 +41,11 @@ function StudioOrder({ initial, onError }: { initial: Order; onError: (s: string
     } catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
   };
   return <details className="border border-line rounded-lg p-4 space-y-3"><summary className="cursor-pointer">
-    {order.id.slice(0, 8)} · {order.items?.length || 0} {t('printSales.photos', 'photo items')} · {order.currency && formatMoneyMinor(order.totalMinor, order.currency)}
+    {order.id.slice(0, 8)} · {t('printSales.photoItems', { count: order.items?.length || 0, defaultValue: '{{count}} photo items' })} · {order.currency && formatMoneyMinor(order.totalMinor, order.currency)}
     <span className="inline-flex gap-2 ml-2"><Badge tone={order.status === 'cancelled' ? 'storno' : order.status === 'dispatched' ? 'success' : 'neutral'}>
       {({ capturing: t('printSales.statusCapturing', 'Preparing quotation'), quoted: t('printSales.statusQuoted', 'Awaiting confirmation'),
         accepted: t('printSales.orderConfirmed', 'Order confirmed'), dispatched: t('printSales.dispatched', 'Dispatched'),
-        failed: t('printSales.statusFailed', 'Quotation failed'), expired: t('printSales.statusExpired', 'Expired'), cancelled: t('printSales.orderCancelled', 'Order cancelled') } as Record<string, string>)[order.status] || t('printSales.unknownStatus', 'Unknown status')}
+        failed: t('printSales.statusFailed', 'Quotation failed'), expired: t('printSales.statusExpired', 'Expired'), resolved: t('printSales.closedManually', 'Closed manually'), cancelled: t('printSales.orderCancelled', 'Order cancelled') } as Record<string, string>)[order.status] || t('printSales.unknownStatus', 'Unknown status')}
     </Badge><Badge tone={order.renderStatus === 'failed' ? 'danger' : order.renderStatus === 'ready' ? 'success' : 'info'}>
       {({ pending: t('printSales.artworkPending', 'Artwork not queued'), queued: t('printSales.artworkQueued', 'Artwork queued'),
         running: t('printSales.artworkRunning', 'Preparing artwork'), ready: t('printSales.artworkReady', 'Artwork ready'),
@@ -67,16 +68,20 @@ function StudioOrder({ initial, onError }: { initial: Order; onError: (s: string
           <Button onClick={() => act('dispatch')}>{t('printSales.recordDispatch', 'Record dispatch')}</Button></label>}
       </>}
       {canManage && order.renderStatus === 'failed' && order.acceptedAt && <Button variant="secondary" onClick={() => act('retry')}>{t('printSales.retryPreparation', 'Retry artwork preparation')}</Button>}
-      {canManage && !order.submittedAt && order.status !== 'cancelled' && <Button variant="secondary" onClick={() => act('cancel')}>{t('printSales.cancelAfterInvoice', 'Cancel order after native invoice correction')}</Button>}
+      {canManage && !order.submittedAt && ['capturing', 'quoted', 'failed', 'accepted'].includes(order.status) && <Button variant="secondary" onClick={() => act('cancel')}>{t('printSales.cancelAfterInvoice', 'Cancel order after native invoice correction')}</Button>}
+      {canManage && order.status === 'accepted' && <label>{t('printSales.resolveNote', 'Reason for closing (only once the invoice is cancelled)')}
+        <input className="input" value={note} onChange={e => setNote(e.target.value)} maxLength={500} />
+        <Button variant="secondary" disabled={!note.trim()} onClick={() => act('resolve')}>{t('printSales.resolveOrder', 'Close order manually')}</Button></label>}
     </fieldset>
     {order.supplierReference && <p>{t('printSales.labReference', 'Lab reference or production code')}: {order.supplierReference}</p>}
-    {order.dispatchedAt && <p>{t('printSales.dispatched', 'Dispatched')}: {order.dispatchedAt} {order.tracking}</p>}
+    {order.dispatchedAt && <p>{t('printSales.dispatched', 'Dispatched')}: {formatDateTime(order.dispatchedAt)} {order.tracking}</p>}
   </details>;
 }
 export function PrintSalesAdminPage() {
   const { t } = useTranslation(), { hasPermission } = usePermissions(), enabled = useFeatureEnabled('printSales');
+  const catalogueEnabled = useFeatureEnabled('albumProducts'), billsEnabled = useFeatureEnabled('bills');
   const canSettings = hasPermission('products.view');
-  const canConfigure = enabled && hasPermission('products.manage') && hasPermission('bills.manage'),
+  const canConfigure = enabled && catalogueEnabled && billsEnabled && hasPermission('products.manage') && hasPermission('bills.manage'),
     canOrders = canSettings && hasPermission('bills.view') && hasPermission('customers.view');
   const client = useQueryClient();
   const [saved, setSaved] = useState<Settings>(), [draft, setDraft] = useState<Settings>(),

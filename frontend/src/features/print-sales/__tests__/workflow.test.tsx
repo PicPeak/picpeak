@@ -8,15 +8,17 @@ import { PrintSalesAdminPage } from '../AdminPage';
 import { SpatialPreview } from '../SpatialPreview';
 import { usePrintSales } from '../PrintSalesContext';
 import { centredCrop } from '../CropEditor';
+import { formatCm } from '../shopping';
 import { ProfileEditor } from '../ProfileEditor';
 import { api } from '../../../config/api';
 import type { Photo } from '../../../types';
 import type { Order, Variant, Profile } from '../model';
 function render(ui: ReactElement) { return renderUi(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>{ui}</QueryClientProvider>); }
 const permissions = vi.hoisted(() => ({ enabled: true, manage: true, denied: new Set<string>() }));
-vi.mock('react-i18next', async original => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }) }));
+vi.mock('react-i18next', async original => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (_key: string, fallback: string | { defaultValue: string }) => typeof fallback === 'string' ? fallback : fallback.defaultValue }) }));
 vi.mock('../../../contexts/PermissionsContext', () => ({ usePermissions: () => ({ hasPermission: (p: string) => !permissions.denied.has(p) && (permissions.manage || !['products.manage', 'products.configure', 'bills.manage', 'customers.edit'].includes(p)) }) }));
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => permissions.enabled }));
+vi.mock('../../../hooks/useLocalizedDate', () => ({ useLocalizedDate: () => ({ formatDateTime: (date: string) => `formatted ${date}` }) }));
 vi.mock('../../../components/common/AuthenticatedImage', () => ({ AuthenticatedImage: ({ onLoad, onUnavailable, isGallery: _gallery, slug: _slug, ...props }: any) =>
   <img {...props} onError={() => onUnavailable?.(true)} onLoad={() => onLoad?.(props.src?.includes('landscape') ? { width: 800, height: 400 } : { width: 400, height: 600 })} /> }));
 vi.mock('../../../components/admin/SettingsSaveBar', () => ({ SettingsSaveBar: ({ onSave, isDirty }: any) => <button disabled={!isDirty} onClick={onSave}>Save print settings</button> }));
@@ -222,6 +224,12 @@ describe('print administration', () => {
     expect(await screen.findByText('Print ordering is disabled. Existing orders remain available for review.')).toBeInTheDocument();
     expect(await screen.findByText(/Open native invoice/)).toHaveAttribute('href', '/admin/clients/bills/42');
     expect(screen.queryByRole('button', { name: 'Save print settings' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Supplier pack' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close order manually' })).not.toBeInTheDocument();
+  });
+  it('keeps floating point out of the centimetre labels', () => {
+    expect(formatCm(279.4)).toBe('27.9');
+    expect(formatCm(100)).toBe('10');
   });
   it('keeps file-download permissions separate from fulfilment edits and explains read-only settings', async () => {
     permissions.denied.add('customers.edit'); permissions.denied.add('products.manage');

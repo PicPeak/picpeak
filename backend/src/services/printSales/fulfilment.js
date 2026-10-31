@@ -3,7 +3,9 @@ const V = require('../albumProducts/validation');
 const { parse } = require('./profiles');
 const { invoiceIdentity, verified } = require('./orders');
 const { AppError, ConflictError, NotFoundError } = require('../../utils/errors');
+const { formatBoolean } = require('../../utils/dbCompat');
 const now = () => new Date().toISOString();
+const log = (...args) => require('../../database/db').logActivity(...args);
 function createService({ db, storage }) {
   async function order(id, admin) {
     const row = await db('print_sales_orders').where({ id: V.uuid(id) }).first();
@@ -11,10 +13,23 @@ function createService({ db, storage }) {
       throw new NotFoundError('Print order');
     return row;
   }
+  /** A Storno and reissue moves the order to the replacement; identity is still checked against it. */
+  async function liveInvoice(tx, id) {
+    let invoice = await tx('invoices').where({ id }).forUpdate().first();
+    const seen = new Set();
+    while (invoice?.status === 'cancelled' && !seen.has(invoice.id)) {
+      seen.add(invoice.id);
+      const replacements = await tx('invoices').where({ replaces_invoice_id: invoice.id }).forUpdate();
+      invoice = replacements.find(i => i.status !== 'cancelled') || replacements[0];
+    }
+    return invoice;
+  }
   async function settled(tx, row) {
-    const invoice = row.invoice_id && await tx('invoices').where({ id: row.invoice_id }).forUpdate().first();
+    const invoice = row.invoice_id && await liveInvoice(tx, row.invoice_id);
+    // A native reissue copies lines and amounts but not vat_code.
+    const vatCode = invoice?.vat_code ?? (await tx('invoices').where({ id: row.invoice_id }).first())?.vat_code;
     if (!invoice || invoice.status !== 'paid' || Number(invoice.paid_amount_minor) < Number(invoice.total_amount_minor) ||
-        await invoiceIdentity(tx, invoice) !== row.invoice_hash)
+        await invoiceIdentity(tx, { ...invoice, vat_code: vatCode }) !== row.invoice_hash)
       throw new ConflictError('The exact order invoice must be fully settled; check native billing');
     if (!row.contact || V.hash(parse(row.contact)) !== parse(row.snapshot).contactHash)
       throw new ConflictError('Confirmed delivery details are unavailable');
@@ -36,10 +51,23 @@ function createService({ db, storage }) {
       const changed = await db('print_sales_orders').where({ id, status: 'accepted', render_status: 'failed' })
         .update({ render_status: 'queued', attempts: 0, error: null, reviewed_version: null, reviewed_at: null });
       if (!changed) throw new ConflictError('Only failed accepted preparation can be retried');
+      await log('print_order_retry', { orderId: id }, row.event_id, { type: 'admin', id: admin.id });
       return;
     }
+    // The way out for an order the invoice no longer matches: submitted to the
+    // lab, or reissued with different lines, so cancel and dispatch both refuse.
+    if (input.action === 'resolve') return db.transaction(async tx => {
+      const current = await tx('print_sales_orders').where({ id }).forUpdate().first();
+      if (current.status !== 'accepted') throw new ConflictError('Only an open order can be closed manually');
+      const invoice = current.invoice_id && await tx('invoices').where({ id: current.invoice_id }).forUpdate().first();
+      if (invoice?.status !== 'cancelled') throw new ConflictError('Cancel/correct the invoice in native billing first');
+      const note = V.text(input.note, 500, true);
+      await tx('print_sales_orders').where({ id }).update({ status: 'resolved', render_status: 'cancelled', closed_at: now() });
+      await log('print_order_resolve', { orderId: id, note }, current.event_id, { type: 'admin', id: admin.id }, tx);
+    });
     if (input.action === 'cancel') return db.transaction(async tx => {
       const current = await tx('print_sales_orders').where({ id }).forUpdate().first();
+      if (['expired', 'cancelled', 'dispatched', 'resolved'].includes(current.status)) throw new ConflictError('This order is already closed');
       if (current.submitted_at) throw new ConflictError('An order already submitted to a lab needs manual resolution');
       const invoice = current.invoice_id && await tx('invoices').where({ id: current.invoice_id }).forUpdate().first();
       if (invoice && invoice.status !== 'cancelled') throw new ConflictError('Cancel/correct the invoice in native billing first');
@@ -52,13 +80,14 @@ function createService({ db, storage }) {
         if (seen.size > 1000) throw new ConflictError('Invoice corrections require manual review');
       }
       await tx('print_sales_orders').where({ id }).update({ status: 'cancelled', render_status: 'cancelled', closed_at: now(),
-        ...(!current.accepted_at ? { contact: null, purge_requested: true } : {}) });
+        ...(!current.accepted_at ? { contact: null, purge_requested: formatBoolean(true) } : {}) });
+      await log('print_order_cancel', { orderId: id }, current.event_id, { type: 'admin', id: admin.id }, tx);
     });
     if (input.artworkVersion !== row.artwork_version) throw new ConflictError('Review the current production files');
     await files(row);
     return db.transaction(async tx => {
       const current = await tx('print_sales_orders').where({ id }).forUpdate().first();
-      if (current.artwork_version !== input.artworkVersion || current.render_status !== 'ready' || current.status === 'cancelled')
+      if (current.artwork_version !== input.artworkVersion || current.render_status !== 'ready' || ['cancelled', 'resolved'].includes(current.status))
         throw new ConflictError('The order changed; reload before continuing');
       await settled(tx, current);
       let update;
@@ -83,7 +112,7 @@ function createService({ db, storage }) {
         update = { dispatched_at: now(), closed_at: now(), tracking, status: 'dispatched' };
       } else throw new ConflictError('Unknown fulfilment action');
       await tx('print_sales_orders').where({ id }).update(update);
-      await require('../../database/db').logActivity(`print_order_${input.action}`, { orderId: id, artworkVersion: current.artwork_version },
+      await log(`print_order_${input.action}`, { orderId: id, artworkVersion: current.artwork_version },
         current.event_id, { type: 'admin', id: admin.id }, tx);
     });
   }
@@ -100,9 +129,9 @@ function createService({ db, storage }) {
     await db('print_sales_orders').whereIn('status', ['quoted', 'capturing', 'failed']).where('expires_at', '<', day)
       .update({ status: 'expired', render_status: 'cancelled', contact: null });
     const rows = await db('print_sales_orders').whereNull('purged_at').where(q => q
-      .where(w => w.whereIn('status', ['expired', 'failed']).where(x => x.where('expires_at', '<', day).orWhere('purge_requested', true)))
-      .orWhere(w => w.whereIn('status', ['dispatched', 'cancelled']).where(x => x
-        .where('closed_at', '<', old).orWhere('purge_requested', true)))).limit(20);
+      .where(w => w.whereIn('status', ['expired', 'failed']).where(x => x.where('expires_at', '<', day).orWhere('purge_requested', formatBoolean(true))))
+      .orWhere(w => w.whereIn('status', ['dispatched', 'cancelled', 'resolved']).where(x => x
+        .where('closed_at', '<', old).orWhere('purge_requested', formatBoolean(true))))).limit(20);
     for (const row of rows) {
       const assets = await db('print_sales_assets').where({ order_id: row.id });
       let complete = true;
@@ -126,10 +155,10 @@ function createService({ db, storage }) {
 async function eraseCustomer(tx, customerId) {
   if (!await tx.schema.hasTable('print_sales_orders')) return;
   const rows = await tx('print_sales_orders').where({ customer_account_id: customerId }).forUpdate();
-  if (rows.some(o => o.accepted_at && !['cancelled', 'dispatched'].includes(o.status)))
+  if (rows.some(o => o.accepted_at && !['cancelled', 'dispatched', 'resolved'].includes(o.status)))
     throw new ConflictError('Resolve active print orders before erasing this customer');
   for (const row of rows) await tx('print_sales_orders').where({ id: row.id }).update({
-    contact: null, purge_requested: true,
+    contact: null, purge_requested: formatBoolean(true),
     ...(!row.accepted_at ? { status: 'expired', render_status: 'cancelled' } : {}),
   });
 }

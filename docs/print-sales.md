@@ -1,11 +1,9 @@
 # Experimental gallery print sales (#48)
 
-This branch implements three connected slices on the merged shared product
+Print sales has three connected slices on the shared product
 catalogue: manufacturing-profile administration; known-customer photo/crop orders
 with native invoices; and background preparation with reviewed manual fulfilment.
-`printSales` and every gallery's shop switch default **off**. Nothing is deployed
-or enabled by these source changes. The proposed initial boundaries have not
-received maintainer agreement on #48.
+`printSales` and every gallery's shop switch default **off**.
 
 ## Configure and use
 
@@ -201,31 +199,29 @@ uncovered countries, zone edits and native delivery invoice lines.
 The same integration suite is run on SQLite and local
 PostgreSQL 18.4. Frontend tests cover confirmation, retry IDs, crop editing,
 buyer-scoped baskets, conflicts and disabled-feature history.
-The final print-sales suite has 45 cases on each engine; the focused unit/image
-and inventory suites have 162 cases, and the frontend workflow/regression set has
-33. Native catalogue/CRM regressions (62 cases) and native-process protections
-(17 cases) also pass. The output test asserts that a separate image worker is in
-use before testing the encoders. Integration fixtures use local storage;
+Integration fixtures use local storage;
 live S3-bucket ordering/restore and ARM64 capacity measurements
 are not claimed.
 
 Desktop (1365×1000) and phone (390×844) screenshots/browser checks use synthetic
 fixtures and the real UI components. They are visual/interaction checks, not a
 claim that a live shop, real payment or physical supplier product was tested.
-Production build, TypeScript and lint are checked. The broader portable restore
-containment suite needed `PICPEAK_IMPORT_WORKER_MEMORY_MIB=2048` on this Node 24
-runner; its default budget intermittently refused restore workers. This changes
-the test process only, not application defaults or print worker limits.
 
 Stripe/card collection, guest accounts, paid digital downloads, albums, supplier
 API connectors, automatic invoice delivery and post-submission lab cancellation
-are outside this release. No existing private deployment or production data is
-migrated by this branch. Lab profile approval, physical samples and a controlled
+are outside this release. Lab profile approval, physical samples and a controlled
 deployment review remain necessary before opening an actual shop.
+
+## Limits and manual recovery
+
+- **Order size.** Prepared artwork for one order is limited to 64 MB. A profile whose single file would exceed it is refused on save, and a basket expected to exceed it is refused at quotation, before anything is retained or invoiced. The estimate is deliberately generous, but a JPEG or PNG that encodes larger still fails preparation after the invoice exists; correct the invoice and close the order.
+- **Corrected invoices.** After a Storno and reissue, fulfilment follows the replacement invoice, which must carry the same lines and totals and be fully paid.
+- **Close order manually.** Once the original invoice is cancelled, an open order that can neither be cancelled nor dispatched (already at the lab, or reissued with different lines) is closed with a recorded reason. This also releases customer erasure.
+- **Feature switched off.** The Print sales tab hides and fulfilment actions and file downloads stop, while retention keeps running. Switch the feature back on to finish open orders.
 
 ## Installation and recovery
 
-Core migration `341_print_sales` adds three order/configuration tables, the gallery switches, the default-off feature flag and the `.print-sales` backup path. It reuses existing permissions and requires no payment-provider setup. The migration guards each gallery column independently so an interrupted SQLite upgrade can be rerun. Recheck migration numbers against main and other drafts before integration.
+Core migration `341_print_sales` adds three order/configuration tables, the gallery switches, the default-off feature flag and the `.print-sales` backup path. It reuses existing permissions and requires no payment-provider setup. The migration guards each gallery column independently so an interrupted SQLite upgrade can be rerun.
 
 Retention retries failed storage deletions without dropping their asset records or marking the order purged. Other orders continue through cleanup, and each failure is logged at error level with order/asset identifiers. Fix the storage access problem to let a later sweep complete. Native accounting records remain retained separately.
 

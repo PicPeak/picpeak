@@ -29,7 +29,7 @@ afterAll(async () => { if (cleanup) await cleanup(); });
 
 linuxIt('preserves seed-only tables the archive predates, while still clearing a genuine user-data table', async () => {
   // Simulate an archive made before migration 201 (product_usage), 129
-  // (ledger_accounts/vat_codes), 226 (customer_groups) and 334 (print settings):
+  // (ledger_accounts/vat_codes), 226 (customer_groups) and 341 (print settings):
   // drop them so the export below never lists them in its manifest.
   await db.schema.dropTable('product_usage_state');
   await db.schema.dropTable('vat_codes');

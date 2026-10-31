@@ -68,7 +68,7 @@ const archiver = require('archiver');
 const { Readable } = require('stream');
 const { getStorage } = require('../../services/storage');
 const { isStorageNotFoundError } = require('../../services/storage/storageErrors');
-const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
+const { resolvePhotoStorageKey, resolvePhotoFilePath, isManagedOriginalKey } = require('../../services/photoResolver');
 const { pickRawDownloadName } = require('../../services/downloadFilenameService');
 const { buildContentDisposition, sanitizeForZipEntry } = require('../../utils/filenameSanitizer');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
@@ -1252,7 +1252,7 @@ function locateOriginal(event, photo) {
   try {
     const key = resolvePhotoStorageKey(event, photo);
     if (key) {
-      return path.posix.normalize(key).startsWith('events/active/') ? { key } : null;
+      return isManagedOriginalKey(key) ? { key } : null;
     }
     return { filePath: resolvePhotoFilePath(event, photo) };
   } catch {
