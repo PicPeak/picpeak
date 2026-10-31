@@ -4,8 +4,8 @@
  *
  * Each photo is mostly I/O: fetch the original from storage, write the
  * rendition back. One at a time left a 2-core host ~75% idle and took ~3 s a
- * photo, so a 19k-photo library needed a whole day. The cap stays because
- * every slot holds one full-resolution decode in memory.
+ * photo, so a 19k-photo library needed a whole day. The cap bounds temp disk
+ * and storage connections: decodes stay in the isolated sharp pool.
  *
  * The mocked ensurePreviewImage records how many calls are in flight at once.
  */
@@ -123,7 +123,7 @@ describe('preview regeneration concurrency', () => {
     expect(peak).toBe(1);
   });
 
-  it('caps a silly value instead of decoding a whole gallery at once', async () => {
+  it('caps a silly value instead of fetching a whole gallery at once', async () => {
     process.env.PREVIEW_REGEN_CONCURRENCY = '500';
     const eventId = await seedEventWithPhotos(12);
     await request(app).post('/admin/thumbnails/regenerate-previews').send({ eventId });
@@ -131,6 +131,19 @@ describe('preview regeneration concurrency', () => {
 
     expect(imageProcessor.ensurePreviewImage).toHaveBeenCalledTimes(12);
     expect(peak).toBe(8);
+  });
+
+  it('finishes an onlyMissing photo without falling through to the forced rebuild', async () => {
+    process.env.PREVIEW_REGEN_CONCURRENCY = '2';
+    const eventId = await seedEventWithPhotos(3);
+    await request(app).post('/admin/thumbnails/regenerate-previews').send({ eventId, onlyMissing: true });
+    await drain();
+
+    expect(imageProcessor.ensurePreviewImage).toHaveBeenCalledTimes(3);
+    expect(imageProcessor.deletePreviewTiers).not.toHaveBeenCalled();
+    expect(imageProcessor.ensurePreviewImage.mock.calls.every(([, options]) => options === undefined)).toBe(true);
+    expect(peak).toBe(2);
+    expect(logInfo.mock.calls.some((c) => /3 success, 0 errors/.test(String(c[0])))).toBe(true);
   });
 
   it('a failing photo does not stop the others', async () => {

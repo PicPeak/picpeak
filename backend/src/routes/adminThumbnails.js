@@ -1,4 +1,5 @@
 const express = require('express');
+const pLimit = require('p-limit');
 const router = express.Router();
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
@@ -19,7 +20,9 @@ const runningJobs = { thumbnails: false, previews: false };
 // Photos one preview regeneration works on at once. 1 (the default) is the old
 // one-by-one loop. Each photo spends most of its time fetching the original
 // from storage and writing the rendition back, so a few in flight keep the CPU
-// busy; every slot also holds one full-resolution decode in memory.
+// busy. Decodes stay in the isolated sharp pool (at most 2 workers), so the cap
+// bounds temp disk and storage connections, not RAM: a queued slot holds a temp
+// copy of the original and a storage request.
 function previewRegenConcurrency() {
   const configured = Number.parseInt(process.env.PREVIEW_REGEN_CONCURRENCY || '1', 10);
   return Number.isFinite(configured) && configured > 0 ? Math.min(configured, 8) : 1;
@@ -390,7 +393,7 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
       let errorCount = 0;
       // Previews this run replaced, removed after the loop (see below).
       const superseded = [];
-      const limit = require('p-limit')(previewRegenConcurrency());
+      const limit = pLimit(previewRegenConcurrency());
       await Promise.all(photos.map((photo) => limit(async () => {
         try {
           if (onlyMissing) {
@@ -403,7 +406,7 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
             } else {
               errorCount++;
             }
-            continue;
+            return;
           }
           // Force regeneration regardless of existing preview state by
           // nulling the cached path so ensurePreviewImage doesn't
