@@ -147,6 +147,18 @@ describe('admin events list — ordering and type filter', () => {
       await mkEvent({ slug: 'st-active', event_name: 'S Active', expires_at: inDays(90) });
     });
 
+    it('sorts a paused expired gallery with expiry, and omits pauses from live-work filters', async () => {
+      const id = await mkEvent({ slug: 'paused-sorting', event_name: 'P Paused', temporarily_disabled: true, delivery_status: 'partial', expires_at: inDays(-1) });
+      try {
+        const names = await listNames({ sortBy: 'status', sortOrder: 'asc' });
+        expect(names.indexOf('P Paused')).toBeLessThan(names.indexOf('S Draft'));
+        expect(names.indexOf('P Paused')).toBeLessThan(names.indexOf('S Inactive'));
+        await db('events').where({ id }).update({ expires_at: inDays(2) });
+        expect(await listNames({ status: 'expiring' })).not.toContain('P Paused');
+        expect(await listNames({ status: 'awaiting_delivery' })).not.toContain('P Paused');
+      } finally { await db('events').where({ id }).del(); }
+    });
+
     it('ranks live galleries first and finished ones last', async () => {
       const names = (await listNames({ sortBy: 'status', sortOrder: 'asc' }))
         .filter((n) => n.startsWith('S '));

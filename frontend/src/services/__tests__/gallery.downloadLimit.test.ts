@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../config/api', () => ({
-  api: { get: vi.fn(), post: vi.fn(), getUri: vi.fn(({ url }: { url: string }) => `/api${url}`) },
+  api: { get: vi.fn(), head: vi.fn(async () => ({})), post: vi.fn(), getUri: vi.fn(({ url }: { url: string }) => `/api${url}`) },
 }));
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn() } }));
 

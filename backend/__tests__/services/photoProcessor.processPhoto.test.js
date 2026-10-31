@@ -80,6 +80,8 @@ jest.mock('../../src/services/imageProcessor', () => {
     generateThumbnail: mockGenerateThumbnail,
     generateVideoPlaceholder: jest.fn(async (filename) => `thumbnails/thumb_${filename.replace(/\.[^.]+$/, '')}.jpg`),
     extractCaptureDate: mockExtractCaptureDate,
+    extractCapture: jest.fn(),
+    captureWallColumn: (c) => (c ? { captured_at_wall: c.wall || '' } : {}),
     // processPhoto routes stored dimensions through this to get the displayed
     // ones (#1185). Mirrored rather than requireActual'd, because pulling the
     // real module in here would drag its database dependency into the mock
@@ -178,7 +180,7 @@ describe('photoProcessor.processPhoto', () => {
     });
     dbModule.__setEvent({ id: 5, slug: 'wedding', event_name: 'Wedding' });
 
-    imageProcessor.extractCaptureDate.mockResolvedValueOnce('2026-04-25T12:00:00Z');
+    imageProcessor.extractCapture.mockResolvedValueOnce({ capturedAt: '2026-04-25T12:00:00Z', wall: '2026-04-25T14:00:00' });
     imageProcessor.generateThumbnail.mockResolvedValueOnce('thumbnails/thumb_wedding-001.jpg');
 
     const { processPhoto } = require('../../src/services/photoProcessor');
@@ -192,6 +194,8 @@ describe('photoProcessor.processPhoto', () => {
     expect(finalUpdate.data.width).toBe(1920);
     expect(finalUpdate.data.height).toBe(1080);
     expect(finalUpdate.data.captured_at).toBe('2026-04-25T12:00:00Z');
+    // And the camera clock as written (issue 2305).
+    expect(finalUpdate.data.captured_at_wall).toBe('2026-04-25T14:00:00');
 
     expect(watermarkService.generateForPhoto).toHaveBeenCalledWith(101);
     expect(webhookService.fire).toHaveBeenCalledWith(
@@ -263,7 +267,7 @@ describe('photoProcessor.processPhoto', () => {
     expect(finalUpdate.data.captured_at).toBe('2025-06-15T12:30:00.000Z');
     expect(finalUpdate.data).toMatchObject({ width: 1080, height: 1920 });
     // The EXIF reader is for images.
-    expect(imageProcessor.extractCaptureDate).not.toHaveBeenCalled();
+    expect(imageProcessor.extractCapture).not.toHaveBeenCalled();
 
     dbModule.__setPhoto({ ...row, captured_at: '2024-01-01T00:00:00.000Z' });
     videoProcessor.processUploadedVideo.mockResolvedValueOnce(result);

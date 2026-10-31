@@ -99,6 +99,51 @@ describe('capture date backfill (#1172)', () => {
     expect((await db('photos').where({ id: photoId }).first()).captured_at).toBeTruthy();
   });
 
+  it('stores the camera clock as written with the date it fills (issue 2305)', async () => {
+    // 02:30 on the spring-forward day: no such time in Europe/Berlin, so
+    // captured_at moves an hour there. The wall clock keeps the camera digits.
+    const { photoId } = await seed({ relpath: 'gap.jpg', exifIso: '2026-03-29T02:30:00Z' });
+
+    await request(app).post('/api/admin/photos/repair-capture-dates');
+    await settle();
+
+    const row = await db('photos').where({ id: photoId }).first();
+    expect(row.captured_at).toBeTruthy();
+    expect(row.captured_at_wall).toBe('2026-03-29T02:30:00');
+  });
+
+  it('reads the camera clock for a photo dated before it existed, and only once (issue 2305)', async () => {
+    const { photoId } = await seed({ relpath: 'old.jpg', exifIso: '2026-03-29T02:30:00Z' });
+    const dated = '2026-03-29T01:30:00.000Z';
+    await db('photos').where({ id: photoId }).update({ captured_at: dated, exif_json: '{}' });
+    expect((await status()).body.pending).toBe(1);
+
+    const res = await request(app).post('/api/admin/photos/repair-capture-dates');
+    expect(res.body.count).toBe(1);
+    const done = await settle();
+
+    const row = await db('photos').where({ id: photoId }).first();
+    expect(row.captured_at_wall).toBe('2026-03-29T02:30:00');
+    // The date it already had is left alone.
+    expect(new Date(row.captured_at).toISOString()).toBe(dated);
+    expect(done.body.lastResult).toMatchObject({ wallClock: 1, success: 0, failed: 0 });
+    expect((await request(app).post('/api/admin/photos/repair-capture-dates')).body.count).toBe(0);
+  });
+
+  it('marks a dated photo whose file carries no camera clock, so it is not read again (issue 2305)', async () => {
+    // Dated some other way (a guest upload dated by the browser).
+    const { photoId } = await seed({ relpath: 'nodate.jpg', exifIso: '2026-06-01T09:45:03Z', writeFile: false });
+    await sharp({ create: { width: 40, height: 30, channels: 3, background: { r: 1, g: 1, b: 1 } } })
+      .jpeg().toFile(path.join(mediaRoot, 'trip', 'nodate.jpg'));
+    await db('photos').where({ id: photoId }).update({ captured_at: '2026-06-01T09:45:03.000Z', exif_json: '{}' });
+
+    await request(app).post('/api/admin/photos/repair-capture-dates');
+    await settle();
+
+    expect((await db('photos').where({ id: photoId }).first()).captured_at_wall).toBe('');
+    expect((await request(app).post('/api/admin/photos/repair-capture-dates')).body.count).toBe(0);
+  });
+
   it('counts a photo with no EXIF separately from a failure', async () => {
     // "The mount is broken" and "these files carry no date" need different
     // answers from an operator, so they are not the same number.
@@ -126,7 +171,8 @@ describe('capture date backfill (#1172)', () => {
   it('reports nothing to do once every photo has a date', async () => {
     const { photoId } = await seed({ relpath: 'b.jpg', exifIso: '2026-06-02T09:00:00Z' });
     // And its camera details read: the job fills those too (issue 1733, D1).
-    await db('photos').where({ id: photoId }).update({ captured_at: new Date().toISOString(), exif_json: '{}' });
+    // And its camera clock (issue 2305).
+    await db('photos').where({ id: photoId }).update({ captured_at: new Date().toISOString(), exif_json: '{}', captured_at_wall: '' });
 
     const res = await request(app).post('/api/admin/photos/repair-capture-dates');
 

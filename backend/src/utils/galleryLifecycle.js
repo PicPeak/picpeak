@@ -24,15 +24,26 @@ function requiresGalleryPassword(event) {
   return !(event.require_password === false || event.require_password === 0 || event.require_password === '0');
 }
 
-function isGalleryAvailable(event, { adminPreview = false } = {}) {
+function isGalleryAvailable(event, { adminPreview = false, allowTemporarilyDisabled = false } = {}) {
   return !!event && isTrue(event.is_active) && !isTrue(event.is_archived)
-    && (adminPreview || (!isTrue(event.is_draft) && !isGalleryExpired(event)));
+    && (adminPreview || ((!isTrue(event.temporarily_disabled) || allowTemporarilyDisabled)
+      && !isTrue(event.is_draft) && !isGalleryExpired(event)));
+}
+
+function assertGalleryEnabled(event, { adminPreview = false } = {}) {
+  // Drafts, expiry, archiving and deletion keep their existing refusal. Only
+  // an otherwise live gallery advertises that its pause is temporary.
+  if (!adminPreview && isTrue(event?.temporarily_disabled)
+      && isGalleryAvailable(event, { allowTemporarilyDisabled: true })) {
+    throw new AppError('This gallery is temporarily unavailable.', 403, 'GALLERY_TEMPORARILY_DISABLED');
+  }
 }
 
 function assertGalleryAvailable(event, { adminPreview = false } = {}) {
   if (!isGalleryAvailable(event, { adminPreview })) {
+    assertGalleryEnabled(event, { adminPreview });
     throw new AppError('Gallery not found or expired', 404, 'GALLERY_UNAVAILABLE');
   }
 }
 
-module.exports = { isGalleryAvailable, assertGalleryAvailable, isGalleryExpired, requiresGalleryPassword };
+module.exports = { isTrue, isGalleryAvailable, assertGalleryAvailable, assertGalleryEnabled, isGalleryExpired, requiresGalleryPassword };

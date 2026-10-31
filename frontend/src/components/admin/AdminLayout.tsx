@@ -131,7 +131,11 @@ const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSid
     // colour class inherited it through `body { color: var(--color-text) }` and
     // rendered near-invisible on a dark-toned theme. Components with an
     // explicit class or `text-theme` still win over this.
-    <div className="h-screen bg-canvas text-heading flex overflow-hidden">
+    //
+    // 100dvh where supported: 100vh on a phone browser is the height with its
+    // toolbar retracted, so the page's own end (and the sticky save bar) sat
+    // under the toolbar whenever it showed.
+    <div className="h-screen supports-[height:100dvh]:h-[100dvh] bg-canvas text-heading flex overflow-hidden">
       {/* Mandatory Password Change Modal */}
       {mustChangePassword && <MandatoryPasswordChangeModal />}
 
@@ -170,7 +174,7 @@ const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSid
           a visible ~15px notch on the right edge of the header's
           border between the column's content area and the scrollbar. */}
       <div
-        className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto"
+        className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto"
         style={{ scrollbarGutter: 'stable' }}
       >
         {/* Header - disabled when password change required */}

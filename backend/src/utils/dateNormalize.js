@@ -54,4 +54,27 @@ function toTimestamp(value) {
   }
 }
 
-module.exports = { toIso, toTimestamp };
+// A timestamp as the wall-clock time it shows in the server's own zone,
+// 'YYYY-MM-DDTHH:MM:SS' with no zone, or null. For photos.captured_at:
+// exifr reads the camera's zone-less EXIF time in the server's zone
+// (imageProcessor.extractCaptureDate), so formatting the stored instant
+// back in that zone returns the camera clock. A browser formatting the
+// instant in its own zone would shift it by the difference (issue 1739).
+function toServerWallClock(value) {
+  const ms = toTimestamp(value);
+  if (!Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${String(d.getFullYear()).padStart(4, '0')}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    + `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+// photos.captured_at_wall (issue 2305) as 'YYYY-MM-DDTHH:MM:SS', the
+// recorded offset dropped: the list shows the camera's own clock. null
+// for NULL, '' (read, none) or anything else.
+function cameraWallClock(value) {
+  const m = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.exec(typeof value === 'string' ? value : '');
+  return m ? m[0] : null;
+}
+
+module.exports = { toIso, toTimestamp, toServerWallClock, cameraWallClock };

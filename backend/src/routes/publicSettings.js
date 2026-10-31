@@ -3,6 +3,7 @@ const { db, withRetry } = require('../database/db');
 const logger = require('../utils/logger');
 const { normaliseDownloadLimit } = require('../services/downloadQuota');
 const { normalizeStatusColors } = require('../utils/statusColors');
+const { parseLightboxMaxZoomPercent, DEFAULT_LIGHTBOX_ZOOM_PERCENT } = require('../utils/lightboxZoom');
 const router = express.Router();
 
 // Get public settings (branding and theme)
@@ -39,6 +40,8 @@ router.get('/', async (req, res) => {
               // Folder structure default (issue 1786), for the create form.
               'event_default_folder_structure',
               'gallery_show_filter_bar',
+              // Maximum lightbox zoom (issue 2281).
+              'gallery_lightbox_max_zoom_percent',
               'event_phone_field_enabled',
               // #613 — guest upload UI needs to know the per-batch file
               // count limit so it can render a real number in the
@@ -53,6 +56,8 @@ router.get('/', async (req, res) => {
               // client-side before posting an oversized file. Backend enforces
               // via getMaxFileSizeBytes regardless.
               'general_max_file_size_mb',
+              // And the video one, which guest uploads honour since issue 2315.
+              'general_max_video_size_mb',
               // #798 — the admin login page needs to know whether to show
               // the "Sign in with SSO" button (and its label). Only these
               // two oidc_* keys are public; issuer/client stay admin-only.
@@ -260,6 +265,10 @@ router.get('/', async (req, res) => {
       event_phone_field_enabled: settingsObject.event_phone_field_enabled === true,
       // Whether to show the search/sort filter bar in public galleries (default: true)
       gallery_show_filter_bar: settingsObject.gallery_show_filter_bar !== false,
+      // Maximum lightbox zoom in percent of the original's pixels (issue
+      // 2281). 100 unless a valid value is stored: today's ceiling.
+      gallery_lightbox_max_zoom_percent: parseLightboxMaxZoomPercent(settingsObject.gallery_lightbox_max_zoom_percent)
+        ?? DEFAULT_LIGHTBOX_ZOOM_PERCENT,
       // Upload settings (safe to expose - needed for client-side validation)
       allowed_file_types: settingsObject.general_allowed_file_types || 'jpg,jpeg,png,webp',
       // #613 — per-batch file count limit. The guest UserPhotoUpload modal
@@ -279,6 +288,11 @@ router.get('/', async (req, res) => {
       general_max_file_size_mb: Number.isFinite(Number(settingsObject.general_max_file_size_mb))
         ? Number(settingsObject.general_max_file_size_mb)
         : 50,
+      // Per-file video limit (MB), issue 2315. Default mirrors uploadSettings.js
+      // DEFAULT_MAX_VIDEO_SIZE_MB.
+      general_max_video_size_mb: Number.isFinite(Number(settingsObject.general_max_video_size_mb))
+        ? Number(settingsObject.general_max_video_size_mb)
+        : 500,
       // SEO meta tag flags (safe to expose - these are intended for crawlers)
       seo_meta_noindex: settingsObject.seo_meta_noindex === true,
       seo_meta_nofollow: settingsObject.seo_meta_nofollow === true,

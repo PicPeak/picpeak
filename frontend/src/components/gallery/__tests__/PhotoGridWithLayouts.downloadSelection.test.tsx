@@ -19,6 +19,11 @@ const mocks = vi.hoisted(() => ({
   limitError: new Error('download limit reached'),
 }));
 
+vi.mock('../../../contexts/ArchiveDownloadContext', () => ({
+  ArchiveDownloadProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useArchiveDownload: () => mocks,
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : key) }),
 }));
@@ -124,7 +129,7 @@ describe('PhotoGridWithLayouts — selection download at the download limit', ()
 
   it('clears the selection and leaves selection mode after a download', async () => {
     quota.remaining = 2;
-    mocks.downloadSelectedPhotos.mockResolvedValue(undefined);
+    mocks.downloadSelectedPhotos.mockResolvedValue(true);
     const onSelectionChange = vi.fn();
     const onToggleSelectionMode = vi.fn();
     mount(onSelectionChange, onToggleSelectionMode);

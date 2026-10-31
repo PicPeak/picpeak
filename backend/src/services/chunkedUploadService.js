@@ -83,6 +83,8 @@ function invalidChunkError(message) {
  * its bytes into an event of their own. A mismatch is reported exactly like
  * an unknown id, so a guessed id confirms nothing.
  *
+ * Gallery guests have no admin id: their owner is `{ eventId, guestKey }`.
+ *
  * `owner` is optional for callers that hold no principal (the expiry sweep,
  * the service's own abort on a tripped cap); the routes always pass one.
  */
@@ -91,7 +93,12 @@ function findOwnedUpload(uploadId, owner) {
   if (!uploadMeta) return null;
   if (owner) {
     if (Number(owner.eventId) !== Number(uploadMeta.eventId)) return null;
-    if (Number(owner.adminId) !== Number(uploadMeta.adminId)) return null;
+    // A gallery guest's upload is bound to its guest key instead (issue
+    // 2315). Either side carrying one means both must, and match: an admin
+    // owner never reaches a guest's upload, nor a guest an admin's.
+    if (owner.guestKey !== undefined || uploadMeta.guestKey !== undefined) {
+      if (owner.guestKey !== uploadMeta.guestKey) return null;
+    } else if (Number(owner.adminId) !== Number(uploadMeta.adminId)) return null;
   }
   return uploadMeta;
 }
@@ -108,6 +115,7 @@ async function initializeUpload(options) {
     mimeType,
     eventId,
     adminId,
+    guestKey,
     totalChunks,
     maxFileSizeBytes
   } = options;
@@ -147,7 +155,12 @@ async function initializeUpload(options) {
   let admission = null;
   if (options.admission) {
     if (size > Number(maxFileSizeBytes)) throw fileTooLargeError(Number(maxFileSizeBytes));
-    admission = await quota().begin({ eventId, mode: 'admin', accountId: adminId, maxFiles: 1, requestedBytes: size, stagedCopies: 2 });
+    // `admission: true` is the admin's; an object is a gallery guest's public
+    // admission (issue 2315), charged to the same gallery and guest allowances
+    // as the single-request guest upload, with the declared size as its body.
+    admission = await quota().begin(options.admission === true
+      ? { eventId, mode: 'admin', accountId: adminId, maxFiles: 1, requestedBytes: size, stagedCopies: 2 }
+      : { ...options.admission, eventId, maxFiles: 1, maxFileBytes: Number(maxFileSizeBytes), declaredBytes: size, stagedCopies: 2 });
   }
   const uploadDir = admission ? path.join(admission.dir, 'chunks') : path.join(getChunksPath(), uploadId);
   try {
@@ -173,6 +186,7 @@ async function initializeUpload(options) {
     eventId,
     // Who started it; see findOwnedUpload.
     adminId,
+    guestKey,
     expectedChunks,
     receivedChunks: new Set(),
     // Bytes per chunk index, so a re-sent chunk replaces rather than adds.

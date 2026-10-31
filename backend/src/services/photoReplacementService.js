@@ -13,7 +13,7 @@ const { isResourceError } = require('./imageResourcePolicy');
 const { db } = require('../database/db');
 const { livePhotos } = require('../utils/photoVisibility');
 const {
-  generateThumbnail, extractCaptureDate, withProcessableImage,
+  generateThumbnail, extractCapture, captureWallColumn, withProcessableImage,
   deleteThumbnailTiers, deletePreviewTiers,
 } = require('./imageProcessor');
 const { processUploadedVideo, extractVideoMetadata, posterFrameError } = require('./videoProcessor');
@@ -271,8 +271,12 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     // Sharp/EXIF need a local file. The temp file from multer still satisfies
     // that — we read metadata before uploading the original to storage.
     let capturedAt = null;
+    let captureWall = {};
     try {
-      capturedAt = await extractCaptureDate(newFileTempPath);
+      // With the camera's own clock (issue 2305).
+      const capture = await extractCapture(newFileTempPath);
+      capturedAt = capture ? capture.capturedAt : null;
+      captureWall = captureWallColumn(capture);
     } catch {
       // No EXIF — keep null
     }
@@ -388,6 +392,9 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       width,
       height,
       captured_at: capturedAt,
+      // The new file's camera clock (issue 2305), or NULL for the backfill.
+      captured_at_wall: null,
+      ...captureWall,
       // Camera details describe the file (issue 1733, D1): the new file's,
       // or none. NULL leaves an unreadable one to the backfill.
       exif_json: null,

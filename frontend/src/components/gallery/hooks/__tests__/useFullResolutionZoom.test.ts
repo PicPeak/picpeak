@@ -27,6 +27,15 @@ describe('full-resolution zoom maths', () => {
     expect(maxZoomFor(7.5)).toBe(7.5);
   });
 
+  it('multiplies the original\'s pixels by the admin\'s maximum zoom percent (issue 2281)', () => {
+    expect(maxZoomFor(7.5, 100)).toBe(7.5);
+    expect(maxZoomFor(7.5, 800)).toBe(60);
+    expect(maxZoomFor(2, 1000)).toBe(20);
+    // Still never below 3x of fit, and nothing to multiply without an original.
+    expect(maxZoomFor(0.2, 1000)).toBe(BASE_MAX_ZOOM);
+    expect(maxZoomFor(null, 1000)).toBe(BASE_MAX_ZOOM);
+  });
+
   it('draws the original in its own proportions inside the preview box', () => {
     expect(overlayBox({ width: 6000, height: 4000 }, { width: 600, height: 400 })).toEqual({ width: 600, height: 400 });
     // A square thumbnail standing in for the preview.

@@ -18,6 +18,7 @@ import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut, Upload, ClipboardList, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
 import { parseISO } from 'date-fns';
 import { useInView } from 'react-intersection-observer';
 
@@ -28,6 +29,7 @@ import { thumbnailUrlForTile } from '../imageTiers';
 import { TileImage } from '../TileImage';
 import { PhotoLabelsProvider, usePhotoLabels } from '../PhotoLabels';
 import { feedbackService } from '../../../services/feedback.service';
+import { BulkRatingPopover } from '../BulkRatingPopover';
 import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
 import { feedbackLockKind } from '../../../utils/feedbackLock';
@@ -49,6 +51,8 @@ import { exifLine } from '../../../utils/photoExif';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
 import { PremiumLightboxDownloadButton } from './PremiumLightboxDownloadButton';
 import { isPhotoDownloadPending } from '../../../hooks/usePhotoDownloadPending';
+import { usePublicSettings } from '../../../hooks/usePublicSettings';
+import { DEFAULT_MAX_ZOOM_PERCENT } from '../hooks/useFullResolutionZoom';
 
 const isVideoPhoto = (photo: Photo) => photo.media_type === 'video' || photo.type === 'video';
 
@@ -293,10 +297,20 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   void _onPhotoClick;
   void _onOpenPhotoWithFeedback;
   void _onDownload;
+  const archives = useArchiveDownload();
   const { t, i18n } = useTranslation();
   const photoLabels = usePhotoLabels();
   const downloadPhotoMutation = useDownloadPhoto();
   const [lightboxIndex, setLightboxIndex] = useState(-1);
+  // The admin's maximum lightbox zoom (issue 2281). This layout's own lightbox
+  // zooms the loaded rendition, so the percent scales Zoom's pixel limit.
+  // Canvas-rendered and maximum-protection views keep the old limit, as
+  // PhotoLightbox keeps them off full-resolution zoom.
+  const { data: publicSettings } = usePublicSettings();
+  const zoomBeyondDefault = !useCanvasRendering && protectionLevel !== 'maximum';
+  const maxZoomPercent = zoomBeyondDefault
+    ? publicSettings?.gallery_lightbox_max_zoom_percent ?? DEFAULT_MAX_ZOOM_PERCENT
+    : DEFAULT_MAX_ZOOM_PERCENT;
   // The delivered preview can be smaller than the original. Keep Zoom's
   // pixel limit/aspect ratio tied to the loaded rendition, as its default
   // image renderer does internally.
@@ -626,7 +640,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     toast.info(t('gallery.downloading', { count: ids.length }));
 
     try {
-      await galleryService.downloadSelectedPhotos(slug, ids);
+      if (!await archives.downloadSelectedPhotos(slug, ids)) return;
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
@@ -636,7 +650,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     // toolbar does. A failure keeps it to retry or trim.
     onDeselectAll?.();
     if (isSelectionMode) onToggleSelectionMode?.();
-  }, [selectedPhotos, slug, t, downloadChoices, onPickResolution, selectionOverQuota, downloadQuota.remaining, onDeselectAll, isSelectionMode, onToggleSelectionMode]);
+  }, [archives, selectedPhotos, slug, t, downloadChoices, onPickResolution, selectionOverQuota, downloadQuota.remaining, onDeselectAll, isSelectionMode, onToggleSelectionMode]);
 
   // Same path as Gallery Story's Download All: the whole-gallery download
   // when the container offers it (#1160), else the ids in scope. That
@@ -672,12 +686,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       ? t('gallery.downloadingInParts', { count: ids.length, parts })
       : t('gallery.downloading', { count: ids.length }));
     try {
-      await galleryService.downloadPhotosInParts(slug, ids);
+      if (!await archives.downloadPhotosInParts(slug, ids)) return;
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
     }
-  }, [downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
+  }, [archives, downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
 
   const handleDownloadFromLightbox = useCallback((slide: { src?: string; photoId?: number }) => {
     if (!allowDownloads || !slide.src) return;
@@ -764,6 +778,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     );
   }
 
+  // "Rate selected" (issue 1985): as in the other layouts, off with ratings off.
+  const bulkRatingShown = feedbackEnabled && !!feedbackOptions?.allowRatings && !!slug
+    && isSelectionMode && selectedPhotos.size > 0;
+
   return (
     // Tiles are numbered against the list this layout's lightbox steps
     // through, which a category filter narrows (issue 1733, E6).
@@ -820,7 +838,9 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
             ))}
           </div>
 
-          <div className="gallery-premium-nav-title">
+          {/* The monogram gives way to the rating star on a phone, where the
+              selection controls already fill the row (issue 1985). */}
+          <div className={`gallery-premium-nav-title${bulkRatingShown ? ' gallery-premium-nav-title--yield' : ''}`}>
             {eventName ? eventName.split(' ').map(w => w[0]).join('').slice(0, 3) : 'Gallery'}
           </div>
 
@@ -858,6 +878,19 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                 </motion.div>
               )}
             </AnimatePresence>
+            {/* Rate selected (issue 1985): an icon in the row, its stars in a
+                panel below the nav. Outside the animated box above, whose
+                transform would confine the panel to it. */}
+            {bulkRatingShown && (
+              <BulkRatingPopover
+                slug={slug}
+                photoIds={Array.from(selectedPhotos)}
+                requireNameEmail={feedbackOptions?.requireNameEmail}
+                className="gallery-premium-rate"
+                triggerClassName="gallery-premium-nav-btn"
+                popoverClassName="gallery-premium-rate-popover"
+              />
+            )}
 
             {/* Guest upload: this layout has no gallery header, which is where
                 every other layout offers it. Hidden while the selection
@@ -1026,6 +1059,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           ...(allowDownloads ? [Download] : []),
           ...(showCaptions ? [Captions] : []),
         ]}
+        zoom={{ maxZoomPixelRatio: maxZoomPercent / 100 }}
         animation={{ fade: 300, swipe: 250 }}
         styles={{
           container: { backgroundColor: 'rgba(0, 0, 0, 0.95)' },

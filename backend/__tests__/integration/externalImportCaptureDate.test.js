@@ -130,6 +130,8 @@ describe('external import capture dates (#1172)', () => {
     // problem shared with managed uploads (#1172's own footnote).
     expect(new Date(photo.captured_at).getUTCFullYear()).toBe(2026);
     expect(new Date(photo.captured_at).getUTCMonth()).toBe(5); // June
+    // The camera clock itself, whatever the host zone (issue 2305).
+    expect(photo.captured_at_wall).toBe('2026-06-01T09:45:03');
   });
 
   it('imports a photo with no EXIF date rather than failing it', async () => {
@@ -142,6 +144,8 @@ describe('external import capture dates (#1172)', () => {
     expect(res.body.imported).toBe(1);
     const photo = await db('photos').where({ event_id: eventId }).first();
     expect(photo.captured_at).toBeNull();
+    // Read, and none there: the backfill does not open it again for this.
+    expect(photo.captured_at_wall).toBe('');
   });
 
   it('orders a two-batch import by capture time, not by batch', async () => {

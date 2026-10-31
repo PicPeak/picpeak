@@ -145,7 +145,8 @@ jest.mock('../../../services/isolatedSharp', () => jest.fn(() => ({
 jest.mock('../../../services/imageProcessor', () => ({
   generateThumbnail: jest.fn().mockResolvedValue('thumbnails/fake_thumb.jpg'),
   // The upload reads the capture date itself (no worker runs for this row).
-  extractCaptureDate: jest.fn().mockResolvedValue(null),
+  extractCapture: jest.fn().mockResolvedValue(null),
+  captureWallColumn: (c) => (c ? { captured_at_wall: c.wall || '' } : {}),
 }));
 
 jest.mock('../../../services/storage', () => ({

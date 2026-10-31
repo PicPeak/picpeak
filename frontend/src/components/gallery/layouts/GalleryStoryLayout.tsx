@@ -2,13 +2,15 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList, Upload, Shield } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useArchiveDownload } from '../../../contexts/ArchiveDownloadContext';
 import { Button } from '../../common';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { STORY_FOOTER_TEXT_MAX, STORY_FOOTER_TITLE_MAX } from '../../../types/theme.types';
 import { feedbackService } from '../../../services/feedback.service';
-import { galleryService, splitIntoArchives } from '../../../services/gallery.service';
+import { BulkRatingPopover } from '../BulkRatingPopover';
+import { splitIntoArchives } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
 import { isVideoItem, mediaSplitLabel, selectLabel, splitMediaCount } from '../../../utils/mediaCounts';
 import { toast } from 'react-toastify';
@@ -125,6 +127,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   void _onPhotoClick;
   void _onOpenPhotoWithFeedback;
   void _onDownload;
+  const archives = useArchiveDownload();
   const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -386,6 +389,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // with either off the like endpoint answers 403, so neither the card hearts
   // nor the bulk control are offered.
   const likesAllowed = feedbackEnabled && feedbackOptions?.allowLikes !== false;
+  // As the other layouts' "Rate selected": off with ratings off for the event.
+  const ratingsAllowed = feedbackEnabled && !!feedbackOptions?.allowRatings && !!slug;
   // The client's per-photo hide/show button (issue 1992); guests get none.
   const clientToggleVisibility = isClient ? onToggleVisibility : undefined;
   const allVisibleSelected = visiblePhotos.length > 0 && visiblePhotos.every((photo) => selected.has(photo.id));
@@ -458,12 +463,12 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       ? t('gallery.downloadingInParts', { count: ids.length, parts })
       : t('gallery.downloading', { count: ids.length }));
     try {
-      await galleryService.downloadPhotosInParts(slug, ids);
+      if (!await archives.downloadPhotosInParts(slug, ids)) return;
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       if (!isDownloadLimitError(error)) toast.error(t('gallery.downloadError'));
     }
-  }, [downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
+  }, [archives, downloadablePhotos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
 
   // Needs something to download: either the whole-gallery callback, or
   // downloadable photos in the current scope. On a folder-only root of a gallery with
@@ -675,6 +680,20 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   </span>
                   <span className="sm:hidden" aria-hidden="true">({selected.size})</span>
                 </button>
+              )}
+              {/* Rate selected (issue 1985): tiles here show no rating, so
+                  the result comes back as a toast. Icon only on a phone. */}
+              {ratingsAllowed && selected.size > 0 && (
+                <BulkRatingPopover
+                  slug={slug}
+                  photoIds={Array.from(selected)}
+                  requireNameEmail={feedbackOptions?.requireNameEmail}
+                  className="story-rate"
+                  triggerClassName="story-selection-btn"
+                  popoverClassName="story-rate-popover"
+                >
+                  <span className="hidden sm:inline">{t('feedback.rateSelected', 'Rate selected')}</span>
+                </BulkRatingPopover>
               )}
               {allowDownloads && onDownloadSelected && selected.size > 0 && (
                 <button

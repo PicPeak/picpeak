@@ -24,7 +24,7 @@ vi.mock('../../../services/gallery.service', () => ({
     getDownloadJob: vi.fn(),
     requestDownloadJobMail: vi.fn(),
     downloadJobFile: vi.fn(),
-    downloadAllPhotos: vi.fn(),
+    downloadCachedArchive: vi.fn(),
   },
 }));
 vi.mock('../../../contexts/DownloadQuotaContext', () => ({

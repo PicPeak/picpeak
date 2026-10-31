@@ -1,335 +1,84 @@
-/**
- * Coverage for #557 — iOS Web Share path on multi-photo selection.
- *
- * downloadSelectedPhotos historically POSTed to /download-selected and
- * triggered a zip download. On iOS with a small selection it now routes
- * through navigator.share({ files }) so the photos land in Photos via
- * the share sheet's "Save N Images" action. Above the file-count cap
- * or anywhere off-iOS, behaviour is unchanged.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const IOS_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15';
-const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0.0.0';
+vi.mock('../../config/api', () => ({ api: { post: vi.fn(), get: vi.fn() } }));
+import { api } from '../../config/api';
+import { galleryService } from '../gallery.service';
+import { markGalleryLimited } from '../../utils/downloadLimit';
 
-const fetchedFor = (id: number) => ({
-  blob: new Blob([`photo-${id}`], { type: 'image/jpeg' }),
-  serverFilename: `IMG_${String(id).padStart(4, '0')}.jpg`,
+const ios = (enabled = true, ipad = false) => Object.defineProperties(navigator, {
+  userAgent: { configurable: true, value: enabled && !ipad ? 'iPhone' : 'Macintosh' },
+  platform: { configurable: true, value: 'MacIntel' },
+  maxTouchPoints: { configurable: true, value: ipad ? 5 : 0 },
 });
 
-// Mock the axios layer so the test never makes a network call. The
-// real api.post resolves with { data: Blob } for the zip path; the
-// shape only matters when the fallback branch is exercised.
-vi.mock('../../config/api', () => ({
-  api: {
-    post: vi.fn(),
-    get: vi.fn(),
-  },
-}));
-
-let galleryService: typeof import('../gallery.service').galleryService;
-let apiMock: { post: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> };
-
-const installNavigator = (overrides: Partial<{
-  userAgent: string;
-  platform: string;
-  maxTouchPoints: number;
-  share: ReturnType<typeof vi.fn>;
-  canShare: ReturnType<typeof vi.fn>;
-}>) => {
-  const desc = (value: any) => ({ value, configurable: true, writable: true });
+beforeEach(() => {
+  vi.clearAllMocks();
+  ios();
+  markGalleryLimited('party', false);
+  vi.spyOn(galleryService, 'fetchPhotoBlob').mockImplementation(async (_slug, id) => ({
+    blob: new Blob([`image-${id}`], { type: 'image/jpeg' }), serverFilename: `camera-${id}.jpg`,
+  }));
   Object.defineProperties(navigator, {
-    userAgent: desc(overrides.userAgent ?? ''),
-    platform: desc(overrides.platform ?? ''),
-    maxTouchPoints: desc(overrides.maxTouchPoints ?? 0),
+    canShare: { configurable: true, value: vi.fn(() => true) },
+    share: { configurable: true, value: vi.fn(async () => undefined) },
   });
-  (navigator as any).share = overrides.share;
-  (navigator as any).canShare = overrides.canShare;
-};
+});
+afterEach(() => vi.restoreAllMocks());
 
-describe('galleryService.downloadSelectedPhotos — iOS Web Share path (#557)', () => {
-  beforeEach(async () => {
-    vi.resetModules();
-    const services = await import('../gallery.service');
-    galleryService = services.galleryService;
-    apiMock = (await import('../../config/api')).api as any;
-    apiMock.post.mockReset();
-    apiMock.post.mockResolvedValue({ data: new Blob(['zip-bytes'], { type: 'application/zip' }) });
-
-    // jsdom doesn't ship URL.createObjectURL / revokeObjectURL —
-    // the zip-fallback path needs both to materialise the <a> link.
-    (window.URL.createObjectURL as any) = vi.fn(() => 'blob:fake');
-    (window.URL.revokeObjectURL as any) = vi.fn();
-
-    // fetchPhotoBlob is the network-dependent helper; stub it across
-    // every test so we never touch the real download endpoint.
-    vi.spyOn(galleryService, 'fetchPhotoBlob').mockImplementation((_slug, id) =>
-      Promise.resolve(fetchedFor(id) as any),
-    );
+describe('small iOS selection sharing', () => {
+  it('shares files with the server filenames and image types', async () => {
+    expect(await galleryService.trySaveSelectedToDevice('party', [1, 2])).toBe('shared');
+    expect(navigator.share).toHaveBeenCalledWith({ files: [
+      expect.objectContaining({ name: 'camera-1.jpg', type: 'image/jpeg' }),
+      expect.objectContaining({ name: 'camera-2.jpg', type: 'image/jpeg' }),
+    ] });
+    expect(api.post).not.toHaveBeenCalled();
   });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    delete (navigator as any).share;
-    delete (navigator as any).canShare;
+  it('supports iPadOS using its desktop user agent', async () => {
+    ios(false, true);
+    expect(await galleryService.trySaveSelectedToDevice('party', [1])).toBe('shared');
   });
-
-  it('routes through navigator.share on iOS with a small selection', async () => {
-    const share = vi.fn().mockResolvedValue(undefined);
-    const canShare = vi.fn().mockReturnValue(true);
-    installNavigator({ userAgent: IOS_UA, share, canShare });
-
-    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
-
-    expect(share).toHaveBeenCalledTimes(1);
-    const shareArg = share.mock.calls[0][0];
-    expect(shareArg.files).toHaveLength(3);
-    expect((shareArg.files[0] as File).name).toBe('IMG_0001.jpg');
-    // Zip endpoint must NOT be called when share succeeds.
-    expect(apiMock.post).not.toHaveBeenCalled();
+  it('keeps dismissal distinct from a fallback', async () => {
+    vi.mocked(navigator.share).mockRejectedValue(new DOMException('Cancelled', 'AbortError'));
+    expect(await galleryService.trySaveSelectedToDevice('party', [1])).toBe('dismissed');
   });
-
-  it('reports the zip download progress to the caller (issue 2043)', async () => {
-    installNavigator({ userAgent: ANDROID_UA });
-    apiMock.post.mockImplementationOnce(async (_url: string, _body: unknown, config: { onDownloadProgress?: (e: unknown) => void }) => {
-      config.onDownloadProgress?.({ loaded: 10 });
-      return { data: new Blob(['zip-bytes']) };
-    });
-    const onProgress = vi.fn();
-    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2], undefined, onProgress);
-    expect(onProgress).toHaveBeenCalledTimes(1);
-  });
-
-  it('falls back to the zip endpoint on Android, even with canShare available', async () => {
-    const share = vi.fn().mockResolvedValue(undefined);
-    const canShare = vi.fn().mockReturnValue(true);
-    installNavigator({ userAgent: ANDROID_UA, share, canShare });
-
-    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
-
-    expect(share).not.toHaveBeenCalled();
-    expect(apiMock.post).toHaveBeenCalledTimes(1);
-    expect(apiMock.post).toHaveBeenCalledWith(
-      '/gallery/wedding-2026/download-selected',
-      { photo_ids: [1, 2, 3] },
-      { responseType: 'blob' },
-    );
-  });
-
-  it('falls back to the zip endpoint above the 25-file cap', async () => {
-    // 26 photos: even on iOS, this exceeds MAX_WEB_SHARE_FILES so the
-    // Web Share path is skipped entirely (no fetchPhotoBlob calls,
-    // no share() call, no canShare() probe).
-    const share = vi.fn();
-    const canShare = vi.fn();
-    installNavigator({ userAgent: IOS_UA, share, canShare });
-
-    const ids = Array.from({ length: 26 }, (_, i) => i + 1);
-    await galleryService.downloadSelectedPhotos('wedding-2026', ids);
-
+  it.each(['desktop', 'large', 'limited', 'empty'])('does not fetch images for %s selections', async (mode) => {
+    if (mode === 'desktop') ios(false);
+    if (mode === 'limited') markGalleryLimited('party', true);
+    const ids = mode === 'empty' ? [] : Array.from({ length: mode === 'large' ? 26 : 2 }, (_, i) => i + 1);
+    expect(await galleryService.trySaveSelectedToDevice('party', ids)).toBe('fallback');
     expect(galleryService.fetchPhotoBlob).not.toHaveBeenCalled();
-    expect(share).not.toHaveBeenCalled();
-    expect(apiMock.post).toHaveBeenCalledTimes(1);
   });
-
-  it('takes the Web Share path at exactly the 25-file boundary', async () => {
-    const share = vi.fn().mockResolvedValue(undefined);
-    const canShare = vi.fn().mockReturnValue(true);
-    installNavigator({ userAgent: IOS_UA, share, canShare });
-
-    const ids = Array.from({ length: 25 }, (_, i) => i + 1);
-    await galleryService.downloadSelectedPhotos('wedding-2026', ids);
-
-    expect(share).toHaveBeenCalledTimes(1);
-    expect(apiMock.post).not.toHaveBeenCalled();
-  });
-
-  it('does NOT fall back to the zip endpoint when the user dismisses the share sheet (AbortError)', async () => {
-    const abortErr = Object.assign(new Error('user dismissed'), { name: 'AbortError' });
-    const share = vi.fn().mockRejectedValue(abortErr);
-    const canShare = vi.fn().mockReturnValue(true);
-    installNavigator({ userAgent: IOS_UA, share, canShare });
-
-    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
-
-    expect(share).toHaveBeenCalledTimes(1);
-    // A surprise zip in Downloads would defeat the user's deliberate
-    // dismissal of the share sheet.
-    expect(apiMock.post).not.toHaveBeenCalled();
-  });
-
-  it('falls back to the zip endpoint when share() rejects with a non-Abort error', async () => {
-    const notAllowed = Object.assign(new Error('blocked'), { name: 'NotAllowedError' });
-    const share = vi.fn().mockRejectedValue(notAllowed);
-    const canShare = vi.fn().mockReturnValue(true);
-    installNavigator({ userAgent: IOS_UA, share, canShare });
-
-    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
-
-    expect(apiMock.post).toHaveBeenCalledTimes(1);
-  });
-
-  it('falls back to the zip endpoint when canShare({files}) returns false (older iOS)', async () => {
-    const share = vi.fn();
-    const canShare = vi.fn().mockReturnValue(false);
-    installNavigator({ userAgent: IOS_UA, share, canShare });
-
-    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
-
-    expect(share).not.toHaveBeenCalled();
-    expect(apiMock.post).toHaveBeenCalledTimes(1);
-  });
-
-  it('falls back to the zip endpoint when any photo fetch fails (partial shares would be confusing)', async () => {
-    const share = vi.fn();
-    const canShare = vi.fn().mockReturnValue(true);
-    installNavigator({ userAgent: IOS_UA, share, canShare });
-
-    // Re-stub fetchPhotoBlob so the 2nd of 3 photos fails — the Promise.all
-    // collapse must route the whole batch to the zip endpoint rather
-    // than sharing only the photos that resolved.
-    (galleryService.fetchPhotoBlob as any).mockReset();
-    (galleryService.fetchPhotoBlob as any)
-      .mockResolvedValueOnce(fetchedFor(1))
-      .mockRejectedValueOnce(new Error('network'))
-      .mockResolvedValueOnce(fetchedFor(3));
-
-    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
-
-    expect(share).not.toHaveBeenCalled();
-    expect(apiMock.post).toHaveBeenCalledTimes(1);
-  });
-
-  it('falls back to the zip endpoint when the selection is empty (no Web Share invocation)', async () => {
-    const share = vi.fn();
-    const canShare = vi.fn();
-    installNavigator({ userAgent: IOS_UA, share, canShare });
-
-    await galleryService.downloadSelectedPhotos('wedding-2026', []);
-
-    expect(galleryService.fetchPhotoBlob).not.toHaveBeenCalled();
-    expect(share).not.toHaveBeenCalled();
-    expect(apiMock.post).toHaveBeenCalledTimes(1);
+  it('falls back after a missing capability, fetch error or unexpected share failure', async () => {
+    vi.mocked(navigator.canShare).mockReturnValueOnce(false);
+    expect(await galleryService.trySaveSelectedToDevice('party', [1])).toBe('fallback');
+    vi.mocked(galleryService.fetchPhotoBlob).mockRejectedValueOnce(new Error('network'));
+    expect(await galleryService.trySaveSelectedToDevice('party', [1])).toBe('fallback');
+    vi.mocked(navigator.share).mockRejectedValueOnce(new Error('share'));
+    expect(await galleryService.trySaveSelectedToDevice('party', [1])).toBe('fallback');
+    expect(api.post).not.toHaveBeenCalled();
   });
 });
 
-describe('galleryService.downloadPhotosInParts — the 500-id cap per archive', () => {
-  beforeEach(async () => {
-    vi.resetModules();
-    galleryService = (await import('../gallery.service')).galleryService;
-    apiMock = (await import('../../config/api')).api as any;
-    apiMock.post.mockReset();
-    apiMock.post.mockResolvedValue({ data: new Blob(['zip-bytes'], { type: 'application/zip' }) });
-    (window.URL.createObjectURL as any) = vi.fn(() => 'blob:fake');
-    (window.URL.revokeObjectURL as any) = vi.fn();
+describe('native archive transport', () => {
+  it('preserves an explicitly empty selection so the server can refuse it', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: { token: 'job', status: 'pending', resolution: 'original' } });
+    await galleryService.startDownloadJob('party', undefined, []);
+    expect(api.post).toHaveBeenCalledWith('/gallery/party/download-jobs', { photo_ids: [] });
   });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    delete (navigator as any).share;
-    delete (navigator as any).canShare;
-  });
-
-  it('posts one archive per 500 ids, named by part', async () => {
-    installNavigator({ userAgent: ANDROID_UA });
-    const names: string[] = [];
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      names.push(this.getAttribute('download') || '');
-    });
-
-    const ids = Array.from({ length: 1001 }, (_, i) => i + 1);
-    await galleryService.downloadPhotosInParts('wedding-2026', ids);
-
-    expect(apiMock.post.mock.calls.map((call) => call[1].photo_ids.length)).toEqual([500, 500, 1]);
-    expect(apiMock.post.mock.calls.flatMap((call) => call[1].photo_ids)).toEqual(ids);
-    expect(names).toEqual([
-      'wedding-2026-selected-1-of-3.zip',
-      'wedding-2026-selected-2-of-3.zip',
-      'wedding-2026-selected-3-of-3.zip',
+  it('passes gallery authentication through native URLs, including admin preview', () => {
+    const links: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () { links.push(this.href); });
+    window.history.replaceState({}, '', '/gallery/party?admin_preview=1');
+    galleryService.downloadCachedArchive('party');
+    galleryService.downloadJobFile('party', 'job', { index: 1, total: 2 });
+    galleryService.downloadJobFile('party', 'selected-job', undefined, true);
+    expect(links.map((href) => new URL(href).pathname + new URL(href).search)).toEqual([
+      '/api/gallery/party/download-all?admin_preview=1',
+      '/api/gallery/party/download-jobs/job/file?part=1&parts=2&admin_preview=1',
+      '/api/gallery/party/download-jobs/selected-job/file?selected=1&admin_preview=1',
     ]);
-  });
-
-  it('sends the last small part as a zip on iOS too, not through the share sheet', async () => {
-    const share = vi.fn();
-    installNavigator({ userAgent: IOS_UA, share, canShare: vi.fn().mockReturnValue(true) });
-
-    await galleryService.downloadPhotosInParts('wedding-2026', Array.from({ length: 503 }, (_, i) => i + 1));
-
-    expect(share).not.toHaveBeenCalled();
-    expect(apiMock.post).toHaveBeenCalledTimes(2);
-  });
-
-  it('keeps a set within the cap as one plain selection download', async () => {
-    installNavigator({ userAgent: ANDROID_UA });
-    await galleryService.downloadPhotosInParts('wedding-2026', [1, 2, 3]);
-    expect(apiMock.post).toHaveBeenCalledTimes(1);
-    expect(apiMock.post).toHaveBeenCalledWith(
-      '/gallery/wedding-2026/download-selected',
-      { photo_ids: [1, 2, 3] },
-      { responseType: 'blob' },
-    );
-  });
-});
-
-describe('galleryService.downloadSelectedPhotos — object URL lifetime', () => {
-  beforeEach(async () => {
-    vi.resetModules();
-    galleryService = (await import('../gallery.service')).galleryService;
-    apiMock = (await import('../../config/api')).api as any;
-    apiMock.post.mockReset();
-    apiMock.post.mockResolvedValue({ data: new Blob(['zip-bytes'], { type: 'application/zip' }) });
-    (window.URL.createObjectURL as any) = vi.fn(() => 'blob:fake');
-    (window.URL.revokeObjectURL as any) = vi.fn();
-    installNavigator({ userAgent: ANDROID_UA });
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
-  it('keeps the zip URL valid past the click, then releases it', async () => {
-    vi.useFakeTimers();
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-
-    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
-
-    expect(click).toHaveBeenCalledTimes(1);
-    // Revoked in the same task as the click, Safari and Firefox can cancel
-    // the download before it starts.
-    expect(window.URL.revokeObjectURL).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1_000);
-    expect(window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake');
-  });
-
-  // A re-wrapped blob has no type, and DuckDuckGo on Android then saves the
-  // archive as .bin (issue 2175).
-  it('hands the browser the zip with the type the server sent', async () => {
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-
-    await galleryService.downloadSelectedPhotos('wedding-2026', [1, 2, 3]);
-
-    const saved = (window.URL.createObjectURL as any).mock.calls[0][0] as Blob;
-    expect(saved.type).toBe('application/zip');
-  });
-
-  it('keeps the zip type on the download-all fallback', async () => {
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-    apiMock.get.mockResolvedValue({ data: new Blob(['zip-bytes'], { type: 'application/zip' }) });
-
-    await galleryService.downloadAllPhotos('wedding-2026', false);
-
-    const saved = (window.URL.createObjectURL as any).mock.calls[0][0] as Blob;
-    expect(saved.type).toBe('application/zip');
-  });
-
-  it('keeps the image type on a single photo download', () => {
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-
-    galleryService.triggerBrowserDownload(new Blob(['jpeg'], { type: 'image/jpeg' }), 'IMG_0001.jpg');
-
-    const saved = (window.URL.createObjectURL as any).mock.calls[0][0] as Blob;
-    expect(saved.type).toBe('image/jpeg');
+    expect(api.get).not.toHaveBeenCalled();
+    window.history.replaceState({}, '', '/');
   });
 });

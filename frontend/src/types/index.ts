@@ -36,6 +36,7 @@ export interface Event {
   archive_path?: string;
   archived_at?: string;
   require_password?: boolean;
+  temporarily_disabled?: boolean;
   // Rows of either type. video_count says how many are videos, and
   // video_duration is their total runtime in seconds (issue 1430).
   photo_count?: number;
@@ -440,6 +441,7 @@ export interface GalleryData {
   event: {
     id: number;
     event_name: string;
+    is_priced?: boolean;
     event_type: string;
     /** Server-derived capability; never contains the private client link or PIN. */
     client_pin_entry_available?: boolean;

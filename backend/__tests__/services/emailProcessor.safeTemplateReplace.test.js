@@ -135,4 +135,10 @@ describe('safeTemplateReplace', () => {
         .toBe('<a href="https://example.com/g/abc?token=xyz&u=1">link</a>');
     });
   });
+
+  it('prints a variable passed as null as nothing, not "null"', () => {
+    const tpl = 'Available until {{expiry_date}}.';
+    expect(safeTemplateReplace(tpl, { expiry_date: null })).toBe('Available until .');
+    expect(safeTemplateReplace(tpl, { expiry_date: null }, { escapeHtml: true })).toBe('Available until .');
+  });
 });
