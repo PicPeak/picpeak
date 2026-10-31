@@ -11622,7 +11622,7 @@
     "retryPreparation": "Druckdateien erneut vorbereiten",
     "cancelAfterInvoice": "Bestellung nach CRM-Rechnungskorrektur stornieren",
     "help": "Konfigurieren Sie Produktionsanforderungen für gemeinsame Katalogprodukte. Preise, Steuern und Zahlungen verwenden CRM-Rechnungen; die Laborbestellung erfolgt manuell.",
-    "closed": "Druckbestellungen sind deaktiviert. Bestehende Bestellungen bleiben zur Prüfung verfügbar.",
+    "closed": "Druckbestellungen sind deaktiviert. Aktivieren Sie sie wieder, um offene Bestellungen abzuschließen.",
     "countries": "Lieferländer (zweistellige Ländercodes, durch Kommas getrennt)",
     "deliveryPrice": "Versandpreis aus dem CRM-Katalog",
     "includedDelivery": "Versand enthalten (keine zusätzliche Position)",

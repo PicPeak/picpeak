@@ -232,8 +232,10 @@ function createService({ db, storage, sharp }) {
       const { event: currentEvent } = await buyer(tx, eventId, customerId);
       if (current.created_by_admin_id !== currentEvent.print_sales_admin_id || currentEvent.print_sales_admin_id !== admin.id)
         throw new ConflictError('The studio billing owner changed; review a new quotation');
-      const open = await tx('print_sales_orders').where({ status: 'accepted' }).select('customer_account_id', 'render_status');
-      if (open.length >= 100 || open.filter(o => o.customer_account_id === customerId).length >= 10 ||
+      const open = await tx('print_sales_orders').where({ status: 'accepted' }).select('customer_account_id', 'created_by_admin_id', 'render_status');
+      const studio = open.filter(o => Number(o.created_by_admin_id) === Number(admin.id));
+      // The render queue is one worker, so that cap stays install-wide.
+      if (studio.length >= 100 || open.filter(o => o.customer_account_id === customerId).length >= 10 ||
           open.filter(o => ['queued', 'running'].includes(o.render_status)).length >= 20)
         throw new ConflictError('The studio order queue is full; try again after existing orders are processed');
       const snapshot = P.parse(current.snapshot), contact = P.parse(current.contact);

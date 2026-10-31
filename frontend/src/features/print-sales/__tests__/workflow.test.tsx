@@ -221,7 +221,7 @@ describe('print administration', () => {
     vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [{ ...quotation, status: 'accepted', acceptedAt: '2026-10-28', invoiceId: 42 }] } :
       { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } }) as any);
     render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
-    expect(await screen.findByText('Print ordering is disabled. Existing orders remain available for review.')).toBeInTheDocument();
+    expect(await screen.findByText('Print ordering is disabled. Turn it on again to finish open orders.')).toBeInTheDocument();
     expect(await screen.findByText(/Open native invoice/)).toHaveAttribute('href', '/admin/clients/bills/42');
     expect(screen.queryByRole('button', { name: 'Save print settings' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Supplier pack' })).not.toBeInTheDocument();

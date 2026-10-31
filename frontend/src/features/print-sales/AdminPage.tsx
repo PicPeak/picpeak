@@ -101,7 +101,7 @@ export function PrintSalesAdminPage() {
   };
   return <div className="space-y-6 [&_button]:max-w-full [&_button]:whitespace-normal">
     <p className="text-muted">{t('printSales.help', 'Configure production requirements for shared catalogue products. Prices, tax and payments use native CRM invoices; lab submission is manual.')}</p>
-    {!enabled && <Notice>{t('printSales.closed', 'Print ordering is disabled. Existing orders remain available for review.')}</Notice>}
+    {!enabled && <Notice>{t('printSales.closed', 'Print ordering is disabled. Turn it on again to finish open orders.')}</Notice>}
     {enabled && canSettings && !canConfigure && <Notice>{t('printSales.readOnly', 'You can view these print settings but cannot change them.')}</Notice>}
     {canSettings && settings.isPending && <Loading />}
     {settings.isError && <ErrorState size="inline" title={t('printSales.settingsFailed', 'Could not load print settings')} message={errorMessage(settings.error)} onRetry={() => { void settings.refetch(); }} retrying={settings.isFetching} />}

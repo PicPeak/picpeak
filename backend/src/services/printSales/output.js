@@ -36,11 +36,11 @@ function output(input) {
 const MAX_ORDER_ARTWORK_BYTES = 64 * 1024 * 1024;
 /**
  * Expected encoded size. Refusing before an invoice exists needs a number up
- * front: uncompressed TIFF is exact, the others are generous for photographs.
+ * front: raw 8-bit RGB for lossless output, a generous figure for a JPEG, whose
+ * worst case is far above any photograph.
  */
 function artworkBytes(artwork, spec) {
-  const perPixel = spec.format === 'jpeg' ? 1 : spec.format === 'tiff' && spec.compression === 'none' ? 3 : 2;
-  return artwork.widthPx * artwork.heightPx * perPixel;
+  return artwork.widthPx * artwork.heightPx * (spec.format === 'jpeg' ? 1 : 3);
 }
 async function encode(raster, requirements, dpi) {
   const spec = output(requirements);

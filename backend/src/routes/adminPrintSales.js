@@ -28,14 +28,14 @@ router.put('/settings', requireFeatureFlag('printSales'), requireFeatureFlag('al
     res.json(result);
   }));
 router.get('/events/:eventId', requireEventOwner, permissions('products.view'), handleAsync(async (req, res) => {
-  const e = await db('events').where({ id: Number(req.params.eventId) }).first();
+  const e = Number.isSafeInteger(Number(req.params.eventId)) && await db('events').where({ id: Number(req.params.eventId) }).first();
   if (!e) throw new NotFoundError('Gallery');
   res.json({ enabled: require('../utils/galleryLifecycle').isTrue(e.print_sales_enabled) });
 }));
 router.put('/events/:eventId', requireEventOwner, requireFeatureFlag('printSales'), requireFeatureFlag('albumProducts'), requireFeatureFlag('bills'),
   permissions('products.configure', 'bills.manage', 'customers.edit'), handleAsync(async (req, res) => {
     if (typeof req.body?.enabled !== 'boolean') throw new AppError('Choose whether gallery ordering is enabled', 400);
-    const event = await db('events').where({ id: Number(req.params.eventId) }).first('id', 'created_by');
+    const event = Number.isSafeInteger(Number(req.params.eventId)) && await db('events').where({ id: Number(req.params.eventId) }).first('id', 'created_by');
     if (!event) throw new NotFoundError('Gallery');
     // Orders invoice under the event, so the CRM rule applies, not event access.
     if (!canLinkCrmToEvent(req.admin, event)) throw new ForbiddenError('Only the gallery owner can run print ordering for this gallery');

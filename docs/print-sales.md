@@ -214,10 +214,11 @@ deployment review remain necessary before opening an actual shop.
 
 ## Limits and manual recovery
 
-- **Order size.** Prepared artwork for one order is limited to 64 MB. A profile whose single file would exceed it is refused on save, and a basket expected to exceed it is refused at quotation, before anything is retained or invoiced. The estimate is deliberately generous, but a JPEG or PNG that encodes larger still fails preparation after the invoice exists; correct the invoice and close the order.
+- **Order size.** Prepared artwork for one order is limited to 64 MB. A profile whose single file would exceed it is refused on save, and a basket expected to exceed it is refused at quotation, before anything is retained or invoiced. Lossless output is counted at raw size. JPEG is an estimate of 1 byte per pixel, so an unusually large JPEG can still fail preparation after the invoice exists; correct the invoice and close the order.
+- **Deleting an admin.** An admin with open print orders cannot be deleted until those orders are closed.
 - **Corrected invoices.** After a Storno and reissue, fulfilment follows the replacement invoice, which must carry the same lines and totals and be fully paid.
 - **Close order manually.** Once the original invoice is cancelled, an open order that can neither be cancelled nor dispatched (already at the lab, or reissued with different lines) is closed with a recorded reason. This also releases customer erasure.
-- **Feature switched off.** The Print sales tab hides and fulfilment actions and file downloads stop, while retention keeps running. Switch the feature back on to finish open orders.
+- **Feature switched off.** The Print sales tab hides and fulfilment actions and file downloads stop, while retention keeps running. Switch the feature back on to finish open orders; this is also needed before erasing a customer who has one. Buyers see their order history only while the gallery's shop is open.
 
 ## Installation and recovery
 

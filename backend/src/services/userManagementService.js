@@ -609,6 +609,12 @@ async function deleteAdminUser(id, deletedById) {
   // super_admin, so their specific message survives.
   await assertMayManageSuperAdminTarget(user, deletedById);
 
+  // Only their creator or a super admin can fulfil a print order (migration 341).
+  if (await db.schema.hasTable('print_sales_orders')
+    && await db('print_sales_orders').where({ created_by_admin_id: id, status: 'accepted' }).first('id')) {
+    throw new ConflictError('Close this admin\'s open print orders before deleting the account');
+  }
+
   // A delegated users.delete holder only reaches accounts within its own
   // permissions, and never one that still owns events or projects: the FK
   // rules below SET NULL the owner column, and ownerless rows are readable

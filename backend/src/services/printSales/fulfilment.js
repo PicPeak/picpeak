@@ -117,10 +117,11 @@ function createService({ db, storage }) {
     });
   }
   async function download(id, admin, kind) {
+    if (!['pack', 'sheet'].includes(kind)) throw new NotFoundError('Supplier file');
     const row = await order(id, admin);
     await db.transaction(tx => settled(tx, row));
-    const assets = await files(row), asset = assets.find(a => a.kind === kind);
-    if (!asset || !['pack', 'sheet'].includes(kind)) throw new NotFoundError('Supplier file');
+    const asset = (await files(row)).find(a => a.kind === kind);
+    if (!asset) throw new NotFoundError('Supplier file');
     return verified(storage, asset);
   }
   /** Terminal artwork expires separately from native accounting records. Active orders are held. */

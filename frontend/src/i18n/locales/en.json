@@ -11610,7 +11610,7 @@
     "retryPreparation": "Retry artwork preparation",
     "cancelAfterInvoice": "Cancel order after native invoice correction",
     "help": "Configure production requirements for shared catalogue products. Prices, tax and payments use native CRM invoices; lab submission is manual.",
-    "closed": "Print ordering is disabled. Existing orders remain available for review.",
+    "closed": "Print ordering is disabled. Turn it on again to finish open orders.",
     "countries": "Delivery countries (two-letter codes, separated by commas)",
     "deliveryPrice": "Delivery price from CRM catalogue",
     "includedDelivery": "Delivery included (no extra line)",

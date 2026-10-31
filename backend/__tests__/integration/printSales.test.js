@@ -517,6 +517,12 @@ const submitted = async () => {
   return fulfilment.order(row.id, admin);
 };
 const invoices = () => require('../../src/services/invoiceService');
+async function secondCustomer() {
+  const row = await db('customer_accounts').where({ id: customerId }).first();
+  const { id, ...rest } = row;
+  const ids = await db('customer_accounts').insert({ ...rest, email: `${uuid()}@example.com`, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).returning('id');
+  return ids[0]?.id ?? ids[0];
+}
 async function newAdmin(extra = {}) {
   const ids = await db('admin_users').insert({ username: uuid(), email: `${uuid()}@example.com`, password_hash: 'unused',
     is_active: true, created_at: new Date().toISOString(), ...extra }).returning('id');
@@ -655,6 +661,19 @@ test('a replayed request for a failed quotation is refused, not returned as an e
     sharp: () => ({ metadata: async () => { throw new Error('unreadable'); } }) });
   await expect(racing.quote(event.id, customerId, 'client', input)).rejects.toThrow('unreadable');
   await expect(quoted(input)).rejects.toThrow('could not be prepared');
+});
+test('an admin with open print orders cannot be deleted', async () => {
+  const owner = await newAdmin(), a = await accepted();
+  await db('print_sales_orders').where({ id: a.id }).update({ created_by_admin_id: owner });
+  await expect(require('../../src/services/userManagementService').deleteAdminUser(owner, admin.id)).rejects.toThrow('open print orders');
+  await db('print_sales_orders').where({ id: a.id }).update({ created_by_admin_id: admin.id });
+});
+test('one studio\'s backlog does not refuse another studio\'s customers at acceptance', async () => {
+  const q = await quoted(), other = await newAdmin(), now = new Date().toISOString(), buyer = await secondCustomer();
+  await db.batchInsert('print_sales_orders', Array.from({ length: 100 }, () => ({ id: uuid(), request_hash: 'x', event_id: event.id,
+    customer_account_id: buyer, created_by_admin_id: other, status: 'accepted', render_status: 'ready', created_at: now, expires_at: now })), 50);
+  const done = await orders.accept(event.id, customerId, 'client', q.id, { snapshotHash: q.snapshotHash, acknowledgeSelection: true });
+  expect(done.status).toBe('accepted');
 });
 test('.print-sales is in every default backup path list', async () => {
   const { DEFAULT_PATHS } = require('../../migrations/core/109_add_backup_paths');
