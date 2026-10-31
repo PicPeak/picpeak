@@ -102,6 +102,117 @@ describe('clause headings', () => {
   });
 });
 
+describe('the editor sends its own clause list', () => {
+  const systemBlocks = () => db('contract_blocks').where({ is_system: true, is_active: true }).select('id', 'slug');
+  const entries = (blocks) => blocks.map((block) => ({ blockId: block.id, included: true }));
+  const library = () => require('../../src/services/contractBlocksService');
+
+  afterAll(() => setCountry('LI'));
+
+  test('a new contract starts from the clauses for the business\'s legal system', async () => {
+    await setCountry('LI');
+    let slugs = (await library().listBlocks({ forNewContract: true })).map((block) => block.slug);
+    expect(slugs).toEqual(expect.arrayContaining(EUROPEAN_ONLY));
+    expect(slugs).not.toContain('closing_jurisdiction_us');
+
+    await setCountry('US');
+    slugs = (await library().listBlocks({ forNewContract: true })).map((block) => block.slug);
+    expect(slugs).toContain('closing_jurisdiction_us');
+    for (const slug of EUROPEAN_ONLY) expect(slugs).not.toContain(slug);
+  });
+
+  test('the block library still lists every clause', async () => {
+    await setCountry('LI');
+    const slugs = (await library().listBlocks()).map((block) => block.slug);
+    expect(slugs).toEqual(expect.arrayContaining([...EUROPEAN_ONLY, 'closing_jurisdiction_us']));
+  });
+
+  test('a stale client cannot put US law on a business elsewhere', async () => {
+    await setCountry('CH');
+    const { id } = await createContract({ blocks: entries(await systemBlocks()) });
+    const slugs = (await clauses(id)).map((c) => c.slug);
+    expect(slugs).toEqual(expect.arrayContaining(EUROPEAN_ONLY));
+    expect(slugs).not.toContain('closing_jurisdiction_us');
+  });
+
+  test('a stale client cannot put Swiss or German law on a US business', async () => {
+    await setCountry('US');
+    const { id } = await createContract({ blocks: entries(await systemBlocks()) });
+    const slugs = (await clauses(id)).map((c) => c.slug);
+    expect(slugs).toContain('closing_jurisdiction_us');
+    for (const slug of EUROPEAN_ONLY) expect(slugs).not.toContain(slug);
+  });
+
+  test('saving a draft keeps the clauses it already holds, after the country changed', async () => {
+    await setCountry('LI');
+    const { id } = await createContract();
+    const held = await db('contract_block_inclusions').where({ contract_id: id }).select('block_id');
+    await setCountry('US');
+    await crud().updateContract(id, { blocks: held.map((row) => ({ blockId: row.block_id, included: true })) }, adminId);
+    expect((await clauses(id)).map((c) => c.slug)).toEqual(expect.arrayContaining(EUROPEAN_ONLY));
+  });
+});
+
+describe('a contract made from a quote', () => {
+  afterAll(() => setCountry('LI'));
+
+  async function converted() {
+    const quotes = require('../../src/services/quoteService');
+    const quoteId = await quotes.createQuote({
+      customerAccountId: customerId, language: 'en', currency: 'USD', vatRate: 0,
+      lineItems: [{ description: 'Full session', quantity: 1, unitPriceMinor: 17500, kind: 'item' }],
+    }, adminId);
+    await db('quotes').where({ id: quoteId.id || quoteId }).update({ status: 'accepted', accepted_at: new Date() });
+    const { contractId } = await require('../../src/services/contractService').createFromQuote(quoteId.id || quoteId, adminId);
+    return contractId;
+  }
+
+  test('a US business closes under US law', async () => {
+    await setCountry('US');
+    const slugs = (await clauses(await converted())).map((c) => c.slug);
+    expect(slugs).toContain('closing_jurisdiction_us');
+    for (const slug of EUROPEAN_ONLY) expect(slugs).not.toContain(slug);
+  });
+
+  test('a business elsewhere keeps its clauses', async () => {
+    await setCountry('DE');
+    const slugs = (await clauses(await converted())).map((c) => c.slug);
+    expect(slugs).toEqual(expect.arrayContaining(EUROPEAN_ONLY));
+    expect(slugs).not.toContain('closing_jurisdiction_us');
+  });
+});
+
+describe('a retired US clause', () => {
+  afterAll(async () => {
+    await db('contract_blocks').where({ slug: 'closing_jurisdiction_us' }).update({ is_active: true });
+    await setCountry('LI');
+  });
+
+  test('still leaves Swiss and German law out of a US contract', async () => {
+    await setCountry('US');
+    await db('contract_blocks').where({ slug: 'closing_jurisdiction_us' }).update({ is_active: false });
+    const slugs = (await clauses((await createContract()).id)).map((c) => c.slug);
+    for (const slug of EUROPEAN_ONLY) expect(slugs).not.toContain(slug);
+  });
+});
+
+describe('a clause an admin wrote', () => {
+  test('keeps the name they gave it in an English contract', async () => {
+    const [row] = await db('contract_blocks').insert({
+      slug: 'own_clause_abc123', section: 'closing', name: 'Our delivery promise',
+      body_text: '**Delivery**\n\nWithin four weeks.', body_text_de: '**Lieferung**\n\nIn vier Wochen.',
+      is_system: false, is_active: true, display_order: 99,
+    }).returning('id');
+    const blockId = typeof row === 'object' ? row.id : row;
+    const { id } = await createContract({ language: 'en', blocks: [{ blockId, included: true }] });
+    const { contract, inclusions, textSections } = await crud().getContractById(id);
+    const ctx = await require('../../src/services/contract/renderContext').buildRenderContext(contract, inclusions, textSections);
+    const [block] = ctx.sections.flatMap((section) => section.blocks);
+    expect(block.name).toBe('Our delivery promise');
+    expect(block.body).not.toContain('**Delivery**');
+  });
+});
+
 describe('without any contract template', () => {
   // A new contract falls back to the active system blocks when no template
   // version can be found (the standard one removed).

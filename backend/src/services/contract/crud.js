@@ -133,6 +133,7 @@ async function getContractById(id) {
         'inc.*',
         'blk.slug as block_slug',
         'blk.name as block_name',
+        'blk.is_system as block_is_system',
         'blk.description as block_description',
         'blk.body_text as block_body_text',
         'blk.body_text_de as block_body_text_de',
@@ -195,10 +196,7 @@ async function createContract(payload, adminId, { idempotencyKey = null, importe
     : null;
   // A US business's contract from the standard template closes under US law
   // instead of Swiss or German law (contract/regionalClauses).
-  if (version && version.template_is_system) {
-    const usClosing = await db('contract_blocks').where({ slug: regionalClauses.US_CLOSING, is_active: true }).first();
-    version.items = regionalClauses.standardItemsFor(version.items, profile?.country_code, usClosing);
-  }
+  await regionalClauses.fitVersionToBusiness(version, profile?.country_code);
   const validDays = ensureInt(await getAppSetting('crm_contracts_default_valid_days')) || 30;
   const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
   const validUntil = payload.validUntil || new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
@@ -276,7 +274,7 @@ async function createContract(payload, adminId, { idempotencyKey = null, importe
       // draft and its inclusions commit together. It used to follow up with a
       // separate update, which could fail after the draft was committed
       // (issue 1447).
-      await writeInclusions(trx, contractId, payload.blocks, history);
+      await writeInclusions(trx, contractId, payload.blocks, history, new Map(), profile?.country_code);
       if (Array.isArray(payload.textSections)) await writeTextSections(trx, contractId, payload.textSections, history);
     } else if (version) {
       // The version's clauses, with their frozen texts and overrides.
@@ -380,9 +378,11 @@ async function createContractIdempotent(payload, adminId, idempotencyKey, { impo
  * list, inside the caller's transaction. Shared by createContract and
  * updateContract. Unknown block ids are skipped, and each row's section comes
  * from the block itself, never from the caller. `history` is the { actor,
- * source } recorded in the accounting change history.
+ * source } recorded in the accounting change history. A system clause written
+ * for another legal system than `countryCode`'s is left out unless the
+ * contract already holds it (contract/regionalClauses).
  */
-async function writeInclusions(trx, contractId, blocks, history, previous = new Map()) {
+async function writeInclusions(trx, contractId, blocks, history, previous = new Map(), countryCode = null) {
   const content = require('./content');
   // Recompute per-section position so we don't trust caller order
   // for ordering integrity; caller controls only the section
@@ -400,13 +400,16 @@ async function writeInclusions(trx, contractId, blocks, history, previous = new 
     ...new Set(blocks.map((e) => e.blockId).filter((id) => Number.isFinite(id))),
   ];
   const blocksFound = blockIds.length > 0
-    ? await trx('contract_blocks').whereIn('id', blockIds).select('id', 'section')
+    ? await trx('contract_blocks').whereIn('id', blockIds).select('id', 'section', 'slug', 'is_system')
     : [];
-  const sectionByBlockId = new Map(blocksFound.map((b) => [b.id, b.section]));
+  const blockById = new Map(blocksFound.map((b) => [b.id, b]));
   const sectionCounters = {};
   for (const entry of blocks) {
-    const section = sectionByBlockId.get(entry.blockId);
-    if (!section) continue;
+    const block = blockById.get(entry.blockId);
+    if (!block) continue;
+    if (block.is_system && !previous.has(Number(entry.blockId))
+      && !regionalClauses.appliesTo(block.slug, countryCode)) continue;
+    const { section } = block;
     sectionCounters[section] = (sectionCounters[section] || 0) + 1;
     // A rewrite keeps each block's frozen text and override (#1445); an
     // override sent with the entry replaces the kept one.
@@ -487,6 +490,9 @@ async function updateContract(id, payload, adminId) {
   // Outside the transaction for the same reason as in createContract: inside
   // it, this schema read deadlocks the single-connection SQLite pool.
   const hasProjectCol = 'projectId' in payload && await hasColumnCached('contracts', 'project_id');
+  const countryCode = Array.isArray(payload.blocks)
+    ? (await businessProfileService.getProfile()).profile?.country_code
+    : null;
 
   // Resolve the audit actor BEFORE the transaction — see createContract.
   const actor = await adminActor(adminId);
@@ -544,7 +550,7 @@ async function updateContract(id, payload, adminId) {
       const previousRows = await trx('contract_block_inclusions').where({ contract_id: id });
       const previous = new Map(previousRows.map((row) => [Number(row.block_id), row]));
       await auditedDelete(trx, 'contract_block_inclusions', { contract_id: id }, history);
-      await writeInclusions(trx, id, payload.blocks, history, previous);
+      await writeInclusions(trx, id, payload.blocks, history, previous, countryCode);
     }
     if (Array.isArray(payload.textSections)) await writeTextSections(trx, id, payload.textSections, history);
     if (Array.isArray(payload.attachments)) {

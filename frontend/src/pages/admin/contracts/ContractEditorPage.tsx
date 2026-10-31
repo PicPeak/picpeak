@@ -204,8 +204,8 @@ export const ContractForm = forwardRef<ContractFormHandle, ContractFormProps>(({
   // on by the server on create). We still show them all here for parity
   // with the edit flow.
   const { data: blockLibrary } = useQuery({
-    queryKey: ['contracts', 'blocks-library'],
-    queryFn: () => contractsService.listBlocks({ includeInactive: false }),
+    queryKey: ['contracts', 'blocks-library', 'new-contract'],
+    queryFn: () => contractsService.listBlocks({ includeInactive: false, forNewContract: true }),
   });
 
   const { data: templateList, isError: templatesFailed } = useQuery({

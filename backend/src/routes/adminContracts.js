@@ -308,12 +308,17 @@ function transformBlock(b) {
 router.get(
   '/blocks',
   requirePermission('contracts.view'),
-  [query('section').optional().isString(), query('includeInactive').optional().isBoolean()],
+  [
+    query('section').optional().isString(),
+    query('includeInactive').optional().isBoolean(),
+    query('forNewContract').optional().isBoolean(),
+  ],
   handleAsync(async (req, res) => {
     validateRequest(req);
     const blocks = await contractBlocksService.listBlocks({
       section: req.query.section,
       includeInactive: req.query.includeInactive === 'true' || req.query.includeInactive === true,
+      forNewContract: req.query.forNewContract === 'true' || req.query.forNewContract === true,
     });
     return successResponse(res, { blocks: blocks.map(transformBlock) });
   }),

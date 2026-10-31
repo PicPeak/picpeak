@@ -13,6 +13,7 @@
  * an admin built is taken as they built it.
  */
 
+const { db } = require('../../database/db');
 const { isUnitedStates } = require('../../utils/postalAddress');
 const content = require('./content');
 
@@ -24,27 +25,30 @@ function isUsOnlyClause(slug) {
   return slug === US_CLOSING;
 }
 
-/** The active system blocks a new contract without a template gets. */
+/** Does this clause belong in a new contract from a business in `countryCode`? */
+function appliesTo(slug, countryCode) {
+  return isUnitedStates(countryCode) ? !EUROPEAN_ONLY.has(slug) : !isUsOnlyClause(slug);
+}
+
+/** The blocks of `blocks` a new contract without a template starts from. */
 function systemBlocksFor(blocks, countryCode) {
-  return isUnitedStates(countryCode)
-    ? blocks.filter((block) => !EUROPEAN_ONLY.has(block.slug))
-    : blocks.filter((block) => !isUsOnlyClause(block.slug));
+  return blocks.filter((block) => appliesTo(block.slug, countryCode));
 }
 
 /**
  * A standard-contract version's items (in order, with `block_slug`) for a
  * business in `countryCode`. A US business's lose the European clauses and
- * take `usClosingBlock` (a contract_blocks row) in place of the first closing
- * clause; everyone else's come back unchanged.
+ * take `usClosingBlock` (a contract_blocks row, none when an admin retired it)
+ * in place of the first closing clause; everyone else's come back unchanged.
  */
 function standardItemsFor(items, countryCode, usClosingBlock) {
-  if (!isUnitedStates(countryCode) || !usClosingBlock) return items;
+  if (!isUnitedStates(countryCode)) return items;
   let placed = items.some((item) => item.kind === 'block' && isUsOnlyClause(item.block_slug));
   const out = [];
   for (const item of items) {
     if (item.kind !== 'block' || !EUROPEAN_ONLY.has(item.block_slug)) {
       out.push(item);
-    } else if (!placed && item.section === 'closing') {
+    } else if (usClosingBlock && !placed && item.section === 'closing') {
       out.push({
         ...item,
         block_id: usClosingBlock.id,
@@ -58,4 +62,17 @@ function standardItemsFor(items, countryCode, usClosingBlock) {
   return out;
 }
 
-module.exports = { US_CLOSING, isUsOnlyClause, systemBlocksFor, standardItemsFor };
+/**
+ * Fit a resolved template version to the business, in place: the standard
+ * template's items for its legal system. A template an admin built stays as
+ * built. Every path that makes a contract from a version goes through here,
+ * before its transaction (this reads through the global db).
+ */
+async function fitVersionToBusiness(version, countryCode) {
+  if (!version || !version.template_is_system) return version;
+  const usClosing = await db('contract_blocks').where({ slug: US_CLOSING, is_active: true }).first();
+  version.items = standardItemsFor(version.items, countryCode, usClosing);
+  return version;
+}
+
+module.exports = { isUsOnlyClause, appliesTo, systemBlocksFor, standardItemsFor, fitVersionToBusiness };

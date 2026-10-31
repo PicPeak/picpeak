@@ -122,7 +122,8 @@ async function buildPlaceholderContext(contract, customer) {
 // Render-context builder + PDF helpers
 // ---------------------------------------------------------------------
 
-const isIncluded = (row) => row.included === true || row.included === 1 || row.included === '1';
+const isSet = (value) => value === true || value === 1 || value === '1';
+const isIncluded = (row) => isSet(row.included);
 
 /**
  * A contract's clauses in reading order, each with its texts by language
@@ -150,6 +151,7 @@ function orderedClauses(contract, inclusions, textSections = []) {
         position: ensureInt(row.position),
         slug: row.block_slug || null,
         name: row.block_name || null,
+        system: isSet(row.block_is_system),
         body: content.mergeLocaleMaps(base, row.body_override),
       };
     }),
@@ -202,11 +204,12 @@ function parseContentSnapshot(value) {
  * every clause heading, and its stored PDF says so, so it keeps being read
  * that way.
  *
- * Format 4 changes no field either: a contract in any language but German
- * heads each clause with the title its own text opens with (`**Subject of
- * contract**`) instead of the library block's name, which the seeded blocks
- * carry in German. One sent before that printed the block names, and keeps
- * being read that way.
+ * Format 4 adds `system` to each clause: a contract in any language but
+ * German heads a seeded clause with the title its own text opens with
+ * (`**Subject of contract**`) instead of the library block's name, which the
+ * seeded blocks carry in German. A clause an admin wrote keeps the name they
+ * gave it. One sent before that printed the block names, and keeps being read
+ * that way.
  */
 const SNAPSHOT_FORMAT = 4;
 
@@ -357,7 +360,7 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
     introText: intro ? render(intro) : null,
     outroText: outro ? render(outro) : null,
     // Placeholders filled in, then a leading `**Title**` line dropped: it
-    // becomes the heading (outside German, see format 4), or the clause name
+    // becomes the heading (a seeded clause outside German, see format 4), or the clause name
     // already is. Inline `**bold**` stays for the PDF (the signing page
     // strips it).
     //
@@ -374,7 +377,7 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
       .map((clause) => {
         const text = content.pickLocale(clause.body, locale);
         const rendered = String(render(text) || '');
-        const title = titledHeadings ? (rendered.match(LEADING_TITLE) || [])[1] : null;
+        const title = titledHeadings && clause.system ? (rendered.match(LEADING_TITLE) || [])[1] : null;
         return {
           blockId: clause.blockId,
           position: clause.position,

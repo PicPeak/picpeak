@@ -139,19 +139,24 @@ function slugify(name) {
   return `${base || 'block'}_${suffix}`;
 }
 
-async function listBlocks({ section, includeInactive = false } = {}) {
+async function listBlocks({ section, includeInactive = false, forNewContract = false } = {}) {
   // Self-heal before reading so the new system block (added to the
   // already-deployed migration 131 in feat/crm) appears in the
   // library UI immediately on first GET, without needing a fresh
   // install. Safe to call repeatedly — guarded by _systemBlocksSeeded.
   await ensureSystemBlocksSeeded();
-  return await withRetry(async () => {
+  const blocks = await withRetry(async () => {
     let q = db('contract_blocks').select('*');
     if (section) q = q.where({ section });
     if (!includeInactive) q = q.where({ is_active: true });
     q = q.orderBy('section', 'asc').orderBy('display_order', 'asc').orderBy('id', 'asc');
     return await q;
   });
+  if (!forNewContract) return blocks;
+  // What a new contract starts from: the clauses for the business's legal
+  // system. The library and the template editor still list them all.
+  const { profile } = await require('./businessProfileService').getProfile();
+  return require('./contract/regionalClauses').systemBlocksFor(blocks, profile?.country_code);
 }
 
 async function getBlockById(id) {
