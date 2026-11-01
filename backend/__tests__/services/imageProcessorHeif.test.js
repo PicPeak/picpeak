@@ -89,6 +89,8 @@ describe('HEVC HEIC decoding', () => {
   it.each([
     ['a single tile', 10, 8],
     ['a larger video track', 128, 96],
+    ['a frame with the same long edge', 40, 40],
+    ['a strip with the same long edge', 40, 5],
   ])('refuses %s in place of the photo', async (_label, width, height) => {
     const seen = [];
     run.mockImplementation(async (_command, args) => {
