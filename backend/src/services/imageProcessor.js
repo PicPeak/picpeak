@@ -248,9 +248,9 @@ function withSourceMetadata(jpeg, { exif, xmp, icc }) {
  * pass as the photo. The tolerance is for the crop a HEIC can apply to its grid.
  */
 function assertDecodedWhole(decoded, source) {
-  const longEdge = Math.max(decoded.width, decoded.height);
-  const expected = Math.max(source.width, source.height);
-  if (Math.abs(longEdge - expected) > expected * 0.1) {
+  const edges = ({ width, height }) => [width, height].sort((a, b) => a - b);
+  const expected = edges(source);
+  if (edges(decoded).some((edge, index) => Math.abs(edge - expected[index]) > expected[index] * 0.1)) {
     throw new Error(`ffmpeg decoded ${decoded.width}x${decoded.height} from a ${source.width}x${source.height} HEIC; a tiled photo needs ffmpeg 8.1 or newer`);
   }
 }
