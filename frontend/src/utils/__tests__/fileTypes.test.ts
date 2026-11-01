@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, buildUploadAcceptString } from '../fileTypes';
+import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, buildUploadAcceptString, normalizeFileMimeType } from '../fileTypes';
 
 describe('fileTypes', () => {
   describe('extensionsToMimeTypes', () => {
@@ -32,7 +32,27 @@ describe('fileTypes', () => {
 
   describe('extensionsToAcceptString', () => {
     it('joins MIME types for the input accept attribute', () => {
-      expect(extensionsToAcceptString('jpg,heic')).toBe('image/jpeg,image/heic');
+      expect(extensionsToAcceptString('jpg,heic')).toBe('image/jpeg,image/heic,.heic');
+    });
+  });
+
+  describe('badly typed uploads (HEIC/HEIF, issue 2359)', () => {
+    it.each([
+      ['IMG_1.HEIC', '', 'image/heic'],
+      ['IMG_1.heic', 'image/heif', 'image/heic'],
+      ['IMG_1.HEIC', 'application/octet-stream', 'image/heic'],
+      ['IMG_1.heif', 'image/heic', 'image/heif'],
+    ])('names %s reported as "%s" from its extension', (name, type, expected) => {
+      expect(normalizeFileMimeType(name, type)).toBe(expected);
+    });
+
+    it('leaves a type that names something else', () => {
+      expect(normalizeFileMimeType('page.heic', 'text/html')).toBe('text/html');
+    });
+
+    it('adds the token only when an admin enabled the type', () => {
+      expect(extensionsToAcceptString('jpg,heic,heif')).toBe('image/jpeg,image/heic,image/heif,.heic,.heif');
+      expect(extensionsToAcceptString('jpg,png')).toBe('image/jpeg,image/png');
     });
   });
 
