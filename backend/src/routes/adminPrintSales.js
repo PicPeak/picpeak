@@ -11,6 +11,7 @@ const P = require('../services/printSales/profiles');
 const O = require('../services/printSales/orders');
 const G = require('../services/albumProducts/library');
 const V = require('../services/albumProducts/validation');
+const { pipeline } = require('stream/promises');
 const { formatBoolean } = require('../utils/dbCompat');
 const fulfilment = () => require('../services/printSales/fulfilment').createService({ db, storage: require('../services/storage').getStorage() });
 const permissions = (...names) => requirePermission(names, { requireAll: true });
@@ -63,8 +64,18 @@ router.post('/orders/:id/actions', requireFeatureFlag('printSales'), permissions
 }));
 router.get('/orders/:id/files/:kind', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
   V.uuid(req.params.id);
-  const bytes = await require('../services/activeApplicationWork').track('print supplier file download', () => fulfilment().download(req.params.id, req.admin, req.params.kind));
-  const pack = req.params.kind === 'pack';
-  res.type(pack ? 'application/zip' : 'application/pdf').attachment(`print-${req.params.id}.${pack ? 'zip' : 'pdf'}`).send(bytes);
+  const controller = new AbortController();
+  const abort = () => { if (!res.writableFinished) controller.abort(); };
+  res.once('close', abort);
+  try {
+    await require('../services/activeApplicationWork').track('print supplier file download', () =>
+      fulfilment().download(req.params.id, req.admin, req.params.kind, async (stream, size) => {
+        const pack = req.params.kind === 'pack';
+        res.type(pack ? 'application/zip' : 'application/pdf').attachment(`print-${req.params.id}.${pack ? 'zip' : 'pdf'}`);
+        res.set('Content-Length', String(size));
+        if (req.method === 'HEAD') return res.end();
+        await pipeline(stream, res, { signal: controller.signal });
+      }, { signal: controller.signal }));
+  } finally { res.removeListener('close', abort); }
 }));
 module.exports = router;

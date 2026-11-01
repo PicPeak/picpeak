@@ -1,7 +1,8 @@
 'use strict';
 const V = require('../albumProducts/validation');
 const { parse } = require('./profiles');
-const { invoiceIdentity, verified } = require('./orders');
+const { invoiceIdentity } = require('./orders');
+const { verify, withVerifiedFile } = require('./files');
 const { AppError, ConflictError, NotFoundError } = require('../../utils/errors');
 const { formatBoolean } = require('../../utils/dbCompat');
 const now = () => new Date().toISOString();
@@ -50,14 +51,14 @@ function createService({ db, storage }) {
     if (!row.contact || V.hash(parse(row.contact)) !== parse(row.snapshot).contactHash)
       throw new ConflictError('Confirmed delivery details are unavailable');
   }
-  async function files(row) {
+  async function files(row, options) {
     if (row.render_status !== 'ready' || !row.artwork_version || row.purged_at)
       throw new ConflictError('Production files are not ready');
     const assets = await db('print_sales_assets').where({ order_id: row.id, claim: row.claim }).orderBy('id');
     if (!assets.some(a => a.kind === 'pack') || !assets.some(a => a.kind === 'sheet') ||
         V.hash(assets.map(a => ({ id: a.id, sha256: a.sha256, size: a.size }))) !== row.artwork_version)
       throw new ConflictError('Production file identity changed');
-    for (const asset of assets) await verified(storage, asset);
+    for (const asset of assets) await verify(storage, asset, options);
     return assets;
   }
   async function action(id, admin, input) {
@@ -133,13 +134,22 @@ function createService({ db, storage }) {
         current.event_id, { type: 'admin', id: admin.id }, tx);
     });
   }
-  async function download(id, admin, kind) {
+  async function download(id, admin, kind, consume, options) {
     if (!['pack', 'sheet'].includes(kind)) throw new NotFoundError('Supplier file');
     const row = await order(id, admin);
     await db.transaction(tx => settled(tx, row));
-    const asset = (await files(row)).find(a => a.kind === kind);
+    const asset = (await files(row, options)).find(a => a.kind === kind);
     if (!asset) throw new NotFoundError('Supplier file');
-    return verified(storage, asset);
+    return withVerifiedFile(storage, asset, async (stream, size) => {
+      // Verification can take time for a large pack. A cancellation, erasure or
+      // invoice correction during it must still stop the browser's release.
+      const current = await order(id, admin);
+      if (current.claim !== row.claim || current.artwork_version !== row.artwork_version ||
+          current.render_status !== 'ready' || current.purged_at)
+        throw new ConflictError('The order changed; reload before downloading');
+      await db.transaction(tx => settled(tx, current));
+      return consume(stream, size);
+    }, options);
   }
   /** Terminal artwork expires separately from native accounting records. Active orders are held. */
   async function cleanup() {

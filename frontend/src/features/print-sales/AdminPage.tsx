@@ -35,9 +35,11 @@ function StudioOrder({ initial, onError }: { initial: Order; onError: (s: string
   const download = async (kind: string) => {
     setBusy(true); onError('');
     try {
-      const r = await api.get(`/admin/print-sales/orders/${order.id}/files/${kind}`, { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data), a = document.createElement('a');
-      a.href = url; a.download = `print-${order.id}.${kind === 'pack' ? 'zip' : 'pdf'}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const path = `/admin/print-sales/orders/${order.id}/files/${kind}`;
+      await api.head(path);
+      const a = document.createElement('a');
+      a.href = api.getUri({ url: path }); a.download = `print-${order.id}.${kind === 'pack' ? 'zip' : 'pdf'}`;
+      document.body.appendChild(a); a.click(); a.remove();
     } catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
   };
   return <details className="border border-line rounded-lg p-4 space-y-3"><summary className="cursor-pointer">
@@ -108,7 +110,7 @@ export function PrintSalesAdminPage() {
     {canSettings && draft && <fieldset disabled={!canConfigure || busy} className="min-w-0 space-y-5">
       <DeliveryEditor value={draft} onChange={setDraft} />
       <label className="block">{t('printSales.policy', 'Buyer policy and delivery information')}
-        <textarea className="input w-full" rows={4} maxLength={5000} value={draft.policy} onChange={e => setDraft({ ...draft, policy: e.target.value })} /></label>
+        <textarea className="input w-full h-auto min-h-28" rows={4} maxLength={5000} value={draft.policy} onChange={e => setDraft({ ...draft, policy: e.target.value })} /></label>
       {draft.profiles.map((p, n) => <div key={p.definition.id} className="space-y-2">
         <ProfileEditor value={p} products={draft.products || []} presets={draft.presets} onChange={value => setDraft({ ...draft, profiles: draft.profiles.map((p, i) => i === n ? value : p) })} />
         <Button variant="ghost" onClick={() => setDraft({ ...draft, profiles: draft.profiles.filter((_, i) => i !== n) })}>{t('printSales.removeProfile', 'Remove variant from future orders')}</Button>

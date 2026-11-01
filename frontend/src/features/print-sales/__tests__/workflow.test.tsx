@@ -22,7 +22,7 @@ vi.mock('../../../hooks/useLocalizedDate', () => ({ useLocalizedDate: () => ({ f
 vi.mock('../../../components/common/AuthenticatedImage', () => ({ AuthenticatedImage: ({ onLoad, onUnavailable, isGallery: _gallery, slug: _slug, ...props }: any) =>
   <img {...props} onError={() => onUnavailable?.(true)} onLoad={() => onLoad?.(props.src?.includes('landscape') ? { width: 800, height: 400 } : { width: 400, height: 600 })} /> }));
 vi.mock('../../../components/admin/SettingsSaveBar', () => ({ SettingsSaveBar: ({ onSave, isDirty }: any) => <button disabled={!isDirty} onClick={onSave}>Save print settings</button> }));
-vi.mock('../../../config/api', () => ({ api: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
+vi.mock('../../../config/api', () => ({ api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), head: vi.fn(), getUri: ({ url }: { url: string }) => `/api${url}` } }));
 const photo = { id: 1, filename: 'sample.jpg', original_filename: 'camera.jpg', url: '/synthetic.jpg', width: 400, height: 600 } as Photo;
 const variant: Variant = { id: 'profile-1', version: 'profile-version', selection: { schemaVersion: 2, productVersion: 'product-version', product: { id: 'product-1', name: 'Photographic print' },
   attributes: [{ id: 'size', name: 'Size', addOn: false, options: [{ id: 'small', name: '10 × 15 cm', imageId: null }] }] },
@@ -229,6 +229,22 @@ describe('gallery print order journey', () => {
   });
 });
 describe('print administration', () => {
+  it('starts a browser download only after an authenticated successful preflight', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [{ ...quotation, status: 'accepted', renderStatus: 'ready', invoiceId: 42 }] } :
+      { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } }) as any);
+    vi.mocked(api.head).mockResolvedValue({ status: 200 } as any);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Supplier pack' }));
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+    expect(api.head).toHaveBeenCalledWith('/admin/print-sales/orders/order-1/files/pack');
+    expect(vi.mocked(api.get).mock.calls.some(([, config]) => config?.responseType === 'blob')).toBe(false);
+    vi.mocked(api.head).mockRejectedValueOnce(new Error('Payment is not settled'));
+    fireEvent.click(screen.getByRole('button', { name: 'Supplier pack' }));
+    await screen.findByText('Payment is not settled');
+    expect(click).toHaveBeenCalledTimes(1); click.mockRestore();
+  });
+
   it('keeps retained orders readable when new ordering is disabled', async () => {
     permissions.enabled = false;
     vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [{ ...quotation, status: 'accepted', acceptedAt: '2026-10-28', invoiceId: 42 }] } :

@@ -63,6 +63,14 @@ beforeEach(async () => {
     type: 'individual', content_sha256: V.hash(sourceBytes), width: 400, height: 600 }).returning('id');
   photoId = ids[0]?.id ?? ids[0];
 });
+// Fixtures are tiny; production downloads consume a verified stream directly.
+async function download(id, actor, kind) {
+  return fulfilment.download(id, actor, kind, async stream => {
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  });
+}
 const payload = () => ({ requestId: uuid(), items: [{ profileId: definition.id, photoId, quantity: 2,
   crop: { x: 0, y: 0, width: 1, height: 1 }, fit: 'cover' }],
 delivery: { country: 'IE', name: 'Synthetic Buyer', line1: '1 Test Lane', city: 'Dublin', postalCode: 'D01 TEST' } });
@@ -151,32 +159,32 @@ test('retained sources survive gallery deletion and produce sRGB artwork plus ne
 });
 test('payment before rendering holds files, then manual review/submission/dispatch records exact artwork', async () => {
   const a = await accepted(); await pay(a);
-  await expect(fulfilment.download(a.id, admin, 'pack')).rejects.toThrow('not ready');
+  await expect(download(a.id, admin, 'pack')).rejects.toThrow('not ready');
   await worker.runOne();
   const row = await fulfilment.order(a.id, admin), details = { artworkVersion: row.artwork_version };
   await expect(fulfilment.action(a.id, admin, { ...details, action: 'submit', supplierReference: 'LAB-001' })).rejects.toThrow('Check');
   await fulfilment.action(a.id, admin, { ...details, action: 'review' });
-  const pack = await fulfilment.download(a.id, admin, 'pack'); expect(pack.subarray(0, 2).toString()).toBe('PK');
+  const pack = await download(a.id, admin, 'pack'); expect(pack.subarray(0, 2).toString()).toBe('PK');
   await fulfilment.action(a.id, admin, { ...details, action: 'submit', supplierReference: 'LAB-001' });
   await fulfilment.action(a.id, admin, { ...details, action: 'dispatch', tracking: 'Test tracking' });
   expect(await fulfilment.order(a.id, admin)).toMatchObject({ status: 'dispatched', supplier_reference: 'LAB-001', tracking: 'Test tracking' });
 });
 test('rendering before payment and partial payments do not release supplier files', async () => {
   const a = await accepted(); await worker.runOne(); await pay(a, 1);
-  await expect(fulfilment.download(a.id, admin, 'pack')).rejects.toThrow('fully settled');
+  await expect(download(a.id, admin, 'pack')).rejects.toThrow('fully settled');
   await pay(a, a.totalMinor - 1);
-  await expect(fulfilment.download(a.id, admin, 'pack')).resolves.toBeInstanceOf(Buffer);
+  await expect(download(a.id, admin, 'pack')).resolves.toBeInstanceOf(Buffer);
 });
 test('changing a production file holds release even when its byte length is unchanged', async () => {
   const a = await accepted(); await worker.runOne(); await pay(a);
   const file = await db('print_sales_assets').where({ order_id: a.id, kind: 'artwork' }).first();
   await storage.put(file.storage_key, Buffer.alloc(file.size));
-  await expect(fulfilment.download(a.id, admin, 'pack')).rejects.toThrow('file changed');
+  await expect(download(a.id, admin, 'pack')).rejects.toThrow('file changed');
 });
 test('editing the native invoice after acceptance holds fulfilment', async () => {
   const a = await accepted(); await worker.runOne(); await pay(a);
   await require('../../src/services/accountingHistory').auditedUpdate(db, 'invoice_line_items', { invoice_id: a.invoiceId }, { description: 'Changed product' }, { actor: admin.id, source: 'test.invoice.edit' });
-  await expect(fulfilment.download(a.id, admin, 'pack')).rejects.toThrow('fully settled');
+  await expect(download(a.id, admin, 'pack')).rejects.toThrow('fully settled');
 });
 test('preparation failure preserves the paid invoice and requires controlled retry after three failures', async () => {
   const a = await accepted(); await pay(a);
@@ -511,6 +519,18 @@ test('archived-gallery deletion detaches retained orders and keeps them visible 
 
 const authed = req => req.set('Authorization', `Bearer ${adminToken}`);
 const paidAndReady = async () => { const a = await accepted(); await pay(a); await worker.runOne(); return fulfilment.order(a.id, admin); };
+test('an invoice correction during pack verification prevents release to the browser', async () => {
+  const row = await paidAndReady();
+  const pack = await db('print_sales_assets').where({ order_id: row.id, kind: 'pack' }).first();
+  const original = storage.get.bind(storage); let reads = 0;
+  const read = jest.spyOn(storage, 'get').mockImplementation(async key => {
+    if (key === pack.storage_key && ++reads === 2)
+      await require('../../src/services/invoiceService').cancelInvoice(row.invoice_id, admin.id);
+    return original(key);
+  });
+  try { await expect(download(row.id, admin, 'pack')).rejects.toThrow('fully settled'); }
+  finally { read.mockRestore(); }
+});
 const submitted = async () => {
   const row = await paidAndReady();
   await fulfilment.action(row.id, admin, { action: 'review', artworkVersion: row.artwork_version });
@@ -532,13 +552,13 @@ async function newAdmin(extra = {}) {
 test('a Storno and reissue moves fulfilment to the paid replacement', async () => {
   const row = await paidAndReady();
   await invoices().cancelInvoice(row.invoice_id, admin.id);
-  await expect(fulfilment.download(row.id, admin, 'sheet')).rejects.toThrow('fully settled');
+  await expect(download(row.id, admin, 'sheet')).rejects.toThrow('fully settled');
   const reissued = await invoices().reissueInvoice(row.invoice_id, admin.id);
   const replacement = await db('invoices').where({ replaces_invoice_id: row.invoice_id }).first();
   expect(replacement?.id).toBeDefined(); expect(reissued).toBeDefined();
-  await expect(fulfilment.download(row.id, admin, 'sheet')).rejects.toThrow('fully settled');
+  await expect(download(row.id, admin, 'sheet')).rejects.toThrow('fully settled');
   await invoices().markPaid(replacement.id, { amountMinor: Number(replacement.total_amount_minor), paymentMethod: 'bank_transfer' }, admin.id);
-  expect((await fulfilment.download(row.id, admin, 'sheet')).length).toBeGreaterThan(0);
+  expect((await download(row.id, admin, 'sheet')).length).toBeGreaterThan(0);
 });
 test('an order at the lab whose invoice was cancelled can be closed, which releases customer erasure', async () => {
   const row = await submitted(), { eraseCustomer } = require('../../src/services/printSales/fulfilment');

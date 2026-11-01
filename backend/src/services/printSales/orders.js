@@ -68,8 +68,9 @@ function createService({ db, storage, sharp }) {
   async function asset(orderId, kind, bytes, claim = null, extension = 'bin') {
     const id = crypto.randomUUID(), key = `.print-sales/${orderId}/${id}.${extension}`;
     const contentType = { jpg: 'image/jpeg', png: 'image/png', tif: 'image/tiff', pdf: 'application/pdf', zip: 'application/zip' }[extension] || 'application/octet-stream';
-    await storage.put(key, bytes, { contentType, cacheControl: 'private, no-store' });
-    const row = { id, order_id: orderId, storage_key: key, sha256: V.hash(bytes), size: bytes.length, kind, claim, created_at: now() };
+    const identity = await require('./files').upload(storage, key, bytes, 80 * 1024 * 1024,
+      { contentType, cacheControl: 'private, no-store' });
+    const row = { id, order_id: orderId, storage_key: key, ...identity, kind, claim, created_at: now() };
     try { await db('print_sales_assets').insert(row); }
     catch (error) { await storage.delete(key).catch(() => {}); throw error; }
     return row;

@@ -147,13 +147,22 @@ supplier-specific mirror/wrap operation.
 
 The supplier ZIP contains numbered `.jpg`, `.png` or `.tif` files as configured,
 a version-two manifest mapping each file to its frozen source/profile/crop/quantity
-and invoice position, and a private
-studio PDF with cropped thumbnails, supplier instructions and delivery/checklist
-details. The manifest retains the frozen delivery selection and full production
+and invoice position. A separate private studio PDF provides cropped
+thumbnails, supplier instructions and delivery/checklist details. The manifest retains the frozen delivery selection and full production
 profile. Manual submission and dispatch still apply to the whole order; supplier
 labels do not implement separate shipments or API routing. A receipt is
 not the order sheet. The sheet names the buyer and the retail total, so it is a
-separate download and is not in the supplier pack. Every manual release re-verifies file SHA-256 identities.
+separate download and is not in the supplier pack. Every manual release re-verifies file SHA-256 identities. The sheet uses the invoice theme's
+uploaded font when configured, otherwise the bundled Latin/Greek/Cyrillic font.
+Configure a document font covering any other scripts used in delivery details.
+
+Artwork is stored as each image finishes. The ZIP streams from those verified
+objects instead of keeping the complete order and archive in memory. Admin file
+downloads use the browser's download handling. Before release, the server checks
+the file into a private temporary copy and rechecks the current order/payment;
+correction or cancellation during preparation stops release. Allow temporary
+space for a complete supplier pack; at most two downloads run per backend process.
+Temporary copies are removed after success, refusal or client disconnection.
 
 Current bounds are 20 photo items, 1–100 copies each, 50 MiB per source, 200 MiB
 of captured originals per quotation, two simultaneous captures globally and two
