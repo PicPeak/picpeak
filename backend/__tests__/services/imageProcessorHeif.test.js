@@ -55,6 +55,7 @@ describe('HEVC HEIC decoding', () => {
     const [command, args, options] = run.mock.calls[0];
     expect(command).toBe('ffmpeg');
     expect(args).toEqual(expect.arrayContaining(['-protocol_whitelist', 'file,pipe', '-format_whitelist', '-frames:v']));
+    expect(args.slice(args.indexOf('-c:v'), args.indexOf('-i'))).toEqual(['-c:v', 'hevc']);
     expect(options).toMatchObject({ memoryBytes: expect.any(Number), wallMs: expect.any(Number), fileBytes: expect.any(Number) });
     // One decoder per tile: the default thread budget ends a 12 MP photo.
     expect(args[args.indexOf('-threads') + 1]).toBe('1');
@@ -83,6 +84,19 @@ describe('HEVC HEIC decoding', () => {
     expect((await sharp(proc.path).metadata()).xmp).toBeDefined();
     expect((await sharp(proc.path).metadata()).xmp.toString()).not.toMatch(/tiff:Orientation(="|>)[2-8]/);
     await proc.cleanup();
+  });
+
+  it.each([
+    ['a single tile', 10, 8],
+    ['a larger video track', 128, 96],
+  ])('refuses %s in place of the photo', async (_label, width, height) => {
+    const seen = [];
+    run.mockImplementation(async (_command, args) => {
+      seen.push(path.dirname(args[args.length - 1]));
+      await fs.writeFile(args[args.length - 1], await sharp({ create: { width, height, channels: 3, background: '#333' } }).jpeg().toBuffer());
+    });
+    await expect(withProcessableImage(FIXTURE, 'IMG_1.heic')).rejects.toThrow(/ffmpeg 8\.1/);
+    await expect(fs.stat(seen[0])).rejects.toThrow();
   });
 
   it('removes the temp file when ffmpeg fails', async () => {

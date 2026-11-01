@@ -48,7 +48,8 @@ function isRawFilename(name) {
 }
 
 const derivativeSourceFields = ['event_id', 'path', 'filename', 'external_relpath', 'source_origin', 'processing_attempt_id'];
-const boundedDerivative = photo => isVideoPhoto(photo) || isRawFilename(photo.filename || photo.external_relpath || photo.path || '');
+const slowDecode = name => isRawFilename(name) || isHeifFilename(name);
+const boundedDerivative = photo => isVideoPhoto(photo) || slowDecode(photo.filename || photo.external_relpath || photo.path || '');
 const derivativeCacheId = photo => crypto.createHash('sha256')
   .update(JSON.stringify(derivativeSourceFields.map(field => photo[field] ?? null))).digest('hex').slice(0, 24);
 function cacheBasename(photo, name) {
@@ -242,6 +243,19 @@ function withSourceMetadata(jpeg, { exif, xmp, icc }) {
 }
 
 /**
+ * ffmpeg before 8.1 hands back one tile of a grid with no error, and a file can
+ * carry a video track that ffmpeg prefers to the photo sharp read. Either would
+ * pass as the photo. The tolerance is for the crop a HEIC can apply to its grid.
+ */
+function assertDecodedWhole(decoded, source) {
+  const longEdge = Math.max(decoded.width, decoded.height);
+  const expected = Math.max(source.width, source.height);
+  if (Math.abs(longEdge - expected) > expected * 0.1) {
+    throw new Error(`ffmpeg decoded ${decoded.width}x${decoded.height} from a ${source.width}x${source.height} HEIC; a tiled photo needs ffmpeg 8.1 or newer`);
+  }
+}
+
+/**
  * Decode a HEVC HEIC to a temp .jpg. ffmpeg already ships for video, and it
  * assembles an iPhone's tile grid and applies the stored rotation, so the
  * result is upright with no orientation left to carry. Throws if the file
@@ -256,13 +270,14 @@ async function decodeHevcHeif(localPath, sourceName, metadata) {
     const cleanup = () => fsp.rm(outDir, { recursive: true, force: true }).catch(() => {});
     try {
       await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
-        ...mediaProcesses.inputOptions(format, 1), '-i', snapshot,
+        ...mediaProcesses.inputOptions(format, 1), '-c:v', 'hevc', '-i', snapshot,
         '-frames:v', '1', '-an', '-sn', '-dn', '-pix_fmt', 'yuvj420p', '-q:v', '2',
         '-threads', '1', outPath], {
         memoryBytes: policy.nativeBytes, wallMs: policy.thumbnailMs,
         cpuSeconds: Math.ceil(policy.thumbnailMs / 1000), fileBytes: HEIF_DECODE_MAX_BYTES,
         threadLimit: HEIF_DECODE_THREADS,
       });
+      assertDecodedWhole(await sharp(outPath).metadata(), metadata);
       await fsp.writeFile(outPath, withSourceMetadata(await fsp.readFile(outPath), metadata));
       return { path: outPath, cleanup };
     } catch (error) {
@@ -313,6 +328,16 @@ async function heifStandIn(input) {
   } catch (error) {
     await removeDir();
     throw error;
+  }
+}
+
+/** Render from a reference photo, in place, through whatever makes it readable. */
+async function renderExternal(localPath, sourceName, render) {
+  const proc = await withProcessableImage(localPath, sourceName);
+  try {
+    return await render(proc.path);
+  } finally {
+    await proc.cleanup();
   }
 }
 
@@ -1231,11 +1256,11 @@ async function regenerateHeroImage(photo, anchor) {
       return null;
     }
     const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
-    newHeroPath = await generateHeroImage(localPath, {
+    newHeroPath = await renderExternal(localPath, sourceBasename, source => generateHeroImage(source, {
       regenerate: true,
       outputBasename: derivativeBasename(`ext${photo.id}_${sourceBasename}`),
       anchor: heroAnchor,
-    });
+    }));
     if (newHeroPath) {
       await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor });
       await dropSupersededHero(photo, newHeroPath);
@@ -1720,9 +1745,10 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
   try {
     if (isExternal) {
       const localPath = resolvePhotoFilePath(event, photo);
-      return await generatePreviewImage(localPath, {
+      const sourceName = photo.external_relpath || photo.filename;
+      return await renderExternal(localPath, sourceName, source => generatePreviewImage(source, {
         regenerate: true, outputBasename, longEdge: width, interactive: true,
-      });
+      }));
     }
     const sourceKey = resolvePhotoStorageKey(event, photo);
     if (!sourceKey) return null;
@@ -1795,7 +1821,7 @@ async function regeneratePreviewImage(photo) {
     const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
     const outputBasename = derivativeBasename(`ext${photo.id}_${sourceBasename}`);
     logger.info(`Ensuring preview for external photo ${photo.id} from ${localPath}`);
-    newPreviewPath = await generatePreviewImage(localPath, { regenerate: true, outputBasename });
+    newPreviewPath = await renderExternal(localPath, sourceBasename, source => generatePreviewImage(source, { regenerate: true, outputBasename }));
   } else {
     let sourceKey;
     try {
