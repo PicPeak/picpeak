@@ -51,6 +51,7 @@ const REPORTABLE_STATUSES = ['sent', 'paid', 'overdue', 'pending_delivery', 'can
 
 // D.2 — `ensureInt` consolidated into utils/numericHelpers.
 const { ensureInt } = require('../utils/numericHelpers');
+const { toTimestamp } = require('../utils/dateNormalize');
 const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
 const logger = require('../utils/logger');
 
@@ -161,6 +162,16 @@ async function loadSkontoMap(invoiceIds) {
   return map;
 }
 
+// Chronological order for report and journal rows. On PostgreSQL `date` is a Date, and
+// String(Date) starts with the weekday name, so a string compare sorted the
+// PDF and CSV exports Fri, Mon, Thu (issue 2335). On SQLite it is text or
+// epoch ms; toTimestamp reads every shape. A row without a date sorts first.
+function byDate(a, b) {
+  const ta = toTimestamp(a.date);
+  const tb = toTimestamp(b.date);
+  return ((Number.isNaN(ta) ? -Infinity : ta) - (Number.isNaN(tb) ? -Infinity : tb)) || 0;
+}
+
 /**
  * Cost side of the Milchbüchlein view (Einnahmen-Ausgaben-Rechnung).
  *
@@ -207,7 +218,11 @@ async function loadCosts({ from, to, cur }) {
   // (no SQL date() function) so it's valid on both Postgres and SQLite — the
   // mocked unit tests can't catch a PG-only function error. invoice_date is a
   // DATE, created_at a TIMESTAMP; both compare correctly against ISO literals.
-  const toEnd = `${to} 23:59:59.999`;
+  // The bound is exclusive: 24:00 of the `to` day, with no zone. On SQLite,
+  // where created_at is text, every shape of the last day sorts below it
+  // ('YYYY-MM-DD HH:MM:SS', and ISO up to '…T23:59:59.999Z'); PostgreSQL
+  // reads 24:00 as the next midnight in the session time zone.
+  const beforeEnd = `${to}T24:00:00`;
 
   const push = (r) => {
     rows.push(r);
@@ -228,7 +243,7 @@ async function loadCosts({ from, to, cur }) {
         qb.whereBetween('inbound_documents.invoice_date', [from, to])
           .orWhere((q2) => q2.whereNull('inbound_documents.invoice_date')
             .andWhere('inbound_documents.created_at', '>=', from)
-            .andWhere('inbound_documents.created_at', '<=', toEnd));
+            .andWhere('inbound_documents.created_at', '<', beforeEnd));
       })
       // Currency match, but INCLUDE rows with no currency set — captured
       // invoices (email/upload) often have a null currency; treat them as the
@@ -282,7 +297,7 @@ async function loadCosts({ from, to, cur }) {
     const isChf = cur === 'CHF';
     const q = db('expenses')
       .leftJoin('events', 'expenses.event_id', 'events.id')
-      .whereRaw('expenses.created_at >= ? AND expenses.created_at <= ?', [from, toEnd])
+      .whereRaw('expenses.created_at >= ? AND expenses.created_at < ?', [from, beforeEnd])
       .whereNot('expenses.status', 'declined')
       .whereNotIn('expenses.disposition', ['duplikat', 'abgelehnt']);
     // CHF report includes every expense (all carry a CHF base). A
@@ -335,7 +350,7 @@ async function loadCosts({ from, to, cur }) {
   }
 
   // Stable chronological order across both sources.
-  rows.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  rows.sort(byDate);
 
   return { rows, totalNet, totalVat, totalGross, reclaimableVat };
 }
@@ -575,7 +590,7 @@ async function getTaxReport({ from, to, currency, includeCosts = true } = {}) {
         totalMinor: -Math.abs(c.totalMinor),
       })),
     ];
-    ledger.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    ledger.sort(byDate);
 
     return {
       rows,
@@ -1123,5 +1138,5 @@ module.exports = {
   renderTaxReportPdf,
   renderTaxReportCsv,
   // Exposed for unit tests.
-  _internal: { grossUpLateFee, computeReportedAmounts, buildCustomerLabel, formatVatRate, loadCosts, scopeLedger, normalizeScope },
+  _internal: { grossUpLateFee, computeReportedAmounts, buildCustomerLabel, formatVatRate, loadCosts, scopeLedger, normalizeScope, byDate },
 };

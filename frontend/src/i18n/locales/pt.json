@@ -1680,7 +1680,11 @@
       "statusActive": "Ativo",
       "confirmRevoke": "Revogar este token? Esta ação é irreversível.",
       "revoke": "Revogar",
-      "empty": "Ainda sem tokens. Gere um acima para começar."
+      "empty": "Ainda sem tokens. Gere um acima para começar.",
+      "galleryPasswordScopes": "Senhas das galerias",
+      "galleryPasswordScopesWarning": "Estes scopes revelam senhas de galerias. Não fazem parte de admin: marque-os apenas num token que precise deles. Cada uso é registado em seu nome.",
+      "scopeGalleryPasswordsRead": "Mostra a senha guardada de uma galeria. Só funciona enquanto \"Manter senhas das galerias recuperáveis\" estiver ativado.",
+      "scopeGalleryPasswordsReset": "Redefine a senha de uma galeria e pode enviar a nova ao cliente por e-mail. Os convidados têm de iniciar sessão novamente."
     },
     "webhooks": {
       "title": "Webhooks",
@@ -1824,6 +1828,24 @@
       "running": "A calcular marcadores...",
       "noneToFill": "Todas as fotos já têm marcador",
       "button": "Calcular marcadores"
+    },
+    "contentHashBackfill": {
+      "title": "Hashes de conteúdo",
+      "description": "Calcula o hash de conteúdo usado pela detecção de duplicados, para fotos e vídeos importados pela pasta monitorada, por mídia externa ou pelo S3, e para os adicionados antes de os hashes existirem. Os arquivos são lidos um de cada vez; você pode pausar a qualquer momento e iniciar de novo depois para continuar de onde parou. Originais que não podem ser lidos são ignorados e contados. Fotos novas recebem o hash automaticamente; vídeos novos o recebem aqui.",
+      "ioWarning": "Isso lê uma vez cada original sem hash: espere carga de E/S em um NAS e tráfego de saída no S3.",
+      "total": "Fotos e vídeos",
+      "hashed": "Com hash",
+      "pending": "Ainda sem hash",
+      "unreadable": "Ilegíveis",
+      "result": "Última execução: {{hashed}} calculados, {{failed}} originais ilegíveis",
+      "resultPaused": "Pausado: {{hashed}} calculados, {{failed}} originais ilegíveis até agora",
+      "running": "Lendo originais...",
+      "pause": "Pausar",
+      "pausing": "Pausando após o arquivo atual...",
+      "resume": "Retomar",
+      "button": "Calcular hashes",
+      "noneToHash": "Todos os originais têm hash",
+      "retryUnreadable": "Tentar ilegíveis novamente ({{count}})"
     },
     "health": {
       "title": "Saúde",

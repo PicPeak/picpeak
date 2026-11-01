@@ -3107,7 +3107,11 @@
       "empty": "No tokens yet. Generate one above to get started.",
       "preview": "Preview",
       "revokeAction": "Revoke token",
-      "loadFailed": "Could not load the API tokens"
+      "loadFailed": "Could not load the API tokens",
+      "galleryPasswordScopes": "Gallery passwords",
+      "galleryPasswordScopesWarning": "These scopes hand out gallery passwords. They are not part of admin: tick them only on a token that needs them. Every use is logged under your name.",
+      "scopeGalleryPasswordsRead": "Reveals a gallery's saved password. Only works while \"Keep gallery passwords recoverable\" is on.",
+      "scopeGalleryPasswordsReset": "Resets a gallery's password and can mail the new one to the client. Guests must sign in again."
     },
     "webhooks": {
       "title": "Webhooks",
@@ -3677,6 +3681,24 @@
       "running": "Computing placeholders...",
       "noneToFill": "All photos already have a placeholder",
       "button": "Compute Placeholders"
+    },
+    "contentHashBackfill": {
+      "title": "Content Hashes",
+      "description": "Compute the content hash duplicate detection matches on, for photos and videos imported through the watch folder, external media or S3, and for those added before hashes existed. Files are read one at a time; pause at any point and start again later to continue where it stopped. Originals that cannot be read are skipped and counted. New photos get their hash automatically; new videos get theirs here.",
+      "ioWarning": "This reads every original without a hash once: expect disk I/O on a NAS and egress traffic on S3.",
+      "total": "Photos and Videos",
+      "hashed": "Hashed",
+      "pending": "Not Hashed Yet",
+      "unreadable": "Unreadable",
+      "result": "Last run: {{hashed}} hashed, {{failed}} originals unreadable",
+      "resultPaused": "Paused: {{hashed}} hashed, {{failed}} originals unreadable so far",
+      "running": "Hashing originals...",
+      "pause": "Pause",
+      "pausing": "Pausing after the current file...",
+      "resume": "Resume",
+      "button": "Compute Hashes",
+      "noneToHash": "All originals are hashed",
+      "retryUnreadable": "Retry unreadable ({{count}})"
     },
     "saveBar": {
       "unsaved": "You have unsaved changes",

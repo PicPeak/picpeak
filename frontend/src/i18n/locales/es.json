@@ -1581,6 +1581,24 @@
       "noneToFill": "Todas las fotos ya tienen marcador",
       "button": "Calcular marcadores"
     },
+    "contentHashBackfill": {
+      "title": "Hashes de contenido",
+      "description": "Calcula el hash de contenido con el que la detección de duplicados compara, para fotos y vídeos importados desde la carpeta vigilada, medios externos o S3, y para los añadidos antes de que existieran los hashes. Los archivos se leen de uno en uno; puedes pausar en cualquier momento y volver a iniciar más tarde para continuar donde se detuvo. Los originales que no se pueden leer se omiten y se cuentan. Las fotos nuevas reciben su hash automáticamente; los vídeos nuevos lo reciben aquí.",
+      "ioWarning": "Esto lee una vez cada original sin hash: espera carga de E/S en un NAS y tráfico de salida en S3.",
+      "total": "Fotos y vídeos",
+      "hashed": "Con hash",
+      "pending": "Aún sin hash",
+      "unreadable": "Ilegibles",
+      "result": "Última ejecución: {{hashed}} calculados, {{failed}} originales ilegibles",
+      "resultPaused": "En pausa: {{hashed}} calculados, {{failed}} originales ilegibles hasta ahora",
+      "running": "Leyendo originales...",
+      "pause": "Pausar",
+      "pausing": "Pausando tras el archivo actual...",
+      "resume": "Reanudar",
+      "button": "Calcular hashes",
+      "noneToHash": "Todos los originales tienen hash",
+      "retryUnreadable": "Reintentar ilegibles ({{count}})"
+    },
     "groups": {
       "people": "Personas y acceso"
     },
@@ -1656,6 +1674,12 @@
         "sso_account": "Tu cuenta inicia sesión mediante el inicio de sesión único, así que no puede usar llaves de acceso.",
         "unsupported": "Este navegador no admite llaves de acceso."
       }
+    },
+    "apiTokens": {
+      "galleryPasswordScopes": "Contraseñas de galería",
+      "galleryPasswordScopesWarning": "Estos scopes entregan contraseñas de galería. No forman parte de admin: márcalos solo en un token que los necesite. Cada uso queda registrado a tu nombre.",
+      "scopeGalleryPasswordsRead": "Muestra la contraseña guardada de una galería. Solo funciona mientras «Guardar contraseñas de galería recuperables» esté activado.",
+      "scopeGalleryPasswordsReset": "Restablece la contraseña de una galería y puede enviar la nueva al cliente por correo. Los invitados deben volver a iniciar sesión."
     }
   },
   "analytics": {

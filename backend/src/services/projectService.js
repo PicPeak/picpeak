@@ -1408,6 +1408,14 @@ async function getProjectOverview(id, perms = {}, admin = null) {
 
   out.stage = deriveStages({ status: project.status, flow: project.flow, skippedStages: project.skippedStages, ...out }, perms);
 
+  // `date` columns leave as bare days, as on every other document payload
+  // (issue 2333): the pg Date would reach the browser as UTC midnight, a day
+  // early west of UTC, and sort apart from the same row on SQLite.
+  for (const row of [...out.quotes, ...out.contracts, ...out.invoices]) {
+    for (const col of ['issue_date', 'valid_until', 'due_date']) if (col in row) row[col] = toDateOnly(row[col]);
+  }
+  for (const milestone of milestones) milestone.date = toDateOnly(milestone.date);
+
   return out;
 }
 

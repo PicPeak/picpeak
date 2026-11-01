@@ -2462,7 +2462,8 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       const checked = { files: contentFiles };
       await validateUploadedFiles(checked, res, () => {});
       if (checked.files.length === 0) {
-        contentError = `Invalid image file: ${mergedFile.filename}`;
+        const [rejected] = checked.invalidFiles || [];
+        contentError = rejected?.code === require('../services/imageResourcePolicy').LIBRARY_UNAVAILABLE ? rejected.error : `Invalid image file: ${mergedFile.filename}`;
       }
     }
     if (contentError) {

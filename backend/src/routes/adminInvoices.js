@@ -41,6 +41,7 @@ const { db } = require('../database/db');
 const { canLinkCrmToEvent, ownsProject } = require('../middleware/ownership');
 const { ensureEventMatchesCustomer } = require('../services/invoice/helpers');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { toDateOnly } = require('../utils/dateOnly');
 
 const router = express.Router();
 // Re-bill proof endpoints (#866) are behind the incoming-invoices flag.
@@ -141,8 +142,8 @@ function transformInvoice(i) {
     projectId: i.project_id ?? null,
     language: i.language,
     currency: i.currency,
-    issueDate: i.issue_date,
-    dueDate: i.due_date,
+    issueDate: toDateOnly(i.issue_date),
+    dueDate: toDateOnly(i.due_date),
     installmentIndex: i.installment_index,
     installmentTotal: i.installment_total,
     installmentLabel: i.installment_label,
@@ -185,8 +186,8 @@ function transformInvoice(i) {
     // monthlyPeriodStart/End drive the period banner on the customer
     // detail page and (later) the PDF header.
     isMonthlyDraft: i.is_monthly_draft === true || i.is_monthly_draft === 1,
-    monthlyPeriodStart: i.monthly_period_start || null,
-    monthlyPeriodEnd: i.monthly_period_end || null,
+    monthlyPeriodStart: toDateOnly(i.monthly_period_start),
+    monthlyPeriodEnd: toDateOnly(i.monthly_period_end),
     // Storno wiring (migration 114). The four FK columns drive the
     // admin UI's banners + action gating:
     //  - kind: 'invoice' | 'storno' — defaults to 'invoice' for rows
@@ -205,7 +206,7 @@ function transformInvoice(i) {
     // these, the list page shows event_name as a column, and email
     // / tax-report rendering reads them in preference to the FK.
     eventName: i.event_name || null,
-    eventDate: i.event_date || null,
+    eventDate: toDateOnly(i.event_date),
     eventTimeStart: i.event_time_start || null,
     eventTimeEnd: i.event_time_end || null,
     // `isImported` surfaces the historical-PDF flag to the admin UI

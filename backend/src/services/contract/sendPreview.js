@@ -16,6 +16,7 @@ const { AppError } = require('../../utils/errors');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { unknownPlaceholders, CONTRACT_PLACEHOLDERS } = require('../../utils/placeholders');
 const { canonicalSha256 } = require('../../utils/canonicalJson');
+const { toDateOnly } = require('../../utils/dateOnly');
 
 const problem = (code, severity, message, extra = {}) => ({ code, severity, message, ...extra });
 
@@ -122,7 +123,7 @@ async function buildSendPreview(contractId) {
   const lockVersion = contract.lock_version == null ? 1 : Number(contract.lock_version);
   const recipient = require('./signers').recipientFields(customer);
   const fingerprint = {
-    ...review, lockVersion, issueDate: contract.issue_date || null, validUntil: contract.valid_until || null, recipient,
+    ...review, lockVersion, issueDate: toDateOnly(contract.issue_date), validUntil: toDateOnly(contract.valid_until), recipient,
     // The issuer, the settings and the PDF theme the send renders with.
     inputs: await require('./signers').readSendInputsSha256(db, contract, { withSigners: false }),
   };

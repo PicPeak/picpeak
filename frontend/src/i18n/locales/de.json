@@ -3698,7 +3698,11 @@
       "empty": "Noch keine Tokens. Generieren Sie oben einen, um zu beginnen.",
       "preview": "Vorschau",
       "revokeAction": "Token widerrufen",
-      "loadFailed": "Die API-Tokens konnten nicht geladen werden"
+      "loadFailed": "Die API-Tokens konnten nicht geladen werden",
+      "galleryPasswordScopes": "Galerie-Passwörter",
+      "galleryPasswordScopesWarning": "Diese Scopes geben Galerie-Passwörter heraus. Sie sind nicht in admin enthalten: Setzen Sie sie nur bei einem Token, das sie braucht. Jede Nutzung wird unter Ihrem Namen protokolliert.",
+      "scopeGalleryPasswordsRead": "Zeigt das gespeicherte Passwort einer Galerie. Funktioniert nur, solange „Galerie-Passwörter wiederherstellbar speichern“ aktiv ist.",
+      "scopeGalleryPasswordsReset": "Setzt das Passwort einer Galerie zurück und kann das neue an den Kunden mailen. Gäste müssen sich neu anmelden."
     },
     "webhooks": {
       "title": "Webhooks",
@@ -4268,6 +4272,24 @@
       "running": "Platzhalter werden berechnet...",
       "noneToFill": "Alle Fotos haben bereits einen Platzhalter",
       "button": "Platzhalter berechnen"
+    },
+    "contentHashBackfill": {
+      "title": "Inhalts-Hashes",
+      "description": "Berechnet den Inhalts-Hash, über den die Duplikaterkennung vergleicht, für Fotos und Videos aus dem überwachten Ordner, aus externen Medien oder aus S3 sowie für alle, die vor den Hashes hinzugefügt wurden. Die Dateien werden einzeln gelesen; Sie können jederzeit pausieren und später an derselben Stelle weitermachen. Originale, die sich nicht lesen lassen, werden übersprungen und gezählt. Neue Fotos erhalten ihren Hash automatisch; neue Videos bekommen ihn hier.",
+      "ioWarning": "Dabei wird jedes Original ohne Hash einmal gelesen: Rechnen Sie mit Last auf dem NAS und mit ausgehendem Datenverkehr bei S3.",
+      "total": "Fotos und Videos",
+      "hashed": "Mit Hash",
+      "pending": "Noch ohne Hash",
+      "unreadable": "Nicht lesbar",
+      "result": "Letzter Lauf: {{hashed}} berechnet, {{failed}} Originale nicht lesbar",
+      "resultPaused": "Pausiert: bisher {{hashed}} berechnet, {{failed}} Originale nicht lesbar",
+      "running": "Originale werden gelesen...",
+      "pause": "Pausieren",
+      "pausing": "Pausiert nach der aktuellen Datei...",
+      "resume": "Fortsetzen",
+      "button": "Hashes berechnen",
+      "noneToHash": "Alle Originale haben einen Hash",
+      "retryUnreadable": "Nicht lesbare erneut versuchen ({{count}})"
     },
     "saveBar": {
       "unsaved": "Du hast ungespeicherte Änderungen",

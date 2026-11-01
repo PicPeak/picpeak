@@ -12,6 +12,7 @@ const { db } = require('../database/db');
 const { getAppSetting } = require('../utils/appSettings');
 const { isTruthyFlag, isUnselectedOptional, parsePromotionSnapshot } = require('../utils/lineItemTotals');
 const { toTimestamp } = require('../utils/dateNormalize');
+const { toDateOnly } = require('../utils/dateOnly');
 
 // Normalise a Settings → Branding logo value (absolute URL, /-rooted path,
 // or bare `uploads/...` filename) into a URL the public page can load.
@@ -66,8 +67,8 @@ function publicContractView(contract, inclusions, customer, profile, locale, bra
     contractNumber: contract.contract_number,
     status: contract.status,
     language: contract.language,
-    issueDate: contract.issue_date,
-    validUntil: contract.valid_until,
+    issueDate: toDateOnly(contract.issue_date),
+    validUntil: toDateOnly(contract.valid_until),
     title: contract.title,
     introText: contract.intro_text,
     outroText: contract.outro_text,
@@ -121,10 +122,10 @@ function publicQuoteView(quote, lineItems, customer, profile, tosRequired, tosTe
     status: quote.status,
     language: quote.language,
     currency: quote.currency,
-    issueDate: quote.issue_date,
-    validUntil: quote.valid_until,
+    issueDate: toDateOnly(quote.issue_date),
+    validUntil: toDateOnly(quote.valid_until),
     eventName: quote.event_name,
-    eventDate: quote.event_date,
+    eventDate: toDateOnly(quote.event_date),
     eventTimeStart: quote.event_time_start,
     eventTimeEnd: quote.event_time_end,
     // The row keeps the raw text; {{placeholders}} resolve wherever it is
