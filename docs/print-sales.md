@@ -25,7 +25,7 @@ with native invoices; and background preparation with reviewed manual fulfilment
    RGB delivery profile, background colour and allowed crop/whole-photo placement
    choices. Optional
    free-text supplier labels, production codes and multiline instructions carry
-   into the frozen pack and studio sheet. There is no lab directory, preferred
+   into the frozen pack and the studio's private sheet. There is no lab directory, preferred
    supplier or supplier-specific preset. Verify the profile against the chosen
    supplier's specification, then enable the variant and use the standard
    settings save bar. Display dimensions do not determine artwork size.
@@ -59,9 +59,7 @@ including separate metric and inch photographic sizes, squares and ISO A6–A2.
 Production helpers also copy common added-bleed and safe-inset values into the
 editable per-edge controls. Applying a production helper or changing the output
 colour profile disables the variant until it is reviewed and enabled again.
-Helpers do not create products, prices or supplier associations. Their evidence,
-exact values and limitations are recorded in the
-[market research](print-sales-market-research.md).
+Helpers do not create products, prices or supplier associations.
 
 For the manual lab setup checklist, payment/lab-account boundary and a researched
 proposal for optional studio-managed API connectors, see
@@ -97,10 +95,11 @@ changed, missing delivery details, unready/tampered files or an obsolete review
 holds fulfilment. The native invoice must be fully settled without relying on a
 success page or a user-supplied payment state. Native correction/refund accounting
 stays authoritative. To withdraw an order, correct/cancel its invoice and any
-live replacements first, then cancel the order before lab submission. Automatic
-rebinding to a reissued invoice is not implemented; agree revised selections as
-a new order rather than silently changing accepted artwork or charges. Orders
-already submitted to a lab require manual cancellation/refund resolution.
+live replacements first, then cancel the order before lab submission. Fulfilment
+follows a replacement invoice only when it carries the same lines and totals; agree
+revised selections as a new order rather than silently changing accepted artwork
+or charges. Orders already submitted to a lab require manual cancellation/refund
+resolution.
 
 ## Preparation, files and recovery
 
@@ -117,7 +116,7 @@ Its profile allowlist accepts built-in sRGB and three fixed, CC0 RGB assets:
 Adobe RGB (1998) compatible, Display P3 and ProPhoto/ROMM RGB. Arbitrary ICC paths
 and uploads remain forbidden. New non-sRGB snapshots freeze the profile SHA-256;
 the worker verifies that the prepared file embeds those exact ICC bytes before
-publication. The supplier sheet includes that identity. Each profile chooses
+publication. The studio sheet includes that identity. Each profile chooses
 one encoding:
 
 - JPEG: quality 1–100 and 4:4:4 or 4:2:0 chroma sampling (defaults 95 and 4:4:4).
@@ -139,7 +138,7 @@ supplier that explicitly accepts 8-bit ProPhoto; a 16-bit workflow is not provid
 The Adobe-compatible asset is not Adobe's proprietary file and may not satisfy
 suppliers that identify a profile by its exact description. The current raster
 pipeline can normalise through sRGB/P3 before encoding; a wider destination is
-not a guarantee of full source-gamut preservation. See the research for details.
+not a guarantee of full source-gamut preservation.
 There is no arbitrary ICC upload, CMYK conversion, soft-proof promise, canvas
 wrapping, folded-card imposition or
 album layout capability. Canvas-front/flat wall-art output must be a supported
@@ -153,7 +152,8 @@ studio PDF with cropped thumbnails, supplier instructions and delivery/checklist
 details. The manifest retains the frozen delivery selection and full production
 profile. Manual submission and dispatch still apply to the whole order; supplier
 labels do not implement separate shipments or API routing. A receipt is
-not the order sheet. Every manual release re-verifies file SHA-256 identities.
+not the order sheet. The sheet names the buyer and the retail total, so it is a
+separate download and is not in the supplier pack. Every manual release re-verifies file SHA-256 identities.
 
 Current bounds are 20 photo items, 1–100 copies each, 50 MiB per source, 200 MiB
 of captured originals per quotation, two simultaneous captures globally and two
@@ -214,10 +214,10 @@ deployment review remain necessary before opening an actual shop.
 
 ## Limits and manual recovery
 
-- **Order size.** Prepared artwork for one order is limited to 64 MB. A profile whose single file would exceed it is refused on save, and a basket expected to exceed it is refused at quotation, before anything is retained or invoiced. Lossless output is counted at raw size. JPEG is an estimate of 1 byte per pixel, so an unusually large JPEG can still fail preparation after the invoice exists; correct the invoice and close the order.
+- **Order size.** Prepared artwork for one order is limited to 64 MB. A profile whose single file would exceed it is refused on save, and a basket expected to exceed it is refused at quotation, before anything is retained or invoiced. Lossless output is counted at raw size and JPEG at 1 byte per pixel. Both are estimates, not bounds: a grainy JPEG can reach about twice that and LZW can pass raw size, so such an order can still fail preparation after the invoice exists; correct the invoice and close the order.
 - **Deleting an admin.** An admin with open print orders cannot be deleted until those orders are closed.
 - **Corrected invoices.** After a Storno and reissue, fulfilment follows the replacement invoice, which must carry the same lines and totals and be fully paid.
-- **Close order manually.** Once the original invoice is cancelled, an open order that can neither be cancelled nor dispatched (already at the lab, or reissued with different lines) is closed with a recorded reason. This also releases customer erasure.
+- **Close order manually.** Once the original invoice is cancelled, an open order that can neither be cancelled nor dispatched (already at the lab, or reissued with different lines) is closed with a recorded reason. A replacement invoice must be fully paid or cancelled first; a paid one is noted on the activity log and refunded in native billing. This also releases customer erasure.
 - **Feature switched off.** The Print sales tab hides and fulfilment actions and file downloads stop, while retention keeps running. Switch the feature back on to finish open orders; this is also needed before erasing a customer who has one. Buyers see their order history only while the gallery's shop is open.
 
 ## Installation and recovery

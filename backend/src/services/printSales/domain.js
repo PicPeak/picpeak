@@ -77,7 +77,9 @@ function geometry(source, item) {
   if (w < 1 || h < 1) fail('The crop has no image pixels');
   if (item.fit === 'contain' && (c.x !== 0 || c.y !== 0 || c.width !== 1 || c.height !== 1))
     fail('Fit mode uses the whole photograph');
-  if (item.fit === 'cover' && Math.abs(w - h * out.widthMm / out.heightMm) > 2)
+  // The crop ratio comes from a rounded preview, so the slack scales with the
+  // original. Rendering covers the artwork, so what passes is trimmed, not stretched.
+  if (item.fit === 'cover' && Math.abs(w - h * out.widthMm / out.heightMm) > Math.max(2, w * .0025))
     fail('The crop must match the production artwork ratio');
   const dpi = item.fit === 'contain'
     ? Math.max(width / out.widthMm, height / out.heightMm) * 25.4

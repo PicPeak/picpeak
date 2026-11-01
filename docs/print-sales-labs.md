@@ -1,7 +1,6 @@
 # Print labs: manual setup and optional API connections
 
-Research checked on **29 October 2026**. WHCC and Prodigi are comparison examples,
-not preferred labs or included integrations. This follows the
+No lab is preferred or integrated. This follows the
 [maintainer's supplier-neutral scope](https://github.com/PicPeak/picpeak/issues/48#issuecomment-6402523874).
 
 **Implemented:** configurable manufacturing profiles, supplier labels/codes/notes,
@@ -56,7 +55,6 @@ supplier fields and manufacturing profiles without introducing another catalogue
 3. Enter actual trim, bleed, safe area, resolution, crop/fit, file encoding and
    accepted RGB profile. Verify the template and any lab colour-correction
    setting. Generic size/bleed helpers are starting values; enable after review.
-   See [the production research](print-sales-market-research.md).
 4. Configure delivery countries/zones and retail shipping. Confirm the supplier
    can deliver each offered product there.
 5. Check synthetic crops, borders, filenames and quantities in the ZIP, manifest
@@ -122,61 +120,6 @@ exist. One lab can itself create several external orders/parcels, so the first
 API slice still needs a one-to-many external-order/shipment model. Retain existing
 accepted profiles as manual work; routing must not reinterpret accepted orders.
 
-## WHCC and Prodigi comparison
-
-### WHCC
-
-WHCC directs new integrations to its newer WHCC API. The older Editor and Order
-Submit APIs remain for existing integrations; do not mix their token/import/
-confirm examples with the new API-key flow.
-[Documentation overview](https://www.whcc.com/developer/docs/).
-
-| Topic | Current documented behaviour | Connector implication |
-|---|---|---|
-| Authentication/version | Account-bound bearer API key; separate sandbox/live hosts and keys; version header `WHCC-API-Version: 2026-10`. | Bind mode, host and key; pin the version. |
-| Products | Filter catalogue entries on `completion: "api"`; editor-only products need design completion. Build configured products and await readiness. | Map exact choices; do not advertise unsupported compound products. |
-| Artwork | Fetchable JPEG/HEIC/PNG under 100 MB, including signed URLs; caller must check resolution. | Use reviewed JPEG/PNG; refuse TIFF on this path. Keep PicPeak's resolution checks. |
-| Pricing/shipping | Calculate before submission; shipping depends on the address. Calculation does not reserve final price. International delivery can need a phone. | Recheck cost/service and required fields. PicPeak's current delivery form has no phone field. |
-| Release | Required idempotency header; asynchronous submission can produce several orders/fulfilment orders and partial failure. | Persist and reconcile every external identity. Never resubmit the whole basket to recover failed lines. |
-| Events | Signed, account-level event subscriptions need setup and enabling. | Verify raw-body HMAC; handle duplicates and split shipments. |
-
-Sources: [API reference](https://www.whcc.com/developer/docs/api/),
-[quick start](https://www.whcc.com/developer/docs/quick-start/),
-[versions](https://www.whcc.com/developer/docs/api/versioning/),
-[shipping](https://www.whcc.com/developer/docs/api/shipping/),
-[submission lifecycle](https://www.whcc.com/developer/docs/api/submission-lifecycle/),
-[events](https://www.whcc.com/developer/docs/api/event-subscriptions/).
-
-### Prodigi
-
-The [v5 reference](https://www.prodigi.com/print-api/reference/v5) loads a public
-[OpenAPI 3.1 specification](https://www.prodigi.com/print-api/reference/openapi.yml),
-labelled API version `5.0.0`. These findings are from that specification, not an
-authenticated account test.
-
-| Topic | v5 specification | Connector implication |
-|---|---|---|
-| Authentication/mode | `X-API-Key`; `sandbox_`/`live_` keys select mode on `https://api.prodigi.com/v5`. Some non-order resources share live account services. | Sandbox order tests must avoid changing shared settings, channels or saved products. |
-| Products/artwork | Order writes require catalogue SKUs and artwork URLs. Managed asset IDs and saved product-variant IDs are not resolved there. Separate upload/ingest endpoints exist. | Map SKUs/print areas explicitly; uploading artwork does not make its ID valid in an order. |
-| Quote/release | `/quotes/order` estimates costs; draft and separate submission are supported. Creation is asynchronous. | Prefer draft, validation and explicit release; acknowledgement is not completed production acceptance. |
-| Retry safety | Creation supports `Idempotency-Key`; most other operations do not act on it yet, according to the introduction. | A listed header parameter does not guarantee an operation is idempotent. Reconcile before retrying submission. |
-| Events | `/webhooks` and test ping are specified with `X-Prodigi-Signature` raw-body HMAC. Per-order `callbackUrl` uses v4 format. | Select and test one event contract rather than treating the formats as identical. |
-| Limits | 1,000 requests/hour/key with rate-limit headers and `Retry-After`. | Bound reconciliation and respect backoff. |
-
-The [FAQ](https://www.prodigi.com/faq/print-api/) describes v5 but says webhook
-subscriptions are unavailable, conflicting with the specification. The older
-[v4 reference](https://www.prodigi.com/print-api/docs/reference/) still calls v4
-current, uses separate sandbox/live hosts, JSON `idempotencyKey` and CloudEvents
-callbacks. Its paused-order visibility differs from v5. Confirm the chosen API
-version and webhook support during setup; do not combine generations. The FAQ's
-v5 launch/migration blog links returned 404 during this review.
-
-Prodigi's [pricing explanation](https://www.prodigi.com/faq/payments-and-pricing/)
-separates merchant retail sales from supplier charges. Its
-[payment timing guidance](https://support.prodigi.com/hc/en-us/articles/18964132086044-When-do-you-take-payment-for-an-order)
-ties charging to production/account billing arrangements. This is the studio's
-supplier account, not customer checkout in PicPeak.
-
 ## Studio connector setup guide
 
 After a generic harness and conforming connector exist:
@@ -211,7 +154,7 @@ After a generic harness and conforming connector exist:
    preserving accepted orders and manual fulfilment.
 3. Agree/implement the generic harness with a fake connector, conformance tests,
    scoped artwork access, explicit release and reconciliation.
-4. Publish separately maintained WHCC/Prodigi mapping examples and sandbox results
+4. Publish separately maintained lab mapping examples and sandbox results
    when there is a connector owner. Keep provider-specific code out of core.
 
 This review used public documentation only. No lab accounts, keys, orders,

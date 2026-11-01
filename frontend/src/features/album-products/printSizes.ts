@@ -1,5 +1,4 @@
 // Generic nominal sizes; production dimensions must still be verified per supplier.
-// Evidence and scope: docs/print-sales-market-research.md (29 October 2026).
 export type PrintSize = { id: string; group: 'metric' | 'imperial' | 'square' | 'paper'; label: string; width: number; height: number; unit: 'cm' | 'in' | 'mm' };
 export const printSizes: PrintSize[] = [
   ...[[9, 13], [10, 15], [13, 18], [15, 20], [20, 25], [20, 30], [30, 40], [30, 45], [40, 50], [40, 60], [50, 70]].map(([width, height]) =>

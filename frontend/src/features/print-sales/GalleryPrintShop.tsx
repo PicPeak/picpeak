@@ -135,7 +135,11 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
       const row = (await api.post<Order>(`${root}/orders/${quote.id}/accept`, { snapshotHash: quote.snapshotHash, acknowledgeSelection: approved })).data;
       orderSequence.current++;
       setOrders(rows => [row, ...rows.filter(o => o.id !== row.id)]); changeCart([]); attempt.current = undefined;
-    } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+    } catch (e) {
+      // A refused quotation stays refused, so reviewing again needs a new id.
+      if ((e as { response?: { status?: number } }).response?.status === 409) attempt.current = undefined;
+      setError(errorMessage(e));
+    } finally { setBusy(false); }
   };
   const available = !!offers?.variants.length;
   const estimates = new Map<string, number>();

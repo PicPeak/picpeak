@@ -6,6 +6,9 @@ const { AppError, ConflictError, NotFoundError } = require('../../utils/errors')
 const { formatBoolean } = require('../../utils/dbCompat');
 const now = () => new Date().toISOString();
 const log = (...args) => require('../../database/db').logActivity(...args);
+const SWEEP_SIZE = 20;
+// Rows that keep failing must not hold the sweep, so each pass resumes after the last.
+let sweepAfter = '';
 function createService({ db, storage }) {
   async function order(id, admin) {
     const row = await db('print_sales_orders').where({ id: V.uuid(id) }).first();
@@ -23,6 +26,19 @@ function createService({ db, storage }) {
       invoice = replacements.find(i => i.status !== 'cancelled') || replacements[0];
     }
     return invoice;
+  }
+  /** Every reissue descending from an invoice; a cancelled one can be reissued again, so this branches. */
+  async function replacementTree(tx, id) {
+    const found = [], seen = new Set([id]);
+    let ancestors = [id];
+    while (ancestors.length) {
+      const replacements = (await tx('invoices').whereIn('replaces_invoice_id', ancestors)).filter(i => !seen.has(i.id));
+      found.push(...replacements);
+      ancestors = replacements.map(i => i.id);
+      for (const id of ancestors) seen.add(id);
+      if (seen.size > 1000) throw new ConflictError('Invoice corrections require manual review');
+    }
+    return found;
   }
   async function settled(tx, row) {
     const invoice = row.invoice_id && await liveInvoice(tx, row.invoice_id);
@@ -61,9 +77,16 @@ function createService({ db, storage }) {
       if (current.status !== 'accepted') throw new ConflictError('Only an open order can be closed manually');
       const invoice = current.invoice_id && await tx('invoices').where({ id: current.invoice_id }).forUpdate().first();
       if (invoice?.status !== 'cancelled') throw new ConflictError('Cancel/correct the invoice in native billing first');
+      // Closing may drop a reissue with different lines, but never one the buyer
+      // is still being asked to pay. A paid one is the studio's to refund, so its
+      // state goes on the record.
+      const replacements = (await replacementTree(tx, invoice.id)).filter(i => i.status !== 'cancelled');
+      if (replacements.some(i => i.status !== 'paid' || Number(i.paid_amount_minor) < Number(i.total_amount_minor)))
+        throw new ConflictError('Settle or cancel the replacement invoice before closing this order');
       const note = V.text(input.note, 500, true);
       await tx('print_sales_orders').where({ id }).update({ status: 'resolved', render_status: 'cancelled', closed_at: now() });
-      await log('print_order_resolve', { orderId: id, note }, current.event_id, { type: 'admin', id: admin.id }, tx);
+      await log('print_order_resolve', { orderId: id, note, replacements: replacements.map(i => ({ id: i.id, status: i.status })) },
+        current.event_id, { type: 'admin', id: admin.id }, tx);
     });
     if (input.action === 'cancel') return db.transaction(async tx => {
       const current = await tx('print_sales_orders').where({ id }).forUpdate().first();
@@ -71,14 +94,8 @@ function createService({ db, storage }) {
       if (current.submitted_at) throw new ConflictError('An order already submitted to a lab needs manual resolution');
       const invoice = current.invoice_id && await tx('invoices').where({ id: current.invoice_id }).forUpdate().first();
       if (invoice && invoice.status !== 'cancelled') throw new ConflictError('Cancel/correct the invoice in native billing first');
-      let ancestors = invoice ? [invoice.id] : [], seen = new Set(ancestors);
-      while (ancestors.length) {
-        const replacements = await tx('invoices').whereIn('replaces_invoice_id', ancestors);
-        if (replacements.some(i => i.status !== 'cancelled')) throw new ConflictError('Correct the live replacement invoice before cancelling this order');
-        ancestors = replacements.map(i => i.id).filter(id => !seen.has(id));
-        for (const id of ancestors) seen.add(id);
-        if (seen.size > 1000) throw new ConflictError('Invoice corrections require manual review');
-      }
+      if (invoice && (await replacementTree(tx, invoice.id)).some(i => i.status !== 'cancelled'))
+        throw new ConflictError('Correct the live replacement invoice before cancelling this order');
       await tx('print_sales_orders').where({ id }).update({ status: 'cancelled', render_status: 'cancelled', closed_at: now(),
         ...(!current.accepted_at ? { contact: null, purge_requested: formatBoolean(true) } : {}) });
       await log('print_order_cancel', { orderId: id }, current.event_id, { type: 'admin', id: admin.id }, tx);
@@ -132,7 +149,9 @@ function createService({ db, storage }) {
     const rows = await db('print_sales_orders').whereNull('purged_at').where(q => q
       .where(w => w.whereIn('status', ['expired', 'failed']).where(x => x.where('expires_at', '<', day).orWhere('purge_requested', formatBoolean(true))))
       .orWhere(w => w.whereIn('status', ['dispatched', 'cancelled', 'resolved']).where(x => x
-        .where('closed_at', '<', old).orWhere('purge_requested', formatBoolean(true))))).limit(20);
+        .where('closed_at', '<', old).orWhere('purge_requested', formatBoolean(true)))))
+      .where('id', '>', sweepAfter).orderBy('id').limit(SWEEP_SIZE);
+    sweepAfter = rows.length === SWEEP_SIZE ? rows[rows.length - 1].id : '';
     for (const row of rows) {
       const assets = await db('print_sales_assets').where({ order_id: row.id });
       let complete = true;

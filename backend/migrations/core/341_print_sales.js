@@ -61,7 +61,8 @@ exports.down = async function (db) {
   await db.schema.dropTableIfExists('print_sales_orders');
   if (db.client.config.client === 'pg') await db.raw('DROP FUNCTION IF EXISTS print_sales_snapshot_guard()');
   await db.schema.dropTableIfExists('print_sales_settings');
-  await db.schema.alterTable('events', t => { t.dropColumn('print_sales_enabled'); t.dropColumn('print_sales_admin_id'); });
+  for (const column of ['print_sales_enabled', 'print_sales_admin_id'])
+    if (await db.schema.hasColumn('events', column)) await db.schema.alterTable('events', t => t.dropColumn(column));
   await db('feature_flags').where({ key: 'printSales' }).del();
   await db('backup_paths').where({ path: '.print-sales' }).del();
 };

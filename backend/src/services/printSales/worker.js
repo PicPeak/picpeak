@@ -8,6 +8,7 @@ const { verified } = require('./orders');
 const { MAX_ORDER_ARTWORK_BYTES } = require('./output');
 const { isTrue } = require('../../utils/galleryLifecycle');
 const work = require('../activeApplicationWork');
+const logger = require('../../utils/logger');
 const now = () => new Date().toISOString();
 const MAX_PACK_BYTES = 80 * 1024 * 1024;
 async function zip(entries) {
@@ -46,6 +47,19 @@ function sheet(row, snapshot, contact, entries) {
   pdf.end(); return done;
 }
 function createWorker({ db, storage, sharp, orders }) {
+  /** Interrupted or failed attempts leave artwork no later release can use. */
+  async function dropEarlierClaims(row) {
+    const stale = await db('print_sales_assets').where({ order_id: row.id }).whereNotNull('claim').whereNot({ claim: row.claim });
+    for (const a of stale) {
+      try {
+        await storage.delete(a.storage_key);
+        await db('print_sales_assets').where({ id: a.id }).del();
+      } catch (error) {
+        // The purge retries it; preparation must not depend on the tidy-up.
+        logger.error('Print asset cleanup failed', { orderId: row.id, assetId: a.id, error: error.message });
+      }
+    }
+  }
   async function runOne() {
     const row = await db.transaction(async tx => {
       await tx('print_sales_settings').where({ id: 1 }).forUpdate().first();
@@ -70,6 +84,7 @@ function createWorker({ db, storage, sharp, orders }) {
       .where({ id: row.id, claim: row.claim, render_status: 'running' }).update({ heartbeat: now() })).catch(() => {}); }, 15000);
     timer.unref();
     try {
+      await dropEarlierClaims(row);
       const s = parse(row.snapshot), contact = parse(row.contact), entries = []; let outputBytes = 0;
       if (V.hash(row.snapshot) !== row.snapshot_hash || !contact || V.hash(contact) !== s.contactHash)
         throw new Error('Frozen order identity changed or delivery was erased');
@@ -99,7 +114,8 @@ function createWorker({ db, storage, sharp, orders }) {
         invoiceId: row.invoice_id, shipping: s.shipping ?? null, items: s.items.map((i, n) => ({ file: entries[n].name, sha256: V.hash(entries[n].bytes),
           sourceFilename: i.source.filename, sourceSha256: i.source.sha256, quantity: i.quantity,
           crop: i.crop, fit: i.fit, profile: i.profile, invoiceLinePosition: i.linePosition })) }, null, 2));
-      const pack = await zip([...entries, { name: 'manifest.json', bytes: manifest }, { name: 'order-sheet.pdf', bytes: report }]);
+      // The sheet carries the buyer's email and retail total: it stays with the studio.
+      const pack = await zip([...entries, { name: 'manifest.json', bytes: manifest }]);
       await orders.asset(row.id, 'pack', pack, row.claim, 'zip');
       const assets = await db('print_sales_assets').where({ order_id: row.id, claim: row.claim }).orderBy('id');
       const version = V.hash(assets.map(a => ({ id: a.id, sha256: a.sha256, size: a.size })));
@@ -124,7 +140,7 @@ function start() {
       if (!await db.schema.hasTable('print_sales_orders')) return;
       await createWorker({ db, storage, sharp: require('../isolatedSharp'), orders: require('./orders').application() }).runOne();
       await work.track('print retention', () => require('./fulfilment').createService({ db, storage }).cleanup());
-    })().catch(error => require('../../utils/logger').error('Print worker failed', { error: error.message }))
+    })().catch(error => logger.error('Print worker failed', { error: error.message }))
       .finally(() => { running = null; });
   };
   timer = setInterval(tick, 10000); timer.unref();

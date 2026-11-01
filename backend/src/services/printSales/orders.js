@@ -14,6 +14,7 @@ const now = () => new Date().toISOString();
 const fingerprint = p => V.hash({ id: p.id, path: p.path, sha: p.content_sha256 || null, filename: p.original_filename });
 const MAX_SOURCE_BYTES = 50 * 1024 * 1024;
 const MAX_UNACCEPTED_SOURCE_BYTES = 4 * 1024 * 1024 * 1024;
+const MAX_CUSTOMER_UNACCEPTED_SOURCE_BYTES = 1024 * 1024 * 1024;
 
 async function read(storage, key, max = MAX_SOURCE_BYTES, options) {
   const stream = await storage.get(key, options), chunks = [];
@@ -128,6 +129,10 @@ function createService({ db, storage, sharp }) {
         throw new ConflictError('This request identifier was already used');
       if (existing.status === 'capturing') throw new ConflictError('This quotation is still being prepared');
       if (!existing.snapshot) throw new ConflictError('This quotation could not be prepared; review a new quotation');
+      // A lapsed quotation can never be accepted, so handing it back would
+      // leave the buyer reviewing the same dead row.
+      if (!existing.accepted_at && (existing.status !== 'quoted' || !(new Date(existing.expires_at).getTime() > Date.now())))
+        throw new ConflictError('The quotation expired; review a new quotation');
       return customerShape(existing);
     }
     const destination = D.delivery(input.delivery, (await P.settings(db)).countries),
@@ -148,12 +153,19 @@ function createService({ db, storage, sharp }) {
       if (await tx('print_sales_orders').where({ id }).first())
         throw new ConflictError('This quotation request is already being prepared; retry shortly');
       const studio = o => Number(o.created_by_admin_id) === Number(event.print_sales_admin_id);
+      // One basket per gallery: a changed basket replaces the quotation it
+      // came from, so reviewing again never waits for the old one to lapse.
+      await tx('print_sales_orders').where({ event_id: eventId, customer_account_id: customerId, status: 'quoted' })
+        .update({ status: 'expired', render_status: 'cancelled', contact: null, purge_requested: formatBoolean(true) });
       const pending = await tx('print_sales_orders').whereIn('status', ['capturing', 'quoted']).where('expires_at', '>', now());
       const open = await tx('print_sales_orders').where({ status: 'accepted' }).select('customer_account_id', 'created_by_admin_id');
       // Failed and lapsed quotations keep their sources until the next sweep.
-      const retained = await tx('print_sales_assets as a').join('print_sales_orders as o', 'o.id', 'a.order_id')
-        .whereNull('o.accepted_at').whereNull('o.purged_at').sum({ bytes: 'a.size' }).first();
-      if (Number(retained?.bytes || 0) >= MAX_UNACCEPTED_SOURCE_BYTES)
+      const retainedBytes = () => tx('print_sales_assets as a').join('print_sales_orders as o', 'o.id', 'a.order_id')
+        .whereNull('o.accepted_at').whereNull('o.purged_at');
+      const retained = await retainedBytes().sum({ bytes: 'a.size' }).first();
+      const ownRetained = await retainedBytes().where('o.customer_account_id', customerId).sum({ bytes: 'a.size' }).first();
+      if (Number(retained?.bytes || 0) >= MAX_UNACCEPTED_SOURCE_BYTES ||
+          Number(ownRetained?.bytes || 0) >= MAX_CUSTOMER_UNACCEPTED_SOURCE_BYTES)
         throw new ConflictError('Too many print quotations are waiting; try again later');
       if (open.filter(studio).length >= 100 || open.filter(o => o.customer_account_id === customerId).length >= 10)
         throw new ConflictError('Resolve existing studio orders before placing another order');
@@ -200,7 +212,7 @@ function createService({ db, storage, sharp }) {
       if (!changed) throw new ConflictError('The quotation expired during preparation');
       return customerShape(await owned(id, customerId, eventId));
     } catch (error) {
-      await db('print_sales_orders').where({ id, status: 'capturing' }).update({ status: 'failed', error: 'Source preparation failed' });
+      await db('print_sales_orders').where({ id, status: 'capturing' }).update({ status: 'failed', error: 'Source preparation failed', purge_requested: formatBoolean(true) });
       // Erased or cancelled mid-capture: this request stored sources after the
       // purge ran, and a purged order is never swept again.
       await db('print_sales_orders').where({ id }).whereNotNull('purged_at').update({ purged_at: null, purge_requested: formatBoolean(true) });

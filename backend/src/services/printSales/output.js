@@ -35,9 +35,10 @@ function output(input) {
 /** The most a single order's artwork may add up to; the worker refuses anything above it. */
 const MAX_ORDER_ARTWORK_BYTES = 64 * 1024 * 1024;
 /**
- * Expected encoded size. Refusing before an invoice exists needs a number up
- * front: raw 8-bit RGB for lossless output, a generous figure for a JPEG, whose
- * worst case is far above any photograph.
+ * Expected encoded size, not a bound: refusing before an invoice exists needs a
+ * number up front. Raw 8-bit RGB for lossless output and 1 byte per pixel for a
+ * JPEG cover ordinary photographs, but heavy grain can double a q95 4:4:4 JPEG
+ * and LZW can pass raw, so the worker may still refuse after the invoice exists.
  */
 function artworkBytes(artwork, spec) {
   return artwork.widthPx * artwork.heightPx * (spec.format === 'jpeg' ? 1 : 3);

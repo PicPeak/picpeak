@@ -61,9 +61,7 @@ It accepts RGB JPEG, PNG or 8-bit TIFF requirements, with embedded `srgb`,
 snapshots include a service-computed `profileSha256` identifying a fixed bundled
 CC0 profile; passing a different hash is refused. These are delivery encodings,
 not a promise of 16-bit editing, full source-gamut preservation, soft proofing or
-universal supplier acceptance. See the
-[market research](print-sales-market-research.md) for the surveyed requirements
-and the Adobe-compatible/8-bit ProPhoto limitations. JPEG has configurable
+universal supplier acceptance. JPEG has configurable
 quality (1–100, default 95) and chroma sampling (4:4:4 or 4:2:0, default 4:4:4).
 PNG supports lossless compression levels 0–9 (default 6); TIFF supports `lzw`,
 `deflate` or `none` compression (default `lzw`). Only the fields appropriate to
@@ -138,7 +136,7 @@ in the order. Missing country coverage never falls back to included delivery.
    checkout would inherit automatic project-invoice append behaviour and is not
    a substitute for that transaction.
 3. Bounded preparation with retained original versions, verifiable output files,
-   neutral supplier pack/order sheet and an explicit settled-payment/studio-review
+   neutral supplier pack, private studio sheet and an explicit settled-payment/studio-review
    release gate, integrated with backup, deletion, privacy and recovery inventories.
 
 The implemented workflow uses

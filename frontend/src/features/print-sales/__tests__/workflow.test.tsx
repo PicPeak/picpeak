@@ -58,6 +58,19 @@ describe('gallery print order journey', () => {
     expect(url).toBe('/gallery/fixture/print-sales/orders/order-1/accept');
     expect(input).toEqual({ snapshotHash: quotation.snapshotHash, acknowledgeSelection: true });
   });
+  it('asks for a new quotation after a refused acceptance instead of replaying the dead one', async () => {
+    render(<GalleryPrintShop slug="fixture" photos={[photo]} />); await addItem();
+    fireEvent.click(screen.getByRole('button', { name: 'Review selections and final total' }));
+    const confirm = await screen.findByRole('button', { name: 'Confirm order and request invoice' });
+    vi.mocked(api.post).mockRejectedValueOnce({ response: { status: 409, data: { error: 'The quotation expired; review a new quotation' } } });
+    fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(confirm);
+    await screen.findByText(/quotation expired/);
+    fireEvent.click(screen.getByRole('button', { name: 'Return to basket' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review selections and final total' }));
+    await screen.findByRole('button', { name: 'Confirm order and request invoice' });
+    const reviews = vi.mocked(api.post).mock.calls.filter(([url]) => url.endsWith('/quotes')) as [string, { requestId: string }][];
+    expect(reviews).toHaveLength(2); expect(reviews[1][1].requestId).not.toBe(reviews[0][1].requestId);
+  });
   it('edits a basket crop without duplicating its photo item', async () => {
     render(<GalleryPrintShop slug="fixture" photos={[photo]} />); await addItem();
     fireEvent.click(screen.getByRole('button', { name: 'Edit crop' }));

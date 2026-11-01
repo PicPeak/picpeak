@@ -8,6 +8,7 @@ const P = require('../../src/services/printSales/profiles');
 const V = require('../../src/services/albumProducts/validation');
 const G = require('../../src/services/albumProducts/library');
 const uuid = () => crypto.randomUUID();
+const { isTrue } = require('../../src/utils/galleryLifecycle');
 let db, cleanup, storage, orders, fulfilment, worker, admin, customerId, event, photoId, config, definition, product,
   sourceBytes, adminApp, galleryApp, adminToken;
 beforeAll(async () => {
@@ -674,6 +675,104 @@ test('one studio\'s backlog does not refuse another studio\'s customers at accep
     customer_account_id: buyer, created_by_admin_id: other, status: 'accepted', render_status: 'ready', created_at: now, expires_at: now })), 50);
   const done = await orders.accept(event.id, customerId, 'client', q.id, { snapshotHash: q.snapshotHash, acknowledgeSelection: true });
   expect(done.status).toBe('accepted');
+});
+test('a quotation that failed on a bad crop gives its sources back straight away', async () => {
+  const input = payload(); input.items[0].crop = { x: 0, y: 0, width: 1, height: .5 };
+  await expect(quoted(input)).rejects.toThrow('ratio');
+  expect((await db('print_sales_orders').where({ id: input.requestId }).first()).status).toBe('failed');
+  await fulfilment.cleanup();
+  expect(await db('print_sales_assets').where({ order_id: input.requestId })).toHaveLength(0);
+  expect((await db('print_sales_orders').where({ id: input.requestId }).first()).purged_at).toBeTruthy();
+});
+test('one customer cannot use up the retained-source budget for everybody', async () => {
+  const failed = uuid(), other = await secondCustomer();
+  await db('event_customer_assignments').insert({ event_id: event.id, customer_account_id: other });
+  await db('print_sales_orders').insert({ id: failed, request_hash: 'x', event_id: event.id, customer_account_id: customerId,
+    created_by_admin_id: admin.id, status: 'failed', created_at: new Date().toISOString(), expires_at: new Date().toISOString() });
+  await db('print_sales_assets').insert({ id: uuid(), order_id: failed, storage_key: `.print-sales/${failed}/0`, sha256: 'x', size: 1100000000, kind: 'source', created_at: new Date().toISOString() });
+  await expect(quoted()).rejects.toThrow('Too many print quotations');
+  await expect(orders.quote(event.id, other, 'client', payload())).resolves.toMatchObject({ status: 'quoted' });
+});
+test('a lapsed quotation is not handed back to an unchanged basket', async () => {
+  const input = payload(), q = await quoted(input);
+  await db('print_sales_orders').where({ id: q.id }).update({ expires_at: new Date(Date.now() - 1000).toISOString() });
+  await expect(quoted(input)).rejects.toThrow('expired');
+  await expect(quoted()).resolves.toMatchObject({ status: 'quoted' });
+});
+test('changing the basket replaces the earlier quotation, however often', async () => {
+  const first = await quoted(), second = await quoted(), third = await quoted();
+  const rows = await db('print_sales_orders').whereIn('id', [first.id, second.id, third.id]);
+  expect(rows.find(r => r.id === third.id).status).toBe('quoted');
+  for (const old of [first, second]) {
+    const row = rows.find(r => r.id === old.id);
+    expect(row).toMatchObject({ status: 'expired', contact: null }); expect(isTrue(row.purge_requested)).toBe(true);
+  }
+  await expect(orders.accept(event.id, customerId, 'client', first.id, { snapshotHash: first.snapshotHash, acknowledgeSelection: true })).rejects.toThrow('expired');
+});
+test('a quotation in another gallery survives a new basket here', async () => {
+  const q = await quoted();
+  await db('print_sales_orders').where({ id: q.id }).update({ event_id: null });
+  await quoted();
+  expect((await db('print_sales_orders').where({ id: q.id }).first()).status).toBe('quoted');
+});
+test('crop slack scales with the original, and a wrong ratio is still refused', () => {
+  const { geometry } = require('../../src/services/printSales/domain');
+  const item = (height, width = .8) => ({ fit: 'cover', crop: { x: 0, y: 0, width, height },
+    profile: { artwork: { widthMm: 140, heightMm: 100 }, manufacturing: { resolution: { minimumDpi: 1 } } } });
+  const source = { width: 7952, height: 5304, orientation: 1 };
+  // 1280.6 x 1920 preview rounded to 1281: a true 1.4 crop, 2.4 px out at full size.
+  expect(geometry(source, item(.8 * 7952 / 1.4 / 5304 + 2.4 / 1.4 / 5304))).toBeTruthy();
+  expect(() => geometry(source, item(.8))).toThrow('ratio');
+  expect(() => geometry({ width: 400, height: 300, orientation: 1 }, { ...item(.8), crop: { x: 0, y: 0, width: 1, height: .9 } })).toThrow('ratio');
+});
+test('the supplier pack leaves out the private sheet, and earlier attempts leave no artwork behind', async () => {
+  const a = await accepted(), stale = uuid(), key = `.print-sales/${a.id}/${stale}.jpg`;
+  await storage.put(key, Buffer.from('old'));
+  await db('print_sales_assets').insert({ id: stale, order_id: a.id, storage_key: key, sha256: 'x', size: 3, kind: 'artwork', claim: uuid(), created_at: new Date().toISOString() });
+  await worker.runOne();
+  expect(await db('print_sales_assets').where({ id: stale }).first()).toBeUndefined();
+  const row = await db('print_sales_orders').where({ id: a.id }).first();
+  const pack = await db('print_sales_assets').where({ order_id: a.id, kind: 'pack', claim: row.claim }).first();
+  const bytes = await require('../../src/services/printSales/orders').verified(storage, pack);
+  expect(bytes.includes('manifest.json')).toBe(true); expect(bytes.includes('order-sheet.pdf')).toBe(false);
+  expect(await db('print_sales_assets').where({ order_id: a.id, kind: 'sheet', claim: row.claim }).first()).toBeTruthy();
+});
+test('closing an order waits for an unpaid replacement invoice and records a paid one', async () => {
+  const row = await submitted();
+  await invoices().cancelInvoice(row.invoice_id, admin.id);
+  await invoices().reissueInvoice(row.invoice_id, admin.id);
+  const replacement = await db('invoices').where({ replaces_invoice_id: row.invoice_id }).first();
+  await expect(fulfilment.action(row.id, admin, { action: 'resolve', note: 'Lab refunded' })).rejects.toThrow('replacement invoice');
+  await invoices().markPaid(replacement.id, { amountMinor: Number(replacement.total_amount_minor), paymentMethod: 'bank_transfer' }, admin.id);
+  await fulfilment.action(row.id, admin, { action: 'resolve', note: 'Lab refunded' });
+  expect((await fulfilment.order(row.id, admin)).status).toBe('resolved');
+  const logged = await db('activity_logs').where({ activity_type: 'print_order_resolve' }).orderBy('id', 'desc').first();
+  expect(P.parse(logged.metadata)).toMatchObject({ replacements: [{ id: replacement.id, status: 'paid' }] });
+});
+test('closing an order sees an unpaid reissue on any branch of the corrections', async () => {
+  const row = await submitted();
+  await invoices().cancelInvoice(row.invoice_id, admin.id);
+  await invoices().reissueInvoice(row.invoice_id, admin.id);
+  const first = await db('invoices').where({ replaces_invoice_id: row.invoice_id }).first();
+  await invoices().cancelInvoice(first.id, admin.id);
+  await invoices().reissueInvoice(row.invoice_id, admin.id);
+  const second = await db('invoices').where({ replaces_invoice_id: row.invoice_id }).whereNot({ id: first.id }).first();
+  await invoices().cancelInvoice(second.id, admin.id);
+  await invoices().reissueInvoice(second.id, admin.id);
+  await expect(fulfilment.action(row.id, admin, { action: 'resolve', note: 'Lab refunded' })).rejects.toThrow('replacement invoice');
+  await expect(fulfilment.action(row.id, admin, { action: 'cancel' })).rejects.toThrow('manual resolution');
+});
+test('orders that keep failing to purge do not starve the rest of the sweep', async () => {
+  const stamp = new Date().toISOString(), rows = Array.from({ length: 25 }, () => ({ id: uuid(), request_hash: 'x', event_id: event.id,
+    customer_account_id: customerId, created_by_admin_id: admin.id, status: 'failed', purge_requested: true, created_at: stamp, expires_at: stamp }));
+  await db.batchInsert('print_sales_orders', rows, 10);
+  const stuck = rows.map(r => r.id).sort().slice(0, 20);
+  await db.batchInsert('print_sales_assets', stuck.map(id => ({ id: uuid(), order_id: id, storage_key: `.print-sales/${id}/x`, sha256: 'x', size: 1, kind: 'source', created_at: stamp })), 10);
+  const deletion = jest.spyOn(storage, 'delete').mockRejectedValue(new Error('Synthetic storage delete failure'));
+  try {
+    await fulfilment.cleanup(); await fulfilment.cleanup();
+    expect(await db('print_sales_orders').whereIn('id', rows.map(r => r.id)).whereNotNull('purged_at')).toHaveLength(5);
+  } finally { deletion.mockRestore(); }
 });
 test('.print-sales is in every default backup path list', async () => {
   const { DEFAULT_PATHS } = require('../../migrations/core/109_add_backup_paths');
