@@ -63,7 +63,7 @@ const mockStripe = {
   } },
   paymentIntents: { retrieve: jest.fn(async (id) => payments.get(id)) },
   charges: { retrieve: jest.fn(async (id) => [...payments.values()].find((p) => p.latest_charge.id === id).latest_charge) },
-  refunds: { create: jest.fn(async () => ({ id: crypto.randomUUID(), status: 'succeeded' })), retrieve: jest.fn(async (id) => ({ id, status: 'succeeded' })) },
+  refunds: { list: jest.fn(async () => ({ data: [], has_more: false })), create: jest.fn(async () => ({ id: crypto.randomUUID(), status: 'succeeded' })), retrieve: jest.fn(async (id) => ({ id, status: 'succeeded' })) },
 };
 
 describe('Stripe photo checkout (real routes, migrated database and SDK signature verification)', () => {
@@ -929,7 +929,7 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     expect((await verification('send', { email: 'other@example.test' })).status).toBe(409);
     expect(send).not.toHaveBeenCalled();
   });
-  test.each(['array', 'object', 'duplicate'])('a %s checkout parameter cannot enter the legacy settlement path', async kind => {
+  test.each(['array', 'object', 'duplicate', 'wrapped', 'encoded_wrapped', 'prefixed', 'uppercase', 'mixed_wrapped'])('a %s checkout parameter cannot enter the legacy settlement path', async kind => {
     enableSnipcart(); await offerPromo();
     await db('events').where({ id: galleryId }).update({ snipcart_discount_id: crypto.randomUUID() });
     const reply = await create({ provider: 'snipcart' }); expect(reply.status).toBe(200);
@@ -937,9 +937,13 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     url.searchParams.delete('checkout');
     if (kind === 'array') url.searchParams.set('checkout[]', checkout);
     else if (kind === 'object') url.searchParams.set('checkout[token]', checkout);
+    else if (kind === 'wrapped' || kind === 'encoded_wrapped') url.searchParams.set('[checkout]', checkout);
+    else if (kind === 'prefixed') url.searchParams.set('nested[checkout]', checkout);
+    else if (kind === 'uppercase') url.searchParams.set('CHECKOUT', checkout);
+    else if (kind === 'mixed_wrapped') { url.searchParams.set('checkout', checkout); url.searchParams.set('[checkout]', checkout); }
     else { url.searchParams.append('checkout', checkout); url.searchParams.append('checkout', checkout); }
-    item.url = url.toString();
-    expect((await request(app).get(url.pathname + url.search)).status).toBe(409);
+    item.url = kind === 'wrapped' ? url.toString().replace('%5Bcheckout%5D', '[checkout]') : url.toString();
+    expect((await request(app).get(new URL(item.url).pathname + new URL(item.url).search)).status).toBe(409);
     const { result } = await deliverSnipcart(reply.body.snipcart, { items: [item], total: 0, discounts: [{ code: 'FOTO-ONCE' }] });
     expect(result.status).toBe(200);
     expect(Number((await db('photo_purchases').count('* as n').first()).n)).toBe(0);
@@ -1030,6 +1034,71 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     expect(JSON.parse(writes.at(-1)[1].body).maxNumberOfUsages).toBeNull();
     await deliverSnipcart(first.body.snipcart, { total: 5, discounts: [] });
     expect((await create({ provider: 'snipcart', promoCode: 'FOTO-ONCE' })).status).toBe(200);
+  });
+
+  test.each(['paul.example.com', '@example.com', 'vic\u00adtim@example.test', 'vic\u200btim@example.test', 'buyer\uff20other@example.test'])('rejects malformed or invisible mailbox input before sending: %s', async email => {
+    await offerPromo(); const send = jest.spyOn(promoIdentity, 'sendCodeEmail').mockResolvedValue();
+    expect((await verification('send', { email })).status).toBe(400); expect(send).not.toHaveBeenCalled();
+  });
+  test('uses one normalised local part for delivery and identity throttling', async () => {
+    await offerPromo(); const send = jest.spyOn(promoIdentity, 'sendCodeEmail').mockResolvedValue();
+    expect((await verification('send', { email: '\uff22uyer@example.test' })).status).toBe(202);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: 'buyer@example.test' }));
+    expect((await verification('send', { email: 'buyer@example.test' })).status).toBe(429);
+  });
+  test('a failed automatic refund reconciles fully succeeded Dashboard refunds across pages', async () => {
+    await offerPromo(); const local = await orderFor(await create({ photoIds: ids, promoCode: 'FOTO-ONCE' }));
+    const session = await pay(local); await db('photos').where({ id: ids[0] }).update({ visibility: 'hidden' });
+    mockStripe.refunds.create.mockResolvedValueOnce({ id: 're_original', status: 'pending' });
+    await webhook('checkout.session.completed', session);
+    mockStripe.refunds.retrieve.mockResolvedValueOnce({ id: 're_original', status: 'failed' });
+    const refund = (id, amount, status = 'succeeded') => ({ id, amount, status, currency: 'eur', payment_intent: session.payment_intent });
+    mockStripe.refunds.list.mockResolvedValueOnce({ data: [refund('re_first', 400), refund('re_pending', 600, 'pending')], has_more: true })
+      .mockResolvedValueOnce({ data: [refund('re_second', 600)], has_more: false });
+    await webhook('refund.updated', { payment_intent: session.payment_intent });
+    expect(await readOrder(local)).toMatchObject({ status: 'refunded', promo_gallery_id: null });
+    expect(mockStripe.refunds.list).toHaveBeenLastCalledWith({ payment_intent: session.payment_intent, limit: 100, starting_after: 're_pending' });
+    expect(mockStripe.refunds.create).toHaveBeenCalledTimes(1);
+    await webhook('refund.updated', { payment_intent: session.payment_intent });
+    expect(mockStripe.refunds.create).toHaveBeenCalledTimes(1);
+  });
+  test('failed, partial, foreign and duplicate refund amounts cannot release an ambiguous order', async () => {
+    await offerPromo(); const local = await orderFor(await create({ photoIds: ids, promoCode: 'FOTO-ONCE' }));
+    const session = await pay(local); await db('photos').where({ id: ids[0] }).update({ visibility: 'hidden' });
+    mockStripe.refunds.create.mockResolvedValueOnce({ id: 're_original', status: 'failed' });
+    const refund = { id: 're_partial', amount: 400, status: 'succeeded', currency: 'eur', payment_intent: session.payment_intent };
+    mockStripe.refunds.list.mockResolvedValueOnce({ data: [refund, refund, { ...refund, id: 're_other', amount: 1000, payment_intent: 'pi_unrelated' },
+      { ...refund, id: 're_failed', amount: 1000, status: 'failed' }], has_more: false });
+    await webhook('checkout.session.completed', session);
+    expect(await readOrder(local)).toMatchObject({ status: 'refund_failed', promo_gallery_id: galleryId });
+  });
+  test('a Snipcart grant racing revocation keeps the spent gallery claim', async () => {
+    enableSnipcart(); await offerPromo(); await db('events').where({ id: galleryId }).update({ snipcart_discount_id: crypto.randomUUID() });
+    const response = await create({ provider: 'snipcart', photoIds: ids, promoCode: 'FOTO-ONCE' });
+    const remote = await deliverSnipcart(response.body.snipcart, { total: 10 });
+    const local = await db('photo_purchase_orders').where({ checkout_token: response.body.snipcart.checkout_token }).first();
+    expect(local.status).toBe('completed');
+    await db('photo_purchase_orders').where({ id: local.id }).update({ promo_used: false });
+    const transaction = db.client.transaction.bind(db.client);
+    jest.spyOn(db.client, 'transaction').mockImplementationOnce(async (callback, ...options) => {
+      await db('photo_purchase_orders').where({ id: local.id }).update({ promo_used: true });
+      return transaction(callback, ...options);
+    });
+    const provider = remote.remote;
+    await require('../../src/modules/photoSales/snipcartOrders').reconcileOrder({ ...provider, paymentStatus: 'Refunded' });
+    expect(await readOrder(local)).toMatchObject({ status: 'refunded', promo_gallery_id: galleryId });
+  });
+  test('a delayed Snipcart revocation cannot overwrite a final state', async () => {
+    enableSnipcart(); const response = await create({ provider: 'snipcart' }), remote = await deliverSnipcart(response.body.snipcart);
+    const local = await db('photo_purchase_orders').where({ checkout_token: response.body.snipcart.checkout_token }).first();
+    const transaction = db.client.transaction.bind(db.client);
+    jest.spyOn(db.client, 'transaction').mockImplementationOnce(async (callback, ...options) => {
+      await db('photo_purchase_orders').where({ id: local.id }).update({ status: 'charged_back' });
+      return transaction(callback, ...options);
+    });
+    const provider = remote.remote;
+    await require('../../src/modules/photoSales/snipcartOrders').reconcileOrder({ ...provider, paymentStatus: 'Refunded' });
+    expect(await readOrder(local)).toMatchObject({ status: 'charged_back' });
   });
 
 });

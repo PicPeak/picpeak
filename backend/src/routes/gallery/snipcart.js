@@ -50,14 +50,14 @@ router.get('/:slug/price-check', async (req, res) => {
     // Unsubmitted carts from before shared checkout must restart in PicPeak.
     // Otherwise omitting `checkout` bypasses promo email verification. Already
     // submitted provider payments still settle through the legacy webhook path.
-    if (req.query.checkout === undefined) {
+    const token = require('../../modules/photoSales/snipcartCheckout').reservationParameter(req.originalUrl);
+    if (token === null) {
       return res.status(409).json({ code: 'CHECKOUT_REQUIRED', error: 'This older cart must be restarted in PicPeak. Close Snipcart and return to the gallery to start again.' });
     }
-    // qs arrays/objects must never be coerced into a valid scalar token.
-    if (typeof req.query.checkout !== 'string') {
+    // Crawl and settlement must interpret the original URL identically.
+    if (token === false) {
       return res.status(409).json({ code: 'CHECKOUT_REQUIRED', error: 'Return to PicPeak to restart this checkout.' });
     }
-    const token = req.query.checkout;
     const reserved = /^[0-9a-f]{48}$/.test(token) ? await db('photo_purchase_orders')
       .where({ payment_provider: 'snipcart', checkout_token: token, gallery_id: event.id }).first() : null;
     const quote = reserved ? quoteOf(reserved) : null;

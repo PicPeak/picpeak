@@ -22,9 +22,13 @@ const validBrowserKey = (key) => typeof key === 'string' && /^[0-9a-f]{64}$/.tes
 function canonicalEmail(value) {
   if (typeof value !== 'string') return null;
   const raw = value.trim().toLowerCase();
-  if (!raw || raw.length > 255 || /[,;:<>()"[\]\\\s\p{Cc}]/u.test(raw)) return null;
-  const at = raw.lastIndexOf('@'), domain = domainToASCII(raw.slice(at + 1));
-  const email = `${raw.slice(0, at)}@${domain}`;
+  if (!raw || raw.length > 255 || /[,;:<>()"[\]\\\s\p{Cc}\p{Cf}]/u.test(raw)) return null;
+  const at = raw.lastIndexOf('@');
+  if (at < 1) return null;
+  const domain = domainToASCII(raw.slice(at + 1));
+  const local = raw.slice(0, at).normalize('NFKC').toLowerCase();
+  if (/[,;:<>()"[\]\\@\s\p{Cc}\p{Cf}]/u.test(local)) return null;
+  const email = `${local}@${domain}`;
   if (!domain || !validator.isEmail(email)) return null;
   const parsed = addressparser(email);
   return parsed.length === 1 && !parsed[0].group && !parsed[0].name && parsed[0].address === email ? email : null;

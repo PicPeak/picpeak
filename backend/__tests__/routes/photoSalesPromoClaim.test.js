@@ -74,4 +74,15 @@ describe('promo discount creation', () => {
     expect(promo.isDiscountId('pending:123')).toBe(false);
     expect(promo.isDiscountId(null)).toBe(false);
   });
+  it.each([null, {}, { id: '' }, { id: 7 }, { id: 'pending:invalid' }, { id: '   ' }, { id: 'invalid\nid' }])('does not report a usable discount without a valid provider id: %j', async response => {
+    const previous = global.fetch;
+    global.fetch = jest.fn(async () => ({ ok: true, status: 201, json: async () => response }));
+    try {
+      await db('events').where({ id: eventId }).update({ snipcart_discount_id: null });
+      const event = await db('events').where({ id: eventId }).first();
+      expect(await promo.syncPromoDiscount(event)).toMatchObject({ ok: false });
+      expect((await db('events').where({ id: eventId }).first()).snipcart_discount_id).toBeNull();
+    } finally { global.fetch = previous; }
+  });
+
 });

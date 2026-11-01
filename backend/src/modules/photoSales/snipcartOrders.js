@@ -96,10 +96,16 @@ async function revokeOrder(orderToken, status) {
   const order = await findProviderOrder(orderToken);
   if (!order || ['refunded', 'charged_back', 'cancelled'].includes(order.status)) return false;
   const now = new Date().toISOString();
-  await db.transaction(async (trx) => {
-    await trx('photo_purchase_orders').where({ id: order.id }).update({ status, recovery_needs_attention: false, recovery_error: null, ...(!order.promo_used ? { promo_gallery_id: null } : {}), updated_at: now });
-    await trx('photo_purchases').where({ order_id: order.order_id }).update({ expires_at: now, updated_at: now });
+  const changed = await db.transaction(async (trx) => {
+    const updated = await trx('photo_purchase_orders').where({ id: order.id }).whereNotIn('status', ['refunded', 'charged_back', 'cancelled'])
+      .update({ status, recovery_needs_attention: false, recovery_error: null, updated_at: now });
+    if (updated) {
+      await trx('photo_purchase_orders').where({ id: order.id, promo_used: false }).update({ promo_gallery_id: null });
+      await trx('photo_purchases').where({ order_id: order.order_id }).update({ expires_at: now, updated_at: now });
+    }
+    return updated;
   });
+  if (!changed) return false;
   logger.info(`Snipcart order ${orderToken} revoked (${status})`);
   return true;
 }

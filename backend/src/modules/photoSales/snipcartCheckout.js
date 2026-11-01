@@ -12,10 +12,11 @@ function reservationParameter(url) {
     // a malformed/new parameter must never fall through as a legacy cart.
     const parsed = new URL(url, 'https://picpeak.invalid');
     if (!['http:', 'https:'].includes(parsed.protocol)) return false;
-    const keys = [...parsed.searchParams.keys()].filter(key => key === 'checkout' || key.startsWith('checkout['));
+    const keys = [...parsed.searchParams.keys()].filter(key => key.toLowerCase().includes('checkout'));
     if (!keys.length) return null;
     if (keys.length !== 1 || keys[0] !== 'checkout') return false;
-    return parsed.searchParams.get('checkout') || false;
+    const token = parsed.searchParams.get('checkout');
+    return /^[0-9a-f]{48}$/.test(token || '') ? token : false;
   } catch { return false; }
 }
 function reservationToken(items) {

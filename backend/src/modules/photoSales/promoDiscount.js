@@ -54,7 +54,7 @@ const CLAIM_STALE_MS = 10 * 60 * 1000;
 
 /** A real Snipcart discount id (not empty, not a creation claim). */
 function isDiscountId(value) {
-  return !!value && !String(value).startsWith(CLAIM_PREFIX);
+  return typeof value === 'string' && value.length > 0 && value.length <= 255 && !/[\s\p{Cc}]/u.test(value) && !value.startsWith(CLAIM_PREFIX);
 }
 
 function isStaleClaim(value) {
@@ -136,10 +136,12 @@ async function syncPromoDiscount(eventRow) {
     if (!claim) return { ok: false, skipped: true, error: 'Another process is creating this discount' };
     const created = await fetch(`${SNIPCART_API}/discounts`, { method: 'POST', headers, signal: AbortSignal.timeout(15000), body: JSON.stringify(body) });
     const createdBody = created.ok ? await created.json().catch(() => ({})) : {};
+    const id = isDiscountId(createdBody?.id) ? createdBody.id : null;
     await db('events')
       .where({ id: eventRow.id, snipcart_discount_id: claim })
-      .update({ snipcart_discount_id: createdBody.id || null });
+      .update({ snipcart_discount_id: id });
     if (!created.ok) return { ok: false, error: `Snipcart discount create HTTP ${created.status}` };
+    if (!id) return { ok: false, error: 'Snipcart discount create returned no valid identifier' };
     return { ok: true };
   } catch (error) {
     logger.warn('Promo discount sync failed', { eventId: eventRow?.id, type: error.name });

@@ -105,6 +105,28 @@ async function revoke(order, status, { releasePromo = false, onlyStatuses = null
   });
 }
 
+/** A Dashboard replacement refund has a different id from our failed attempt. */
+async function fullyRefunded(order, client) {
+  if (!Number.isSafeInteger(Number(order.total_cents)) || Number(order.total_cents) <= 0) return false;
+  const seen = new Set(), cursors = new Set(); let total = 0, cursor;
+  do {
+    const page = await client.refunds.list({ payment_intent: order.payment_intent_id, limit: 100,
+      ...(cursor ? { starting_after: cursor } : {}) });
+    for (const refund of page.data || []) {
+      if (!refund.id || seen.has(refund.id)) continue;
+      seen.add(refund.id);
+      if (refund.status === 'succeeded' && idOf(refund.payment_intent) === order.payment_intent_id &&
+          refund.currency?.toUpperCase() === order.currency?.toUpperCase() && Number.isSafeInteger(refund.amount) && refund.amount > 0)
+        total += refund.amount;
+    }
+    if (total >= Number(order.total_cents)) return true;
+    if (!page.has_more) return false;
+    cursor = page.data?.at(-1)?.id;
+    if (!cursor || cursors.has(cursor)) throw checkoutError('Refund reconciliation could not be completed.', 503);
+    cursors.add(cursor);
+  } while (cursor);
+  return false;
+}
 async function refusePaidOrder(order, client) {
   // A stale rejection must never revoke a purchase another worker fulfilled.
   if (!(await revoke(order, 'refund_pending', { onlyStatuses: [...OPEN, ...REFUSING, 'expired', 'failed', 'cancelled'] }))) return;
@@ -121,6 +143,7 @@ async function refusePaidOrder(order, client) {
     await db('photo_purchase_orders').where({ id: order.id }).update({ payment_refund_id: refund.id });
     status = refund.status === 'succeeded' ? 'refunded'
       : ['pending', 'requires_action'].includes(refund.status) ? 'refund_pending' : 'refund_failed';
+    if (status === 'refund_failed' && await fullyRefunded(order, client)) status = 'refunded';
   } finally {
     await revoke(order, status, { releasePromo: status === 'refunded' && !order.promo_used });
   }

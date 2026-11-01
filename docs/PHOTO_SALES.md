@@ -169,8 +169,9 @@ does not release a pending payment or its promo reservation.
   downloads with an explanation/contact address, and compensates the overlap
   when resumed without exceeding the gallery's expiry. Open reservations
   also retain overlapping pause time if a deferred payment settles after resume.
-  A pending or failed automatic refund keeps its promo claim until the specific
-  refund is confirmed successful; the charge's aggregate refunded amount alone
+  A pending or failed automatic refund keeps its promo claim until the refund
+  is confirmed successful, or a failed attempt is reconciled against fully
+  succeeded refunds for that payment. The charge's aggregate refunded amount alone
   does not release that claim.
 - A success URL does not prove payment. Buyers see a confirmation screen while
   verified callbacks establish payment; delayed methods may take longer. The
