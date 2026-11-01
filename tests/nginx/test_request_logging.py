@@ -197,7 +197,7 @@ http {
         "missing" "";
         "unavailable" "%s";
     }
-    map $http_x_test_snipcart $fixture_policy_port { default 3000; "dead" 3999; }
+    map $http_x_test_snipcart $fixture_policy_port { default 3000; "dead" 3999; "hung" 3001; }
     server {
         listen 3000;
         location = /api/public/settings/photo-sales-policy {
@@ -246,6 +246,24 @@ http {
                             expected = snipcart if uri.startswith("/gallery/") and mode == "1" else site
                             self.assertEqual(response.getheader("Content-Security-Policy"), expected)
                             self.assertEqual(len(response.headers.get_all("Content-Security-Policy")), 1)
+                # A socket that accepts the request but never answers must
+                # fall back promptly too, not hold gallery HTML for 15 s.
+                run("docker", "exec", "-d", name, "sh", "-c",
+                    "while true; do tail -f /dev/null | nc -l -p 3001; done")
+                time.sleep(0.1)
+                started = time.monotonic()
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                try:
+                    connection.request("GET", "/gallery/hung-policy", headers={"Host": "localhost", "X-Test-Snipcart": "hung"})
+                    response = connection.getresponse()
+                    response.read()
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(response.getheader("Content-Security-Policy"), site)
+                    self.assertEqual(len(response.headers.get_all("Content-Security-Policy")), 1)
+                    self.assertGreater(time.monotonic() - started, 1.5)
+                    self.assertLess(time.monotonic() - started, 5)
+                finally:
+                    connection.close()
             finally:
                 run("docker", "rm", "-f", name)
 

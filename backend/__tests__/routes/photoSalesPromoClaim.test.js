@@ -65,7 +65,7 @@ describe('promo discount creation', () => {
 
     const event = await db('events').where({ id: eventId }).first('promo_code', 'snipcart_discount_id');
     expect(created).toHaveLength(1);
-    expect(created[0]).toMatchObject({ code: event.promo_code, amount: 10, maxNumberOfUsages: 1 });
+    expect(created[0]).toMatchObject({ code: event.promo_code, amount: 10, maxNumberOfUsages: null });
     expect(event.snipcart_discount_id).toBe('disc-1');
     expect(promo.isDiscountId(event.snipcart_discount_id)).toBe(true);
   });

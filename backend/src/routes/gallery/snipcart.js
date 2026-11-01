@@ -53,7 +53,11 @@ router.get('/:slug/price-check', async (req, res) => {
     if (req.query.checkout === undefined) {
       return res.status(409).json({ code: 'CHECKOUT_REQUIRED', error: 'This older cart must be restarted in PicPeak. Close Snipcart and return to the gallery to start again.' });
     }
-    const token = String(req.query.checkout);
+    // qs arrays/objects must never be coerced into a valid scalar token.
+    if (typeof req.query.checkout !== 'string') {
+      return res.status(409).json({ code: 'CHECKOUT_REQUIRED', error: 'Return to PicPeak to restart this checkout.' });
+    }
+    const token = req.query.checkout;
     const reserved = /^[0-9a-f]{48}$/.test(token) ? await db('photo_purchase_orders')
       .where({ payment_provider: 'snipcart', checkout_token: token, gallery_id: event.id }).first() : null;
     const quote = reserved ? quoteOf(reserved) : null;

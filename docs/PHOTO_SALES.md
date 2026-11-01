@@ -129,7 +129,9 @@ does not release a pending payment or its promo reservation.
   Codes last 15 minutes with five attempts. Sending is limited to once a minute
   and five times an hour per address across galleries, plus a network limit.
   A verified address can hold one outstanding promo checkout across both
-  providers and galleries. This prevents fresh tabs from resetting the cap;
+  providers and galleries. Recipient parsing rejects lists/display names and
+  canonicalises international domain names before sending and hashing.
+  This prevents fresh tabs from resetting the cap;
   multiple mailboxes/aliases and repeated reservations after expiry remain possible.
   Verification grants last 30 minutes and are gallery- and session-bound.
   PicPeak retains keyed address hashes, hashed codes and hashed browser proofs;
@@ -145,7 +147,9 @@ does not release a pending payment or its promo reservation.
   refund. Historical Snipcart redemptions remain spent too. Snipcart cannot
   confirm cancellation of an unpaid cart through its Orders API; an unsubmitted
   reservation expires after its window plus five minutes. A known pending
-  provider payment retains its claim while it settles. A late payment against
+  provider payment retains its claim while it settles. Snipcart discounts use
+  no provider usage cap: the shared PicPeak claim enforces one fulfilled
+  redemption, so a refused/refunded attempt does not exhaust the code. A late payment against
   an expired reservation or a conflicting redemption is refused/refunded,
   rather than granting a second use of the code. Unpaid pre-upgrade Snipcart
   carts without a PicPeak reservation must restart from the gallery, so they
@@ -163,7 +167,11 @@ does not release a pending payment or its promo reservation.
   payment confirmation prevents delivery and triggers an automatic refund.
   A temporary pause (#2296) preserves a valid purchase and email, blocks
   downloads with an explanation/contact address, and compensates the overlap
-  when resumed without exceeding the gallery's expiry.
+  when resumed without exceeding the gallery's expiry. Open reservations
+  also retain overlapping pause time if a deferred payment settles after resume.
+  A pending or failed automatic refund keeps its promo claim until the specific
+  refund is confirmed successful; the charge's aggregate refunded amount alone
+  does not release that claim.
 - A success URL does not prove payment. Buyers see a confirmation screen while
   verified callbacks establish payment; delayed methods may take longer. The
   existing purchase token grants only that order's photos until its deadline.

@@ -3,6 +3,9 @@
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const validator = require('validator');
+const addressparser = require('nodemailer/lib/addressparser');
+const { domainToASCII } = require('url');
 const { db } = require('../../database/db');
 const { lock } = require('./paymentSettings');
 const logger = require('../../utils/logger');
@@ -16,6 +19,16 @@ const TYPE = 'photo_checkout_promo';
 const failure = (message, statusCode, code) => Object.assign(new Error(message), { statusCode, code });
 const browserHash = (key) => crypto.createHash('sha256').update(key).digest('hex');
 const validBrowserKey = (key) => typeof key === 'string' && /^[0-9a-f]{64}$/.test(key);
+function canonicalEmail(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim().toLowerCase();
+  if (!raw || raw.length > 255 || /[,;:<>()"[\]\\\s\p{Cc}]/u.test(raw)) return null;
+  const at = raw.lastIndexOf('@'), domain = domainToASCII(raw.slice(at + 1));
+  const email = `${raw.slice(0, at)}@${domain}`;
+  if (!domain || !validator.isEmail(email)) return null;
+  const parsed = addressparser(email);
+  return parsed.length === 1 && !parsed[0].group && !parsed[0].name && parsed[0].address === email ? email : null;
+}
 const emailHash = (email) => crypto.createHmac('sha256', process.env.JWT_SECRET)
   .update(`photo-promo-email-v1\0${email.trim().toLowerCase()}`).digest('hex');
 
@@ -60,9 +73,16 @@ async function sendCodeEmail({ to, code, language }) {
   }
 }
 
+/** Configuration readiness only; delivery is still verified by the actual send. */
+async function emailReady() {
+  const config = await db('email_configs').first('from_email', 'smtp_host');
+  const webhook = require('../../services/emailWebhookTransport').isEnabled();
+  return !!((config?.from_email || (webhook && process.env.EMAIL_FROM)) && (webhook || config?.smtp_host));
+}
+
 async function sendCode(galleryId, body) {
-  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-  if (email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !validBrowserKey(body.browserKey)) {
+  const email = canonicalEmail(body.email);
+  if (!email || !validBrowserKey(body.browserKey)) {
     throw failure('Enter a valid email address.', 400, 'CHECKOUT_PROMO_EMAIL_INVALID');
   }
   const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
@@ -119,4 +139,4 @@ async function prune() {
   await db(TABLE).where('expires_at', '<', new Date(Date.now() - HOUR_MS).toISOString()).del();
 }
 
-module.exports = { sendCode, sendCodeEmail, confirmCode, verifiedIdentity, issueGrant, emailHash, browserHash, prune };
+module.exports = { sendCode, sendCodeEmail, emailReady, confirmCode, verifiedIdentity, issueGrant, emailHash, browserHash, prune };

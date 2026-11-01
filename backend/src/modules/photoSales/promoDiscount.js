@@ -8,7 +8,7 @@
  *
  *   trigger: Code      — the buyer enters the code in the checkout
  *   type: FixedAmount  — deducts free_photo_count × photo_price
- *   maxNumberOfUsages: 1
+ *   maxNumberOfUsages: null — PicPeak's shared claim enforces one redemption
  *
  * The code is generated when a gallery is created/edited as priced; the
  * discount is created/updated through the Snipcart REST API using the
@@ -47,7 +47,7 @@ async function ensurePromoCode(eventRow) {
 // While one process creates a gallery's Snipcart discount, the column holds
 // a claim instead of an id, so no other process (another replica's startup
 // sweep, a second save) creates a second discount for the same code — each
-// is single-use, so two would honour the free photos twice. A claim older
+// must stay associated with the one shared PicPeak promo claim. A claim older
 // than CLAIM_STALE_MS belongs to a process that died and may be taken over.
 const CLAIM_PREFIX = 'pending:';
 const CLAIM_STALE_MS = 10 * 60 * 1000;
@@ -106,7 +106,10 @@ async function syncPromoDiscount(eventRow) {
       code,
       type: 'FixedAmount',
       amount,
-      maxNumberOfUsages: 1,
+      // A refunded/refused attempt must not burn the provider's usage counter.
+      // Only PicPeak's immutable reservation can pass price-check, and its
+      // gallery claim permits one fulfilled promo across both providers.
+      maxNumberOfUsages: null,
     };
 
     const headers = {

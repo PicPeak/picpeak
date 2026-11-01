@@ -7,7 +7,7 @@ const { allocateFreeLines } = require('./priceRules');
 const { isDiscountId } = require('./promoDiscount');
 const { SALES_CURRENCY, ON_SALE_COLUMNS, isGalleryOnSale, sellablePhotos, verifyPhotoSale, saleSignatureFromUrl } = require('./sellable');
 const snipcartSettings = require('./snipcartSettings');
-const { reservationToken, findProviderOrder, grantReservation } = require('./snipcartCheckout');
+const { reservationToken, reservationParameter, findProviderOrder, grantReservation } = require('./snipcartCheckout');
 const PAID_STATUSES = new Set(['Paid', 'PaidDeferred']);
 const REVOKING_PAYMENT_STATUSES = new Set(['Refunded', 'ChargedBack', 'Cancelled', 'Failed', 'Expired']);
 /**
@@ -223,6 +223,9 @@ async function grantOrder(order) {
     .map((d) => String(d?.code || ''))
     .filter(Boolean);
   const codeApplied = !!(gallery.promo_code && discountCodes.includes(gallery.promo_code));
+  if (codeApplied && items.some(item => reservationParameter(item?.url) !== null)) {
+    return reject(gallery, 'a checkout promo requires its verified reservation');
+  }
   const codeHonored = codeApplied && !priorPromoUse && isDiscountId(gallery.snipcart_discount_id);
   const freeValueCents = codeHonored
     ? Math.round(Math.max(0, Number(gallery.free_photo_count || 0)) * Number(gallery.photo_price || 0) * 100)

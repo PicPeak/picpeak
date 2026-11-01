@@ -3,13 +3,27 @@
 const { db } = require('../../database/db');
 const { quoteOf, checkoutError, OPEN } = require('./checkoutReservation');
 const { signPhotoSale, sellablePhotos, isGalleryOnSale } = require('./sellable');
-const { purchaseExpiry, purchaseRows, sendPurchaseEmail } = require('./fulfilment');
+const { reservationExpiry, purchaseRows, sendPurchaseEmail } = require('./fulfilment');
 
+function reservationParameter(url) {
+  if (typeof url !== 'string') return false;
+  try {
+    // Historical item URLs can be relative. Both paths use URLSearchParams;
+    // a malformed/new parameter must never fall through as a legacy cart.
+    const parsed = new URL(url, 'https://picpeak.invalid');
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const keys = [...parsed.searchParams.keys()].filter(key => key === 'checkout' || key.startsWith('checkout['));
+    if (!keys.length) return null;
+    if (keys.length !== 1 || keys[0] !== 'checkout') return false;
+    return parsed.searchParams.get('checkout') || false;
+  } catch { return false; }
+}
 function reservationToken(items) {
   const tokens = (Array.isArray(items) ? items : []).map((item) => {
-    try { return new URL(item.url).searchParams.get('checkout'); } catch { return null; }
+    return reservationParameter(item?.url);
   });
-  if (!tokens.some(Boolean)) return null; // A pre-upgrade Snipcart cart.
+  if (tokens.some(token => token === false)) return false;
+  if (tokens.every(token => token === null)) return null; // A pre-upgrade Snipcart cart.
   if (!tokens.length || tokens.some((token) => !/^[0-9a-f]{48}$/.test(token || '') || token !== tokens[0])) return false;
   return tokens[0];
 }
@@ -46,8 +60,7 @@ async function grantReservation(local, remote, gallery, photoIds) {
       || JSON.stringify(expectedIds) !== JSON.stringify(suppliedIds)
       || (quote.promoCode ? discounts.length !== 1 || discounts[0] !== quote.promoCode : discounts.length > 0)
       || !buyerEmail || String(remote.currency).toUpperCase() !== quote.currency
-      || Math.round(Number(remote.total) * 100) !== quote.totalCents
-      || Date.parse(quote.expiresAt) <= Date.now()) return false;
+      || Math.round(Number(remote.total) * 100) !== quote.totalCents) return false;
   const result = await db.transaction(async (trx) => {
     // Same event-first lock as gallery pause compensation (#2296).
     const eventQuery = trx('events').where({ id: gallery.id });
@@ -58,10 +71,11 @@ async function grantReservation(local, remote, gallery, photoIds) {
     const currentOrder = await orderQuery.first();
     if (!currentOrder || !OPEN.includes(currentOrder.status)) return currentOrder?.status === 'completed' && currentOrder.provider_order_id === String(remote.token);
     if (!isGalleryOnSale(event, { allowTemporarilyDisabled: true })) return false;
+    const now = Date.now();
+    const expiresAt = reservationExpiry(currentOrder, event, now);
+    if (!expiresAt || Date.parse(expiresAt) <= now) return false;
     const photos = await sellablePhotos(trx, gallery.id).whereIn('photos.id', photoIds).select('photos.id');
     if (photos.length !== photoIds.length) return false;
-    const now = Date.now();
-    const expiresAt = new Date(Math.min(Date.parse(quote.expiresAt), Date.parse(purchaseExpiry(event, now)))).toISOString();
     const changed = await trx('photo_purchase_orders').where({ id: local.id }).whereIn('status', OPEN)
       .modify((q) => { if (quote.promoCode) q.where({ promo_gallery_id: gallery.id }); })
       .update({ provider_order_id: String(remote.token), status: 'completed', buyer_email: buyerEmail,
@@ -75,4 +89,4 @@ async function grantReservation(local, remote, gallery, photoIds) {
   if (result) await sendPurchaseEmail(await db('photo_purchase_orders').where({ id: local.id }).first(), quote.galleryName, quote.lines.length);
   return result;
 }
-module.exports = { handoff, reservationToken, findProviderOrder, grantReservation };
+module.exports = { handoff, reservationToken, reservationParameter, findProviderOrder, grantReservation };

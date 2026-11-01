@@ -82,7 +82,7 @@ async function reserveCheckout(gallery, body) {
     .select('photos.id', 'photos.photo_price', 'photos.filename', 'photos.original_filename');
   if (rows.length !== photoIds.length) throw checkoutError('Some selected photos are no longer available.', 409, 'PHOTOS_UNAVAILABLE');
   const byId = new Map(rows.map((row) => [Number(row.id), row]));
-  const base = await frontendOrigin();
+  const base = provider === 'stripe' ? await frontendOrigin() : undefined;
   // Stripe requires at least 30 minutes until Checkout expires. Refuse a
   // last-minute purchase instead of promising access past gallery closure.
   if (provider === 'stripe' && gallery.expires_at && new Date(gallery.expires_at).getTime() < Date.now() + 31 * 60e3) {
@@ -111,11 +111,11 @@ async function reserveCheckout(gallery, body) {
   }
   if (provider === 'snipcart' && promoApplied) {
     const promos = require('./promoDiscount');
-    if (!promos.isDiscountId(gallery.snipcart_discount_id)) {
-      await promos.ensurePromoForEvent(gallery);
-      const fresh = await db('events').where({ id: gallery.id }).first('snipcart_discount_id');
-      if (!promos.isDiscountId(fresh?.snipcart_discount_id)) throw checkoutError('This promo code is not ready for Snipcart. Choose Stripe or try again later.', 409, 'PROMO_UNAVAILABLE');
-    }
+    // Refresh existing discounts too: older max-usage counters can be spent
+    // by a payment PicPeak refused/refunded and subsequently released.
+    const result = promos.isDiscountId(gallery.snipcart_discount_id)
+      ? await promos.syncPromoDiscount(gallery) : (await promos.ensurePromoForEvent(gallery)).sync;
+    if (!result?.ok) throw checkoutError('This promo code is not ready for Snipcart. Choose Stripe or try again later.', 409, 'PROMO_UNAVAILABLE');
   }
   const expiresAt = purchaseExpiry(gallery);
   const quote = {

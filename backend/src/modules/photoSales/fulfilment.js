@@ -14,6 +14,12 @@ function purchaseExpiry(gallery, now = Date.now()) {
   return new Date(Number.isFinite(galleryEnd) ? Math.min(end, galleryEnd) : end).toISOString();
 }
 
+/** Preserve the quoted window plus pause credit, still capped by gallery expiry. */
+function reservationExpiry(order, gallery, now = Date.now()) {
+  const end = pauseAdjustedExpiry(order, gallery, now);
+  return end ? new Date(Math.min(Date.parse(end), Date.parse(purchaseExpiry(gallery, now)))).toISOString() : null;
+}
+
 function purchaseRows({ orderId, galleryId, buyerEmail, purchasedAt, expiresAt, accessToken, currency, lines }) {
   return lines.map((line) => ({
     order_id: orderId,
@@ -63,4 +69,4 @@ async function sendPurchaseEmail(order, galleryName, photoCount) {
   });
 }
 
-module.exports = { purchaseExpiry, purchaseRows, sendPurchaseEmail };
+module.exports = { purchaseExpiry, reservationExpiry, purchaseRows, sendPurchaseEmail };

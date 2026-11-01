@@ -713,7 +713,8 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // in the store, so the UI never advertises a dead code.
       free_quota_available: await freeQuotaAvailable(event),
       promo_code: event.promo_code || null,
-      promo_discount_ready: !!(event.promo_code && (checkout?.available.includes('stripe') || (checkout?.available.includes('snipcart') && isDiscountId(event.snipcart_discount_id)))),
+      promo_discount_ready: !!(event.promo_code && (checkout?.available.includes('stripe') || (checkout?.available.includes('snipcart') && isDiscountId(event.snipcart_discount_id)))
+        && await require('../modules/photoSales/promoIdentity').emailReady()),
       // Promo banner override (#440). GalleryView has always read
       // promo_mode from THIS payload, but it was never sent — so every
       // per-event promo override silently resolved to 'inherit' and a

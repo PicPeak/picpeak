@@ -12,6 +12,7 @@ const promoIdentity = require('../../modules/photoSales/promoIdentity');
 const { isGalleryOnSale } = require('../../modules/photoSales/sellable');
 const { configuration: providerConfiguration } = require('../../modules/photoSales/providers');
 const logger = require('../../utils/logger');
+const { db } = require('../../database/db');
 
 const router = express.Router();
 const checkoutLimiter = rateLimit({ windowMs: 60000, max: 20, keyGenerator: rateLimitKey, standardHeaders: true, legacyHeaders: false });
@@ -27,6 +28,9 @@ function verificationHandler(action) {
       return res.status(409).json({ error: 'This promo is not available.', code: 'PROMO_UNAVAILABLE' });
     }
     try {
+      if (await db('photo_purchase_orders').where({ gallery_id: req.event.id, promo_used: true }).first('id')) {
+        return res.status(409).json({ error: 'This promo is not available.', code: 'PROMO_UNAVAILABLE' });
+      }
       if (!(await providerConfiguration()).available.length) {
         return res.status(503).json({ error: 'Photo purchases are unavailable.', code: 'CHECKOUT_UNAVAILABLE' });
       }

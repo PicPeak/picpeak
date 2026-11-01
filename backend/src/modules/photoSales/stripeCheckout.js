@@ -1,7 +1,7 @@
 'use strict';
 const { db } = require('../../database/db');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
-const { purchaseExpiry, purchaseRows, sendPurchaseEmail } = require('./fulfilment');
+const { reservationExpiry, purchaseRows, sendPurchaseEmail } = require('./fulfilment');
 const { isGalleryOnSale, sellablePhotos } = require('./sellable');
 const { stripeClient, stripeConfiguration } = require('./stripeClient');
 const { reserveCheckout, quoteOf, verifyCheckoutBrowser, checkoutError, OPEN } = require('./checkoutReservation');
@@ -95,7 +95,11 @@ async function revoke(order, status, { releasePromo = false, onlyStatuses = null
     const updated = await trx('photo_purchase_orders').where({ id: order.id })
       .whereNotIn('status', ['charged_back', 'refunded'])
       .modify((q) => { if (onlyStatuses) q.whereIn('status', onlyStatuses); })
-      .update({ status, updated_at: now, ...(releasePromo ? { promo_gallery_id: null } : {}) });
+      .update({ status, updated_at: now });
+    // The caller's order can predate a competing grant. Test the live value
+    // under the order lock rather than releasing a fulfilled promo's claim.
+    if (updated && releasePromo) await trx('photo_purchase_orders').where({ id: order.id, promo_used: false })
+      .update({ promo_gallery_id: null });
     if (updated) await trx('photo_purchases').where({ order_id: order.order_id }).update({ expires_at: now, updated_at: now });
     return updated;
   });
@@ -146,8 +150,10 @@ async function reconcileSession(order, session, { failed = false, client = strip
   });
   order = await db('photo_purchase_orders').where({ id: order.id }).first();
   if (charge?.disputed) return revoke(order, 'charged_back', { releasePromo: !order.promo_used });
-  if (Number(charge?.amount_refunded) > 0) return revoke(order, 'refunded', { releasePromo: !order.promo_used });
+  // A charge's aggregate refund amount is not proof that our refund finished.
+  // Keep its reservation until the actual Refund object confirms success.
   if (REFUSING.includes(order.status)) return refusePaidOrder(order, client);
+  if (Number(charge?.amount_refunded) > 0) return revoke(order, 'refunded', { releasePromo: !order.promo_used });
   // Stripe can mark a zero-total Checkout paid without creating a
   // PaymentIntent. Only a matching zero-total quote permits that path.
   const zeroTotal = quote.totalCents === 0 && session.amount_total === 0 && !session.payment_intent;
@@ -184,10 +190,11 @@ async function reconcileSession(order, session, { failed = false, client = strip
     if (trx.client.config.client === 'pg') orderQuery.forUpdate();
     const currentOrder = await orderQuery.first();
     if (!currentOrder || !OPEN.includes(currentOrder.status)) return true;
-    if (!isGalleryOnSale(current, { allowTemporarilyDisabled: true }) || Date.parse(quote.expiresAt) <= Date.now()) return false;
+    if (!isGalleryOnSale(current, { allowTemporarilyDisabled: true })) return false;
     const grantedAt = Date.now();
+    const expiresAt = reservationExpiry(currentOrder, current, grantedAt);
+    if (!expiresAt || Date.parse(expiresAt) <= grantedAt) return false;
     const now = new Date(grantedAt).toISOString();
-    const expiresAt = new Date(Math.min(Date.parse(quote.expiresAt), Date.parse(purchaseExpiry(current, grantedAt)))).toISOString();
     const currentPhotos = await sellablePhotos(trx, current.id).whereIn('photos.id', quote.lines.map((line) => line.photoId)).select('photos.id');
     if (currentPhotos.length !== quote.lines.length) return false;
     const changed = await trx('photo_purchase_orders').where({ id: order.id }).whereIn('status', OPEN)
