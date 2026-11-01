@@ -10,12 +10,16 @@ describe('badly typed HEIC and HEIF uploads (issue 2359)', () => {
     ['IMG_1.heif', 'image/heic', 'image/heif'],
   ])('names %s reported as "%s" from its extension', (name, reported, expected) => {
     expect(normalizeUploadMimeType(name, reported)).toBe(expected);
-    expect(validateFileType(name, reported, heif)).toBe(true);
+    expect(validateFileType(name, normalizeUploadMimeType(name, reported), heif)).toBe(true);
   });
 
   it('needs the type enabled, by its extension', () => {
-    expect(validateFileType('IMG_1.HEIC', '', ['image/jpeg'])).toBe(false);
+    expect(validateFileType('IMG_1.HEIC', normalizeUploadMimeType('IMG_1.HEIC', ''), ['image/jpeg'])).toBe(false);
     expect(validateFileType('IMG_1.heif', 'image/heif', ['image/heic'])).toBe(false);
+  });
+
+  it('leaves the check itself to the routes that normalise, so a transfer keeps its type', () => {
+    expect(validateFileType('IMG_1.HEIC', 'application/octet-stream', [...heif, 'application/octet-stream'])).toBe(false);
   });
 
   it('does not rename a type that names something else', () => {

@@ -234,12 +234,7 @@ const ALLOWED_DOCUMENT_TYPES = {
  * @param {string[]} allowedTypes - Array of allowed MIME types
  * @returns {boolean} - True if file type is valid
  */
-function validateFileType(filename, reportedMimetype, allowedTypes) {
-  // HEIC arrives badly typed from the browser. The routes that normalise DNG
-  // do so before calling this, so nothing else changes here.
-  const heif = HEIF_EXTENSION_TO_MIME[path.extname(filename).toLowerCase()];
-  const mimetype = heif ? normalizeUploadMimeType(filename, reportedMimetype) : reportedMimetype;
-
+function validateFileType(filename, mimetype, allowedTypes) {
   // Check if MIME type is allowed
   if (!allowedTypes.includes(mimetype)) {
     return false;
