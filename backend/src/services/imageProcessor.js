@@ -36,6 +36,11 @@ const RAW_EXTENSIONS = new Set([
   'raf', 'rw2', 'orf', 'pef', 'srw', 'raw', '3fr', 'dcr', 'kdc'
 ]);
 
+/** HEIC or HEIF by name. The codec inside is only known from the file. */
+function isHeifFilename(name) {
+  return /\.hei[cf]$/i.test(String(name || ''));
+}
+
 function isRawFilename(name) {
   if (!name || typeof name !== 'string') return false;
   const ext = path.extname(name).toLowerCase().replace(/^\./, '');
@@ -153,19 +158,124 @@ async function extractRawPreviewSnapshot(rawPath) {
   throw new Error(`No usable embedded preview in RAW file ${path.basename(rawPath)}: ${lastErr ? lastErr.message : 'no preview tag returned data'}`);
 }
 
+// A 48 MP frame at the quality below stays well under this.
+const HEIF_DECODE_MAX_BYTES = 128 * 1024 * 1024;
+// An iPhone stores its frame as 512px tiles and ffmpeg gives each tile a
+// decoder thread: 48 for 12 MP, 187 for 48 MP. The default budget of 128 ends
+// the job, so the decoders stay single-threaded and the budget is the maximum.
+const HEIF_DECODE_THREADS = 256;
+const JPEG_ICC_SEGMENT_BYTES = 65519;
+
+/**
+ * The header of a HEVC-coded HEIF, or null. Sharp's prebuilt libvips reads that
+ * header but has no HEVC decoder, while an AV1-coded .heif decodes as it is. A
+ * file sharp cannot read at all is left to fail where any other photo would.
+ */
+async function hevcHeifMetadata(input) {
+  try {
+    const metadata = await sharp(input).metadata();
+    return metadata.compression === 'hevc' ? metadata : null;
+  } catch (error) {
+    if (isResourceError(error)) throw error;
+    return null;
+  }
+}
+
+/**
+ * Put an ICC profile into a JPEG, after the JFIF header ffmpeg writes. ffmpeg
+ * drops the profile on the way out, and an iPhone shoots in Display P3: read
+ * as sRGB, every photo would come out visibly duller.
+ */
+function withIccProfile(jpeg, icc) {
+  const count = Math.ceil(icc.length / JPEG_ICC_SEGMENT_BYTES);
+  const segments = [];
+  for (let index = 0; index < count; index++) {
+    const part = icc.subarray(index * JPEG_ICC_SEGMENT_BYTES, (index + 1) * JPEG_ICC_SEGMENT_BYTES);
+    const header = Buffer.alloc(18);
+    header.writeUInt16BE(0xffe2, 0);
+    header.writeUInt16BE(part.length + 16, 2);
+    header.write('ICC_PROFILE\0', 4, 'latin1');
+    header[16] = index + 1;
+    header[17] = count;
+    segments.push(header, part);
+  }
+  const start = jpeg.readUInt16BE(2) === 0xffe0 ? 4 + jpeg.readUInt16BE(4) : 2;
+  return Buffer.concat([jpeg.subarray(0, start), ...segments, jpeg.subarray(start)]);
+}
+
+/**
+ * Decode a HEVC HEIC to a temp .jpg. ffmpeg already ships for video, and it
+ * assembles an iPhone's tile grid and applies the stored rotation, so the
+ * result is upright with no orientation left to carry. Throws if the file
+ * cannot be decoded; the caller treats that as a processing failure, same as
+ * any unreadable upload.
+ */
+async function decodeHevcHeif(localPath, sourceName, metadata) {
+  require('./imageResourcePolicy').estimate(metadata);
+  return mediaProcesses.withSnapshot(localPath, 'heif', async (snapshot, { policy, format }) => {
+    const outDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-heif-'));
+    const outPath = path.join(outDir, `${crypto.randomBytes(4).toString('hex')}.jpg`);
+    const cleanup = () => fsp.rm(outDir, { recursive: true, force: true }).catch(() => {});
+    try {
+      await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+        ...mediaProcesses.inputOptions(format, 1), '-i', snapshot,
+        '-frames:v', '1', '-an', '-sn', '-dn', '-pix_fmt', 'yuvj420p', '-q:v', '2',
+        '-threads', '1', outPath], {
+        memoryBytes: policy.nativeBytes, wallMs: policy.thumbnailMs,
+        cpuSeconds: Math.ceil(policy.thumbnailMs / 1000), fileBytes: HEIF_DECODE_MAX_BYTES,
+        threadLimit: HEIF_DECODE_THREADS,
+      });
+      if (metadata.icc) await fsp.writeFile(outPath, withIccProfile(await fsp.readFile(outPath), metadata.icc));
+      return { path: outPath, cleanup };
+    } catch (error) {
+      await cleanup();
+      throw error;
+    }
+  }, { sourceName });
+}
+
 /**
  * Give a Sharp-processable local image path for `localPath`. For ordinary
  * images it's a pass-through (no cost). For RAW/DNG (by `sourceName` extension)
- * it extracts the embedded JPEG preview and returns that, plus the basename to
- * use for generated outputs so thumbnails/previews stay named after the source
- * rather than the random temp file. Always call `cleanup()` when done.
+ * it extracts the embedded JPEG preview, and for a HEVC HEIC it decodes one,
+ * and returns that, plus the basename to use for generated outputs so
+ * thumbnails/previews stay named after the source rather than the random temp
+ * file. Always call `cleanup()` when done.
  */
 async function withProcessableImage(localPath, sourceName) {
-  if (!isRawFilename(sourceName)) {
+  const hevc = isHeifFilename(sourceName) ? await hevcHeifMetadata(localPath) : null;
+  if (!hevc && !isRawFilename(sourceName)) {
     return { path: localPath, outputBasename: undefined, cleanup: () => {} };
   }
-  const { path: previewPath, cleanup } = await extractRawPreview(localPath, sourceName);
+  const { path: previewPath, cleanup } = hevc
+    ? await decodeHevcHeif(localPath, sourceName, hevc)
+    : await extractRawPreview(localPath, sourceName);
   return { path: previewPath, outputBasename: path.basename(sourceName), cleanup };
+}
+
+/**
+ * A temp file sharp can read standing in for a HEVC photo, or null for any
+ * other input. For the code that takes a path or a buffer and not a source
+ * name: the watermark, which a HEIC reaches at both shapes.
+ */
+async function heifStandIn(input) {
+  if (!Buffer.isBuffer(input)) {
+    if (!isHeifFilename(input)) return null;
+    const proc = await withProcessableImage(input, input);
+    return proc.path === input ? null : proc;
+  }
+  if (input.toString('latin1', 4, 8) !== 'ftyp' || !(await hevcHeifMetadata(input))) return null;
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-heif-'));
+  const removeDir = () => fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  try {
+    const source = path.join(dir, 'source.heic');
+    await fsp.writeFile(source, input);
+    const proc = await withProcessableImage(source, source);
+    return { path: proc.path, cleanup: async () => { await proc.cleanup(); await removeDir(); } };
+  } catch (error) {
+    await removeDir();
+    throw error;
+  }
 }
 
 // Default thumbnail settings
@@ -1843,6 +1953,7 @@ module.exports = {
   isRawFilename,
   extractRawPreview,
   withProcessableImage,
+  heifStandIn,
   prefixedBasename,
   RAW_EXTENSIONS,
   DEFAULT_THUMBNAIL_WIDTH,

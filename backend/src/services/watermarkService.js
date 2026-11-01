@@ -1,6 +1,6 @@
 const sharp = require('./isolatedSharp');
 const { isResourceError } = require('./imageResourcePolicy');
-const { orientedDimensions } = require('./imageProcessor');
+const { orientedDimensions, heifStandIn } = require('./imageProcessor');
 const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
@@ -99,8 +99,22 @@ class WatermarkService {
    * download paths resize first and watermark second without a second tmp
    * file — which matters because the mark is sized relative to the input's
    * own width, so it has to be applied at the OUTPUT size to come out right.
+   *
+   * A HEVC HEIC is marked through a decoded copy. It stays outside the
+   * fail-open below: a file that cannot be decoded cannot be marked, and the
+   * original must not go out in its place.
    */
-  async applyWatermark(imagePath, settings, { keepMetadata = false, failClosed = false } = {}) {
+  async applyWatermark(imagePath, settings, options = {}) {
+    const standIn = settings?.enabled ? await heifStandIn(imagePath) : null;
+    if (!standIn) return this.compositeWatermark(imagePath, settings, options);
+    try {
+      return await this.compositeWatermark(standIn.path, settings, options);
+    } finally {
+      await standIn.cleanup();
+    }
+  }
+
+  async compositeWatermark(imagePath, settings, { keepMetadata = false, failClosed = false } = {}) {
     const isBuffer = Buffer.isBuffer(imagePath);
     try {
       if (!settings || !settings.enabled) {
