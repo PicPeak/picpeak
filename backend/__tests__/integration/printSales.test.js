@@ -1205,3 +1205,22 @@ sdkTest('S3 SDK cancellation finishes multipart cleanup before releasing the sta
     expect(await db('print_sales_assets').where({ order_id: q.id })).toHaveLength(0);
   });
 }, 120000);
+
+sdkTest('S3 SDK retries transient part failures without reusing a completed Upload object', async () => {
+  await withPrintS3(async s3 => {
+    let injected = false;
+    s3.adapter.s3Client.middlewareStack.add((next, context) => async args => {
+      if (!injected && context.commandName === 'UploadPartCommand') {
+        injected = true;
+        throw Object.assign(new Error('Synthetic temporary part failure'), { name: 'ServiceUnavailable', $metadata: { httpStatusCode: 503 }, $retryable: {} });
+      }
+      return next(args);
+    }, { step: 'deserialize', name: 'transientPrintPartFixture' });
+    const bytes = crypto.randomBytes(6 * 1024 * 1024), key = '.print-sales/retry-fixture/artwork.bin';
+    await s3.put(key, bytes);
+    expect(injected).toBe(true);
+    const digest = require('crypto').createHash('sha256');
+    for await (const chunk of await s3.get(key)) digest.update(chunk);
+    expect(digest.digest('hex')).toBe(V.hash(bytes));
+  });
+}, 120000);
