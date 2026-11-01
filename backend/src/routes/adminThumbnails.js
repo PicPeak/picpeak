@@ -6,6 +6,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { canAccessEvent } = require('../middleware/ownership');
 const { ensureThumbnail, ensurePreviewImage } = require('../services/imageProcessor');
+const { retryTransient } = require('../services/imageResourcePolicy');
 const { getStorage } = require('../services/storage');
 const logger = require('../utils/logger');
 const applicationWork = require('../services/activeApplicationWork');
@@ -23,6 +24,13 @@ const runningJobs = { thumbnails: false, previews: false };
 // busy. Decodes stay in the isolated sharp pool (at most 2 workers), so the cap
 // bounds temp disk and storage connections, not RAM: a queued slot holds a temp
 // copy of the original and a storage request.
+// Several RAW files at once can fill the media staging budget, and the refusal
+// (MEDIA_QUEUE_FULL) asks for 5 s. This loop has no queue to put a photo back in,
+// so it waits here, holding its slot. Only that refusal: a stopped service would
+// hold the shutdown drain for every photo left, and a timeout would run as long
+// again.
+const PREVIEW_RETRY = { pauseMs: 5000, retryIf: (error) => error?.code === 'MEDIA_QUEUE_FULL' };
+
 function previewRegenConcurrency() {
   const configured = Number.parseInt(process.env.PREVIEW_REGEN_CONCURRENCY || '1', 10);
   return Number.isFinite(configured) && configured > 0 ? Math.min(configured, 8) : 1;
@@ -401,7 +409,7 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
             // superseded. Not forced: a lazy generation already running for
             // this photo renders under the same settings, so joining it is
             // the same result without doing the work twice.
-            if (await ensurePreviewImage(photo)) {
+            if (await retryTransient(() => ensurePreviewImage(photo), PREVIEW_RETRY)) {
               successCount++;
             } else {
               errorCount++;
@@ -421,7 +429,10 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
           const tierError = await require('../services/imageProcessor')
             .deletePreviewTiers(photo, { strict: true }).then(() => null, (err) => err);
           // `force`: never adopt a lazy generation already in flight (#1020).
-          const newPreviewPath = await ensurePreviewImage({ ...photo, preview_path: null }, { force: true });
+          const newPreviewPath = await retryTransient(
+            () => ensurePreviewImage({ ...photo, preview_path: null }, { force: true }),
+            PREVIEW_RETRY
+          );
           if (newPreviewPath) {
             // The replaced preview, when the key MOVED. A camera-named
             // (watch-folder) photo's preview is now named per photo, an S3

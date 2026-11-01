@@ -146,6 +146,63 @@ describe('preview regeneration concurrency', () => {
     expect(logInfo.mock.calls.some((c) => /3 success, 0 errors/.test(String(c[0])))).toBe(true);
   });
 
+  describe('a transient refusal', () => {
+    const queueFull = () => Object.assign(new Error('Media input staging capacity is full'), { code: 'MEDIA_QUEUE_FULL', retryAfter: 5 });
+    let pauses;
+
+    // The real pause is 5 s; record it and run it at once.
+    beforeEach(() => {
+      pauses = [];
+      const realSetTimeout = global.setTimeout;
+      jest.spyOn(global, 'setTimeout').mockImplementation((fn, ms, ...args) => {
+        if (ms === 5000) { pauses.push(ms); return realSetTimeout(fn, 0, ...args); }
+        return realSetTimeout(fn, ms, ...args);
+      });
+    });
+    afterEach(() => { global.setTimeout.mockRestore(); });
+
+    it.each([
+      ['a forced run', {}],
+      ['an onlyMissing run', { onlyMissing: true }],
+    ])('is retried after the pause it asks for on %s', async (_name, body) => {
+      process.env.PREVIEW_REGEN_CONCURRENCY = '2';
+      const eventId = await seedEventWithPhotos(1);
+      imageProcessor.ensurePreviewImage.mockRejectedValueOnce(queueFull());
+      await request(app).post('/admin/thumbnails/regenerate-previews').send({ eventId, ...body });
+      await drain();
+
+      expect(imageProcessor.ensurePreviewImage).toHaveBeenCalledTimes(2);
+      expect(pauses).toEqual([5000]);
+      expect(logInfo.mock.calls.some((c) => /1 success, 0 errors/.test(String(c[0])))).toBe(true);
+    });
+
+    it('does not pause for a stopped service, so a shutdown drain stays short', async () => {
+      process.env.PREVIEW_REGEN_CONCURRENCY = '2';
+      const eventId = await seedEventWithPhotos(1);
+      imageProcessor.ensurePreviewImage.mockRejectedValueOnce(
+        Object.assign(new Error('Media processing is stopped'), { code: 'MEDIA_CANCELLED' })
+      );
+      await request(app).post('/admin/thumbnails/regenerate-previews').send({ eventId });
+      await drain();
+
+      expect(imageProcessor.ensurePreviewImage).toHaveBeenCalledTimes(1);
+      expect(pauses).toEqual([]);
+      expect(logInfo.mock.calls.some((c) => /0 success, 1 errors/.test(String(c[0])))).toBe(true);
+    });
+
+    it('counts the photo as failed once the retries run out', async () => {
+      process.env.PREVIEW_REGEN_CONCURRENCY = '2';
+      const eventId = await seedEventWithPhotos(1);
+      imageProcessor.ensurePreviewImage
+        .mockRejectedValueOnce(queueFull()).mockRejectedValueOnce(queueFull()).mockRejectedValueOnce(queueFull());
+      await request(app).post('/admin/thumbnails/regenerate-previews').send({ eventId });
+      await drain();
+
+      expect(imageProcessor.ensurePreviewImage).toHaveBeenCalledTimes(3);
+      expect(logInfo.mock.calls.some((c) => /0 success, 1 errors/.test(String(c[0])))).toBe(true);
+    });
+  });
+
   it('a failing photo does not stop the others', async () => {
     process.env.PREVIEW_REGEN_CONCURRENCY = '2';
     const eventId = await seedEventWithPhotos(5);

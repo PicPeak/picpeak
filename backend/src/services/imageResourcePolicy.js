@@ -118,11 +118,11 @@ function isTransient(error) {
   return TRANSIENT.has(error?.code);
 }
 /** Runs `work` again after a pause while the image worker says "not now". */
-async function retryTransient(work, { attempts = 3, pauseMs = 2000 } = {}) {
+async function retryTransient(work, { attempts = 3, pauseMs = 2000, retryIf = isTransient } = {}) {
   for (let attempt = 1; ; attempt++) {
     try { return await work(); }
     catch (error) {
-      if (!isTransient(error) || attempt >= attempts) throw error;
+      if (!retryIf(error) || attempt >= attempts) throw error;
       await new Promise(resolve => setTimeout(resolve, pauseMs));
     }
   }
