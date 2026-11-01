@@ -22,8 +22,13 @@ const { safeValidationErrors } = require('../../utils/routeHelpers');
 const { db, logActivity } = require('../../database/db');
 const { livePhotos } = require('../../utils/photoVisibility');
 const { parseBooleanInput } = require('../../utils/parsers');
-const { apiTokenAuth, requireApiScope } = require('../../middleware/apiTokenAuth');
-const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
+const rateLimit = require('express-rate-limit');
+const {
+  apiTokenAuth, requireApiScope, GALLERY_PASSWORD_READ_SCOPE, GALLERY_PASSWORD_RESET_SCOPE
+} = require('../../middleware/apiTokenAuth');
+const { requireEventOwnership, requireEventOwner, scopeEventsQuery } = require('../../middleware/ownership');
+const { noStoreCache } = require('../../middleware/noStoreCache');
+const { revealGalleryPassword, resetGalleryPassword } = require('../../services/galleryPasswordService');
 const { holdsForReview, adminUploadColumns } = require('../../services/uploadReviewService');
 const { claimPromotion } = require('../../services/watchFolderClaims');
 // GHSA-9697: migration 081 defines a token's effective permissions as the
@@ -531,7 +536,8 @@ async function handleV1PhotoUpload(req, res) {
     await validateUploadedFiles(checked, res, () => {});
     if (checked.files.length === 0) {
       await fs.unlink(tempPath).catch(() => {});
-      return res.status(400).json({ error: `Invalid image file: ${req.file.originalname}` });
+      const [rejected] = checked.invalidFiles || [];
+      return res.status(400).json({ error: rejected?.code === require('../../services/imageResourcePolicy').LIBRARY_UNAVAILABLE ? rejected.error : `Invalid image file: ${req.file.originalname}` });
     }
 
     const event = await db('events').where({ id: req.params.id }).first();
@@ -2204,6 +2210,189 @@ router.get(
         error: errorClass(error)
       });
       if (!res.headersSent) res.status(500).json({ error: 'Failed to serve preview' });
+    }
+  }
+);
+
+// ──────────────────────────────────────────────────────────────────────────
+// Gallery passwords (issue 2326): the API-token twins of the admin routes
+// GET /api/admin/events/:id/password and POST /api/admin/events/:id/reset-password.
+// Each needs its own gallery_passwords:* scope, which no other scope implies.
+// The same role permission and owner rule as the admin routes apply
+// (requireEventOwner: an assignment does not hand over the password), and both
+// share their logic with them through galleryPasswordService. Every reveal and
+// reset is in the activity log under the token's owner, naming the token.
+// ──────────────────────────────────────────────────────────────────────────
+
+// Per token, in memory like the other limiters (a restart resets it). Placed
+// before the permission and owner checks, so probing foreign ids counts too.
+const galleryPasswordLimiter = (bucket) => rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `v1-${bucket}:${req.apiToken.id}`,
+  handler: (_req, res) => res.status(429).json({
+    error: 'Too many gallery password requests for this token. Try again later.',
+    code: 'RATE_LIMITED'
+  })
+});
+const passwordReadLimiter = galleryPasswordLimiter('gallery-password-read');
+const passwordResetLimiter = galleryPasswordLimiter('gallery-password-reset');
+
+const tokenAudit = (req) => ({ via: 'api_token', apiTokenId: req.apiToken.id, apiTokenName: req.apiToken.name });
+const tokenActor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
+
+/**
+ * @openapi
+ * /events/{id}/password:
+ *   get:
+ *     tags: [Events]
+ *     summary: Reveal a gallery's recoverable password
+ *     description: |
+ *       Needs the `gallery_passwords:read` scope (not implied by `admin`) and,
+ *       for the token's owner, the events.edit or events.support permission
+ *       and ownership of the event (an assignment is not enough). A password
+ *       exists only while the security setting "Keep gallery passwords
+ *       recoverable" is on and a copy was saved after it was switched on;
+ *       otherwise `available` is false and `reason` says why. Every reveal is
+ *       written to the activity log. Limited to 10 requests per 15 minutes
+ *       per token. The response is never cached.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: The stored passwords, or why there are none
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 available: { type: boolean, description: "True when at least one of the two passwords is returned." }
+ *                 reason:
+ *                   type: string
+ *                   nullable: true
+ *                   enum: [recoverable_storage_disabled, no_saved_copy]
+ *                 enabled: { type: boolean, description: "Whether recoverable storage is switched on." }
+ *                 password: { type: string, nullable: true, description: "The gallery password." }
+ *                 client_password: { type: string, nullable: true, description: "The client access password." }
+ *       403: { description: "Missing scope or permission, or not the event's owner" }
+ *       404: { description: Not found }
+ *       429: { description: Rate limited }
+ */
+router.get(
+  '/events/:id/password',
+  apiTokenAuth,
+  noStoreCache,
+  requireApiScope(GALLERY_PASSWORD_READ_SCOPE),
+  passwordReadLimiter,
+  requirePermission(['events.edit', 'events.support']),
+  requireEventOwner,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin, 'created_by', { assignments: false }).first('id', 'event_name');
+      if (!event) return res.status(404).json({ error: 'Event not found' });
+
+      const stored = await revealGalleryPassword(id, event, tokenActor(req), tokenAudit(req));
+      const available = Boolean(stored.password || stored.clientPassword);
+      res.json({
+        available,
+        reason: available ? null : (stored.enabled ? 'no_saved_copy' : 'recoverable_storage_disabled'),
+        enabled: stored.enabled,
+        password: stored.password,
+        client_password: stored.clientPassword
+      });
+    } catch (error) {
+      logger.error('v1 GET /events/:id/password failed', { eventId: req.params.id, error: error.message });
+      res.status(500).json({ error: 'Failed to read gallery password' });
+    }
+  }
+);
+
+/**
+ * @openapi
+ * /events/{id}/reset-password:
+ *   post:
+ *     tags: [Events]
+ *     summary: Reset a gallery's password
+ *     description: |
+ *       Needs the `gallery_passwords:reset` scope (not implied by `admin`) and
+ *       the same permission and ownership as the password read. Same behaviour
+ *       as the admin reset: sets the given password, or generates one when
+ *       none is given, signs out guests who used the old one, and mails the
+ *       new one to the customer unless `send_email` is false. Recoverable
+ *       storage does not have to be on. Archived galleries are refused.
+ *       Every reset is written to the activity log. Limited to 10 requests per
+ *       15 minutes per token. The response is never cached.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               password: { type: string, description: "The new password. Omitted or empty: a password is generated. Must meet the gallery password rules." }
+ *               send_email: { type: boolean, default: true, description: "Mail the new password to the customer (or host) address." }
+ *     responses:
+ *       200:
+ *         description: Password reset
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 password: { type: string, description: "The new gallery password." }
+ *                 email_sent: { type: boolean, description: "False when no mail was queued, for example because the event has no address." }
+ *       400: { description: "Invalid body, a password that fails the rules, or an archived gallery" }
+ *       403: { description: "Missing scope or permission, or not the event's owner" }
+ *       404: { description: Not found }
+ *       429: { description: Rate limited }
+ */
+router.post(
+  '/events/:id/reset-password',
+  apiTokenAuth,
+  noStoreCache,
+  requireApiScope(GALLERY_PASSWORD_RESET_SCOPE),
+  passwordResetLimiter,
+  requirePermission(['events.edit', 'events.support']),
+  requireEventOwner,
+  [
+    body('password').optional({ nullable: true }).isString().isLength({ max: 256 }),
+    body('send_email').optional().isBoolean({ strict: true })
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
+      }
+      const { id } = req.params;
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin, 'created_by', { assignments: false }).first();
+      if (!event) return res.status(404).json({ error: 'Event not found' });
+      if (event.is_archived) {
+        return res.status(400).json({ error: 'Cannot reset password for archived event' });
+      }
+
+      const result = await resetGalleryPassword(id, event, {
+        password: req.body.password,
+        sendEmail: req.body.send_email !== false
+      }, tokenActor(req), tokenAudit(req));
+      if (result.rejected) return res.status(400).json(result.rejected);
+      res.json({ password: result.newPassword, email_sent: result.emailSent });
+    } catch (error) {
+      logger.error('v1 POST /events/:id/reset-password failed', { eventId: req.params.id, error: error.message });
+      res.status(500).json({ error: 'Failed to reset password' });
     }
   }
 );

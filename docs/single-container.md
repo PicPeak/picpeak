@@ -234,6 +234,13 @@ proxy hop.
 > request (when no site URL is saved in Settings → General) start with
 > `http://`.
 
+## Virtual machines
+
+On x86-64 the image library needs a CPU with x86-64-v2 instructions. A VM can
+hide them even when the physical CPU has them: on Proxmox, the `kvm64` CPU type
+does. Every image upload then fails while the rest of the app runs normally.
+See [CPU compatibility](https://docs.picpeak.app/deployment/system-requirements#cpu).
+
 ## NAS notes
 
 **Synology (Container Manager)** and **QNAP (Container Station)** can both run

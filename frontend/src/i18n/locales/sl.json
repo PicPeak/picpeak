@@ -2797,7 +2797,11 @@
       "confirmRevoke": "Prekličem »{{name}}«? Obstoječe integracije, ki uporabljajo ta žeton, bodo začele prejemati napako 401.",
       "revoke": "Prekliči",
       "empty": "Žetonov še ni. Ustvarite enega zgoraj za začetek.",
-      "preview": "Predogled"
+      "preview": "Predogled",
+      "galleryPasswordScopes": "Gesla galerij",
+      "galleryPasswordScopesWarning": "Ti obsegi izdajajo gesla galerij. Niso del admin: označite jih le pri žetonu, ki jih potrebuje. Vsaka uporaba se zabeleži pod vašim imenom.",
+      "scopeGalleryPasswordsRead": "Prikaže shranjeno geslo galerije. Deluje le, dokler je vklopljeno »Hrani gesla galerij v obnovljivi obliki«.",
+      "scopeGalleryPasswordsReset": "Ponastavi geslo galerije in lahko novo pošlje stranki po e-pošti. Gostje se morajo znova prijaviti."
     },
     "webhooks": {
       "title": "Webhooki",
@@ -3353,6 +3357,24 @@
       "running": "Računanje nadomestnih slik...",
       "noneToFill": "Vse fotografije že imajo nadomestno sliko",
       "button": "Izračunaj nadomestne slike"
+    },
+    "contentHashBackfill": {
+      "title": "Zgoščene vrednosti vsebine",
+      "description": "Izračuna zgoščeno vrednost vsebine, po kateri primerja zaznavanje dvojnikov, za fotografije in videoposnetke, uvožene prek nadzorovane mape, zunanjih medijev ali S3, ter za tiste, dodane preden so zgoščene vrednosti obstajale. Datoteke se berejo ena za drugo; kadar koli lahko začasno ustavite in pozneje znova zaženete, da se nadaljuje, kjer se je ustavilo. Izvirniki, ki jih ni mogoče prebrati, so preskočeni in prešteti. Nove fotografije dobijo zgoščeno vrednost samodejno; novi videoposnetki jo dobijo tukaj.",
+      "ioWarning": "Vsak izvirnik brez zgoščene vrednosti se enkrat prebere: pričakujte obremenitev diska na NAS in odhodni promet pri S3.",
+      "total": "Fotografije in videoposnetki",
+      "hashed": "Z zgoščeno vrednostjo",
+      "pending": "Še brez zgoščene vrednosti",
+      "unreadable": "Neberljivi",
+      "result": "Zadnji zagon: izračunanih {{hashed}}, neberljivih izvirnikov {{failed}}",
+      "resultPaused": "Začasno ustavljeno: doslej izračunanih {{hashed}}, neberljivih izvirnikov {{failed}}",
+      "running": "Branje izvirnikov...",
+      "pause": "Začasno ustavi",
+      "pausing": "Ustavljanje po trenutni datoteki...",
+      "resume": "Nadaljuj",
+      "button": "Izračunaj zgoščene vrednosti",
+      "noneToHash": "Vsi izvirniki imajo zgoščeno vrednost",
+      "retryUnreadable": "Znova poskusi neberljive ({{count}})"
     },
     "health": {
       "title": "Stanje",

@@ -77,7 +77,10 @@ router.post(
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
-      const { name, scopes, expires_at } = req.body;
+      const { name, expires_at } = req.body;
+      // Deduplicated: all five scopes fit api_tokens.scopes (varchar 64)
+      // once each, a repeated one could overflow it on PostgreSQL.
+      const scopes = [...new Set(req.body.scopes)];
       const { plaintext, hashed, preview } = generateApiToken();
 
       const insertResult = await db('api_tokens').insert({

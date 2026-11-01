@@ -1089,6 +1089,9 @@
         "GET /repair-credits/status",
         "POST /repair-thumb-hashes",
         "GET /repair-thumb-hashes/status",
+        "POST /repair-content-hashes",
+        "POST /repair-content-hashes/pause",
+        "GET /repair-content-hashes/status",
         "GET /refresh-renditions/status"
       ]
     },
@@ -1783,7 +1786,9 @@
         "GET /events/:id/photos",
         "GET /events/:id/photos/download",
         "GET /events/:id/photos/:photoId/download",
-        "GET /events/:id/photos/:photoId/preview"
+        "GET /events/:id/photos/:photoId/preview",
+        "GET /events/:id/password",
+        "POST /events/:id/reset-password"
       ]
     },
     "gallery/downloads.js": {

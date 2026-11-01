@@ -41,6 +41,7 @@ const { clientIpForAudit } = require('../utils/clientIp');
 const contractSignedPdfUpload = require('../utils/contractSignedPdfUpload');
 const { auditedUpdate } = require('../services/accountingHistory');
 const { neverFrozen } = require('../services/contract/helpers');
+const { toDateOnly } = require('../utils/dateOnly');
 
 // Gate a customer-facing route on BOTH the global master flag AND the
 // per-customer override — getEffectiveFeaturesForCustomer combines them, so an
@@ -533,10 +534,10 @@ router.get('/quotes', customerAuth, async (req, res) => {
         quoteNumber: q.quote_number,
         status: q.status,
         currency: q.currency,
-        issueDate: q.issue_date,
-        validUntil: q.valid_until,
+        issueDate: toDateOnly(q.issue_date),
+        validUntil: toDateOnly(q.valid_until),
         eventName: q.event_name,
-        eventDate: q.event_date,
+        eventDate: toDateOnly(q.event_date),
         netAmountMinor: q.net_amount_minor,
         vatRate: q.vat_rate == null ? null : Number(q.vat_rate),
         vatAmountMinor: q.vat_amount_minor,
@@ -616,8 +617,8 @@ router.get('/invoices', customerAuth, async (req, res) => {
         invoiceNumber: i.invoice_number,
         status: i.status,
         currency: i.currency,
-        issueDate: i.issue_date,
-        dueDate: i.due_date,
+        issueDate: toDateOnly(i.issue_date),
+        dueDate: toDateOnly(i.due_date),
         installmentIndex: i.installment_index,
         installmentTotal: i.installment_total,
         installmentLabel: i.installment_label,
@@ -636,7 +637,7 @@ router.get('/invoices', customerAuth, async (req, res) => {
         cancellationStornoId: i.cancellation_storno_id || null,
         cancellationStornoNumber: i.cancellation_storno_number || null,
         eventName: i.event_name || null,
-        eventDate: i.event_date || null,
+        eventDate: toDateOnly(i.event_date),
       })),
     });
   } catch (error) {
@@ -773,8 +774,8 @@ router.get('/contracts', customerAuth, async (req, res) => {
         contractNumber: c.contract_number,
         status: c.status,
         language: c.language,
-        issueDate: c.issue_date,
-        validUntil: c.valid_until,
+        issueDate: toDateOnly(c.issue_date),
+        validUntil: toDateOnly(c.valid_until),
         // Before the freeze (#1446) the number is all that is shown.
         title: neverFrozen(c) ? null : c.title,
         sentAt: c.sent_at,

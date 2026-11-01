@@ -1551,7 +1551,11 @@
       "statusActive": "Actief",
       "confirmRevoke": "Dit token intrekken? Deze actie kan niet ongedaan worden gemaakt.",
       "revoke": "Intrekken",
-      "empty": "Nog geen tokens. Genereer er een hierboven om te beginnen."
+      "empty": "Nog geen tokens. Genereer er een hierboven om te beginnen.",
+      "galleryPasswordScopes": "Galerijwachtwoorden",
+      "galleryPasswordScopesWarning": "Deze scopes geven galerijwachtwoorden vrij. Ze vallen niet onder admin: vink ze alleen aan bij een token dat ze nodig heeft. Elk gebruik wordt op jouw naam gelogd.",
+      "scopeGalleryPasswordsRead": "Toont het opgeslagen wachtwoord van een galerij. Werkt alleen zolang \"Galerijwachtwoorden herstelbaar bewaren\" aan staat.",
+      "scopeGalleryPasswordsReset": "Stelt het wachtwoord van een galerij opnieuw in en kan het nieuwe naar de klant mailen. Gasten moeten opnieuw inloggen."
     },
     "webhooks": {
       "title": "Webhooks",
@@ -1695,6 +1699,24 @@
       "running": "Plaatshouders worden berekend...",
       "noneToFill": "Alle foto’s hebben al een plaatshouder",
       "button": "Plaatshouders berekenen"
+    },
+    "contentHashBackfill": {
+      "title": "Inhoudshashes",
+      "description": "Berekent de inhoudshash waarop de duplicaatdetectie vergelijkt, voor foto's en video's die via de bewaakte map, externe media of S3 zijn geïmporteerd, en voor alles wat werd toegevoegd voordat er hashes bestonden. Bestanden worden één voor één gelezen; je kunt op elk moment pauzeren en later opnieuw starten om verder te gaan waar het stopte. Originelen die niet te lezen zijn, worden overgeslagen en geteld. Nieuwe foto's krijgen hun hash automatisch; nieuwe video's krijgen die hier.",
+      "ioWarning": "Hierbij wordt elk origineel zonder hash één keer gelezen: reken op schijfbelasting op een NAS en uitgaand verkeer bij S3.",
+      "total": "Foto's en video's",
+      "hashed": "Met hash",
+      "pending": "Nog zonder hash",
+      "unreadable": "Onleesbaar",
+      "result": "Laatste run: {{hashed}} berekend, {{failed}} originelen onleesbaar",
+      "resultPaused": "Gepauzeerd: tot nu toe {{hashed}} berekend, {{failed}} originelen onleesbaar",
+      "running": "Originelen worden gelezen...",
+      "pause": "Pauzeren",
+      "pausing": "Pauzeert na het huidige bestand...",
+      "resume": "Hervatten",
+      "button": "Hashes berekenen",
+      "noneToHash": "Alle originelen hebben een hash",
+      "retryUnreadable": "Onleesbare opnieuw proberen ({{count}})"
     },
     "health": {
       "title": "Gezondheid",

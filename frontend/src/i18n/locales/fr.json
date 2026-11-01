@@ -1580,7 +1580,11 @@
       "statusActive": "Actif",
       "confirmRevoke": "Voulez-vous révoquer ce jeton ? Cette action ne peut pas être annulée.",
       "revoke": "Révoquer",
-      "empty": "Aucun jeton pour l'instant. Générez-en un ci-dessus pour commencer."
+      "empty": "Aucun jeton pour l'instant. Générez-en un ci-dessus pour commencer.",
+      "galleryPasswordScopes": "Mots de passe des galeries",
+      "galleryPasswordScopesWarning": "Ces scopes donnent accès aux mots de passe des galeries. Ils ne font pas partie d'admin : cochez-les uniquement sur un jeton qui en a besoin. Chaque utilisation est journalisée à votre nom.",
+      "scopeGalleryPasswordsRead": "Affiche le mot de passe enregistré d'une galerie. Ne fonctionne que tant que « Conserver les mots de passe des galeries récupérables » est activé.",
+      "scopeGalleryPasswordsReset": "Réinitialise le mot de passe d'une galerie et peut envoyer le nouveau au client par e-mail. Les invités doivent se reconnecter."
     },
     "webhooks": {
       "title": "Webhooks",
@@ -1745,6 +1749,24 @@
       "running": "Calcul des aperçus...",
       "noneToFill": "Toutes les photos ont déjà un aperçu flou",
       "button": "Calculer les aperçus flous"
+    },
+    "contentHashBackfill": {
+      "title": "Empreintes de contenu",
+      "description": "Calcule l'empreinte de contenu sur laquelle repose la détection des doublons, pour les photos et vidéos importées depuis le dossier surveillé, les médias externes ou S3, et pour celles ajoutées avant l'existence des empreintes. Les fichiers sont lus un par un ; vous pouvez mettre en pause à tout moment et relancer plus tard pour reprendre là où il s'est arrêté. Les originaux illisibles sont ignorés et comptés. Les nouvelles photos reçoivent leur empreinte automatiquement ; les nouvelles vidéos la reçoivent ici.",
+      "ioWarning": "Chaque original sans empreinte est lu une fois : prévoyez des E/S disque sur un NAS et du trafic sortant sur S3.",
+      "total": "Photos et vidéos",
+      "hashed": "Avec empreinte",
+      "pending": "Pas encore calculées",
+      "unreadable": "Illisibles",
+      "result": "Dernière exécution : {{hashed}} calculées, {{failed}} originaux illisibles",
+      "resultPaused": "En pause : {{hashed}} calculées, {{failed}} originaux illisibles jusqu'ici",
+      "running": "Lecture des originaux...",
+      "pause": "Pause",
+      "pausing": "Pause après le fichier en cours...",
+      "resume": "Reprendre",
+      "button": "Calculer les empreintes",
+      "noneToHash": "Tous les originaux ont une empreinte",
+      "retryUnreadable": "Réessayer les illisibles ({{count}})"
     },
     "health": {
       "title": "Santé",
