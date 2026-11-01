@@ -100,22 +100,15 @@ class WatermarkService {
    * file — which matters because the mark is sized relative to the input's
    * own width, so it has to be applied at the OUTPUT size to come out right.
    *
-   * A HEVC HEIC is marked through a decoded copy. It stays outside the
-   * fail-open below: a file that cannot be decoded cannot be marked, and the
-   * original must not go out in its place.
+   * A HEVC HEIC is marked through a decoded copy, after the cache lookup, under
+   * the key of its own path. The decode stays outside the fail-open below: a
+   * file that cannot be decoded cannot be marked, and the original must not go
+   * out in its place.
    */
-  async applyWatermark(imagePath, settings, options = {}) {
-    const standIn = settings?.enabled ? await heifStandIn(imagePath) : null;
-    if (!standIn) return this.compositeWatermark(imagePath, settings, options);
-    try {
-      return await this.compositeWatermark(standIn.path, settings, options);
-    } finally {
-      await standIn.cleanup();
-    }
-  }
-
-  async compositeWatermark(imagePath, settings, { keepMetadata = false, failClosed = false } = {}) {
+  async applyWatermark(imagePath, settings, { keepMetadata = false, failClosed = false } = {}) {
     const isBuffer = Buffer.isBuffer(imagePath);
+    let standIn = null;
+    let decoding = false;
     try {
       if (!settings || !settings.enabled) {
         // Return original image if watermarking is disabled
@@ -142,7 +135,11 @@ class WatermarkService {
       // composited and re-encoded sideways — and gallery.js serves
       // watermark_path ahead of the original, so this is exactly what a guest
       // sees.
-      const image = sharp(imagePath).rotate();
+      decoding = true;
+      standIn = await heifStandIn(imagePath);
+      decoding = false;
+      const source = standIn ? standIn.path : imagePath;
+      const image = sharp(source).rotate();
 
       // Deliberately NOT `await image.metadata()`: .rotate() does not change
       // what metadata() reports — a 400x200 source tagged orientation 6 still
@@ -150,7 +147,7 @@ class WatermarkService {
       // use below is positioning (watermark scale, font size, composite
       // extent), so it has to be the DISPLAYED size or the mark lands against
       // the wrong axis.
-      const rawMetadata = await sharp(imagePath).metadata();
+      const rawMetadata = await sharp(source).metadata();
       const oriented = orientedDimensions(rawMetadata);
       const metadata = { ...rawMetadata, width: oriented.width, height: oriented.height };
 
@@ -293,11 +290,13 @@ class WatermarkService {
       return watermarkedBuffer;
     } catch (error) {
       logger.error('Error applying watermark:', error);
-      if (failClosed || isResourceError(error)) throw error;
+      if (failClosed || decoding || isResourceError(error)) throw error;
       // Return the un-watermarked input on error. Buffer inputs are already
       // in memory — readFile() would treat the Buffer as a path and throw,
       // turning a cosmetic watermark failure into a failed download.
       return isBuffer ? imagePath : await fs.readFile(imagePath);
+    } finally {
+      await standIn?.cleanup();
     }
   }
 
