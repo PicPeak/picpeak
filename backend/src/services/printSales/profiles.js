@@ -4,7 +4,6 @@ const G = require('../albumProducts/library');
 const { defineProfile } = require('./manufacturingProfiles');
 const { AppError, ConflictError } = require('../../utils/errors');
 const { isTruthyFlag } = require('../../utils/lineItemTotals');
-const { artworkBytes, MAX_ORDER_ARTWORK_BYTES } = require('./output');
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 const defaults = () => ({ profiles: [], countries: [], policy: '', shippingPresetId: null });
 async function catalogue(tx) {
@@ -60,8 +59,6 @@ async function save(db, input) {
         const key = V.hash({ product: snapshot.selection.product.id, values: G.valuesOf(snapshot.selection) });
         if (variants.has(key)) throw new AppError('Two profiles enable the same product choices', 400);
         variants.add(key);
-        if (artworkBytes(snapshot.artwork, snapshot.manufacturing.output) > MAX_ORDER_ARTWORK_BYTES)
-          throw new AppError('This output file would exceed the 64 MB order limit; use a compressed format or a lower resolution', 400);
         prices.push(await priceItem(tx, entry.cataloguePresetId, definition.selection.productId));
       }
       profiles.push({ definition, cataloguePresetId: entry.cataloguePresetId });

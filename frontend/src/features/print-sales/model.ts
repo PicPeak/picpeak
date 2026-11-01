@@ -33,10 +33,15 @@ export interface Order {
   id: string; status: string; renderStatus: string; invoiceId: number | null; snapshotHash: string; artworkVersion: string | null;
   currency: string; totalMinor: number; netMinor: number; vatMinor: number; delivery?: Delivery; policy: string;
   buyerEmail?: string; acceptedAt: string | null; reviewedAt: string | null; submittedAt: string | null; dispatchedAt: string | null;
-  supplierReference: string | null; tracking: string | null; needsAttention: boolean; purgedAt: string | null;
-  items?: { photoId: number; filename: string; quantity: number; crop: Crop; fit: string; selection: Choice;
+  supplierReference?: string | null; tracking: string | null; needsAttention: boolean; purgedAt: string | null;
+  items?: { profileId: string; photoId: number; filename: string; quantity: number; crop: Crop; fit: 'cover' | 'contain'; selection: Choice;
     artwork?: { widthMm: number; heightMm: number }; background?: string; unitPriceMinor: number }[];
 }
+export interface Preparation {
+  stage: 'queued' | 'capturing' | 'rendering' | 'packaging' | 'ready' | 'failed' | 'expired';
+  completed: number; total: number; percent: number;
+}
+export interface Quote extends Order { preparation: Preparation }
 export const printSales = {
   settings: () => api.get<Settings>('/admin/print-sales/settings').then(r => r.data),
   save: (settings: Settings) => api.put<Settings>('/admin/print-sales/settings', settings).then(r => r.data),

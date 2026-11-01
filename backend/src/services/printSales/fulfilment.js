@@ -153,16 +153,20 @@ function createService({ db, storage }) {
   }
   /** Terminal artwork expires separately from native accounting records. Active orders are held. */
   async function cleanup() {
-    const old = new Date(Date.now() - 90 * 86400e3).toISOString(), day = new Date(Date.now() - 86400e3).toISOString();
-    await db('print_sales_orders').whereIn('status', ['quoted', 'capturing', 'failed']).where('expires_at', '<', day)
-      .update({ status: 'expired', render_status: 'cancelled', contact: null });
+    const old = new Date(Date.now() - 90 * 86400e3).toISOString();
+    await db('print_sales_orders').whereIn('status', ['quoted', 'capturing', 'failed']).whereNull('accepted_at').where('expires_at', '<=', now())
+      .update({ status: 'expired', render_status: 'cancelled', contact: null, purge_requested: formatBoolean(true) });
     const rows = await db('print_sales_orders').whereNull('purged_at').where(q => q
-      .where(w => w.whereIn('status', ['expired', 'failed']).where(x => x.where('expires_at', '<', day).orWhere('purge_requested', formatBoolean(true))))
+      .where(w => w.whereIn('status', ['expired', 'failed']).where(x => x.where('expires_at', '<=', now()).orWhere('purge_requested', formatBoolean(true))))
       .orWhere(w => w.whereIn('status', ['dispatched', 'cancelled', 'resolved']).where(x => x
         .where('closed_at', '<', old).orWhere('purge_requested', formatBoolean(true)))))
       .where('id', '>', sweepAfter).orderBy('id').limit(SWEEP_SIZE);
     sweepAfter = rows.length === SWEEP_SIZE ? rows[rows.length - 1].id : '';
     for (const row of rows) {
+      // A cancelled uploader may still be finishing its current object. Keep
+      // its reservation until it acknowledges cancellation or its lease lapses.
+      if (row.heartbeat && new Date(row.heartbeat).getTime() > Date.now() - 5 * 60e3 &&
+          await db('print_sales_assets').where({ order_id: row.id, kind: 'staging', claim: row.claim }).first()) continue;
       const assets = await db('print_sales_assets').where({ order_id: row.id });
       let complete = true;
       for (const a of assets) {

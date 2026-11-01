@@ -22,6 +22,10 @@ router.get('/:slug/print-sales/orders', handleAsync(async (req, res) => {
     .where({ event_id: req.event.id, customer_account_id: customer(req) }).orderBy('created_at', 'desc').limit(50);
   res.json({ orders: rows.map(s.customerShape) });
 }));
+router.get('/:slug/print-sales/orders/:id', handleAsync(async (req, res) =>
+  res.json(await service().status(req.event.id, customer(req), req.params.id))));
+router.post('/:slug/print-sales/orders/:id/discard', handleAsync(async (req, res) =>
+  res.json(await service().discard(req.event.id, customer(req), req.params.id))));
 router.post('/:slug/print-sales/quotes', require('express-rate-limit')({ windowMs: 10 * 60e3, max: 20, standardHeaders: true, legacyHeaders: false }),
   handleAsync(async (req, res) => res.status(201).json(await service().quote(req.event.id, customer(req), req.accessLevel, req.body))));
 router.post('/:slug/print-sales/orders/:id/accept', handleAsync(async (req, res) =>

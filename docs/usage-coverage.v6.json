@@ -2056,6 +2056,8 @@
       "route_signatures": [
         "GET /:slug/print-sales",
         "GET /:slug/print-sales/orders",
+        "GET /:slug/print-sales/orders/:id",
+        "POST /:slug/print-sales/orders/:id/discard",
         "POST /:slug/print-sales/quotes",
         "POST /:slug/print-sales/orders/:id/accept"
       ]

@@ -37,12 +37,14 @@ with native invoices; and background preparation with reviewed manual fulfilment
    per-photo copies and a basket scoped to that buyer's browser session. The same
    photograph can appear more than once with different products/crops. Delivery
    details are collected once; the server reuses the verified account email.
-7. Review the frozen quotation, final tax/delivery total and policy. Explicit
-   confirmation creates one product-only **native invoice** and queues artwork.
+7. Ask PicPeak to prepare the order. A progress bar shows stored originals,
+   completed print files and packaging; no invoice exists during preparation.
+   Once the package is ready, review the frozen quotation, final tax/delivery
+   total and policy. Explicit confirmation creates one product-only **native invoice**.
    The studio opens that invoice from the order and issues/sends it through
    normal CRM billing. The customer pays by bank transfer; native confirmed
    payments are authoritative. No invoice or payment email is sent by the shop
-   itself. Preparation and payment can finish in either order.
+   itself. Preparing a new order must finish before confirmation or invoicing.
 8. In Print sales, download the settled order's supplier ZIP and studio PDF,
    check the exact files, record the studio review, submit to the chosen lab
    manually, record its reference, and explicitly record dispatch/tracking.
@@ -69,18 +71,22 @@ implementation.
 
 ## Acceptance and billing guarantees
 
-Quotations retain order-specific original bytes **before** acceptance, along with
+Ready quotations retain order-specific original bytes **before** acceptance, along with
 source hashes, original filenames, EXIF-oriented geometry, manufacturing/profile
 versions, the selected delivery zone, native configured lines, taxes, totals and
-the policy. Quotations expire after 30 minutes. Catalogue, pricing, billing-owner,
+the policy. Queued preparations expire after 30 minutes; successful preparation
+starts a fresh 30-minute review window, capped by gallery expiry. Catalogue,
+pricing, billing-owner,
 source and visibility changes require a new quotation, as do production or
 delivery-zone edits. A shared gallery password or entered customer ID cannot
 identify the buyer. Guests, PIN-only clients and admin previews cannot order.
 
 Acceptance locks the catalogue/settings/order, verifies the buyer assignment and
 request acknowledgement and creates the native invoice within the same database
-transaction. Request replay returns the existing order/invoice. Concurrent capture
-requests return a retryable conflict; concurrent acceptance cannot create another
+transaction. It requires the finished stored originals, artwork, sheet and ZIP;
+known rendering, encoding and size failures cannot create an invoice. Request
+replay returns the existing preparation/order/invoice. Concurrent acceptance
+cannot create another
 obligation. Monthly/manual accumulation and automatic project-invoice appending
 are bypassed. Each photo allocation retains its own invoice line position.
 
@@ -107,9 +113,12 @@ The normal backend starts a database-backed worker. One order is prepared at a
 time across replicas. A claim UUID, heartbeat and compare-and-set publication
 prevent an interrupted attempt from publishing over a newer attempt. Claims
 older than five minutes can recover; three failures require explicit studio
-retry. Failure never rewrites the invoice or pretends that received money is
+retry for existing accepted orders. Failed unconfirmed preparations can be
+discarded and prepared again without an invoice. Failure never rewrites the
+invoice or pretends that received money is
 unpaid. Feature withdrawal pauses new rendering and ordering while retaining
-admin access to orders and prepared files.
+read access to retained orders through the admin API; downloads and fulfilment
+require re-enabling the feature.
 
 The existing isolated image worker performs metadata inspection and rendering.
 Its profile allowlist accepts built-in sRGB and three fixed, CC0 RGB assets:
@@ -164,15 +173,38 @@ correction or cancellation during preparation stops release. Allow temporary
 space for a complete supplier pack; at most two downloads run per backend process.
 Temporary copies are removed after success, refusal or client disconnection.
 
-Current bounds are 20 photo items, 1–100 copies each, 50 MiB per source, 200 MiB
-of captured originals per quotation, two simultaneous captures globally and two
-unexpired quotations per buyer (20 globally). At most 20 accepted orders can be
-queued/running and at most 100 accepted orders await studio resolution (10 per
-buyer). A render profile allows at most 60 megapixels; an order allows 64 MiB of
-production image files and an 80 MiB ZIP. Lossless formats can reach these bounds
-sooner; unsupported sizes are refused rather than silently reducing quality.
-Reads have a 60-second timeout. These are conservative initial limits, not an
-ARM64 throughput or memory benchmark; image-resource policy may refuse earlier.
+Current bounds are 20 photo items, 1–100 copies each, 50 MiB per source and
+200 MiB of captured originals per quotation. At most 20 unconfirmed preparations
+wait globally, and two per buyer across galleries. A changed basket supersedes
+its previous unconfirmed preparation. Only one order renders at a time. Existing
+accepted work takes priority; at most 20 accepted orders can be queued/running
+and at most 100 accepted orders await resolution per studio (10 per buyer).
+
+A render profile allows at most 60 megapixels. Actual output is bounded to
+256 MiB per image, 1 GiB of artwork per order, a ZIP of that artwork plus 8 MiB
+of overhead, and an 8 MiB private PDF sheet. Space is reserved from pixel counts
+(up to 4.5 bytes/pixel plus 1 MiB per image), rather than guessing compression
+ratios. The actual encoded output must fit this allocation before confirmation.
+Unconfirmed work reserves originals, artwork, ZIP and sheet together: at most
+8 GiB installation-wide and 3 GiB per customer, including incomplete uploads and
+failed objects awaiting deletion. These are admission limits, not preallocated
+disk space; accepted orders have separate count/retention limits and require
+sufficient studio storage. Storage exhaustion fails preparation without invoicing.
+
+The progress bar counts completed files, not elapsed time or an estimated finish
+time. It polls only for the active review, resumes after reopening/refreshing,
+and requires a fresh status check after a connection error. Only the opaque
+preparation ID is retained alongside the existing session basket; address details
+are not written to browser storage. Returning to the basket discards unconfirmed
+work first. Expiry, discard and erasure stop late publication and promptly reclaim
+files; a healthy in-flight upload keeps its staging reservation until it stops.
+
+Reads have a 60-second timeout. These limits are not an ARM64 throughput or
+memory benchmark; image-resource policy may refuse earlier. Each image is held
+only while processing that image; the ZIP streams from storage. Existing accepted
+orders still support frozen-profile preparation and controlled studio retries.
+Prepared packages use the order ID and snapshot hash; before confirmation they
+have no invoice number. The studio finds the attached invoice through the order.
 
 Private objects live under `.print-sales/<order-id>/` using the normal local/S3
 storage adapter. Normal backups, required-key recovery inventories and portable
@@ -223,7 +255,7 @@ deployment review remain necessary before opening an actual shop.
 
 ## Limits and manual recovery
 
-- **Order size.** Prepared artwork for one order is limited to 64 MB. A profile whose single file would exceed it is refused on save, and a basket expected to exceed it is refused at quotation, before anything is retained or invoiced. Lossless output is counted at raw size and JPEG at 1 byte per pixel. Both are estimates, not bounds: a grainy JPEG can reach about twice that and LZW can pass raw size, so such an order can still fail preparation after the invoice exists; correct the invoice and close the order.
+- **Order size.** Actual files must fit the bounds above and finish preparation before an invoice can be requested. A failed preparation leaves the basket available for editing and retry; it does not silently lower quality or create a financial obligation.
 - **Deleting an admin.** An admin with open print orders cannot be deleted until those orders are closed.
 - **Corrected invoices.** After a Storno and reissue, fulfilment follows the replacement invoice, which must carry the same lines and totals and be fully paid.
 - **Close order manually.** Once the original invoice is cancelled, an open order that can neither be cancelled nor dispatched (already at the lab, or reissued with different lines) is closed with a recorded reason. A replacement invoice must be fully paid or cancelled first; a paid one is noted on the activity log and refunded in native billing. This also releases customer erasure.

@@ -12,7 +12,7 @@ async function sheet(row, snapshot, contact, entries) {
   if (!registered) throw new Error('The bundled print-sheet font is unavailable');
   pdf.font(registered.body);
   pdf.fontSize(18).text('Studio print order sheet');
-  pdf.fontSize(10).text(`Order ${row.id}\nSelection ${row.snapshot_hash}\nInvoice ${row.invoice_id}`);
+  pdf.fontSize(10).text(`Order ${row.id}\nSelection ${row.snapshot_hash}\n${row.invoice_id ? `Invoice ${row.invoice_id}` : 'Invoice reference: see this order in PicPeak'}`);
   pdf.moveDown().text('PRIVATE STUDIO CHECKLIST — verify settlement and exact files before manual lab submission.');
   pdf.moveDown().text(`Deliver to: ${Object.values(contact.delivery).filter(Boolean).join(', ')}\nBuyer: ${contact.buyerEmail}`);
   if (snapshot.shipping?.zoneName) pdf.text(`Delivery zone: ${snapshot.shipping.zoneName}`);

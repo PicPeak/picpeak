@@ -344,3 +344,17 @@
   align-self: center;
   font-weight: 600;
 }
+
+.print-preparation-progress {
+  display: block;
+  width: 100%;
+  height: .75rem;
+  accent-color: var(--color-accent, #477968);
+}
+
+.print-shop-dialog [data-modal-footer] > button {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

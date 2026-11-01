@@ -12,8 +12,12 @@ import { formatCm } from '../shopping';
 import { ProfileEditor } from '../ProfileEditor';
 import { api } from '../../../config/api';
 import type { Photo } from '../../../types';
-import type { Order, Variant, Profile } from '../model';
-function render(ui: ReactElement) { return renderUi(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>{ui}</QueryClientProvider>); }
+import type { Order, Quote, Variant, Profile } from '../model';
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const result = renderUi(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return { ...result, rerender: (next: ReactElement) => result.rerender(<QueryClientProvider client={client}>{next}</QueryClientProvider>) };
+}
 const permissions = vi.hoisted(() => ({ enabled: true, manage: true, denied: new Set<string>() }));
 vi.mock('react-i18next', async original => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (_key: string, fallback: string | { defaultValue: string }) => typeof fallback === 'string' ? fallback : fallback.defaultValue }) }));
 vi.mock('../../../contexts/PermissionsContext', () => ({ usePermissions: () => ({ hasPermission: (p: string) => !permissions.denied.has(p) && (permissions.manage || !['products.manage', 'products.configure', 'bills.manage', 'customers.edit'].includes(p)) }) }));
@@ -27,14 +31,14 @@ const photo = { id: 1, filename: 'sample.jpg', original_filename: 'camera.jpg', 
 const variant: Variant = { id: 'profile-1', version: 'profile-version', selection: { schemaVersion: 2, productVersion: 'product-version', product: { id: 'product-1', name: 'Photographic print' },
   attributes: [{ id: 'size', name: 'Size', addOn: false, options: [{ id: 'small', name: '10 × 15 cm', imageId: null }] }] },
 artwork: { widthMm: 100, heightMm: 150 }, fitModes: ['cover', 'contain'], currency: 'EUR', unitPriceMinor: 250 };
-const quotation: Order = { id: 'order-1', status: 'quoted', renderStatus: 'pending', invoiceId: null,
+const quotation: Quote = { id: 'order-1', status: 'quoted', renderStatus: 'ready', preparation: { stage: 'ready', completed: 4, total: 4, percent: 100 }, invoiceId: null,
   snapshotHash: 'frozen-selection-hash', artworkVersion: null, currency: 'EUR', totalMinor: 615, netMinor: 500, vatMinor: 115,
   policy: 'Synthetic buyer policy', acceptedAt: null, reviewedAt: null, submittedAt: null, dispatchedAt: null,
   supplierReference: null, tracking: null, needsAttention: false, purgedAt: null,
-  items: [{ photoId: 1, filename: 'camera.jpg', quantity: 2, crop: { x: 0, y: 0, width: 1, height: 1 }, fit: 'cover', selection: variant.selection, unitPriceMinor: 250 }] };
+  items: [{ profileId: variant.id, photoId: 1, filename: 'camera.jpg', quantity: 2, crop: { x: 0, y: 0, width: 1, height: 1 }, fit: 'cover', selection: variant.selection, unitPriceMinor: 250 }] };
 beforeEach(() => {
   sessionStorage.clear(); permissions.enabled = true; permissions.manage = true; permissions.denied.clear();
-  vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/orders') ? { orders: [] } : { variants: [variant], countries: ['IE'], policy: 'Synthetic buyer policy', basketScope: 'buyer-1' } }) as any);
+  vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/orders') ? { orders: [] } : url.includes('/orders/') ? quotation : { variants: [variant], countries: ['IE'], policy: 'Synthetic buyer policy', basketScope: 'buyer-1' } }) as any);
   vi.mocked(api.post).mockImplementation(async (url: string) => ({ data: url.endsWith('/accept') ? { ...quotation, status: 'accepted', acceptedAt: '2026-10-28', invoiceId: 42 } : quotation }) as any);
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -178,7 +182,7 @@ describe('gallery print order journey', () => {
     expect(add).toBeDisabled(); fireEvent.load(image); expect(add).toBeEnabled(); fireEvent.error(image); expect(add).toBeDisabled();
   });
   it('uses finished trim dimensions for spatial scale without modifying the crop', async () => {
-    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/orders') ? { orders: [] } : { variants: [{ ...variant, trimMm: { width: 100, height: 150 }, bleedMm: { left: 5, top: 5, right: 5, bottom: 5 }, artwork: { widthMm: 110, heightMm: 160 } }], countries: ['IE'], basketScope: 'buyer-1' } }) as any);
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/orders') ? { orders: [] } : url.includes('/orders/') ? quotation : { variants: [{ ...variant, trimMm: { width: 100, height: 150 }, bleedMm: { left: 5, top: 5, right: 5, bottom: 5 }, artwork: { widthMm: 110, heightMm: 160 } }], countries: ['IE'], basketScope: 'buyer-1' } }) as any);
     render(<GalleryPrintShop slug="fixture" photos={[photo]} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Choose prints' })); fireEvent.click(screen.getByRole('button', { name: /camera.jpg/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Choose print options (1)' })); fireEvent.load(screen.getByAltText('Selected photograph and print crop'));
@@ -364,4 +368,99 @@ describe('print administration', () => {
     fireEvent.change(screen.getByLabelText('Trim width (mm)'), { target: { value: '149,7' } });
     expect(JSON.parse(screen.getByTestId('profile-json').textContent!).definition.manufacturing.trimMm.width).toBe(149.7);
   });
+});
+
+describe('preparation before invoicing', () => {
+  const pending: Quote = { ...quotation, status: 'capturing', renderStatus: 'running', artworkVersion: null,
+    preparation: { stage: 'rendering', completed: 1, total: 4, percent: 25 } };
+  function serve(status: () => Quote) {
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.endsWith('/orders') ? { orders: [] } : url.includes('/orders/') ? status() :
+      { variants: [variant], countries: ['IE'], policy: 'Synthetic buyer policy', basketScope: 'buyer-1' } }) as any);
+  }
+  it('shows real progress and only enables acknowledgement after the prepared files are ready', async () => {
+    let current = pending; serve(() => current); vi.mocked(api.post).mockResolvedValue({ data: pending } as any);
+    render(<GalleryPrintShop slug="fixture" photos={[photo]} />); await addItem();
+    fireEvent.click(screen.getByRole('button', { name: 'Review selections and final total' }));
+    const bar = await screen.findByRole('progressbar', { name: 'Print preparation progress' });
+    expect(bar).toHaveAttribute('value', '25'); expect(bar).toHaveAttribute('aria-valuetext', expect.stringContaining('(1/4)'));
+    expect(screen.getByText(/No invoice has been created/)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Confirm order and request invoice' })).toBeDisabled();
+    current = quotation;
+    await waitFor(() => expect(screen.getByRole('checkbox')).toBeEnabled(), { timeout: 3500 });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '100');
+    expect(screen.getByRole('button', { name: 'Confirm order and request invoice' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(screen.getByRole('button', { name: 'Confirm order and request invoice' })).toBeEnabled();
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+  it('restores the opaque preparation ID after refresh and retries status without another quote', async () => {
+    sessionStorage.setItem('print-preparation:buyer-1', pending.id);
+    let unavailable = true;
+    serve(() => { if (unavailable) throw new Error('offline'); return pending; });
+    render(<GalleryPrintShop slug="fixture" photos={[photo]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Prints & orders (0)' }));
+    const retry = await screen.findByRole('button', { name: 'Check progress again' });
+    expect(screen.getByRole('button', { name: 'Confirm order and request invoice' })).toBeDisabled();
+    unavailable = false; fireEvent.click(retry);
+    await screen.findByRole('progressbar'); expect(api.post).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem('print-preparation:buyer-1')).toBe(pending.id);
+  });
+  it('waits for discard before allowing edits, and preserves progress after a failed discard', async () => {
+    serve(() => pending); vi.mocked(api.post).mockResolvedValueOnce({ data: pending } as any);
+    render(<GalleryPrintShop slug="fixture" photos={[photo]} />); await addItem();
+    fireEvent.click(screen.getByRole('button', { name: 'Review selections and final total' }));
+    const back = await screen.findByRole('button', { name: 'Return to basket' });
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('Could not discard'));
+    fireEvent.click(back); await screen.findByText('Could not discard');
+    expect(screen.queryByRole('button', { name: 'Edit crop' })).not.toBeInTheDocument();
+    let finish!: (value: unknown) => void;
+    vi.mocked(api.post).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }) as any);
+    fireEvent.click(back); await waitFor(() => expect(api.post).toHaveBeenCalledTimes(3));
+    expect(back).toBeDisabled(); expect(screen.queryByRole('button', { name: 'Edit crop' })).not.toBeInTheDocument();
+    finish({ data: { ...pending, status: 'expired' } });
+    expect(await screen.findByRole('button', { name: 'Edit crop' })).toBeEnabled();
+    expect(sessionStorage.getItem('print-preparation:buyer-1')).toBeNull();
+    expect(vi.mocked(api.post).mock.calls[2][0]).toBe('/gallery/fixture/print-sales/orders/order-1/discard');
+  });
+  it('recovers an accepted order after a lost response without another invoice request', async () => {
+    sessionStorage.setItem('print-preparation:buyer-1', quotation.id);
+    sessionStorage.setItem('print-basket:buyer-1', JSON.stringify([{ ...quotation.items![0], lineId: 'line-1' }]));
+    serve(() => ({ ...quotation, status: 'accepted', acceptedAt: '2026-11-01', invoiceId: 42 }));
+    render(<GalleryPrintShop slug="fixture" photos={[photo]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Prints & orders (1)' }));
+    await screen.findByText(/Invoice.*#42/); expect(api.post).not.toHaveBeenCalled();
+    await waitFor(() => expect(sessionStorage.getItem('print-basket:buyer-1')).toBe('[]'));
+    expect(sessionStorage.getItem('print-preparation:buyer-1')).toBeNull();
+  });
+  it('aborts status requests on unmount to protect the next gallery session', async () => {
+    sessionStorage.setItem('print-preparation:buyer-1', quotation.id);
+    let signal: AbortSignal | undefined;
+    const fallback = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url: string, options?: any) => {
+      if (url.includes('/orders/')) { signal = options.signal; return new Promise(() => {}); }
+      return fallback(url, options);
+    });
+    const ui = render(<GalleryPrintShop slug="fixture" photos={[photo]} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Prints & orders (0)' }));
+    await waitFor(() => expect(signal).toBeDefined()); ui.unmount(); expect(signal?.aborted).toBe(true);
+  });
+});
+
+it('checks order status after a lost acceptance response and recovers the existing invoice', async () => {
+  let confirmed = false;
+  const fallback = vi.mocked(api.get).getMockImplementation()!;
+  vi.mocked(api.get).mockImplementation(async (url: string, options?: any) => url.includes('/orders/') ?
+    { data: confirmed ? { ...quotation, status: 'accepted', acceptedAt: '2026-11-01', invoiceId: 42 } : quotation } as any : fallback(url, options));
+  vi.mocked(api.post).mockImplementation(async (url: string) => {
+    if (url.endsWith('/accept')) { confirmed = true; throw new Error('Connection lost'); }
+    return { data: quotation } as any;
+  });
+  render(<GalleryPrintShop slug="fixture" photos={[photo]} />); await addItem();
+  fireEvent.click(screen.getByRole('button', { name: 'Review selections and final total' }));
+  const confirm = await screen.findByRole('button', { name: 'Confirm order and request invoice' });
+  fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(confirm);
+  await screen.findByText(/Invoice.*#42/);
+  expect(vi.mocked(api.post).mock.calls.filter(([url]) => url.endsWith('/accept'))).toHaveLength(1);
+  expect(screen.queryByText('Connection lost')).not.toBeInTheDocument();
 });
