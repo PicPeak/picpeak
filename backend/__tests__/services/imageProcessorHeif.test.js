@@ -5,12 +5,13 @@
  * first test pins the reason this path exists. What ffmpeg itself does with one
  * was checked by hand in the backend image: 512px tile grids up to 48 MP
  * assemble, and a stored rotation comes out applied. It drops the ICC profile,
- * which is why the profile is put back here.
+ * EXIF and XMP, which is why they are put back here.
  */
 const fs = require('fs').promises;
 const os = require('os');
 const path = require('path');
 const sharp = require('sharp');
+const exifr = require('exifr');
 
 const mediaProcesses = require('../../src/services/mediaProcessService');
 const {
@@ -20,6 +21,8 @@ const {
 const watermarkService = require('../../src/services/watermarkService');
 
 const FIXTURE = path.join(__dirname, '../fixtures/hevc-display-p3.heic');
+// 40x30 stored with rotation 6, capture date and camera make, from ImageIO.
+const ROTATED = path.join(__dirname, '../fixtures/hevc-rotated-exif.heic');
 const decodedJpeg = () => sharp({ create: { width: 40, height: 30, channels: 3, background: '#c33' } }).jpeg().toBuffer();
 const fakeFfmpeg = () => jest.spyOn(mediaProcesses, 'run').mockImplementation(async (_command, args) => {
   await fs.writeFile(args[args.length - 1], await decodedJpeg());
@@ -73,6 +76,15 @@ describe('HEVC HEIC decoding', () => {
     await proc.cleanup();
   });
 
+  it('carries EXIF and XMP over, with the rotation ffmpeg applied taken out', async () => {
+    const proc = await withProcessableImage(ROTATED, 'IMG_1.heic');
+    const tags = await exifr.parse(proc.path, { reviveValues: false, translateValues: false });
+    expect(tags).toMatchObject({ Orientation: 1, Make: 'PicPeak Test', DateTimeOriginal: '2026:05:04 11:22:33' });
+    expect((await sharp(proc.path).metadata()).xmp).toBeDefined();
+    expect((await sharp(proc.path).metadata()).xmp.toString()).not.toMatch(/tiff:Orientation(="|>)[2-8]/);
+    await proc.cleanup();
+  });
+
   it('removes the temp file when ffmpeg fails', async () => {
     const seen = [];
     run.mockImplementation(async (_command, args) => {
@@ -121,8 +133,31 @@ describe('HEVC HEIC decoding', () => {
     const marked = await watermarkService.applyWatermark(FIXTURE, settings);
     expect((await sharp(marked).metadata()).format).toBe('jpeg');
 
+    await expect(watermarkService.applyWatermark(ROTATED, settings, { keepMetadata: true }))
+      .resolves.toBeInstanceOf(Buffer);
     run.mockRejectedValue(new Error('ffmpeg failed'));
-    await expect(watermarkService.applyWatermark(FIXTURE, settings)).rejects.toThrow('ffmpeg failed');
+    await expect(watermarkService.applyWatermark(ROTATED, { ...settings, text: 'new' })).rejects.toThrow('ffmpeg failed');
     await expect(watermarkService.applyWatermark(await fs.readFile(FIXTURE), settings)).rejects.toThrow('ffmpeg failed');
+  });
+
+  it('keeps the metadata on a watermarked download, and not on a gallery rendition', async () => {
+    const settings = { enabled: true, type: 'text', text: 'keep', opacity: 50, position: 'center', size: 20 };
+    const download = await watermarkService.applyWatermark(ROTATED, settings, { keepMetadata: true });
+    expect(await exifr.parse(download, { reviveValues: false })).toMatchObject({ DateTimeOriginal: '2026:05:04 11:22:33' });
+
+    const rendition = await watermarkService.applyWatermark(ROTATED, settings);
+    expect(await sharp(rendition).metadata()).not.toHaveProperty('exif');
+  });
+
+  it('caches a watermark under the photo, and never a buffer', async () => {
+    const settings = { enabled: true, type: 'text', text: 'cache', opacity: 50, position: 'center', size: 20 };
+    await watermarkService.applyWatermark(FIXTURE, settings);
+    await watermarkService.applyWatermark(FIXTURE, settings);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect([...watermarkService.cache.keys()].filter((key) => key.includes('picpeak-heif-'))).toEqual([]);
+
+    const size = watermarkService.cache.size;
+    await watermarkService.applyWatermark(await fs.readFile(FIXTURE), settings);
+    expect(watermarkService.cache.size).toBe(size);
   });
 });

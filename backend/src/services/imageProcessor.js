@@ -422,6 +422,7 @@ const HEIF_DECODE_MAX_BYTES = 128 * 1024 * 1024;
 // decoder thread: 48 for 12 MP, 187 for 48 MP. The default budget of 128 ends
 // the job, so the decoders stay single-threaded and the budget is the maximum.
 const HEIF_DECODE_THREADS = 256;
+const JPEG_SEGMENT_BYTES = 65533;
 const JPEG_ICC_SEGMENT_BYTES = 65519;
 
 /**
@@ -439,23 +440,60 @@ async function hevcHeifMetadata(input) {
   }
 }
 
+function jpegSegment(marker, payload) {
+  const header = Buffer.alloc(4);
+  header.writeUInt16BE(marker, 0);
+  header.writeUInt16BE(payload.length + 2, 2);
+  return Buffer.concat([header, payload]);
+}
+
 /**
- * Put an ICC profile into a JPEG, after the JFIF header ffmpeg writes. ffmpeg
- * drops the profile on the way out, and an iPhone shoots in Display P3: read
- * as sRGB, every photo would come out visibly duller.
+ * An EXIF block with its Orientation at 1, or null if it is not one. The decode
+ * has already turned the pixels, and every later `.rotate()` reads this tag.
  */
-function withIccProfile(jpeg, icc) {
-  const count = Math.ceil(icc.length / JPEG_ICC_SEGMENT_BYTES);
+function uprightExif(exif) {
+  if (exif.toString('latin1', 0, 6) !== 'Exif\0\0') return null;
+  const copy = Buffer.from(exif);
+  const little = copy.toString('latin1', 6, 8) === 'II';
+  const u16 = offset => (little ? copy.readUInt16LE(offset) : copy.readUInt16BE(offset));
+  try {
+    const ifd = 6 + (little ? copy.readUInt32LE(10) : copy.readUInt32BE(10));
+    for (let index = 0; index < u16(ifd); index++) {
+      const entry = ifd + 2 + index * 12;
+      if (u16(entry) !== 0x0112) continue;
+      if (little) copy.writeUInt16LE(1, entry + 8); else copy.writeUInt16BE(1, entry + 8);
+      break;
+    }
+    return copy;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Put the source's metadata into a JPEG, after the JFIF header ffmpeg writes.
+ * ffmpeg drops all of it on the way out. An iPhone shoots in Display P3, so
+ * without the ICC profile every photo reads as sRGB and comes out duller, and
+ * a watermarked download promises the photo's EXIF and XMP (issue 1649). The
+ * renditions stay stripped: sharp only keeps metadata when told to.
+ */
+function withSourceMetadata(jpeg, { exif, xmp, icc }) {
   const segments = [];
+  const upright = exif && uprightExif(exif);
+  if (upright && upright.length <= JPEG_SEGMENT_BYTES) segments.push(jpegSegment(0xffe1, upright));
+  if (xmp) {
+    const text = xmp.toString('utf8').replace(/(tiff:Orientation(?:="|>))\d/g, (_, tag) => `${tag}1`);
+    const payload = Buffer.concat([Buffer.from('http://ns.adobe.com/xap/1.0/\0', 'latin1'), Buffer.from(text, 'utf8')]);
+    if (payload.length <= JPEG_SEGMENT_BYTES) segments.push(jpegSegment(0xffe1, payload));
+  }
+  const count = icc ? Math.ceil(icc.length / JPEG_ICC_SEGMENT_BYTES) : 0;
   for (let index = 0; index < count; index++) {
+    const header = Buffer.alloc(14);
+    header.write('ICC_PROFILE\0', 0, 'latin1');
+    header[12] = index + 1;
+    header[13] = count;
     const part = icc.subarray(index * JPEG_ICC_SEGMENT_BYTES, (index + 1) * JPEG_ICC_SEGMENT_BYTES);
-    const header = Buffer.alloc(18);
-    header.writeUInt16BE(0xffe2, 0);
-    header.writeUInt16BE(part.length + 16, 2);
-    header.write('ICC_PROFILE\0', 4, 'latin1');
-    header[16] = index + 1;
-    header[17] = count;
-    segments.push(header, part);
+    segments.push(jpegSegment(0xffe2, Buffer.concat([header, part])));
   }
   const start = jpeg.readUInt16BE(2) === 0xffe0 ? 4 + jpeg.readUInt16BE(4) : 2;
   return Buffer.concat([jpeg.subarray(0, start), ...segments, jpeg.subarray(start)]);
@@ -483,7 +521,7 @@ async function decodeHevcHeif(localPath, sourceName, metadata) {
         cpuSeconds: Math.ceil(policy.thumbnailMs / 1000), fileBytes: HEIF_DECODE_MAX_BYTES,
         threadLimit: HEIF_DECODE_THREADS,
       });
-      if (metadata.icc) await fsp.writeFile(outPath, withIccProfile(await fsp.readFile(outPath), metadata.icc));
+      await fsp.writeFile(outPath, withSourceMetadata(await fsp.readFile(outPath), metadata));
       return { path: outPath, cleanup };
     } catch (error) {
       await cleanup();
