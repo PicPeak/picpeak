@@ -5,13 +5,13 @@ const zip = require('./pack');
 const V = require('../albumProducts/validation');
 const { parse } = require('./profiles');
 const { verified } = require('./orders');
-const { budgetOf, imageAllowance } = require('./limits');
+const { budgetOf, imageAllowance, QUOTE_TTL_MS } = require('./limits');
 const { deadline } = require('./orders');
 const { isTrue } = require('../../utils/galleryLifecycle');
 const work = require('../activeApplicationWork');
 const logger = require('../../utils/logger');
 const now = () => new Date().toISOString();
-function createWorker({ db, storage, sharp, orders }) {
+function createWorker({ db, storage, sharp, orders, heartbeatMs = 15000 }) {
   /** Interrupted or failed attempts leave artwork no later release can use. */
   async function dropEarlierClaims(row) {
     const sourceIds = new Set((parse(row.snapshot)?.items || []).map(i => i.source?.assetId).filter(Boolean));
@@ -38,10 +38,9 @@ function createWorker({ db, storage, sharp, orders }) {
       // Discard stops publication immediately, but the current image/upload may
       // still be finishing. Its live lease holds the single rendering slot.
       if (await tx('print_sales_orders').whereNotNull('claim').where('heartbeat', '>=', cutoff).first()) return null;
-      // Existing confirmed orders take priority over new baskets. Legacy quoted
-      // snapshots can also finish preparation, without changing their identity.
+      // Repair of confirmed orders takes priority over new baskets.
       const next = await tx('print_sales_orders').whereIn('status', ['capturing', 'quoted', 'accepted'])
-        .where(q => q.where({ render_status: 'queued' }).orWhere({ status: 'quoted', render_status: 'pending' }))
+        .where({ render_status: 'queued' })
         .where(q => q.whereNotNull('accepted_at').orWhere('expires_at', '>', now()))
         .orderByRaw('CASE WHEN status = \'accepted\' THEN 0 ELSE 1 END').orderBy('created_at').first();
       if (!next) return null;
@@ -55,15 +54,24 @@ function createWorker({ db, storage, sharp, orders }) {
       return changed ? { ...next, ...updates } : null;
     });
     if (!row) return false;
+    const controller = new AbortController(), signal = controller.signal, workDeadline = Date.now() + QUOTE_TTL_MS;
     let heartbeat = Promise.resolve();
-    const timer = setInterval(() => { heartbeat = heartbeat.then(() => db('print_sales_orders')
-      .where({ id: row.id, claim: row.claim }).update({ heartbeat: now() })).catch(() => {}); }, 15000);
+    const check = async () => {
+      const current = await db('print_sales_orders').where({ id: row.id }).first();
+      if (Date.now() >= workDeadline || !current || current.claim !== row.claim || current.render_status !== 'running' || !['capturing', 'quoted', 'accepted'].includes(current.status) ||
+          (!current.accepted_at && new Date(current.expires_at).getTime() <= Date.now())) {
+        controller.abort(Object.assign(new Error('Print preparation was cancelled or expired'), { statusCode: 409 }));
+        return;
+      }
+      await db('print_sales_orders').where({ id: row.id, claim: row.claim }).update({ heartbeat: now() });
+    };
+    const timer = setInterval(() => { heartbeat = heartbeat.then(check).catch(error => controller.abort(error)); }, heartbeatMs);
     timer.unref();
     try {
       await dropEarlierClaims(row);
       if (V.hash(row.snapshot) !== row.snapshot_hash || !row.contact || V.hash(parse(row.contact)) !== parse(row.snapshot).contactHash)
         throw new Error('Frozen order identity changed or delivery was erased');
-      if (row.status === 'capturing') row = await orders.capture(row);
+      if (row.status === 'capturing') row = await orders.capture(row, { signal });
       const s = parse(row.snapshot), contact = parse(row.contact), entries = [], budget = budgetOf(s); let outputBytes = 0;
       if (V.hash(row.snapshot) !== row.snapshot_hash || !contact || V.hash(contact) !== s.contactHash)
         throw new Error('Frozen order identity changed or delivery was erased');
@@ -71,8 +79,8 @@ function createWorker({ db, storage, sharp, orders }) {
         const item = s.items[n], source = await db('print_sales_assets').where({ id: item.source.assetId, order_id: row.id }).first();
         if (![1, 2].includes(item.profile.schemaVersion)) throw new Error('Unsupported frozen manufacturing profile version');
         if (!source || source.sha256 !== item.source.sha256) throw new Error('Retained original identity changed');
-        const bytes = await verified(storage, source), geometry = require('./domain').geometry(item.source, item);
-        let raster = sharp(bytes).rotate();
+        const bytes = await verified(storage, source, { signal }), geometry = require('./domain').geometry(item.source, item);
+        let raster = sharp(bytes, { signal }).rotate();
         if (item.fit === 'cover') raster = raster.extract({ left: geometry.left, top: geometry.top, width: geometry.width, height: geometry.height });
         const m = item.profile.manufacturing;
         raster = raster.resize(item.profile.artwork.widthPx, item.profile.artwork.heightPx,
@@ -80,21 +88,21 @@ function createWorker({ db, storage, sharp, orders }) {
         // Version-one accepted profiles retain their original transparency behaviour.
         if (m.background !== undefined) raster = raster.flatten({ background: m.background });
         const encoded = await require('./output').encode(raster, m.output, m.resolution.targetDpi), image = encoded.bytes;
-        if (m.output.profileSha256) require('./colourProfiles').verify(await sharp(image).metadata(), m.output);
+        if (m.output.profileSha256) require('./colourProfiles').verify(await sharp(image, { signal }).metadata(), m.output);
         outputBytes += image.length;
         if (outputBytes > budget.artworkBytes) throw Object.assign(new Error('Production artwork exceeds the reserved order space'), { statusCode: 400 });
-        const thumbnail = await sharp(image).resize(320, 320, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
-        const asset = await orders.asset(row.id, 'artwork', image, row.claim, encoded.extension, { maxBytes: imageAllowance(item) });
+        const thumbnail = await sharp(image, { signal }).resize(320, 320, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
+        const asset = await orders.asset(row.id, 'artwork', image, row.claim, encoded.extension, { maxBytes: imageAllowance(item), signal });
         entries.push({ name: `${String(n + 1).padStart(3, '0')}.${encoded.extension}`, asset, thumbnail });
       }
       const report = await sheet(row, s, contact, entries);
-      await orders.asset(row.id, 'sheet', report, row.claim, 'pdf');
+      await orders.asset(row.id, 'sheet', report, row.claim, 'pdf', { signal });
       const manifest = Buffer.from(JSON.stringify({ schemaVersion: 2, orderId: row.id, selectionHash: row.snapshot_hash,
         invoiceId: row.invoice_id, shipping: s.shipping ?? null, items: s.items.map((i, n) => ({ file: entries[n].name, sha256: entries[n].asset.sha256,
           sourceFilename: i.source.filename, sourceSha256: i.source.sha256, quantity: i.quantity,
           crop: i.crop, fit: i.fit, profile: i.profile, invoiceLinePosition: i.linePosition })) }, null, 2));
       // The sheet carries the buyer's email and retail total: it stays with the studio.
-      await orders.asset(row.id, 'pack', zip(entries, manifest, storage), row.claim, 'zip', { maxBytes: budget.packBytes });
+      await orders.asset(row.id, 'pack', zip(entries, manifest, storage, { signal }), row.claim, 'zip', { maxBytes: budget.packBytes, signal });
       const assets = await db('print_sales_assets').where({ order_id: row.id, claim: row.claim }).orderBy('id');
       const version = V.hash(assets.map(a => ({ id: a.id, sha256: a.sha256, size: a.size })));
       await db.transaction(async tx => {
@@ -110,7 +118,8 @@ function createWorker({ db, storage, sharp, orders }) {
       });
     } catch (error) {
       logger.warn('Print preparation failed', { orderId: row.id, error: error.message });
-      const terminal = error.statusCode >= 400 && error.statusCode < 500 || row.attempts >= 3;
+      const status = error.statusCode ?? error.status;
+      const terminal = status >= 400 && status < 500 || row.attempts >= 3;
       await db('print_sales_orders').where({ id: row.id, claim: row.claim, render_status: 'running' })
         .whereIn('status', ['capturing', 'quoted', 'accepted']).update({
           ...(!row.accepted_at && terminal ? { status: 'failed', purge_requested: true } : {}),
@@ -123,7 +132,7 @@ function createWorker({ db, storage, sharp, orders }) {
   }
   return { runOne: () => work.track('print artwork preparation', runOne) };
 }
-let timer, running, cleaning, stopped = true;
+let timer, running, cleaning, stopped = true, lastTempSweep = 0;
 function start() {
   if (!stopped) return;
   stopped = false;
@@ -136,6 +145,9 @@ function start() {
     })().catch(error => logger.error('Print worker failed', { error: error.message })).finally(() => { running = null; });
     // Expiry and deletion must continue even during a long render.
     if (!cleaning) cleaning = (async () => {
+      if (Date.now() - lastTempSweep > 60000) {
+        await work.track('print download cleanup', () => require('./files').sweepDownloads()); lastTempSweep = Date.now();
+      }
       if (await db.schema.hasTable('print_sales_orders'))
         await work.track('print retention', () => require('./fulfilment').createService({ db, storage }).cleanup());
     })().catch(error => logger.error('Print retention failed', { error: error.message })).finally(() => { cleaning = null; });

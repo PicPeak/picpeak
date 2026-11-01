@@ -284,6 +284,16 @@ class S3StorageAdapter extends stream.EventEmitter {
    * @returns {Promise<Object>} - Upload result
    */
   async uploadStream(readStream, s3Key, options = {}) {
+    options.signal?.throwIfAborted();
+    let client = this.s3Client;
+    if (options.signal) {
+      // Abort the real requests, not Upload.done()'s early-rejecting abort
+      // race. done() must await the producers and multipart cleanup first.
+      client = Object.create(this.s3Client);
+      client.send = (command, sendOptions = {}) => this.s3Client.send(command, {
+        ...sendOptions, ...(command instanceof AbortMultipartUploadCommand ? {} : { abortSignal: options.signal }),
+      });
+    }
     const uploadParams = {
       Bucket: this.bucket,
       Key: s3Key,
@@ -298,7 +308,7 @@ class S3StorageAdapter extends stream.EventEmitter {
     Object.keys(uploadParams).forEach(key => uploadParams[key] === undefined && delete uploadParams[key]);
     
     const parallelUploads3 = new Upload({
-      client: this.s3Client,
+      client,
       params: uploadParams,
       queueSize: 4,
       partSize: this.config.partSize,
@@ -313,7 +323,12 @@ class S3StorageAdapter extends stream.EventEmitter {
       });
     }
     
-    return await this._retryOperation(() => parallelUploads3.done());
+    const abort = () => readStream.destroy(options.signal.reason);
+    options.signal?.addEventListener('abort', abort, { once: true });
+    try {
+      options.signal?.throwIfAborted();
+      return await parallelUploads3.done();
+    } finally { options.signal?.removeEventListener('abort', abort); }
   }
   
   /**
@@ -401,7 +416,7 @@ class S3StorageAdapter extends stream.EventEmitter {
     // Remove undefined values
     Object.keys(params).forEach(key => params[key] === undefined && delete params[key]);
     
-    const result = await this.s3Client.send(new GetObjectCommand(params));
+    const result = await this.s3Client.send(new GetObjectCommand(params), ...(options.signal ? [{ abortSignal: options.signal }] : []));
     return result.Body;
   }
   

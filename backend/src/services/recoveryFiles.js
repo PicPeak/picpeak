@@ -26,7 +26,7 @@ const REFERENCES_SUFFIX = '.storage-references.json';
 // Only the columns a storage reference is read from, fetched in id order.
 const REFERENCE_COLUMNS = {
   album_product_images: ['id', 'storage_key'],
-  print_sales_assets: ['id', 'storage_key'],
+  print_sales_assets: ['id', 'storage_key', 'kind'],
   events: ['id', 'is_archived', 'archive_path', 'source_mode'],
   photos: ['id', 'event_id', 'path', 'source_origin', 'thumbnail_path', 'preview_path', 'hero_path', 'watermark_path', 'web_path'],
   customer_documents: ['id', 'storage_key', 'purged_at'],
@@ -163,8 +163,15 @@ async function requiredKeys(knex, selected, derived) {
       table === 'transfer_uploads' ? 'uploads/transfers' : 'transfers', `Transfer file ${row.id}`);
   }
   for await (const row of rows(knex, 'album_product_images')) add(row.storage_key, 'album-products', `Product image ${row.id}`);
-  for await (const row of rows(knex, 'print_sales_assets')) add(row.storage_key, '.print-sales', `Print order asset ${row.id}`);
+  for await (const row of rows(knex, 'print_sales_assets')) {
+    if (row.kind !== 'staging') add(row.storage_key, '.print-sales', `Print order asset ${row.id}`);
+  }
   return keys;
+}
+
+async function retainedPrintKey(knex, key) {
+  if (knex instanceof Map) return (knex.get('print_sales_assets') || []).some(row => row.storage_key === key && row.kind !== 'staging');
+  return await knex.schema.hasTable('print_sales_assets') && !!await knex('print_sales_assets').where({ storage_key: key }).whereNot({ kind: 'staging' }).first('id');
 }
 
 async function adapterInventory(knex, roots, selected = key => roots.some(root => under(key, root)), requiredReferences = []) {
@@ -193,8 +200,21 @@ async function adapterInventory(knex, roots, selected = key => roots.some(root =
   }
   const derived = new Set();
   const required = await requiredKeys(knex, selected, derived);
-  for (const key of requiredReferences) { validKey(key); if (selected(key) && managedKey(key)) required.add(key); }
+  // Private staging/orphan objects are not a completed order's backup estate.
+  for (const key of found.keys()) if (under(key, '.print-sales') && !required.has(key)) found.delete(key);
+  for (const key of requiredReferences) {
+    validKey(key);
+    if (selected(key) && managedKey(key) && (!under(key, '.print-sales') || required.has(key))) required.add(key);
+  }
   for (const key of required) {
+    if (!found.has(key) && under(key, '.print-sales')) {
+      // Publication can finish after ListObjects; discard can remove a key
+      // after the database/reference capture. Check only this lifecycle root.
+      if (!await retainedPrintKey(knex, key)) continue;
+      const stat = await storage.stat(key);
+      if (stat) found.set(key, { relativePath: key, size: stat.size, modified: stat.mtime, storage: 'adapter' });
+      else if (!await retainedPrintKey(knex, key)) continue;
+    }
     if (!found.has(key)) throw new Error(`Required primary-storage object is missing from the backup inventory: ${key}`);
   }
   for (const key of derived) {
@@ -277,7 +297,7 @@ async function verifyAdapter(key, checksum, metadata, maxBytes = DEFAULT_MAX_BYT
 
 // Materialize a catalogue for destinations that need a tree (rsync/export).
 // Only the selected files are present; local decoys of managed keys are absent.
-async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES) {
+async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES, referenceDb) {
   const output = [];
   const byKey = new Map();
   for (const original of files) {
@@ -307,6 +327,9 @@ async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES) {
         checksum: captured.checksum, size: captured.size,
         objectMetadata: captured.objectMetadata || original.objectMetadata, modified: captured.modified || original.modified };
       output.push(entry); byKey.set(key, entry);
+    } catch (error) {
+      if (referenceDb && under(key, '.print-sales') && !await retainedPrintKey(referenceDb, key)) continue;
+      throw error;
     } finally { if (captured) await captured.cleanup(); }
   }
   return output;

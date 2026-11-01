@@ -283,7 +283,7 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
       // video fails it.
       const fileStage = path.join(staging, 'captured');
       await fsp.mkdir(fileStage, { mode: 0o700 });
-      files = await recoveryFiles.materialize(files, fileStage, Number.MAX_SAFE_INTEGER);
+      files = await recoveryFiles.materialize(files, fileStage, Number.MAX_SAFE_INTEGER, db);
     } else if (includeFiles) {
       files = await catalogueInPlace(files);
     }

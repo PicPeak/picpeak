@@ -31,7 +31,7 @@ const photo = { id: 1, filename: 'sample.jpg', original_filename: 'camera.jpg', 
 const variant: Variant = { id: 'profile-1', version: 'profile-version', selection: { schemaVersion: 2, productVersion: 'product-version', product: { id: 'product-1', name: 'Photographic print' },
   attributes: [{ id: 'size', name: 'Size', addOn: false, options: [{ id: 'small', name: '10 × 15 cm', imageId: null }] }] },
 artwork: { widthMm: 100, heightMm: 150 }, fitModes: ['cover', 'contain'], currency: 'EUR', unitPriceMinor: 250 };
-const quotation: Quote = { id: 'order-1', status: 'quoted', renderStatus: 'ready', preparation: { stage: 'ready', completed: 4, total: 4, percent: 100 }, invoiceId: null,
+const quotation: Quote = { expiresAt: new Date(Date.now() + 30 * 60e3).toISOString(), id: 'order-1', status: 'quoted', renderStatus: 'ready', preparation: { stage: 'ready', completed: 4, total: 4, percent: 100 }, invoiceId: null,
   snapshotHash: 'frozen-selection-hash', artworkVersion: null, currency: 'EUR', totalMinor: 615, netMinor: 500, vatMinor: 115,
   policy: 'Synthetic buyer policy', acceptedAt: null, reviewedAt: null, submittedAt: null, dispatchedAt: null,
   supplierReference: null, tracking: null, needsAttention: false, purgedAt: null,
@@ -234,7 +234,7 @@ describe('gallery print order journey', () => {
 });
 describe('print administration', () => {
   it('starts a browser download only after an authenticated successful preflight', async () => {
-    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [{ ...quotation, status: 'accepted', renderStatus: 'ready', invoiceId: 42 }] } :
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [{ ...quotation, status: 'accepted', acceptedAt: '2026-11-01', renderStatus: 'ready', invoiceId: 42 }] } :
       { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } }) as any);
     vi.mocked(api.head).mockResolvedValue({ status: 200 } as any);
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
@@ -463,4 +463,38 @@ it('checks order status after a lost acceptance response and recovers the existi
   await screen.findByText(/Invoice.*#42/);
   expect(vi.mocked(api.post).mock.calls.filter(([url]) => url.endsWith('/accept'))).toHaveLength(1);
   expect(screen.queryByText('Connection lost')).not.toBeInTheDocument();
+});
+
+it('shows the review deadline and disables confirmation when a ready quotation expires', async () => {
+  let current = quotation;
+  const fallback = vi.mocked(api.get).getMockImplementation()!;
+  vi.mocked(api.get).mockImplementation(async (url: string, options?: any) => url.includes('/orders/') ? { data: current } as any : fallback(url, options));
+  vi.mocked(api.post).mockImplementation(async () => {
+    current = { ...quotation, expiresAt: new Date(Date.now() + 1000).toISOString() }; return { data: current } as any;
+  });
+  render(<GalleryPrintShop slug="fixture" photos={[photo]} />); await addItem();
+  fireEvent.click(screen.getByRole('button', { name: 'Review selections and final total' }));
+  const confirm = await screen.findByRole('button', { name: 'Confirm order and request invoice' });
+  expect(screen.getByText(/Confirm by/)).toBeInTheDocument(); fireEvent.click(screen.getByRole('checkbox')); expect(confirm).toBeEnabled();
+  await waitFor(() => expect(confirm).toBeDisabled(), { timeout: 2500 });
+  expect(await screen.findByText(/This preparation has expired/)).toBeInTheDocument();
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+it('hides fulfilment downloads and review actions until a ready basket is confirmed', async () => {
+  vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [quotation] } :
+    { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } }) as any);
+  render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>); await screen.findByText('Awaiting confirmation');
+  expect(screen.queryByRole('button', { name: 'Supplier pack' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Studio order sheet' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'I checked these production files' })).not.toBeInTheDocument();
+});
+it('offers controlled repair for a confirmed order before lab submission', async () => {
+  const order = { ...quotation, status: 'accepted', acceptedAt: '2026-11-01', invoiceId: 42 };
+  vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [order] } :
+    { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } }) as any);
+  vi.mocked(api.post).mockResolvedValueOnce({ data: { ...order, renderStatus: 'queued', artworkVersion: null } } as any);
+  render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Check and repair production files' }));
+  await screen.findByText('Artwork queued');
+  expect(api.post).toHaveBeenCalledWith('/admin/print-sales/orders/order-1/actions', expect.objectContaining({ action: 'repair' }));
 });

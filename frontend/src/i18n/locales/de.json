@@ -11531,6 +11531,8 @@
     "lockAndBill": "Auswahl sperren und zur Abrechnung hinzufügen"
   },
   "printSales": {
+    "repairFiles": "Produktionsdateien prüfen und reparieren",
+    "reviewDeadline": "Bestätigung bis",
     "preparationQueued": "Ihre Abzüge warten auf die Vorbereitung",
     "preparationCapturing": "Originalfotos werden gespeichert",
     "preparationRendering": "Ihre Druckdateien werden vorbereitet",
@@ -11654,7 +11656,6 @@
     "recordSubmission": "Manuelle Laborbestellung dokumentieren",
     "tracking": "Sendungsverfolgung / Versandnotiz",
     "recordDispatch": "Versand dokumentieren",
-    "retryPreparation": "Druckdateien erneut vorbereiten",
     "cancelAfterInvoice": "Bestellung nach CRM-Rechnungskorrektur stornieren",
     "help": "Konfigurieren Sie Produktionsanforderungen für gemeinsame Katalogprodukte. Preise, Steuern und Zahlungen verwenden CRM-Rechnungen; die Laborbestellung erfolgt manuell.",
     "closed": "Druckbestellungen sind deaktiviert. Aktivieren Sie sie wieder, um offene Bestellungen abzuschließen.",
@@ -11740,7 +11741,6 @@
     "statusFailed": "Angebot fehlgeschlagen",
     "statusExpired": "Abgelaufen",
     "unknownStatus": "Unbekannter Status",
-    "artworkPending": "Druckdateien noch nicht eingeplant",
     "artworkQueued": "Druckdateien eingeplant",
     "artworkRunning": "Druckdateien werden vorbereitet",
     "artworkReady": "Druckdateien bereit",

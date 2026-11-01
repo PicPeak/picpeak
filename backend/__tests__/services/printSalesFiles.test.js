@@ -103,3 +103,60 @@ test('an artwork digest failure aborts the supplier ZIP upload', async () => {
     .rejects.toThrow('file changed');
   expect(await storage.exists('pack.zip')).toBe(false);
 });
+
+test('a slow consumer does not exhaust the source idle timeout', async () => {
+  const { verifiedStream } = require('../../src/services/printSales/files');
+  const chunks = Array.from({ length: 4 }, (_, n) => Buffer.alloc(256 * 1024, n)), bytes = Buffer.concat(chunks);
+  const source = Readable.from(chunks, { objectMode: false });
+  const output = verifiedStream({ get: async () => source }, { storage_key: 'synthetic', size: bytes.length, sha256: hash(bytes) }, { idleMs: 20 });
+  const iterator = output[Symbol.asyncIterator](), first = await iterator.next();
+  await new Promise(resolve => setTimeout(resolve, 80));
+  expect(source.destroyed).toBe(false);
+  const received = [first.value]; for (let next = await iterator.next(); !next.done; next = await iterator.next()) received.push(next.value);
+  expect(hash(Buffer.concat(received))).toBe(hash(bytes));
+});
+test('a source that stops producing data still times out', async () => {
+  const { verifiedStream } = require('../../src/services/printSales/files');
+  const source = new Readable({ read() {} });
+  const output = verifiedStream({ get: async () => source }, { storage_key: 'stalled', size: 1, sha256: 'unused' }, { idleMs: 20 });
+  await expect((async () => { for await (const _chunk of output) { /* consume */ } })()).rejects.toThrow('timed out');
+  expect(source.destroyed).toBe(true);
+});
+test('aborting an upload waits for the storage cancellation before returning', async () => {
+  const controller = new AbortController(), source = new Readable({ read() { this.push(Buffer.alloc(1024)); } });
+  let entered, finish, settled = false;
+  const started = new Promise(resolve => { entered = resolve; });
+  const destination = { put: async (_key, input, { signal }) => {
+    entered(); await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+    await new Promise(resolve => { finish = resolve; }); input.destroy();
+  }, delete: jest.fn(async () => {}) };
+  const pending = upload(destination, 'aborted', source, 100 * 1024 * 1024, { signal: controller.signal }).finally(() => { settled = true; });
+  const failed = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  await started; controller.abort(); await new Promise(resolve => setImmediate(resolve));
+  expect(settled).toBe(false); finish(); await failed;
+  expect(destination.delete).toHaveBeenCalledWith('aborted'); expect(source.destroyed).toBe(true);
+});
+test('abandoned private copies expire while fresh, active and unrelated files are preserved', async () => {
+  const { sweepDownloads } = require('../../src/services/printSales/files'), a = await asset();
+  const old = await fs.mkdtemp(path.join(root, 'picpeak-print-download-')), fresh = await fs.mkdtemp(path.join(root, 'picpeak-print-download-'));
+  await fs.utimes(old, new Date(0), new Date(0)); await fs.writeFile(path.join(old, 'verified'), 'private');
+  await fs.utimes(old, new Date(0), new Date(0));
+  const unrelated = path.join(root, 'keep-me'); await fs.mkdir(unrelated);
+  await withVerifiedFile(storage, a, async stream => {
+    const active = path.dirname(stream.path); await fs.utimes(active, new Date(0), new Date(0));
+    await sweepDownloads({ directory: root });
+    expect(await fs.stat(active)).toBeTruthy();
+  }, { directory: root });
+  await expect(fs.stat(old)).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await fs.stat(fresh)).toBeTruthy(); expect(await fs.stat(unrelated)).toBeTruthy();
+});
+
+test('original capture permits a long transfer that continues making progress', async () => {
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+  let count = 0;
+  const input = new Readable({ read() { setTimeout(() => { this.push(Buffer.from('x')); if (++count === 3) this.push(null); }, 30000); } });
+  try {
+    const checked = expect(require('../../src/services/printSales/orders').read({ get: async () => input }, 'synthetic', 10)).resolves.toEqual(Buffer.from('xxx'));
+    await jest.advanceTimersByTimeAsync(90001); await checked;
+  } finally { input.destroy(); jest.useRealTimers(); }
+});

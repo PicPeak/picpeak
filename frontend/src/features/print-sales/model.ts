@@ -30,7 +30,7 @@ export interface Variant {
 export interface CartItem { photoId: number; profileId: string; quantity: number; crop: Crop; fit: 'cover' | 'contain' }
 export interface Delivery { name: string; line1: string; line2: string; city: string; region: string; postalCode: string; country: string }
 export interface Order {
-  id: string; status: string; renderStatus: string; invoiceId: number | null; snapshotHash: string; artworkVersion: string | null;
+  id: string; status: string; renderStatus: string; invoiceId: number | null; snapshotHash: string; artworkVersion: string | null; expiresAt: string;
   currency: string; totalMinor: number; netMinor: number; vatMinor: number; delivery?: Delivery; policy: string;
   buyerEmail?: string; acceptedAt: string | null; reviewedAt: string | null; submittedAt: string | null; dispatchedAt: string | null;
   supplierReference?: string | null; tracking: string | null; needsAttention: boolean; purgedAt: string | null;

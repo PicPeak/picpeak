@@ -380,4 +380,28 @@ describe('S3StorageAdapter', () => {
       expect(s3Storage._formatBytes(1536, 1)).toBe('1.5 KB');
     });
   });
+  it('cancels real upload requests and waits for multipart cleanup before rejecting', async () => {
+    const { PutObjectCommand, AbortMultipartUploadCommand } = require('@aws-sdk/client-s3');
+    const controller = new AbortController(), input = new stream.PassThrough(); input.on('error', () => {});
+    let entered, finish, settled = false;
+    const started = new Promise(resolve => { entered = resolve; });
+    mockSend.mockImplementation((command, options) => {
+      if (command instanceof AbortMultipartUploadCommand) {
+        expect(options.abortSignal).toBeUndefined();
+        return new Promise(resolve => { finish = resolve; });
+      }
+      expect(options.abortSignal).toBe(controller.signal); entered();
+      return new Promise((_resolve, reject) => options.abortSignal.addEventListener('abort', () => reject(options.abortSignal.reason), { once: true }));
+    });
+    Upload.mockImplementation(({ client }) => ({ on() {}, done: async () => {
+      try { return await client.send(new PutObjectCommand({})); }
+      catch (error) { await client.send(new AbortMultipartUploadCommand({})); throw error; }
+    } }));
+    const task = s3Storage.uploadStream(input, 'cancelled', { signal: controller.signal }).finally(() => { settled = true; });
+    const failure = expect(task).rejects.toMatchObject({ name: 'AbortError' });
+    await started; controller.abort(); await new Promise(resolve => setImmediate(resolve));
+    expect(settled).toBe(false); expect(input.destroyed).toBe(true);
+    finish({}); await failure;
+  });
+
 });

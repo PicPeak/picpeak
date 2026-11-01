@@ -8,7 +8,7 @@ const { livePhotos, wherePhotoProcessed, isPhotoHiddenFromViewer } = require('..
 const { assertGalleryAvailable, isTrue } = require('../../utils/galleryLifecycle');
 const work = require('../activeApplicationWork');
 const { formatBoolean } = require('../../utils/dbCompat');
-const { MAX_SOURCE_BYTES, MAX_ORDER_SOURCE_BYTES, MAX_IMAGE_BYTES, MAX_PACK_BYTES, MAX_SHEET_BYTES,
+const { MAX_SOURCE_BYTES, MAX_ORDER_SOURCE_BYTES, MAX_IMAGE_BYTES, MAX_ORDER_ARTWORK_BYTES, MAX_PACK_BYTES, MAX_SHEET_BYTES,
   QUOTE_TTL_MS, preparationBudget, budgetOf } = require('./limits');
 const { isManagedOriginalKey, resolvePhotoStorageKey } = require('../photoResolver');
 const now = () => new Date().toISOString();
@@ -16,23 +16,27 @@ const fingerprint = p => V.hash({ id: p.id, path: p.path, sha: p.content_sha256 
 const ACTIVE = ['capturing', 'quoted', 'accepted'];
 
 async function read(storage, key, max = MAX_SOURCE_BYTES, options) {
+  options?.signal?.throwIfAborted();
   const stream = await storage.get(key, options), chunks = [];
+  const abort = () => stream.destroy(options.signal.reason);
+  options?.signal?.addEventListener('abort', abort, { once: true });
   const timer = setTimeout(() => stream.destroy(new AppError('Order file read timed out', 504)), 60000);
   timer.unref();
   let size = 0;
   try {
+    options?.signal?.throwIfAborted();
     for await (const chunk of stream) {
-      size += chunk.length;
+      timer.refresh(); size += chunk.length;
       if (size > max) throw new AppError('Image exceeds the print source limit', 400);
       chunks.push(chunk);
     }
     return Buffer.concat(chunks);
-  } finally { clearTimeout(timer); stream.destroy(); }
+  } finally { clearTimeout(timer); options?.signal?.removeEventListener('abort', abort); stream.destroy(); }
 }
 
 /** Byte identity is checked on every administrative release, not just object size. */
-async function verified(storage, asset) {
-  const bytes = await read(storage, asset.storage_key, Math.max(asset.size, 1));
+async function verified(storage, asset, options) {
+  const bytes = await read(storage, asset.storage_key, Math.max(asset.size, 1), options);
   if (bytes.length !== asset.size || V.hash(bytes) !== asset.sha256)
     throw new ConflictError('An order file changed; hold the order for review');
   return bytes;
@@ -65,6 +69,7 @@ function createService({ db, storage, sharp }) {
     return p;
   }
   async function asset(orderId, kind, bytes, claim = null, extension = 'bin', options = {}) {
+    options.signal?.throwIfAborted();
     const id = crypto.randomUUID(), key = `.print-sales/${orderId}/${id}.${extension}`;
     const contentType = { jpg: 'image/jpeg', png: 'image/png', tif: 'image/tiff', pdf: 'application/pdf', zip: 'application/zip' }[extension] || 'application/octet-stream';
     const expectedClaim = options.expectedClaim || claim;
@@ -89,7 +94,7 @@ function createService({ db, storage, sharp }) {
         sha256: '', size: reservedBytes, kind: 'staging', claim: expectedClaim || null, created_at: now() });
     });
     try {
-      const identity = await require('./files').upload(storage, key, bytes, maxBytes, { contentType, cacheControl: 'private, no-store' });
+      const identity = await require('./files').upload(storage, key, bytes, maxBytes, { contentType, cacheControl: 'private, no-store', signal: options.signal });
       const row = { id, order_id: orderId, storage_key: key, ...identity, kind, claim, created_at: now() };
       await db.transaction(async tx => {
         await tx('print_sales_settings').where({ id: 1 }).forUpdate().first();
@@ -195,6 +200,10 @@ function createService({ db, storage, sharp }) {
     }
     const destination = D.delivery(input.delivery, (await P.settings(db)).countries),
       plan = await D.plan(db, input.items, { country: destination.country });
+    const rawBytes = item => item.profile.manufacturing.output.format === 'tiff' && item.profile.manufacturing.output.compression === 'none'
+      ? item.profile.artwork.widthPx * item.profile.artwork.heightPx * 3 : 0;
+    if (plan.items.some(item => rawBytes(item) > MAX_IMAGE_BYTES) || plan.items.reduce((sum, item) => sum + rawBytes(item), 0) > MAX_ORDER_ARTWORK_BYTES)
+      throw new AppError('Uncompressed TIFF artwork exceeds the order limit; choose fewer or smaller prints', 400);
     const sources = new Map(); let sourceBytes = 0;
     // Record the version, without transferring original image bytes in the request.
     for (const item of plan.items) {
@@ -241,7 +250,7 @@ function createService({ db, storage, sharp }) {
     });
     return progress(await owned(id, customerId, eventId));
   }
-  async function capture(row) {
+  async function capture(row, { signal } = {}) {
     const snapshot = P.parse(row.snapshot), sources = new Map();
     for (const item of snapshot.items) {
       if (!sources.has(item.photoId)) {
@@ -251,16 +260,16 @@ function createService({ db, storage, sharp }) {
           const matches = stat => stat && stat.size === p.size && String(stat.mtime) === p.mtime &&
             (stat.etag ?? null) === p.etag && (stat.versionId ?? null) === p.versionId;
           if (!matches(await storage.stat(p.key))) throw new ConflictError('An original changed; review the photograph again');
-          const bytes = await read(storage, p.key, MAX_SOURCE_BYTES, { ifMatch: p.etag || undefined, versionId: p.versionId || undefined });
+          const bytes = await read(storage, p.key, MAX_SOURCE_BYTES, { ifMatch: p.etag || undefined, versionId: p.versionId || undefined, signal });
           if (bytes.length !== p.size || !matches(await storage.stat(p.key)) || (p.contentHash && p.contentHash !== V.hash(bytes)))
             throw new ConflictError('An original changed; review the photograph again');
-          const meta = await sharp(bytes).metadata();
+          const meta = await sharp(bytes, { signal }).metadata();
           if (!['jpeg', 'png', 'webp', 'tiff'].includes(meta.format) || !meta.width || !meta.height ||
               meta.width * meta.height > 60e6 || (meta.pages || 1) > 1) throw new AppError('Use a single image up to 60 megapixels', 400);
           const source = { fingerprint: item.source.fingerprint, filename: item.source.filename,
             width: meta.width, height: meta.height, orientation: meta.orientation || 1 };
           for (const print of snapshot.items.filter(i => i.photoId === item.photoId)) D.geometry(source, print);
-          const stored = await asset(row.id, 'source', bytes, null, 'bin', { expectedClaim: row.claim });
+          const stored = await asset(row.id, 'source', bytes, null, 'bin', { expectedClaim: row.claim, signal });
           sources.set(item.photoId, { ...source, assetId: stored.id, sha256: stored.sha256 });
         }
       }

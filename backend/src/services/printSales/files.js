@@ -8,36 +8,47 @@ const { Readable, Transform, Writable } = require('stream');
 const { pipeline, finished } = require('stream/promises');
 const { AppError, ConflictError } = require('../../utils/errors');
 
-const IDLE_MS = 60000;
+const IDLE_MS = 60000, TEMP_LEASE_MS = 15000, TEMP_STALE_MS = 5 * 60e3;
+const activeDirectories = new Set();
+const damaged = message => Object.assign(new ConflictError(message), { code: 'PRINT_FILES_DAMAGED' });
+const missing = error => ['ENOENT', 'NoSuchKey', 'NotFound'].includes(error.code || error.name) || error.$metadata?.httpStatusCode === 404;
 
-/** Lazy, bounded reads work for both local files and S3 without retaining a file. */
-function verifiedStream(storage, asset) {
+/** The source clock is stopped while downstream applies backpressure. */
+function verifiedStream(storage, asset, { signal, idleMs = IDLE_MS } = {}) {
   return Readable.from((async function* () {
-    if (!Number.isSafeInteger(Number(asset.size)) || Number(asset.size) < 0)
-      throw new ConflictError('Invalid production file size');
-    const source = await storage.get(asset.storage_key), hash = crypto.createHash('sha256');
-    let size = 0;
-    const timer = setTimeout(() => source.destroy(new AppError('Order file read timed out', 504)), IDLE_MS);
-    timer.unref();
+    signal?.throwIfAborted();
+    if (!Number.isSafeInteger(Number(asset.size)) || Number(asset.size) < 0) throw damaged('Invalid production file size');
+    let source;
+    try { source = await storage.get(asset.storage_key, { signal }); }
+    catch (error) { if (missing(error)) throw damaged('A production file is missing'); throw error; }
+    const abort = () => source.destroy(signal.reason), iterator = source[Symbol.asyncIterator](), hash = crypto.createHash('sha256');
+    signal?.addEventListener('abort', abort, { once: true });
+    let size = 0, timer;
     try {
-      for await (const chunk of source) {
-        timer.refresh(); size += chunk.length;
-        if (size > Number(asset.size)) throw new ConflictError('An order file changed; hold the order for review');
-        hash.update(chunk);
-        yield chunk;
+      signal?.throwIfAborted();
+      while (true) {
+        timer = setTimeout(() => source.destroy(new AppError('Order file read timed out', 504)), idleMs); timer.unref();
+        let next;
+        try { next = await iterator.next(); } finally { clearTimeout(timer); }
+        if (next.done) break;
+        const chunk = next.value; size += chunk.length;
+        if (size > Number(asset.size)) throw damaged('An order file changed; hold the order for review');
+        hash.update(chunk); yield chunk;
       }
       if (size !== Number(asset.size) || hash.digest('hex') !== asset.sha256)
-        throw new ConflictError('An order file changed; hold the order for review');
-    } finally { clearTimeout(timer); source.destroy(); }
+        throw damaged('An order file changed; hold the order for review');
+    } catch (error) {
+      if (missing(error)) throw damaged('A production file is missing');
+      throw error;
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); source.destroy(); }
   })(), { objectMode: false });
 }
-
 async function verify(storage, asset, options = {}) {
-  await pipeline(verifiedStream(storage, asset), new Writable({ write(_chunk, _encoding, done) { done(); } }), options);
+  await pipeline(verifiedStream(storage, asset, options), new Writable({ write(_chunk, _encoding, done) { done(); } }), { signal: options.signal });
 }
 
-/** Publish the asset row only after the entire upload and its digest finish. */
-async function upload(storage, key, body, maxBytes, options) {
+/** The storage adapter and the producer settle before an aborted upload returns. */
+async function upload(storage, key, body, maxBytes, options = {}) {
   const source = Buffer.isBuffer(body) ? Readable.from(body) : body;
   const hash = crypto.createHash('sha256'); let size = 0;
   const meter = new Transform({ transform(chunk, _encoding, done) {
@@ -47,7 +58,7 @@ async function upload(storage, key, body, maxBytes, options) {
   } });
   const pending = [];
   try {
-    pending.push(pipeline(source, meter), storage.put(key, meter, options));
+    pending.push(pipeline(source, meter, { signal: options.signal }), storage.put(key, meter, options));
     await Promise.all(pending);
     return { size, sha256: hash.digest('hex') };
   } catch (error) {
@@ -59,23 +70,42 @@ async function upload(storage, key, body, maxBytes, options) {
 }
 
 let downloads = 0;
-/** Verify into a private file before releasing a single byte to the browser. */
-async function withVerifiedFile(storage, asset, consume, { signal } = {}) {
-  if (downloads >= 2) throw new AppError('Two print downloads are already in progress; try again shortly', 503);
+async function withFileWork(run) {
+  if (downloads >= 2) throw new AppError('Two print file operations are already in progress; try again shortly', 503);
   downloads++;
-  let dir, stream;
-  try {
-    dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-print-download-'));
-    const file = path.join(dir, 'verified');
-    await pipeline(verifiedStream(storage, asset), fs.createWriteStream(file, { flags: 'wx', mode: 0o600 }), { signal });
-    stream = fs.createReadStream(file);
-    return await consume(stream, Number(asset.size));
-  } finally {
+  try { return await run(); } finally { downloads--; }
+}
+/** A lease distinguishes an abandoned copy from another process's slow download. */
+async function sweepDownloads({ directory = os.tmpdir(), at = Date.now(), staleMs = TEMP_STALE_MS } = {}) {
+  for (const name of await fsp.readdir(directory)) {
+    if (!/^picpeak-print-download-[a-zA-Z0-9]{6}$/.test(name)) continue;
+    const dir = path.join(directory, name);
+    if (activeDirectories.has(dir)) continue;
     try {
-      if (stream) { stream.destroy(); await finished(stream).catch(() => {}); }
-      if (dir) await fsp.rm(dir, { recursive: true, force: true });
-    } finally { downloads--; }
+      const stat = await fsp.lstat(dir);
+      if (stat.isDirectory() && (typeof process.getuid !== 'function' || stat.uid === process.getuid()) && at - stat.mtimeMs > staleMs)
+        await fsp.rm(dir, { recursive: true, force: true });
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
 }
-
-module.exports = { verifiedStream, verify, upload, withVerifiedFile };
+/** Verify the requested file once, into a private copy, before browser release. */
+async function withVerifiedFile(storage, asset, consume, { signal, directory = os.tmpdir() } = {}) {
+  return withFileWork(async () => {
+    let dir, stream, timer, heartbeat = Promise.resolve();
+    try {
+      dir = await fsp.mkdtemp(path.join(directory, 'picpeak-print-download-')); activeDirectories.add(dir);
+      timer = setInterval(() => { heartbeat = heartbeat.then(() => fsp.utimes(dir, new Date(), new Date())).catch(() => {}); }, TEMP_LEASE_MS); timer.unref();
+      const file = path.join(dir, 'verified');
+      await pipeline(verifiedStream(storage, asset, { signal }), fs.createWriteStream(file, { flags: 'wx', mode: 0o600 }), { signal });
+      stream = fs.createReadStream(file);
+      return await consume(stream, Number(asset.size));
+    } finally {
+      clearInterval(timer); await heartbeat;
+      try {
+        if (stream) { stream.destroy(); await finished(stream).catch(() => {}); }
+        if (dir) await fsp.rm(dir, { recursive: true, force: true });
+      } finally { if (dir) activeDirectories.delete(dir); }
+    }
+  });
+}
+module.exports = { verifiedStream, verify, upload, withVerifiedFile, withFileWork, sweepDownloads, damaged };

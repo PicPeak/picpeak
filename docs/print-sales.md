@@ -112,8 +112,9 @@ resolution.
 The normal backend starts a database-backed worker. One order is prepared at a
 time across replicas. A claim UUID, heartbeat and compare-and-set publication
 prevent an interrupted attempt from publishing over a newer attempt. Claims
-older than five minutes can recover; three failures require explicit studio
-retry for existing accepted orders. Failed unconfirmed preparations can be
+older than five minutes can recover. Permanent image refusals stop immediately;
+transient failures can retry up to three times. Confirmed orders have a
+controlled studio repair action before lab submission. Failed unconfirmed preparations can be
 discarded and prepared again without an invoice. Failure never rewrites the
 invoice or pretends that received money is
 unpaid. Feature withdrawal pauses new rendering and ordering while retaining
@@ -171,7 +172,11 @@ downloads use the browser's download handling. Before release, the server checks
 the file into a private temporary copy and rechecks the current order/payment;
 correction or cancellation during preparation stops release. Allow temporary
 space for a complete supplier pack; at most two downloads run per backend process.
-Temporary copies are removed after success, refusal or client disconnection.
+HEAD checks authorisation and recorded file metadata without reading file bytes.
+The actual download verifies only the requested file, once. Expensive download
+and review verification share a two-operation limit per backend process.
+Temporary copies are removed after success, refusal or client disconnection;
+leased temporary directories are swept after five minutes without a heartbeat.
 
 Current bounds are 20 photo items, 1–100 copies each, 50 MiB per source and
 200 MiB of captured originals per quotation. At most 20 unconfirmed preparations
@@ -187,8 +192,8 @@ of overhead, and an 8 MiB private PDF sheet. Space is reserved from pixel counts
 ratios. The actual encoded output must fit this allocation before confirmation.
 Unconfirmed work reserves originals, artwork, ZIP and sheet together: at most
 8 GiB installation-wide and 3 GiB per customer, including incomplete uploads and
-failed objects awaiting deletion. These are admission limits, not preallocated
-disk space; accepted orders have separate count/retention limits and require
+failed objects awaiting deletion. Once preparation is ready, actual stored bytes replace the reservation.
+These are admission limits, not preallocated disk space; accepted orders have separate count/retention limits and require
 sufficient studio storage. Storage exhaustion fails preparation without invoicing.
 
 The progress bar counts completed files, not elapsed time or an estimated finish
@@ -198,18 +203,28 @@ preparation ID is retained alongside the existing session basket; address detail
 are not written to browser storage. Returning to the basket discards unconfirmed
 work first. Expiry, discard and erasure stop late publication and promptly reclaim
 files; a healthy in-flight upload keeps its staging reservation until it stops.
+The review displays its deadline and disables confirmation when it expires.
+Active preparation has a 30-minute work deadline, including repairs; cancelling,
+expiry or loss of the worker claim aborts its image work and storage requests.
 
-Reads have a 60-second timeout. These limits are not an ARM64 throughput or
+Source reads have a 60-second idle timeout which excludes downstream waiting. These limits are not an ARM64 throughput or
 memory benchmark; image-resource policy may refuse earlier. Each image is held
 only while processing that image; the ZIP streams from storage. Existing accepted
-orders still support frozen-profile preparation and controlled studio retries.
+orders can have damaged files rebuilt from verified retained originals before
+lab submission. The invoice and selections stay unchanged; the studio must
+review the new artwork version. A missing retained original requires manual
+resolution or restoration of that exact original. Healthy-file checks are a
+no-op, and an order already submitted to a lab cannot be rebuilt through this action.
 Prepared packages use the order ID and snapshot hash; before confirmation they
 have no invoice number. The studio finds the attached invoice through the order.
 
 Private objects live under `.print-sales/<order-id>/` using the normal local/S3
 storage adapter. Normal backups, required-key recovery inventories and portable
 exports/imports include them, **even when gallery photos are excluded**. Database
-backups alone do not replace storage backups. Capture, acceptance, rendering,
+backups alone do not replace storage backups. Unfinished staging uploads are
+not required backup objects. Recovery inventories account for committed print
+files published after the initial listing and unconfirmed work removed during
+capture; a missing file still retained by an order remains an error. Capture, acceptance, rendering,
 retention and downloads participate in the native application-work drain; the
 worker also stops/resumes with coordinated restore. Gallery deletion clears its
 live order link on both normal and archived paths and retains order-specific

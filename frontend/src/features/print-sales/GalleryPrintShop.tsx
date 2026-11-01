@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { PreparationProgress } from './PreparationProgress';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../config/api';
@@ -31,13 +32,14 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
   slug: string; photos: Photo[]; enabled: boolean; selectedPhotoIds?: Set<number>; children: ReactNode;
 }) {
   const queryClient = useQueryClient();
+  const { formatDateTime } = useLocalizedDate();
   const { t } = useTranslation(), root = `/gallery/${slug}/print-sales`;
   const [offers, setOffers] = useState<Offers>(), [basket, setBasket] = useState<{ scope: string; lines: BasketLine[] }>({ scope: '', lines: [] }),
     [view, setView] = useState<View>(), [drafts, setDrafts] = useState<Draft[]>([]), [active, setActive] = useState(0),
     [picked, setPicked] = useState<number[]>([]), [editing, setEditing] = useState<string>(), [previewReady, setPreviewReady] = useState(false),
     [validDraft, setValidDraft] = useState(true), [invalidLines, setInvalidLines] = useState<Set<string>>(new Set()),
     [error, setError] = useState(''), [busy, setBusy] = useState(false), [initialQuote, setQuote] = useState<Quote>(), [quoteId, setQuoteId] = useState<string>(),
-    [approved, setApproved] = useState(false), [orders, setOrders] = useState<Order[]>([]),
+    [approved, setApproved] = useState(false), [deadlineReached, setDeadlineReached] = useState(false), [orders, setOrders] = useState<Order[]>([]),
     [delivery, setDelivery] = useState<Delivery>({ name: '', line1: '', line2: '', city: '', region: '', postalCode: '', country: '' });
   const attempt = useRef<{ fingerprint: string; id: string }>(), loadSequence = useRef(0), scope = useRef(''), orderSequence = useRef(0);
   const draftCache = useRef(new Map<number, Draft>());
@@ -50,7 +52,20 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
     retry: false,
     refetchInterval: query => query.state.status === 'error' || ['ready', 'failed', 'expired'].includes(query.state.data?.preparation?.stage || '') ? false : 2000 });
   const quote = preparation.data;
-  const ready = quote?.status === 'quoted' && quote.renderStatus === 'ready' && quote.preparation.stage === 'ready' && !preparation.isError;
+  const expired = !!quote && !quote.acceptedAt && (deadlineReached || !(Date.parse(quote.expiresAt) > Date.now()));
+  const ready = quote?.status === 'quoted' && quote.renderStatus === 'ready' && quote.preparation.stage === 'ready' && !preparation.isError && !expired;
+  useEffect(() => {
+    setDeadlineReached(false);
+    if (!quote || quote.acceptedAt || view !== 'basket') return;
+    const delay = Date.parse(quote.expiresAt) - Date.now();
+    if (!Number.isFinite(delay) || delay <= 0) { setDeadlineReached(true); return; }
+    const timer = setTimeout(() => { setDeadlineReached(true); void preparation.refetch(); }, Math.min(delay, 2147483647));
+    const refresh = () => { if (document.visibilityState === 'visible') { setDeadlineReached(Date.parse(quote.expiresAt) <= Date.now()); void preparation.refetch(); } };
+    window.addEventListener('focus', refresh); document.addEventListener('visibilitychange', refresh);
+    return () => { clearTimeout(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+    // Only a new quotation/deadline or opening the review resets this clock.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quote?.id, quote?.expiresAt, quote?.acceptedAt, view]);
   const invalidate = () => {
     void queryClient.cancelQueries({ queryKey: quoteKey });
     setQuote(undefined); setQuoteId(undefined); setApproved(false);
@@ -271,7 +286,8 @@ function ShopSession({ slug, photos, enabled, selectedPhotoIds, children }: {
           </article>)}
         </>}
         {view === 'basket' && quoteId && <>
-          <PreparationProgress value={quote?.preparation} failedToLoad={preparation.isError} retry={() => void preparation.refetch()} />
+          <PreparationProgress value={expired && quote ? { ...quote.preparation, stage: 'expired' } : quote?.preparation} failedToLoad={preparation.isError} retry={() => void preparation.refetch()} />
+          {quote?.status === 'quoted' && <p className="text-sm text-muted">{t('printSales.reviewDeadline', 'Confirm by')}: <time dateTime={quote.expiresAt}>{formatDateTime(quote.expiresAt)}</time></p>}
           {quote && !quote.acceptedAt && ['capturing', 'failed'].includes(quote.status) && <p className="text-sm text-muted">{t('printSales.noInvoiceYet', 'No invoice has been created. You can close this window while we prepare your files.')}</p>}
         </>}
         {view === 'basket' && quote && <section className="space-y-4" aria-label={t('printSales.orderReview', 'Review print order')}>

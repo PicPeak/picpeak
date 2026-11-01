@@ -9,12 +9,13 @@ async function admit(tx, customerId, requestedBytes) {
     .sum({ bytes: 'a.size' }).groupBy('a.order_id', 'o.customer_account_id');
   const reservations = new Map(sizes.map(row => [row.order_id, { customerId: Number(row.customer_account_id), bytes: Number(row.bytes) }]));
   const pending = await tx('print_sales_orders').whereNull('accepted_at').whereIn('status', ['capturing', 'quoted'])
-    .select('id', 'customer_account_id', 'snapshot');
+    .select('id', 'customer_account_id', 'snapshot', 'render_status');
   for (const row of pending) {
     let snapshot;
     try { snapshot = typeof row.snapshot === 'string' ? JSON.parse(row.snapshot) : row.snapshot; } catch { /* Reserve conservatively until cleanup. */ }
     reservations.set(row.id, { customerId: Number(row.customer_account_id),
-      bytes: Math.max(reservations.get(row.id)?.bytes || 0, budgetOf(snapshot).totalBytes) });
+      bytes: row.render_status === 'ready' ? reservations.get(row.id)?.bytes || 0
+        : Math.max(reservations.get(row.id)?.bytes || 0, budgetOf(snapshot).totalBytes) });
   }
   let total = requestedBytes, own = requestedBytes;
   for (const reservation of reservations.values()) {

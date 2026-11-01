@@ -49,7 +49,7 @@ function StudioOrder({ initial, onError }: { initial: Order; onError: (s: string
         accepted: t('printSales.orderConfirmed', 'Order confirmed'), dispatched: t('printSales.dispatched', 'Dispatched'),
         failed: t('printSales.statusFailed', 'Quotation failed'), expired: t('printSales.statusExpired', 'Expired'), resolved: t('printSales.closedManually', 'Closed manually'), cancelled: t('printSales.orderCancelled', 'Order cancelled') } as Record<string, string>)[order.status] || t('printSales.unknownStatus', 'Unknown status')}
     </Badge><Badge tone={order.renderStatus === 'failed' ? 'danger' : order.renderStatus === 'ready' ? 'success' : 'info'}>
-      {({ pending: t('printSales.artworkPending', 'Artwork not queued'), queued: t('printSales.artworkQueued', 'Artwork queued'),
+      {({ queued: t('printSales.artworkQueued', 'Artwork queued'),
         running: t('printSales.artworkRunning', 'Preparing artwork'), ready: t('printSales.artworkReady', 'Artwork ready'),
         failed: t('printSales.artworkFailed', 'Artwork preparation failed'), cancelled: t('printSales.artworkStopped', 'Artwork preparation stopped') } as Record<string, string>)[order.renderStatus] || t('printSales.unknownStatus', 'Unknown status')}
     </Badge></span></summary>
@@ -58,7 +58,7 @@ function StudioOrder({ initial, onError }: { initial: Order; onError: (s: string
     <ul>{order.items?.map((i, n) => <li key={n}>{i.filename} — {i.selection.product.name} × {i.quantity}</li>)}</ul>
     {order.needsAttention && <p role="status" className="text-warning-text">{t('printSales.needsAttention', 'This order needs studio attention. Payment and file preparation are checked separately.')}</p>}
     <fieldset disabled={busy} className="min-w-0 flex flex-wrap gap-3">
-      {order.renderStatus === 'ready' && !order.purgedAt && <>
+      {order.acceptedAt && ['accepted', 'dispatched'].includes(order.status) && order.renderStatus === 'ready' && !order.purgedAt && <>
         {canFiles && <Button variant="secondary" onClick={() => download('pack')}>{t('printSales.supplierPack', 'Supplier pack')}</Button>}
         {canFiles && <Button variant="secondary" onClick={() => download('sheet')}>{t('printSales.orderSheet', 'Studio order sheet')}</Button>}
         {canManage && !order.submittedAt && <Button variant="secondary" onClick={() => act('review')}>{t('printSales.recordReview', 'I checked these production files')}</Button>}
@@ -69,7 +69,7 @@ function StudioOrder({ initial, onError }: { initial: Order; onError: (s: string
           <input className="input" value={tracking} onChange={e => setTracking(e.target.value)} maxLength={500} />
           <Button onClick={() => act('dispatch')}>{t('printSales.recordDispatch', 'Record dispatch')}</Button></label>}
       </>}
-      {canManage && order.renderStatus === 'failed' && order.acceptedAt && <Button variant="secondary" onClick={() => act('retry')}>{t('printSales.retryPreparation', 'Retry artwork preparation')}</Button>}
+      {canManage && order.status === 'accepted' && !order.submittedAt && !order.purgedAt && ['ready', 'failed'].includes(order.renderStatus) && <Button variant="secondary" onClick={() => act('repair')}>{t('printSales.repairFiles', 'Check and repair production files')}</Button>}
       {canManage && !order.submittedAt && ['capturing', 'quoted', 'failed', 'accepted'].includes(order.status) && <Button variant="secondary" onClick={() => act('cancel')}>{t('printSales.cancelAfterInvoice', 'Cancel order after native invoice correction')}</Button>}
       {canManage && order.status === 'accepted' && <label>{t('printSales.resolveNote', 'Reason for closing (only once the invoice is cancelled)')}
         <input className="input" value={note} onChange={e => setNote(e.target.value)} maxLength={500} />
@@ -101,7 +101,7 @@ export function PrintSalesAdminPage() {
     try { const result = { ...draft, ...await printSales.save(draft) }; setSaved(result); setDraft(result); client.setQueryData(['print-sales', 'settings'], result); }
     catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   };
-  return <div className="space-y-6 [&_button]:max-w-full [&_button]:whitespace-normal">
+  return <div className="space-y-6 [&_button]:max-w-full [&_button]:whitespace-normal [&_.btn-md]:h-auto [&_.btn-md]:min-h-10">
     <p className="text-muted">{t('printSales.help', 'Configure production requirements for shared catalogue products. Prices, tax and payments use native CRM invoices; lab submission is manual.')}</p>
     {!enabled && <Notice>{t('printSales.closed', 'Print ordering is disabled. Turn it on again to finish open orders.')}</Notice>}
     {enabled && canSettings && !canConfigure && <Notice>{t('printSales.readOnly', 'You can view these print settings but cannot change them.')}</Notice>}

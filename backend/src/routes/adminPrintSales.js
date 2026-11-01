@@ -64,6 +64,12 @@ router.post('/orders/:id/actions', requireFeatureFlag('printSales'), permissions
 }));
 router.get('/orders/:id/files/:kind', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
   V.uuid(req.params.id);
+  if (req.method === 'HEAD') {
+    const { asset } = await fulfilment().downloadMetadata(req.params.id, req.admin, req.params.kind);
+    res.type(req.params.kind === 'pack' ? 'application/zip' : 'application/pdf')
+      .attachment(`print-${req.params.id}.${req.params.kind === 'pack' ? 'zip' : 'pdf'}`);
+    res.set('Content-Length', String(asset.size)); return res.end();
+  }
   const controller = new AbortController();
   const abort = () => { if (!res.writableFinished) controller.abort(); };
   res.once('close', abort);
@@ -73,7 +79,6 @@ router.get('/orders/:id/files/:kind', requireFeatureFlag('printSales'), permissi
         const pack = req.params.kind === 'pack';
         res.type(pack ? 'application/zip' : 'application/pdf').attachment(`print-${req.params.id}.${pack ? 'zip' : 'pdf'}`);
         res.set('Content-Length', String(size));
-        if (req.method === 'HEAD') return res.end();
         await pipeline(stream, res, { signal: controller.signal });
       }, { signal: controller.signal }));
   } finally { res.removeListener('close', abort); }

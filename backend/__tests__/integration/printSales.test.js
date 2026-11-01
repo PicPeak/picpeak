@@ -81,10 +81,14 @@ async function quoted(input = payload()) {
   if (ready.status === 'failed') throw new Error('Preparation failed before confirmation');
   return ready;
 }
-async function accepted({ legacyQueue = false } = {}) {
+async function accepted({ repairQueue = false } = {}) {
   const q = await quoted();
   const result = await orders.accept(event.id, customerId, 'client', q.id, { snapshotHash: q.snapshotHash, acknowledgeSelection: true });
-  if (legacyQueue) await db('print_sales_orders').where({ id: q.id }).update({ render_status: 'queued', attempts: 0 });
+  if (repairQueue) {
+    const pack = await db('print_sales_assets').where({ order_id: q.id, kind: 'pack' }).first();
+    await storage.put(pack.storage_key, Buffer.alloc(pack.size));
+    await fulfilment.action(q.id, admin, { action: 'repair' });
+  }
   return result;
 }
 async function pay(order, amount = order.totalMinor) {
@@ -167,8 +171,8 @@ test('retained sources survive gallery deletion and produce sRGB artwork plus ne
   expect(meta).toMatchObject({ format: 'jpeg', width: 100, height: 150, density: 100 }); expect(meta.icc).toBeTruthy();
   expect(await db('print_sales_assets').where({ order_id: a.id, kind: 'pack' }).first()).toBeTruthy();
 });
-test('legacy payment before rendering holds files, then manual review/submission/dispatch records exact artwork', async () => {
-  const a = await accepted({ legacyQueue: true }); await pay(a);
+test('payment during repair holds files, then manual review/submission/dispatch records exact artwork', async () => {
+  const a = await accepted({ repairQueue: true }); await pay(a);
   await expect(download(a.id, admin, 'pack')).rejects.toThrow('not ready');
   await worker.runOne();
   const row = await fulfilment.order(a.id, admin), details = { artworkVersion: row.artwork_version };
@@ -187,7 +191,7 @@ test('rendering before payment and partial payments do not release supplier file
 });
 test('changing a production file holds release even when its byte length is unchanged', async () => {
   const a = await accepted(); await worker.runOne(); await pay(a);
-  const file = await db('print_sales_assets').where({ order_id: a.id, kind: 'artwork' }).first();
+  const file = await db('print_sales_assets').where({ order_id: a.id, kind: 'pack' }).first();
   await storage.put(file.storage_key, Buffer.alloc(file.size));
   await expect(download(a.id, admin, 'pack')).rejects.toThrow('file changed');
 });
@@ -196,14 +200,15 @@ test('editing the native invoice after acceptance holds fulfilment', async () =>
   await require('../../src/services/accountingHistory').auditedUpdate(db, 'invoice_line_items', { invoice_id: a.invoiceId }, { description: 'Changed product' }, { actor: admin.id, source: 'test.invoice.edit' });
   await expect(download(a.id, admin, 'pack')).rejects.toThrow('fully settled');
 });
-test('legacy preparation failure preserves the paid invoice and requires controlled retry after three failures', async () => {
-  const a = await accepted({ legacyQueue: true }); await pay(a);
+test('repair failure preserves the paid invoice and requires controlled retry after three failures', async () => {
+  const a = await accepted({ repairQueue: true }); await pay(a);
   const source = await db('print_sales_assets').where({ order_id: a.id, kind: 'source' }).first();
   await storage.delete(source.storage_key);
   for (let n = 0; n < 3; n++) await worker.runOne();
   expect((await fulfilment.order(a.id, admin)).render_status).toBe('failed');
   expect((await db('invoices').where({ id: a.invoiceId }).first()).status).toBe('paid');
-  await fulfilment.action(a.id, admin, { action: 'retry' });
+  await storage.put(source.storage_key, sourceBytes);
+  await fulfilment.action(a.id, admin, { action: 'repair' });
   expect((await fulfilment.order(a.id, admin)).render_status).toBe('queued');
 });
 test('backup required-key inventory contains retained order files', async () => {
@@ -312,7 +317,7 @@ test('a native portable backup includes order-specific originals even without ga
   } finally { await archive.close(); fs.rmSync(path.dirname(exported.filePath), { recursive: true, force: true }); }
 });
 test('the real isolated renderer embeds sRGB and density while stripping camera metadata', async () => {
-  const a = await accepted({ legacyQueue: true });
+  const a = await accepted({ repairQueue: true });
   const isolated = require('../../src/services/isolatedSharp');
   try {
     await require('../../src/services/printSales/worker').createWorker({ db, storage, sharp: isolated, orders }).runOne();
@@ -435,7 +440,7 @@ test('a version-one accepted profile keeps its frozen JPEG requirements after a 
   const a = await accepted(); await worker.runOne();
   const original = await fulfilment.order(a.id, admin), old = P.parse(original.snapshot), id = uuid();
   await db('print_sales_orders').insert({ id, request_hash: 'historical-fixture', customer_account_id: customerId,
-    status: 'capturing', render_status: 'pending', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60000).toISOString() });
+    status: 'capturing', render_status: 'queued', created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60000).toISOString() });
   const source = await orders.asset(id, 'source', sourceBytes);
   for (const item of old.items) {
     item.source.assetId = source.id; const p = item.profile;
@@ -515,7 +520,7 @@ test('repairs a partially applied gallery-column migration without changing exis
 });
 
 test('archived-gallery deletion detaches retained orders and keeps them visible in the studio list', async () => {
-  const a = await accepted({ legacyQueue: true });
+  const a = await accepted({ repairQueue: true });
   await db('events').where({ id: event.id }).update({ is_archived: true });
   const app = buildRouteApp('/api/admin/archives', require('../../src/routes/adminArchives'));
   const response = await request(app).delete(`/api/admin/archives/${event.id}`).set('Authorization', `Bearer ${adminToken}`);
@@ -535,7 +540,7 @@ test('an invoice correction during pack verification prevents release to the bro
   const pack = await db('print_sales_assets').where({ order_id: row.id, kind: 'pack' }).first();
   const original = storage.get.bind(storage); let reads = 0;
   const read = jest.spyOn(storage, 'get').mockImplementation(async key => {
-    if (key === pack.storage_key && ++reads === 2)
+    if (key === pack.storage_key && ++reads === 1)
       await require('../../src/services/invoiceService').cancelInvoice(row.invoice_id, admin.id);
     return original(key);
   });
@@ -585,7 +590,7 @@ test('an order at the lab whose invoice was cancelled can be closed, which relea
   const logged = await db('activity_logs').where({ activity_type: 'print_order_resolve' }).orderBy('id', 'desc').first();
   expect(JSON.stringify(logged.metadata)).toContain('Lab refunded');
 });
-test('cancelling a closed order changes nothing, and cancel and retry leave an activity record', async () => {
+test('cancelling a closed order changes nothing, and cancel leaves an activity record', async () => {
   const a = await accepted();
   await invoices().cancelInvoice(a.invoiceId, admin.id);
   await fulfilment.action(a.id, admin, { action: 'cancel' });
@@ -751,7 +756,7 @@ test('crop slack scales with the original, and a wrong ratio is still refused', 
   expect(() => geometry({ width: 400, height: 300, orientation: 1 }, { ...item(.8), crop: { x: 0, y: 0, width: 1, height: .9 } })).toThrow('ratio');
 });
 test('the supplier pack leaves out the private sheet, and earlier attempts leave no artwork behind', async () => {
-  const a = await accepted({ legacyQueue: true }), stale = uuid(), key = `.print-sales/${a.id}/${stale}.jpg`;
+  const a = await accepted({ repairQueue: true }), stale = uuid(), key = `.print-sales/${a.id}/${stale}.jpg`;
   await storage.put(key, Buffer.from('old'));
   await db('print_sales_assets').insert({ id: stale, order_id: a.id, storage_key: key, sha256: 'x', size: 3, kind: 'artwork', claim: uuid(), created_at: new Date().toISOString() });
   await worker.runOne();
@@ -941,7 +946,7 @@ test('retry retains completed original captures and does not reread a replaced g
   expect((await db('print_sales_assets').where({ order_id: q.id, kind: 'source' })).map(a => a.id)).toEqual([source.id]);
 });
 test('confirmed legacy work takes priority over an unconfirmed preparation', async () => {
-  const a = await accepted({ legacyQueue: true }), q = await orders.quote(event.id, customerId, 'client', payload());
+  const a = await accepted({ repairQueue: true }), q = await orders.quote(event.id, customerId, 'client', payload());
   await worker.runOne();
   expect((await fulfilment.order(a.id, admin)).render_status).toBe('ready');
   expect((await fulfilment.order(q.id, admin)).render_status).toBe('queued');
@@ -1002,3 +1007,201 @@ test('concurrent customers cannot reserve the same remaining installation space'
   const refused = results.find(r => r.status === 'rejected'); expect(refused.reason.message).toContain('storage is busy');
   expect(await db('print_sales_orders').where({ status: 'capturing' })).toHaveLength(1);
 });
+
+test('backup references skip unfinished uploads and keep completed private files', async () => {
+  const q = await quoted(), key = `.print-sales/${q.id}/${uuid()}.zip`;
+  await db('print_sales_assets').insert({ id: uuid(), order_id: q.id, storage_key: key, kind: 'staging', sha256: '', size: 100, created_at: new Date().toISOString() });
+  const recovery = require('../../src/services/recoveryFiles'), refs = await recovery.requiredKeys(db, () => true);
+  expect(refs.has(key)).toBe(false); expect([...refs].some(k => k.startsWith(`.print-sales/${q.id}/`))).toBe(true);
+  const snapshot = new Map([['print_sales_assets', await db('print_sales_assets')]]);
+  expect((await recovery.requiredKeys(snapshot, () => true)).has(key)).toBe(false);
+});
+test('S3 backup inventory handles discard, late publication and genuinely missing retained files', async () => {
+  const q = await quoted(), recovery = require('../../src/services/recoveryFiles'), adapter = require('../../src/services/storage');
+  const refs = (await db('print_sales_assets').where({ order_id: q.id })).map(asset => asset.storage_key);
+  const fake = { kind: () => 's3', list: async () => [], stat: storage.stat.bind(storage), get: storage.get.bind(storage) };
+  adapter.setStorageForTesting(fake);
+  try {
+    // All uploads landed after the listing: HEAD confirms their committed keys.
+    expect(await recovery.adapterInventory(db, ['.print-sales'], undefined, refs)).toHaveLength(refs.length);
+    const a = await db('print_sales_assets').where({ order_id: q.id, kind: 'pack' }).first();
+    await storage.delete(a.storage_key);
+    await expect(recovery.adapterInventory(db, ['.print-sales'], undefined, refs)).rejects.toThrow('missing from the backup inventory');
+    await db('print_sales_assets').where({ id: a.id }).del();
+    expect(await recovery.adapterInventory(db, ['.print-sales'], undefined, refs)).toHaveLength(refs.length - 1);
+  } finally { adapter.setStorageForTesting(storage); }
+});
+test('S3 export capture tolerates an unconfirmed basket removed after inventory', async () => {
+  const q = await quoted(), recovery = require('../../src/services/recoveryFiles'), adapter = require('../../src/services/storage');
+  const fake = { kind: () => 's3', list: async prefix => storage.list(prefix.replace(/\/$/, '')), stat: storage.stat.bind(storage), get: storage.get.bind(storage) };
+  const dir = await require('fs').promises.mkdtemp(require('path').join(require('os').tmpdir(), 'print-export-test-'));
+  adapter.setStorageForTesting(fake);
+  try {
+    const inventory = await recovery.adapterInventory(db, ['.print-sales']);
+    await orders.discard(event.id, customerId, q.id); await fulfilment.cleanup();
+    expect(await recovery.materialize(inventory, dir, Number.MAX_SAFE_INTEGER, db)).toHaveLength(0);
+  } finally { adapter.setStorageForTesting(storage); await require('fs').promises.rm(dir, { recursive: true, force: true }); }
+});
+test('finished preparations release unused reserved space while queued work keeps its allocation', async () => {
+  const q = await quoted(), limits = require('../../src/services/printSales/limits');
+  const actual = Number((await db('print_sales_assets').where({ order_id: q.id }).sum({ bytes: 'size' }).first()).bytes);
+  const reserve = require('../../src/services/printSales/limits').budgetOf(P.parse((await fulfilment.order(q.id, admin)).snapshot)).totalBytes;
+  expect(reserve).toBeGreaterThan(actual);
+  // Leave exactly enough space for the actual finished files, not the estimate.
+  await expect(db.transaction(async tx => {
+    await tx('print_sales_settings').where({ id: 1 }).forUpdate().first();
+    await require('../../src/services/printSales/capacity').admit(tx, customerId, limits.MAX_CUSTOMER_PENDING_BYTES - actual);
+  })).resolves.toBeUndefined();
+  await db('print_sales_orders').where({ id: q.id }).update({ render_status: 'queued' });
+  await expect(db.transaction(tx => require('../../src/services/printSales/capacity').admit(tx, customerId, limits.MAX_CUSTOMER_PENDING_BYTES - actual)))
+    .rejects.toThrow('storage is busy');
+});
+test('confirmed damaged artwork can be repaired without changing the invoice or frozen selections', async () => {
+  const row = await paidAndReady(), original = row.snapshot;
+  await fulfilment.action(row.id, admin, { action: 'review', artworkVersion: row.artwork_version });
+  const a = await db('print_sales_assets').where({ order_id: row.id, kind: 'artwork' }).first(); await storage.delete(a.storage_key);
+  expect((await download(row.id, admin, 'sheet')).subarray(0, 4).toString()).toBe('%PDF');
+  await expect(fulfilment.action(row.id, admin, { action: 'review', artworkVersion: row.artwork_version })).rejects.toThrow('missing');
+  await fulfilment.action(row.id, admin, { action: 'repair' });
+  expect(await fulfilment.order(row.id, admin)).toMatchObject({ invoice_id: row.invoice_id, snapshot: original, render_status: 'queued', reviewed_at: null, artwork_version: null });
+  await worker.runOne(); const repaired = await fulfilment.order(row.id, admin);
+  expect(repaired.render_status).toBe('ready'); expect(repaired.artwork_version).not.toBe(row.artwork_version);
+  expect((await db('invoices').where({ id: row.invoice_id }).first()).status).toBe('paid');
+  await expect(fulfilment.action(row.id, admin, { action: 'submit', artworkVersion: repaired.artwork_version, supplierReference: 'LAB-REPAIR' })).rejects.toThrow('Check');
+  expect(await db('activity_logs').where({ activity_type: 'print_order_repair' }).first()).toBeTruthy();
+});
+test('repair refuses a missing frozen source and never substitutes the gallery original', async () => {
+  const row = await paidAndReady();
+  for (const kind of ['pack', 'source']) await storage.delete((await db('print_sales_assets').where({ order_id: row.id, kind }).first()).storage_key);
+  const get = jest.spyOn(storage, 'get');
+  try {
+    await expect(fulfilment.action(row.id, admin, { action: 'repair' })).rejects.toThrow('missing');
+    expect(get.mock.calls.some(([key]) => key.startsWith('events/'))).toBe(false);
+    expect((await fulfilment.order(row.id, admin)).render_status).toBe('ready');
+  } finally { get.mockRestore(); }
+});
+test('repair cannot rebuild files already submitted to the lab', async () => {
+  const row = await submitted(); await storage.delete((await db('print_sales_assets').where({ order_id: row.id, kind: 'pack' }).first()).storage_key);
+  await expect(fulfilment.action(row.id, admin, { action: 'repair' })).rejects.toThrow('not yet submitted');
+});
+test('HEAD authorises from metadata and GET reads only the requested file once', async () => {
+  const row = await paidAndReady(), get = jest.spyOn(storage, 'get');
+  try {
+    const reply = await authed(request(adminApp).head(`/api/admin/print-sales/orders/${row.id}/files/pack`));
+    expect(reply.status).toBe(200); expect(Number(reply.headers['content-length'])).toBeGreaterThan(0); expect(get).not.toHaveBeenCalled();
+    await download(row.id, admin, 'pack'); expect(get).toHaveBeenCalledTimes(1);
+  } finally { get.mockRestore(); }
+});
+test('a third download is refused before reading any file bytes', async () => {
+  const row = await paidAndReady(); let release, entered = 0, ready;
+  const held = new Promise(r => { release = r; }), started = new Promise(r => { ready = r; });
+  const consume = async () => { if (++entered === 2) ready(); await held; };
+  const active = [fulfilment.download(row.id, admin, 'pack', consume), fulfilment.download(row.id, admin, 'sheet', consume)];
+  try {
+    await started; const get = jest.spyOn(storage, 'get');
+    try { await expect(download(row.id, admin, 'pack')).rejects.toMatchObject({ statusCode: 503 }); expect(get).not.toHaveBeenCalled(); }
+    finally { get.mockRestore(); }
+  } finally { release(); await Promise.all(active); }
+});
+test.each(['discard', 'expiry', 'claim'])('the heartbeat aborts an active upload after %s', async reason => {
+  const q = await orders.quote(event.id, customerId, 'client', payload()); let entered;
+  const started = new Promise(r => { entered = r; });
+  const put = jest.spyOn(storage, 'put').mockImplementation(async (_key, _body, { signal }) => {
+    entered(); await new Promise((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason); else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+  });
+  const job = require('../../src/services/printSales/worker').createWorker({ db, storage, sharp, orders, heartbeatMs: 20 }).runOne();
+  try {
+    await started;
+    if (reason === 'discard') await orders.discard(event.id, customerId, q.id);
+    else await db('print_sales_orders').where({ id: q.id }).update(reason === 'expiry' ? { expires_at: '2000-01-01T00:00:00Z' } : { claim: uuid(), render_status: 'queued' });
+    await job;
+    expect(await db('print_sales_assets').where({ order_id: q.id })).toHaveLength(0);
+    expect((await fulfilment.order(q.id, admin)).invoice_id).toBeNull();
+  } finally { put.mockRestore(); await job; }
+});
+test('permanent isolated-image refusals stop after one attempt', async () => {
+  const q = await orders.quote(event.id, customerId, 'client', payload());
+  const refusal = require('../../src/services/printSales/worker').createWorker({ db, storage, sharp: () => { throw Object.assign(new Error('Permanent image limit'), { status: 422 }); }, orders });
+  await refusal.runOne();
+  expect(await fulfilment.order(q.id, admin)).toMatchObject({ status: 'failed', render_status: 'failed', attempts: 1, invoice_id: null });
+});
+test('mathematically oversized uncompressed TIFF baskets are refused before retaining or rendering', async () => {
+  const manufacturing = { ...definition.manufacturing, trimMm: { width: 600, height: 400 }, resolution: { targetDpi: 300, minimumDpi: 72 },
+    output: { format: 'tiff', colourSpace: 'srgb', compression: 'none' } };
+  await P.save(db, { ...config, profiles: [{ definition: { ...definition, manufacturing }, cataloguePresetId: config.profiles[0].cataloguePresetId }] });
+  const input = payload(); input.items = Array.from({ length: 11 }, () => ({ ...input.items[0] }));
+  await expect(orders.quote(event.id, customerId, 'client', input)).rejects.toThrow('Uncompressed TIFF');
+  expect(await db('print_sales_orders')).toHaveLength(0); expect(await db('print_sales_assets')).toHaveLength(0);
+});
+
+const sdkTest = process.env.PICPEAK_PRINT_S3_TEST_URL ? test : test.skip;
+async function withPrintS3(run) {
+  const sdk = require('@aws-sdk/client-s3'), bucket = `print-fixture-${uuid()}`;
+  const endpoint = process.env.PICPEAK_PRINT_S3_TEST_URL;
+  const config = { endpoint, bucket, region: 'us-east-1', forcePathStyle: true, sslEnabled: false,
+    accessKeyId: crypto.randomBytes(16).toString('hex'), secretAccessKey: crypto.randomBytes(24).toString('hex'), partSize: 5 * 1024 * 1024 };
+  const client = new sdk.S3Client({ endpoint, region: config.region, forcePathStyle: true,
+    credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey } });
+  await client.send(new sdk.CreateBucketCommand({ Bucket: bucket }));
+  const s3 = new (require('../../src/services/storage/S3StorageBackend'))({ ...config, indexDatabase: db });
+  try {
+    await s3.init(); require('../../src/services/storage').setStorageForTesting(s3);
+    await run(s3, client, bucket, sdk);
+  } finally {
+    require('../../src/services/storage').setStorageForTesting(storage);
+    for (const file of await s3.list('')) await s3.delete(file.key);
+    await client.send(new sdk.DeleteBucketCommand({ Bucket: bucket })); client.destroy(); s3.adapter.s3Client.destroy();
+  }
+}
+sdkTest('S3 SDK export works during a real multipart preparation and includes the completed order files', async () => {
+  await withPrintS3(async s3 => {
+    const bytes = await sharp(crypto.randomBytes(2400 * 3600 * 3), { raw: { width: 2400, height: 3600, channels: 3 } }).jpeg({ quality: 100 }).toBuffer();
+    await s3.put(`events/active/${event.slug}/individual/source.jpg`, bytes);
+    await db('photos').where({ id: photoId }).update({ content_sha256: V.hash(bytes) });
+    const service = require('../../src/services/printSales/orders').createService({ db, storage: s3, sharp });
+    const q = await service.quote(event.id, customerId, 'client', payload()); let entered, resume, once = false;
+    const started = new Promise(r => { entered = r; }), held = new Promise(r => { resume = r; });
+    s3.adapter.s3Client.middlewareStack.add((next, context) => async args => {
+      const result = await next(args);
+      if (!once && context.commandName === 'UploadPartCommand' && args.input.Key.startsWith('.print-sales/')) { once = true; entered(); await held; }
+      return result;
+    }, { step: 'initialize', name: 'pausePrintMultipartFixture' });
+    const job = require('../../src/services/printSales/worker').createWorker({ db, storage: s3, sharp, orders: service }).runOne();
+    const exports = [];
+    try {
+      await started;
+      const stage = await db('print_sales_assets').where({ order_id: q.id, kind: 'staging' }).first();
+      expect(await s3.stat(stage.storage_key)).toBeNull();
+      exports.push(await require('../../src/services/picpeakExportService').createPicpeak({ includePhotos: false }));
+      resume(); await job;
+      expect((await service.status(event.id, customerId, q.id)).renderStatus).toBe('ready');
+      exports.push(await require('../../src/services/picpeakExportService').createPicpeak({ includePhotos: false }));
+      const archive = new (require('node-stream-zip').async)({ file: exports[1].filePath });
+      try { expect(Object.keys(await archive.entries()).filter(key => key.startsWith(`files/.print-sales/${q.id}/`))).toHaveLength(4); }
+      finally { await archive.close(); }
+    } finally {
+      resume(); await job;
+      for (const result of exports) await require('fs').promises.rm(require('path').dirname(result.filePath), { recursive: true, force: true });
+    }
+  });
+}, 120000);
+sdkTest('S3 SDK cancellation finishes multipart cleanup before releasing the staging asset', async () => {
+  await withPrintS3(async (s3, client, bucket, sdk) => {
+    await s3.put(`events/active/${event.slug}/individual/source.jpg`, sourceBytes);
+    const service = require('../../src/services/printSales/orders').createService({ db, storage: s3, sharp });
+    const q = await service.quote(event.id, customerId, 'client', payload()), claim = uuid(), controller = new AbortController();
+    await db('print_sales_orders').where({ id: q.id }).update({ claim, render_status: 'running', heartbeat: new Date().toISOString() });
+    let entered, sent = false; const started = new Promise(r => { entered = r; });
+    s3.adapter.s3Client.middlewareStack.add((next, context) => async args => {
+      const result = await next(args); if (context.commandName === 'UploadPartCommand') entered(); return result;
+    }, { step: 'initialize', name: 'observePrintMultipartFixture' });
+    const body = new (require('stream').Readable)({ read() { if (!sent) { sent = true; this.push(Buffer.alloc(6 * 1024 * 1024)); } } });
+    const uploading = service.asset(q.id, 'pack', body, claim, 'zip', { signal: controller.signal, maxBytes: 9 * 1024 * 1024 });
+    const failure = expect(uploading).rejects.toMatchObject({ name: 'AbortError' });
+    await started; controller.abort(); await failure;
+    expect((await client.send(new sdk.ListMultipartUploadsCommand({ Bucket: bucket }))).Uploads || []).toHaveLength(0);
+    expect(await db('print_sales_assets').where({ order_id: q.id })).toHaveLength(0);
+  });
+}, 120000);

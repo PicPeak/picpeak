@@ -11565,6 +11565,8 @@
     "lockAndBill": "Lock choice and add to billing"
   },
   "printSales": {
+    "repairFiles": "Check and repair production files",
+    "reviewDeadline": "Confirm by",
     "preparationQueued": "Your prints are waiting to be prepared",
     "preparationCapturing": "Saving the original photographs",
     "preparationRendering": "Preparing your print files",
@@ -11642,7 +11644,6 @@
     "recordSubmission": "Record manual lab submission",
     "tracking": "Tracking / dispatch note",
     "recordDispatch": "Record dispatch",
-    "retryPreparation": "Retry artwork preparation",
     "cancelAfterInvoice": "Cancel order after native invoice correction",
     "help": "Configure production requirements for shared catalogue products. Prices, tax and payments use native CRM invoices; lab submission is manual.",
     "closed": "Print ordering is disabled. Turn it on again to finish open orders.",
@@ -11769,7 +11770,6 @@
     "statusFailed": "Quotation failed",
     "statusExpired": "Expired",
     "unknownStatus": "Unknown status",
-    "artworkPending": "Artwork not queued",
     "artworkQueued": "Artwork queued",
     "artworkRunning": "Preparing artwork",
     "artworkReady": "Artwork ready",

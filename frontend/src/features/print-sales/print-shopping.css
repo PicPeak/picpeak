@@ -353,6 +353,8 @@
 }
 
 .print-shop-dialog [data-modal-footer] > button {
+  height: auto;
+  min-height: 2.5rem;
   max-width: 100%;
   min-width: 0;
   white-space: normal;

@@ -1495,7 +1495,7 @@ async function runBackupInternal(isManual = false) {
       await fs.chmod(recoveryStage, 0o700);
       if (stagedFiles) {
         files = await recoveryFiles.materialize(files, recoveryStage,
-          (Number(config.backup_max_file_size_mb) || 5000) * 1024 * 1024);
+          (Number(config.backup_max_file_size_mb) || 5000) * 1024 * 1024, db);
       }
       if (destinationType === 'rsync') {
         // The walker excludes backup output directories. Explicitly capture

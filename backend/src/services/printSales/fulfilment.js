@@ -2,7 +2,7 @@
 const V = require('../albumProducts/validation');
 const { parse } = require('./profiles');
 const { invoiceIdentity } = require('./orders');
-const { verify, withVerifiedFile } = require('./files');
+const { verify, withVerifiedFile, withFileWork, damaged } = require('./files');
 const { AppError, ConflictError, NotFoundError } = require('../../utils/errors');
 const { formatBoolean } = require('../../utils/dbCompat');
 const now = () => new Date().toISOString();
@@ -51,24 +51,48 @@ function createService({ db, storage }) {
     if (!row.contact || V.hash(parse(row.contact)) !== parse(row.snapshot).contactHash)
       throw new ConflictError('Confirmed delivery details are unavailable');
   }
-  async function files(row, options) {
+  async function files(row, options = {}) {
     if (row.render_status !== 'ready' || !row.artwork_version || row.purged_at)
       throw new ConflictError('Production files are not ready');
     const assets = await db('print_sales_assets').where({ order_id: row.id, claim: row.claim }).orderBy('id');
     if (!assets.some(a => a.kind === 'pack') || !assets.some(a => a.kind === 'sheet') ||
         V.hash(assets.map(a => ({ id: a.id, sha256: a.sha256, size: a.size }))) !== row.artwork_version)
-      throw new ConflictError('Production file identity changed');
-    for (const asset of assets) await verify(storage, asset, options);
+      throw damaged('Production file identity changed');
+    if (options.verifyBytes !== false) await withFileWork(async () => { for (const asset of assets) await verify(storage, asset, options); });
     return assets;
   }
   async function action(id, admin, input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new AppError('Choose a fulfilment action', 400);
     const row = await order(id, admin);
-    if (input.action === 'retry') {
-      const changed = await db('print_sales_orders').where({ id, status: 'accepted', render_status: 'failed' })
-        .update({ render_status: 'queued', attempts: 0, error: null, reviewed_version: null, reviewed_at: null });
-      if (!changed) throw new ConflictError('Only failed accepted preparation can be retried');
-      await log('print_order_retry', { orderId: id }, row.event_id, { type: 'admin', id: admin.id });
+    if (input.action === 'repair') {
+      if (row.status !== 'accepted' || row.submitted_at || row.purged_at || !['ready', 'failed'].includes(row.render_status))
+        throw new ConflictError('Only confirmed files not yet submitted to the lab can be repaired');
+      let broken = row.render_status === 'failed';
+      if (!broken) {
+        try { await files(row); }
+        catch (error) { if (error.code !== 'PRINT_FILES_DAMAGED') throw error; broken = true; }
+      }
+      if (!broken) return;
+      const snapshot = parse(row.snapshot);
+      if (V.hash(row.snapshot) !== row.snapshot_hash || !row.contact || V.hash(parse(row.contact)) !== snapshot.contactHash)
+        throw new ConflictError('The frozen order identity is unavailable; hold the order for manual resolution');
+      await withFileWork(async () => {
+        for (const source of new Map(snapshot.items.map(item => [item.source.assetId, item.source])).values()) {
+          const asset = await db('print_sales_assets').where({ id: source.assetId, order_id: id, kind: 'source' }).first();
+          if (!asset || asset.sha256 !== source.sha256) throw new ConflictError('Retained original is unavailable; hold the order for manual resolution');
+          await verify(storage, asset);
+        }
+      });
+      await db.transaction(async tx => {
+        await tx('print_sales_settings').where({ id: 1 }).forUpdate().first();
+        const current = await tx('print_sales_orders').where({ id }).forUpdate().first();
+        if (current.status !== 'accepted' || current.submitted_at || current.purged_at || current.claim !== row.claim ||
+            current.artwork_version !== row.artwork_version || !['ready', 'failed'].includes(current.render_status))
+          throw new ConflictError('The order changed; reload before repairing');
+        await tx('print_sales_orders').where({ id }).update({ render_status: 'queued', attempts: 0, error: null, artwork_version: null,
+          reviewed_version: null, reviewed_at: null, reviewed_by: null });
+        await log('print_order_repair', { orderId: id }, row.event_id, { type: 'admin', id: admin.id }, tx);
+      });
       return;
     }
     // The way out for an order the invoice no longer matches: submitted to the
@@ -134,15 +158,17 @@ function createService({ db, storage }) {
         current.event_id, { type: 'admin', id: admin.id }, tx);
     });
   }
-  async function download(id, admin, kind, consume, options) {
+  async function downloadMetadata(id, admin, kind, options) {
     if (!['pack', 'sheet'].includes(kind)) throw new NotFoundError('Supplier file');
     const row = await order(id, admin);
     await db.transaction(tx => settled(tx, row));
-    const asset = (await files(row, options)).find(a => a.kind === kind);
+    const asset = (await files(row, { ...options, verifyBytes: false })).find(a => a.kind === kind);
     if (!asset) throw new NotFoundError('Supplier file');
+    return { row, asset };
+  }
+  async function download(id, admin, kind, consume, options) {
+    const { row, asset } = await downloadMetadata(id, admin, kind, options);
     return withVerifiedFile(storage, asset, async (stream, size) => {
-      // Verification can take time for a large pack. A cancellation, erasure or
-      // invoice correction during it must still stop the browser's release.
       const current = await order(id, admin);
       if (current.claim !== row.claim || current.artwork_version !== row.artwork_version ||
           current.render_status !== 'ready' || current.purged_at)
@@ -182,7 +208,7 @@ function createService({ db, storage }) {
       if (complete) await db('print_sales_orders').where({ id: row.id }).update({ purged_at: now(), contact: null });
     }
   }
-  return { order, settled, files, action, download, cleanup };
+  return { order, settled, files, action, download, downloadMetadata, cleanup };
 }
 
 /** Called inside native customer erasure; ongoing orders must be explicitly resolved first. */
