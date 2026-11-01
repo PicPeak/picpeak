@@ -26,6 +26,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Calendar, Clock, Download, ExternalLink, History, ImageIcon, Info } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
+import { ArchiveDownloadProvider, useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
 import type { TFunction } from 'i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useQuery } from '@tanstack/react-query';
@@ -35,7 +36,6 @@ import { formatMoneyMinor } from '../../utils/money';
 import {
   customerService, type CustomerDashboard, type CustomerEvent, type CustomerRecentItem,
 } from '../../services/customer.service';
-import { galleryService } from '../../services/gallery.service';
 import { isDownloadLimitError } from '../../utils/downloadLimit';
 import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
@@ -198,7 +198,10 @@ const Recent: React.FC<{ items: CustomerRecentItem[] }> = ({ items }) => {
   );
 };
 
-export const CustomerDashboardPage: React.FC = () => {
+export const CustomerDashboardPage: React.FC = () => <ArchiveDownloadProvider><CustomerDashboardContent /></ArchiveDownloadProvider>;
+
+const CustomerDashboardContent: React.FC = () => {
+  const archives = useArchiveDownload();
   const { t } = useTranslation();
   const navigate = useNavigate();
   // Localized date formatting — respects general_date_format + the active UI
@@ -264,7 +267,7 @@ export const CustomerDashboardPage: React.FC = () => {
       const { token } = await customerService.getEventAccessToken(slug);
       storeGalleryToken(slug, token);
       setActiveGallerySlug(slug);
-      await galleryService.downloadAllPhotos(slug, false);
+      if (!await archives.downloadAllPhotos(slug)) return;
       toast.success(t('customer.dashboard.downloadStarted', 'Download started for {{name}}', { name: eventName }));
     } catch (e: any) {
       // A download limit refusal already said why (issue 1560).

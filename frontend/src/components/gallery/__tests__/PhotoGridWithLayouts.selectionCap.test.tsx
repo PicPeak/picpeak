@@ -11,6 +11,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { Photo } from '../../../types';
 import { DownloadLimitError, SelectionTooLargeError } from '../../../utils/downloadLimit';
 
+vi.mock('../../../contexts/ArchiveDownloadContext', () => ({
+  ArchiveDownloadProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useArchiveDownload: () => service,
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : key) }),
 }));

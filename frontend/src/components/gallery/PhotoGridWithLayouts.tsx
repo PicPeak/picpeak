@@ -2,18 +2,18 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { GalleryEmptyMessage } from './GalleryEmptyMessage';
 import { toast as toastify } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
+import { useArchiveDownload } from '../../contexts/ArchiveDownloadContext';
 
 import type { Photo, DownloadResolutionChoice, GalleryPerson } from '../../types';
 import { useDownloadPhoto } from '../../hooks/useGallery';
 import { isPhotoDownloadPending } from '../../hooks/usePhotoDownloadPending';
 import { PhotoLightbox } from './PhotoLightbox';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
-import { galleryService } from '../../services/gallery.service';
 import { analyticsService } from '../../services/analytics.service';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { useDownloadChoice } from '../../contexts/DownloadChoiceContext';
-import { isDownloadLimitError, isSelectionTooLargeError, showDownloadLimitReached, type QuotaPhoto } from '../../utils/downloadLimit';
+import { isDownloadLimitError, showDownloadLimitReached, type QuotaPhoto } from '../../utils/downloadLimit';
 import type { LightboxPhotoChangeHandler } from './photoLink';
 
 // Import all layouts
@@ -182,6 +182,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   people,
   onSelectPerson,
 }) => {
+  const archives = useArchiveDownload();
   const { t } = useTranslation();
   const { theme } = useTheme();
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
@@ -394,15 +395,16 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     toastify.info(t('gallery.downloading', { count: ids.length }));
 
     // Over the server's per-download cap the selection stays too, to trim.
-    let keepSelection = false;
+    let keepSelection = true;
     try {
-      await galleryService.downloadSelectedPhotos(slug, ids);
+      if (!await archives.downloadSelectedPhotos(slug, ids)) return;
+      keepSelection = false;
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch (error) {
       // A download-limit refusal keeps the selection, as the pre-check
       // above does, so the guest can trim it to what is left; so does a
       // selection over the server's per-download cap.
-      keepSelection = isDownloadLimitError(error) || isSelectionTooLargeError(error);
+      keepSelection = true;
       if (!isDownloadLimitError(error)) toastify.error(t('gallery.downloadError'));
     } finally {
       if (!keepSelection) {

@@ -159,10 +159,10 @@ function sanitizeForZipEntry(name) {
  * camera body across two shoot days).
  *
  * @param {string[]} names
+ * @param {Map} seen optional running name registry for streamed archives
  * @returns {string[]} new array of the same length, with collisions resolved
  */
-function uniquifyZipNames(names) {
-  const seen = new Map();
+function uniquifyZipNames(names, seen = new Map()) {
   const out = new Array(names.length);
 
   for (let i = 0; i < names.length; i += 1) {

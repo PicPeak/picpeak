@@ -27,10 +27,14 @@ const stopDownloadJobCleanup = () => task.stop();
 async function runDownloadJobCleanup() {
   try {
     await downloadJobService.sweepExpired();
+  } catch (err) {
+    logger.error('Download job cleanup failed', { error: err.message });
+  }
+  try {
     // Ready mails that could not be queued when their job finished.
     await require('./downloadJobNotifier').retryUnsent();
   } catch (err) {
-    logger.error('Download job cleanup failed', { error: err.message });
+    logger.error('Download job mail retry failed', { error: err.message });
   }
 }
 

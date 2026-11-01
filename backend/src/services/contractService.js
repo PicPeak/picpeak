@@ -41,6 +41,7 @@ const crud = require('./contract/crud');
 const sending = require('./contract/sending');
 const signatures = require('./contract/signatures');
 const conversions = require('./contract/conversions');
+const imports = require('./contract/imports');
 
 const { SECTIONS_ORDER, nextContractNumber } = helpers;
 const { renderTemplatedBody, buildPlaceholderContext, buildRenderContext } = renderContext;
@@ -53,12 +54,14 @@ const {
   rerenderAndResend, restampSignatures, getAuditTrail,
 } = signatures;
 const { createFromQuote, convertToEvent, convertToInvoiceOnly } = conversions;
+const { importContract } = imports;
 
 module.exports = {
   listContracts,
   getContractById,
   createContract,
   createContractIdempotent,
+  importContract,
   updateContract,
   sendContract,
   renderContractPdfBuffer,

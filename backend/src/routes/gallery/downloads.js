@@ -39,6 +39,7 @@ const {
   resolveWatermarkSettings, resolveWatermarkSettingsForPhoto, isVideo,
 } = require('../../services/downloadRendition');
 const downloadJobService = require('../../services/downloadJobService');
+const { readEntryManifest, trackPreparedDelivery } = require('../../services/downloadJobDelivery');
 const downloadJobNotifier = require('../../services/downloadJobNotifier');
 const { resolveGuest } = require('../../middleware/guestAuth');
 const {
@@ -1274,7 +1275,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
 });
 
 // ──────────────────────────────────────────────────────────────────────────
-// Custom-resolution download jobs (#858).
+// Prepared archive downloads (#858, #1966).
 //
 // The plain download-all is served from the pre-built cache at the gallery's
 // STANDARD resolution. Picking a different size has nothing to cache against,
@@ -1290,9 +1291,6 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
     if (denial) return res.status(403).json(denial);
 
     const policy = await resolveEventDownloadPolicy(req.event);
-    if (!policy.pickerEnabled) {
-      return res.status(403).json({ error: 'Resolution choice is not enabled for this gallery' });
-    }
     const resolution = pickRequestedResolution(policy, req.body?.resolution);
     if (resolution === null) {
       return res.status(400).json({ error: 'Resolution not available for this gallery' });
@@ -1300,8 +1298,12 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
 
     // Optional subset. Absent = the whole visible gallery.
     let photoIds = null;
-    if (Array.isArray(req.body?.photo_ids) && req.body.photo_ids.length) {
-      photoIds = cleanPhotoIds(req.body.photo_ids);
+    if (req.body && Object.hasOwn(req.body, 'photo_ids')) {
+      const raw = req.body.photo_ids;
+      if (!Array.isArray(raw) || raw.length === 0 || raw.some((id) => parsePositiveInt32(id) === null)) {
+        return res.status(400).json({ error: 'photo_ids must be a non-empty array of valid photo IDs' });
+      }
+      photoIds = cleanPhotoIds(raw);
       if (photoIds.length === 0) {
         return res.status(400).json({ error: 'No valid photo IDs provided' });
       }
@@ -1311,10 +1313,9 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
     // Download limit (issue 1560). Checked here so no archive gets built for a
     // request that could never be delivered; granted when the file is handed
     // over, because jobs are shared between requesters and creating one is not
-    // a download. A share-link guest of a limited gallery only gets
-    // preview-size copies, which a resolution job does not build.
-    if (await isPreviewOnly(req)) return res.status(403).json(clientOnlyError());
-    if (downloadLimitOf(req.event) && !req.isAdminPreview) {
+    // a download. Preview guests have separate jobs and draw no quota.
+    const previewOnly = await isPreviewOnly(req);
+    if (!previewOnly && downloadLimitOf(req.event) && !req.isAdminPreview) {
       const resolved = await downloadJobService
         .photoQuery(req.event.id, photoIds, req.accessLevel, await folderTree.downloadBlockedFolderIds(req.event.id))
         .select('photos.id');
@@ -1329,6 +1330,7 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
         resolution,
         photoIds,
         accessLevel: req.accessLevel,
+        previewOnly,
       });
     } catch (err) {
       if (err.code === 'NO_PHOTOS') {
@@ -1363,8 +1365,9 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
     // Download limit (issue 1560). The file itself goes out through a browser
     // navigation, which cannot surface a refusal — so a ready job says here
     // whether it would still fit, and the client asks before it navigates.
+    const previewOnly = await isPreviewOnly(req);
     let limitReached;
-    if (job.status === 'ready' && downloadLimitOf(req.event) && !req.isAdminPreview) {
+    if (job.status === 'ready' && !previewOnly && downloadLimitOf(req.event) && !req.isAdminPreview) {
       let ids = [];
       try {
         ids = JSON.parse(job.delivered_photo_ids || job.photo_ids || '[]');
@@ -1386,12 +1389,19 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
     // withheld from this visitor (403), past its retention (410), no longer
     // matching the gallery or this visitor's scope (409 / 404). The dialog
     // opened from a ready-mail must not offer it (issue 1733).
-    const unavailable = job.status === 'ready' && (
+    let unavailable = job.status === 'ready' && (
       !!(await originalAssetDenial(req))
-      || await isPreviewOnly(req)
+      || !!job.preview_only !== previewOnly
       || new Date(job.expires_at).getTime() <= Date.now()
       || !(await downloadJobService.isStillDeliverable(job, req.event, req.accessLevel))
     );
+    if (job.status === 'ready' && !unavailable) {
+      const stat = await downloadJobService.readyStat(job);
+      let ids;
+      try { ids = JSON.parse(job.delivered_photo_ids || '[]'); } catch (_) { ids = []; }
+      unavailable = !stat || (job.policy_version >= 2
+        && (!Array.isArray(ids) || !readEntryManifest(job, ids, stat.size)));
+    }
     res.json({
       status: job.status,
       resolution: job.resolution,
@@ -1414,7 +1424,8 @@ router.post('/:slug/download-jobs/:token/notify', verifyGalleryAccess, denySlide
   try {
     const job = await downloadJobService.getStatus(req.params.token);
     if (!job || job.event_id !== req.event.id
-        || job.visibility_scope !== downloadJobService.visibilityScopeFor(req.accessLevel)) {
+        || job.visibility_scope !== downloadJobService.visibilityScopeFor(req.accessLevel)
+        || !!job.preview_only !== await isPreviewOnly(req)) {
       return res.status(404).json({ error: 'Download job not found' });
     }
     // A client's job: the link in the mail could not reach it (canMail).
@@ -1456,9 +1467,10 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     if (job.visibility_scope !== downloadJobService.visibilityScopeFor(req.accessLevel)) {
       return res.status(404).json({ error: 'Download job not found' });
     }
-    // Download limit (issue 1560): a limited gallery's archives hold
-    // originals, which a share-link guest may not take.
-    if (await isPreviewOnly(req)) return res.status(403).json(clientOnlyError());
+    // A public-scope portal job can hold originals; a limited share-link
+    // guest in that same visibility scope can only receive a preview job.
+    const previewOnly = await isPreviewOnly(req);
+    if (!!job.preview_only !== previewOnly) return res.status(403).json(clientOnlyError());
     if (job.status !== 'ready' || !job.zip_path) {
       return res.status(409).json({ error: 'Download is not ready yet', status: job.status });
     }
@@ -1468,7 +1480,8 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     // A photo hidden AFTER this archive was built is still inside it, and the
     // scope check above can't see that — both sides remain 'public'. Re-run
     // the visibility query over the packaged set before handing it over.
-    if (!(await downloadJobService.isStillDeliverable(job, req.event, req.accessLevel))) {
+    const deliveryPhotos = await downloadJobService.deliveryPhotos(job, req.event, req.accessLevel);
+    if (!deliveryPhotos) {
       return res.status(409).json({
         error: 'This gallery changed since the download was prepared — please request it again',
         status: 'stale',
@@ -1490,14 +1503,33 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
 
     // Download limit (issue 1560). A limited gallery must know what it is
     // handing over, so an unreadable manifest refuses rather than ships.
-    const limited = !req.isAdminPreview && await currentDownloadLimit(req.event);
+    const limited = !previewOnly && !req.isAdminPreview && await currentDownloadLimit(req.event);
     if (limited && (!Array.isArray(deliveredIds) || deliveredIds.length === 0)) {
       return res.status(409).json({
         error: 'This gallery changed since the download was prepared — please request it again',
         status: 'stale',
       });
     }
-    const suffix = job.resolution === 'original' ? 'original' : job.resolution;
+    const manifest = job.policy_version >= 2 ? readEntryManifest(job, deliveredIds, stat.size) : null;
+    if (job.policy_version >= 2 && !manifest) {
+      return res.status(409).json({ error: 'This download is no longer available. Please request it again' });
+    }
+    let suffix = job.preview_only ? 'previews' : job.resolution;
+    if (!job.preview_only && isGalleryPriced(req.event) && Array.isArray(deliveredIds)) {
+      const delivered = new Set(deliveredIds.map(Number));
+      const media = deliveryPhotos.filter((photo) => delivered.has(Number(photo.id)));
+      const videos = media.filter(isVideo).length;
+      suffix = videos === 0 ? 'previews' : videos === media.length ? 'videos' : 'photo-previews-and-videos';
+    }
+    // Native downloads use the response filename ahead of <a download>.
+    // Part metadata changes only the name, never the job's authorised set.
+    const part = parsePositiveInt32(req.query.part);
+    const parts = parsePositiveInt32(req.query.parts);
+    const selected = req.query.selected === '1';
+    const selectionSuffix = suffix === job.resolution ? '' : `-${suffix}`;
+    const archiveName = part && parts && part <= parts
+      ? `${req.event.slug}-selected-${part}-of-${parts}${selectionSuffix}.zip`
+      : selected ? `${req.event.slug}-selected${selectionSuffix}.zip` : `${req.event.slug}-${suffix}.zip`;
     // A HEAD probe is not a download (issue 2139): it answers the headers
     // without taking any of the quota, and on any gallery before the
     // counters below.
@@ -1509,14 +1541,27 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
       res.set({
         'Content-Type': 'application/zip',
         'Content-Length': stat.size,
-        'Content-Disposition': `attachment; filename="${req.event.slug}-${suffix}.zip"`,
+        'Content-Disposition': buildContentDisposition(archiveName),
       });
       return res.end();
     }
-    if (limited) {
-      const quota = await grantDownloads(req.event, deliveredIds, { reserve: true });
-      if (!quota.ok) return refuseDownload(res, quota);
-      settleWhenDone(res, req.event.id, quota, responseDelivered(res, deliveredIds));
+    // Open before reserving so a missing remote source cannot strand slots.
+    const stream = await storage.get(job.zip_path);
+    // Absorb lazy source errors even while an atomic grant is in progress.
+    const sourceFailed = (err) => logger.warn('Prepared download source failed', { jobId: job.id, error: err.message });
+    stream.on('error', sourceFailed);
+    try {
+      if (limited) {
+        const quota = await grantDownloads(req.event, deliveredIds, { reserve: true });
+        if (!quota.ok) { stream.destroy(); return refuseDownload(res, quota); }
+        const shipped = manifest ? trackPreparedDelivery(stream, res, manifest) : responseDelivered(res, deliveredIds);
+        settleWhenDone(res, req.event.id, quota, shipped);
+      }
+      if (res.destroyed || res.closed) { stream.destroy(); return; }
+      if (stream.errored) throw stream.errored;
+    } catch (err) {
+      stream.destroy();
+      throw err;
     }
 
     // Stats parity with the other bulk paths (#895): only count once the
@@ -1541,11 +1586,11 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     // Opened before the headers: an archive removed since the stat (issue
     // 2129) makes S3's get() reject here, and the lazy local stream fails in
     // pipeStreamToResponse, both with the failed stat's 410.
-    const stream = await storage.get(job.zip_path);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Length', stat.size);
-    res.setHeader('Content-Disposition', `attachment; filename="${req.event.slug}-${suffix}.zip"`);
+    res.setHeader('Content-Disposition', buildContentDisposition(archiveName));
     pipeStreamToResponse(stream, res, { context: `download job ${job.id}`, missingStatus: 410 });
+    stream.removeListener('error', sourceFailed);
   } catch (error) {
     if (answerVanished(res, error, 'This download is no longer available', 410)) return;
     errorResponse(res, error, 500, 'Failed to serve prepared download');

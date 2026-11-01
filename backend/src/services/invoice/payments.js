@@ -14,6 +14,7 @@ const { toMillis } = require('../../utils/queueTimestamps');
 const { formatMajor } = require('./helpers');
 const { auditedInsert, auditedUpdate, normalizeActor } = require('../accountingHistory');
 const { applyReminder, resolveAdminEmailForInvoice, resolvePerReminderFeeMinor, resolveSkontoPercentForInvoice } = require('./reminders');
+const { toDateOnly } = require('../../utils/dateOnly');
 
 // Payment-check token lifetime (GHSA-wg94-f86h-vq68 hardening). This
 // unauthenticated magic link is the only gate on a write to the
@@ -528,8 +529,8 @@ async function getPaymentCheckByToken(token) {
         || customer?.display_name || customer?.email || '',
       email: customer?.email,
     },
-    issueDate: invoice.issue_date,
-    dueDate: invoice.due_date,
+    issueDate: toDateOnly(invoice.issue_date),
+    dueDate: toDateOnly(invoice.due_date),
     totalMinor: invoice.total_amount_minor,
     paidMinor: invoice.paid_amount_minor,
     lateFeeMinor: invoice.late_fee_amount_minor,

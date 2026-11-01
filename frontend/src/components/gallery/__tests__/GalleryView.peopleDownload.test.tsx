@@ -26,8 +26,14 @@ const stable = vi.hoisted(() => ({
 }));
 
 const service = vi.hoisted(() => ({
-  downloadSelectedPhotos: vi.fn().mockResolvedValue(undefined),
+  downloadSelectedPhotos: vi.fn().mockResolvedValue(true),
   downloadPhotosInParts: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../../contexts/ArchiveDownloadContext', () => ({
+  ArchiveDownloadProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  ArchiveDownloadDialog: () => null,
+  useArchiveDownload: () => service,
 }));
 
 vi.mock('../../../contexts', () => ({

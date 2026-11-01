@@ -116,9 +116,11 @@ export const ThumbnailsTab: React.FC = () => {
   // ensurePreviewImage's lazy on-first-open generation. Useful after
   // flipping the toggle on so guests don't pay the lazy-cost on the
   // very first lightbox open per gallery.
+  // onlyMissing builds only the previews that do not exist yet, so a run cut
+  // short (a restart, an upgrade) picks up where it stopped.
   const regeneratePreviewsMutation = useMutation({
-    mutationFn: async () => {
-      const response = await api.post('/admin/thumbnails/regenerate-previews');
+    mutationFn: async (onlyMissing: boolean) => {
+      const response = await api.post('/admin/thumbnails/regenerate-previews', onlyMissing ? { onlyMissing: true } : {});
       return response.data;
     },
     onSuccess: (data) => {
@@ -333,15 +335,25 @@ export const ThumbnailsTab: React.FC = () => {
         {/* Eager regeneration so guests don't pay the lazy first-open
             cost. Only useful after the toggle is on; gated so admins
             don't accidentally kick off a job that won't be visible. */}
-        <Button
-          variant="outline"
-          onClick={() => regeneratePreviewsMutation.mutate()}
-          isLoading={regeneratePreviewsMutation.isPending}
-          disabled={!settings.lightbox_preview_enabled}
-          leftIcon={regeneratePreviewsMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
-        >
-          {t('settings.thumbnails.regeneratePreviewsButton', 'Regenerate All Previews')}
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          {[false, true].map((onlyMissing) => {
+            const pending = regeneratePreviewsMutation.isPending && regeneratePreviewsMutation.variables === onlyMissing;
+            return (
+              <Button
+                key={String(onlyMissing)}
+                variant="outline"
+                onClick={() => regeneratePreviewsMutation.mutate(onlyMissing)}
+                isLoading={pending}
+                disabled={!settings.lightbox_preview_enabled || regeneratePreviewsMutation.isPending}
+                leftIcon={pending ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
+              >
+                {onlyMissing
+                  ? t('settings.thumbnails.generateMissingPreviewsButton', 'Generate Missing Previews')
+                  : t('settings.thumbnails.regeneratePreviewsButton', 'Regenerate All Previews')}
+              </Button>
+            );
+          })}
+        </div>
       </Card>
 
       {/* Info Box */}

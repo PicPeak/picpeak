@@ -14,6 +14,8 @@ import { useGalleryDialog } from './hooks/useGalleryDialog';
 import { imageLimitMessage, publicUploadErrorKey } from '../../utils/publicUploadErrors';
 import { prepareGuestUpload } from '../../utils/guestUploadDownscale';
 import { getGalleryToken } from '../../utils/galleryAuthStorage';
+import { uploadMultipartBudget } from '../../utils/uploadMultipartBudget';
+import { uploadGuestFileInChunks } from '../../services/guestChunkedUpload';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -135,12 +137,20 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   const maxFileSizeMb = Number.isFinite(Number(publicSettings?.general_max_file_size_mb))
     ? Number(publicSettings?.general_max_file_size_mb)
     : 50;
-  const maxFileSizeBytes = maxFileSizeMb * 1024 * 1024;
+
+  // Videos have their own limit (issue 2315), as in the admin uploader; the
+  // backend holds each file to its type's limit the same way.
+  const maxVideoSizeMb = Number.isFinite(Number(publicSettings?.general_max_video_size_mb))
+    ? Number(publicSettings?.general_max_video_size_mb)
+    : 500;
 
   const allowedMimeTypes = useMemo(
     () => extensionsToMimeTypes(publicSettings?.allowed_file_types),
     [publicSettings?.allowed_file_types]
   );
+  const videoUploadsAllowed = allowedMimeTypes.some((type) => type.startsWith('video/'));
+  const sizeLimitMbFor = (file: File) =>
+    (file.type.startsWith('video/') ? maxVideoSizeMb : maxFileSizeMb);
 
   // #1117 — on Android this appends a type the photo picker can't handle, so
   // the system falls back to the chooser that actually offers the camera.
@@ -165,9 +175,10 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         toast.error(t('upload.invalidFileType', { names: file.name }));
         return false;
       }
-      // Check file size against the configured per-file limit.
-      if (file.size > maxFileSizeBytes) {
-        toast.error(t('upload.fileTooLarge', { name: file.name, limit: maxFileSizeMb }));
+      // Check file size against the configured per-file limit for its type.
+      const limitMb = sizeLimitMbFor(file);
+      if (file.size > limitMb * 1024 * 1024) {
+        toast.error(t('upload.fileTooLarge', { name: file.name, limit: limitMb }));
         return false;
       }
       return true;
@@ -344,46 +355,62 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
       };
       // Inside the loop, so only one decoded image is in memory at a time.
       const prepared = await prepareGuestUpload(file, maxEdge);
-      const formData = new FormData();
-      formData.append('photos', prepared.file);
+      const fields: Record<string, string> = {};
       if (categoryId) {
-        formData.append('category_id', categoryId.toString());
+        fields.category_id = categoryId.toString();
       }
       if (prepared.capturedAt) {
-        formData.append('captured_at', prepared.capturedAt);
+        fields.captured_at = prepared.capturedAt;
       }
+      const authHeaders: Record<string, string> = {
+        // Explicit, not left to the interceptor: this URL carries the
+        // event id where the interceptor looks for a slug, so it would
+        // look the guest token up under the wrong key (#1561).
+        ...(uploader.token ? { 'x-guest-token': uploader.token } : {}),
+        // The gallery token too, for the same reason: without it the
+        // server falls back to any gallery cookie, which with a second
+        // gallery open in another tab is that one's, and answers 403.
+        ...(galleryToken ? { Authorization: `Bearer ${galleryToken}` } : {}),
+      };
+      const reportProgress = (progress: number) => {
+        setUploadProgress(prev => ({
+          ...prev,
+          [file.name]: progress,
+        }));
+        if (progress >= 100) {
+          setProcessingFiles(prev => ({ ...prev, [file.name]: true }));
+        }
+      };
+      type UploadAnswer = {
+        upload_id?: string;
+        count?: number;
+        held_for_review?: boolean;
+        errors?: Array<{ filename?: string; error?: string; code?: string; limit?: number }>;
+      };
 
-      try {
-        const response = await api.post<{
-          upload_id?: string;
-          count?: number;
-          held_for_review?: boolean;
-          errors?: Array<{ filename?: string; error?: string; code?: string; limit?: number }>;
-        }>(`/gallery/${eventId}/upload`, formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-            // Explicit, not left to the interceptor: this URL carries the
-            // event id where the interceptor looks for a slug, so it would
-            // look the guest token up under the wrong key (#1561).
-            ...(uploader.token ? { 'x-guest-token': uploader.token } : {}),
-            // The gallery token too, for the same reason: without it the
-            // server falls back to any gallery cookie, which with a second
-            // gallery open in another tab is that one's, and answers 403.
-            ...(galleryToken ? { Authorization: `Bearer ${galleryToken}` } : {}),
-          },
+      const sendWhole = () => {
+        const formData = new FormData();
+        formData.append('photos', prepared.file);
+        Object.entries(fields).forEach(([name, value]) => formData.append(name, value));
+        return api.post<UploadAnswer>(`/gallery/${eventId}/upload`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data', ...authHeaders },
           onUploadProgress: (progressEvent) => {
             if (progressEvent.total) {
-              const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-              setUploadProgress(prev => ({
-                ...prev,
-                [file.name]: progress,
-              }));
-              if (progress >= 100) {
-                setProcessingFiles(prev => ({ ...prev, [file.name]: true }));
-              }
+              reportProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total));
             }
           },
         });
+      };
+
+      try {
+        // A file larger than one request may carry (a phone video, mostly)
+        // goes in chunks, as admin uploads do (issue 2315). The answer is the
+        // same either way.
+        const response = prepared.file.size > uploadMultipartBudget()
+          ? await uploadGuestFileInChunks<UploadAnswer>(eventId, prepared.file, {
+            headers: authHeaders, fields, onProgress: reportProgress,
+          })
+          : await sendWhole();
         setProcessingFiles(prev => {
           const next = { ...prev };
           delete next[file.name];
@@ -593,6 +620,11 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
                         rendering literally. */}
                     {t('upload.fileRequirements', { formats: formatsLabel, limit: maxFilesPerUpload, sizeLimit: maxFileSizeMb })}
                   </p>
+                  {videoUploadsAllowed && (
+                    <p className="text-xs text-muted-theme">
+                      {t('upload.videoSizeLimit', 'Videos: max {{sizeLimit}}MB per file', { sizeLimit: maxVideoSizeMb })}
+                    </p>
+                  )}
                   <input
                     type="file"
                     className="hidden"

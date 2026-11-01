@@ -39,6 +39,7 @@ const {
 const quoteService = require('../services/quoteService');
 const accountingHistory = require('../services/accountingHistory');
 const { db } = require('../database/db');
+const { toDateOnly } = require('../utils/dateOnly');
 
 const router = express.Router();
 
@@ -119,10 +120,10 @@ function transformQuote(q) {
     dealUuid: q.deal_uuid || null,
     language: q.language,
     currency: q.currency,
-    issueDate: q.issue_date,
-    validUntil: q.valid_until,
+    issueDate: toDateOnly(q.issue_date),
+    validUntil: toDateOnly(q.valid_until),
     eventName: q.event_name,
-    eventDate: q.event_date,
+    eventDate: toDateOnly(q.event_date),
     eventType: q.event_type ?? null,
     bookingWorkflowId: q.booking_workflow_id ?? null,
     eventTimeStart: q.event_time_start,

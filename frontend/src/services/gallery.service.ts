@@ -28,13 +28,12 @@ export function splitIntoArchives(photoIds: number[]): number[][] {
 // How long a downloaded blob's object URL stays valid. Revoking it in the
 // same task as the click can cancel the download before the browser has
 // started reading it (Safari and Firefox), so it is released a little later,
-// but soon: a download in parts would otherwise hold several zips at once.
+// so successive single-photo saves do not retain all their image buffers.
 const BLOB_URL_RELEASE_MS = 1_000;
 
 // Takes the Blob axios returned as is: it keeps the server's Content-Type.
-// Re-wrapping it would leave the type empty, and browsers that name a blob
-// download from its type (DuckDuckGo on Android, issue 2175) then save the
-// zip as .bin.
+// Re-wrapping it would leave the type empty, which some mobile browsers
+// use when choosing the file extension.
 function saveBlob(blob: Blob, filename: string): void {
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -377,79 +376,19 @@ export const galleryService = {
     api.post(`/gallery/${slug}/photo/${photoId}/view`).catch(() => {});
   },
 
-  // Download all photos as ZIP
-  // When a pre-generated zip is available, use native browser download (Content-Length → progress bar).
-  // Otherwise fall back to blob download.
-  async downloadAllPhotos(slug: string, zipReady?: boolean): Promise<void> {
-    if (zipReady && !isGalleryLimited(slug)) {
-      // Native browser download — the server sends Content-Length so
-      // the browser shows a real progress bar and mobile doesn't crash.
-      const link = document.createElement('a');
-      link.href = withAdminPreview(`/api/gallery/${slug}/download-all`);
-      link.setAttribute('download', `${slug}.zip`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      return;
-    }
-
-    // Fallback: blob download (no Content-Length, buffered in memory)
-    const response = await withDownloadLimit(slug, () => api.get(`/gallery/${slug}/download-all`, {
-      responseType: 'blob',
-    }));
-
-    saveBlob(response.data, `${slug}.zip`);
+  // Only use after the gallery payload confirms an eligible ready cache.
+  downloadCachedArchive(slug: string): void {
+    const link = document.createElement('a');
+    link.href = withAdminPreview(`/api/gallery/${slug}/download-all`);
+    link.setAttribute('download', `${slug}.zip`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   },
 
-  // Download selected photos. On iOS with a small selection, route
-  // through Web Share so the files land directly in Photos via the
-  // share sheet's "Save N Images" action (#557, extending #531 to the
-  // multi-photo case). Above the cap, or anywhere else, fall through
-  // to the existing server-side zip flow.
-  async downloadSelectedPhotos(
-    slug: string,
-    photoIds: number[],
-    part?: { index: number; total: number },
-    // Called as the zip's bytes arrive (issue 2043).
-    onProgress?: () => void,
-  ): Promise<void> {
-    // Not on a limited gallery (issue 1560): the share path fetches photo by
-    // photo, so a refusal halfway through would already have used up the
-    // photos before it, where the zip below is all or nothing. Not for one
-    // part of a larger download either: those all arrive as zips.
-    if (
-      !part &&
-      isIOS() &&
-      !isGalleryLimited(slug) &&
-      photoIds.length > 0 &&
-      photoIds.length <= MAX_WEB_SHARE_FILES
-    ) {
-      const status = await this.trySaveMultipleToDevice(slug, photoIds);
-      // 'shared' = share() resolved; 'dismissed' = user closed the
-      // share sheet — both terminate the flow without touching the
-      // zip path. Only 'fallback' continues below.
-      if (status !== 'fallback') return;
-    }
-
-    const response = await withDownloadLimit(slug, () => api.post(`/gallery/${slug}/download-selected`, { photo_ids: photoIds }, {
-      responseType: 'blob',
-      ...(onProgress ? { onDownloadProgress: () => onProgress() } : {}),
-    }));
-
-    saveBlob(response.data, part
-      ? `${slug}-selected-${part.index}-of-${part.total}.zip`
-      : `${slug}-selected.zip`);
-  },
-
-  // Download photos as zips of at most SELECTED_DOWNLOAD_LIMIT each, one after
-  // the other, so a set past the server's per-request cap is never cut short.
-  // The first failure stops the rest and is thrown.
-  async downloadPhotosInParts(slug: string, photoIds: number[]): Promise<void> {
-    const parts = splitIntoArchives(photoIds);
-    if (parts.length <= 1) return this.downloadSelectedPhotos(slug, photoIds);
-    for (let i = 0; i < parts.length; i += 1) {
-      await this.downloadSelectedPhotos(slug, parts[i], { index: i + 1, total: parts.length });
-    }
+  async trySaveSelectedToDevice(slug: string, photoIds: number[]): Promise<'shared' | 'dismissed' | 'fallback'> {
+    if (!isIOS() || isGalleryLimited(slug) || photoIds.length === 0 || photoIds.length > MAX_WEB_SHARE_FILES) return 'fallback';
+    return this.trySaveMultipleToDevice(slug, photoIds);
   },
 
   // ── Custom-resolution downloads (#858) ──────────────────────────────────
@@ -460,11 +399,11 @@ export const galleryService = {
   // Kick off a build. `photoIds` omitted = the whole gallery.
   async startDownloadJob(
     slug: string,
-    resolution: string,
+    resolution?: string,
     photoIds?: number[]
-  ): Promise<{ token: string; status: DownloadJobStatus }> {
-    const body: Record<string, unknown> = { resolution };
-    if (photoIds && photoIds.length) body.photo_ids = photoIds;
+  ): Promise<{ token: string; status: DownloadJobStatus; resolution: string }> {
+    const body: Record<string, unknown> = resolution ? { resolution } : {};
+    if (photoIds !== undefined) body.photo_ids = photoIds;
     const response = await withDownloadLimit(slug, () => api.post(`/gallery/${slug}/download-jobs`, body));
     return response.data;
   },
@@ -482,10 +421,11 @@ export const galleryService = {
 
   // Native browser download so the archive streams with Content-Length
   // (real progress bar, no in-memory blob for a multi-GB gallery).
-  downloadJobFile(slug: string, token: string, filename: string): void {
+  downloadJobFile(slug: string, token: string, part?: { index: number; total: number }, selected = false): void {
     const link = document.createElement('a');
-    link.href = withAdminPreview(`/api/gallery/${slug}/download-jobs/${token}/file`);
-    link.setAttribute('download', filename);
+    const query = part ? `?part=${part.index}&parts=${part.total}` : selected ? '?selected=1' : '';
+    link.href = withAdminPreview(`/api/gallery/${slug}/download-jobs/${token}/file${query}`);
+    link.setAttribute('download', '');
     document.body.appendChild(link);
     link.click();
     link.remove();

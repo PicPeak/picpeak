@@ -12,6 +12,8 @@ import {
   RotateCw,
   Sparkles,
   AlertTriangle,
+  Fingerprint,
+  Pause,
 } from 'lucide-react';
 import { Button, Card, Notice } from '../../../components/common';
 import { DecimalInput } from '../../../components/common/DecimalInput';
@@ -215,6 +217,39 @@ export const StatusTab: React.FC<StatusTabProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photo-placeholder-status'] });
+    },
+  });
+
+  // Content-hash backfill (issue 2194). Same shape as the placeholder
+  // backfill, plus pause: it reads every original, so it can be stopped and
+  // a later start resumes where it stopped.
+  const { data: contentHashStatus } = useQuery({
+    queryKey: ['photo-content-hash-status'],
+    queryFn: async () => {
+      const res = await api.get('/admin/photos/repair-content-hashes/status');
+      return res.data;
+    },
+    enabled: isActive && canManageSystem,
+    refetchInterval: 10000,
+  });
+
+  const contentHashMutation = useMutation({
+    mutationFn: async (retryUnreadable: boolean) => {
+      const res = await api.post('/admin/photos/repair-content-hashes', { retryUnreadable });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['photo-content-hash-status'] });
+    },
+  });
+
+  const contentHashPauseMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/admin/photos/repair-content-hashes/pause');
+      return res.data;
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['photo-content-hash-status'] });
     },
   });
 
@@ -941,6 +976,109 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                   : t('settings.placeholderBackfill.button')}
             </Button>
           </div>
+        </Card>
+      )}
+
+      {/* Content hashes for duplicate detection (issue 2194) */}
+      {contentHashStatus && canManageSystem && (
+        <Card padding="md">
+          <h2 className="text-lg font-semibold text-heading mb-4 flex items-center gap-2">
+            <Fingerprint className="w-5 h-5" />
+            {t('settings.contentHashBackfill.title')}
+          </h2>
+
+          <p className="text-sm text-soft mb-2">
+            {t('settings.contentHashBackfill.description')}
+          </p>
+          <p className="text-sm text-warning-text mb-4">
+            {t('settings.contentHashBackfill.ioWarning')}
+          </p>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="bg-subtle rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-heading">{contentHashStatus.total}</p>
+              <p className="text-xs text-soft">{t('settings.contentHashBackfill.total')}</p>
+            </div>
+            <div className="bg-subtle rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-success-text">{contentHashStatus.hashed}</p>
+              <p className="text-xs text-soft">{t('settings.contentHashBackfill.hashed')}</p>
+            </div>
+            <div className="bg-subtle rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-heading">{contentHashStatus.pending}</p>
+              <p className="text-xs text-soft">{t('settings.contentHashBackfill.pending')}</p>
+            </div>
+            <div className="bg-subtle rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-heading">{contentHashStatus.unreadable}</p>
+              <p className="text-xs text-soft">{t('settings.contentHashBackfill.unreadable')}</p>
+            </div>
+          </div>
+
+          {contentHashStatus.lastResult && (
+            <p className="text-sm text-soft mb-4">
+              {t(contentHashStatus.lastResult.paused
+                ? 'settings.contentHashBackfill.resultPaused'
+                : 'settings.contentHashBackfill.result', {
+                hashed: contentHashStatus.lastResult.hashed,
+                failed: contentHashStatus.lastResult.failed,
+              })}
+              {Number(contentHashStatus.lastResult.skipped) > 0 && (
+                <span className="block text-warning-text mt-1">
+                  {t('settings.captureDates.skipped', {
+                    count: contentHashStatus.lastResult.skipped,
+                    defaultValue: '{{count}} photo(s) were changed by something else while the run was reading them and were not updated.',
+                  })}
+                </span>
+              )}
+            </p>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-2">
+            {contentHashStatus.isRunning ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => contentHashPauseMutation.mutate()}
+                isLoading={contentHashPauseMutation.isPending}
+                disabled={contentHashStatus.pausing}
+                leftIcon={<Pause className="w-4 h-4" />}
+              >
+                {contentHashStatus.pausing
+                  ? t('settings.contentHashBackfill.pausing')
+                  : t('settings.contentHashBackfill.pause')}
+              </Button>
+            ) : (
+              <>
+                {Number(contentHashStatus.unreadable) > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => contentHashMutation.mutate(true)}
+                    isLoading={contentHashMutation.isPending && contentHashMutation.variables === true}
+                    disabled={contentHashMutation.isPending}
+                  >
+                    {t('settings.contentHashBackfill.retryUnreadable', { count: Number(contentHashStatus.unreadable) })}
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => contentHashMutation.mutate(false)}
+                  isLoading={contentHashMutation.isPending && contentHashMutation.variables === false}
+                  disabled={Number(contentHashStatus.pending) === 0 || contentHashMutation.isPending}
+                  leftIcon={<Fingerprint className="w-4 h-4" />}
+                >
+                  {Number(contentHashStatus.pending) === 0
+                    ? t('settings.contentHashBackfill.noneToHash')
+                    : contentHashStatus.paused
+                      ? t('settings.contentHashBackfill.resume')
+                      : t('settings.contentHashBackfill.button')}
+                </Button>
+              </>
+            )}
+          </div>
+          {contentHashStatus.isRunning && !contentHashStatus.pausing && (
+            <p className="text-xs text-soft mt-2 text-right">{t('settings.contentHashBackfill.running')}</p>
+          )}
         </Card>
       )}
 

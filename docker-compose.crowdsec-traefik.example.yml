@@ -1,0 +1,60 @@
+# Opt-in overlay: PicPeak behind an existing Traefik with a CrowdSec bouncer.
+#
+# Nothing here is used unless you pass it explicitly. It does not add a
+# CrowdSec service, a LAPI key or any other secret: CrowdSec (Security Engine,
+# LAPI, bouncer key, collections) and the Traefik middleware stay owned by
+# your infrastructure. This file only attaches PicPeak's router to that
+# middleware.
+#
+#   cp docker-compose.crowdsec-traefik.example.yml docker-compose.crowdsec-traefik.yml
+#   echo 'COMPOSE_FILE=docker-compose.production.yml:docker-compose.crowdsec-traefik.yml' >> .env
+#   docker compose up -d
+#
+# Keep COMPOSE_FILE in .env (or pass both -f on every command): an update
+# run with docker-compose.production.yml alone drops the Traefik labels and
+# publishes the frontend port again, so CrowdSec no longer sits in front.
+#
+# Rollback: remove the overlay from COMPOSE_FILE and run `docker compose up -d`.
+#
+# Expects in .env:
+#   PICPEAK_DOMAIN=photos.example.com
+# Optional:
+#   TRAEFIK_NETWORK=traefik              external Docker network Traefik watches
+#   CROWDSEC_MIDDLEWARE=crowdsec@file    bouncer middleware defined in Traefik
+#   TRAEFIK_ENTRYPOINT=websecure
+#   TRAEFIK_CERTRESOLVER=letsencrypt
+#   TRAEFIK_TRUST_PROXY=2               3 with a CDN in front of Traefik (see the guide)
+#
+# Guide: https://docs.picpeak.app/deployment/bot-protection/crowdsec-traefik
+
+services:
+  frontend:
+    # Traefik reaches nginx over the Docker network. Do not publish the
+    # frontend port: a client that reaches nginx directly could put its own
+    # entry into X-Forwarded-For and be trusted by TRUST_PROXY=2.
+    # (`!reset` needs Docker Compose 2.24 or newer.)
+    ports: !reset []
+    networks:
+      - picpeak-network
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+      - "traefik.http.routers.picpeak.rule=Host(`${PICPEAK_DOMAIN:?set PICPEAK_DOMAIN in .env}`)"
+      - "traefik.http.routers.picpeak.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.picpeak.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.routers.picpeak.middlewares=${CROWDSEC_MIDDLEWARE:-crowdsec@file}"
+      - "traefik.http.services.picpeak.loadbalancer.server.port=80"
+
+  backend:
+    environment:
+      # Two hops: Traefik, then the bundled frontend nginx. Its own variable,
+      # because .env usually still carries TRUST_PROXY=1 from the default
+      # install, which is wrong behind Traefik.
+      TRUST_PROXY: "${TRAEFIK_TRUST_PROXY:-2}"
+      COOKIE_SECURE: "true"
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}

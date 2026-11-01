@@ -126,6 +126,15 @@ function ensureCustomerActive(customer) {
   }
 }
 /**
+ * A historical import (imports.js, migration 327): the uploaded PDF is the
+ * contract, so nothing may re-render, re-stamp, counter-sign or replace it.
+ */
+function assertNotImported(contract) {
+  if (contract && contract.imported_at) {
+    throw new AppError('This contract was imported from a PDF and cannot be changed.', 409, 'CONTRACT_IMPORTED');
+  }
+}
+/**
  * A contract that asked for the customer's details and was never sent with
  * them (#1446): still waiting, or expired or cancelled while it waited.
  * Nothing of it but its number is shown to the customer.
@@ -185,6 +194,7 @@ module.exports = {
   maybeStoreIp,
   nextContractNumber,
   ensureCustomerActive,
+  assertNotImported,
   QUOTE_RELEASING_CONTRACT_STATUSES,
   releaseQuoteOnDeadContract,
 };

@@ -331,7 +331,12 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
 router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'), async (req, res) => {
   let acquired = false;
   try {
+    // onlyMissing: build the previews that do not exist yet and leave every
+    // existing one, and its tiers, alone. A run cut short by a restart, or
+    // repeated after new uploads, then picks up where it stopped instead of
+    // redoing the whole library.
     const { eventId } = req.body;
+    const onlyMissing = req.body.onlyMissing === true;
     if (!(await mayStartRegeneration(req, res, eventId))) return;
     if (runningJobs.previews) {
       return res.status(409).json({ error: 'A preview regeneration is already running.', code: 'REGENERATION_RUNNING' });
@@ -353,15 +358,21 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
     query = query.where(function() {
       this.whereNull('media_type').orWhere('media_type', '!=', 'video');
     });
+    if (onlyMissing) query = query.whereNull('preview_path');
 
     const photos = await query;
     if (photos.length === 0) {
       runningJobs.previews = false;
-      return res.json({ message: 'No image photos to regenerate previews for', count: 0 });
+      return res.json({
+        message: onlyMissing ? 'No image photos are missing a preview' : 'No image photos to regenerate previews for',
+        count: 0,
+      });
     }
 
     res.json({
-      message: `Started regenerating ${photos.length} previews`,
+      message: onlyMissing
+        ? `Started generating ${photos.length} missing previews`
+        : `Started regenerating ${photos.length} previews`,
       count: photos.length,
     });
 
@@ -372,6 +383,18 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
       const superseded = [];
       for (const photo of photos) {
         try {
+          if (onlyMissing) {
+            // No preview to replace, so no tiers to drop and nothing
+            // superseded. Not forced: a lazy generation already running for
+            // this photo renders under the same settings, so joining it is
+            // the same result without doing the work twice.
+            if (await ensurePreviewImage(photo)) {
+              successCount++;
+            } else {
+              errorCount++;
+            }
+            continue;
+          }
           // Force regeneration regardless of existing preview state by
           // nulling the cached path so ensurePreviewImage doesn't
           // short-circuit on a stale isPreviewValid check.

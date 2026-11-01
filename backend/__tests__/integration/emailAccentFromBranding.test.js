@@ -107,4 +107,62 @@ describe('wrapEmailHtml — email accent', () => {
     expect(contrastRatio(inline, '#ffffff')).toBeGreaterThanOrEqual(4.5);
     expect(html).not.toMatch(/#5c8762/i);
   });
+
+  // The seeded gallery_created CTA is an inline-styled anchor, not
+  // class="button", and its link carries the green as text colour.
+  const seededBody = '<a href="#" style="color: #5C8762;">link</a>'
+    + '<a href="#" style="display: inline-block; padding: 12px 30px; background-color: #5C8762; color: white; text-decoration: none;">View Gallery</a>';
+
+  it('fills an inline-styled seeded button with the accent and the button label colour', async () => {
+    await setSetting('email_primary_color', '#2D5A5A');
+    await setSetting('email_button_text_color', '#fafafa');
+    const html = await wrapEmailHtml(seededBody, 'Subject', 'en', template);
+    expect(html).toContain('background-color: #2D5A5A; color: #fafafa; text-decoration: none;');
+  });
+
+  it('adds the button label colour to a seeded button style that has none', async () => {
+    await setSetting('email_primary_color', '#2D5A5A');
+    const html = await wrapEmailHtml('<a href="#" style="padding: 12px; background-color: #5C8762">Go</a>', 'Subject', 'en', template);
+    expect(html).toContain('style="padding: 12px; background-color: #2D5A5A; color: #ffffff;"');
+  });
+
+  it('keeps the green rather than a lightened accent that would vanish on a light info panel', async () => {
+    // A tint that reads on #444 at 4.5:1 is too light for #f9f9f9 at 3:1.
+    await setSetting('email_primary_color', '#2D5A5A');
+    await setSetting('email_container_bg_color', '#444444');
+    await setSetting('email_list_bg_color', '#f9f9f9');
+    try {
+      const html = await wrapEmailHtml(seededBody, 'Subject', 'en', template);
+      expect(html).toContain('<a href="#" style="color: #5C8762;">link');
+      expect(html).toContain('background-color: #2D5A5A; color: #ffffff;');
+    } finally {
+      await setSetting('email_container_bg_color', undefined);
+      await setSetting('email_list_bg_color', undefined);
+    }
+  });
+
+  it('gives inline seeded buttons a configured label on the legacy green too', async () => {
+    await setSetting('email_primary_color', '#5C8762');
+    await setSetting('email_button_text_color', '#111111');
+    const html = await wrapEmailHtml(seededBody, 'Subject', 'en', template);
+    expect(html).toContain('background-color: #5C8762; color: #111111;');
+  });
+
+  it('lightens the accent for link text on a dark card instead of keeping the green', async () => {
+    await setSetting('email_primary_color', '#2D5A5A');
+    await setSetting('email_container_bg_color', '#1b1b1b');
+    await setSetting('email_list_bg_color', '#232323');
+    try {
+      const html = await wrapEmailHtml(seededBody, 'Subject', 'en', template);
+      const link = html.match(/<a href="#" style="color: (#[0-9a-f]{6});">link/i)[1];
+      expect(link.toLowerCase()).not.toBe('#2d5a5a');
+      expect(contrastRatio(link, '#1b1b1b')).toBeGreaterThanOrEqual(4.5);
+      // The button fill is not link text: it stays the accent, like the header.
+      expect(html).toContain('background-color: #2D5A5A; color: #ffffff;');
+      expect(html).not.toMatch(/#5c8762/i);
+    } finally {
+      await setSetting('email_container_bg_color', undefined);
+      await setSetting('email_list_bg_color', undefined);
+    }
+  });
 });
