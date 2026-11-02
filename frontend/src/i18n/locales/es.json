@@ -74,6 +74,9 @@
     },
     "creditNameHelp": "Se muestra en las fotos que sube esta cuenta cuando el archivo no tiene nombre de fotógrafo en sus metadatos."
   },
+  "capabilityNotice": {
+    "archive": "Las descargas ZIP están en pausa por un momento. Aún puedes ver y descargar fotos sueltas."
+  },
   "common": {
     "loading": "Cargando...",
     "error": "Error",
@@ -219,7 +222,10 @@
       "nothingToUpload": "No se puede subir ninguno de los archivos seleccionados: todos están en carpetas ocultas u omitidas.",
       "keptForNext": "Los archivos añadidos mientras se preparaban las carpetas siguen seleccionados: {{count}}."
     },
-    "largeFileReplaceSkipped": "Reemplazar por nombre no está disponible para archivos que superan el tamaño del lote; súbelo sin reemplazar."
+    "largeFileReplaceSkipped": "Reemplazar por nombre no está disponible para archivos que superan el tamaño del lote; súbelo sin reemplazar.",
+    "capacity": {
+      "paused": "La subida está en pausa por un momento. Inténtalo de nuevo en breve."
+    }
   },
   "navigation": {
     "dashboard": "Panel",

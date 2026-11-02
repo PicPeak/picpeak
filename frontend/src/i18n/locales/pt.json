@@ -74,6 +74,9 @@
     },
     "creditNameHelp": "Indicado nas fotos que esta conta envia quando o arquivo não tem nome de fotógrafo nos metadados."
   },
+  "capabilityNotice": {
+    "archive": "Os downloads em ZIP estão pausados por um momento. Você ainda pode ver e baixar fotos individuais."
+  },
   "common": {
     "loading": "Carregando...",
     "error": "Erro",
@@ -265,7 +268,10 @@
       "nothingToUpload": "Nenhum dos arquivos selecionados pode ser enviado: estão todos em pastas ocultas ou ignoradas.",
       "keptForNext": "Arquivos adicionados enquanto as pastas eram preparadas continuam selecionados: {{count}}."
     },
-    "largeFileReplaceSkipped": "Substituir pelo nome não é suportado para arquivos acima do tamanho do lote; envie-o sem substituir."
+    "largeFileReplaceSkipped": "Substituir pelo nome não é suportado para arquivos acima do tamanho do lote; envie-o sem substituir.",
+    "capacity": {
+      "paused": "O envio está pausado por um momento. Tente novamente em instantes."
+    }
   },
   "navigation": {
     "dashboard": "Painel",

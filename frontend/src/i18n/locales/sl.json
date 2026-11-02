@@ -668,6 +668,9 @@
     },
     "creditNameHelp": "Navedeno pri fotografijah, ki jih naloži ta račun, če datoteka v metapodatkih nima imena fotografa."
   },
+  "capabilityNotice": {
+    "archive": "Prenosi ZIP so za trenutek zaustavljeni. Posamezne fotografije si lahko še vedno ogledate in prenesete."
+  },
   "systemHealth": {
     "retry": "Ponovi",
     "dismiss": "Zapri",
@@ -946,7 +949,10 @@
       "nothingToUpload": "Nobene od izbranih datotek ni mogoče naložiti: vse so v skritih ali preskočenih mapah.",
       "keptForNext": "Datoteke, dodane med pripravo map, so še vedno izbrane: {{count}}."
     },
-    "largeFileReplaceSkipped": "Zamenjava po imenu ni podprta za datoteke, večje od velikosti paketa; naložite jo brez zamenjave."
+    "largeFileReplaceSkipped": "Zamenjava po imenu ni podprta za datoteke, večje od velikosti paketa; naložite jo brez zamenjave.",
+    "capacity": {
+      "paused": "Nalaganje je za trenutek zaustavljeno. Poskusite znova čez nekaj trenutkov."
+    }
   },
   "navigation": {
     "dashboard": "Nadzorna plošča",

@@ -74,6 +74,9 @@
     },
     "creditNameHelp": "Wordt vermeld bij foto's die dit account uploadt als het bestand geen fotografennaam in de metadata heeft."
   },
+  "capabilityNotice": {
+    "archive": "ZIP-downloads zijn even gepauzeerd. Je kunt losse foto's nog steeds bekijken en downloaden."
+  },
   "common": {
     "loading": "Laden...",
     "error": "Fout",
@@ -218,7 +221,10 @@
       "nothingToUpload": "Geen van de geselecteerde bestanden kan worden geüpload: ze staan allemaal in verborgen of overgeslagen mappen.",
       "keptForNext": "Bestanden die werden toegevoegd terwijl de mappen werden voorbereid, zijn nog geselecteerd: {{count}}."
     },
-    "largeFileReplaceSkipped": "Vervangen op naam wordt niet ondersteund voor bestanden boven de batchgrootte; upload het bestand zonder vervangen."
+    "largeFileReplaceSkipped": "Vervangen op naam wordt niet ondersteund voor bestanden boven de batchgrootte; upload het bestand zonder vervangen.",
+    "capacity": {
+      "paused": "Uploaden is even gepauzeerd. Probeer het zo meteen opnieuw."
+    }
   },
   "navigation": {
     "dashboard": "Dashboard",

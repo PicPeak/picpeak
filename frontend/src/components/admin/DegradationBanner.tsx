@@ -26,7 +26,7 @@ export const DegradationBanner: React.FC = () => {
   if (!limited || dismissed) return null;
 
   return (
-    <div className="bg-warning-soft border-b border-warning-line">
+    <div role="status" className="bg-warning-soft border-b border-warning-line">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-3 py-3">
           <div className="flex items-center gap-3 min-w-0">

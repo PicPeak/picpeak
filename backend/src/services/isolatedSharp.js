@@ -297,7 +297,11 @@ function pump() {
  * passes `interactive: true` and gets IMAGE_QUEUE_FULL (503) instead of
  * joining a queue that is already `queueLength` deep. Someone is waiting on
  * that request, so it goes ahead of queued background work, in its own order.
+ * The first background job lets at most MAX_OVERTAKES of them past, so steady
+ * guest traffic cannot hold library work back for ever.
  */
+const MAX_OVERTAKES = 8;
+
 function submit(job, { signal, interactive } = {}) {
   let policy;
   try { policy = configuration(); } catch (error) { return Promise.reject(error); }
@@ -308,7 +312,7 @@ function submit(job, { signal, interactive } = {}) {
     return Promise.reject(refusal('Image processing is busy; try again shortly', 'IMAGE_QUEUE_FULL', { retryAfter: 5 }));
   }
   return new Promise((resolve, reject) => {
-    const entry = { job, policy, signal, interactive, resolve, reject, done: false, running: false, worker: null };
+    const entry = { job, policy, signal, interactive, overtaken: 0, resolve, reject, done: false, running: false, worker: null };
     entry.fail = error => {
       if (entry.done) return;
       entry.done = true;
@@ -324,9 +328,14 @@ function submit(job, { signal, interactive } = {}) {
     };
     entry.cancel = () => entry.fail(refusal('Image processing was cancelled', 'IMAGE_CANCELLED'));
     signal?.addEventListener('abort', entry.cancel, { once: true });
-    const firstBackground = interactive ? queue.findIndex(queued => !queued.interactive) : -1;
-    if (firstBackground >= 0) queue.splice(firstBackground, 0, entry);
-    else queue.push(entry);
+    const firstBackground = interactive
+      ? queue.findIndex(queued => !queued.interactive && queued.overtaken < MAX_OVERTAKES) : -1;
+    if (firstBackground >= 0) {
+      queue[firstBackground].overtaken += 1;
+      queue.splice(firstBackground, 0, entry);
+    } else {
+      queue.push(entry);
+    }
     pump();
   });
 }
