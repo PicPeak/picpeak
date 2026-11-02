@@ -26,8 +26,14 @@ const { isStorageUnavailableError } = require('./storage/storageErrors');
  * needed to come back, so a flapping share does not reopen uploads on every
  * success. Merely slow probes need DOWN_AFTER readings to degrade: the timing is
  * wall-clock, so a burst of uploads or a stalled event loop can slow one on a
- * healthy disk, and that must not pause the uploads causing it. /health is deliberately not fed from here: Docker restarting the
- * app cannot repair a share or a mail server.
+ * healthy disk, and that must not pause the uploads causing it. A probe that
+ * times out counts as slow too: a full S3 socket pool surfaces as a timeout. A
+ * probe still running at the next pass counts as a failure, so a hung mount
+ * still goes down. /health is deliberately not fed from here: Docker restarting
+ * the app cannot repair a share or a mail server.
+ *
+ * `detail` is fixed text, because GET /status shows it to settings.view readers;
+ * the error itself, with its paths and hosts, goes to the log (`logDetail`).
  */
 const PROBE_INTERVAL_MS = 15_000;
 const PROBE_TIMEOUT_MS = 5_000;
@@ -62,6 +68,8 @@ function diskState(freeBytes, totalBytes) {
   return 'healthy';
 }
 
+const storageBackend = () => (process.env.STORAGE_BACKEND || 'local').toLowerCase();
+
 const defaultProbes = {
   async database() {
     const startedAt = Date.now();
@@ -71,7 +79,7 @@ const defaultProbes = {
 
   async storage() {
     const startedAt = Date.now();
-    if ((process.env.STORAGE_BACKEND || 'local').toLowerCase() === 'local') {
+    if (storageBackend() === 'local') {
       await fsp.access(getStoragePath(), fsConstants.R_OK | fsConstants.W_OK);
     }
     // stat() resolves null for a missing key and throws when the backend
@@ -87,7 +95,15 @@ const defaultProbes = {
   },
 
   async disk() {
-    const stats = await fsp.statfs(getStoragePath());
+    let stats;
+    try {
+      stats = await fsp.statfs(getStoragePath());
+    } catch (error) {
+      // S3 outside Docker can run without a local storage directory, leaving no
+      // disk here to judge.
+      if (error.code === 'ENOENT' && storageBackend() !== 'local') return null;
+      throw error;
+    }
     const freeBytes = stats.bavail * stats.bsize;
     const totalBytes = stats.blocks * stats.bsize;
     return { state: diskState(freeBytes, totalBytes), metrics: { freeBytes, totalBytes } };
@@ -98,8 +114,9 @@ const defaultProbes = {
     const status = getQueueProcessorStatus();
     if (!status.started) return { state: 'degraded', detail: 'processor not running' };
     // Mail is queued, so a failing server is never worse than degraded.
-    const problem = status.outage?.error || status.lastError;
-    return problem ? { state: 'degraded', detail: problem } : { state: 'healthy' };
+    if (status.outage) return { state: 'degraded', detail: 'mail server unavailable', logDetail: status.outage.error };
+    if (status.lastError) return { state: 'degraded', detail: 'last queue pass failed', logDetail: status.lastError };
+    return { state: 'healthy' };
   },
 
   async faceSidecar() {
@@ -107,7 +124,7 @@ const defaultProbes = {
     // Nothing may contact the sidecar unless the feature is on (faceSettings).
     if (!await faceSettings.isFeatureEnabled()) return null;
     const health = await require('./faceClient').checkHealth();
-    return health.ok ? { state: 'healthy' } : { state: 'down', detail: health.error };
+    return health.ok ? { state: 'healthy' } : { state: 'down', detail: 'sidecar not answering', logDetail: health.error };
   },
 
   async queues() {
@@ -136,7 +153,7 @@ const defaultProbes = {
 function withTimeout(promise) {
   let timer;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error('probe timed out')), PROBE_TIMEOUT_MS);
+    timer = setTimeout(() => reject(Object.assign(new Error('probe timed out'), { code: 'PROBE_TIMEOUT' })), PROBE_TIMEOUT_MS);
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
@@ -173,7 +190,7 @@ class DependencyHealth {
 
     if (next !== entry.state) {
       logger[next === 'healthy' ? 'info' : 'warn'](`Dependency ${name}: ${entry.state} -> ${next}`, {
-        detail: outcome.detail,
+        detail: outcome.logDetail || outcome.detail,
       });
       entry.state = next;
       entry.better = 0;
@@ -238,7 +255,9 @@ class DependencyHealth {
         outcome = await withTimeout(run);
       } catch (error) {
         run.catch(() => {});
-        outcome = { state: 'down', detail: error.message };
+        outcome = error?.code === 'PROBE_TIMEOUT'
+          ? { state: 'degraded', detail: 'check timed out', slow: true }
+          : { state: 'down', detail: 'check failed', logDetail: error?.message };
       }
       if (outcome) this.applyProbe(name, outcome, options);
       else this.dependencies.delete(name);

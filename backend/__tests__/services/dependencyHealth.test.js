@@ -33,7 +33,38 @@ describe('breaker transitions', () => {
     expect(health.states().storage).toBe('degraded');
     await ticks(health, DOWN_AFTER - TRIP_AFTER);
     expect(health.states().storage).toBe('down');
-    expect(health.snapshot().dependencies.storage.detail).toBe('EIO');
+    // Fixed text: GET /status shows it, and an error can name a path or a host.
+    expect(health.snapshot().dependencies.storage.detail).toBe('check failed');
+  });
+
+  it('never shows the error itself, which can name a local path', async () => {
+    const health = build({ storage: jest.fn().mockRejectedValue(new Error('EACCES: permission denied, access /home/someone/storage')) });
+    await ticks(health, DOWN_AFTER);
+    expect(JSON.stringify(health.snapshot())).not.toContain('/home/someone');
+  });
+
+  it('counts a probe that times out as slow, so a busy backend does not pause uploads', async () => {
+    // Returns after the timeout but before the next pass, like S3 with a full
+    // socket pool.
+    const probe = jest.fn(() => new Promise((resolve) => { setTimeout(() => resolve({ state: 'healthy' }), 5500); }));
+    const health = build({ storage: probe });
+    const pass = async () => {
+      const running = health.tick();
+      await jest.advanceTimersByTimeAsync(6000);
+      await running;
+    };
+    jest.useFakeTimers();
+    try {
+      for (let i = 0; i < DOWN_AFTER - 1; i += 1) await pass();
+      expect(health.states().storage).toBe('healthy');
+      await pass();
+      expect(health.states().storage).toBe('degraded');
+      for (let i = 0; i < DOWN_AFTER * 2; i += 1) await pass();
+    } finally {
+      jest.useRealTimers();
+    }
+    expect(health.states().storage).toBe('degraded');
+    expect(health.snapshot().dependencies.storage.detail).toBe('check timed out');
   });
 
   it('gives a merely slow dependency longer, and never calls it down', async () => {
@@ -204,6 +235,23 @@ describe('updateSettings', () => {
     const health = build({});
     await health.updateSettings({ forcedOff: ['uploads.new', 'auth.bypass'] });
     expect(upsertAppSetting).toHaveBeenCalledWith(dependencyHealth.FORCED_OFF_KEY, JSON.stringify(['uploads.new']), 'system');
+  });
+});
+
+describe('disk probe', () => {
+  const env = { ...process.env };
+  afterEach(() => { process.env = { ...env }; });
+
+  it('leaves out the disk for S3 without a local storage directory', async () => {
+    process.env.STORAGE_BACKEND = 's3';
+    process.env.STORAGE_PATH = '/nonexistent/picpeak-storage-for-test';
+    await expect(dependencyHealth.probes.disk()).resolves.toBeNull();
+  });
+
+  it('still fails when the local storage directory is missing', async () => {
+    process.env.STORAGE_BACKEND = 'local';
+    process.env.STORAGE_PATH = '/nonexistent/picpeak-storage-for-test';
+    await expect(dependencyHealth.probes.disk()).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
 
