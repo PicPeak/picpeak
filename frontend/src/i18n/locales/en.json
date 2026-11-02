@@ -9529,6 +9529,7 @@
       "dueDate": "Due",
       "dueDateOverrideOn": "Manual due date — untick to auto-set from send date + payment term",
       "dueDateOverrideOff": "Auto from send date + payment term — tick to set manually",
+      "issueDateOnDelivery": "Set when you mark this invoice delivered. The due date then counts from it, unless you changed it.",
       "scheduledSendAt": "Scheduled send",
       "installment": "Installment",
       "total": "Total",

@@ -16,6 +16,7 @@
  */
 const registry = require('./registry');
 const { formatBoolean } = require('../../utils/dbCompat');
+const { toDateOnly } = require('../../utils/dateOnly');
 
 // --- Conditions ---
 
@@ -153,7 +154,7 @@ registry.registerAction('escalate_to_collections', async (ctx) => {
     late_fee_amount: fee ? fmt(fee) : '',
     paid_amount: fmt(paid),
     outstanding_amount: fmt(outstanding),
-    due_date: invoice.due_date ? String(invoice.due_date).slice(0, 10) : '',
+    due_date: toDateOnly(invoice.due_date) || '',
     reminder_level: invoice.reminder_level || 0,
     attachments,
   }, { respectBusinessHours: false, usageEligible: !ctx.vars?.__test }); // internal/admin → immediate

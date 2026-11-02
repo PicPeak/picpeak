@@ -8343,6 +8343,7 @@
       "dueDate": "Zapadlo",
       "dueDateOverrideOn": "Ročni datum zapadlosti — odstranite kljukico za samodejni izračun iz datuma pošiljanja + plačilnega roka",
       "dueDateOverrideOff": "Samodejno iz datuma pošiljanja + plačilnega roka — označite za ročno nastavitev",
+      "issueDateOnDelivery": "Nastavi se, ko račun označite kot dostavljen. Rok plačila se nato šteje od tega dne, razen če ste ga spremenili.",
       "scheduledSendAt": "Načrtovano pošiljanje",
       "installment": "Obrok",
       "total": "Skupaj",
