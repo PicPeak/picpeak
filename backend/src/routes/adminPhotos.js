@@ -17,7 +17,9 @@ const {
 } = require('../services/downloadFilenameService');
 const { escapeLikePattern, likeWithEscape } = require('../utils/sqlSecurity');
 const { COLOR_LABELS, dominantColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
-const { normalizeDecisionFilter, whereDecision } = require('../utils/photoFilterBuilder');
+const {
+  normalizeDecisionFilter, whereDecision, normalizeFavoriteListFilter, whereInFavoriteList,
+} = require('../utils/photoFilterBuilder');
 const feedbackService = require('../services/feedbackService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
 const { validateUploadedFiles } = require('../middleware/uploadValidation');
@@ -1767,6 +1769,11 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
           .orWhereRaw(likeWithEscape('photos.original_filename'), [pattern]);
       });
     }
+
+    // One favourite list, or one guest's favourites (issue 2303), from the
+    // guest detail's "show in photos". ANDed with everything, like a folder.
+    const favoriteList = normalizeFavoriteListFilter(req.query);
+    if (favoriteList) whereInFavoriteList(query, Number(eventId), favoriteList);
 
     // Feedback filters (has likes / favorites / comments / min rating) with AND/OR logic
     const feedbackConditions = [];

@@ -177,6 +177,9 @@ export interface PhotoFilters {
   hasLikes?: boolean;
   hasFavorites?: boolean;
   hasComments?: boolean;
+  /** One favourite list / one guest's favourites (issue 2303). */
+  favoriteList?: number | 'default';
+  favoriteGuest?: number;
   minRating?: number | null;
   /** Colour labels to keep, e.g. ['green'] (#1044). */
   colorLabels?: string[];
@@ -263,6 +266,8 @@ class PhotosService {
       if (filters.hasLikes) params.append('has_likes', 'true');
       if (filters.hasFavorites) params.append('has_favorites', 'true');
       if (filters.hasComments) params.append('has_comments', 'true');
+      if (filters.favoriteList !== undefined) params.append('favorite_list', String(filters.favoriteList));
+      if (filters.favoriteGuest !== undefined) params.append('favorite_guest', String(filters.favoriteGuest));
       if (filters.minRating !== undefined && filters.minRating !== null) {
         params.append('min_rating', filters.minRating.toString());
       }
@@ -687,6 +692,13 @@ export interface FeedbackFilters {
   hasFavorites?: boolean;
   minFavorites?: number;
   hasComments?: boolean;
+  /**
+   * One favourite list (issue 2303): a list id, or 'default' for a guest's
+   * default list (with favoriteGuest). From the guest detail's "Show in photos".
+   */
+  favoriteList?: number | 'default';
+  /** A registered guest's favourites, in any list or the one above. */
+  favoriteGuest?: number;
   /** Colour labels to keep, e.g. ['green'] (#1044). Empty = no filtering. */
   colorLabels?: string[];
   /** Same, against the caller's own marks. */
@@ -744,6 +756,8 @@ export interface ExportFilter {
   has_favorites?: boolean;
   min_favorites?: number;
   has_comments?: boolean;
+  favorite_list?: number | 'default';
+  favorite_guest?: number;
   color_labels?: string[];
   my_color_labels?: string[];
   decisions?: DecisionFilter[];
