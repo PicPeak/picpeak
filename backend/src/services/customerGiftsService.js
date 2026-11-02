@@ -365,9 +365,8 @@ function giftToApi(row) {
     itemName: row.item_name || null,
     milestoneYears: row.milestone_years ?? null,
     isOverride: Boolean(row.is_override),
-    unitCostMinor: row.unit_cost_minor === null || row.unit_cost_minor === undefined
-      ? null : Number(row.unit_cost_minor),
-    currency: row.currency || null,
+    // The cost snapshot stays in the row: the customer routes need no
+    // accounting right, so supplier costs are read on the movements only.
     note: row.note || null,
     giftDate: toDateOnly(row.gift_date),
     undone: Boolean(row.undone_at),

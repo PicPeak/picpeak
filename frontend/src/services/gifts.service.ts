@@ -52,8 +52,6 @@ export interface CustomerGift {
   itemName: string | null;
   milestoneYears: number | null;
   isOverride: boolean;
-  unitCostMinor: number | null;
-  currency: string | null;
   note: string | null;
   giftDate: string;
   undone: boolean;

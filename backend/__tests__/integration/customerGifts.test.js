@@ -173,6 +173,15 @@ describe('access to customer data', () => {
     expect(movement).toMatchObject({ kind: 'purchase', unitCostMinor: null, currency: null });
     const [full] = bodyOf(await get(`/items/${item.id}/movements`)).movements;
     expect(full.unitCostMinor).toBe(1500);
+
+    const customer = await createCustomer();
+    const given = bodyOf(await post(`/customers/${customer}/gifts`, { giftItemId: item.id }));
+    expect(given.gifts[0]).not.toHaveProperty('unitCostMinor');
+    expect(given.gifts[0]).not.toHaveProperty('currency');
+    const reader = await tokenWith('gift-customer-reader', ['customers.view', 'customers.gifts.view']);
+    const [gift] = bodyOf(await get(`/customers/${customer}`, reader)).gifts;
+    expect(gift).not.toHaveProperty('unitCostMinor');
+    expect(gift).not.toHaveProperty('currency');
   });
 
   it('leaves gifts out of the timeline without the gift right or the flag', async () => {
@@ -201,7 +210,10 @@ describe('stock', () => {
 
     const given = bodyOf(await post(`/customers/${customer}/gifts`, { giftItemId: item.id, note: 'thank you' }));
     expect(await stockOf(item.id)).toBe(4);
-    expect(given.gifts[0]).toMatchObject({ status: 'given', unitCostMinor: 1500, currency: 'CHF', note: 'thank you' });
+    expect(given.gifts[0]).toMatchObject({ status: 'given', note: 'thank you' });
+    const stored = await db('customer_gifts').where({ id: given.gifts[0].id }).first();
+    expect(Number(stored.unit_cost_minor)).toBe(1500);
+    expect(stored.currency).toBe('CHF');
 
     await post(`/${given.gifts[0].id}/undo`);
     expect(await stockOf(item.id)).toBe(5);
@@ -429,7 +441,8 @@ describe('edges', () => {
     const item = await createItem('Priced', 1);
     const customer = await createCustomer();
     const { gifts } = bodyOf(await post(`/customers/${customer}/gifts`, { giftItemId: item.id, reduceStock: false }));
-    expect(gifts[0].unitCostMinor).toBeNull();
+    const stored = await db('customer_gifts').where({ id: gifts[0].id }).first();
+    expect(stored.unit_cost_minor).toBeNull();
   });
 
   it('refuses a duplicate invoice in the inbox', async () => {
