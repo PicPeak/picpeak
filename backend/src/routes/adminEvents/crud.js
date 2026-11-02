@@ -211,6 +211,7 @@ module.exports = (router) => {
     body('allow_reactions').optional().isBoolean(),
     body('allow_color_labels').optional().isBoolean(),
     body('allow_decisions').optional().isBoolean(),
+    body('allow_favorite_lists').optional().isBoolean(),
     body('allow_selection_submit').optional().isBoolean(),
     body('allow_annotations').optional().isBoolean(),
     body('keybind_mode').optional().isIn(KEYBIND_MODES),
@@ -1117,6 +1118,7 @@ module.exports = (router) => {
           // row rather than the global defaults (#1044).
           allow_color_labels: sourceFeedback.allow_color_labels,
           allow_decisions: sourceFeedback.allow_decisions,
+          allow_favorite_lists: sourceFeedback.allow_favorite_lists,
           allow_selection_submit: sourceFeedback.allow_selection_submit,
           allow_annotations: sourceFeedback.allow_annotations,
           keybind_mode: sourceFeedback.keybind_mode,

@@ -2400,6 +2400,25 @@
     "toolbar": {
       "browse": "Galeriewerkzeuge",
       "selection": "Auswahl"
+    },
+    "favoriteLists": {
+      "saveTo": "In Liste speichern",
+      "defaultList": "Meine Favoriten",
+      "manage": "Listen verwalten…",
+      "title": "Deine Listen",
+      "intro": "Sortiere deine Favoriten in Listen. Das Lesezeichen speichert in die gewählte Liste.",
+      "defaultHint": "Standardliste",
+      "nameLabel": "Name der Liste",
+      "rename": "{{name}} umbenennen",
+      "deleteNamed": "{{name}} löschen",
+      "confirmDelete_one": "„{{name}}“ und das {{count}} darin gespeicherte Foto löschen?",
+      "confirmDelete_other": "„{{name}}“ und die {{count}} darin gespeicherten Fotos löschen?",
+      "delete": "Liste löschen",
+      "newPlaceholder": "Neue Liste, z. B. Album",
+      "create": "Hinzufügen",
+      "nameTaken": "Du hast bereits eine Liste mit diesem Namen.",
+      "limitReached": "Du kannst bis zu {{count}} Listen anlegen.",
+      "saveError": "Die Liste konnte nicht gespeichert werden."
     }
   },
   "categories": {
@@ -3444,6 +3463,7 @@
       "defaultAllowRatings": "Sternebewertung",
       "defaultAllowLikes": "Likes",
       "defaultAllowFavorites": "Favoriten",
+      "defaultAllowFavoriteLists": "Favoritenlisten",
       "defaultAllowComments": "Kommentare",
       "defaultAllowReactions": "Emoji-Reaktionen",
       "defaultAllowColorLabels": "Farbmarkierungen",
@@ -5596,6 +5616,31 @@
         "deleted_other": "{{count}} Fotos gelöscht",
         "deleteFailed_one": "{{count}} Foto konnte nicht gelöscht werden und ist noch in der Galerie",
         "deleteFailed_other": "{{count}} Fotos konnten nicht gelöscht werden und sind noch in der Galerie"
+      },
+      "duplicates": {
+        "open": "Duplikate",
+        "title": "Doppelte Fotos",
+        "intro": "Nur byte-identische Dateien werden erkannt: neu exportierte oder verkleinerte Kopien nicht, und Fotos ohne Hash (importiert, bevor gehasht wurde) werden nicht verglichen.",
+        "empty": "Keine Duplikate in dieser Galerie",
+        "emptyHelp": "Keine zwei Fotos hier haben dieselbe Datei.",
+        "loadFailed": "Die Duplikate konnten nicht geladen werden",
+        "copies_one": "{{count}} identische Kopie",
+        "copies_other": "{{count}} identische Kopien",
+        "keep": "Behalten",
+        "keepThis": "{{name}} behalten",
+        "keepOne_one": "Markiertes behalten, {{count}} in den Papierkorb",
+        "keepOne_other": "Markiertes behalten, {{count}} in den Papierkorb",
+        "keepAll_one": "Markiertes Foto in {{count}} Gruppe behalten",
+        "keepAll_other": "Markiertes Foto in allen {{count}} Gruppen behalten",
+        "trashed_one": "{{count}} Kopie in den Papierkorb verschoben",
+        "trashed_other": "{{count}} Kopien in den Papierkorb verschoben",
+        "failed": "Die Kopien konnten nicht in den Papierkorb verschoben werden",
+        "trashOff": "Der Papierkorb ist ausgeschaltet und Löschen ist endgültig, daher listet diese Ansicht die Kopien nur auf.",
+        "sourceAdmin": "Upload oder Import",
+        "sourceGuest": "Gast-Upload",
+        "sourceExternal": "Externer Ordner",
+        "range_one": "Gruppe {{from}}–{{to}} von {{count}}",
+        "range_other": "Gruppen {{from}}–{{to}} von {{count}}"
       }
     },
     "events": {
@@ -5671,7 +5716,16 @@
         "rated": "Bewertet",
         "reacted": "Reagiert",
         "commented": "Kommentiert",
-        "labeled": "Farbmarkierungen"
+        "labeled": "Farbmarkierungen",
+        "defaultList": "Standardliste",
+        "favoriteLists": "Favoritenlisten",
+        "listCount_one": "{{count}} Foto",
+        "listCount_other": "{{count}} Fotos",
+        "listUpdated": "Geändert {{date}}",
+        "showInPhotos": "In Fotos zeigen",
+        "clearListFilter": "Alle Fotos zeigen",
+        "listFilterNamed": "Angezeigt werden die Fotos in {{name}}.",
+        "listFilter": "Angezeigt werden die Fotos einer Favoritenliste."
       },
       "inviteStatus": {
         "pending": "Ausstehend",
@@ -6598,6 +6652,8 @@
       "reactions": "Emoji-Reaktionen",
       "reactionsDesc": "Ein Emoji pro Gast und Foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Fotos als Favoriten markieren",
+      "favoriteLists": "Favoritenlisten",
+      "favoriteListsDesc": "Gäste sortieren ihre Favoriten in eigene Listen, etwa „Album“ oder „Druck“",
       "perGuestLimits": "Limits pro Gast",
       "perGuestLimitsDesc": "Begrenzen, wie viele Fotos jeder Gast favorisieren oder liken kann — praktisch für „Wählen Sie Ihre Top-N fürs Album“-Abläufe. 0 = unbegrenzt. Eine Senkung unter den aktuellen Stand eines Gasts lässt vorhandene Einträge bestehen; nur neue Hinzufügungen werden blockiert, bis er welche entfernt.",
       "maxFavoritesPerGuest": "Max. Favoriten pro Gast",
@@ -9503,6 +9559,7 @@
       "issueDate": "Ausgestellt am",
       "dueDateOverrideOn": "Manuelles Fälligkeitsdatum — Häkchen entfernen, um es automatisch aus Versanddatum + Zahlungsziel zu berechnen",
       "dueDateOverrideOff": "Automatisch aus Versanddatum + Zahlungsziel — ankreuzen, um es manuell zu setzen",
+      "issueDateOnDelivery": "Wird gesetzt, wenn Sie die Rechnung als geliefert markieren. Das Fälligkeitsdatum zählt dann ab diesem Tag, ausser Sie haben es geändert.",
       "scheduledSendAt": "Geplanter Versand (optional)",
       "installment": "Rate",
       "paid": "Bezahlt",

@@ -8,6 +8,7 @@ const { sanitizeDays } = require('../utils/sqlSecurity');
 const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
 const { resolveAdapter } = require('../services/trackers');
 const logger = require('../utils/logger');
+const { withDocumentNumbers } = require('../services/activityDocumentNumbers');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const { queueTimestamp, toUtcIso } = require('../utils/queueTimestamps');
@@ -273,7 +274,7 @@ router.get('/activity', adminAuth, requirePermission('analytics.view'), async (r
       createdAt: toUtcIso(activity.created_at)
     }));
 
-    res.json(formattedActivities);
+    res.json(await withDocumentNumbers(formattedActivities));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to fetch activity log');
   }

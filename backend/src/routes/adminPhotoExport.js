@@ -72,6 +72,9 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), re
       color_labels: req.query.color_labels,
       my_color_labels: req.query.my_color_labels,
       decisions: req.query.decisions,
+      // One favourite list / one guest's favourites (issue 2303).
+      favorite_list: req.query.favorite_list,
+      favorite_guest: req.query.favorite_guest,
       admin_id: req.admin.id,
       category_id: req.query.category_id ? parseInt(req.query.category_id) : undefined,
       logic: req.query.logic || 'AND'

@@ -40,8 +40,8 @@ function isRawFilename(name) {
  * thumbnail, and then show a broken image the moment anyone opened it.
  *
  * EXPERIMENTAL: whether a preview actually renders still depends on the backend
- * being able to decode the source — HEVC-in-HEIC on the prod image, exiftool
- * for RAW. See #821.
+ * being able to decode the source — ffmpeg for HEVC-in-HEIC, exiftool for RAW.
+ * See #821.
  */
 const NON_DISPLAYABLE_ORIGINAL_EXT = new Set([...RAW_EXTENSIONS, 'heic', 'heif']);
 const NON_DISPLAYABLE_ORIGINAL_MIME = new Set([
@@ -60,8 +60,14 @@ function originalNeedsPreview(photo) {
   return NON_DISPLAYABLE_ORIGINAL_EXT.has(ext);
 }
 
+/** HEIC or HEIF by name. The codec inside is only known from the file. */
+function isHeifFilename(name) {
+  return /\.hei[cf]$/i.test(String(name || ''));
+}
+
 module.exports = {
   RAW_EXTENSIONS,
   isRawFilename,
+  isHeifFilename,
   originalNeedsPreview,
 };

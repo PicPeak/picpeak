@@ -7,7 +7,7 @@ const { AppError } = require('../../utils/errors');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('../accountingHistory');
-const { computeDueDate, computeScheduledSendAt, EDITABLE_INSTALLMENT_STATUSES, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
+const { computeDueDate, computeScheduledSendAt, isInvoiceEditable, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
 
 
 /**
@@ -150,7 +150,7 @@ async function replaceReconciliationLine(
  *
  * Guards:
  *   - dealUuid must exist + own ≥1 invoice (else 404)
- *   - all siblings must be in EDITABLE_INSTALLMENT_STATUSES (else 409
+ *   - all siblings must pass isInvoiceEditable (else 409
  *     `INVOICE_LOCKED`)
  *   - no Storno on the deal (else 409 `PLAN_HAS_STORNO`)
  *   - new plan validated by validateInstallmentPlanInput
@@ -196,9 +196,9 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
         'PLAN_HAS_STORNO',
       );
     }
-    if (!EDITABLE_INSTALLMENT_STATUSES.has(row.status)) {
+    if (!isInvoiceEditable(row)) {
       throw new AppError(
-        `Cannot reshape — invoice ${row.invoice_number} is '${row.status}'`,
+        `Cannot reshape — invoice ${row.invoice_number} is '${row.status}' or has a payment recorded`,
         409,
         'INVOICE_LOCKED',
       );

@@ -9,6 +9,7 @@ import { ColorLabelFilterChips } from './ColorLabelFilterChips';
 import { MinRatingFilterChips } from './MinRatingFilterChips';
 import { CreditFilterChips } from './CreditFilterChips';
 import { TagFilterChips, type TagChip } from './TagFilterChips';
+import { FavoriteListSwitcher } from './FavoriteListSwitcher';
 
 export type GalleryMediaFilter = 'all' | 'photo' | 'video';
 
@@ -110,6 +111,9 @@ export const GalleryFilterPanel: React.FC<GalleryFilterPanelProps> = ({
               </Button>
             ))}
           </div>
+          {/* Named lists (issue 2303): "Saved" shows the list picked here,
+              the one the bookmark saves to. Absent without lists. */}
+          <FavoriteListSwitcher className="self-start" />
         </div>
       )}
 
