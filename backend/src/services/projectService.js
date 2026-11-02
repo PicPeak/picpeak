@@ -1521,8 +1521,11 @@ async function retryEmail(emailId, adminId = null) {
   const row = await db('email_queue').where({ id: emailId }).first();
   if (!row) throw new AppError('Email not found', 404);
   await assertResendable(row);
-  await db('email_queue').where({ id: emailId })
-    .update({ status: pendingStatusFor(row), retry_count: 0, error_message: null, scheduled_at: null });
+  await db('email_queue').where({ id: emailId }).update({
+    status: pendingStatusFor(row), retry_count: 0, error_message: null, scheduled_at: null,
+    // A retry starts the outage allowance again, like the attempts.
+    ...(await hasColumnCached('email_queue', 'deferred_since') ? { deferred_since: null } : {}),
+  });
   await logEmailAction('project_email_retried', emailId, row, adminId);
   return { id: emailId, status: 'pending' };
 }

@@ -263,6 +263,14 @@ describe('mail server outage', () => {
     expect((await row(id)).retry_count).toBe(1);
   });
 
+  it('starts the count again when an admin retries the mail', async () => {
+    await endOutage();
+    const id = await queueMail();
+    await db('email_queue').where({ id }).update({ deferred_since: daysAgo(3.1), status: 'failed', retry_count: 3 });
+    await require('../../src/services/projectService').retryEmail(id);
+    expect(await row(id)).toMatchObject({ status: 'pending', retry_count: 0, deferred_since: null });
+  });
+
   it('shows the queue card why mail is waiting', async () => {
     await endOutage();
     await queueMail();
