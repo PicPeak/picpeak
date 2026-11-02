@@ -30,6 +30,7 @@ const {
 const { isGalleryPriced, resolveForcedWatermarkSettingsForPhoto } = require('../modules/photoSales/priceRules');
 const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const logger = require('../utils/logger');
+const dependencyHealth = require('./dependencyHealth');
 
 const DEBOUNCE_MS = 5000;
 
@@ -550,7 +551,7 @@ class DownloadZipService {
     const newTimer = setTimeout(() => {
       this.debounceTimers.delete(eventId);
       // While paused the rebuild waits: the next download streams or rebuilds it.
-      if (require('./dependencyHealth').evaluate('downloads.archive').paused) return;
+      if (dependencyHealth.evaluate('downloads.archive').paused) return;
       // Through the cap (#1399): invalidateAll arms every one of these in the
       // same tick, so without it they all start building together.
       this._withRegenSlot(() => this.generateZip(eventId)).catch(err =>

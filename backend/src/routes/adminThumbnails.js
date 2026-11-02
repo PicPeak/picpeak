@@ -10,6 +10,7 @@ const { retryTransient } = require('../services/imageResourcePolicy');
 const { getStorage } = require('../services/storage');
 const logger = require('../utils/logger');
 const applicationWork = require('../services/activeApplicationWork');
+const loadGovernor = require('../services/loadGovernor');
 
 const { canonicalStorageKey, sameStorageKey } = require('../utils/storageKey');
 
@@ -19,7 +20,7 @@ const { canonicalStorageKey, sameStorageKey } = require('../utils/storageKey');
 const MAX_REGENERATION_PAUSE_MS = 2000;
 function paceRegeneration() {
   if (applicationWork.isClosed()) return undefined;
-  const pause = Math.min(require('../services/loadGovernor').bulkDelayMs(), MAX_REGENERATION_PAUSE_MS);
+  const pause = Math.min(loadGovernor.bulkDelayMs(), MAX_REGENERATION_PAUSE_MS);
   return pause ? new Promise((resolve) => setTimeout(resolve, pause)) : undefined;
 }
 

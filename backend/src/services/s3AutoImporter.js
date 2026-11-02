@@ -32,6 +32,7 @@ const { getAllowedExtensions } = require('./uploadSettings');
 const logger = require('../utils/logger');
 const { promotionSettled } = require('./watchFolderClaims');
 const { unfinishedKeys } = require('./publicUploadQuota');
+const dependencyHealth = require('./dependencyHealth');
 
 const POLL_INTERVAL_MS = parseInt(process.env.STORAGE_AUTO_IMPORT_INTERVAL_MS || `${5 * 60 * 1000}`, 10);
 const ENABLED = process.env.STORAGE_AUTO_IMPORT === 'true';
@@ -47,7 +48,7 @@ async function runTick() {
   if (stopped) return;
   const storage = getStorage();
   if (storage.kind() !== 's3') return; // no-op for local fs
-  if (require('./dependencyHealth').evaluate('uploads.new').paused) return; // next tick tries again
+  if (dependencyHealth.evaluate('uploads.new').paused) return; // next tick tries again
 
   try {
     const events = await db('events')
