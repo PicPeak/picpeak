@@ -319,7 +319,7 @@ describe('Mosaic windowing', () => {
   });
 
   it('keeps the top photo through a width change, not the pixel offset', () => {
-    render(<MosaicGalleryLayout {...layoutProps(makePhotos(2000))} />);
+    render(<MosaicGalleryLayout {...layoutProps(makePhotos(1000))} />);
     scrollGridTo(-30000);
     // A narrower grid has taller tiles, and everything is further down.
     stretch = 2;
@@ -332,7 +332,7 @@ describe('Mosaic windowing', () => {
 
   it('holds on to the top photo while it still crosses the viewport, next to tiles that started higher', () => {
     stagger = 100;
-    render(<MosaicGalleryLayout {...layoutProps(makePhotos(2000))} />);
+    render(<MosaicGalleryLayout {...layoutProps(makePhotos(500))} />);
     // The third column of row 99, y 29900, is the first tile reaching past
     // this line.
     scrollGridTo(-30100);
