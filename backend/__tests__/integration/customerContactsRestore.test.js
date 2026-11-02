@@ -1,6 +1,6 @@
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
-// A .picpeak archive made before migration 342 never lists customer_contacts
+// A .picpeak archive made before migration 346 never lists customer_contacts
 // or customer_logins. Restoring one must clear them, and the holder has to keep
 // logging in: migrations do not run again after a restore, which is why the
 // holder's password never moved to these tables.
@@ -27,7 +27,7 @@ linuxIt('an archive older than contacts clears them and leaves the holder workin
   expect(Object.hasOwn(manifest.tables, 'customer_contacts')).toBe(false);
   expect(Object.hasOwn(manifest.tables, 'customer_logins')).toBe(false);
 
-  await require('../../migrations/core/342_customer_contacts').up(db);
+  await require('../../migrations/core/346_customer_contacts').up(db);
   await db('customer_contacts').insert({ customer_account_id: customerId, email: 'local@example.test' });
   await db('customer_logins').insert({ email: 'local@example.test', password_hash: 'x' });
 

@@ -1,5 +1,5 @@
 /**
- * Customer detail → Contacts (migration 342).
+ * Customer detail → Contacts (migration 346).
  *
  * Further people of this customer, each with an own login and own rights. The
  * account holder is not listed as a contact: they stay the customer record

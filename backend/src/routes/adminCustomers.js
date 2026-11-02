@@ -743,7 +743,7 @@ router.post('/:id/password-reset', [
 }));
 
 /**
- * Contacts of a customer (migration 342): further people with an own login and
+ * Contacts of a customer (migration 346): further people with an own login and
  * own rights. Same permission split as the customer's own account:
  * customers.create invites and resets, customers.edit changes the record,
  * customers.delete removes. Adding a contact and handing out a login need the

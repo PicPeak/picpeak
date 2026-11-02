@@ -1,5 +1,5 @@
 /**
- * Customer contacts (migration 342): several logins on one customer, each with
+ * Customer contacts (migration 346): several logins on one customer, each with
  * own rights. The holder of a customer without contacts must not notice any of
  * it, so that is pinned first.
  */
