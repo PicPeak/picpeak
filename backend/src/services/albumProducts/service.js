@@ -526,13 +526,13 @@ function createService({ db, storage, sharp }) {
           ? G.selection(product, input, { complete })
           : V.selection(product, input);
         if (product?.guided) {
-          selected.photoRoles = await P.select(tx, event.id, product.guided, input.photos, { complete });
+          selected.photoRoles = await P.select(tx, event.id, product.guided, input.photoRoles, { complete });
           if (complete && product.guided.clientFinal) {
             await assertNoOtherConfirmation(tx, current);
             selected.clientFinal = true;
             selected.confirmedAt = timestamp();
           }
-        } else if (input.photos !== undefined)
+        } else if (input.photoRoles !== undefined)
           throw new AppError('This product takes no photos', 400);
         update.selection = JSON.stringify(selected);
         update.status = complete ? 'submitted' : 'draft';

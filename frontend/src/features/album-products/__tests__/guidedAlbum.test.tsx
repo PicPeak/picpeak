@@ -196,7 +196,7 @@ describe('guided album flow', () => {
     const calls = vi.mocked(api.put).mock.calls;
     expect(calls.length).toBeGreaterThanOrEqual(5);
     const last = calls[calls.length - 1][1] as Record<string, unknown>;
-    expect(last).toMatchObject({ submit: false, productVersion: 'a'.repeat(64), photos: { cover: [1], poster: [2] }, values: { material: ['silk'], colour: ['ivory'], format: ['square'], size: ['s2550'] } });
+    expect(last).toMatchObject({ submit: false, productVersion: 'a'.repeat(64), photoRoles: { cover: [1], poster: [2] }, values: { material: ['silk'], colour: ['ivory'], format: ['square'], size: ['s2550'] } });
     expect(last).not.toHaveProperty('name');
     expect(calls.map((c) => (c[1] as { revision: number }).revision)).toEqual(calls.map((_, i) => i + 1));
   });

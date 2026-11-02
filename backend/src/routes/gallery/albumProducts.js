@@ -63,7 +63,7 @@ router.put(
   body('modelId').optional().isUUID(),
   body('colourId').optional().isUUID(),
   body('values').optional().isObject(),
-  body('photos').optional().isObject(),
+  body('photoRoles').optional().isObject(),
   body('productVersion').isHexadecimal().isLength({ min: 64, max: 64 }),
   body('name').optional().isString().trim().isLength({ min: 1, max: 100 }),
   body('submit').isBoolean(),
@@ -95,7 +95,7 @@ router.put(
           values: req.body.values,
           modelId: req.body.modelId,
           colourId: req.body.colourId,
-          photos: req.body.photos,
+          photoRoles: req.body.photoRoles,
           submit: req.body.submit,
         },
         {

@@ -29,7 +29,6 @@ describe('guided album order', () => {
   const ids = {};
   let material; let colour; let format; let size;
   let albumA; let albumB; let classic;
-  let revision = 0;
 
   const admin = (id = owner) => `Bearer ${mintAdminToken(id)}`;
   const pinToken = (gallery) => jwt.sign(
@@ -103,7 +102,7 @@ describe('guided album order', () => {
     return res.body.offers.find((o) => o.id === id);
   };
   const complete = (gallery, extra = {}) => ({
-    values: values(), photos: { cover: [gallery.photos[0]], poster: [gallery.photos[1]] }, name: 'Client', ...extra,
+    values: values(), photoRoles: { cover: [gallery.photos[0]], poster: [gallery.photos[1]] }, name: 'Client', ...extra,
   });
   const historyOf = (offer) => db('album_product_choice_history').where({ offer_id: offer.id }).orderBy('revision');
   const metadataOf = (log) => (typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata);
@@ -111,9 +110,7 @@ describe('guided album order', () => {
 
   async function saveCatalogue(products, overrides = {}) {
     const catalogue = await service.catalogue();
-    const saved = await service.saveCatalogue({ ...catalogue, revision: catalogue.revision, products, ...overrides });
-    revision = saved.revision;
-    return saved;
+    return service.saveCatalogue({ ...catalogue, revision: catalogue.revision, products, ...overrides });
   }
   const libraryAndType = () => {
     for (const key of ['materials', 'colours', 'formats', 'sizes', 'cotton', 'silk', 'leather', 'natural', 'ivory',
@@ -335,7 +332,7 @@ describe('guided album order', () => {
     ])('rejects a photo that is %s', async (_name, row) => {
       const photo = await addPhoto(gallery, row);
       for (const photos of [{ cover: [photo], poster: [gallery.photos[1]] }, { cover: [gallery.photos[0]], poster: [photo] }]) {
-        const res = await client.put(gallery, await seen(), { ...complete(gallery), photos, submit: true });
+        const res = await client.put(gallery, await seen(), { ...complete(gallery), photoRoles: photos, submit: true });
         expect(res.status).toBe(400);
         expect(res.body.code).toBe('PHOTO_UNAVAILABLE');
       }
@@ -343,7 +340,7 @@ describe('guided album order', () => {
 
     test('rejects a photo of another gallery', async () => {
       const other = await makeGallery();
-      const res = await client.put(gallery, await seen(), { ...complete(gallery), photos: { cover: [other.photos[0]], poster: [gallery.photos[1]] } });
+      const res = await client.put(gallery, await seen(), { ...complete(gallery), photoRoles: { cover: [other.photos[0]], poster: [gallery.photos[1]] } });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('PHOTO_UNAVAILABLE');
     });
@@ -354,7 +351,7 @@ describe('guided album order', () => {
       ['no poster', () => ({ cover: [gallery.photos[0]] }), 'PHOTO_COUNT'],
       ['three posters', () => ({ cover: [gallery.photos[0]], poster: gallery.photos.slice(1, 4) }), 'PHOTO_COUNT'],
     ])('rejects a confirmation with %s', async (_name, photos, code) => {
-      const res = await client.put(gallery, await seen(), { ...complete(gallery), photos: photos(), submit: true });
+      const res = await client.put(gallery, await seen(), { ...complete(gallery), photoRoles: photos(), submit: true });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe(code);
     });
@@ -365,16 +362,16 @@ describe('guided album order', () => {
       ['an id beyond int4', () => ({ cover: [2147483648], poster: [] })],
       ['an unknown role', () => ({ cover: [gallery.photos[0]], inside: [gallery.photos[1]] })],
     ])('rejects %s', async (_name, photos) => {
-      expect((await client.put(gallery, await seen(), { ...complete(gallery), photos: photos() })).status).toBe(400);
+      expect((await client.put(gallery, await seen(), { ...complete(gallery), photoRoles: photos() })).status).toBe(400);
     });
 
     test('takes a partial draft, keeps the studio counts on it and allows one photo in two roles', async () => {
-      const partial = await client.put(gallery, await seen(), { values: values(ids.silk, null, null, null), photos: { cover: [gallery.photos[0]] } });
+      const partial = await client.put(gallery, await seen(), { values: values(ids.silk, null, null, null), photoRoles: { cover: [gallery.photos[0]] } });
       expect(partial.status).toBe(200);
       expect(partial.body.status).toBe('draft');
-      const over = await client.put(gallery, await seen(), { values: values(), photos: { poster: gallery.photos.slice(0, 3) } });
+      const over = await client.put(gallery, await seen(), { values: values(), photoRoles: { poster: gallery.photos.slice(0, 3) } });
       expect(over.body.code).toBe('PHOTO_COUNT');
-      const both = await client.put(gallery, await seen(), { values: values(), photos: { cover: [gallery.photos[0]], poster: [gallery.photos[0]] } });
+      const both = await client.put(gallery, await seen(), { values: values(), photoRoles: { cover: [gallery.photos[0]], poster: [gallery.photos[0]] } });
       expect(both.status).toBe(200);
     });
 
@@ -387,7 +384,7 @@ describe('guided album order', () => {
       const one = await pin.put(other, await clientOffer(pin, other, two.id), { ...complete(other), submit: true });
       expect(one.status).toBe(400);
       expect(one.body.error).toBe('Poster photos: choose 2');
-      const ok = await pin.put(other, await clientOffer(pin, other, two.id), { ...complete(other), photos: { cover: [other.photos[0]], poster: other.photos.slice(1, 3) }, submit: true });
+      const ok = await pin.put(other, await clientOffer(pin, other, two.id), { ...complete(other), photoRoles: { cover: [other.photos[0]], poster: other.photos.slice(1, 3) }, submit: true });
       expect(ok.status).toBe(200);
       await saveCatalogue(catalogue.products);
     });
@@ -488,7 +485,7 @@ describe('guided album order', () => {
       const seen = await clientOffer(client, gallery, offer.id);
       expect(seen.needsReview).toBe(false);
       for (const submit of [false, true]) {
-        const res = await client.put(gallery, seen, { ...complete(gallery), photos: { cover: [gallery.photos[2]], poster: [gallery.photos[3]] }, submit });
+        const res = await client.put(gallery, seen, { ...complete(gallery), photoRoles: { cover: [gallery.photos[2]], poster: [gallery.photos[3]] }, submit });
         expect(res.status).toBe(403);
       }
       const [stored] = await adminOffers(gallery);
@@ -542,7 +539,7 @@ describe('guided album order', () => {
       expect((await client.put(gallery, reloaded, { ...body, values: values(ids.cotton, ids.natural) })).status).toBe(200);
       const noName = await client.put(gallery, await clientOffer(client, gallery, offer.id), { values: values() });
       expect(noName.status).toBe(409);
-      expect((await client.put(gallery, await clientOffer(client, gallery, offer.id), { ...body, photos: { cover: [gallery.photos[0]] } })).status).toBe(400);
+      expect((await client.put(gallery, await clientOffer(client, gallery, offer.id), { ...body, photoRoles: { cover: [gallery.photos[0]] } })).status).toBe(400);
     });
   });
 
@@ -567,7 +564,7 @@ describe('guided album order', () => {
       expect(metadataOf(log)).toMatchObject({ productName: 'Album A', previousStatus: 'locked', offerId: offer.id });
       const history = await historyOf(offer);
       expect(history[history.length - 1]).toMatchObject({ status: 'draft', actor_type: 'admin' });
-      const again = await client.put(gallery, await clientOffer(client, gallery, offer.id), { ...complete(gallery), photos: { cover: [gallery.photos[2]], poster: [gallery.photos[3]] }, submit: true });
+      const again = await client.put(gallery, await clientOffer(client, gallery, offer.id), { ...complete(gallery), photoRoles: { cover: [gallery.photos[2]], poster: [gallery.photos[3]] }, submit: true });
       expect(again.status).toBe(200);
       expect(await activityOf(gallery, 'album_product_submitted')).toHaveLength(2);
     });

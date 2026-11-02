@@ -218,7 +218,7 @@ export function GuidedAlbumFlow({
       revision: offer.revision,
       productVersion: product.version,
       values,
-      photos: chosen,
+      photoRoles: chosen,
       ...(name.trim() ? { name: name.trim() } : {}),
       submit: commit,
     };
