@@ -189,11 +189,17 @@ export function useWindowedItems(
     // Hold on to the same photo while its row is still the one at the top:
     // another width puts it in a row that starts with a different photo, and
     // switching to that one would drift a row per resize, never to return.
+    // Rows can overlap (a tile of a column layout is one), so that means
+    // still crossing the top of the viewport, not just being the first to.
     const { items, rowOf } = modelRef.current;
     const previous = anchorRef.current;
+    const held = previous ? rowOf.get(previous.photoId) : undefined;
+    const kept = held !== undefined
+      && (held === top || (rows[held].top <= viewTop && rows[held].bottom > viewTop));
+    const row = rows[kept ? held : top];
     anchorRef.current = {
-      photoId: previous && rowOf.get(previous.photoId) === top ? previous.photoId : items[rows[top].from].photoId,
-      ratio: Math.max(0, (viewTop - rows[top].top) / (rows[top].bottom - rows[top].top)),
+      photoId: kept ? previous!.photoId : items[row.from].photoId,
+      ratio: Math.max(0, (viewTop - row.top) / (row.bottom - row.top)),
     };
   }, [containerRef]);
 

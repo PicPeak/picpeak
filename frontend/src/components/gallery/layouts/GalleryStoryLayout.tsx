@@ -18,11 +18,13 @@ import { toast } from 'react-toastify';
 import {
   StoryHero,
   StoryScene,
-  StoryPhotoCard,
   StoryCarousel,
+  StoryFixedGrid,
   StoryJustifiedGrid,
   StoryScrollToTop
 } from './story';
+import { WINDOW_MIN_PHOTOS } from './rowWindow';
+import { TIMELINE_GROUP_WINDOW_MIN_PHOTOS } from './gridWindow';
 import { PhotoLightbox } from '../PhotoLightbox';
 import { PhotoLabelsProvider } from '../PhotoLabels';
 import { FeedbackIdentityModal } from '../FeedbackIdentityModal';
@@ -347,6 +349,16 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // category scenes applied. The lightbox steps through these, not `photos`,
   // or its arrows reach photos the search has hidden.
   const visiblePhotos = useMemo(() => scenes.flatMap((scene) => scene.photos), [scenes]);
+
+  // In a large gallery a grid mounts only the rows near the viewport (issue
+  // 2193). A small scene stays whole, for the reason a small Timeline group
+  // does. Carousels are not grids: they keep every slide.
+  const windowScene = (scene: CategoryScene) => visiblePhotos.length >= WINDOW_MIN_PHOTOS
+    && scene.photos.length >= TIMELINE_GROUP_WINDOW_MIN_PHOTOS;
+  // Which cards have made their entrance, for a large gallery only: a filter
+  // that takes it below the threshold must not replay them either.
+  const revealedRef = useRef(new Set<number>());
+  const revealed = photos.length >= WINDOW_MIN_PHOTOS ? revealedRef.current : undefined;
 
   const handleOpenLightbox = useCallback((photo: Photo) => {
     const index = visiblePhotos.findIndex(p => p.id === photo.id);
@@ -779,32 +791,28 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   likesAllowed={likesAllowed}
                   onToggleVisibility={clientToggleVisibility}
                   caption={caption}
+                  windowed={windowScene(scene)}
+                  revealed={revealed}
                 />
               ) : (
-                <div id={`gallery-${scene.id}`} className="story-gallery-grid">
-                  {scene.photos.map((photo, index) => (
-                    <StoryPhotoCard
-                      key={photo.id}
-                      photo={photo}
-                      index={index}
-                      isFavorite={favorites.has(photo.id)}
-                      onToggleFavorite={handleToggleFavorite}
-                      onClick={() => handleOpenLightbox(photo)}
-                      slug={slug}
-                      galleryId={`gallery-${scene.id}`}
-                      allowDownloads={allowDownloads}
-                      useEnhancedProtection={useEnhancedProtection}
-                      // Mark first photo in each grid as featured
-                      featured={index === 0 && scene.photos.length > 4}
-                      isSelectionMode={isSelectionMode}
-                      isSelected={selected.has(photo.id)}
-                      onSelect={cardSelect}
-                      likesAllowed={likesAllowed}
-                      onToggleVisibility={clientToggleVisibility}
-                      caption={caption}
-                    />
-                  ))}
-                </div>
+                <StoryFixedGrid
+                  id={`gallery-${scene.id}`}
+                  photos={scene.photos}
+                  favorites={favorites}
+                  onToggleFavorite={handleToggleFavorite}
+                  onPhotoClick={handleOpenLightbox}
+                  slug={slug}
+                  allowDownloads={allowDownloads}
+                  useEnhancedProtection={useEnhancedProtection}
+                  isSelectionMode={isSelectionMode}
+                  selectedPhotos={selected}
+                  onPhotoSelect={cardSelect}
+                  likesAllowed={likesAllowed}
+                  onToggleVisibility={clientToggleVisibility}
+                  caption={caption}
+                  windowed={windowScene(scene)}
+                  revealed={revealed}
+                />
               )}
             </StoryScene>
           );
