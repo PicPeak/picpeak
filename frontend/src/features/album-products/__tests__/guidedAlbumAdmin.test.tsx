@@ -67,13 +67,20 @@ describe('studio gallery card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Release to client' }));
     await waitFor(() => expect(albumProducts.update).toHaveBeenCalledWith(7, expect.anything(), { enabled: true }));
   });
-  it('offers to withdraw a released album and its client link', async () => {
+  it('offers to withdraw a released album', async () => {
     load([offer()]);
     mount();
     expect(await screen.findByText('Released')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Copy client link' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Withdraw release' }));
     await waitFor(() => expect(albumProducts.update).toHaveBeenCalledWith(7, expect.anything(), { enabled: false }));
+  });
+  it('gives a customer\'s release the portal link', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    load([offer({ releasedCustomerId: 1 })], { customers });
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy client link' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/customer/events/wedding`));
   });
   it('shows album, options and photo roles in one summary, with filenames and missing photos', async () => {
     load([offer({ status: 'submitted', selection })]);

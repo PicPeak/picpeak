@@ -1,4 +1,3 @@
-import { useTranslation } from 'react-i18next';
 import { availableOptions, type ConfigurationValues } from './ConfigurationPicker';
 import type { Attribute, Option } from './model';
 
@@ -60,7 +59,6 @@ export function FormatComparison({
   name: string;
   disabled?: boolean;
 }) {
-  const { t } = useTranslation();
   const largest = widestOf(size.options);
   return (
     <fieldset disabled={disabled}>
@@ -90,9 +88,11 @@ export function FormatComparison({
                 />
                 <span className="min-w-0">
                   <span className="block font-semibold">{option.name}</span>
-                  <span className="block text-sm">
-                    {sizes.map((s) => s.name).join(` ${t('albumProducts.or', 'or')} `)}
-                  </span>
+                  {sizes.map((s) => (
+                    <span key={s.id} className="block text-sm">
+                      {s.name}
+                    </span>
+                  ))}
                 </span>
               </span>
             </label>

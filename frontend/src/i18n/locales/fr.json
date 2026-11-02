@@ -4243,7 +4243,6 @@
     "linkCopyFailed": "Le lien n’a pas pu être copié",
     "noPhotos": "Il n’y a pas encore de photos à choisir.",
     "notReleased": "Non publié",
-    "or": "ou",
     "photoCountExact": "{{count}} sur {{max}} sélectionnées",
     "photoCountOne": "{{count}} sur 1 sélectionnée",
     "photoCountRange": "{{count}} sélectionnées, choisissez-en de {{min}} à {{max}}",

@@ -74,14 +74,14 @@ export function ColourSwatches({
   );
 }
 
-/** A small non-interactive swatch for summaries. */
+/** A small non-interactive swatch, for the portal and the admin alike. */
 export function SwatchDot({ hex }: { hex?: string }) {
   if (!hex) return null;
   return (
     <span
       aria-hidden="true"
-      className="inline-block h-4 w-4 rounded-full border border-border-token align-text-bottom"
-      style={{ backgroundColor: hex }}
+      className="inline-block h-4 w-4 rounded-full align-text-bottom"
+      style={{ backgroundColor: hex, boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0.15)' }}
     />
   );
 }

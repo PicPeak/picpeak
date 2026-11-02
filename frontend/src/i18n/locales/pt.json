@@ -4452,7 +4452,6 @@
     "linkCopyFailed": "Não foi possível copiar a ligação",
     "noPhotos": "Ainda não há fotos para escolher.",
     "notReleased": "Não disponibilizado",
-    "or": "ou",
     "photoCountExact": "{{count}} de {{max}} selecionadas",
     "photoCountOne": "{{count}} de 1 selecionadas",
     "photoCountRange": "{{count}} selecionadas, escolha de {{min}} a {{max}}",

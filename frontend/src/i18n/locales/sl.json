@@ -10344,7 +10344,6 @@
     "linkCopyFailed": "Povezave ni bilo mogoče kopirati",
     "noPhotos": "Fotografij za izbiro še ni.",
     "notReleased": "Ni sproščeno",
-    "or": "ali",
     "photoCountExact": "Izbrano: {{count}} od {{max}}",
     "photoCountOne": "Izbrano: {{count}} od 1",
     "photoCountRange": "Izbrano: {{count}}, izberite od {{min}} do {{max}}",

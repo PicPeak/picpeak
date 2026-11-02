@@ -4352,7 +4352,6 @@
     "linkCopyFailed": "Не удалось скопировать ссылку",
     "noPhotos": "Пока нет фотографий для выбора.",
     "notReleased": "Не открыто",
-    "or": "или",
     "photoCountExact": "Выбрано: {{count}} из {{max}}",
     "photoCountOne": "Выбрано: {{count}} из 1",
     "photoCountRange": "Выбрано: {{count}}, выберите от {{min}} до {{max}}",

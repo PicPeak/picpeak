@@ -11556,7 +11556,6 @@
     "linkCopyFailed": "Der Link konnte nicht kopiert werden",
     "noPhotos": "Es stehen noch keine Fotos zur Auswahl.",
     "notReleased": "Nicht freigegeben",
-    "or": "oder",
     "photoCountExact": "{{count}} von {{max}} ausgewählt",
     "photoCountOne": "{{count}} von 1 ausgewählt",
     "photoCountRange": "{{count}} ausgewählt, wähle {{min}} bis {{max}}",

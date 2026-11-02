@@ -96,6 +96,7 @@ export function GuidedAlbumFlow({
   const flowId = useId();
   const dialog = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const attempt = useRef<{ fingerprint: string; id: string } | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -185,7 +186,8 @@ export function GuidedAlbumFlow({
   // A new step is new content: tell a screen reader, and start at its top.
   useEffect(() => {
     heading.current?.focus();
-  }, [step, offerId]);
+    if (content.current) content.current.scrollTop = 0;
+  }, [step, offerId, readOnly]);
 
   const steps = stepsFor(offer);
   const position = steps.indexOf(step);
@@ -555,7 +557,7 @@ export function GuidedAlbumFlow({
           <X className="h-5 w-5" aria-hidden="true" />
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={content} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
           {body()}
           {error && <p role="alert" className="font-semibold">{error}</p>}

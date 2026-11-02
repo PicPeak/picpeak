@@ -11590,7 +11590,6 @@
     "linkCopyFailed": "The link could not be copied",
     "noPhotos": "There are no photos to choose from yet.",
     "notReleased": "Not released",
-    "or": "or",
     "photoCountExact": "{{count}} of {{max}} selected",
     "photoCountOne": "{{count}} of 1 selected",
     "photoCountRange": "{{count}} selected, choose {{min}} to {{max}}",

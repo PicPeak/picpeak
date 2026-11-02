@@ -141,8 +141,8 @@ describe('guided album flow', () => {
     await heading('Compare the formats');
     const [landscape, square] = ['Landscape', 'Square'].map((name) => screen.getByRole('radio', { name: new RegExp(name) }).closest('label') as HTMLElement);
     expect((landscape.parentElement as HTMLElement).className).toContain('grid-cols-2');
-    expect(landscape).toHaveTextContent('25 × 70 cm or 30 × 80 cm');
-    expect(square).toHaveTextContent('25 × 50 cm or 30 × 60 cm');
+    expect(landscape).toHaveTextContent('25 × 70 cm30 × 80 cm');
+    expect(square).toHaveTextContent('25 × 50 cm30 × 60 cm');
     const outline = (card: HTMLElement) => card.querySelector('[data-ratio]') as HTMLElement;
     expect(outline(landscape).dataset.ratio).toBe('800:300');
     expect(outline(square).dataset.ratio).toBe('600:300');
@@ -336,6 +336,16 @@ describe('gallery entry', () => {
     vi.mocked(albumProducts.client).mockResolvedValue([offer()]);
     render(<GalleryProductPanel slug="wedding" />);
     await heading('Choose your album');
+  });
+  it('the link to the album choice opens it, and closing clears the link', async () => {
+    window.history.replaceState(null, '', '/gallery/wedding?album=choose&x=1');
+    vi.mocked(albumProducts.client).mockResolvedValue([offer(), offer({ id: 'offer-b', product: product('album-b', 'Panorama album') })]);
+    render(<GalleryProductPanel slug="wedding" />);
+    await heading('Choose your album');
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(window.location.search).toBe('?x=1');
   });
   it('a deep link to an offer this client cannot see opens nothing', async () => {
     window.history.replaceState(null, '', '/gallery/wedding?album=someone-elses');

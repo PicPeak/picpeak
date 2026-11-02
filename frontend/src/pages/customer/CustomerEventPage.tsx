@@ -22,6 +22,7 @@ import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuth
 import { CustomerDocumentList } from './CustomerDocumentsPage';
 import { DOWNLOAD_JOB_QUERY_PARAM, readDownloadJobParam } from '../../components/gallery/downloadJobLink';
 import { isGalleryTemporarilyDisabled } from '../../utils/galleryAvailability';
+import { CHOOSE_ALBUM } from '../../features/album-products/model';
 
 /** Open a blob URL produced by `load` in a new tab, keeping the click gesture. */
 async function openPdf(load: () => Promise<string>, blockedMessage: string, failedMessage: string) {
@@ -103,6 +104,7 @@ export const CustomerEventPage: React.FC = () => {
 
   // The product list of the gallery itself; guided albums get their own entry.
   const albumOffers = (data.productOffers ?? []).filter((offer) => offer.guided);
+  const confirmedAlbum = albumOffers.find((offer) => offer.confirmed);
   const nothingElse = (!sections.quotes || data.quotes.length === 0)
     && (!sections.contracts || data.contracts.length === 0)
     && (!sections.invoices || data.invoices.length === 0)
@@ -159,28 +161,21 @@ export const CustomerEventPage: React.FC = () => {
       </Card>
 
       {event.availability === 'active' && albumOffers.length > 0 && (
-        <Section title={t('customer.event.album', 'Your album')}>
-          <ul className="divide-y divide-border-token">
-            {albumOffers.map((offer) => (
-              <li key={offer.id} className="p-4 flex items-center justify-between gap-3 flex-wrap">
-                <div className="min-w-0">
-                  <span className="text-sm text-theme">{offer.name}</span>
-                  <p className="text-xs text-muted-theme mt-0.5">
-                    {offer.confirmed
-                      ? t('customer.event.albumConfirmed', 'Your selection is confirmed.')
-                      : t('customer.event.albumReady', 'The studio has released your album. Choose its look and your photos.')}
-                  </p>
-                </div>
-                <Button type="button" variant={offer.confirmed ? 'outline' : 'primary'} size="sm" disabled={opening}
-                  leftIcon={<ExternalLink className="w-4 h-4" />} onClick={() => openGallery(offer.id)}>
-                  {offer.confirmed
-                    ? t('customer.event.albumView', 'View your selection')
-                    : t('customer.event.albumOpen', 'Configure your album')}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </Section>
+        <Card padding="lg" className="mb-4">
+          <h2 className="text-base font-semibold text-theme mb-1">{t('customer.event.album', 'Your album')}</h2>
+          <p className="text-sm text-muted-theme mb-3">
+            {confirmedAlbum
+              ? `${confirmedAlbum.name}: ${t('customer.event.albumConfirmed', 'Your selection is confirmed.')}`
+              : t('customer.event.albumReady', 'The studio has released your album. Choose its look and your photos.')}
+          </p>
+          <Button type="button" variant={confirmedAlbum ? 'outline' : 'primary'} size="sm" disabled={opening}
+            leftIcon={<ExternalLink className="w-4 h-4" />}
+            onClick={() => openGallery((confirmedAlbum || (albumOffers.length === 1 ? albumOffers[0] : null))?.id ?? CHOOSE_ALBUM)}>
+            {confirmedAlbum
+              ? t('customer.event.albumView', 'View your selection')
+              : t('customer.event.albumOpen', 'Configure your album')}
+          </Button>
+        </Card>
       )}
 
       {sections.quotes && data.quotes.length > 0 && (

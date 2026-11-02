@@ -175,10 +175,11 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
       setBusy(false);
     }
   };
-  const copyLink = async (offer: Offer) => {
+  // A customer's way in; the gallery client already has the client access link.
+  const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(
-        `${window.location.origin}/gallery/${slug}?album=${offer.id}`,
+        `${window.location.origin}/customer/events/${slug}`,
       );
       toast.success(t('albumProducts.linkCopied', 'Client link copied'));
     } catch {
@@ -442,8 +443,8 @@ function EventProducts({ eventId, ownsEvent, slug }: { eventId: number; ownsEven
                     ? t('albumProducts.hide', 'Hide offer')
                     : t('albumProducts.show', 'Show offer')}
               </Button>
-              {guided && offer.enabled && slug && (
-                <Button variant="ghost" disabled={busy} onClick={() => copyLink(offer)}>
+              {guided && offer.enabled && slug && offer.releasedCustomerId != null && (
+                <Button variant="ghost" disabled={busy} onClick={copyLink}>
                   {t('albumProducts.copyLink', 'Copy client link')}
                 </Button>
               )}

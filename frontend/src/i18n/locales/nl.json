@@ -4174,7 +4174,6 @@
     "linkCopyFailed": "De link kon niet worden gekopieerd",
     "noPhotos": "Er zijn nog geen foto’s om uit te kiezen.",
     "notReleased": "Niet vrijgegeven",
-    "or": "of",
     "photoCountExact": "{{count}} van {{max}} geselecteerd",
     "photoCountOne": "{{count}} van 1 geselecteerd",
     "photoCountRange": "{{count}} geselecteerd, kies er {{min}} tot {{max}}",

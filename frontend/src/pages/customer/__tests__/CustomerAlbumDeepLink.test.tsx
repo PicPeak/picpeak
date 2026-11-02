@@ -38,16 +38,22 @@ describe('customer portal album link', () => {
     vi.mocked(customerService.getEventOverview).mockResolvedValue(overview([released]) as never);
     vi.mocked(customerService.getEventAccessToken).mockResolvedValue({ token: 'gallery' } as never);
     mount();
-    expect(await screen.findByText('Fine art album')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Configure your album' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Configure your album' }));
     expect(await screen.findByText('at /gallery/wedding?album=offer-a')).toBeInTheDocument();
     await waitFor(() => expect(customerService.getEventAccessToken).toHaveBeenCalledWith('wedding'));
+  });
+  it('sends a client with several albums to the album choice, in one entry', async () => {
+    vi.mocked(customerService.getEventOverview).mockResolvedValue(overview([released, { ...released, id: 'offer-b', name: 'Panorama' }]) as never);
+    vi.mocked(customerService.getEventAccessToken).mockResolvedValue({ token: 'gallery' } as never);
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Configure your album' }));
+    expect(await screen.findByText('at /gallery/wedding?album=choose')).toBeInTheDocument();
   });
   it('says so once the selection is confirmed', async () => {
     vi.mocked(customerService.getEventOverview).mockResolvedValue(overview([{ ...released, status: 'submitted', confirmed: true }]) as never);
     mount();
     expect(await screen.findByRole('button', { name: 'View your selection' })).toBeInTheDocument();
-    expect(screen.getByText('Your selection is confirmed.')).toBeInTheDocument();
+    expect(screen.getByText('Fine art album: Your selection is confirmed.')).toBeInTheDocument();
   });
   it('shows nothing with no release, for a classic product, or while the gallery cannot open', async () => {
     vi.mocked(customerService.getEventOverview).mockResolvedValue(overview([]) as never);

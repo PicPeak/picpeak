@@ -3616,7 +3616,6 @@
     "linkCopyFailed": "No se pudo copiar el enlace",
     "noPhotos": "Todavía no hay fotos para elegir.",
     "notReleased": "No publicado",
-    "or": "o",
     "photoCountExact": "{{count}} de {{max}} seleccionadas",
     "photoCountOne": "{{count}} de 1 seleccionadas",
     "photoCountRange": "{{count}} seleccionadas, elige de {{min}} a {{max}}",

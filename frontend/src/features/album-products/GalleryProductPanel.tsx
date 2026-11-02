@@ -9,7 +9,7 @@ import { Button, Input } from '../../components/common';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../config/api';
-import { albumProducts, errorMessage, isConfirmed, type Offer } from './model';
+import { albumProducts, CHOOSE_ALBUM, errorMessage, isConfirmed, type Offer } from './model';
 import { ProductImage } from './ProductImage';
 import { GuidedAlbumFlow } from './GuidedAlbumFlow';
 const isGuided = (offer: Offer) =>
@@ -28,7 +28,17 @@ function GuidedAlbumEntry({
   const [link] = useState(() =>
     new URLSearchParams(window.location.search).get('album'),
   );
-  const [open, setOpen] = useState(() => offers.some((o) => o.id === link));
+  const [open, setOpen] = useState(
+    () => link === CHOOSE_ALBUM || offers.some((o) => o.id === link),
+  );
+  // The link has done its work: leave it in the URL and closing would reopen.
+  const close = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('album');
+    window.history.replaceState(window.history.state, '', url);
+    setOpen(false);
+    onClosed();
+  };
   const confirmed = offers.find(isConfirmed);
   return (
     <section
@@ -62,10 +72,7 @@ function GuidedAlbumEntry({
           offers={offers}
           slug={slug}
           startOfferId={link}
-          onClose={() => {
-            setOpen(false);
-            onClosed();
-          }}
+          onClose={close}
         />
       )}
     </section>

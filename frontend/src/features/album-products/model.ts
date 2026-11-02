@@ -101,6 +101,8 @@ export interface OfferHistoryEntry {
   actor_name: string | null;
   created_at: string;
 }
+/** `?album=` value that opens the album choice when no one album is meant. */
+export const CHOOSE_ALBUM = 'choose';
 /** A client-final selection the client can no longer change. */
 export const isConfirmed = (offer: Pick<Offer, 'status' | 'selection'>) =>
   offer.status === 'locked' ||
