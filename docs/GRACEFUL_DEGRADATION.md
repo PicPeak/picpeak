@@ -12,15 +12,19 @@ Every 15 seconds PicPeak checks:
 | --- | --- |
 | Database | A simple query answers in time |
 | Storage | The storage location or S3 bucket answers, and a local location can be written to |
-| Disk space | Free space under `STORAGE_PATH`, relative to its size. On S3 this is the local disk used for staging |
+| Disk space | Free space under `STORAGE_PATH`, relative to its size. On S3 this is the local disk used for staging, and it is left out when that directory does not exist |
 | Email sending | The mail queue's last pass, and whether the mail server or webhook is currently unreachable |
 | Face recognition service | Only while the feature is on |
 | Photo processing queue | The oldest photo has not waited more than 30 minutes |
 | Server load | CPU, memory and event loop delay of the container |
 
-Each dependency is **healthy**, **degraded** or **down**. One failed check changes nothing. Two failures in a row mean degraded and four mean down. A check that succeeds but takes over 3 seconds needs four in a row to count as degraded, because a burst of uploads can slow one on a healthy disk. Coming back takes about two minutes of better readings, so a flapping network share does not reopen uploads every few seconds.
+Each dependency is **healthy**, **degraded** or **down**. One failed check changes nothing. Two failures in a row mean degraded and four mean down. A check that takes over 3 seconds, or runs past its 5-second limit, needs four in a row to count as degraded, because a burst of uploads or ZIP downloads can slow one on a healthy disk or fill the S3 connection pool. Slowness alone never counts as down. A check still running when the next one is due counts as a failure, so a hung mount still goes down. Coming back takes about two minutes of better readings, so a flapping network share does not reopen uploads every few seconds.
 
 The public `/health` endpoint does not use these states, on purpose: Docker restarting the app cannot repair a share or a mail server.
+
+The status page shows a short reason, such as "check failed". The full error, which can name a path or a host, is in the server log.
+
+**Limit on local storage:** the storage check confirms that the `STORAGE_PATH` directory exists and can be read and written. It does not tell a mounted share from the empty directory a lost mount leaves behind. If a share drops that way, storage still reads healthy, disk space measures the disk underneath, and uploads go to that disk. Point `STORAGE_PATH` at a directory inside the share rather than at the mount point, so a lost mount leaves no such directory and the check fails.
 
 ## What pauses
 
@@ -37,7 +41,7 @@ The public `/health` endpoint does not use these states, on purpose: Docker rest
 
 Visitors see a short message that the feature is paused for a moment, and the admin uploader waits about four minutes for the pause to end, then stops the rest of the batch. A plain download link shows a short paused page. The refused request answers `503` with `code: CAPABILITY_UNAVAILABLE` and `Retry-After`, and does not name the dependency. A direct **Download all** link that needs a new build fails as a browser download.
 
-This mail handling is always on, in observe mode too. While the mail server or webhook cannot be reached at all, email waits and retries every 5 minutes without using up its attempts, and **Email sending** shows as degraded. After 3 days of continuous outage it goes back to the normal limit of three attempts, so it shows up under failed emails. A restart starts that count again. A temporary answer about one recipient, such as greylisting, uses an attempt and waits 5 minutes. So does a connection lost at a point where the server may already hold the message, so it can never be sent more than three times. A delayed email can go out outside business hours.
+This mail handling is always on, in observe mode too. While the mail server or webhook cannot be reached at all, email waits and retries every 5 minutes without using up its attempts, and **Email sending** shows as degraded. Three days after an email was first held back it goes back to the normal limit of three attempts, so it shows up under failed emails. That time is kept on each email, so a restart or other emails getting through do not start it again, and a retry by hand keeps it. While email is held back, the email queue card shows the last error. A temporary answer about one recipient, such as greylisting, uses an attempt and waits 5 minutes. So does a connection lost at a point where the server may already hold the message, so it can never be sent more than three times. A delayed email can go out outside business hours.
 
 ## Observe mode and enforcement
 
