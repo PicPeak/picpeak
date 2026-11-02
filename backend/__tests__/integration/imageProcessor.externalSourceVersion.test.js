@@ -334,4 +334,41 @@ describe('renditions of an external file rewritten in place', () => {
     await imageProcessor.deletePreviewTiers(row);
     expect(await storage.stat(legacyKey)).toBeFalsy();
   });
+
+  describe('a HEVC HEIC on the share (issue 2359)', () => {
+    const FIXTURE = path.join(__dirname, '../fixtures/hevc-display-p3.heic');
+    const mediaProcesses = require('../../src/services/mediaProcessService');
+    const fakeFfmpeg = (during = async () => {}) => jest.spyOn(mediaProcesses, 'run').mockImplementation(async (_command, args) => {
+      await during();
+      await sharp({ create: { width: 40, height: 30, channels: 3, background: '#c33' } }).jpeg().toFile(args[args.length - 1]);
+      return { stdout: Buffer.alloc(0) };
+    });
+
+    async function heicPhoto(name) {
+      const full = path.join(mediaRoot, 'shoot', name);
+      await fsp.mkdir(path.dirname(full), { recursive: true });
+      await fsp.copyFile(FIXTURE, full);
+      const { size } = await fsp.stat(full);
+      const id = resultId(await db('photos').insert({ event_id: eventId, filename: name, original_filename: name,
+        path: `shoot/${name}`, external_relpath: `shoot/${name}`, type: 'individual', mime_type: 'image/heic', media_type: 'image',
+        size_bytes: size, processing_status: 'complete', source_origin: 'reference' }).returning('id'));
+      return db('photos').where({ id }).first();
+    }
+
+    test('the preview, its tiers and the hero go through the decode', async () => {
+      const run = fakeFfmpeg();
+      const row = await heicPhoto('share-renditions.heic');
+      expect(await imageProcessor.ensurePreviewImage(row)).toBeTruthy();
+      expect(await imageProcessor.ensurePreviewImageAtWidth(row, 640)).toBeTruthy();
+      expect(await imageProcessor.ensureHeroImage(row)).toBeTruthy();
+      expect(run).toHaveBeenCalledTimes(3);
+    });
+
+    test('a decode that outlives a replacement is not recorded', async () => {
+      const row = await heicPhoto('share-replaced.heic');
+      fakeFfmpeg(() => db('photos').where({ id: row.id }).update({ filename: 'replacement.jpg' }));
+      await expect(imageProcessor.ensurePreviewImage(row)).rejects.toMatchObject({ code: 'MEDIA_SUPERSEDED' });
+      expect((await db('photos').where({ id: row.id }).first()).preview_path).toBeNull();
+    });
+  });
 });

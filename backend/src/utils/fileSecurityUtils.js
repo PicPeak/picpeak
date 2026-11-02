@@ -171,8 +171,8 @@ const ALLOWED_IMAGE_TYPES = {
   },
   // HEIC/HEIF (iPhone). ISO-BMFF container: bytes 4-7 are the "ftyp" box marker,
   // present in every HEIF/HEIC file (single entry — the magic check is `.every`,
-  // so alternatives can't be listed as separate entries). Sharp's libvips
-  // decodes these; extension + MIME are already gated by validateFileType.
+  // so alternatives can't be listed as separate entries). Decoded through
+  // withProcessableImage; extension + MIME are already gated by validateFileType.
   'image/heic': {
     extensions: ['.heic'],
     magicNumbers: [
