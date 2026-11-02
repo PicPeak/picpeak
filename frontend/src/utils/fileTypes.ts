@@ -47,8 +47,9 @@ export function extensionsToMimeTypes(extString?: string | null): string[] {
 // Extensions that also go into `accept` by name. A file chooser matches accept
 // MIME types against the operating system's own type table, and macOS, iOS and
 // Windows do not map .dng to image/x-adobe-dng, so the MIME type alone hid
-// every DNG from the chooser (issue 821).
-const ACCEPT_BY_EXTENSION = new Set(['dng']);
+// every DNG from the chooser (issue 821). HEIC and HEIF need it for the same
+// reason on any system that maps no HEIC type.
+const ACCEPT_BY_EXTENSION = new Set(['dng', 'heic', 'heif']);
 
 /**
  * Convert a comma-separated extension string to an HTML `accept` attribute
@@ -65,6 +66,9 @@ export function extensionsToAcceptString(extString?: string | null): string {
 // What browsers report for a .dng besides image/x-adobe-dng: which one depends
 // on the OS type table, and a machine without a RAW codec reports nothing.
 const DNG_TYPE_ALIASES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
+// Chromium on Linux reports no type for an iPhone's `.HEIC` and image/heif for
+// `.heic`, and the two names cover one container.
+const HEIF_TYPE_ALIASES = new Set(['', 'application/octet-stream', 'image/heic', 'image/heif']);
 
 /**
  * The MIME type to validate a picked file against. Mirrors the backend's
@@ -72,6 +76,8 @@ const DNG_TYPE_ALIASES = new Set(['', 'application/octet-stream', 'image/dng', '
  */
 export function normalizeFileMimeType(name: string, type: string): string {
   if (/\.dng$/i.test(name) && DNG_TYPE_ALIASES.has(type)) return EXTENSION_TO_MIME.dng;
+  const heif = /\.(hei[cf])$/i.exec(name);
+  if (heif && HEIF_TYPE_ALIASES.has(type)) return EXTENSION_TO_MIME[heif[1].toLowerCase()];
   return type;
 }
 

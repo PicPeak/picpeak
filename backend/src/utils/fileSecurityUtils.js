@@ -431,6 +431,13 @@ function createFileUploadValidator(options = {}) {
 // RAW codec reports nothing, which multer delivers as application/octet-stream.
 const DNG_MIME_ALIASES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
 
+// HEIC is the same story with fewer names. The extension is often uppercase on
+// an iPhone file, and Chromium on Linux reports no type for `.HEIC` and
+// image/heif for `.heic`. The two names cover one container, so neither says
+// more about the file than the extension does.
+const HEIF_EXTENSION_TO_MIME = { '.heic': 'image/heic', '.heif': 'image/heif' };
+const GENERIC_HEIF_MIMES = new Set(['', 'application/octet-stream', 'image/heic', 'image/heif']);
+
 /**
  * The MIME type to validate an upload against. A browser-reported MIME is a
  * name, not evidence, so mapping these variants onto the canonical DNG entry
@@ -444,6 +451,10 @@ function normalizeUploadMimeType(filename, mimetype) {
   const ext = path.extname(filename || '').toLowerCase();
   if (ext === '.dng' && DNG_MIME_ALIASES.has(mimetype || '')) {
     return 'image/x-adobe-dng';
+  }
+  const heifMime = HEIF_EXTENSION_TO_MIME[ext];
+  if (heifMime && GENERIC_HEIF_MIMES.has(mimetype || '')) {
+    return heifMime;
   }
   return mimetype;
 }
