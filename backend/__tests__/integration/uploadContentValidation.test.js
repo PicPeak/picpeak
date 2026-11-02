@@ -194,6 +194,29 @@ describe('Upload content validation on guest and chunked uploads', () => {
       expect(await photosOf(event)).toHaveLength(1);
     });
 
+    it('takes a .HEIC sent as a generic type and stores its real type', async () => {
+      const heic = fs.readFileSync(path.join(__dirname, '../fixtures/hevc-display-p3.heic'));
+      const event = await makeEvent();
+      const res = await v1Upload(event, heic, 'IMG_3974.HEIC', 'application/octet-stream');
+      expect(res.status).toBe(201);
+      const [photo] = await photosOf(event);
+      expect(photo.mime_type).toBe('image/heic');
+    });
+
+    it('still refuses a generic type on anything else', async () => {
+      const event = await makeEvent();
+      const res = await v1Upload(event, jpeg, 'api.jpg', 'application/octet-stream');
+      expect(res.status).toBe(400);
+      expect(await photosOf(event)).toHaveLength(0);
+    });
+
+    it('refuses JPEG bytes under a .heic name', async () => {
+      const event = await makeEvent();
+      const res = await v1Upload(event, jpeg, 'renamed.heic', 'image/jpeg');
+      expect(res.status).toBe(400);
+      expect(await photosOf(event)).toHaveLength(0);
+    });
+
     // v1 checks no extension, so the declared type picks the decode check.
     it('refuses undecodable JPEG bytes under a non-image filename', async () => {
       const event = await makeEvent();

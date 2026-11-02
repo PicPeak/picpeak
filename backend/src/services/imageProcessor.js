@@ -1990,6 +1990,7 @@ async function resizeToBox(inputBuffer, box, options = {}) {
 }
 
 module.exports = {
+  isHeifFilename,
   orientedDimensions,
   hasOrientationTransform,
   ensurePreviewImageAtWidth,
