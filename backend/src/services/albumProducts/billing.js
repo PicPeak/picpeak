@@ -144,6 +144,7 @@ async function lock(tx, offer, eventId, adminId) {
   });
   const customerId =
     offer.billing_customer_id ||
+    offer.released_customer_id ||
     (assignments.length === 1 ? assignments[0].customer_account_id : null);
   if (
     !customerId ||

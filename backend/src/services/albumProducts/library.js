@@ -15,6 +15,9 @@ const unique = (values) => {
     fail('Duplicate catalogue identifiers');
   return values;
 };
+// What an attribute is in a guided album. Roles say how to present a catalogue
+// attribute; every material, colour, format and size stays catalogue data.
+const GUIDED_ROLES = ['material', 'colour', 'format', 'size'];
 function cleanLibrary(value = []) {
   const ids = new Set();
   const identify = (id) => {
@@ -54,10 +57,39 @@ function cleanLibrary(value = []) {
           unit: option.unit,
         });
       }
+      if (group.kind === 'colour' && option.hex) {
+        if (!/^#[0-9a-f]{6}$/i.test(option.hex))
+          fail('A colour value is a hex code such as #a1b2c3');
+        out.hex = option.hex.toLowerCase();
+      }
       return out;
     }),
   }));
 }
+/** Which of one attribute's options each option of its parent allows. */
+function cleanAvailability(a, optionIds, attributes) {
+  const rule = a.availableWhen;
+  if (!rule || typeof rule !== 'object' || Array.isArray(rule))
+    fail('Invalid option dependency');
+  const parent = attributes.find((p) => p.id === rule.attributeId);
+  if (!parent || parent.id === a.id) fail('Invalid option dependency');
+  if (!rule.options || typeof rule.options !== 'object' || Array.isArray(rule.options))
+    fail('Invalid option dependency');
+  const options = {};
+  for (const [id, parents] of Object.entries(rule.options)) {
+    if (!optionIds.includes(id)) fail('Invalid option dependency');
+    const allowed = unique(list(parents, 100).map(V.uuid));
+    if (!allowed.length || allowed.some((p) => !parent.optionIds.includes(p)))
+      fail('Invalid option dependency');
+    options[id] = allowed;
+  }
+  return { attributeId: parent.id, options };
+}
+// An option without an entry is offered with every parent option.
+const optionAllowed = (a, optionId, parentValues) => {
+  const allowed = a.availableWhen?.options[optionId];
+  return !allowed || allowed.some((id) => parentValues.includes(id));
+};
 function cleanTypes(value = [], library) {
   const groups = new Map(library.map((group) => [group.id, group]));
   const types = list(value, 30).map((type) => {
@@ -82,9 +114,20 @@ function cleanTypes(value = [], library) {
           attributeId: V.uuid(d.attributeId),
           optionIds: unique(list(d.optionIds, 100).map(V.uuid)),
         })),
+        ...(a.role ? { role: GUIDED_ROLES.includes(a.role) ? a.role : fail('Unknown attribute role') } : {}),
+        // Sizes measure the open album, two pages side by side.
+        ...(a.spread === true && a.role === 'size' ? { spread: true } : {}),
       };
     });
     unique(attributes.map((a) => a.id));
+    unique(attributes.map((a) => a.role).filter(Boolean));
+    for (const [index, a] of type.attributes.entries())
+      if (a.availableWhen)
+        attributes[index].availableWhen = cleanAvailability(
+          a,
+          attributes[index].optionIds,
+          attributes,
+        );
     const byId = new Map(attributes.map((a) => [a.id, a]));
     for (const a of attributes)
       for (const d of a.dependsOn) {
@@ -103,10 +146,21 @@ function cleanTypes(value = [], library) {
       if (seen.has(id)) return;
       pending.add(id);
       for (const d of byId.get(id).dependsOn) visit(d.attributeId);
+      if (byId.get(id).availableWhen) visit(byId.get(id).availableWhen.attributeId);
       pending.delete(id);
       seen.add(id);
     }
     for (const a of attributes) visit(a.id);
+    // A client must never reach a parent choice that leaves nothing to pick.
+    const active = (a) =>
+      groups.get(a.groupId).options.filter((o) => o.active && a.optionIds.includes(o.id));
+    for (const a of attributes) {
+      if (!a.availableWhen || !a.required) continue;
+      const parent = byId.get(a.availableWhen.attributeId);
+      for (const option of active(parent))
+        if (!active(a).some((o) => optionAllowed(a, o.id, [option.id])))
+          fail(`${option.name} has no available option in ${a.name}`);
+    }
     return {
       id: V.uuid(type.id),
       name: V.text(type.name, 100, true),
@@ -177,19 +231,28 @@ function selection(product, input, { complete = true } = {}) {
       if (chosen.length) fail('This option depends on another choice');
       continue;
     }
+    if (
+      a.availableWhen &&
+      chosen.some(
+        (id) => !optionAllowed(a, id, normalized[a.availableWhen.attributeId] ?? []),
+      )
+    )
+      fail('This combination of options is not available');
     if (complete && a.required && !chosen.length) fail(`Choose ${a.name}`);
     if (chosen.length)
       attributes.push({
         id: a.id,
         name: a.name,
         addOn: a.addOn,
+        ...(a.role ? { role: a.role } : {}),
         options: a.options
           .filter((o) => chosen.includes(o.id))
-          .map(({ id, name, imageId, width, height, unit }) => ({
+          .map(({ id, name, imageId, width, height, unit, hex }) => ({
             id,
             name,
             imageId,
             ...(width == null ? {} : { width, height, unit }),
+            ...(hex ? { hex } : {}),
           })),
       });
   }
@@ -204,14 +267,38 @@ const valuesOf = (snapshot) =>
   Object.fromEntries(
     (snapshot?.attributes || []).map((a) => [a.id, a.options.map((o) => o.id)]),
   );
+/** A guided album needs each role once and the two catalogue dependencies. */
+function assertGuided(product, types) {
+  const attributes = types.find((t) => t.id === product.typeId)?.attributes || [];
+  const role = (name) => attributes.find((a) => a.role === name);
+  for (const name of GUIDED_ROLES) {
+    const a = role(name);
+    if (!a || !a.required || a.multiple)
+      fail(`A guided album needs one required ${name} attribute`);
+  }
+  if (
+    role('colour').availableWhen?.attributeId !== role('material').id ||
+    role('size').availableWhen?.attributeId !== role('format').id
+  )
+    fail('A guided album needs colours by material and sizes by format');
+}
+const PHOTO_LABELS = { cover: 'Cover', poster: 'Poster' };
 const summary = (snapshot) =>
-  snapshot?.attributes
-    ? snapshot.attributes
-      .map((a) => `${a.name}: ${a.options.map((o) => o.name).join(', ')}`)
-      .join(' · ')
-    : [snapshot?.model?.name, snapshot?.colour?.name]
-      .filter(Boolean)
-      .join(' · ');
+  (snapshot?.attributes
+    ? snapshot.attributes.map(
+      (a) => `${a.name}: ${a.options.map((o) => o.name).join(', ')}`,
+    )
+    : [snapshot?.model?.name, snapshot?.colour?.name].filter(Boolean)
+  )
+    .concat(
+      (snapshot?.photoRoles || [])
+        .filter((r) => r.photos.length)
+        .map(
+          (r) =>
+            `${PHOTO_LABELS[r.key]}: ${r.photos.map((p) => p.filename).join(', ')}`,
+        ),
+    )
+    .join(' · ');
 function presetId(label) {
   const hex = V.hash(label);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
@@ -267,6 +354,7 @@ function presets() {
 module.exports = {
   cleanLibrary,
   cleanTypes,
+  assertGuided,
   resolve,
   selection,
   valuesOf,

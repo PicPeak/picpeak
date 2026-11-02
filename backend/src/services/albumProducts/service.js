@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 const V = require('./validation');
 const G = require('./library');
+const P = require('./photos');
 const {
   formatBoolean,
   parseBoolean: normalizeBoolean,
@@ -31,9 +32,11 @@ function createService({ db, storage, sharp }) {
     const previous = await catalogue();
     const library = G.cleanLibrary(input.library ?? previous.library);
     const types = G.cleanTypes(input.types ?? previous.types, library);
-    for (const p of products)
+    for (const p of products) {
       if (p.typeId && !types.some((t) => t.id === p.typeId))
         throw new AppError('Unknown product type', 400);
+      if (p.guided && p.active) G.assertGuided(p, types);
+    }
     V.revision(input.revision);
     const imageIds = [
       ...new Set([
@@ -42,7 +45,7 @@ function createService({ db, storage, sharp }) {
           .map((o) => o.imageId)
           .filter(Boolean),
         ...products.flatMap((p) =>
-          [...(p.models || []), ...(p.colours || [])]
+          [...(p.models || []), ...(p.colours || []), { imageId: p.heroImageId }]
             .map((o) => o.imageId)
             .filter(Boolean),
         ),
@@ -141,6 +144,7 @@ function createService({ db, storage, sharp }) {
       enabled: row.enabled === true || row.enabled === 1,
       cataloguePresetId: row.catalogue_preset_id || null,
       customerId: row.billing_customer_id || null,
+      releasedCustomerId: row.released_customer_id ?? null,
       showPrices: normalizeBoolean(row.show_prices),
       revision: row.revision,
       status: row.status,
@@ -149,17 +153,43 @@ function createService({ db, storage, sharp }) {
     };
   }
   function clientShape(row) {
-    const result = { ...row };
+    const result = { ...row, selection: P.forClient(row.selection) };
     delete result.customerId;
+    delete result.releasedCustomerId;
     delete result.cataloguePresetId;
     return result;
   }
   async function offers(eventId) {
-    return (
-      await db('event_album_products')
-        .where({ event_id: eventId })
-        .orderBy('created_at')
-    ).map(shape);
+    return P.withAvailability(
+      db,
+      eventId,
+      (
+        await db('event_album_products')
+          .where({ event_id: eventId })
+          .orderBy('created_at')
+      ).map(shape),
+    );
+  }
+  const assignedCustomers = async (conn, eventId) =>
+    Number(
+      (
+        await conn('event_customer_assignments')
+          .where({ event_id: eventId })
+          .count('* as count')
+          .first()
+      ).count,
+    );
+  /**
+   * Who an offer belongs to. A customer's offer is theirs alone; the rest
+   * belongs to the gallery's client, the PIN or its only customer. Where
+   * several customers share a gallery none of them is that client: one offer
+   * holds one selection, so showing it to all would hand each the other's.
+   */
+  function reaches(releasedCustomerId, viewer, customers) {
+    if (viewer.preview) return true;
+    if (releasedCustomerId != null)
+      return Number(viewer.customerId) === Number(releasedCustomerId);
+    return viewer.customerId == null || customers <= 1;
   }
   async function offer(eventId, id, tx = db) {
     const row = await tx('event_album_products')
@@ -168,28 +198,48 @@ function createService({ db, storage, sharp }) {
     if (!row) throw new NotFoundError('Product offer');
     return row;
   }
-  async function assign(eventId, productId) {
+  async function assertAssigned(conn, eventId, customerId) {
+    if (
+      !Number.isSafeInteger(customerId) ||
+      !(await conn('event_customer_assignments')
+        .where({ event_id: eventId, customer_account_id: customerId })
+        .first())
+    )
+      throw new AppError('Choose a customer assigned to this gallery', 400);
+  }
+  const forAudience = (query, customerId) =>
+    customerId == null
+      ? query.whereNull('released_customer_id')
+      : query.where({ released_customer_id: customerId });
+  async function assign(eventId, productId, customerId = null) {
     const { products } = await catalogue(),
       product = products.find((p) => p.id === productId && p.active);
     if (!product) throw new AppError('Choose an active product', 400);
+    if (customerId != null) await assertAssigned(db, eventId, customerId);
     const id = crypto.randomUUID();
     await db('event_album_products')
       .insert({
         id,
         event_id: eventId,
         product_id: product.id,
-        enabled: true,
+        released_customer_id: customerId,
+        // A guided album waits for the studio's explicit release.
+        enabled: !product.guided,
         revision: 1,
         status: 'draft',
         created_at: timestamp(),
         updated_at: timestamp(),
       })
-      .onConflict(['event_id', 'product_id'])
+      .onConflict()
       .ignore();
     return shape(
-      await db('event_album_products')
-        .where({ event_id: eventId, product_id: product.id })
-        .first(),
+      await forAudience(
+        db('event_album_products').where({
+          event_id: eventId,
+          product_id: product.id,
+        }),
+        customerId,
+      ).first(),
     );
   }
   function selectionCurrent(product, snapshot) {
@@ -220,10 +270,13 @@ function createService({ db, storage, sharp }) {
       return false;
     }
   }
-  async function clientOffers(eventId) {
+  async function clientOffers(eventId, viewer = {}) {
     const catalog = await catalogue(),
       products = catalog.products.map((p) => G.resolve(p, catalog)),
-      rows = await offers(eventId);
+      customers = await assignedCustomers(db, eventId),
+      rows = (await offers(eventId)).filter(
+        (row) => row.enabled && reaches(row.releasedCustomerId, viewer, customers),
+      );
     const priced = await Promise.all(
       rows.map(async (row) => ({
         ...row,
@@ -236,7 +289,6 @@ function createService({ db, storage, sharp }) {
       })),
     );
     return priced
-      .filter((row) => row.enabled)
       .map((row) => {
         const product = products.find(
           (p) => p.id === row.productId && p.active,
@@ -245,6 +297,7 @@ function createService({ db, storage, sharp }) {
           ...clientShape(row),
           needsReview:
             row.status === 'submitted' &&
+            !row.selection?.clientFinal &&
             !selectionCurrent(product, row.selection),
           product: product
             ? product.attributes
@@ -279,12 +332,26 @@ function createService({ db, storage, sharp }) {
       actor_type: actor.type,
       actor_id: actor.id == null ? null : String(actor.id),
       actor_name: actor.name || null,
+      customer_account_id: actor.customerId ?? null,
       created_at: timestamp(),
     });
   }
-  async function mutate(event, input, actor, { admin = false } = {}) {
+  /** One binding album per client: another tab must not confirm a second. */
+  async function assertNoOtherConfirmation(tx, current) {
+    const others = await forAudience(
+      tx('event_album_products')
+        .where({ event_id: current.event_id })
+        .whereNot({ id: current.id })
+        .whereIn('status', ['submitted', 'locked']),
+      current.released_customer_id ?? null,
+    );
+    if (others.some((row) => V.parse(row.selection)?.clientFinal))
+      throw new ConflictError('Another album is already confirmed for this gallery');
+  }
+  async function mutate(event, input, actor, { admin = false, viewer = {} } = {}) {
     V.revision(input.revision);
     V.uuid(input.mutationId);
+    const outcome = (row) => (admin ? shape(row) : clientShape(shape(row)));
     return db.transaction(async (tx) => {
       // Catalogue precedes offer in the shared lock order for writes.
       const catalog = await tx('album_product_catalogue')
@@ -296,6 +363,15 @@ function createService({ db, storage, sharp }) {
         .forUpdate()
         .first();
       if (!current) throw new NotFoundError('Product offer');
+      // Before the replay answer, which carries the selection: a retry is no
+      // way around another customer's offer or a withdrawn release.
+      if (!admin) {
+        const customers = await assignedCustomers(tx, event.id);
+        if (!reaches(current.released_customer_id, viewer, customers))
+          throw new NotFoundError('Product offer');
+        if (!normalizeBoolean(current.enabled))
+          throw new ForbiddenError('This choice is locked or unavailable');
+      }
       const replay = await tx('album_product_choice_history')
         .where({ offer_id: current.id, mutation_id: input.mutationId })
         .first();
@@ -305,7 +381,7 @@ function createService({ db, storage, sharp }) {
           replay.actor_id !== String(actor.id ?? '')
         )
           throw new ConflictError('This request identifier was already used');
-        return admin ? shape(current) : clientShape(shape(current));
+        return outcome(current);
       }
       if (current.revision !== input.revision)
         throw new ConflictError(
@@ -319,6 +395,7 @@ function createService({ db, storage, sharp }) {
         revision: current.revision + 1,
         updated_at: timestamp(),
       };
+      const reopening = admin && input.action === 'reopen';
       if (admin) {
         if (
           input.cataloguePresetId !== undefined ||
@@ -332,20 +409,8 @@ function createService({ db, storage, sharp }) {
           if (!(await require('./billing').enabled(tx)))
             throw new ForbiddenError('CRM billing is disabled');
           if (input.customerId !== undefined) {
-            if (
-              input.customerId !== null &&
-              (!Number.isSafeInteger(input.customerId) ||
-                !(await tx('event_customer_assignments')
-                  .where({
-                    event_id: event.id,
-                    customer_account_id: input.customerId,
-                  })
-                  .first()))
-            )
-              throw new AppError(
-                'Choose a customer assigned to this gallery',
-                400,
-              );
+            if (input.customerId !== null)
+              await assertAssigned(tx, event.id, input.customerId);
             update.billing_customer_id = input.customerId;
           }
           if (input.cataloguePresetId !== undefined) {
@@ -378,10 +443,45 @@ function createService({ db, storage, sharp }) {
               throw new AppError('Invalid price display setting', 400);
             update.show_prices = formatBoolean(input.showPrices);
           }
-        } else if (typeof input.enabled === 'boolean')
-          update.enabled = formatBoolean(input.enabled);
-        else if (input.action === 'unlock' && current.status === 'locked')
+        } else if (
+          input.releasedCustomerId !== undefined ||
+          typeof input.enabled === 'boolean'
+        ) {
+          if (
+            input.releasedCustomerId !== undefined &&
+            input.releasedCustomerId !== (current.released_customer_id ?? null)
+          ) {
+            // The selection belongs to whoever made it. Changing the audience
+            // would show it to someone else.
+            if (current.selection)
+              throw new ConflictError(
+                'This offer already holds a choice; add a new offer for the other customer',
+              );
+            if (input.releasedCustomerId !== null)
+              await assertAssigned(tx, event.id, input.releasedCustomerId);
+            if (
+              await forAudience(
+                tx('event_album_products')
+                  .where({ event_id: event.id, product_id: current.product_id })
+                  .whereNot({ id: current.id }),
+                input.releasedCustomerId,
+              ).first()
+            )
+              throw new ConflictError(
+                'This customer already has an offer for this product',
+              );
+            update.released_customer_id = input.releasedCustomerId;
+          }
+          if (typeof input.enabled === 'boolean')
+            update.enabled = formatBoolean(input.enabled);
+        } else if (input.action === 'unlock' && current.status === 'locked')
           update.status = 'submitted';
+        else if (
+          reopening &&
+          ['submitted', 'locked'].includes(current.status) &&
+          V.parse(current.selection)?.clientFinal
+        )
+          update.status = 'draft';
         else if (
           input.action === 'lock' &&
           current.status === 'submitted' &&
@@ -410,17 +510,32 @@ function createService({ db, storage, sharp }) {
           update.status = 'locked';
         } else throw new AppError('This choice cannot move to that state', 409);
       } else {
-        if (!current.enabled || current.status === 'locked')
+        if (current.status === 'locked')
           throw new ForbiddenError('This choice is locked or unavailable');
+        if (current.status === 'submitted' && V.parse(current.selection)?.clientFinal)
+          throw new ForbiddenError('This selection is confirmed; contact the studio to change it');
         if (current.status === 'submitted' && input.submit !== true)
           throw new ConflictError(
             'A submitted choice must be resubmitted, not saved as a draft',
           );
+        const complete = input.submit === true;
+        // Only a guided draft may be saved before the client signs it.
+        if (!actor.name && (complete || !product?.guided))
+          throw new AppError('A name is required', 400);
         const selected = product?.attributes
-          ? G.selection(product, input, { complete: input.submit === true })
+          ? G.selection(product, input, { complete })
           : V.selection(product, input);
+        if (product?.guided) {
+          selected.photoRoles = await P.select(tx, event.id, product.guided, input.photos, { complete });
+          if (complete && product.guided.clientFinal) {
+            await assertNoOtherConfirmation(tx, current);
+            selected.clientFinal = true;
+            selected.confirmedAt = timestamp();
+          }
+        } else if (input.photos !== undefined)
+          throw new AppError('This product takes no photos', 400);
         update.selection = JSON.stringify(selected);
-        update.status = input.submit === true ? 'submitted' : 'draft';
+        update.status = complete ? 'submitted' : 'draft';
       }
       if (
         Object.entries(update).every(
@@ -431,11 +546,15 @@ function createService({ db, storage, sharp }) {
               : current[key] === value),
         )
       )
-        return admin ? shape(current) : clientShape(shape(current));
+        return outcome(current);
       const next = { ...current, ...update };
       if (admin && update.status === 'locked')
         await require('./billing').lock(tx, next, event.id, actor.id);
-      if (admin && update.status === 'submitted' && current.status === 'locked')
+      if (
+        admin &&
+        current.status === 'locked' &&
+        ['submitted', 'draft'].includes(update.status)
+      )
         await require('./billing').unlock(tx, current);
       await tx('event_album_products').where({ id: current.id }).update(update);
       await record(tx, next, actor, input);
@@ -453,14 +572,45 @@ function createService({ db, storage, sharp }) {
           tx,
         );
       }
-      return admin ? shape(next) : clientShape(shape(next));
+      if (admin) {
+        const audit = [
+          current.status === 'locked' && update.status === 'submitted'
+            ? 'album_product_unlocked'
+            : reopening
+              ? 'album_product_reopened'
+              : null,
+          update.enabled === undefined ||
+          normalizeBoolean(update.enabled) === normalizeBoolean(current.enabled)
+            ? null
+            : normalizeBoolean(update.enabled)
+              ? 'album_product_released'
+              : 'album_product_withdrawn',
+        ].filter(Boolean);
+        for (const type of audit)
+          await require('../../database/db').logActivity(
+            type,
+            {
+              eventName: event.event_name,
+              productName: V.parse(current.selection)?.product?.name || product?.name,
+              offerId: current.id,
+              previousStatus: current.status,
+              choice: G.summary(V.parse(current.selection)),
+              customerId: next.released_customer_id ?? null,
+            },
+            event.id,
+            actor,
+            tx,
+          );
+      }
+      return outcome(next);
     });
   }
-  async function clientImage(eventId, id) {
+  async function clientImage(eventId, id, viewer = {}) {
     V.uuid(id);
-    const rows = await clientOffers(eventId);
+    const rows = await clientOffers(eventId, viewer);
     const allowed = rows.some((row) =>
       [
+        { imageId: row.product?.heroImageId },
         ...(row.product?.attributes?.flatMap((a) => a.options) || []),
         ...(row.selection?.attributes?.flatMap((a) => a.options) || []),
         ...(row.product?.models || []),
