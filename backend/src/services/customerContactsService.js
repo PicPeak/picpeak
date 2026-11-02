@@ -27,7 +27,7 @@ const { getBcryptRounds } = require('../utils/passwordValidation');
 const { auditedUpdate } = require('./accountingHistory');
 const { queueEmail } = require('./emailProcessor');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
-const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
+const { AppError, ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 const { capabilityTokenColumns } = require('../utils/capabilityToken');
 const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
 
@@ -143,8 +143,9 @@ async function isContactEmail(email, trx = db) {
 /**
  * The password of this address: a holder's own, otherwise its login row.
  * customer_accounts.email is unique by exact case, so older rows can differ in
- * case only. The address as written picks among them, then the oldest row, and
- * membershipsFor opens that same row.
+ * case only. A row whose address matches the given one exactly wins, otherwise
+ * the oldest, and membershipsFor opens that same row. Login lowercases the
+ * address first, so there the lowercase row wins.
  */
 async function credentialFor(email, trx = db) {
   const address = normaliseEmail(email);
@@ -315,7 +316,12 @@ async function createContact(customerId, input, adminId) {
   return shapeOne(customerId, id);
 }
 
-async function updateContact(customerId, contactId, input, adminId) {
+/**
+ * mayGrantLogin: whether this admin may hand out a login (customers.create and
+ * the customerPortal flag, as when adding a contact). Moving a contact onto an
+ * address that already has one gives that login access to this customer.
+ */
+async function updateContact(customerId, contactId, input, adminId, { mayGrantLogin = false } = {}) {
   const updates = { ...personColumns(input), ...rightColumns(input.rights) };
   if (input.receivesMail !== undefined) updates.receives_mail = formatBoolean(!!input.receivesMail);
   const email = input.email === undefined ? undefined : normaliseEmail(input.email);
@@ -332,6 +338,10 @@ async function updateContact(customerId, contactId, input, adminId) {
 
     if (moves) {
       await assertEmailFree(customerId, email, { exceptContactId: contactId, trx });
+      if (!mayGrantLogin && await credentialFor(email, trx)) {
+        throw new AppError('This address already has a login. Only an admin who can invite may give it access.',
+          403, 'CONTACT_LOGIN_GRANT_FORBIDDEN');
+      }
       updates.email = email;
       updates.password_changed_at = new Date();
       // The login follows the person, unless the old address still works
@@ -422,7 +432,12 @@ async function usedElsewhere(contact, trx = db) {
 // customer's: the same address can also be a contract's signer or on a
 // campaign, and that mail is not the contact's.
 async function cancelQueuedMail(trx, email, customerId, { lastUse }) {
+  // The contact's address can also be the customer's billing address. Billing
+  // mail to it is the customer's, so there only the contact's notices go.
+  const customer = await trx('customer_accounts').where('id', customerId).first('billing_email');
+  const billing = normaliseEmail(customer?.billing_email) === email;
   for (const row of await mailAbout(trx, email, customerId, ['pending'])) {
+    if (billing && !GALLERY_NOTICES.includes(row.email_type)) continue;
     await trx('email_queue').where({ id: row.id, status: 'pending' }).update({ status: 'cancelled' });
   }
   // Invitation and reset mail names no customer. It leads to this login, so it
@@ -453,7 +468,7 @@ async function dropCopies(trx, email, customerId) {
     if (!Array.isArray(data?.cc) || Number(data.__customerAccountId) !== Number(customerId)) continue;
     const cc = data.cc.filter((address) => String(address).toLowerCase() !== email);
     if (cc.length === data.cc.length) continue;
-    await trx('email_queue').where('id', row.id)
+    await trx('email_queue').where({ id: row.id, status: 'pending' })
       .update({ email_data: JSON.stringify({ ...data, cc }) });
   }
 }

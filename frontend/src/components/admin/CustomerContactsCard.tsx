@@ -248,6 +248,11 @@ export const CustomerContactsCard: React.FC<CustomerContactsCardProps> = ({
   };
 
   const mayInvite = portalEnabled && !isPassive;
+  // The login follows an address change, so editing in a successor would hand
+  // them the predecessor's password.
+  const edited = (contacts || []).find((c) => c.id === editingId);
+  const movesLogin = !!edited?.hasLogin
+    && draft.email.trim().toLowerCase() !== edited.email.toLowerCase();
   if (!portalEnabled && (contacts || []).length === 0) return null;
 
   const form = (
@@ -270,6 +275,11 @@ export const CustomerContactsCard: React.FC<CustomerContactsCardProps> = ({
           onChange={(e) => setDraft({ ...draft, last_name: e.target.value })}
         />
       </div>
+      {movesLogin && (
+        <p className="text-xs text-warning-text" role="status">
+          {t('customers.contacts.addressMovesLogin', 'The login and password move to the new address. For a different person, remove this contact and add a new one.')}
+        </p>
+      )}
       <RightsEditor draft={draft} onChange={setDraft} />
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="outline" size="sm" onClick={closeForm}>

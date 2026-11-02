@@ -645,7 +645,7 @@ describe('customer contacts', () => {
       const other = await contacts.createContact(secondId, { email: 'tom@example.test' }, adminId);
       await contacts.updateContact(customerId, mia.id, { email: 'tom2@example.test' }, adminId);
       await db('customer_logins').insert({ email: 'tom3@example.test', password_hash: 'x' });
-      await contacts.updateContact(customerId, mia.id, { email: 'tom3@example.test' }, adminId);
+      await contacts.updateContact(customerId, mia.id, { email: 'tom3@example.test' }, adminId, { mayGrantLogin: true });
       expect(await db('customer_logins').where({ email: 'tom2@example.test' })).toEqual([]);
       expect(other.hasLogin).toBe(true);
     });
@@ -774,12 +774,16 @@ describe('customer contacts', () => {
 
     it('keep a contact removable while the portal is off, but hand out no login', async () => {
       const contact = await makeContact('mia@example.test', MARKETING);
+      await db('customer_logins').insert({ email: 'other-login@example.test', password_hash: 'x' });
       const url = `/api/admin/customers/${customerId}/contacts`;
       await db('feature_flags').where({ key: 'customerPortal' }).update({ value: false });
       await new Promise((resolve) => { setTimeout(resolve, 10100); });
       try {
         expect((await call('post', url).send({ email: 'new@example.test' })).status).toBe(403);
         expect((await call('post', `${url}/${contact.id}/password-reset`)).status).toBe(403);
+        const onto = await call('put', `${url}/${contact.id}`).send({ email: 'other-login@example.test' });
+        expect(onto.status).toBe(403);
+        expect(onto.body.code).toBe('CONTACT_LOGIN_GRANT_FORBIDDEN');
         expect((await call('put', `${url}/${contact.id}`).send({ isActive: false })).status).toBe(200);
         expect((await call('delete', `${url}/${contact.id}`)).status).toBe(200);
       } finally {
@@ -1041,6 +1045,37 @@ describe('customer contacts', () => {
       const moved = await makeContact('old@example.test', MARKETING);
       await contacts.updateContact(customerId, moved.id, { email: 'new@example.test' }, adminId);
       expect(await db('customer_logins').where({ email: 'new@example.test' })).toHaveLength(1);
+    });
+
+    it('moves a contact onto an address with a login only for an admin who may invite', async () => {
+      const moved = await makeContact('old@example.test', MARKETING);
+      await db('customer_logins').insert({ email: 'taken@example.test', password_hash: await bcrypt.hash(PASSWORD, 4) });
+      await expect(contacts.updateContact(customerId, moved.id, { email: 'taken@example.test' }, adminId))
+        .rejects.toMatchObject({ statusCode: 403, code: 'CONTACT_LOGIN_GRANT_FORBIDDEN' });
+      expect((await db('customer_contacts').where({ id: moved.id }).first()).email).toBe('old@example.test');
+      expect(await db('customer_logins').where({ email: 'old@example.test' })).toHaveLength(1);
+      await contacts.updateContact(customerId, moved.id, { email: 'taken@example.test' }, adminId, { mayGrantLogin: true });
+      expect((await db('customer_contacts').where({ id: moved.id }).first()).email).toBe('taken@example.test');
+    });
+
+    it('keeps the customer\'s billing mail when a contact on the billing address goes', async () => {
+      await db('customer_accounts').where({ id: customerId }).update({ billing_email: 'Books@example.test' });
+      try {
+        const contact = await makeContact('books@example.test', { ...ACCOUNTING, galleries: 'view' });
+        const reminder = await queueMail({
+          recipient_email: 'books@example.test', email_type: 'invoice_reminder_first',
+          email_data: JSON.stringify({ __customerAccountId: customerId }),
+        });
+        const notice = await queueMail({
+          recipient_email: 'books@example.test', email_type: 'gallery_completed',
+          email_data: JSON.stringify({ __customerAccountId: customerId }),
+        });
+        await contacts.deleteContact(customerId, contact.id, adminId);
+        expect((await db('email_queue').where({ id: reminder }).first()).status).toBe('pending');
+        expect((await db('email_queue').where({ id: notice }).first()).status).toBe('cancelled');
+      } finally {
+        await db('customer_accounts').where({ id: customerId }).update({ billing_email: null });
+      }
     });
 
     it('leaves a scheduled invoice and an unreminded one alone when the recipients cannot be read', async () => {

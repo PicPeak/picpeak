@@ -7446,7 +7446,7 @@
       "documents": "Dokumente",
       "overview": "Übersicht",
       "company": "Firma",
-        "companyById": "Firma {{id}}",
+      "companyById": "Firma {{id}}",
       "switchFailed": "Die Firma konnte nicht gewechselt werden. Bitte versuchen Sie es erneut."
     },
     "comingSoon": {
@@ -8201,6 +8201,7 @@
       "resetSent": "Link zum Zurücksetzen gesendet",
       "deleteConfirm": "{{name}} entfernen? Das Login funktioniert danach sofort nicht mehr.",
       "saveOnly": "Ohne Login speichern",
+      "addressMovesLogin": "Login und Passwort gehen auf die neue Adresse über. Für eine andere Person diesen Kontakt entfernen und einen neuen anlegen.",
       "saveInvite": "Speichern und einladen",
       "invite": "Einladen",
       "reinvite": "Einladung erneut senden",

@@ -797,8 +797,12 @@ router.put('/:id/contacts/:contactId', [
   ...contactFields,
 ], handleAsync(async (req, res) => {
   validateRequest(req);
+  // Same gate as adding a contact, for an address that already has a login.
+  const mayGrantLogin = req.body.email !== undefined
+    && await userHasAnyPermission(req.admin.id, ['customers.create'])
+    && await isFeatureEnabled('customerPortal');
   const contact = await customerContactsService.updateContact(
-    parseInt(req.params.id, 10), parseInt(req.params.contactId, 10), req.body, req.admin.id,
+    parseInt(req.params.id, 10), parseInt(req.params.contactId, 10), req.body, req.admin.id, { mayGrantLogin },
   );
   successResponse(res, { contact });
 }));

@@ -7481,7 +7481,7 @@
       "documents": "Documents",
       "overview": "Overview",
       "company": "Company",
-        "companyById": "Company {{id}}",
+      "companyById": "Company {{id}}",
       "switchFailed": "Could not switch company. Please try again."
     },
     "comingSoon": {
@@ -8236,6 +8236,7 @@
       "resetSent": "Password reset link sent",
       "deleteConfirm": "Remove {{name}}? Their login stops working right away.",
       "saveOnly": "Save without login",
+      "addressMovesLogin": "The login and password move to the new address. For a different person, remove this contact and add a new one.",
       "saveInvite": "Save and invite",
       "invite": "Invite",
       "reinvite": "Send invitation again",
