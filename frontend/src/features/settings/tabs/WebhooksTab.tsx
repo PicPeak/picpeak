@@ -19,6 +19,7 @@ const WEBHOOK_EVENT_TYPES = [
   'photo.uploaded',
   'photo.deleted',
   'selection.submitted',
+  'external_scan.completed',
 ] as const;
 type WebhookEventType = typeof WEBHOOK_EVENT_TYPES[number];
 

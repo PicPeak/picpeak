@@ -45,6 +45,7 @@ const folderTree = require('./folderTreeService');
 const { parseBooleanInput } = require('../utils/parsers');
 const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
 const { livePhotos } = require('../utils/photoVisibility');
+const webhookService = require('./webhookService');
 
 /**
  * Where an external file lands (issues 1786 + 1562), from its path relative
@@ -85,6 +86,16 @@ class EventNotFoundError extends Error {
 const jobNameFor = (eventId) => `external_import:${eventId}`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Entries per list in an external_scan.completed delivery (issue 2357). The
+// body is stored whole in webhook_deliveries and POSTed as one request, while
+// a first import can be tens of thousands of files; the true totals always
+// travel in `counts`, and a receiver that sees `truncated` reads the rest from
+// the gallery.
+const MAX_SCAN_WEBHOOK_ENTRIES = 200;
+const pushCapped = (list, entry) => {
+  if (list.length < MAX_SCAN_WEBHOOK_ENTRIES) list.push(entry);
+};
 
 /**
  * Remember that an admin deleted these photos, so an automatic pass does not
@@ -206,9 +217,9 @@ async function describesRow(row, f) {
  * carried the old one; folder, category and everything else stay.
  *
  * Stops as soon as `isLost()` says the pass lost its claim or eligibility.
- * Returns the number of rows moved.
+ * Returns the number of rows moved; `onMove` hears each one.
  */
-async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic, isLost }) {
+async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic, isLost, onMove }) {
   const keyOf = (size, mtimeMs, name) => `${Number(size)}:${Math.floor(Number(mtimeMs))}:${path.extname(name).toLowerCase()}`;
   const group = (items, key) => {
     const map = new Map();
@@ -241,10 +252,12 @@ async function moveRenamedRows({ eventId, unseen, newFiles, toRootRelative, full
     if (row.source_filename === oldName) updates.source_filename = f.name;
     try {
       // Fenced on what was read: a row repointed or replaced since stays.
-      moved += await livePhotos(db)
+      const updated = await livePhotos(db)
         .where({ id: row.id, external_relpath: row.external_relpath })
         .whereIn('source_origin', SERVED_ORIGINS)
         .update(updates);
+      moved += updated;
+      if (updated) onMove({ photo_id: row.id, from: row.external_relpath, to: newRel });
     } catch (err) {
       // Another writer imported the new path meanwhile: both rows stay.
       if (!isUniqueViolation(err)) logger.warn(`Could not move photo ${row.id} to its renamed file: ${err.message}`);
@@ -649,6 +662,8 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
  * @param {number} [opts.settleMs=0]  automatic passes: a new file modified
  *   within the last settleMs, or whose size moves during a wait of settleMs,
  *   is left for the next pass instead of being imported half-copied
+ * @param {'watch'|'sweep'|'manual'} [opts.trigger='manual']  what started the
+ *   pass, as told to external_scan.completed subscribers
  * @returns {Promise<{imported:number, skipped:number, deferred:number, excluded:number, thumbnailsGenerated:number, thumbnailsFailed:number, truncated:boolean, capReached:boolean, moved:number, missing:number, returned:number}>}
  *   `truncated`: the recursive walk hit its depth or entry bound and the
  *   folder was not read in full. `capReached`: the event's photo cap stopped
@@ -667,6 +682,7 @@ async function importExternalFolder({
   actor = null,
   automatic = false,
   settleMs = 0,
+  trigger = 'manual',
 }) {
   // Load event
   const event = await db('events').where('id', eventId).first();
@@ -957,6 +973,9 @@ async function importExternalFolder({
     let moved = 0;
     let missing = 0;
     let returned = 0;
+    // What the external_scan.completed webhook lists, capped; the counters
+    // here stay the true totals.
+    const announced = { imported: [], moved: [], missing: [] };
     // Paths of existing rows the loop below took through refreshChangedFile.
     const refreshedPaths = new Set();
     if (walkComplete) {
@@ -968,6 +987,7 @@ async function importExternalFolder({
         if (newFiles.length) {
           moved = await moveRenamedRows({
             eventId, unseen, newFiles, toRootRelative, fullOf, access, automatic, isLost: () => lost,
+            onMove: (entry) => pushCapped(announced.moved, entry),
           });
         }
       }
@@ -1258,6 +1278,7 @@ async function importExternalFolder({
 
         if (photoId != null && !isVideo) importedPhotoIds.push(photoId);
         imported += (inserted?.length ? 1 : 0);
+        if (photoId != null) pushCapped(announced.imported, { photo_id: photoId, relpath: relFromRoot });
         if (photoId != null && where.firstLook) firstLookImported += 1;
 
         // The manual Import is the explicit intent the exclusion list exists
@@ -1303,11 +1324,13 @@ async function importExternalFolder({
         if (state === 'missing' && row.unavailable_reason == null) {
           // Fenced on the path and origin read: a row moved or replaced
           // since is not this file's.
-          missing += await livePhotos(db)
+          const marked = await livePhotos(db)
             .where({ id: row.id, external_relpath: row.external_relpath })
             .whereIn('source_origin', SERVED_ORIGINS)
             .whereNull('unavailable_reason')
             .update({ unavailable_reason: SOURCE_MISSING });
+          missing += marked;
+          if (marked) pushCapped(announced.missing, { photo_id: row.id, relpath: row.external_relpath });
         } else if (state === 'present' && row.unavailable_reason === SOURCE_MISSING) {
           // Back at its path but not taken by the loop (a type no longer
           // imported, a file another of the same name shadows): restored
@@ -1411,7 +1434,30 @@ async function importExternalFolder({
       );
     }
 
-    if (!superseded) await jobState.release(jobName, token, result);
+    const released = !superseded && await jobState.release(jobName, token, result);
+
+    // external_scan.completed (issue 2357), here because every pass ends here:
+    // the watcher's, the sweep's, the Import button's and a new gallery's
+    // first import. Same rule as the activity log above, so a sweep tick that
+    // found nothing sends nothing. A pass that stopped early or failed did
+    // not complete and announces nothing.
+    if (released && !lost && changed) {
+      try {
+        await webhookService.fire('external_scan.completed', {
+          event_id: eventId,
+          source: external_path,
+          trigger,
+          ...announced,
+          counts: { imported, moved, missing, returned, refreshed },
+          truncated: announced.imported.length < imported
+            || announced.moved.length < moved
+            || announced.missing.length < missing,
+          finished_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        logger.warn(`external_scan.completed failed for event ${eventId}: ${err.message}`);
+      }
+    }
     return result;
   } catch (error) {
     // Record the failure as the outcome, so the Photos tab (GET
@@ -1452,6 +1498,7 @@ module.exports = {
   ImportInProgressError,
   EventNotFoundError,
   jobNameFor,
+  MAX_SCAN_WEBHOOK_ENTRIES,
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
 };
