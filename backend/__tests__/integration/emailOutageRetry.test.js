@@ -19,6 +19,8 @@ const REAL = {
   refused: { code: 'ESOCKET', command: 'CONN', syscall: 'connect' },
   dns: { code: 'EDNS', command: 'CONN', syscall: 'getaddrinfo' },
   noGreeting: { code: 'ETIMEDOUT', command: 'CONN', timeoutType: 'GREETING_TIMEOUT' },
+  // An unroutable host: a firewall dropping packets, or a dead machine.
+  unroutable: { code: 'ETIMEDOUT', command: 'CONN', timeoutType: 'CONNECT_TIMEOUT' },
   stalledAfterBody: { code: 'ETIMEDOUT', command: 'CONN', timeoutType: 'SOCKET_TIMEOUT' },
   droppedAfterBody: { code: 'ECONNECTION', command: 'CONN' },
   resetAfterBody: { code: 'ESOCKET', command: 'CONN', syscall: 'read' },
@@ -70,6 +72,43 @@ describe('mail server outage', () => {
     expect(deferred.error_message).toContain('ECONNREFUSED');
     expect(deferred.scheduled_at).toBeTruthy();
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['a refused connection', REAL.refused],
+    ['a name that does not resolve', REAL.dns],
+    ['a host that drops packets', REAL.unroutable],
+    ['a server that never greets', REAL.noGreeting],
+  ])('defers on %s and ends the pass', async (_label, shape) => {
+    const id = await queueMail();
+    await queueMail();
+    send.mockRejectedValue(Object.assign(new Error('unavailable'), shape));
+    await run();
+    expect(await row(id)).toMatchObject({ status: 'pending', retry_count: 0 });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('spends an attempt when the same shape comes from outside the transport', async () => {
+    // A refused database connection looks like a refused mail server. Only the
+    // send itself may defer, or a delivered mail could go out again.
+    const notifier = require('../../src/services/downloadJobNotifier');
+    const stale = jest.spyOn(notifier, 'staleMailReason')
+      .mockRejectedValue(Object.assign(new Error('connect ECONNREFUSED'), REAL.refused));
+    try {
+      const inserted = await db('email_queue').insert({
+        recipient_email: 'guest@example.com',
+        email_type: 'download_ready',
+        email_data: JSON.stringify({ subject: 'Test' }),
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      }).returning('id');
+      const id = inserted[0]?.id ?? inserted[0];
+      await run();
+      expect(await row(id)).toMatchObject({ retry_count: 1 });
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      stale.mockRestore();
+    }
   });
 
   it('skips a deferred mail until its time comes, then sends it', async () => {
@@ -178,27 +217,58 @@ describe('mail server outage', () => {
     expect((await row(id)).retry_count).toBe(0);
   });
 
-  it('goes back to the attempt cap once an outage has lasted three days', async () => {
+  const daysAgo = (days) => {
+    const { queueTimestamp } = require('../../src/utils/queueTimestamps');
+    return queueTimestamp(Date.now() - days * 24 * 60 * 60 * 1000);
+  };
+
+  it('keeps the time of a mail\'s first deferral on the row', async () => {
     await endOutage();
     const id = await queueMail();
     send.mockRejectedValue(refused());
-    const started = Date.now();
-    const clock = jest.spyOn(Date, 'now');
+    await run();
+    const { toMillis } = require('../../src/utils/queueTimestamps');
+    const first = toMillis((await row(id)).deferred_since);
+    expect(first).toBeGreaterThan(Date.now() - 60 * 1000);
+    await db('email_queue').where({ id }).update({ scheduled_at: null });
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 60 * 60 * 1000);
     try {
-      // Failing every 14 minutes: inside the gap, so one outage. The count runs
-      // from the first failure, 14 minutes in, so step 310 is past three days.
-      const failAt = async (step) => {
-        clock.mockReturnValue(started + step * 14 * 60 * 1000);
-        await db('email_queue').where({ id }).update({ scheduled_at: null });
-        await run();
-      };
-      for (let step = 1; step <= 309; step += 1) await failAt(step);
-      expect(await row(id)).toMatchObject({ status: 'pending', retry_count: 0 });
-      await failAt(310);
+      await run();
     } finally {
       clock.mockRestore();
     }
+    expect(toMillis((await row(id)).deferred_since)).toBe(first);
+  });
+
+  it('goes back to the attempt cap three days after a mail was first deferred', async () => {
+    await endOutage();
+    const id = await queueMail();
+    await db('email_queue').where({ id }).update({ deferred_since: daysAgo(2.9) });
+    send.mockRejectedValue(refused());
+    await run();
+    expect((await row(id)).retry_count).toBe(0);
+    await db('email_queue').where({ id }).update({ deferred_since: daysAgo(3.1), scheduled_at: null });
+    await run();
     expect((await row(id)).retry_count).toBe(1);
+  });
+
+  it('does not restart that count when other mail gets through, or after a restart', async () => {
+    // A row refused on its own, while the rest of the queue flows. endOutage()
+    // clears what the processor holds in memory, as a restart would.
+    await endOutage();
+    const id = await queueMail();
+    await db('email_queue').where({ id }).update({ deferred_since: daysAgo(3.1) });
+    send.mockRejectedValue(Object.assign(new Error('try later'), { code: 'EENVELOPE', responseCode: 421, command: 'MAIL FROM' }));
+    await run();
+    expect((await row(id)).retry_count).toBe(1);
+  });
+
+  it('shows the queue card why mail is waiting', async () => {
+    await endOutage();
+    await queueMail();
+    send.mockRejectedValue(refused());
+    await run();
+    expect(status().lastError).toBe('connect ECONNREFUSED');
   });
 
   it.each([
