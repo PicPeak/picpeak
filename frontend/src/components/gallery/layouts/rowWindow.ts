@@ -5,12 +5,13 @@ import { KEEP_BAND_VIEWPORTS } from './lazyBands';
 
 /**
  * Row windowing for the layouts that position every tile from a precomputed
- * box (Masonry rows) — issue 1733, step 2.
+ * box (Masonry rows and flickr) — issue 1733, step 2 — and for Masonry
+ * quilted, which pins its tiles to grid lines (see quiltedWindow.ts).
  *
  * Only the rows near the viewport are in the DOM. The grid container keeps
- * the layout's full height and the tiles stay absolutely positioned at their
- * own offsets, so the container is its own spacer: the scrollbar and every
- * tile's position are exactly what they are with all rows mounted.
+ * the layout's full height and the tiles stay at their own offsets, so the
+ * container is its own spacer: the scrollbar and every tile's position are
+ * exactly what they are with all rows mounted.
  */
 
 /** Below this many photos every row is mounted, as before. */
@@ -37,7 +38,19 @@ export interface RowRange {
   end: number;
 }
 
-/** Group layout items (already in row order) into their rows. */
+/** A layout item, for the hook below. */
+export interface WindowItem extends JustifiedLayoutItem {
+  /**
+   * The photo's place in the list, where the layout's row order is another
+   * one (Masonry quilted backfills holes with later photos).
+   */
+  listIndex?: number;
+}
+
+/**
+ * Group layout items (already in row order) into their rows. A row reaches as
+ * far down as its tallest tile: Masonry quilted has tiles spanning two rows.
+ */
 export function buildRows(items: JustifiedLayoutItem[]): RowBox[] {
   const rows: RowBox[] = [];
   let rowIndex = -1;
@@ -46,7 +59,9 @@ export function buildRows(items: JustifiedLayoutItem[]): RowBox[] {
       rowIndex = item.rowIndex;
       rows.push({ top: item.y, bottom: item.y + item.height, from: i, to: i + 1 });
     } else {
-      rows[rows.length - 1].to = i + 1;
+      const row = rows[rows.length - 1];
+      row.to = i + 1;
+      row.bottom = Math.max(row.bottom, item.y + item.height);
     }
   });
   return rows;
@@ -106,7 +121,7 @@ export interface WindowedItems {
  */
 export function useWindowedItems(
   containerRef: RefObject<HTMLElement | null>,
-  items: JustifiedLayoutItem[],
+  items: WindowItem[],
   width: number,
   enabled: boolean,
   rowHeight = 0,
@@ -115,13 +130,15 @@ export function useWindowedItems(
     const rows = enabled ? buildRows(items) : [];
     const rowOf = new Map<number, number>();
     const indexOf = new Map<number, number>();
+    const listIndexOf = new Map<number, number>();
     rows.forEach((row, index) => {
       for (let i = row.from; i < row.to; i++) {
         rowOf.set(items[i].photoId, index);
         indexOf.set(items[i].photoId, i);
+        listIndexOf.set(items[i].photoId, items[i].listIndex ?? i);
       }
     });
-    return { items, rows, rowOf, indexOf };
+    return { items, rows, rowOf, indexOf, listIndexOf };
   }, [items, enabled]);
 
   // The rows in the window, and the layout they were measured in.
@@ -191,7 +208,7 @@ export function useWindowedItems(
     // Sorted, filtered or grown ahead of the anchor: its photo is somewhere
     // else in the list, or gone. A cache patch leaves it where it was.
     const rearranged = anchor !== null
-      && model.indexOf.get(anchor.photoId) !== previous.indexOf.get(anchor.photoId);
+      && model.listIndexOf.get(anchor.photoId) !== previous.listIndexOf.get(anchor.photoId);
     const resized = (widthRef.current !== width && widthRef.current > 0)
       || rowHeightRef.current !== rowHeight;
     widthRef.current = width;
