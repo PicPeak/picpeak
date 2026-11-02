@@ -2674,7 +2674,7 @@
         "publicKey": "Snipcart public API key",
         "secretKey": "Snipcart secret API key",
         "webhook": "Snipcart webhook URL",
-        "webhookHelp": "Add this URL in Snipcart Dashboard → Store configurations → Webhooks, and allow your public PicPeak domain. Keep prices tax-inclusive and use EUR. Saving checks secret-key read access only; complete a test purchase, download and refund to verify the store, public key and webhook together."
+        "webhookHelp": "Add this URL in Snipcart Dashboard → Store configurations → Webhooks, and allow your public PicPeak domain. Enable EUR under Store configurations → Regional settings → Supported currencies, in the same test/live environment as your keys. Keep prices tax-inclusive. Saving checks secret-key read access only; complete a test purchase, download and refund to verify the store, public key and webhook together."
       },
       "attention": {
         "title": "Orders needing attention and deleted galleries",
@@ -7376,6 +7376,8 @@
     "photoCount_other": "{{count}} photos",
     "sectionDescription": "Sell individual photo downloads: the first free photos are granted through a one-time promo code shown on the gallery.",
     "keepBrowsing": "Keep browsing",
+    "checkoutReload": "Snipcart did not respond. Reload checkout to try again. Your photos are saved in your cart.",
+    "reloadCheckout": "Reload checkout",
     "openingCheckout": "Opening checkout…",
     "continueCheckout": "Continue to payment",
     "cartEmpty": "Add photos to your cart to get started.",

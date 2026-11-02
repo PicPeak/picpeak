@@ -3,9 +3,9 @@
  * navigation. Server-side quote validation remains the authority on payment.
  * https://docs.snipcart.com/v3/themes/default/reference/3.4.0
  */
-#snipcart.picpeak-photo-checkout .snipcart-item-line__header button,
-#snipcart.picpeak-photo-checkout .snipcart-item-quantity__quantity button,
-#snipcart.picpeak-photo-checkout .snipcart-discount-box {
+body.picpeak-photo-checkout #snipcart .snipcart-item-line__header button,
+body.picpeak-photo-checkout #snipcart .snipcart-item-quantity__quantity button,
+body.picpeak-photo-checkout #snipcart .snipcart-discount-box {
   display: none !important;
 }
 

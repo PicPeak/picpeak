@@ -8,8 +8,10 @@ import { PhotoSalesCartButton } from '../PhotoSalesCartButton';
 import { buildPhotoSalesConfig } from '../photoSales';
 
 vi.mock('../../../config/api', () => ({ api: { post: vi.fn() } }));
+vi.mock('../snipcartCheckout', () => ({ openSnipcartCheckout: vi.fn() }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (_key: string, fallback: string, values?: Record<string, unknown>) => fallback.replace(/{{(\w+)}}/g, (_, key) => String(values?.[key] ?? key)) }) }));
 const { api } = await import('../../../config/api');
+const { openSnipcartCheckout } = await import('../snipcartCheckout');
 const photo = { id: 1, filename: 'Portrait.jpg', sale_token: 'proof', photo_price: 5 };
 const config = (slug = 'one') => buildPhotoSalesConfig({ slug, event: { is_priced: true, photo_price: 5, free_photo_count: 1, promo_code: 'FOTO-ONCE' }, checkoutConfigured: true });
 function ExtraPhoto() {
@@ -21,7 +23,21 @@ const Gallery = ({ slug = 'one' }: { slug?: string }) => <PhotoSalesProvider val
 </PhotoSalesProvider>;
 
 describe('PicPeak photo cart', () => {
-  beforeEach(() => { sessionStorage.clear(); vi.mocked(api.post).mockReset(); });
+  beforeEach(() => { sessionStorage.clear(); vi.mocked(api.post).mockReset(); vi.mocked(openSnipcartCheckout).mockReset(); });
+  it('offers reload recovery after Snipcart stalls and preserves the selected photos', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { snipcart: {} } });
+    vi.mocked(openSnipcartCheckout).mockRejectedValueOnce(Object.assign(new Error('Timed out'), { code: 'SNIPCART_RELOAD_REQUIRED' }));
+    const both = { ...config(), providers: ['stripe', 'snipcart'] as const };
+    render(<PhotoSalesProvider value={{ ...both, providers: [...both.providers] }}><PhotoPurchaseBadge photo={photo} /><PhotoSalesCartButton /></PhotoSalesProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cart, 1 photos' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Snipcart' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to payment' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Snipcart did not respond');
+    expect(screen.getByRole('button', { name: 'Reload checkout' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Keep browsing' })).toBeEnabled();
+    expect(sessionStorage.getItem('picpeak_photo_cart_one')).toContain('Portrait.jpg');
+  });
   it('shares tile, cart and lightbox selection, permits removal, and stores no sale credentials', async () => {
     render(<Gallery />);
     fireEvent.click(screen.getByRole('button', { name: 'Add photo to cart for €5.00' }));

@@ -28,6 +28,7 @@ export const PhotoSalesCart: React.FC<{
   const [promoAccess, setPromoAccess] = useState<PromoAccess | null>(() => readPromoAccess(config.slug));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [reloadRequired, setReloadRequired] = useState(false);
   const promoHintId = useId();
   const request = useRef<{ signature: string; key: string }>();
   const gross = items.reduce((sum, item) => sum + Math.round(item.price * 100), 0);
@@ -41,6 +42,7 @@ export const PhotoSalesCart: React.FC<{
   }, [promoAccess, config.slug]);
 
   const checkout = async () => {
+    if (reloadRequired) { window.location.reload(); return; }
     if (busy || !items.length) return;
     if (promoApplied && (!promoAccess || promoAccess.expiresAt <= Date.now())) {
       clearPromoAccess(config.slug); setPromoAccess(null); return;
@@ -64,10 +66,13 @@ export const PhotoSalesCart: React.FC<{
       if (!destination || !validCheckoutDestination(destination)) throw new Error('Invalid checkout destination');
       window.location.assign(destination);
     } catch (caught) {
-      const code = (caught as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      const failure = caught as { code?: string; response?: { data?: { code?: string } } };
+      const code = failure?.code === 'SNIPCART_RELOAD_REQUIRED' ? failure.code : failure?.response?.data?.code;
+      setReloadRequired(code === 'SNIPCART_RELOAD_REQUIRED');
       if (code === 'CHECKOUT_ENDED') request.current = undefined;
       if (code === 'CHECKOUT_PROMO_IDENTITY_REQUIRED') { clearPromoAccess(config.slug); setPromoAccess(null); }
       const messages: Record<string, string> = {
+        SNIPCART_RELOAD_REQUIRED: t('photoSales.checkoutReload', 'Snipcart did not respond. Reload checkout to try again. Your photos are saved in your cart.'),
         CHECKOUT_MINIMUM: t('photoSales.checkoutMinimum', 'Stripe requires a minimum of €0.50. Add another photo or choose another payment provider.'),
         PHOTOS_UNAVAILABLE: t('photoSales.checkoutPhotosUnavailable', 'Some selected photos are no longer available. Remove them and try again.'),
         PROMO_UNAVAILABLE: t('photoSales.checkoutPromoUnavailable', 'This promo code is used or reserved by another checkout. Try again later or remove the code.'),
@@ -86,8 +91,8 @@ export const PhotoSalesCart: React.FC<{
     title={t('photoSales.cart', 'Cart')} description={config.itemDescription}
     footer={<>
       <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>{t('photoSales.keepBrowsing', 'Keep browsing')}</Button>
-      <Button type="button" isLoading={busy} focusableWhileLoading disabled={!items.length || (promoApplied && !promoAccess)} onClick={checkout}>
-        {busy ? t('photoSales.openingCheckout', 'Opening checkout…') : t('photoSales.continueCheckout', 'Continue to payment')}
+      <Button type="button" isLoading={busy} focusableWhileLoading disabled={!reloadRequired && (!items.length || (promoApplied && !promoAccess))} onClick={checkout}>
+        {busy ? t('photoSales.openingCheckout', 'Opening checkout…') : reloadRequired ? t('photoSales.reloadCheckout', 'Reload checkout') : t('photoSales.continueCheckout', 'Continue to payment')}
       </Button>
     </>}
   >

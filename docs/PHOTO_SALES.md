@@ -95,7 +95,10 @@ reaches the browser; the secret is encrypted at rest. Saving checks secret-key
 read access, not the public/secret pairing or successful payment delivery.
 
 Add the displayed `/api/gallery/snipcart-webhook` URL in Snipcart's dashboard,
-allow the public PicPeak domain, and keep prices tax-inclusive in EUR. Existing
+allow the public PicPeak domain, and enable **EUR** under Store configurations
+→ Regional settings → Supported currencies in the same Test/Live environment
+as the keys. A fresh store supports USD only; an EUR checkout can fail at cart
+creation until EUR is enabled. Keep prices tax-inclusive. Existing
 per-gallery webhook URLs remain supported. Test a
 purchase, buyer email, original download and refund before accepting payments.
 Keep secret-key access to the same store for historical orders and refunds.
@@ -114,6 +117,11 @@ script permissions.
 After handoff, Snipcart hides item removal, quantity changes and the discount
 box; totals remain visible. Close Snipcart to edit the cart in PicPeak. Editing
 does not release a pending payment or its promo reservation.
+
+If Snipcart’s session or cart update does not finish within 30 seconds after
+the SDK loads, PicPeak restores the cart controls and offers **Reload checkout**. Reload before
+retrying: a delayed provider mutation may still finish in the old page. The
+selected photos remain saved in PicPeak; a timed-out handoff cannot open later.
 
 ## Pricing and access rules
 

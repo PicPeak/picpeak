@@ -250,7 +250,7 @@ export const PaymentsTab: React.FC = () => {
           disabled={save.isPending} autoComplete="new-password" spellCheck={false} />
       </>}
       <Input id="snipcart-webhook-url" readOnly label={t('settings.payments.snipcart.webhook', 'Snipcart webhook URL')} value={data.snipcart?.webhook_url || ''} onFocus={(event) => event.target.select()} />
-      <p className="text-sm text-soft">{t('settings.payments.snipcart.webhookHelp', 'Add this URL in Snipcart Dashboard → Store configurations → Webhooks, and allow your public PicPeak domain. Keep prices tax-inclusive and use EUR. Saving checks secret-key read access only; complete a test purchase, download and refund to verify the store, public key and webhook together.')}</p>
+      <p className="text-sm text-soft">{t('settings.payments.snipcart.webhookHelp', 'Add this URL in Snipcart Dashboard → Store configurations → Webhooks, and allow your public PicPeak domain. Enable EUR under Store configurations → Regional settings → Supported currencies, in the same test/live environment as your keys. Keep prices tax-inclusive. Saving checks secret-key read access only; complete a test purchase, download and refund to verify the store, public key and webhook together.')}</p>
     </div></Card>
     <Card><div className="p-6 space-y-4">
       <h2 className="text-lg font-semibold text-heading">{t('settings.payments.attention.title', 'Orders needing attention and deleted galleries')}</h2>
