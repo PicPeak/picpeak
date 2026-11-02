@@ -77,10 +77,12 @@ function cleanAvailability(a, optionIds, attributes) {
     fail('Invalid option dependency');
   const options = {};
   for (const [id, parents] of Object.entries(rule.options)) {
-    if (!optionIds.includes(id)) fail('Invalid option dependency');
-    const allowed = unique(list(parents, 100).map(V.uuid));
-    if (!allowed.length || allowed.some((p) => !parent.optionIds.includes(p)))
-      fail('Invalid option dependency');
+    // Unticking an option in the type takes its rule along.
+    if (!optionIds.includes(id)) continue;
+    const allowed = unique(list(parents, 100).map(V.uuid)).filter((p) =>
+      parent.optionIds.includes(p),
+    );
+    if (!allowed.length) fail('Invalid option dependency');
     options[id] = allowed;
   }
   return { attributeId: parent.id, options };

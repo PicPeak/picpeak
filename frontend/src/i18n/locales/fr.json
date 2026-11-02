@@ -2322,7 +2322,11 @@
       "photosRestored_other": "{{count}} photos restaurées depuis la corbeille de \"{{eventName}}\"",
       "photosTrashPurged_one": "{{count}} photo supprimée définitivement de la corbeille de \"{{eventName}}\"",
       "photosTrashPurged_many": "{{count}} photos supprimées définitivement de la corbeille de \"{{eventName}}\"",
-      "photosTrashPurged_other": "{{count}} photos supprimées définitivement de la corbeille de \"{{eventName}}\""
+      "photosTrashPurged_other": "{{count}} photos supprimées définitivement de la corbeille de \"{{eventName}}\"",
+      "productChoiceReopened": "{{eventName}} : {{productName}} rouvert pour le client",
+      "productChoiceUnlocked": "{{eventName}} : {{productName}} déverrouillé",
+      "productReleased": "{{eventName}} : {{productName}} publié pour le client",
+      "productWithdrawn": "{{eventName}} : publication de {{productName}} retirée"
     },
     "notificationToasts": {
       "markedAllRead": "Toutes les notifications marquées comme lues",
@@ -2691,7 +2695,11 @@
       "approval_submitted": "{{guestName}} a approuvé les photos retouchées dans {{eventName}}",
       "selection_reopened": "Envoi de {{guestName}} rouvert dans {{eventName}}",
       "photos_restored": "{{count}} photos restaurées depuis la corbeille de {{eventName}}",
-      "photos_trash_purged": "{{count}} photos supprimées définitivement de la corbeille de {{eventName}}"
+      "photos_trash_purged": "{{count}} photos supprimées définitivement de la corbeille de {{eventName}}",
+      "album_product_reopened": "{{productName}} rouvert pour le client dans {{eventName}}",
+      "album_product_unlocked": "{{productName}} déverrouillé dans {{eventName}}",
+      "album_product_released": "{{productName}} publié pour le client dans {{eventName}}",
+      "album_product_withdrawn": "Publication de {{productName}} retirée dans {{eventName}}"
     },
     "customerActivity": {
       "customer_invitation_created": "Invitation envoyée",
@@ -3896,7 +3904,9 @@
       "sortNewest": "Du plus récent au plus ancien",
       "sortOldest": "Du plus ancien au plus récent",
       "sortName": "Par nom",
-      "open": "Ouvrir"
+      "open": "Ouvrir",
+      "albumAwaiting": "Votre album pour {{name}} est prêt à être configuré",
+      "configureAlbum": "Configurer l’album"
     },
     "layout": {
       "greeting": "Bonjour, {{name}}"
@@ -3988,6 +3998,13 @@
       "successToast": "Mot de passe mis à jour. Veuillez vous connecter.",
       "invalidSubmission": "Impossible de mettre à jour votre mot de passe.",
       "generalError": "Impossible de mettre à jour votre mot de passe. Veuillez réessayer."
+    },
+    "event": {
+      "album": "Votre album",
+      "albumConfirmed": "Votre sélection est confirmée.",
+      "albumOpen": "Configurer votre album",
+      "albumReady": "Le studio a publié votre album. Choisissez sa finition et vos photos.",
+      "albumView": "Voir votre sélection"
     }
   },
   "customers": {
@@ -4199,6 +4216,108 @@
     },
     "subnav": {
       "approvals": "Approbations"
+    }
+  },
+  "albumProducts": {
+    "actorClient": "Client",
+    "actorStudio": "Studio",
+    "album": "Album",
+    "audience": "Destinataire de cette offre",
+    "audienceClient": "Le client de la galerie (PIN)",
+    "audienceFixed": "Cette offre contient déjà un choix et reste donc attribuée à ce client. Ajoutez une nouvelle offre pour un autre client.",
+    "audienceShared": "Plusieurs clients partagent cette galerie : aucun d’eux ne voit cette offre dans le portail. Choisissez un client ou utilisez le code PIN.",
+    "confirmBack": "Continuer à modifier",
+    "confirmFinal": "Confirmer maintenant",
+    "confirmSelection": "Confirmer la sélection",
+    "confirmWarning": "Attention : après confirmation, cette sélection ne pourra plus être modifiée.",
+    "confirmedByClient": "Confirmé par le client",
+    "confirmedLocked": "Votre sélection est confirmée et verrouillée par le studio.",
+    "confirmedWaiting": "Votre sélection est confirmée. Le studio l’a bien reçue.",
+    "continueSelection": "Reprendre votre sélection",
+    "copyLink": "Copier le lien client",
+    "coverPhoto": "Photo de couverture",
+    "entryConfirmed": "Votre sélection est confirmée.",
+    "entryOpen": "Choisissez votre album, sa finition et vos photos de couverture et d’affiche.",
+    "history": "Historique du choix",
+    "linkCopied": "Lien client copié",
+    "linkCopyFailed": "Le lien n’a pas pu être copié",
+    "noPhotos": "Il n’y a pas encore de photos à choisir.",
+    "notReleased": "Non publié",
+    "or": "ou",
+    "photoCountExact": "{{count}} sur {{max}} sélectionnées",
+    "photoCountOne": "{{count}} sur 1 sélectionnée",
+    "photoCountRange": "{{count}} sélectionnées, choisissez-en de {{min}} à {{max}}",
+    "photoGone": "Plus disponible",
+    "photoNumber": "Photo {{number}}",
+    "photoUnavailable": "Plus disponible, veuillez la remplacer",
+    "photosFailed": "Les photos de la galerie n’ont pas pu être chargées. Fermez cette fenêtre et réessayez.",
+    "posterPhotos": "Photos d’affiche",
+    "release": "Publier pour le client",
+    "released": "Publié",
+    "releasedTo": "Uniquement pour {{name}}",
+    "removePhoto": "Retirer",
+    "reopen": "Rouvrir pour le client",
+    "reopenMessage": "Le client pourra de nouveau modifier la sélection confirmée et devra la confirmer à nouveau. La réouverture est consignée dans le journal d’activité.",
+    "reopenTitle": "Rouvrir cette sélection ?",
+    "reviewIncomplete": "Il manque encore des étapes. Revenez en arrière pour les compléter.",
+    "selectedPhoto": "Photo sélectionnée",
+    "showMorePhotos": "Afficher plus de photos",
+    "startSelection": "Configurer votre album",
+    "stepAlbum": "Choisissez votre album",
+    "stepColour": "Choisissez une couleur",
+    "stepCover": "Choisissez votre photo de couverture",
+    "stepExtras": "Encore quelques détails",
+    "stepFormat": "Comparez les formats",
+    "stepMaterial": "Choisissez une matière",
+    "stepOf": "Étape {{current}} sur {{total}}",
+    "stepPoster": "Choisissez vos photos d’affiche",
+    "stepReview": "Vérifiez votre album",
+    "stepSize": "Choisissez une taille",
+    "viewSelection": "Voir votre sélection",
+    "withdraw": "Retirer la publication",
+    "yourAlbum": "Votre album"
+  },
+  "products": {
+    "addAlbumStarter": "Ajouter un jeu de départ pour album",
+    "attributeRole": "Rôle dans un album guidé",
+    "availabilityHelp": "Cochez ce qui va avec chaque option. Sans coche, elle est proposée avec toutes.",
+    "clearColourValue": "Retirer la valeur de couleur",
+    "clientFinal": "La confirmation du client est définitive",
+    "colourValue": "Valeur de couleur",
+    "dependsOnNothing": "Rien : toujours toutes",
+    "guidedAlbum": "Commande d’album guidée",
+    "guidedHelp": "Le client parcourt album, matière, couleur, format et taille, puis choisit ses photos. Le type de produit doit avoir les quatre rôles, des couleurs liées à la matière et des tailles liées au format. L’album reste masqué jusqu’à sa publication dans la galerie.",
+    "heroImage": "Image du produit (PNG, 6 Mo max.)",
+    "optionsDependOn": "Les options proposées dépendent de",
+    "posterMax": "Photos d’affiche, au maximum",
+    "posterMin": "Photos d’affiche, au minimum",
+    "removeHeroImage": "Retirer l’image",
+    "requireCover": "Exiger une photo de couverture",
+    "roleNone": "Aucun : un choix supplémentaire",
+    "sizesAreSpreads": "Les tailles mesurent l’album ouvert (deux pages)",
+    "role": {
+      "material": "Matière",
+      "colour": "Couleur",
+      "format": "Format",
+      "size": "Taille"
+    },
+    "starter": {
+      "black": "Noir",
+      "champagne": "Champagne",
+      "cognac": "Cognac",
+      "colours": "Couleur de l’album",
+      "cotton": "Coton",
+      "formats": "Format de l’album",
+      "ivory": "Ivoire",
+      "landscape": "Paysage",
+      "leather": "Cuir",
+      "materials": "Matière de l’album",
+      "natural": "Naturel",
+      "silk": "Soie",
+      "sizes": "Taille de l’album",
+      "slate": "Ardoise",
+      "square": "Carré",
+      "type": "Album"
     }
   }
 }

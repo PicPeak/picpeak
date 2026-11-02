@@ -78,7 +78,7 @@ export const CustomerEventPage: React.FC = () => {
   const blocked = t('customer.event.popupBlocked', 'Allow pop-ups for this site to open the PDF.');
   const failed = t('customer.event.pdfError', 'The PDF could not be opened. Please try again.');
 
-  const openGallery = async () => {
+  const openGallery = async (albumOfferId?: string) => {
     if (opening) return;
     setOpening(true);
     try {
@@ -88,8 +88,10 @@ export const CustomerEventPage: React.FC = () => {
       // A "your download is ready" mail links here for an account (issue
       // 1733); the gallery is what offers the job, so hand the token on.
       const downloadJob = readDownloadJobParam(location.search);
-      navigate(`/gallery/${encodeURIComponent(event.slug)}${
-        downloadJob ? `?${DOWNLOAD_JOB_QUERY_PARAM}=${downloadJob}` : ''}`);
+      const query = albumOfferId
+        ? `?album=${albumOfferId}`
+        : downloadJob ? `?${DOWNLOAD_JOB_QUERY_PARAM}=${downloadJob}` : '';
+      navigate(`/gallery/${encodeURIComponent(event.slug)}${query}`);
     } catch (error) {
       toast.error(isGalleryTemporarilyDisabled(error)
         ? t('gallery.temporarilyUnavailable', 'This gallery is temporarily unavailable.')
@@ -99,6 +101,8 @@ export const CustomerEventPage: React.FC = () => {
     }
   };
 
+  // The product list of the gallery itself; guided albums get their own entry.
+  const albumOffers = (data.productOffers ?? []).filter((offer) => offer.guided);
   const nothingElse = (!sections.quotes || data.quotes.length === 0)
     && (!sections.contracts || data.contracts.length === 0)
     && (!sections.invoices || data.invoices.length === 0)
@@ -133,7 +137,7 @@ export const CustomerEventPage: React.FC = () => {
             type="button"
             variant="primary"
             size="sm"
-            onClick={openGallery}
+            onClick={() => openGallery()}
             disabled={opening}
             leftIcon={<ExternalLink className="w-4 h-4" />}
           >
@@ -153,6 +157,31 @@ export const CustomerEventPage: React.FC = () => {
           </p>
         )}
       </Card>
+
+      {event.availability === 'active' && albumOffers.length > 0 && (
+        <Section title={t('customer.event.album', 'Your album')}>
+          <ul className="divide-y divide-border-token">
+            {albumOffers.map((offer) => (
+              <li key={offer.id} className="p-4 flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <span className="text-sm text-theme">{offer.name}</span>
+                  <p className="text-xs text-muted-theme mt-0.5">
+                    {offer.confirmed
+                      ? t('customer.event.albumConfirmed', 'Your selection is confirmed.')
+                      : t('customer.event.albumReady', 'The studio has released your album. Choose its look and your photos.')}
+                  </p>
+                </div>
+                <Button type="button" variant={offer.confirmed ? 'outline' : 'primary'} size="sm" disabled={opening}
+                  leftIcon={<ExternalLink className="w-4 h-4" />} onClick={() => openGallery(offer.id)}>
+                  {offer.confirmed
+                    ? t('customer.event.albumView', 'View your selection')
+                    : t('customer.event.albumOpen', 'Configure your album')}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       {sections.quotes && data.quotes.length > 0 && (
         <Section title={t('customer.nav.quotes', 'Quotes')}>

@@ -9,8 +9,68 @@ import { Button, Input } from '../../components/common';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../../config/api';
-import { albumProducts, errorMessage, type Offer } from './model';
+import { albumProducts, errorMessage, isConfirmed, type Offer } from './model';
 import { ProductImage } from './ProductImage';
+import { GuidedAlbumFlow } from './GuidedAlbumFlow';
+const isGuided = (offer: Offer) =>
+  !!offer.product?.guided || !!offer.selection?.photoRoles;
+/** The entry to a released album. The portal's deep link opens it directly. */
+function GuidedAlbumEntry({
+  offers,
+  slug,
+  onClosed,
+}: {
+  offers: Offer[];
+  slug: string;
+  onClosed: () => void;
+}) {
+  const { t } = useTranslation();
+  const [link] = useState(() =>
+    new URLSearchParams(window.location.search).get('album'),
+  );
+  const [open, setOpen] = useState(() => offers.some((o) => o.id === link));
+  const confirmed = offers.find(isConfirmed);
+  return (
+    <section
+      aria-label={t('albumProducts.yourAlbum', 'Your album')}
+      className="max-w-7xl mx-auto px-4 py-4 text-text-primary"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-token bg-surface p-4">
+        <div className="min-w-0">
+          <h3 className="font-semibold">
+            {t('albumProducts.yourAlbum', 'Your album')}
+          </h3>
+          <p className="text-sm">
+            {confirmed
+              ? t('albumProducts.entryConfirmed', 'Your selection is confirmed.')
+              : t(
+                  'albumProducts.entryOpen',
+                  'Choose your album, its look and your cover and poster photos.',
+                )}
+          </p>
+        </div>
+        <Button onClick={() => setOpen(true)}>
+          {confirmed
+            ? t('albumProducts.viewSelection', 'View your selection')
+            : offers.some((o) => o.selection)
+              ? t('albumProducts.continueSelection', 'Continue your selection')
+              : t('albumProducts.startSelection', 'Configure your album')}
+        </Button>
+      </div>
+      {open && (
+        <GuidedAlbumFlow
+          offers={offers}
+          slug={slug}
+          startOfferId={link}
+          onClose={() => {
+            setOpen(false);
+            onClosed();
+          }}
+        />
+      )}
+    </section>
+  );
+}
 function ProductChoice({
   initial,
   slug,
@@ -77,6 +137,11 @@ function ProductChoice({
         {product?.name || offer.selection?.product.name}
       </h3>
       {product?.description && <p>{product.description}</p>}
+      {product?.heroImageId && (
+        <div className="max-w-xs">
+          <ProductImage slug={slug} imageId={product.heroImageId} alt={product.name} />
+        </div>
+      )}
       {offer.selection && (
         <p role="status">
           {t('albumProducts.savedChoice', 'Saved choice')}:{' '}
@@ -329,30 +394,44 @@ export function GalleryProductPanel({ slug }: { slug: string }) {
     };
   }, [slug, reload, t]);
   if (!offers.length && !error) return null;
+  const guided = offers.filter(isGuided),
+    classic = offers.filter((offer) => !isGuided(offer));
   return (
-    <details
-      aria-label={t('products.clientTitle', 'Your product choices')}
-      className="max-w-7xl mx-auto px-4 py-6 space-y-4 text-text-primary bg-background"
-    >
-      <summary className="cursor-pointer text-lg font-semibold">
-        {t('products.clientTitle', 'Your product choices')}
-      </summary>
-      {offers.map((offer) => (
-        <ProductChoice
-          key={`${offer.id}-${reload}`}
-          initial={offer}
+    <>
+      {guided.length > 0 && (
+        <GuidedAlbumEntry
+          key={reload}
+          offers={guided}
           slug={slug}
-          onRefresh={() => setReload(reload + 1)}
+          onClosed={() => setReload(reload + 1)}
         />
-      ))}
-      {error && (
-        <p role="status">
-          {error}{' '}
-          <button className="underline" onClick={() => setReload(reload + 1)}>
-            {t('common.retry', 'Try again')}
-          </button>
-        </p>
       )}
-    </details>
+      {(classic.length > 0 || error) && (
+        <details
+          aria-label={t('products.clientTitle', 'Your product choices')}
+          className="max-w-7xl mx-auto px-4 py-6 space-y-4 text-text-primary bg-background"
+        >
+          <summary className="cursor-pointer text-lg font-semibold">
+            {t('products.clientTitle', 'Your product choices')}
+          </summary>
+          {classic.map((offer) => (
+            <ProductChoice
+              key={`${offer.id}-${reload}`}
+              initial={offer}
+              slug={slug}
+              onRefresh={() => setReload(reload + 1)}
+            />
+          ))}
+          {error && (
+            <p role="status">
+              {error}{' '}
+              <button className="underline" onClick={() => setReload(reload + 1)}>
+                {t('common.retry', 'Try again')}
+              </button>
+            </p>
+          )}
+        </details>
+      )}
+    </>
   );
 }

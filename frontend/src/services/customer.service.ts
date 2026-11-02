@@ -167,6 +167,8 @@ export interface CustomerDocumentLimits {
 
 export interface CustomerDashboard {
   needsAction: {
+    /** Released albums the customer has not confirmed yet. */
+    albums?: Array<{ eventName: string; link: string }>;
     quotes: Array<{
       id: number; quoteNumber: string; eventName: string | null; validUntil: string | null;
       sentAt: string | null; totalAmountMinor: number; currency: string;
@@ -210,6 +212,10 @@ export interface CustomerRecentItem {
 export interface CustomerEventOverview {
   event: CustomerEvent;
   sections: { quotes: boolean; contracts: boolean; invoices: boolean; documents: boolean };
+  /** Product offers released to this customer in this gallery. */
+  productOffers?: Array<{
+    id: string; name: string | null; status: 'draft' | 'submitted' | 'locked'; confirmed: boolean; guided: boolean;
+  }>;
   quotes: Array<{
     id: number; quoteNumber: string; status: CustomerQuote['status']; issueDate: string | null;
     validUntil: string | null; totalAmountMinor: number; currency: string;

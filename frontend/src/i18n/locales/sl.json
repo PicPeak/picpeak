@@ -4158,7 +4158,11 @@
       "photosTrashPurged_one": "{{count}} fotografija trajno izbrisana iz koša galerije »{{eventName}}«",
       "photosTrashPurged_two": "{{count}} fotografiji trajno izbrisani iz koša galerije »{{eventName}}«",
       "photosTrashPurged_few": "{{count}} fotografije trajno izbrisane iz koša galerije »{{eventName}}«",
-      "photosTrashPurged_other": "{{count}} fotografij trajno izbrisanih iz koša galerije »{{eventName}}«"
+      "photosTrashPurged_other": "{{count}} fotografij trajno izbrisanih iz koša galerije »{{eventName}}«",
+      "productChoiceReopened": "{{eventName}}: {{productName}} znova odprt za stranko",
+      "productChoiceUnlocked": "{{eventName}}: {{productName}} odklenjen",
+      "productReleased": "{{eventName}}: {{productName}} sproščen stranki",
+      "productWithdrawn": "{{eventName}}: sprostitev {{productName}} preklicana"
     },
     "notificationToasts": {
       "markedAllRead": "Vsa obvestila so označena kot prebrana",
@@ -4668,7 +4672,11 @@
       "approval_submitted": "{{guestName}} je odobril(a) obdelane fotografije v {{eventName}}",
       "selection_reopened": "Oddaja gosta {{guestName}} znova odprta v {{eventName}}",
       "photos_restored": "{{count}} fotografij obnovljenih iz koša galerije {{eventName}}",
-      "photos_trash_purged": "{{count}} fotografij trajno izbrisanih iz koša galerije {{eventName}}"
+      "photos_trash_purged": "{{count}} fotografij trajno izbrisanih iz koša galerije {{eventName}}",
+      "album_product_reopened": "{{productName}} znova odprt za stranko v {{eventName}}",
+      "album_product_unlocked": "{{productName}} odklenjen v {{eventName}}",
+      "album_product_released": "{{productName}} sproščen stranki v {{eventName}}",
+      "album_product_withdrawn": "Sprostitev {{productName}} preklicana v {{eventName}}"
     },
     "customerActivity": {
       "customer_invitation_created": "Povabilo poslano",
@@ -6619,7 +6627,9 @@
         "galleryAssigned": "Galerija {{title}} vam je zdaj na voljo"
       },
       "documentRequested": "Naložite: {{title}}",
-      "uploadDocument": "Naloži"
+      "uploadDocument": "Naloži",
+      "albumAwaiting": "Vaš album za {{name}} je pripravljen za sestavljanje",
+      "configureAlbum": "Sestavi album"
     },
     "layout": {
       "greeting": "Pozdravljeni, {{name}}"
@@ -6865,7 +6875,12 @@
       "pdfError": "PDF-ja ni bilo mogoče odpreti. Poskusite znova.",
       "pdf": "PDF",
       "dueOn": "Zapade {{date}}",
-      "nothingElse": "Za ta dogodek še ni dokumentov."
+      "nothingElse": "Za ta dogodek še ni dokumentov.",
+      "album": "Vaš album",
+      "albumConfirmed": "Vaš izbor je potrjen.",
+      "albumOpen": "Sestavite svoj album",
+      "albumReady": "Studio je sprostil vaš album. Izberite njegov videz in svoje fotografije.",
+      "albumView": "Oglejte si izbor"
     },
     "document": {
       "back": "Vsi dokumenti",
@@ -10302,6 +10317,108 @@
     },
     "subnav": {
       "approvals": "Odobritve"
+    }
+  },
+  "albumProducts": {
+    "actorClient": "Stranka",
+    "actorStudio": "Studio",
+    "album": "Album",
+    "audience": "Komu je ponudba namenjena",
+    "audienceClient": "Stranka galerije (PIN)",
+    "audienceFixed": "Ta ponudba že vsebuje izbiro, zato ostane pri tej stranki. Za drugo stranko dodajte novo ponudbo.",
+    "audienceShared": "To galerijo si deli več strank, zato te ponudbe v portalu ne vidi nobena. Izberite stranko ali uporabite PIN.",
+    "confirmBack": "Nadaljuj z urejanjem",
+    "confirmFinal": "Potrdi zdaj",
+    "confirmSelection": "Potrdi izbor",
+    "confirmWarning": "Pozor: po potrditvi tega izbora ni več mogoče spremeniti.",
+    "confirmedByClient": "Stranka je potrdila",
+    "confirmedLocked": "Vaš izbor je potrjen in ga je studio zaklenil.",
+    "confirmedWaiting": "Vaš izbor je potrjen. Studio ga je prejel.",
+    "continueSelection": "Nadaljujte z izborom",
+    "copyLink": "Kopiraj povezavo za stranko",
+    "coverPhoto": "Naslovna fotografija",
+    "entryConfirmed": "Vaš izbor je potrjen.",
+    "entryOpen": "Izberite album, njegov videz ter fotografije za naslovnico in plakate.",
+    "history": "Zgodovina izbire",
+    "linkCopied": "Povezava za stranko je kopirana",
+    "linkCopyFailed": "Povezave ni bilo mogoče kopirati",
+    "noPhotos": "Fotografij za izbiro še ni.",
+    "notReleased": "Ni sproščeno",
+    "or": "ali",
+    "photoCountExact": "Izbrano: {{count}} od {{max}}",
+    "photoCountOne": "Izbrano: {{count}} od 1",
+    "photoCountRange": "Izbrano: {{count}}, izberite od {{min}} do {{max}}",
+    "photoGone": "Ni več na voljo",
+    "photoNumber": "Fotografija {{number}}",
+    "photoUnavailable": "Ni več na voljo, zamenjajte jo",
+    "photosFailed": "Fotografij iz galerije ni bilo mogoče naložiti. Zaprite to okno in poskusite znova.",
+    "posterPhotos": "Fotografije za plakate",
+    "release": "Sprosti stranki",
+    "released": "Sproščeno",
+    "releasedTo": "Samo za {{name}}",
+    "removePhoto": "Odstrani",
+    "reopen": "Znova odpri za stranko",
+    "reopenMessage": "Stranka lahko potrjeni izbor znova spremeni in ga mora ponovno potrditi. Ponovno odprtje se zabeleži v dnevnik dejavnosti.",
+    "reopenTitle": "Znova odprem ta izbor?",
+    "reviewIncomplete": "Nekaj korakov še manjka. Vrnite se in jih dokončajte.",
+    "selectedPhoto": "Izbrana fotografija",
+    "showMorePhotos": "Pokaži več fotografij",
+    "startSelection": "Sestavite svoj album",
+    "stepAlbum": "Izberite album",
+    "stepColour": "Izberite barvo",
+    "stepCover": "Izberite naslovno fotografijo",
+    "stepExtras": "Še nekaj podrobnosti",
+    "stepFormat": "Primerjajte formate",
+    "stepMaterial": "Izberite material",
+    "stepOf": "Korak {{current}} od {{total}}",
+    "stepPoster": "Izberite fotografije za plakate",
+    "stepReview": "Preglejte svoj album",
+    "stepSize": "Izberite velikost",
+    "viewSelection": "Oglejte si izbor",
+    "withdraw": "Prekliči sprostitev",
+    "yourAlbum": "Vaš album"
+  },
+  "products": {
+    "addAlbumStarter": "Dodaj začetni nabor za album",
+    "attributeRole": "Vloga v vodenem albumu",
+    "availabilityHelp": "Označite, s čim se posamezna možnost ujema. Brez oznake je na voljo z vsemi.",
+    "clearColourValue": "Odstrani vrednost barve",
+    "clientFinal": "Potrditev stranke je dokončna",
+    "colourValue": "Vrednost barve",
+    "dependsOnNothing": "Od ničesar: vedno vse",
+    "guidedAlbum": "Vodeno naročilo albuma",
+    "guidedHelp": "Stranka gre skozi album, material, barvo, format in velikost, nato izbere fotografije. Vrsta izdelka potrebuje vse štiri vloge, barve, vezane na material, in velikosti, vezane na format. Album ostane skrit, dokler ga ne sprostite v galeriji.",
+    "heroImage": "Slika izdelka (PNG, do 6 MB)",
+    "optionsDependOn": "Ponujene možnosti so odvisne od",
+    "posterMax": "Fotografije za plakate, največ",
+    "posterMin": "Fotografije za plakate, najmanj",
+    "removeHeroImage": "Odstrani sliko",
+    "requireCover": "Zahtevaj naslovno fotografijo",
+    "roleNone": "Brez: dodatna izbira",
+    "sizesAreSpreads": "Velikosti veljajo za odprt album (dve strani)",
+    "role": {
+      "material": "Material",
+      "colour": "Barva",
+      "format": "Format",
+      "size": "Velikost"
+    },
+    "starter": {
+      "black": "Črna",
+      "champagne": "Šampanjec",
+      "cognac": "Konjak",
+      "colours": "Barva albuma",
+      "cotton": "Bombaž",
+      "formats": "Format albuma",
+      "ivory": "Slonovina",
+      "landscape": "Ležeče",
+      "leather": "Usnje",
+      "materials": "Material albuma",
+      "natural": "Naravna",
+      "silk": "Svila",
+      "sizes": "Velikost albuma",
+      "slate": "Skrilasta",
+      "square": "Kvadratno",
+      "type": "Album"
     }
   }
 }
