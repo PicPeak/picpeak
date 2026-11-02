@@ -190,7 +190,8 @@ async function localPrintInventory(knex, files, selected = () => true) {
   const output = files.filter(file => {
     const key = (file.relativePath || file.rel).split(path.sep).join('/');
     return !under(key, '.print-sales') || required.has(key);
-  });
+  }).map(file => under((file.relativePath || file.rel).split(path.sep).join('/'), '.print-sales')
+    ? { ...file, recoveryRequired: true } : file);
   const found = new Set(output.map(file => (file.relativePath || file.rel).split(path.sep).join('/')));
   for (const key of required) {
     if (found.has(key) || !await retainedPrintKey(knex, key)) continue;
@@ -199,7 +200,7 @@ async function localPrintInventory(knex, files, selected = () => true) {
     try { stat = await fsp.lstat(abs); }
     catch (error) { if (await discardedPrintFile(knex, key, error)) continue; throw error; }
     if (!stat.isFile()) throw new Error(`Not a regular recovery source: ${key}`);
-    output.push({ path: abs, abs, rel: key, relativePath: key, size: stat.size, modified: stat.mtime });
+    output.push({ path: abs, abs, rel: key, relativePath: key, size: stat.size, modified: stat.mtime, recoveryRequired: true });
   }
   return output;
 }
@@ -366,5 +367,5 @@ async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES, refer
 }
 
 module.exports = { MANAGED_ROOTS, DEFAULT_MAX_BYTES, REFERENCES_SUFFIX, validKey, managedKey, remoteDestination, objectOptions,
-  printTemporaryKey, discardedPrintFile, localPrintInventory,
+  printTemporaryKey, discardedPrintFile, retainedPrintKey, localPrintInventory,
   restoreObjectOptions, selectedManifestFiles, adapterInventory, requiredKeys, captureStream, captureAdapter, checksumAdapter, verifyAdapter, materialize };

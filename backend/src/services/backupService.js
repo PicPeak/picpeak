@@ -958,7 +958,8 @@ async function performLocalBackup(config, files, verifiedDatabaseInfo) {
       try {
         const maxSizeMb = config.backup_max_file_size_mb || 5000;
         if (file.size > maxSizeMb * 1024 * 1024) {
-          if (file.recoveryCaptured) throw new Error(`Required recovery file exceeds the backup size limit: ${file.relativePath}`);
+          if (file.recoveryRequired && !await recoveryFiles.retainedPrintKey(db, file.relativePath.split(path.sep).join('/'))) continue;
+          if (file.recoveryCaptured || file.recoveryRequired) throw new Error(`Required recovery file exceeds the backup size limit: ${file.relativePath}`);
           logger.warn(`Skipping large file: ${file.relativePath} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
           continue;
         }
@@ -1190,7 +1191,8 @@ async function performS3Backup(config, files, verifiedDatabaseInfo) {
       try {
         const maxSizeMb = config.backup_max_file_size_mb || 5000;
         if (file.size > maxSizeMb * 1024 * 1024) {
-          if (file.recoveryCaptured) throw new Error(`Required recovery file exceeds the backup size limit: ${file.relativePath}`);
+          if (file.recoveryRequired && !await recoveryFiles.retainedPrintKey(db, file.relativePath.split(path.sep).join('/'))) continue;
+          if (file.recoveryCaptured || file.recoveryRequired) throw new Error(`Required recovery file exceeds the backup size limit: ${file.relativePath}`);
           logger.warn(`Skipping large file: ${file.relativePath} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
           continue;
         }

@@ -88,6 +88,22 @@ test.each(['before listing', 'after listing'])('a missing retained local file fa
   }
   const point = await backup(); expect(point.status).toBe('failed'); expect(point.manifest_path).toBeNull();
 });
+test.each(['local', 's3'])('a retained local asset over the configured size limit cannot silently disappear from a %s point', async type => {
+  await asset('pack', key(), Buffer.alloc(2 * 1024 * 1024));
+  await setting('backup_destination_type', type); await setting('backup_max_file_size_mb', 1);
+  const point = await backup(); expect(point.status).toBe('failed');
+  expect(point.error_message).toMatch(/Required recovery file exceeds/); expect(point.manifest_path).toBeNull();
+});
+test.each(['local', 's3'])('a discarded oversized file still leaves a valid %s point', async type => {
+  await asset('pack', key(), Buffer.alloc(2 * 1024 * 1024));
+  await setting('backup_destination_type', type); await setting('backup_max_file_size_mb', 1);
+  const original = service.getFilesToBackup.bind(service);
+  jest.spyOn(service, 'getFilesToBackup').mockImplementationOnce(async (...args) => {
+    const files = await original(...args); await db('print_sales_assets').where({ storage_key: key() }).del(); await storage.delete(key()); return files;
+  });
+  const point = await backup(); expect(point.status).toBe('completed');
+  expect((await manifest(point)).files.manifest.some(f => f.path === key())).toBe(false);
+});
 test.each(['discarded', 'retained'])('portable capture handles a %s file lost after listing', async state => {
   await asset();
   const recovery = require('../../src/services/recoveryFiles'), original = recovery.materialize;

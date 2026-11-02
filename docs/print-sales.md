@@ -230,6 +230,8 @@ backups alone do not replace storage backups. Unfinished staging uploads are
 not required backup objects. Recovery inventories account for committed print
 files published after the initial listing and unconfirmed work removed during
 capture; a missing file still retained by an order remains an error.
+Retained print assets exceeding the configured backup file-size limit also fail
+the restore point instead of silently producing an incomplete order backup.
 Local atomic `.tmp.` files are excluded too. Portable exports privately capture
 the retained print files before archiving, so a concurrent discard cannot remove
 a catalogued ZIP source; allow staging disk space for those copies.
