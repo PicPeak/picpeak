@@ -13,11 +13,19 @@ const { db } = require('../database/db');
 const { livePhotos } = require('../utils/photoVisibility');
 const { toTimestamp } = require('../utils/dateNormalize');
 
-/** Hex SHA-256 of a local file, streamed. */
-async function sha256File(filePath) {
+/**
+ * Hex SHA-256 of a readable stream, chunk by chunk: an original on S3 or a
+ * NAS mount is never held in memory whole.
+ */
+async function sha256Stream(stream) {
   const hash = crypto.createHash('sha256');
-  for await (const chunk of fs.createReadStream(filePath)) hash.update(chunk);
+  for await (const chunk of stream) hash.update(chunk);
   return hash.digest('hex');
+}
+
+/** Hex SHA-256 of a local file, streamed. */
+function sha256File(filePath) {
+  return sha256Stream(fs.createReadStream(filePath));
 }
 
 /**
@@ -111,6 +119,6 @@ async function duplicatesOf(eventId, keep, conn = db) {
 }
 
 module.exports = {
-  sha256File, findDuplicate, duplicateName, listDuplicateGroups, duplicatesOf, uploadedMs,
+  sha256File, sha256Stream, findDuplicate, duplicateName, listDuplicateGroups, duplicatesOf, uploadedMs,
   DEFAULT_GROUP_LIMIT, MAX_GROUP_LIMIT,
 };

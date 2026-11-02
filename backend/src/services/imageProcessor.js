@@ -39,7 +39,7 @@ sharp.concurrency(2); // Limit concurrent operations
 // RAW format knowledge lives in a leaf module so a route can ask "can a
 // browser render this?" without loading sharp. Re-exported below, because
 // isRawFilename has callers that import it from here.
-const { RAW_EXTENSIONS, isRawFilename, originalNeedsPreview } = require('../utils/rawFormats');
+const { RAW_EXTENSIONS, isRawFilename, isHeifFilename, originalNeedsPreview } = require('../utils/rawFormats');
 
 const derivativeSourceFields = ['event_id', 'path', 'filename', 'external_relpath', 'source_origin', 'processing_attempt_id'];
 // A file on a reference share can be rewritten in place: same path, other
@@ -64,7 +64,8 @@ const legacyVersionTags = photo => {
   if (!sourceVersion(photo)) return [];
   return sourceVersion(photo) === sizeVersion(photo) ? [''] : ['', `v${sizeVersion(photo)}_`];
 };
-const boundedDerivative = photo => isVideoPhoto(photo) || isRawFilename(photo.filename || photo.external_relpath || photo.path || '');
+const slowDecode = name => isRawFilename(name) || isHeifFilename(name);
+const boundedDerivative = photo => isVideoPhoto(photo) || slowDecode(photo.filename || photo.external_relpath || photo.path || '');
 const derivativeCacheId = photo => crypto.createHash('sha256')
   .update(JSON.stringify([
     ...derivativeSourceFields.map(field => photo[field] ?? null),
@@ -416,19 +417,186 @@ async function extractRawPreviewSnapshot(rawPath) {
   throw new Error(`No usable embedded preview in RAW file ${path.basename(rawPath)}: ${lastErr ? lastErr.message : 'no preview tag returned data'}`);
 }
 
+// A 48 MP frame at the quality below stays well under this.
+const HEIF_DECODE_MAX_BYTES = 128 * 1024 * 1024;
+// An iPhone stores its frame as 512px tiles and ffmpeg gives each tile a
+// decoder thread: 48 for 12 MP, 187 for 48 MP. The default budget of 128 ends
+// the job, so the decoders stay single-threaded and the budget is the maximum.
+const HEIF_DECODE_THREADS = 256;
+const JPEG_SEGMENT_BYTES = 65533;
+const JPEG_ICC_SEGMENT_BYTES = 65519;
+
+/**
+ * The header of a HEVC-coded HEIF, or null. Sharp's prebuilt libvips reads that
+ * header but has no HEVC decoder, while an AV1-coded .heif decodes as it is. A
+ * file sharp cannot read at all is left to fail where any other photo would.
+ */
+async function hevcHeifMetadata(input) {
+  try {
+    const metadata = await sharp(input).metadata();
+    return metadata.compression === 'hevc' ? metadata : null;
+  } catch (error) {
+    if (isResourceError(error)) throw error;
+    return null;
+  }
+}
+
+function jpegSegment(marker, payload) {
+  const header = Buffer.alloc(4);
+  header.writeUInt16BE(marker, 0);
+  header.writeUInt16BE(payload.length + 2, 2);
+  return Buffer.concat([header, payload]);
+}
+
+/**
+ * An EXIF block with its Orientation at 1, or null if it is not one. The decode
+ * has already turned the pixels, and every later `.rotate()` reads this tag.
+ */
+function uprightExif(exif) {
+  if (exif.toString('latin1', 0, 6) !== 'Exif\0\0') return null;
+  const copy = Buffer.from(exif);
+  const little = copy.toString('latin1', 6, 8) === 'II';
+  const u16 = offset => (little ? copy.readUInt16LE(offset) : copy.readUInt16BE(offset));
+  try {
+    const ifd = 6 + (little ? copy.readUInt32LE(10) : copy.readUInt32BE(10));
+    for (let index = 0; index < u16(ifd); index++) {
+      const entry = ifd + 2 + index * 12;
+      if (u16(entry) !== 0x0112) continue;
+      if (little) copy.writeUInt16LE(1, entry + 8); else copy.writeUInt16BE(1, entry + 8);
+      break;
+    }
+    return copy;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Put the source's metadata into a JPEG, after the JFIF header ffmpeg writes.
+ * ffmpeg drops all of it on the way out. An iPhone shoots in Display P3, so
+ * without the ICC profile every photo reads as sRGB and comes out duller, and
+ * a watermarked download promises the photo's EXIF and XMP (issue 1649). The
+ * renditions stay stripped: sharp only keeps metadata when told to.
+ */
+function withSourceMetadata(jpeg, { exif, xmp, icc }) {
+  const segments = [];
+  const upright = exif && uprightExif(exif);
+  if (upright && upright.length <= JPEG_SEGMENT_BYTES) segments.push(jpegSegment(0xffe1, upright));
+  if (xmp) {
+    const text = xmp.toString('utf8').replace(/(tiff:Orientation(?:="|>))\d/g, (_, tag) => `${tag}1`);
+    const payload = Buffer.concat([Buffer.from('http://ns.adobe.com/xap/1.0/\0', 'latin1'), Buffer.from(text, 'utf8')]);
+    if (payload.length <= JPEG_SEGMENT_BYTES) segments.push(jpegSegment(0xffe1, payload));
+  }
+  const count = icc ? Math.ceil(icc.length / JPEG_ICC_SEGMENT_BYTES) : 0;
+  for (let index = 0; index < count; index++) {
+    const header = Buffer.alloc(14);
+    header.write('ICC_PROFILE\0', 0, 'latin1');
+    header[12] = index + 1;
+    header[13] = count;
+    const part = icc.subarray(index * JPEG_ICC_SEGMENT_BYTES, (index + 1) * JPEG_ICC_SEGMENT_BYTES);
+    segments.push(jpegSegment(0xffe2, Buffer.concat([header, part])));
+  }
+  const start = jpeg.readUInt16BE(2) === 0xffe0 ? 4 + jpeg.readUInt16BE(4) : 2;
+  return Buffer.concat([jpeg.subarray(0, start), ...segments, jpeg.subarray(start)]);
+}
+
+/**
+ * ffmpeg before 8.1 hands back one tile of a grid with no error, and a file can
+ * carry a video track that ffmpeg prefers to the photo sharp read. Either would
+ * pass as the photo. The tolerance is for the crop a HEIC can apply to its grid.
+ */
+function assertDecodedWhole(decoded, source) {
+  const edges = ({ width, height }) => [width, height].sort((a, b) => a - b);
+  const expected = edges(source);
+  if (edges(decoded).some((edge, index) => Math.abs(edge - expected[index]) > expected[index] * 0.1)) {
+    throw new Error(`ffmpeg decoded ${decoded.width}x${decoded.height} from a ${source.width}x${source.height} HEIC; a tiled photo needs ffmpeg 8.1 or newer`);
+  }
+}
+
+/**
+ * Decode a HEVC HEIC to a temp .jpg. ffmpeg already ships for video, and it
+ * assembles an iPhone's tile grid and applies the stored rotation, so the
+ * result is upright with no orientation left to carry. Throws if the file
+ * cannot be decoded; the caller treats that as a processing failure, same as
+ * any unreadable upload.
+ */
+async function decodeHevcHeif(localPath, sourceName, metadata) {
+  require('./imageResourcePolicy').estimate(metadata);
+  return mediaProcesses.withSnapshot(localPath, 'heif', async (snapshot, { policy, format }) => {
+    const outDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-heif-'));
+    const outPath = path.join(outDir, `${crypto.randomBytes(4).toString('hex')}.jpg`);
+    const cleanup = () => fsp.rm(outDir, { recursive: true, force: true }).catch(() => {});
+    try {
+      await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+        ...mediaProcesses.inputOptions(format, 1), '-c:v', 'hevc', '-i', snapshot,
+        '-frames:v', '1', '-an', '-sn', '-dn', '-pix_fmt', 'yuvj420p', '-q:v', '2',
+        '-threads', '1', outPath], {
+        memoryBytes: policy.nativeBytes, wallMs: policy.thumbnailMs,
+        cpuSeconds: Math.ceil(policy.thumbnailMs / 1000), fileBytes: HEIF_DECODE_MAX_BYTES,
+        threadLimit: HEIF_DECODE_THREADS,
+      });
+      assertDecodedWhole(await sharp(outPath).metadata(), metadata);
+      await fsp.writeFile(outPath, withSourceMetadata(await fsp.readFile(outPath), metadata));
+      return { path: outPath, cleanup };
+    } catch (error) {
+      await cleanup();
+      throw error;
+    }
+  }, { sourceName });
+}
+
 /**
  * Give a Sharp-processable local image path for `localPath`. For ordinary
  * images it's a pass-through (no cost). For RAW/DNG (by `sourceName` extension)
- * it extracts the embedded JPEG preview and returns that, plus the basename to
- * use for generated outputs so thumbnails/previews stay named after the source
- * rather than the random temp file. Always call `cleanup()` when done.
+ * it extracts the embedded JPEG preview, and for a HEVC HEIC it decodes one,
+ * and returns that, plus the basename to use for generated outputs so
+ * thumbnails/previews stay named after the source rather than the random temp
+ * file. Always call `cleanup()` when done.
  */
 async function withProcessableImage(localPath, sourceName) {
-  if (!isRawFilename(sourceName)) {
+  const hevc = isHeifFilename(sourceName) ? await hevcHeifMetadata(localPath) : null;
+  if (!hevc && !isRawFilename(sourceName)) {
     return { path: localPath, outputBasename: undefined, cleanup: () => {} };
   }
-  const { path: previewPath, cleanup } = await extractRawPreview(localPath, sourceName);
+  const { path: previewPath, cleanup } = hevc
+    ? await decodeHevcHeif(localPath, sourceName, hevc)
+    : await extractRawPreview(localPath, sourceName);
   return { path: previewPath, outputBasename: path.basename(sourceName), cleanup };
+}
+
+/**
+ * A temp file sharp can read standing in for a HEVC photo, or null for any
+ * other input. For the code that takes a path or a buffer and not a source
+ * name: the watermark, which a HEIC reaches at both shapes.
+ */
+async function heifStandIn(input) {
+  if (!Buffer.isBuffer(input)) {
+    if (!isHeifFilename(input)) return null;
+    const proc = await withProcessableImage(input, input);
+    return proc.path === input ? null : proc;
+  }
+  if (input.toString('latin1', 4, 8) !== 'ftyp' || !(await hevcHeifMetadata(input))) return null;
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-heif-'));
+  const removeDir = () => fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  try {
+    const source = path.join(dir, 'source.heic');
+    await fsp.writeFile(source, input);
+    const proc = await withProcessableImage(source, source);
+    return { path: proc.path, cleanup: async () => { await proc.cleanup(); await removeDir(); } };
+  } catch (error) {
+    await removeDir();
+    throw error;
+  }
+}
+
+/** Render from a reference photo, in place, through whatever makes it readable. */
+async function renderExternal(localPath, sourceName, render) {
+  const proc = await withProcessableImage(localPath, sourceName);
+  try {
+    return await render(proc.path);
+  } finally {
+    await proc.cleanup();
+  }
 }
 
 // Default thumbnail settings
@@ -1602,11 +1770,11 @@ async function regenerateHeroImage(photo, anchor) {
       return null;
     }
     const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
-    newHeroPath = await generateHeroImage(localPath, {
+    newHeroPath = await renderExternal(localPath, sourceBasename, source => generateHeroImage(source, {
       regenerate: true,
       outputBasename: derivativeBasename(`ext${photo.id}_${versionTag(photo)}${sourceBasename}`),
       anchor: heroAnchor,
-    });
+    }));
     if (newHeroPath) {
       if (!await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor })) return null;
       await dropSupersededHero(photo, newHeroPath);
@@ -2189,9 +2357,10 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
   try {
     if (isExternal) {
       const localPath = resolvePhotoFilePath(event, photo);
-      return await keepTierIfCurrent(photo, await generatePreviewImage(localPath, {
+      const sourceName = photo.external_relpath || photo.filename;
+      return await keepTierIfCurrent(photo, await renderExternal(localPath, sourceName, source => generatePreviewImage(source, {
         regenerate: true, outputBasename, longEdge: width, interactive: true,
-      }), previewTierKeys);
+      })), previewTierKeys);
     }
     const sourceKey = resolvePhotoStorageKey(event, photo);
     if (!sourceKey) return null;
@@ -2265,7 +2434,7 @@ async function regeneratePreviewImage(photo) {
     const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
     const outputBasename = derivativeBasename(`ext${photo.id}_${versionTag(photo)}${sourceBasename}`);
     logger.info(`Ensuring preview for external photo ${photo.id} from ${localPath}`);
-    newPreviewPath = await generatePreviewImage(localPath, { regenerate: true, outputBasename });
+    newPreviewPath = await renderExternal(localPath, sourceBasename, source => generatePreviewImage(source, { regenerate: true, outputBasename }));
   } else {
     let sourceKey;
     try {
@@ -2545,6 +2714,7 @@ module.exports = {
   originalNeedsPreview,
   extractRawPreview,
   withProcessableImage,
+  heifStandIn,
   prefixedBasename,
   RAW_EXTENSIONS,
   DEFAULT_THUMBNAIL_WIDTH,

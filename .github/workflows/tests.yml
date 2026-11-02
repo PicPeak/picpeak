@@ -37,8 +37,8 @@ jobs:
     # The budget that normally fires is the 35 on the jest step below. This
     # one sits five minutes above it, and the steps before jest (checkout,
     # npm ci, the Postgres service) take about one, so it fires first only
-    # when those steps themselves run more than five minutes. frontend and ml
-    # keep 10 — they take a few minutes at most and have never come close.
+    # when those steps themselves run more than five minutes. ml keeps 10;
+    # frontend has its own note below.
     timeout-minutes: 40
 
     # The .picpeak restore suites gate their real-Postgres cases behind
@@ -141,7 +141,11 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 10 used to be plenty. With ~480 test files the job takes 6 to 10
+    # minutes (Vitest alone 9.5 on a slow runner), and on 2026-10-29 five
+    # runs were cancelled at 10 with every test passing so far. 20 leaves
+    # room for a degraded runner while a hung run still ends.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code

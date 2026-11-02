@@ -21,6 +21,7 @@
  */
 
 const { db } = require('../database/db');
+const { toDateOnly } = require('../utils/dateOnly');
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 function deriveOffsetDays(invoice) {
@@ -108,10 +109,10 @@ async function getDealDocuments(dealUuid) {
       status: q.status,
       currency: q.currency,
       totalAmountMinor: q.total_amount_minor,
-      issueDate: q.issue_date,
-      validUntil: q.valid_until,
+      issueDate: toDateOnly(q.issue_date),
+      validUntil: toDateOnly(q.valid_until),
       eventName: q.event_name,
-      eventDate: q.event_date,
+      eventDate: toDateOnly(q.event_date),
       createdAt: q.created_at,
     })),
     contracts: contracts.map((c) => ({
@@ -120,10 +121,10 @@ async function getDealDocuments(dealUuid) {
       number: c.contract_number,
       status: c.status,
       title: c.title,
-      issueDate: c.issue_date,
-      validUntil: c.valid_until,
+      issueDate: toDateOnly(c.issue_date),
+      validUntil: toDateOnly(c.valid_until),
       eventName: c.event_name,
-      eventDate: c.event_date,
+      eventDate: toDateOnly(c.event_date),
       createdAt: c.created_at,
     })),
     invoices: invoices.map((i) => ({
@@ -135,10 +136,10 @@ async function getDealDocuments(dealUuid) {
       currency: i.currency,
       totalAmountMinor: i.total_amount_minor,
       paidAmountMinor: i.paid_amount_minor,
-      issueDate: i.issue_date,
-      dueDate: i.due_date,
+      issueDate: toDateOnly(i.issue_date),
+      dueDate: toDateOnly(i.due_date),
       eventName: i.event_name,
-      eventDate: i.event_date,
+      eventDate: toDateOnly(i.event_date),
       installmentIndex: i.installment_index,
       installmentTotal: i.installment_total,
       installmentLabel: i.installment_label,

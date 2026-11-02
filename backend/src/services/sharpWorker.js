@@ -2,12 +2,13 @@
  * child and feeds it one JSON job per line; `run` is also its last-resort
  * in-process fallback. Nothing else may load it. */
 const fs = require('fs');
-const { estimate, refusal, MiB } = require('./imageResourcePolicy');
+const { estimate, refusal, MiB, LIBRARY_UNAVAILABLE } = require('./imageResourcePolicy');
 
 const RESPONSE_BYTES = MiB;
 // EXIF/ICC/XMP/IPTC blocks travel back base64-encoded inside one response.
 // Blocks beyond this budget are left out rather than failing the photo.
 const METADATA_BLOCK_BYTES = 512 * 1024;
+const REQUIREMENTS_URL = 'https://docs.picpeak.app/deployment/system-requirements#cpu';
 
 function errorCode(error) {
   if (error.code?.startsWith('IMAGE_')) return error.code;
@@ -43,10 +44,21 @@ function serializableMetadata(metadata) {
   }
   return result;
 }
+// sharp refuses to load on an x86-64 CPU without the v2 instructions, and on
+// a broken install. Either way it is this host, never the file at hand.
+function libraryUnavailable(error) {
+  const message = String(error.message || error);
+  const cause = /microarchitecture|Unsupported CPU/i.test(message)
+    ? 'this CPU lacks the x86-64-v2 instructions the image library needs (on a VM, check the virtual CPU type)'
+    : 'the image library could not be loaded';
+  return refusal(`Image processing is unavailable on this server: ${cause}. The file itself may be fine. See ${REQUIREMENTS_URL}`,
+    LIBRARY_UNAVAILABLE, { detail: message });
+}
 let native;
 function loadSharp() {
   if (!native) {
-    native = require('sharp');
+    try { native = require('sharp'); }
+    catch (error) { throw libraryUnavailable(error); }
     native.cache(false);
     native.concurrency(1);
   }
@@ -227,4 +239,4 @@ function serve() {
   process.stdin.on('end', () => process.exit(0));
 }
 if (require.main === module) serve();
-module.exports = { run, serializeError };
+module.exports = { run, serializeError, loadSharp };
