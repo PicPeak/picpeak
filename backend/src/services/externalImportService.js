@@ -33,6 +33,7 @@ const {
 } = require('./externalMediaTypes');
 const { generateThumbnail, extractCaptureDate, extractCapture, captureWallColumn, orientedDimensions } = require('./imageProcessor');
 const { exifColumn } = require('./photoExif');
+const { sha256File } = require('./photoDuplicates');
 const { processUploadedVideo, posterFrameError, extractVideoMetadata } = require('./videoProcessor');
 const { isInterruption: isResourceError } = require('./mediaProcessPolicy');
 const { isUniqueViolation } = require('../utils/dbErrors');
@@ -404,6 +405,14 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
     const creditFromFile = !row.credit_source || row.credit_source === 'exif';
     credit = creditFromFile ? await resolveCredit({ localPath: f.full, isVideo: false }) : null;
   }
+  // The content hash (issue 2194) follows the bytes too: the old one would
+  // match a duplicate the file no longer is. Read in place, streamed, for an
+  // image; a video's is cleared and left to the content-hash backfill, as is
+  // a file that cannot be read now.
+  const contentSha256 = isVideo ? null : await sha256File(f.full).catch((hashErr) => {
+    logger.warn(`Could not hash changed external file ${f.rel}: ${hashErr.message}`);
+    return null;
+  });
   // Everything above must describe one version of the file: if it moved
   // while being read, try again on the next pass.
   const stats = await fs.stat(f.full);
@@ -502,6 +511,8 @@ async function refreshChangedFile(row, f, { automatic, settleMs }) {
       ...exif,
     }),
     thumb_hash: null,
+    content_sha256: contentSha256,
+    content_sha256_error: null,
   };
   for (const column of DERIVATIVE_COLUMNS) updates[column] = null;
   // A video's web copy and ladder as the row names them at the commit, read
@@ -1088,6 +1099,17 @@ async function importExternalFolder({
         // Videos carry none, as on every other ingest path.
         const credit = await resolveCredit({ localPath: f.full, isVideo });
 
+        // Content hash (issue 2194), as the upload paths store it, of the
+        // file in place on the share, streamed. Images only: a second full
+        // read of a large video would hold up the import (and the request
+        // that runs it), so videos are left to the content-hash backfill.
+        // Best-effort like the reads above: a file that cannot be read now
+        // goes in without one, for the same.
+        const contentSha256 = isVideo ? null : await sha256File(f.full).catch((hashErr) => {
+          logger.warn(`Could not hash ${f.rel}: ${hashErr.message}`);
+          return null;
+        });
+
         // Folder + first-look flag (issues 1786, 1562). Folders are created on
         // insert only; a rescan never moves an existing row, so an admin's
         // manual moves survive.
@@ -1118,6 +1140,7 @@ async function importExternalFolder({
             thumbnail_path: null,
             type,
             size_bytes: stats.size,
+            content_sha256: contentSha256,
             // With the size, the version a re-scan compares (issue 2059).
             source_mtime_ms: Math.floor(stats.mtimeMs),
             width,

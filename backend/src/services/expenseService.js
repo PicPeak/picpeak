@@ -251,8 +251,10 @@ async function recordInboundDocument({ source, filePath, originalFilename, mimeT
     page_count: pageCount != null ? Math.min(pageCount, 200) : null,
     duplicate_of_id: duplicateOfId,
     created_by_admin_id: adminId || null,
-    created_at: mailClaim ? now.toISOString() : now,
-    updated_at: mailClaim ? now.toISOString() : now,
+    // ISO text, not a Date: SQLite stores a Date as epoch ms, which the
+    // tax report's and journal's date range never matched (migration 337).
+    created_at: now.toISOString(),
+    updated_at: now.toISOString(),
     ...(mailClaim ? { received_email_id: mailClaim.id, mail_account_key: mailClaim.accountKey } : {}),
   };
   // The mailbox poller records with no admin: attribute it to the intake.
@@ -921,8 +923,9 @@ function buildExpenseInsert(payload, adminId, opts = {}) {
     receipt_path: opts.receiptPath || null,
     status: 'open',
     created_by_admin_id: adminId || null,
-    created_at: now,
-    updated_at: now,
+    // ISO text, not a Date: see the inbound insert above (migration 337).
+    created_at: now.toISOString(),
+    updated_at: now.toISOString(),
   };
 }
 

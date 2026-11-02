@@ -11,7 +11,9 @@ const { configuration, refusal, MiB } = require('./imageResourcePolicy');
 
 const methods = ['rotate', 'withMetadata', 'keepMetadata', 'withIccProfile', 'withExif', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite', 'ensureAlpha', 'raw'];
 const WORKER = path.join(__dirname, 'sharpWorker.js');
-const NODE_FLAGS = ['--jitless', '--no-expose-wasm', '--max-old-space-size=64'];
+// --jitless also turns WebAssembly off, on every supported Node. Node 24 removed
+// --no-expose-wasm and refuses to start with it.
+const NODE_FLAGS = Object.freeze(['--jitless', '--max-old-space-size=64']);
 const MESSAGE_BYTES = 1024 * 1024;
 const READY_MS = 15000;
 const IDLE_MS = 30000;
@@ -135,6 +137,10 @@ function resolveMode(policy) {
       } catch (exit) {
         logger.warn(`IMAGE PROCESSING RUNS INSIDE THE BACKEND PROCESS: ${reason}, and a plain image worker did not start either ` +
           `(${startFailure(exit)}). The pixel limit still applies, but a crash or memory exhaustion in the image library now takes the backend down with it.`);
+        // No worker starts when sharp itself cannot load: every image would
+        // fail, so this line has to be findable before the first upload.
+        try { require('./sharpWorker').loadSharp(); }
+        catch (error) { logger.error(`IMAGE PROCESSING IS UNAVAILABLE: ${error.message}${error.detail ? ` (${error.detail})` : ''}`); }
         return 'inprocess';
       }
     })();
@@ -338,6 +344,7 @@ sharp.concurrency = () => 1;
 // Bounded header admission batches avoid one job per small upload.
 sharp.metadataBatch = (entries, { signal, interactive, validate = false } = {}) =>
   submit({ entries, validate, terminal: 'metadataBatch' }, { signal, interactive });
+sharp.nodeFlags = NODE_FLAGS;
 /** Decide the isolation mode now, so its warning lands in the startup log. */
 sharp.prepare = () => resolveMode(configuration());
 /** Stop the idle workers (shutdown, tests). Running jobs finish first. */

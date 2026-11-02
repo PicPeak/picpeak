@@ -5,11 +5,8 @@
 const { db, logActivity } = require('../../database/db');
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission, userHasAnyPermission } = require('../../middleware/permissions');
-const bcrypt = require('bcrypt');
-const { queueEmail } = require('../../services/emailProcessor');
-const { galleryPasswordColumns, readGalleryPassword, dropCopiesIfStorageOff } = require('../../utils/galleryPasswordVault');
-const { credentialChangeColumns, sameAsStored } = require('../../utils/galleryCredentialCutoff');
-const { validatePasswordInContext, getBcryptRounds } = require('../../utils/passwordValidation');
+const { readGalleryPassword } = require('../../utils/galleryPasswordVault');
+const { resetGalleryPassword } = require('../../services/galleryPasswordService');
 const logger = require('../../utils/logger');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
@@ -17,8 +14,7 @@ const { requireEventOwner, scopeEventsQuery } = require('../../middleware/owners
 const { getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const { parseBooleanInput } = require('../../utils/parsers');
 const {
-  resolveGalleryRecipients, notifyGalleryRecipients, describeRecipients, recipientSummary, passwordKnownColumns,
-  galleryLinkFor,
+  resolveGalleryRecipients, notifyGalleryRecipients, describeRecipients, recipientSummary,
 } = require('../../services/galleryNotificationService');
 
 module.exports = (router) => {
@@ -41,89 +37,12 @@ module.exports = (router) => {
         return res.status(400).json({ error: 'Cannot reset password for archived event' });
       }
 
-      // Use the admin-supplied password when provided; otherwise auto-generate
-      // (preserves the previous one-click behaviour for callers/cron that don't
-      // pass a body). Validation matches the create-event flow so the same
-      // strength rules apply both ways.
-      let newPassword;
-      if (typeof clientPassword === 'string' && clientPassword.length > 0) {
-        const passwordValidation = await validatePasswordInContext(clientPassword, 'gallery', {
-          eventName: event.event_name
-        });
-        if (!passwordValidation.valid) {
-          return res.status(400).json({
-            error: 'Password does not meet security requirements',
-            details: passwordValidation.errors,
-            score: passwordValidation.score,
-            feedback: passwordValidation.feedback
-          });
-        }
-        newPassword = clientPassword;
-      } else {
-        const { generateReadablePassword } = require('../../utils/passwordGenerator');
-        newPassword = generateReadablePassword();
+      const result = await resetGalleryPassword(id, event, { password: clientPassword, sendEmail },
+        { type: 'admin', id: req.admin.id, name: req.admin.username });
+      if (result.rejected) {
+        return res.status(400).json(result.rejected);
       }
-      const passwordHash = await bcrypt.hash(newPassword, getBcryptRounds());
-      // The admin sees this password in the response, so it is no longer the
-      // generated one nobody knows (migration 264).
-      const copyColumns = { ...(await galleryPasswordColumns({ password: newPassword })), ...(await passwordKnownColumns()) };
-      // An admin-chosen password equal to the current one is not a change; it
-      // keeps the hash only while the stored hash is still the one compared.
-      // A generated password is always new. #1271 — the copy is written in the
-      // same statement as the hash, so it can never disagree with it.
-      const keptHash = newPassword === clientPassword
-        && await sameAsStored(newPassword, event.password_hash)
-        && await db('events').where({ id, password_hash: event.password_hash })
-          .update(Object.keys(copyColumns).length ? copyColumns : { updated_at: new Date().toISOString() });
-      if (!keptHash) {
-        await db('events')
-          .where('id', id)
-          .update({
-            password_hash: passwordHash,
-            ...copyColumns,
-            // Guests who got in with the old password must log in again.
-            ...(await credentialChangeColumns('gallery')),
-          });
-      }
-      await dropCopiesIfStorageOff(id);
-
-      // Queue email notification if requested. The event may have no address
-      // (optional at creation, clearable since issue 1733): then nothing is
-      // queued and the response says so, instead of reporting a mail that
-      // never existed.
-      let emailSent = false;
-      if (sendEmail) {
-        const recipientEmail = event.customer_email || event.host_email;
-        const recipientName = event.customer_name || event.host_name || (recipientEmail ? recipientEmail.split('@')[0] : null);
-        // event.share_link is the path-only form (`/gallery/<slug>/<token>`).
-        // Use the full URL so customers can click straight from the email.
-        const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
-
-        // The password is already changed above; a queue failure must not
-        // turn that into a 500 without the audit row below.
-        try {
-          emailSent = await queueEmail(id, recipientEmail, 'gallery_created', {
-            customer_name: recipientName,
-            customer_email: recipientEmail,
-            host_name: recipientName,
-            event_name: event.event_name,
-            event_date: event.event_date,  // Pass raw date - will be formatted by email processor
-            gallery_link: await galleryLinkFor(event, recipientEmail, shareUrl),
-            gallery_password: newPassword,
-            expiry_date: event.expires_at  // Pass raw date - will be formatted by email processor
-          }) === true;
-        } catch (queueError) {
-          logger.error('Password reset: could not queue the notification email', { eventId: id, error: queueError.message });
-          emailSent = false;
-        }
-      }
-
-      // Log activity
-      await logActivity('password_reset',
-        { eventName: event.event_name, emailSent },
-        id,
-        { type: 'admin', id: req.admin.id, name: req.admin.username }
-      );
+      const { newPassword, emailSent } = result;
 
       res.json({
         message: 'Password reset successfully',

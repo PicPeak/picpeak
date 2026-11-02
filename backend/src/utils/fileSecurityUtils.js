@@ -171,8 +171,8 @@ const ALLOWED_IMAGE_TYPES = {
   },
   // HEIC/HEIF (iPhone). ISO-BMFF container: bytes 4-7 are the "ftyp" box marker,
   // present in every HEIF/HEIC file (single entry — the magic check is `.every`,
-  // so alternatives can't be listed as separate entries). Sharp's libvips
-  // decodes these; extension + MIME are already gated by validateFileType.
+  // so alternatives can't be listed as separate entries). Decoded through
+  // withProcessableImage; extension + MIME are already gated by validateFileType.
   'image/heic': {
     extensions: ['.heic'],
     magicNumbers: [
@@ -309,6 +309,13 @@ const ALLOWED_DOCUMENT_TYPES = {
 // one of them can be taken at its word.
 const GENERIC_RAW_MIMES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
 
+// HEIC is the same story with fewer names. The extension is often uppercase on
+// an iPhone file, and Chromium on Linux reports no type for `.HEIC` and
+// image/heif for `.heic`. The two names cover one container, so neither says
+// more about the file than the extension does.
+const HEIF_EXTENSION_TO_MIME = { '.heic': 'image/heic', '.heif': 'image/heif' };
+const GENERIC_HEIF_MIMES = new Set(['', 'application/octet-stream', 'image/heic', 'image/heif']);
+
 /**
  * The MIME type an upload should be validated and stored as.
  *
@@ -337,6 +344,10 @@ function normalizeUploadMimeType(filename, mimetype) {
   if (rawMime && GENERIC_RAW_MIMES.has(mimetype || '')) {
     return rawMime;
   }
+  const heifMime = HEIF_EXTENSION_TO_MIME[ext];
+  if (heifMime && GENERIC_HEIF_MIMES.has(mimetype || '')) {
+    return heifMime;
+  }
   return mimetype;
 }
 
@@ -348,8 +359,8 @@ function normalizeUploadMimeType(filename, mimetype) {
  * @returns {boolean} - True if file type is valid
  */
 function validateFileType(filename, mimetype, allowedTypes) {
-  // RAW arrives untyped from the browser; every other format is taken at its
-  // word, exactly as before.
+  // RAW and HEIC arrive badly typed from the browser; every other format is
+  // taken at its word, exactly as before.
   const effectiveMime = normalizeUploadMimeType(filename, mimetype);
 
   // Check if MIME type is allowed

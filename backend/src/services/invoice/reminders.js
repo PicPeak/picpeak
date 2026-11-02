@@ -4,7 +4,7 @@
 const { db, logActivity } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
 const { AppError } = require('../../utils/errors');
-const { formatShortDate } = require('../../utils/dateFormatter');
+const { toDateOnly } = require('../../utils/dateOnly');
 const { resolveBillingRecipients } = require('../_billingRecipients');
 const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
@@ -187,7 +187,7 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
       outstanding_amount: formatMajor(outstandingMinor, invoice.currency, locale),
       paid_amount: formatMajor(invoice.paid_amount_minor, invoice.currency, locale),
       late_fee_amount: formatMajor(lateFeeGross, invoice.currency, locale),
-      due_date: formatShortDate(invoice.due_date),
+      due_date: toDateOnly(invoice.due_date),
       days_overdue: daysOverdue,
       cc: reminderCc,
       attachments,

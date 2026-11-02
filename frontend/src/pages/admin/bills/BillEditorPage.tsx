@@ -3,7 +3,7 @@
  * quote conversion; this is for one-off / ad-hoc invoicing. Smaller
  * surface than the quote form on purpose.
  *
- * One page per invoice: `BillForm` is the body of a scheduled invoice's own
+ * One page per invoice: `BillForm` is the body of an unissued invoice's own
  * page (BillDetailPage, which owns the header, the save bar and Send) and of
  * /bills/new (BillEditorPage below). Once an invoice is issued it is never
  * edited again (§ 14 UStG): its page is read-only, Storno and reissue.
@@ -90,7 +90,9 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
   // on the day the invoice actually goes out. Flipping this lets the
   // admin type a different date by hand; we keep it pinned so the auto
   // effect below stops clobbering their value.
-  const [dueDateOverridden, setDueDateOverridden] = useState(false);
+  // A saved invoice keeps its due date. hydrate() sets this too, but with
+  // cached data the auto-track effect runs right after it, on the old value.
+  const [dueDateOverridden, setDueDateOverridden] = useState(isEdit);
   const [scheduledSendAt, setScheduledSendAt] = useState('');
   // null = inherit profile default at render time. 'none' / 'swiss' /
   // 'epc' = explicit per-invoice override. (Existing invoices that
@@ -162,6 +164,7 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
     queryFn: () => billsService.get(parseInt(id!, 10)),
     enabled: !!isEdit,
   });
+  const awaitingDelivery = existing?.invoice.status === 'pending_delivery';
 
   // Dirty tracking: the payload the fields build right after a saved
   // invoice is loaded into them is the snapshot to compare against.
@@ -605,7 +608,19 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
       <Card>
         <h3 className="font-semibold mb-2">{t('bills.section.details', 'Details')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <LocalizedDateInput label={t('bills.field.issueDate', 'Issue date') as string} value={issueDate} onChange={setIssueDate} />
+          <div>
+            <LocalizedDateInput
+              label={t('bills.field.issueDate', 'Issue date') as string}
+              value={issueDate}
+              onChange={setIssueDate}
+              disabled={awaitingDelivery}
+            />
+            {awaitingDelivery && (
+              <p className="text-xs text-muted mt-1">
+                {t('bills.field.issueDateOnDelivery', 'Set when you mark this invoice delivered. The due date then counts from it, unless you changed it.')}
+              </p>
+            )}
+          </div>
           <div>
             <LocalizedDateInput
               label={t('bills.field.dueDate', 'Due date') as string}
@@ -625,6 +640,8 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
                 : t('bills.field.dueDateOverrideOff', 'Auto from send date + payment term — tick to set manually')}
             </label>
           </div>
+          {/* A delivery invoice goes out with "Mark delivered & send", not by date. */}
+          {!awaitingDelivery && (
           <div>
             <label className="block text-sm font-medium mb-1">{t('bills.field.scheduledSendAt', 'Scheduled send (optional)')}</label>
             {/* Localized date + time (honours general_date_format +
@@ -650,6 +667,7 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
               />
             </div>
           </div>
+          )}
           <div>
             <label className="block text-sm font-medium mb-1">{t('bills.field.qrFormat', 'Payment QR format')}</label>
             <select
@@ -797,14 +815,14 @@ export const BillForm = forwardRef<BillFormHandle, BillFormProps>(({ invoiceId, 
             a multi-row plan and clicks Save, the backend spawns one
             invoice per row via spawnInstallmentInvoices (commit #4)
             and returns the array of new ids. */}
-        <div className="mt-4 pt-4 border-t border-line">
+        {!isEdit && <div className="mt-4 pt-4 border-t border-line">
           <InstallmentsPanel
             value={installments}
             onChange={setInstallments}
             onValidityChange={setInstallmentsValid}
             eventDate={eventDate || null}
           />
-        </div>
+        </div>}
       </Card>
 
       <Card>

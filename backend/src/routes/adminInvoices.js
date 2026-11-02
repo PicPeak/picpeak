@@ -39,8 +39,10 @@ const expenseService = require('../services/expenseService');
 const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { db } = require('../database/db');
 const { canLinkCrmToEvent, ownsProject } = require('../middleware/ownership');
-const { ensureEventMatchesCustomer } = require('../services/invoice/helpers');
+const { AppError } = require('../utils/errors');
+const { computeDueDate, ensureEventMatchesCustomer, isInvoiceEditable, resolveNetDaysForRow, UNISSUED_INVOICE_STATUSES } = require('../services/invoice/helpers');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { toDateOnly } = require('../utils/dateOnly');
 
 const router = express.Router();
 // Re-bill proof endpoints (#866) are behind the incoming-invoices flag.
@@ -141,8 +143,8 @@ function transformInvoice(i) {
     projectId: i.project_id ?? null,
     language: i.language,
     currency: i.currency,
-    issueDate: i.issue_date,
-    dueDate: i.due_date,
+    issueDate: toDateOnly(i.issue_date),
+    dueDate: toDateOnly(i.due_date),
     installmentIndex: i.installment_index,
     installmentTotal: i.installment_total,
     installmentLabel: i.installment_label,
@@ -185,8 +187,8 @@ function transformInvoice(i) {
     // monthlyPeriodStart/End drive the period banner on the customer
     // detail page and (later) the PDF header.
     isMonthlyDraft: i.is_monthly_draft === true || i.is_monthly_draft === 1,
-    monthlyPeriodStart: i.monthly_period_start || null,
-    monthlyPeriodEnd: i.monthly_period_end || null,
+    monthlyPeriodStart: toDateOnly(i.monthly_period_start),
+    monthlyPeriodEnd: toDateOnly(i.monthly_period_end),
     // Storno wiring (migration 114). The four FK columns drive the
     // admin UI's banners + action gating:
     //  - kind: 'invoice' | 'storno' — defaults to 'invoice' for rows
@@ -205,7 +207,7 @@ function transformInvoice(i) {
     // these, the list page shows event_name as a column, and email
     // / tax-report rendering reads them in preference to the FK.
     eventName: i.event_name || null,
-    eventDate: i.event_date || null,
+    eventDate: toDateOnly(i.event_date),
     eventTimeStart: i.event_time_start || null,
     eventTimeEnd: i.event_time_end || null,
     // `isImported` surfaces the historical-PDF flag to the admin UI
@@ -742,15 +744,36 @@ router.put(
     // legal record under CH/LI/DE/AT tax rules ("Rechnung ist
     // ausgestellt"). Modifying it in place would break the audit
     // trail — the correct workflow is to cancel the original +
-    // issue a new one. Only `scheduled` (not yet sent) invoices
-    // remain editable.
-    if (existing.status !== 'scheduled') {
+    // issue a new one. Only invoices that have not left the system
+    // remain editable: `scheduled`, and `pending_delivery`, which
+    // is hidden from the customer and the books until "Mark delivered & send".
+    if (!UNISSUED_INVOICE_STATUSES.has(existing.status)) {
       return res.status(409).json({
         error: `Cannot edit invoice with status '${existing.status}'. Sent invoices are locked — cancel and reissue if changes are needed.`,
         code: 'INVOICE_LOCKED',
       });
     }
+    if (!isInvoiceEditable(existing)) {
+      return res.status(409).json({
+        error: 'This invoice already has a payment recorded. Cancel and reissue it if changes are needed.',
+        code: 'INVOICE_LOCKED',
+      });
+    }
     const payload = mapPayloadToService(req.body);
+    // A delivery invoice goes out with "Mark delivered & send", never by date.
+    // Sending sets the issue date, and the release compares the due date with it.
+    if (existing.status === 'pending_delivery' && (payload.scheduledSendAt
+        || (payload.installmentTrigger && payload.installmentTrigger !== existing.installment_trigger)
+        || (payload.issueDate && toDateOnly(payload.issueDate) !== toDateOnly(existing.issue_date)))) {
+      return res.status(409).json({
+        error: 'An invoice awaiting delivery is sent by marking it delivered. It cannot take a send date, an issue date or another trigger.',
+        code: 'INVOICE_SENDS_ON_DELIVERY',
+      });
+    }
+    // The checks above are reads; this makes the write lose to a send or a
+    // payment that landed since, instead of changing what was just issued.
+    const unchanged = { id, status: existing.status, paid_amount_minor: existing.paid_amount_minor };
+    const lockedError = () => new AppError('This invoice was sent or paid in the meantime. Reload it.', 409, 'INVOICE_LOCKED');
 
     const history = { actor: req.admin.id, source: 'invoice.update' };
     // Configured lines carry an agreed specification and, for gallery items,
@@ -802,8 +825,8 @@ router.put(
       // Per-invoice Skonto opt-out (migration 126).
       skontoDisabled: 'skonto_disabled',
       // Inline event snapshot (migration 123) — editable as long as
-      // the invoice is still in 'scheduled' status (this route already
-      // gates on that above).
+      // the invoice has not been issued (this route already gates on
+      // that above).
       eventName: 'event_name',
       eventDate: 'event_date',
       eventTimeStart: 'event_time_start',
@@ -876,6 +899,17 @@ router.put(
       }
     }
 
+    // A delivery invoice's due date stays machine-set until someone changes
+    // it, so marking delivered can still re-anchor it. Keep it on the formula
+    // when the payment term moves underneath it.
+    if (existing.status === 'pending_delivery' && Object.prototype.hasOwnProperty.call(updates, 'payment_term_snapshot')
+        && (!payload.dueDate || toDateOnly(payload.dueDate) === toDateOnly(existing.due_date))) {
+      const dueAfter = (netDays) => computeDueDate(new Date(toDateOnly(existing.issue_date)), netDays).toISOString().slice(0, 10);
+      if (toDateOnly(existing.due_date) === dueAfter(await resolveNetDaysForRow(existing))) {
+        updates.due_date = dueAfter(await resolveNetDaysForRow({ ...existing, ...updates }));
+      }
+    }
+
     if (Array.isArray(payload.lineItems)) {
       // Recompute everything authoritatively. Migration 119 — sub-
       // items don't roll into net directly; parent totals auto-
@@ -928,15 +962,15 @@ router.put(
       const quoteService = require('../services/quoteService');
       const { validateLineItemHierarchy, insertLineItemsHierarchical } = quoteService._internal;
       await db.transaction(async (trx) => {
+        if (!(await accountingHistory.auditedUpdate(trx, 'invoices', unchanged, updates, history))) throw lockedError();
         await accountingHistory.auditedDelete(trx, 'invoice_line_items', { invoice_id: id }, history);
         if (items.length > 0) {
           validateLineItemHierarchy(items);
           await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', id, items, history);
         }
-        await accountingHistory.auditedUpdate(trx, 'invoices', { id }, updates, history);
       });
-    } else {
-      await accountingHistory.auditedUpdate(db, 'invoices', { id }, updates, history);
+    } else if (!(await accountingHistory.auditedUpdate(db, 'invoices', unchanged, updates, history))) {
+      throw lockedError();
     }
 
     const data = await invoiceService.getInvoiceById(id);

@@ -33,8 +33,8 @@ describe('toDisplayDate', () => {
     // datetime-local values are local on purpose (the scheduled reveal).
     expect(toDisplayDate('2026-10-05T14:00').getTime()).toBe(new Date(2026, 9, 5, 14, 0).getTime());
     expect(toDisplayDate('2026-10-05T14:00:00').getTime()).toBe(new Date(2026, 9, 5, 14, 0, 0).getTime());
-    // A bare calendar date is not a timestamp.
-    expect(toDisplayDate('2026-10-05').getTime()).toBe(new Date('2026-10-05').getTime());
+    // A bare calendar date is that day in the viewer's zone (issue 2330).
+    expect(toDisplayDate('2026-10-05').getTime()).toBe(new Date(2026, 9, 5, 12).getTime());
     const date = new Date();
     expect(toDisplayDate(date)).toBe(date);
     expect(Number.isNaN(toDisplayDate('not a date').getTime())).toBe(true);

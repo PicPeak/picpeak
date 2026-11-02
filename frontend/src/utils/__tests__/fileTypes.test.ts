@@ -32,7 +32,7 @@ describe('fileTypes', () => {
 
   describe('extensionsToAcceptString', () => {
     it('joins MIME types for the input accept attribute', () => {
-      expect(extensionsToAcceptString('jpg,heic')).toBe('image/jpeg,image/heic');
+      expect(extensionsToAcceptString('jpg,heic')).toBe('image/jpeg,image/heic,.heic');
     });
 
     it('also lists RAW extensions in dotted form', () => {
@@ -77,6 +77,35 @@ describe('fileTypes', () => {
       expect(isAllowedUploadFile(file('payload.exe'), allowed)).toBe(false);
       expect(isAllowedUploadFile(file('holiday.jpg'), allowed)).toBe(false);
       expect(isAllowedUploadFile(file('holiday.jpg', 'image/jpeg'), allowed)).toBe(true);
+    });
+  });
+
+  describe('badly typed uploads (HEIC/HEIF, issue 2359)', () => {
+    const both = ['image/heic', 'image/heif'];
+
+    it.each([
+      ['IMG_1.HEIC', ''],
+      ['IMG_1.heic', 'image/heif'],
+      ['IMG_1.HEIC', 'application/octet-stream'],
+      ['IMG_1.heif', 'image/heic'],
+    ])('accepts %s reported as "%s"', (name, type) => {
+      expect(isAllowedUploadFile({ name, type }, both)).toBe(true);
+    });
+
+    it('judges the file by its extension', () => {
+      expect(normalizeFileMimeType('IMG_1.HEIC', '')).toBe('image/heic');
+      expect(normalizeFileMimeType('IMG_1.heic', 'image/heif')).toBe('image/heic');
+      expect(isAllowedUploadFile({ name: 'IMG_1.heif', type: 'image/heif' }, ['image/heic'])).toBe(false);
+    });
+
+    it('still refuses a HEIC that names another type, and any file HEIC is not enabled for', () => {
+      expect(normalizeFileMimeType('page.heic', 'text/html')).toBe('text/html');
+      expect(isAllowedUploadFile({ name: 'IMG_1.HEIC', type: '' }, ['image/jpeg'])).toBe(false);
+    });
+
+    it('adds the token only when an admin enabled the type', () => {
+      expect(extensionsToAcceptString('jpg,heic,heif')).toBe('image/jpeg,image/heic,image/heif,.heic,.heif');
+      expect(extensionsToAcceptString('jpg,png')).toBe('image/jpeg,image/png');
     });
   });
 

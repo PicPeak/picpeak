@@ -70,6 +70,7 @@ sudo ./picpeak-setup.sh --native
 
 ### Minimum Requirements
 - **OS**: Ubuntu 20.04+, Debian 11+, Fedora 38+, RHEL/CentOS 8+, Raspberry Pi OS
+- **CPU**: 64-bit ARM, or x86-64 with [x86-64-v2 instructions](https://docs.picpeak.app/deployment/system-requirements#cpu). On a VM, check the virtual CPU type (Proxmox: not `kvm64`)
 - **RAM**: 
   - Docker: 2GB minimum (4GB recommended)
   - Native: 1GB minimum (2GB recommended)

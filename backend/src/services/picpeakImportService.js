@@ -26,6 +26,7 @@ const logger = require('../utils/logger');
 const { PICPEAK_FORMAT_VERSION } = require('./picpeakExportService');
 const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
 const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
+const { isoSqliteCostTimestamps, COST_TIMESTAMP_TABLES } = require('../utils/costTimestamps');
 const { rowBatches } = require('./portableImportRows');
 const {
   dedupeExternalPhotos,
@@ -659,6 +660,8 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       // Likewise events.expires_at text that julianday() cannot read, which
       // migration 263 rewrote once on this target (issue 1733).
       if (table === 'events') await canonicaliseSqliteExpiresAt(trx);
+      // And cost timestamps stored as epoch ms, which migration 337 rewrote.
+      if (COST_TIMESTAMP_TABLES.includes(table)) await isoSqliteCostTimestamps(trx, [table]);
     }
 
     // Rebuild only missing legacy accounting from the RESTORED rows in this
