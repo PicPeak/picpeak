@@ -292,7 +292,8 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
       // Print files can be discarded after the catalogue but before ZIP reads.
       // Capture only this changing private estate; the media library stays in place.
       const printFiles = files.filter(file => (file.relativePath || file.rel).startsWith('.print-sales/'));
-      const captured = await recoveryFiles.materialize(printFiles, path.join(staging, 'captured'), Number.MAX_SAFE_INTEGER, db);
+      const captured = printFiles.length
+        ? await recoveryFiles.materialize(printFiles, path.join(staging, 'captured'), Number.MAX_SAFE_INTEGER, db) : [];
       files = await catalogueInPlace([...files.filter(file => !printFiles.includes(file)), ...captured]);
     }
 
