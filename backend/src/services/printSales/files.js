@@ -60,6 +60,7 @@ async function upload(storage, key, body, maxBytes, options = {}) {
   try {
     pending.push(pipeline(source, meter, { signal: options.signal }), storage.put(key, meter, options));
     await Promise.all(pending);
+    options.signal?.throwIfAborted();
     return { size, sha256: hash.digest('hex') };
   } catch (error) {
     source.destroy(); meter.destroy();

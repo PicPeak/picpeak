@@ -2046,6 +2046,8 @@
         "GET /orders",
         "GET /orders/:id",
         "POST /orders/:id/actions",
+        "POST /orders/:id/files/:kind/downloads",
+        "GET /orders/:id/files/:kind/downloads/:downloadId",
         "GET /orders/:id/files/:kind"
       ]
     },

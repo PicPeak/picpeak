@@ -162,7 +162,7 @@ thumbnails, supplier instructions and delivery/checklist details. The manifest r
 profile. Manual submission and dispatch still apply to the whole order; supplier
 labels do not implement separate shipments or API routing. A receipt is
 not the order sheet. The sheet names the buyer and the retail total, so it is a
-separate download and is not in the supplier pack. Every manual release re-verifies file SHA-256 identities. The sheet uses the invoice theme's
+separate download and is not in the supplier pack. Review and lab submission re-verify file SHA-256 identities. Recording dispatch uses the recorded file identity without needing the stored bytes: files lost after lab submission must not prevent recording shipment. The sheet uses the invoice theme's
 uploaded font when configured, otherwise the bundled Latin/Greek/Cyrillic font.
 Configure a document font covering any other scripts used in delivery details.
 
@@ -175,6 +175,11 @@ space for a complete supplier pack; at most two downloads run per backend proces
 HEAD checks authorisation and recorded file metadata without reading file bytes.
 The actual download verifies only the requested file, once. Expensive download
 and review verification share a two-operation limit per backend process.
+The admin page observes the actual streamed download through a short-lived,
+administrator-bound status record. Verification/capacity errors appear on the
+page without a second full-file check or buffering the ZIP in the browser.
+Status polling stops when the page closes; the browser can finish its download.
+Completed transfers still need to be checked in the browser's downloads.
 Temporary copies are removed after success, refusal or client disconnection;
 leased temporary directories are swept after five minutes without a heartbeat.
 
@@ -224,8 +229,11 @@ exports/imports include them, **even when gallery photos are excluded**. Databas
 backups alone do not replace storage backups. Unfinished staging uploads are
 not required backup objects. Recovery inventories account for committed print
 files published after the initial listing and unconfirmed work removed during
-capture; a missing file still retained by an order remains an error. Capture, acceptance, rendering,
-retention and downloads participate in the native application-work drain; the
+capture; a missing file still retained by an order remains an error.
+Local atomic `.tmp.` files are excluded too. Portable exports privately capture
+the retained print files before archiving, so a concurrent discard cannot remove
+a catalogued ZIP source; allow staging disk space for those copies.
+Capture, acceptance, rendering, retention and downloads participate in the native application-work drain; the
 worker also stops/resumes with coordinated restore. Gallery deletion clears its
 live order link on both normal and archived paths and retains order-specific
 sources. It does not cancel paid work or its invoice.
@@ -279,6 +287,9 @@ deployment review remain necessary before opening an actual shop.
 ## Installation and recovery
 
 Core migration `341_print_sales` adds three order/configuration tables, the gallery switches, the default-off feature flag and the `.print-sales` backup path. It reuses existing permissions and requires no payment-provider setup. The migration guards each gallery column independently so an interrupted SQLite upgrade can be rerun.
+Migration `342_print_download_status` adds temporary download-attempt status.
+It contains no paths or credentials and expires within an hour; cleanup runs
+independently of production-file retention. Portable exports omit these rows.
 
 Retention retries failed storage deletions without dropping their asset records or marking the order purged. Other orders continue through cleanup, and each failure is logged at error level with order/asset identifiers. Fix the storage access problem to let a later sweep complete. Native accounting records remain retained separately.
 

@@ -11565,6 +11565,12 @@
     "lockAndBill": "Lock choice and add to billing"
   },
   "printSales": {
+    "downloadStatusUnavailable": "Download status could not be checked. Check your browser downloads before trying again.",
+    "filesHealthy": "Production files checked; no repair needed.",
+    "repairQueued": "Repair queued. Review the new production files before submitting them to the lab.",
+    "checkingDownload": "Checking the file before download…",
+    "transferringDownload": "Sending the file to your browser…",
+    "downloadTransferred": "File sent. Check your browser downloads.",
     "repairFiles": "Check and repair production files",
     "reviewDeadline": "Confirm by",
     "preparationQueued": "Your prints are waiting to be prepared",

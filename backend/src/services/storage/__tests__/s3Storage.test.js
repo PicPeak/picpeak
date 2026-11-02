@@ -403,5 +403,35 @@ describe('S3StorageAdapter', () => {
     expect(settled).toBe(false); expect(input.destroyed).toBe(true);
     finish({}); await failure;
   });
+  it('lets multipart completion settle when cancellation arrives in the final phase', async () => {
+    const { CompleteMultipartUploadCommand } = require('@aws-sdk/client-s3');
+    const controller = new AbortController(), input = new stream.PassThrough(); input.on('error', () => {});
+    let entered, finish, settled = false;
+    const started = new Promise(resolve => { entered = resolve; });
+    mockSend.mockImplementation((command, options) => {
+      expect(command).toBeInstanceOf(CompleteMultipartUploadCommand);
+      expect(options.abortSignal).toBeUndefined(); entered();
+      return new Promise(resolve => { finish = resolve; });
+    });
+    Upload.mockImplementation(({ client }) => ({ on() {}, done: () => client.send(new CompleteMultipartUploadCommand({})) }));
+    const task = s3Storage.uploadStream(input, 'finishing', { signal: controller.signal }).finally(() => { settled = true; });
+    const failure = expect(task).rejects.toMatchObject({ name: 'AbortError' });
+    await started; controller.abort(); await new Promise(resolve => setImmediate(resolve));
+    expect(settled).toBe(false); finish({ Location: 'finished' });
+    await failure;
+  });
+  it.each(['upload', 'uploadStream'])('never repeats done() on one single-use %s Upload', async method => {
+    const error = Object.assign(new Error('SDK request retries exhausted'), { code: 'ServiceUnavailable' });
+    const done = jest.fn().mockRejectedValueOnce(error).mockRejectedValue(new Error('Upload already used'));
+    Upload.mockImplementation(() => ({ on() {}, done }));
+    const input = stream.Readable.from('file');
+    const read = jest.spyOn(fs, 'createReadStream').mockReturnValue(input);
+    const stat = jest.spyOn(fs.promises, 'stat').mockResolvedValue({ size: 4 });
+    try {
+      await expect(s3Storage[method](method === 'upload' ? '/fixture' : stream.Readable.from('file'), 'key')).rejects.toBe(error);
+      expect(done).toHaveBeenCalledTimes(1);
+      if (method === 'upload') expect(input.destroyed).toBe(true);
+    } finally { read.mockRestore(); stat.mockRestore(); }
+  });
 
 });

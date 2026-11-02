@@ -233,19 +233,46 @@ describe('gallery print order journey', () => {
   });
 });
 describe('print administration', () => {
-  it('starts a browser download only after an authenticated successful preflight', async () => {
-    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [{ ...quotation, status: 'accepted', acceptedAt: '2026-11-01', renderStatus: 'ready', invoiceId: 42 }] } :
+  it('observes the actual browser download without buffering the archive', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/downloads/') ? { id: 'download-1', status: 'complete' } : url.includes('/orders') ? { orders: [{ ...quotation, status: 'accepted', acceptedAt: '2026-11-01', renderStatus: 'ready', invoiceId: 42 }] } :
       { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } }) as any);
-    vi.mocked(api.head).mockResolvedValue({ status: 200 } as any);
+    vi.mocked(api.post).mockResolvedValue({ data: { id: 'download-1', status: 'pending' } } as any);
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Supplier pack' }));
     await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
-    expect(api.head).toHaveBeenCalledWith('/admin/print-sales/orders/order-1/files/pack');
+    await screen.findByText('File sent. Check your browser downloads.');
+    expect(api.post).toHaveBeenCalledWith('/admin/print-sales/orders/order-1/files/pack/downloads', {}, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(api.head).not.toHaveBeenCalled();
     expect(vi.mocked(api.get).mock.calls.some(([, config]) => config?.responseType === 'blob')).toBe(false);
-    vi.mocked(api.head).mockRejectedValueOnce(new Error('Payment is not settled'));
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('Payment is not settled'));
     fireEvent.click(screen.getByRole('button', { name: 'Supplier pack' }));
     await screen.findByText('Payment is not settled');
+    expect(click).toHaveBeenCalledTimes(1); click.mockRestore();
+  });
+  it.each(['A production file is missing', 'Two print file operations are already in progress; try again shortly'])('reports a native GET failure: %s', async error => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/downloads/') ? { id: 'download-1', status: 'failed', error } : url.includes('/orders') ? { orders: [{ ...quotation, status: 'accepted', acceptedAt: '2026-11-01', renderStatus: 'ready', invoiceId: 42 }] } :
+      { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } }) as any);
+    vi.mocked(api.post).mockResolvedValue({ data: { id: 'download-1', status: 'pending' } } as any);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Supplier pack' }));
+    await screen.findByText(error);
+    expect(screen.getByRole('alert').closest('details')).not.toBeNull();
+    expect(click).toHaveBeenCalledTimes(1); expect(screen.getByRole('button', { name: 'Supplier pack' })).toBeEnabled();
+    click.mockRestore();
+  });
+  it('distinguishes an unavailable status check from a known download failure', async () => {
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.includes('/downloads/')) throw new Error('Network unavailable');
+      return { data: url.includes('/orders') ? { orders: [{ ...quotation, status: 'accepted', acceptedAt: '2026-11-01', renderStatus: 'ready', invoiceId: 42 }] } :
+        { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } } as any;
+    });
+    vi.mocked(api.post).mockResolvedValue({ data: { id: 'download-1', status: 'pending' } } as any);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Supplier pack' }));
+    await screen.findByText('Download status could not be checked. Check your browser downloads before trying again.');
     expect(click).toHaveBeenCalledTimes(1); click.mockRestore();
   });
 
@@ -492,9 +519,19 @@ it('offers controlled repair for a confirmed order before lab submission', async
   const order = { ...quotation, status: 'accepted', acceptedAt: '2026-11-01', invoiceId: 42 };
   vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [order] } :
     { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } }) as any);
-  vi.mocked(api.post).mockResolvedValueOnce({ data: { ...order, renderStatus: 'queued', artworkVersion: null } } as any);
+  vi.mocked(api.post).mockResolvedValueOnce({ data: { ...order, renderStatus: 'queued', artworkVersion: null, repair: 'queued' } } as any);
   render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
   fireEvent.click(await screen.findByRole('button', { name: 'Check and repair production files' }));
   await screen.findByText('Artwork queued');
+  expect(screen.getByText('Repair queued. Review the new production files before submitting them to the lab.')).toBeInTheDocument();
   expect(api.post).toHaveBeenCalledWith('/admin/print-sales/orders/order-1/actions', expect.objectContaining({ action: 'repair' }));
+});
+it('confirms when checked production files need no repair', async () => {
+  const order = { ...quotation, status: 'accepted', acceptedAt: '2026-11-01', invoiceId: 42 };
+  vi.mocked(api.get).mockImplementation(async (url: string) => ({ data: url.includes('/orders') ? { orders: [order] } :
+    { revision: 1, profiles: [], countries: ['IE'], policy: 'Policy', shippingPresetId: null, products: [], presets: [] } }) as any);
+  vi.mocked(api.post).mockResolvedValueOnce({ data: { ...order, repair: 'healthy' } } as any);
+  render(<MemoryRouter><PrintSalesAdminPage /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Check and repair production files' }));
+  await screen.findByText('Production files checked; no repair needed.');
 });

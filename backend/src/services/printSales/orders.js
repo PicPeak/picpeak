@@ -74,6 +74,7 @@ function createService({ db, storage, sharp }) {
     const contentType = { jpg: 'image/jpeg', png: 'image/png', tif: 'image/tiff', pdf: 'application/pdf', zip: 'application/zip' }[extension] || 'application/octet-stream';
     const expectedClaim = options.expectedClaim || claim;
     const check = row => {
+      options.signal?.throwIfAborted();
       if (!row || row.purged_at || !ACTIVE.includes(row.status) || (!row.accepted_at && new Date(row.expires_at).getTime() <= Date.now()) ||
           (expectedClaim && (row.claim !== expectedClaim || row.render_status !== 'running' || !row.contact)))
         throw new ConflictError('This preparation is no longer active');

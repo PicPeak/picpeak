@@ -11531,6 +11531,12 @@
     "lockAndBill": "Auswahl sperren und zur Abrechnung hinzufügen"
   },
   "printSales": {
+    "downloadStatusUnavailable": "Der Downloadstatus konnte nicht geprüft werden. Prüfen Sie die Downloads Ihres Browsers, bevor Sie es erneut versuchen.",
+    "filesHealthy": "Produktionsdateien geprüft; keine Reparatur erforderlich.",
+    "repairQueued": "Reparatur vorgemerkt. Prüfen Sie die neuen Produktionsdateien vor der Übermittlung an das Labor.",
+    "checkingDownload": "Die Datei wird vor dem Download geprüft…",
+    "transferringDownload": "Die Datei wird an Ihren Browser übertragen…",
+    "downloadTransferred": "Datei übertragen. Prüfen Sie die Downloads Ihres Browsers.",
     "repairFiles": "Produktionsdateien prüfen und reparieren",
     "reviewDeadline": "Bestätigung bis",
     "preparationQueued": "Ihre Abzüge warten auf die Vorbereitung",

@@ -42,10 +42,11 @@ export interface Preparation {
   completed: number; total: number; percent: number;
 }
 export interface Quote extends Order { preparation: Preparation }
+export interface ActionResult extends Order { repair?: 'healthy' | 'queued' }
 export const printSales = {
   settings: () => api.get<Settings>('/admin/print-sales/settings').then(r => r.data),
   save: (settings: Settings) => api.put<Settings>('/admin/print-sales/settings', settings).then(r => r.data),
   orders: (offset = 0) => api.get<{ orders: Order[] }>(`/admin/print-sales/orders?offset=${offset}`).then(r => r.data.orders),
   action: (id: string, action: string, details: Record<string, unknown> = {}) =>
-    api.post<Order>(`/admin/print-sales/orders/${id}/actions`, { action, ...details }).then(r => r.data),
+    api.post<ActionResult>(`/admin/print-sales/orders/${id}/actions`, { action, ...details }).then(r => r.data),
 };

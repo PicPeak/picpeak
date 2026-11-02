@@ -548,7 +548,7 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], 
     // A feature never used has no top-level directory. A directory already
     // enumerated below it disappearing, or any unreadable directory, is not
     // a complete catalogue for a standalone point.
-    if (error.code === 'ENOENT' && allowMissing) return;
+    if (error.code === 'ENOENT' && (allowMissing || path.relative(basePath, dirPath).split(path.sep)[0] === '.print-sales')) return;
     logger.error(`Failed to scan directory ${dirPath}:`, error);
     if (strict) throw error;
     return;
@@ -558,7 +558,7 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], 
       const fullPath = path.join(dirPath, entry.name);
       const relativePath = path.relative(basePath, fullPath);
 
-      if (isExcludedName(entry.name, excludePatterns)) {
+      if (isExcludedName(entry.name, excludePatterns) || recoveryFiles.printTemporaryKey(relativePath.split(path.sep).join('/'))) {
         continue;
       }
 
@@ -567,7 +567,9 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], 
         if (skip.ids.length > 0 && skip.ids.includes(await dirIdentity(fullPath))) continue;
         await scanDirectory(fullPath, fileList, basePath, excludePatterns, skip, strict, false);
       } else if (entry.isFile()) {
-        const stats = await fs.stat(fullPath);
+        let stats;
+        try { stats = await fs.stat(fullPath); }
+        catch (error) { if (await recoveryFiles.discardedPrintFile(db, relativePath.split(path.sep).join('/'), error)) continue; throw error; }
         fileList.push({
           path: fullPath,
           relativePath,
@@ -881,12 +883,12 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     });
   }
 
-  if (getStorage().kind() !== 's3') return files;
   const selected = key => {
     const target = targets.find(t => key === t.path || key.startsWith(`${t.path}/`));
     return !!target && !key.slice(target.path.length).split('/').filter(Boolean)
       .some(name => isExcludedName(name, excludePatterns));
   };
+  if (getStorage().kind() !== 's3') return recoveryFiles.localPrintInventory(db, files, selected);
   const remote = await recoveryFiles.adapterInventory(db, targets.map(t => t.path), selected, config.recovery_reference_keys);
   // Managed rows are served by S3, so a leftover local file is not a backup
   // substitute. The remaining local estate includes CRM PDFs/static assets.
@@ -980,6 +982,7 @@ async function performLocalBackup(config, files, verifiedDatabaseInfo) {
         backedUpFiles.push(file.relativePath);
         backedUpSize += file.size;
       } catch (error) {
+        if (await recoveryFiles.discardedPrintFile(db, file.relativePath.split(path.sep).join('/'), error)) continue;
         logger.error(`Failed to backup file ${file.relativePath}:`, error);
         throw error;
       }
@@ -1037,6 +1040,7 @@ async function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStorag
   // (extraExcludes) — rsync syncs the whole storage root, so this is the
   // only place the What-to-Backup selection can take effect for rsync.
   const excludePatterns = [...new Set([
+    '/.print-sales/**.tmp.*',
     ...DEFAULT_EXCLUDE_PATTERNS,
     ...(Array.isArray(config.backup_exclude_patterns) ? config.backup_exclude_patterns : []),
     ...extraExcludes,
@@ -1208,6 +1212,7 @@ async function performS3Backup(config, files, verifiedDatabaseInfo) {
         backedUpFiles.push(file.relativePath);
         backedUpSize += file.size;
       } catch (error) {
+        if (await recoveryFiles.discardedPrintFile(db, file.relativePath.split(path.sep).join('/'), error)) continue;
         logger.error(`Failed to backup file ${file.relativePath} to S3:`, error);
         throw error;
       }

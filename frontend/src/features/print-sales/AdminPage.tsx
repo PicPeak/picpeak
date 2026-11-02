@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { api } from '../../config/api';
 import { Button, Loading, EmptyState, ErrorState, Notice, Badge } from '../../components/common';
 import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
 import { usePermissions } from '../../contexts/PermissionsContext';
@@ -13,6 +12,7 @@ import { formatMoneyMinor } from '../../utils/money';
 import { ProfileEditor } from './ProfileEditor';
 import { DeliveryEditor } from './DeliveryEditor';
 import { printSales, type Settings, type Order, type Profile } from './model';
+import { downloadPrintFile, DownloadStatusUnavailable } from './download';
 function newProfile(): Profile {
   return { cataloguePresetId: 0, definition: { id: crypto.randomUUID(), revision: 1, enabled: false, labReference: '',
     selection: { productId: '', productVersion: '', values: {} }, manufacturing: { capability: 'single-photo-rectangle',
@@ -20,27 +20,41 @@ function newProfile(): Profile {
       safeInsetMm: { top: 0, right: 0, bottom: 0, left: 0 }, resolution: { targetDpi: 300, minimumDpi: 150 },
       output: { format: 'jpeg', colourSpace: 'srgb' }, fitModes: ['cover', 'contain'] } } };
 }
-function StudioOrder({ initial, onError }: { initial: Order; onError: (s: string) => void }) {
+function StudioOrder({ initial }: { initial: Order }) {
   const { hasPermission } = usePermissions(), enabled = useFeatureEnabled('printSales'), { formatDateTime } = useLocalizedDate();
   const canFiles = enabled && ['products.configure', 'bills.manage', 'customers.view'].every(hasPermission);
   const canManage = enabled && ['products.configure', 'bills.manage', 'customers.edit'].every(hasPermission);
   const { t } = useTranslation(), [order, setOrder] = useState(initial), [busy, setBusy] = useState(false),
-    [reference, setReference] = useState(initial.supplierReference || ''), [tracking, setTracking] = useState(initial.tracking || ''), [note, setNote] = useState('');
+    [reference, setReference] = useState(initial.supplierReference || ''), [tracking, setTracking] = useState(initial.tracking || ''), [note, setNote] = useState(''),
+    [notice, setNotice] = useState(''), [orderError, setOrderError] = useState('');
+  const downloadController = useRef<AbortController | null>(null);
+  useEffect(() => () => downloadController.current?.abort(), []);
   useEffect(() => { setOrder(initial); }, [initial]);
   const act = async (action: string) => {
-    setBusy(true); onError('');
-    try { setOrder(await printSales.action(order.id, action, { artworkVersion: order.artworkVersion, supplierReference: reference, tracking, note })); }
-    catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
+    setBusy(true); setOrderError(''); setNotice('');
+    try {
+      const result = await printSales.action(order.id, action, { artworkVersion: order.artworkVersion, supplierReference: reference, tracking, note });
+      setOrder(result);
+      if (result.repair) setNotice(result.repair === 'healthy'
+        ? t('printSales.filesHealthy', 'Production files checked; no repair needed.')
+        : t('printSales.repairQueued', 'Repair queued. Review the new production files before submitting them to the lab.'));
+    }
+    catch (e) { setOrderError(errorMessage(e)); } finally { setBusy(false); }
   };
   const download = async (kind: string) => {
-    setBusy(true); onError('');
+    setBusy(true); setOrderError(''); setNotice(t('printSales.checkingDownload', 'Checking the file before download…'));
+    const controller = new AbortController(); downloadController.current = controller;
     try {
-      const path = `/admin/print-sales/orders/${order.id}/files/${kind}`;
-      await api.head(path);
-      const a = document.createElement('a');
-      a.href = api.getUri({ url: path }); a.download = `print-${order.id}.${kind === 'pack' ? 'zip' : 'pdf'}`;
-      document.body.appendChild(a); a.click(); a.remove();
-    } catch (e) { onError(errorMessage(e)); } finally { setBusy(false); }
+      await downloadPrintFile(order.id, kind, controller.signal, status => {
+        if (status === 'downloading') setNotice(t('printSales.transferringDownload', 'Sending the file to your browser…'));
+      });
+      setNotice(t('printSales.downloadTransferred', 'File sent. Check your browser downloads.'));
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        setNotice(''); setOrderError(e instanceof DownloadStatusUnavailable
+          ? t('printSales.downloadStatusUnavailable', 'Download status could not be checked. Check your browser downloads before trying again.') : errorMessage(e));
+      }
+    } finally { if (!controller.signal.aborted) setBusy(false); }
   };
   return <details className="border border-line rounded-lg p-4 space-y-3"><summary className="cursor-pointer">
     {order.id.slice(0, 8)} · {t('printSales.photoItems', { count: order.items?.length || 0, defaultValue: '{{count}} photo items' })} · {order.currency && formatMoneyMinor(order.totalMinor, order.currency)}
@@ -57,6 +71,8 @@ function StudioOrder({ initial, onError }: { initial: Order; onError: (s: string
     <p>{order.buyerEmail} · {order.delivery && Object.values(order.delivery).filter(Boolean).join(', ')}</p>
     <ul>{order.items?.map((i, n) => <li key={n}>{i.filename} — {i.selection.product.name} × {i.quantity}</li>)}</ul>
     {order.needsAttention && <p role="status" className="text-warning-text">{t('printSales.needsAttention', 'This order needs studio attention. Payment and file preparation are checked separately.')}</p>}
+    {notice && <p role="status" className="text-sm text-muted-theme">{notice}</p>}
+    {orderError && <Notice tone="danger">{orderError}</Notice>}
     <fieldset disabled={busy} className="min-w-0 flex flex-wrap gap-3">
       {order.acceptedAt && ['accepted', 'dispatched'].includes(order.status) && order.renderStatus === 'ready' && !order.purgedAt && <>
         {canFiles && <Button variant="secondary" onClick={() => download('pack')}>{t('printSales.supplierPack', 'Supplier pack')}</Button>}
@@ -122,7 +138,7 @@ export function PrintSalesAdminPage() {
       {orders.isPending && <Loading />}
       {orders.isError && <ErrorState size="inline" title={t('printSales.ordersFailed', 'Could not load print orders')} message={errorMessage(orders.error)} onRetry={() => { void orders.refetch(); }} retrying={orders.isFetching} />}
       {orders.isSuccess && !orders.data.length && <EmptyState size="inline" title={t('printSales.noOrders', 'No print orders yet')} description={t('printSales.noOrdersHelp', 'Enable ordering for an assigned customer’s gallery to receive an order.')} />}
-      {orders.data?.map(o => <StudioOrder key={o.id} initial={o} onError={setError} />)}
+      {orders.data?.map(o => <StudioOrder key={o.id} initial={o} />)}
       <div className="flex gap-3"><Button variant="secondary" disabled={!offset || orders.isFetching} onClick={() => setOffset(n => Math.max(0, n - 50))}>{t('common.previous', 'Previous')}</Button>
         <Button variant="secondary" disabled={!orders.isSuccess || orders.data.length < 50 || orders.isFetching} onClick={() => setOffset(n => n + 50)}>{t('common.next', 'Next')}</Button></div>
     </section>}

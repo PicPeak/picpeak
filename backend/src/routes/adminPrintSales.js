@@ -15,6 +15,7 @@ const { pipeline } = require('stream/promises');
 const { formatBoolean } = require('../utils/dbCompat');
 const fulfilment = () => require('../services/printSales/fulfilment').createService({ db, storage: require('../services/storage').getStorage() });
 const permissions = (...names) => requirePermission(names, { requireAll: true });
+const downloadStatus = () => require('../services/printSales/downloadStatus').createService(db);
 router.use(adminAuth, (req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
 router.get('/settings', permissions('products.view'), handleAsync(async (_req, res) => {
   const cat = await P.catalogue(db);
@@ -59,8 +60,19 @@ router.get('/orders', permissions('products.view', 'bills.view', 'customers.view
 router.get('/orders/:id', permissions('products.view', 'bills.view', 'customers.view'), handleAsync(async (req, res) =>
   res.json(O.application().shape(await fulfilment().order(req.params.id, req.admin)))));
 router.post('/orders/:id/actions', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.edit'), handleAsync(async (req, res) => {
-  await require('../services/activeApplicationWork').track('manual print fulfilment', () => fulfilment().action(req.params.id, req.admin, req.body));
-  res.json(O.application().shape(await fulfilment().order(req.params.id, req.admin)));
+  const result = await require('../services/activeApplicationWork').track('manual print fulfilment', () => fulfilment().action(req.params.id, req.admin, req.body));
+  res.json({ ...O.application().shape(await fulfilment().order(req.params.id, req.admin)), ...(result?.repair ? { repair: result.repair } : {}) });
+}));
+router.post('/orders/:id/files/:kind/downloads', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
+  const result = await require('../services/activeApplicationWork').track('print download status preparation', async () => {
+    await fulfilment().downloadMetadata(req.params.id, req.admin, req.params.kind);
+    return downloadStatus().create(req.params.id, req.admin, req.params.kind);
+  });
+  res.status(201).json(result);
+}));
+router.get('/orders/:id/files/:kind/downloads/:downloadId', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
+  await fulfilment().order(req.params.id, req.admin);
+  res.json(await downloadStatus().read(req.params.downloadId, req.params.id, req.admin, req.params.kind));
 }));
 router.get('/orders/:id/files/:kind', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.view'), handleAsync(async (req, res) => {
   V.uuid(req.params.id);
@@ -71,16 +83,26 @@ router.get('/orders/:id/files/:kind', requireFeatureFlag('printSales'), permissi
     res.set('Content-Length', String(asset.size)); return res.end();
   }
   const controller = new AbortController();
+  const status = downloadStatus(), downloadId = req.query.downloadId;
   const abort = () => { if (!res.writableFinished) controller.abort(); };
   res.once('close', abort);
   try {
-    await require('../services/activeApplicationWork').track('print supplier file download', () =>
-      fulfilment().download(req.params.id, req.admin, req.params.kind, async (stream, size) => {
-        const pack = req.params.kind === 'pack';
-        res.type(pack ? 'application/zip' : 'application/pdf').attachment(`print-${req.params.id}.${pack ? 'zip' : 'pdf'}`);
-        res.set('Content-Length', String(size));
-        await pipeline(stream, res, { signal: controller.signal });
-      }, { signal: controller.signal }));
+    await require('../services/activeApplicationWork').track('print supplier file download', async () => {
+      if (downloadId !== undefined) await status.start(downloadId, req.params.id, req.admin, req.params.kind);
+      try {
+        await fulfilment().download(req.params.id, req.admin, req.params.kind, async (stream, size) => {
+          await status.update(downloadId, 'downloading');
+          const pack = req.params.kind === 'pack';
+          res.type(pack ? 'application/zip' : 'application/pdf').attachment(`print-${req.params.id}.${pack ? 'zip' : 'pdf'}`);
+          res.set('Content-Length', String(size));
+          await pipeline(stream, res, { signal: controller.signal });
+        }, { signal: controller.signal });
+        await status.update(downloadId, 'complete');
+      } catch (error) {
+        await status.update(downloadId, 'failed', error);
+        throw error;
+      }
+    });
   } finally { res.removeListener('close', abort); }
 }));
 module.exports = router;

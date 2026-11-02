@@ -72,7 +72,7 @@ function createService({ db, storage }) {
         try { await files(row); }
         catch (error) { if (error.code !== 'PRINT_FILES_DAMAGED') throw error; broken = true; }
       }
-      if (!broken) return;
+      if (!broken) return { repair: 'healthy' };
       const snapshot = parse(row.snapshot);
       if (V.hash(row.snapshot) !== row.snapshot_hash || !row.contact || V.hash(parse(row.contact)) !== snapshot.contactHash)
         throw new ConflictError('The frozen order identity is unavailable; hold the order for manual resolution');
@@ -93,7 +93,7 @@ function createService({ db, storage }) {
           reviewed_version: null, reviewed_at: null, reviewed_by: null });
         await log('print_order_repair', { orderId: id }, row.event_id, { type: 'admin', id: admin.id }, tx);
       });
-      return;
+      return { repair: 'queued' };
     }
     // The way out for an order the invoice no longer matches: submitted to the
     // lab, or reissued with different lines, so cancel and dispatch both refuse.
@@ -126,7 +126,7 @@ function createService({ db, storage }) {
       await log('print_order_cancel', { orderId: id }, current.event_id, { type: 'admin', id: admin.id }, tx);
     });
     if (input.artworkVersion !== row.artwork_version) throw new ConflictError('Review the current production files');
-    await files(row);
+    await files(row, { verifyBytes: input.action !== 'dispatch' });
     return db.transaction(async tx => {
       const current = await tx('print_sales_orders').where({ id }).forUpdate().first();
       if (current.artwork_version !== input.artworkVersion || current.render_status !== 'ready' || ['cancelled', 'resolved'].includes(current.status))

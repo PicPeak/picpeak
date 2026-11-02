@@ -11,7 +11,8 @@ const { isTrue } = require('../../utils/galleryLifecycle');
 const work = require('../activeApplicationWork');
 const logger = require('../../utils/logger');
 const now = () => new Date().toISOString();
-function createWorker({ db, storage, sharp, orders, heartbeatMs = 15000 }) {
+const LEASE_MS = 5 * 60e3;
+function createWorker({ db, storage, sharp, orders, heartbeatMs = 15000, leaseMs = LEASE_MS }) {
   /** Interrupted or failed attempts leave artwork no later release can use. */
   async function dropEarlierClaims(row) {
     const sourceIds = new Set((parse(row.snapshot)?.items || []).map(i => i.source?.assetId).filter(Boolean));
@@ -31,7 +32,7 @@ function createWorker({ db, storage, sharp, orders, heartbeatMs = 15000 }) {
     let row = await db.transaction(async tx => {
       await tx('print_sales_settings').where({ id: 1 }).forUpdate().first();
       if (!isTrue((await tx('feature_flags').where({ key: 'printSales' }).first())?.value)) return null;
-      const cutoff = new Date(Date.now() - 5 * 60e3).toISOString();
+      const cutoff = new Date(Date.now() - leaseMs).toISOString();
       await tx('print_sales_orders').whereIn('status', ['capturing', 'quoted', 'accepted']).where({ render_status: 'running' })
         .where(q => q.where('heartbeat', '<', cutoff).orWhereNull('heartbeat'))
         .update({ render_status: 'queued', claim: null, error: 'Interrupted preparation recovered' });
@@ -55,7 +56,7 @@ function createWorker({ db, storage, sharp, orders, heartbeatMs = 15000 }) {
     });
     if (!row) return false;
     const controller = new AbortController(), signal = controller.signal, workDeadline = Date.now() + QUOTE_TTL_MS;
-    let heartbeat = Promise.resolve();
+    let heartbeat = Promise.resolve(), lastLeaseAt = Date.now(), heartbeatFailed = false;
     const check = async () => {
       const current = await db('print_sales_orders').where({ id: row.id }).first();
       if (Date.now() >= workDeadline || !current || current.claim !== row.claim || current.render_status !== 'running' || !['capturing', 'quoted', 'accepted'].includes(current.status) ||
@@ -63,9 +64,21 @@ function createWorker({ db, storage, sharp, orders, heartbeatMs = 15000 }) {
         controller.abort(Object.assign(new Error('Print preparation was cancelled or expired'), { statusCode: 409 }));
         return;
       }
-      await db('print_sales_orders').where({ id: row.id, claim: row.claim }).update({ heartbeat: now() });
+      const renewedAt = Date.now();
+      const changed = await db('print_sales_orders').where({ id: row.id, claim: row.claim, render_status: 'running' }).update({ heartbeat: new Date(renewedAt).toISOString() });
+      if (!changed) controller.abort(Object.assign(new Error('Print preparation ownership changed'), { statusCode: 409 }));
+      else { lastLeaseAt = renewedAt; heartbeatFailed = false; }
     };
-    const timer = setInterval(() => { heartbeat = heartbeat.then(check).catch(error => controller.abort(error)); }, heartbeatMs);
+    const timer = setInterval(() => {
+      // A transient DB error must not waste an otherwise healthy render. Stop
+      // before another worker can reclaim our lease, even if a DB call hangs.
+      if (Date.now() >= workDeadline || Date.now() - lastLeaseAt >= leaseMs - Math.min(heartbeatMs, leaseMs / 2))
+        controller.abort(Object.assign(new Error('Print preparation lease could not be maintained'), { statusCode: 503 }));
+      heartbeat = heartbeat.then(() => { if (!signal.aborted) return check(); }).catch(error => {
+        if (!heartbeatFailed) logger.warn('Print preparation heartbeat failed; retrying within its lease', { orderId: row.id, error: error.message });
+        heartbeatFailed = true;
+      });
+    }, heartbeatMs);
     timer.unref();
     try {
       await dropEarlierClaims(row);
@@ -105,9 +118,11 @@ function createWorker({ db, storage, sharp, orders, heartbeatMs = 15000 }) {
       await orders.asset(row.id, 'pack', zip(entries, manifest, storage, { signal }), row.claim, 'zip', { maxBytes: budget.packBytes, signal });
       const assets = await db('print_sales_assets').where({ order_id: row.id, claim: row.claim }).orderBy('id');
       const version = V.hash(assets.map(a => ({ id: a.id, sha256: a.sha256, size: a.size })));
+      signal.throwIfAborted();
       await db.transaction(async tx => {
         await tx('print_sales_settings').where({ id: 1 }).forUpdate().first();
         const current = await tx('print_sales_orders').where({ id: row.id }).forUpdate().first();
+        signal.throwIfAborted();
         if ((!current.accepted_at && new Date(current.expires_at).getTime() <= Date.now()) || current.claim !== row.claim || current.render_status !== 'running' || !['capturing', 'quoted', 'accepted'].includes(current.status)) return;
         if (!current.accepted_at) {
           await orders.buyer(tx, current.event_id, current.customer_account_id);
@@ -119,7 +134,8 @@ function createWorker({ db, storage, sharp, orders, heartbeatMs = 15000 }) {
     } catch (error) {
       logger.warn('Print preparation failed', { orderId: row.id, error: error.message });
       const status = error.statusCode ?? error.status;
-      const terminal = status >= 400 && status < 500 || row.attempts >= 3;
+      const transient = error.code === 'IMAGE_WORKER_FAILED' || require('../imageResourcePolicy').isTransient(error);
+      const terminal = !transient && status >= 400 && status < 500 || row.attempts >= 3;
       await db('print_sales_orders').where({ id: row.id, claim: row.claim, render_status: 'running' })
         .whereIn('status', ['capturing', 'quoted', 'accepted']).update({
           ...(!row.accepted_at && terminal ? { status: 'failed', purge_requested: true } : {}),
@@ -146,7 +162,11 @@ function start() {
     // Expiry and deletion must continue even during a long render.
     if (!cleaning) cleaning = (async () => {
       if (Date.now() - lastTempSweep > 60000) {
-        await work.track('print download cleanup', () => require('./files').sweepDownloads()); lastTempSweep = Date.now();
+        lastTempSweep = Date.now();
+        await work.track('print download cleanup', () => require('./files').sweepDownloads())
+          .catch(error => logger.error('Print download cleanup failed', { error: error.message }));
+        await work.track('print download status cleanup', () => require('./downloadStatus').createService(db).cleanup())
+          .catch(error => logger.error('Print download status cleanup failed', { error: error.message }));
       }
       if (await db.schema.hasTable('print_sales_orders'))
         await work.track('print retention', () => require('./fulfilment').createService({ db, storage }).cleanup());

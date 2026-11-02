@@ -1084,6 +1084,67 @@ test('repair cannot rebuild files already submitted to the lab', async () => {
   const row = await submitted(); await storage.delete((await db('print_sales_assets').where({ order_id: row.id, kind: 'pack' }).first()).storage_key);
   await expect(fulfilment.action(row.id, admin, { action: 'repair' })).rejects.toThrow('not yet submitted');
 });
+test('dispatch records a paid lab shipment even if its retained pack was subsequently lost', async () => {
+  const row = await submitted();
+  await storage.delete((await db('print_sales_assets').where({ order_id: row.id, kind: 'pack' }).first()).storage_key);
+  const get = jest.spyOn(storage, 'get');
+  try {
+    await fulfilment.action(row.id, admin, { action: 'dispatch', artworkVersion: row.artwork_version, tracking: 'TRACK-1' });
+    expect(await fulfilment.order(row.id, admin)).toMatchObject({ status: 'dispatched', tracking: 'TRACK-1' });
+    expect(get).not.toHaveBeenCalled();
+    expect((await db('invoices').where({ id: row.invoice_id }).first()).status).toBe('paid');
+  } finally { get.mockRestore(); }
+});
+test.each(['healthy', 'queued'])('repair reports its %s outcome through the actual admin projection', async outcome => {
+  const row = await paidAndReady();
+  if (outcome === 'queued') await storage.delete((await db('print_sales_assets').where({ order_id: row.id, kind: 'pack' }).first()).storage_key);
+  const result = await authed(request(adminApp).post(`/api/admin/print-sales/orders/${row.id}/actions`)).send({ action: 'repair' });
+  expect(result.status).toBe(200); expect(result.body).toMatchObject({ id: row.id, repair: outcome, artworkVersion: outcome === 'healthy' ? row.artwork_version : null });
+});
+test('download status migration reruns and repairs an interrupted index without changing orders', async () => {
+  const row = await paidAndReady(), migration = require('../../migrations/core/342_print_download_status');
+  const attempt = await require('../../src/services/printSales/downloadStatus').createService(db).create(row.id, admin, 'pack');
+  await db.raw('DROP INDEX print_sales_downloads_expires_at_index');
+  await migration.up(db); await migration.up(db);
+  const index = db.client.config.client === 'pg'
+    ? await db('pg_indexes').where({ indexname: 'print_sales_downloads_expires_at_index' }).first()
+    : await db('sqlite_master').where({ type: 'index', name: 'print_sales_downloads_expires_at_index' }).first();
+  expect(index).toBeTruthy(); expect((await db('print_sales_downloads').where({ id: attempt.id }).first()).status).toBe('pending');
+  await migration.down(db); await migration.up(db);
+  expect(await db('print_sales_downloads')).toHaveLength(0);
+  expect((await fulfilment.order(row.id, admin)).invoice_id).toBe(row.invoice_id);
+});
+test.each(['missing', 'capacity', 'success'])('the status API reports the actual native GET outcome: %s', async reason => {
+  const row = await paidAndReady(), path = `/api/admin/print-sales/orders/${row.id}/files/pack`;
+  const get = jest.spyOn(storage, 'get'); let release, active = [];
+  try {
+    const created = await authed(request(adminApp).post(`${path}/downloads`));
+    expect(created.status).toBe(201); expect(created.body.status).toBe('pending'); expect(get).not.toHaveBeenCalled();
+    const id = created.body.id;
+    const status = () => authed(request(adminApp).get(`${path}/downloads/${id}`));
+    await expect(require('../../src/services/printSales/downloadStatus').createService(db).read(id, row.id, { id: admin.id + 1000 }, 'pack')).rejects.toThrow('not found');
+    expect((await authed(request(adminApp).get(`${path.replace('/pack', '/sheet')}/downloads/${id}`))).status).toBe(404);
+    if (reason === 'missing') await storage.delete((await db('print_sales_assets').where({ order_id: row.id, kind: 'pack' }).first()).storage_key);
+    if (reason === 'capacity') {
+      let entered = 0, ready;
+      const started = new Promise(r => { ready = r; }), held = new Promise(r => { release = r; });
+      const consume = async () => { if (++entered === 2) ready(); await held; };
+      active = [fulfilment.download(row.id, admin, 'pack', consume), fulfilment.download(row.id, admin, 'sheet', consume)];
+      await started;
+    }
+    const response = await authed(request(adminApp).get(path).query({ downloadId: id }));
+    expect(response.status).toBe(reason === 'success' ? 200 : reason === 'missing' ? 409 : 503);
+    const state = await status(); expect(state.status).toBe(200);
+    expect(state.body.status).toBe(reason === 'success' ? 'complete' : 'failed');
+    if (reason !== 'success') expect(state.body.error).toMatch(reason === 'missing' ? /missing/ : /already in progress/);
+    expect((await authed(request(adminApp).get(path).query({ downloadId: id }))).status).toBe(409);
+    if (reason === 'success') expect(get).toHaveBeenCalledTimes(1);
+    expect(Object.keys(state.body).sort()).toEqual(['error', 'id', 'status']);
+    await db('print_sales_downloads').where({ id }).update({ expires_at: '2000-01-01T00:00:00Z' });
+    await require('../../src/services/printSales/downloadStatus').createService(db).cleanup();
+    expect((await status()).status).toBe(404);
+  } finally { release?.(); await Promise.all(active); get.mockRestore(); }
+});
 test('HEAD authorises from metadata and GET reads only the requested file once', async () => {
   const row = await paidAndReady(), get = jest.spyOn(storage, 'get');
   try {
@@ -1126,6 +1187,41 @@ test('permanent isolated-image refusals stop after one attempt', async () => {
   const refusal = require('../../src/services/printSales/worker').createWorker({ db, storage, sharp: () => { throw Object.assign(new Error('Permanent image limit'), { status: 422 }); }, orders });
   await refusal.runOne();
   expect(await fulfilment.order(q.id, admin)).toMatchObject({ status: 'failed', render_status: 'failed', attempts: 1, invoice_id: null });
+});
+test('a transient child crash retries with a fresh attempt and stops at the bounded limit', async () => {
+  const q = await orders.quote(event.id, customerId, 'client', payload());
+  const crash = () => { throw Object.assign(new Error('Child exited'), { code: 'IMAGE_WORKER_FAILED', status: 422 }); };
+  const crashing = require('../../src/services/printSales/worker').createWorker({ db, storage, sharp: crash, orders });
+  await crashing.runOne();
+  expect(await fulfilment.order(q.id, admin)).toMatchObject({ render_status: 'queued', attempts: 1, invoice_id: null });
+  await crashing.runOne(); await crashing.runOne();
+  expect(await fulfilment.order(q.id, admin)).toMatchObject({ status: 'failed', render_status: 'failed', attempts: 3, invoice_id: null });
+});
+test.each(['temporary', 'lease exhausted'])('heartbeat database errors are bounded by the lease: %s', async reason => {
+  const q = await orders.quote(event.id, customerId, 'client', payload());
+  let entered, failed, release, blocked = false, failures = 0;
+  const started = new Promise(r => { entered = r; }), failure = new Promise(r => { failed = r; });
+  const held = new Promise(r => { release = r; });
+  const originalPut = storage.put.bind(storage), originalQuery = db.client.query.bind(db.client);
+  const put = jest.spyOn(storage, 'put').mockImplementationOnce(async (key, body, options) => {
+    blocked = true; entered();
+    await Promise.race([held, new Promise((_r, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }))]);
+    return originalPut(key, body, options);
+  });
+  const query = jest.spyOn(db.client, 'query').mockImplementation((connection, statement) => {
+    if (blocked && /^select \*/i.test(statement.sql) && statement.sql.includes('print_sales_orders') && (reason !== 'temporary' || failures === 0)) {
+      failures++; failed(); return Promise.reject(Object.assign(new Error('Transient database disconnect'), { code: 'ECONNRESET' }));
+    }
+    return originalQuery(connection, statement);
+  });
+  const task = require('../../src/services/printSales/worker').createWorker({ db, storage, sharp, orders, heartbeatMs: 20, leaseMs: reason === 'temporary' ? 300000 : 160 }).runOne();
+  try {
+    await started; await failure;
+    if (reason === 'temporary') release();
+    await task; blocked = false;
+    const row = await fulfilment.order(q.id, admin);
+    expect(row).toMatchObject({ render_status: reason === 'temporary' ? 'ready' : 'queued', attempts: 1, invoice_id: null });
+  } finally { blocked = false; release(); query.mockRestore(); put.mockRestore(); await task; }
 });
 test('mathematically oversized uncompressed TIFF baskets are refused before retaining or rendering', async () => {
   const manufacturing = { ...definition.manufacturing, trimMm: { width: 600, height: 400 }, resolution: { targetDpi: 300, minimumDpi: 72 },
@@ -1222,5 +1318,26 @@ sdkTest('S3 SDK retries transient part failures without reusing a completed Uplo
     const digest = require('crypto').createHash('sha256');
     for await (const chunk of await s3.get(key)) digest.update(chunk);
     expect(digest.digest('hex')).toBe(V.hash(bytes));
+  });
+}, 120000);
+sdkTest('S3 SDK cancellation during multipart completion leaves neither parts nor a published asset', async () => {
+  await withPrintS3(async (s3, client, bucket, sdk) => {
+    await s3.put(`events/active/${event.slug}/individual/source.jpg`, sourceBytes);
+    const service = require('../../src/services/printSales/orders').createService({ db, storage: s3, sharp });
+    const q = await service.quote(event.id, customerId, 'client', payload()), claim = uuid(), controller = new AbortController();
+    await db('print_sales_orders').where({ id: q.id }).update({ claim, render_status: 'running', heartbeat: new Date().toISOString() });
+    let entered, resume;
+    const started = new Promise(r => { entered = r; }), held = new Promise(r => { resume = r; });
+    s3.adapter.s3Client.middlewareStack.add((next, context) => async args => {
+      if (context.commandName === 'CompleteMultipartUploadCommand') { entered(); await held; }
+      return next(args);
+    }, { step: 'initialize', name: 'pausePrintCompletionFixture' });
+    const uploading = service.asset(q.id, 'pack', crypto.randomBytes(6 * 1024 * 1024), claim, 'zip', { signal: controller.signal, maxBytes: 9 * 1024 * 1024 });
+    const failure = expect(uploading).rejects.toMatchObject({ name: 'AbortError' });
+    try { await started; controller.abort(); } finally { resume(); }
+    await failure;
+    expect((await client.send(new sdk.ListMultipartUploadsCommand({ Bucket: bucket }))).Uploads || []).toHaveLength(0);
+    expect((await s3.list(`.print-sales/${q.id}/`))).toHaveLength(0);
+    expect(await db('print_sales_assets').where({ order_id: q.id })).toHaveLength(0);
   });
 }, 120000);

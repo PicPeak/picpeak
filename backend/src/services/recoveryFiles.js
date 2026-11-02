@@ -170,8 +170,38 @@ async function requiredKeys(knex, selected, derived) {
 }
 
 async function retainedPrintKey(knex, key) {
-  if (knex instanceof Map) return (knex.get('print_sales_assets') || []).some(row => row.storage_key === key && row.kind !== 'staging');
   return await knex.schema.hasTable('print_sales_assets') && !!await knex('print_sales_assets').where({ storage_key: key }).whereNot({ kind: 'staging' }).first('id');
+}
+
+const printTemporaryKey = key => under(key, '.print-sales') && /\.tmp\.[^/]+$/.test(key);
+async function discardedPrintFile(knex, key, error) {
+  return error.code === 'ENOENT' && under(key, '.print-sales') && !await retainedPrintKey(knex, key);
+}
+
+/** Local inventories obey the same committed-asset contract as S3. */
+async function localPrintInventory(knex, files, selected = () => true) {
+  const required = new Set();
+  for await (const row of rows(knex, 'print_sales_assets')) {
+    if (row.kind === 'staging') continue;
+    const key = validKey(row.storage_key);
+    if (!under(key, '.print-sales')) throw new Error(`Print asset is outside its recovery root: ${key}`);
+    if (selected(key)) required.add(key);
+  }
+  const output = files.filter(file => {
+    const key = (file.relativePath || file.rel).split(path.sep).join('/');
+    return !under(key, '.print-sales') || required.has(key);
+  });
+  const found = new Set(output.map(file => (file.relativePath || file.rel).split(path.sep).join('/')));
+  for (const key of required) {
+    if (found.has(key) || !await retainedPrintKey(knex, key)) continue;
+    const abs = path.join(require('../config/storage').getStoragePath(), ...key.split('/'));
+    let stat;
+    try { stat = await fsp.lstat(abs); }
+    catch (error) { if (await discardedPrintFile(knex, key, error)) continue; throw error; }
+    if (!stat.isFile()) throw new Error(`Not a regular recovery source: ${key}`);
+    output.push({ path: abs, abs, rel: key, relativePath: key, size: stat.size, modified: stat.mtime });
+  }
+  return output;
 }
 
 async function adapterInventory(knex, roots, selected = key => roots.some(root => under(key, root)), requiredReferences = []) {
@@ -336,4 +366,5 @@ async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES, refer
 }
 
 module.exports = { MANAGED_ROOTS, DEFAULT_MAX_BYTES, REFERENCES_SUFFIX, validKey, managedKey, remoteDestination, objectOptions,
+  printTemporaryKey, discardedPrintFile, localPrintInventory,
   restoreObjectOptions, selectedManifestFiles, adapterInventory, requiredKeys, captureStream, captureAdapter, checksumAdapter, verifyAdapter, materialize };
