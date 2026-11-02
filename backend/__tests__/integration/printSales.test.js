@@ -10,7 +10,7 @@ const G = require('../../src/services/albumProducts/library');
 const uuid = () => crypto.randomUUID();
 const { isTrue } = require('../../src/utils/galleryLifecycle');
 let db, cleanup, storage, orders, fulfilment, worker, admin, customerId, event, photoId, config, definition, product,
-  sourceBytes, adminApp, galleryApp, adminToken;
+  sourceBytes, adminApp, customerApp, galleryApp, adminToken;
 beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
   const seeded = await seedMinimal(db); customerId = seeded.customerId;
@@ -23,6 +23,7 @@ beforeAll(async () => {
   fulfilment = require('../../src/services/printSales/fulfilment').createService({ db, storage });
   worker = require('../../src/services/printSales/worker').createWorker({ db, storage, sharp, orders });
   adminApp = buildRouteApp('/api/admin/print-sales', require('../../src/routes/adminPrintSales'));
+  customerApp = buildRouteApp('/api/admin/customers', require('../../src/routes/adminCustomers'));
   galleryApp = buildRouteApp('/api/gallery', require('../../src/routes/gallery/printSales'));
   galleryApp.set('trust proxy', 'loopback');
   sourceBytes = await sharp({ create: { width: 400, height: 600, channels: 3, background: '#3578a2' } }).jpeg().toBuffer();
@@ -625,14 +626,59 @@ test('a gallery a non-owner manages cannot be opened: invoices would be refused 
   expect(response.status).toBe(403);
   expect(response.body.error).toContain('gallery owner');
 });
-test('with the feature off, fulfilment and file downloads stop while order reads stay', async () => {
+test('with the feature off, preparation/release actions and file downloads stop while order reads stay', async () => {
   const row = await paidAndReady();
   await db('feature_flags').where({ key: 'printSales' }).update({ value: false });
   require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
-  const action = await authed(request(adminApp).post(`/api/admin/print-sales/orders/${row.id}/actions`)).send({ action: 'review', artworkVersion: row.artwork_version });
-  expect(action.status).toBe(403);
+  for (const action of ['review', 'submit', 'dispatch', 'repair', 'unknown', 'cancel ', ['cancel'], null]) {
+    const response = await authed(request(adminApp).post(`/api/admin/print-sales/orders/${row.id}/actions`))
+      .send({ action, artworkVersion: row.artwork_version });
+    expect(response.status).toBe(403); expect(response.body.code).toBe('PRINT_SALES_DISABLED');
+  }
   expect((await authed(request(adminApp).get(`/api/admin/print-sales/orders/${row.id}/files/pack`))).status).toBe(403);
   expect((await authed(request(adminApp).get(`/api/admin/print-sales/orders/${row.id}`))).status).toBe(200);
+});
+test.each(['cancel', 'resolve'])('with the feature off, %s still needs admin authentication and permissions', async action => {
+  const row = await accepted(), path = `/api/admin/print-sales/orders/${row.id}/actions`;
+  const viewer = await newAdmin(); await assignAdminRole(db, viewer, 'viewer');
+  await db('feature_flags').where({ key: 'printSales' }).update({ value: false });
+  require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+  expect((await request(adminApp).post(path).send({ action, note: 'Close for erasure' })).status).toBe(401);
+  const denied = await request(adminApp).post(path).set('Authorization', `Bearer ${mintAdminToken(viewer)}`).send({ action, note: 'Close for erasure' });
+  expect(denied.status).toBe(403); expect(denied.body.error).toContain('Insufficient permissions');
+  expect((await fulfilment.order(row.id, admin)).status).toBe('accepted');
+});
+test.each(['cancel', 'resolve'])('with the feature off, %s releases customer erasure only after native invoice correction', async action => {
+  const buyer = await secondCustomer();
+  await db('event_customer_assignments').insert({ event_id: event.id, customer_account_id: buyer });
+  const q = await orders.quote(event.id, buyer, 'client', payload());
+  await worker.runOne();
+  const ready = await orders.status(event.id, buyer, q.id);
+  const acceptedOrder = await orders.accept(event.id, buyer, 'client', q.id, { snapshotHash: ready.snapshotHash, acknowledgeSelection: true });
+  let row = await fulfilment.order(q.id, admin);
+  if (action === 'resolve') {
+    await pay(acceptedOrder);
+    await fulfilment.action(row.id, admin, { action: 'review', artworkVersion: row.artwork_version });
+    await fulfilment.action(row.id, admin, { action: 'submit', artworkVersion: row.artwork_version, supplierReference: 'LAB-ERASURE' });
+    row = await fulfilment.order(q.id, admin);
+  }
+  await db('feature_flags').where({ key: 'printSales' }).update({ value: false });
+  require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+  const erase = () => authed(request(customerApp).post(`/api/admin/customers/${buyer}/erase`)).send({});
+  const close = () => authed(request(adminApp).post(`/api/admin/print-sales/orders/${row.id}/actions`))
+    .send({ action, note: 'Lab cancellation confirmed; close for customer erasure' });
+  expect((await erase()).status).toBe(409);
+  const refused = await close(); expect(refused.status).toBe(409); expect(refused.body.error).toContain('native billing first');
+  expect((await fulfilment.order(row.id, admin)).status).toBe('accepted');
+  await invoices().cancelInvoice(row.invoice_id, admin.id);
+  const closed = await close(); expect(closed.status).toBe(200);
+  expect(closed.body.status).toBe(action === 'cancel' ? 'cancelled' : 'resolved');
+  expect((await erase()).status).toBe(200);
+  const erased = await db('customer_accounts').where({ id: buyer }).first();
+  expect(isTrue(erased.is_active)).toBe(false); expect(erased.display_name).toBeNull();
+  expect((await fulfilment.order(row.id, admin)).contact).toBeNull();
+  expect((await db('invoices').where({ id: row.invoice_id }).first()).status).toBe('cancelled');
+  expect(isTrue((await db('feature_flags').where({ key: 'printSales' }).first()).value)).toBe(false);
 });
 test('a photo path that leaves the managed originals is refused', async () => {
   await db('photos').where({ id: photoId }).update({ path: '../../.print-sales/other/source.jpg' });

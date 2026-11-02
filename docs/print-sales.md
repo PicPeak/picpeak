@@ -1,9 +1,13 @@
-# Experimental gallery print sales (#48)
+# Beta gallery print sales (#48)
 
 Print sales has three connected slices on the shared product
 catalogue: manufacturing-profile administration; known-customer photo/crop orders
 with native invoices; and background preparation with reviewed manual fulfilment.
 `printSales` and every gallery's shop switch default **off**.
+
+This feature is beta. Production capacity on S3 and ARM64 has not been measured;
+studios must validate their own storage, hardware and lab output before opening
+a shop. The resource limits below are fixed constants, not admin settings.
 
 ## Configure and use
 
@@ -284,7 +288,7 @@ deployment review remain necessary before opening an actual shop.
 - **Deleting an admin.** An admin with open print orders cannot be deleted until those orders are closed.
 - **Corrected invoices.** After a Storno and reissue, fulfilment follows the replacement invoice, which must carry the same lines and totals and be fully paid.
 - **Close order manually.** Once the original invoice is cancelled, an open order that can neither be cancelled nor dispatched (already at the lab, or reissued with different lines) is closed with a recorded reason. A replacement invoice must be fully paid or cancelled first; a paid one is noted on the activity log and refunded in native billing. This also releases customer erasure.
-- **Feature switched off.** The Print sales tab hides and fulfilment actions and file downloads stop, while retention keeps running. Switch the feature back on to finish open orders; this is also needed before erasing a customer who has one. Buyers see their order history only while the gallery's shop is open.
+- **Feature switched off.** The Print sales tab hides, and preparation/release actions and file downloads stop, while retention keeps running. Authorised admins can still use the order actions API to `cancel` or `resolve` existing orders, subject to the same ownership, invoice-correction and state checks. Customer erasure can then proceed without re-enabling print sales. Review, repair, lab submission and dispatch require the feature to be on. Buyers see their order history only while the gallery's shop is open.
 
 ## Installation and recovery
 

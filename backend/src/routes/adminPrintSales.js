@@ -16,6 +16,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const fulfilment = () => require('../services/printSales/fulfilment').createService({ db, storage: require('../services/storage').getStorage() });
 const permissions = (...names) => requirePermission(names, { requireAll: true });
 const downloadStatus = () => require('../services/printSales/downloadStatus').createService(db);
+const requirePrintSales = requireFeatureFlag('printSales');
 router.use(adminAuth, (req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
 router.get('/settings', permissions('products.view'), handleAsync(async (_req, res) => {
   const cat = await P.catalogue(db);
@@ -59,7 +60,12 @@ router.get('/orders', permissions('products.view', 'bills.view', 'customers.view
 }));
 router.get('/orders/:id', permissions('products.view', 'bills.view', 'customers.view'), handleAsync(async (req, res) =>
   res.json(O.application().shape(await fulfilment().order(req.params.id, req.admin)))));
-router.post('/orders/:id/actions', requireFeatureFlag('printSales'), permissions('products.configure', 'bills.manage', 'customers.edit'), handleAsync(async (req, res) => {
+router.post('/orders/:id/actions', permissions('products.configure', 'bills.manage', 'customers.edit'), (req, res, next) => {
+  // Closing retained orders must remain possible for customer erasure when
+  // sales are off. Fulfilment still enforces ownership and native billing.
+  if (req.body?.action === 'cancel' || req.body?.action === 'resolve') return next();
+  return requirePrintSales(req, res, next);
+}, handleAsync(async (req, res) => {
   const result = await require('../services/activeApplicationWork').track('manual print fulfilment', () => fulfilment().action(req.params.id, req.admin, req.body));
   res.json({ ...O.application().shape(await fulfilment().order(req.params.id, req.admin)), ...(result?.repair ? { repair: result.repair } : {}) });
 }));
