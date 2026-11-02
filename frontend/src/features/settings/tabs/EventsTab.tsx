@@ -26,13 +26,15 @@ const FEEDBACK_TYPE_DEFAULTS: Array<{
   key: 'event_default_allow_ratings' | 'event_default_allow_likes'
     | 'event_default_allow_favorites' | 'event_default_allow_comments'
     | 'event_default_allow_reactions' | 'event_default_allow_color_labels'
-    | 'event_default_allow_decisions';
+    | 'event_default_allow_decisions' | 'event_default_allow_favorite_lists';
   label: string;
   fallback: string;
 }> = [
   { key: 'event_default_allow_ratings', label: 'settings.events.defaultAllowRatings', fallback: 'Star ratings' },
   { key: 'event_default_allow_likes', label: 'settings.events.defaultAllowLikes', fallback: 'Likes' },
   { key: 'event_default_allow_favorites', label: 'settings.events.defaultAllowFavorites', fallback: 'Favourites' },
+  // Named favourite lists (issue 2303), right under favourites.
+  { key: 'event_default_allow_favorite_lists', label: 'settings.events.defaultAllowFavoriteLists', fallback: 'Favourite lists' },
   { key: 'event_default_allow_comments', label: 'settings.events.defaultAllowComments', fallback: 'Comments' },
   { key: 'event_default_allow_reactions', label: 'settings.events.defaultAllowReactions', fallback: 'Emoji reactions' },
   { key: 'event_default_allow_color_labels', label: 'settings.events.defaultAllowColorLabels', fallback: 'Color labels' },
