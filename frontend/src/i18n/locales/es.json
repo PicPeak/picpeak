@@ -598,6 +598,25 @@
     "toolbar": {
       "browse": "Herramientas de la galería",
       "selection": "Selección"
+    },
+    "favoriteLists": {
+      "saveTo": "Guardar en la lista",
+      "defaultList": "Mis favoritos",
+      "manage": "Gestionar listas…",
+      "title": "Tus listas",
+      "intro": "Ordena tus favoritos en listas. El marcador guarda en la lista que elijas.",
+      "defaultHint": "Lista predeterminada",
+      "nameLabel": "Nombre de la lista",
+      "rename": "Renombrar {{name}}",
+      "deleteNamed": "Eliminar {{name}}",
+      "confirmDelete_one": "¿Eliminar «{{name}}» y la {{count}} foto guardada en ella?",
+      "confirmDelete_other": "¿Eliminar «{{name}}» y las {{count}} fotos guardadas en ella?",
+      "delete": "Eliminar lista",
+      "newPlaceholder": "Nueva lista, p. ej. Álbum",
+      "create": "Añadir",
+      "nameTaken": "Ya tienes una lista con este nombre.",
+      "limitReached": "Puedes tener hasta {{count}} listas.",
+      "saveError": "No se pudo guardar la lista."
     }
   },
   "categories": {
@@ -1403,6 +1422,7 @@
       "defaultAllowRatings": "Valoración con estrellas",
       "defaultAllowLikes": "Me gusta",
       "defaultAllowFavorites": "Favoritos",
+      "defaultAllowFavoriteLists": "Listas de favoritos",
       "defaultAllowComments": "Comentarios",
       "defaultAllowReactions": "Reacciones emoji",
       "defaultAllowColorLabels": "Etiquetas de color",
@@ -1581,6 +1601,24 @@
       "noneToFill": "Todas las fotos ya tienen marcador",
       "button": "Calcular marcadores"
     },
+    "contentHashBackfill": {
+      "title": "Hashes de contenido",
+      "description": "Calcula el hash de contenido con el que la detección de duplicados compara, para fotos y vídeos importados desde la carpeta vigilada, medios externos o S3, y para los añadidos antes de que existieran los hashes. Los archivos se leen de uno en uno; puedes pausar en cualquier momento y volver a iniciar más tarde para continuar donde se detuvo. Los originales que no se pueden leer se omiten y se cuentan. Las fotos nuevas reciben su hash automáticamente; los vídeos nuevos lo reciben aquí.",
+      "ioWarning": "Esto lee una vez cada original sin hash: espera carga de E/S en un NAS y tráfico de salida en S3.",
+      "total": "Fotos y vídeos",
+      "hashed": "Con hash",
+      "pending": "Aún sin hash",
+      "unreadable": "Ilegibles",
+      "result": "Última ejecución: {{hashed}} calculados, {{failed}} originales ilegibles",
+      "resultPaused": "En pausa: {{hashed}} calculados, {{failed}} originales ilegibles hasta ahora",
+      "running": "Leyendo originales...",
+      "pause": "Pausar",
+      "pausing": "Pausando tras el archivo actual...",
+      "resume": "Reanudar",
+      "button": "Calcular hashes",
+      "noneToHash": "Todos los originales tienen hash",
+      "retryUnreadable": "Reintentar ilegibles ({{count}})"
+    },
     "groups": {
       "people": "Personas y acceso"
     },
@@ -1656,6 +1694,12 @@
         "sso_account": "Tu cuenta inicia sesión mediante el inicio de sesión único, así que no puede usar llaves de acceso.",
         "unsupported": "Este navegador no admite llaves de acceso."
       }
+    },
+    "apiTokens": {
+      "galleryPasswordScopes": "Contraseñas de galería",
+      "galleryPasswordScopesWarning": "Estos scopes entregan contraseñas de galería. No forman parte de admin: márcalos solo en un token que los necesite. Cada uso queda registrado a tu nombre.",
+      "scopeGalleryPasswordsRead": "Muestra la contraseña guardada de una galería. Solo funciona mientras «Guardar contraseñas de galería recuperables» esté activado.",
+      "scopeGalleryPasswordsReset": "Restablece la contraseña de una galería y puede enviar la nueva al cliente por correo. Los invitados deben volver a iniciar sesión."
     }
   },
   "analytics": {
@@ -2316,6 +2360,31 @@
         "deleteFailed_one": "No se pudo eliminar {{count}} foto; sigue en la galería",
         "deleteFailed_many": "No se pudieron eliminar {{count}} fotos; siguen en la galería",
         "deleteFailed_other": "No se pudieron eliminar {{count}} fotos; siguen en la galería"
+      },
+      "duplicates": {
+        "open": "Duplicados",
+        "title": "Fotos duplicadas",
+        "intro": "Solo coinciden archivos idénticos byte a byte: las copias reexportadas o redimensionadas no se detectan, y las fotos aún sin hash (importadas antes del hash) no se comparan.",
+        "empty": "No hay duplicados en esta galería",
+        "emptyHelp": "Ninguna foto de aquí comparte el mismo archivo con otra.",
+        "loadFailed": "No se pudieron cargar los duplicados",
+        "copies_one": "{{count}} copia idéntica",
+        "copies_other": "{{count}} copias idénticas",
+        "keep": "Conservar",
+        "keepThis": "Conservar {{name}}",
+        "keepOne_one": "Conservar la marcada, mover {{count}} a la papelera",
+        "keepOne_other": "Conservar la marcada, mover {{count}} a la papelera",
+        "keepAll_one": "Conservar la foto marcada en {{count}} grupo",
+        "keepAll_other": "Conservar la foto marcada en los {{count}} grupos",
+        "trashed_one": "{{count}} copia movida a la papelera",
+        "trashed_other": "{{count}} copias movidas a la papelera",
+        "failed": "No se pudieron mover las copias a la papelera",
+        "trashOff": "La papelera está desactivada y borrar es definitivo, así que esta vista solo enumera las copias.",
+        "sourceAdmin": "Subida o importación",
+        "sourceGuest": "Subida de invitado",
+        "sourceExternal": "Carpeta externa",
+        "range_one": "Grupo {{from}}–{{to}} de {{count}}",
+        "range_other": "Grupos {{from}}–{{to}} de {{count}}"
       }
     },
     "guests": {
@@ -2323,7 +2392,16 @@
         "colorLabels": "Etiquetas de color"
       },
       "detail": {
-        "labeled": "Etiquetas de color"
+        "labeled": "Etiquetas de color",
+        "defaultList": "Lista predeterminada",
+        "favoriteLists": "Listas de favoritos",
+        "listCount_one": "{{count}} foto",
+        "listCount_other": "{{count}} fotos",
+        "listUpdated": "Actualizada {{date}}",
+        "showInPhotos": "Ver en fotos",
+        "clearListFilter": "Mostrar todas las fotos",
+        "listFilterNamed": "Se muestran las fotos de {{name}}.",
+        "listFilter": "Se muestran las fotos de una lista de favoritos."
       }
     },
     "catalogedMedia": "{{size}} catalogados",
@@ -3193,6 +3271,8 @@
       "reactions": "Reacciones con emojis",
       "reactionsDesc": "Un emoji por invitado y foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Marcar fotos como favoritas",
+      "favoriteLists": "Listas de favoritos",
+      "favoriteListsDesc": "Los invitados ordenan sus favoritos en listas con nombre propio, como «Álbum» o «Impresión»",
       "identityMode": "Modo de identidad",
       "identityModeSimple": "Feedback simple",
       "identityModeSimpleDesc": "Anónimo, basado en dispositivo. Visitantes del mismo dispositivo comparten estado.",

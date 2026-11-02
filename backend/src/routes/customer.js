@@ -37,11 +37,13 @@ const customerDocumentNotifications = require('../services/customerDocumentNotif
 const customerDocumentAbuse = require('../services/customerDocumentAbuse');
 const customerDocumentRequestsService = require('../services/customerDocumentRequestsService');
 const customerPortalService = require('../services/customerPortalService');
+const { isInvoiceEditable, orPaidAwaitingDelivery } = require('../services/invoice/helpers');
 const publicDocumentViews = require('../services/publicDocumentViews');
 const { clientIpForAudit } = require('../utils/clientIp');
 const contractSignedPdfUpload = require('../utils/contractSignedPdfUpload');
 const { auditedUpdate } = require('../services/accountingHistory');
 const { neverFrozen } = require('../services/contract/helpers');
+const { toDateOnly } = require('../utils/dateOnly');
 
 // Gate a customer-facing route on the global master flag, the per-customer
 // override AND a contact's own right — getEffectiveFeaturesForSession combines
@@ -635,10 +637,10 @@ router.get('/quotes', customerAuth, async (req, res) => {
         quoteNumber: q.quote_number,
         status: q.status,
         currency: q.currency,
-        issueDate: q.issue_date,
-        validUntil: q.valid_until,
+        issueDate: toDateOnly(q.issue_date),
+        validUntil: toDateOnly(q.valid_until),
         eventName: q.event_name,
-        eventDate: q.event_date,
+        eventDate: toDateOnly(q.event_date),
         netAmountMinor: q.net_amount_minor,
         vatRate: q.vat_rate == null ? null : Number(q.vat_rate),
         vatAmountMinor: q.vat_amount_minor,
@@ -685,8 +687,7 @@ router.get('/invoices', customerAuth, async (req, res) => {
       .leftJoin('invoices as cancels_inv', 'invoices.cancels_invoice_id', 'cancels_inv.id')
       .leftJoin('invoices as cancellation_storno', 'invoices.cancellation_storno_id', 'cancellation_storno.id')
       .where({ 'invoices.customer_account_id': req.customer.id })
-      .whereNot('invoices.status', 'scheduled')
-      .whereNot('invoices.status', 'skipped')
+      .where((q) => orPaidAwaitingDelivery(q.whereNotIn('invoices.status', ['scheduled', 'pending_delivery', 'skipped'])))
       .andWhere(function () {
         this.whereNot('invoices.status', 'cancelled').orWhereNotNull('invoices.cancellation_storno_id');
       })
@@ -719,8 +720,8 @@ router.get('/invoices', customerAuth, async (req, res) => {
         invoiceNumber: i.invoice_number,
         status: i.status,
         currency: i.currency,
-        issueDate: i.issue_date,
-        dueDate: i.due_date,
+        issueDate: toDateOnly(i.issue_date),
+        dueDate: toDateOnly(i.due_date),
         installmentIndex: i.installment_index,
         installmentTotal: i.installment_total,
         installmentLabel: i.installment_label,
@@ -739,7 +740,7 @@ router.get('/invoices', customerAuth, async (req, res) => {
         cancellationStornoId: i.cancellation_storno_id || null,
         cancellationStornoNumber: i.cancellation_storno_number || null,
         eventName: i.event_name || null,
-        eventDate: i.event_date || null,
+        eventDate: toDateOnly(i.event_date),
       })),
     });
   } catch (error) {
@@ -794,9 +795,9 @@ router.get('/invoices/:id/pdf', customerAuth, async (req, res) => {
       .where({ id: parseInt(req.params.id, 10), customer_account_id: req.customer.id })
       .first();
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
-    if (['scheduled', 'cancelled', 'skipped'].includes(invoice.status)) {
-      // Don't expose scheduled drafts, cancelled docs, or
-      // skipped empty-monthly placeholders.
+    if (isInvoiceEditable(invoice) || ['cancelled', 'skipped'].includes(invoice.status)) {
+      // Don't expose scheduled drafts, invoices awaiting delivery,
+      // cancelled docs, or skipped empty-monthly placeholders.
       return res.status(404).json({ error: 'Invoice not found' });
     }
     const invoiceService = require('../services/invoiceService');
@@ -879,8 +880,8 @@ router.get('/contracts', customerAuth, async (req, res) => {
         contractNumber: c.contract_number,
         status: c.status,
         language: c.language,
-        issueDate: c.issue_date,
-        validUntil: c.valid_until,
+        issueDate: toDateOnly(c.issue_date),
+        validUntil: toDateOnly(c.valid_until),
         // Before the freeze (#1446) the number is all that is shown.
         title: neverFrozen(c) ? null : c.title,
         sentAt: c.sent_at,

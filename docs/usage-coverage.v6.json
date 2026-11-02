@@ -1095,6 +1095,9 @@
         "GET /repair-credits/status",
         "POST /repair-thumb-hashes",
         "GET /repair-thumb-hashes/status",
+        "POST /repair-content-hashes",
+        "POST /repair-content-hashes/pause",
+        "GET /repair-content-hashes/status",
         "GET /refresh-renditions/status"
       ]
     },
@@ -1140,6 +1143,8 @@
         "GET /:eventId/photos/trash/:photoId/thumbnail",
         "POST /:eventId/photos/trash/restore",
         "POST /:eventId/photos/trash/purge",
+        "GET /:eventId/photos/duplicates",
+        "POST /:eventId/photos/duplicates/resolve",
         "GET /:eventId/photos/moderation",
         "POST /:eventId/photos/moderation",
         "GET /:eventId/photos/credits",
@@ -1630,7 +1635,11 @@
         "GET /:slug/feedback-summary",
         "GET /:slug/my-feedback",
         "GET /:slug/selection",
-        "POST /:slug/selection/submit"
+        "POST /:slug/selection/submit",
+        "GET /:slug/favorite-lists",
+        "POST /:slug/favorite-lists",
+        "PATCH /:slug/favorite-lists/:listId",
+        "DELETE /:slug/favorite-lists/:listId"
       ]
     },
     "galleryGuests.js": {
@@ -1790,7 +1799,9 @@
         "GET /events/:id/photos",
         "GET /events/:id/photos/download",
         "GET /events/:id/photos/:photoId/download",
-        "GET /events/:id/photos/:photoId/preview"
+        "GET /events/:id/photos/:photoId/preview",
+        "GET /events/:id/password",
+        "POST /events/:id/reset-password"
       ]
     },
     "gallery/downloads.js": {

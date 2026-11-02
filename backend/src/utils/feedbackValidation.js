@@ -247,6 +247,7 @@ const validateFeedbackSettings = [
   body('allow_reactions').optional().isBoolean(),
   body('allow_color_labels').optional().isBoolean(),
   body('allow_decisions').optional().isBoolean(),
+  body('allow_favorite_lists').optional().isBoolean(),
   body('allow_selection_submit').optional().isBoolean(),
   body('allow_annotations').optional().isBoolean(),
   body('keybind_mode').optional().isIn(KEYBIND_MODES)

@@ -21,6 +21,7 @@ const customerAccountsService = require('./customerAccountsService');
 const customerDocumentsService = require('./customerDocumentsService');
 const { hasRight } = require('./customerContactsService');
 const { followSlugRedirect } = require('./slugRedirects');
+const { orPaidAwaitingDelivery } = require('./invoice/helpers');
 
 const isTrue = (v) => v === true || v === 1 || v === '1';
 const pad = (n) => String(n).padStart(2, '0');
@@ -253,7 +254,7 @@ async function recentFor(customerId, features, limit = 10, { galleries = true } 
   if (features.bills) {
     // Same visibility as GET /api/customer/invoices.
     const rows = await db('invoices').where({ customer_account_id: customerId })
-      .whereNotIn('status', ['scheduled', 'skipped'])
+      .where((q) => orPaidAwaitingDelivery(q.whereNotIn('status', ['scheduled', 'pending_delivery', 'skipped'])))
       .andWhere((q) => q.whereNot('status', 'cancelled').orWhereNotNull('cancellation_storno_id'))
       .select('id', 'invoice_number', 'sent_at');
     for (const i of rows) push('invoice_sent', i.id, i.invoice_number, i.sent_at, '/customer/bills');
@@ -400,7 +401,7 @@ async function getEventOverview(customerId, slug, session = null) {
     // Same visibility as GET /api/customer/invoices.
     invoices = (await db('invoices')
       .where({ customer_account_id: customerId })
-      .whereNotIn('status', ['scheduled', 'skipped'])
+      .where((q) => orPaidAwaitingDelivery(q.whereNotIn('status', ['scheduled', 'pending_delivery', 'skipped'])))
       .andWhere((q) => q.whereNot('status', 'cancelled').orWhereNotNull('cancellation_storno_id'))
       .andWhere(linkedTo('event_id'))
       .orderBy('id', 'desc')

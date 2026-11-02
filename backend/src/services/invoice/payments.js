@@ -14,6 +14,7 @@ const { toMillis } = require('../../utils/queueTimestamps');
 const { formatMajor } = require('./helpers');
 const { auditedInsert, auditedUpdate, normalizeActor } = require('../accountingHistory');
 const { applyReminder, resolveAdminEmailForInvoice, resolvePerReminderFeeMinor, resolveSkontoPercentForInvoice } = require('./reminders');
+const { toDateOnly } = require('../../utils/dateOnly');
 
 // Payment-check token lifetime (GHSA-wg94-f86h-vq68 hardening). This
 // unauthenticated magic link is the only gate on a write to the
@@ -100,6 +101,11 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
     if (!invoice) throw new AppError('Invoice not found', 404);
     if (invoice.status === 'cancelled') {
       throw new AppError('Cannot mark a cancelled invoice as paid', 409);
+    }
+    // Not issued yet, and a paid invoice can no longer be marked delivered,
+    // so it would never reach the customer.
+    if (invoice.status === 'pending_delivery') {
+      throw new AppError('This invoice is awaiting delivery. Mark it delivered before recording a payment.', 409, 'INVOICE_AWAITING_DELIVERY');
     }
     skontoAmountMinor = skontoFlag
       ? Math.max(0, ensureInt(invoice.total_amount_minor) - amount)
@@ -440,7 +446,7 @@ async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
         // Keep the body language consistent with the locale the amounts are
         // formatted in, instead of event-first resolution (admin-facing gate).
         __language: locale,
-        due_date: formatShortDate(invoice.due_date),
+        due_date: toDateOnly(invoice.due_date),
         total_amount: formatMajor(invoice.total_amount_minor, invoice.currency, locale),
         paid_amount: formatMajor(paidMinor, invoice.currency, locale),
         outstanding_amount: formatMajor(outstandingMinor, invoice.currency, locale),
@@ -528,8 +534,8 @@ async function getPaymentCheckByToken(token) {
         || customer?.display_name || customer?.email || '',
       email: customer?.email,
     },
-    issueDate: invoice.issue_date,
-    dueDate: invoice.due_date,
+    issueDate: toDateOnly(invoice.issue_date),
+    dueDate: toDateOnly(invoice.due_date),
     totalMinor: invoice.total_amount_minor,
     paidMinor: invoice.paid_amount_minor,
     lateFeeMinor: invoice.late_fee_amount_minor,

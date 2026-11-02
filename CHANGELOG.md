@@ -5,6 +5,51 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.188.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.187.0-beta.0...v3.188.0-beta.0) (2026-11-02)
+
+
+### Features
+
+* **admin:** duplicates view on the gallery's Photos tab ([#2338](https://github.com/PicPeak/picpeak/issues/2338)) ([5c37538](https://github.com/PicPeak/picpeak/commit/5c37538720b27724d3aefd58695e09d46ebdffe8))
+* **feedback:** named favorite lists per guest per gallery ([#2346](https://github.com/PicPeak/picpeak/issues/2346)) ([5979ecc](https://github.com/PicPeak/picpeak/commit/5979ecca3df138fc0e3068cc480961d52b9aae2d))
+* **thumbnails:** regenerate previews PREVIEW_REGEN_CONCURRENCY photos at once (default 1) ([#2317](https://github.com/PicPeak/picpeak/issues/2317)) ([2f4a214](https://github.com/PicPeak/picpeak/commit/2f4a21443be1a77c758f05eab642a9d6a640a399))
+
+
+### Bug Fixes
+
+* **images:** decode HEVC HEIC through ffmpeg ([#2360](https://github.com/PicPeak/picpeak/issues/2360)) ([0820c51](https://github.com/PicPeak/picpeak/commit/0820c51a9d631ca00fcdccc931cfa93a8e69f575))
+* **invoices:** invoices awaiting delivery stay editable and unissued until sent ([#2358](https://github.com/PicPeak/picpeak/issues/2358)) ([67ed32c](https://github.com/PicPeak/picpeak/commit/67ed32c567f4ab0120fb6433039c992d825f3efd))
+* **uploads:** accept HEIC and HEIF however the browser types them ([#2361](https://github.com/PicPeak/picpeak/issues/2361)) ([2499b21](https://github.com/PicPeak/picpeak/commit/2499b21cc4a00cb256e4257b0f8c77ff5379c14a))
+
+## [3.187.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.186.0-beta.0...v3.187.0-beta.0) (2026-11-01)
+
+
+### Features
+
+* **api:** let API tokens read and reset gallery passwords ([#2339](https://github.com/PicPeak/picpeak/issues/2339)) ([77b7b15](https://github.com/PicPeak/picpeak/commit/77b7b15520f7c7d4e1839f8e5d9b31930ef7af10))
+* **contracts:** import historical signed contract PDFs without emailing the customer ([#2301](https://github.com/PicPeak/picpeak/issues/2301)) ([5c26cff](https://github.com/PicPeak/picpeak/commit/5c26cff4732baffb5fdb2ad0bb31f9cb8ba14ecb))
+* **photos:** content-hash backfill job, and hash watch-folder, external and S3 imports ([#2340](https://github.com/PicPeak/picpeak/issues/2340)) ([77779c3](https://github.com/PicPeak/picpeak/commit/77779c3904a6ae0f771f31edac9169a719a9f9ac))
+* **thumbnails:** add an onlyMissing mode to preview regeneration ([#2318](https://github.com/PicPeak/picpeak/issues/2318)) ([60f2513](https://github.com/PicPeak/picpeak/commit/60f25133a1f172a2737f801d63ec048e88802bda))
+
+
+### Bug Fixes
+
+* **accounting:** sort tax report and journal exports by date on PostgreSQL ([#2336](https://github.com/PicPeak/picpeak/issues/2336)) ([322a200](https://github.com/PicPeak/picpeak/commit/322a20063ab012f51653e916096ccb0e4cb445af))
+* **admin:** phone menu opens a section's pages in place ([#2325](https://github.com/PicPeak/picpeak/issues/2325)) ([223e127](https://github.com/PicPeak/picpeak/commit/223e1279a1aadffca4a27468ea80d1feaa3d2dc1))
+* **contracts:** show contract dates as the written day west of UTC ([#2332](https://github.com/PicPeak/picpeak/issues/2332)) ([fddaf98](https://github.com/PicPeak/picpeak/commit/fddaf98a3d1fba8bd5611509b2a872833347c6dc))
+* **crm:** send quote and invoice dates as bare days on PostgreSQL ([#2334](https://github.com/PicPeak/picpeak/issues/2334)) ([1a619d8](https://github.com/PicPeak/picpeak/commit/1a619d8a1807976c2f3d8cb185d4f9276277516b))
+* **email:** gallery mail follows the brand colour on dark cards and drops a missing expiry date ([#2324](https://github.com/PicPeak/picpeak/issues/2324)) ([8d5e2ca](https://github.com/PicPeak/picpeak/commit/8d5e2caec5f69886274a8ca96beaff4247af235a))
+* **gallery:** download large archives without browser buffering ([#2270](https://github.com/PicPeak/picpeak/issues/2270)) ([405b35d](https://github.com/PicPeak/picpeak/commit/405b35d2295dfdf9021f4230d0adc31fe8a56c4a))
+* **gallery:** fit portrait videos into the lightbox instead of cropping them ([#2322](https://github.com/PicPeak/picpeak/issues/2322)) ([ac62b37](https://github.com/PicPeak/picpeak/commit/ac62b372eba7adf98fcad7c00ab4f84fcaecd37a))
+* **images:** start the image worker on Node 24 ([#2354](https://github.com/PicPeak/picpeak/issues/2354)) ([c74db00](https://github.com/PicPeak/picpeak/commit/c74db001800d532c91ae7b320a368eef492d1425))
+* **uploads:** honour Max Video Size for guests and upload large guest files in chunks ([#2323](https://github.com/PicPeak/picpeak/issues/2323)) ([bdb07f9](https://github.com/PicPeak/picpeak/commit/bdb07f96ca47a70ff66a294c9ed74be153b6c7a1))
+* **uploads:** name the server, not the photo, when sharp cannot load ([#2353](https://github.com/PicPeak/picpeak/issues/2353)) ([4409cf1](https://github.com/PicPeak/picpeak/commit/4409cf15ed3f81021870032ec89e0b80068e1651))
+
+
+### Documentation
+
+* **deploy:** add an opt-in Traefik + CrowdSec Compose overlay ([#2337](https://github.com/PicPeak/picpeak/issues/2337)) ([d8f006a](https://github.com/PicPeak/picpeak/commit/d8f006a17e198bfb918de6fde1d1944a08938857))
+
 ## [3.186.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.185.2-beta.0...v3.186.0-beta.0) (2026-10-28)
 
 
