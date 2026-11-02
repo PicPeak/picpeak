@@ -134,6 +134,7 @@ jest.mock('../../../services/isolatedSharp', () => jest.fn(() => ({
 // Thumbnail + storage are network/fs-heavy; stub to constant resolves
 // so the test stays a pure unit test of the route handler's contract.
 jest.mock('../../../services/imageProcessor', () => ({
+  isHeifFilename: () => false,
   generateThumbnail: jest.fn().mockResolvedValue('thumbnails/fake_thumb.jpg'),
 }));
 
