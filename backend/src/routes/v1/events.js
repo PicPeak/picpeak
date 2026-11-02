@@ -63,6 +63,7 @@ const { withPublicUpload } = require('../../middleware/publicUploadStream');
 const { createUploadFileGuard } = require('../../utils/uploadAdmissionType');
 const uploadQuota = require('../../services/publicUploadQuota');
 const { validateFileContent, validateFileType, normalizeUploadMimeType, ALLOWED_MEDIA_TYPES } = require('../../utils/fileSecurityUtils');
+const { isHeifFilename } = require('../../utils/rawFormats');
 const { validateUploadedFiles } = require('../../middleware/uploadValidation');
 const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
@@ -104,6 +105,8 @@ const buildPhotoUpload = (maxFileSizeBytes, { storage, streamHandler, rejectBody
     // understood by its processing path without the UI's extension allow-list.
     // A video takes the UI's gate instead (Lightroom plugin issue 8): only a
     // type the admin enabled in general_allowed_file_types, extension matching.
+    // A .HEIC or RAW file often arrives with a generic type (issue 2368).
+    file.mimetype = normalizeUploadMimeType(file.originalname, file.mimetype);
     if (/^image\//.test(file.mimetype)) cb(null, true);
     else if (isVideoMimeType(file.mimetype) && validateFileType(file.originalname, file.mimetype, req.allowedMimeTypes)) cb(null, true);
     else {
@@ -520,7 +523,11 @@ async function handleV1PhotoUpload(req, res) {
     // (TIFF, AVIF, ...); one the signature table does not know has to be an
     // image Sharp can read instead. A video passed the file filter only as a
     // type the table knows, so it gets the signature check and no decode.
-    const declaredType = normalizeUploadMimeType(req.file.originalname, req.file.mimetype);
+    // A photo is served by its name's type, so a HEIF name has to hold HEIF bytes.
+    const declaredType = isHeifFilename(req.file.originalname)
+      ? normalizeUploadMimeType(req.file.originalname, '')
+      : req.file.mimetype;
+    req.file.mimetype = declaredType;
     const videoUpload = isVideoMimeType(declaredType);
     const contentMatches = ALLOWED_MEDIA_TYPES[declaredType]
       ? await validateFileContent(tempPath, declaredType)
