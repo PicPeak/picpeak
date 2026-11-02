@@ -1068,9 +1068,75 @@ describe('Stripe photo checkout (real routes, migrated database and SDK signatur
     mockStripe.refunds.create.mockResolvedValueOnce({ id: 're_original', status: 'failed' });
     const refund = { id: 're_partial', amount: 400, status: 'succeeded', currency: 'eur', payment_intent: session.payment_intent };
     mockStripe.refunds.list.mockResolvedValueOnce({ data: [refund, refund, { ...refund, id: 're_other', amount: 1000, payment_intent: 'pi_unrelated' },
+      { ...refund, id: 're_usd', amount: 1000, currency: 'usd' },
       { ...refund, id: 're_failed', amount: 1000, status: 'failed' }], has_more: false });
     await webhook('checkout.session.completed', session);
     expect(await readOrder(local)).toMatchObject({ status: 'refund_failed', promo_gallery_id: galleryId });
+  });
+  test.each(['create', 'retrieve'])('reconciles a full Dashboard refund after refunds.%s throws', async (method) => {
+    await offerPromo(); const local = await orderFor(await create({ photoIds: ids, promoCode: 'FOTO-ONCE' }));
+    const session = await pay(local); await db('photos').where({ id: ids[0] }).update({ visibility: 'hidden' });
+    if (method === 'retrieve') await db('photo_purchase_orders').where({ id: local.id }).update({ payment_refund_id: 're_missing' });
+    mockStripe.refunds[method].mockRejectedValueOnce(new Error('balance_insufficient'));
+    expect((await webhook('checkout.session.completed', session)).status).toBe(500);
+    expect(await readOrder(local)).toMatchObject({ status: 'refund_failed', promo_gallery_id: galleryId });
+    const nextGallery = await anotherGallery();
+    expect((await checkoutOther(nextGallery)).status).toBe(409);
+    await db('photo_purchase_orders').where({ id: local.id }).update({ recovery_needs_attention: true, recovery_error: 'REFUND_UNCONFIRMED' });
+    mockStripe.refunds[method].mockRejectedValueOnce(new Error('charge_already_refunded'));
+    mockStripe.refunds.list.mockResolvedValueOnce({ data: [{ id: 're_dashboard', amount: local.total_cents,
+      status: 'succeeded', currency: 'eur', payment_intent: session.payment_intent }], has_more: false });
+    expect((await webhook('refund.updated', { payment_intent: session.payment_intent })).status).toBe(200);
+    expect(await readOrder(local)).toMatchObject({ status: 'refunded', promo_gallery_id: null, recovery_error: null });
+    expect((await checkoutOther(nextGallery)).status).toBe(200);
+    expect(await db('photo_purchases')).toHaveLength(0);
+  });
+  test.each(['partial', 'pending', 'currency', 'unavailable', 'incomplete page'])('keeps a thrown-create refund held when reconciliation is %s', async (kind) => {
+    await offerPromo(); const local = await orderFor(await create({ photoIds: ids, promoCode: 'FOTO-ONCE' }));
+    const session = await pay(local); await db('photos').where({ id: ids[0] }).update({ visibility: 'hidden' });
+    for (let i = 0; i < 2; i++) {
+      mockStripe.refunds.create.mockRejectedValueOnce(new Error('balance_insufficient'));
+      if (kind === 'unavailable') mockStripe.refunds.list.mockRejectedValueOnce(new Error('Temporary outage'));
+      else mockStripe.refunds.list.mockResolvedValueOnce({ data: kind === 'incomplete page' ? [] : [{ id: 're_dashboard',
+        amount: local.total_cents - (kind === 'partial' ? 1 : 0), status: kind === 'pending' ? 'pending' : 'succeeded',
+        currency: kind === 'currency' ? 'usd' : 'eur', payment_intent: session.payment_intent }], has_more: kind === 'incomplete page' });
+      expect((await webhook('checkout.session.completed', session)).status).toBe(500);
+      expect(await readOrder(local)).toMatchObject({ status: 'refund_failed', payment_refund_id: null, promo_gallery_id: galleryId });
+    }
+    expect(await db('photo_purchases')).toHaveLength(0);
+  });
+  test.each(['refund_failed', 'refund_pending'].flatMap(status => ['amount', 'provider status'].map(confirmation => [status, confirmation])))('retains a Snipcart %s claim until full repayment via %s', async (status, confirmation) => {
+    enableSnipcart(); await offerPromo(); await db('events').where({ id: galleryId }).update({ snipcart_discount_id: crypto.randomUUID() });
+    const reply = await create({ provider: 'snipcart', photoIds: ids, promoCode: 'FOTO-ONCE' });
+    const local = await db('photo_purchase_orders').where({ checkout_token: reply.body.snipcart.checkout_token }).first();
+    const providerToken = crypto.randomUUID();
+    await db('photo_purchase_orders').where({ id: local.id }).update({ status, provider_order_id: providerToken,
+      recovery_needs_attention: true, recovery_error: 'REFUND_UNCONFIRMED' });
+    const reconcile = require('../../src/modules/photoSales/snipcartOrders').reconcileOrder;
+    const remote = { token: providerToken, paymentStatus: 'Paid', currency: 'eur', total: local.total_cents / 100 };
+    for (const amount of [0.01, (local.total_cents - 1) / 100]) {
+      await reconcile({ ...remote, refundsAmount: amount });
+      expect(await readOrder(local)).toMatchObject({ status, promo_gallery_id: galleryId, recovery_error: 'REFUND_UNCONFIRMED' });
+    }
+    await reconcile({ ...remote, refundsAmount: remote.total, currency: 'usd' });
+    expect(await readOrder(local)).toMatchObject({ status, promo_gallery_id: galleryId });
+    await reconcile({ ...remote, ...(confirmation === 'amount' ? { refundsAmount: remote.total } : { paymentStatus: 'Refunded' }) });
+    expect(await readOrder(local)).toMatchObject({ status: 'refunded', promo_gallery_id: null, recovery_error: null });
+    expect(await db('photo_purchases')).toHaveLength(0);
+  });
+  test('a Snipcart partial-refund notification racing a refusal cannot clear its claim', async () => {
+    enableSnipcart(); await offerPromo(); await db('events').where({ id: galleryId }).update({ snipcart_discount_id: crypto.randomUUID() });
+    const reply = await create({ provider: 'snipcart', photoIds: ids, promoCode: 'FOTO-ONCE' });
+    const local = await db('photo_purchase_orders').where({ checkout_token: reply.body.snipcart.checkout_token }).first();
+    const providerToken = crypto.randomUUID();
+    await db('photo_purchase_orders').where({ id: local.id }).update({ provider_order_id: providerToken });
+    const transaction = db.client.transaction.bind(db.client);
+    jest.spyOn(db.client, 'transaction').mockImplementationOnce(async (callback, ...options) => {
+      await db('photo_purchase_orders').where({ id: local.id }).update({ status: 'refund_failed', recovery_needs_attention: true, recovery_error: 'REFUND_UNCONFIRMED' });
+      return transaction(callback, ...options);
+    });
+    await require('../../src/modules/photoSales/snipcartOrders').reconcileOrder({ token: providerToken, paymentStatus: 'Paid', currency: 'eur', refundsAmount: 0.01 });
+    expect(await readOrder(local)).toMatchObject({ status: 'refund_failed', promo_gallery_id: galleryId, recovery_error: 'REFUND_UNCONFIRMED' });
   });
   test('a Snipcart grant racing revocation keeps the spent gallery claim', async () => {
     enableSnipcart(); await offerPromo(); await db('events').where({ id: galleryId }).update({ snipcart_discount_id: crypto.randomUUID() });

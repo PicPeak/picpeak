@@ -7,7 +7,7 @@ const { allocateFreeLines } = require('./priceRules');
 const { isDiscountId } = require('./promoDiscount');
 const { SALES_CURRENCY, ON_SALE_COLUMNS, isGalleryOnSale, sellablePhotos, verifyPhotoSale, saleSignatureFromUrl } = require('./sellable');
 const snipcartSettings = require('./snipcartSettings');
-const { reservationToken, reservationParameter, findProviderOrder, grantReservation } = require('./snipcartCheckout');
+const { reservationToken, findProviderOrder, grantReservation } = require('./snipcartCheckout');
 const PAID_STATUSES = new Set(['Paid', 'PaidDeferred']);
 const REVOKING_PAYMENT_STATUSES = new Set(['Refunded', 'ChargedBack', 'Cancelled', 'Failed', 'Expired']);
 /**
@@ -92,13 +92,23 @@ function centsOf(amount) {
 }
 
 /** Revoke a granted order: the link and every purchase row stop working. */
-async function revokeOrder(orderToken, status) {
+async function revokeOrder(orderToken, status, { fullRefund = false, refundedCents = NaN, currency = '' } = {}) {
   const order = await findProviderOrder(orderToken);
   if (!order || ['refunded', 'charged_back', 'cancelled'].includes(order.status)) return false;
   const now = new Date().toISOString();
   const changed = await db.transaction(async (trx) => {
-    const updated = await trx('photo_purchase_orders').where({ id: order.id }).whereNotIn('status', ['refunded', 'charged_back', 'cancelled'])
-      .update({ status, recovery_needs_attention: false, recovery_error: null, updated_at: now });
+    const update = trx('photo_purchase_orders').where({ id: order.id }).whereNotIn('status', ['refunded', 'charged_back', 'cancelled']);
+    if (status === 'refunded' && !fullRefund) {
+      // Any refund revokes a fulfilled purchase. A refused payment needs
+      // full repayment before its attention flag or unused claim can clear.
+      // Check the live row, since a refusal can race this notification.
+      update.where(q => {
+        q.whereNotIn('status', ['refund_pending', 'refund_failed']);
+        if (Number.isSafeInteger(refundedCents) && refundedCents > 0)
+          q.orWhere(held => held.where({ currency }).where('total_cents', '>', 0).where('total_cents', '<=', refundedCents));
+      });
+    }
+    const updated = await update.update({ status, recovery_needs_attention: false, recovery_error: null, updated_at: now });
     if (updated) {
       await trx('photo_purchase_orders').where({ id: order.id, promo_used: false }).update({ promo_gallery_id: null });
       await trx('photo_purchases').where({ order_id: order.order_id }).update({ expires_at: now, updated_at: now });
@@ -229,9 +239,6 @@ async function grantOrder(order) {
     .map((d) => String(d?.code || ''))
     .filter(Boolean);
   const codeApplied = !!(gallery.promo_code && discountCodes.includes(gallery.promo_code));
-  if (codeApplied && items.some(item => reservationParameter(item?.url) !== null)) {
-    return reject(gallery, 'a checkout promo requires its verified reservation');
-  }
   const codeHonored = codeApplied && !priorPromoUse && isDiscountId(gallery.snipcart_discount_id);
   const freeValueCents = codeHonored
     ? Math.round(Math.max(0, Number(gallery.free_photo_count || 0)) * Number(gallery.photo_price || 0) * 100)
@@ -308,13 +315,13 @@ async function trackPendingOrder(order) {
 }
 async function reconcileOrder(order) {
   const orderToken = String(order.token);
-  // A partial refund leaves the payment status at Paid; any refunded
-  // amount revokes the order all the same.
+  // A partial refund revokes downloads, but cannot resolve a refused payment.
   const refunded = order.paymentStatus === 'Refunded' || Number(order.refundsAmount) > 0;
   if (REVOKING_PAYMENT_STATUSES.has(order.paymentStatus) || order.status === 'Cancelled' || refunded) {
     const status = order.paymentStatus === 'ChargedBack' ? 'charged_back'
       : refunded ? 'refunded' : 'cancelled';
-    await revokeOrder(orderToken, status);
+    await revokeOrder(orderToken, status, { fullRefund: order.paymentStatus === 'Refunded',
+      refundedCents: centsOf(order.refundsAmount), currency: String(order.currency || '').toUpperCase() });
     return;
   }
   if (!PAID_STATUSES.has(order.paymentStatus)) {

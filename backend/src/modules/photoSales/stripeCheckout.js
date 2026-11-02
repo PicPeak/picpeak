@@ -95,7 +95,9 @@ async function revoke(order, status, { releasePromo = false, onlyStatuses = null
     const updated = await trx('photo_purchase_orders').where({ id: order.id })
       .whereNotIn('status', ['charged_back', 'refunded'])
       .modify((q) => { if (onlyStatuses) q.whereIn('status', onlyStatuses); })
-      .update({ status, updated_at: now });
+      .update({ status, updated_at: now, ...(['refunded', 'charged_back'].includes(status) ? {
+        recovery_needs_attention: false, recovery_error: null, recovery_next_at: null,
+      } : {}) });
     // The caller's order can predate a competing grant. Test the live value
     // under the order lock rather than releasing a fulfilled promo's claim.
     if (updated && releasePromo) await trx('photo_purchase_orders').where({ id: order.id, promo_used: false })
@@ -136,10 +138,19 @@ async function refusePaidOrder(order, client) {
   }
   let status = 'refund_failed';
   try {
-    const refund = order.payment_refund_id ? await client.refunds.retrieve(order.payment_refund_id)
-      : await client.refunds.create({ payment_intent: order.payment_intent_id }, {
-        idempotencyKey: `picpeak-refund:${order.order_id}`,
-      });
+    let refund;
+    try {
+      refund = order.payment_refund_id ? await client.refunds.retrieve(order.payment_refund_id)
+        : await client.refunds.create({ payment_intent: order.payment_intent_id }, {
+          idempotencyKey: `picpeak-refund:${order.order_id}`,
+        });
+    } catch (error) {
+      // A rejected create has no Refund id. A later Dashboard refund must
+      // still resolve it, even when Stripe replays the original API error.
+      if (!await fullyRefunded(order, client)) throw error;
+      status = 'refunded';
+      return;
+    }
     await db('photo_purchase_orders').where({ id: order.id }).update({ payment_refund_id: refund.id });
     status = refund.status === 'succeeded' ? 'refunded'
       : ['pending', 'requires_action'].includes(refund.status) ? 'refund_pending' : 'refund_failed';

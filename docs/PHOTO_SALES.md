@@ -99,6 +99,9 @@ allow the public PicPeak domain, and keep prices tax-inclusive in EUR. Existing
 per-gallery webhook URLs remain supported. Test a
 purchase, buyer email, original download and refund before accepting payments.
 Keep secret-key access to the same store for historical orders and refunds.
+During the store check, confirm Snipcart's crawler preserves the signed item URL
+and its query encoding through settlement, including encoded separators. Local
+parser tests cannot establish the provider's URL handling.
 The development HMAC simulator remains disabled in production.
 
 Buyers select photos and enter a promo in PicPeak, then Snipcart opens only
@@ -172,7 +175,10 @@ does not release a pending payment or its promo reservation.
   A pending or failed automatic refund keeps its promo claim until the refund
   is confirmed successful, or a failed attempt is reconciled against fully
   succeeded refunds for that payment. The charge's aggregate refunded amount alone
-  does not release that claim.
+  does not release that claim. Reconciliation also runs when Stripe rejects the
+  refund request before returning an object. For refused Snipcart payments,
+  partial repayment keeps the attention flag and unused reservation until the
+  full charged amount is refunded.
 - A success URL does not prove payment. Buyers see a confirmation screen while
   verified callbacks establish payment; delayed methods may take longer. The
   existing purchase token grants only that order's photos until its deadline.
