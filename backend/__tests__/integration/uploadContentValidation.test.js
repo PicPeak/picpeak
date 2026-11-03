@@ -254,6 +254,103 @@ describe('Upload content validation on guest and chunked uploads', () => {
     });
   });
 
+  // A valid photo over the server's image limits is refused with the limit
+  // named (issue 2395), not as an empty request, a corrupt file or a 500.
+  describe('image limit refusals', () => {
+    let large; let largeTiff;
+    const limit = { code: 'IMAGE_RESOURCE_LIMIT', imageLimit: 'pixels', imageMax: 1 };
+    const adminUpload = (event, files) => {
+      let req = request(app).post(`/api/admin/photos/${event.id}/upload`).set('Authorization', `Bearer ${adminToken}`);
+      for (const [bytes, filename] of files) req = req.attach('photos', bytes, { filename, contentType: 'image/jpeg' });
+      return req;
+    };
+    const chunked = async (event, bytes, filename) => {
+      const base = `/api/admin/photos/${event.id}/chunked-upload`;
+      const init = await request(app).post(`${base}/init`).set('Authorization', `Bearer ${adminToken}`)
+        .send({ filename, fileSize: bytes.length });
+      expect(init.status).toBe(200);
+      await request(app).post(`${base}/${init.body.uploadId}/chunk/0`).set('Authorization', `Bearer ${adminToken}`)
+        .set('Content-Type', 'application/octet-stream').send(bytes);
+      return request(app).post(`${base}/${init.body.uploadId}/complete`).set('Authorization', `Bearer ${adminToken}`).send({});
+    };
+    const v1Upload = (event, bytes, filename, contentType) => request(app)
+      .post(`/api/v1/events/${event.id}/photos`).set('Authorization', `Bearer ${apiToken}`)
+      .attach('photo', bytes, { filename, contentType });
+    const filesUnder = (dir) => {
+      if (!fs.existsSync(dir)) return [];
+      return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (
+        e.isDirectory() ? filesUnder(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+    };
+    const storedFiles = () => filesUnder(require('../../src/config/storage').getStoragePath()).sort();
+
+    beforeAll(async () => {
+      const create = { create: { width: 2000, height: 1000, channels: 3, background: 'white' } };
+      large = await sharp(create).jpeg().toBuffer();
+      largeTiff = await sharp(create).tiff().toBuffer();
+    });
+    beforeEach(() => { process.env.IMAGE_MAX_PIXELS = '1000000'; });
+    afterEach(() => { delete process.env.IMAGE_MAX_PIXELS; });
+
+    it('multipart: answers 422 with each refusal when every file is over a limit', async () => {
+      const event = await makeEvent();
+      const before = storedFiles();
+      const res = await adminUpload(event, [[large, 'big-1.jpg'], [large, 'big-2.jpg']]);
+      expect(res.status).toBe(422);
+      expect(res.body.error).not.toMatch(/No files uploaded/);
+      expect(res.body.errors).toHaveLength(2);
+      expect(res.body.errors[0]).toMatchObject({ filename: 'big-1.jpg', ...limit });
+      expect(res.body.errors[0].error).toMatch(/^Image has 2 megapixels.*up to 1 megapixels \(IMAGE_MAX_PIXELS\)/);
+      expect(res.body.errors[1]).toMatchObject({ filename: 'big-2.jpg', ...limit });
+      expect(await photosOf(event)).toHaveLength(0);
+      expect(storedFiles()).toEqual(before);
+    });
+
+    it('multipart: answers 400 when the refusals are not all limits', async () => {
+      const event = await makeEvent();
+      const broken = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), crypto.randomBytes(2000)]);
+      const res = await adminUpload(event, [[large, 'big.jpg'], [broken, 'broken.jpg']]);
+      expect(res.status).toBe(400);
+      expect(res.body.errors).toHaveLength(2);
+      expect(res.body.errors[0]).toMatchObject({ filename: 'big.jpg', ...limit });
+      expect(res.body.errors[1]).toMatchObject({ filename: 'broken.jpg' });
+      expect(res.body.errors[1].code).toBeUndefined();
+      expect(await photosOf(event)).toHaveLength(0);
+    });
+
+    it('multipart: a request with no file still answers "No files uploaded"', async () => {
+      const event = await makeEvent();
+      const res = await request(app).post(`/api/admin/photos/${event.id}/upload`).set('Authorization', `Bearer ${adminToken}`)
+        .field('category_id', '');
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('No files uploaded');
+    });
+
+    it('chunked: answers 422 with the limit, no row, no leftover merge dir', async () => {
+      const event = await makeEvent();
+      const tempRoot = path.join(require('../../src/config/storage').getStoragePath(), 'temp');
+      const mergeDirs = () => (fs.existsSync(tempRoot) ? fs.readdirSync(tempRoot).filter((n) => n.startsWith('merge_')) : []);
+      const before = mergeDirs();
+      const res = await chunked(event, large, 'big.jpg');
+      expect(res.status).toBe(422);
+      expect(res.body).toMatchObject(limit);
+      expect(res.body.error).toMatch(/^Image has 2 megapixels.*up to 1 megapixels/);
+      expect(await photosOf(event)).toHaveLength(0);
+      expect(mergeDirs()).toEqual(before);
+    });
+
+    it.each([['decode check', 'big.jpg', 'image/jpeg'], ['image read of an unlisted type', 'big.tiff', 'image/tiff']])(
+      'v1: answers 422 with the limit from the %s, no row, no leftover file', async (_path, filename, contentType) => {
+        const event = await makeEvent();
+        const before = storedFiles();
+        const res = await v1Upload(event, filename.endsWith('.tiff') ? largeTiff : large, filename, contentType);
+        expect(res.status).toBe(422);
+        expect(res.body).toMatchObject(limit);
+        expect(res.body.error).toMatch(/^Image has 2 megapixels.*up to 1 megapixels/);
+        expect(await photosOf(event)).toHaveLength(0);
+        expect(storedFiles()).toEqual(before);
+      });
+  });
+
   // The HEIF signature is only a container's `ftyp`, so a HEIF name has to read
   // as an image on every upload route, as on v1 above.
   describe('HEIF names on admin and guest uploads', () => {

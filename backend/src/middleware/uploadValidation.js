@@ -50,6 +50,8 @@ async function validateUploadedFile(filePath, extension, queueing = {}) {
       } catch (metadataError) {
         // A server that cannot load the image library says nothing about the file.
         if (metadataError.code === LIBRARY_UNAVAILABLE) throw metadataError;
+        // An image over the server's limits is not a broken file: its own message names the limit.
+        if (require('../services/imageResourcePolicy').isResourceError(metadataError)) throw metadataError;
         // If metadata reading fails, the file is likely incomplete
         throw Object.assign(new Error(`Invalid image file: ${metadataError.message}`), { code: metadataError.code, imageLimit: metadataError.imageLimit, imageMax: metadataError.imageMax });
       }
@@ -73,6 +75,7 @@ async function validateUploadedFile(filePath, extension, queueing = {}) {
           .resize(10, 10) // Try to resize to very small size
           .toBuffer();
       } catch (decodeError) {
+        if (require('../services/imageResourcePolicy').isResourceError(decodeError)) throw decodeError;
         throw Object.assign(new Error(`Image decode failed - file may be corrupted: ${decodeError.message}`), { code: decodeError.code, imageLimit: decodeError.imageLimit, imageMax: decodeError.imageMax });
       }
       

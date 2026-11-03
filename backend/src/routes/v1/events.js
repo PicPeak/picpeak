@@ -453,6 +453,20 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requirePermissi
  *                 media_type: { type: string, enum: [image, video] }
  *       400: { description: "No file, an invalid or disabled type, a file over its cap, or a replacement by another media type" }
  *       404: { description: Event not found, or replaces_photo_id not in this event }
+ *       422:
+ *         description: |
+ *           An image over one of the server's image limits (IMAGE_MAX_PIXELS,
+ *           IMAGE_MAX_DIMENSION, IMAGE_MAX_FRAMES, IMAGE_MAX_DECODED_MIB, ...).
+ *           Nothing is stored; the message names the limit.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error: { type: string }
+ *                 code: { type: string, example: IMAGE_RESOURCE_LIMIT }
+ *                 imageLimit: { type: string, enum: [pixels, dimension, frames, decoded, input, memory] }
+ *                 imageMax: { type: number, description: "The limit's value: megapixels, px, frames or MiB." }
  */
 router.post(
   '/events/:id/photos',
@@ -533,6 +547,8 @@ async function handleV1PhotoUpload(req, res) {
     if (checked.files.length === 0) {
       await fs.unlink(tempPath).catch(() => {});
       const [rejected] = checked.invalidFiles || [];
+      const limitRefusal = require('../../services/imageResourcePolicy').uploadRefusal(rejected);
+      if (limitRefusal) return res.status(limitRefusal.status).json(limitRefusal.body);
       return res.status(400).json({ error: rejected?.code === require('../../services/imageResourcePolicy').LIBRARY_UNAVAILABLE ? rejected.error : `Invalid image file: ${req.file.originalname}` });
     }
 
@@ -834,6 +850,11 @@ async function handleV1PhotoUpload(req, res) {
     }
     logger.error('v1 POST /events/:id/photos failed', { error: error.message });
     if (tempPath) await fs.unlink(tempPath).catch(() => {});
+    // An image over the server's limits, met past the decode check (an
+    // image/* type the signature table does not know, the metadata or the
+    // thumbnail), is a refusal of the file, not a server fault (issue 2395).
+    const limitRefusal = require('../../services/imageResourcePolicy').uploadRefusal(error);
+    if (limitRefusal) return res.status(limitRefusal.status).json(limitRefusal.body);
     res.status(500).json({ error: 'Failed to upload photo' });
   } finally {
     releaseClaim?.();
