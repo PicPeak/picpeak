@@ -431,6 +431,16 @@ describe('Masonry quilted grid', () => {
     expect(mounts).toEqual([]);
   });
 
+  it('falls back when a CSS template arrives without changing the grid\'s size', async () => {
+    render(<MasonryGalleryLayout {...layoutProps(makePhotos(2000))} />);
+    expect(tiles().length).toBeLessThan(2000);
+    forced = { rowGap: '40px' };
+    const template = document.createElement('style');
+    await act(async () => { document.head.appendChild(template); });
+    expect(tiles()).toHaveLength(2000);
+    template.remove();
+  });
+
   it('renders the tiles in list order, as with all of them mounted', () => {
     // Wide photos leave holes the single ones then backfill, far up the grid.
     const photos = makePhotos(2000).map((p, i) => (i % 4 === 0 ? p : { ...p, width: 1920, height: 1080 }));
