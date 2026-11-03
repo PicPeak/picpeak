@@ -116,6 +116,13 @@ withExiftool('a RAW download carries the container metadata (issue 2393)', () =>
     expect(orientations(read)).toEqual([]);
   });
 
+  test('copies them from a RAW whose name exiftool would read as a format', async () => {
+    const odd = path.join(dir, 'IMG 100%f.DNG');
+    fs.copyFileSync(rawPath, odd);
+    const out = await renderPhotoForDownload({}, { ...photo(), filename: 'IMG 100%f.DNG', __path: odd }, BOX, null);
+    expectContainerTags(tags(out));
+  });
+
   test('keeps the preview\'s own orientation when the mark draws nothing', async () => {
     const out = await renderPhotoForDownload({}, photo(), null, { ...WATERMARK, companyName: '' });
     // Shipped as extracted: stored landscape, turned by its own tag.

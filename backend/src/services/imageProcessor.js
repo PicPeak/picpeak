@@ -318,8 +318,13 @@ async function withRawContainerTags(rawPath, jpeg) {
   const target = path.join(dir, 'download.jpg');
   try {
     await fsp.writeFile(target, jpeg);
+    // exiftool reads %d, %f and %e in a -TagsFromFile name as a format, so a
+    // photo named "100%f.CR2" would copy from a file that doesn't exist. A
+    // link under a fixed name sidesteps the escaping.
+    const source = path.join(dir, `source${path.extname(rawPath)}`);
+    await fsp.symlink(path.resolve(rawPath), source);
     await runExiftool([
-      '-m', '-TagsFromFile', rawPath, '-all:all',
+      '-m', '-TagsFromFile', source, '-all:all',
       '--Orientation', '--ThumbnailImage', '--PreviewImage', '--JpgFromRaw',
       '-overwrite_original', target,
     ]);
