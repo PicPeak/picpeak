@@ -94,6 +94,20 @@ export function visibleRowRange(
   return { start, end: Math.max(start, end) };
 }
 
+const isStylesheet = (node: Node) => node.nodeName === 'STYLE' || node.nodeName === 'LINK';
+
+/** Calls back when a stylesheet arrives or changes: a CSS template comes after the first layout. */
+export function watchStylesheets(onChange: () => void): () => void {
+  const styles = new MutationObserver((records) => {
+    if (records.some((record) => isStylesheet(record.target.nodeType === Node.TEXT_NODE ? record.target.parentNode! : record.target)
+      || Array.from(record.addedNodes).some(isStylesheet))) {
+      onChange();
+    }
+  });
+  styles.observe(document.head, { childList: true, subtree: true, characterData: true });
+  return () => styles.disconnect();
+}
+
 interface ScrollAnchor {
   photoId: number;
   /** How far down the anchor's row the top of the viewport is, 0 to 1. */

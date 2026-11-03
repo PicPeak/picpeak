@@ -1,6 +1,6 @@
-import { useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { RefObject } from 'react';
-import type { WindowItem } from './rowWindow';
+import { watchStylesheets, type WindowItem } from './rowWindow';
 
 /**
  * The boxes of Masonry quilted, for row windowing (issue 2193).
@@ -133,6 +133,9 @@ export function useQuiltedWindow<P extends { id: number; width?: number | null; 
     [active, containerWidth, photos, columns, cell, gutter],
   );
   const windowed = requested && !unsupported && layout !== null;
+  // Bumped when a CSS template arrives, which can change the grid at any size.
+  const [styles, setStyles] = useState(0);
+  useEffect(() => (windowed ? watchStylesheets(() => setStyles((count) => count + 1)) : undefined), [windowed]);
 
   // The grid's style is inline, but a CSS template can override it with
   // `!important`, and every tile would then be pinned to the wrong grid.
@@ -151,7 +154,7 @@ export function useQuiltedWindow<P extends { id: number; width?: number | null; 
       || parseFloat(style.rowGap) !== gutter
       || tracks.length !== columns
     ) setUnsupported(true);
-  }, [containerRef, windowed, containerWidth, columns, cell, gutter]);
+  }, [containerRef, windowed, containerWidth, columns, cell, gutter, styles]);
 
   return { layout, windowed, pending: requested && !unsupported && containerWidth <= 0 };
 }
