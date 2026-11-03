@@ -92,13 +92,13 @@ describe('PhotoUpload duplicates', () => {
     uploadLargeFile.mockReset();
   });
 
-  it('offers duplicate skipping by default and explains replacement precedence', () => {
+  it('offers duplicate skipping by default and describes content matching', () => {
     renderWithClient(<PhotoUpload eventId={1} />);
 
     const toggle = screen.getByRole('checkbox', { name: 'Skip exact duplicates' });
     expect(toggle).toBeChecked();
     expect(toggle).toHaveAccessibleDescription(
-      'Skip files with identical contents already in this gallery, even if renamed. Name-based replacement takes priority.'
+      'Skip files with identical contents already in this gallery, even if renamed.'
     );
   });
 

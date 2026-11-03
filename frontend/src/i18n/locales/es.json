@@ -126,7 +126,7 @@
   "upload": {
     "duplicates": {
       "skip": "Omitir duplicados exactos",
-      "skipHelp": "Omitir archivos con contenido idéntico que ya estén en esta galería, aunque tengan otro nombre. El reemplazo por nombre de archivo tiene prioridad.",
+      "skipHelp": "Omitir archivos con contenido idéntico que ya estén en esta galería, aunque tengan otro nombre.",
       "title_one": "{{count}} archivo ya está en esta galería",
       "title_other": "{{count}} archivos ya están en esta galería",
       "toast_one": "{{count}} archivo ya está en esta galería y se omitió: detalles en la barra de subida de arriba.",

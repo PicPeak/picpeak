@@ -561,7 +561,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
           </label>
         </div>
         <p id="skip-duplicates-help" className="mt-1 text-xs text-muted">
-          {t('upload.duplicates.skipHelp', 'Skip files with identical contents already in this gallery, even if renamed. Name-based replacement takes priority.')}
+          {t('upload.duplicates.skipHelp', 'Skip files with identical contents already in this gallery, even if renamed.')}
         </p>
       </div>
 
