@@ -3,6 +3,21 @@ const path = require('path');
 const sharp = require('../services/isolatedSharp');
 const logger = require('../utils/logger');
 
+// Whether Sharp reads the file as an image with dimensions. A busy image
+// worker says nothing about the file, so it passes; a resource limit is
+// thrown, as the decode check below throws one.
+async function readsAsImage(filePath, options = {}) {
+  try {
+    const meta = await sharp(filePath, options).metadata();
+    return Boolean(meta && meta.width && meta.height);
+  } catch (error) {
+    const policy = require('../services/imageResourcePolicy');
+    if (policy.isTransient(error)) return true;
+    if (policy.isResourceError(error)) throw error;
+    return false;
+  }
+}
+
 /**
  * Validate uploaded file is complete and not corrupted
  */
@@ -57,6 +72,13 @@ async function validateUploadedFile(filePath, extension, queueing = {}) {
       }
       
       return true;
+    }
+
+    // The HEIF signature is only a container's `ftyp`, which says nothing about
+    // an image in it, so a HEIF name has to read as one as well. A HEVC HEIC
+    // only decodes through ffmpeg later; its header is enough here.
+    if ((ext === '.heic' || ext === '.heif') && !(await readsAsImage(filePath, queueing))) {
+      throw new Error('Invalid image file: no readable HEIF image');
     }
     
     return true;
@@ -135,6 +157,7 @@ async function validateUploadedFiles(req, res, next) {
 }
 
 module.exports = {
+  readsAsImage,
   validateUploadedFile,
   validateUploadedFiles
 };
