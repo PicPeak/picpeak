@@ -154,6 +154,14 @@ describe('the download watermark', () => {
     expect((await sharp(out).metadata()).format).toBe('jpeg');
   });
 
+  test('ships a video as stored, not refused by the image watermark', async () => {
+    const video = write('clip.mp4', Buffer.from('not an image'));
+    video.media_type = 'video';
+    video.mime_type = 'video/mp4';
+    expect(await renderPhotoForDownload({}, video, null, WATERMARK)).toBeNull();
+    expect(await renderPhotoForDownload({}, video, BOX, WATERMARK)).toBeNull();
+  });
+
   test('still marks a healthy photo', async () => {
     const source = await solid(1200, 800).jpeg().toBuffer();
     const photo = write('mark-ok.jpg', source);
