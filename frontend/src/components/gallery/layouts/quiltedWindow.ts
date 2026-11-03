@@ -54,15 +54,16 @@ export function quiltedColumnCount(width: number, cell: number, gutter: number):
  * `dense` row-first placement: each tile takes the first cell, from the top
  * left, where it fits. Null when a span does not fit the columns. The grid
  * then adds an implicit column whose width comes from the images in it, which
- * no calculation can give.
+ * no calculation can give. Story's grid is the same thing with other spans.
  */
 export function layoutQuilted<P extends { id: number; width?: number | null; height?: number | null }>(
   photos: P[],
   columns: number,
   cell: number,
   gutter: number,
+  spanOf: (photo: P, index: number) => QuiltedSpan = quiltedSpan,
 ): QuiltedLayout | null {
-  const spans = photos.map(quiltedSpan);
+  const spans = photos.map((photo, index) => spanOf(photo, index));
   if (spans.some((span) => span.columns > columns)) return null;
 
   // Cells by `row * columns + column`.

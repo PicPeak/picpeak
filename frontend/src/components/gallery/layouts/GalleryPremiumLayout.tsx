@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { GalleryEmptyMessage, LikedOnlyEmptyMessage } from '../GalleryEmptyMessage';
 import { createPortal } from 'react-dom';
 import { MasonryPhotoAlbum } from 'react-photo-album';
+import type { RenderPhotoContext } from 'react-photo-album';
 import 'react-photo-album/masonry.css';
 import Lightbox from 'yet-another-react-lightbox';
 import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
@@ -50,6 +51,9 @@ import { lightboxImageUrl } from '../imageTiers';
 import { exifLine } from '../../../utils/photoExif';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
 import { PremiumLightboxDownloadButton } from './PremiumLightboxDownloadButton';
+import { PremiumWindowedAlbum } from './PremiumWindowedAlbum';
+import { boxStyle, type TileBox } from './measuredWindow';
+import { WINDOW_MIN_PHOTOS } from './rowWindow';
 import { isPhotoDownloadPending } from '../../../hooks/usePhotoDownloadPending';
 import { usePublicSettings } from '../../../hooks/usePublicSettings';
 import { DEFAULT_MAX_ZOOM_PERCENT } from '../hooks/useFullResolutionZoom';
@@ -81,6 +85,13 @@ interface PhotoCardProps {
   index: number;
   /** The client's hide/show handler (issue 1992); set only for the client. */
   onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
+  /**
+   * The tiles that have faded in, in a windowed gallery: one that scrolled
+   * away and comes back is remounted and must not fade in a second time.
+   */
+  revealed?: Set<number>;
+  /** Where the tile is, in a windowed gallery. */
+  box?: TileBox;
 }
 
 const PhotoCard: React.FC<PhotoCardProps> = ({
@@ -98,6 +109,8 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   allowLikes = false,
   index,
   onToggleVisibility,
+  revealed,
+  box,
 }) => {
   // The height MasonryPhotoAlbum computed from photos.width/height is used,
   // not discarded (#1130). Letting the tile size itself from the image meant
@@ -110,6 +123,11 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
     triggerOnce: true,
     threshold: 0.1,
   });
+  const [revealedBefore] = useState(() => revealed?.has(photo.id) ?? false);
+  useEffect(() => {
+    if (inView) revealed?.add(photo.id);
+  }, [inView, revealed, photo.id]);
+  const shown = inView || revealedBefore;
 
   // Responsive tier (#1095). This layout has its own card rather than the
   // shared PhotoCard, so it needs its own call — but MasonryPhotoAlbum hands
@@ -129,9 +147,9 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
     <motion.div
       ref={ref}
       className={`gallery-premium-photo-card group ${isSelected ? 'selected' : ''}`}
-      style={{ width: '100%', height, display: 'block' }}
-      initial={{ opacity: 0, y: 20 }}
-      animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+      style={{ width: '100%', height, display: 'block', ...boxStyle(box) }}
+      initial={revealedBefore ? false : { opacity: 0, y: 20 }}
+      animate={shown ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
       transition={{ duration: 0.4, delay: Math.min(index * 0.05, 0.3) }}
       onClick={onClick}
       data-testid={`photo-card-${photo.id}`}
@@ -140,7 +158,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         // Blurred placeholder (issue 1733). Every card mounts its image at
         // page load here, so the hash is only handed over (and decoded) once
         // the card is in view.
-        thumbHash={inView ? photo.thumb_hash : null}
+        thumbHash={shown ? photo.thumb_hash : null}
         src={tieredSrc}
         alt={photoLabels.of(photo, photo.filename)}
         // No inline height: the card now has a definite one, so the
@@ -247,6 +265,12 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
       )}
     </motion.div>
   );
+};
+
+const albumColumns = (containerWidth: number) => {
+  if (containerWidth < 640) return 1;
+  if (containerWidth < 1024) return 2;
+  return 3;
 };
 
 interface GalleryPremiumLayoutProps extends BaseGalleryLayoutProps {
@@ -460,6 +484,55 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       _photo: photo
     }));
   }, [filteredPhotos]);
+
+  // A large gallery mounts only the tiles near the viewport (issue 2193). Which
+  // tiles have faded in is kept for any filter of it: one that goes below the
+  // threshold changes the album and remounts the tiles.
+  const largeGallery = filteredPhotos.length >= WINDOW_MIN_PHOTOS;
+  const revealedRef = useRef(new Set<number>());
+
+  const renderAlbumTile = (
+    { photo, index: photoIndex, width, height }: RenderPhotoContext<(typeof albumPhotos)[number]>,
+    box?: TileBox,
+  ) => {
+    // `index` is the position in `albumPhotos`, a 1:1 map of
+    // `filteredPhotos`, so it is the lightbox index too — no
+    // per-tile `findIndex` (issue 1733).
+    const originalPhoto = (photo as any)._photo as Photo;
+
+    return (
+      <PhotoCard
+        photo={originalPhoto}
+        width={width}
+        height={height}
+        onClick={() => {
+          lightboxPhotoIdRef.current = originalPhoto.id;
+          setLightboxIndex(photoIndex);
+          onLightboxPhotoChange?.(originalPhoto.id, 'open');
+        }}
+        onLike={(e) => handleLike(originalPhoto, e)}
+        onSelect={(e) => {
+          e.stopPropagation();
+          onPhotoSelect?.(originalPhoto.id);
+        }}
+        isSelected={selectedPhotos.has(originalPhoto.id)}
+        isSelectionMode={isSelectionMode}
+        // #590 follow-up: drop the `|| like_count > 0` fallback,
+        // which treated "anyone liked this" as "I liked it". The
+        // per-viewer is_liked seed above is the correct source.
+        isLiked={likedPhotoIds.has(originalPhoto.id)}
+        slug={slug}
+        allowDownloads={allowDownloads}
+        useEnhancedProtection={useEnhancedProtection}
+        feedbackEnabled={feedbackEnabled}
+        allowLikes={!!feedbackOptions?.allowLikes}
+        index={photoIndex}
+        onToggleVisibility={isClient ? onToggleVisibility : undefined}
+        revealed={photos.length >= WINDOW_MIN_PHOTOS ? revealedRef.current : undefined}
+        box={box}
+      />
+    );
+  };
 
   // Lightbox slides. `title` powers the Captions plugin — only emitted
   // when the admin has flipped the original-filenames toggle (#508), or as
@@ -976,54 +1049,16 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
             <DownloadQuotaNotice />
           </div>
         )}
-        <MasonryPhotoAlbum
-          photos={albumPhotos}
-          render={{
-            photo: (_props, { photo, index: photoIndex, width, height }) => {
-              // `index` is the position in `albumPhotos`, a 1:1 map of
-              // `filteredPhotos`, so it is the lightbox index too — no
-              // per-tile `findIndex` (issue 1733).
-              const originalPhoto = (photo as any)._photo as Photo;
-
-              return (
-                <PhotoCard
-                  photo={originalPhoto}
-                  width={width}
-                  height={height}
-                  onClick={() => {
-                    lightboxPhotoIdRef.current = originalPhoto.id;
-                    setLightboxIndex(photoIndex);
-                    onLightboxPhotoChange?.(originalPhoto.id, 'open');
-                  }}
-                  onLike={(e) => handleLike(originalPhoto, e)}
-                  onSelect={(e) => {
-                    e.stopPropagation();
-                    onPhotoSelect?.(originalPhoto.id);
-                  }}
-                  isSelected={selectedPhotos.has(originalPhoto.id)}
-                  isSelectionMode={isSelectionMode}
-                  // #590 follow-up: drop the `|| like_count > 0` fallback,
-                  // which treated "anyone liked this" as "I liked it". The
-                  // per-viewer is_liked seed above is the correct source.
-                  isLiked={likedPhotoIds.has(originalPhoto.id)}
-                  slug={slug}
-                  allowDownloads={allowDownloads}
-                  useEnhancedProtection={useEnhancedProtection}
-                  feedbackEnabled={feedbackEnabled}
-                  allowLikes={!!feedbackOptions?.allowLikes}
-                  index={photoIndex}
-                  onToggleVisibility={isClient ? onToggleVisibility : undefined}
-                />
-              );
-            }
-          }}
-          columns={(containerWidth) => {
-            if (containerWidth < 640) return 1;
-            if (containerWidth < 1024) return 2;
-            return 3;
-          }}
-          spacing={16}
-        />
+        {largeGallery ? (
+          <PremiumWindowedAlbum photos={albumPhotos} renderTile={renderAlbumTile} columns={albumColumns} spacing={16} />
+        ) : (
+          <MasonryPhotoAlbum
+            photos={albumPhotos}
+            render={{ photo: (_props, context) => renderAlbumTile(context) }}
+            columns={albumColumns}
+            spacing={16}
+          />
+        )}
       </main>
 
       {afterGrid && <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{afterGrid}</div>}

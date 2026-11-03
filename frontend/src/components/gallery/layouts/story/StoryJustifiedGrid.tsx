@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import justifiedLayout from 'justified-layout';
 import { StoryPhotoCard, type StoryCaptionMode } from './StoryPhotoCard';
+import { useWindowedItems, type WindowItem } from '../rowWindow';
 import type { Photo } from '../../../../types';
 
 interface StoryJustifiedGridProps {
@@ -19,6 +20,9 @@ interface StoryJustifiedGridProps {
   /** The client's hide/show handler (issue 1992); set only for the client. */
   onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
   caption?: StoryCaptionMode;
+  /** Mount only the rows near the viewport (issue 2193). */
+  windowed?: boolean;
+  revealed?: Set<number>;
 }
 
 /**
@@ -53,6 +57,8 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
   likesAllowed = true,
   onToggleVisibility,
   caption = 'none',
+  windowed = false,
+  revealed,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -87,6 +93,21 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
     });
   }, [photos, containerWidth]);
 
+  // The boxes as layout items, one row per `top`.
+  const items = useMemo((): WindowItem[] => {
+    let rowIndex = -1;
+    let rowTop = -1;
+    return (layout?.boxes ?? []).map((box, index) => {
+      if (box.top !== rowTop) {
+        rowTop = box.top;
+        rowIndex += 1;
+      }
+      return { photoId: photos[index].id, x: box.left, y: box.top, width: box.width, height: box.height, rowIndex };
+    });
+  }, [layout, photos]);
+  const { visible } = useWindowedItems(containerRef, items, containerWidth, windowed);
+  const indexById = useMemo(() => new Map(photos.map((photo, index) => [photo.id, index])), [photos]);
+
   return (
     <div
       id={id}
@@ -94,9 +115,11 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
       className="story-gallery-justified"
       style={{ height: layout ? layout.containerHeight : undefined }}
     >
-      {layout && photos.map((photo, index) => {
-        const box = layout.boxes[index];
-        if (!box) return null;
+      {layout && visible.map(({ photoId }) => {
+        const index = indexById.get(photoId);
+        const box = index === undefined ? undefined : layout.boxes[index];
+        if (index === undefined || !box) return null;
+        const photo = photos[index];
         // justified-layout clamps a row that would be shorter than half or
         // taller than twice the target height (a lone panorama on a phone, a
         // lone tall portrait) and widens or narrows its boxes to fit, so the
@@ -131,6 +154,7 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
               likesAllowed={likesAllowed}
               onToggleVisibility={onToggleVisibility}
               caption={caption}
+              revealed={revealed}
             />
           </div>
         );
