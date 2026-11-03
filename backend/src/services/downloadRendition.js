@@ -82,7 +82,10 @@ async function capToBox(localPath, box, sourceName) {
  * @returns {Promise<Buffer|null>}     null = serve the stored bytes unchanged
  */
 async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
-  const wantsResize = !!box && !isVideo(photo);
+  // A video ships as stored: neither the cap nor the image watermark applies,
+  // and the fail-closed mark would refuse every video of a watermarked gallery.
+  if (isVideo(photo)) return null;
+  const wantsResize = !!box;
   const wantsWatermark = !!(watermarkSettings && watermarkSettings.enabled);
   if (!wantsResize && !wantsWatermark) return null;
 
