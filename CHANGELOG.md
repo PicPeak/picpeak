@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.6](https://github.com/PicPeak/picpeak/compare/v3.135.5...v3.135.6) (2026-11-02)
+
+
+### Bug Fixes
+
+* **images:** decode HEVC HEIC through ffmpeg ([#2362](https://github.com/PicPeak/picpeak/issues/2362)) ([6696f5d](https://github.com/PicPeak/picpeak/commit/6696f5d13b2bc4ba326d555a3aafa04f8dc36dc8))
+* **uploads:** accept HEIC and HEIF however the browser types them ([#2363](https://github.com/PicPeak/picpeak/issues/2363)) ([2158d7a](https://github.com/PicPeak/picpeak/commit/2158d7a785304f27a13c69c26907164d781af294))
+
 ## [3.135.5](https://github.com/PicPeak/picpeak/compare/v3.135.4...v3.135.5) (2026-10-27)
 
 
