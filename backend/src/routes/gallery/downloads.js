@@ -977,7 +977,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         const rendered = await renderPhotoForDownload(req.event, photo, bulkBox, photoSettings);
         // photoId rides along to archiver's 'entry' event (releaseUnshipped).
         if (rendered) {
-          archive.append(rendered, { name: archiveName, photoId: photo.id });
+          // A capped HEIC/AVIF/RAW comes back as JPEG: name it so.
+          archive.append(rendered, { name: renderedDownloadType(rendered, photo, archiveName).name, photoId: photo.id });
         } else if (storageKey) {
           if (!await guard.acquire()) break;
           const stream = await storage.get(storageKey);
@@ -1210,7 +1211,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         // storage rather than buffering the whole photo.
         const rendered = await renderPhotoForDownload(req.event, photo, selectedBox, selectedPhotoSettings);
         if (rendered) {
-          archive.append(rendered, { name, photoId: photo.id });
+          archive.append(rendered, { name: renderedDownloadType(rendered, photo, name).name, photoId: photo.id });
         } else if (storageKey) {
           if (!await selectedGuard.acquire()) break;
           const stream = await selectedStorage.get(storageKey);

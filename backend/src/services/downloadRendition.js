@@ -15,7 +15,10 @@
  */
 
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
-const { withLocalCopy, resizeToBox, ensurePreviewImage } = require('./imageProcessor');
+const {
+  withLocalCopy, resizeToBox, ensurePreviewImage, withProcessableImage, orientedDimensions,
+} = require('./imageProcessor');
+const sharp = require('./isolatedSharp');
 const { isRawFilename } = require('../utils/rawFormats');
 const watermarkService = require('./watermarkService');
 const { isGalleryPriced, resolvePhotoSalesWatermarkSettings } = require('../modules/photoSales/priceRules');
@@ -32,16 +35,46 @@ function isVideo(photo) {
 }
 
 /**
- * Neither does camera RAW. A resolution choice is meaningless for a file the
- * client is downloading precisely to edit at full size, and re-encoding one to
- * JPEG under its own name would produce something no converter can open.
- *
- * That is already the behaviour, but by accident: sharp throws on the RAW and
- * resizeToBox hands back what it was given, after the whole 55 MB original has
- * been read into a Buffer for nothing.
+ * Whether the image in `buffer` is no larger than `box`, as displayed: a
+ * still by its oriented dimensions, an animation by one frame (its height
+ * spans every frame, and resizeToBox never rotates one).
  */
-function shipsAsStored(photo) {
-  return isVideo(photo) || isRawFilename(photo.original_filename || photo.filename);
+async function fitsBox(buffer, box) {
+  try {
+    const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
+    const { width, height } = (metadata.pages || 1) > 1
+      ? { width: metadata.width, height: metadata.pageHeight || metadata.height }
+      : orientedDimensions(metadata);
+    return !!(width && height && width <= box.width && height <= box.height);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The photo at most `box` large. The box is the gallery's download cap, so
+ * the original must never stand in for it: resizeToBox hands back its input
+ * for HEIC/AVIF (it cannot encode them in kind), for camera RAW, and for any
+ * source it fails on. Those go out as a JPEG inside the box, made from what
+ * sharp can read (the embedded preview of a RAW, a decoded HEVC HEIC), and a
+ * source that cannot be read at all is refused.
+ */
+async function capToBox(localPath, box, sourceName) {
+  if (!isRawFilename(sourceName)) {
+    const resized = await resizeToBox(await fs.promises.readFile(localPath), box, { sourceName });
+    if (await fitsBox(resized, box)) return resized;
+  }
+  const proc = await withProcessableImage(localPath, sourceName);
+  try {
+    return await sharp(proc.path, { limitInputPixels: 268402689, failOn: 'none' })
+      .rotate()
+      .resize(box.width, box.height, { fit: 'inside', withoutEnlargement: true })
+      .keepMetadata()
+      .jpeg({ quality: 90, mozjpeg: true })
+      .toBuffer();
+  } finally {
+    await proc.cleanup();
+  }
 }
 
 /**
@@ -52,7 +85,7 @@ function shipsAsStored(photo) {
  * @returns {Promise<Buffer|null>}     null = serve the stored bytes unchanged
  */
 async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
-  const wantsResize = !!box && !shipsAsStored(photo);
+  const wantsResize = !!box && !isVideo(photo);
   const wantsWatermark = !!(watermarkSettings && watermarkSettings.enabled);
   if (!wantsResize && !wantsWatermark) return null;
 
@@ -67,9 +100,7 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
       // 1649); the gallery-view rendition the same function makes does not.
       return watermarkService.applyWatermark(localPath, watermarkSettings, { keepMetadata: true });
     }
-    const buffer = await resizeToBox(await fs.promises.readFile(localPath), box, {
-      sourceName: photo.original_filename || photo.filename,
-    });
+    const buffer = await capToBox(localPath, box, photo.original_filename || photo.filename);
     return wantsWatermark
       ? watermarkService.applyWatermark(buffer, watermarkSettings, { keepMetadata: true })
       : buffer;
@@ -166,6 +197,5 @@ module.exports = {
   resolveWatermarkSettings,
   resolveWatermarkSettingsForPhoto,
   isVideo,
-  shipsAsStored,
   getStorage,
 };
