@@ -770,6 +770,23 @@ describe('guided album order', () => {
       expect(offer.releasedCustomerId).toBe(anna);
     });
 
+    test('the portal keeps showing a confirmed album after the studio retires the product', async () => {
+      const gallery = await makeGallery();
+      const anna = await addCustomer(gallery);
+      const offer = await released(gallery, albumB, anna);
+      const a = asClient(portalToken(gallery, anna));
+      await a.put(gallery, await clientOffer(a, gallery, offer.id), { ...complete(gallery), submit: true });
+      const overview = async () => (await request(app).get(`/api/customer/overview/${gallery.slug}`).set('x-customer', String(anna))).body.productOffers;
+      expect((await overview())[0]).toMatchObject({ confirmed: true, guided: true });
+      const { products } = await service.catalogue();
+      await saveCatalogue(products.map((p) => (p.id === albumB.id ? { ...p, active: false } : p)));
+      try {
+        expect((await overview())[0]).toMatchObject({ confirmed: true, guided: true });
+      } finally {
+        await saveCatalogue(products);
+      }
+    });
+
     test('the portal lists only this customer\'s released offers and flags an unconfirmed album', async () => {
       const gallery = await makeGallery();
       const anna = await addCustomer(gallery);

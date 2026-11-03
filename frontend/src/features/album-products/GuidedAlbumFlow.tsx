@@ -211,6 +211,12 @@ export function GuidedAlbumFlow({
   const ready = (s: Step) => stepReady(s, offer, values, chosen);
   const complete = steps.every((s) => s === 'review' || ready(s));
 
+  // A role the studio has since turned off has no step left to clear it in.
+  const rolePhotos = {
+    cover: roleLimit(offer, 'cover').max > 0 ? chosen.cover : [],
+    poster: roleLimit(offer, 'poster').max > 0 ? chosen.poster : [],
+  };
+
   const persist = async (commit: boolean) => {
     if (!offer || !product) return false;
     setBusy(true);
@@ -219,7 +225,7 @@ export function GuidedAlbumFlow({
       revision: offer.revision,
       productVersion: product.version,
       values,
-      photoRoles: chosen,
+      photoRoles: rolePhotos,
       ...(name.trim() ? { name: name.trim() } : {}),
       submit: commit,
     };
@@ -248,7 +254,7 @@ export function GuidedAlbumFlow({
     // A submitted, not yet final choice is only ever resubmitted whole. A draft
     // waits while it still names a hidden photo: the server refuses it, and the
     // step that replaces that photo may be further on.
-    const saveable = !Object.values(chosen).flat().some((id) => unavailable.includes(id));
+    const saveable = !Object.values(rolePhotos).flat().some((id) => unavailable.includes(id));
     if (step !== 'album' && offer?.status === 'draft' && saveable && !(await persist(false))) return;
     setStep(steps[position + 1]);
   };

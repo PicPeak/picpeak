@@ -74,14 +74,18 @@ async function productOffersFor(customerId, eventId) {
   if (!(await isFeatureEnabled('albumProducts'))) return [];
   const offers = await require('./albumProducts/service').application()
     .clientOffers(eventId, { customerId });
-  return offers.map((o) => ({
-    id: o.id,
-    name: o.selection?.product?.name || o.product?.name || null,
-    status: o.status,
+  return offers.map((o) => {
     // A reopened offer keeps its selection, `clientFinal` included.
-    confirmed: o.status === 'locked' || (o.status === 'submitted' && !!o.selection?.clientFinal),
-    guided: !!o.product?.guided,
-  }));
+    const confirmed = o.status === 'locked' || (o.status === 'submitted' && !!o.selection?.clientFinal);
+    return {
+      id: o.id,
+      name: o.selection?.product?.name || o.product?.name || null,
+      status: o.status,
+      confirmed,
+      // As in the gallery: a confirmed album stays one whatever the catalogue does.
+      guided: o.product && !confirmed ? !!o.product.guided : !!o.product?.guided || !!o.selection?.photoRoles,
+    };
+  });
 }
 
 /** Galleries with a released guided album the customer has not confirmed yet. */

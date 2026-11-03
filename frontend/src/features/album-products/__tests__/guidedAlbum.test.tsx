@@ -299,6 +299,28 @@ describe('guided album flow', () => {
     expect(vi.mocked(api.put).mock.calls[0][1]).toMatchObject({ photoRoles: { cover: [1], poster: [2] } });
   });
 
+  it('drops the saved photos of a role the studio turned off', async () => {
+    const draft = offer({
+      product: product('album-a', 'Fine art album', { guided: { clientFinal: true, photoRoles: [{ key: 'cover', min: 1, max: 1 }, { key: 'poster', min: 0, max: 0 }] } }),
+      selection: {
+        schemaVersion: 2, productVersion: '', product: { id: 'album-a', name: 'Fine art album' },
+        attributes: [
+          { id: 'material', name: 'Material', addOn: false, options: [{ id: 'silk', name: 'Silk', imageId: null }] },
+          { id: 'colour', name: 'Colour', addOn: false, options: [{ id: 'ivory', name: 'Ivory', imageId: null }] },
+          { id: 'format', name: 'Format', addOn: false, options: [{ id: 'square', name: 'Square', imageId: null }] },
+          { id: 'size', name: 'Size', addOn: false, options: [{ id: 's2550', name: '25 × 50 cm', imageId: null }] },
+        ],
+        photoRoles: [{ key: 'cover', photos: [] }, { key: 'poster', photos: [{ id: 2, available: true }] }],
+      },
+    });
+    mount([draft]);
+    await heading('Choose your cover photo');
+    fireEvent.click(await screen.findByRole('button', { name: 'Photo 1' }));
+    next();
+    await heading('Review your album');
+    expect(vi.mocked(api.put).mock.calls[0][1]).toMatchObject({ photoRoles: { cover: [1], poster: [] } });
+  });
+
   it('shows the base price and every surcharge where the studio shows prices', async () => {
     const surcharges = [
       { attributeId: 'material', optionId: 'silk', amountMinor: 1500 },
