@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.7](https://github.com/PicPeak/picpeak/compare/v3.135.6...v3.135.7) (2026-11-03)
+
+
+### Bug Fixes
+
+* **api:** accept generic .HEIC on v1 uploads, refuse other bytes under a HEIF name ([#2371](https://github.com/PicPeak/picpeak/issues/2371)) ([7dc8fbd](https://github.com/PicPeak/picpeak/commit/7dc8fbd41b8f69664be4831352cf722ff091f59f))
+* **downloads:** never ship the original in place of a capped or watermarked download ([#2392](https://github.com/PicPeak/picpeak/issues/2392)) ([c586da2](https://github.com/PicPeak/picpeak/commit/c586da28a5288c88c6177249d6e6ef121d43cbdd))
+* **uploads:** refuse non-image bytes under a HEIF name on admin uploads ([#2387](https://github.com/PicPeak/picpeak/issues/2387)) ([9456236](https://github.com/PicPeak/picpeak/commit/9456236a993c1ca28a7eef2229a5fe678887ed3f))
+
 ## [3.135.6](https://github.com/PicPeak/picpeak/compare/v3.135.5...v3.135.6) (2026-11-02)
 
 
