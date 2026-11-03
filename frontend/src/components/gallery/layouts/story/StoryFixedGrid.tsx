@@ -1,8 +1,7 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { StoryPhotoCard, type StoryCaptionMode } from './StoryPhotoCard';
-import { useWindowedItems, type WindowItem } from '../rowWindow';
+import { useWindowedItems, watchStylesheets, type WindowItem } from '../rowWindow';
 import { layoutQuilted } from '../quiltedWindow';
-import { watchStylesheets } from '../measuredWindow';
 import type { Photo } from '../../../../types';
 
 const NO_ITEMS: WindowItem[] = [];
