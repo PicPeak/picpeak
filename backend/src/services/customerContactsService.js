@@ -34,6 +34,9 @@ const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const GALLERY_NOTICES = ['gallery_completed', 'customer_gallery_assigned'];
+// pg_advisory_xact_lock class for one address's login. The other classes are
+// 1074-1078 and two mnemonic ones (selectionSubmissions, portableRestore).
+const ADDRESS_LOCK_CLASS = 0x43436f6e; // CCon
 
 // Area -> the levels it offers, lowest first. `act` is what changes something:
 // choosing an album, accepting a quote, signing a contract, uploading a
@@ -247,7 +250,8 @@ async function loadContact(customerId, contactId) {
 
 // Everything that acts on a contact's address or links holds this row, so an
 // address change cannot pass a link being made for the old address. One lock
-// order on PostgreSQL: contact, then login, then links, then the account.
+// order on PostgreSQL: contact, then address, then login, then links, then the
+// account.
 async function lockContact(trx, customerId, contactId) {
   const contact = await trx('customer_contacts')
     .where({ id: contactId, customer_account_id: customerId }).forUpdate().first();
@@ -293,22 +297,26 @@ async function createContact(customerId, input, adminId) {
   const customer = await db('customer_accounts').where('id', customerId).first();
   if (!customer) throw new NotFoundError('Customer', customerId);
   if (!asFlag(customer.is_active)) throw new ValidationError('This customer is inactive');
-  await assertEmailFree(customerId, email);
-  const invite = input.invite && !(await credentialFor(email));
-  if (invite && !customer.password_hash) throw passiveCustomerError();
 
-  const [inserted] = await db('customer_contacts').insert({
-    customer_account_id: customerId,
-    email,
-    ...personColumns(input),
-    ...rightColumns(input.rights),
-    receives_mail: formatBoolean(input.receivesMail !== false),
-    is_active: formatBoolean(true),
-    created_by_admin_id: adminId || null,
-    created_at: new Date(),
-    updated_at: new Date(),
-  }).returning('id').catch(conflictOnDuplicate);
-  const id = inserted?.id || inserted;
+  const { id, invite } = await db.transaction(async (trx) => {
+    await lockAddresses(trx, [email]);
+    await assertEmailFree(customerId, email, { trx });
+    const invites = input.invite && !(await credentialFor(email, trx));
+    if (invites && !customer.password_hash) throw passiveCustomerError();
+
+    const [inserted] = await trx('customer_contacts').insert({
+      customer_account_id: customerId,
+      email,
+      ...personColumns(input),
+      ...rightColumns(input.rights),
+      receives_mail: formatBoolean(input.receivesMail !== false),
+      is_active: formatBoolean(true),
+      created_by_admin_id: adminId || null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    }).returning('id').catch(conflictOnDuplicate);
+    return { id: inserted?.id || inserted, invite: invites };
+  });
 
   await logActivity('customer_contact_created',
     { customerId, contactId: id, email }, null, { type: 'admin', id: adminId });
@@ -333,6 +341,7 @@ async function updateContact(customerId, contactId, input, adminId, { mayGrantLo
     const oldAddress = contact.email.toLowerCase();
     const moves = email !== undefined && email !== contact.email;
     const deactivates = input.isActive === false && asFlag(contact.is_active);
+    await lockAddresses(trx, moves ? [oldAddress, email] : [oldAddress]);
     await lockLogins(trx, [oldAddress]);
     const lastUse = !(await usedElsewhere(contact, trx));
 
@@ -409,6 +418,18 @@ async function withdrawNotices(trx, contact, updates) {
   }
   if (noMail || (hasRight(before, 'bills') && !hasRight(after, 'bills'))) {
     await dropCopies(trx, address, contact.customer_account_id);
+  }
+}
+
+// Whether a login row may exist depends on contact rows of any customer, and
+// the row being decided on may not exist yet, so lockLogins cannot cover it
+// (issue 2375). Every path that adds or removes a login row, or the contact row
+// that justifies one, takes this before it looks. Sorted, so paths with more
+// than one address cannot deadlock. SQLite serialises writers already.
+async function lockAddresses(trx, emails) {
+  if (trx.client.config.client !== 'pg') return;
+  for (const address of [...new Set(emails.map(normaliseEmail))].filter(Boolean).sort()) {
+    await trx.raw('SELECT pg_advisory_xact_lock(?, hashtext(?))', [ADDRESS_LOCK_CLASS, address]);
   }
 }
 
@@ -530,6 +551,8 @@ async function mailToKeep(trx, customerId, email) {
 async function keepHolderLogin(trx, customer) {
   if (!customer.password_hash) return;
   const email = normaliseEmail(customer.email);
+  // Taken in lockForErasure already, unless the address changed in between.
+  await lockAddresses(trx, [email]);
   const elsewhere = await trx('customer_contacts').whereRaw('LOWER(email) = ?', [email]).first('id');
   if (!elsewhere) return;
   await trx('customer_logins').insert({
@@ -579,6 +602,7 @@ async function deleteContactLinks(trx, contactIds) {
 async function deleteContact(customerId, contactId, adminId) {
   await db.transaction(async (trx) => {
     const contact = await lockContact(trx, customerId, contactId);
+    await lockAddresses(trx, [contact.email]);
     await lockLogins(trx, [contact.email.toLowerCase()]);
     const lastUse = !(await usedElsewhere(contact, trx));
     await cancelQueuedMail(trx, contact.email.toLowerCase(), customerId, { lastUse });
@@ -667,6 +691,7 @@ async function acceptInvitation(invitation, { name, password, profile }) {
       .where({ id: row.customer_account_id, is_active: formatBoolean(true) }).first('id');
     if (!customer) throw new ValidationError('Invalid or expired invitation');
 
+    await lockAddresses(trx, [row.email]);
     // Invited by two customers, the second acceptance finds the login made.
     if (await credentialFor(row.email, trx)) throw new ConflictError('Email already registered', 'email');
     await trx('customer_contacts').where('id', row.id).update({ ...person, updated_at: new Date() });
@@ -800,10 +825,15 @@ async function noticeRecipients(customerId, area) {
   }
 }
 
-/** First in an erasure, before the account: the same order as everything else. */
+/**
+ * First in an erasure, before the account: the same order as everything else.
+ * The holder's address too, which keepHolderLogin may give a login row.
+ */
 async function lockForErasure(trx, customerId) {
   const rows = await trx('customer_contacts').where('customer_account_id', customerId)
     .orderBy('id').forUpdate().select('email');
+  const holder = await trx('customer_accounts').where('id', customerId).first('email');
+  await lockAddresses(trx, [...rows.map((row) => row.email), ...(holder ? [holder.email] : [])]);
   await lockLogins(trx, rows.map((row) => row.email.toLowerCase()));
 }
 
