@@ -3513,6 +3513,11 @@
         "title": "Automatic tags",
         "description": "Tag photos by scene (ceremony, cake, dancing, outdoors…) so guests can filter a gallery. Runs on your own server in the same optional ML container as face detection, with a tagging model added. Tags describe scenes, not people. Stays off until you also enable it per gallery.",
         "lockedSingleContainer": "Not available on the all-in-one image. Tagging needs the separate ML container."
+      },
+      "customerGifts": {
+        "title": "Customer gifts",
+        "description": "Suggest gifts at customer milestones, track gift stock and record who received what. Every gift is confirmed by an admin.",
+        "sidebar": "Gifts"
       }
     },
     "customerSurface": {
@@ -5514,7 +5519,11 @@
     "customerActivity": {
       "customer_invitation_created": "Invitation sent",
       "customer_password_reset_requested": "Password reset requested",
-      "customer_event_access": "Opened a gallery"
+      "customer_event_access": "Opened a gallery",
+      "customer_gift_given": "Gift logged",
+      "customer_gift_declined": "Gift declined",
+      "customer_gift_undone": "Gift entry undone",
+      "customer_gift_preferences_updated": "Gift settings changed"
     },
     "people": {
       "title": "People in this gallery",
@@ -8550,7 +8559,8 @@
       "taxReport": "Tax",
       "development": "Development",
       "newsletters": "Newsletters",
-      "projects": "Projects"
+      "projects": "Projects",
+      "gifts": "Gifts"
     }
   },
   "accounting": {
@@ -11864,5 +11874,117 @@
     "noProductItems": "No product items yet.",
     "lockBillingHelp": "Locking freezes the current CRM price and creates a billable item. An eligible unissued project invoice receives a separate product line.",
     "lockAndBill": "Lock choice and add to billing"
+  },
+  "gifts": {
+    "title": "Gifts",
+    "subtitle": "Thank loyal customers at their milestones and keep track of gift stock.",
+    "due": {
+      "title": "Gifts due",
+      "empty": "No gifts due right now",
+      "confirm": "Confirm gift"
+    },
+    "notQualified": {
+      "title": "Didn't qualify",
+      "hint": "Past the grace period. You can still give a gift, and it is marked as an override.",
+      "override": "Gift anyway",
+      "showMore": "Show more ({{count}} left)"
+    },
+    "reason": {
+      "bookings": "{{have}} of {{need}} bookings",
+      "lastPayment": "Last payment {{date}}",
+      "noPayment": "No payment yet"
+    },
+    "give": {
+      "title": "Add gift",
+      "titleMilestone": "{{years}}-year gift",
+      "saved": "Gift logged",
+      "submit": "Log gift",
+      "item": "Item",
+      "pickItem": "Pick an item",
+      "itemOption": "{{name}} ({{count}} in stock)",
+      "date": "Date",
+      "note": "Note (optional)",
+      "keepStock": "Don't reduce stock",
+      "keepStockHint": "For a gift given before you tracked stock here.",
+      "outOfStock": "This item is out of stock. Add stock on the Gifts page first."
+    },
+    "decline": {
+      "title": "Decline {{years}}-year gift",
+      "saved": "Milestone declined",
+      "submit": "Decline",
+      "hint": "This closes the milestone. Stock stays the same, and the next milestone still comes up.",
+      "reason": "Reason (optional)"
+    },
+    "items": {
+      "title": "Stock",
+      "add": "New item",
+      "create": "Create",
+      "created": "Item created",
+      "name": "Name",
+      "empty": "No gift items yet",
+      "archived": "Archived",
+      "archive": "Archive",
+      "restore": "Restore",
+      "history": "History",
+      "stock": "{{count}} in stock"
+    },
+    "stock": {
+      "addTitle": "Add stock",
+      "addSubmit": "Add stock",
+      "added": "Stock added",
+      "quantity": "Quantity",
+      "unitCost": "Cost per unit (optional)",
+      "date": "Date",
+      "note": "Note (optional)",
+      "invoice": "Supplier invoice (optional)",
+      "noInvoice": "No invoice",
+      "unnamedInvoice": "Invoice #{{id}}",
+      "uploadInvoice": "Upload",
+      "invoiceUploaded": "Invoice added to incoming invoices",
+      "invoiceHint": "Net total {{amount}}. Cost per unit is a suggestion, because one invoice can cover other goods.",
+      "correctTitle": "Correct stock",
+      "correctSubmit": "Save correction",
+      "corrected": "Stock corrected",
+      "delta": "Change (for example -2)",
+      "reason": "Reason",
+      "historyTitle": "Stock history",
+      "historyEmpty": "No stock changes yet"
+    },
+    "movement": {
+      "purchase": "Purchase",
+      "gift": "Gift",
+      "giftUndone": "Gift undone",
+      "correction": "Correction"
+    },
+    "rules": {
+      "title": "Rules",
+      "hint": "A customer also stays active if their last payment fits their usual gap between bookings.",
+      "milestones": "Milestones (years)",
+      "minBookings": "Minimum paid bookings",
+      "activityPeriodYears": "Active: within this many years",
+      "rhythmMarginMonths": "Booking rhythm margin (months)",
+      "graceDays": "Grace period (days)",
+      "saved": "Rules saved",
+      "activityMinBookings": "Active: minimum paid bookings"
+    },
+    "customer": {
+      "title": "Gifts",
+      "add": "Add gift",
+      "empty": "No gifts yet.",
+      "declined": "Declined",
+      "override": "Override",
+      "undo": "Undo",
+      "undone": "Entry undone",
+      "undoneBadge": "Undone",
+      "saved": "Saved",
+      "noGifts": "No gifts",
+      "noGiftsHint": "Keeps this customer off every gift list.",
+      "startDate": "Anniversaries count from",
+      "startDateHint": "Leave empty to use the first paid invoice."
+    },
+    "milestoneBadge_one": "{{count}} year",
+    "milestoneBadge_other": "{{count}} years",
+    "lowStock_one": "{{count}} gift due, {{stock}} in stock.",
+    "lowStock_other": "{{count}} gifts due, {{stock}} in stock."
   }
 }

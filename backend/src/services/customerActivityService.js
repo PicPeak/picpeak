@@ -39,6 +39,13 @@ const CUSTOMER_TYPES = [
   'customer_company_switch',
 ];
 
+const GIFT_TYPES = [
+  'customer_gift_given',
+  'customer_gift_declined',
+  'customer_gift_undone',
+  'customer_gift_preferences_updated',
+];
+
 // Metadata fields a timeline row may show. Everything else stays in the log.
 const SAFE_META = ['documentId', 'status', 'eventId', 'requestId', 'count', 'step', 'uploaderType'];
 
@@ -60,11 +67,12 @@ const parseMeta = (v) => {
 
 /**
  * @param {number} customerId
- * @param {{ limit?: number, beforeId?: number|null, includeDocuments?: boolean }} options
+ * @param {{ limit?: number, beforeId?: number|null, includeDocuments?: boolean, includeGifts?: boolean }} options
  *   includeDocuments: false leaves every customer_document_* row out.
+ *   includeGifts: true adds the gift rows.
  * @returns {Promise<{ entries: object[], nextBeforeId: number|null }>}
  */
-async function listForCustomer(customerId, { limit = 50, beforeId = null, includeDocuments = true } = {}) {
+async function listForCustomer(customerId, { limit = 50, beforeId = null, includeDocuments = true, includeGifts = false } = {}) {
   const size = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const q = db('activity_logs')
     // Admin rows logged with only the admin's id read the current username.
@@ -75,6 +83,7 @@ async function listForCustomer(customerId, { limit = 50, beforeId = null, includ
     .andWhere((w) => {
       w.whereIn('activity_logs.activity_type', CUSTOMER_TYPES);
       if (includeDocuments) w.orWhere('activity_logs.activity_type', 'like', 'customer_document_%');
+      if (includeGifts) w.orWhereIn('activity_logs.activity_type', GIFT_TYPES);
     })
     .orderBy('activity_logs.id', 'desc')
     .limit(size + 1)

@@ -126,6 +126,10 @@ const KNOWN_FLAGS = [
   // portal plus the Documents card on the customer record. Strictly opt-in:
   // while off, every documents route (portal and admin) answers 403.
   'documents',
+  // Customer gifts (migration 343). Child of `clients` - milestone gift
+  // suggestions, gift stock and the gift history on the customer record.
+  // Strictly opt-in: while off, every /admin/gifts route answers 403.
+  'customerGifts',
 ];
 
 // Spec defaults for any flag missing from the DB (e.g. a row added by a
@@ -163,6 +167,7 @@ const DEFAULT_FLAGS = {
   autoTagging: false,
   newsletters: false,
   documents: false,
+  customerGifts: false,
 };
 
 async function readAllFlags() {
@@ -231,6 +236,7 @@ function applyDependencyRules(flags) {
     || out.calendar
     // Migration 199 (#1264) — newsletter campaigns live under Clients.
     || out.newsletters
+    || out.customerGifts
     // future siblings (out.messaging) go here
   );
   return out;

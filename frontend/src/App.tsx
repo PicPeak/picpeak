@@ -46,6 +46,7 @@ import { CrmDevelopmentPage } from './pages/admin/clients/CrmDevelopmentPage';
 // Clients block; the API refuses these routes independently when it is off.
 import { NewsletterListPage } from './pages/admin/newsletters/NewsletterListPage';
 import { NewsletterDetailPage } from './pages/admin/newsletters/NewsletterDetailPage';
+import { GiftsPage } from './pages/admin/clients/GiftsPage';
 import { TaxReportPage } from './pages/admin/clients/TaxReportPage';
 import { HoursLoggingPage } from './pages/admin/clients/HoursLoggingPage';
 // E.6 — Calendar page lazy-loaded so the ~200 KB FullCalendar bundle
@@ -279,8 +280,9 @@ const router = createBrowserRouter(
                 page hosts the newsletter consent control, so a
                 newsletter-only install (portal off) must still
                 be able to open a customer to record a phone
-                opt-out (#1264). */}
-            <Route element={<RequireFeature anyOf={['customerPortal', 'newsletters']} />}>
+                opt-out (#1264). Gifts link here too: undo, No
+                gifts and the start date live on this page. */}
+            <Route element={<RequireFeature anyOf={['customerPortal', 'newsletters', 'customerGifts']} />}>
               <Route path="accounts" element={<CustomerManagementPage />} />
               <Route path="accounts/:id" element={<CustomerDetailPage />} />
             </Route>
@@ -359,6 +361,12 @@ const router = createBrowserRouter(
               <Route path="newsletters" element={<NewsletterListPage />} />
               <Route path="newsletters/:id" element={<NewsletterDetailPage />} />
               <Route path="newsletters/:id/edit" element={<RedirectToRecord base="/admin/clients/newsletters" />} />
+            </Route>
+            {/* Customer gifts (migration 343) — gated by `customerGifts`. */}
+            <Route element={<RequireFeature flag="customerGifts" />}>
+              <Route element={<RequirePermission permission="customers.gifts.view" />}>
+                <Route path="gifts" element={<GiftsPage />} />
+              </Route>
             </Route>
             {/* Developer tools — gated by `crmDevelopment`. */}
             <Route element={<RequireFeature flag="crmDevelopment" />}>

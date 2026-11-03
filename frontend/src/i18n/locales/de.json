@@ -4104,6 +4104,11 @@
         "title": "Automatische Tags",
         "description": "Fotos nach Szenen taggen (Zeremonie, Torte, Tanzen, draußen …), damit Gäste eine Galerie filtern können. Läuft auf Ihrem eigenen Server im selben optionalen ML-Container wie die Gesichtserkennung, ergänzt um ein Tagging-Modell. Tags beschreiben Szenen, keine Personen. Bleibt aus, bis Sie es zusätzlich pro Galerie aktivieren.",
         "lockedSingleContainer": "Im All-in-One-Image nicht verfügbar. Das Tagging benötigt den separaten ML-Container."
+      },
+      "customerGifts": {
+        "title": "Kundengeschenke",
+        "description": "Schlägt Geschenke zu Kundenjubiläen vor, führt den Geschenkbestand und hält fest, wer was erhalten hat. Jedes Geschenk bestätigt ein Admin.",
+        "sidebar": "Geschenke"
       }
     },
     "customerSurface": {
@@ -6032,7 +6037,11 @@
     "customerActivity": {
       "customer_invitation_created": "Einladung gesendet",
       "customer_password_reset_requested": "Passwort-Reset angefordert",
-      "customer_event_access": "Hat eine Galerie geöffnet"
+      "customer_event_access": "Hat eine Galerie geöffnet",
+      "customer_gift_given": "Geschenk erfasst",
+      "customer_gift_declined": "Geschenk abgelehnt",
+      "customer_gift_undone": "Geschenkeintrag rückgängig gemacht",
+      "customer_gift_preferences_updated": "Geschenkeinstellungen geändert"
     },
     "people": {
       "title": "Personen in dieser Galerie",
@@ -8515,7 +8524,8 @@
       "taxReport": "Steuer",
       "development": "Entwicklung",
       "newsletters": "Newsletter",
-      "projects": "Projekte"
+      "projects": "Projekte",
+      "gifts": "Geschenke"
     }
   },
   "accounting": {
@@ -11830,5 +11840,117 @@
     "noProductItems": "Noch keine Produktposten vorhanden.",
     "lockBillingHelp": "Beim Sperren wird der aktuelle CRM-Preis festgeschrieben und ein abrechenbarer Posten erstellt. Eine passende, noch nicht ausgestellte Projektrechnung erhält eine eigene Produktposition.",
     "lockAndBill": "Auswahl sperren und zur Abrechnung hinzufügen"
+  },
+  "gifts": {
+    "title": "Geschenke",
+    "subtitle": "Danken Sie treuen Kunden zu ihren Jubiläen und behalten Sie den Geschenkbestand im Blick.",
+    "due": {
+      "title": "Fällige Geschenke",
+      "empty": "Derzeit sind keine Geschenke fällig",
+      "confirm": "Geschenk bestätigen"
+    },
+    "notQualified": {
+      "title": "Nicht qualifiziert",
+      "hint": "Die Nachfrist ist abgelaufen. Sie können trotzdem etwas schenken, der Eintrag wird als Ausnahme markiert.",
+      "override": "Trotzdem schenken",
+      "showMore": "Mehr anzeigen (noch {{count}})"
+    },
+    "reason": {
+      "bookings": "{{have}} von {{need}} Buchungen",
+      "lastPayment": "Letzte Zahlung {{date}}",
+      "noPayment": "Noch keine Zahlung"
+    },
+    "give": {
+      "title": "Geschenk hinzufügen",
+      "titleMilestone": "Geschenk zum {{years}}-Jahr-Jubiläum",
+      "saved": "Geschenk erfasst",
+      "submit": "Geschenk erfassen",
+      "item": "Artikel",
+      "pickItem": "Artikel wählen",
+      "itemOption": "{{name}} ({{count}} auf Lager)",
+      "date": "Datum",
+      "note": "Notiz (optional)",
+      "keepStock": "Bestand nicht reduzieren",
+      "keepStockHint": "Für ein Geschenk aus der Zeit, bevor der Bestand hier geführt wurde.",
+      "outOfStock": "Dieser Artikel ist nicht auf Lager. Erfassen Sie zuerst Bestand auf der Seite Geschenke."
+    },
+    "decline": {
+      "title": "Geschenk zum {{years}}-Jahr-Jubiläum ablehnen",
+      "saved": "Jubiläum abgelehnt",
+      "submit": "Ablehnen",
+      "hint": "Damit wird dieses Jubiläum geschlossen. Der Bestand bleibt gleich, und das nächste Jubiläum erscheint weiterhin.",
+      "reason": "Grund (optional)"
+    },
+    "items": {
+      "title": "Bestand",
+      "add": "Neuer Artikel",
+      "create": "Erstellen",
+      "created": "Artikel erstellt",
+      "name": "Name",
+      "empty": "Noch keine Geschenkartikel",
+      "archived": "Archiviert",
+      "archive": "Archivieren",
+      "restore": "Wiederherstellen",
+      "history": "Verlauf",
+      "stock": "{{count}} auf Lager"
+    },
+    "stock": {
+      "addTitle": "Bestand hinzufügen",
+      "addSubmit": "Bestand hinzufügen",
+      "added": "Bestand hinzugefügt",
+      "quantity": "Menge",
+      "unitCost": "Kosten pro Stück (optional)",
+      "date": "Datum",
+      "note": "Notiz (optional)",
+      "invoice": "Lieferantenrechnung (optional)",
+      "noInvoice": "Keine Rechnung",
+      "unnamedInvoice": "Rechnung #{{id}}",
+      "uploadInvoice": "Hochladen",
+      "invoiceUploaded": "Rechnung zu den Eingangsrechnungen hinzugefügt",
+      "invoiceHint": "Nettosumme {{amount}}. Die Kosten pro Stück sind ein Vorschlag, weil eine Rechnung auch andere Waren enthalten kann.",
+      "correctTitle": "Bestand korrigieren",
+      "correctSubmit": "Korrektur speichern",
+      "corrected": "Bestand korrigiert",
+      "delta": "Änderung (zum Beispiel -2)",
+      "reason": "Grund",
+      "historyTitle": "Bestandsverlauf",
+      "historyEmpty": "Noch keine Bestandsänderungen"
+    },
+    "movement": {
+      "purchase": "Einkauf",
+      "gift": "Geschenk",
+      "giftUndone": "Geschenk rückgängig",
+      "correction": "Korrektur"
+    },
+    "rules": {
+      "title": "Regeln",
+      "hint": "Kunden gelten auch als aktiv, wenn ihre letzte Zahlung zu ihrem üblichen Abstand zwischen Buchungen passt.",
+      "milestones": "Jubiläen (Jahre)",
+      "minBookings": "Mindestanzahl bezahlter Buchungen",
+      "activityPeriodYears": "Aktiv: innerhalb so vieler Jahre",
+      "rhythmMarginMonths": "Spielraum beim Buchungsrhythmus (Monate)",
+      "graceDays": "Nachfrist (Tage)",
+      "saved": "Regeln gespeichert",
+      "activityMinBookings": "Aktiv: Mindestanzahl bezahlter Buchungen"
+    },
+    "customer": {
+      "title": "Geschenke",
+      "add": "Geschenk hinzufügen",
+      "empty": "Noch keine Geschenke.",
+      "declined": "Abgelehnt",
+      "override": "Ausnahme",
+      "undo": "Rückgängig",
+      "undone": "Eintrag rückgängig gemacht",
+      "undoneBadge": "Rückgängig gemacht",
+      "saved": "Gespeichert",
+      "noGifts": "Keine Geschenke",
+      "noGiftsHint": "Nimmt diesen Kunden aus allen Geschenklisten.",
+      "startDate": "Jubiläen zählen ab",
+      "startDateHint": "Leer lassen, um die erste bezahlte Rechnung zu verwenden."
+    },
+    "milestoneBadge_one": "{{count}} Jahr",
+    "milestoneBadge_other": "{{count}} Jahre",
+    "lowStock_one": "{{count}} Geschenk fällig, {{stock}} auf Lager.",
+    "lowStock_other": "{{count}} Geschenke fällig, {{stock}} auf Lager."
   }
 }

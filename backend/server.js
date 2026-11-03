@@ -955,6 +955,7 @@ app.use('/api/admin/roles', require('./src/routes/adminRoles'));
 // PR #458 → #470 history in the middleware file for context.
 const { noStoreCache } = require('./src/middleware/noStoreCache');
 app.use('/api/admin/customers', noStoreCache, require('./src/routes/adminCustomers'));
+app.use('/api/admin/gifts', noStoreCache, require('./src/routes/adminGifts'));
 // Customer-side surface (#354). Strictly separate from /api/admin/* —
 // distinct token type, distinct cookie, distinct middleware. The
 // noStoreCache wrapper (upstream) prevents stale customer-portal

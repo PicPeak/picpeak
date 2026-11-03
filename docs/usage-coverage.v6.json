@@ -2048,6 +2048,27 @@
         "POST /:slug/snipcart-webhook"
       ]
     },
+    "adminGifts.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Excluded: customer gifts and gift stock are not reported as a capability; no customers, items, quantities, costs, dates or notes.",
+      "route_signatures": [
+        "GET /suggestions",
+        "GET /rules",
+        "PUT /rules",
+        "GET /items",
+        "POST /items",
+        "PATCH /items/:id",
+        "GET /items/:id/movements",
+        "POST /items/:id/stock",
+        "POST /items/:id/corrections",
+        "GET /customers/:id",
+        "PATCH /customers/:id",
+        "POST /customers/:id/gifts",
+        "POST /customers/:id/declines",
+        "POST /:id/undo"
+      ]
+    },
     "gallery/stripeCheckout.js": {
       "decision": "excluded",
       "signals": [],
@@ -2253,6 +2274,10 @@
     "albumProducts": {
       "signals": [],
       "reason": "Experimental product configuration is excluded from usage signals; no private product choices or audit labels are observed."
+    },
+    "customerGifts": {
+      "signals": [],
+      "reason": "Excluded: customer gifts are not reported as their own capability; no flag value, counts or amounts."
     }
   },
   "excluded_runtime": [

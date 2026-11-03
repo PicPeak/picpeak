@@ -1127,10 +1127,13 @@ router.get('/:id/activity', [
   if (!customer) throw new NotFoundError('Customer', customerId);
   const includeDocuments = await isFeatureEnabled('documents')
     && await userHasAnyPermission(req.admin.id, ['customers.documents.manage']);
+  const includeGifts = await isFeatureEnabled('customerGifts')
+    && await userHasAnyPermission(req.admin.id, ['customers.gifts.view']);
   const result = await customerActivityService.listForCustomer(customerId, {
     limit: req.query.limit ? parseInt(req.query.limit, 10) : 50,
     beforeId: req.query.beforeId ? parseInt(req.query.beforeId, 10) : null,
     includeDocuments,
+    includeGifts,
   });
   successResponse(res, result);
 }));

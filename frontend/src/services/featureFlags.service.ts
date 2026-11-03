@@ -98,7 +98,10 @@ export type FeatureKey =
   // Customer documents (migration 225, #1444) — PDF exchange in the customer
   // portal and the Documents card on the customer record. Strictly opt-in;
   // the backend refuses every documents route while it is off.
-  | 'documents';
+  | 'documents'
+  // Customer gifts (migration 343) - milestone suggestions, gift stock and the
+  // gift history. Child of `clients`; the backend refuses /admin/gifts while off.
+  | 'customerGifts';
 
 export type FeatureFlags = Record<FeatureKey, boolean>;
 

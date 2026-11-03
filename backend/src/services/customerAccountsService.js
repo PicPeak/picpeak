@@ -1492,6 +1492,10 @@ async function eraseCustomer(id, erasedByAdminId) {
     // keep its groups undeletable.
     await trx('customer_group_members').where('customer_account_id', id).del();
 
+    // Gift notes are free text about the person. The rows stay, without a
+    // name, so the stock count behind them keeps adding up.
+    await require('./customerGiftsService').forgetCustomer(trx, id, erasedByAdminId || null);
+
     // Pending re-bills (incoming invoices, migration 132) attached to this
     // customer would otherwise stay billable to the now-anonymized account —
     // return the not-yet-billed ones to the inbox for re-triage so they're not

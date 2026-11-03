@@ -25,7 +25,7 @@ async function expandSnapshot(db, { features, flags, used, now, version = 'usage
     effective.expenses = false;
     effective.taxReport = false;
   }
-  effective.clients = ['customerPortal', 'quotes', 'bills', 'contracts', 'projects', 'calendar', 'hoursLogging', 'newsletters']
+  effective.clients = ['customerPortal', 'quotes', 'bills', 'contracts', 'projects', 'calendar', 'hoursLogging', 'newsletters', 'customerGifts']
     .some((flag) => effective[flag]);
   if (['1', 'true', 'yes'].includes(String(process.env.PICPEAK_SINGLE_CONTAINER || '').toLowerCase())) effective.faces = false;
   for (const [key, definition] of Object.entries(CATALOGS[version].features)) {
