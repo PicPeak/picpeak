@@ -62,6 +62,20 @@ describe('validateUploadedFiles queueing', () => {
     })]);
   });
 
+  it('reports it as that for a HEIF name too, not as an unreadable HEIF', async () => {
+    const sharp = require('../../src/services/isolatedSharp');
+    const failure = Object.assign(new Error('Image processing is unavailable on this server'), { code: 'SHARP_UNAVAILABLE' });
+    sharp.mockImplementationOnce(() => ({ metadata: jest.fn().mockRejectedValue(failure) }));
+    const file = path.join(dir, 'fine.heic');
+    fs.writeFileSync(file, 'x');
+    const req = { files: [{ originalname: 'fine.heic', path: file }] };
+    await validateUploadedFiles(req, {}, () => {});
+    expect(req.files).toHaveLength(0);
+    expect(req.invalidFiles).toEqual([expect.objectContaining({
+      filename: 'fine.heic', code: 'SHARP_UNAVAILABLE', error: 'Image processing is unavailable on this server',
+    })]);
+  });
+
   it('leaves a non-decodable type alone', async () => {
     const file = path.join(dir, 'clip.mov');
     fs.writeFileSync(file, 'x');
