@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.190.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.189.0-beta.0...v3.190.0-beta.0) (2026-11-03)
+
+
+### Features
+
+* add configurable gallery print orders and manual fulfilment ([#2342](https://github.com/PicPeak/picpeak/issues/2342)) ([c2fd441](https://github.com/PicPeak/picpeak/commit/c2fd4413da6ae36743347770cc1e77d81a56fc17))
+
 ## [3.189.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.188.0-beta.0...v3.189.0-beta.0) (2026-11-03)
 
 
