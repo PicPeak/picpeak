@@ -342,9 +342,13 @@ function createService({ db, storage, sharp }) {
       .where({ event_id: current.event_id })
       .whereNot({ id: current.id })
       .whereIn('status', ['submitted', 'locked']);
-    // The gallery's only customer is the client of its unscoped offers too.
-    if ((await assignedCustomers(tx, current.event_id)) > 1)
-      forAudience(others, current.released_customer_id ?? null);
+    // The gallery's only customer is the client of its unscoped offers too. An
+    // offer of someone since removed from the gallery is nobody's here.
+    const assigned = await tx('event_customer_assignments')
+      .where({ event_id: current.event_id })
+      .pluck('customer_account_id');
+    if (assigned.length > 1) forAudience(others, current.released_customer_id ?? null);
+    else others.where((q) => q.whereNull('released_customer_id').orWhereIn('released_customer_id', assigned));
     if ((await others).some((row) => V.parse(row.selection)?.clientFinal))
       throw new ConflictError('Another album is already confirmed for this gallery');
   }

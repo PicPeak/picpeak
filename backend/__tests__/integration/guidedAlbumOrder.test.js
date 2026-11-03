@@ -489,6 +489,19 @@ describe('guided album order', () => {
       expect(res.body.error).toMatch(/already confirmed/);
     });
 
+    test('a confirmation stays out of it once its customer has left the gallery', async () => {
+      const gallery = await makeGallery();
+      const anna = await addCustomer(gallery);
+      const ben = await addCustomer(gallery);
+      const first = await released(gallery, albumA, anna);
+      const second = await released(gallery, albumB, ben);
+      const a = asClient(portalToken(gallery, anna));
+      const b = asClient(portalToken(gallery, ben));
+      await a.put(gallery, await clientOffer(a, gallery, first.id), { ...complete(gallery), submit: true });
+      await db('event_customer_assignments').where({ event_id: gallery.id, customer_account_id: anna }).del();
+      expect((await b.put(gallery, await clientOffer(b, gallery, second.id), { ...complete(gallery), submit: true })).status).toBe(200);
+    });
+
     test('one customer\'s confirmation leaves another customer\'s offer open', async () => {
       const gallery = await makeGallery();
       const anna = await addCustomer(gallery);

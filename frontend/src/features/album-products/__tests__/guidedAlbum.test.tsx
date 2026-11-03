@@ -319,6 +319,30 @@ describe('guided album flow', () => {
     next();
     await heading('Review your album');
     expect(vi.mocked(api.put).mock.calls[0][1]).toMatchObject({ photoRoles: { cover: [1], poster: [] } });
+    expect(screen.queryByRole('heading', { name: /poster/i })).toBeNull();
+  });
+
+  it('lets a draft over a lowered photo limit move on to the step that fixes it', async () => {
+    const draft = offer({
+      product: product('album-a', 'Fine art album', { guided: { clientFinal: true, photoRoles: [{ key: 'cover', min: 1, max: 1 }, { key: 'poster', min: 1, max: 1 }] } }),
+      selection: {
+        schemaVersion: 2, productVersion: '', product: { id: 'album-a', name: 'Fine art album' },
+        attributes: [
+          { id: 'material', name: 'Material', addOn: false, options: [{ id: 'silk', name: 'Silk', imageId: null }] },
+          { id: 'colour', name: 'Colour', addOn: false, options: [{ id: 'ivory', name: 'Ivory', imageId: null }] },
+          { id: 'format', name: 'Format', addOn: false, options: [{ id: 'square', name: 'Square', imageId: null }] },
+          { id: 'size', name: 'Size', addOn: false, options: [{ id: 's2550', name: '25 × 50 cm', imageId: null }] },
+        ],
+        photoRoles: [{ key: 'cover', photos: [{ id: 1, available: true }] }, { key: 'poster', photos: [{ id: 2, available: true }, { id: 3, available: true }] }],
+      },
+    });
+    mount([draft]);
+    await heading('Choose your poster photos');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await heading('Choose your cover photo');
+    next();
+    await heading('Choose your poster photos');
+    expect(api.put).not.toHaveBeenCalled();
   });
 
   it('shows the base price and every surcharge where the studio shows prices', async () => {

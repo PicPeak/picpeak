@@ -252,9 +252,12 @@ export function GuidedAlbumFlow({
 
   const next = async () => {
     // A submitted, not yet final choice is only ever resubmitted whole. A draft
-    // waits while it still names a hidden photo: the server refuses it, and the
-    // step that replaces that photo may be further on.
-    const saveable = !Object.values(rolePhotos).flat().some((id) => unavailable.includes(id));
+    // waits while it names a hidden photo or more than a role now takes: the
+    // server refuses it, and the step that fixes that may be further on.
+    const saveable =
+      !Object.values(rolePhotos).flat().some((id) => unavailable.includes(id)) &&
+      rolePhotos.cover.length <= roleLimit(offer, 'cover').max &&
+      rolePhotos.poster.length <= roleLimit(offer, 'poster').max;
     if (step !== 'album' && offer?.status === 'draft' && saveable && !(await persist(false))) return;
     setStep(steps[position + 1]);
   };
@@ -315,7 +318,7 @@ export function GuidedAlbumFlow({
           })),
         photoRoles: (['cover', 'poster'] as const).map((key) => ({
           key,
-          photos: chosen[key].map((id) => ({ id })),
+          photos: rolePhotos[key].map((id) => ({ id })),
         })),
       }
     : null;
