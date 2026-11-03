@@ -30,7 +30,8 @@ const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
-const { renderPhotoForDownload, resolveWatermarkSettings } = require('./downloadRendition');
+const { uniquifyZipNames } = require('../utils/filenameSanitizer');
+const { renderPhotoForDownload, renderedDownloadType, resolveWatermarkSettings } = require('./downloadRendition');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { parseResolution } = require('../utils/downloadResolutions');
 const { applyPhotoVisibilityFilter, canSeeHiddenPhotos } = require('../utils/photoVisibility');
@@ -307,6 +308,10 @@ class DownloadJobService {
       const storage = getStorage();
       const useOriginal = await getUseOriginalFilenames();
       const entryNames = getZipEntryNames(photos, useOriginal);
+      // A converted entry takes the new format's extension, which can give it
+      // the name of another entry: uniquify the final names as they ship.
+      const finalNames = new Map();
+      const finalName = (name) => uniquifyZipNames([name], finalNames)[0];
 
       tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-dljob-'));
       const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.zip`);
@@ -338,14 +343,14 @@ class DownloadJobService {
             try {
               const rendered = await renderPhotoForDownload(event, photo, box, watermarkSettings);
               if (rendered) {
-                archive.append(rendered, { name });
+                archive.append(rendered, { name: finalName(renderedDownloadType(rendered, photo, name).name) });
               } else {
                 const key = resolvePhotoStorageKey(event, photo);
                 if (key) {
                   if (!await guard.acquire()) break;
-                  archive.append(guard.track(await storage.get(key)), { name });
+                  archive.append(guard.track(await storage.get(key)), { name: finalName(name) });
                 } else {
-                  archive.file(resolvePhotoFilePath(event, photo), { name });
+                  archive.file(resolvePhotoFilePath(event, photo), { name: finalName(name) });
                 }
               }
               appended += 1;
