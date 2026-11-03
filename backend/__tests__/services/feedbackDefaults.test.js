@@ -81,6 +81,8 @@ describe('resolveEventFeedbackDefaults (#1044)', () => {
       allow_color_labels: false,
       // Approve / reject (issue 744): opt-in for the same reason.
       allow_decisions: false,
+      // Named favourite lists (issue 2303): opt-in for the same reason.
+      allow_favorite_lists: false,
       keybind_mode: 'colors',
     });
   });

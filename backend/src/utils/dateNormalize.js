@@ -77,4 +77,18 @@ function cameraWallClock(value) {
   return m ? m[0] : null;
 }
 
-module.exports = { toIso, toTimestamp, toServerWallClock, cameraWallClock };
+/**
+ * A value as a Date. A bare "2025-07-16" is that calendar day on this server:
+ * read as midnight UTC it would print the day before west of Greenwich. Lives
+ * here, not in dateFormatter, because the PDF render worker can't load the db.
+ */
+function parseCalendarDate(value) {
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map((num) => parseInt(num, 10));
+    return new Date(year, month - 1, day);
+  }
+  return new Date(value);
+}
+
+module.exports = { toIso, toTimestamp, toServerWallClock, cameraWallClock, parseCalendarDate };

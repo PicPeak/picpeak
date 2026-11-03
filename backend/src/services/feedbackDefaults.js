@@ -45,6 +45,8 @@ const FEEDBACK_TOGGLES = [
   { column: 'allow_color_labels', settingKey: 'event_default_allow_color_labels', fallback: false },
   // Approve / reject per photo (issue 744): opt-in for the same reason.
   { column: 'allow_decisions', settingKey: 'event_default_allow_decisions', fallback: false },
+  // Named favourite lists (issue 2303): opt-in for the same reason.
+  { column: 'allow_favorite_lists', settingKey: 'event_default_allow_favorite_lists', fallback: false },
 ];
 
 /** Non-boolean feedback defaults that follow the same global -> event flow. */
@@ -106,7 +108,8 @@ function parseKeybindModeSetting(rawValue) {
  *
  * @returns {Promise<{allow_ratings: boolean, allow_likes: boolean,
  *   allow_favorites: boolean, allow_comments: boolean, allow_reactions: boolean,
- *   allow_color_labels: boolean, allow_decisions: boolean, keybind_mode: string}>}
+ *   allow_color_labels: boolean, allow_decisions: boolean,
+ *   allow_favorite_lists: boolean, keybind_mode: string}>}
  */
 async function resolveEventFeedbackDefaults() {
   const defaults = {};

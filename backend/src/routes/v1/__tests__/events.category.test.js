@@ -144,6 +144,7 @@ jest.mock('../../../services/isolatedSharp', () => jest.fn(() => ({
 // so the test stays a pure unit test of the route handler's contract.
 jest.mock('../../../services/imageProcessor', () => ({
   generateThumbnail: jest.fn().mockResolvedValue('thumbnails/fake_thumb.jpg'),
+  withProcessableImage: async (localPath) => ({ path: localPath, cleanup: () => {} }),
   // The upload reads the capture date itself (no worker runs for this row).
   extractCapture: jest.fn().mockResolvedValue(null),
   captureWallColumn: (c) => (c ? { captured_at_wall: c.wall || '' } : {}),

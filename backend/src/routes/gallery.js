@@ -8,6 +8,7 @@ router.use(require('./gallery/printSales'));
 router.use(require('./gallery/downloads'));
 router.use(require('./gallery/purchasedDownloads'));
 router.use(require('./gallery/snipcart'));
+router.use(require('./gallery/stripeCheckout'));
 router.use(require('./gallery/media'));
 router.use(require('./gallery/stats'));
 router.use(require('./gallery/uploads'));

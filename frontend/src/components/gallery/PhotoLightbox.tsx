@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallba
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
-import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock, Loader2, ShoppingCart, Check, Printer } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock, Loader2, Printer } from 'lucide-react';
 import type { Photo, GalleryPerson } from '../../types';
 import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { isPhotoDownloadPending, usePhotoDownloadPending } from '../../hooks/usePhotoDownloadPending';
@@ -27,7 +27,7 @@ import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 import { usePrintSales } from '../../features/print-sales/PrintSalesContext';
 import { isPhotograph } from '../../features/print-sales/shopping';
 import { usePhotoSales } from '../../features/photo-sales/PhotoSalesContext';
-import { effectivePhotoPrice, formatPhotoPrice, snipcartItemProps } from '../../features/photo-sales/photoSales';
+import { PhotoPurchaseButton } from '../../features/photo-sales/PhotoPurchaseButton';
 import { lockBodyScroll } from '../../utils/scrollLock';
 import { pushDialogLayer } from '../common/Modal';
 import { LightboxFilmStrip, LightboxScrubStandIn } from './LightboxFilmStrip';
@@ -41,6 +41,8 @@ import { ImageAnnotationOverlay } from './annotation/ImageAnnotationOverlay';
 import { AnnotationToolbar } from './annotation/AnnotationToolbar';
 import { LightboxModeSwitch, type LightboxMode } from './annotation/LightboxModeSwitch';
 import { PhotoFavorites } from './PhotoFavorites';
+import { FavoriteListSwitcher } from './FavoriteListSwitcher';
+import { inActiveList, useFavoriteListsOptional } from '../../contexts/FavoriteListsContext';
 
 interface PhotoLightboxProps {
   photos: Photo[];
@@ -196,6 +198,13 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   }, [annotating]);
   const [myLiked, setMyLiked] = useState<boolean>(false);
   const [myFavorited, setMyFavorited] = useState<boolean>(false);
+  // Named lists (issue 2303): which of the guest's lists hold this photo. The
+  // bookmark shows the active list; without lists it shows myFavorited.
+  const favoriteLists = useFavoriteListsOptional();
+  const [myFavoriteListIds, setMyFavoriteListIds] = useState<Array<number | null> | null>(null);
+  const bookmarkFilled = favoriteLists && myFavoriteListIds
+    ? inActiveList(myFavoriteListIds, favoriteLists.activeListId)
+    : myFavorited;
   const [favoriteCount, setFavoriteCount] = useState<number>(0);
   // Bumped by every favourite toggle in the bar: a feedback load that was
   // already out then carries the state from before it, and leaves the
@@ -378,15 +387,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // Photo sales: every photo of a priced gallery is
   // delivered through the checkout; the direct download button is hidden.
   const downloadLockedBySales = photoSales.checkoutReady && currentPhoto != null;
-  const lightboxCartProps = photoSales.checkoutReady && currentPhoto
-    ? snipcartItemProps({
-      slug: photoSales.slug,
-      priceCheckUrl: photoSales.priceCheckUrl,
-      price: effectivePhotoPrice(photoSales.price, currentPhoto.photo_price),
-      description: photoSales.itemDescription,
-      photo: currentPhoto,
-    })
-    : null;
+  const lightboxCartPhoto = photoSales.checkoutReady && currentPhoto?.sale_token ? currentPhoto : null;
   // Download limit (issue 1560): the button stays, disabled with the reason,
   // once nothing is left — except for photos already downloaded, which are free.
   const downloadQuota = useDownloadQuota();
@@ -604,6 +605,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         setMyLiked(!!data.my_feedback.liked);
         if (favoriteSeq === favoriteToggleSeqRef.current) {
           setMyFavorited(!!data.my_feedback.favorited);
+          setMyFavoriteListIds(data.my_feedback.favorite_list_ids ?? null);
           setFavoriteCount(Number(data.summary?.favorite_count) || 0);
         }
         setMyRating(data.my_feedback.rating || 0);
@@ -633,6 +635,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       const data = await feedbackService.getPhotoFeedback(slug, savedPhotoId);
       if (favoriteSeq !== favoriteToggleSeqRef.current || String(feedbackPhotoIdRef.current) !== savedPhotoId) return;
       setMyFavorited(!!data.my_feedback.favorited);
+      setMyFavoriteListIds(data.my_feedback.favorite_list_ids ?? null);
       setFavoriteCount(Number(data.summary?.favorite_count) || 0);
     } catch {
       // The optimistic state stays.
@@ -1462,36 +1465,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
             {/* Photo sales: the photo's price as the lightbox's main action.
                 A photo already in the cart opens the cart instead. */}
-            {lightboxCartProps && (() => {
-              const inCart = photoSales.cartItemIds.has(String(lightboxCartProps['data-item-id']));
-              const priceLabel = formatPhotoPrice(
-                effectivePhotoPrice(photoSales.price, currentPhoto?.photo_price),
-                photoSales.currency || 'EUR'
-              );
-              return (
-                <button
-                  type="button"
-                  className={`${inCart ? 'snipcart-checkout' : 'snipcart-add-item'} inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-semibold shadow-sm transition-opacity hover:opacity-90`}
-                  style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-accent-fg, #ffffff)' }}
-                  aria-label={inCart
-                    ? t('photoSales.inCartOpen', 'In your cart — open the cart')
-                    : t('photoSales.addToCartPrice', 'Add photo to cart for {{price}}', { price: priceLabel })}
-                  title={inCart ? undefined : t('photoSales.buyTitle', 'Buy this photo in full quality, without watermark')}
-                  {...(inCart ? {} : lightboxCartProps)}
-                >
-                  {inCart ? <Check className="w-4 h-4" aria-hidden="true" /> : <ShoppingCart className="w-4 h-4" aria-hidden="true" />}
-                  {inCart ? (
-                    <span>{t('photoSales.inCart', 'In cart')}</span>
-                  ) : (
-                    <>
-                      <span className="hidden sm:inline">{t('photoSales.addToCartShort', 'Add to cart')}</span>
-                      <span className="hidden sm:inline opacity-60" aria-hidden="true">·</span>
-                      <span className="tabular-nums">{priceLabel}</span>
-                    </>
-                  )}
-                </button>
-              );
-            })()}
+            {lightboxCartPhoto && <PhotoPurchaseButton photo={lightboxCartPhoto} onOpenCart={onClose} />}
 
             {printSales?.available && currentPhoto && isPhotograph(currentPhoto) && <button type="button"
               className="inline-flex items-center gap-2 rounded-full bg-white/10 hover:bg-white/20 px-3 py-2 text-white text-sm"
@@ -1533,18 +1507,27 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   variant="toolbar"
                   photoId={String(currentPhoto.id)}
                   gallerySlug={slug}
-                  isFavorited={myFavorited}
+                  isFavorited={bookmarkFilled}
                   favoriteCount={feedbackSettings?.show_feedback_to_guests ? favoriteCount : 0}
                   isEnabled
                   requireNameEmail={!!feedbackSettings?.require_name_email}
                   onFavoriteChange={(favorited) => {
                     favoriteToggleSeqRef.current += 1;
                     setMyFavorited(favorited);
+                    if (favoriteLists) {
+                      const active = favoriteLists.activeListId;
+                      setMyFavoriteListIds((ids) => {
+                        const rest = (ids ?? []).filter((id) => id !== active);
+                        return favorited ? [...rest, active] : rest;
+                      });
+                    }
                     setFavoriteCount((c) => Math.max(0, c + (favorited ? 1 : -1)));
                   }}
                   onAccepted={reloadFavorite}
                   onSaved={onFeedbackChange ? (savedPhotoId) => onFeedbackChange(Number(savedPhotoId)) : undefined}
                 />
+                {/* Which list the bookmark saves to (issue 2303). */}
+                <FavoriteListSwitcher variant="toolbar" className="ml-1" />
               </div>
             )}
 

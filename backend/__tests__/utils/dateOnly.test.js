@@ -56,11 +56,11 @@ describe('every quote, invoice and contract payload sends its date columns throu
 
   test.each([
     ['routes/adminQuotes.js', 3],
-    ['routes/adminInvoices.js', 5],
+    ['routes/adminInvoices.js', 9],
     ['routes/customer.js', 8],
     ['services/dealsService.js', 9],
     ['services/publicDocumentViews.js', 5],
-    ['services/invoice/payments.js', 2],
+    ['services/invoice/payments.js', 3],
     ['services/invoice/drafts.js', 2],
     ['services/contract/sendPreview.js', 2],
   ])('%s', (rel, count) => {

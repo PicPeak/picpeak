@@ -52,6 +52,9 @@ const EXCLUDED_TABLES = new Set([
   // they would attach to whatever ids the target's own re-scan happens to
   // mint, silently suppressing merge suggestions in unrelated galleries.
   'event_people_merge_dismissals',
+  // Short-lived promo verification state, not data: code and identity hashes
+  // are worthless after restore and should not leave the install in an archive.
+  'photo_checkout_verifications',
   // Live lease state for the maintenance sweeps (#1181), not data. An archive
   // taken while a sweep was running would otherwise carry is_running = true and
   // a claim token belonging to a process on the source install. Restored within

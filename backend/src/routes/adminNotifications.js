@@ -4,6 +4,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { seesAllEvents, scopeEventsQuery } = require('../middleware/ownership');
 const logger = require('../utils/logger');
+const { withDocumentNumbers } = require('../services/activityDocumentNumbers');
 const { toUtcIso } = require('../utils/queueTimestamps');
 // Per-request audit rows that have a summary row of their own in the bell.
 const { BELL_EXCLUDED_ACTIVITY_TYPES } = require('../services/apiDownloadNotifications');
@@ -86,6 +87,8 @@ router.get('/', adminAuth, requirePermission(['settings.view', 'notifications.vi
       readAt: toUtcIso(notification.read_at),
       isRead: !!notification.read_at
     }));
+
+    await withDocumentNumbers(formattedNotifications);
 
     // Get unread count
     const unreadCount = await bellRows(req.admin)

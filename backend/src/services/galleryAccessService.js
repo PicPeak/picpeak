@@ -12,7 +12,9 @@ const sessions = require('./sessionAccessService');
 // enters a media URL. Only use grants from this service or a verified signature.
 // parentIat/parentJti identify the portal session a gallery token was minted from.
 // showLink names the slideshow link a slideshow session was opened with.
-const CLAIMS = ['type', 'id', 'customerId', 'eventId', 'eventSlug', 'iat', 'exp', 'jti', 'via', 'accessLevel',
+const { hasRight, rightsOf } = require('./customerContactsService');
+
+const CLAIMS = ['type', 'id', 'customerId', 'contactId', 'eventId', 'eventSlug', 'iat', 'exp', 'jti', 'via', 'accessLevel',
   'parentIat', 'parentJti', 'showLink', 'clientPinEntry'];
 
 class GalleryAccessService {
@@ -75,7 +77,10 @@ class GalleryAccessService {
         throw new AppError('Slideshow disabled', 401, 'SLIDESHOW_DISABLED');
       }
       if (session.via === 'customer') {
-        await sessions.customer(session, { derived: true });
+        const account = await sessions.customer(session, { derived: true });
+        if (account.contact && !hasRight(rightsOf(account.contact), 'galleries')) {
+          throw new AppError('Access to this gallery has been revoked', 403, 'CUSTOMER_ASSIGNMENT_REVOKED');
+        }
         const assignment = await db('event_customer_assignments')
           .where({ event_id: event.id, customer_account_id: session.customerId }).first();
         if (!assignment) {

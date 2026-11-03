@@ -30,6 +30,7 @@ import {
   Send as SendIcon,
   Users,
   HeartPulse,
+  CreditCard,
   type LucideIcon,
 } from 'lucide-react';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
@@ -71,6 +72,7 @@ export type SettingsTab =
   | 'seo'
   | 'apiTokens'
   | 'webhooks'
+  | 'payments'
   | 'status'
   | 'analytics'
   | 'backup'
@@ -115,7 +117,7 @@ export const ALL_SETTINGS_TABS: SettingsTab[] = [
   'branding', 'watermark', 'categories', 'thumbnails', 'downloads', 'styling', 'cms',
   'email', 'moderation', 'transfers',
   'security', 'sso', 'imageSecurity', 'seo',
-  'apiTokens', 'webhooks',
+  'apiTokens', 'webhooks', 'payments',
   'status', 'health', 'analytics', 'backup',
   'businessProfile', 'crm', 'contracts', 'accounting', 'whatsapp',
   'slideshow',
@@ -163,6 +165,7 @@ export const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, string[]> = {
   seo:               ['settings.view'],
   apiTokens:         ['settings.view', 'settings.integrations'],
   webhooks:          ['settings.view', 'settings.integrations'],
+  payments:          ['settings.integrations'],
   status:            ['settings.view', 'system.view', 'system.manage'],
   analytics:         ['settings.view', 'analytics.view'],
   backup:            ['settings.view', 'backup.view'],
@@ -245,7 +248,7 @@ export function settingsTabGatedOff(flags: Flags): Partial<Record<SettingsTab, b
 export function useSettingsNavGroups(): SettingsNavGroup[] {
   const { t } = useTranslation();
   const { flags } = useFeatureFlags();
-  const { hasAnyPermission } = usePermissions();
+  const { hasAnyPermission, isSuperAdmin } = usePermissions();
 
   const groups: SettingsNavGroup[] = [
     {
@@ -313,6 +316,7 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
     {
       label: t('settings.groups.integrations', 'Integrations'),
       items: [
+        ...(isSuperAdmin ? [{ key: 'payments' as const, label: t('settings.payments.title', 'Payments'), icon: CreditCard }] : []),
         { key: 'apiTokens', label: t('settings.apiTokens.title', 'API Tokens'), icon: KeyRound },
         { key: 'webhooks',  label: t('settings.webhooks.title',  'Webhooks'),   icon: Webhook },
       ],

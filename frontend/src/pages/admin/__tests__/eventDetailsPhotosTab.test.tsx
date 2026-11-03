@@ -317,6 +317,27 @@ describe('EventDetailsPage photos tab', () => {
       expect.objectContaining({ photo_ids: [2] })));
   });
 
+  it('exports without the favourite list once "Show all photos" clears it, after another filter changed', async () => {
+    getEventPhotos.mockResolvedValue([{
+      id: 1, filename: 'IMG_1.jpg', url: '/1.jpg', thumbnail_url: '/thumb/1.jpg',
+      type: 'individual', size: 100, uploaded_at: '2026-10-01T00:00:00Z',
+    }]);
+    renderPage('/admin/events/1?tab=photos&favorite_list=4&favorite_guest=2');
+    // Any change in the panel writes the props it got, list filter included,
+    // back into the page's filter state.
+    await userEvent.click(await screen.findByRole('checkbox', { name: /Has likes/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Show all photos' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Show all photos' })).toBeNull());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Export' }));
+    await userEvent.click(screen.getByRole('button', { name: /Filename List \(TXT\)/ }));
+    await waitFor(() => expect(exportPhotosAsText).toHaveBeenCalledTimes(1));
+    const options = exportPhotosAsText.mock.calls[0][1] as { filter: Record<string, unknown> };
+    expect(options.filter).toMatchObject({ has_likes: true });
+    expect(options.filter.favorite_list).toBeUndefined();
+    expect(options.filter.favorite_guest).toBeUndefined();
+  });
+
   it('keeps grid and export selections together through uncached and cached sorting', async () => {
     const photos = [1, 2].map((id) => ({
       id, filename: `IMG_${id}.jpg`, url: `/${id}.jpg`, thumbnail_url: `/thumb/${id}.jpg`,

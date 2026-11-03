@@ -190,6 +190,10 @@ export type ActivityType =
   | "customer_invitation_created"
   | "customer_invitation_accepted"
   | "customer_invitation_cancelled"
+  | "customer_contact_created"
+  | "customer_contact_updated"
+  | "customer_contact_deleted"
+  | "customer_company_switch"
   | "customer_password_reset_requested"
   | "customer_password_reset_applied"
   | "customer_password_change"
@@ -515,6 +519,10 @@ export const adminService = {
       'customer_password_reset_requested': `Password reset requested for customer ${md.email || ''}`,
       'customer_password_reset_applied': `Customer password reset by admin: ${md.email || ''}`,
       'customer_password_change': `Customer changed their password`,
+      'customer_contact_created': `Customer contact added: ${md.email || ''}`,
+      'customer_contact_updated': `Customer contact updated`,
+      'customer_contact_deleted': `Customer contact removed`,
+      'customer_company_switch': `Customer login switched company`,
       'customer_self_profile_update': `Customer updated their profile`,
       'customer_event_access': `Customer opened ${activity.eventName || md.event_slug || 'a gallery'}`,
       'customer_updated': `Customer account updated: ${md.email || ''}`,

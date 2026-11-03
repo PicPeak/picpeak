@@ -31,6 +31,7 @@ vi.mock('react-i18next', async () => {
   };
 });
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('../../../contexts/CustomerAuthContext', () => ({ useCustomerAuth: () => ({ customer: null }) }));
 vi.mock('../../../hooks/useLocalizedDate', () => ({
   useLocalizedDate: () => ({
     // A Date as its local day, the way date-fns formats one.

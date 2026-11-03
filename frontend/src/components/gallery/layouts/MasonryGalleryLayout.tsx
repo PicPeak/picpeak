@@ -13,8 +13,11 @@ import justifiedLayout from 'justified-layout';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { useLazyBands } from './lazyBands';
-import { useWindowedItems, WINDOW_MIN_PHOTOS } from './rowWindow';
+import { useWindowedItems, WINDOW_MIN_PHOTOS, type WindowItem } from './rowWindow';
+import { quiltedSpan, useQuiltedWindow } from './quiltedWindow';
 import { densityColumnDelta, densitySizeFactor, useGridDensity } from '../gridDensity';
+
+const NO_ITEMS: WindowItem[] = [];
 
 // Count-style feedback indicators shared by all masonry modes (top-left).
 // `withTitles` matches the columns-mode markup, which carries title attributes.
@@ -363,16 +366,6 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     });
   }, [mode, photos, containerWidth, targetRowHeight, gutter, lastRowBehavior]);
 
-  // Rows mode mounts only the rows near the viewport in a large gallery
-  // (issue 1733); the other modes never have items here.
-  const { visible: visibleRowItems } = useWindowedItems(
-    containerRef,
-    rowsLayout.items,
-    containerWidth,
-    mode === 'rows' && photos.length >= WINDOW_MIN_PHOTOS,
-    targetRowHeight,
-  );
-
   // Calculate Flickr justified layout
   const flickrLayout = useMemo(() => {
     if (mode !== 'flickr' || containerWidth <= 0 || photos.length === 0) {
@@ -397,6 +390,45 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
 
     return result;
   }, [mode, photos, containerWidth, targetRowHeight, gutter]);
+
+  // Flickr's boxes as layout items, one row per `top`.
+  const flickrItems = useMemo((): WindowItem[] => {
+    let rowIndex = -1;
+    let rowTop = -1;
+    return flickrLayout.boxes.map((box, index) => {
+      if (box.top !== rowTop) {
+        rowTop = box.top;
+        rowIndex += 1;
+      }
+      return { photoId: photos[index].id, x: box.left, y: box.top, width: box.width, height: box.height, rowIndex };
+    });
+  }, [flickrLayout, photos]);
+
+  const largeGallery = photos.length >= WINDOW_MIN_PHOTOS;
+  const quilted = useQuiltedWindow(
+    containerRef, photos, containerWidth, quiltedCell, gutter, mode === 'quilted', mode === 'quilted' && largeGallery,
+  );
+
+  // Quilted without a layout has every tile mounted, and a wider grid can give
+  // it one: the window then starts from those tiles, not from nothing.
+  const quiltedMounted = useMemo((): WindowItem[] => (
+    mode === 'quilted' && !quilted.layout && !quilted.pending
+      ? photos.map((photo, rowIndex) => ({ photoId: photo.id, x: 0, y: 0, width: 0, height: 0, rowIndex }))
+      : NO_ITEMS
+  ), [mode, quilted.layout, quilted.pending, photos]);
+
+  // Rows, flickr and quilted mount only the rows near the viewport in a large
+  // gallery (issues 1733 and 2193); columns mode never has items here.
+  const windowItems = mode === 'rows' ? rowsLayout.items
+    : mode === 'flickr' ? flickrItems
+      : quilted.layout?.items ?? quiltedMounted;
+  const { visible: visibleItems } = useWindowedItems(
+    containerRef,
+    windowItems,
+    containerWidth,
+    mode === 'quilted' ? quilted.windowed : (mode === 'rows' || mode === 'flickr') && largeGallery,
+    mode === 'quilted' ? quiltedCell : targetRowHeight,
+  );
 
   // Distribute photos across columns using greedy "shortest column" algorithm
   // This creates a more balanced masonry layout instead of round-robin
@@ -476,7 +508,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               <div key={photo.id} className="aspect-square bg-border-token rounded-lg animate-pulse" />
             ))}
           </div>
-        ) : visibleRowItems.map((layoutItem) => {
+        ) : visibleItems.map((layoutItem) => {
           const index = photoIndexById.get(layoutItem.photoId);
           if (index === undefined) return null;
           const photo = photos[index];
@@ -547,9 +579,10 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               <div key={photo.id} className="aspect-square bg-border-token rounded-lg animate-pulse" />
             ))}
           </div>
-        ) : photos.map((photo, index) => {
-          const box = flickrLayout.boxes[index];
-          if (!box) return null;
+        ) : visibleItems.map((box) => {
+          const index = photoIndexById.get(box.photoId);
+          if (index === undefined) return null;
+          const photo = photos[index];
 
           return (
             <PhotoCard
@@ -563,8 +596,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               onToggleSelect={() => onPhotoSelect && onPhotoSelect(photo.id)}
               className="photo-card absolute group cursor-pointer transition-all duration-300 hover:z-10"
               style={{
-                left: box.left,
-                top: box.top,
+                left: box.x,
+                top: box.y,
                 width: box.width,
                 height: box.height,
                 // Issue 1733, as in rows mode above.
@@ -606,17 +639,18 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   if (mode === 'quilted') {
     // Determine grid span based on aspect ratio
     const getSpanClasses = (photo: Photo): string => {
-      const width = photo.width || 800;
-      const height = photo.height || 600;
-      const ratio = width / height;
-
-      // Very wide landscape (panoramic) - span 2 columns
-      if (ratio > 1.5) return 'col-span-2';
-      // Very tall portrait - span 2 rows
-      if (ratio < 0.7) return 'row-span-2';
-      // Normal aspect ratio - single cell
+      const span = quiltedSpan(photo);
+      if (span.columns === 2) return 'col-span-2';
+      if (span.rows === 2) return 'row-span-2';
       return '';
     };
+
+    // In list order, as with every tile mounted: the tiles' lines place them,
+    // and this is the order Tab walks them in.
+    const windowedIndices = (): number[] => visibleItems
+      .flatMap((item) => photoIndexById.get(item.photoId) ?? [])
+      .sort((a, b) => a - b);
+    const indices = quilted.pending ? [] : quilted.windowed ? windowedIndices() : photos.map((_, index) => index);
 
     return (
       <div
@@ -628,9 +662,13 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           gridAutoRows: `${quiltedCell}px`,
           gap: `${gutter}px`,
           gridAutoFlow: 'dense', // Fill gaps automatically
+          ...(quilted.windowed && quilted.layout
+            ? { gridTemplateRows: `repeat(${quilted.layout.rowCount}, ${quiltedCell}px)` }
+            : undefined),
         }}
       >
-        {photos.map((photo, index) => {
+        {indices.map((index) => {
+          const photo = photos[index];
           const spanClasses = getSpanClasses(photo);
 
           return (
@@ -647,7 +685,10 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               // Issue 1733: the grid's fixed-height rows and the span classes size
               // the cell, not the image, so the box survives both a skipped
               // tile and a released one. No intrinsic size, as in Grid.
-              style={{ contentVisibility: 'auto' }}
+              style={{
+                contentVisibility: 'auto',
+                ...(quilted.windowed ? quilted.layout?.placements.get(photo.id) : undefined),
+              }}
               lazy
               inViewRootMargin={bands.load}
               releaseRootMargin={bands.keep}

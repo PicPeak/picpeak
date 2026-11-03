@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const { db } = require('../../database/db');
 const { getAppSetting } = require('../../utils/appSettings');
+const { issuerIntlLocale } = require('../../utils/issuerIntlLocale');
 const { AppError } = require('../../utils/errors');
 const { nextDocumentNumber } = require('../../utils/documentSequences');
 const { ensureInt } = require('../../utils/numericHelpers');
@@ -257,10 +258,26 @@ function computeMonthlyCadenceDate(year, month /* 0-based */, cycleDay) {
 // updateInstallmentPlan — atomic post-spawn plan edit
 // ----------------------------------------------------------------------
 
-// Statuses that are still pre-customer (no PDF has gone out the door).
-// Both `scheduled` and `pending_delivery` are reshapable; anything else
+// Statuses that are still pre-customer: not sent, not in the portal, not in
+// the books, unless an older row carries a payment (isInvoiceEditable). These
+// can be edited, reshaped and cancelled without a Storno; anything else
 // belongs to the audit trail and can't be silently mutated.
-const EDITABLE_INSTALLMENT_STATUSES = new Set(['scheduled', 'pending_delivery']);
+const UNISSUED_INVOICE_STATUSES = new Set(['scheduled', 'pending_delivery']);
+
+// Rows from before recordPayment refused `pending_delivery` can carry a
+// payment. Those are corrected through Storno, as they always were.
+function isInvoiceEditable(invoice) {
+  return invoice.status === 'scheduled'
+    || (invoice.status === 'pending_delivery' && !(Number(invoice.paid_amount_minor) > 0));
+}
+
+// The same rule for queries: such an older row is issued, so it stays in the
+// portal and the books. Pass a builder already holding the status filter.
+function orPaidAwaitingDelivery(query) {
+  return query.orWhere((paid) => paid
+    .where('invoices.status', 'pending_delivery')
+    .where('invoices.paid_amount_minor', '>', 0));
+}
 
 const VALID_INSTALLMENT_TRIGGERS = new Set([
   'quote_accepted', 'before_event', 'after_event', 'after_delivery', 'fixed_date',
@@ -278,9 +295,10 @@ async function resolveIntlLocale(docLocale) {
   try {
     const businessProfileService = require('../businessProfileService');
     const profile = (await businessProfileService.getProfile()).profile || {};
-    const cc = (profile.country_code || '').toUpperCase();
-    if (['CH', 'LI', 'DE', 'AT'].includes(cc)) {
-      _cachedIntlLocale = 'de-CH';
+    // DACH businesses write 1'000.00, a US business $1,000.00.
+    const fixed = issuerIntlLocale(profile.country_code);
+    if (fixed) {
+      _cachedIntlLocale = fixed;
       return _cachedIntlLocale;
     }
   } catch (_) { /* fall through to per-locale default */ }
@@ -316,7 +334,9 @@ module.exports = {
   resolveDealUuid,
   snapToNextBillingCycle,
   computeMonthlyCadenceDate,
-  EDITABLE_INSTALLMENT_STATUSES,
+  UNISSUED_INVOICE_STATUSES,
+  isInvoiceEditable,
+  orPaidAwaitingDelivery,
   VALID_INSTALLMENT_TRIGGERS,
   resolveIntlLocale,
   formatMajor,

@@ -104,6 +104,8 @@ import { PhotoSalesPromoBanner } from '../../features/photo-sales/PhotoSalesProm
 import type { Photo } from '../../types';
 import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
 import { useQueryClient } from '@tanstack/react-query';
+import { FavoriteListsContext, favoriteRowInList, useFavoriteListsState } from '../../contexts/FavoriteListsContext';
+import { FavoriteListsDialog } from './FavoriteListsDialog';
 
 interface GalleryViewProps {
   slug: string;
@@ -434,12 +436,14 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   const { data: settingsData } = usePublicSettings();
 
-  // Photo sales: priced galleries get the Snipcart bootstrap
+  // Photo sales: priced galleries get the PicPeak cart
   // and buy buttons; non-priced galleries never load any of it.
   const photoSalesValue = useMemo(() => buildPhotoSalesConfig({
     slug,
-    event: (data?.event as unknown) as Parameters<typeof buildPhotoSalesConfig>[0]['event'],
-    apiKey: (settingsData as { snipcart_api_key?: string | null } | undefined)?.snipcart_api_key ?? null,
+    event: data?.event,
+    checkoutConfigured: settingsData?.photo_sales_checkout_configured === true,
+    providers: settingsData?.photo_sales_providers,
+    snipcartPublicKey: settingsData?.snipcart_api_key,
   }), [slug, data?.event, settingsData]);
 
   // Fetch feedback settings
@@ -653,13 +657,21 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const selectionCounterOn = !!selectionState?.selection.counter;
   useSelectionPickRefresh(slug, !!selectionState);
 
+  // Named favourite lists (issue 2303). With them on, "Saved" is the viewer's
+  // own active list in every identity mode, read from /my-feedback; off,
+  // null, and everything below reads as it did before lists.
+  const favoriteLists = useFavoriteListsState(slug, !!feedbackSettings?.feedback_enabled
+    && !!feedbackSettings?.allow_favorites && !!feedbackSettings?.allow_favorite_lists);
+  const savedIsOwn = isGuestIdentityMode || !!favoriteLists;
+
   const { data: myFeedbackRows } = useQuery<Array<{
     photo_id: number;
     feedback_type: 'like' | 'favorite' | 'rating' | 'comment';
+    favorite_list_id?: number | null;
   }>>({
     queryKey: ['my-feedback', slug],
     queryFn: () => feedbackService.getMyFeedback(slug),
-    enabled: (isGuestIdentityMode || selectionCounterOn) && !!slug,
+    enabled: (isGuestIdentityMode || selectionCounterOn || !!favoriteLists) && !!slug,
     staleTime: 30 * 1000,
   });
 
@@ -683,14 +695,18 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       commented: new Set<number>(),
     };
     if (!myFeedbackRows) return sets;
+    const activeListId = favoriteLists ? favoriteLists.activeListId : undefined;
     for (const row of myFeedbackRows) {
       if (row.feedback_type === 'like') sets.liked.add(row.photo_id);
-      else if (row.feedback_type === 'favorite') sets.favorited.add(row.photo_id);
+      else if (row.feedback_type === 'favorite') {
+        // With lists, the active list only (issue 2303).
+        if (favoriteRowInList(row.favorite_list_id, activeListId)) sets.favorited.add(row.photo_id);
+      }
       else if (row.feedback_type === 'rating') sets.rated.add(row.photo_id);
       else if (row.feedback_type === 'comment') sets.commented.add(row.photo_id);
     }
     return sets;
-  }, [myFeedbackRows]);
+  }, [myFeedbackRows, favoriteLists]);
 
   // Apply branding settings
   useEffect(() => {
@@ -971,6 +987,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // Only while tagging is on for the gallery: the chips hide with it.
     selectedTagKeys: tagsEnabled ? selectedTagKeys : undefined,
     likedIsOwn: favouritesAreLikes,
+    favoritedIsOwn: savedIsOwn,
     videosFirst,
   });
   // `scopedPhotos` is the same scope with every search and filter off: tells
@@ -1054,11 +1071,11 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   }, [scopedPhotos, isGuestIdentityMode, myFeedbackPhotoIds]);
 
   const favoriteCount = useMemo(() => {
-    if (isGuestIdentityMode) {
+    if (savedIsOwn) {
       return scopedPhotos.filter(p => myFeedbackPhotoIds.favorited.has(p.id)).length;
     }
     return scopedPhotos.filter(p => (p.favorite_count ?? 0) > 0).length;
-  }, [scopedPhotos, isGuestIdentityMode, myFeedbackPhotoIds]);
+  }, [scopedPhotos, savedIsOwn, myFeedbackPhotoIds]);
 
   const ratedCount = useMemo(() => {
     if (isGuestIdentityMode) {
@@ -1146,9 +1163,9 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   // Photo sales: a priced gallery delivers everything
   // through the checkout: every download affordance (header, sidebar,
-  // tiles, lightbox, layout nav) is switched off and a Snipcart cart
+  // tiles, lightbox, layout nav) is switched off and a purchase cart
   // button takes the header slot instead.
-  const salesCheckoutReady = photoSalesValue.enabled && !!photoSalesValue.apiKey;
+  const salesCheckoutReady = photoSalesValue.checkoutReady;
   if (salesCheckoutReady && allowDownloads) allowDownloads = false;
 
   // Guest uploads: the refetched /photos payload decides once it is here. The
@@ -1223,7 +1240,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     selectedPhotos,
     (photo) => isFilenameListFavourite(photo, {
       likeBacked: favouritesAreLikes,
-      guestIdentity: isGuestIdentityMode,
+      guestIdentity: savedIsOwn,
       myLiked: myFeedbackPhotoIds.liked,
       myFavorited: myFeedbackPhotoIds.favorited,
       // The identity mode is known only from a successful load: the public
@@ -1234,7 +1251,7 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       settingsResolved: feedbackSettings?.identity_mode !== undefined,
     }),
     isSelectionMode,
-  ), [data?.photos, neutralPhotoLabels, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes, feedbackSettings]);
+  ), [data?.photos, neutralPhotoLabels, selectedPhotos, isSelectionMode, savedIsOwn, myFeedbackPhotoIds, favouritesAreLikes, feedbackSettings]);
 
   const handleDownloadAll = () => {
     // Prevent downloads if gallery is expired or downloads disabled
@@ -1523,8 +1540,11 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const withDownloadProviders = (children: React.ReactNode) => (
     <DownloadQuotaProvider slug={slug} event={data?.event}>
       <PhotoDownloadChoiceProvider {...downloadChoiceProps}>
-        <ArchiveDownloadDialog available={downloadsAvailable} />
-        {children}
+        <FavoriteListsContext.Provider value={favoriteLists}>
+          <ArchiveDownloadDialog available={downloadsAvailable} />
+          <FavoriteListsDialog />
+          {children}
+        </FavoriteListsContext.Provider>
       </PhotoDownloadChoiceProvider>
     </DownloadQuotaProvider>
   );
@@ -1821,10 +1841,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
         <GuestRecoveryModal />
         <PhotoSalesProvider
+          photos={data?.photos}
           value={{
             ...photoSalesValue,
-            photos: (data?.photos || []) as Array<{ id: number; uploaded_at?: string | null }>,
-            checkoutReady: photoSalesValue.enabled && !!photoSalesValue.apiKey,
+            checkoutReady: photoSalesValue.checkoutReady,
           }}
         >
 
@@ -2065,10 +2085,10 @@ const GalleryViewContent: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       <PhotoLabelsProvider neutral={neutralPhotoLabels} photos={filteredPhotos}>
       <GridDensityOffered.Provider value={densityOffered}>
       <PhotoSalesProvider
+        photos={data?.photos}
         value={{
           ...photoSalesValue,
-          photos: (data?.photos || []) as Array<{ id: number; uploaded_at?: string | null }>,
-          checkoutReady: photoSalesValue.enabled && !!photoSalesValue.apiKey,
+          checkoutReady: photoSalesValue.checkoutReady,
         }}
       >
 

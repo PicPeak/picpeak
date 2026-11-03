@@ -121,7 +121,8 @@ export const DocumentLineageCard: React.FC<DocumentLineageCardProps> = ({
   const hasMultiInstallment = invoices.some((i) => (i.installmentTotal || 0) > 1);
   const allInvoicesEditable = invoices.length > 0
     && invoices.every((i) => i.invoiceKind !== 'storno'
-      && EDITABLE_PLAN_STATUSES.has(i.status));
+      && EDITABLE_PLAN_STATUSES.has(i.status)
+      && (i.status === 'scheduled' || !Number(i.paidAmountMinor)));
   const canEditPlan = hasMultiInstallment && allInvoicesEditable;
   // Only ONE doc total = the current one. No siblings to surface.
   if (totalCount <= 1) {
