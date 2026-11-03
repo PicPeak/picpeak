@@ -66,6 +66,8 @@ vi.mock('react-photo-album', () => ({
     <React.Fragment key={photo.key}>{renderer.photo({}, { photo, index, width: 300, height: 200 })}</React.Fragment>
   )}</>,
 }));
+// These galleries are large enough to be windowed, which needs a layout engine.
+vi.mock('../layouts/PremiumWindowedAlbum', () => ({ PremiumWindowedAlbum: () => null }));
 vi.mock('yet-another-react-lightbox', () => ({ default: () => null }));
 vi.mock('yet-another-react-lightbox/plugins/thumbnails', () => ({ default: () => null }));
 vi.mock('yet-another-react-lightbox/plugins/zoom', () => ({ default: () => null }));
