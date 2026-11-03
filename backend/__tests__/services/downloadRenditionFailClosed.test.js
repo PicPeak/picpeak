@@ -5,6 +5,9 @@
  * renderPhotoForDownload must come back as an image inside it, never as the
  * original. resizeToBox returns its input for HEIC/AVIF, camera RAW and any
  * source it fails on, and renderPhotoForDownload used to pass that through.
+ *
+ * The same for the watermark: applyWatermark returns the clean input when it
+ * fails, unless asked to fail closed, and the download path did not ask.
  */
 const fs = require('fs');
 const os = require('os');
@@ -42,9 +45,13 @@ jest.mock('../../src/services/imageProcessor', () => {
   };
 });
 
+const watermarkService = require('../../src/services/watermarkService');
 const { renderPhotoForDownload } = require('../../src/services/downloadRendition');
 
 const BOX = { width: 800, height: 600 };
+const WATERMARK = {
+  enabled: true, position: 'bottom-right', opacity: 50, size: 15, companyName: 'PicPeak',
+};
 
 let dir;
 const write = (name, bytes) => {
@@ -117,5 +124,41 @@ describe('the download cap', () => {
   test('ships the stored bytes when there is no cap and no watermark', async () => {
     const photo = write('IMG_0003.CR2', Buffer.from('not really a raw'));
     expect(await renderPhotoForDownload({}, photo, null, null)).toBeNull();
+  });
+});
+
+describe('the download watermark', () => {
+  // A failure inside applyWatermark's own try, the shape that used to hand
+  // the clean input back.
+  const breakTheMark = () => jest.spyOn(watermarkService, 'getPositionCoordinates')
+    .mockImplementation(() => { throw new Error('composite failed'); });
+
+  test('fails closed on an original-size download', async () => {
+    const photo = write('mark.jpg', await solid(1200, 800).jpeg().toBuffer());
+    breakTheMark();
+    await expect(renderPhotoForDownload({}, photo, null, WATERMARK)).rejects.toThrow('composite failed');
+  });
+
+  test('fails closed on a resized download', async () => {
+    const photo = write('mark-big.jpg', await solid(2400, 1600).jpeg().toBuffer());
+    breakTheMark();
+    await expect(renderPhotoForDownload({}, photo, BOX, WATERMARK)).rejects.toThrow('composite failed');
+  });
+
+  test('marks a RAW on its embedded preview rather than refusing it', async () => {
+    const preview = path.join(dir, 'raw-preview.jpg');
+    fs.writeFileSync(preview, await solid(1200, 800).jpeg().toBuffer());
+    mockRawStandIn.path = preview;
+    const photo = write('IMG_0004.ARW', Buffer.from('not really a raw'));
+    const out = await renderPhotoForDownload({}, photo, null, WATERMARK);
+    expect((await sharp(out).metadata()).format).toBe('jpeg');
+  });
+
+  test('still marks a healthy photo', async () => {
+    const source = await solid(1200, 800).jpeg().toBuffer();
+    const photo = write('mark-ok.jpg', source);
+    const out = await renderPhotoForDownload({}, photo, null, WATERMARK);
+    expect(Buffer.isBuffer(out)).toBe(true);
+    expect(out.equals(source)).toBe(false);
   });
 });
