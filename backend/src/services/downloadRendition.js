@@ -15,7 +15,10 @@
  */
 
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
-const { withLocalCopy, resizeToBox } = require('./imageProcessor');
+const {
+  withLocalCopy, resizeToBox, withProcessableImage, orientedDimensions, isRawFilename,
+} = require('./imageProcessor');
+const sharp = require('./isolatedSharp');
 const watermarkService = require('./watermarkService');
 const { getStorage } = require('./storage');
 const fs = require('fs');
@@ -26,6 +29,49 @@ const { sniffImageType, ALLOWED_IMAGE_TYPES } = require('../utils/fileSecurityUt
 function isVideo(photo) {
   return photo.media_type === 'video'
     || (photo.mime_type && String(photo.mime_type).startsWith('video/'));
+}
+
+/**
+ * Whether the image in `buffer` is no larger than `box`, as displayed: a
+ * still by its oriented dimensions, an animation by one frame (its height
+ * spans every frame, and resizeToBox never rotates one).
+ */
+async function fitsBox(buffer, box) {
+  try {
+    const metadata = await sharp(buffer, { failOn: 'none' }).metadata();
+    const { width, height } = (metadata.pages || 1) > 1
+      ? { width: metadata.width, height: metadata.pageHeight || metadata.height }
+      : orientedDimensions(metadata);
+    return !!(width && height && width <= box.width && height <= box.height);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The photo at most `box` large. The box is the gallery's download cap, so
+ * the original must never stand in for it: resizeToBox hands back its input
+ * for HEIC/AVIF (it cannot encode them in kind), for camera RAW, and for any
+ * source it fails on. Those go out as a JPEG inside the box, made from what
+ * sharp can read (the embedded preview of a RAW, a decoded HEVC HEIC), and a
+ * source that cannot be read at all is refused.
+ */
+async function capToBox(localPath, box, sourceName) {
+  if (!isRawFilename(sourceName)) {
+    const resized = await resizeToBox(await fs.promises.readFile(localPath), box);
+    if (await fitsBox(resized, box)) return resized;
+  }
+  const proc = await withProcessableImage(localPath, sourceName);
+  try {
+    return await sharp(proc.path, { limitInputPixels: 268402689, failOn: 'none' })
+      .rotate()
+      .resize(box.width, box.height, { fit: 'inside', withoutEnlargement: true })
+      .keepMetadata()
+      .jpeg({ quality: 90, mozjpeg: true })
+      .toBuffer();
+  } finally {
+    await proc.cleanup();
+  }
 }
 
 /**
@@ -42,6 +88,8 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
 
   const storageKey = resolvePhotoStorageKey(event, photo);
 
+  const sourceName = photo.original_filename || photo.filename;
+
   const transform = async (localPath) => {
     // No resize → hand applyWatermark the PATH. Buffer inputs intentionally
     // bypass its cache, so buffering here would re-run sharp over the
@@ -51,7 +99,7 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
       // 1649); the gallery-view rendition the same function makes does not.
       return watermarkService.applyWatermark(localPath, watermarkSettings, { keepMetadata: true });
     }
-    const buffer = await resizeToBox(await fs.promises.readFile(localPath), box);
+    const buffer = await capToBox(localPath, box, sourceName);
     return wantsWatermark
       ? watermarkService.applyWatermark(buffer, watermarkSettings, { keepMetadata: true })
       : buffer;

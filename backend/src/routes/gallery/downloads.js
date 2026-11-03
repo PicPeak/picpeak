@@ -702,7 +702,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         // full-resolution files for exactly those cases.
         const rendered = await renderPhotoForDownload(req.event, photo, bulkBox, effectiveSettings);
         if (rendered) {
-          archive.append(rendered, { name: archiveName });
+          // A capped HEIC/AVIF/RAW comes back as JPEG: name it so.
+          archive.append(rendered, { name: renderedDownloadType(rendered, photo, archiveName).name });
         } else if (storageKey) {
           if (!await guard.acquire()) break;
           const stream = await storage.get(storageKey);
@@ -902,7 +903,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         // storage rather than buffering the whole photo.
         const rendered = await renderPhotoForDownload(req.event, photo, selectedBox, effectiveSettings);
         if (rendered) {
-          archive.append(rendered, { name });
+          archive.append(rendered, { name: renderedDownloadType(rendered, photo, name).name });
         } else if (storageKey) {
           if (!await selectedGuard.acquire()) break;
           const stream = await selectedStorage.get(storageKey);

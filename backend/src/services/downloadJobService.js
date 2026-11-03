@@ -30,7 +30,7 @@ const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
-const { renderPhotoForDownload, resolveWatermarkSettings } = require('./downloadRendition');
+const { renderPhotoForDownload, renderedDownloadType, resolveWatermarkSettings } = require('./downloadRendition');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { parseResolution } = require('../utils/downloadResolutions');
 const { applyPhotoVisibilityFilter, canSeeHiddenPhotos } = require('../utils/photoVisibility');
@@ -338,7 +338,7 @@ class DownloadJobService {
             try {
               const rendered = await renderPhotoForDownload(event, photo, box, watermarkSettings);
               if (rendered) {
-                archive.append(rendered, { name });
+                archive.append(rendered, { name: renderedDownloadType(rendered, photo, name).name });
               } else {
                 const key = resolvePhotoStorageKey(event, photo);
                 if (key) {

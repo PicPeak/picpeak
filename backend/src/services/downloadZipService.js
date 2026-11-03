@@ -24,7 +24,7 @@ const watermarkService = require('./watermarkService');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getStorage } = require('./storage');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
-const { renderPhotoForDownload } = require('./downloadRendition');
+const { renderPhotoForDownload, renderedDownloadType } = require('./downloadRendition');
 const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const logger = require('../utils/logger');
 
@@ -413,7 +413,8 @@ class DownloadZipService {
             }
 
             if (rendered) {
-              archive.append(rendered, { name: archiveName });
+              // A capped HEIC/AVIF/RAW comes back as JPEG: name it so.
+              archive.append(rendered, { name: renderedDownloadType(rendered, photo, archiveName).name });
             } else if (storageKey) {
               await waitForReadSlot();
               if (cancelled) return;
