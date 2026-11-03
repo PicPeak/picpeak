@@ -551,6 +551,7 @@ describe('Masonry quilted grid', () => {
     ['flex', { display: 'flex' }],
     ['the row height', { gridAutoRows: '320px' }],
     ['the gap', { rowGap: '40px' }],
+    ['the rows', { gridTemplateRows: '400px 400px' }],
   ])('mounts every tile, unpinned, when a template forces %s', (_name, override) => {
     forced = override;
     render(<MasonryGalleryLayout {...layoutProps(makePhotos(2000))} />);
