@@ -329,13 +329,15 @@ async function sendInvitation(contract, row, token, template = 'contract_sent') 
   // Asking for details carries nothing of the contract: no title, no PDF, no
   // attachment — it isn't frozen yet, and the link is not verified yet.
   const asksForDetails = contract.status === 'awaiting_data';
+  // The business's country picks the date order (MM/DD/YYYY in the US).
+  const profile = await db('business_profile').where({ id: 1 }).first('country_code');
   await emailProcessor.queueEmail(null, to, asksForDetails ? 'contract_data_request' : template, {
     contract_number: contract.contract_number,
     customer_name: signerName(row),
     response_url: `${frontendUrl}/contract/${token}`,
     title: asksForDetails ? '' : (contract.title || ''),
     event_name: asksForDetails ? '' : (contract.event_name || ''),
-    valid_until: formatShortDate(contract.valid_until),
+    valid_until: formatShortDate(contract.valid_until, profile && profile.country_code),
     attachments: asksForDetails ? undefined : await invitationAttachments(contract),
   }, { customerAccountId: contract.customer_account_id });
 }

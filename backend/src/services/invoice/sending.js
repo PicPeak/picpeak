@@ -519,7 +519,7 @@ async function sendStornoOnce(stornoId, adminId) {
   await emailProcessor.queueEmail(storno.event_id || null, stornoTo, 'storno_issued', {
     storno_number: storno.invoice_number,
     original_invoice_number: originalRow?.invoice_number || '',
-    original_issue_date: originalRow?.issue_date ? formatShortDate(originalRow.issue_date) : '',
+    original_issue_date: originalRow?.issue_date ? formatShortDate(originalRow.issue_date, ctx.issuer?.countryCode) : '',
     customer_name: customer.display_name || customer.first_name || customer.email.split('@')[0],
     total_amount: formatMajor(Math.abs(storno.total_amount_minor), storno.currency, ctx.locale),
     // Match the customer's language (as with the ctx.locale-formatted amount).

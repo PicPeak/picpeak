@@ -277,7 +277,7 @@ async function queueInvoicePaidAdminNotification({
       paid_amount: formatMajor(paidTotalMinor, invoice.currency, locale),
       payment_method: paymentMethod || '',
       payment_reference: paymentReference || '',
-      paid_at: formatShortDate(paidAt),
+      paid_at: formatShortDate(paidAt, profile?.country_code),
       skonto_applied: !!skontoApplied,
       skonto_percent: skontoApplied && skontoPercent ? skontoPercent : '',
       skonto_discount_amount: skontoApplied
@@ -585,7 +585,7 @@ async function notifyAdminOfPaymentCheckAction({ invoice, action, amountMinor, i
       amount: amountMinor ? formatMajor(ensureInt(amountMinor), invoice.currency, locale) : '',
       has_amount: !!amountMinor,
       ip: ip || 'unknown',
-      recorded_at: formatShortDate(new Date()),
+      recorded_at: formatShortDate(new Date(), profile?.country_code),
     });
 }
 
