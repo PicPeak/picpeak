@@ -83,6 +83,14 @@ export const notificationsService = {
         });
       case 'album_product_submitted':
         return t('admin.notificationMessages.productChoiceSubmitted', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName, choice: notification.metadata.choice });
+      case 'album_product_reopened':
+        return t('admin.notificationMessages.productChoiceReopened', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName });
+      case 'album_product_unlocked':
+        return t('admin.notificationMessages.productChoiceUnlocked', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName });
+      case 'album_product_released':
+        return t('admin.notificationMessages.productReleased', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName });
+      case 'album_product_withdrawn':
+        return t('admin.notificationMessages.productWithdrawn', { eventName: notification.eventName || notification.metadata.eventName, productName: notification.metadata.productName });
       case 'photo_deleted':
         return t('admin.notificationMessages.photoDeleted', { eventName: notification.eventName });
       case 'photos_bulk_deleted':

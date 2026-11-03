@@ -1224,6 +1224,41 @@ test('gallery lock freezes current CRM pricing once, price display defaults off,
     await db('product_billable_items').where({ offer_id: offer.id }),
   ).toHaveLength(0);
 });
+test('a customer\'s offer bills that customer in a gallery several customers share', async () => {
+  const f = await billableFixture();
+  const other = await db('customer_accounts')
+    .insert({ email: `${uuid()}@example.test`, display_name: 'Other', is_active: true })
+    .returning('id');
+  await db('event_customer_assignments').insert({
+    event_id: f.event.id,
+    customer_account_id: other[0]?.id ?? other[0],
+  });
+  await db('event_album_products')
+    .where({ id: f.offer.id })
+    .update({ released_customer_id: customerId });
+  await f.change('lock');
+  const [item] = await db('product_billable_items').where({ offer_id: f.offer.id });
+  expect(Number(item.customer_account_id)).toBe(customerId);
+});
+test('reopening a confirmed album removes its open item, and a billed one needs the invoice corrected first', async () => {
+  const f = await billableFixture();
+  const row = await db('event_album_products').where({ id: f.offer.id }).first();
+  await db('event_album_products')
+    .where({ id: f.offer.id })
+    .update({ selection: JSON.stringify({ ...parsed(row.selection), clientFinal: true }) });
+  await f.change('lock');
+  expect(await db('product_billable_items').where({ offer_id: f.offer.id })).toHaveLength(1);
+  await f.change('reopen');
+  expect(f.offer.status).toBe('draft');
+  expect(await db('product_billable_items').where({ offer_id: f.offer.id })).toHaveLength(0);
+  await db('event_album_products')
+    .where({ id: f.offer.id })
+    .update({ status: 'submitted' });
+  await f.change('lock');
+  await require('../../src/services/albumProducts/billing').billEvent(db, f.event.id, adminId, null, customerId);
+  await expect(f.change('reopen')).rejects.toMatchObject({ code: 'PRODUCT_ALREADY_BILLED' });
+  expect((await db('event_album_products').where({ id: f.offer.id }).first()).status).toBe('locked');
+});
 test('open gallery products create a product-only invoice; issued invoices stay unchanged and Storno is required for a change', async () => {
   const f = await billableFixture({ project: true });
   const invoices = require('../../src/services/invoiceService');

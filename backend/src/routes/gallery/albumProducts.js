@@ -16,6 +16,12 @@ const service = () =>
 const customerContactsService = require('../../services/customerContactsService');
 
 const router = express.Router();
+// A portal session keeps its customer through a PIN role change; a plain PIN
+// session names nobody, which is what keeps it off a customer's offer.
+const viewerOf = (req) => ({
+  preview: !!req.isAdminPreview,
+  customerId: req.viaCustomer ? req.galleryAccess.session.customerId : null,
+});
 router.use(
   '/:slug/album-products',
   verifyGalleryAccess,
@@ -32,7 +38,7 @@ router.use(
 router.get(
   '/:slug/album-products',
   handleAsync(async (req, res) => {
-    const offers = await service().clientOffers(req.event.id);
+    const offers = await service().clientOffers(req.event.id, viewerOf(req));
     const readOnly = !!req.viaCustomer
       && !(await customerContactsService.sessionMayAct(req.galleryAccess?.session, 'galleries'));
     res.json({ offers: offers.map((offer) => ({ ...offer, readOnly })) });
@@ -43,7 +49,7 @@ router.get(
   param('imageId').isUUID(),
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const image = await service().clientImage(req.event.id, req.params.imageId);
+    const image = await service().clientImage(req.event.id, req.params.imageId, viewerOf(req));
     res.type('png');
     pipeStreamToResponse(
       await require('../../services/storage')
@@ -70,8 +76,9 @@ router.put(
   body('modelId').optional().isUUID(),
   body('colourId').optional().isUUID(),
   body('values').optional().isObject(),
+  body('photoRoles').optional().isObject(),
   body('productVersion').isHexadecimal().isLength({ min: 64, max: 64 }),
-  body('name').isString().trim().isLength({ min: 1, max: 100 }),
+  body('name').optional().isString().trim().isLength({ min: 1, max: 100 }),
   body('submit').isBoolean(),
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -101,17 +108,23 @@ router.put(
           values: req.body.values,
           modelId: req.body.modelId,
           colourId: req.body.colourId,
+          photoRoles: req.body.photoRoles,
           submit: req.body.submit,
         },
         {
           type: 'client',
           id,
-          name: require('../../services/albumProducts/validation').text(
-            req.body.name,
-            100,
-            true,
-          ),
+          customerId: viewerOf(req).customerId,
+          name:
+            req.body.name === undefined
+              ? null
+              : require('../../services/albumProducts/validation').text(
+                req.body.name,
+                100,
+                true,
+              ),
         },
+        { viewer: viewerOf(req) },
       ),
     );
   }),

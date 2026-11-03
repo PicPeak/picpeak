@@ -42,6 +42,33 @@ const hash = (value) =>
         : JSON.stringify(value),
     )
     .digest('hex');
+// The studio sets the counts; which roles exist is fixed, so that a summary,
+// a notification and the client's words for them stay meaningful.
+const PHOTO_ROLES = [
+  { key: 'cover', maxLimit: 1 },
+  { key: 'poster', maxLimit: 10 },
+];
+function guided(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    fail('Invalid guided album settings');
+  const roles = Array.isArray(value.photoRoles) ? value.photoRoles : [];
+  return {
+    clientFinal: value.clientFinal === true,
+    photoRoles: PHOTO_ROLES.map(({ key, maxLimit }) => {
+      const role = roles.find((r) => r?.key === key);
+      if (
+        !role ||
+        !Number.isSafeInteger(role.min) ||
+        !Number.isSafeInteger(role.max) ||
+        role.min < 0 ||
+        role.min > role.max ||
+        role.max > maxLimit
+      )
+        fail('Photo counts must run from a minimum to a maximum the role allows');
+      return { key, min: role.min, max: role.max };
+    }),
+  };
+}
 /** Only the documented shape reaches persisted catalogue data. */
 function products(value) {
   if (!Array.isArray(value) || value.length > 20)
@@ -63,7 +90,11 @@ function products(value) {
         description: text(p.description || '', 1000),
         active: p.active === true,
         typeId: uuid(p.typeId),
+        // Only when set: the hash of a product without them must not change.
+        ...(p.heroImageId ? { heroImageId: uuid(p.heroImageId) } : {}),
+        ...(p.guided ? { guided: guided(p.guided) } : {}),
       };
+    if (p.guided) fail('A guided album needs a product type');
     const out = {
       id: identify(p.id),
       name: text(p.name, 100, true),

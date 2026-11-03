@@ -118,6 +118,13 @@ events.get(
     res.json({
       catalogue: await service().catalogue(),
       offers: await service().offers(Number(req.params.eventId)),
+      customers: (
+        await db('event_customer_assignments as a')
+          .join('customer_accounts as c', 'c.id', 'a.customer_account_id')
+          .where('a.event_id', Number(req.params.eventId))
+          .orderBy('c.id')
+          .select('c.id', 'c.display_name', 'c.email')
+      ).map((c) => ({ id: c.id, name: c.display_name || c.email })),
     }),
   ),
 );
@@ -170,6 +177,7 @@ events.post(
   '/offers',
   requirePermission('products.configure'),
   body('productId').isUUID(),
+  body('customerId').optional({ nullable: true }).isInt({ min: 1 }),
   handleAsync(async (req, res) => {
     validateRequest(req);
     if (
@@ -181,7 +189,11 @@ events.post(
     res
       .status(201)
       .json(
-        await service().assign(Number(req.params.eventId), req.body.productId),
+        await service().assign(
+          Number(req.params.eventId),
+          req.body.productId,
+          req.body.customerId == null ? null : Number(req.body.customerId),
+        ),
       );
   }),
 );
@@ -206,6 +218,7 @@ events.put(
     if (
       req.body.action === 'lock' ||
       req.body.action === 'unlock' ||
+      req.body.action === 'reopen' ||
       req.body.cataloguePresetId !== undefined ||
       req.body.showPrices !== undefined ||
       req.body.customerId !== undefined
@@ -238,6 +251,7 @@ events.put(
           cataloguePresetId: req.body.cataloguePresetId,
           showPrices: req.body.showPrices,
           customerId: req.body.customerId,
+          releasedCustomerId: req.body.releasedCustomerId,
         },
         { type: 'admin', id: req.admin.id, name: req.admin.username },
         { admin: true },

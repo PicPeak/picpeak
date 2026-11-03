@@ -22,6 +22,7 @@ const customerDocumentsService = require('./customerDocumentsService');
 const { hasRight } = require('./customerContactsService');
 const { followSlugRedirect } = require('./slugRedirects');
 const { orPaidAwaitingDelivery } = require('./invoice/helpers');
+const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 
 const isTrue = (v) => v === true || v === 1 || v === '1';
 const pad = (n) => String(n).padStart(2, '0');
@@ -64,6 +65,43 @@ function shapeEvent(e) {
 }
 
 const money = (v) => Number(v) || 0;
+
+/**
+ * The product offers released to this customer in one gallery (issue 2320),
+ * through the same rule the gallery applies, so the portal never links to an
+ * offer the gallery would refuse.
+ */
+async function productOffersFor(customerId, eventId) {
+  if (!(await isFeatureEnabled('albumProducts'))) return [];
+  const offers = await require('./albumProducts/service').application()
+    .clientOffers(eventId, { customerId });
+  return offers.map((o) => {
+    // A reopened offer keeps its selection, `clientFinal` included.
+    const confirmed = o.status === 'locked' || (o.status === 'submitted' && !!o.selection?.clientFinal);
+    return {
+      id: o.id,
+      name: o.selection?.product?.name || o.product?.name || null,
+      status: o.status,
+      confirmed,
+      // As in the gallery: a confirmed album stays one whatever the catalogue does.
+      guided: o.product && !confirmed ? !!o.product.guided : !!o.product?.guided || !!o.selection?.photoRoles,
+    };
+  });
+}
+
+/** Galleries with a released guided album the customer has not confirmed yet. */
+async function albumsAwaitingCustomer(customerId, galleries) {
+  const out = [];
+  for (const gallery of galleries) {
+    const offers = (await productOffersFor(customerId, gallery.id)).filter((o) => o.guided);
+    if (!offers.length || offers.some((o) => o.confirmed || o.status !== 'draft')) continue;
+    out.push({
+      eventName: gallery.eventName,
+      link: `/customer/events/${encodeURIComponent(gallery.slug)}`,
+    });
+  }
+  return out;
+}
 
 async function needsActionFor(customerId, features, session = null) {
   const today = todayDateOnly();
@@ -284,7 +322,13 @@ async function getDashboard(customerId, session = null) {
     ? (await customerAccountsService.listEventsForCustomer(customerId)).map(shapeEvent)
     : [];
   return {
-    needsAction: await needsActionFor(customerId, features, session),
+    needsAction: {
+      ...await needsActionFor(customerId, features, session),
+      // A login without the right to act on galleries has no album to confirm.
+      albums: !session || hasRight(session.rights, 'galleries', 'act')
+        ? await albumsAwaitingCustomer(customerId, events.filter((e) => e.availability === 'active'))
+        : [],
+    },
     recent: await recentFor(customerId, features, 10, { galleries }),
     galleries: {
       active: events.filter((e) => e.availability !== 'expired'),
@@ -441,6 +485,7 @@ async function getEventOverview(customerId, slug, session = null) {
     contracts,
     invoices,
     documents: mayActOnDocuments ? documents : documents.map((doc) => ({ ...doc, canDelete: false })),
+    productOffers: await productOffersFor(customerId, event.id),
   };
 }
 

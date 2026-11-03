@@ -987,6 +987,8 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
  *   - Set `is_active=false` and bump `password_changed_at` so any
  *     outstanding tokens die immediately.
  *   - Delete pending invitations + reset tokens for this customer.
+ *   - Clear the names and session digests in this customer's product choice
+ *     history and withdraw their offers (albumProducts/retention.js).
  *   - Redact every contract nobody signed (cancelling a draft or sent one),
  *     and revoke every live signing link and session on the signed ones
  *     (contract/erasure.js).
@@ -1492,6 +1494,9 @@ async function eraseCustomer(id, erasedByAdminId) {
     // can be one, and an anonymised row that still counted as a member would
     // keep its groups undeletable.
     await trx('customer_group_members').where('customer_account_id', id).del();
+
+    // The name a client typed on a product choice (issue 2320).
+    await require('./albumProducts/retention').forgetCustomer(trx, id);
 
     // Gift notes are free text about the person. The rows stay, without a
     // name, so the stock count behind them keeps adding up.
