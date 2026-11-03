@@ -308,9 +308,11 @@ class WatermarkService {
       // global company name.
       const label = this.watermarkLabel(settings);
 
-      // Nothing to draw (no usable logo, no text) is not a failed
-      // watermark: fail-closed callers must not turn it into an error.
+      // Nothing to draw (no logo, no text) is not a failed watermark:
+      // fail-closed callers must not turn it into an error. A logo that is set
+      // but cannot be drawn is one.
       if (!watermarkBuffer && !label) {
+        if (failClosed && settings.logoPath) throw new Error('The watermark logo could not be applied');
         return isBuffer ? imagePath : await fs.readFile(imagePath);
       }
 

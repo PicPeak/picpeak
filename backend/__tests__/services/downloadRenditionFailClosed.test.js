@@ -46,7 +46,7 @@ jest.mock('../../src/services/imageProcessor', () => {
 });
 
 const watermarkService = require('../../src/services/watermarkService');
-const { renderPhotoForDownload } = require('../../src/services/downloadRendition');
+const { renderPhotoForDownload, resolveWatermarkSettings } = require('../../src/services/downloadRendition');
 
 const BOX = { width: 800, height: 600 };
 const WATERMARK = {
@@ -160,6 +160,24 @@ describe('the download watermark', () => {
     video.mime_type = 'video/mp4';
     expect(await renderPhotoForDownload({}, video, null, WATERMARK)).toBeNull();
     expect(await renderPhotoForDownload({}, video, BOX, WATERMARK)).toBeNull();
+  });
+
+  test('fails closed on a logo it cannot draw when there is no text to fall back on', async () => {
+    const photo = write('mark-logo.jpg', await solid(1200, 800).jpeg().toBuffer());
+    const logoOnly = { ...WATERMARK, companyName: '', logoPath: path.join(dir, 'missing-logo.png') };
+    await expect(renderPhotoForDownload({}, photo, null, logoOnly)).rejects.toThrow('logo');
+  });
+
+  test('ships a photo as stored when nothing is configured to draw', async () => {
+    const source = await solid(1200, 800).jpeg().toBuffer();
+    const photo = write('mark-none.jpg', source);
+    const out = await renderPhotoForDownload({}, photo, null, { ...WATERMARK, companyName: '' });
+    expect(out.equals(source)).toBe(true);
+  });
+
+  test('refuses when the watermark settings cannot be read', async () => {
+    jest.spyOn(watermarkService, 'getWatermarkSettings').mockResolvedValue(null);
+    await expect(resolveWatermarkSettings({ watermark_downloads: 1 })).rejects.toThrow('settings');
   });
 
   test('still marks a healthy photo', async () => {
