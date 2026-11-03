@@ -29,6 +29,7 @@ export { HeroPhotoSelector } from './HeroPhotoSelector';
 export { FocalPointPicker } from './FocalPointPicker';
 export { PhotoUploadModal } from './PhotoUploadModal';
 export { PhotoTrashModal, photoTrashQueryKey } from './PhotoTrashModal';
+export { PhotoDuplicatesModal, photoDuplicatesQueryKey } from './PhotoDuplicatesModal';
 export { UploadProgressBar } from './UploadProgressBar';
 export { SettingsSaveBar } from './SettingsSaveBar';
 export { GalleryPreview } from './GalleryPreview';

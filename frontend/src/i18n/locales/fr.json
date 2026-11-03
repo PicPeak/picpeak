@@ -627,6 +627,25 @@
     "toolbar": {
       "browse": "Outils de la galerie",
       "selection": "Sélection"
+    },
+    "favoriteLists": {
+      "saveTo": "Enregistrer dans la liste",
+      "defaultList": "Mes favoris",
+      "manage": "Gérer les listes…",
+      "title": "Vos listes",
+      "intro": "Classez vos favoris dans des listes. Le signet enregistre dans la liste choisie.",
+      "defaultHint": "Liste par défaut",
+      "nameLabel": "Nom de la liste",
+      "rename": "Renommer {{name}}",
+      "deleteNamed": "Supprimer {{name}}",
+      "confirmDelete_one": "Supprimer « {{name}} » et la {{count}} photo qu’elle contient ?",
+      "confirmDelete_other": "Supprimer « {{name}} » et les {{count}} photos qu’elle contient ?",
+      "delete": "Supprimer la liste",
+      "newPlaceholder": "Nouvelle liste, p. ex. Album",
+      "create": "Ajouter",
+      "nameTaken": "Vous avez déjà une liste portant ce nom.",
+      "limitReached": "Vous pouvez créer jusqu’à {{count}} listes.",
+      "saveError": "La liste n’a pas pu être enregistrée."
     }
   },
   "categories": {
@@ -1385,6 +1404,7 @@
       "defaultAllowRatings": "Notes en étoiles",
       "defaultAllowLikes": "J'aime",
       "defaultAllowFavorites": "Favoris",
+      "defaultAllowFavoriteLists": "Listes de favoris",
       "defaultAllowComments": "Commentaires",
       "defaultAllowReactions": "Réactions emoji",
       "defaultAllowColorLabels": "Étiquettes de couleur",
@@ -2425,6 +2445,31 @@
         "deleteFailed_one": "{{count}} photo n’a pas pu être supprimée et se trouve toujours dans la galerie",
         "deleteFailed_many": "{{count}} photos n’ont pas pu être supprimées et se trouvent toujours dans la galerie",
         "deleteFailed_other": "{{count}} photos n’ont pas pu être supprimées et se trouvent toujours dans la galerie"
+      },
+      "duplicates": {
+        "open": "Doublons",
+        "title": "Photos en double",
+        "intro": "Seuls les fichiers identiques octet par octet correspondent : les copies réexportées ou redimensionnées ne sont pas détectées, et les photos encore sans empreinte (importées avant le hachage) ne sont pas comparées.",
+        "empty": "Aucun doublon dans cette galerie",
+        "emptyHelp": "Aucune photo ici ne partage le même fichier qu’une autre.",
+        "loadFailed": "Impossible de charger les doublons",
+        "copies_one": "{{count}} copie identique",
+        "copies_other": "{{count}} copies identiques",
+        "keep": "Conserver",
+        "keepThis": "Conserver {{name}}",
+        "keepOne_one": "Conserver celle marquée, mettre {{count}} à la corbeille",
+        "keepOne_other": "Conserver celle marquée, mettre {{count}} à la corbeille",
+        "keepAll_one": "Conserver la photo marquée dans {{count}} groupe",
+        "keepAll_other": "Conserver la photo marquée dans les {{count}} groupes",
+        "trashed_one": "{{count}} copie mise à la corbeille",
+        "trashed_other": "{{count}} copies mises à la corbeille",
+        "failed": "Impossible de mettre les copies à la corbeille",
+        "trashOff": "La corbeille est désactivée et la suppression est définitive : cette vue ne fait que lister les copies.",
+        "sourceAdmin": "Envoi ou import",
+        "sourceGuest": "Envoi d’invité",
+        "sourceExternal": "Dossier externe",
+        "range_one": "Groupe {{from}}–{{to}} sur {{count}}",
+        "range_other": "Groupes {{from}}–{{to}} sur {{count}}"
       }
     },
     "events": {
@@ -2497,7 +2542,16 @@
         "rated": "Notés",
         "reacted": "A réagi",
         "commented": "Commentés",
-        "labeled": "Étiquettes de couleur"
+        "labeled": "Étiquettes de couleur",
+        "defaultList": "Liste par défaut",
+        "favoriteLists": "Listes de favoris",
+        "listCount_one": "{{count}} photo",
+        "listCount_other": "{{count}} photos",
+        "listUpdated": "Modifiée {{date}}",
+        "showInPhotos": "Voir dans les photos",
+        "clearListFilter": "Afficher toutes les photos",
+        "listFilterNamed": "Photos de {{name}}.",
+        "listFilter": "Photos d’une liste de favoris."
       },
       "inviteStatus": {
         "pending": "En attente",
@@ -3371,6 +3425,8 @@
       "reactions": "Réactions emoji",
       "reactionsDesc": "Un emoji par invité et par photo (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Marquer les photos comme favoris",
+      "favoriteLists": "Listes de favoris",
+      "favoriteListsDesc": "Les invités classent leurs favoris dans des listes qu’ils nomment, comme « Album » ou « Tirage »",
       "identityMode": "Mode d'identité",
       "identityModeSimple": "Commentaires simples",
       "identityModeSimpleDesc": "Anonyme, basé sur l'appareil. Tous les visiteurs sur le même appareil partagent le même état.",

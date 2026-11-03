@@ -23,13 +23,15 @@ const { buildCustomerLabel, byDate } = require('./taxReportService')._internal;
 const { ensureInt } = require('../utils/numericHelpers');
 const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
 const { auditedDelete, auditedInsert, auditedUpdate } = require('./accountingHistory');
+const { orPaidAwaitingDelivery } = require('./invoice/helpers');
 
 const ACCOUNT_TYPES = ['asset', 'liability', 'equity', 'revenue', 'expense'];
 const VAT_DIRECTIONS = ['output', 'input'];
 
 // Statuses we book. Mirrors taxReportService: cancelled originals are excluded
-// (the storno reissue, a negative-total row, carries the reversal).
-const REVENUE_STATUSES = ['sent', 'paid', 'overdue', 'pending_delivery'];
+// (the storno reissue, a negative-total row, carries the reversal), and an
+// unpaid invoice awaiting delivery is not issued yet, so it books once it is sent.
+const REVENUE_STATUSES = ['sent', 'paid', 'overdue'];
 
 // ── helpers ──────────────────────────────────────────────────────────
 function rateKey(rate) {
@@ -267,7 +269,7 @@ async function buildPostings({ from, to, currency } = {}) {
       .leftJoin('events', 'invoices.event_id', 'events.id')
       .whereBetween('invoices.issue_date', [from, to])
       .where('invoices.currency', cur)
-      .whereIn('invoices.status', REVENUE_STATUSES)
+      .where((q) => orPaidAwaitingDelivery(q.whereIn('invoices.status', REVENUE_STATUSES)))
       .orderBy('invoices.issue_date', 'asc')
       .select(
         'invoices.id', 'invoices.invoice_number', 'invoices.issue_date', 'invoices.vat_rate',

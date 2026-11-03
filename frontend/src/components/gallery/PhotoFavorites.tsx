@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bookmark } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -8,6 +8,7 @@ import { toast } from 'react-toastify';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
+import { favoriteListsQueryKey, useFavoriteListsOptional } from '../../contexts/FavoriteListsContext';
 
 interface PhotoFavoritesProps {
   photoId: string;
@@ -40,23 +41,43 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const guestIdentity = useGuestIdentityOptional();
+  // Named lists (issue 2303): the bookmark saves to the guest's active list.
+  // Without lists (null) nothing is sent and the toggle works as it always did.
+  const favoriteLists = useFavoriteListsOptional();
   const { modal: limitModal, handleError: handleLimitError } = useFeedbackLimitModal();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
+  const mounted = useRef(false);
+  const animationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (animationTimeout.current !== null) clearTimeout(animationTimeout.current);
+      animationTimeout.current = null;
+    };
+  }, []);
 
   const submitFavoriteMutation = useMutation({
     // The photo travels with the call. The function and the callbacks below
     // are the latest render's, which in the lightbox can already show another
     // photo: a toggle paused offline would otherwise be sent for that one.
-    mutationFn: (data: { photoId: string; guest_name?: string; guest_email?: string }) =>
+    mutationFn: (data: { photoId: string; guest_name?: string; guest_email?: string; favoriteListId?: number | null }) =>
       feedbackService.submitFeedback(gallerySlug, data.photoId, {
         feedback_type: 'favorite',
+        // Captured at the click, like the photo: switching lists while the
+        // toggle is in flight must not move it to the other list.
+        ...(data.favoriteListId !== undefined ? { favorite_list_id: data.favoriteListId } : {}),
         guest_name: data.guest_name || undefined,
         guest_email: data.guest_email || undefined
       }),
     onMutate: async () => {
+      if (!mounted.current) return;
+      if (animationTimeout.current !== null) clearTimeout(animationTimeout.current);
+      animationTimeout.current = null;
       setIsSubmitting(true);
       setAnimating(true);
       // Optimistic update
@@ -75,6 +96,9 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       // read the guest's own rows from my-feedback, so refresh it now that
       // the toggle is accepted (as PhotoRating does).
       queryClient.invalidateQueries({ queryKey: ['my-feedback', gallerySlug] });
+      if (variables.favoriteListId !== undefined) {
+        queryClient.invalidateQueries({ queryKey: favoriteListsQueryKey(gallerySlug) });
+      }
     },
     onError: (error: any) => {
       // Revert optimistic update
@@ -90,10 +114,17 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       }
     },
     onSettled: () => {
+      // A mutation can settle after the lightbox has unmounted this control.
+      if (!mounted.current) return;
       setIsSubmitting(false);
-      setTimeout(() => setAnimating(false), 300);
+      animationTimeout.current = setTimeout(() => {
+        animationTimeout.current = null;
+        if (mounted.current) setAnimating(false);
+      }, 300);
     }
   });
+
+  const listChoice = favoriteLists ? { favoriteListId: favoriteLists.activeListId } : {};
 
   const handleFavoriteClick = async () => {
     if (!isEnabled || isSubmitting) return;
@@ -104,7 +135,7 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       } catch {
         return;
       }
-      submitFavoriteMutation.mutate({ photoId });
+      submitFavoriteMutation.mutate({ photoId, ...listChoice });
       return;
     }
 
@@ -114,14 +145,14 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       const identityPayload = savedIdentity
         ? { guest_name: savedIdentity.name, guest_email: savedIdentity.email }
         : {};
-      submitFavoriteMutation.mutate({ ...identityPayload, photoId });
+      submitFavoriteMutation.mutate({ ...identityPayload, photoId, ...listChoice });
     }
   };
 
   const handleIdentitySubmit = (name: string, email: string) => {
     setSavedIdentity({ name, email });
     setShowIdentityModal(false);
-    submitFavoriteMutation.mutate({ photoId, guest_name: name, guest_email: email });
+    submitFavoriteMutation.mutate({ photoId, guest_name: name, guest_email: email, ...listChoice });
   };
 
   if (!isEnabled) return null;

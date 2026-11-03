@@ -64,3 +64,11 @@ describe('useLocalizedDate with a zone-less SQLite timestamp', () => {
     expect(result.current.formatTime('09:00')).toBe('09:00');
   });
 });
+
+describe('formatDateTime with an unparseable value', () => {
+  it('renders blank instead of throwing', () => {
+    const { result } = renderHook(() => useLocalizedDate());
+    expect(result.current.formatDateTime('1793313078114')).toBe('');
+    expect(result.current.formatDateTime('not a date')).toBe('');
+  });
+});

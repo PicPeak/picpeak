@@ -7,17 +7,24 @@ const { adminActivityActor } = require('../../utils/activityActor');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
 const { formatShortDate } = require('../../utils/dateFormatter');
+const { toDateOnly } = require('../../utils/dateOnly');
 const { resolveBillingRecipients } = require('../_billingRecipients');
+const customerContactsService = require('../customerContactsService');
 const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { extendedLineColumns } = require('../../utils/lineItemTotals');
-const { computeDueDate, ensureCustomerCanBill, formatMajor, getHierarchyHelpers, nextInvoiceNumber, resolveNetDaysForRow } = require('./helpers');
+const { computeDueDate, ensureCustomerCanBill, formatMajor, getHierarchyHelpers, nextInvoiceNumber, resolveNetDaysForRow, isInvoiceEditable } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 const { createInvoice } = require('./create');
 const { buildInvoiceRenderContext } = require('./render');
 const { collectRebillProofAttachments } = require('./rebillProofs');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
+
+async function billingContactEmails(customer) {
+  const contacts = await customerContactsService.mailRecipients(customer?.id, 'bills');
+  return contacts.map((contact) => contact.email);
+}
 
 
 /**
@@ -170,6 +177,8 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     issuer: ctx.issuer,
   });
 
+  // Before the claim: a failed lookup must not leave it sent with no mail.
+  const contactEmails = await billingContactEmails(customer);
   const newStatus = invoice.status === 'overdue' ? 'overdue' : 'sent';
   // Conditional on the status read above: when another process sent this
   // scheduled invoice in the meantime, the row is no longer 'scheduled',
@@ -186,7 +195,9 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     return { sent: false, alreadySent: true };
   }
 
-  const { to: invoiceTo, cc: invoiceCc } = resolveBillingRecipients(customer, invoice.cc_pdf_email);
+  const { to: invoiceTo, cc: invoiceCc } = resolveBillingRecipients(
+    customer, invoice.cc_pdf_email, contactEmails,
+  );
 
   // Re-bill/passthrough proof attachments (#866). Separate attachments — the
   // invoice PDF above is never touched. Selection comes from the Send dialog on
@@ -209,7 +220,7 @@ async function sendInvoiceOnce(id, adminId, options = {}) {
     customer_name: customer.display_name || customer.first_name || customer.email.split('@')[0],
     event_name: invoice.event_name || '',
     total_amount: formatMajor(invoice.total_amount_minor, invoice.currency, ctx.locale),
-    due_date: formatShortDate(invoice.due_date),
+    due_date: toDateOnly(invoice.due_date),
     installment_label: invoice.installment_label || '',
     installment_index: invoice.installment_index + 1,
     installment_total: invoice.installment_total,
@@ -307,7 +318,7 @@ async function createStorno(originalId, adminId, trx = db) {
   if (original.kind === 'storno') {
     throw new AppError('Cannot Storno a Storno', 409, 'IS_STORNO');
   }
-  if (original.status === 'scheduled') {
+  if (isInvoiceEditable(original)) {
     throw new AppError(
       'This invoice has not been sent yet — Storno only applies to issued documents.',
       409,
@@ -497,6 +508,7 @@ async function sendStornoOnce(stornoId, adminId) {
     issuer: ctx.issuer,
   });
 
+  const contactEmails = await billingContactEmails(customer);
   // Same claim as sendInvoice: only the caller that flips the row mails it
   // (cancelInvoice's inline send and the scheduler retry can overlap).
   const claimed = await auditedUpdate(db, 'invoices', { id: stornoId, status: storno.status }, {
@@ -514,11 +526,13 @@ async function sendStornoOnce(stornoId, adminId) {
       .select('invoice_number', 'issue_date').first()
     : null;
 
-  const { to: stornoTo, cc: stornoCc } = resolveBillingRecipients(customer, storno.cc_pdf_email);
+  const { to: stornoTo, cc: stornoCc } = resolveBillingRecipients(
+    customer, storno.cc_pdf_email, contactEmails,
+  );
   await emailProcessor.queueEmail(storno.event_id || null, stornoTo, 'storno_issued', {
     storno_number: storno.invoice_number,
     original_invoice_number: originalRow?.invoice_number || '',
-    original_issue_date: originalRow?.issue_date ? formatShortDate(originalRow.issue_date) : '',
+    original_issue_date: originalRow?.issue_date ? formatShortDate(originalRow.issue_date, ctx.issuer?.countryCode) : '',
     customer_name: customer.display_name || customer.first_name || customer.email.split('@')[0],
     total_amount: formatMajor(Math.abs(storno.total_amount_minor), storno.currency, ctx.locale),
     // Match the customer's language (as with the ctx.locale-formatted amount).
@@ -564,7 +578,7 @@ async function reissueInvoice(id, adminId) {
   if (original.kind === 'storno') {
     throw new AppError('Cannot reissue a Storno document', 409, 'IS_STORNO');
   }
-  if (original.status === 'scheduled') {
+  if (isInvoiceEditable(original)) {
     throw new AppError(
       'This invoice has not been sent yet — use Edit instead of Cancel & reissue.',
       409,
@@ -704,11 +718,20 @@ async function releaseForDelivery(id, adminId) {
     );
   }
   const now = new Date();
-  await auditedUpdate(db, 'invoices', { id }, {
-    status: 'scheduled',
-    scheduled_send_at: now,
-    updated_at: now,
-  }, { actor: adminId, source: 'invoice.releaseForDelivery' });
+  // ISO text: on SQLite a Date comes back as a number sendInvoice cannot parse.
+  const updates = { status: 'scheduled', scheduled_send_at: now.toISOString(), updated_at: now };
+  // Until now the dates assume delivery on event day + 14. Payment runs from
+  // the real delivery, unless an admin set the due date by hand. This has to
+  // happen here: sendInvoice compares against scheduled_send_at, which from
+  // this update on is today and would read the old date as a manual override.
+  const netDays = await resolveNetDaysForRow(invoice);
+  const assumedDue = computeDueDate(new Date(toDateOnly(invoice.issue_date)), netDays).toISOString().slice(0, 10);
+  if (toDateOnly(invoice.due_date) === assumedDue) {
+    updates.due_date = computeDueDate(now, netDays).toISOString().slice(0, 10);
+  }
+  const released = await auditedUpdate(db, 'invoices', { id, status: 'pending_delivery' }, updates,
+    { actor: adminId, source: 'invoice.releaseForDelivery' });
+  if (!released) throw new AppError('Invoice is no longer awaiting delivery', 409, 'NOT_PENDING_DELIVERY');
   try {
     await logActivity('invoice_released_for_delivery', { invoiceId: id }, invoice.event_id || null, adminActivityActor(adminId));
   } catch (_) { /* non-fatal */ }
@@ -721,7 +744,7 @@ async function releaseForDelivery(id, adminId) {
  * Cancel an invoice. The behaviour depends on whether the document
  * was ever issued:
  *
- *   - `scheduled` (draft, no PDF emitted): soft cancel — status
+ *   - `scheduled` / `pending_delivery` (not issued, no PDF emitted): soft cancel — status
  *     flips to 'cancelled', nothing leaves the system. No Storno is
  *     generated because no document exists for the customer to
  *     reverse.
@@ -755,10 +778,11 @@ async function cancelInvoice(id, adminId) {
   }
 
   // Draft path: nothing was issued, soft cancel and we're done.
-  if (invoice.status === 'scheduled') {
-    await auditedUpdate(db, 'invoices', { id }, {
+  if (isInvoiceEditable(invoice)) {
+    const cancelled = await auditedUpdate(db, 'invoices', { id, status: invoice.status }, {
       status: 'cancelled', updated_at: new Date(),
     }, { actor: adminId, source: 'invoice.cancel' });
+    if (!cancelled) throw new AppError('This invoice changed in the meantime. Reload it.', 409, 'INVOICE_STATUS_CHANGED');
     // Free any re-billed supplier invoices so the cost isn't stranded (#866 review).
     await releaseRebillsForCancelledInvoice(db, id, adminId);
     try {

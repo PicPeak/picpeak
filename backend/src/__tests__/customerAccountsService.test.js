@@ -15,6 +15,7 @@ jest.mock('../database/db', () => {
 jest.mock('../utils/logger', () => ({
   info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(),
 }));
+jest.mock('../services/customerContactsService', () => ({ isContactEmail: jest.fn(async () => false) }));
 jest.mock('../services/emailProcessor', () => ({
   queueEmail: jest.fn().mockResolvedValue(undefined),
 }));

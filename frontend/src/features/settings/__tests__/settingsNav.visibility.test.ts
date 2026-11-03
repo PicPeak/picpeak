@@ -13,14 +13,16 @@ import { renderHook } from '@testing-library/react';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-import { useHasVisibleSettings } from '../settingsNav';
+import { useHasVisibleSettings, useSettingsNavGroups } from '../settingsNav';
 
 let granted: string[] = [];
+let superAdmin = false;
 vi.mock('../../../contexts/PermissionsContext', () => ({
   usePermissions: () => ({
     hasAnyPermission: (perms: string[]) => perms.some((p) => granted.includes(p)),
     hasPermission: (p: string) => granted.includes(p),
     isLoading: false,
+    isSuperAdmin: superAdmin,
   }),
 }));
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({
@@ -33,6 +35,14 @@ vi.mock('react-i18next', () => ({
 const read = (rel: string) => readFileSync(resolve(__dirname, '../../..', rel), 'utf8');
 
 describe('useHasVisibleSettings', () => {
+  it('limits installation payment configuration to super admins', () => {
+    granted = ['settings.integrations'];
+    superAdmin = false;
+    expect(renderHook(() => useSettingsNavGroups()).result.current.flatMap((g) => g.items).some((i) => i.key === 'payments')).toBe(false);
+    superAdmin = true;
+    expect(renderHook(() => useSettingsNavGroups()).result.current.flatMap((g) => g.items).some((i) => i.key === 'payments')).toBe(true);
+    superAdmin = false;
+  });
   it('is true for a role with one narrow settings permission', () => {
     granted = ['branding.view'];
     expect(renderHook(() => useHasVisibleSettings()).result.current).toBe(true);

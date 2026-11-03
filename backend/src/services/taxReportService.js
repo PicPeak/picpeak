@@ -43,11 +43,13 @@ const { getAppSetting } = require('../utils/appSettings');
 // Null when never set: the report then treats VAT charged this period as registered.
 const { getVatRegisteredSetting } = require('../utils/vatRegistration');
 const { t } = require('./pdf-i18n');
+const { orPaidAwaitingDelivery } = require('./invoice/helpers');
 const { formatMinor, formatDate } = pdfService._internal;
 
 // Rows we WANT to surface in the tax report. `cancelled` is included
 // for audit visibility; the totals math filters it out separately.
-const REPORTABLE_STATUSES = ['sent', 'paid', 'overdue', 'pending_delivery', 'cancelled'];
+// An unpaid invoice awaiting delivery is not issued yet, so it reports once it is sent.
+const REPORTABLE_STATUSES = ['sent', 'paid', 'overdue', 'cancelled'];
 
 // D.2 — `ensureInt` consolidated into utils/numericHelpers.
 const { ensureInt } = require('../utils/numericHelpers');
@@ -387,7 +389,7 @@ async function getTaxReport({ from, to, currency, includeCosts = true } = {}) {
       .leftJoin('events',            'invoices.event_id',            'events.id')
       .whereBetween('invoices.issue_date', [from, to])
       .where('invoices.currency', cur)
-      .whereIn('invoices.status', REPORTABLE_STATUSES)
+      .where((q) => orPaidAwaitingDelivery(q.whereIn('invoices.status', REPORTABLE_STATUSES)))
       .orderBy('invoices.invoice_number', 'asc')
       .select(
         'invoices.id',

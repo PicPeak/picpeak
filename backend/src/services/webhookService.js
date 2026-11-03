@@ -20,6 +20,9 @@ const EVENT_TYPES = Object.freeze([
   // A guest finished their selection or approved the edited photos
   // (issue 1733, A1); data.submission.kind says which.
   'selection.submitted',
+  // An external-media scan of a gallery finished and changed something
+  // (issue 2357); fired from importExternalFolder.
+  'external_scan.completed',
 ]);
 
 function generateSecret() {

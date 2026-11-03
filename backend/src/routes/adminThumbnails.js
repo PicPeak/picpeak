@@ -1,10 +1,12 @@
 const express = require('express');
+const pLimit = require('p-limit');
 const router = express.Router();
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { canAccessEvent } = require('../middleware/ownership');
 const { ensureThumbnail, ensurePreviewImage } = require('../services/imageProcessor');
+const { retryTransient } = require('../services/imageResourcePolicy');
 const { getStorage } = require('../services/storage');
 const logger = require('../utils/logger');
 const applicationWork = require('../services/activeApplicationWork');
@@ -15,6 +17,24 @@ const { canonicalStorageKey, sameStorageKey } = require('../utils/storageKey');
 // double the load and delete each other's freshly written renditions. Held per
 // process; another replica can still start its own.
 const runningJobs = { thumbnails: false, previews: false };
+
+// Photos one preview regeneration works on at once. 1 (the default) is the old
+// one-by-one loop. Each photo spends most of its time fetching the original
+// from storage and writing the rendition back, so a few in flight keep the CPU
+// busy. Decodes stay in the isolated sharp pool (at most 2 workers), so the cap
+// bounds temp disk and storage connections, not RAM: a queued slot holds a temp
+// copy of the original and a storage request.
+// Several RAW files at once can fill the media staging budget, and the refusal
+// (MEDIA_QUEUE_FULL) asks for 5 s. This loop has no queue to put a photo back in,
+// so it waits here, holding its slot. Only that refusal: a stopped service would
+// hold the shutdown drain for every photo left, and a timeout would run as long
+// again.
+const PREVIEW_RETRY = { pauseMs: 5000, retryIf: (error) => error?.code === 'MEDIA_QUEUE_FULL' };
+
+function previewRegenConcurrency() {
+  const configured = Number.parseInt(process.env.PREVIEW_REGEN_CONCURRENCY || '1', 10);
+  return Number.isFinite(configured) && configured > 0 ? Math.min(configured, 8) : 1;
+}
 
 /**
  * Who may start a regeneration. Scoped to an event it is that event's photo
@@ -381,19 +401,20 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
       let errorCount = 0;
       // Previews this run replaced, removed after the loop (see below).
       const superseded = [];
-      for (const photo of photos) {
+      const limit = pLimit(previewRegenConcurrency());
+      await Promise.all(photos.map((photo) => limit(async () => {
         try {
           if (onlyMissing) {
             // No preview to replace, so no tiers to drop and nothing
             // superseded. Not forced: a lazy generation already running for
             // this photo renders under the same settings, so joining it is
             // the same result without doing the work twice.
-            if (await ensurePreviewImage(photo)) {
+            if (await retryTransient(() => ensurePreviewImage(photo), PREVIEW_RETRY)) {
               successCount++;
             } else {
               errorCount++;
             }
-            continue;
+            return;
           }
           // Force regeneration regardless of existing preview state by
           // nulling the cached path so ensurePreviewImage doesn't
@@ -408,7 +429,10 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
           const tierError = await require('../services/imageProcessor')
             .deletePreviewTiers(photo, { strict: true }).then(() => null, (err) => err);
           // `force`: never adopt a lazy generation already in flight (#1020).
-          const newPreviewPath = await ensurePreviewImage({ ...photo, preview_path: null }, { force: true });
+          const newPreviewPath = await retryTransient(
+            () => ensurePreviewImage({ ...photo, preview_path: null }, { force: true }),
+            PREVIEW_RETRY
+          );
           if (newPreviewPath) {
             // The replaced preview, when the key MOVED. A camera-named
             // (watch-folder) photo's preview is now named per photo, an S3
@@ -432,7 +456,7 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
           logger.error(`Error regenerating preview for photo ${photo.id}:`, error);
           errorCount++;
         }
-      }
+      })));
       // Delete the replaced previews no row points at any more, as the
       // thumbnail endpoint does. One pass over every row's preview_path after
       // the loop, not a lookup per photo (on S3 every key moves). A row that

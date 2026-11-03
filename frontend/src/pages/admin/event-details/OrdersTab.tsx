@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { ShoppingBag, Send, Link2 } from 'lucide-react';
 import { api } from '../../../config/api';
-import { Badge, Card, Loading, type BadgeTone } from '../../../components/common';
+import { Badge, Card, Loading } from '../../../components/common';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { formatPhotoPrice } from '../../../features/photo-sales/photoSales';
+import { useOrderStatus } from '../../../features/photo-sales/usePhotoOrderStatus';
 import { PhotoSalesStoreNotice } from '../../../features/photo-sales/PhotoSalesStoreNotice';
 import {
   photoOrdersQueryKey, usePhotoOrders, type PhotoOrderSummary,
@@ -14,27 +15,6 @@ import {
 
 interface OrdersTabProps {
   eventId: number;
-}
-
-/** Badge for an order: what Snipcart and the audit made of it. */
-function useOrderStatus() {
-  const { t } = useTranslation();
-  return (order: PhotoOrderSummary): { tone: BadgeTone; label: string } => {
-    switch (order.status) {
-      case 'completed':
-        return order.remaining_days > 0
-          ? { tone: 'success', label: t('photoSales.statusPaid', 'Paid') }
-          : { tone: 'neutral', label: t('photoSales.statusExpired', 'Access ended') };
-      case 'refunded':
-        return { tone: 'neutral', label: t('photoSales.statusRefunded', 'Refunded') };
-      case 'refund_failed':
-        return { tone: 'danger', label: t('photoSales.statusRefundFailed', 'Refund failed') };
-      case 'charged_back':
-        return { tone: 'danger', label: t('photoSales.statusChargedBack', 'Charged back') };
-      default:
-        return { tone: 'neutral', label: t('photoSales.statusCancelled', 'Cancelled') };
-    }
-  };
 }
 
 /**
@@ -47,7 +27,8 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({ eventId }) => {
   const { format } = useLocalizedDate();
   const queryClient = useQueryClient();
   const orderStatus = useOrderStatus();
-  const { data, isLoading, isError, refetch } = usePhotoOrders(eventId);
+  const [includeAbandoned, setIncludeAbandoned] = useState(false);
+  const { data, isLoading, isError, refetch } = usePhotoOrders(eventId, true, includeAbandoned);
 
   const resendMutation = useMutation({
     mutationFn: (orderId: string) =>
@@ -101,12 +82,16 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({ eventId }) => {
   return (
     <div className="space-y-4">
       <PhotoSalesStoreNotice store={data?.store} />
+      <label className="flex items-center gap-2 text-sm text-body">
+        <input type="checkbox" checked={includeAbandoned} onChange={(event) => setIncludeAbandoned(event.target.checked)} />
+        {t('photoSales.showAbandoned', 'Show expired, failed and cancelled checkouts')}
+      </label>
 
       {orders.length === 0 ? (
         <Card padding="md">
           <div className="flex items-center gap-3 text-soft">
             <ShoppingBag className="w-5 h-5 shrink-0" />
-            <p>{t('photoSales.noOrders', 'No purchases yet. Buyers get an order listed here as soon as a Snipcart checkout completes.')}</p>
+            <p>{t('photoSales.noVisibleOrders', 'No orders to show. Expired, failed and cancelled checkouts are hidden unless selected above.')}</p>
           </div>
         </Card>
       ) : (
@@ -136,7 +121,7 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({ eventId }) => {
                   const active = order.status === 'completed' && order.remaining_days > 0;
                   return (
                     <tr key={order.order_id} className="border-b border-line-faint last:border-0">
-                      <td className="py-3 pr-4 text-heading break-all">{order.buyer_email || '—'}</td>
+                      <td className="py-3 pr-4 text-heading break-all">{order.buyer_email || '—'}<span className="block text-xs text-muted">{order.payment_provider === 'stripe' ? 'Stripe' : 'Snipcart'}</span></td>
                       <td className="py-3 pr-4 whitespace-nowrap"><Badge tone={status.tone}>{status.label}</Badge></td>
                       <td className="py-3 pr-4 text-body text-right tabular-nums">{order.status === 'completed' ? order.photo_count : '—'}</td>
                       <td className="py-3 pr-4 text-body text-right tabular-nums whitespace-nowrap">

@@ -102,6 +102,11 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
     if (invoice.status === 'cancelled') {
       throw new AppError('Cannot mark a cancelled invoice as paid', 409);
     }
+    // Not issued yet, and a paid invoice can no longer be marked delivered,
+    // so it would never reach the customer.
+    if (invoice.status === 'pending_delivery') {
+      throw new AppError('This invoice is awaiting delivery. Mark it delivered before recording a payment.', 409, 'INVOICE_AWAITING_DELIVERY');
+    }
     skontoAmountMinor = skontoFlag
       ? Math.max(0, ensureInt(invoice.total_amount_minor) - amount)
       : null;
@@ -272,7 +277,7 @@ async function queueInvoicePaidAdminNotification({
       paid_amount: formatMajor(paidTotalMinor, invoice.currency, locale),
       payment_method: paymentMethod || '',
       payment_reference: paymentReference || '',
-      paid_at: formatShortDate(paidAt),
+      paid_at: formatShortDate(paidAt, profile?.country_code),
       skonto_applied: !!skontoApplied,
       skonto_percent: skontoApplied && skontoPercent ? skontoPercent : '',
       skonto_discount_amount: skontoApplied
@@ -441,7 +446,7 @@ async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
         // Keep the body language consistent with the locale the amounts are
         // formatted in, instead of event-first resolution (admin-facing gate).
         __language: locale,
-        due_date: formatShortDate(invoice.due_date),
+        due_date: toDateOnly(invoice.due_date),
         total_amount: formatMajor(invoice.total_amount_minor, invoice.currency, locale),
         paid_amount: formatMajor(paidMinor, invoice.currency, locale),
         outstanding_amount: formatMajor(outstandingMinor, invoice.currency, locale),
@@ -580,7 +585,7 @@ async function notifyAdminOfPaymentCheckAction({ invoice, action, amountMinor, i
       amount: amountMinor ? formatMajor(ensureInt(amountMinor), invoice.currency, locale) : '',
       has_amount: !!amountMinor,
       ip: ip || 'unknown',
-      recorded_at: formatShortDate(new Date()),
+      recorded_at: formatShortDate(new Date(), profile?.country_code),
     });
 }
 

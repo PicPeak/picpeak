@@ -116,6 +116,28 @@ describe('email signature card', () => {
     expect(preview.getByText('Handelsregister Vaduz')).toBeInTheDocument();
   });
 
+  it("writes a US business's address and tax number the US way", async () => {
+    profileFixture = {
+      ...baseProfile,
+      addressLine1: '123 Main St', postalCode: '80202', city: 'Denver', state: 'CO',
+      countryCode: 'US', countryName: 'United States', vatId: '12-3456789',
+    };
+    renderPage();
+
+    const preview = within(await screen.findByTestId('email-signature-preview'));
+    expect(preview.getByText('123 Main St · Denver, CO 80202')).toBeInTheDocument();
+    expect(preview.getByText('EIN: 12-3456789')).toBeInTheDocument();
+  });
+
+  it("labels a US business's tax numbers as EIN and sales tax ID", async () => {
+    profileFixture = { ...baseProfile, countryCode: 'US' };
+    renderPage();
+
+    expect(await screen.findByLabelText('EIN')).toBeInTheDocument();
+    expect(screen.getByLabelText('Sales tax ID')).toBeInTheDocument();
+    expect(screen.queryByLabelText('VAT ID (USt-IdNr.)')).not.toBeInTheDocument();
+  });
+
   it('explains the off state instead of showing a stale preview', async () => {
     profileFixture = { ...baseProfile, emailSignatureEnabled: false };
     renderPage();

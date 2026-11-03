@@ -288,7 +288,8 @@ function darkenColor(hex, amount = 0.15) {
 
 // VAT is the one value that needs a label to mean anything. en/de only;
 // every other locale falls back to the English label, same as the rest of
-// the wrapper chrome ("All rights reserved").
+// the wrapper chrome ("All rights reserved"). A US business's signature
+// carries its own label (EIN), which wins over these.
 const SIGNATURE_VAT_LABELS = { en: 'VAT ID', de: 'USt-IdNr.' };
 
 // tel: hrefs take digits and a leading +; strip everything else so a pasted
@@ -352,7 +353,7 @@ function renderEmailSignature(signature, { mutedTextColor, brandingCompanyName, 
   }
 
   if (signature.vatId) {
-    const label = SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
+    const label = signature.vatIdLabel || SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
     rows.push(`<p style="${lineStyle}">${escapeHtml(label)}: ${escapeHtml(signature.vatId)}</p>`);
   }
 
@@ -399,7 +400,7 @@ function renderEmailSignatureText(signature, { brandingCompanyName, language } =
     .filter(Boolean);
   if (contact.length) lines.push(contact.join(' \u00b7 '));
   if (signature.vatId) {
-    const label = SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
+    const label = signature.vatIdLabel || SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
     lines.push(`${label}: ${signature.vatId}`);
   }
   if (signature.extra) lines.push(signature.extra);

@@ -5,6 +5,22 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.188.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.187.0-beta.0...v3.188.0-beta.0) (2026-11-02)
+
+
+### Features
+
+* **admin:** duplicates view on the gallery's Photos tab ([#2338](https://github.com/PicPeak/picpeak/issues/2338)) ([5c37538](https://github.com/PicPeak/picpeak/commit/5c37538720b27724d3aefd58695e09d46ebdffe8))
+* **feedback:** named favorite lists per guest per gallery ([#2346](https://github.com/PicPeak/picpeak/issues/2346)) ([5979ecc](https://github.com/PicPeak/picpeak/commit/5979ecca3df138fc0e3068cc480961d52b9aae2d))
+* **thumbnails:** regenerate previews PREVIEW_REGEN_CONCURRENCY photos at once (default 1) ([#2317](https://github.com/PicPeak/picpeak/issues/2317)) ([2f4a214](https://github.com/PicPeak/picpeak/commit/2f4a21443be1a77c758f05eab642a9d6a640a399))
+
+
+### Bug Fixes
+
+* **images:** decode HEVC HEIC through ffmpeg ([#2360](https://github.com/PicPeak/picpeak/issues/2360)) ([0820c51](https://github.com/PicPeak/picpeak/commit/0820c51a9d631ca00fcdccc931cfa93a8e69f575))
+* **invoices:** invoices awaiting delivery stay editable and unissued until sent ([#2358](https://github.com/PicPeak/picpeak/issues/2358)) ([67ed32c](https://github.com/PicPeak/picpeak/commit/67ed32c567f4ab0120fb6433039c992d825f3efd))
+* **uploads:** accept HEIC and HEIF however the browser types them ([#2361](https://github.com/PicPeak/picpeak/issues/2361)) ([2499b21](https://github.com/PicPeak/picpeak/commit/2499b21cc4a00cb256e4257b0f8c77ff5379c14a))
+
 ## [3.187.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.186.0-beta.0...v3.187.0-beta.0) (2026-11-01)
 
 
