@@ -151,7 +151,8 @@ export function useQuiltedWindow<P extends { id: number; width?: number | null; 
       style.display !== 'grid'
       || !(style.gridAutoFlow || '').includes('dense')
       || style.gridAutoRows !== `${cell}px`
-      || Math.abs((parseFloat(style.gridTemplateRows) || cell) - cell) >= 0.5
+      || style.gridTemplateRows === 'none'
+      || (style.gridTemplateRows || '').split(/\s+/).some((row) => Math.abs((parseFloat(row) || cell) - cell) >= 0.5)
       || parseFloat(style.rowGap) !== gutter
       || tracks.length !== columns
     ) setUnsupported(true);
