@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.192.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.192.0-beta.0...v3.192.1-beta.0) (2026-11-03)
+
+
+### Bug Fixes
+
+* **downloads:** never ship the original in place of a capped or watermarked download ([#2385](https://github.com/PicPeak/picpeak/issues/2385)) ([1b80114](https://github.com/PicPeak/picpeak/commit/1b80114e1f76771a7c1a63804629c43176d5ac50))
+* **uploads:** refuse non-image bytes under a HEIF name on admin uploads ([#2386](https://github.com/PicPeak/picpeak/issues/2386)) ([6eb18ac](https://github.com/PicPeak/picpeak/commit/6eb18acf885e9c9270332bbb0899817db5f2509a))
+
 ## [3.192.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.191.0-beta.0...v3.192.0-beta.0) (2026-11-03)
 
 
