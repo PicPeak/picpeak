@@ -1498,7 +1498,9 @@ function getQueueProcessorStatus() {
     started: processorStatus.started,
     lastRunAt: processorStatus.lastRunAt,
     lastResult: processorStatus.lastResult,
-    lastError: processorStatus.lastError,
+    // Each pass clears lastError, and a deferred row is not due for 5 minutes,
+    // so the passes in between would read clear while mail is held back.
+    lastError: processorStatus.lastError ?? currentMailOutage()?.error ?? null,
     lastErrorCode: processorStatus.lastErrorCode,
     outage: currentMailOutage(),
   };
@@ -1769,9 +1771,6 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         if (outage && now - deferredSince < MAIL_OUTAGE_MAX_MS) {
           result.failed -= 1;
           result.deferred = (result.deferred || 0) + 1;
-          // The queue card reads this; a deferred row is scheduled ahead, so
-          // the waiting and failure lists do not show it.
-          processorStatus.lastError = error.message;
           logger.warn(`Mail server unavailable, email ${email.id} deferred: ${error.message}`);
           try {
             await db('email_queue').where({ id: email.id, status: email.status }).update({

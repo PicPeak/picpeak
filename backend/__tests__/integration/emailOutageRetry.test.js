@@ -36,6 +36,10 @@ describe('mail server outage', () => {
       email_data: JSON.stringify({ gallery_name: 'Test', subject: 'Test' }),
       status: 'pending',
       created_at: createdAt.toISOString(),
+      // Explicit NULL, as queueEmail writes it. The column default is the
+      // database's clock, and one a few milliseconds ahead of Node's left
+      // every row not yet due.
+      scheduled_at: null,
     }).returning('id');
     return inserted[0]?.id ?? inserted[0];
   }
@@ -101,6 +105,7 @@ describe('mail server outage', () => {
         email_data: JSON.stringify({ subject: 'Test' }),
         status: 'pending',
         created_at: new Date().toISOString(),
+        scheduled_at: null,
       }).returning('id');
       const id = inserted[0]?.id ?? inserted[0];
       await run();
@@ -271,12 +276,18 @@ describe('mail server outage', () => {
     expect(await row(id)).toMatchObject({ status: 'pending', retry_count: 0, deferred_since: null });
   });
 
-  it('shows the queue card why mail is waiting', async () => {
+  it('shows the queue card why mail is waiting, also on the passes that find nothing due', async () => {
     await endOutage();
     await queueMail();
     send.mockRejectedValue(refused());
     await run();
     expect(status().lastError).toBe('connect ECONNREFUSED');
+    // The deferred row is not due for 5 minutes; the passes in between find nothing.
+    await db('email_queue').del();
+    await run();
+    expect(status().lastError).toBe('connect ECONNREFUSED');
+    await endOutage();
+    expect(status().lastError).toBeNull();
   });
 
   it.each([
