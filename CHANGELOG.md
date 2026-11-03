@@ -5,6 +5,28 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.189.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.188.0-beta.0...v3.189.0-beta.0) (2026-11-03)
+
+
+### Features
+
+* **crm:** customer gifts with milestone suggestions and gift stock ([#2364](https://github.com/PicPeak/picpeak/issues/2364)) ([1793f4a](https://github.com/PicPeak/picpeak/commit/1793f4a678eb05f3e8dfe5157dfe4403684b3b6c))
+* **crm:** several portal logins per customer, with rights per login ([#2351](https://github.com/PicPeak/picpeak/issues/2351)) ([23fa28d](https://github.com/PicPeak/picpeak/commit/23fa28d9a485d1385d98158554e399b86d90423e))
+* **crm:** United States conventions on quotes, invoices, contracts and emails ([#2319](https://github.com/PicPeak/picpeak/issues/2319)) ([80ad506](https://github.com/PicPeak/picpeak/commit/80ad50637c3bf775c81c456ac928ebca490fdb0e))
+* **photo-sales:** add Stripe alongside Snipcart with shared checkout ([#2280](https://github.com/PicPeak/picpeak/issues/2280)) ([aaad102](https://github.com/PicPeak/picpeak/commit/aaad1021bc8f3a50bd4c587a52db1bc41f64968b))
+* **webhooks:** external_scan.completed after an external-media scan ([#2372](https://github.com/PicPeak/picpeak/issues/2372)) ([46afdeb](https://github.com/PicPeak/picpeak/commit/46afdeb9473952f5f8628d14c3bc8478d398db6b))
+
+
+### Bug Fixes
+
+* **api:** accept generic .HEIC on v1 uploads, refuse other bytes under a HEIF name ([#2370](https://github.com/PicPeak/picpeak/issues/2370)) ([e0d5893](https://github.com/PicPeak/picpeak/commit/e0d589375d1adc35429e90488992686124dcd9ed))
+
+
+### Performance Improvements
+
+* **gallery:** window Masonry columns, Mosaic and the Story and Premium grids ([#2376](https://github.com/PicPeak/picpeak/issues/2376)) ([7bfd222](https://github.com/PicPeak/picpeak/commit/7bfd2229ef1835d025620add48f066d3b89d9f3b))
+* **gallery:** window the Masonry flickr and quilted layouts in large galleries ([#2373](https://github.com/PicPeak/picpeak/issues/2373)) ([c9699eb](https://github.com/PicPeak/picpeak/commit/c9699eb909ca24474518fc1cb65637c351a2ca94))
+
 ## [3.188.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.187.0-beta.0...v3.188.0-beta.0) (2026-11-02)
 
 
