@@ -33,6 +33,10 @@ const CUSTOMER_TYPES = [
   'customer_self_profile_update',
   'customer_groups_assigned',
   'customer_marketing_opt_out',
+  'customer_contact_created',
+  'customer_contact_updated',
+  'customer_contact_deleted',
+  'customer_company_switch',
 ];
 
 // Metadata fields a timeline row may show. Everything else stays in the log.
